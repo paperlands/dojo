@@ -1,0 +1,758 @@
+# 🥋 Book I - Matrix
+
+## Welcome to Book I
+
+```elixir
+:inet.gethostname()
+:erl_epmd.names()
+
+Node.self()
+|> Node.disconnect()
+
+Node.list(:connected)
+Livebook.Runtime
+```
+
+```elixir
+input = Kino.Input.text("Your name")
+```
+
+```elixir
+name = Kino.Input.read(input)
+Dojo.Class.join(self(), "book1", %Dojo.Disciple{name: name, node: Node.self(), action: "away"})
+```
+
+```elixir
+defmodule SmartAnimation do
+  use Kino.JS
+  use Kino.JS.Live
+  @max_speed 10
+  @min_speed 0.5
+  @default_speed 1
+
+  @spec new(list() | Range.t() | nil, (integer() -> any()), list()) :: Kino.JS.Live.t()
+  def new(range_or_list \\ nil, function, opts \\ [])
+
+  def new(nil, start..finish = range, opts) when is_list(opts) do
+    component(%{
+      start: start,
+      finish: finish,
+      function: fn index -> Enum.at(range, index) end,
+      opts: opts
+    })
+  end
+
+  def new(nil, list, opts) when is_list(list) and is_list(opts) do
+    component(%{
+      start: 0,
+      finish: nil,
+      function: fn index -> Enum.at(list, index) end,
+      opts: opts
+    })
+  end
+
+  def new(nil, function, opts) when is_function(function) and is_list(opts) do
+    component(%{
+      start: 1,
+      finish: nil,
+      function: function,
+      opts: opts
+    })
+  end
+
+  def new(start..finish, function, opts) when is_function(function) and is_list(opts) do
+    component(%{
+      start: start,
+      finish: finish,
+      function: function,
+      opts: opts
+    })
+  end
+
+  def component(state) do
+    frame = Kino.Frame.new()
+    Kino.render(frame)
+    Kino.Frame.render(frame, state.function.(state.start))
+
+    speed_multiplier =
+      Keyword.get(state.opts, :speed_multiplier, @default_speed)
+      |> max(@min_speed)
+      |> min(@max_speed)
+
+    Kino.JS.Live.new(__MODULE__,
+      function: state.function,
+      frame: frame,
+      finish: state.finish,
+      speed_multiplier: speed_multiplier,
+      step: state.start,
+      start: state.start
+    )
+  end
+
+  @impl true
+  def init(state, ctx) do
+    {:ok, assign(ctx, state)}
+  end
+
+  def increment_step(ctx) do
+    incremented_step =
+      if ctx.assigns.finish && ctx.assigns.step >= ctx.assigns.finish,
+        do: ctx.assigns.start,
+        else: ctx.assigns.step + 1
+
+    assign(ctx, step: incremented_step)
+  end
+
+  def decrement_step(ctx) do
+    decremented_step =
+      if ctx.assigns.step <= ctx.assigns.start,
+        do: ctx.assigns.finish || ctx.assigns.start,
+        else: ctx.assigns.step - 1
+
+    assign(ctx, step: decremented_step)
+  end
+
+  def update_animation(ctx) do
+    broadcast_event(ctx, "update_animation", %{"step" => ctx.assigns.step})
+    Kino.Frame.render(ctx.assigns.frame, ctx.assigns.function.(ctx.assigns.step))
+    ctx
+  end
+
+  @impl true
+  def handle_info(:increment, ctx) do
+    if ctx.assigns.running do
+      speed = round(1000 / ctx.assigns.speed_multiplier)
+      Process.send_after(self(), :increment, speed)
+      {:noreply, ctx |> increment_step() |> update_animation()}
+    else
+      {:noreply, ctx}
+    end
+  end
+
+  @impl true
+  def handle_connect(ctx) do
+    {:ok,
+     %{
+       "start" => ctx.assigns.start,
+       "finish" => ctx.assigns.finish,
+       "speed_multiplier" => ctx.assigns.speed_multiplier
+     }, ctx}
+  end
+
+  @impl true
+  def handle_event("stop", _, ctx) do
+    {:noreply, assign(ctx, running: false)}
+  end
+
+  @impl true
+  def handle_event("start", _, ctx) do
+    Process.send_after(self(), :increment, 1000)
+    {:noreply, assign(ctx, running: true)}
+  end
+
+  @impl true
+  def handle_event("reset", _, ctx) do
+    broadcast_event(ctx, "toggle_speed", %{"speed" => @default_speed})
+
+    {:noreply,
+     assign(ctx, step: ctx.assigns.start, speed_multiplier: @default_speed, running: false)
+     |> update_animation()}
+  end
+
+  @impl true
+  def handle_event("next", _, ctx) do
+    {:noreply, ctx |> increment_step() |> assign(running: false) |> update_animation()}
+  end
+
+  @impl true
+  def handle_event("previous", _, ctx) do
+    {:noreply, ctx |> decrement_step() |> assign(running: false) |> update_animation()}
+  end
+
+  def handle_event("toggle_speed", _, ctx) do
+    speed = ctx.assigns.speed_multiplier + 0.5
+    next_multiplier = if speed > @max_speed, do: @min_speed, else: speed
+
+    broadcast_event(ctx, "toggle_speed", %{"speed" => next_multiplier})
+
+    {:noreply, assign(ctx, speed_multiplier: next_multiplier)}
+  end
+
+  asset "main.js" do
+    """
+    export function init(ctx, payload) {
+      ctx.importCSS("main.css");
+      ctx.importCSS("https://cdn.jsdelivr.net/npm/remixicon@2.5.0/fonts/remixicon.css")
+
+      ctx.root.innerHTML = `
+        <section class="control">
+          <span id="reset">Reset</span>
+          <span id="step"></span>
+          <i id="previous" class="ri-arrow-left-fill icon"></i>
+          <i id="start" class="ri-play-fill icon"></i>
+          <i id="stop" class="ri-stop-fill icon"></i>
+          <i id="next" class="ri-arrow-right-fill icon"></i>
+          <span id="speed_multiplier">${payload.speed_multiplier}x</span>
+        </section>
+      `;
+
+      ctx.handleSync(() => {
+        // Synchronously invokes change listeners
+        document.activeElement &&
+          document.activeElement.dispatchEvent(new Event("change"));
+      });
+
+      const start = ctx.root.querySelector("#start");
+      const stop = ctx.root.querySelector("#stop");
+      const reset = ctx.root.querySelector("#reset");
+      const next = ctx.root.querySelector("#next");
+      const previous = ctx.root.querySelector("#previous");
+      const speed_multiplier = ctx.root.querySelector("#speed_multiplier");
+      const step = ctx.root.querySelector("#step");
+
+      if (payload.finish) {
+        step.innerHTML = `1/${payload.finish - payload.start + 1}`
+      } else {
+        step.innerHTML = 1
+      }
+
+      stop.style.display = "none"
+
+      start.addEventListener("click", (event) => {
+        start.style.display = "none"
+        stop.style.display = "inline"
+        ctx.pushEvent("start", {});
+      });
+
+      stop.addEventListener("click", (event) => {
+        stop.style.display = "none"
+        start.style.display = "inline"
+        ctx.pushEvent("stop", {});
+      });
+
+      reset.addEventListener("click", (event) => {
+        start.style.display = "inline"
+        stop.style.display = "none"
+        ctx.pushEvent("reset", {});
+      });
+
+      next.addEventListener("click", (event) => {
+        ctx.pushEvent("next", {});
+      });
+
+      previous.addEventListener("click", (event) => {
+        ctx.pushEvent("previous", {});
+      });
+
+      speed_multiplier.addEventListener("click", (event) => {
+        ctx.pushEvent("toggle_speed", {});
+      });
+
+      ctx.handleEvent("toggle_speed", ({ speed }) => {
+        speed_multiplier.innerHTML = `${speed}x`;
+      });
+
+
+      ctx.handleEvent("update_animation", ({ step: current_step }) => {
+        if (payload.finish) {
+          step.innerHTML = `${1 + current_step - payload.start}/${payload.finish - payload.start + 1}`
+        } else {
+          step.innerHTML = current_step
+        }
+      });
+    }
+    """
+  end
+
+  asset "main.css" do
+    """
+    .control {
+      padding: 1rem;
+      background-color: rgb(240 245 249);
+      border-radius: 0.5rem;
+      font-weight: 500;
+      color: rgb(97 117 138);
+      font-family: Inter, system-ui,-apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif, Apple Color Emoji, Segoe UI Emoji;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .icon {
+        font-size: 1.875rem;
+        padding: 0 1rem;
+    }
+
+    #reset {
+      position: absolute;
+      left: 1rem;
+    }
+
+    #step {
+      position: absolute;
+      left: 20%;
+    }
+
+
+    #speed_multiplier {
+      position: absolute;
+      right: 2rem;
+      padding: 0 1rem;
+    }
+
+    .icon:hover, #reset:hover, #speed_multiplier:hover {
+      color: black;
+      cursor: pointer
+    }
+    """
+  end
+end
+```
+
+```elixir
+defmodule Conway do
+  # square of size size
+  def genesis(name, size, generations, initial_life \\ nil) do
+    board = seed(size, initial_life)
+    print_board(board, name, size, 0)
+    reason = generate(name, size, generations, board, 1)
+
+    case reason do
+      :all_dead ->
+        "no more life."
+
+      :static ->
+        "no movement"
+
+      reason ->
+        reason
+        # _  -> 
+        #   "specified lifetime ended"
+    end
+  end
+
+  defp new_board(n) do
+    for x <- 1..n, y <- 1..n, into: %{}, do: {{x, y}, 0}
+  end
+
+  defp seed(n, points) do
+    # randomly seed board
+    if points do
+      points
+    else
+      for(x <- 1..n, y <- 1..n, do: {x, y}) |> Enum.take_random(10)
+    end
+    |> Enum.reduce(new_board(n), fn pos, acc -> %{acc | pos => 1} end)
+  end
+
+  defp generate(_, size, generations, board, gen) when generations < gen,
+    do: print_board(board, size)
+
+  defp generate(name, size, generations, board, gen) do
+    new = evolve(board, size)
+    print_board(new, name, size, gen)
+
+    cond do
+      barren?(new) -> :all_dead
+      board == new -> :static
+      true -> generate(name, size, generations, new, gen + 1)
+    end
+  end
+
+  defp evolve(board, n) do
+    for x <- 1..n, y <- 1..n, into: %{}, do: {{x, y}, fate(board, x, y, n)}
+  end
+
+  defp fate(board, x, y, n) do
+    irange = max(1, x - 1)..min(x + 1, n)
+    jrange = max(1, y - 1)..min(y + 1, n)
+    sum = (for(i <- irange, j <- jrange, do: board[{i, j}]) |> Enum.sum()) - board[{x, y}]
+
+    cond do
+      sum == 3 -> 1
+      sum == 2 and board[{x, y}] == 1 -> 1
+      true -> 0
+    end
+  end
+
+  defp barren?(board) do
+    Enum.all?(board, fn {_, v} -> v == 0 end)
+  end
+
+  defp print_board(_board, _name, _n, _generation) do
+    :ok
+  end
+
+  # defp print_board(board, name, n, generation) do
+  #   IO.puts "#{name}: generation #{generation}"
+  #   Enum.each(1..n, fn y ->
+  #     Enum.map(1..n, fn x -> if board[{x,y}]==1, do: "⬛", else: "⬜" end)
+  #     |> IO.puts
+  #   end)
+  # end
+
+  defp print_board(board, n) do
+    Enum.map(1..n, fn y ->
+      Enum.map(1..n, fn x -> if board[{x, y}] == 1, do: "⬛", else: "⬜" end)
+      |> Enum.join("")
+    end)
+    |> Enum.join("<br>")
+  end
+end
+```
+
+```elixir
+Conway.genesis("blinker", 3, 10, [{2, 1}, {2, 2}, {2, 3}])
+```
+
+```elixir
+SmartAnimation.new(1..10, fn index ->
+  Kino.Markdown.new(Conway.genesis("blinker", 10, index, [{2, 4}, {2, 5}, {2, 6}]))
+end)
+```
+
+```elixir
+defmodule GOL do
+  # ...
+
+  def next_generation(grid) do
+    # Define the convolution kernel for the Game of Life rules
+    kernel = [
+      [1, 1, 1],
+      [1, 0, 1],
+      [1, 1, 1]
+    ]
+
+    # Apply the convolution to the grid
+    convolution(grid, kernel)
+  end
+
+  defp convolution(grid, kernel) do
+    # Implement the convolution operation here
+    # This involves sliding the kernel over the grid and applying the rules
+    # For simplicity, we'll assume a basic implementation that counts neighbors
+    # and applies the Game of Life rules
+    Enum.map(grid, fn row, y ->
+      Enum.map(row, fn cell, x ->
+        # Calculate the sum of the kernel applied to the cell
+        sum =
+          Enum.sum(Enum.with_index(kernel), fn {row, ky}, i ->
+            Enum.sum(Enum.with_index(row), fn cell, kx ->
+              if kx + i < 0 or kx + i >= length(row) or ky + y < 0 or ky + y >= length(grid) do
+                0
+              else
+                Enum.at(Enum.at(grid, ky + y), kx + i)
+              end
+            end)
+          end)
+
+        # Apply the Game of Life rules
+        if cell == 1 and (sum == 2 or sum == 3) do
+          1
+        else
+          if cell == 0 and sum == 3 do
+            1
+          else
+            0
+          end
+        end
+      end)
+    end)
+  end
+end
+```
+
+```elixir
+defmodule KinoGuide.ShellCell do
+  use Kino.JS
+  use Kino.JS.Live
+  use Kino.SmartCell, name: "Shell script"
+
+  @impl true
+  def init(_attrs, ctx) do
+    {:ok, ctx, editor: [attribute: "source"]}
+  end
+
+  @impl true
+  def handle_connect(ctx) do
+    {:ok, %{}, ctx}
+  end
+
+  @impl true
+  def to_attrs(_ctx) do
+    %{}
+  end
+
+  @impl true
+  def to_source(attrs) do
+    quote do
+      System.shell(
+        unquote(quoted_multiline(attrs["source"])),
+        into: IO.stream(),
+        stderr_to_stdout: true
+      )
+      |> elem(1)
+    end
+    |> Kino.SmartCell.quoted_to_string()
+  end
+
+  defp quoted_multiline(string) do
+    {:<<>>, [delimiter: ~s["""]], [string <> "\n"]}
+  end
+
+  asset "main.js" do
+    """
+    export function init(ctx, payload) {
+      ctx.importCSS("main.css");
+
+      root.innerHTML = `
+        <div class="app">
+          Shell script
+        </div>
+      `;
+    }
+    """
+  end
+
+  asset "main.css" do
+    """
+    .app {
+      padding: 8px 16px;
+      border: solid 1px #cad5e0;
+      border-radius: 0.5rem 0.5rem 0 0;
+      border-bottom: none;
+    }
+    """
+  end
+end
+
+Kino.SmartCell.register(KinoGuide.ShellCell)
+```
+
+```elixir
+defmodule Kino.TailwindPlayground do
+  use Kino.JS
+  use Kino.JS.Live
+  use Kino.SmartCell, name: "Tailwind Playground"
+  require Logger
+
+  @impl true
+  def init(attrs, ctx) do
+    {:ok, assign(ctx, initial_html: attrs["html"] || ""),
+     editor: [attribute: "html", language: "html", placement: :top]}
+  end
+
+  @impl true
+  def handle_connect(ctx) do
+    {:ok, %{}, ctx}
+  end
+
+  @impl true
+  def handle_event("initial-render", %{}, ctx) do
+    Process.send_after(self(), {:display_html, ctx.assigns.initial_html}, 100)
+    {:noreply, ctx}
+  end
+
+  @impl true
+  def to_attrs(_ctx) do
+    %{}
+  end
+
+  @impl true
+  def to_source(attrs) do
+    # we can't encode ctx in attrs so we send ourselves a message in order to display the html.
+    send(self(), {:display_html, attrs["html"]})
+    "Kino.nothing()"
+  end
+
+  @impl true
+  def handle_info({:display_html, html}, ctx) do
+    broadcast_event(ctx, "display-html", %{"html" => html})
+    {:noreply, ctx}
+  end
+
+  asset "main.css" do
+    """
+    .wrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow-x: auto;
+      background-color: white;
+    }
+
+    svg {
+      pointer-events: none;
+    }
+
+    .size-btn {
+      color: white;
+      border-radius: 8px;
+      border-style: none;
+      background-color: #33394c;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+    }
+
+    .active {
+      background-color: #495e7c;
+    }
+
+    .button-header {
+      padding: 12px;
+      background-color: #0f182a;
+      display: flex;
+      gap: 8px;
+    }
+
+    #iframe {
+      background-color: white;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+      margin-left: auto;
+      margin-right: auto;
+      overflow: auto;
+    }
+
+    #iframe-container {
+      max-width: 100%;
+      display: block;
+      background-color: #292c34;
+      height: 570px;
+      resize: vertical;
+      overflow: hidden;
+      position: relative;
+      padding: 0 5px 5px;
+    }
+    """
+  end
+
+  asset "main.js" do
+    """
+    export function init(ctx, payload) {
+      ctx.importCSS("main.css");
+
+      ctx.root.innerHTML = `
+        <div class="wrapper">
+          <div class="button-header">
+            <button data-width="375px" class="size-btn text-sm">
+              xs
+            </button>
+            <button data-width="640px" class="size-btn text-sm">
+              sm
+            </button>
+            <button data-width="768px" class="size-btn text-sm">
+              md
+            </button>
+            <button data-width="100%" class="size-btn active">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
+              </svg>
+            </button>
+          </div>
+          <div id="iframe-container">
+            <iframe id="iframe" loading="eager" width="100%" height="100%"></iframe>
+          </div>
+        </div>
+      `
+      ctx
+        .importJS(
+          "https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio"
+        )
+        .then(() => {
+          let iframe = ctx.root.querySelector("#iframe");
+          let buttons = document.querySelectorAll(".size-btn");
+
+          iframe.srcdoc = `
+            <head>
+              <script src='https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio'></script>
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body id="body">
+            </body>
+          `
+          buttons.forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+              iframe.style.maxWidth = e.target.dataset.width;
+              buttons.forEach((btn) => { btn.classList.remove("active") })
+              e.target.classList.add("active")
+            });
+          });
+
+          ctx.handleEvent("display-html", ({ html }) => {
+            let body = iframe.contentWindow.document.querySelector("#body");
+            body.innerHTML = html
+          });
+
+          ctx.pushEvent("initial-render", { });
+
+          ctx.handleSync(() => {
+            // Synchronously invokes change listeners
+            document.activeElement && document.activeElement.dispatchEvent(new Event("change"));
+          });
+        });
+    }
+    """
+  end
+end
+
+Kino.SmartCell.register(Kino.TailwindPlayground)
+```
+
+<!-- livebook:{"attrs":"eyJodG1sIjoiPCFkb2N0eXBlIGh0bWw+XG48aHRtbD5cbjxoZWFkPlxuICA8bWV0YSBjaGFyc2V0PVwiVVRGLThcIj5cbiAgPG1ldGEgbmFtZT1cInZpZXdwb3J0XCIgY29udGVudD1cIndpZHRoPWRldmljZS13aWR0aCwgaW5pdGlhbC1zY2FsZT0xLjBcIj5cbiAgPHN0eWxlPlxuICAgIEBrZXlmcmFtZXMgYm91bmNlIHtcbiAgICAgIDAlLCAxMDAlIHsgdHJhbnNmb3JtOiB0cmFuc2xhdGVZKDIwMHB4KTsgfVxuICAgICAgNTAlIHsgdHJhbnNmb3JtOiB0cmFuc2xhdGVZKDUwMHB4KTsgfVxuICAgIH1cbiAgPC9zdHlsZT5cbjwvaGVhZD5cbjxib2R5IGNsYXNzPVwiYmctZ3JhZGllbnQtdG8tciBmcm9tLXBpbmstNDAwIHZpYS1wdXJwbGUtNTAwIHRvLWluZGlnby01MDAgbWluLWgtc2NyZWVuIGZsZXggaXRlbXMtY2VudGVyIGp1c3RpZnktY2VudGVyXCI+XG4gIDxkaXYgY2xhc3M9XCJiZy13aGl0ZSBwLTYgcm91bmRlZC1sZyBzaGFkb3cteGwgbWF4LXctbWQgYW5pbWF0ZS1ib3VuY2VcIj5cbiAgICA8aDEgY2xhc3M9XCJ0ZXh0LTV4bCBmb250LWJvbGQgdGV4dC1jZW50ZXIgbWItNFwiPkhlbGxvIGZyb20gQWNtZSE8L2gxPlxuICAgIDxwIGNsYXNzPVwidGV4dC1sZyB0ZXh0LWNlbnRlclwiPldlbGNvbWUgdG8gb3VyIG1hZ2ljYWwgd29ybGQuPC9wPlxuICA8L2Rpdj5cbiAgXG48L2JvZHk+XG48L2h0bWw+XG4ifQ","chunks":null,"kind":"Elixir.Kino.TailwindPlayground","livebook_object":"smart_cell"} -->
+
+```elixir
+Kino.nothing()
+```
+
+```elixir
+Dojo.PubSub.publish(
+  "class:book1",
+  {name,
+   """
+   <!doctype html>
+   <html>
+   <head>
+     <meta charset="UTF-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     <style>
+       @keyframes bounce {
+         0%, 100% { transform: translateY(200px); }
+         50% { transform: translateY(500px); }
+       }
+     </style>
+   </head>
+   <body class="bg-gradient-to-r from-pink-400 via-purple-500 to-indigo-500 min-h-screen flex items-center justify-center">
+     <div class="bg-white p-6 rounded-lg shadow-xl max-w-md animate-bounce">
+       <h1 class="text-5xl font-bold text-center mb-4">Hello from Acme!</h1>
+       <p class="text-lg text-center">Welcome to our magical world.</p>
+     </div>
+     
+   </body>
+   </html>
+   """}
+)
+```
+
+```elixir
+require Dojo.Module
+
+# String.to_atom("Brit")
+
+Dojo.Module.generate(name, "hellod")
+
+# :erlang.binary_to_existing_atom("Elixir.Dojo.PubSub", :utf8)
+# Module.con
+```
+
+```elixir
+Dojo.Mat.Brit.hello()
+```
