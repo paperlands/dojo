@@ -12,6 +12,12 @@ defmodule Dojo.Application do
 #      Dojo.Repo,
       {DNSCluster, query: Application.get_env(:dojo, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Dojo.PubSub},
+      {Dojo.Gate,
+       [
+         name: Dojo.Gate,
+         pubsub_server: Dojo.PubSub,
+         pool_size: :erlang.system_info(:schedulers_online)
+       ]},
       # Start the Finch HTTP client for sending emails
       {Finch, name: Dojo.Finch},
       # Start a worker by calling: Dojo.Worker.start_link(arg)

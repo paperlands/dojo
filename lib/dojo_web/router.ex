@@ -19,7 +19,7 @@ defmodule DojoWeb.Router do
 
     get "/", PageController, :home
 
-    live("/", BookOneLive, :index)
+    live("/book1", BookOneLive, :index)
 
   end
 
