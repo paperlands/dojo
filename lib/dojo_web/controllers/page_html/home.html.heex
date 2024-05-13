@@ -1,0 +1,410 @@
+<style>
+body, html {
+    height: 100%;
+    margin: 0;
+}
+
+@-webkit-keyframes title {
+  0% {
+    opacity: 0;
+    right: 130px;
+  }
+  48% {
+    opacity: 0;
+    right: 130px;
+  }
+  52% {
+    opacity: 1;
+    right: 30px;
+  }
+  70% {
+    opacity: 1;
+    right: 30px;
+  }
+  100% {
+    opacity: 0;
+    right: 30px;
+  }
+}
+@-moz-keyframes title {
+  0% {
+    opacity: 0;
+    right: 130px;
+  }
+  48% {
+    opacity: 0;
+    right: 130px;
+  }
+  52% {
+    opacity: 1;
+    right: 30px;
+  }
+  70% {
+    opacity: 1;
+    right: 30px;
+  }
+  100% {
+    opacity: 0;
+    right: 30px;
+  }
+}
+@-webkit-keyframes fade {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@-moz-keyframes fade {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@-webkit-keyframes blink {
+  0% {
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  10% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  20% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  30% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 0;
+    right: -21px;
+  }
+  45% {
+    opacity: 1;
+    right: 80px;
+  }
+  50% {
+    opacity: 0;
+    right: -21px;
+  }
+  51% {
+    right: -21px;
+  }
+  55% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 0;
+  }
+  65% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0;
+  }
+  75% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 0;
+  }
+  85% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 0;
+    right: -21px;
+  }
+  95% {
+    opacity: 1;
+    right: 80px;
+  }
+  96% {
+    right: -21px;
+  }
+  100% {
+    opacity: 0;
+    right: -21px;
+  }
+}
+@-moz-keyframes blink {
+  0% {
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  10% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  20% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  30% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 0;
+    right: -21px;
+  }
+  45% {
+    opacity: 1;
+    right: 80px;
+  }
+  50% {
+    opacity: 0;
+    right: -21px;
+  }
+  51% {
+    right: -21px;
+  }
+  55% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 0;
+  }
+  65% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0;
+  }
+  75% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 0;
+  }
+  85% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 0;
+    right: -21px;
+  }
+  95% {
+    opacity: 1;
+    right: 80px;
+  }
+  96% {
+    right: -21px;
+  }
+  100% {
+    opacity: 0;
+    right: -21px;
+  }
+}
+body {
+  font-family: Purista,sans-serif, arial;
+  background: black;
+  color: #eaf7ff;
+}
+
+.loading {
+  position: relative;
+  text-align: right;
+  text-shadow: 0 0 6px #bce4ff;
+  height: 20px;
+  width: 150px;
+}
+.loading span {
+  display: block;
+  position: absolute;
+  right: 30px;
+  height: 20px;
+  width: 200px;
+  line-height: 20px;
+}
+.loading span:after {
+  content: "";
+  display: block;
+  position: absolute;
+  top: -2px;
+  right: -21px;
+  height: 20px;
+  width: 16px;
+  background: #eaf7ff;
+  -moz-box-shadow: 0 0 15px #bce4ff;
+  -webkit-box-shadow: 0 0 15px #bce4ff;
+  box-shadow: 0 0 15px #bce4ff;
+  -moz-animation: blink 3.4s infinite;
+  -webkit-animation: blink 3.4s infinite;
+  animation: blink 3.4s infinite;
+}
+.loading span.title {
+  -moz-animation: title 3.4s linear infinite;
+  -webkit-animation: title 3.4s linear infinite;
+  animation: title 3.4s linear infinite;
+}
+.loading span.text {
+  -moz-animation: title 3.4s linear 1.7s infinite;
+  -webkit-animation: title 3.4s linear 1.7s infinite;
+  animation: title 3.4s linear 1.7s infinite;
+  opacity: 0;
+}
+
+.bgimg {
+    background-image: url('/images/dojo.svg');
+    height: 100%;
+   viewBox: "0 0 500 500";
+    background-position: center;
+    background-size: cover;
+    position: relative;
+    color: white;
+    font-family: "futura-pt", sans-serif;
+    font-size: 20px;
+}
+
+.topleft {
+    position: absolute;
+    top: 8px;
+    left: 16px;
+    text-shadow: 0 0 6px #bce4ff;
+}
+
+.bottomleft {
+    position: absolute;
+    bottom: 0;
+    left: 16px;
+    text-shadow: 0 0 6px #bce4ff;
+}
+
+.middle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+}
+
+hr {
+    margin: auto;
+    width: 40%;
+}
+</style>
+<.flash_group flash={@flash} />
+<div class="left-[40rem] fixed inset-y-0 right-0 z-0 hidden lg:block xl:left-[50rem]">
+<div class="bgimg">
+  <div class="middle">
+    <div class="wrap">
+    <div class="bg">
+      <div class="loading">
+       <span class="title">Enter the Dojo </span>
+        <span class="text"><%= assigns[:reason] && @reason.message || "▓░ 🪷 ░▓" %></span>
+      </div>
+    </div>
+  </div>
+    <hr>
+    <p id="demo" style="font-size:30px"></p>
+  </div>
+  <div class="bottomleft">
+
+  </div>
+</div>
+</div>
+<div class="px-4 py-10 sm:px-6 sm:py-28 lg:px-8 xl:px-28 xl:py-32">
+  <div class="mx-auto max-w-xl lg:mx-0">
+    <svg viewBox="0 0 71 40" class="h-12" aria-hidden="true">
+     <image xlink:href="/images/logo.svg" width="100" height="88"/>
+    </svg>
+    <h1 class="text-brand mt-10 flex items-center text-sm font-semibold leading-6">
+      Dojo
+      <small class="bg-brand/5 text-[0.8125rem] ml-3 rounded-full px-2 font-medium leading-6">
+        v<%= Application.spec(:dojo, :vsn) %>
+      </small>
+    </h1>
+    <p class="text-[3.5rem] mt-4 font-semibold leading-10 tracking-tighter text-zinc-900">
+      Welcome to the Dojo
+    </p>
+    <p class="mt-4 text-base leading-7 text-zinc-600">
+      do computers dream in maths
+    </p>
+    <div class="flex">
+      <div class="w-full sm:w-auto">
+        <div class="mt-10 grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
+          <.link
+            navigate={~p"/book1"}
+            class="group relative rounded-2xl px-6 py-4 text-sm font-semibold leading-6 text-zinc-900 sm:py-6"
+          >
+            <span class="absolute inset-0 rounded-2xl bg-zinc-50 transition group-hover:bg-zinc-100 sm:group-hover:scale-105">
+            </span>
+            <span class="relative flex items-center gap-4 sm:flex-col">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" class="h-6 w-6">
+                <path d="m12 4 10-2v18l-10 2V4Z" fill="#18181B" fill-opacity=".15" />
+                <path
+                  d="M12 4 2 2v18l10 2m0-18v18m0-18 10-2v18l-10 2"
+                  stroke="#18181B"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              Book 1
+            </span>
+           </.link>
+          <a
+            href="https://github.com/deusludum/dojo/"
+            class="group relative rounded-2xl px-6 py-4 text-sm font-semibold leading-6 text-zinc-900 sm:py-6"
+          >
+            <span class="absolute inset-0 rounded-2xl bg-zinc-50 transition group-hover:bg-zinc-100 sm:group-hover:scale-105">
+            </span>
+            <span class="relative flex items-center gap-4 sm:flex-col">
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="h-6 w-6">
+                <path
+                  fill-rule="evenodd"
+                  clip-rule="evenodd"
+                  d="M12 0C5.37 0 0 5.506 0 12.303c0 5.445 3.435 10.043 8.205 11.674.6.107.825-.262.825-.585 0-.292-.015-1.261-.015-2.291C6 21.67 5.22 20.346 4.98 19.654c-.135-.354-.72-1.446-1.23-1.738-.42-.23-1.02-.8-.015-.815.945-.015 1.62.892 1.845 1.261 1.08 1.86 2.805 1.338 3.495 1.015.105-.8.42-1.338.765-1.645-2.67-.308-5.46-1.37-5.46-6.075 0-1.338.465-2.446 1.23-3.307-.12-.308-.54-1.569.12-3.26 0 0 1.005-.323 3.3 1.26.96-.276 1.98-.415 3-.415s2.04.139 3 .416c2.295-1.6 3.3-1.261 3.3-1.261.66 1.691.24 2.952.12 3.26.765.861 1.23 1.953 1.23 3.307 0 4.721-2.805 5.767-5.475 6.075.435.384.81 1.122.81 2.276 0 1.645-.015 2.968-.015 3.383 0 .323.225.707.825.585a12.047 12.047 0 0 0 5.919-4.489A12.536 12.536 0 0 0 24 12.304C24 5.505 18.63 0 12 0Z"
+                  fill="#18181B"
+                />
+              </svg>
+              Source Code
+            </span>
+          </a>
+          <a
+            href={"https://discord.gg/RPdWkUEfbP"}
+            class="group relative rounded-2xl px-6 py-4 text-sm font-semibold leading-6 text-zinc-900 sm:py-6"
+          >
+            <span class="absolute inset-0 rounded-2xl bg-zinc-50 transition group-hover:bg-zinc-100 sm:group-hover:scale-105">
+            </span>
+            <span class="relative flex items-center gap-4 sm:flex-col">
+            <svg
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+                class="h-6 w-6 fill-zinc-800 group-hover:fill-zinc-600"
+              >
+                <path d="M13.545 2.995c-1.02-.46-2.114-.8-3.257-.994a.05.05 0 0 0-.052.024c-.141.246-.297.567-.406.82a12.377 12.377 0 0 0-3.658 0 8.238 8.238 0 0 0-.412-.82.052.052 0 0 0-.052-.024 13.315 13.315 0 0 0-3.257.994.046.046 0 0 0-.021.018C.356 6.063-.213 9.036.066 11.973c.001.015.01.029.02.038a13.353 13.353 0 0 0 3.996 1.987.052.052 0 0 0 .056-.018c.308-.414.582-.85.818-1.309a.05.05 0 0 0-.028-.069 8.808 8.808 0 0 1-1.248-.585.05.05 0 0 1-.005-.084c.084-.062.168-.126.248-.191a.05.05 0 0 1 .051-.007c2.619 1.176 5.454 1.176 8.041 0a.05.05 0 0 1 .053.006c.08.065.164.13.248.192a.05.05 0 0 1-.004.084c-.399.23-.813.423-1.249.585a.05.05 0 0 0-.027.07c.24.457.514.893.817 1.307a.051.051 0 0 0 .056.019 13.31 13.31 0 0 0 4.001-1.987.05.05 0 0 0 .021-.037c.334-3.396-.559-6.345-2.365-8.96a.04.04 0 0 0-.021-.02Zm-8.198 7.19c-.789 0-1.438-.712-1.438-1.587 0-.874.637-1.586 1.438-1.586.807 0 1.45.718 1.438 1.586 0 .875-.637 1.587-1.438 1.587Zm5.316 0c-.788 0-1.438-.712-1.438-1.587 0-.874.637-1.586 1.438-1.586.807 0 1.45.718 1.438 1.586 0 .875-.63 1.587-1.438 1.587Z" />
+              </svg>
+
+              Discord
+            </span>
+          </a>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
