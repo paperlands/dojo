@@ -66,6 +66,7 @@ defmodule DojoWeb.BookOneLive do
     """
   end
 
+  #send_update for animate component
 
   def handle_info(
         {:join, "class:book1", %{name: name} = disciple},
@@ -83,6 +84,11 @@ defmodule DojoWeb.BookOneLive do
     {:noreply,
      socket
      |> assign(:disciples, Map.delete(d, name))}
+  end
+
+  def handle_info({DojoWeb.Animate, action, id}, socket) do
+    send_update DojoWeb.Animate, id: id, action: action
+    {:noreply, socket}
   end
 
   def handle_info({ref, result}, %{assigns: %{task_ref: ref}} = socket) do
