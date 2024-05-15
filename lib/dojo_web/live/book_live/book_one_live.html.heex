@@ -3,8 +3,8 @@
         <p class="mt-6 text-lg text-sky-600 text-center max-w-3xl mx-auto">
           Run your friends model!
         </p>
-        <div class="flex flex-wrap justify-around p-4">
-        <div :for={{name, dis} <- @disciples |> Enum.sort_by(&(elem(&1, 1).online_at), :desc)} class="w-64 h-64 text-white bg-brand border-2 border-custom shadow cursor-pointer hover:border-red-500 transition-colors duration-200 ease-in-out">
+        <div class="flex flex-wrap justify-around m-8">
+        <div :for={{name, dis} <- @disciples |> Enum.sort_by(&(elem(&1, 1).online_at), :desc)} class="w-64 h-64 p-4 m-5 rounded text-white bg-brand border-2 border-custom shadow cursor-pointer hover:border-red-500 transition-colors duration-200 ease-in-out">
         <.live_component id={idfy(name, "animate")} name={name} module={DojoWeb.Animate} />
         </div>
         </div>

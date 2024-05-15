@@ -21,13 +21,13 @@ defmodule DojoWeb.Animate do
   def update(%{id: id, function: func}, %{assigns: %{running: true}} = socket) do
     list = func.(5)
     |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
-    {:ok, assign(socket, function: fn index -> Enum.at(list , index) end)}
+    {:ok, assign(socket, end: length(list), function: fn index -> Enum.at(list , index) end)}
   end
 
   def update(%{id: id, function: func}, %{assigns: %{running: false}} = socket) do
     list = func.(5)
     |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
-    {:ok, assign(socket, function: fn index -> Enum.at(list , index) end) |> increment_step()}
+    {:ok, assign(socket, end: length(list), function: fn index -> Enum.at(list , index) end) |> increment_step()}
   end
 
   # def update(%{assigns: %{list: list}} = socket) do
@@ -44,7 +44,6 @@ defmodule DojoWeb.Animate do
 
   def render(assigns) do
     ~H"""
-    <div
     <div id="smart-animation" class="parent w-full h-full items-center justify-center flex flex-col">
     <%= @step %> || <%= @name %>
     <div class="scroll-container w-full overflow-x-auto bg-white">
