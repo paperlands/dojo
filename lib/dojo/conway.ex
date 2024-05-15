@@ -119,7 +119,7 @@ defmodule Dojo.Conway do
 
   defp print_board(board, n) do
     Enum.map(1..n, fn y ->
-      "# " <>
+      "## " <>
       (Enum.map(1..n, fn x -> if board[{x, y}] == 1, do: "⬛", else: "⬜" end)
       |> Enum.join(""))
     end)

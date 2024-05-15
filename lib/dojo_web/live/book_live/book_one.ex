@@ -94,6 +94,11 @@ defmodule DojoWeb.BookOneLive do
      |> assign(:disciples, Map.delete(d, name))}
   end
 
+  def handle_info({Dojo.PubSub, :animate, {name, func}}, socket) do
+    send_update(DojoWeb.Animate, id: idfy(name, "animate"), function: func)
+    {:noreply, socket}
+  end
+
   def handle_info({DojoWeb.Animate, action, id}, socket) do
     send_update(DojoWeb.Animate, id: id, action: action)
     {:noreply, socket}
@@ -104,4 +109,6 @@ defmodule DojoWeb.BookOneLive do
     %{predictions: [%{label: label}]} = result
     {:noreply, assign(socket, label: label, running: false)}
   end
+
+  defp idfy(name, component), do: name <> "-" <>component
 end

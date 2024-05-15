@@ -1,19 +1,13 @@
 <div class="flex flex-col items-center">
-  <h1 class="text-3xl font-extrabold tracking-tight text-center text-brand">Dojo Book 1</h1>
-  <p class="max-w-3xl mx-auto mt-6 text-lg text-center text-sky-600">
-    Run your friends model!
-  </p>
-  <div class="flex flex-wrap justify-around p-4">
-    <div
-      :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
-      class="flex flex-col items-center justify-center justify-between inline-block w-64 h-64 mb-4 text-white transition-colors duration-200 ease-in-out border-2 shadow cursor-pointer bg-brand border-custom hover:border-red-500"
-    >
-      <%= name %>
-      <br />
-      <%= dis.node %>
-      <.live_component id="animate" name={name} module={DojoWeb.Animate} />
-    </div>
-  </div>
+        <h1 class="text-brand font-extrabold text-3xl tracking-tight text-center"> Dojo Book 1</h1>
+        <p class="mt-6 text-lg text-sky-600 text-center max-w-3xl mx-auto">
+          Run your friends model!
+        </p>
+        <div class="flex flex-wrap justify-around p-4">
+        <div :for={{name, dis} <- @disciples |> Enum.sort_by(&(elem(&1, 1).online_at), :desc)} class="w-64 h-64 text-white bg-brand border-2 border-custom shadow cursor-pointer hover:border-red-500 transition-colors duration-200 ease-in-out">
+        <.live_component id={idfy(name, "animate")} name={name} module={DojoWeb.Animate} />
+        </div>
+        </div>
   <form class="flex flex-col items-center m-0 mt-8 space-y-2" phx-change="noop" phx-submit="noop">
     <.kernel id="3x3grid" height={224} width={224} grid_map={@grid_map} />
   </form>
