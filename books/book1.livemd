@@ -331,6 +331,25 @@ defmodule Conway do
     end
   end
 
+  def reduce_genesis(name, size, generations, initial_life \\ nil) do
+    board = seed(size, initial_life)
+    print_board(board, name, size, 0)
+    reason = reduce_generate(name, size, generations, board, 1)
+
+    # case reason do
+    #   :all_dead ->
+    #     "no more life."
+
+    #   :static ->
+    #     "no movement"
+
+    #   reason ->
+    #     reason
+    #     # _  -> 
+    #     #   "specified lifetime ended"
+    # end
+  end
+
   defp new_board(n) do
     for x <- 1..n, y <- 1..n, into: %{}, do: {{x, y}, 0}
   end
@@ -350,12 +369,27 @@ defmodule Conway do
 
   defp generate(name, size, generations, board, gen) do
     new = evolve(board, size)
-    print_board(new, name, size, gen)
 
     cond do
       barren?(new) -> :all_dead
       board == new -> :static
       true -> generate(name, size, generations, new, gen + 1)
+    end
+  end
+
+  defp reduce_generate(n, s, g, b, gen, play \\ [])
+
+  defp reduce_generate(_, size, generations, board, gen, play) when generations < gen,
+    do: [print_board(board, size) | play]
+
+  defp reduce_generate(name, size, generations, board, gen, play) do
+    new = evolve(board, size)
+    play = [print_board(board, size) | play]
+
+    cond do
+      barren?(new) -> :all_dead
+      board == new -> :static
+      true -> reduce_generate(name, size, generations, new, gen + 1, play)
     end
   end
 
@@ -396,13 +430,14 @@ defmodule Conway do
       Enum.map(1..n, fn x -> if board[{x, y}] == 1, do: "⬛", else: "⬜" end)
       |> Enum.join("")
     end)
-    |> Enum.join("<br>")
+    |> Enum.join("<br>
+")
   end
 end
 ```
 
 ```elixir
-Conway.genesis("blinker", 3, 10, [{2, 1}, {2, 2}, {2, 3}])
+Conway.reduce_genesis("blinker", 5, 10, [{2, 1}, {2, 2}, {2, 3}])
 ```
 
 ```elixir

@@ -25,10 +25,7 @@ defmodule DojoWeb.BookOneLive do
           Run your friends model!
         </p>
         <div class="flex flex-wrap justify-around p-4">
-        <div :for={{name, dis} <- @disciples |> Enum.sort_by(&(elem(&1, 1).online_at), :desc)} class="w-64 h-64 flex flex-col justify-between items-center text-white bg-brand border-2 border-custom shadow cursor-pointer hover:border-red-500 transition-colors duration-200 ease-in-out inline-block mb-4 flex items-center justify-center">
-        <%= name %>
-        <br>
-        <%= dis.node %>
+        <div :for={{name, dis} <- @disciples |> Enum.sort_by(&(elem(&1, 1).online_at), :desc)} class="w-64 h-64 text-white bg-brand border-2 border-custom shadow cursor-pointer hover:border-red-500 transition-colors duration-200 ease-in-out">
         <.live_component id="animate" name={name} module={DojoWeb.Animate} />
         </div>
         </div>
@@ -44,7 +41,6 @@ defmodule DojoWeb.BookOneLive do
     <div
       id={@id}
       class="inline-flex p-4 border-2 border-dashed border-gray-200 rounded-lg cursor-pointer bg-white"
-      phx-hook="ImageInput"
       data-height={@height}
       data-width={@width}
     >

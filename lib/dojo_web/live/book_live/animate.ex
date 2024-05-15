@@ -3,7 +3,9 @@ defmodule DojoWeb.Animate do
 
 
   def update(%{id: id, name: name}, socket) do
-    {:ok, assign(socket, start: 1, id: id, name: name, step: 0, function: fn index -> Enum.at([1, 2, 3], index) end, finish: nil, speed_multiplier: 1, running: false)}
+    list = Dojo.Conway.reduce_genesis("blinker", 8, 10, [{2, 1}, {2, 2}, {2, 3}])
+    |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
+    {:ok, assign(socket, start: 1, end: length(list), id: id, name: name, step: 1, function: fn index -> Enum.at(list , index) end, speed_multiplier: 1, running: false)}
   end
 
   def update(%{id: id, action: :inc}, socket) do
@@ -30,8 +32,13 @@ defmodule DojoWeb.Animate do
 
   def render(assigns) do
     ~H"""
-    <div id="smart-animation" >
+    <div
+    <div id="smart-animation" class="parent w-full h-full items-center justify-center flex flex-col">
     <%= @step %>
+    <div class="scroll-container w-full overflow-x-auto bg-white">
+    <div class="child flex-2 h-full inline-block mx-auto bg-white w-full">
+    <%= @function.(@step - 1) %></div>
+    </div>
     <section class="p-4 bg-orange-100/20 rounded-md font-medium text-gray-600 flex justify-center items-center w-full">
     <span id="reset" class="px-2 hover:text-black hover:cursor-pointer">Reset</span>
     <.icon  name="hero-arrow-left-solid" class="hover:text-black hover:cursor-pointer"/>
@@ -46,7 +53,6 @@ defmodule DojoWeb.Animate do
         <%= "#{@speed_multiplier} x" %>
     </span>
     </section>
-      <!-- UI elements will be defined here -->
     </div>
     """
   end
@@ -85,7 +91,7 @@ defmodule DojoWeb.Animate do
 
   defp increment_step(socket) do
     incremented_step =
-      if socket.assigns.finish && socket.assigns.step >= socket.assigns.finish,
+      if socket.assigns.end && socket.assigns.step >= socket.assigns.end,
         do: socket.assigns.start,
         else: socket.assigns.step + 1
 
@@ -95,7 +101,7 @@ defmodule DojoWeb.Animate do
   defp decrement_step(socket) do
     decremented_step =
       if socket.assigns.step <= socket.assigns.start,
-        do: socket.assigns.finish || socket.assigns.start,
+        do: socket.assigns.end || socket.assigns.start,
         else: socket.assigns.step - 1
 
     assign(socket, step: decremented_step)

@@ -60,7 +60,9 @@ defmodule Dojo.MixProject do
       {:kino, "~> 0.12.3"},
       {:kino_vega_lite, "~> 0.1.11"},
       {:dns_cluster, "~> 0.1.1"},
-      {:bandit, "~> 1.2"}
+      {:bandit, "~> 1.2"},
+      {:earmark, "~> 1.4"},
+      {:html_sanitize_ex, "~> 1.4"}
     ]
   end
 
