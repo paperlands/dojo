@@ -1,5 +1,9 @@
 # Dojo
 
+## Production
+Running Server @ [`thedojo`](https://thedojo.fly.dev)
+
+## Local Development
 To start the Dojo server:
 
   * Run `mix setup` to install and setup dependencies

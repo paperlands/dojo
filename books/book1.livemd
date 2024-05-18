@@ -3,14 +3,8 @@
 ## Welcome to Book I
 
 ```elixir
-:inet.gethostname()
-:erl_epmd.names()
-
-Node.self()
-|> Node.disconnect()
-
-Node.list(:connected)
-Livebook.Runtime
+host = :inet.gethostname()
+host = :erl_epmd.names()
 ```
 
 ```elixir
@@ -23,18 +17,16 @@ name = Kino.Input.read(input)
 ```
 
 ```elixir
-f = &Dojo.Conway.reduce_genesis("blinker", 7, &1, [{3, 4}, {3, 5}, {3, 6}])
-Dojo.PubSub.publish({"kwang", f}, :animate, "class:book1")
-```
+coordinate = [{3, 4}, {2, 5}, {2, 6}]
 
-```elixir
-
-```
-
-```elixir
 DojoKino.Animate.new(1..10, fn index ->
-  Kino.Markdown.new(Dojo.Conway.genesis("blinker", 10, index, [{2, 4}, {2, 5}, {2, 6}]))
+  Kino.Markdown.new(Dojo.Conway.genesis("blinker", 10, index, coordinate))
 end)
+```
+
+```elixir
+f = &Dojo.Conway.reduce_genesis("blinker", 7, &1, coordinate)
+Dojo.PubSub.publish({name, f}, :animate, "class:book1")
 ```
 
 ```elixir

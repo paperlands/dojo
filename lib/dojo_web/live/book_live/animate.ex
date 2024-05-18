@@ -1,14 +1,15 @@
 defmodule DojoWeb.Animate do
   use DojoWeb, :live_component
 
-
+  # init clause
   def update(%{id: id, name: name}, socket) do
     list = Dojo.Conway.reduce_genesis("blinker", 8, 10, [{2, 1}, {2, 2}, {2, 3}])
     |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
     {:ok, assign(socket, start: 1, end: length(list), id: id, name: name, step: 1, function: fn index -> Enum.at(list , index) end, speed_multiplier: 1, running: false)}
   end
 
-  def update(%{id: id, action: :inc}, socket) do
+  #
+  def update(%{action: :inc}, socket) do
     if socket.assigns.running do
       speed = round(1000 / socket.assigns.speed_multiplier)
       act(:inc, speed, socket.assigns.id)
@@ -18,7 +19,7 @@ defmodule DojoWeb.Animate do
     end
   end
 
-  def update(%{id: id, function: func}, %{assigns: %{running: true}} = socket) do
+  def update(%{function: func}, %{assigns: %{running: true}} = socket) do
     list = func.(5)
     |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
     {:ok, assign(socket, end: length(list), function: fn index -> Enum.at(list , index) end)}
@@ -78,20 +79,16 @@ defmodule DojoWeb.Animate do
     {:noreply, assign(socket, running: false)}
   end
 
-  def handle_info(:increment, socket) do
-
-  end
-
   def handle_event("reset", _, socket) do
     {:noreply, assign(socket, step: 1, speed_multiplier: 1, running: false)}
   end
 
   def handle_event("next", _, socket) do
-    {:noreply, assign(socket, step: socket.assigns.step + 1)}
+    {:noreply, socket|> increment_step()}
   end
 
   def handle_event("previous", _, socket) do
-    {:noreply, assign(socket, step: socket.assigns.step - 1)}
+    {:noreply, socket |> decrement_step()}
   end
 
   def handle_event("toggle_speed", _, socket) do
