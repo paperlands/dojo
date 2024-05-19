@@ -16,7 +16,9 @@
   <form class="flex flex-col items-center m-0 mt-8 space-y-2" phx-change="noop" phx-submit="noop">
     <.kernel id="3x3grid" height={224} width={224} grid_map={@grid_map} />
   </form>
-  <div phx-window-keydown="enter::enter_sensei">
+  <div phx-window-keydown="keyboard">
+    <div :if={@sensei} class="text-red-600" >
     Sensei Mode
+    </div>
   </div>
 </div>

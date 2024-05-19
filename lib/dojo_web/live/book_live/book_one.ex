@@ -18,6 +18,7 @@ defmodule DojoWeb.BookOneLive do
      socket
      |> assign(label: nil, running: false, task_ref: nil, disciples: dis)
      |> assign(grid_map: grid_map)
+     |> assign(sensei: false)
      |> assign(focused_phx_ref: "")}
   end
 
@@ -75,7 +76,14 @@ defmodule DojoWeb.BookOneLive do
     {:noreply, socket}
   end
 
-  def handle_event("toggle-focus", %{"disciple-phx_ref" => phx_ref}, socket) do
+  def handle_event("toggle-focus", %{"disciple-phx_ref" => phx_ref}, %{assigns: %{sensei: false}} = socket) do
+    # TODO: store focused_phx_ref in presence tracking so that new liveviews know which to focus on
+
+    {:noreply,
+     socket}
+  end
+
+  def handle_event("toggle-focus", %{"disciple-phx_ref" => phx_ref}, %{assigns: %{sensei: true}} = socket) do
     old_phx_ref = socket.assigns.focused_phx_ref
 
     new_phx_ref =
@@ -92,6 +100,14 @@ defmodule DojoWeb.BookOneLive do
     {:noreply,
      socket
      |> assign(focused_phx_ref: new_phx_ref)}
+  end
+
+  def handle_event("keyboard", %{"altKey" => true, "ctrlKey" => true, "key" => "s"}, %{assigns: %{sensei: false}} = socket) do
+    {:noreply, assign(socket, sensei: true)}
+  end
+
+  def handle_event("keyboard", _, socket) do
+    {:noreply, socket}
   end
 
   # send_update for animate component
