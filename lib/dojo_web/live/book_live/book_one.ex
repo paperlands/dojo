@@ -111,15 +111,7 @@ defmodule DojoWeb.BookOneLive do
 
   def handle_event(
         "keyboard",
-        %{"altKey" => true, "ctrlKey" => true, "key" => "s"},
-        %{assigns: %{sensei: false}} = socket
-      ) do
-    {:noreply, assign(socket, sensei: true)}
-  end
-
-  def handle_event(
-        "keyboard",
-        %{"ctrlKey" => true, "key" => "s"},
+        %{"ctrlKey" => true, "key" => ","},
         %{assigns: %{sensei: false}} = socket
       ) do
     {:noreply, assign(socket, sensei: true)}
