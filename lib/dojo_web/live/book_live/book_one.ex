@@ -17,7 +17,8 @@ defmodule DojoWeb.BookOneLive do
     {:ok,
      socket
      |> assign(label: nil, running: false, task_ref: nil, disciples: dis)
-     |> assign(grid_map: grid_map)}
+     |> assign(grid_map: grid_map)
+     |> assign(focused_phx_ref: "")}
   end
 
   defp kernel(assigns) do
@@ -74,6 +75,25 @@ defmodule DojoWeb.BookOneLive do
     {:noreply, socket}
   end
 
+  def handle_event("toggle-focus", %{"disciple-phx_ref" => phx_ref}, socket) do
+    old_phx_ref = socket.assigns.focused_phx_ref
+
+    new_phx_ref =
+      case old_phx_ref do
+        "" -> phx_ref
+        ^phx_ref -> ""
+        _ -> phx_ref
+      end
+
+    Dojo.PubSub.publish({new_phx_ref}, :focused_phx_ref, "class:book1")
+
+    # TODO: store focused_phx_ref in presence tracking so that new liveviews know which to focus on
+
+    {:noreply,
+     socket
+     |> assign(focused_phx_ref: new_phx_ref)}
+  end
+
   # send_update for animate component
 
   def handle_info(
@@ -110,5 +130,18 @@ defmodule DojoWeb.BookOneLive do
     {:noreply, assign(socket, label: label, running: false)}
   end
 
-  defp idfy(name, component), do: name <> "-" <>component
+  def handle_info({Dojo.PubSub, :focused_phx_ref, {focused_phx_ref}}, socket) do
+    {:noreply,
+     socket
+     |> assign(focused_phx_ref: focused_phx_ref)}
+  end
+
+  defp idfy(name, component), do: name <> "-" <> component
+
+  defp is_main_focus(phx_ref, focused_phx_ref) do
+    case phx_ref do
+      ^focused_phx_ref -> " scale-150 border-blue-600 border-4"
+      _ -> ""
+    end
+  end
 end
