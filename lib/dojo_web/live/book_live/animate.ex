@@ -4,12 +4,13 @@ defmodule DojoWeb.Animate do
   # init clause
   def update(%{id: id, name: name}, socket) do
     list =
-    "1"
-    |> Dojo.World.create()
-    |> Dojo.World.print(list: true)
-      #Dojo.Conway.reduce_genesis("blinker", 8, 10, [{2, 1}, {2, 2}, {2, 3}])
+      "1"
+      |> Dojo.World.create()
+      |> Dojo.World.print(list: true)
+      # Dojo.Conway.reduce_genesis("blinker", 8, 10, [{2, 1}, {2, 2}, {2, 3}])
       |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
-      #|> DojoWeb.Utils.DOMParser.extract_html_from_md()
+
+    # |> DojoWeb.Utils.DOMParser.extract_html_from_md()
 
     {:ok,
      assign(socket,
@@ -35,10 +36,10 @@ defmodule DojoWeb.Animate do
     end
   end
 
-    def update(%{function: {m, f, arg}}, %{assigns: %{running: true}} = socket) do
+  def update(%{function: {m, f, arg}}, %{assigns: %{running: true}} = socket) do
     list =
       apply(m, f, arg)
-    |> Dojo.World.print(list: true)
+      |> Dojo.World.print(list: true)
       |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
 
     {:ok, assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)}
@@ -47,14 +48,13 @@ defmodule DojoWeb.Animate do
   def update(%{id: _id, function: {m, f, arg}}, %{assigns: %{running: false}} = socket) do
     list =
       apply(m, f, arg)
-    |> Dojo.World.print(list: true)
+      |> Dojo.World.print(list: true)
       |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
 
     {:ok,
      assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)
      |> increment_step()}
   end
-
 
   def update(%{function: func}, %{assigns: %{running: true}} = socket) when is_function(func) do
     list =
@@ -64,7 +64,8 @@ defmodule DojoWeb.Animate do
     {:ok, assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)}
   end
 
-  def update(%{id: _id, function: func}, %{assigns: %{running: false}} = socket) when is_function(func) do
+  def update(%{id: _id, function: func}, %{assigns: %{running: false}} = socket)
+      when is_function(func) do
     list =
       func.(5)
       |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
@@ -86,33 +87,38 @@ defmodule DojoWeb.Animate do
 
   def render(assigns) do
     ~H"""
-    <div id="smart-animation" class="flex flex-col items-center justify-center w-full h-full parent">
-      <%= @step %> || <%= @name %>
-      <div class="w-full overflow-x-auto bg-white scroll-container">
-        <div class="inline-block w-full h-full mx-auto bg-white child flex-2">
-          <%= @function.(@step - 1) %>
+    <div id="smart-animation" class="">
+      <div class="flex justify-between my-2">
+        <div class="text-2xl font-bold"><%= @name %></div>
+        <div class="flex">
+          step:<div class="ml-1 font-bold"><%= @step %></div>
         </div>
       </div>
-      <section class="flex items-center justify-center w-full p-4 font-medium text-gray-600 rounded-md bg-orange-100/20">
-        <span id="reset" class="px-2 hover:text-black hover:cursor-pointer">Reset</span>
-        <.icon name="hero-arrow-left-solid" class="hover:text-black hover:cursor-pointer" />
-        <a href="#" phx-click="play" phx-target={@myself}>
-          <.icon
-            :if={@running == false}
-            name="hero-play-solid"
-            class=" hover:text-black hover:cursor-pointer"
-          />
-        </a>
-        <a href="#" phx-click="pause" phx-target={@myself}>
-          <.icon
-            :if={@running == true}
-            name="hero-stop-solid"
-            class=" hover:text-black hover:cursor-pointer"
-          />
-        </a>
-        <.icon name="hero-arrow-right-solid" class=" hover:text-black hover:cursor-pointer" />
+      <div class="px-1 py-2 overflow-x-auto bg-white rounded">
+        <%= @function.(@step - 1) %>
+      </div>
+      <section class="flex justify-between p-2 font-medium text-gray-600 rounded-md bg-orange-100/50">
+        <span id="reset" class="hover:text-black hover:cursor-pointer">Reset</span>
+        <div>
+          <.icon name="hero-arrow-left-solid" class="hover:text-black hover:cursor-pointer" />
+          <a href="#" phx-click="play" phx-target={@myself}>
+            <.icon
+              :if={@running == false}
+              name="hero-play-solid"
+              class=" hover:text-black hover:cursor-pointer"
+            />
+          </a>
+          <a href="#" phx-click="pause" phx-target={@myself}>
+            <.icon
+              :if={@running == true}
+              name="hero-stop-solid"
+              class=" hover:text-black hover:cursor-pointer"
+            />
+          </a>
+          <.icon name="hero-arrow-right-solid" class=" hover:text-black hover:cursor-pointer" />
+        </div>
         <span id="speed_multiplier" class="px-4 hover:text-black hover:cursor-pointer">
-          <%= "#{@speed_multiplier} x" %>
+          <%= "#{@speed_multiplier}x" %>
         </span>
       </section>
     </div>
