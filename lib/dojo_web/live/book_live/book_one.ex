@@ -131,14 +131,18 @@ defmodule DojoWeb.BookOneLive do
   end
 
   def handle_info(
-        {:leave, "class:book1", %{name: name} = disciple},
-        %{assigns: %{disciples: d}} = socket
-      ) do
+    {:leave, "class:book1", %{name: name, phx_ref: ref} = disciple},
+    %{assigns: %{disciples: d}} = socket
+  ) do
+    IO.inspect(disciple, label: "leave")
+    if d[name][:phx_ref] == ref do
+      {:noreply,
+       socket
+       |> assign(:disciples, Map.delete(d, name))}
+    else
+      {:noreply, socket}
+    end
 
-     IO.inspect(disciple, label: "leave")
-    {:noreply,
-     socket
-     |> assign(:disciples, Map.delete(d, name))}
   end
 
   def handle_info({Dojo.PubSub, :animate, {name, func}}, socket) do

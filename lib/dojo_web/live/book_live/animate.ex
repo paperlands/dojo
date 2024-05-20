@@ -1,6 +1,15 @@
 defmodule DojoWeb.Animate do
   use DojoWeb, :live_component
 
+  def mount(socket) do
+  IO.inspect(socket, label: "mount")
+  {:ok, socket}
+  end
+
+  # already running
+  def update(%{id: id, name: name}, %{assigns: %{running: run}} = socket) do
+    {:ok, socket}
+  end
   # init clause
   def update(%{id: id, name: name}, socket) do
     list =
@@ -55,35 +64,6 @@ defmodule DojoWeb.Animate do
      assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)
      |> increment_step()}
   end
-
-  def update(%{function: func}, %{assigns: %{running: true}} = socket) when is_function(func) do
-    list =
-      func.(5)
-      |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
-
-    {:ok, assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)}
-  end
-
-  def update(%{id: _id, function: func}, %{assigns: %{running: false}} = socket)
-      when is_function(func) do
-    list =
-      func.(5)
-      |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
-
-    {:ok,
-     assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)
-     |> increment_step()}
-  end
-
-  # def update(%{assigns: %{list: list}} = socket) do
-  #   IO.inspect(socket, label: "update")
-  #   {:ok, assign(socket, start: 1, function: fn index -> Enum.at(list, index) end, finish: nil, speed_multiplier: 1, running: false)}
-  # end
-
-  # def update(%{assigns: assigns} = socket) do
-  #   IO.inspect(socket, label: "update")
-  #   {:ok, socket}
-  # end
 
   def render(assigns) do
     ~H"""
