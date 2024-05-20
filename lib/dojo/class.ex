@@ -3,21 +3,31 @@ defmodule Dojo.Class do
 
   def join(pid, book, disciple) do
     topic = "class:" <> book
-    Dojo.Gate.track(pid, topic, disciple)
-    GenServer.start_link(__MODULE__, %{room: pid, book: book, disciple: disciple})
+    {:ok, class} = GenServer.start_link(__MODULE__, %{room: pid, book: book, disciple: disciple})
+    Dojo.Gate.track(pid, topic, %{disciple | node: class})
+    {:ok, class}
   end
 
-  def submit(pid, function) do
-    GenServer.call(pid, {:animate, function})
+  def publish(pid, msg, event) do
+    GenServer.cast(pid, {:publish, msg, event})
   end
+
+  def last_animate(pid) when is_pid(pid) do
+    GenServer.call(pid, :last_animate)
+  end
+  def last_animate(_), do: nil
 
   def init(%{book: book, disciple: disciple}) do
-    {:ok, %{topic: topic(book), disciple: disciple}}
+    {:ok, %{topic: topic(book), disciple: disciple, animate_msg: nil}}
   end
 
-  def handle_call({:animate, func}, _from, %{topic: topic, disciple: %{name: name}}) do
-    Dojo.PubSub.publish({name, func}, :animate, topic)
-    {:reply, :ok}
+  def handle_cast({:publish, msg, :animate}, %{topic: topic, disciple: %{name: name}} = state) do
+    Dojo.PubSub.publish({name, msg}, :animate, topic)
+    {:noreply, %{state | animate_msg: msg}}
+  end
+
+  def handle_call(:last_animate, __from,  %{animate_msg: msg} = state) do
+    {:reply, msg, state}
   end
 
   ## helper fns

@@ -145,13 +145,8 @@ defmodule DojoWeb.BookOneLive do
 
   end
 
-  def handle_info({Dojo.PubSub, :animate, {name, func}}, socket) do
-    send_update(DojoWeb.Animate, id: idfy(name, "animate"), function: func)
-    {:noreply, socket}
-  end
-
-  def handle_info({Dojo.PubSub, :animate, {name, {m, f, a}}}, socket) do
-    send_update(DojoWeb.Animate, id: idfy(name, "animate"), function: {m, f, a})
+  def handle_info({Dojo.PubSub, :animate, {name, func}}, %{assigns: %{disciples: d}} = socket) do
+    send_update(DojoWeb.Animate, id: idfy(d[name][:phx_ref], "animate"), function: func)
     {:noreply, socket}
   end
 

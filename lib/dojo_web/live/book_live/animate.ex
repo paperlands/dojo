@@ -2,7 +2,6 @@ defmodule DojoWeb.Animate do
   use DojoWeb, :live_component
 
   def mount(socket) do
-  IO.inspect(socket, label: "mount")
   {:ok, socket}
   end
 
@@ -11,21 +10,26 @@ defmodule DojoWeb.Animate do
     {:ok, socket}
   end
   # init clause
-  def update(%{id: id, name: name}, socket) do
-    list =
-      "1"
-      |> Dojo.World.create()
-      |> Dojo.World.print(list: true)
-      # Dojo.Conway.reduce_genesis("blinker", 8, 10, [{2, 1}, {2, 2}, {2, 3}])
-      |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
+  def update(%{id: id, class_id: class_id, name: name}, socket) do
+    list = case Dojo.Class.last_animate(class_id) do
+    {m,f,a} -> apply(m, f, a)
+    _ ->
+    "1"
+    |> Dojo.World.create()
+
+    end
+
+    |> Dojo.World.print(list: true)
+    |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
 
     # |> DojoWeb.Utils.DOMParser.extract_html_from_md()
 
     {:ok,
      assign(socket,
        start: 1,
-       end: length(list),
+        end: length(list),
        id: id,
+       class_id: class_id,
        name: name,
        step: 1,
        function: fn index -> Enum.at(list, index) end,
@@ -67,7 +71,7 @@ defmodule DojoWeb.Animate do
 
   def render(assigns) do
     ~H"""
-    <div id="smart-animation" class="">
+    <div id={@id <> "smart-animation"} class="">
       <div class="flex justify-between my-2">
         <div class="text-2xl font-bold"><%= @name %></div>
         <div class="flex">
@@ -78,7 +82,7 @@ defmodule DojoWeb.Animate do
         <%= @function.(@step - 1) %>
       </div>
       <section class="flex justify-between p-2 font-medium text-gray-600 rounded-md bg-orange-100/50">
-        <span id="reset" class="hover:text-black hover:cursor-pointer">Reset</span>
+        <span class="hover:text-black hover:cursor-pointer">Reset</span>
         <div>
           <.icon name="hero-arrow-left-solid" class="hover:text-black hover:cursor-pointer" />
           <a href="#" phx-click="play" phx-target={@myself}>
@@ -97,7 +101,7 @@ defmodule DojoWeb.Animate do
           </a>
           <.icon name="hero-arrow-right-solid" class=" hover:text-black hover:cursor-pointer" />
         </div>
-        <span id="speed_multiplier" class="px-4 hover:text-black hover:cursor-pointer">
+        <span class="px-4 hover:text-black hover:cursor-pointer">
           <%= "#{@speed_multiplier}x" %>
         </span>
       </section>

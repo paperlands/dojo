@@ -15,7 +15,7 @@
       phx-value-disciple-phx_ref={dis.phx_ref}
       class={"p-4 text-white transition duration-200 ease-in-out border-4 rounded shadow cursor-pointer bg-brand hover:border-blue-500" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
     >
-      <.live_component id={idfy(name, "animate")} name={name} module={DojoWeb.Animate} />
+      <.live_component id={idfy(dis.phx_ref, "animate")} name={name} class_id={dis.node} module={DojoWeb.Animate} />
     </div>
   </div>
   <%!-- <form class="flex flex-col items-center m-0 mt-8 space-y-2" phx-change="noop" phx-submit="noop">
