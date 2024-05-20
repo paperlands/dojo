@@ -1,0 +1,153 @@
+<!-- livebook:{"file_entries":[{"name":"ElementaryCARule090.svg","type":"attachment"},{"name":"binary.png","type":"url","url":"http://csabai.web.elte.hu/http/complexSim/cellularAutomata/The%20Nature%20of%20Code_files/ch07_08.png"},{"name":"empty.png","type":"attachment"},{"name":"short-talk-about-richard-feynman-images-richard-feynman-and-stephen-wolfram.png","type":"attachment"},{"name":"stateful.png","type":"attachment"},{"name":"vonneumann.jpg","type":"attachment"}]} -->
+
+# Book 1D or: How Cells Stopped Worrying and Learned to Love the Reproduction
+
+## ⛩️
+
+```elixir
+input = Kino.Input.text("Your name")
+```
+
+<!-- livebook:{"attrs":{"source":"name = Kino.Input.read(input)\nname = cond do\n  String.length(name) > 0 -> name\n  true -> raise \"Enter your name\"\nend\n{:ok, class} = Dojo.Class.join(self(), \"book1\", %Dojo.Disciple{name: name, action: \"online\"})\n\"Welcome \" <> name <> \"!\"","title":"Enter the Dojo"},"chunks":null,"kind":"Elixir.DojoKino.Incognito","livebook_object":"smart_cell"} -->
+
+```elixir
+name = Kino.Input.read(input)
+
+name =
+  cond do
+    String.length(name) > 0 -> name
+    true -> raise "Enter your name"
+  end
+
+{:ok, class} = Dojo.Class.join(self(), "book1", %Dojo.Disciple{name: name, action: "online"})
+"Welcome " <> name <> "!"
+```
+
+```elixir
+# This is a book that runs code and talks to the Dojo at the same time
+# Dojo.Class.join(self(), "book1", %Dojo.Disciple{name: "ppman", action: "away"})
+1 + 1
+```
+
+Instructors self-introduction
+Ask people to self intro
+
+* Name
+* Term & Pillar
+* What were they expecting from this class
+
+## Where it started
+
+![](files/vonneumann.jpg)
+2 questions:
+
+* How can reliable systems be constructed from unreliable components?
+* What kind of logical organisation is sufficient for an automaton to be able to reproduce itself?
+
+## Create your 1D world
+
+We begin with a
+
+* **World**. The simplest world would be one-dimensional: a line of cells that stretch for as long as you need them to
+  ![](files/empty.png)
+* **State**. Cells then a state.  The simplest set of states (beyond a homogenous dead ass world of one state) would be 2 states: 0 (dead) or 1 (alive).
+  ![](files/stateful.png)
+
+***
+
+```elixir
+# init condition goes here Liv
+# build a list
+[]
+
+Dojo.World.create("010", %{name: name})
+```
+
+## Its convolve time
+
+```elixir
+
+```
+
+## Its reproduction time
+
+> What kind of logical organization is sufficient for an automaton to be able to reproduce itself?
+
+<!-- livebook:{"break_markdown":true} -->
+
+For every cell in the array:
+
+* Take a look at the neighborhood states: left, middle, right.
+* Look up the new value for the cell state according to some ruleset.
+* Set the cell's state to that new value.
+
+This may lead you to write some code like this:
+
+```elixir
+
+```
+
+What is the total number of kernel rules you can create?
+
+## Activity: Create your family tree
+
+![Elementary](files/ElementaryCARule090.svg)
+*rule 90*
+
+```elixir
+
+```
+
+## Activity: Present your Rule
+
+## Universal Computation
+
+### What if it was
+
+initial configuration of a cellular automaton represents a "program" and "initial data,"
+processed by cellular automaton time evolution to give a configuration correspond-
+ing to the "output" or "result" of the "computation." The cellular automaton rules
+represent the basic mechanism of the computer; different programs may be "run"
+(or different "functions evaluated") by giving different initial or "input" configura-
+tions. This process is analogous to the "evolution" of the sequence of symbols on
+the tape of a Turing machine (Turing, 1936). However, instead of considering a
+single "head" which modifies one square of the tape at each time step, the cellular
+automaton evolution simultaneously affects all sites at each time step. There exist "universal" cellular automata analogous to universal Turing
+machines, for which changes in the initial configuration alone allow any computable
+(or "recursive") function to be evaluated. A universal Turing machine may simu-
+late any other Turing machine using an "interpreter program" which describes the
+machine to be simulated. Each "instruction" of the simulated machine is simulated
+by running the appropriate part of the interpreter program on the universal machine.
+Universal cellular automata may similarly simulate any other cellular automata. The
+interpreter consists of an encoding of the configurations for the cellular automaton
+to be simulated on the universal automaton.
+
+## Reflection
+
+> "Feynman took me aside, rather conspiratorially, and said, "Look, I just want to ask you one thing: how did you know rule __ would do all this crazy stuff?" "You know me," I said. "I didn't. I just had a computer try all the possible rules. And I found it." "Ah," he said, "now I feel much better. I was worried you had some way to figure it out."
+
+![](files/short-talk-about-richard-feynman-images-richard-feynman-and-stephen-wolfram.png)
+
+<!-- livebook:{"break_markdown":true} -->
+
+1. What does "computation" mean to you?
+2. In your own words, how does one use computation to understand math or vice versa?
+3. Is there anything you like about the class?
+4. Is there anything you dont like about the class?
+5. If we did another extension course, would you come again?
+
+Is this different from how your teachers teach in the cohort class? How so?
+
+## Appendix I
+
+reinforce -> why we decide do this
+
+where can you find materials to go beyond the class
+
+```elixir
+
+```
+
+## Here be dragons
+
+Heres where you find more materials to go beyond the class:

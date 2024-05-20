@@ -124,15 +124,18 @@ defmodule DojoWeb.BookOneLive do
         {:join, "class:book1", %{name: name} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
+     IO.inspect(disciple, label: "join")
     {:noreply,
      socket
      |> assign(:disciples, Map.put(d, name, disciple))}
   end
 
   def handle_info(
-        {:leave, "class:book1", %{name: name}},
+        {:leave, "class:book1", %{name: name} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
+
+     IO.inspect(disciple, label: "leave")
     {:noreply,
      socket
      |> assign(:disciples, Map.delete(d, name))}
@@ -140,6 +143,11 @@ defmodule DojoWeb.BookOneLive do
 
   def handle_info({Dojo.PubSub, :animate, {name, func}}, socket) do
     send_update(DojoWeb.Animate, id: idfy(name, "animate"), function: func)
+    {:noreply, socket}
+  end
+
+  def handle_info({Dojo.PubSub, :animate, {name, {mod, func, args}}}, socket) do
+    send_update(DojoWeb.Animate, id: idfy(name, "animate"), module: mod, function: func,  args: args)
     {:noreply, socket}
   end
 

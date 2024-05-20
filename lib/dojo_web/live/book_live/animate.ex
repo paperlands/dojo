@@ -4,8 +4,12 @@ defmodule DojoWeb.Animate do
   # init clause
   def update(%{id: id, name: name}, socket) do
     list =
-      Dojo.Conway.reduce_genesis("blinker", 8, 10, [{2, 1}, {2, 2}, {2, 3}])
+    "1"
+    |> Dojo.World.create()
+      |> Dojo.World.print(list: true)
+      #Dojo.Conway.reduce_genesis("blinker", 8, 10, [{2, 1}, {2, 2}, {2, 3}])
       |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
+      #|> DojoWeb.Utils.DOMParser.extract_html_from_md()
 
     {:ok,
      assign(socket,
