@@ -1,5 +1,10 @@
 <div class="flex flex-col items-center">
   <h1 class="text-3xl font-extrabold tracking-tight text-center text-brand">Dojo Book 1</h1>
+  <div phx-window-keydown="keyboard">
+    <div :if={@sensei} class="text-red-600">
+      Sensei Mode
+    </div>
+  </div>
   <p class="max-w-3xl mx-auto mt-6 text-lg text-center text-sky-600">
     Run your friends model!
   </p>
@@ -13,12 +18,7 @@
       <.live_component id={idfy(name, "animate")} name={name} module={DojoWeb.Animate} />
     </div>
   </div>
-  <form class="flex flex-col items-center m-0 mt-8 space-y-2" phx-change="noop" phx-submit="noop">
+  <%!-- <form class="flex flex-col items-center m-0 mt-8 space-y-2" phx-change="noop" phx-submit="noop">
     <.kernel id="3x3grid" height={224} width={224} grid_map={@grid_map} />
-  </form>
-  <div phx-window-keydown="keyboard">
-    <div :if={@sensei} class="text-red-600" >
-    Sensei Mode
-    </div>
-  </div>
+  </form> --%>
 </div>

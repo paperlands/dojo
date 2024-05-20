@@ -78,13 +78,10 @@ defmodule DojoWeb.BookOneLive do
 
   def handle_event(
         "toggle-focus",
-        %{"disciple-phx_ref" => phx_ref},
+        %{"disciple-phx_ref" => _phx_ref},
         %{assigns: %{sensei: false}} = socket
-      ) do
-    # TODO: store focused_phx_ref in presence tracking so that new liveviews know which to focus on
-
-    {:noreply, socket}
-  end
+      ),
+      do: {:noreply, socket}
 
   def handle_event(
         "toggle-focus",

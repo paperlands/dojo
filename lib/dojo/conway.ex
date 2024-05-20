@@ -18,25 +18,25 @@ defmodule Dojo.Conway do
 
       reason ->
         reason
-      # _  ->
-      #   "specified lifetime ended"
+        # _  ->
+        #   "specified lifetime ended"
     end
   end
 
   def reduce_genesis(name, size, generations, initial_life \\ nil) do
     board = seed(size, initial_life)
     print_board(board, name, size, 0)
-    reason = reduce_generate(name, size, generations, board, 1)
+    _reason = reduce_generate(name, size, generations, board, 1)
 
-      # case reason do
+    # case reason do
     #   :all_dead ->
-      #     "no more life."
+    #     "no more life."
 
     #   :static ->
-      #     "no movement"
+    #     "no movement"
 
     #   reason ->
-      #     reason
+    #     reason
     #     # _  ->
     #     #   "specified lifetime ended"
     # end
@@ -120,8 +120,8 @@ defmodule Dojo.Conway do
   defp print_board(board, n) do
     Enum.map(1..n, fn y ->
       "## " <>
-      (Enum.map(1..n, fn x -> if board[{x, y}] == 1, do: "⬛", else: "⬜" end)
-      |> Enum.join(""))
+        (Enum.map(1..n, fn x -> if board[{x, y}] == 1, do: "⬛", else: "⬜" end)
+         |> Enum.join(""))
     end)
     |> Enum.join("
 ")
