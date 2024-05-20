@@ -11,17 +11,14 @@ defmodule Dojo.Class do
     GenServer.call(pid, {:animate, function})
   end
 
-
   def init(%{book: book, disciple: disciple}) do
     {:ok, %{topic: topic(book), disciple: disciple}}
   end
-
 
   def handle_call({:animate, func}, _from, %{topic: topic, disciple: %{name: name}}) do
     Dojo.PubSub.publish({name, func}, :animate, topic)
     {:reply, :ok}
   end
-
 
   ## helper fns
 

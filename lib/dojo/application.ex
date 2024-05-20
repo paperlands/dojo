@@ -9,7 +9,7 @@ defmodule Dojo.Application do
   def start(_type, _args) do
     children = [
       DojoWeb.Telemetry,
-#      Dojo.Repo,
+      #      Dojo.Repo,
       {DNSCluster, query: Application.get_env(:dojo, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Dojo.PubSub},
       {Dojo.Gate,
