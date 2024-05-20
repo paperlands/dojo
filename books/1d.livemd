@@ -25,7 +25,7 @@ name =
 
 ```elixir
 # This is a book that runs code and talks to the Dojo at the same time
-# Dojo.Class.join(self(), "book1", %Dojo.Disciple{name: "ppman", action: "away"})
+
 1 + 1
 ```
 
@@ -58,8 +58,7 @@ We begin with a
 ```elixir
 # init condition goes here Liv
 # build a list
-Dojo.World.create("10101", %{name: name})
-# |> Dojo.World.next()
+Dojo.World.create("10101", %{class: class})
 |> Dojo.World.print(book: true)
 ```
 
@@ -96,11 +95,15 @@ rule_set =
     "110" => "0",
     "111" => "0"
   }
-  |> Dojo.World.print(book: true)
+
+rule_set
+|> Dojo.World.print(book: true)
 ```
 
 ```elixir
-
+Dojo.World.create("010")
+|> Dojo.World.next(20, 15, %{class: class})
+|> Dojo.World.print(animate: true)
 ```
 
 What is the total number of kernel rules you can create?

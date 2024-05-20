@@ -14,10 +14,17 @@ defmodule Dojo.World do
 
   def print(str, [book: true]) when is_list(str) do
     str
-        |> Enum.join("
-")
+        |> Enum.join("  ")
     |> print_world()
     |> Kino.Markdown.new()
+  end
+
+  def print(str, [animate: true]) when is_list(str) do
+    DojoKino.Animate.new(0..length(str) - 1, fn index ->
+    Enum.at(str, index)
+    |> print_world()
+    |> Kino.Markdown.new()
+    end)
   end
 
   def print(rules, [book: true]) when is_map(rules) do
@@ -49,10 +56,44 @@ defmodule Dojo.World do
     |> Enum.map(&print_world(&1))
   end
 
-  def next() do
-
-
+  def next(state, rule, times, opts \\ %{})
+  def next(state, rule, 0, _) do
+    state |> Enum.reverse()
   end
+
+  def next(state, rule, times, opts) when is_binary(rule) do
+    next(state, String.to_integer(rule), times, opts)
+  end
+
+  def next(state, rule, times, opts) when is_integer(rule) do
+    next(state, rule_pattern(rule), times, opts)
+  end
+
+  # 1st state
+  def next([str | [] ] = state, patterns, times, %{class: pid}) when is_map(patterns) do
+
+    Dojo.Class.publish(pid, {__MODULE__, :next, [state, patterns, 10]}, :animate)
+
+    str2 = String.last(str) <> str <> String.first(str)
+
+    new =
+      Enum.map_join(0..(String.length(str) - 1), fn i ->
+        Map.get(patterns, String.slice(str2, i, 3))
+      end)
+
+    next([ new | state], patterns, times - 1, %{})
+  end
+
+  def next([str | _ ] = state, patterns, times, _) when is_map(patterns) do
+    str2 = String.last(str) <> str <> String.first(str)
+
+    new =
+      Enum.map_join(0..(String.length(str) - 1), fn i ->
+        Map.get(patterns, String.slice(str2, i, 3))
+      end)
+
+    next([ new | state], patterns, times - 1)
+   end
 
   def run(str, rule, times) do
     w_pad = String.duplicate("0", @world)
