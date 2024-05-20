@@ -12,9 +12,30 @@ defmodule Dojo.World do
     [w_pad <> str <> w_pad]
   end
 
+  def print(str, [book: true]) when is_list(str) do
+    str
+        |> Enum.join("
+")
+    |> print_world()
+    |> Kino.Markdown.new()
+  end
+
+  def print(rules, [book: true]) when is_map(rules) do
+    """
+    | Input Pattern | Output Value |
+    | ------------- | ------------ |
+    """ <>
+    (Enum.map(rules, fn {k, v} ->
+          "| #{print_world(k)} | #{print_world(v)} |\n"
+        end)
+        |> Enum.join(""))
+        |> Kino.Markdown.new()
+  end
+
   def print(str) when is_binary(str) do
     print_world(str)
   end
+
 
   def print(gen) when is_list(gen) do
     gen
@@ -35,7 +56,6 @@ defmodule Dojo.World do
 
   def run(str, rule, times) do
     w_pad = String.duplicate("0", @world)
-    IO.puts("rule : #{rule}")
     str = w_pad <> str <> w_pad
 
     # to work on padder later
@@ -43,7 +63,11 @@ defmodule Dojo.World do
     each(str, rule_pattern(rule), times)
   end
 
-  defp rule_pattern(rule) do
+  def rule_pattern(rule) when is_map(rule) do
+    rule
+  end
+
+  def rule_pattern(rule) when is_integer(rule) do
     list =
       Integer.to_string(rule, 2)
       |> String.pad_leading(8, "0")
@@ -53,6 +77,7 @@ defmodule Dojo.World do
     Enum.map(0..7, fn i -> Integer.to_string(i, 2) |> String.pad_leading(3, "0") end)
     |> Enum.zip(list)
     |> Map.new()
+    |> IO.inspect()
    end
 
   defp each(_, _, 0), do: :ok

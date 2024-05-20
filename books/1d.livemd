@@ -58,15 +58,15 @@ We begin with a
 ```elixir
 # init condition goes here Liv
 # build a list
-[]
-
-Dojo.World.create("010", %{name: name})
+Dojo.World.create("10101", %{name: name})
+# |> Dojo.World.next()
+|> Dojo.World.print(book: true)
 ```
 
-## Its convolve time
-
 ```elixir
-
+# DojoKino.Animate.new(1..10, fn index ->
+#   Kino.Markdown.new(Dojo.World.create("blinker", 10, index, coordinate))
+# end)
 ```
 
 ## Its reproduction time
@@ -75,13 +75,29 @@ Dojo.World.create("010", %{name: name})
 
 <!-- livebook:{"break_markdown":true} -->
 
-For every cell in the array:
+Here come the rules:
 
 * Take a look at the neighborhood states: left, middle, right.
 * Look up the new value for the cell state according to some ruleset.
 * Set the cell's state to that new value.
 
 This may lead you to write some code like this:
+
+```elixir
+# Define the rule set
+rule_set =
+  %{
+    "000" => "0",
+    "001" => "1",
+    "010" => "1",
+    "011" => "1",
+    "100" => "1",
+    "101" => "0",
+    "110" => "0",
+    "111" => "0"
+  }
+  |> Dojo.World.print(book: true)
+```
 
 ```elixir
 
