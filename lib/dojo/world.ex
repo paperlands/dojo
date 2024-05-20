@@ -3,7 +3,7 @@ defmodule Dojo.World do
 
   def create(str, %{name: name}) when is_binary(str) do
     str = create(str)
-    Dojo.PubSub.publish({name, {__MODULE__, :create, [str]}}, :animate, "class:book1")
+    Dojo.PubSub.publish({name, {__MODULE__, :create, str}}, :animate, "class:book1")
     str
   end
 

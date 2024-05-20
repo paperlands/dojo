@@ -6,7 +6,7 @@ defmodule DojoWeb.Animate do
     list =
     "1"
     |> Dojo.World.create()
-      |> Dojo.World.print(list: true)
+    |> Dojo.World.print(list: true)
       #Dojo.Conway.reduce_genesis("blinker", 8, 10, [{2, 1}, {2, 2}, {2, 3}])
       |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
       #|> DojoWeb.Utils.DOMParser.extract_html_from_md()
@@ -35,7 +35,28 @@ defmodule DojoWeb.Animate do
     end
   end
 
-  def update(%{function: func}, %{assigns: %{running: true}} = socket) do
+    def update(%{function: {m, f, arg}}, %{assigns: %{running: true}} = socket) do
+    list =
+      apply(m, f, arg)
+    |> Dojo.World.print(list: true)
+      |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
+
+    {:ok, assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)}
+  end
+
+  def update(%{id: _id, function: {m, f, arg}}, %{assigns: %{running: false}} = socket) do
+    list =
+      apply(m, f, arg)
+    |> Dojo.World.print(list: true)
+      |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
+
+    {:ok,
+     assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)
+     |> increment_step()}
+  end
+
+
+  def update(%{function: func}, %{assigns: %{running: true}} = socket) when is_function(func) do
     list =
       func.(5)
       |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
@@ -43,7 +64,7 @@ defmodule DojoWeb.Animate do
     {:ok, assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)}
   end
 
-  def update(%{id: _id, function: func}, %{assigns: %{running: false}} = socket) do
+  def update(%{id: _id, function: func}, %{assigns: %{running: false}} = socket) when is_function(func) do
     list =
       func.(5)
       |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
