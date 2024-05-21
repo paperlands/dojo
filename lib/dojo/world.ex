@@ -1,5 +1,28 @@
 defmodule Dojo.World do
+    @moduledoc """
+  Implements functionality for simulating and visualizing elementary cellular automata.
+
+  Provides functions to create, print, and evolve cellular automata based on given rules.
+  """
+
   @world 10
+
+  @doc """
+  Creates an initial state for the cellular automaton.
+
+  Takes a binary string representing the initial state and returns a padded version of it,
+  ensuring it fits within the predefined world size.
+
+  ## Parameters
+
+  - `str`: A binary string where '1' represents a live cell and '0' represents a dead cell.
+
+  ## Examples
+
+  iex> Dojo.World.create("101")
+  ["00001010000"]
+
+  """
 
   def create(str, %{class: pid}) when is_binary(str) do
     str = create(str)
@@ -12,12 +35,31 @@ defmodule Dojo.World do
     [w_pad <> str <> w_pad]
   end
 
+
+  @doc """
+  Prints the current state of the cellular automaton.
+
+  Supports different output formats based on the options provided.
+
+  ## Options
+
+  - `book: true`: Formats the output for display in a book-like layout.
+  - `view: true`: Formats the output for direct viewing in a console or web page.
+  - `animate: true`: Animates the evolution of the cellular automaton over time.
+
+  ## Examples
+
+  iex> Dojo.World.print(["00001010000"], book: true)
+  "⬜⬜⬜⬛⬜⬛⬜⬜⬜⬜"
+
+  """
   def print(str, book: true) when is_list(str) do
     str
     |> Enum.join("  ")
     |> print_world()
     |> Kino.Markdown.new()
   end
+
 
   def print(str, view: true) when is_list(str) do
     str
@@ -89,6 +131,25 @@ defmodule Dojo.World do
     |> Enum.map(&print_world(&1))
   end
 
+  @doc """
+  Evolves the cellular automaton through a series of generations.
+
+  Applies the given rule to the current state of the cellular automaton for a specified number of times.
+
+  ## Parameters
+
+  - `state`: The current state of the cellular automaton, represented as a list of binary strings.
+  - `rule`: The rule to apply, either as a binary string, an integer, or a map of patterns to outputs.
+  - `times`: The number of generations to evolve.
+  - `opts`: Optional parameters, such as a `class` PID for publishing events.
+
+  ## Examples
+
+  iex> Dojo.World.next(["00001010000"], "30", 5)
+  ["00001010000",...]
+
+  """
+
   def next(state, rule, times, opts \\ %{})
 
   def next(state, rule, 0, _) do
@@ -130,6 +191,27 @@ defmodule Dojo.World do
     next([new | state], patterns, times - 1)
   end
 
+  @doc """
+  Runs the cellular automaton simulation and publishes the result.
+
+  We pad the initial state to fit the predefined world size, applies the specified rule over the given number of generations, and returns the sequence of states resulting from the simulation.
+
+  Evolves the cellular automaton according to the given rule and times, then publishes the final state.
+
+  ## Parameters
+
+  - `str`: The initial state of the cellular automaton as a binary string.
+  - `rule`: The rule to apply, either as a binary string or an integer.
+  - `times`: The number of generations to evolve.
+  - `%{class: pid}`: A map containing a `class` key with a PID for event publishing.
+
+  ## Examples
+
+  iex> Dojo.World.run("00001010000", "30", 5, %{class: self()})
+  # Publishes the final state after evolving 5 generations.
+
+  """
+
   def run(str, rule, times, %{class: pid}) do
     outcome = run(str, rule, times)
     Dojo.Class.publish(pid, outcome, :animate)
@@ -141,6 +223,20 @@ defmodule Dojo.World do
     str = w_pad <> str <> w_pad
     each(str, rule_pattern(rule), times, [])
   end
+
+  @doc """
+  Converts a rule into a pattern map if it's an integer.
+
+  ## Parameters
+
+  - `rule`: The rule to convert, either as a map or an integer.
+
+  ## Examples
+
+  iex> Dojo.World.rule_pattern(30)
+  %{"111" => "0", "110" => "1",...}
+
+  """
 
   def rule_pattern(rule) when is_map(rule) do
     rule
@@ -171,6 +267,22 @@ defmodule Dojo.World do
 
     each(next_str, patterns, times - 1, [str | board])
   end
+
+  @doc """
+  Converts the cellular automaton's state into a human-readable format.
+
+  Replaces '0' with '⬜' and '1' with '⬛' for better visualization.
+
+  ## Parameters
+
+  - `str`: A binary string representing the state of the cellular automaton.
+
+  ## Examples
+
+  iex> Dojo.World.print_world("00001010000")
+  "⬜⬜⬜⬛⬜⬛⬜⬜⬜⬜"
+
+  """
 
   def print_world(str) do
     str
