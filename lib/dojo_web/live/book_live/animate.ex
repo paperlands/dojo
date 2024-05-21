@@ -2,32 +2,34 @@ defmodule DojoWeb.Animate do
   use DojoWeb, :live_component
 
   def mount(socket) do
-  {:ok, socket}
+    {:ok, socket}
   end
 
   # already running
   def update(%{id: id, name: name}, %{assigns: %{running: run}} = socket) do
     {:ok, socket}
   end
+
   # init clause
   def update(%{id: id, class_id: class_id, name: name}, socket) do
-    list = case Dojo.Class.last_animate(class_id) do
-    {m,f,a} -> apply(m, f, a)
-    _ ->
-    "1"
-    |> Dojo.World.create()
+    list =
+      case Dojo.Class.last_animate(class_id) do
+        {m, f, a} ->
+          apply(m, f, a)
 
-    end
-
-    |> Dojo.World.print(list: true)
-    |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
+        _ ->
+          "1"
+          |> Dojo.World.create()
+      end
+      |> Dojo.World.print(list: true)
+      |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
 
     # |> DojoWeb.Utils.DOMParser.extract_html_from_md()
 
     {:ok,
      assign(socket,
        start: 1,
-        end: length(list),
+       end: length(list),
        id: id,
        class_id: class_id,
        name: name,
@@ -62,11 +64,10 @@ defmodule DojoWeb.Animate do
 
   def update(%{id: _id, function: list}, socket) when is_list(list) do
     list =
-      [list
-      |> Dojo.World.print(view: true)
-      |> DojoWeb.Utils.DOMParser.extract_html_from_md()]
-
-    IO.inspect(list)
+      [
+        safe: "<p>" <> Dojo.World.print(list, view: true) <> "</p>"
+        # |> DojoWeb.Utils.DOMParser.extract_html_from_md() #! this DOMparser fn is faulty. Doesnt do <br> well
+      ]
 
     {:ok, assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)}
   end
