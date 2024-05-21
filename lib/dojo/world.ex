@@ -19,6 +19,12 @@ defmodule Dojo.World do
     |> Kino.Markdown.new()
   end
 
+  def print(str, [view: true]) when is_list(str) do
+    str
+    |> Enum.join(" <br> ")
+    |> print_world()
+  end
+
   def print(str, [animate: true]) when is_list(str) do
     DojoKino.Animate.new(0..length(str) - 1, fn index ->
     Enum.at(str, index)
@@ -26,6 +32,27 @@ defmodule Dojo.World do
     |> Kino.Markdown.new()
     end)
   end
+
+  # def print(str, [spacetime: true, class: pid]) when is_list(str) do
+  #   Dojo.Class.publish(pid, str, :animate)
+  #   print(str, [spacetime: true])
+  # end
+
+  def print(str, [spacetime: true]) when is_list(str) do
+
+    timesteps = length(str) - 1
+    DojoKino.Animate.new(0..timesteps, fn index ->
+      Enum.reduce_while(str, [],
+        fn x, acc when length(acc) > index ->
+          {:halt, Enum.reverse(acc)}
+          x , acc when length(acc) == timesteps ->
+          {:halt, Enum.reverse(acc)}
+          x, acc ->
+          {:cont, [ x | acc ]} end)
+      |> print([book: true])
+    end)
+  end
+
 
   def print(rules, [book: true]) when is_map(rules) do
     """
@@ -51,6 +78,11 @@ defmodule Dojo.World do
     |> print_world()
   end
 
+  def print(gen, [list: true]) when is_binary(gen) do
+    [gen]
+    |> Enum.map(&print_world(&1))
+  end
+
   def print(gen, [list: true]) when is_list(gen) do
     gen
     |> Enum.map(&print_world(&1))
@@ -71,9 +103,6 @@ defmodule Dojo.World do
 
   # 1st state
   def next([str | [] ] = state, patterns, times, %{class: pid}) when is_map(patterns) do
-
-    Dojo.Class.publish(pid, {__MODULE__, :next, [state, patterns, 10]}, :animate)
-
     str2 = String.last(str) <> str <> String.first(str)
 
     new =
@@ -81,7 +110,11 @@ defmodule Dojo.World do
         Map.get(patterns, String.slice(str2, i, 3))
       end)
 
-    next([ new | state], patterns, times - 1, %{})
+    outcome = next([ new | state], patterns, times - 1, %{})
+
+    Dojo.Class.publish(pid, {__MODULE__, :next, [state, patterns, 10]}, :animate)
+
+    outcome
   end
 
   def next([str | _ ] = state, patterns, times, _) when is_map(patterns) do
@@ -93,15 +126,19 @@ defmodule Dojo.World do
       end)
 
     next([ new | state], patterns, times - 1)
-   end
+  end
+
+
+  def run(str, rule, times, %{class: pid}) do
+    outcome = run(str, rule, times)
+    Dojo.Class.publish(pid, outcome, :animate)
+    outcome
+  end
 
   def run(str, rule, times) do
     w_pad = String.duplicate("0", @world)
     str = w_pad <> str <> w_pad
-
-    # to work on padder later
-    #padder = &String.slice(&1, pad, len - pad)
-    each(str, rule_pattern(rule), times)
+    each(str, rule_pattern(rule), times, [])
   end
 
   def rule_pattern(rule) when is_map(rule) do
@@ -121,10 +158,9 @@ defmodule Dojo.World do
     |> IO.inspect()
    end
 
-  defp each(_, _, 0), do: :ok
+  defp each(str, _, 0, board), do: [str | board] |> Enum.reverse()
 
-  defp each(str, patterns, times) do
-    IO.puts(String.replace(str, "0", "⬜") |> String.replace("1", "⬛"))
+  defp each(str, patterns, times, board) do
     str2 = String.last(str) <> str <> String.first(str)
 
     next_str =
@@ -132,11 +168,11 @@ defmodule Dojo.World do
         Map.get(patterns, String.slice(str2, i, 3))
       end)
 
-    each(next_str, patterns, times - 1)
+    each(next_str, patterns, times - 1, [str | board])
   end
 
 
-  defp print_world(str) do
+  def print_world(str) do
     str
     |> String.replace("0", "⬜")
     |> String.replace("1", "⬛")

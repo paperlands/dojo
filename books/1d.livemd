@@ -114,10 +114,18 @@ What is the total number of kernel rules you can create?
 *rule 90*
 
 ```elixir
-
+str =
+  Dojo.World.create("010")
+  |> Dojo.World.next(20, 5)
+  |> Dojo.World.print(spacetime: true)
 ```
 
 ## Activity: Present your Rule
+
+```elixir
+str = Dojo.World.run("010", rule_set, 30, %{class: class})
+# |> Dojo.World.print([book: true])
+```
 
 ## Universal Computation
 

@@ -49,16 +49,7 @@ defmodule DojoWeb.Animate do
     end
   end
 
-  def update(%{function: {m, f, arg}}, %{assigns: %{running: true}} = socket) do
-    list =
-      apply(m, f, arg)
-      |> Dojo.World.print(list: true)
-      |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
-
-    {:ok, assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)}
-  end
-
-  def update(%{id: _id, function: {m, f, arg}}, %{assigns: %{running: false}} = socket) do
+  def update(%{id: _id, function: {m, f, arg}}, socket) do
     list =
       apply(m, f, arg)
       |> Dojo.World.print(list: true)
@@ -66,7 +57,18 @@ defmodule DojoWeb.Animate do
 
     {:ok,
      assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)
-     |> increment_step()}
+     |> increment_step_if_static()}
+  end
+
+  def update(%{id: _id, function: list}, socket) when is_list(list) do
+    list =
+      [list
+      |> Dojo.World.print(view: true)
+      |> DojoWeb.Utils.DOMParser.extract_html_from_md()]
+
+    IO.inspect(list)
+
+    {:ok, assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)}
   end
 
   def render(assigns) do
@@ -134,6 +136,21 @@ defmodule DojoWeb.Animate do
     speed = socket.assigns.speed_multiplier + 0.5
     next_multiplier = if speed > 10, do: 0.5, else: speed
     {:noreply, assign(socket, speed_multiplier: next_multiplier)}
+  end
+
+  defp increment_step_if_static(%{assigns: %{running: false}} = socket) do
+    incremented_step =
+      if socket.assigns.end && socket.assigns.step >= socket.assigns.end,
+        do: socket.assigns.start,
+        else: socket.assigns.step + 1
+
+    act(:inc, 1000, socket.assigns.id)
+
+    assign(socket, step: incremented_step, running: true)
+  end
+
+  defp increment_step_if_static(socket) do
+    socket
   end
 
   defp increment_step(socket) do
