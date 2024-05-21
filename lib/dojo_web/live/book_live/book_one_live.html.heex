@@ -8,14 +8,19 @@
   <p class="max-w-3xl mx-auto mt-6 text-lg text-center text-sky-600">
     Check out other people's models!
   </p>
-  <div class="grid grid-cols-1 gap-8 my-8 lg:grid-cols-3 md:grid-cols-2 w-max">
+  <div class="grid grid-cols-1 gap-8 my-8 lg:grid-cols-2 auto-cols-min auto-rows-min">
     <div
       :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
       phx-click="toggle-focus"
       phx-value-disciple-phx_ref={dis.phx_ref}
-      class={"p-4 text-white transition duration-200 ease-in-out border-4 rounded shadow cursor-pointer bg-brand hover:border-blue-500" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
+      class={" border-brand max-h-80 max-w-96 text-white transition duration-200 ease-in-out border-4 rounded shadow cursor-pointer bg-brand hover:border-blue-500" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
     >
-      <.live_component id={idfy(dis.phx_ref, "animate")} name={name} class_id={dis.node} module={DojoWeb.Animate} />
+      <.live_component
+        id={idfy(dis.phx_ref, "animate")}
+        name={name}
+        class_id={dis.node}
+        module={DojoWeb.Animate}
+      />
     </div>
   </div>
   <%!-- <form class="flex flex-col items-center m-0 mt-8 space-y-2" phx-change="noop" phx-submit="noop">

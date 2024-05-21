@@ -15,6 +15,7 @@ defmodule Dojo.Class do
   def last_animate(pid) when is_pid(pid) do
     GenServer.call(pid, :last_animate)
   end
+
   def last_animate(_), do: nil
 
   def init(%{book: book, disciple: disciple}) do
@@ -26,7 +27,7 @@ defmodule Dojo.Class do
     {:noreply, %{state | animate_msg: msg}}
   end
 
-  def handle_call(:last_animate, __from,  %{animate_msg: msg} = state) do
+  def handle_call(:last_animate, __from, %{animate_msg: msg} = state) do
     {:reply, msg, state}
   end
 

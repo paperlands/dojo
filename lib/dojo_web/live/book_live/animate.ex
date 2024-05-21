@@ -75,16 +75,16 @@ defmodule DojoWeb.Animate do
   def render(assigns) do
     ~H"""
     <div id={@id <> "smart-animation"} class="">
-      <div class="flex justify-between my-2">
+      <div class="flex justify-between m-4">
         <div class="text-2xl font-bold"><%= @name %></div>
         <div class="flex">
           step:<div class="ml-1 font-bold"><%= @step %></div>
         </div>
       </div>
-      <div class="px-1 py-2 overflow-x-auto bg-white rounded">
+      <div class="px-1 py-2 overflow-auto text-sm bg-white rounded max-h-60">
         <%= @function.(@step - 1) %>
       </div>
-      <section class="flex justify-between p-2 font-medium text-gray-600 rounded-md bg-orange-100/50">
+      <%!-- <section class="flex justify-between p-2 font-medium text-gray-600 rounded-md bg-orange-100/50">
         <span class="hover:text-black hover:cursor-pointer">Reset</span>
         <div>
           <.icon name="hero-arrow-left-solid" class="hover:text-black hover:cursor-pointer" />
@@ -107,7 +107,7 @@ defmodule DojoWeb.Animate do
         <span class="px-4 hover:text-black hover:cursor-pointer">
           <%= "#{@speed_multiplier}x" %>
         </span>
-      </section>
+      </section> --%>
     </div>
     """
   end
