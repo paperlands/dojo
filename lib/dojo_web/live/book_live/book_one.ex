@@ -19,7 +19,8 @@ defmodule DojoWeb.BookOneLive do
      |> assign(label: nil, running: false, task_ref: nil, disciples: dis)
      |> assign(grid_map: grid_map)
      |> assign(sensei: false)
-     |> assign(focused_phx_ref: "")}
+     |> assign(focused_phx_ref: "")
+     |> assign(show_controls: false)}
   end
 
   defp kernel(assigns) do
@@ -118,23 +119,29 @@ defmodule DojoWeb.BookOneLive do
     {:noreply, socket}
   end
 
+  def handle_event("toggle-controls", _, socket) do
+    {:noreply, socket |> assign(show_controls: !socket.assigns.show_controls)}
+  end
+
   # send_update for animate component
 
   def handle_info(
         {:join, "class:book1", %{name: name} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
-     IO.inspect(disciple, label: "join")
+    IO.inspect(disciple, label: "join")
+
     {:noreply,
      socket
      |> assign(:disciples, Map.put(d, name, disciple))}
   end
 
   def handle_info(
-    {:leave, "class:book1", %{name: name, phx_ref: ref} = disciple},
-    %{assigns: %{disciples: d}} = socket
-  ) do
+        {:leave, "class:book1", %{name: name, phx_ref: ref} = disciple},
+        %{assigns: %{disciples: d}} = socket
+      ) do
     IO.inspect(disciple, label: "leave")
+
     if d[name][:phx_ref] == ref do
       {:noreply,
        socket
@@ -142,7 +149,6 @@ defmodule DojoWeb.BookOneLive do
     else
       {:noreply, socket}
     end
-
   end
 
   def handle_info({Dojo.PubSub, :animate, {name, func}}, %{assigns: %{disciples: d}} = socket) do
@@ -171,8 +177,8 @@ defmodule DojoWeb.BookOneLive do
 
   defp is_main_focus(phx_ref, focused_phx_ref) do
     case phx_ref do
-      ^focused_phx_ref -> " scale-150 border-blue-600 border-4"
-      _ -> ""
+      ^focused_phx_ref -> " scale-150 border-blue-600"
+      _ -> " border-brand"
     end
   end
 end

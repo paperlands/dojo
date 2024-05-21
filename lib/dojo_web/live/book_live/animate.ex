@@ -6,12 +6,15 @@ defmodule DojoWeb.Animate do
   end
 
   # already running
-  def update(%{id: id, name: name}, %{assigns: %{running: run}} = socket) do
-    {:ok, socket}
+  def update(
+        %{id: _id, name: _name, show_controls: show_controls},
+        %{assigns: %{running: _run}} = socket
+      ) do
+    {:ok, socket |> assign(show_controls: show_controls)}
   end
 
   # init clause
-  def update(%{id: id, class_id: class_id, name: name}, socket) do
+  def update(%{id: id, class_id: class_id, name: name, show_controls: show_controls}, socket) do
     list =
       case Dojo.Class.last_animate(class_id) do
         {m, f, a} ->
@@ -36,7 +39,8 @@ defmodule DojoWeb.Animate do
        step: 1,
        function: fn index -> Enum.at(list, index) end,
        speed_multiplier: 1,
-       running: false
+       running: false,
+       show_controls: show_controls
      )}
   end
 
@@ -84,7 +88,7 @@ defmodule DojoWeb.Animate do
       <div class="px-1 py-2 overflow-auto text-sm bg-white rounded max-h-60">
         <%= @function.(@step - 1) %>
       </div>
-      <%!-- <section class="flex justify-between p-2 font-medium text-gray-600 rounded-md bg-orange-100/50">
+      <section class={"flex justify-between p-2 font-medium text-gray-600 rounded-md bg-orange-100/40" <> show_controls(@show_controls)}>
         <span class="hover:text-black hover:cursor-pointer">Reset</span>
         <div>
           <.icon name="hero-arrow-left-solid" class="hover:text-black hover:cursor-pointer" />
@@ -107,7 +111,7 @@ defmodule DojoWeb.Animate do
         <span class="px-4 hover:text-black hover:cursor-pointer">
           <%= "#{@speed_multiplier}x" %>
         </span>
-      </section> --%>
+      </section>
     </div>
     """
   end
@@ -137,6 +141,13 @@ defmodule DojoWeb.Animate do
     speed = socket.assigns.speed_multiplier + 0.5
     next_multiplier = if speed > 10, do: 0.5, else: speed
     {:noreply, assign(socket, speed_multiplier: next_multiplier)}
+  end
+
+  defp show_controls(bool) do
+    case bool do
+      true -> ""
+      false -> " hidden"
+    end
   end
 
   defp increment_step_if_static(%{assigns: %{running: false}} = socket) do
