@@ -214,7 +214,7 @@ defmodule Dojo.World do
 
   def run(str, rule, times, %{class: pid}) do
     outcome = run(str, rule, times)
-    Dojo.Class.publish(pid, outcome, :animate)
+    Dojo.Class.publish(pid, {outcome, {__MODULE__, :run, [str, rule, times]}}, :animate)
     outcome
   end
 

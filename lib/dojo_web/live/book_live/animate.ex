@@ -71,14 +71,14 @@ defmodule DojoWeb.Animate do
      |> increment_step_if_static()}
   end
 
-  def update(%{id: _id, function: list}, socket) when is_list(list) do
+  def update(%{id: _id, function: {list, {m,f,a}}}, socket) when is_list(list) do
     list =
       [
         safe: "<p>" <> Dojo.World.print(list, view: true) <> "</p>"
         # |> DojoWeb.Utils.DOMParser.extract_html_from_md() #! this DOMparser fn is faulty. Doesnt do <br> well
       ]
 
-    {:ok, assign(socket, last: length(list), function: fn index -> Enum.at(list, index) end)}
+    {:ok, assign(socket, last: length(list), function: fn index -> Enum.at(list, index) end, source: to_source({m, f, a}))}
   end
 
   def render(assigns) do
