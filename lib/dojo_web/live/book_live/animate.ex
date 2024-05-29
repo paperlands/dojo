@@ -15,15 +15,16 @@ defmodule DojoWeb.Animate do
 
   # init clause
   def update(%{id: id, class_id: class_id, name: name, show_controls: show_controls}, socket) do
-    list =
+    {list, source} =
       case Dojo.Class.last_animate(class_id) do
         {m, f, a} ->
-          apply(m, f, a)
-
+          {apply(m, f, a), to_source({m,f,a})}
         _ ->
-          "1"
-          |> Dojo.World.create()
+          {Dojo.World.create("1"), "Dojo.World.create(\"1\")"}
+
       end
+
+    list = list
       |> Dojo.World.print(list: true)
       |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
 
@@ -56,14 +57,15 @@ defmodule DojoWeb.Animate do
     end
   end
 
-  def update(%{id: _id, function: {m, f, arg}}, socket) do
+  def update(%{id: _id, function: {m, f, a}}, socket) do
     list =
-      apply(m, f, arg)
+      apply(m, f, a)
       |> Dojo.World.print(list: true)
       |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
 
     {:ok,
      assign(socket, last: length(list),
+       source: to_source({m, f, a}),
        function: fn index -> Enum.at(list, index) end
      )
      |> increment_step_if_static()}
