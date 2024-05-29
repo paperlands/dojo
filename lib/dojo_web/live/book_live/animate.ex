@@ -18,13 +18,14 @@ defmodule DojoWeb.Animate do
     {list, source} =
       case Dojo.Class.last_animate(class_id) do
         {m, f, a} ->
-          {apply(m, f, a), to_source({m,f,a})}
+          {apply(m, f, a), to_source({m, f, a})}
+
         _ ->
           {Dojo.World.create("1"), "Dojo.World.create(\"1\")"}
-
       end
 
-    list = list
+    list =
+      list
       |> Dojo.World.print(list: true)
       |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
 
@@ -64,7 +65,8 @@ defmodule DojoWeb.Animate do
       |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
 
     {:ok,
-     assign(socket, last: length(list),
+     assign(socket,
+       last: length(list),
        source: to_source({m, f, a}),
        function: fn index -> Enum.at(list, index) end
      )
@@ -94,9 +96,16 @@ defmodule DojoWeb.Animate do
         <%= @function.(@step - 1) %>
       </div>
       <section class={"flex justify-between p-2 font-medium text-gray-600 rounded-md bg-orange-100/40" <> show_controls(@show_controls)}>
-        <span class="hover:text-black hover:cursor-pointer" phx-click="reset" phx-target={@myself} >Reset</span>
+        <span class="hover:text-black hover:cursor-pointer" phx-click="reset" phx-target={@myself}>
+          Reset
+        </span>
         <div>
-          <.icon name="hero-arrow-left-solid" phx-click="prev" phx-target={@myself} class="hover:text-black hover:cursor-pointer" />
+          <.icon
+            name="hero-arrow-left-solid"
+            phx-click="prev"
+            phx-target={@myself}
+            class="hover:text-black hover:cursor-pointer"
+          />
           <a href="#" phx-click="play" phx-target={@myself}>
             <.icon
               :if={@running == false}
@@ -111,26 +120,33 @@ defmodule DojoWeb.Animate do
               class=" hover:text-black hover:cursor-pointer"
             />
           </a>
-          <.icon name="hero-arrow-right-solid" phx-click="next" phx-target={@myself} class="hover:text-black hover:cursor-pointer" />
+          <.icon
+            name="hero-arrow-right-solid"
+            phx-click="next"
+            phx-target={@myself}
+            class="hover:text-black hover:cursor-pointer"
+          />
         </div>
-        <span phx-click="gobrrr" phx-target={@myself} class="px-4 hover:text-black hover:cursor-pointer">
+        <span
+          phx-click="gobrrr"
+          phx-target={@myself}
+          class="px-4 hover:text-black hover:cursor-pointer"
+        >
           <%= "#{@speed_multiplier}x" %>
         </span>
       </section>
-      <div class={"py-1 rounded-lg"}/>
-      <div class={"bg-black rounded-lg"}>
-      <.icon name="hero-clipboard" class="w-3 h-3 ml-2 active:bg-brand active:animate-spin hover:cursor-copy" phx-click={JS.dispatch("dojo:yoink", to: "##{@id}-source")}/>
-          <div id={@id <>"-source"} class="hidden"><%=@source%></div>
-          <div class="px-8 overflow-x-auto">
+      <div class="py-1 rounded-lg" />
+      <div class="bg-black rounded-lg">
+        <.icon
+          name="hero-clipboard"
+          class="w-3 h-3 ml-2 active:bg-brand active:animate-spin hover:cursor-copy"
+          phx-click={JS.dispatch("dojo:yoink", to: "##{@id}-source")}
+        />
+        <div id={@id <>"-source"} class="hidden text"><%= @source %></div>
+        <div class="px-8 overflow-x-auto">
           <%= [safe: Makeup.highlight(@source)] %>
-       <div class="max-w-2xl w-full animate-pulse">
-        <div class="flex-1 space-y-4">
-          <div class="h-4"></div>
-          <div class="bg-gray-500 h-4 rounded-lg"></div>
-          <div class="bg-gray-500 h-4 rounded-lg w-5/6"></div>
+          <div class="w-full max-w-2xl m-2 animate-pulse"></div>
         </div>
-      </div>
-          </div>
       </div>
     </div>
     """
@@ -208,8 +224,7 @@ defmodule DojoWeb.Animate do
   end
 
   defp to_source({mod, fun, arity}) do
-    args = arity |> Enum.map(&"#{inspect(&1)}")|> Enum.join(", ")
+    args = arity |> Enum.map(&"#{inspect(&1)}") |> Enum.join(", ")
     "#{inspect(mod)}.#{fun}(#{args})"
   end
-
 end

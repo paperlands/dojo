@@ -16,29 +16,32 @@
 //
 
 // Include phoenix_html to handle method=PUT/DELETE in forms and buttons.
-import "phoenix_html"
+import "phoenix_html";
 // Establish Phoenix Socket and LiveView configuration.
-import {Socket} from "phoenix"
-import {LiveSocket} from "phoenix_live_view"
-import topbar from "../vendor/topbar"
+import { Socket } from "phoenix";
+import { LiveSocket } from "phoenix_live_view";
+import topbar from "../vendor/topbar";
 
-let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
+let csrfToken = document
+  .querySelector("meta[name='csrf-token']")
+  .getAttribute("content");
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  params: {_csrf_token: csrfToken},
+  params: { _csrf_token: csrfToken },
   metadata: {
     keydown: (event, element) => {
       return {
         altKey: event.altKey,
-        ctrlKey: event.ctrlKey
-      }
-    }
-  }
-})
+        ctrlKey: event.ctrlKey,
+      };
+    },
+  },
+});
 
 window.addEventListener("dojo:yoink", (event) => {
   if ("clipboard" in navigator) {
     const text = event.target.textContent;
+    alert("Code copied!");
     navigator.clipboard.writeText(text);
   } else {
     alert("Sorry, your browser does not support clipboard copy.");
@@ -46,26 +49,24 @@ window.addEventListener("dojo:yoink", (event) => {
 });
 
 // Show progress bar on live navigation and form submits
-topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
-window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
-window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
+topbar.config({ barColors: { 0: "#29d" }, shadowColor: "rgba(0, 0, 0, .3)" });
+window.addEventListener("phx:page-loading-start", (_info) => topbar.show(300));
+window.addEventListener("phx:page-loading-stop", (_info) => topbar.hide());
 
 // connect if there are any LiveViews on the page
-liveSocket.connect()
+liveSocket.connect();
 
 // expose liveSocket on window for web console debug logs and latency simulation:
 // insert dev mode check here
-liveSocket.enableDebug()
+liveSocket.enableDebug();
 
-window.addEventListener("phx:live_reload:attached", ({detail: reloader}) => {
+window.addEventListener("phx:live_reload:attached", ({ detail: reloader }) => {
   // Enable server log streaming to client.
   // Disable with reloader.disableServerLogs()
-  reloader.enableServerLogs()
-  window.liveReloader = reloader
-})
-
+  reloader.enableServerLogs();
+  window.liveReloader = reloader;
+});
 
 // >> liveSocket.enableLatencySim(1000)  // enabled for duration of browser session
 // >> liveSocket.disableLatencySim()
-window.liveSocket = liveSocket
-
+window.liveSocket = liveSocket;

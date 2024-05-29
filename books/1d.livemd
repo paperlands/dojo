@@ -8,33 +8,29 @@
 input = Kino.Input.text("Your name")
 ```
 
-<!-- livebook:{"attrs":{"source":"name = Kino.Input.read(input)\nname = cond do\n  String.length(name) > 0 -> name\n  true -> raise \"Enter your name\"\nend\n{:ok, class} = Dojo.Class.join(self(), \"book1\", %Dojo.Disciple{name: name, action: \"online\"})\n\"Welcome \" <> name <> \"!\"","title":"Enter the Dojo"},"chunks":null,"kind":"Elixir.DojoKino.Incognito","livebook_object":"smart_cell"} -->
+<!-- livebook:{"attrs":"eyJzb3VyY2UiOiJkZWZtb2R1bGUgU3RhcnQgZG9cbiAgZGVmIHJ1bihpbnB1dCkgZG9cbiAgICBuYW1lID0gS2luby5JbnB1dC5yZWFkKGlucHV0KVxuICAgIG5hbWUgPSBjb25kIGRvXG4gICAgICBTdHJpbmcubGVuZ3RoKG5hbWUpID4gMCAtPiBuYW1lXG4gICAgICB0cnVlIC0+IHJhaXNlIFwiRW50ZXIgeW91ciBuYW1lXCJcbiAgICBlbmRcbiAgICB7Om9rLCBjbGFzc30gPSBEb2pvLkNsYXNzLmpvaW4oc2VsZigpLCBcImJvb2sxXCIsICVEb2pvLkRpc2NpcGxle25hbWU6IG5hbWUsIGFjdGlvbjogXCJvbmxpbmVcIn0pXG4gICAge1wiV2VsY29tZSBcIiA8PiBuYW1lIDw+IFwiIVwiLCBjbGFzc31cbiAgZW5kXG5lbmRcbiIsInRpdGxlIjoiRW50ZXIgdGhlIERvam8ifQ","chunks":null,"kind":"Elixir.DojoKino.Incognito","livebook_object":"smart_cell"} -->
 
 ```elixir
-name = Kino.Input.read(input)
+defmodule Start do
+  def run(input) do
+    name = Kino.Input.read(input)
 
-name =
-  cond do
-    String.length(name) > 0 -> name
-    true -> raise "Enter your name"
+    name =
+      cond do
+        String.length(name) > 0 -> name
+        true -> raise "Enter your name"
+      end
+
+    {:ok, class} = Dojo.Class.join(self(), "book1", %Dojo.Disciple{name: name, action: "online"})
+    {"Welcome " <> name <> "!", class}
   end
-
-{:ok, class} = Dojo.Class.join(self(), "book1", %Dojo.Disciple{name: name, action: "online"})
-"Welcome " <> name <> "!"
+end
 ```
 
 ```elixir
 # This is a book that runs code and talks to the Dojo at the same time
-
-1 + 1
+{_, class} = Start.run(input)
 ```
-
-Instructors self-introduction
-Ask people to self intro
-
-* Name
-* Term & Pillar
-* What were they expecting from this class
 
 ## Where it started
 
