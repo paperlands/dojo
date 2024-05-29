@@ -4,7 +4,14 @@ defmodule DojoKino.Incognito do
   use Kino.SmartCell, name: "Incognito"
 
   @impl true
-  def init(attrs, ctx) do
+  def init(attrs, ctx) when is_binary(attrs) do
+    attrs = %{}
+    source = attrs["source"] || ""
+    title = attrs["title"] || "🤫"
+    {:ok, assign(ctx, source: source, title: title)}
+  end
+
+  def init(attrs, ctx) when is_map(attrs) do
     source = attrs["source"] || ""
     title = attrs["title"] || "🤫"
     {:ok, assign(ctx, source: source, title: title)}

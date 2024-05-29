@@ -36,6 +36,7 @@ defmodule DojoWeb.Animate do
        id: id,
        class_id: class_id,
        name: name,
+       source: "def new(range_or_list \\ nil, function, opts \\ [])",
        step: 1,
        function: fn index -> Enum.at(list, index) end,
        speed_multiplier: 1,
@@ -62,7 +63,9 @@ defmodule DojoWeb.Animate do
       |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
 
     {:ok,
-     assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)
+     assign(socket, end: length(list),
+       function: fn index -> Enum.at(list, index) end
+     )
      |> increment_step_if_static()}
   end
 
@@ -112,6 +115,21 @@ defmodule DojoWeb.Animate do
           <%= "#{@speed_multiplier}x" %>
         </span>
       </section>
+      <div class={"py-1 rounded-lg"}/>
+      <div class={"bg-black rounded-lg"}>
+      <.icon name="hero-clipboard" class="w-3 h-3 ml-2 active:bg-brand active:animate-spin hover:cursor-copy" phx-click={JS.dispatch("dojo:yoink", to: "##{@id}-source")}/>
+          <div id={@id <>"-source"} class="hidden"><%=@source%></div>
+          <div class="px-8 overflow-x-auto">
+          <%= [safe: Makeup.highlight(@source)] %>
+       <div class="max-w-2xl w-full animate-pulse">
+        <div class="flex-1 space-y-4">
+          <div class="h-4"></div>
+          <div class="bg-gray-500 h-4 rounded-lg"></div>
+          <div class="bg-gray-500 h-4 rounded-lg w-5/6"></div>
+        </div>
+      </div>
+          </div>
+      </div>
     </div>
     """
   end
