@@ -32,11 +32,11 @@ defmodule DojoWeb.Animate do
     {:ok,
      assign(socket,
        start: 1,
-       end: length(list),
+       last: length(list),
        id: id,
        class_id: class_id,
        name: name,
-       source: "def new(range_or_list \\ nil, function, opts \\ [])",
+       source: source,
        step: 1,
        function: fn index -> Enum.at(list, index) end,
        speed_multiplier: 1,
@@ -63,7 +63,7 @@ defmodule DojoWeb.Animate do
       |> Enum.map(&DojoWeb.Utils.DOMParser.extract_html_from_md(&1))
 
     {:ok,
-     assign(socket, end: length(list),
+     assign(socket, last: length(list),
        function: fn index -> Enum.at(list, index) end
      )
      |> increment_step_if_static()}
@@ -76,7 +76,7 @@ defmodule DojoWeb.Animate do
         # |> DojoWeb.Utils.DOMParser.extract_html_from_md() #! this DOMparser fn is faulty. Doesnt do <br> well
       ]
 
-    {:ok, assign(socket, end: length(list), function: fn index -> Enum.at(list, index) end)}
+    {:ok, assign(socket, last: length(list), function: fn index -> Enum.at(list, index) end)}
   end
 
   def render(assigns) do
@@ -85,16 +85,16 @@ defmodule DojoWeb.Animate do
       <div class="flex justify-between m-4">
         <div class="text-2xl font-bold"><%= @name %></div>
         <div class="flex">
-          step:<div class="ml-1 font-bold"><%= @step %></div>
+          step:<div class="ml-1 font-bold"><%= @step %>/<%= @last %></div>
         </div>
       </div>
       <div class="px-1 py-2 overflow-auto text-sm bg-white rounded max-h-60">
         <%= @function.(@step - 1) %>
       </div>
       <section class={"flex justify-between p-2 font-medium text-gray-600 rounded-md bg-orange-100/40" <> show_controls(@show_controls)}>
-        <span class="hover:text-black hover:cursor-pointer">Reset</span>
+        <span class="hover:text-black hover:cursor-pointer" phx-click="reset" phx-target={@myself} >Reset</span>
         <div>
-          <.icon name="hero-arrow-left-solid" class="hover:text-black hover:cursor-pointer" />
+          <.icon name="hero-arrow-left-solid" phx-click="prev" phx-target={@myself} class="hover:text-black hover:cursor-pointer" />
           <a href="#" phx-click="play" phx-target={@myself}>
             <.icon
               :if={@running == false}
@@ -109,9 +109,9 @@ defmodule DojoWeb.Animate do
               class=" hover:text-black hover:cursor-pointer"
             />
           </a>
-          <.icon name="hero-arrow-right-solid" class=" hover:text-black hover:cursor-pointer" />
+          <.icon name="hero-arrow-right-solid" phx-click="next" phx-target={@myself} class="hover:text-black hover:cursor-pointer" />
         </div>
-        <span class="px-4 hover:text-black hover:cursor-pointer">
+        <span phx-click="gobrrr" phx-target={@myself} class="px-4 hover:text-black hover:cursor-pointer">
           <%= "#{@speed_multiplier}x" %>
         </span>
       </section>
@@ -151,11 +151,11 @@ defmodule DojoWeb.Animate do
     {:noreply, socket |> increment_step()}
   end
 
-  def handle_event("previous", _, socket) do
+  def handle_event("prev", _, socket) do
     {:noreply, socket |> decrement_step()}
   end
 
-  def handle_event("toggle_speed", _, socket) do
+  def handle_event("gobrrr", _, socket) do
     speed = socket.assigns.speed_multiplier + 0.5
     next_multiplier = if speed > 10, do: 0.5, else: speed
     {:noreply, assign(socket, speed_multiplier: next_multiplier)}
@@ -170,7 +170,7 @@ defmodule DojoWeb.Animate do
 
   defp increment_step_if_static(%{assigns: %{running: false}} = socket) do
     incremented_step =
-      if socket.assigns.end && socket.assigns.step >= socket.assigns.end,
+      if socket.assigns.last && socket.assigns.step >= socket.assigns.last,
         do: socket.assigns.start,
         else: socket.assigns.step + 1
 
@@ -185,7 +185,7 @@ defmodule DojoWeb.Animate do
 
   defp increment_step(socket) do
     incremented_step =
-      if socket.assigns.end && socket.assigns.step >= socket.assigns.end,
+      if socket.assigns.last && socket.assigns.step >= socket.assigns.last,
         do: socket.assigns.start,
         else: socket.assigns.step + 1
 
@@ -195,7 +195,7 @@ defmodule DojoWeb.Animate do
   defp decrement_step(socket) do
     decremented_step =
       if socket.assigns.step <= socket.assigns.start,
-        do: socket.assigns.end || socket.assigns.start,
+        do: socket.assigns.last || socket.assigns.start,
         else: socket.assigns.step - 1
 
     assign(socket, step: decremented_step)
@@ -204,4 +204,10 @@ defmodule DojoWeb.Animate do
   defp act(action, time, id) do
     Process.send_after(self(), {DojoWeb.Animate, action, id}, time)
   end
+
+  defp to_source({mod, fun, arity}) do
+    args = arity |> Enum.map(&"#{inspect(&1)}")|> Enum.join(", ")
+    "#{inspect(mod)}.#{fun}(#{args})"
+  end
+
 end
