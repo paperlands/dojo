@@ -119,6 +119,11 @@ defmodule DojoWeb.BookOneLive do
     {:noreply, socket}
   end
 
+  def handle_event("yoink", %{"name" => name}, socket) do
+    Dojo.Room.add_leaderboard!("class1", name)
+    {:noreply, socket}
+  end
+
   def handle_event("toggle-controls", _, socket) do
     {:noreply, socket |> assign(show_controls: !socket.assigns.show_controls)}
   end

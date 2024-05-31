@@ -140,7 +140,7 @@ defmodule DojoWeb.Animate do
         <.icon
           name="hero-clipboard"
           class="w-3 h-3 ml-2 active:bg-brand active:animate-spin hover:cursor-copy"
-          phx-click={JS.dispatch("dojo:yoink", to: "##{@id}-source")}
+          phx-click={JS.dispatch("dojo:yoink", to: "##{@id}-source") |> JS.push("yoink", value: %{name: @name})}
         />
         <div id={@id <>"-source"} class="hidden text"><%= @source %></div>
         <div class="px-8 overflow-x-auto">
