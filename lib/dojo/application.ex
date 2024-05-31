@@ -20,6 +20,7 @@ defmodule Dojo.Application do
        ]},
       # Start the Finch HTTP client for sending emails
       {Finch, name: Dojo.Finch},
+      Dojo.Cache,
       # Start a worker by calling: Dojo.Worker.start_link(arg)
       # {Dojo.Worker, arg},
       # Start to serve requests, typically the last entry

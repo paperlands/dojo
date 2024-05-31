@@ -19,7 +19,10 @@ defmodule DojoWeb.Router do
 
     get "/", PageController, :home
 
-    live("/book1", BookOneLive, :index)
+    live_session :dojo_session,
+    on_mount: [{DojoWeb.Session, :anon}] do
+      live("/book1", BookOneLive, :index)
+    end
 
   end
 

@@ -58,6 +58,7 @@ defmodule Dojo.MixProject do
       {:gettext, "~> 0.20"},
       {:jason, "~> 1.2"},
       {:kino, "~> 0.12.3"},
+      {:nebulex, "~> 2.6"},
       {:kino_vega_lite, "~> 0.1.11"},
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.2"},
