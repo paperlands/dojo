@@ -14,17 +14,15 @@ input = Kino.Input.text("Your name")
 defmodule Start do
   def run(input) do
     name = Kino.Input.read(input)
-
-    name =
-      cond do
-        String.length(name) > 0 -> name
-        true -> raise "Enter your name"
-      end
-
+    name = cond do
+      String.length(name) > 0 -> name
+      true -> raise "Enter your name"
+    end
     {:ok, class} = Dojo.Class.join(self(), "book1", %Dojo.Disciple{name: name, action: "online"})
     {"Welcome " <> name <> "!", class}
   end
 end
+
 ```
 
 ```elixir
@@ -62,6 +60,9 @@ Dojo.World.create("10101", %{class: class})
 # DojoKino.Animate.new(1..10, fn index ->
 #   Kino.Markdown.new(Dojo.World.create("blinker", 10, index, coordinate))
 # end)
+
+Dojo.Room.get_leaderboard!("class1")
+# Dojo.Room._leaderboard!("class1", name)
 ```
 
 ## Its reproduction time

@@ -16,7 +16,7 @@ defmodule DojoWeb.Animate do
   # init clause
   def update(%{id: id, class_id: class_id, name: name, show_controls: show_controls}, socket) do
     {list, source} =
-      case Dojo.Class.last_animate(class_id) do
+      case Dojo.Table.last_animate(class_id) do
         {m, f, a} ->
           {apply(m, f, a), to_source({m, f, a})}
 

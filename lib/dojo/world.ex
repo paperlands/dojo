@@ -26,7 +26,7 @@ defmodule Dojo.World do
 
   def create(str, %{class: pid}) when is_binary(str) do
     str = create(str)
-    Dojo.Class.publish(pid, {__MODULE__, :create, str}, :animate)
+    Dojo.Table.publish(pid, {__MODULE__, :create, str}, :animate)
     str
   end
 
@@ -175,7 +175,7 @@ defmodule Dojo.World do
 
     outcome = next([new | state], patterns, times - 1, %{})
 
-    Dojo.Class.publish(pid, {__MODULE__, :next, [state, patterns, 10]}, :animate)
+    Dojo.Table.publish(pid, {__MODULE__, :next, [state, patterns, 10]}, :animate)
 
     outcome
   end
@@ -214,7 +214,7 @@ defmodule Dojo.World do
 
   def run(str, rule, times, %{class: pid}) do
     outcome = run(str, rule, times)
-    Dojo.Class.publish(pid, {outcome, {__MODULE__, :run, [str, rule, times]}}, :animate)
+    Dojo.Table.publish(pid, {outcome, {__MODULE__, :run, [str, rule, times]}}, :animate)
     outcome
   end
 
