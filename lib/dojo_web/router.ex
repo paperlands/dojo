@@ -22,6 +22,7 @@ defmodule DojoWeb.Router do
     live_session :dojo_session,
     on_mount: [{DojoWeb.Session, :anon}] do
       live("/book1", BookOneLive, :index)
+      live("/shell", ShellLive, :index)
     end
 
   end

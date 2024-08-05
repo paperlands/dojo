@@ -17,7 +17,7 @@ defmodule DojoWeb do
   those modules here.
   """
 
-  def static_paths, do: ~w(assets fonts images favicon.ico robots.txt)
+  def static_paths, do: ~w(assets fonts images codemirror favicon.ico robots.txt)
 
   def router do
     quote do
@@ -53,6 +53,14 @@ defmodule DojoWeb do
     quote do
       use Phoenix.LiveView,
         layout: {DojoWeb.Layouts, :app}
+
+      unquote(html_helpers())
+    end
+  end
+
+  def live_shell do
+    quote do
+      use Phoenix.LiveView
 
       unquote(html_helpers())
     end
