@@ -1,5 +1,6 @@
 export class Evaluator {
     run(ast, context) {
+        if (!ast) return 0 // set null case as operand 0
         if (ast.type === 'operand') {
             if (/^\d+\.?\d*$/.test(ast.value)) {
                 return parseFloat(ast.value);

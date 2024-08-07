@@ -1,3 +1,5 @@
+import { ASTNode } from "../ast.js"
+
 export class Parser {
     // take it to the shuntingyard
     constructor() {
