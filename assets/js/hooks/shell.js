@@ -21,8 +21,11 @@ Shell = {
       // set up event listeners
       const debouncedRunCode = debounce(this.run, 300);
 
+      const cachedVal = loadEditorContent()
+
       // init editor state
-      this.shell.setValue(loadEditorContent());
+      this.shell.setValue(cachedVal);
+      this.run(cachedVal, canvas);
 
       // start listening
       this.shell.on('change', function(cm, change) {
@@ -36,15 +39,27 @@ Shell = {
   initCodeMirror(){
 
     const shell = CodeMirror.
-      fromTextArea(editor, {theme: "abbott",
-                            mode: "apl",
-                            lineNumbers: true,
-                            styleActiveLine: true,
-                            autocorrect: true,
-                            extraKeys: {
-                              "Ctrl-Space": function() {
-                                snippet()
-                              }}});
+          fromTextArea(editor, {theme: "abbott",
+                                mode: "apl",
+                                lineNumbers: true,
+                                styleActiveLine: true,
+                                autocorrect: true,
+                                extraKeys: {
+                                  "Ctrl-Space": function() {
+                                    snippet()
+                                  },
+                                  "Ctrl-/": function(cm) {
+                                    const selected = cm.getSelection();
+                                    if (selected) {
+                                      const lines = selected.split('\n');
+                                      const commented = lines.map(line => {
+                                        return line.startsWith('#') ? line.slice(1) : '#' + line;
+                                      });
+                                      cm.replaceSelection(commented.join('\n'));
+                                    }
+                                  }
+
+                                }});
 
     function snippet() {
       CodeMirror.showHint(shell, function () {
@@ -68,8 +83,8 @@ Shell = {
     }
 
     return shell
-
   },
+
   run(val, canvas) {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
