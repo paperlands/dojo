@@ -1,5 +1,7 @@
 import { Turtle } from "../turtling/turtle.js"
 import {parseProgram } from "../turtling/parse.js"
+import {seaBridge} from "../bridged.js"
+import { computePosition, offset, inline, autoUpdate } from "../../vendor/floating-ui.dom.umd.min";
 
 const snippets = [
   { text: 'fw 1', displayText: 'go forward 1 unit' },
@@ -19,7 +21,7 @@ Shell = {
       this.shell = this.initCodeMirror()
 
       // set up event listeners
-      const debouncedRunCode = debounce(this.run, 300);
+      const debouncedRunCode = debounce(this.run, 180);
 
       const cachedVal = loadEditorContent()
 
@@ -33,8 +35,41 @@ Shell = {
         saveEditorContent(val);
         debouncedRunCode(val, canvas)
       })
+      this.shell.on('mousedown', function(e){
+        var old_slider = document.getElementById('slider');
+        old_slider.classList.add("hidden")
+      })
+      this.shell.on('dblclick', function(cm, event) {
+        const pos = cm.coordsChar({ left: event.clientX, top: event.clientY });
+        const line = cm.getLine(pos.line);
+        const token = cm.getTokenAt(pos);
+        const numberPattern = /[+-]?\d*\.\d+|[+-]?\d+/g;
+        var old_slider = document.getElementById('slider');
+        // Check if the token is a number
+        if (token.string.match(numberPattern)) {
+          var new_slider = old_slider.cloneNode(true);
+          new_slider.value = 1
+          old_slider.parentNode.replaceChild(new_slider, old_slider);
+          new_slider.addEventListener("input", function() {
+            const sliderValue = new_slider.value*line.match(numberPattern);
+            // Replace all numbers in the line with the slider value
+            const replacedLine = line.replace(numberPattern, sliderValue);
+            cm.replaceRange(replacedLine, { line: pos.line, ch: 0 }, { line: pos.line, ch: 100 });
+          });
+          // Position the slider near the hovered number
+          new_slider.classList.remove("hidden")
 
-    },
+          computePosition(event.target, new_slider, {placement: 'bottom-right', middleware: [offset(5)]}).then(({x, y}) => {
+            new_slider.classList.remove("hidden")
+            Object.assign(new_slider.style, {
+              left: `${x}px`,
+              top: `${y}px`,
+            });
+          })
+        } else {
+          old_slider.classList.add("hidden")
+        }
+      })},
 
   initCodeMirror(){
 
@@ -53,7 +88,7 @@ Shell = {
                                     if (selected) {
                                       const lines = selected.split('\n');
                                       const commented = lines.map(line => {
-                                        return line.startsWith('#') ? line.slice(1) : '#' + line;
+                                        return line.startsWith('#') ? line.slice(1) : '# ' + line;
                                       });
                                       cm.replaceSelection(commented.join('\n'));
                                     }
@@ -97,7 +132,7 @@ Shell = {
       const commands = parseProgram(code);
 
       // Clear canvas
-      turtle.ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // turtle.ctx.clearRect(0, 0, canvas.width, canvas.height);
       turtle.reset();
 
       // Execute all instructions
