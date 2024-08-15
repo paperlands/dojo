@@ -222,8 +222,7 @@ export class Turtle {
 
             this.ctx.closePath();
             this.ctx.fill(); // Fill the turtle
-                             //
-                             //
+
             // Stroke the outline of the turtle shape
             this.ctx.strokeStyle = 'black'; // Outline color
             this.ctx.stroke();

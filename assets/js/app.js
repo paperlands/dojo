@@ -32,7 +32,7 @@ let liveSocket = new LiveSocket("/live", Socket, {
             locale: Intl.NumberFormat().resolvedOptions().locale,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             timezone_offset: -new Date().getTimezoneOffset(),
-            session: JSON.parse(localStorage.getItem("session")) || {active: true}
+            session:  fetchSession()
           },
   metadata: {
     keydown: (event, element) => {
@@ -44,6 +44,16 @@ let liveSocket = new LiveSocket("/live", Socket, {
   },
   hooks: Hooks,
 });
+
+function fetchSession() {
+  try {
+    sess = JSON.parse(localStorage.getItem("session"))
+    console.log(sess)
+    return  sess || {active: true};
+  } catch (error) {
+    return {active: true}
+  }
+};
 
 window.addEventListener("dojo:yoink", (event) => {
   if ("clipboard" in navigator) {
