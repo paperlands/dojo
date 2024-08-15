@@ -43,26 +43,52 @@ Shell = {
         const pos = cm.coordsChar({ left: event.clientX, top: event.clientY });
         const line = cm.getLine(pos.line);
         const token = cm.getTokenAt(pos);
-        const numberPattern = /[+-]?\d*\.\d+|[+-]?\d+/g;
+        var selection = window.getSelection()
+          if (!selection || selection.rangeCount <= 0) {
+            return
+          }
+        var getSelectRect = selection.getRangeAt(0).getBoundingClientRect();
+        const numpat = /[+-]?\d*\.\d+|[+-]?\d+/g;
         var old_slider = document.getElementById('slider');
         // Check if the token is a number
-        if (token.string.match(numberPattern)) {
+        if (token.string.match(numpat)) {
           var new_slider = old_slider.cloneNode(true);
           new_slider.value = 1
           old_slider.parentNode.replaceChild(new_slider, old_slider);
           new_slider.addEventListener("input", function() {
-            const sliderValue = new_slider.value*line.match(numberPattern);
+            let charCount = 0;
+            let val = null;
+            let index = 0;
+            // we cant trim the whitespace as pos accounts for it
+            const wsregex = /(\S+|\s+)/g;
+            const linecode = line.split(wsregex)
+            for (let i = 0; i < linecode.length; i++) {
+              const str = linecode[i];
+              charCount += str.length;
+
+              if (charCount >= pos.ch && str.includes(token.string)) {
+                val = str;
+                index = i;
+                break; // Exit the loop once we find the match
+              }
+            }
+            if (val){
+            //slidervalue get
+            const sliderValue = new_slider.value*val;
+            linecode[index] = sliderValue
             // Replace all numbers in the line with the slider value
-            const replacedLine = line.replace(numberPattern, sliderValue);
+            const replacedLine = linecode.join('')
             cm.replaceRange(replacedLine, { line: pos.line, ch: 0 }, { line: pos.line, ch: 100 });
-          });
+            }});
           // Position the slider near the hovered number
           new_slider.classList.remove("hidden")
 
-          computePosition(event.target, new_slider, {placement: 'bottom-right', middleware: [offset(5)]}).then(({x, y}) => {
+          var getSelectRect = selection.getRangeAt(0).getBoundingClientRect();
+
+          computePosition(event.target, new_slider, {placement: 'top-end', middleware: [offset(5)]}).then(({x, y}) => {
             new_slider.classList.remove("hidden")
             Object.assign(new_slider.style, {
-              left: `${x}px`,
+              left: `${getSelectRect.x}px`,
               top: `${y}px`,
             });
           })
