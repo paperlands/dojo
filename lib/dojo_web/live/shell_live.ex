@@ -15,23 +15,23 @@ defmodule DojoWeb.ShellLive do
   """
 
   def mount(_params, _session, socket) do
-    #
+    Dojo.Class.listen("shell")
 
     dis =
-      Dojo.Gate.list_users("class:book1")
+      Dojo.Gate.list_users("class:shell")
       |> Enum.into(%{}, fn %{name: name} = dis -> {name, dis} end)
 
-    IO.inspect(socket.assigns.session)
+    IO.inspect(dis)
     {:ok,
      socket
-     |> assign(label: nil, sensei: true, disciples: dis)
+     |> assign(label: nil, sensei: false, disciples: dis)
      |> assign(focused_phx_ref: "")
      |> sync_session()
     }
   end
 
   defp sync_session(%{assigns: %{session: %Session{name: name} = sess}} = socket) when is_binary(name) do
-    {:ok, class} = Dojo.Class.join(self(), "book1", %Dojo.Disciple{name: name, action: "active"})
+    {:ok, class} = Dojo.Class.join(self(), "shell", %Dojo.Disciple{name: name, action: "active"})
     socket
     |> push_event("initSession", sess)
   end
@@ -41,7 +41,7 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_info(
-        {:join, "class:book1", %{name: name} = disciple},
+        {:join, "class:shell", %{name: name} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
     IO.inspect(disciple, label: "join")
@@ -52,7 +52,7 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_info(
-        {:leave, "class:book1", %{name: name, phx_ref: ref} = disciple},
+        {:leave, "class:shell", %{name: name, phx_ref: ref} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
     IO.inspect(disciple, label: "leave")
@@ -81,13 +81,16 @@ defmodule DojoWeb.ShellLive do
      |> sync_session()}
   end
 
-  def handle_event(
-        "keyboard",
-        %{"ctrlKey" => true, "key" => ","},
-        %{assigns: %{sensei: _bool}} = socket
-      ) do
-    {:noreply, assign(socket, sensei: !socket.assigns.sensei)}
+  def handle_event("opensenseime", _, %{assigns: %{sensei: bool}} = socket) do
+    {:noreply, assign(socket, sensei: !bool)}
   end
+
+  def handle_event(
+        "toggle-focus",
+        %{"disciple-phx_ref" => _phx_ref},
+        %{assigns: %{sensei: false}} = socket
+      ),
+      do: {:noreply, socket}
 
   def handle_event(
         "toggle-focus",
@@ -102,7 +105,15 @@ defmodule DojoWeb.ShellLive do
         ^phx_ref -> ""
         _ -> phx_ref
       end
-    end
+
+    Dojo.PubSub.publish({new_phx_ref}, :focused_phx_ref, "class:shell")
+
+    # TODO: store focused_phx_ref in presence tracking so that new liveviews know which to focus on
+
+    {:noreply,
+     socket
+     |> assign(focused_phx_ref: new_phx_ref)}
+  end
 
   def render(assigns) do
     ~H"""
@@ -151,9 +162,9 @@ defmodule DojoWeb.ShellLive do
  <div class="z-10 bottom-10 flex justify-center items-center backdrop-blur-lg bg-opacity-70 opacity-70 bg-brand rounded-2xl shadow-lg absolute left-1/2 -translate-x-1/2 z-100 w-1/2 h-12  lg:h-18 p-4 md:p-6 lg:p-8">
     <div class="flex flex-wrap gap-[-20px] md:gap-0">
         <div :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)} class={"flex-1 w-full sm:w-1/4 md:w-1/4 lg:w-1/8 z-5 p-5 rounded-lg transition duration-200 ease-in-out shadow  hover:border-blue-500" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}>
-        <.icon :if={@sensei} class="fill-current text-brand" name="hero-cursor-arrow-ripple"
+        <.icon :if={@sensei} name="hero-cursor-arrow-ripple"
            phx-click="toggle-focus"
-           phx-value-disciple-phx_ref={dis.phx_ref} class="cursor-pointer"
+           phx-value-disciple-phx_ref={dis.phx_ref} class="text-brand cursor-pointer"
            />
             <canvas class="w-full h-auto overflow-hidden object-cover border-2 border-white rounded-md transition-transform duration-200 transform hover:-translate-y-2 md:hover:-translate-y-8"></canvas>
         </div>

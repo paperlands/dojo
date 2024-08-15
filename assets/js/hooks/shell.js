@@ -74,7 +74,7 @@ Shell = {
             }
             if (val){
             //slidervalue get
-            const sliderValue = new_slider.value*val;
+            const sliderValue = Math.round(new_slider.value*val * 100) / 100;
             linecode[index] = sliderValue
             // Replace all numbers in the line with the slider value
             const replacedLine = linecode.join('')
