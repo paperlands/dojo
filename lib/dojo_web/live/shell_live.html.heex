@@ -1,0 +1,97 @@
+<div class="relative min-h-screen overflow-hidden bg-black">
+  <!-- Canvas background -->
+  <canvas phx-update="ignore" id="canvas" class="fixed top-0 left-0 w-full h-full bg-inherit z-2">
+  </canvas>
+  <!-- Left Coder pane container -->
+  <div class="absolute top-0 left-0 w-auto h-auto min-h-screen p-4">
+    <!-- Session -->
+    <div
+      :if={@session.active}
+      id="sessionbox"
+      class="p-2 mb-4 font-mono text-xs rounded text-brand outline"
+      phx-hook="Box"
+    >
+      <div :if={!@session.name}>
+        <span class="block">&gt; enter the shell</span>
+        <span class="block">&gt; your name:</span>
+        <form class="flex items-center" id="name" phx-submit="name">
+          <span class="transition-opacity duration-700 animate-pulse">&gt;</span>
+          <input
+            value={@session.name}
+            name="name"
+            type="text"
+            class="flex-grow text-xs bg-transparent border-transparent border-none outline-none caret-current focus:border-transparent focus:ring-0"
+            autoFocus
+          />
+        </form>
+      </div>
+      <span :if={@session.name} class="block">
+        &gt; welcome to the shell, <%= @session.name %>
+      </span>
+    </div>
+    <!-- Editor -->
+    <div phx-update="ignore" id="runenv" class="mb-4 cursor-text">
+      <div class="relative z-20">
+        <input
+          id="slider"
+          type="range"
+          min="-30"
+          max="30"
+          step="0.1"
+          value="1"
+          class="absolute hidden w-1/2 h-1 bg-transparent rounded-lg appearance-none cursor-pointer slider stroke-transparent"
+        />
+      </div>
+      <textarea
+        id="editor"
+        phx-hook="Shell"
+        class="p-2 font-mono text-white transition-colors duration-300 ease-in-out bg-transparent border border-gray-300 focus:border-blue-500"
+      ></textarea>
+    </div>
+    <!-- Output -->
+    <div
+      phx-update="ignore"
+      id="output"
+      class="absolute bottom-4 left-4 w-80 h-[20vh] font-mono border-none overflow-y-auto p-2 text-white"
+    >
+    </div>
+  </div>
+</div>
+
+<%!-- Turtle viewing pane --%>
+<div class="fixed bottom-0 z-10 w-full px-4 py-4 -translate-x-1/2 left-1/2 lg:w-1/2 md:w-3/4">
+  <div class="flex items-center justify-center space-x-4 overflow-x-auto">
+    <!-- Other people's turtles -->
+    <div
+      :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
+      :if={Map.has_key?(dis, :meta)}
+      class={"p-5 rounded-lg transition duration-200 ease-in-out flex-shrink-0 w-1/4" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
+    >
+      <.icon
+        :if={@sensei}
+        name="hero-cursor-arrow-ripple"
+        phx-click="toggle-focus"
+        phx-value-disciple-phx_ref={dis.phx_ref}
+        class="cursor-pointer text-brand"
+      />
+      <img
+        src={dis.meta}
+        class="object-cover overflow-hidden transition-transform duration-200 transform border rounded-md hover:scale-110 hover:border-4"
+      />
+    </div>
+  </div>
+</div>
+
+<style>
+  /* Custom styles for editor width */
+  #editor, #output {
+  width: 80ch; /* 80 characters width */
+  }
+</style>
+
+<script src="codemirror/codemirror.js">
+</script>
+<link rel="stylesheet" href="codemirror/codemirror.css" />
+<link rel="stylesheet" href="codemirror/theme/abbott.css" />
+<script src="codemirror/mode/apl/apl.js">
+</script>
