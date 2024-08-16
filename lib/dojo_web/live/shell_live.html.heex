@@ -42,30 +42,26 @@
           class="absolute hidden w-1/2 h-1 bg-transparent rounded-lg appearance-none cursor-pointer slider stroke-transparent"
         />
       </div>
-      <textarea
-        id="editor"
-        phx-hook="Shell"
-        class="p-2 font-mono text-white transition-colors duration-300 ease-in-out bg-transparent border border-gray-300 focus:border-blue-500"
-      ></textarea>
+      <textarea id="editor" phx-hook="Shell"></textarea>
     </div>
-    <!-- Output -->
+    <!-- Code Output -->
     <div
       phx-update="ignore"
       id="output"
-      class="absolute bottom-4 left-4 w-80 h-[20vh] font-mono border-none overflow-y-auto p-2 text-white"
+      class="absolute p-2 overflow-y-auto font-mono text-white border-none bottom-4 left-4"
     >
     </div>
   </div>
 </div>
 
 <%!-- Turtle viewing pane --%>
-<div class="fixed bottom-0 z-10 w-full px-4 py-4 -translate-x-1/2 left-1/2 lg:w-1/2 md:w-3/4">
-  <div class="flex items-center justify-center space-x-4 overflow-x-auto">
+<div class="fixed bottom-0 z-10 w-full p-4 -translate-x-1/2 left-1/2">
+  <div class="flex items-center justify-center p-4 space-x-4 overflow-x-auto">
     <!-- Other people's turtles -->
     <div
       :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
       :if={Map.has_key?(dis, :meta)}
-      class={"p-5 rounded-lg transition duration-200 ease-in-out flex-shrink-0 w-1/4" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
+      class={"rounded-lg transition duration-200 ease-in-out flex-shrink-0 w-1/6" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
     >
       <.icon
         :if={@sensei}
@@ -74,10 +70,7 @@
         phx-value-disciple-phx_ref={dis.phx_ref}
         class="cursor-pointer text-brand"
       />
-      <img
-        src={dis.meta}
-        class="object-cover overflow-hidden transition-transform duration-200 transform border rounded-md hover:scale-110 hover:border-4"
-      />
+      <img src={dis.meta} class="border rounded-md hover:scale-110 hover:border-4" />
     </div>
   </div>
 </div>

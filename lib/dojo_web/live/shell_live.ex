@@ -141,7 +141,7 @@ defmodule DojoWeb.ShellLive do
 
   defp is_main_focus(phx_ref, focused_phx_ref) do
     case phx_ref do
-      ^focused_phx_ref -> " scale-150 border-blue-600"
+      ^focused_phx_ref -> " scale-150"
       _ -> " border-brand"
     end
   end
