@@ -1,7 +1,6 @@
 import { ASTNode } from "./ast.js"
 
 function tokenize(program) {
-    console.log(program)
     return program
         .replace(/\)\)/g, ')\n)') // line feed if cosecutive closing ps
         .split(/\r?\n/)
@@ -67,4 +66,32 @@ export function parseProgram(program) {
     }
 
     return ast;
+}
+
+export function printAST(ast) {
+    let output = [];
+
+    function visit(node, indent = 0) {
+        const indentStr = ' '.repeat(indent * 2);
+
+        if (node.type === 'Call') {
+            output.push(`${indentStr}${node.value} ${node.children.map(child => visit(child, 0)).join(' ')}`);
+        } else if (node.type === 'Argument') {
+            return node.value;
+        } else if (node.type === 'Lit') {
+            output.push(`${indentStr}# ${node.value.trim()}`);
+        } else if (node.type === 'Loop') {
+            output.push(`${indentStr}for ${node.value} (`);
+            node.children.forEach(child => visit(child, indent + 1));
+            output.push(`${indentStr})`);
+        } else if (node.type === 'Define') {
+            output.push(`${indentStr}draw ${node.value} ${(node.meta.args || []).map(arg => visit(arg, 0)).join(' ')} (`);
+            node.children.forEach(child => visit(child, indent + 1));
+            output.push(`${indentStr})`);
+        }
+    }
+
+    ast.forEach(node => visit(node));
+    return output.join('\n');
+
 }

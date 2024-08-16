@@ -1,5 +1,6 @@
 import { Turtle } from "../turtling/turtle.js"
-import {parseProgram } from "../turtling/parse.js"
+import { Terminal } from "../terminal.js"
+import {printAST, parseProgram } from "../turtling/parse.js"
 import {seaBridge} from "../bridged.js"
 import { computePosition, offset, inline, autoUpdate } from "../../vendor/floating-ui.dom.umd.min";
 
@@ -15,11 +16,9 @@ const snippets = [
 Shell = {
     mounted() {
       // on init find the triumvirate
-      const editor = this.el
       const canvas = document.getElementById('canvas');
       const output = document.getElementById('output');
-      this.shell = this.initCodeMirror()
-
+      const shell = new Terminal(this.el, CodeMirror).init();
       // set up event listeners
       const debouncedRunCode = debounce(this.run, 180);
 
@@ -31,20 +30,20 @@ Shell = {
         this.pushEvent(payload[0], payload[1])
       )
       // init editor state
-      this.shell.setValue(cachedVal);
+      shell.setValue(cachedVal);
       this.run(cachedVal, canvas);
 
       // start listening
-      this.shell.on('change', function(cm, change) {
+      shell.on('change', function(cm, change) {
         const val = cm.getValue()
         saveEditorContent(val);
         debouncedRunCode(val, canvas)
       })
-      this.shell.on('mousedown', function(e){
+      shell.on('mousedown', function(e){
         var old_slider = document.getElementById('slider');
         old_slider.classList.add("hidden")
       })
-      this.shell.on('dblclick', function(cm, event) {
+      shell.on('dblclick', function(cm, event) {
         const pos = cm.coordsChar({ left: event.clientX, top: event.clientY });
         const line = cm.getLine(pos.line);
         const token = cm.getTokenAt(pos);
@@ -102,55 +101,6 @@ Shell = {
         }
       })},
 
-  initCodeMirror(){
-
-    const shell = CodeMirror.
-          fromTextArea(editor, {theme: "abbott",
-                                mode: "apl",
-                                lineNumbers: true,
-                                styleActiveLine: true,
-                                autocorrect: true,
-                                extraKeys: {
-                                  "Ctrl-Space": function() {
-                                    snippet()
-                                  },
-                                  "Ctrl-/": function(cm) {
-                                    const selected = cm.getSelection();
-                                    if (selected) {
-                                      const lines = selected.split('\n');
-                                      const commented = lines.map(line => {
-                                        return line.startsWith('#') ? line.slice(1) : '# ' + line;
-                                      });
-                                      cm.replaceSelection(commented.join('\n'));
-                                    }
-                                  }
-
-                                }});
-
-    function snippet() {
-      CodeMirror.showHint(shell, function () {
-        const cursor = shell.getCursor();
-        const token = shell.getTokenAt(cursor);
-        const start = token.start;
-        const end = cursor.ch;
-        const line = cursor.line;
-        const currentWord = token.string;
-
-        const list = snippets.filter(function (item) {
-          return item.text.indexOf(currentWord) >= 0;
-        });
-
-        return {
-          list: list.length ? list : snippets,
-          from: CodeMirror.Pos(line, start),
-          to: CodeMirror.Pos(line, end)
-        };
-      }, { completeSingle: true });
-    }
-
-    return shell
-  },
-
   run(val, canvas) {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -170,7 +120,6 @@ Shell = {
       turtle.executeBody(commands, {});
       turtle.drawTurtle()
       const path = canvas.toDataURL()
-
       seaBridge.pub(["hatchTurtle", {"commands": commands, "path": path}])
 
       // Display output

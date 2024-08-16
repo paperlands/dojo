@@ -48,7 +48,6 @@ let liveSocket = new LiveSocket("/live", Socket, {
 function fetchSession() {
   try {
     sess = JSON.parse(localStorage.getItem("session"))
-    console.log(sess)
     return  sess || {active: true};
   } catch (error) {
     return {active: true}

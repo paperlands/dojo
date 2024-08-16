@@ -235,7 +235,6 @@ export class Turtle {
             this.ctx.fill();
 
             // // Optionally, draw a small circle to indicate the top of the turtle inverse of a rotation matrix is the rotation matrix's transpose.
-            console.log(transformValues)
             this.ctx.resetTransform(1,0,0,1,0,0)
             this.ctx.translate(projectedX, projectedY);
             // this.ctx.scale(1 / transformValues.a, 1 / transformValues.d);
