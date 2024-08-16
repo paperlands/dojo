@@ -25,6 +25,11 @@ Shell = {
 
       const cachedVal = loadEditorContent()
 
+
+      // seabridge dispatcher babyy
+      seaBridge.sub((payload) =>
+        this.pushEvent(payload[0], payload[1])
+      )
       // init editor state
       this.shell.setValue(cachedVal);
       this.run(cachedVal, canvas);
@@ -164,9 +169,14 @@ Shell = {
       // Execute all instructions
       turtle.executeBody(commands, {});
       turtle.drawTurtle()
+      const path = canvas.toDataURL()
+
+      seaBridge.pub(["hatchTurtle", {"commands": commands, "path": path}])
 
       // Display output
       output.innerHTML = `Instructions executed: ${turtle.commandCount}`;
+
+
     } catch (error) {
       output.innerHTML = `Error: ${error.message}`;
       console.error(error);

@@ -23,11 +23,13 @@ defmodule DojoWeb.Session do
   end
 
 
+
+  # careful of client and server state
   defp mutate_session(%{"id" => id} = sess) when is_binary(id) do
     atomised_sess = for {key, val} <- sess, into: %{} do
       {String.to_existing_atom(key), val}
     end
-    struct(%__MODULE__{}, atomised_sess)
+    %{struct(%__MODULE__{}, atomised_sess)| active: true}
   end
   #explicit active from clientside
   defp mutate_session(%{"active" => true} = sess), do: %__MODULE__{id: :crypto.strong_rand_bytes(18) |> :base64.encode(), active: true}

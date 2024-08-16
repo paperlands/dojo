@@ -24,7 +24,7 @@ defmodule DojoWeb.ShellLive do
     IO.inspect(dis)
     {:ok,
      socket
-     |> assign(label: nil, sensei: false, disciples: dis)
+     |> assign(label: nil, sensei: false, class: nil, disciples: dis)
      |> assign(focused_phx_ref: "")
      |> sync_session()
     }
@@ -33,6 +33,7 @@ defmodule DojoWeb.ShellLive do
   defp sync_session(%{assigns: %{session: %Session{name: name} = sess}} = socket) when is_binary(name) do
     {:ok, class} = Dojo.Class.join(self(), "shell", %Dojo.Disciple{name: name, action: "active"})
     socket
+    |> assign(:class, class)
     |> push_event("initSession", sess)
   end
 
@@ -70,6 +71,18 @@ defmodule DojoWeb.ShellLive do
     {:noreply,
      socket
      |> assign(focused_phx_ref: focused_phx_ref)}
+  end
+
+  def handle_info({Dojo.PubSub, :hatch, {name, {Dojo.Turtle, img}}}, %{assigns: %{disciples: dis}} = socket) do
+    {:noreply,
+     socket
+     |> assign(disciples: put_in(dis, [name, :meta], img))}
+  end
+
+
+  def handle_event("hatchTurtle", %{"commands" => _command, "path" => img}, %{assigns: %{class: class}} = socket) do
+    Dojo.Turtle.hatch(img, %{class: class} )
+    {:noreply, socket}
   end
 
   def handle_event(
@@ -161,12 +174,14 @@ defmodule DojoWeb.ShellLive do
  </div>
  <div class="z-10 bottom-10 flex justify-center items-center backdrop-blur-lg bg-opacity-70 opacity-70 bg-brand rounded-2xl shadow-lg absolute left-1/2 -translate-x-1/2 z-100 w-1/2 h-12  lg:h-18 p-4 md:p-6 lg:p-8">
     <div class="flex flex-wrap gap-[-20px] md:gap-0">
-        <div :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)} class={"flex-1 w-full sm:w-1/4 md:w-1/4 lg:w-1/8 z-5 p-5 rounded-lg transition duration-200 ease-in-out shadow  hover:border-blue-500" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}>
+        <div :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
+        :if={Map.has_key?(dis, :meta)}
+        class={"flex-1 w-full sm:w-1/4 md:w-1/4 lg:w-1/8 z-5 p-5 rounded-lg transition duration-200 ease-in-out shadow  hover:border-blue-500" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}>
         <.icon :if={@sensei} name="hero-cursor-arrow-ripple"
            phx-click="toggle-focus"
            phx-value-disciple-phx_ref={dis.phx_ref} class="text-brand cursor-pointer"
            />
-            <canvas class="w-full h-auto overflow-hidden object-cover border-2 border-white rounded-md transition-transform duration-200 transform hover:-translate-y-2 md:hover:-translate-y-8"></canvas>
+            <img src={dis.meta} class="w-full h-auto overflow-hidden object-cover border-2 border-white rounded-md transition-transform duration-200 transform hover:-translate-y-2 md:hover:-translate-y-8"/>
         </div>
     </div>
 </div>
