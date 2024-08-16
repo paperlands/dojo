@@ -14,15 +14,17 @@ input = Kino.Input.text("Your name")
 defmodule Start do
   def run(input) do
     name = Kino.Input.read(input)
-    name = cond do
-      String.length(name) > 0 -> name
-      true -> raise "Enter your name"
-    end
+
+    name =
+      cond do
+        String.length(name) > 0 -> name
+        true -> raise "Enter your name"
+      end
+
     {:ok, class} = Dojo.Class.join(self(), "book1", %Dojo.Disciple{name: name, action: "online"})
     {"Welcome " <> name <> "!", class}
   end
 end
-
 ```
 
 ```elixir

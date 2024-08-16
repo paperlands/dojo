@@ -337,7 +337,7 @@ hr {
         v<%= Application.spec(:dojo, :vsn) %>
       </small>
     </h1>
-    <p class="text-[3.5rem] mt-4 font-semibold leading-10 tracking-tighter text-zinc-900">
+    <p class="text-[3em] mt-4 font-semibold leading-10 tracking-tighter text-zinc-900">
       Welcome to the Dojo
     </p>
     <p class="mt-4 text-base leading-7 text-zinc-600">
@@ -347,23 +347,16 @@ hr {
       <div class="w-full sm:w-auto">
         <div class="mt-10 grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
           <.link
-            navigate={~p"/book1"}
+            navigate={~p"/shell"}
             class="group relative rounded-2xl px-6 py-4 text-sm font-semibold leading-6 text-zinc-900 sm:py-6"
           >
             <span class="absolute inset-0 rounded-2xl bg-zinc-50 transition group-hover:bg-zinc-100 sm:group-hover:scale-105">
             </span>
             <span class="relative flex items-center gap-4 sm:flex-col">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" class="h-6 w-6">
-                <path d="m12 4 10-2v18l-10 2V4Z" fill="#18181B" fill-opacity=".15" />
-                <path
-                  d="M12 4 2 2v18l10 2m0-18v18m0-18 10-2v18l-10 2"
-                  stroke="#18181B"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
+              <svg viewBox="0 0 50 50" fill="none" aria-hidden="true" class="h-6 w-6">
+
               </svg>
-              Book 1
+              Shell
             </span>
            </.link>
           <a
@@ -385,21 +378,21 @@ hr {
             </span>
           </a>
           <a
-            href={"https://discord.gg/RPdWkUEfbP"}
+            href={"https://paperlands.github.io"}
             class="group relative rounded-2xl px-6 py-4 text-sm font-semibold leading-6 text-zinc-900 sm:py-6"
           >
             <span class="absolute inset-0 rounded-2xl bg-zinc-50 transition group-hover:bg-zinc-100 sm:group-hover:scale-105">
             </span>
             <span class="relative flex items-center gap-4 sm:flex-col">
             <svg
-                viewBox="0 0 16 16"
+                viewBox="0 0 50 50"
                 aria-hidden="true"
                 class="h-6 w-6 fill-zinc-800 group-hover:fill-zinc-600"
               >
-                <path d="M13.545 2.995c-1.02-.46-2.114-.8-3.257-.994a.05.05 0 0 0-.052.024c-.141.246-.297.567-.406.82a12.377 12.377 0 0 0-3.658 0 8.238 8.238 0 0 0-.412-.82.052.052 0 0 0-.052-.024 13.315 13.315 0 0 0-3.257.994.046.046 0 0 0-.021.018C.356 6.063-.213 9.036.066 11.973c.001.015.01.029.02.038a13.353 13.353 0 0 0 3.996 1.987.052.052 0 0 0 .056-.018c.308-.414.582-.85.818-1.309a.05.05 0 0 0-.028-.069 8.808 8.808 0 0 1-1.248-.585.05.05 0 0 1-.005-.084c.084-.062.168-.126.248-.191a.05.05 0 0 1 .051-.007c2.619 1.176 5.454 1.176 8.041 0a.05.05 0 0 1 .053.006c.08.065.164.13.248.192a.05.05 0 0 1-.004.084c-.399.23-.813.423-1.249.585a.05.05 0 0 0-.027.07c.24.457.514.893.817 1.307a.051.051 0 0 0 .056.019 13.31 13.31 0 0 0 4.001-1.987.05.05 0 0 0 .021-.037c.334-3.396-.559-6.345-2.365-8.96a.04.04 0 0 0-.021-.02Zm-8.198 7.19c-.789 0-1.438-.712-1.438-1.587 0-.874.637-1.586 1.438-1.586.807 0 1.45.718 1.438 1.586 0 .875-.637 1.587-1.438 1.587Zm5.316 0c-.788 0-1.438-.712-1.438-1.587 0-.874.637-1.586 1.438-1.586.807 0 1.45.718 1.438 1.586 0 .875-.63 1.587-1.438 1.587Z" />
+                <image xlink:href="/images/logo.svg" width="60" height="60"/>
               </svg>
 
-              Discord
+              Paperland
             </span>
           </a>
         </div>

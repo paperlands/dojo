@@ -16,6 +16,12 @@ module.exports = {
       colors: {
         brand: "#FF9933",
         ink: "#1E1024"
+      },
+      keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        }
       }
     },
   },
