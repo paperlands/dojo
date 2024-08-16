@@ -53,24 +53,23 @@
     </div>
   </div>
 </div>
-
- <!-- Right Editor -->
- <div :if={@outershell} class="min-h-screen absolute top-0 right-0 h-auto w-1/2 p-4 " >
+<!-- Right Editor -->
+<div :if={@outershell} class="absolute top-0 right-0 w-1/4 h-auto min-h-screen p-4 ">
   <div class="py-1 rounded-lg" />
-      <div class="bg-white rounded-lg">
-        <.icon
-          name="hero-clipboard"
-          class="w-3 h-3 ml-2  bg-brand active:animate-spin hover:cursor-copy"
-          phx-click={JS.dispatch("dojo:yoink", to: "#outer-source")}
-        />
-        <div id="outer_source" class="hidden text"><%= @outershell %></div>
-        <div class="px-8 overflow-x-auto">
-          <%= [safe: Makeup.highlight(@outershell)] %>
-          <div class="w-full max-w-2xl m-2 animate-pulse"></div>
-        </div>
-      </div>
- </div>
-
+  <div class="rounded-lg">
+    <.icon
+      name="hero-clipboard"
+      class="w-4 h-4 ml-2 bg-brand active:animate-spin hover:cursor-copy hover:bg-brand"
+      phx-click={JS.dispatch("dojo:yoink", to: "#outer_source")}
+    />
+    <div id="outer_source" class="hidden text"><%= @outershell %></div>
+    <%!-- The code --%>
+    <div class="px-8 overflow-x-auto text-brand">
+      <%= [safe: Makeup.highlight(@outershell)] %>
+      <div class="w-full max-w-2xl m-2 animate-pulse"></div>
+    </div>
+  </div>
+</div>
 
 <%!-- Turtle viewing pane --%>
 <div class="fixed bottom-0 z-10 w-full p-4 -translate-x-1/2 left-1/2">
@@ -88,7 +87,12 @@
         phx-value-disciple-phx_ref={dis.phx_ref}
         class="cursor-pointer text-brand"
       />
-      <img phx-click="seeTurtle" phx-value-name={name} src={dis.meta.path} class="border cursor-alias rounded-md hover:scale-110 hover:border-4" />
+      <img
+        phx-click="seeTurtle"
+        phx-value-name={name}
+        src={dis.meta.path}
+        class="border rounded-md cursor-alias hover:scale-110 hover:border-4"
+      />
     </div>
   </div>
 </div>
