@@ -1,6 +1,8 @@
 import { Parser } from "./mafs/parse.js"
 import { Evaluator } from "./mafs/evaluate.js"
 import { Versor } from "./mafs/versors.js"
+import { Camera } from "./camera.js"
+import { cameraBridge } from "../bridged.js"
 
 export class Turtle {
     constructor(canvas) {
@@ -21,13 +23,14 @@ export class Turtle {
             beColour: this.setColor.bind(this)
         };
         this.functions = {};
+        this.instructions = [];
 
-        this.camera = {
-            x: 0,
-            y: 0,
-            z: 500
-        };
+        this.camera = new Camera(canvas, cameraBridge)
 
+        // Camera can intervene on the view of the world
+        cameraBridge.sub(() =>
+            this.redraw()
+        )
         this.rotation = new Versor(1, 0, 0, 0); // Identity quaternion
         // Command execution tracking
         this.commandCount = 0;
@@ -45,7 +48,7 @@ export class Turtle {
     spawn() {
         this.x = 0;
         this.y = 0;
-        this.z = 0
+        this.z = 10
     }
 
     defineFunction(name, parameters, body) {
@@ -116,13 +119,10 @@ export class Turtle {
     }
 
     reset() {
-        if( this.x == undefined ) {
-            this.spawn();
-        }
 
-        const scrolly = (this.y > window.innerHeight) && (this.y + window.innerHeight / 2) || this.y
-        window.scrollTo(this.x , scrolly);
-        this.angle = 0;
+        this.spawn()
+        this.ctx.clearRect(0, 0, canvas.width, canvas.height)
+        this.commandCount = 0
         this.rotation = new Versor(1, 0, 0, 0);
         this.penDown = true;
         this.color = 'red';
@@ -153,13 +153,15 @@ export class Turtle {
     }
 
     projectX(x, z) {
-        const perspective = this.camera.z / (this.camera.z - z);
-        return (x - this.camera.x) * perspective + this.ctx.canvas.width / 2;
+        const cam = this.camera.now()
+        const perspective = cam.z > z ? cam.z / (cam.z - z) : 0;
+        return (x - cam.x) * perspective + this.ctx.canvas.width / 2;
     }
 
     projectY(y, z) {
-        const perspective = this.camera.z / (this.camera.z - z);
-        return (y - this.camera.y) * perspective + this.ctx.canvas.height / 2;
+        const cam = this.camera.now()
+        const perspective = cam.z > z ? cam.z / (cam.z - z) : 0;
+        return (y - cam.y) * perspective + this.ctx.canvas.height / 2;
     }
 
     roll(angle) {
@@ -200,10 +202,7 @@ export class Turtle {
         this.penDown = true;
     }
 
-    draw(instructions) {
-        this.reset();
-        this.instructions = instructions
-        this.executeBody(instructions, {});
+    head() {
         if (this.showTurtle) {
             const headSize = 10;
             const projectedX = this.projectX(this.x, this.z);
@@ -254,6 +253,21 @@ export class Turtle {
             this.ctx.fill();
             this.ctx.restore();
         }
+
+    }
+
+    redraw() {
+        this.reset();
+        if(this.instructions.length > 0) this.executeBody(this.instructions, {});
+        this.head()
+    }
+
+    draw(instructions) {
+        this.reset();
+        this.executeBody(instructions, {});
+        this.head()
+        this.instructions = instructions
+
     }
     hideTurtle() {
         this.showTurtle = false;
