@@ -120,7 +120,7 @@ Shell = {
       seaBridge.pub(["hatchTurtle", {"commands": commands, "path": path}])
 
       // Display output
-      output.innerHTML = `Instructions executed: ${turtle.commandCount}`;
+      output.innerHTML = `${turtle.commandCount}`;
 
 
     } catch (error) {

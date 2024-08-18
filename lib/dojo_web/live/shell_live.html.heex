@@ -1,9 +1,9 @@
 <div class="relative min-h-screen overflow-hidden bg-black">
   <!-- Canvas background -->
-  <canvas phx-update="ignore" id="canvas" class="fixed top-0 left-0 w-full h-full bg-inherit z-2">
+  <canvas phx-update="ignore" id="canvas" class="fixed z-10 top-0 left-0 w-full h-full bg-inherit z-2">
   </canvas>
   <!-- Left Coder pane container -->
-  <div class="absolute top-0 left-0 w-auto h-auto min-h-screen p-4">
+  <div class="absolute z-30 top-0 left-0 w-auto h-auto min-h-screen p-4">
     <!-- Session -->
     <div
       :if={@session.active}
@@ -48,13 +48,13 @@
     <div
       phx-update="ignore"
       id="output"
-      class="absolute p-2 overflow-y-auto font-mono text-white border-none bottom-4 left-4"
+      class="absolute overflow-y-auto font-mono text-brand border-none bottom-0 left-2"
     >
     </div>
   </div>
 </div>
 <!-- Right Editor -->
-<div :if={@outershell} class="absolute top-0 right-0 w-1/4 h-auto min-h-screen p-4 ">
+<div :if={@outershell} class="absolute top-0 z-20 right-0 w-1/4 h-auto min-h-screen p-4 ">
   <div class="py-1 rounded-lg" />
   <div class="rounded-lg">
     <.icon
@@ -72,13 +72,13 @@
 </div>
 
 <%!-- Turtle viewing pane --%>
-<div class="fixed bottom-0 z-10 w-full p-4 -translate-x-1/2 left-1/2">
+<div class="fixed bottom-0 z-20  pointer-events-none w-full p-4 -translate-x-1/2 left-1/2">
   <div class="flex items-center justify-center p-4 space-x-4 overflow-x-auto">
     <!-- Other people's turtles -->
     <div
       :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
       :if={Map.has_key?(dis, :meta)}
-      class={"rounded-lg transition duration-200 ease-in-out flex-shrink-0 w-1/6" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
+      class={"rounded-lg  transition duration-200 ease-in-out flex-shrink-0 w-1/6" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
     >
       <.icon
         :if={@sensei}
@@ -91,7 +91,7 @@
         phx-click="seeTurtle"
         phx-value-name={name}
         src={dis.meta.path}
-        class="border rounded-md cursor-alias hover:scale-110 hover:border-4"
+        class="border pointer-events-auto rounded-md cursor-alias hover:scale-110 hover:border-4"
       />
       <div class="text-white"><%= name %></div>
     </div>
@@ -100,7 +100,7 @@
 
 <style>
   /* Custom styles for editor width */
-  #editor, #output {
+  #editor {
   width: 80ch; /* 80 characters width */
   }
 </style>
