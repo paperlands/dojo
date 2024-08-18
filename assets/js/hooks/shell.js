@@ -114,11 +114,8 @@ Shell = {
 
       // Clear canvas
       // turtle.ctx.clearRect(0, 0, canvas.width, canvas.height);
-      turtle.reset();
 
-      // Execute all instructions
-      turtle.executeBody(commands, {});
-      turtle.drawTurtle()
+      turtle.draw(commands)
       const path = canvas.toDataURL()
       seaBridge.pub(["hatchTurtle", {"commands": commands, "path": path}])
 

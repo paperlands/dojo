@@ -17,6 +17,7 @@ export class Turtle {
             show: this.unhideTurtle.bind(this),
             hd: this.hideTurtle.bind(this),
             jmp: this.jmp.bind(this),
+            home: this.spawn.bind(this),
             beColour: this.setColor.bind(this)
         };
         this.functions = {};
@@ -30,8 +31,8 @@ export class Turtle {
         this.rotation = new Versor(1, 0, 0, 0); // Identity quaternion
         // Command execution tracking
         this.commandCount = 0;
-        this.maxCommands = 5000;
-        this.maxRecurse = 36
+        this.maxCommands = 10000;
+        this.maxRecurse = 24
 
 
         //mafs
@@ -199,7 +200,10 @@ export class Turtle {
         this.penDown = true;
     }
 
-    drawTurtle() {
+    draw(instructions) {
+        this.reset();
+        this.instructions = instructions
+        this.executeBody(instructions, {});
         if (this.showTurtle) {
             const headSize = 10;
             const projectedX = this.projectX(this.x, this.z);
