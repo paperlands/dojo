@@ -39,21 +39,19 @@ Shell = {
         saveEditorContent(val);
         debouncedRunCode(val, canvas)
       })
-      shell.on('mousedown', function(e){
+      shell.on('mousedown', function(cm, change) {
         var old_slider = document.getElementById('slider');
-        old_slider.classList.add("hidden")
-      })
-      shell.on('dblclick', function(cm, event) {
+        var selection = window.getSelection()
+        if (!selection || selection.rangeCount <= 0) {
+          old_slider.classList.add("hidden")
+          return
+        }
+        else {
         const pos = cm.coordsChar({ left: event.clientX, top: event.clientY });
         const line = cm.getLine(pos.line);
         const token = cm.getTokenAt(pos);
-        var selection = window.getSelection()
-          if (!selection || selection.rangeCount <= 0) {
-            return
-          }
         var getSelectRect = selection.getRangeAt(0).getBoundingClientRect();
         const numpat = /[+-]?\d*\.\d+|[+-]?\d+/g;
-        var old_slider = document.getElementById('slider');
         // Check if the token is a number
         if (token.string.match(numpat)) {
           var new_slider = old_slider.cloneNode(true);
@@ -99,7 +97,9 @@ Shell = {
         } else {
           old_slider.classList.add("hidden")
         }
-      })},
+        }
+      })
+    },
 
   run(val, canvas) {
     canvas.width = window.innerWidth;
