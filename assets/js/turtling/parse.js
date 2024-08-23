@@ -34,13 +34,17 @@ function parseLine(line, lines, blockStack) {
     const command = tokens.shift();
     if (command === 'for') {
         const times = tokens.shift();
-        if (tokens.shift() !== '(') throw new Error("Expected '(' after 'for'");
+        if (tokens.shift() !== '(') throw new Error("Expected ' (' after 'for'");
         return new ASTNode('Loop', times, parseBlock(lines, blockStack));
     } else if (command === 'draw') {
         const funcName = tokens.shift();
-        if (tokens.pop() !== '(') throw new Error("Expected '(' at the end of 'draw'");
+        if (tokens.pop() !== '(') throw new Error("Expected ' (' at the end of 'draw'");
         const args = tokens.map(arg => new ASTNode('Argument', arg));
         return new ASTNode('Define', funcName, parseBlock(lines, blockStack), {args: args} );
+    } else if (command === 'when') {
+        const pattern = tokens.shift();
+        if (tokens.pop() !== '(') throw new Error("Expected ' (' at the end of 'when'");
+        return new ASTNode('When', pattern, parseBlock(lines, blockStack));
     } else if (!command) {
         return litcomment;
     }

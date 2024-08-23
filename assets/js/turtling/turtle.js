@@ -29,12 +29,12 @@ export class Turtle {
 
         // Camera can intervene on the view of the world
         cameraBridge.sub(() =>
-            this.redraw()
+            requestAnimationFrame(this.redraw())
         )
         this.rotation = new Versor(1, 0, 0, 0); // Identity quaternion
         // Command execution tracking
         this.commandCount = 0;
-        this.maxCommands = 10000;
+        this.maxCommands = 80000;
         this.maxRecurse = 24
 
 
@@ -88,6 +88,7 @@ export class Turtle {
     }
 
     executeBody(body, context) {
+        let matched = false;
         body.forEach(node => {
             switch (node.type) {
             case 'Loop':
@@ -106,7 +107,18 @@ export class Turtle {
                 const params = node.meta?.args?.map(n => n.value) || []
                 this.defineFunction(node.value,  params, node.children)
                 break;
-            }
+
+            case 'When':
+                const pattern = node.value;
+                if (!matched && this.evaluateExpression(pattern, context) !== 0 ) {
+                    matched = true;
+                    this.executeBody(node.children, context);
+                }
+                break;
+
+                }
+
+
         });
     }
 
@@ -119,7 +131,6 @@ export class Turtle {
     }
 
     reset() {
-
         this.spawn()
         this.ctx.clearRect(0, 0, canvas.width, canvas.height)
         this.commandCount = 0

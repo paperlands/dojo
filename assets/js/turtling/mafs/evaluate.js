@@ -23,12 +23,17 @@ export class Evaluator {
 
     applyOperator(operator, left, right) {
         switch (operator) {
-            case '+': return left + right;
-            case '-': return left - right;
-            case '*': return left * right;
-            case '/': return left / right;
-            case '^': return Math.pow(left, right);
-            default: throw new Error(`Unknown operator: ${operator}`);
+        case '&': return left && right;
+        case '|': return left || right;
+        case '>': return (left > right)? left: 0;
+        case '<': return (left < right)? left: 0;
+        case '=': return (left === right) ? left: 0;
+        case '^': return Math.pow(left, right);
+        case '*': return left * right;
+        case '/': return left / right;
+        case '+': return left + right;
+        case '-': return left - right;
+        default: throw new Error(`Unknown operator: ${operator}`);
         }
     }
 }
