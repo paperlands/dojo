@@ -18,6 +18,7 @@ Shell = {
       // on init find the triumvirate
       const canvas = document.getElementById('canvas');
       const output = document.getElementById('output');
+      const turtle = new Turtle(canvas);
       const shell = new Terminal(this.el, CodeMirror).init();
       // set up event listeners
       const debouncedRunCode = debounce(this.run, 180);
@@ -31,13 +32,13 @@ Shell = {
       )
       // init editor state
       shell.setValue(cachedVal);
-      this.run(cachedVal, canvas);
+      this.run(cachedVal, canvas, turtle);
 
       // start listening
       shell.on('change', function(cm, change) {
         const val = cm.getValue()
         saveEditorContent(val);
-        debouncedRunCode(val, canvas)
+        debouncedRunCode(val, canvas, turtle)
       })
       shell.on('mousedown', function(cm, change) {
         var old_slider = document.getElementById('slider');
@@ -101,20 +102,16 @@ Shell = {
       })
     },
 
-  run(val, canvas) {
+  run(val, canvas, turtle) {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    const turtle = new Turtle(canvas);
+
     const code = val;
 
 
     try {
       const commands = parseProgram(code);
-
-      // Clear canvas
-      // turtle.ctx.clearRect(0, 0, canvas.width, canvas.height);
-
       turtle.draw(commands)
       const path = canvas.toDataURL()
       seaBridge.pub(["hatchTurtle", {"commands": commands, "path": path}])

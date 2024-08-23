@@ -29,12 +29,12 @@ export class Turtle {
 
         // Camera can intervene on the view of the world
         cameraBridge.sub(() =>
-            requestAnimationFrame(this.redraw())
+            this.redraw()
         )
         this.rotation = new Versor(1, 0, 0, 0); // Identity quaternion
         // Command execution tracking
         this.commandCount = 0;
-        this.maxCommands = 80000;
+        this.maxCommands = 88888;
         this.maxRecurse = 24
 
 
@@ -269,7 +269,7 @@ export class Turtle {
 
     redraw() {
         this.reset();
-        if(this.instructions.length > 0) this.executeBody(this.instructions, {});
+        if(this.instructions.length > 0) requestAnimationFrame(this.executeBody(this.instructions, {}));
         this.head()
     }
 
