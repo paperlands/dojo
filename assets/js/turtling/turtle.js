@@ -19,6 +19,7 @@ export class Turtle {
             show: this.unhideTurtle.bind(this),
             hd: this.hideTurtle.bind(this),
             jmp: this.jmp.bind(this),
+            mv: this.move.bind(this),
             home: this.spawn.bind(this),
             beColour: this.setColor.bind(this)
         };
@@ -26,6 +27,7 @@ export class Turtle {
         this.instructions = [];
 
         this.camera = new Camera(canvas, cameraBridge)
+        this.speed = 0
 
         // Camera can intervene on the view of the world
         cameraBridge.sub(() =>
@@ -205,6 +207,10 @@ export class Turtle {
         this.oPen();
     }
 
+    move(speed){
+        this.speed = speed
+    }
+
     noPen() {
         this.penDown = false;
     }
@@ -264,13 +270,17 @@ export class Turtle {
             this.ctx.fill();
             this.ctx.restore();
         }
+        // init listener if legit at the end
+        this.camera.speed(this.speed)
 
     }
 
     redraw() {
-        this.reset();
-        if(this.instructions.length > 0) requestAnimationFrame(this.executeBody(this.instructions, {}));
-        this.head()
+        // if(this.instructions.length > 0) requestAnimationFrame(this.executeBody(this.instructions, {}));
+        if(this.instructions.length > 0) requestAnimationFrame(() => {
+            this.reset();
+            this.executeBody(this.instructions, {})
+            this.head()});
     }
 
     draw(instructions) {

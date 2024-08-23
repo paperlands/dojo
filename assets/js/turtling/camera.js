@@ -5,12 +5,15 @@ export class Camera {
         this.camera = {
             x: 0,
             y: 0,
-            z: 100
+            z: 100,
+            v: 0
         };
         this.isDragging = false;
         this.lastMousePosition = { x: 0, y: 0 };
 
         this.scrollSpeed = 10;
+
+        this.movie = null ;
 
 
         // Initialize event listeners
@@ -19,6 +22,34 @@ export class Camera {
 
     now() {
         return this.camera
+    }
+
+    speed(v) {
+        this.camera.v = v
+        !v ? (this.endMovie()) : (this.beginMovie())
+    }
+
+    beginMovie() {
+        if (!this.movie) {
+            // Trigger draw event every 1000ms / 24 = ~41.67ms
+            this.movie = setInterval(() => {
+                this.updateCameraPosition();
+                this.draw();
+            }, 1000 / 24);
+        }
+    }
+
+    updateCameraPosition() {
+        // Update the camera position based on its velocity and direction
+        // Assuming facing direction is along the x-axis for simplicity
+        this.camera.z -= this.camera.v; // Adjust this based on actual direction
+    }
+
+    endMovie() {
+        if (this.movie) {
+            clearInterval(this.movie);
+            this.movie = null;
+        }
     }
 
     initEventListeners() {
