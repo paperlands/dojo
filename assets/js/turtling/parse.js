@@ -88,6 +88,10 @@ export function printAST(ast) {
             output.push(`${indentStr}for ${node.value} (`);
             node.children.forEach(child => visit(child, indent + 1));
             output.push(`${indentStr})`);
+        } else if (node.type === 'Loop') {
+            output.push(`${indentStr}when ${node.value} (`);
+            node.children.forEach(child => visit(child, indent + 1));
+            output.push(`${indentStr})`);
         } else if (node.type === 'Define') {
             output.push(`${indentStr}draw ${node.value} ${(node.meta.args || []).map(arg => visit(arg, 0)).join(' ')} (`);
             node.children.forEach(child => visit(child, indent + 1));

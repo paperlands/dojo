@@ -57,12 +57,13 @@ export class Turtle {
         this.functions[name] = { parameters, body };
     }
 
-    callFunction(name, args, depth =0) {
+    callFunction(name, args, ctx, depth =0) {
         if (depth >= this.maxRecurse) {
             this.forward(0.01)
             return;
         }
-        const func = this.functions[name];
+        console.log(name , args ,ctx , depth)
+        const func = this.functions[name] || (ctx[name] && this.functions[ctx[name]]);
         if (!func)
         {this.callCommand(name, ...args)}
         else
@@ -102,7 +103,7 @@ export class Turtle {
             case 'Call':
                 const args = node.children.map(arg => this.evaluateExpression(arg.value, context));
                 const currDepth = context['__depth__'] || 0;
-                this.callFunction(node.value, args, currDepth + 1); // ...args
+                this.callFunction(node.value, args, context, currDepth + 1); // ...args
                 break;
 
             case 'Define':
