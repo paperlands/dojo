@@ -2,7 +2,7 @@
   <!-- Canvas background -->
   <canvas phx-update="ignore" id="canvas" class="fixed z-10 top-0 left-0 w-full h-full bg-inherit z-2">
   </canvas>
-  <canvas :if={@outershell && @outershell.resp} phx-update="ignore" id="outercanvas" class="fixed z-10 top-0 left-0 w-full h-full bg-inherit z-3 opacity-40 pointer-events-none">
+  <canvas :if={@outershell && @outershell.resp} phx-update="ignore" id="outercanvas" class={["fixed z-10 top-0 left-0 w-full h-full bg-transparent z-3", @outershell && "pointer-events-none"]} >
     </canvas>
   <!-- Left Coder pane container -->
   <div class="relative z-30 top-0 left-0 w-1/4 h-auto min-h-screen p-4 shadow-lg">
@@ -12,7 +12,7 @@
       <div class="px-3 py-1 rounded-t-lg text-xs focus:outline-none outline outline-1 outline-gray-500 font-mono text-brand  rounded  cursor-pointer hover:bg-yellow-300 transition duration-200">
           ~
         </div>
-        <div :for={%{"value" => value} <- @functions} class="px-3 py-1 rounded-t-lg text-xs focus:outline-none outline outline-1 outline-gray-500 font-mono text-brand  rounded  cursor-pointer hover:bg-yellow-300 transition duration-200">
+        <div :for={%{"value" => value} <- @myfunctions} class="px-3 py-1 rounded-t-lg text-xs focus:outline-none outline outline-1 outline-gray-500 font-mono text-brand  rounded  cursor-pointer hover:bg-yellow-300 transition duration-200">
           <%= value %>
         </div>
     </div>

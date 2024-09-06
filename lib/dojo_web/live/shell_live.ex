@@ -26,7 +26,7 @@ defmodule DojoWeb.ShellLive do
 
     {:ok,
      socket
-     |> assign(label: nil, outershell: nil, sensei: false, functions: [], class: nil, disciples: dis)
+     |> assign(label: nil, outershell: nil, sensei: false, myfunctions: [], class: nil, disciples: dis)
      |> assign(focused_phx_ref: "")
      |> sync_session()}
   end
@@ -89,19 +89,19 @@ defmodule DojoWeb.ShellLive do
 
   def handle_event(
         "hatchTurtle",
-        %{"commands" => command, "path" => path},
+        %{"commands" => commands, "path" => path},
         %{assigns: %{class: class}} = socket
       ) do
-    Dojo.Turtle.hatch(%{path: path, commands: command}, %{class: class})
-    {:noreply, socket |> assign(functions: command |> Dojo.Turtle.filter_fns())}
+    Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
+    {:noreply, socket |> assign(myfunctions: commands |> Dojo.Turtle.filter_fns())}
   end
 
   def handle_event("seeTurtle", %{"name" => name}, %{assigns: %{disciples: dis}} = socket) do
     {:noreply,
      socket
-     |> push_event("seeOuterShell", %{})
+     |> push_event("seeOuterShell", %{ast: dis[name][:meta][:commands]})
      |> assign(:outershell,
-     %{command: Dojo.Turtle.print(dis[name][:meta][:commands]),
+     %{
        resp: "summoning #{name}'s code ☄"
      })}
   end

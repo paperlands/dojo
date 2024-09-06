@@ -10,8 +10,12 @@ import { computePosition, offset, inline, autoUpdate } from "../../vendor/floati
 
 OuterShell = {
   mounted() {
-      this.handleEvent("seeOuterShell", (buffer) =>
-          !this.active && this.initOuterShell(this.el, buffer));
+      this.handleEvent("seeOuterShell", (init) =>
+
+          !this.active && this.initOuterShell(this.el, init.ast));
+
+    this.buffers = {}; // Store buffers
+    this.activeBuffer = null; // Track the currently active buffer
   },
   beforeUpdate() { // gets called synchronously, prior to update
 
@@ -24,17 +28,47 @@ OuterShell = {
     initOuterShell(el, buffer){
         const canvas = document.getElementById('outercanvas');
         const turtle = new Turtle(outercanvas);
-        const shell = new Terminal(el, CodeMirror).init();
+        this.shell = new Terminal(el, CodeMirror).init();
 
         const debouncedRunCode = debounce(this.run, 180);
 
         this.active = true
 
-        shell.on('change', function(cm, change) {
+        this.shell.on('change', function(cm, change) {
         const val = cm.getValue()
         debouncedRunCode(val, canvas, turtle)
+
       })
+
+        this.createBuffer(buffer);
     },
+
+  createBuffer(ast) {
+      const buffer = printAST(ast)
+      const doc = CodeMirror.Doc(buffer, "apl"); // Create a new document
+    this.buffers["test"] = doc; // Store the document in buffers
+    this.switchBuffer("test"); // Switch to the new buffer
+  },
+
+  switchBuffer(name) {
+    if (this.buffers[name]) {
+      const oldDoc = this.shell.getDoc(); // Get the current document
+      this.shell.swapDoc(this.buffers[name]); // Switch to the new document
+      this.activeBuffer = name; // Update the active buffer
+      // this.loadBufferContent(name); // Load content if exists
+    } else {
+      console.error(`Buffer ${name} does not exist.`);
+    }
+  },
+
+  loadBufferContent(name) {
+    //const content = localStorage.getItem(name) || '';
+    //this.shell.setValue(content); // Set the content of the editor
+  },
+
+  // saveBufferContent(addr, mod, name,  val) {
+  //   localStorage.setItem(`@${addr}.${mod}.${name}`, val);
+  // },
 
   run(val, canvas, turtle) {
     canvas.width = window.innerWidth;
@@ -72,10 +106,6 @@ function debounce(func, wait) {
         clearTimeout(timeout);
         timeout = setTimeout(later, wait);
     };
-}
-
-function saveBufferContent(addr, mod, name,  val) {
-    localStorage.setItem(`@${addr}.${mod}.${name}`, val);
 }
 
 

@@ -13,8 +13,12 @@ defmodule Dojo.Turtle do
     end)
   end
 
-  def print(ast) do
+  def print(ast) when is_map(ast) do
     ast |> Enum.map(&visit/1) |> Enum.join("\n")
+  end
+
+  def print(_) do
+    ""
   end
 
   defp visit(%{"type" => "Call", "value" => value, "children" => children}) do

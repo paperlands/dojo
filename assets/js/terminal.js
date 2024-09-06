@@ -9,20 +9,20 @@ export class Terminal {
 
     init() {
         // Initialize the shell
-        this.shell = this.CM.fromTextArea(this.editor, {
-            theme: "abbott",
-            mode: "apl",
-            lineNumbers: true,
+        this.shell = this.CM.fromTextArea(this.editor, this.opts());
+        this.shell.initOpts = this.opts();
+        // Create the initial buffer
+        return this.shell;
+    }
+
+    opts() {
+        return {theme: "abbott", mode: "apl", lineNumbers: true,
             styleActiveLine: true,
             autocorrect: true,
             extraKeys: {
                 "Ctrl-Space": () => this.snippet(),
                 "Ctrl-/": (cm) => this.toggleComment(cm)
-            }
-        });
-
-        // Create the initial buffer
-        return this.shell;
+            }}
     }
 
     openBuffer(name, text, mode) {
