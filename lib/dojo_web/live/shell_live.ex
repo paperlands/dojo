@@ -26,7 +26,7 @@ defmodule DojoWeb.ShellLive do
 
     {:ok,
      socket
-     |> assign(label: nil, outershell: nil, sensei: false, myfunctions: [], class: nil, disciples: dis)
+     |> assign(label: nil, outershell: nil, sensei: false, myfunctions: [], outerfunctions: [], class: nil, disciples: dis)
      |> assign(focused_phx_ref: "")
      |> sync_session()}
   end
@@ -96,14 +96,46 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket |> assign(myfunctions: commands |> Dojo.Turtle.filter_fns())}
   end
 
-  def handle_event("seeTurtle", %{"name" => name}, %{assigns: %{disciples: dis}} = socket) do
+
+  def handle_event("seeTurtle", %{"addr" => addr, "function" => func}, %{assigns: %{disciples: dis}} = socket) do
     {:noreply,
      socket
-     |> push_event("seeOuterShell", %{ast: dis[name][:meta][:commands]})
+     |> push_event("seeOuterShell", %{ast: dis[addr][:meta][:commands] |> Dojo.Turtle.find_fn(func), addr: addr, mod: "lambda", name: func})
      |> assign(:outershell,
      %{
-       resp: "summoning #{name}'s code ☄"
+       addr: addr,
+       resp: "drawing @#{addr}'s #{func}"
      })}
+  end
+
+  def handle_event("seeTurtle", %{"addr" => addr}, %{assigns: %{disciples: dis}} = socket) when is_binary(addr) do
+    {:noreply,
+     socket
+     |> push_event("seeOuterShell", %{ast: dis[addr][:meta][:commands], addr: addr, mod: "root"})
+     |> assign(:outershell,
+     %{
+       addr: addr,
+       outerfunctions: dis[addr][:meta][:commands] |> Dojo.Turtle.filter_fns(),
+       resp: "summoning @#{addr}'s code ☄"
+     })}
+  end
+
+  def handle_event("seeTurtle", %{"function" => func}, %{assigns: %{myfunctions: commands}} = socket) do
+    {:noreply,
+     socket
+     |> push_event("seeOuterShell", %{ast: commands |> Dojo.Turtle.find_fn(func), addr: "my", mod: "lambda", name: func})
+     |> assign(:outershell,
+     %{
+       addr: "my",
+       resp: "drawing your #{func}"
+     })}
+  end
+
+  def handle_event("seeTurtle", _ , socket) do
+    {:noreply,
+     socket
+     |> assign(:outershell,
+       nil)}
   end
 
 

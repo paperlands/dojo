@@ -9,10 +9,14 @@ import {seaBridge} from "../bridged.js"
 import { computePosition, offset, inline, autoUpdate } from "../../vendor/floating-ui.dom.umd.min";
 
 OuterShell = {
-  mounted() {
-      this.handleEvent("seeOuterShell", (init) =>
-
-          !this.active && this.initOuterShell(this.el, init.ast));
+    mounted() {
+        this.handleEvent("seeOuterShell", (sight) => {
+          if (this.active) {
+            this.createBuffer(sight.ast);
+          } else {
+            this.initOuterShell(this.el, sight.ast);
+          }
+        });
 
     this.buffers = {}; // Store buffers
     this.activeBuffer = null; // Track the currently active buffer
@@ -25,7 +29,7 @@ OuterShell = {
   },
   //...other in methods
   //
-    initOuterShell(el, buffer){
+    initOuterShell(el, ast){
         const canvas = document.getElementById('outercanvas');
         const turtle = new Turtle(outercanvas);
         this.shell = new Terminal(el, CodeMirror).init();
@@ -40,7 +44,7 @@ OuterShell = {
 
       })
 
-        this.createBuffer(buffer);
+        this.createBuffer(ast);
     },
 
   createBuffer(ast) {

@@ -2,17 +2,21 @@
   <!-- Canvas background -->
   <canvas phx-update="ignore" id="canvas" class="fixed z-10 top-0 left-0 w-full h-full bg-inherit z-2">
   </canvas>
-  <canvas :if={@outershell && @outershell.resp} phx-update="ignore" id="outercanvas" class={["fixed z-10 top-0 left-0 w-full h-full bg-transparent z-3", @outershell && "pointer-events-none"]} >
+  <canvas :if={@outershell && @outershell.resp} phx-update="ignore" id="outercanvas" class={["fixed z-10 top-0 left-0 w-full h-full bg-transparent z-3", !@outershell && "pointer-events-none"]} >
     </canvas>
   <!-- Left Coder pane container -->
   <div class="relative z-30 top-0 left-0 w-1/4 h-auto min-h-screen p-4 shadow-lg">
     <!-- Function Marks -->
     <div class="flex justify-start space-x-0.5 py-1">
         <!-- Example bookmarks -->
-      <div class="px-3 py-1 rounded-t-lg text-xs focus:outline-none outline outline-1 outline-gray-500 font-mono text-brand  rounded  cursor-pointer hover:bg-yellow-300 transition duration-200">
+      <div class="px-3 py-1 rounded-t-lg text-xs focus:outline-none outline outline-1 outline-gray-500 font-mono text-brand rounded  cursor-pointer hover:bg-yellow-300 transition duration-200" phx-click="seeTurtle">
           ~
         </div>
-        <div :for={%{"value" => value} <- @myfunctions} class="px-3 py-1 rounded-t-lg text-xs focus:outline-none outline outline-1 outline-gray-500 font-mono text-brand  rounded  cursor-pointer hover:bg-yellow-300 transition duration-200">
+        <div :for={%{"value" => value} <- @myfunctions} class="px-3 py-1 rounded-t-lg text-xs focus:outline-none outline outline-1 outline-gray-500 font-mono text-brand  rounded  cursor-pointer hover:bg-yellow-300 transition duration-200"
+          phx-click="seeTurtle"
+          phx-value-function={value}
+
+        >
           <%= value %>
         </div>
     </div>
@@ -77,7 +81,7 @@
 </div>
 
 <%!-- Turtle viewing pane --%>
-<div class="fixed bottom-0 z-20  pointer-events-none w-full p-4 -translate-x-1/2 left-1/2">
+<div class="fixed bottom-0 z-20  pointer-events-none w-full -translate-x-1/2 left-1/2">
   <div class="flex items-center justify-center p-4 space-x-4 overflow-x-auto">
     <!-- Other people's turtles -->
     <div
@@ -90,15 +94,16 @@
         name="hero-cursor-arrow-ripple"
         phx-click="toggle-focus"
         phx-value-disciple-phx_ref={dis.phx_ref}
-        class="cursor-pointer text-brand"
-      />
-      <img
-        phx-click="seeTurtle"
-        phx-value-name={name}
-        src={dis.meta.path}
-        class="border pointer-events-auto rounded-md cursor-alias hover:scale-110 hover:border-4"
+        class="cursor-pointer pointer-events-auto text-brand"
       />
       <div class="text-white"><%= name %></div>
+      <img
+        phx-click="seeTurtle"
+        phx-value-addr={name}
+        src={dis.meta.path}
+        class={["border pointer-events-auto rounded-md cursor-alias hover:scale-120 hover:border-2",
+        @outershell && @outershell.addr == name && "border-orange-500"]}
+      />
     </div>
   </div>
 </div>

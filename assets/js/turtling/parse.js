@@ -88,7 +88,7 @@ export function printAST(ast) {
             output.push(`${indentStr}for ${node.value} (`);
             node.children.forEach(child => visit(child, indent + 1));
             output.push(`${indentStr})`);
-        } else if (node.type === 'Loop') {
+        } else if (node.type === 'When') {
             output.push(`${indentStr}when ${node.value} (`);
             node.children.forEach(child => visit(child, indent + 1));
             output.push(`${indentStr})`);
