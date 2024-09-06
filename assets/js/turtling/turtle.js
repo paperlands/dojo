@@ -37,7 +37,7 @@ export class Turtle {
         // Command execution tracking
         this.commandCount = 0;
         this.maxCommands = 88888;
-        this.maxRecurse = 24
+        this.maxRecurse = 28
 
 
         //mafs
@@ -62,7 +62,7 @@ export class Turtle {
             this.forward(0.01)
             return;
         }
-        console.log(name , args ,ctx , depth)
+        // console.log(name , args ,ctx , depth)
         const func = this.functions[name] || (ctx[name] && this.functions[ctx[name]]);
         if (!func)
         {this.callCommand(name, ...args)}
