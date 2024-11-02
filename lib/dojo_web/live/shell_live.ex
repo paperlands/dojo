@@ -22,8 +22,6 @@ defmodule DojoWeb.ShellLive do
       Dojo.Gate.list_users("class:shell")
       |> Enum.into(%{}, fn %{name: name} = dis -> {name, dis} end)
 
-    IO.inspect(dis)
-
     {:ok,
      socket
      |> assign(label: nil, outershell: nil, sensei: false, myfunctions: [], outerfunctions: [], class: nil, disciples: dis)
@@ -58,7 +56,6 @@ defmodule DojoWeb.ShellLive do
         {:leave, "class:shell", %{name: name, phx_ref: ref} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
-    IO.inspect(disciple, label: "leave")
 
     if d[name][:phx_ref] == ref do
       {:noreply,

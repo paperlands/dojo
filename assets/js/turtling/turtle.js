@@ -141,6 +141,7 @@ export class Turtle {
         this.penDown = true;
         this.color = 'red';
         this.ctx.strokeStyle = this.color;
+        this.ctx.lineWidth = 2;
         this.ctx.beginPath();
         this.ctx.moveTo(this.x, this.y);
         this.showTurtle = true;

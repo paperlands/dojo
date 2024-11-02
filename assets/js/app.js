@@ -54,6 +54,7 @@ function fetchSession() {
   }
 };
 
+
 window.addEventListener("dojo:yoink", (event) => {
   if ("clipboard" in navigator) {
     const text = event.target.textContent;

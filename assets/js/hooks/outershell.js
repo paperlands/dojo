@@ -44,7 +44,7 @@ OuterShell = {
 
       })
 
-        this.createBuffer(ast);
+        const buffer = this.createBuffer(ast);
     },
 
   createBuffer(ast) {
@@ -52,6 +52,7 @@ OuterShell = {
       const doc = CodeMirror.Doc(buffer, "apl"); // Create a new document
     this.buffers["test"] = doc; // Store the document in buffers
     this.switchBuffer("test"); // Switch to the new buffer
+    this.shell.setValue(this.shell.getValue()) // trigger change event
   },
 
   switchBuffer(name) {

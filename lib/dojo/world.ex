@@ -252,7 +252,6 @@ defmodule Dojo.World do
     Enum.map(0..7, fn i -> Integer.to_string(i, 2) |> String.pad_leading(3, "0") end)
     |> Enum.zip(list)
     |> Map.new()
-    |> IO.inspect()
   end
 
   defp each(str, _, 0, board), do: [str | board] |> Enum.reverse()

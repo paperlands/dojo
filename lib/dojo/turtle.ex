@@ -15,15 +15,12 @@ defmodule Dojo.Turtle do
 
   def find_fn(ast, name) do
 
-    out = ast |> Enum.reject(fn
+    ast |> Enum.reject(fn
     %{"type" => "Define", "value" => ^name} ->
       false
       _ ->
         true
     end)
-
-    IO.inspect(out)
-    out
   end
 
   def print(ast) when is_map(ast) do
