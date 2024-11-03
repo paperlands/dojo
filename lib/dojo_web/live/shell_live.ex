@@ -16,22 +16,29 @@ defmodule DojoWeb.ShellLive do
   """
 
   def mount(_params, _session, socket) do
-    Dojo.Class.listen("shell")
-
-    dis =
-      Dojo.Gate.list_users("class:shell")
-      |> Enum.into(%{}, fn %{name: name} = dis -> {name, dis} end)
 
     {:ok,
      socket
-     |> assign(label: nil, outershell: nil, sensei: false, myfunctions: [], outerfunctions: [], class: nil, disciples: dis)
-     |> assign(focused_phx_ref: "")
+     |> assign(label: nil, clan: nil, outershell: nil, sensei: false, myfunctions: [], outerfunctions: [], class: nil, disciples: %{})
+     |> assign(focused_phx_ref: "")}
+  end
+
+  def handle_params(params, _url, socket) do
+    {:noreply, socket
+     |> join_clan(params["clan"] || "home")
      |> sync_session()}
   end
 
-  defp sync_session(%{assigns: %{session: %Session{name: name} = sess}} = socket)
-       when is_binary(name) do
-    {:ok, class} = Dojo.Class.join(self(), "shell", %Dojo.Disciple{name: name, action: "active"})
+  defp join_clan(socket, clan) do
+    Dojo.Class.listen("shell:" <> clan)
+
+    socket
+    |> assign(disciples: Dojo.Class.list_disciples("shell:" <> clan))
+    |> assign(clan: clan)
+  end
+
+  defp sync_session(%{assigns: %{session: %Session{name: name} = sess, clan: clan}} = socket) when is_binary(name) do
+    {:ok, class} = Dojo.Class.join(self(), "shell:" <> clan, %Dojo.Disciple{name: name, action: "active"})
 
     socket
     |> assign(:class, class)
@@ -43,7 +50,7 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_info(
-        {:join, "class:shell", %{name: name} = disciple},
+        {:join, "class:shell" <> _ , %{name: name} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
 
@@ -53,7 +60,7 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_info(
-        {:leave, "class:shell", %{name: name, phx_ref: ref} = disciple},
+        {:leave, "class:shell"  <> _ , %{name: name, phx_ref: ref} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
 

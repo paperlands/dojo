@@ -29,7 +29,13 @@ defmodule Dojo.Class do
   ## helper fns
 
   def whereis(username, book) do
-    Dojo.Gate.get_by_key("class:" <> book, username)
+    Dojo.Gate.get_by_key(topic(book), username)
+  end
+
+  def list_disciples(book) do
+    Dojo.Gate.list_users(topic(book))
+    |> Enum.into(%{}, fn %{name: name} = dis -> {name, dis} end)
+
   end
 
   def listen(book) do

@@ -30,7 +30,7 @@
           max="30"
           step="0.1"
           value="1"
-          class="absolute hidden w-1/2 h-1 bg-transparent rounded-lg appearance-none cursor-pointer slider stroke-transparent"
+          class="absolute hidden w-full h-1 bg-transparent rounded-lg appearance-none cursor-pointer slider stroke-transparent"
         />
       </div>
       <textarea id="your-buffer" phx-hook="Shell"></textarea>
@@ -50,7 +50,7 @@
  <div
       :if={@session.active}
       id="sessionbox"
-      class="absolute p-2 mr-4 w-1/2 right-0 font-mono text-xs rounded text-brand outline "
+      class={["absolute mr-4 w-1/2 right-0 font-mono text-xs rounded text-brand", @session.name || "outline outline-2 p-2"]}
       phx-hook="Box"
     >
       <div :if={!@session.name}>
@@ -99,8 +99,8 @@
 </div>
 
 <%!-- Turtle viewing pane --%>
-<div class="fixed bottom-0 z-20  pointer-events-none w-full -translate-x-1/2 left-1/2">
-  <div class="flex items-center justify-center p-4 space-x-4 overflow-x-auto">
+<div class="fixed bottom-0 z-40  pointer-events-none w-full -translate-x-1/2 left-1/2">
+  <div class="flex items-center justify-center pb-6  space-x-4 overflow-x-auto">
     <!-- Other people's turtles -->
     <div
       :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}

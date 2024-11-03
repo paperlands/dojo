@@ -3,7 +3,7 @@ defmodule DojoWeb.Session do
   import Phoenix.LiveView, only: [get_connect_params: 1]
 
   @derive Jason.Encoder
-  defstruct name: nil, id: nil, active: false, class: nil, last_opened: DateTime.now!("Etc/UTC")
+  defstruct name: nil, id: nil, active: false, last_opened: DateTime.now!("Etc/UTC")
 
   @default_locale "en"
   @timezone "UTC"
@@ -22,17 +22,6 @@ defmodule DojoWeb.Session do
      )}
   end
 
-
-    defp mutate_session(%{"id" => id} = sess, %{"clan" => clan})
-       when is_binary(id) and is_binary(clan) do
-    atomised_sess =
-      for {key, val} <- sess, reduce: %{} do
-        acc -> hydrate_session(acc, key, val)
-      end
-
-    struct(%__MODULE__{}, atomised_sess)
-  end
-
   # careful of client and server state race. id here is not SOT
   defp mutate_session(%{"active" => true} = sess, _) do
     atomised_sess =
@@ -42,19 +31,12 @@ defmodule DojoWeb.Session do
 
     struct(%__MODULE__{}, atomised_sess)
   end
-
   # false first load
   defp mutate_session(_, _), do: %__MODULE__{}
-
-  defp hydrate_session(acc, "clan", %{"id" => id}) do
-    put_in(acc, [:clan], Dojo.Clan.get(id))
-  end
 
   defp hydrate_session(acc, key, val) when key in ["name", "id", "active", "last_opened"] do
     put_in(acc, [String.to_existing_atom(key)], val)
   end
 
-  defp hydrate_session(acc, _key, _val) do
-     acc
-  end
+  defp hydrate_session(acc, _key, _val), do: acc
  end
