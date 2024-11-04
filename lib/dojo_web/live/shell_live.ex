@@ -20,7 +20,7 @@ defmodule DojoWeb.ShellLive do
 
     {:ok,
      socket
-     |> assign(label: nil, clan: nil, outershell: nil, sensei: false, myfunctions: [], outerfunctions: [], class: nil, disciples: %{}, deck: false)
+     |> assign(label: nil, clan: nil, outershell: nil, sensei: false, myfunctions: [], outerfunctions: [], class: nil, disciples: %{}, deck: true)
      |> assign(focused_phx_ref: "")}
   end
 
@@ -94,11 +94,20 @@ defmodule DojoWeb.ShellLive do
 
   def handle_event(
         "tellTurtle",
-        _,
-        %{assigns: %{class: class}} = socket
+        %{"cmd" => cmd},
+        socket
       ) do
     # Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
-    {:noreply, socket |>  push_event("writeShell", %{})}
+    {:noreply, socket |>  push_event("writeShell", %{"command" => cmd})}
+  end
+
+  def handle_event(
+        "tellTurtle",
+        _,
+        socket
+      ) do
+    # Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
+    {:noreply, socket}
   end
 
   def handle_event(
@@ -204,9 +213,9 @@ defmodule DojoWeb.ShellLive do
   def command_deck(assigns) do
     ~H"""
     <!-- CommandDeck Component (command_deck.html.heex) -->
-    <div class="relative">
+    <div class="flex absolute right-0 bottom-0 px-1 pb-1">
       <!-- Trigger Button -->
-      <div class="absolute bottom-1 right-1 z-50" phx-click={@visible || "flipDeck"}>
+      <div class="absolute bottom-1 right-1 z-50" phx-click="flipDeck">
         <svg
           class="w-5 h-5 text-brand transition-transform duration-700 hover:rotate-180"
           viewBox="0 0 24 24"
@@ -227,28 +236,58 @@ defmodule DojoWeb.ShellLive do
       <!-- Command Deck Panel -->
       <%= if @visible do %>
         <div
-          class="fixed top-4 right-4 w-64 bg-brand-900/70 rounded-lg shadow-xl backdrop-blur-sm transform transition-all duration-500 ease-in-out"
-          phx-click-away="flipDeck"
+          class="flex-grow w-64 bg-brand-900/70 rounded-lg shadow-xl backdrop-blur-sm transform transition-all duration-500 ease-in-out"
         >
           <div class="p-4">
             <!-- Header -->
             <div class="flex items-center justify-between mb-4">
               <h2 class="text-amber-200 font-bold text-xl">Command Deck</h2>
             </div>
+                <div
+                class="absolute top-1 right-1 z-50 group"
+                  phx-click="tellTurtle" phx-value-cmd="undo"
+                >
+                  <div class="relative">
+                    <!-- Main Button -->
+                    <button
+                     class="flex items-center justify-center w-8 h-8 bg-amber-900/90 rounded-full border-2 border-amber-600 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0"
+                    >
+                      <svg
+                        class="w-4 h-4 text-amber-300"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M9 14L4 9L9 4" />
+                        <path d="M4 9H13.5C16.5376 9 19 11.4624 19 14.5C19 17.5376 16.5376 20 13.5 20H11" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <!-- Tooltip -->
+                  <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <div class="bg-amber-900/90 text-amber-200 text-xs px-2 py-1 rounded border border-amber-600 backdrop-blur-sm whitespace-nowrap">
+                      Undo Last Command
+                    </div>
+                  </div>
+                </div>
 
             <!-- Command List -->
             <div class="space-y-2">
-              <%= for {cmd, desc, icon} <- [
-                {"fw", "Move Forward", "M12 5l7 7-7 7"},
-                {"rt", "Turn Right", "M5 12h14l-7 7"},
-                {"lt", "Turn Left", "M19 12H5l7-7"},
-                {"show", "Show Turtle", "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"},
-                {"hd", "Hide Turtle", "M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8"},
-                {"jmp", "Jump To Position", "M5 9l7-7 7 7"},
-                {"home", "Return To Start", "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"},
-                {"beColour", "Set Color", "M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"}
+              <%= for {cmd, desc, code} <- [
+                {"fw", "Move Forward", "fw 100"},
+                {"rt", "Turn Right", "rt 30"},
+                {"lt", "Turn Left", "lt 30"},
+                {"jmp", "Jump Forward", "jmp 100"},
+                {"home", "Return To Start", "home"},
+                {"hd", "Hide Turtle", "hd"},
+                {"show", "Show Turtle", "show"},
+                {"beColour", "Set your Color", "beColour red"}
               ] do %>
-                <div class="flex items-center p-2 rounded hover:bg-amber-900/50 transition-colors group">
+                <div phx-click="tellTurtle" phx-value-cmd={code} class="flex items-center p-2 rounded hover:bg-amber-900/50 transition-colors group">
                   <div class="mr-3 text-amber-400">
                     <.cmd_icon command={cmd} class="w-8 h-8 fill-brand"/>
                   </div>
