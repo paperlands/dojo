@@ -223,7 +223,7 @@ export class Turtle {
 
     head() {
         if (this.showTurtle) {
-            const headSize = 10;
+            const headSize = 15;
             const projectedX = this.projectX(this.x, this.z);
             const projectedY = this.projectY(this.y, this.z);
 

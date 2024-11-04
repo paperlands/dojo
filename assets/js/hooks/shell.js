@@ -25,6 +25,18 @@ Shell = {
 
       const cachedVal = loadEditorContent()
 
+      this.handleEvent("writeShell", (sight) => {
+        var doc = shell.getDoc();
+        var cursor = doc.getCursor(); // gets the line number in the cursor position
+        var line = doc.getLine(cursor.line); // get the line contents
+        var pos = { // create a new object to avoid mutation of the original selection
+          line: cursor.line,
+          ch: line.length // set the character position to the end of the line
+        }
+        doc.replaceRange('\nfw 100', pos); // adds a new line
+
+
+      });
 
       // seabridge dispatcher babyy
       seaBridge.sub((payload) =>
