@@ -213,7 +213,7 @@ defmodule DojoWeb.ShellLive do
   def command_deck(assigns) do
     ~H"""
     <!-- CommandDeck Component (command_deck.html.heex) -->
-    <div class="flex absolute right-0 bottom-0 px-1 pb-1">
+    <div class="flex absolute right-5 bottom-5 px-1 pb-1">
       <!-- Trigger Button -->
       <div class="absolute bottom-1 right-1 z-50" phx-click="flipDeck">
         <svg
@@ -233,10 +233,11 @@ defmodule DojoWeb.ShellLive do
         </svg>
       </div>
 
+
       <!-- Command Deck Panel -->
       <%= if @visible do %>
         <div
-          class="flex-grow w-64 bg-brand-900/70 rounded-lg shadow-xl backdrop-blur-sm transform transition-all duration-500 ease-in-out"
+          class="w-64 bg-brand-900/70 rounded-lg shadow-xl backdrop-blur-sm transform transition-all duration-500 ease-in-out"
         >
           <div class="p-4">
             <!-- Header -->
@@ -268,7 +269,7 @@ defmodule DojoWeb.ShellLive do
                   </div>
 
                   <!-- Tooltip -->
-                  <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  <div class="absolute bottom-full -right-2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                     <div class="bg-amber-900/90 text-amber-200 text-xs px-2 py-1 rounded border border-amber-600 backdrop-blur-sm whitespace-nowrap">
                       Undo Last Command
                     </div>
@@ -283,8 +284,8 @@ defmodule DojoWeb.ShellLive do
                 {"lt", "Turn Left", "lt 30"},
                 {"jmp", "Jump Forward", "jmp 100"},
                 {"home", "Return To Start", "home"},
-                {"hd", "Hide Turtle", "hd"},
-                {"show", "Show Turtle", "show"},
+                {"hd", "Hide your Head", "hd"},
+                {"show", "Show your Head", "show"},
                 {"beColour", "Set your Color", "beColour red"}
               ] do %>
                 <div phx-click="tellTurtle" phx-value-cmd={code} class="flex items-center p-2 rounded hover:bg-amber-900/50 transition-colors group">
@@ -308,14 +309,57 @@ defmodule DojoWeb.ShellLive do
           </div>
 
           <!-- Decorative corners -->
-          <div class="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-amber-400"></div>
-          <div class="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-amber-400"></div>
-          <div class="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-amber-400"></div>
-          <div class="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-amber-400"></div>
+          <div class="absolute -top-1  -left-1 w-3 h-3 border-t-2 border-l-2 border-amber-400"></div>
+          <div class="absolute -top-1 -right-1  w-3 h-3 border-t-2 border-r-2 border-amber-400"></div>
+          <div class="absolute -bottom-1 -left-1  w-3 h-3 border-b-2 border-l-2 border-amber-400"></div>
+          <div class="absolute -bottom-1 -right-1  w-3 h-3 border-b-2 border-r-2 border-amber-400"></div>
         </div>
       <% end %>
     </div>
 
+    """
+  end
+
+
+  def export(assigns) do
+    ~H"""
+     <button
+       phx-click="keepTurtle"
+       class="relative flex items-center gap-2 px-4 py-2 bg-transparent rounded-lg shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-105 group"
+     >
+       <div class="relative w-6 h-6">
+         <svg
+           class="absolute inset-0 w-6 h-6 text-amber-300 transform transition-transform group-hover:translate-y-0.5"
+           viewBox="0 0 24 24"
+           fill="none"
+           stroke="currentColor"
+           stroke-width="2"
+           stroke-linecap="round"
+           stroke-linejoin="round"
+         >
+           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+           <polyline points="7 10 12 15 17 10" />
+           <line x1="12" y1="15" x2="12" y2="3" />
+         </svg>
+       </div>
+
+       <span class="font-mono text-amber-300 text-sm tracking-wide transform transition-all duration-300 group-hover:text-amber-200">
+         Keep Creations
+       </span>
+
+       <!-- Decorative corners -->
+       <div class="absolute -top-1 animate-pulse -left-1 w-2 h-2 border-t-2 border-l-2 border-amber-400"></div>
+       <div class="absolute -top-1 animate-pulse -right-1 w-2 h-2 border-t-2 border-r-2 border-amber-400"></div>
+       <div class="absolute -bottom-1 animate-pulse -left-1 w-2 h-2 border-b-2 border-l-2 border-amber-400"></div>
+       <div class="absolute -bottom-1 animate-pulse -right-1 w-2 h-2 border-b-2 border-r-2 border-amber-400"></div>
+     </button>
+
+     <!-- Tooltip -->
+     <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+       <div class="bg-amber-900/90 text-amber-200 text-xs px-2 py-1 rounded border border-amber-600 backdrop-blur-sm whitespace-nowrap">
+         Download Your Creation
+       </div>
+     </div>
     """
   end
 

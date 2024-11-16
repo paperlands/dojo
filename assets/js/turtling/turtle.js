@@ -36,8 +36,10 @@ export class Turtle {
         this.rotation = new Versor(1, 0, 0, 0); // Identity quaternion
         // Command execution tracking
         this.commandCount = 0;
+        this.recurseCount = 0,
+        this.maxRecurses = 500000;
         this.maxCommands = 88888;
-        this.maxRecurse = 28
+        this.maxRecurseDepth = 15
 
 
         //mafs
@@ -58,11 +60,11 @@ export class Turtle {
     }
 
     callFunction(name, args, ctx, depth =0) {
-        if (depth >= this.maxRecurse) {
+        if (depth >= this.maxRecurseDepth) {
             this.forward(0.01)
             return;
         }
-        // console.log(name , args ,ctx , depth)
+        console.log(name , args ,ctx , depth)
         const func = this.functions[name] || (ctx[name] && this.functions[ctx[name]]);
         if (!func)
         {this.callCommand(name, ...args)}
@@ -103,6 +105,10 @@ export class Turtle {
             case 'Call':
                 const args = node.children.map(arg => this.evaluateExpression(arg.value, context));
                 const currDepth = context['__depth__'] || 0;
+                if(currDepth > 1) this.recurseCount++ ;
+                if (this.recurseCount >= this.maxRecurses) {
+                    throw new Error(`Maximum recurse limit of ${this.maxRecurses} reached`);
+                }
                 this.callFunction(node.value, args, context, currDepth + 1); // ...args
                 break;
 
@@ -137,11 +143,12 @@ export class Turtle {
         this.spawn()
         this.ctx.clearRect(0, 0, canvas.width, canvas.height)
         this.commandCount = 0
+        this.recurseCount = 0
         this.rotation = new Versor(1, 0, 0, 0);
         this.penDown = true;
         this.color = 'red';
         this.ctx.strokeStyle = this.color;
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = 3;
         this.ctx.beginPath();
         this.ctx.moveTo(this.x, this.y);
         this.showTurtle = true;
