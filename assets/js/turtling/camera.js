@@ -54,16 +54,21 @@ export class Camera {
 
     initEventListeners() {
         this.canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
-        this.canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
-        this.canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
-        this.canvas.addEventListener('mouseleave', this.onMouseLeave.bind(this));
         this.canvas.addEventListener('wheel', this.onWheel.bind(this));
+
+        // Bind the handlers to preserve 'this' context
+        this.boundMouseMove = this.onMouseMove.bind(this);
+        this.boundMouseUp = this.onMouseUp.bind(this);
     }
 
     onMouseDown(event) {
         this.isDragging = true;
         this.lastMousePosition.x = event.clientX;
         this.lastMousePosition.y = event.clientY;
+
+        // Add document-level event listeners when dragging starts
+        document.addEventListener('mousemove', this.boundMouseMove);
+        document.addEventListener('mouseup', this.boundMouseUp);
     }
 
     onMouseMove(event) {
@@ -71,25 +76,26 @@ export class Camera {
             const deltaX = event.clientX - this.lastMousePosition.x;
             const deltaY = event.clientY - this.lastMousePosition.y;
 
-            // Update camera position based on drag
             this.camera.x += deltaX;
             this.camera.y += deltaY;
-
             this.lastMousePosition.x = event.clientX;
             this.lastMousePosition.y = event.clientY;
 
-            
             this.draw();
         }
     }
 
     onMouseUp() {
-        this.isDragging = false;
+        if (this.isDragging) {
+            this.isDragging = false;
+
+            // Remove document-level event listeners when dragging ends
+            document.removeEventListener('mousemove', this.boundMouseMove);
+            document.removeEventListener('mouseup', this.boundMouseUp);
+        }
     }
 
-    onMouseLeave() {
-        this.isDragging = false;
-    }
+
 
     onWheel(event) {
         event.preventDefault(); // Prevent default scrolling behavior
