@@ -15,12 +15,15 @@ export class Turtle {
             lt: this.left.bind(this),
             yaw: this.yaw.bind(this),
             pitch: this.pitch.bind(this),
+            dive: this.pitch.bind(this),
             roll: this.roll.bind(this),
             show: this.unhideTurtle.bind(this),
             hd: this.hideTurtle.bind(this),
             jmp: this.jmp.bind(this),
             mv: this.move.bind(this),
             home: this.spawn.bind(this),
+            fill: this.fill.bind(this),
+            clear: this.clear.bind(this),
             beColour: this.setColor.bind(this)
         };
         this.functions = {};
@@ -39,7 +42,7 @@ export class Turtle {
         this.recurseCount = 0,
         this.maxRecurses = 500000;
         this.maxCommands = 88888;
-        this.maxRecurseDepth = 15
+        this.maxRecurseDepth = 28
 
 
         //mafs
@@ -55,6 +58,19 @@ export class Turtle {
         this.z = 10
     }
 
+    fill() {
+        this.ctx.closePath();
+        this.ctx.fillStyle = this.color; // Color of the top indicator
+        this.ctx.fill();
+        this.ctx.beginPath();
+        this.ctx.moveTo(this.projectX(this.x, this.z), this.projectY(this.y, this.z));
+
+    }
+
+    clear() {
+        this.ctx.clearRect(0, 0, canvas.width, canvas.height)
+    }
+
     defineFunction(name, parameters, body) {
         this.functions[name] = { parameters, body };
     }
@@ -64,7 +80,7 @@ export class Turtle {
             this.forward(0.01)
             return;
         }
-        console.log(name , args ,ctx , depth)
+        //console.log(name , args ,ctx , depth)
         const func = this.functions[name] || (ctx[name] && this.functions[ctx[name]]);
         if (!func)
         {this.callCommand(name, ...args)}
@@ -149,6 +165,9 @@ export class Turtle {
         this.color = 'red';
         this.ctx.strokeStyle = this.color;
         this.ctx.lineWidth = 3;
+        // this.ctx.shadowBlur = 8;
+        // this.ctx.shadowColor = "white";
+        this.ctx.lineCap = 'round';
         this.ctx.beginPath();
         this.ctx.moveTo(this.x, this.y);
         this.showTurtle = true;
@@ -161,7 +180,6 @@ export class Turtle {
         const newX = this.x + rotatedDirection.x * distance;
         const newY = this.y + rotatedDirection.y * distance;
         const newZ = this.z + rotatedDirection.z * distance;
-
         if (this.penDown) {
             this.ctx.beginPath();
             this.ctx.moveTo(this.projectX(this.x, this.z), this.projectY(this.y, this.z));
@@ -231,6 +249,7 @@ export class Turtle {
     head() {
         if (this.showTurtle) {
             const headSize = 15;
+            this.ctx.lineWidth = 2;
             const projectedX = this.projectX(this.x, this.z);
             const projectedY = this.projectY(this.y, this.z);
 
@@ -280,6 +299,7 @@ export class Turtle {
             this.ctx.restore();
         }
         // init listener if legit at the end
+
         this.camera.speed(this.speed)
 
     }
@@ -309,6 +329,7 @@ export class Turtle {
 
     setColor(color) {
         this.color = color;
+        if (color == "invisible") this.color = "#00000000"
         this.ctx.strokeStyle = this.color;
     }
 }

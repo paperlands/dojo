@@ -57,6 +57,28 @@ Shell = {
         saveEditorContent(val);
         debouncedRunCode(val, canvas, turtle)
       })
+
+      shell.on('beforeSelectionChange', (cm, select) => {
+        const lineNumbers = new Set(); // Use Set to avoid duplicates
+
+        select.ranges.forEach(range => {
+          const startLine = range.anchor.line;
+          const endLine = range.head.line;
+
+          // Add all lines between start and end, inclusive
+          for (let line = Math.min(startLine, endLine);
+               line <= Math.max(startLine, endLine);
+               line++) {
+            lineNumbers.add(line);
+          }
+        });
+
+        // Convert Set to sorted array
+        console.log(lineNumbers);
+
+
+      });
+
       shell.on('mousedown', function(cm, change) {
         var old_slider = document.getElementById('slider');
         var selection = window.getSelection()
