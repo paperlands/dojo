@@ -7,7 +7,7 @@ import { cameraBridge } from "../bridged.js"
 export class Turtle {
     constructor(canvas) {
         this.ctx = canvas.getContext('2d');
-        this.reset();
+        this.canvas = canvas;
         this.commands = {
             // Add other command references here
             fw: this.forward.bind(this),
@@ -28,8 +28,22 @@ export class Turtle {
         };
         this.functions = {};
         this.instructions = [];
+        this.paths = []; // Store drawing operations
+        this.executionState = {
+            x: 0,
+            y: 0,
+            z: 10,
+            rotation: new Versor(1, 0, 0, 0)
+        };
 
-        this.camera = new Camera(canvas, cameraBridge)
+        this.setupContinuousRendering();
+        this.reset();
+
+        // Set up animation frame for continuous rendering
+
+        this.camera = new Camera(canvas, {
+            pub: () => this.requestRender()
+        })
         this.speed = 0
 
         // Camera can intervene on the view of the world
@@ -58,18 +72,175 @@ export class Turtle {
         this.z = 10
     }
 
-    fill() {
-        this.ctx.closePath();
-        this.ctx.fillStyle = this.color; // Color of the top indicator
-        this.ctx.fill();
-        this.ctx.beginPath();
-        this.ctx.moveTo(this.projectX(this.x, this.z), this.projectY(this.y, this.z));
+    setupContinuousRendering() {
+        let renderRequested = false;
 
+        const renderLoop = () => {
+            if (renderRequested) {
+                this.render();
+                renderRequested = false;
+            }
+            requestAnimationFrame(renderLoop);
+        };
+
+        this.requestRender = () => {
+            renderRequested = true;
+        };
+
+        renderLoop();
+    }
+
+       render() {
+        const cam = this.camera.now();
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Save the current transform state
+        this.ctx.save();
+
+        // Apply camera transform
+        this.ctx.translate(this.canvas.width / 2, this.canvas.height / 2);
+
+        // Apply perspective scale based on camera Z position
+        const scale = 100 / Math.max(cam.z, 1); // Prevent division by zero
+        this.ctx.scale(scale, scale);
+
+        // Apply camera position offset
+        this.ctx.translate(-cam.x, -cam.y);
+
+        // Draw all stored paths (even if there were errors)
+        this.drawStoredPaths(scale);
+
+        // Always draw the turtle at its current position
+        if (this.showTurtle) {
+            this.drawTurtle(scale);
+        }
+
+        this.ctx.restore();
+    }
+
+    drawStoredPaths(scale) {
+        this.paths.forEach(path => {
+            if (!path.points || path.points.length === 0) return;
+
+            this.ctx.beginPath();
+            this.ctx.strokeStyle = path.color || 'red';
+            this.ctx.lineWidth = (path.lineWidth || 3) / scale;
+
+            try {
+                path.points.forEach((point, index) => {
+                    if (index === 0) {
+                        this.ctx.moveTo(point.x, point.y);
+                    } else {
+                        this.ctx.lineTo(point.x, point.y);
+                    }
+                });
+
+                this.ctx.stroke();
+                if (path.filled) {
+                    this.ctx.fillStyle = path.color || 'red';
+                    this.ctx.fill();
+                }
+            } catch (error) {
+                console.warn('Error drawing path:', error);
+                // Continue with next path even if this one fails
+            }
+        });
+    }
+
+    drawTurtle(scale) {
+        const headSize = 15 / scale;
+        this.ctx.save();
+
+        this.ctx.fillStyle = this.color;
+        this.ctx.translate(this.x, this.y);
+
+        // Apply turtle rotation with error handling
+        try {
+            const transformValues = this.rotation.getTransformValues();
+            this.ctx.transform(
+                transformValues.a, transformValues.b,
+                transformValues.c, transformValues.d,
+                transformValues.e, transformValues.f
+            );
+        } catch (error) {
+            console.warn('Error applying turtle rotation:', error);
+            // Use identity transform if rotation fails
+            this.ctx.transform(1, 0, 0, 1, 0, 0);
+        }
+
+        // Draw turtle head
+        this.ctx.beginPath();
+        this.ctx.moveTo(headSize, 0);
+        this.ctx.lineTo(-headSize / 2, headSize / 2);
+        this.ctx.lineTo(-headSize / 2, -headSize / 2);
+        this.ctx.closePath();
+        this.ctx.fill();
+
+        this.ctx.restore();
+    }
+
+    forward(distance=0) {
+        try {
+            const direction = { x: 1, y: 0, z: 0 };
+            const rotatedDirection = this.rotation.rotate(direction);
+            const newX = this.x + rotatedDirection.x * distance;
+            const newY = this.y + rotatedDirection.y * distance;
+            const newZ = this.z + rotatedDirection.z * distance;
+
+            if (this.penDown) {
+                // Create new path segment
+                if (!this.currentPath) {
+                    this.currentPath = {
+                        points: [{x: this.x, y: this.y}],
+                        color: this.color,
+                        lineWidth: this.ctx.lineWidth,
+                        filled: false
+                    };
+                    this.paths.push(this.currentPath);
+                }
+                this.currentPath.points.push({x: newX, y: newY});
+            }
+
+            this.x = newX;
+            this.y = newY;
+            this.z = newZ;
+
+            // Store current state for recovery if needed
+            this.executionState = {
+                x: this.x,
+                y: this.y,
+                z: this.z,
+                rotation: new Versor(
+                    this.rotation.w,
+                    this.rotation.x,
+                    this.rotation.y,
+                    this.rotation.z
+                )
+            };
+        } catch (error) {
+            console.warn('Error in forward movement:', error);
+            // Recover from last known good state
+            Object.assign(this, this.executionState);
+        }
+
+        this.requestRender();
+    }
+
+    fill() {
+        if (this.currentPath) {
+            this.currentPath.filled = true;
+            this.currentPath = null;
+        }
     }
 
     clear() {
-        this.ctx.clearRect(0, 0, canvas.width, canvas.height)
+        this.paths = [];
+        this.currentPath = null;
+        this.requestRender();
+        // this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
+
+
 
     defineFunction(name, parameters, body) {
         this.functions[name] = { parameters, body };
@@ -157,7 +328,7 @@ export class Turtle {
 
     reset() {
         this.spawn()
-        this.ctx.clearRect(0, 0, canvas.width, canvas.height)
+        this.clear();
         this.commandCount = 0
         this.recurseCount = 0
         this.rotation = new Versor(1, 0, 0, 0);
@@ -171,26 +342,29 @@ export class Turtle {
         this.ctx.beginPath();
         this.ctx.moveTo(this.x, this.y);
         this.showTurtle = true;
+        this.currentPath = null;
+
+        this.requestRender();
     }
 
-    forward(distance) {
-        const direction = { x: 1, y: 0, z: 0 }; // Forward direction in local space
+    // forward(distance) {
+    //     const direction = { x: 1, y: 0, z: 0 }; // Forward direction in local space
 
-        const rotatedDirection = this.rotation.rotate(direction);
-        const newX = this.x + rotatedDirection.x * distance;
-        const newY = this.y + rotatedDirection.y * distance;
-        const newZ = this.z + rotatedDirection.z * distance;
-        if (this.penDown) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.projectX(this.x, this.z), this.projectY(this.y, this.z));
-            this.ctx.lineTo(this.projectX(newX, newZ), this.projectY(newY, newZ));
-            this.ctx.stroke();
-        }
+    //     const rotatedDirection = this.rotation.rotate(direction);
+    //     const newX = this.x + rotatedDirection.x * distance;
+    //     const newY = this.y + rotatedDirection.y * distance;
+    //     const newZ = this.z + rotatedDirection.z * distance;
+    //     if (this.penDown) {
+    //         this.ctx.beginPath();
+    //         this.ctx.moveTo(this.projectX(this.x, this.z), this.projectY(this.y, this.z));
+    //         this.ctx.lineTo(this.projectX(newX, newZ), this.projectY(newY, newZ));
+    //         this.ctx.stroke();
+    //     }
 
-        this.x = newX;
-        this.y = newY;
-        this.z = newZ;
-    }
+    //     this.x = newX;
+    //     this.y = newY;
+    //     this.z = newZ;
+    // }
 
     projectX(x, z) {
         const cam = this.camera.now()
@@ -204,17 +378,17 @@ export class Turtle {
         return (y - cam.y) * perspective + this.ctx.canvas.height / 2;
     }
 
-    roll(angle) {
+    roll(angle=0) {
         const rotation = Versor.fromAxisAngle({ x: 1, y: 0, z: 0 }, angle);
         this.rotation = rotation.multiply(this.rotation);
     }
 
-    pitch(angle) {
+    pitch(angle=0) {
         const rotation = Versor.fromAxisAngle({ x: 0, y: 1, z: 0 }, angle);
         this.rotation = rotation.multiply(this.rotation);
     }
 
-    yaw(angle) {
+    yaw(angle=0) {
         const rotation = Versor.fromAxisAngle({ x: 0, y: 0, z: 1 }, angle);
         this.rotation = rotation.multiply(this.rotation);
     }
@@ -307,6 +481,7 @@ export class Turtle {
     redraw() {
         // if(this.instructions.length > 0) requestAnimationFrame(this.executeBody(this.instructions, {}));
         if(this.instructions.length > 0) requestAnimationFrame(() => {
+
             this.reset();
             this.executeBody(this.instructions, {})
             this.head()});
@@ -315,7 +490,7 @@ export class Turtle {
     draw(instructions) {
         this.reset();
         this.executeBody(instructions, {});
-        this.head()
+
         this.instructions = instructions
 
     }
