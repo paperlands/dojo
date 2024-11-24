@@ -2,7 +2,7 @@ import { Parser } from "./mafs/parse.js"
 import { Evaluator } from "./mafs/evaluate.js"
 import { Versor } from "./mafs/versors.js"
 import { Camera } from "./camera.js"
-import { cameraBridge } from "../bridged.js"
+import { seaBridge, cameraBridge } from "../bridged.js"
 
 export class Turtle {
     constructor(canvas) {
@@ -477,6 +477,12 @@ export class Turtle {
 
         this.instructions = instructions
 
+        setTimeout(() => {
+            seaBridge.pub(["hatchTurtle", {"commands": instructions, "path": this.canvas.toDataURL()}])
+        }, 100)
+
+
+
     }
     hideTurtle() {
         this.showTurtle = false;
@@ -486,7 +492,7 @@ export class Turtle {
         this.showTurtle = true;
     }
 
-    setColor(color) {
+    setColor(color = "silver") {
         this.color = color;
         if (color == "invisible") this.color = "#00000000"
         this.ctx.strokeStyle = this.color;

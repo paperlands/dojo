@@ -1,7 +1,7 @@
 import { Turtle } from "../turtling/turtle.js"
 import { Terminal } from "../terminal.js"
 import {printAST, parseProgram } from "../turtling/parse.js"
-import {seaBridge} from "../bridged.js"
+import {seaBridge} from "../bridged.js" 
 import { computePosition, offset, inline, autoUpdate } from "../../vendor/floating-ui.dom.umd.min";
 
 const snippets = [
@@ -152,9 +152,6 @@ Shell = {
     try {
       const commands = parseProgram(code);
       turtle.draw(commands)
-      const path = canvas.toDataURL()
-
-      seaBridge.pub(["hatchTurtle", {"commands": commands, "path": path}])
 
       // Display output
       output.innerHTML = `${turtle.commandCount}`;
