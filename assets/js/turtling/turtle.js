@@ -123,34 +123,38 @@ export class Turtle {
     }
 
     drawStoredPaths(scale) {
-        this.paths.forEach(path => {
-            if (!path.points || path.points.length === 0) return;
+    this.paths.forEach(path => {
+        if (!path.points || path.points.length === 0) return;
 
-            this.ctx.beginPath();
-            this.ctx.strokeStyle = path.color || 'red';
-            this.ctx.lineWidth = (path.lineWidth || 2) / scale;
+        // Start drawing a new path
+        this.ctx.beginPath();
+        this.ctx.strokeStyle = path.color || 'red';
+        this.ctx.lineWidth = (path.lineWidth || 2) / scale;
 
-            try {
-                path.points.forEach((point, index) => {
-                    if (index === 0) {
-                        this.ctx.moveTo(point.x, point.y);
-                    } else {
-                        this.ctx.lineTo(point.x, point.y);
-                    }
-                });
-
-                this.ctx.stroke();
-                if (path.filled) {
-                    this.ctx.fillStyle = path.color || 'red';
-                    this.ctx.fill();
+        try {
+            // Iterate through each point in the path
+            path.points.forEach((point, index) => {
+                // Move to or draw line to the current point
+                if (index === 0) {
+                    this.ctx.moveTo(point.x, point.y);
+                } else {
+                    this.ctx.lineTo(point.x, point.y);
                 }
-            } catch (error) {
-                console.warn('Error drawing path:', error);
-                // Continue with next path even if this one fails
-            }
-        });
-    }
+            });
 
+            // Final stroke for the last segment
+            this.ctx.stroke();
+
+            // Fill if necessary
+            if (path.filled) {
+                this.ctx.fillStyle = path.color || 'red';
+                this.ctx.fill();
+            }
+        } catch (error) {
+            console.warn('Error drawing path:', error);
+        }
+    });
+    }
     drawTurtle(scale) {
         const headSize = 15 / scale;
         this.ctx.save();
@@ -201,6 +205,7 @@ export class Turtle {
                     };
                     this.paths.push(this.currentPath);
                 }
+                //color transition
                 this.currentPath.points.push({x: newX, y: newY});
             }
 
@@ -485,5 +490,7 @@ export class Turtle {
         this.color = color;
         if (color == "invisible") this.color = "#00000000"
         this.ctx.strokeStyle = this.color;
+        //break path for new path
+        this.currentPath = null;
     }
 }
