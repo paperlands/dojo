@@ -23,6 +23,7 @@ export class Turtle {
             mv: this.move.bind(this),
             home: this.spawn.bind(this),
             fill: this.fill.bind(this),
+            // wait: this.wait.bind(this),
             clear: this.clear.bind(this),
             beColour: this.setColor.bind(this)
         };
@@ -35,6 +36,9 @@ export class Turtle {
             z: 10,
             rotation: new Versor(1, 0, 0, 0)
         };
+
+        this.nowtime = 0
+        this.comingtime = 0
 
         this.setupContinuousRendering();
         this.reset();
@@ -124,7 +128,7 @@ export class Turtle {
 
             this.ctx.beginPath();
             this.ctx.strokeStyle = path.color || 'red';
-            this.ctx.lineWidth = (path.lineWidth || 3) / scale;
+            this.ctx.lineWidth = (path.lineWidth || 2) / scale;
 
             try {
                 path.points.forEach((point, index) => {
@@ -180,7 +184,6 @@ export class Turtle {
     }
 
     forward(distance=0) {
-        try {
             const direction = { x: 1, y: 0, z: 0 };
             const rotatedDirection = this.rotation.rotate(direction);
             const newX = this.x + rotatedDirection.x * distance;
@@ -217,13 +220,7 @@ export class Turtle {
                     this.rotation.z
                 )
             };
-        } catch (error) {
-            console.warn('Error in forward movement:', error);
-            // Recover from last known good state
-            Object.assign(this, this.executionState);
-        }
 
-        this.requestRender();
     }
 
     fill() {
@@ -335,7 +332,7 @@ export class Turtle {
         this.penDown = true;
         this.color = 'red';
         this.ctx.strokeStyle = this.color;
-        this.ctx.lineWidth = 3;
+        this.ctx.lineWidth = 2;
         // this.ctx.shadowBlur = 8;
         // this.ctx.shadowColor = "white";
         this.ctx.lineCap = 'round';
@@ -347,24 +344,6 @@ export class Turtle {
         this.requestRender();
     }
 
-    // forward(distance) {
-    //     const direction = { x: 1, y: 0, z: 0 }; // Forward direction in local space
-
-    //     const rotatedDirection = this.rotation.rotate(direction);
-    //     const newX = this.x + rotatedDirection.x * distance;
-    //     const newY = this.y + rotatedDirection.y * distance;
-    //     const newZ = this.z + rotatedDirection.z * distance;
-    //     if (this.penDown) {
-    //         this.ctx.beginPath();
-    //         this.ctx.moveTo(this.projectX(this.x, this.z), this.projectY(this.y, this.z));
-    //         this.ctx.lineTo(this.projectX(newX, newZ), this.projectY(newY, newZ));
-    //         this.ctx.stroke();
-    //     }
-
-    //     this.x = newX;
-    //     this.y = newY;
-    //     this.z = newZ;
-    // }
 
     projectX(x, z) {
         const cam = this.camera.now()

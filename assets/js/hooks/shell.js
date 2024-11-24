@@ -153,6 +153,7 @@ Shell = {
       const commands = parseProgram(code);
       turtle.draw(commands)
       const path = canvas.toDataURL()
+
       seaBridge.pub(["hatchTurtle", {"commands": commands, "path": path}])
 
       // Display output
