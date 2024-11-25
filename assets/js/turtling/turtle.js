@@ -19,7 +19,7 @@ export class Turtle {
             roll: this.roll.bind(this),
             show: this.unhideTurtle.bind(this),
             hd: this.hideTurtle.bind(this),
-            jmp: this.jmp.bind(this),
+            jmp: this.jump.bind(this),
             mv: this.move.bind(this),
             home: this.spawn.bind(this),
             fill: this.fill.bind(this),
@@ -58,9 +58,9 @@ export class Turtle {
         // Command execution tracking
         this.commandCount = 0;
         this.recurseCount = 0,
-        this.maxRecurses = 500000;
+        this.maxRecurses = 888888;
         this.maxCommands = 88888;
-        this.maxRecurseDepth = 28
+        this.maxRecurseDepth = 1000
 
 
         //mafs
@@ -153,8 +153,9 @@ export class Turtle {
         } catch (error) {
             console.warn('Error drawing path:', error);
         }
-    });
-    }
+    });}
+
+
     drawTurtle(scale) {
         const headSize = 15 / scale;
         this.ctx.save();
@@ -208,6 +209,9 @@ export class Turtle {
                 //color transition
                 this.currentPath.points.push({x: newX, y: newY});
             }
+        else {
+            this.currentPath= null
+        }
 
             this.x = newX;
             this.y = newY;
@@ -385,7 +389,7 @@ export class Turtle {
         this.yaw(angle);
     }
 
-    jmp(distance){
+    jump(distance){
 
         this.noPen();
         this.forward(distance);
@@ -404,63 +408,7 @@ export class Turtle {
         this.penDown = true;
     }
 
-    head() {
-        if (this.showTurtle) {
-            const headSize = 15;
-            this.ctx.lineWidth = 2;
-            const projectedX = this.projectX(this.x, this.z);
-            const projectedY = this.projectY(this.y, this.z);
 
-            this.ctx.save();
-            this.ctx.fillStyle = this.color;
-            this.ctx.translate(projectedX, projectedY);
-
-            // Convert quaternion to rotation matrix
-            const transformValues = this.rotation.getTransformValues();
-            this.ctx.transform(transformValues.a, transformValues.b, transformValues.c, transformValues.d, transformValues.e, transformValues.f);
-
-            this.ctx.beginPath();
-
-            // Draw turtle-like shape (triangle)
-            this.ctx.moveTo(headSize, 0); // Pointing direction
-            this.ctx.lineTo(-headSize / 2, headSize / 2); // Bottom left
-            this.ctx.lineTo(-headSize / 2, -headSize / 2); // Bottom right
-
-            this.ctx.closePath();
-            this.ctx.fill(); // Fill the turtle
-
-            // Stroke the outline of the turtle shape
-            this.ctx.strokeStyle = 'black'; // Outline color
-            this.ctx.stroke();
-
-            //front eyes
-            this.ctx.beginPath();
-            this.ctx.arc(1, headSize / 2 , 2, 0, Math.PI * 2);
-            this.ctx.arc(5, -headSize / 2 , 2, 0, Math.PI * 2);
-            this.ctx.fillStyle = this.color; // Color of the top indicator
-            this.ctx.fill();
-
-            // // Optionally, draw a small circle to indicate the top of the turtle inverse of a rotation matrix is the rotation matrix's transpose.
-            this.ctx.resetTransform(1,0,0,1,0,0)
-            this.ctx.translate(projectedX, projectedY);
-            // this.ctx.scale(1 / transformValues.a, 1 / transformValues.d);
-            // const scaleFactor = 1 / Math.max(transformValues.a, transformValues.d);
-            // this.ctx.scale(scaleFactor, scaleFactor);
-            this.ctx.beginPath();
-            this.ctx.arc(1, headSize / 2 , 1, 0, Math.PI);
-            this.ctx.arc(5, -headSize / 2 , 1, 0, Math.PI);
-            this.ctx.arc(0, 0, 3, 0, Math.PI * 2, true);
-            // Circle above the turtle
-            this.ctx.closePath();
-            this.ctx.fillStyle = this.color; // Color of the top indicator
-            this.ctx.fill();
-            this.ctx.restore();
-        }
-        // init listener if legit at the end
-
-        this.camera.speed(this.speed)
-
-    }
 
     redraw() {
         // if(this.instructions.length > 0) requestAnimationFrame(this.executeBody(this.instructions, {}));
