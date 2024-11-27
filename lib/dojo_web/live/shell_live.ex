@@ -285,6 +285,7 @@ defmodule DojoWeb.ShellLive do
                 {"jmp", "Jump Forward", "jmp 100"},
                 {"home", "Return To Start", "home"},
                 {"hd", "Hide your Head", "hd"},
+                {"wait", "Wait for a while ", "wait 1"},
                 {"show", "Show your Head", "show"},
                 {"beColour", "Set your Color", "beColour red"}
               ] do %>
