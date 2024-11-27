@@ -60,7 +60,7 @@ export class Turtle {
         this.recurseCount = 0,
         this.maxRecurses = 888888;
         this.maxCommands = 88888;
-        this.maxRecurseDepth = 1000
+        this.maxRecurseDepth = 360
 
 
         //mafs
@@ -74,6 +74,7 @@ export class Turtle {
         this.x = 0;
         this.y = 0;
         this.z = 10
+        this.currentPath=null
     }
 
     setupContinuousRendering() {
@@ -427,7 +428,7 @@ export class Turtle {
 
         setTimeout(() => {
             seaBridge.pub(["hatchTurtle", {"commands": instructions, "path": this.canvas.toDataURL()}])
-        }, 100)
+        }, 1000)
 
 
 
