@@ -156,7 +156,7 @@ export class Turtle {
 
         // Get only new paths since last render
         const newPaths = Array.from(this.timeline.frames.entries())
-              .filter(([time]) => time > this.timeline.lastRenderTime && time <= currRenderTime)
+              .filter(([time]) => time >= this.timeline.lastRenderTime && time < currRenderTime)
               .flatMap(([_, frame]) => frame);
 
         // Render only the new paths
@@ -169,7 +169,7 @@ export class Turtle {
 
         // Draw turtle on final frame if needed
         if (this.timeline.lastRenderTime > this.timeline.endTime && this.showTurtle) {
-            this.drawTurtle(scale);
+            this.drawHead(scale);
         }
 
         this.ctx.restore();
@@ -212,11 +212,11 @@ export class Turtle {
         // Draw all stored paths (even if there were errors)
         this.drawPaths(paths, scale);
 
-        if(this.timeline.lastRenderTime > this.timeline.endTime) {
-                    if (this.showTurtle) {
-                        this.drawTurtle(scale);
-                    }
-        }
+        // if(this.timeline.lastRenderTime > this.timeline.endTime) {
+        //             if (this.showTurtle) {
+        //                 this.drawTurtle(scale);
+        //             }
+        // }
 
 
         // Always draw the turtle at its current position, forget on next frame till last frame
@@ -269,7 +269,7 @@ export class Turtle {
         this.currentPath= null
     }
 
-    drawTurtle(scale) {
+    drawHead(scale) {
         const headSize = 15 / scale;
         this.ctx.save();
 
@@ -541,7 +541,7 @@ export class Turtle {
             requestAnimationFrame(() => {
             this.reset();
             this.executeBody(this.instructions, {})
-            this.head()});
+            });
     }
 
     draw(instructions) {

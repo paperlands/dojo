@@ -313,7 +313,7 @@ defmodule DojoWeb.ShellLive do
           <div class="absolute -top-1  -left-1 w-3 h-3 border-t-2 border-l-2 border-amber-400"></div>
           <div class="absolute -top-1 -right-1  w-3 h-3 border-t-2 border-r-2 border-amber-400"></div>
           <div class="absolute -bottom-1 -left-1  w-3 h-3 border-b-2 border-l-2 border-amber-400"></div>
-          <div class="absolute -bottom-1 -right-1  w-3 h-3 border-b-2 border-r-2 border-amber-400"></div>
+
         </div>
       <% end %>
     </div>

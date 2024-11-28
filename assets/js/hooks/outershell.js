@@ -31,6 +31,8 @@ OuterShell = {
   //
     initOuterShell(el, ast){
         const canvas = document.getElementById('outercanvas');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
         const turtle = new Turtle(outercanvas);
         this.shell = new Terminal(el, CodeMirror).init();
 
