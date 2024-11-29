@@ -23,15 +23,7 @@
     <!-- Editor -->
     <div phx-update="ignore" id="runenv" class="mb-4 cursor-text">
       <div class="relative z-20">
-        <input
-          id="slider"
-          type="range"
-          min="-30"
-          max="30"
-          step="0.1"
-          value="1"
-          class="absolute hidden w-full h-1 bg-transparent rounded-lg appearance-none cursor-pointer slider stroke-transparent"
-        />
+        <.slider slider_value="50" />
       </div>
       <textarea id="your-buffer" phx-hook="Shell"></textarea>
     </div>
@@ -94,7 +86,8 @@
             overflow-hidden">
       <button
         phx-click="seeTurtle"
-        class="absolute
+        class="shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:bg-red-900/90 group opacity-50 hover:opacity-100
+               absolute
               top-2
               right-2
               z-10

@@ -18,6 +18,7 @@ Shell = {
       // on init find the triumvirate
       const canvas = document.getElementById('canvas');
       const output = document.getElementById('output');
+      // const world = new World(canvas);
       const turtle = new Turtle(canvas);
       const shell = new Terminal(this.el, CodeMirror).init();
       // set up event listeners
@@ -72,11 +73,6 @@ Shell = {
             lineNumbers.add(line);
           }
         });
-
-        // Convert Set to sorted array
-        console.log(lineNumbers);
-
-
       });
 
       shell.on('mousedown', function(cm, change) {
@@ -94,10 +90,7 @@ Shell = {
         const numpat = /[+-]?\d*\.\d+|[+-]?\d+/g;
         // Check if the token is a number
         if (token.string.match(numpat)) {
-          var new_slider = old_slider.cloneNode(true);
-          new_slider.value = 1
-          old_slider.parentNode.replaceChild(new_slider, old_slider);
-          new_slider.addEventListener("input", function() {
+          slideObserver = new MutationObserver(function(mut) {
             let charCount = 0;
             let val = null;
             let index = 0;
@@ -114,28 +107,37 @@ Shell = {
                 break; // Exit the loop once we find the match
               }
             }
+            console.log(mut[0].target.getAttribute(mut[0].attributeName))
             if (val){
             //slidervalue get
-            const sliderValue = Math.round(new_slider.value*val * 100) / 100;
+              const sliderValue = Math.round(((7.2*(mut[0].target.getAttribute(mut[0].attributeName)-50))));
             linecode[index] = sliderValue
             // Replace all numbers in the line with the slider value
             const replacedLine = linecode.join('')
             cm.replaceRange(replacedLine, { line: pos.line, ch: 0 }, { line: pos.line, ch: 100 });
-            }});
+            }})
+
+          slideObserver.observe(old_slider, {
+            subtree: true,
+            childList: true,
+            attributeFilter: ['slideval'],
+          })
+
           // Position the slider near the hovered number
-          new_slider.classList.remove("hidden")
+          old_slider.classList.remove("hidden")
 
           var getSelectRect = selection.getRangeAt(0).getBoundingClientRect();
 
-          computePosition(event.target, new_slider, {placement: 'top-end', middleware: [offset(5)]}).then(({x, y}) => {
-            new_slider.classList.remove("hidden")
-            Object.assign(new_slider.style, {
+          computePosition(event.target, old_slider, {placement: 'top-end', middleware: [offset(5)]}).then(({x, y}) => {
+            old_slider.classList.remove("hidden")
+            Object.assign(old_slider.style, {
               left: `${getSelectRect.x}px`,
               top: `${y}px`,
             });
           })
         } else {
           old_slider.classList.add("hidden")
+          slideObserver.disconnect()
         }
         }
       })
@@ -198,5 +200,7 @@ draw spiral size fo fi (
 )
 spiral 1 1 1`;
 }
+
+
 
 export default Shell;

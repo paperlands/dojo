@@ -17,8 +17,10 @@ export class Terminal {
 
     opts() {
         return {theme: "abbott", mode: "apl", lineNumbers: true,
-            styleActiveLine: true,
+                styleActiveLine: {nonEmpty: true},
+                styleActiveSelected: true,
             autocorrect: true,
+
             extraKeys: {
                 "Ctrl-Space": () => this.snippet(),
                 "Ctrl-/": (cm) => this.toggleComment(cm)
