@@ -75,72 +75,103 @@ Shell = {
         });
       });
 
+      let sliderhideoutId;
+      const old_slider = document.getElementById('slider');
+
+      old_slider.addEventListener('mouseover', () => {
+            clearTimeout(sliderhideoutId); // Clear the timeout when hovering over the message
+        });
+
+      old_slider.addEventListener('mouseleave', resetSliderHideout);
+
       shell.on('mousedown', function(cm, change) {
-        var old_slider = document.getElementById('slider');
-        var selection = window.getSelection()
+        const selection = window.getSelection();
+
+        resetSliderHideout();
+
+
         if (!selection || selection.rangeCount <= 0) {
-          old_slider.classList.add("hidden")
-          return
+          old_slider.classList.add("hidden");
+          return;
         }
-        else {
+
         const pos = cm.coordsChar({ left: event.clientX, top: event.clientY });
         const line = cm.getLine(pos.line);
         const token = cm.getTokenAt(pos);
-        var getSelectRect = selection.getRangeAt(0).getBoundingClientRect();
         const numpat = /[+-]?\d*\.\d+|[+-]?\d+/g;
+
         // Check if the token is a number
         if (token.string.match(numpat)) {
-          slideObserver = new MutationObserver(function(mut) {
-            let charCount = 0;
-            let val = null;
-            let index = 0;
-            // we cant trim the whitespace as pos accounts for it
-            const wsregex = /(\S+|\s+)/g;
-            const linecode = line.split(wsregex)
-            for (let i = 0; i < linecode.length; i++) {
-              const str = linecode[i];
-              charCount += str.length;
-
-              if (charCount >= pos.ch && str.includes(token.string)) {
-                val = str;
-                index = i;
-                break; // Exit the loop once we find the match
-              }
-            }
-            console.log(mut[0].target.getAttribute(mut[0].attributeName))
-            if (val){
-            //slidervalue get
-              const sliderValue = Math.round(((7.2*(mut[0].target.getAttribute(mut[0].attributeName)-50))));
-            linecode[index] = sliderValue
-            // Replace all numbers in the line with the slider value
-            const replacedLine = linecode.join('')
-            cm.replaceRange(replacedLine, { line: pos.line, ch: 0 }, { line: pos.line, ch: 100 });
-            }})
-
-          slideObserver.observe(old_slider, {
-            subtree: true,
-            childList: true,
-            attributeFilter: ['slideval'],
-          })
+          // Initialize the slider observer
+          initializeSliderObserver(old_slider, cm, pos, line, token.string);
 
           // Position the slider near the hovered number
-          old_slider.classList.remove("hidden")
-
-          var getSelectRect = selection.getRangeAt(0).getBoundingClientRect();
+          old_slider.classList.remove("hidden");
+          const getSelectRect = selection.getRangeAt(0).getBoundingClientRect();
 
           computePosition(event.target, old_slider, {placement: 'top-end', middleware: [offset(5)]}).then(({x, y}) => {
-            old_slider.classList.remove("hidden")
             Object.assign(old_slider.style, {
               left: `${getSelectRect.x}px`,
               top: `${y}px`,
             });
-          })
+          });
         } else {
-          old_slider.classList.add("hidden")
-          slideObserver.disconnect()
+          old_slider.classList.add("hidden");
+          if (slideObserver) slideObserver.disconnect();
         }
-        }
-      })
+      });
+
+      let slideObserver;
+
+      function resetSliderHideout() {
+        clearTimeout(sliderhideoutId);
+        sliderhideoutId = setTimeout(function() {
+          old_slider.classList.add("hidden");
+        }, 3000);
+      }
+
+      function initializeSliderObserver(old_slider, cm, pos, line, tokenString) {
+        if (slideObserver) slideObserver.disconnect(); // Disconnect previous observer if exists
+
+        slideObserver = new MutationObserver(function(mut) {
+          let charCount = 0;
+          let val = null;
+          let index = 0;
+
+          // Split line into words and whitespace
+          const wsregex = /(\S+|\s+)/g;
+          const linecode = line.split(wsregex);
+
+          for (let i = 0; i < linecode.length; i++) {
+            const str = linecode[i];
+            charCount += str.length;
+
+            if (charCount >= pos.ch && str.includes(tokenString)) {
+              val = str;
+              index = i;
+              break; // Exit loop once we find the match
+            }
+          }
+
+          if (val) {
+            // Slider value get
+            const sliderValue = Math.round((7.2 * (mut[0].target.getAttribute(mut[0].attributeName) - 50)));
+            linecode[index] = sliderValue;
+
+            // Replace all numbers in the line with the slider value
+            const replacedLine = linecode.join('');
+            cm.replaceRange(replacedLine, { line: pos.line, ch: 0 }, { line: pos.line, ch: 100 });
+          }
+        });
+
+        slideObserver.observe(old_slider, {
+          subtree: true,
+          childList: true,
+          attributeFilter: ['slideval'],
+        });
+      }
+
+
     },
 
   run(val, canvas, turtle) {

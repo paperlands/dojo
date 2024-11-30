@@ -376,7 +376,7 @@ defmodule DojoWeb.ShellLive do
 
   def slider(assigns) do
     ~H"""
-    <div id="slider" class="absolute hidden w-full max-w-xs group opacity-50 hover:opacity-100">
+    <div id="slider" class="absolute transition-opacity duration-300 ease-in-out  hidden w-full max-w-xs group opacity-50 hover:opacity-100 group-hover:block">
      <div class="flex items-center space-x-3">
      <!-- Value Display -->
        <div class="w-4 text-left mr-4 -ml-4">

@@ -1,7 +1,9 @@
 import { ASTNode } from "./ast.js"
 
 function tokenize(program) {
+    // TODO replace paranthesis needs to account for comment reduce till comment #
     return program
+        //.replace(/#.*?(?=\n|$)/g, '')
         .replace(/\)\)/g, ')\n)') // line feed if cosecutive closing ps
         .split(/\r?\n/)
         .map(line => line.trim())
