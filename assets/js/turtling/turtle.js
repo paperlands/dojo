@@ -551,18 +551,14 @@ export class Turtle {
         this.instructions = instructions
 
         setTimeout(() => {
-            seaBridge.pub(["hatchTurtle", {"commands": instructions, "path": this.canvas.toDataURL()}])
+            seaBridge.pub(["hatchTurtle", {"commands": instructions, "path": trimImage(this.ctx)}])
         }, 1000)
 
 
 
     }
 
-    export() {
 
-
-
-    }
     hideTurtle() {
         this.showTurtle = false;
     }
@@ -579,3 +575,46 @@ export class Turtle {
         this.currentPath = null;
     }
 }
+
+   function trimImage(ctx) {
+        const canvas = ctx.canvas;
+        const width = canvas.width;
+        const height = canvas.height;
+        const imageData = ctx.getImageData(0, 0, width, height);
+        let xMin = width, xMax = -1, yMin = height, yMax = -1;
+
+        // Loop through pixels to find the bounding box of non-transparent pixels
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const index = (y * width + x) * 4;
+                if (imageData.data[index + 3] > 0) { // Check alpha channel
+                    if (x < xMin) xMin = x;
+                    if (x > xMax) xMax = x;
+                    if (y < yMin) yMin = y;
+                    if (y > yMax) yMax = y;
+                }
+            }
+        }
+
+        // If no pixels found, return early
+        if (xMax < xMin || yMax < yMin) return null;
+
+        const newWidth = xMax - xMin + 1;
+        const newHeight = yMax - yMin + 1;
+
+        // Create an offscreen canvas
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = newWidth;
+        offscreenCanvas.height = newHeight;
+
+        const offscreenCtx = offscreenCanvas.getContext('2d');
+
+        // Extract the cropped image data from the original canvas
+        const cut = ctx.getImageData(xMin, yMin, newWidth, newHeight);
+
+        // Put the cropped image data into the offscreen canvas
+        offscreenCtx.putImageData(cut, 0, 0);
+
+        // Return the cropped image as a data URL
+        return offscreenCanvas.toDataURL();
+    }
