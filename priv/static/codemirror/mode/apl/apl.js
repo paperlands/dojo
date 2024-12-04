@@ -287,7 +287,7 @@ CodeMirror.defineMode("plang", function(config) {
       var closed = ct.type == closing[firstChar] ||
         ct.type == "keyword" && /^(?:end|until|else|elsif|when|rescue)\b/.test(textAfter);
       return ct.indented + (closed ? 0 : config.indentUnit) +
-        (state.continuedLine ? config.indentUnit : 0);
+        (state.continuedLine ? config.indentUnit : 0) + (state.lastTok == "end" ? -2 : 0);
     },
 
     electricInput: /^\s*(?:end|rescue|elsif|else|\})$/,
