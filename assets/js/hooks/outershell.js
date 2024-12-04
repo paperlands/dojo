@@ -51,7 +51,7 @@ OuterShell = {
 
   createBuffer(ast) {
       const buffer = printAST(ast)
-      const doc = CodeMirror.Doc(buffer, "apl"); // Create a new document
+      const doc = CodeMirror.Doc(buffer, "plang"); // Create a new document
     this.buffers["test"] = doc; // Store the document in buffers
     this.switchBuffer("test"); // Switch to the new buffer
     this.shell.setValue(this.shell.getValue()) // trigger change event

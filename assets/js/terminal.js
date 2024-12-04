@@ -16,10 +16,12 @@ export class Terminal {
     }
 
     opts() {
-        return {theme: "abbott", mode: "apl", lineNumbers: true,
+        return {theme: "abbott", mode: "plang", lineNumbers: true, lineWrapping: true,
                 styleActiveLine: {nonEmpty: true},
                 styleActiveSelected: true,
             autocorrect: true,
+            foldGutter: true,
+            gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
 
             extraKeys: {
                 "Ctrl-Space": () => this.snippet(),

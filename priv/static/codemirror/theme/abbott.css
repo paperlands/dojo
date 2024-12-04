@@ -164,7 +164,7 @@
 .cm-s-abbott span.cm-variable,
 .cm-s-abbott span.cm-variable-2,
 .cm-s-abbott span.cm-variable-3 {
-  color: #8ccdf0 /* periwinkle_blue */;
+  color: #D3D05B /* periwinkle_blue */;
 }
 
 /* Roughly equivalent to Vim's Function group. */
@@ -264,6 +264,7 @@
 
 /* Roughly equivalent to Vim's Folded group. */
 .cm-s-abbott .CodeMirror-foldmarker {
-  color: #f63f05 /* cinnabar */;
+  color: #fbb32f /* cinnabar */;
   text-shadow: none;
+  font-size: 16px;
 }

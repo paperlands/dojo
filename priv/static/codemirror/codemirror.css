@@ -356,6 +356,30 @@ div.CodeMirror-dragcursors {
   cursor: pointer;
 }
 
+.CodeMirror-foldmarker {
+  text-shadow: #fff 1px 1px 2px, #b9f -1px -1px 2px, #b9f 1px -1px 2px, #b9f -1px 1px 2px;
+  line-height: .3;
+  cursor: pointer;
+  content: "❦";
+}
+.CodeMirror-foldgutter {
+  width: .7em;
+}
+.CodeMirror-foldgutter-open,
+.CodeMirror-foldgutter-folded {
+  cursor: pointer;
+  font-size: 16px;
+  margin-left: -3px
+}
+.CodeMirror-foldgutter-open:after {
+  content: "\25BE";
+
+}
+.CodeMirror-foldgutter-folded:after {
+  content: "\25B8";
+}
+
+
 li.CodeMirror-hint-active {
   background: #08f;
   color: white;
