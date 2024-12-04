@@ -85,17 +85,17 @@ export function printAST(ast) {
         } else if (node.type === 'Lit') {
             output.push(`${indentStr}# ${node.value.trim()}`);
         } else if (node.type === 'Loop') {
-            output.push(`${indentStr}for ${node.value} (`);
+            output.push(`${indentStr}for ${node.value} do`);
             node.children.forEach(child => visit(child, indent + 1));
-            output.push(`${indentStr})`);
+            output.push(`${indentStr}end`);
         } else if (node.type === 'When') {
-            output.push(`${indentStr}when ${node.value} (`);
+            output.push(`${indentStr}when ${node.value} do`);
             node.children.forEach(child => visit(child, indent + 1));
-            output.push(`${indentStr})`);
+            output.push(`${indentStr}end`);
         } else if (node.type === 'Define') {
-            output.push(`${indentStr}draw ${node.value} ${(node.meta.args || []).map(arg => visit(arg, 0)).join(' ')} (`);
+            output.push(`${indentStr}draw ${node.value} ${(node.meta.args || []).map(arg => visit(arg, 0)).join(' ')} do`);
             node.children.forEach(child => visit(child, indent + 1));
-            output.push(`${indentStr})`);
+            output.push(`${indentStr}end`);
         }
     }
 

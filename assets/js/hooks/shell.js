@@ -220,15 +220,15 @@ function loadEditorContent() {
   return localStorage.getItem('@my.turtle') || `rt 30
 jmp 200
 hd
-draw spiral size fo fi (
+draw spiral size fo fi do
  beColour gold
  # character arc begins
- for 360/[2*4] (
+ for 360/[2*4] do
   fw size
   rt 2
- )
+ end
  spiral size*[fo+fi]/fi fi fi+fo #fibo go brrr
-)
+end
 spiral 1 1 1`;
 }
 

@@ -47,18 +47,18 @@ defmodule Dojo.Turtle do
   defp visit(%{"type" => "Loop", "value" => value, "children" => children}) do
     child_output = children |> Enum.map(&visit/1) |> Enum.join("\n")
     """
-    for #{value} (
+    for #{value} do
     #{indent_lines(child_output)}
-    )
+    end
     """
   end
 
   defp visit(%{"type" => "When", "value" => value, "children" => children}) do
     child_output = children |> Enum.map(&visit/1) |> Enum.join("\n")
     """
-    when #{value} (
+    when #{value} do
     #{indent_lines(child_output)}
-    )
+    end
     """
   end
 
@@ -66,9 +66,9 @@ defmodule Dojo.Turtle do
     arg_output = args |> Enum.map(&visit/1) |> Enum.join(" ")
     child_output = children |> Enum.map(&visit/1) |> Enum.join("\n")
     """
-    draw #{value} #{arg_output} (
+    draw #{value} #{arg_output} do
     #{indent_lines(child_output)}
-    )
+    end
     """
   end
 
