@@ -84,7 +84,7 @@ Shell = {
 
       old_slider.addEventListener('mouseleave', resetSliderHideout);
 
-      shell.on('mousedown', function(cm, change) {
+      shell.on('dblclick', function(cm, change) {
         const selection = window.getSelection();
 
         resetSliderHideout();
@@ -97,8 +97,15 @@ Shell = {
 
         const pos = cm.coordsChar({ left: event.clientX, top: event.clientY });
         const line = cm.getLine(pos.line);
-        const token = cm.getTokenAt(pos);
+        let token = cm.getTokenAt(pos);
+        if (token.type == null) {
+          // so that it checks one character to the right as well
+          pos.ch += 1
+          token = cm.getTokenAt(pos)
+        }
         const numpat = /[+-]?\d*\.\d+|[+-]?\d+/g;
+
+        console.log(token)
 
         // Check if the token is a number
         if (token.string.match(numpat)) {
