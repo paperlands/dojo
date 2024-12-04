@@ -110,6 +110,25 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
+
+  def handle_event(
+        "keepTurtle",
+        _,
+        %{assigns: %{disciples: dis}} = socket
+      ) do
+
+    push_socket = dis |> Enum.reduce(socket,
+                                     fn {name, %{meta: %{path: path}}}, sock ->
+                                       sock |> push_event("download-file", %{
+                                                 href: path,
+                                                 filename: name <> ".png"})
+                                       _, sock ->
+                                         sock
+                                     end)
+    # Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
+    {:noreply, push_socket}
+  end
+
   def handle_event(
         "hatchTurtle",
         %{"commands" => commands, "path" => path},
@@ -334,9 +353,9 @@ defmodule DojoWeb.ShellLive do
 
   def export(assigns) do
     ~H"""
-     <button
+     <div
        phx-click="keepTurtle"
-       class="relative flex items-center gap-2 px-4 py-2 bg-transparent rounded-lg shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-105 group"
+       class="relative z-[60] flex items-center m-auto gap-2 px-4 py-2 bg-transparent rounded-lg shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-105 group z-[100]"
      >
        <div class="relative w-6 h-6">
          <svg
@@ -363,7 +382,7 @@ defmodule DojoWeb.ShellLive do
        <div class="absolute -top-1 animate-pulse -right-1 w-2 h-2 border-t-2 border-r-2 border-amber-400"></div>
        <div class="absolute -bottom-1 animate-pulse -left-1 w-2 h-2 border-b-2 border-l-2 border-amber-400"></div>
        <div class="absolute -bottom-1 animate-pulse -right-1 w-2 h-2 border-b-2 border-r-2 border-amber-400"></div>
-     </button>
+     </div>
 
      <!-- Tooltip -->
      <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -371,6 +390,10 @@ defmodule DojoWeb.ShellLive do
          Download Your Creation
        </div>
      </div>
+
+      <script>
+
+     </script>
     """
   end
 

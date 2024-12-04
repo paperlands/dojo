@@ -151,8 +151,9 @@
     <.command_deck visible={@deck}/>
 </div>
 
+
 <%!-- Turtle viewing pane --%>
-<div class="fixed bottom-0 z-40  pointer-events-none w-full -translate-x-1/2 left-1/2">
+<div class="fixed bottom-0 z-50  pointer-events-none w-full -translate-x-1/2 left-1/2">
   <div class="flex items-center justify-center pb-6  space-x-4 overflow-x-auto">
     <!-- Other people's turtles -->
     <div
@@ -176,6 +177,9 @@
         @outershell && @outershell.addr == name && "border-orange-500"]}
       />
     </div>
+  </div>
+  <div :if={@sensei} class="flex z-50 mb-2 pointer-events-auto" >
+  <.export />
   </div>
 </div>
 

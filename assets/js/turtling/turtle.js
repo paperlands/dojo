@@ -161,7 +161,7 @@ export class Turtle {
 
         // Render only the new paths
         if (newPaths.length > 0) {
-            this.drawPaths(newPaths, scale);
+            this.drawPaths(this.ctx, newPaths, scale);
         }
 
         // Update last render time
@@ -210,7 +210,7 @@ export class Turtle {
 
 
         // Draw all stored paths (even if there were errors)
-        this.drawPaths(paths, scale);
+        this.drawPaths(this.ctx, paths, scale);
 
         // if(this.timeline.lastRenderTime > this.timeline.endTime) {
         //             if (this.showTurtle) {
@@ -225,32 +225,32 @@ export class Turtle {
         this.ctx.restore();
     }
 
-    drawPaths(paths, scale) {
+    drawPaths(ctx, paths, scale) {
         paths.forEach(path => {
             if (!path.points || path.points.length === 0) return;
             // Start drawing a new path
-            this.ctx.beginPath();
-            this.ctx.strokeStyle = path.color || 'red';
-            this.ctx.lineWidth = 2 / scale;
+            ctx.beginPath();
+            ctx.strokeStyle = path.color || 'red';
+            ctx.lineWidth = 2 / scale;
 
             try {
                 // Iterate through each point in the path
                 path.points.forEach((point, index) => {
                     // Move to or draw line to the current point
                     if (index === 0) {
-                        this.ctx.moveTo(point.x, point.y);
+                        ctx.moveTo(point.x, point.y);
                     } else {
-                        this.ctx.lineTo(point.x, point.y);
+                        ctx.lineTo(point.x, point.y);
                     }
                 });
 
                 // Final stroke for the last segment
-                this.ctx.stroke();
+                ctx.stroke();
 
                 // Fill if necessary
                 if (path.filled) {
-                    this.ctx.fillStyle = path.color || 'red';
-                    this.ctx.fill();
+                    ctx.fillStyle = path.color || 'red';
+                    ctx.fill();
                 }
             } catch (error) {
                 console.warn('Error drawing path:', error);
@@ -553,6 +553,12 @@ export class Turtle {
         setTimeout(() => {
             seaBridge.pub(["hatchTurtle", {"commands": instructions, "path": this.canvas.toDataURL()}])
         }, 1000)
+
+
+
+    }
+
+    export() {
 
 
 

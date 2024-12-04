@@ -105,8 +105,6 @@ Shell = {
         }
         const numpat = /[+-]?\d*\.\d+|[+-]?\d+/g;
 
-        console.log(token)
-
         // Check if the token is a number
         if (token.string.match(numpat)) {
           // Initialize the slider observer
