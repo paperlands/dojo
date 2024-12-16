@@ -270,36 +270,41 @@ export class Turtle {
     }
 
     drawHead(scale) {
-        const headSize = 15 / scale;
-        this.ctx.save();
+        // theres a 32 bit overflow
+        if (isFinite(Math.fround(this.x)) && isFinite(Math.fround(this.y))){
 
-        this.ctx.fillStyle = this.color;
-        this.ctx.translate(this.x, this.y);
+            const headSize = 15 / scale;
+            this.ctx.save();
 
-        // Apply turtle rotation with error handling
-        try {
-            const transformValues = this.rotation.getTransformValues();
-            this.ctx.transform(
-                transformValues.a, transformValues.b,
-                transformValues.c, transformValues.d,
-                transformValues.e, transformValues.f
-            );
-        } catch (error) {
-            console.warn('Error applying turtle rotation:', error);
-            // Use identity transform if rotation fails
-            this.ctx.transform(1, 0, 0, 1, 0, 0);
-        }
+            this.ctx.fillStyle = this.color;
 
-        // Draw turtle head
-        this.ctx.beginPath();
-        this.ctx.moveTo(headSize, 0);
-        this.ctx.lineTo(-headSize / 2, headSize / 2);
-        this.ctx.lineTo(-headSize / 2, -headSize / 2);
-        this.ctx.closePath();
-        this.ctx.fill();
+            this.ctx.translate(this.x, this.y);
 
-        this.ctx.restore();
-    }
+            // Apply turtle rotation with error handling
+            try {
+                const transformValues = this.rotation.getTransformValues();
+                this.ctx.transform(
+                    transformValues.a, transformValues.b,
+                    transformValues.c, transformValues.d,
+                    transformValues.e, transformValues.f
+                );
+            } catch (error) {
+                console.warn('Error applying turtle rotation:', error);
+                // Use identity transform if rotation fails
+                this.ctx.transform(1, 0, 0, 1, 0, 0);
+            }
+
+            // Draw turtle head
+            this.ctx.beginPath();
+            this.ctx.moveTo(headSize, 0);
+            this.ctx.lineTo(-headSize / 2, headSize / 2);
+            this.ctx.lineTo(-headSize / 2, -headSize / 2);
+            this.ctx.closePath();
+            this.ctx.fill();
+
+            this.ctx.restore();
+
+        }}
 
     forward(distance=0) {
             const direction = { x: 1, y: 0, z: 0 };
@@ -319,10 +324,12 @@ export class Turtle {
 
                     const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
                     currentFrame.push(this.currentPath);
+                    console.log(currentFrame)
                     this.timeline.frames.set(this.timeline.currentTime, currentFrame);
                 }
                 //color transition
                 this.currentPath.points.push({x: newX, y: newY});
+                console.log(this.currentPath.points)
             }
         else {
             this.currentPath= null
@@ -375,7 +382,7 @@ export class Turtle {
             this.forward(0.01)
             return;
         }
-        //console.log(name , args ,ctx , depth)
+        // console.log(name , args ,ctx , depth)
         const func = this.functions[name] || (ctx[name] && this.functions[ctx[name]]);
         if (!func)
         {this.callCommand(name, ...args)}
@@ -444,7 +451,7 @@ export class Turtle {
 
     evaluateExpression(expr, context) {
         if (this.math.parser.isNumeric(expr)) return parseFloat(expr);
-        if (context[expr]) return context[expr];
+        if (context[expr] != null) return context[expr];
         const tree = this.math.parser.run(expr)
         if (tree.children.length > 1) return this.math.evaluator.run(tree, context);
         return tree.value // probably a string
