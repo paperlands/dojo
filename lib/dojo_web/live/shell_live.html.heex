@@ -127,12 +127,12 @@
 </div>
 
 <%!-- Turtle viewing pane --%>
-<div class="fixed bottom-0 z-50 flex w-2/3 overflow-x-scroll transform -translate-x-1/2 pointer-events-none scrollbar-hide left-1/2">
+<div class="fixed bottom-0 z-50 flex w-2/3 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 border border-gray-900 rounded-md left-1/2 dark-scrollbar">
   <!-- Other people's turtles -->
   <div
     :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
     :if={Map.has_key?(dis, :meta)}
-    class={"rounded-lg transition m-4 duration-200 ease-in-out flex-shrink-0 w-1/6" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
+    class={"rounded-lg transition mx-8 duration-200 ease-in-out flex-shrink-0 w-1/6" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
   >
     <.icon
       :if={@sensei}
@@ -143,7 +143,7 @@
     />
     <div class="text-white"><%= name %></div>
     <div class={[
-      "flex justify-center h-32 w-48 border pointer-events-auto rounded-md cursor-alias hover:scale-120 hover:border-2",
+      "flex justify-center h-32 lg:w-48 w-32 border pointer-events-auto rounded-md cursor-alias hover:scale-120 hover:border-2",
       @outershell && @outershell.addr == name && "border-orange-500"
     ]}>
       <img
@@ -163,6 +163,25 @@
   /* Custom styles for editor width */
   #editor {
   width: 80ch; /* 80 characters width */
+  }
+
+  /* WebKit-based browsers (Chrome, Safari, Edge) */
+  .dark-scrollbar::-webkit-scrollbar {
+    width: 12px; /* Width of the scrollbar */
+  }
+  .dark-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #555; /* Color of the scrollbar thumb */
+    border-radius: 6px; /* Rounded corners */
+    border: 3px solid #222; /* Optional: space between thumb and track */
+  }
+  .dark-scrollbar::-webkit-scrollbar-track {
+    background-color: #222; /* Color of the scrollbar track */
+  }
+
+  /* Firefox */
+  .dark-scrollbar {
+    scrollbar-color: #555 #222; /* Thumb color and track color */
+    scrollbar-width: thin; /* Thin scrollbar */
   }
 </style>
 
