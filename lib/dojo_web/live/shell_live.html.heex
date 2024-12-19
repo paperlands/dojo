@@ -84,7 +84,7 @@
     :if={@outershell}
     id="outerenv"
     phx-update="ignore"
-    class="absolute w-full overflow-hidden border rounded-lg top-32 right-4 bottom-4 md:w-96 bg-amber-300/10 border-amber-600/20"
+    class="absolute w-2/3 overflow-y-scroll border rounded-lg h-1/2 top-32 right-4 bottom-4 bg-amber-300/10 border-amber-600/20 dark-scrollbar"
   >
     <button
       phx-click="seeTurtle"
@@ -118,7 +118,7 @@
         <path d="M12 7v10M7 12h10" stroke-dasharray="2 2" />
       </svg>
     </button>
-    <div class="w-full h-full p-4 my-8 overflow-auto font-mono text-xs text-white bg-transparent resize-none focus:outline-none">
+    <div class="p-4 my-8 overflow-auto font-mono text-xs text-white bg-transparent resize-none h-11/12 focus:outline-none">
       <textarea id="outershell" phx-hook="OuterShell"></textarea>
     </div>
   </div>
