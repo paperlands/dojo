@@ -21,6 +21,7 @@ export class Turtle {
             hd: this.hideTurtle.bind(this),
             jmp: this.jump.bind(this),
             mv: this.move.bind(this),
+            goto: this.goto.bind(this),
             home: this.spawn.bind(this),
             fill: this.fill.bind(this),
             wait: this.wait.bind(this),
@@ -306,6 +307,13 @@ export class Turtle {
 
         }}
 
+    goto(x=0, y=0, z=null) {
+        this.x = x;
+        this.y = y;
+        this.z = z ?? this.z
+        this.currentPath=null
+    }
+
     forward(distance=0) {
             const direction = { x: 1, y: 0, z: 0 };
             const rotatedDirection = this.rotation.rotate(direction);
@@ -324,12 +332,10 @@ export class Turtle {
 
                     const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
                     currentFrame.push(this.currentPath);
-                    console.log(currentFrame)
                     this.timeline.frames.set(this.timeline.currentTime, currentFrame);
                 }
                 //color transition
                 this.currentPath.points.push({x: newX, y: newY});
-                console.log(this.currentPath.points)
             }
         else {
             this.currentPath= null

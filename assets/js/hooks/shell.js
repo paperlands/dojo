@@ -34,13 +34,14 @@ Shell = {
           break;
         default:
           var doc = shell.getDoc();
+          var token = shell.getTokenAt(shell.getCursor());
           var cursor = doc.getCursor(); // gets the line number in the cursor position
           var line = doc.getLine(cursor.line); // get the line contents
           var pos = { // create a new object to avoid mutation of the original selection
             line: cursor.line,
             ch: line.length // set the character position to the end of the line
           }
-          doc.replaceRange('\n' + cmd, pos); // adds a new line
+          doc.replaceRange("\n".padEnd(1+token.state.indented) + cmd, pos); // adds a new line
         }
       });
 

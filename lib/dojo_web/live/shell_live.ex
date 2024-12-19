@@ -348,7 +348,7 @@ defmodule DojoWeb.ShellLive do
                 {"rt", "Turn Right", "rt 30"},
                 {"lt", "Turn Left", "lt 30"},
                 {"jmp", "Jump Forward", "jmp 100"},
-                {"home", "Return To Start", "home"},
+                {"goto", "Go To Start", "goto 0 0"},
                 {"hd", "Hide your Head", "hd"},
                 {"wait", "Wait for a while ", "wait 1"},
                 {"show", "Show your Head", "show"},

@@ -21,6 +21,7 @@ export class Terminal {
                 styleActiveSelected: true,
             autocorrect: true,
             foldGutter: true,
+                smartIndent: true,
             gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
 
             extraKeys: {
