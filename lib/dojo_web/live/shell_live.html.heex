@@ -88,7 +88,7 @@
   >
     <button
       phx-click="seeTurtle"
-      class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full shadow-xl opacity-50 backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-2 right-2 bg-amber-900/90 border-amber-600"
+      class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full shadow-xl opacity-50 backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-4 left-4 bg-amber-900/90 border-amber-600"
     >
       <!-- Base Crosshair -->
       <div class="absolute inset-0 flex items-center justify-center">
@@ -118,9 +118,8 @@
         <path d="M12 7v10M7 12h10" stroke-dasharray="2 2" />
       </svg>
     </button>
-    <div class="w-full h-full p-4 overflow-auto font-mono text-xs text-white bg-transparent resize-none focus:outline-none">
-      <textarea id="outershell" phx-hook="OuterShell">
-  </textarea>
+    <div class="w-full h-full p-4 my-8 overflow-auto font-mono text-xs text-white bg-transparent resize-none focus:outline-none">
+      <textarea id="outershell" phx-hook="OuterShell"></textarea>
     </div>
   </div>
   <.command_deck visible={@deck} />
