@@ -15,3 +15,35 @@
 @import "tailwindcss/utilities";
 
 /* This file is for your main application CSS */
+
+
+/* add the code bellow */
+@layer utilities {
+      /* Hide scrollbar for Chrome, Safari and Opera */
+      .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+      }
+     /* Hide scrollbar for IE, Edge and Firefox */
+      .scrollbar-hide {
+        -ms-overflow-style: none;  /* IE and Edge */
+        scrollbar-width: none;  /* Firefox */
+      }
+      /* WebKit-based browsers (Chrome, Safari, Edge) */
+      .dark-scrollbar::-webkit-scrollbar {
+        width: 12px; /* Width of the scrollbar */
+      }
+      .dark-scrollbar::-webkit-scrollbar-thumb {
+        background-color: #555; /* Color of the scrollbar thumb */
+        border-radius: 6px; /* Rounded corners */
+        border: 3px solid #222; /* Optional: space between thumb and track */
+      }
+      .dark-scrollbar::-webkit-scrollbar-track {
+        background-color: #222; /* Color of the scrollbar track */
+      }
+
+      /* Firefox */
+      .dark-scrollbar {
+        scrollbar-color: #444 #222; /* Thumb color and track color */
+        scrollbar-width: thin; /* Thin scrollbar */
+      }
+}
