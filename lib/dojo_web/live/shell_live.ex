@@ -309,18 +309,19 @@ defmodule DojoWeb.ShellLive do
       </div>
       <!-- Command Deck Panel -->
       <%= if @visible do %>
-        <div class="w-64 transition-all duration-500 ease-in-out transform rounded-lg shadow-xl bg-brand-900/70 backdrop-blur-sm">
-          <div class="p-4">
+        <div class="fixed w-64 transition-all duration-500 ease-in-out transform rounded-lg shadow-xl right-5 bottom-36 xl:h-2/3 bg-brand-900/70 backdrop-blur-sm h-1/2 dark-scrollbar">
+          <div class="h-full p-4">
             <!-- Header -->
             <div class="flex items-center justify-between mb-4">
               <h2 class="text-xl font-bold text-amber-200">Command Deck</h2>
             </div>
-            <div class="absolute z-50 top-1 right-1 group" phx-click="tellTurtle" phx-value-cmd="undo">
+            <%!-- Undo button --%>
+            <div class="absolute z-50 top-4 right-4 group" phx-click="tellTurtle" phx-value-cmd="undo">
               <div class="relative">
                 <!-- Main Button -->
-                <button class="flex items-center justify-center w-8 h-8 bg-amber-900/90 rounded-full border-2 border-amber-600 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
+                <button class="flex items-center justify-center w-8 h-8 bg-amber-900/90 rounded-full border-2 border-amber-700 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
                   <svg
-                    class="w-4 h-4 text-amber-300"
+                    class="w-4 h-4 text-amber-400"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -341,7 +342,7 @@ defmodule DojoWeb.ShellLive do
               </div>
             </div>
             <!-- Command List -->
-            <div class="space-y-2">
+            <div class="h-full space-y-2 overflow-y-scroll">
               <%= for {cmd, desc, code} <- [
                 {"fw", "Move Forward", "fw 100"},
                 {"rt", "Turn Right", "rt 30"},
@@ -376,9 +377,9 @@ defmodule DojoWeb.ShellLive do
             </div>
           </div>
           <!-- Decorative corners -->
-          <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-1 -left-1 border-amber-400"></div>
-          <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-1 -right-1 border-amber-400"></div>
-          <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-1 -left-1 border-amber-400">
+          <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-2 -left-4 border-amber-400"></div>
+          <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-2 right-1 border-amber-400"></div>
+          <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-24 -left-4 border-amber-400">
           </div>
         </div>
       <% end %>
