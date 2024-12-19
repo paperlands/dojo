@@ -191,7 +191,7 @@ defmodule DojoWeb.ShellLive do
        %{
          addr: addr,
          outerfunctions: dis[addr][:meta][:commands] |> Dojo.Turtle.filter_fns(),
-         resp: "summoning @#{addr}'s code ☄"
+         resp: "#{addr}"
        }
      )
      |> assign(:deck, false)}

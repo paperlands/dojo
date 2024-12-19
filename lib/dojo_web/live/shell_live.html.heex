@@ -77,9 +77,15 @@
       <span class="relative flex items-center space-x-2"></span>
     </span>
     <span :if={@outershell && @outershell.resp} class="block">
-      &gt; <%= @outershell.resp %>
+      &gt; summoning @<%= @outershell.resp %>'s code ☄
     </span>
   </div>
+  <span
+    :if={@outershell && @outershell.resp}
+    class="absolute text-lg font-bold lg:text-xl right-8 md:right-10 lg:right-12 text-amber-600 top-36"
+  >
+    @<%= @outershell.resp %>'s code
+  </span>
   <div
     :if={@outershell}
     id="outerenv"
@@ -118,7 +124,7 @@
         <path d="M12 7v10M7 12h10" stroke-dasharray="2 2" />
       </svg>
     </button>
-    <div class="p-4 my-8 overflow-auto font-mono text-xs text-white bg-transparent resize-none h-11/12 focus:outline-none">
+    <div class="p-4 mt-12 mb-8 overflow-auto font-mono text-xs text-white bg-transparent resize-none h-11/12 focus:outline-none">
       <textarea id="outershell" phx-hook="OuterShell"></textarea>
     </div>
   </div>
