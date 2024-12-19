@@ -1,7 +1,7 @@
 import { Turtle } from "../turtling/turtle.js"
 import { Terminal } from "../terminal.js"
 import {printAST, parseProgram } from "../turtling/parse.js"
-import {seaBridge} from "../bridged.js"
+import {seaBridge} from "../bridged.js" 
 import { computePosition, offset, inline, autoUpdate } from "../../vendor/floating-ui.dom.umd.min";
 
 const snippets = [
@@ -18,6 +18,7 @@ Shell = {
       // on init find the triumvirate
       const canvas = document.getElementById('canvas');
       const output = document.getElementById('output');
+      // const world = new World(canvas);
       const turtle = new Turtle(canvas);
       const shell = new Terminal(this.el, CodeMirror).init();
       // set up event listeners
@@ -33,13 +34,14 @@ Shell = {
           break;
         default:
           var doc = shell.getDoc();
+          var token = shell.getTokenAt(shell.getCursor());
           var cursor = doc.getCursor(); // gets the line number in the cursor position
           var line = doc.getLine(cursor.line); // get the line contents
           var pos = { // create a new object to avoid mutation of the original selection
             line: cursor.line,
             ch: line.length // set the character position to the end of the line
           }
-          doc.replaceRange('\n' + cmd, pos); // adds a new line
+          doc.replaceRange("\n".padEnd(1+token.state.indented) + cmd, pos); // adds a new line
         }
       });
 
@@ -72,73 +74,110 @@ Shell = {
             lineNumbers.add(line);
           }
         });
-
-        // Convert Set to sorted array
-        console.log(lineNumbers);
-
-
       });
 
-      shell.on('mousedown', function(cm, change) {
-        var old_slider = document.getElementById('slider');
-        var selection = window.getSelection()
+      let sliderhideoutId;
+      const old_slider = document.getElementById('slider');
+
+      old_slider.addEventListener('mouseover', () => {
+            clearTimeout(sliderhideoutId); // Clear the timeout when hovering over the message
+        });
+
+      old_slider.addEventListener('mouseleave', resetSliderHideout);
+
+      shell.on('dblclick', function(cm, change) {
+        const selection = window.getSelection();
+
+        resetSliderHideout();
+
+
         if (!selection || selection.rangeCount <= 0) {
-          old_slider.classList.add("hidden")
-          return
+          old_slider.classList.add("hidden");
+          return;
         }
-        else {
+
         const pos = cm.coordsChar({ left: event.clientX, top: event.clientY });
         const line = cm.getLine(pos.line);
-        const token = cm.getTokenAt(pos);
-        var getSelectRect = selection.getRangeAt(0).getBoundingClientRect();
+        let token = cm.getTokenAt(pos);
+        if (token.type == null) {
+          // so that it checks one character to the right as well
+          pos.ch += 1
+          token = cm.getTokenAt(pos)
+        }
         const numpat = /[+-]?\d*\.\d+|[+-]?\d+/g;
+
         // Check if the token is a number
         if (token.string.match(numpat)) {
-          var new_slider = old_slider.cloneNode(true);
-          new_slider.value = 1
-          old_slider.parentNode.replaceChild(new_slider, old_slider);
-          new_slider.addEventListener("input", function() {
-            let charCount = 0;
-            let val = null;
-            let index = 0;
-            // we cant trim the whitespace as pos accounts for it
-            const wsregex = /(\S+|\s+)/g;
-            const linecode = line.split(wsregex)
-            for (let i = 0; i < linecode.length; i++) {
-              const str = linecode[i];
-              charCount += str.length;
+          // Initialize the slider observer
+          initializeSliderObserver(old_slider, cm, pos, line, token.string);
 
-              if (charCount >= pos.ch && str.includes(token.string)) {
-                val = str;
-                index = i;
-                break; // Exit the loop once we find the match
-              }
-            }
-            if (val){
-            //slidervalue get
-            const sliderValue = Math.round(new_slider.value*val * 100) / 100;
-            linecode[index] = sliderValue
-            // Replace all numbers in the line with the slider value
-            const replacedLine = linecode.join('')
-            cm.replaceRange(replacedLine, { line: pos.line, ch: 0 }, { line: pos.line, ch: 100 });
-            }});
           // Position the slider near the hovered number
-          new_slider.classList.remove("hidden")
+          old_slider.classList.remove("hidden");
+          const getSelectRect = selection.getRangeAt(0).getBoundingClientRect();
 
-          var getSelectRect = selection.getRangeAt(0).getBoundingClientRect();
-
-          computePosition(event.target, new_slider, {placement: 'top-end', middleware: [offset(5)]}).then(({x, y}) => {
-            new_slider.classList.remove("hidden")
-            Object.assign(new_slider.style, {
+          computePosition(event.target, old_slider, {placement: 'top-end', middleware: [offset(5)]}).then(({x, y}) => {
+            Object.assign(old_slider.style, {
               left: `${getSelectRect.x}px`,
               top: `${y}px`,
             });
-          })
+          });
         } else {
-          old_slider.classList.add("hidden")
+          old_slider.classList.add("hidden");
+          if (slideObserver) slideObserver.disconnect();
         }
-        }
-      })
+      });
+
+      let slideObserver;
+
+      function resetSliderHideout() {
+        clearTimeout(sliderhideoutId);
+        sliderhideoutId = setTimeout(function() {
+          old_slider.classList.add("hidden");
+        }, 3000);
+      }
+
+      function initializeSliderObserver(old_slider, cm, pos, line, tokenString) {
+        if (slideObserver) slideObserver.disconnect(); // Disconnect previous observer if exists
+
+        slideObserver = new MutationObserver(function(mut) {
+          let charCount = 0;
+          let val = null;
+          let index = 0;
+
+          // Split line into words and whitespace
+          const wsregex = /(\S+|\s+)/g;
+          const linecode = line.split(wsregex);
+
+          for (let i = 0; i < linecode.length; i++) {
+            const str = linecode[i];
+            charCount += str.length;
+
+            if (charCount >= pos.ch && str.includes(tokenString)) {
+              val = str;
+              index = i;
+              break; // Exit loop once we find the match
+            }
+          }
+
+          if (val) {
+            // Slider value get
+            const sliderValue = Math.round((7.2 * (mut[0].target.getAttribute(mut[0].attributeName) - 50)));
+            linecode[index] = sliderValue;
+
+            // Replace all numbers in the line with the slider value
+            const replacedLine = linecode.join('');
+            cm.replaceRange(replacedLine, { line: pos.line, ch: 0 }, { line: pos.line, ch: 100 });
+          }
+        });
+
+        slideObserver.observe(old_slider, {
+          subtree: true,
+          childList: true,
+          attributeFilter: ['slideval'],
+        });
+      }
+
+
     },
 
   run(val, canvas, turtle) {
@@ -152,8 +191,6 @@ Shell = {
     try {
       const commands = parseProgram(code);
       turtle.draw(commands)
-      const path = canvas.toDataURL()
-      seaBridge.pub(["hatchTurtle", {"commands": commands, "path": path}])
 
       // Display output
       output.innerHTML = `${turtle.commandCount}`;
@@ -189,16 +226,18 @@ function loadEditorContent() {
   return localStorage.getItem('@my.turtle') || `rt 30
 jmp 200
 hd
-draw spiral size fo fi (
+draw spiral size fo fi do
  beColour gold
  # character arc begins
- for 360/[2*4] (
+ for 360/[2*4] do
   fw size
   rt 2
- )
+ end
  spiral size*[fo+fi]/fi fi fi+fo #fibo go brrr
-)
+end
 spiral 1 1 1`;
 }
+
+
 
 export default Shell;

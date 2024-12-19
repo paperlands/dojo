@@ -25,12 +25,12 @@ export class Evaluator {
         switch (operator) {
         case '&': return left && right;
         case '|': return left || right;
-        case '>': return (left > right)? left: 0;
-        case '<': return (left < right)? left: 0;
-        case '=': return (left === right) ? left: 0;
+        case '>': return (left > right)? left || 1: 0;
+        case '<': return (left < right)? left || 1 : 0;
+        case '=': return (left === right) ? left || 1: 0;
         case '^': return Math.pow(left, right);
         case '*': return left * right;
-        case '/': return left / right;
+        case '/': return (left / right==Infinity) ? 2147483647: left / right;
         case '+': return left + right;
         case '-': return left - right;
         default: throw new Error(`Unknown operator: ${operator}`);

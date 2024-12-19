@@ -4,7 +4,7 @@
   /* Set height, width, borders, and global font properties here */
   font-family: monospace;
   height: 80%;
-  margin: 10px;
+  margin: 8px;
   color: black;
   z-index: 2;
   direction: ltr;
@@ -355,6 +355,31 @@ div.CodeMirror-dragcursors {
   color: black;
   cursor: pointer;
 }
+
+.CodeMirror-foldmarker {
+  text-shadow: #fff 1px 1px 2px, #b9f -1px -1px 2px, #b9f 1px -1px 2px, #b9f -1px 1px 2px;
+  line-height: .3;
+  cursor: pointer;
+  content: "❦";
+}
+.CodeMirror-foldgutter {
+width: 1em;
+}
+.CodeMirror-foldgutter-open,
+.CodeMirror-foldgutter-folded {
+  cursor: pointer;
+  font-size: 16px;
+  margin-left: -5px
+  z-index: 5;
+}
+.CodeMirror-foldgutter-open:after {
+  content: "\25BE";
+
+}
+.CodeMirror-foldgutter-folded:after {
+  content: "\25B8";
+}
+
 
 li.CodeMirror-hint-active {
   background: #08f;

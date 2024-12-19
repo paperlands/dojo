@@ -54,6 +54,18 @@ function fetchSession() {
   }
 };
 
+window.addEventListener("phx:download-file", (event) => {
+       console.log("Event received:", event);
+       var element = document.createElement('a');
+       element.setAttribute('href', event.detail.href);
+       element.setAttribute('download', event.detail.filename);
+
+       element.style.display = 'none';
+       document.body.appendChild(element);
+       element.click();
+       document.body.removeChild(element);
+});
+
 
 window.addEventListener("dojo:yoink", (event) => {
   if ("clipboard" in navigator) {
