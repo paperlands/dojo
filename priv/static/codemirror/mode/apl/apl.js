@@ -19,7 +19,7 @@ function wordObj(words) {
 
 var keywordList = [
   "draw", "do", "BEGIN", "begin", "break", "case", "class", "def", "defined?",
-  "fw", "rt", "hd",  "lt", "show", "wait", "beColour", "jmp",
+  "fw", "rt", "hd",  "lt", "show", "wait", "beColour", "jmp", "fill",
   "elsif", "END", "end", "ensure", "false", "for", "if", "in", "module", "next", "not", "or",
   "redo", "rescue", "retry", "return", "self", "super", "then", "true", "undef", "unless",
   "until", "when", "while", "yield", "nil", "raise", "throw", "catch", "fail", "loop", "callcc",
@@ -260,7 +260,7 @@ CodeMirror.defineMode("plang", function(config) {
         if (style == "keyword") {
           thisTok = word;
           if (indentWords.propertyIsEnumerable(word)) kwtype = "indent";
-          else if (dedentWords.propertyIsEnumerable(word)) kwtype = "dedent";
+          else if (word=="end") kwtype = "dedent";
           else if ((word == "if" || word == "unless") && stream.column() == stream.indentation())
             kwtype = "indent";
           else if (word == "do" && state.context.indented < state.indented)
@@ -285,9 +285,10 @@ CodeMirror.defineMode("plang", function(config) {
       var firstChar = textAfter && textAfter.charAt(0);
       var ct = state.context;
       var closed = ct.type == closing[firstChar] ||
-        ct.type == "keyword" && /^(?:end|until|else|elsif|when|rescue)\b/.test(textAfter);
+        ct.type == "keyword" && /^(?:end)\b/.test(textAfter);
+      if (state.lastTok == "end") ct.indented = ct.indented-2
       return ct.indented + (closed ? 0 : config.indentUnit) +
-        (state.continuedLine ? config.indentUnit : 0) + (state.lastTok == "end" ? -2 : 0);
+        (state.continuedLine ? config.indentUnit : 0) ;
     },
 
     electricInput: /^\s*(?:end|rescue|elsif|else|\})$/,
