@@ -147,13 +147,11 @@
       class="cursor-pointer pointer-events-auto text-brand"
     />
     <div class="text-white"><%= name %></div>
-    <div class={[
+    <div phx-click="seeTurtle" phx-value-addr={name} class={[
       "flex justify-center h-32 lg:w-48 w-32 border pointer-events-auto rounded-md cursor-alias hover:scale-120 hover:border-2",
       @outershell && @outershell.addr == name && "border-orange-500"
     ]}>
       <img
-        phx-click="seeTurtle"
-        phx-value-addr={name}
         src={dis.meta.path}
         class="object-scale-down max-h-full m-auto"
       />

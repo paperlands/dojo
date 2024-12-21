@@ -22,10 +22,10 @@ export class Turtle {
             jmp: this.jump.bind(this),
             mv: this.move.bind(this),
             goto: this.goto.bind(this),
+            erase: this.erase.bind(this),
             home: this.spawn.bind(this),
             fill: this.fill.bind(this),
             wait: this.wait.bind(this),
-            clear: this.clear.bind(this),
             beColour: this.setColor.bind(this)
         };
         this.functions = {};
@@ -41,6 +41,7 @@ export class Turtle {
 
 
         this.pathTemplate = {
+            type: "path",
             points: [],
             color: null,
             filled: false,
@@ -55,7 +56,6 @@ export class Turtle {
             lastRenderTime: 0,
             lastRenderFrame: 0
         };
-
 
         this.setupContinuousRendering();
         this.reset();
@@ -93,13 +93,18 @@ export class Turtle {
     setupContinuousRendering() {
         let animationFrameId = null;
         let lastTimestamp = 0;
+        let restartTimestamp=0
+        let currTime=0
         let clear = false;
+        let restart=true
         const targetFPS = 60;
         const frameInterval = 1000/targetFPS;
 
         const renderLoop = (timestamp) => {
-            if (!lastTimestamp) lastTimestamp = timestamp;
-            const deltaTime = timestamp - lastTimestamp;
+            currTime = timestamp-restartTimestamp
+            if (!lastTimestamp) lastTimestamp = currTime;
+
+            const deltaTime = currTime - lastTimestamp;
 
             if (deltaTime >= frameInterval) {
                 if (this.timeline.lastRenderTime <= this.timeline.endTime) {
@@ -107,8 +112,14 @@ export class Turtle {
                         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
                         clear = false
                     }
-                    this.renderIncremental(timestamp);
-                    lastTimestamp = timestamp;
+                    if (restart) {
+                        this.timeline.lastRenderTime = 0;
+                        restartTimestamp=timestamp
+                        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                        restart = false
+                    }
+                    this.renderIncremental(currTime);
+                    lastTimestamp = currTime;
                 } else {
                     this.renderIncremental(this.timeline.endTime);
                     cancelAnimationFrame(animationFrameId);
@@ -134,6 +145,12 @@ export class Turtle {
                 lastTimestamp = 0;
                 animationFrameId = requestAnimationFrame(renderLoop);
             }
+        };
+
+
+        this.requestRestart = () => {
+            lastTimestamp = 0;
+            restart=true
         };
     }
 
@@ -228,34 +245,47 @@ export class Turtle {
 
     drawPaths(ctx, paths, scale) {
         paths.forEach(path => {
-            if (!path.points || path.points.length === 0) return;
-            // Start drawing a new path
-            ctx.beginPath();
-            ctx.strokeStyle = path.color || 'red';
-            ctx.lineWidth = 2 / scale;
+            switch(path.type) {
+            case "clear":
+                console.warn(path)
+                ctx.closePath();
+                ctx.save();
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                ctx.restore();
+                break;
+            case "path" :
+                if (!path.points || path.points.length === 0) return;
+                // Start drawing a new path
+                ctx.beginPath();
+                ctx.strokeStyle = path.color || 'red';
+                ctx.lineWidth = 2 / scale;
 
-            try {
-                // Iterate through each point in the path
-                path.points.forEach((point, index) => {
-                    // Move to or draw line to the current point
-                    if (index === 0) {
-                        ctx.moveTo(point.x, point.y);
-                    } else {
-                        ctx.lineTo(point.x, point.y);
+                try {
+                    // Iterate through each point in the path
+                    path.points.forEach((point, index) => {
+                        // Move to or draw line to the current point
+                        if (index === 0) {
+                            ctx.moveTo(point.x, point.y);
+                        } else {
+                            ctx.lineTo(point.x, point.y);
+                        }
+                    });
+
+                    // Final stroke for the last segment
+                    ctx.stroke();
+
+                    // Fill if necessary
+                    if (path.filled) {
+                        ctx.fillStyle = path.color || 'red';
+                        ctx.fill();
                     }
-                });
-
-                // Final stroke for the last segment
-                ctx.stroke();
-
-                // Fill if necessary
-                if (path.filled) {
-                    ctx.fillStyle = path.color || 'red';
-                    ctx.fill();
+                } catch (error) {
+                    console.warn('Error drawing path:', error);
                 }
-            } catch (error) {
-                console.warn('Error drawing path:', error);
+                break;
             }
+
         });
     }
 
@@ -268,6 +298,7 @@ export class Turtle {
             this.timeline.frames.set(this.timeline.currentTime, []);
         }
         this.currentPath= null
+        this.requestRestart();
     }
 
     drawHead(scale) {
@@ -312,6 +343,18 @@ export class Turtle {
         this.y = y;
         this.z = z ?? this.z
         this.currentPath=null
+    }
+
+    erase(){
+        this.currentPath = {
+            ...this.pathTemplate,
+            type: "clear"
+        };
+
+        const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
+        currentFrame.push(this.currentPath);
+        this.timeline.frames.set(this.timeline.currentTime, currentFrame);
+        this.currentPath = null;
     }
 
     forward(distance=0) {
@@ -583,6 +626,7 @@ export class Turtle {
     setColor(color = "silver") {
         this.color = color;
         if (color == "invisible") this.color = "#00000000"
+        if (color == "random") this.color = `hsla(${~~(360 * Math.random())}, 70%,  72%, 0.8)`
         this.ctx.strokeStyle = this.color;
         //break path for new path
         this.currentPath = null;
