@@ -1,6 +1,7 @@
 import { Parser } from "./mafs/parse.js"
 import { Evaluator } from "./mafs/evaluate.js"
 import { Versor } from "./mafs/versors.js"
+import { RenderLoop } from "./renderer.js"
 import { Camera } from "./camera.js"
 import { seaBridge, cameraBridge } from "../bridged.js"
 
@@ -22,10 +23,10 @@ export class Turtle {
             jmp: this.jump.bind(this),
             mv: this.move.bind(this),
             goto: this.goto.bind(this),
+            erase: this.erase.bind(this),
             home: this.spawn.bind(this),
             fill: this.fill.bind(this),
             wait: this.wait.bind(this),
-            clear: this.clear.bind(this),
             beColour: this.setColor.bind(this)
         };
         this.functions = {};
@@ -39,8 +40,8 @@ export class Turtle {
         };
 
 
-
         this.pathTemplate = {
+            type: "path",
             points: [],
             color: null,
             filled: false,
@@ -57,7 +58,12 @@ export class Turtle {
         };
 
 
-        this.setupContinuousRendering();
+        this.renderLoop = new RenderLoop(canvas, {
+            onRender: (currentTime) => this.renderIncremental(currentTime),
+            stopCondition: () => this.timeline.lastRenderTime > this.timeline.endTime
+        });
+
+        // this.setupContinuousRendering();
         this.reset();
 
         // Set up animation frame for continuous rendering
@@ -90,51 +96,18 @@ export class Turtle {
         this.currentPath=null
     }
 
-    setupContinuousRendering() {
-        let animationFrameId = null;
-        let lastTimestamp = 0;
-        let clear = false;
-        const targetFPS = 60;
-        const frameInterval = 1000/targetFPS;
+    // turtle interface for renderer
+    requestRender() {
+        this.renderLoop.start();
+    }
 
-        const renderLoop = (timestamp) => {
-            if (!lastTimestamp) lastTimestamp = timestamp;
-            const deltaTime = timestamp - lastTimestamp;
+    requestRerender() {
+        this.timeline.lastRenderTime = 0;
+        this.renderLoop.requestClear();
+    }
 
-            if (deltaTime >= frameInterval) {
-                if (this.timeline.lastRenderTime <= this.timeline.endTime) {
-                    if (clear) {
-                        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                        clear = false
-                    }
-                    this.renderIncremental(timestamp);
-                    lastTimestamp = timestamp;
-                } else {
-                    this.renderIncremental(this.timeline.endTime);
-                    cancelAnimationFrame(animationFrameId);
-                    animationFrameId = null;
-                    return;
-                }
-            }
-
-            animationFrameId = requestAnimationFrame(renderLoop);
-        };
-
-        this.requestRender = () => {
-            if (!animationFrameId) {
-                lastTimestamp = 0;
-                animationFrameId = requestAnimationFrame(renderLoop);
-            }
-        };
-
-        this.requestRerender = () => {
-            this.timeline.lastRenderTime = 0;
-            clear = true;
-            if (!animationFrameId) {
-                lastTimestamp = 0;
-                animationFrameId = requestAnimationFrame(renderLoop);
-            }
-        };
+    requestRestart() {
+        this.renderLoop.requestRestart();
     }
 
     renderIncremental(currRenderTime) {
@@ -176,86 +149,49 @@ export class Turtle {
         this.ctx.restore();
     }
 
-
-    render(currRenderTime) {
-        const cam = this.camera.now();
-        // // query frames between last rendertime and curr rendertime -> draw every path on that
-
-
-        // Save the current transform state
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.save();
-
-        // // Apply camera transform
-        this.ctx.translate(this.canvas.width / 2, this.canvas.height / 2);
-
-        // // Apply perspective scale based on camera Z position
-        const scale = 100 / Math.max(cam.z, 1); // Prevent division by zero
-        this.ctx.scale(scale, scale);
-
-        // Apply camera position offset
-        this.ctx.translate(-cam.x, -cam.y);
-
-        const paths = []
-        for (let [time, frame] of  this.timeline.frames.entries()) {
-            if((time < currRenderTime )) paths.push(...frame)
-        }
-
-        this.timeline.lastRenderTime = currRenderTime
-
-        if (paths.length === 0) return;
-        console.log(currRenderTime)
-        console.log(paths)
-
-
-
-
-        // Draw all stored paths (even if there were errors)
-        this.drawPaths(this.ctx, paths, scale);
-
-        // if(this.timeline.lastRenderTime > this.timeline.endTime) {
-        //             if (this.showTurtle) {
-        //                 this.drawTurtle(scale);
-        //             }
-        // }
-
-
-        // Always draw the turtle at its current position, forget on next frame till last frame
-
-
-        this.ctx.restore();
-    }
-
     drawPaths(ctx, paths, scale) {
         paths.forEach(path => {
-            if (!path.points || path.points.length === 0) return;
-            // Start drawing a new path
-            ctx.beginPath();
-            ctx.strokeStyle = path.color || 'red';
-            ctx.lineWidth = 2 / scale;
+            switch(path.type) {
+            case "clear":
+                console.warn(path)
+                ctx.closePath();
+                ctx.save();
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                ctx.restore();
+                break;
+            case "path" :
+                if (!path.points || path.points.length === 0) return;
+                // Start drawing a new path
+                ctx.beginPath();
+                ctx.strokeStyle = path.color || 'red';
+                ctx.lineWidth = 2 / scale;
 
-            try {
-                // Iterate through each point in the path
-                path.points.forEach((point, index) => {
-                    // Move to or draw line to the current point
-                    if (index === 0) {
-                        ctx.moveTo(point.x, point.y);
-                    } else {
-                        ctx.lineTo(point.x, point.y);
+                try {
+                    // Iterate through each point in the path
+                    path.points.forEach((point, index) => {
+                        // Move to or draw line to the current point
+                        if (index === 0) {
+                            ctx.moveTo(point.x, point.y);
+                        } else {
+                            ctx.lineTo(point.x, point.y);
+                        }
+                    });
+
+                    // Final stroke for the last segment
+                    ctx.stroke();
+
+                    // Fill if necessary
+                    if (path.filled) {
+                        ctx.fillStyle = path.color || 'red';
+                        ctx.fill();
                     }
-                });
-
-                // Final stroke for the last segment
-                ctx.stroke();
-
-                // Fill if necessary
-                if (path.filled) {
-                    ctx.fillStyle = path.color || 'red';
-                    ctx.fill();
+                } catch (error) {
+                    console.warn('Error drawing path:', error);
                 }
-            } catch (error) {
-                console.warn('Error drawing path:', error);
+                break;
             }
+
         });
     }
 
@@ -268,6 +204,7 @@ export class Turtle {
             this.timeline.frames.set(this.timeline.currentTime, []);
         }
         this.currentPath= null
+        this.requestRestart();
     }
 
     drawHead(scale) {
@@ -312,6 +249,18 @@ export class Turtle {
         this.y = y;
         this.z = z ?? this.z
         this.currentPath=null
+    }
+
+    erase(){
+        this.currentPath = {
+            ...this.pathTemplate,
+            type: "clear"
+        };
+
+        const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
+        currentFrame.push(this.currentPath);
+        this.timeline.frames.set(this.timeline.currentTime, currentFrame);
+        this.currentPath = null;
     }
 
     forward(distance=0) {
@@ -583,6 +532,7 @@ export class Turtle {
     setColor(color = "silver") {
         this.color = color;
         if (color == "invisible") this.color = "#00000000"
+        if (color == "random") this.color = `hsla(${~~(360 * Math.random())}, 70%,  72%, 0.8)`
         this.ctx.strokeStyle = this.color;
         //break path for new path
         this.currentPath = null;

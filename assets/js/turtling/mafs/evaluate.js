@@ -4,6 +4,8 @@ export class Evaluator {
         if (ast.type === 'operand') {
             if (/^\d+\.?\d*$/.test(ast.value)) {
                 return parseFloat(ast.value);
+            } else if (ast.value=="random") {
+                return Math.random()
             } else {
                 return this.resolveContext(ast.value, context);
             }

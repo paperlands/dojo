@@ -290,7 +290,7 @@ defmodule DojoWeb.ShellLive do
     <!-- CommandDeck Component (command_deck.html.heex) -->
     <div class="absolute flex px-1 pb-1 right-5 bottom-5">
       <!-- Trigger Button -->
-      <div class="absolute z-50 bottom-1 right-1" phx-click="flipDeck">
+      <div class="absolute z-50 bottom-1 right-1 pointer-events-auto" phx-click="flipDeck">
         <svg
           class="w-5 h-5 transition-transform duration-700 text-brand hover:rotate-180"
           viewBox="0 0 24 24"
@@ -316,7 +316,7 @@ defmodule DojoWeb.ShellLive do
               <h2 class="text-xl font-bold text-amber-200">Command Deck</h2>
             </div>
             <%!-- Undo button --%>
-            <div class="absolute z-50 top-4 right-4 group" phx-click="tellTurtle" phx-value-cmd="undo">
+            <div class="absolute z-50 top-4 right-4 pointer-events-auto group" phx-click="tellTurtle" phx-value-cmd="undo">
               <div class="relative">
                 <!-- Main Button -->
                 <button class="flex items-center justify-center w-8 h-8 bg-amber-900/90 rounded-full border-2 border-amber-700 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
@@ -337,7 +337,7 @@ defmodule DojoWeb.ShellLive do
               <!-- Tooltip -->
               <div class="absolute mb-2 transition-opacity duration-200 opacity-0 bottom-full -right-2 group-hover:opacity-100">
                 <div class="px-2 py-1 text-xs border rounded bg-amber-900/90 text-amber-200 border-amber-600 backdrop-blur-sm whitespace-nowrap">
-                  Undo Last Command
+                  Undo
                 </div>
               </div>
             </div>
@@ -357,7 +357,7 @@ defmodule DojoWeb.ShellLive do
                 <div
                   phx-click="tellTurtle"
                   phx-value-cmd={code}
-                  class="flex items-center p-2 transition-colors rounded hover:bg-amber-900/50 group"
+                  class="flex items-center p-2 transition-colors rounded hover:bg-amber-900/50 group pointer-events-auto"
                 >
                   <div class="mr-3 text-amber-400">
                     <.cmd_icon command={cmd} class="w-8 h-8 fill-brand" />
