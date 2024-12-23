@@ -12,10 +12,10 @@
   >
   </canvas>
   <!-- Left Coder pane container -->
-  <div class="relative left-0 z-20 w-1/3 h-screen p-4 overflow-y-scroll shadow-lg scrollbar-hide">
+  <div class="relative left-0 z-20 w-1/3 h-screen p-4 overflow-y-scroll shadow-lg scrollbar-hide pointer-events-none">
     <!-- Function Marks -->
     <div class="flex justify-start space-x-0.5 py-1">
-      <div class="fixed flex">
+      <div class="fixed flex pointer-events-auto">
         <!-- Example bookmarks -->
         <div
           class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none outline outline-1 outline-gray-500 text-brand hover:bg-yellow-300"
@@ -34,7 +34,7 @@
       </div>
     </div>
     <!-- Editor -->
-    <div phx-update="ignore" id="runenv" class="my-12 cursor-text">
+    <div phx-update="ignore" id="runenv" class="my-12 cursor-text pointer-events-auto">
       <div class="relative z-10">
         <.slider slider_value="50" />
       </div>
@@ -50,7 +50,7 @@
   </div>
 </div>
 <!-- Right Editor -->
-<div class="fixed top-0 right-0 z-20 flex flex-col w-1/3 h-screen p-4">
+<div class="fixed top-0 right-0 z-20 flex flex-col w-1/3 h-screen p-4 pointer-events-none">
   <!-- Session -->
   <div :if={@session.active} id="sessionbox" class={["absolute top-4 right-4 z-20
             w-64 max-w-[calc(100vw-2rem)]
@@ -61,7 +61,7 @@
     <div :if={!@session.name}>
       <span class="block">&gt; enter the shell</span>
       <span class="block">&gt; your name:</span>
-      <form class="flex items-center" id="name" phx-submit="name">
+      <form class="flex items-center pointer-events-auto" id="name" phx-submit="name">
         <span class="transition-opacity duration-700 animate-pulse">&gt;</span>
         <input
           value={@session.name}
@@ -82,7 +82,7 @@
   </div>
   <span
     :if={@outershell && @outershell.resp}
-    class="absolute text-lg font-bold lg:text-xl right-8 md:right-10 lg:right-12 text-amber-600 top-36"
+    class="absolute text-lg font-bold right-8 md:right-10 lg:right-12 text-amber-600 top-36"
   >
     @<%= @outershell.resp %>'s code
   </span>
@@ -90,11 +90,11 @@
     :if={@outershell}
     id="outerenv"
     phx-update="ignore"
-    class="absolute w-2/3 overflow-y-scroll border rounded-lg h-1/2 top-32 right-4 bottom-4 bg-amber-300/10 border-amber-600/20 dark-scrollbar"
+    class="absolute w-2/3 overflow-y-scroll border rounded-lg h-1/2 top-32 right-4 bottom-4 bg-amber-300/10 border-amber-600/20 dark-scrollbar pointer-events-auto"
   >
     <button
       phx-click="seeTurtle"
-      class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full shadow-xl opacity-50 backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-4 left-4 bg-amber-900/90 border-amber-600"
+      class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full shadow-xl opacity-50 backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-4 left-4 bg-amber-900/90 border-amber-600 pointer-events-auto"
     >
       <!-- Base Crosshair -->
       <div class="absolute inset-0 flex items-center justify-center">
@@ -132,7 +132,7 @@
 </div>
 
 <%!-- Turtle viewing pane --%>
-<div class="fixed bottom-0 z-50 flex w-2/3 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 border border-gray-900 rounded-md left-1/2 dark-scrollbar">
+<div class="fixed bottom-0 z-50 flex w-2/3 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 border border-gray-900 rounded-md left-1/2 dark-scrollbar pointer-events-none">
   <!-- Other people's turtles -->
   <div
     :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
