@@ -1,6 +1,7 @@
 import { Parser } from "./mafs/parse.js"
 import { Evaluator } from "./mafs/evaluate.js"
 import { Versor } from "./mafs/versors.js"
+import { RenderLoop } from "./renderer.js"
 import { Camera } from "./camera.js"
 import { seaBridge, cameraBridge } from "../bridged.js"
 
@@ -39,7 +40,6 @@ export class Turtle {
         };
 
 
-
         this.pathTemplate = {
             type: "path",
             points: [],
@@ -57,7 +57,13 @@ export class Turtle {
             lastRenderFrame: 0
         };
 
-        this.setupContinuousRendering();
+
+        this.renderLoop = new RenderLoop(canvas, {
+            onRender: (currentTime) => this.renderIncremental(currentTime),
+            stopCondition: () => this.timeline.lastRenderTime > this.timeline.endTime
+        });
+
+        // this.setupContinuousRendering();
         this.reset();
 
         // Set up animation frame for continuous rendering
@@ -90,68 +96,18 @@ export class Turtle {
         this.currentPath=null
     }
 
-    setupContinuousRendering() {
-        let animationFrameId = null;
-        let lastTimestamp = 0;
-        let restartTimestamp=0
-        let currTime=0
-        let clear = false;
-        let restart=true
-        const targetFPS = 60;
-        const frameInterval = 1000/targetFPS;
+    // turtle interface for renderer
+    requestRender() {
+        this.renderLoop.start();
+    }
 
-        const renderLoop = (timestamp) => {
-            currTime = timestamp-restartTimestamp
-            if (!lastTimestamp) lastTimestamp = currTime;
+    requestRerender() {
+        this.timeline.lastRenderTime = 0;
+        this.renderLoop.requestClear();
+    }
 
-            const deltaTime = currTime - lastTimestamp;
-
-            if (deltaTime >= frameInterval) {
-                if (this.timeline.lastRenderTime <= this.timeline.endTime) {
-                    if (clear) {
-                        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                        clear = false
-                    }
-                    if (restart) {
-                        this.timeline.lastRenderTime = 0;
-                        restartTimestamp=timestamp
-                        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                        restart = false
-                    }
-                    this.renderIncremental(currTime);
-                    lastTimestamp = currTime;
-                } else {
-                    this.renderIncremental(this.timeline.endTime);
-                    cancelAnimationFrame(animationFrameId);
-                    animationFrameId = null;
-                    return;
-                }
-            }
-
-            animationFrameId = requestAnimationFrame(renderLoop);
-        };
-
-        this.requestRender = () => {
-            if (!animationFrameId) {
-                lastTimestamp = 0;
-                animationFrameId = requestAnimationFrame(renderLoop);
-            }
-        };
-
-        this.requestRerender = () => {
-            this.timeline.lastRenderTime = 0;
-            clear = true;
-            if (!animationFrameId) {
-                lastTimestamp = 0;
-                animationFrameId = requestAnimationFrame(renderLoop);
-            }
-        };
-
-
-        this.requestRestart = () => {
-            lastTimestamp = 0;
-            restart=true
-        };
+    requestRestart() {
+        this.renderLoop.requestRestart();
     }
 
     renderIncremental(currRenderTime) {
@@ -189,56 +145,6 @@ export class Turtle {
         if (this.timeline.lastRenderTime > this.timeline.endTime && this.showTurtle) {
             this.drawHead(scale);
         }
-
-        this.ctx.restore();
-    }
-
-
-    render(currRenderTime) {
-        const cam = this.camera.now();
-        // // query frames between last rendertime and curr rendertime -> draw every path on that
-
-
-        // Save the current transform state
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.save();
-
-        // // Apply camera transform
-        this.ctx.translate(this.canvas.width / 2, this.canvas.height / 2);
-
-        // // Apply perspective scale based on camera Z position
-        const scale = 100 / Math.max(cam.z, 1); // Prevent division by zero
-        this.ctx.scale(scale, scale);
-
-        // Apply camera position offset
-        this.ctx.translate(-cam.x, -cam.y);
-
-        const paths = []
-        for (let [time, frame] of  this.timeline.frames.entries()) {
-            if((time < currRenderTime )) paths.push(...frame)
-        }
-
-        this.timeline.lastRenderTime = currRenderTime
-
-        if (paths.length === 0) return;
-        console.log(currRenderTime)
-        console.log(paths)
-
-
-
-
-        // Draw all stored paths (even if there were errors)
-        this.drawPaths(this.ctx, paths, scale);
-
-        // if(this.timeline.lastRenderTime > this.timeline.endTime) {
-        //             if (this.showTurtle) {
-        //                 this.drawTurtle(scale);
-        //             }
-        // }
-
-
-        // Always draw the turtle at its current position, forget on next frame till last frame
-
 
         this.ctx.restore();
     }
