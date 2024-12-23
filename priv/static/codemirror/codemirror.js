@@ -10765,8 +10765,8 @@ function findBlockEnd(cm, start) {
     let lineIndent = line.search(/\S/);
 
     // Only count 'do' and 'end' that are standalone words (not part of other words)
-    let startCount = (line.match(/\b(?<!\.|\w)do\b(?![\w-])/g) || []).length;
-    let endCount = (line.match(/\b(?<!\.|\w)end\b(?![\w-])/g) || []).length;
+    let startCount = (line.match(/(?:^|[^.\w])do\b(?![\w-])/g) || []).length;
+    let endCount = (line.match(/(?:^|[^.\w])end\b(?![\w-])/g) || []).length;
 
     depth += startCount - endCount;
 
@@ -10786,7 +10786,7 @@ CodeMirror.registerHelper("fold", "indent", function(cm, start) {
   var line = cm.getLine(start.line);
 
   // Look for standalone 'do' keyword (not part of a method name or other word)
-  if (/\b(?<!\.|\w)do\b(?![\w-])/.test(line)) {
+  if (/(?:^|[^.\w])do\b(?![\w-])/.test(line)) {
     return findBlockEnd(cm, start);
   }
 });
