@@ -143,6 +143,7 @@ export class Turtle {
 
         // Draw turtle on final frame if needed
         if (this.timeline.lastRenderTime > this.timeline.endTime && this.showTurtle) {
+            console.log("DRAW HEAD")
             this.drawHead(scale);
         }
 
@@ -241,8 +242,7 @@ export class Turtle {
             this.ctx.fill();
 
             this.ctx.restore();
-
-        }}
+    }}
 
     goto(x=0, y=0, z=null) {
         this.x = x;

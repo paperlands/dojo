@@ -20,7 +20,7 @@ config :dojo, DojoWeb.Endpoint,
     layout: false
   ],
   pubsub_server: Dojo.PubSub,
-  check_origin: ["https://dojo.paperland.in", "https://thedojo.fly.dev"],
+  check_origin: ["https://dojo.paperland.sg", "https://dojo.paperland.in", "https://thedojo.fly.dev"],
   live_view: [signing_salt: "ko/5Xrfn"]
 
 # Configures the mailer
