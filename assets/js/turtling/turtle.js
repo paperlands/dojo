@@ -345,7 +345,7 @@ export class Turtle {
         {
             const context = {};
             func.parameters.forEach((param, index) => {
-                context[param] = args[index];
+                context[param] = args[index] || 0;
             });
             context['__depth__'] = depth;
             return this.executeBody(func.body, context);
