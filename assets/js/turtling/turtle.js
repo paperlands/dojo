@@ -165,7 +165,7 @@ export class Turtle {
                 if (!path.points || path.points.length === 0) return;
                 // Start drawing a new path
                 ctx.beginPath();
-                ctx.strokeStyle = path.color || 'red';
+                ctx.strokeStyle = path.color || 'DarkOrange';
                 ctx.lineWidth = 2 / scale;
 
                 try {
@@ -184,7 +184,7 @@ export class Turtle {
 
                     // Fill if necessary
                     if (path.filled) {
-                        ctx.fillStyle = path.color || 'red';
+                        ctx.fillStyle = path.color || 'DarkOrange';
                         ctx.fill();
                     }
                 } catch (error) {
@@ -426,7 +426,7 @@ export class Turtle {
         this.recurseCount = 0
         this.rotation = new Versor(1, 0, 0, 0);
         this.penDown = true;
-        this.color = 'red';
+        this.color = 'DarkOrange';
         this.ctx.strokeStyle = this.color;
         this.ctx.lineWidth = 2;
         // this.ctx.shadowBlur = 8;
@@ -506,18 +506,18 @@ export class Turtle {
             });
     }
 
-    draw(instructions) {
+    draw(instructions, opts= {}) {
+        const options = { ...{comms: true}, ...opts };
         this.reset();
         this.executeBody(instructions, {});
 
         this.instructions = instructions
 
-        setTimeout(() => {
-            seaBridge.pub(["hatchTurtle", {"commands": instructions, "path": trimImage(this.ctx)}])
-        }, 1000)
-
-
-
+        if(options.comms){
+            setTimeout(() => {
+                seaBridge.pub(["hatchTurtle", {"commands": instructions, "path": trimImage(this.ctx)}])
+            }, 1000)
+        }
     }
 
 

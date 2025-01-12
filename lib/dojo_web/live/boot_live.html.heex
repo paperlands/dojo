@@ -1,4 +1,4 @@
-<div class="fixed inset-0 bg-black min-h-dvh  flex items-center justify-center z-50">
+<div class="fixed inset-0 bg-black min-h-dvh  flex sm:flex-col lg:flex-row items-center justify-center z-50">
         <svg id="logo" viewBox="0 0 3000 2400" xmlns="http://www.w3.org/2000/svg">
       <g id="l7FepJA2HlIKjbTaOfBKIiU" fill="#ff9933" transform="matrix(1.38233,0,0,1.38233,-570.4212,-206.10597)">
         <!-- Base columns -->
@@ -24,6 +24,37 @@
          d="m 2263.5209,1054.7732 c -3.0157,-13.9695 -15.0583,-37.6981 -75.327,-37.6981 h -78.3494 l -26.1165,-31.1389 c -14.0627,-17.07615 -26.1164,-40.17917 -26.1164,-51.22844 V 913.6137 l 48.215,8.03583 c 26.1164,3.01344 77.3449,10.04479 113.5061,13.05823 85.3807,9.04031 119.533,33.14781 119.533,85.38084 0,0 6.6996,56.7489 6.2979,64.1452 -1.2303,22.6502 -38.014,7.7541 -38.014,7.7541 -26.1793,-5.3396 -41.6285,-17.3062 -43.6287,-37.2147 z"/>
         </g>
 </svg>
+
+    <div :if={@session.active} id="login"  class="relative flex-row m-36 px-12  bg-black/80  border-amber-800/50 rounded-lg animate-fade" phx-hook="Box">
+    <!-- Login Form -->
+    <span class="block text-amber-500/80">welcome to the shell</span>
+    <span :if={@session.name} class="space-y-4 block text-amber-500/80 animate-glitchy">&gt; <%= @session.name %></span>
+    <form :if={!@session.name} phx-submit="login" class="space-y-4 animate-glitchy">
+      <div class="font-mono text-amber-500/80 tracking-wide">
+        <div class="flex items-center">
+          <span class="mr-2">></span>
+          <input
+            type="text"
+            name="username"
+            class="flex-1 bg-transparent caret-current border-none focus:border-transparent focus:ring-0 outline-none text-amber-300 placeholder-amber-800"
+            placeholder="enter your name"
+            autocomplete="off"
+            spellcheck="false"
+            phx-debounce="300"
+            autofocus
+          />
+        </div>
+      </div>
+
+      <button type="submit" class="hidden">Submit</button>
+    </form>
+
+    <!-- Decorative corners -->
+    <div class="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-amber-400"></div>
+    <div class="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-amber-400"></div>
+    <div class="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-amber-400"></div>
+    <div class="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-amber-400"></div>
+  </div>
 </div>
 
 <style>

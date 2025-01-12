@@ -55,7 +55,6 @@ defmodule DojoWeb.ShellLive do
 
     socket
     |> assign(:class, class)
-    |> push_event("initSession", sess)
   end
 
   defp sync_session(socket) do
@@ -229,17 +228,6 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_event("flipDeck", _, socket), do: {:noreply, update(socket, :deck, &(!&1))}
-
-  def handle_event(
-        "name",
-        %{"name" => name},
-        %{assigns: %{session: sess}} = socket
-      ) do
-    {:noreply,
-     socket
-     |> assign(session: %{sess | name: name})
-     |> sync_session()}
-  end
 
   def handle_event("opensenseime", _, %{assigns: %{sensei: bool}} = socket) do
     {:noreply, assign(socket, sensei: !bool)}

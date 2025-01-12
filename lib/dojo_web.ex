@@ -60,7 +60,8 @@ defmodule DojoWeb do
 
   def live_shell do
     quote do
-      use Phoenix.LiveView
+      use Phoenix.LiveView,
+          layout: {DojoWeb.Layouts, :shell}
 
       unquote(html_helpers())
     end

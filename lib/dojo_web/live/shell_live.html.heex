@@ -1,4 +1,5 @@
 <div class="relative max-h-screen overflow-hidden bg-black">
+  <div class="animate-fade">
   <!-- Canvas background -->
   <canvas phx-update="ignore" id="canvas" class="fixed w-full h-full bg-inherit"></canvas>
   <canvas
@@ -52,26 +53,32 @@
 <!-- Right Editor -->
 <div class="fixed top-0 right-0 z-20 flex flex-col w-1/3 h-screen p-4 pointer-events-none">
   <!-- Session -->
-  <div :if={@session.active} id="sessionbox" class={["absolute top-4 right-4 z-20
+
+  <div id="sessionbox" class={["absolute top-4 right-4 z-20
             w-64 max-w-[calc(100vw-2rem)]
             bg-transparent backdrop-blur-sm
-            rounded-lg border border-white/20
+            rounded-lg border-none
             p-3 font-mono text-xs text-brand
-            shadow-lg", @session.name || "outline outline-2 p-2"]} phx-hook="Box">
-    <div :if={!@session.name}>
-      <span class="block">&gt; enter the shell</span>
-      <span class="block">&gt; your name:</span>
-      <form class="flex items-center pointer-events-auto" id="name" phx-submit="name">
-        <span class="transition-opacity duration-700 animate-pulse">&gt;</span>
-        <input
-          value={@session.name}
-          name="name"
-          type="text"
-          class="flex-grow text-xs bg-transparent border-transparent border-none outline-none caret-current focus:border-transparent focus:ring-0"
-          autoFocus
-        />
-      </form>
-    </div>
+            shadow-lg", @session.name && "outline outline-2 p-2"]} >
+
+  <div :if={!@session.name} class="group relative">
+    <!-- Login Link Button -->
+    <.link
+      navigate={~p"/welcome"}
+      class="relative ml-10 px-4 py-2 font-mono text-sm text-amber-400/80 hover:text-amber-300 transition-colors duration-300 pointer-events-auto"
+    >
+      <span class="relative z-10 text-end">Enter the Shell</span>
+      <!-- Animated underscore cursor -->
+      <span class="inline-block w-2 h-0.5 ml-1 bg-amber-400 animate-flicker">_</span>
+
+      <!-- Decorative corners (smaller size for subtlety) -->
+      <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-amber-500"></div>
+      <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-amber-500"></div>
+      <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-amber-500"></div>
+      <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-amber-500"></div>
+    </.link>
+</div>
+
     <span :if={@session.name} class="block">
       &gt; welcome to the shell, <%= @session.name %>
       <span class="relative flex items-center space-x-2"></span>
@@ -160,6 +167,7 @@
   <div :if={@sensei} class="z-50 flex mb-2 pointer-events-auto">
     <.export />
   </div>
+  </div>
 </div>
 
 <style>
@@ -168,10 +176,3 @@
   width: 80ch; /* 80 characters width */
   }
 </style>
-
-<script src="codemirror/codemirror.js">
-</script>
-<link rel="stylesheet" href="codemirror/codemirror.css" />
-<link rel="stylesheet" href="codemirror/theme/abbott.css" />
-<script src="codemirror/mode/apl/apl.js">
-</script>
