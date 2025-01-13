@@ -27,11 +27,12 @@
 
   <div id="login"  class="relative flex-row m-36 px-12 bg-black/80 mt-56 border-amber-800/50 rounded-lg animate-fade" phx-hook="Box">
     <!-- Login Form -->
-    <span class="block text-amber-500/80">welcome to the shell, {@session.name}</span>
+    <span class="block text-amber-500/80">welcome to the shell</span>
     <form id="boot" phx-submit="login" class="space-y-4 animate-glitchy">
       <div class="font-mono text-amber-500/80 tracking-wide">
         <div class="flex items-center">
           <span class="mr-2">></span>
+          <span>  {@session.name} </span>
           <input
             :if={!@session.name}
             type="text"
