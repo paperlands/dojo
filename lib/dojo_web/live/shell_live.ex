@@ -93,6 +93,7 @@ defmodule DojoWeb.ShellLive do
         {Dojo.PubSub, :hatch, {name, {Dojo.Turtle, meta}}},
         %{assigns: %{disciples: dis}} = socket
       ) do
+
     active_dis =
       if Map.has_key?(dis, name) do
         put_in(dis, [name, :meta], meta)
@@ -102,7 +103,8 @@ defmodule DojoWeb.ShellLive do
 
     {:noreply,
      socket
-     |> assign(disciples: active_dis)}
+     |> assign(disciples: active_dis)
+     }
   end
 
   def handle_event(

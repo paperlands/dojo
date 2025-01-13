@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -7,17 +8,14 @@
       <%= assigns[:page_title] || "Dojo" %>
     </.live_title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
-    <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}>
-    </script>
-    <script src="codemirror/codemirror.js">
-    </script>
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}></script>
+    <script  src="codemirror/codemirror.js"></script>
     <link rel="stylesheet" href="codemirror/codemirror.css" />
     <link rel="stylesheet" href="codemirror/theme/abbott.css" />
-    <script src="codemirror/mode/apl/apl.js">
-    </script>
+    <script src="codemirror/mode/apl/apl.js"></script>
     <script defer data-domain="dojo.paperland.sg" src="https://odin.fly.dev/js/script.file-downloads.hash.outbound-links.pageview-props.tagged-events.js"></script>
   </head>
-  <body class="bg-black antialiased">
+  <body class="bg-black">
     <.flash_group flash={@flash} />
     <%= @inner_content %>
   </body>

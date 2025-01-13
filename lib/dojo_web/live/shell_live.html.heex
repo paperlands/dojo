@@ -1,5 +1,4 @@
 <div class="relative max-h-screen overflow-hidden bg-black">
-  <div class="animate-fade">
   <!-- Canvas background -->
   <canvas phx-update="ignore" id="canvas" class="fixed w-full h-full bg-inherit"></canvas>
   <canvas
@@ -51,7 +50,7 @@
   </div>
 </div>
 <!-- Right Editor -->
-<div class="fixed top-0 right-0 z-20 flex flex-col w-1/3 h-screen p-4 pointer-events-none">
+<div id="rightpane"  class="fixed top-0 right-0 z-20 flex flex-col w-1/3 h-screen p-4 pointer-events-none">
   <!-- Session -->
 
   <div id="sessionbox" class={["absolute top-4 right-4 z-20
@@ -61,7 +60,7 @@
             p-3 font-mono text-xs text-brand
             shadow-lg", @session.name && "outline outline-2 p-2"]} >
 
-  <div :if={!@session.name} class="group relative">
+  <div :if={!@session.name} class="group relative ">
     <!-- Login Link Button -->
     <.link
       navigate={~p"/welcome"}
@@ -132,7 +131,7 @@
       </svg>
     </button>
     <div class="p-4 mt-12 mb-8 overflow-auto font-mono text-xs text-white bg-transparent resize-none h-11/12 focus:outline-none">
-      <textarea id="outershell" phx-hook="OuterShell"></textarea>
+      <textarea phx-update="ignore" id="outershell" phx-hook="OuterShell"></textarea>
     </div>
   </div>
   <.command_deck visible={@deck} />
@@ -166,7 +165,6 @@
   </div>
   <div :if={@sensei} class="z-50 flex mb-2 pointer-events-auto">
     <.export />
-  </div>
   </div>
 </div>
 

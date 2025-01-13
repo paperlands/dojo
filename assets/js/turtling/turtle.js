@@ -513,11 +513,12 @@ export class Turtle {
 
         this.instructions = instructions
 
-        if(options.comms){
             setTimeout(() => {
-                seaBridge.pub(["hatchTurtle", {"commands": instructions, "path": trimImage(this.ctx)}])
+                if(options.comms){
+               seaBridge.pub(["hatchTurtle", {"commands": instructions, "path": trimImage(this.ctx)}])
+                }
             }, 1000)
-        }
+
     }
 
 
