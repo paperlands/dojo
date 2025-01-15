@@ -143,7 +143,7 @@ export class Turtle {
 
         // Draw turtle on final frame if needed
         if (this.timeline.lastRenderTime > this.timeline.endTime && this.showTurtle) {
-            console.log("DRAW HEAD")
+            console.warn("DRAW HEAD")
             this.drawHead(scale);
         }
 
@@ -166,7 +166,7 @@ export class Turtle {
                 // Start drawing a new path
                 ctx.beginPath();
                 ctx.strokeStyle = path.color || 'DarkOrange';
-                ctx.lineWidth = 2 / scale;
+                ctx.lineWidth = 2 / Math.max(scale, 2);
 
                 try {
                     // Iterate through each point in the path
@@ -408,7 +408,7 @@ export class Turtle {
         if (this.math.parser.isNumeric(expr)) return parseFloat(expr);
         if (context[expr] != null) return context[expr];
         const tree = this.math.parser.run(expr)
-        if (tree.children.length > 1) return this.math.evaluator.run(tree, context);
+        if (tree.children.length > 0) return this.math.evaluator.run(tree, context);
         return tree.value // probably a string
     }
 

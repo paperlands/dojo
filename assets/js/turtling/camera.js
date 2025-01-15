@@ -190,8 +190,8 @@ export class Camera {
     }
 
     zoomToward(worldPosition, factor) {
-        const newZoom = this.clampZoom(this.state.targetZoom * factor);
-        const zoomChange = newZoom / this.state.targetZoom;
+         const newZoom = this.clampZoom(this.state.targetZoom * factor);
+         const zoomChange = newZoom / this.state.targetZoom;
 
         // Adjust position to maintain world position under mouse
         const offset = worldPosition.subtract(this.state.targetPosition);
