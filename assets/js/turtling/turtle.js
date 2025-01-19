@@ -166,8 +166,7 @@ export class Turtle {
                 // Start drawing a new path
                 ctx.beginPath();
                 ctx.strokeStyle = path.color || 'DarkOrange';
-                ctx.lineWidth = 1/scale
-                // 2 / Math.max(scale, 2);
+                ctx.lineWidth = 2.5/scale
 
                 try {
                     // Iterate through each point in the path
@@ -271,22 +270,22 @@ export class Turtle {
             const newY = this.y + rotatedDirection.y * distance;
             const newZ = this.z + rotatedDirection.z * distance;
 
-            if (this.penDown) {
-                // Create new path segment
-                if (!this.currentPath) {
-                    this.currentPath = {
-                        ...this.pathTemplate,
-                        color: this.color,
-                        points: [{x: this.x, y: this.y}]
-                    };
+        if (this.penDown) {
+            // Create new path segment
+            if (!this.currentPath) {
+                this.currentPath = {
+                    ...this.pathTemplate,
+                    color: this.color,
+                    points: [{x: this.x, y: this.y}]
+                };
 
-                    const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
-                    currentFrame.push(this.currentPath);
-                    this.timeline.frames.set(this.timeline.currentTime, currentFrame);
-                }
-                //color transition
-                this.currentPath.points.push({x: newX, y: newY});
+                const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
+                currentFrame.push(this.currentPath);
+                this.timeline.frames.set(this.timeline.currentTime, currentFrame);
             }
+            //color transition
+            this.currentPath.points.push({x: newX, y: newY});
+        }
         else {
             this.currentPath= null
         }
@@ -432,7 +431,9 @@ export class Turtle {
         this.ctx.lineWidth = 2;
         // this.ctx.shadowBlur = 8;
         // this.ctx.shadowColor = "white";
+        this.ctx.imageSmoothingEnabled = false;
         this.ctx.lineCap = 'round';
+        this.ctx.lineJoin = 'round'
         this.ctx.beginPath();
         this.ctx.moveTo(this.x, this.y);
         this.showTurtle = true;
