@@ -47,7 +47,7 @@ class CameraState {
 class CameraConfig {
     constructor(options = {}) {
         this.smoothingFactor = options.smoothingFactor || 0.15;
-        this.zoomSpeed = options.zoomSpeed || 0.15;
+        this.zoomSpeed = options.zoomSpeed || 0.12;
         this.minZoom = options.minZoom || 1;
         this.maxZoom = options.maxZoom || 10000;
         this.framerate = options.framerate || 60;
