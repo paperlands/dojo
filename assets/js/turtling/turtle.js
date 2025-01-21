@@ -264,7 +264,7 @@ export class Turtle {
     }
 
     forward(distance=0) {
-            const direction = { x: 1, y: 0, z: 0 };
+            const direction = { x: 10, y: 0, z: 0 };
             const rotatedDirection = this.rotation.rotate(direction);
             const newX = this.x + rotatedDirection.x * distance;
             const newY = this.y + rotatedDirection.y * distance;

@@ -27,7 +27,7 @@ class CameraState {
     constructor(config = {}) {
         this.position = new Vector2D(config.x || 0, config.y || 0);
         this.targetPosition = this.position.clone();
-        this.zoom = config.zoom || 100;
+        this.zoom = config.zoom || 500;
         this.targetZoom = this.zoom;
         this.velocity = config.velocity || 0;
     }
@@ -49,7 +49,7 @@ class CameraConfig {
         this.smoothingFactor = options.smoothingFactor || 0.15;
         this.zoomSpeed = options.zoomSpeed || 0.12;
         this.minZoom = options.minZoom || 1;
-        this.maxZoom = options.maxZoom || 10000;
+        this.maxZoom = options.maxZoom || 100000000;
         this.framerate = options.framerate || 60;
     }
 }
