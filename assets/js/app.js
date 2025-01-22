@@ -32,7 +32,7 @@ let liveSocket = new LiveSocket("/live", Socket, {
             locale: Intl.NumberFormat().resolvedOptions().locale,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             timezone_offset: -new Date().getTimezoneOffset(),
-            session:  fetchSession()
+            session:  JSON.parse(localStorage.getItem("session")) || {active: true}
           },
   metadata: {
     keydown: (event, element) => {
@@ -45,14 +45,6 @@ let liveSocket = new LiveSocket("/live", Socket, {
   hooks: Hooks,
 });
 
-function fetchSession() {
-  try {
-    sess = JSON.parse(localStorage.getItem("session"))
-    return  sess || {active: true};
-  } catch (error) {
-    return {active: true}
-  }
-};
 
 window.addEventListener("phx:download-file", (event) => {
        console.log("Event received:", event);

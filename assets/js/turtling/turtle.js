@@ -143,7 +143,7 @@ export class Turtle {
 
         // Draw turtle on final frame if needed
         if (this.timeline.lastRenderTime > this.timeline.endTime && this.showTurtle) {
-            console.log("DRAW HEAD")
+            console.warn("DRAW HEAD")
             this.drawHead(scale);
         }
 
@@ -165,8 +165,8 @@ export class Turtle {
                 if (!path.points || path.points.length === 0) return;
                 // Start drawing a new path
                 ctx.beginPath();
-                ctx.strokeStyle = path.color || 'red';
-                ctx.lineWidth = 2 / scale;
+                ctx.strokeStyle = path.color || 'DarkOrange';
+                ctx.lineWidth = 2.5/scale
 
                 try {
                     // Iterate through each point in the path
@@ -184,7 +184,7 @@ export class Turtle {
 
                     // Fill if necessary
                     if (path.filled) {
-                        ctx.fillStyle = path.color || 'red';
+                        ctx.fillStyle = path.color || 'DarkOrange';
                         ctx.fill();
                     }
                 } catch (error) {
@@ -264,28 +264,28 @@ export class Turtle {
     }
 
     forward(distance=0) {
-            const direction = { x: 1, y: 0, z: 0 };
+            const direction = { x: 10, y: 0, z: 0 };
             const rotatedDirection = this.rotation.rotate(direction);
             const newX = this.x + rotatedDirection.x * distance;
             const newY = this.y + rotatedDirection.y * distance;
             const newZ = this.z + rotatedDirection.z * distance;
 
-            if (this.penDown) {
-                // Create new path segment
-                if (!this.currentPath) {
-                    this.currentPath = {
-                        ...this.pathTemplate,
-                        color: this.color,
-                        points: [{x: this.x, y: this.y}]
-                    };
+        if (this.penDown) {
+            // Create new path segment
+            if (!this.currentPath) {
+                this.currentPath = {
+                    ...this.pathTemplate,
+                    color: this.color,
+                    points: [{x: this.x, y: this.y}]
+                };
 
-                    const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
-                    currentFrame.push(this.currentPath);
-                    this.timeline.frames.set(this.timeline.currentTime, currentFrame);
-                }
-                //color transition
-                this.currentPath.points.push({x: newX, y: newY});
+                const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
+                currentFrame.push(this.currentPath);
+                this.timeline.frames.set(this.timeline.currentTime, currentFrame);
             }
+            //color transition
+            this.currentPath.points.push({x: newX, y: newY});
+        }
         else {
             this.currentPath= null
         }
@@ -345,7 +345,7 @@ export class Turtle {
         {
             const context = {};
             func.parameters.forEach((param, index) => {
-                context[param] = args[index];
+                context[param] = args[index] || 0;
             });
             context['__depth__'] = depth;
             return this.executeBody(func.body, context);
@@ -408,7 +408,7 @@ export class Turtle {
         if (this.math.parser.isNumeric(expr)) return parseFloat(expr);
         if (context[expr] != null) return context[expr];
         const tree = this.math.parser.run(expr)
-        if (tree.children.length > 1) return this.math.evaluator.run(tree, context);
+        if (tree.children.length > 0) return this.math.evaluator.run(tree, context);
         return tree.value // probably a string
     }
 
@@ -426,12 +426,14 @@ export class Turtle {
         this.recurseCount = 0
         this.rotation = new Versor(1, 0, 0, 0);
         this.penDown = true;
-        this.color = 'red';
+        this.color = 'DarkOrange';
         this.ctx.strokeStyle = this.color;
         this.ctx.lineWidth = 2;
         // this.ctx.shadowBlur = 8;
         // this.ctx.shadowColor = "white";
+        this.ctx.imageSmoothingEnabled = false;
         this.ctx.lineCap = 'round';
+        this.ctx.lineJoin = 'round'
         this.ctx.beginPath();
         this.ctx.moveTo(this.x, this.y);
         this.showTurtle = true;
@@ -506,17 +508,18 @@ export class Turtle {
             });
     }
 
-    draw(instructions) {
+    draw(instructions, opts= {}) {
+        const options = { ...{comms: true}, ...opts };
         this.reset();
         this.executeBody(instructions, {});
 
         this.instructions = instructions
 
-        setTimeout(() => {
-            seaBridge.pub(["hatchTurtle", {"commands": instructions, "path": trimImage(this.ctx)}])
-        }, 1000)
-
-
+            setTimeout(() => {
+                if(options.comms){
+               seaBridge.pub(["hatchTurtle", {"commands": instructions, "path": trimImage(this.ctx)}])
+                }
+            }, 1000)
 
     }
 

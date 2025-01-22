@@ -87,7 +87,7 @@ OuterShell = {
 
     try {
       const commands = parseProgram(code);
-      turtle.draw(commands)
+      turtle.draw(commands, {comms: false})
       const path = canvas.toDataURL()
 
       // Display output
