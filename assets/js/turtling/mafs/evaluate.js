@@ -89,10 +89,13 @@ export class Evaluator {
             // Arithmetic operators
             case '^': return Math.pow(left, right);
             case '^-': return Math.pow(left, -right);
+            case '/-': return (left / right == Infinity) ? -2147483647 : left / -right;
             case '*': return left * right;
             case '*-': return left * -right;
             case '/': return (left / right == Infinity) ? 2147483647 : left / right;
             case '+': return left + right;
+            case '--': return left + right;
+            case '+-': return left - right;
             case '-': return left - right;
 
             default: throw new Error(`Unknown operator: ${operator}`);

@@ -11,6 +11,7 @@ export class Parser {
             '===': 5, '!==': 5, '==': 5, '!=': 5,  // Equality operators
             '>=': 6, '>': 6, '<=': 6, '<': 6,      // Comparison operators
             '+': 7, '-': 7,
+            '+-': 7, '--': 7,
             '*': 8, '/': 8,
             '*-': 9, '/-': 9,
             '!': 9,   // Unary not

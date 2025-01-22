@@ -23,6 +23,7 @@ export class Turtle {
             jmp: this.jump.bind(this),
             mv: this.move.bind(this),
             goto: this.goto.bind(this),
+            jmpto: this.jmpto.bind(this),
             erase: this.erase.bind(this),
             home: this.spawn.bind(this),
             fill: this.fill.bind(this),
@@ -245,10 +246,55 @@ export class Turtle {
     }}
 
     goto(x=0, y=0, z=null) {
-        this.x = x;
-        this.y = y;
-        this.z = z ?? this.z
-        this.currentPath=null
+
+        // not sure why we need to *10
+        const newX = x*10;
+        const newY = -y*10;
+        const newZ = z ?? this.z
+
+        if (this.penDown) {
+                // Create new path segment
+                if (!this.currentPath) {
+                    this.currentPath = {
+                        ...this.pathTemplate,
+                        color: this.color,
+                        points: [{x: this.x, y: this.y}]
+                    };
+
+                    const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
+                    currentFrame.push(this.currentPath);
+                    this.timeline.frames.set(this.timeline.currentTime, currentFrame);
+                }
+                //color transition
+                this.currentPath.points.push({x: newX, y: newY});
+            }
+        else {
+            this.currentPath= null
+        }
+
+            this.x = newX;
+            this.y = newY;
+            this.z = newZ;
+
+            // Store current state for recovery if needed
+            this.executionState = {
+                x: this.x,
+                y: this.y,
+                z: this.z,
+                rotation: new Versor(
+                    this.rotation.w,
+                    this.rotation.x,
+                    this.rotation.y,
+                    this.rotation.z
+                )
+            };
+
+    }
+
+    jmpto(x=0, y=0, z=null) {
+        this.noPen();
+        this.goto(x, y, z)
+        this.oPen()
     }
 
     erase(){
@@ -470,11 +516,11 @@ export class Turtle {
         this.rotation = rotation.multiply(this.rotation);
     }
 
-    left(angle) {
+    left(angle=0) {
         this.yaw(-angle);
     }
 
-    right(angle) {
+    right(angle=0) {
         this.yaw(angle);
     }
 
