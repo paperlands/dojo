@@ -167,7 +167,7 @@ export class Turtle {
                 // Start drawing a new path
                 ctx.beginPath();
                 ctx.strokeStyle = path.color || 'DarkOrange';
-                ctx.lineWidth = 2.5/scale
+                ctx.lineWidth = 1.5/scale
 
                 try {
                     // Iterate through each point in the path

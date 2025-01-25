@@ -47,42 +47,58 @@ class CameraState {
 class CameraConfig {
     constructor(options = {}) {
         this.smoothingFactor = options.smoothingFactor || 0.15;
-        this.zoomSpeed = options.zoomSpeed || 0.12;
+        this.zoomSpeed = options.zoomSpeed || 0.05;
         this.minZoom = options.minZoom || 1;
         this.maxZoom = options.maxZoom || 100000000;
         this.framerate = options.framerate || 60;
     }
 }
 
-// user interaction management
 class CameraInputHandler {
     constructor(camera) {
         this.camera = camera;
         this.isDragging = false;
-        this.lastMousePosition = new Vector2D();
+        this.lastPosition = new Vector2D();
+        this.touchIdentifier = null;
+
+        // Mouse event bindings
+        this.boundMouseDown = this.handleMouseDown.bind(this);
         this.boundMouseMove = this.handleMouseMove.bind(this);
         this.boundMouseUp = this.handleMouseUp.bind(this);
+
+        // Touch event bindings
+        this.boundTouchStart = this.handleTouchStart.bind(this);
+        this.boundTouchMove = this.handleTouchMove.bind(this);
+        this.boundTouchEnd = this.handleTouchEnd.bind(this);
+
+        // Add event listeners
+        this.camera.canvas.addEventListener('mousedown', this.boundMouseDown);
+        this.camera.canvas.addEventListener('wheel', this.handleWheel.bind(this));
+
+        // Touch event listeners
+        this.camera.canvas.addEventListener('touchstart', this.boundTouchStart, { passive: false });
+        this.camera.canvas.addEventListener('touchmove', this.boundTouchMove, { passive: false });
+        this.camera.canvas.addEventListener('touchend', this.boundTouchEnd);
+        this.camera.canvas.addEventListener('touchcancel', this.boundTouchEnd);
     }
 
+    // Mouse interaction methods (existing implementation)
     handleMouseDown(event) {
         this.isDragging = true;
-        this.lastMousePosition = new Vector2D(event.clientX, event.clientY);
+        this.lastPosition = new Vector2D(event.clientX, event.clientY);
         document.addEventListener('mousemove', this.boundMouseMove);
         document.addEventListener('mouseup', this.boundMouseUp);
     }
 
     handleMouseMove(event) {
         if (!this.isDragging) return;
-
         const currentPosition = new Vector2D(event.clientX, event.clientY);
-        const delta = currentPosition.subtract(this.lastMousePosition);
+        const delta = currentPosition.subtract(this.lastPosition);
         const zoomFactor = this.camera.state.zoom / 100;
-
         this.camera.state.targetPosition = this.camera.state.targetPosition.subtract(
-            delta.scale(zoomFactor)
+            delta.scale(zoomFactor/2)
         );
-
-        this.lastMousePosition = currentPosition;
+        this.lastPosition = currentPosition;
     }
 
     handleMouseUp() {
@@ -91,20 +107,118 @@ class CameraInputHandler {
         document.removeEventListener('mouseup', this.boundMouseUp);
     }
 
-    handleWheel(event) {
+    // Touch interaction methods
+    handleTouchStart(event) {
+        // Prevent default to stop scrolling/zooming
         event.preventDefault();
 
+        // Single touch for panning
+        if (event.touches.length === 1) {
+            const touch = event.touches[0];
+            this.isDragging = true;
+            this.touchIdentifier = touch.identifier;
+            this.lastPosition = new Vector2D(touch.clientX, touch.clientY);
+        }
+
+        // Pinch-to-zoom for multiple touches
+        if (event.touches.length === 2) {
+            this.handlePinchStart(event);
+        }
+    }
+
+    handleTouchMove(event) {
+        event.preventDefault();
+
+        // Single touch panning
+        if (event.touches.length === 1 && this.isDragging) {
+            const touch = Array.from(event.touches).find(
+                t => t.identifier === this.touchIdentifier
+            );
+
+            if (touch) {
+                const currentPosition = new Vector2D(touch.clientX, touch.clientY);
+                const delta = currentPosition.subtract(this.lastPosition);
+                const zoomFactor = this.camera.state.zoom / 100;
+                this.camera.state.targetPosition = this.camera.state.targetPosition.subtract(
+                    delta.scale(zoomFactor)
+                );
+                this.lastPosition = currentPosition;
+            }
+        }
+
+        // Pinch-to-zoom
+        if (event.touches.length === 2) {
+            this.handlePinchMove(event);
+        }
+    }
+
+    handleTouchEnd(event) {
+        // Reset dragging state
+        this.isDragging = false;
+        this.touchIdentifier = null;
+
+        // Reset pinch-zoom tracking
+        if (event.touches.length === 0) {
+            this.initialDistance = null;
+            this.initialZoom = null;
+        }
+    }
+
+    // Pinch-to-zoom handling
+    handlePinchStart(event) {
+        const touch1 = event.touches[0];
+        const touch2 = event.touches[1];
+
+        // Calculate initial pinch distance
+        this.initialDistance = Math.hypot(
+            touch1.clientX - touch2.clientX,
+            touch1.clientY - touch2.clientY
+        );
+
+        // Store initial zoom level
+        this.initialZoom = this.camera.state.zoom;
+    }
+
+    handlePinchMove(event) {
+        if (!this.initialDistance || !this.initialZoom) return;
+
+        const touch1 = event.touches[0];
+        const touch2 = event.touches[1];
+
+        // Calculate current pinch distance
+        const currentDistance = Math.hypot(
+            touch1.clientX - touch2.clientX,
+            touch1.clientY - touch2.clientY
+        );
+
+        // Calculate zoom factor
+        const zoomFactor = currentDistance / this.initialDistance;
+
+        // Calculate midpoint for zoom
+        const midpoint = new Vector2D(
+            (touch1.clientX + touch2.clientX) / 2,
+            (touch1.clientY + touch2.clientY) / 2
+        );
+
+        // Get world position of midpoint
+        const worldPosition = this.getWorldPosition(midpoint);
+
+        // Apply zooming
+        const newZoom = this.initialZoom * zoomFactor;
+        this.camera.zoomToward(worldPosition, newZoom / this.camera.state.zoom);
+    }
+
+    handleWheel(event) {
+        event.preventDefault();
         const rect = this.camera.canvas.getBoundingClientRect();
         const mousePosition = new Vector2D(
             event.clientX - rect.left,
             event.clientY - rect.top
         );
-
         const worldPosition = this.getWorldPosition(mousePosition);
         const zoomFactor = event.deltaY > 0 ?
             (1 + this.camera.config.zoomSpeed) :
             (1 - this.camera.config.zoomSpeed);
-
         this.camera.zoomToward(worldPosition, zoomFactor);
     }
 
@@ -113,15 +227,25 @@ class CameraInputHandler {
             this.camera.canvas.width / 2,
             this.camera.canvas.height / 2
         );
-
         const offset = screenPosition.subtract(canvasCenter)
             .scale(this.camera.state.zoom / 100);
-
         return this.camera.state.position.add(offset);
+    }
+
+    // Optional: Cleanup method to remove event listeners
+    dispose() {
+        this.camera.canvas.removeEventListener('mousedown', this.boundMouseDown);
+        this.camera.canvas.removeEventListener('wheel', this.handleWheel);
+        this.camera.canvas.removeEventListener('touchstart', this.boundTouchStart);
+        this.camera.canvas.removeEventListener('touchmove', this.boundTouchMove);
+        this.camera.canvas.removeEventListener('touchend', this.boundTouchEnd);
+        this.camera.canvas.removeEventListener('touchcancel', this.boundTouchEnd);
     }
 }
 
+
 // Main Camera class
+
 export class Camera {
     constructor(canvas, camBridge, config = {}) {
         this.canvas = canvas;
