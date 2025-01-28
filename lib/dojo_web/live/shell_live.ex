@@ -335,8 +335,8 @@ defmodule DojoWeb.ShellLive do
             <div class="h-full space-y-2 overflow-y-scroll">
               <%= for {cmd, desc, code} <- [
                 {"fw", "Move Forward", "fw 100"},
-                {"rt", "Turn Right", "rt 30"},
-                {"lt", "Turn Left", "lt 30"},
+                {"rt", "Face Right", "rt 30"},
+                {"lt", "Face Left", "lt 30"},
                 {"jmp", "Jump Forward", "jmp 100"},
                 {"goto", "Go To Start", "goto 0 0"},
                 {"hd", "Hide your Head", "hd"},

@@ -23,6 +23,7 @@ export class Turtle {
             jmp: this.jump.bind(this),
             mv: this.move.bind(this),
             goto: this.goto.bind(this),
+            faceto: this.faceto.bind(this),
             jmpto: this.jmpto.bind(this),
             erase: this.erase.bind(this),
             home: this.spawn.bind(this),
@@ -296,6 +297,36 @@ export class Turtle {
         this.goto(x, y, z)
         this.oPen()
     }
+
+    faceto(targetX=0, targetY=0, targetZ=null) {
+        // Convert target coordinates to the same scale as internal coordinates
+        const tx = targetX * 10;
+        const ty = -targetY * 10;
+        const tz = targetZ ?? this.z;
+
+        // Calculate direction vector from current position to target
+        const dx = tx - this.x;
+        const dy = ty - this.y;
+        const dz = tz - this.z;
+
+        // Calculate angle in the XY plane (yaw)
+        let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+        // Create rotation versor for this angle
+        const rotation = Versor.fromAxisAngle({ x: 0, y: 0, z: 1 }, angle);
+
+        // Reset current rotation and apply new rotation
+        this.rotation = rotation;
+
+        // Update execution state
+        this.executionState.rotation = new Versor(
+            this.rotation.w,
+            this.rotation.x,
+            this.rotation.y,
+            this.rotation.z
+        );
+    }
+
 
     erase(){
         this.currentPath = {
