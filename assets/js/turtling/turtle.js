@@ -22,6 +22,7 @@ export class Turtle {
             hd: this.hideTurtle.bind(this),
             jmp: this.jump.bind(this),
             mv: this.move.bind(this),
+            //fn: this.func.bind(this),
             goto: this.goto.bind(this),
             faceto: this.faceto.bind(this),
             jmpto: this.jmpto.bind(this),
