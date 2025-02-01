@@ -33,7 +33,7 @@ function parseBlock(lines, blockStack) {
 function parseLine(line, lines, blockStack) {
     const [tokens, litcomment] = parseTokens(line);
     const command = tokens.shift();
-    if (command === 'for') {
+    if (command === 'for' || command === 'loop') {
         const times = tokens.shift();
         if (tokens.shift() !== 'do') throw new Error("Expected ' do' after 'for'");
         return new ASTNode('Loop', times, parseBlock(lines, blockStack));
