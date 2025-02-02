@@ -142,8 +142,8 @@
   <!-- Other people's turtles -->
   <div
     :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
-    :if={Map.has_key?(dis, :meta)}
-    class={"rounded-lg transition mx-8 duration-200 ease-in-out flex-shrink-0 w-1/6" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
+    :if={Map.has_key?(dis, :meta) && @pane}
+    class={"rounded-lg transition mx-8 pb-4 pt-2 gap-2 duration-200 ease-in-out flex-shrink-0 w-1/6" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
   >
     <.icon
       :if={@sensei}
@@ -152,17 +152,32 @@
       phx-value-disciple-phx_ref={dis.phx_ref}
       class="cursor-pointer pointer-events-auto text-brand"
     />
-    <div class="text-white"><%= name %></div>
     <div phx-click="seeTurtle" phx-value-addr={name} class={[
-      "flex justify-center h-32 lg:w-48 w-32 border pointer-events-auto rounded-md cursor-alias hover:scale-120 hover:border-2",
+      "relative flex justify-center h-32 lg:w-48 w-32 border pointer-events-auto rounded-md cursor-alias hover:scale-120 hover:border-2",
       @outershell && @outershell.addr == name && "border-orange-500"
     ]}>
+  <div class="absolute top-2 right-2 font-mono text-amber-500/50 text-sm tracking-wider rotate-0 select-none">
+    <%= name %>
+  </div>
+
       <img
         src={dis.meta.path}
         class="object-scale-down max-h-full m-auto"
       />
     </div>
   </div>
+  <div id="paneflip" class="fixed bottom-0 z-50 w-2/3 left-1/2 -translate-x-1/2 m-2 pointer-events-auto" phx-hook="Sensei">
+        <svg
+        class={"z-[60] w-6 h-6 text-amber-400 items-center flex  m-auto  rounded-lg shadow-xl backdrop-blur-sm transform transition-transform duration-300" <> if(@pane, do: " rotate-180", else: "")}
+        phx-click="flipPane"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path d="M18 15l-6-6-6 6"/>
+      </svg>
+    </div>
   <div :if={@sensei} class="z-50 flex mb-2 pointer-events-auto">
     <.export />
   </div>

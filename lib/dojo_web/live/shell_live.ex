@@ -28,7 +28,8 @@ defmodule DojoWeb.ShellLive do
        outerfunctions: [],
        class: nil,
        disciples: %{},
-       deck: true
+       deck: true,
+       pane: true
      )
      |> assign(focused_phx_ref: "")}
   end
@@ -84,6 +85,7 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_info({Dojo.PubSub, :focused_phx_ref, {focused_phx_ref}}, socket) do
+    IO.inspect focused_phx_ref
     {:noreply,
      socket
      |> assign(focused_phx_ref: focused_phx_ref)}
@@ -230,6 +232,7 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_event("flipDeck", _, socket), do: {:noreply, update(socket, :deck, &(!&1))}
+  def handle_event("flipPane", _, socket), do: {:noreply, update(socket, :pane, &(!&1))}
 
   def handle_event("opensenseime", _, %{assigns: %{sensei: bool}} = socket) do
     {:noreply, assign(socket, sensei: !bool)}
@@ -245,7 +248,7 @@ defmodule DojoWeb.ShellLive do
   def handle_event(
         "toggle-focus",
         %{"disciple-phx_ref" => phx_ref},
-        %{assigns: %{sensei: true}} = socket
+        %{assigns: %{sensei: true, clan: clan}} = socket
       ) do
     old_phx_ref = socket.assigns.focused_phx_ref
 
@@ -256,7 +259,7 @@ defmodule DojoWeb.ShellLive do
         _ -> phx_ref
       end
 
-    Dojo.PubSub.publish({new_phx_ref}, :focused_phx_ref, "class:shell")
+    Dojo.PubSub.publish({new_phx_ref}, :focused_phx_ref, "class:shell:" <> clan)
 
     # TODO: store focused_phx_ref in presence tracking so that new liveviews know which to focus on
 

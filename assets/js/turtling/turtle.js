@@ -169,7 +169,7 @@ export class Turtle {
                 // Start drawing a new path
                 ctx.beginPath();
                 ctx.strokeStyle = path.color || 'DarkOrange';
-                ctx.lineWidth = 1.5/scale
+                ctx.lineWidth = 2/scale
 
                 try {
                     // Iterate through each point in the path
@@ -215,7 +215,7 @@ export class Turtle {
         // theres a 32 bit overflow
         if (isFinite(Math.fround(this.x)) && isFinite(Math.fround(this.y))){
 
-            const headSize = 15 / scale;
+            const headSize = 12 / scale;
             this.ctx.save();
 
             this.ctx.fillStyle = this.color;
