@@ -42,24 +42,41 @@ defmodule DojoWeb.ShellLive do
   end
 
   defp join_clan(socket, clan) do
-    Dojo.Class.listen("shell:" <> clan)
 
     socket
-    |> assign(disciples: Dojo.Class.list_disciples("shell:" <> clan))
     |> assign(clan: clan)
+    |> start_async(:list_disciples, fn -> Dojo.Class.list_disciples("shell:" <> clan) end)
   end
 
   defp sync_session(%{assigns: %{session: %Session{name: name} = sess, clan: clan}} = socket)
        when is_binary(name) do
-    {:ok, class} =
-      Dojo.Class.join(self(), "shell:" <> clan, %Dojo.Disciple{name: name, action: "active"})
+       parent = self()
 
     socket
-    |> assign(:class, class)
+    |> start_async(:join_disciples, fn -> Dojo.Class.join!(parent, "shell:" <> clan, %Dojo.Disciple{name: name, action: "active"}) end)
   end
 
   defp sync_session(socket) do
     socket
+  end
+
+  def handle_async(:list_disciples, {:ok, disciples}, %{assigns: %{clan: clan}} = socket) do
+    Dojo.Class.listen("shell:" <> clan)
+    {:noreply, assign(socket, :disciples, disciples)}
+  end
+
+  def handle_async(:list_disciples, {:exit, reason}, socket) do
+    IO.inspect(reason, label: "disciples load failed")
+    {:noreply, socket}
+  end
+
+  def handle_async(:join_disciples, {:ok, class}, %{assigns: %{clan: clan}} = socket) do
+    {:noreply, assign(socket, :class, class)}
+  end
+
+  def handle_async(:join_disciples, {:exit, reason}, socket) do
+    IO.inspect(reason, label: "disciples join failed")
+    {:noreply, socket}
   end
 
   def handle_info(
