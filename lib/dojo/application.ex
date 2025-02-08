@@ -21,6 +21,7 @@ defmodule Dojo.Application do
       # Start the Finch HTTP client for sending emails
       {Finch, name: Dojo.Finch},
       Dojo.Cache,
+      {Task.Supervisor, name: Dojo.TaskSupervisor},
       {PartitionSupervisor, child_spec: DynamicSupervisor, name: Dojo.Class},
       # Start a worker by calling: Dojo.Worker.start_link(arg)
       # {Dojo.Worker, arg},

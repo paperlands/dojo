@@ -68,7 +68,7 @@ config :dojo, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :console, format: "[$level] $message\n"
-config :logger, truncate: 500
+config :logger, truncate: 1000
 
 
 # Set a higher stacktrace during development. Avoid configuring such

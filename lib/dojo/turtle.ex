@@ -4,13 +4,17 @@ defmodule Dojo.Turtle do
     Dojo.Table.publish(pid, {__MODULE__, turtle}, :hatch)
   end
 
-  def filter_fns(ast) do
+  def filter_fns(ast) when is_map(ast) do
     ast |> Enum.reject(fn
     %{"type" => "Define", "value" => value, "meta" => %{"args" => args}, "children" => children} ->
       false
       _ ->
         true
     end)
+  end
+
+  def filter_fns(_)  do
+    []
   end
 
   def find_fn(ast, name) do

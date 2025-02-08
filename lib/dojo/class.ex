@@ -25,6 +25,11 @@ defmodule Dojo.Class do
     {:ok, class}
   end
 
+  def join!(pid, book, disciple) do
+    {:ok, class} = join(pid, book, disciple)
+    class
+  end
+
 
   ## helper fns
 
