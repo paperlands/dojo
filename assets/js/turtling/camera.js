@@ -152,17 +152,17 @@ class CameraInputHandler {
         }
     }
 
-    handleTouchEnd(event) {
-        // Reset dragging state
-        this.isDragging = false;
-        this.touchIdentifier = null;
+    // handleTouchEnd(event) {
+    //     // Reset dragging state
+    //     this.isDragging = false;
+    //     this.touchIdentifier = null;
 
-        // Reset pinch-zoom tracking
-        if (event.touches.length === 0) {
-            this.initialDistance = null;
-            this.initialZoom = null;
-        }
-    }
+    //     // Reset pinch-zoom tracking
+    //     if (event.touches.length === 0) {
+    //         this.initialDistance = null;
+    //         this.initialZoom = null;
+    //     }
+    // }
 
     // Pinch-to-zoom handling
     handlePinchStart(event) {
@@ -177,6 +177,15 @@ class CameraInputHandler {
 
         // Store initial zoom level
         this.initialZoom = this.camera.state.zoom;
+
+        // Store the midpoint for consistent zoom targeting
+        this.pinchMidpoint = new Vector2D(
+            (touch1.clientX + touch2.clientX) / 2,
+            (touch1.clientY + touch2.clientY) / 2
+        );
+
+        // Convert midpoint to world coordinates for consistent zoom targeting
+        this.pinchWorldPoint = this.getWorldPosition(this.pinchMidpoint);
     }
 
     handlePinchMove(event) {
@@ -191,22 +200,63 @@ class CameraInputHandler {
             touch1.clientY - touch2.clientY
         );
 
-        // Calculate zoom factor
-        const zoomFactor = currentDistance / this.initialDistance;
+        // Calculate distance ratio (pinching in or out)
+        const distanceRatio = currentDistance / this.initialDistance;
 
-        // Calculate midpoint for zoom
-        const midpoint = new Vector2D(
+        // Update midpoint for zoom targeting
+        const currentMidpoint = new Vector2D(
             (touch1.clientX + touch2.clientX) / 2,
             (touch1.clientY + touch2.clientY) / 2
         );
 
-        // Get world position of midpoint
-        const worldPosition = this.getWorldPosition(midpoint);
+        // Convert pinch motion to an equivalent wheel delta
+        // Positive delta means zoom out, negative means zoom in
+        let equivalentDelta;
+        if (distanceRatio > 1) {
+            // Pinching outward (zoom in) - negative delta
+            equivalentDelta = -1 * (distanceRatio - 1) * 20;
+        } else {
+            // Pinching inward (zoom out) - positive delta
+            equivalentDelta = (1 - distanceRatio) * 20;
+        }
 
-        // Apply zooming
-        const newZoom = this.initialZoom * zoomFactor;
-        this.camera.zoomToward(worldPosition, newZoom / this.camera.state.zoom);
+        // Apply similar zoom logic as wheel event
+        const zoomFactor = equivalentDelta > 0 ?
+              (1 + this.camera.config.zoomSpeed) :
+              (1 - this.camera.config.zoomSpeed);
+
+        // Use the same zoom method as wheel zooming for consistency
+        this.camera.zoomToward(this.pinchWorldPoint, zoomFactor);
+
+        // Update pan position to account for midpoint movement
+        if (!this.lastPinchMidpoint) {
+            this.lastPinchMidpoint = this.pinchMidpoint;
+        }
+
+        const midpointDelta = currentMidpoint.subtract(this.lastPinchMidpoint);
+        const zoomScaleFactor = this.camera.state.zoom / 100;
+        this.camera.state.targetPosition = this.camera.state.targetPosition.subtract(
+            midpointDelta.scale(zoomScaleFactor/2)
+        );
+
+        this.lastPinchMidpoint = currentMidpoint;
     }
+
+    handleTouchEnd(event) {
+        // Reset dragging state
+        this.isDragging = false;
+        this.touchIdentifier = null;
+
+        // Reset pinch-zoom tracking
+        if (event.touches.length === 0) {
+            this.initialDistance = null;
+            this.initialZoom = null;
+            this.pinchMidpoint = null;
+            this.pinchWorldPoint = null;
+            this.lastPinchMidpoint = null;
+        }
+    }
+
 
     handleWheel(event) {
         event.preventDefault();
