@@ -42,7 +42,6 @@ defmodule DojoWeb.ShellLive do
   end
 
   defp join_clan(socket, clan) do
-
     socket
     |> assign(clan: clan)
     |> start_async(:list_disciples, fn -> Dojo.Class.list_disciples("shell:" <> clan) end)
@@ -50,10 +49,12 @@ defmodule DojoWeb.ShellLive do
 
   defp sync_session(%{assigns: %{session: %Session{name: name} = sess, clan: clan}} = socket)
        when is_binary(name) do
-       parent = self()
+    parent = self()
 
     socket
-    |> start_async(:join_disciples, fn -> Dojo.Class.join!(parent, "shell:" <> clan, %Dojo.Disciple{name: name, action: "active"}) end)
+    |> start_async(:join_disciples, fn ->
+      Dojo.Class.join!(parent, "shell:" <> clan, %Dojo.Disciple{name: name, action: "active"})
+    end)
   end
 
   defp sync_session(socket) do
@@ -102,7 +103,8 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_info({Dojo.PubSub, :focused_phx_ref, {focused_phx_ref}}, socket) do
-    IO.inspect focused_phx_ref
+    IO.inspect(focused_phx_ref)
+
     {:noreply,
      socket
      |> assign(focused_phx_ref: focused_phx_ref)}
@@ -112,7 +114,6 @@ defmodule DojoWeb.ShellLive do
         {Dojo.PubSub, :hatch, {name, {Dojo.Turtle, meta}}},
         %{assigns: %{disciples: dis}} = socket
       ) do
-
     active_dis =
       if Map.has_key?(dis, name) do
         put_in(dis, [name, :meta], meta)
@@ -122,8 +123,7 @@ defmodule DojoWeb.ShellLive do
 
     {:noreply,
      socket
-     |> assign(disciples: active_dis)
-     }
+     |> assign(disciples: active_dis)}
   end
 
   def handle_event(
@@ -297,26 +297,8 @@ defmodule DojoWeb.ShellLive do
 
   def command_deck(assigns) do
     ~H"""
-    <!-- CommandDeck Component (command_deck.html.heex) -->
+    <!-- Command Deck Component (command_deck.html.heex) -->
     <div class="absolute flex px-1 pb-1 right-5 bottom-5">
-      <!-- Trigger Button -->
-      <div class="absolute z-50 bottom-1 right-1 pointer-events-auto" phx-click="flipDeck">
-        <svg
-          class="w-5 h-5 transition-transform duration-700 text-brand hover:rotate-180"
-          viewBox="0 0 24 24"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z"
-            fill="#FCD34D"
-          />
-          <path
-            d="M12 3C11.175 3 10.5 3.675 10.5 4.5V4.71094C10.5 5.32494 10.074 5.86494 9.48901 6.05994C9.33001 6.11394 9.17397 6.17397 9.01697 6.23397C8.43897 6.47797 7.76901 6.35191 7.34001 5.92191L7.17999 5.76205C6.60999 5.19205 5.69498 5.19205 5.12598 5.76105L4.76562 6.12109C4.19563 6.69109 4.19563 7.60595 4.76562 8.17595L4.92603 8.33594C5.35703 8.76494 5.48292 9.43494 5.23792 10.0129C5.17792 10.1699 5.11897 10.326 5.06397 10.486C4.86897 11.071 4.32897 11.4961 3.71497 11.4961H3.5C2.675 11.4961 2 12.1721 2 12.9971C2 13.8221 2.675 14.4971 3.5 14.4971H3.71094C4.32494 14.4971 4.86494 14.923 5.05994 15.508C5.11394 15.667 5.17397 15.8231 5.23397 15.9801C5.47797 16.5581 5.35191 17.228 4.92191 17.657L4.76205 17.817C4.19205 18.387 4.19205 19.302 4.76205 19.871L5.12207 20.231C5.69207 20.801 6.60693 20.801 7.17693 20.231L7.33691 20.071C7.76591 19.64 8.43592 19.514 9.01392 19.759C9.17092 19.819 9.32703 19.878 9.48703 19.933C10.072 20.128 10.4971 20.668 10.4971 21.282V21.4971C10.4971 22.3221 11.1731 22.9971 11.9981 22.9971C12.8231 22.9971 13.4981 22.3221 13.4981 21.4971V21.2861C13.4981 20.6721 13.924 20.1321 14.509 19.9371C14.668 19.8831 14.824 19.8231 14.981 19.7631C15.559 19.5191 16.229 19.6451 16.658 20.0751L16.818 20.2349C17.388 20.8049 18.303 20.8049 18.872 20.2349L19.232 19.8749C19.802 19.3049 19.802 18.39 19.232 17.82L19.072 17.66C18.641 17.231 18.515 16.561 18.76 15.983C18.82 15.826 18.879 15.67 18.934 15.51C19.129 14.925 19.669 14.5 20.283 14.5H20.4981C21.3231 14.5 21.9981 13.825 21.9981 13C21.9981 12.175 21.3231 11.5 20.4981 11.5H20.2871C19.6731 11.5 19.1331 11.074 18.9381 10.489C18.8841 10.33 18.8241 10.174 18.7641 10.017C18.5201 9.43896 18.6451 8.76901 19.0751 8.34001L19.2349 8.17999C19.8049 7.60999 19.8049 6.69498 19.2349 6.12598L18.8749 5.76562C18.3049 5.19563 17.39 5.19563 16.82 5.76562L16.66 5.92603C16.231 6.35703 15.561 6.48292 14.983 6.23792C14.826 6.17792 14.67 6.11897 14.51 6.06397C13.925 5.86897 13.5 5.32897 13.5 4.71497V4.5C13.5 3.675 12.825 3 12 3ZM12 17C9.23858 17 7 14.7614 7 12C7 9.23858 9.23858 7 12 7C14.7614 7 17 9.23858 17 12C17 14.7614 14.7614 17 12 17Z"
-            fill="#FCD34D"
-          />
-        </svg>
-      </div>
       <!-- Command Deck Panel -->
       <%= if @visible do %>
         <div class="fixed w-64 transition-all duration-500 ease-in-out transform rounded-lg shadow-xl right-5 bottom-36 xl:h-2/3 bg-brand-900/70 backdrop-blur-sm h-1/2 dark-scrollbar">
@@ -326,7 +308,11 @@ defmodule DojoWeb.ShellLive do
               <h2 class="text-xl font-bold text-amber-200">Command Deck</h2>
             </div>
             <%!-- Undo button --%>
-            <div class="absolute z-50 top-4 right-4 pointer-events-auto group" phx-click="tellTurtle" phx-value-cmd="undo">
+            <div
+              class="absolute z-50 pointer-events-auto top-4 right-4 group"
+              phx-click="tellTurtle"
+              phx-value-cmd="undo"
+            >
               <div class="relative">
                 <!-- Main Button -->
                 <button class="flex items-center justify-center w-8 h-8 bg-amber-900/90 rounded-full border-2 border-amber-700 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
@@ -367,14 +353,14 @@ defmodule DojoWeb.ShellLive do
                 <div
                   phx-click="tellTurtle"
                   phx-value-cmd={code}
-                  class="flex items-center p-2 transition-colors rounded hover:bg-amber-900/50 group pointer-events-auto"
+                  class="flex items-center p-2 transition-colors rounded pointer-events-auto hover:bg-amber-900/50 group"
                 >
                   <div class="mr-3 text-amber-400">
                     <.cmd_icon command={cmd} class="w-8 h-8 fill-brand" />
                   </div>
                   <div>
-                    <code class="font-mono text-sm text-amber-300"><%= cmd %></code>
-                    <p class="text-xs text-amber-200/80"><%= desc %></p>
+                    <code class="font-mono text-sm text-amber-300">{cmd}</code>
+                    <p class="text-xs text-amber-200/80">{desc}</p>
                   </div>
                 </div>
               <% end %>
