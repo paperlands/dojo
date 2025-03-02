@@ -163,13 +163,30 @@
   <.command_deck visible={@deck} />
 </div>
 
+<%!-- Turtle viewing pane toggle icon --%>
+<div
+  id="paneflip"
+  class="fixed z-50 -translate-x-1/2 pointer-events-auto bottom-2 left-1/2"
+  phx-hook="Sensei"
+>
+  <svg
+    class={"z-[60] w-6 h-6 text-amber-400 items-center flex  m-auto  rounded-lg shadow-xl backdrop-blur-sm transform transition-transform duration-300" <> if(@pane, do: " rotate-180", else: "")}
+    phx-click="flipPane"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+  >
+    <path d="M18 15l-6-6-6 6" />
+  </svg>
+</div>
 <%!-- Turtle viewing pane --%>
-<div class="fixed bottom-0 z-40 flex w-2/3 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 border border-gray-900 rounded-md pointer-events-none left-1/2 dark-scrollbar">
+<div class="fixed bottom-0 z-40 flex w-2/3 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto">
   <!-- Other people's turtles -->
   <div
     :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
     :if={Map.has_key?(dis, :meta) && @pane}
-    class={"rounded-lg transition mx-8 pb-4 pt-2 gap-2 duration-200 ease-in-out flex-shrink-0 w-1/6" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
+    class={"rounded-lg transition mx-11 pb-4 pt-2 duration-200 ease-in-out flex-shrink-0 w-1/6" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
   >
     <.icon
       :if={@sensei}
@@ -193,22 +210,7 @@
       <img src={dis.meta.path} class="object-scale-down max-h-full m-auto" />
     </div>
   </div>
-  <div
-    id="paneflip"
-    class="fixed bottom-0 z-50 w-2/3 m-2 -translate-x-1/2 pointer-events-auto left-1/2"
-    phx-hook="Sensei"
-  >
-    <svg
-      class={"z-[60] w-6 h-6 text-amber-400 items-center flex  m-auto  rounded-lg shadow-xl backdrop-blur-sm transform transition-transform duration-300" <> if(@pane, do: " rotate-180", else: "")}
-      phx-click="flipPane"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-    >
-      <path d="M18 15l-6-6-6 6" />
-    </svg>
-  </div>
+
   <div :if={@sensei} class="z-50 flex mb-2 pointer-events-auto">
     <.export />
   </div>
