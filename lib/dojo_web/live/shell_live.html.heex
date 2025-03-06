@@ -1,4 +1,4 @@
-<div class="relative max-h-screen overflow-hidden bg-black">
+<div class="relative max-h-dvh overflow-hidden bg-black">
   <!-- Canvas background -->
   <canvas phx-update="ignore" id="canvas" class="fixed w-full h-full bg-inherit"></canvas>
   <canvas
@@ -38,7 +38,7 @@
     <div
       phx-update="ignore"
       id="runenv"
-      class="my-12 pointer-events-auto cursor-text bg-slate-400 bg-opacity-10"
+      class="my-12 rounded-sm pointer-events-auto cursor-text bg-amber-600/5 border-amber-600/20"
     >
       <div class="relative z-10">
         <.slider slider_value="50" />
@@ -116,21 +116,22 @@
       &gt; summoning @{@outershell.resp}'s code ☄
     </span>
   </div>
-  <span
-    :if={@outershell && @outershell.resp}
-    class="absolute text-lg font-bold right-8 md:right-10 lg:right-12 text-amber-600 top-36"
-  >
-    @{@outershell.resp}'s code
-  </span>
+
   <div
     :if={@outershell}
     id="outerenv"
     phx-update="ignore"
     class="absolute w-2/3 overflow-y-scroll border rounded-lg pointer-events-auto h-1/2 top-32 right-4 bottom-4 bg-amber-300/10 border-amber-600/20 dark-scrollbar"
   >
+    <span
+    :if={@outershell && @outershell.resp}
+    class="absolute text-lg font-bold left-2 text-amber-600 top-4"
+  >
+    @{@outershell.resp}'s code
+  </span>
     <button
       phx-click="seeTurtle"
-      class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full shadow-xl opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-4 left-4 bg-amber-900/90 border-amber-600"
+      class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full shadow-xl opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-4 right-4 bg-amber-900/90 border-amber-600"
     >
       <!-- Base Crosshair -->
       <div class="absolute inset-0 flex items-center justify-center">

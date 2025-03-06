@@ -3,7 +3,7 @@ import { ASTNode } from "./ast.js"
 function tokenize(program) {
     return program
         .replace(/#.*?(?=\n|$)/g, '') // Keep the comment handling
-        .replace(/end/g, 'end\n') // Ensure 'end' is on a new line
+        .replace(/\bend\b(?!\n)/g, 'end\n') // Ensure 'end' is on a new line
         .split(/\r?\n/)
         .map(line => line.trim())
         .filter(line => line.length > 0);
@@ -57,6 +57,7 @@ function parseLine(line, lines, blockStack) {
 // Main function to parse the entire program
 export function parseProgram(program) {
     const lines = tokenize(program);
+    console.log(lines)
     const ast = [];
     const blockStack = [ast];
 
