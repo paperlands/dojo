@@ -37,7 +37,7 @@ defmodule DojoWeb.ShellLive do
   def handle_params(params, _url, socket) do
     {:noreply,
      socket
-     |> join_clan(params["clan"] || "home")
+     |> join_clan(params["clan"] || "dojo")
      |> sync_session()}
   end
 
@@ -301,7 +301,7 @@ defmodule DojoWeb.ShellLive do
     <div class="absolute flex px-1 pb-1 right-5 bottom-5">
       <!-- Command Deck Panel -->
       <%= if @visible do %>
-        <div class="fixed w-64 transition-all duration-500 ease-in-out transform rounded-lg shadow-xl right-5 bottom-36 xl:h-2/3 bg-brand-900/70 backdrop-blur-sm h-1/2 dark-scrollbar">
+        <div class="fixed w-64 transition-all duration-500 ease-in-out transform rounded-lg shadow-xl right-5 bottom-20 xl:h-2/3 bg-brand-900/70 backdrop-blur-sm h-1/2 dark-scrollbar">
           <div class="h-full p-4">
             <!-- Header -->
             <div class="flex items-center justify-between mb-4">
@@ -504,4 +504,15 @@ defmodule DojoWeb.ShellLive do
       _ -> " border-brand"
     end
   end
+
+  defp to_titlecase(snek) when is_binary(snek) do
+    snek
+    |> String.split(["_", "-"])
+    |> Enum.map(fn <<first_grapheme::utf8, rest::binary>> ->
+      String.capitalize(<<first_grapheme::utf8>>) <> rest
+    end)
+    |> Enum.join(" ")
+
+  end
+  defp to_titlecase(_), do: ""
 end

@@ -2,8 +2,11 @@ defmodule DojoWeb.BootLive do
   use DojoWeb, :live_shell
   import DojoWeb.SVGComponents
 
-  def mount(_params, _session, socket) do
-    {:ok, socket |> boot(3600)}
+  def mount(params, _session, socket) do
+    {:ok, socket
+    |> assign(:params, params)
+    |> boot(3600)
+    }
   end
 
   def boot(%{assigns: %{session: %DojoWeb.Session{name: name} = sess}} = socket, time \\ 200) when is_binary(name) do
@@ -16,9 +19,9 @@ defmodule DojoWeb.BootLive do
   end
 
 
-  def handle_info(:boot, socket) do
+  def handle_info(:boot, %{assigns: %{params: params}} = socket) do
     {:noreply, socket
-      |> redirect(to: ~p"/shell")
+      |> redirect(to: ~p"/shell?#{params}")
      }
   end
 
