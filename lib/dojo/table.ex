@@ -24,17 +24,18 @@ defmodule Dojo.Table do
   end
 
 
-  def init(%{topic: topic, disciple: disciple}) do
-    {:ok, %{topic: topic, disciple: disciple, animate_msg: nil, last: %{}}}
+  def init(%{track_pid: pid, topic: topic, disciple: disciple}) do
+    {:ok, ref} = Dojo.Gate.track(pid, topic, %{disciple | node: self()})
+    {:ok, %{track_pid: pid, topic: topic, disciple: %{disciple | phx_ref: ref}, animate_msg: nil, last: %{}}}
   end
 
-  def handle_cast({:publish, msg, :animate}, %{topic: topic, disciple: %{name: name}} = state) do
-    Dojo.PubSub.publish({name, msg}, :animate, topic)
+  def handle_cast({:publish, msg, :animate}, %{topic: topic, disciple: %{phx_ref: phx_ref}} = state) do
+    Dojo.PubSub.publish({phx_ref, msg}, :animate, topic)
     {:noreply, %{state | animate_msg: msg}}
   end
 
-  def handle_cast({:publish, msg, event}, %{last: last, topic: topic, disciple: %{name: name}} = state) do
-    Dojo.PubSub.publish({name, msg}, event, topic)
+  def handle_cast({:publish, msg, event}, %{last: last, topic: topic, disciple: %{phx_ref: phx_ref}} = state) do
+    Dojo.PubSub.publish({phx_ref, msg}, event, topic)
     {:noreply, %{state | last: last |> Map.put(event, msg)}}
   end
 

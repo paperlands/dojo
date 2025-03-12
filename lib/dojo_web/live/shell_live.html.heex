@@ -19,7 +19,7 @@
       <div class="fixed flex pointer-events-auto">
         <!-- Example bookmarks -->
         <div
-          class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none outline outline-1 outline-gray-500 text-brand hover:bg-yellow-300"
+          class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none outline outline-1 outline-gray-500 text-brand hover:bg-amber-400 hover:text-black"
           phx-click="seeTurtle"
         >
           ~
@@ -32,14 +32,18 @@
         >
           {value}
         </div>
+
       </div>
     </div>
     <!-- Editor -->
     <div
       phx-update="ignore"
       id="runenv"
-      class="my-12 rounded-sm pointer-events-auto cursor-text bg-amber-600/5 border-amber-600/20"
+      class="mt-8 rounded-sm pointer-events-auto cursor-text bg-amber-600/5 border-amber-600/20"
     >
+      <div phx-click="flipWorks">
+      <.folders  class="absolute top-5 right-6 w-5 h-5  fill-brand/50 hover:fill-amber-400 cursor-pointer" />
+        </div>
       <div class="relative z-10">
         <.slider slider_value="50" />
       </div>
@@ -124,18 +128,18 @@
   >
     <span
     :if={@outershell && @outershell.resp}
-    class="absolute text-lg font-bold left-2 text-amber-600 top-4"
+    class="absolute text-lg font-bold left-2 text-amber-200 top-4"
   >
     @{@outershell.resp}'s code
   </span>
     <button
       phx-click="seeTurtle"
-      class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full shadow-xl opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-4 right-4 bg-amber-900/90 border-amber-600"
+      class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full shadow-xl opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-4 right-4  border-amber-600"
     >
       <!-- Base Crosshair -->
       <div class="absolute inset-0 flex items-center justify-center">
         <svg
-          class="w-5 h-5 transition-colors text-amber-300 group-hover:text-red-300"
+          class="w-5 h-5 transition-colors text-red-600 group-hover:text-amber-300"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -170,11 +174,11 @@
 <%!-- Turtle viewing pane toggle icon --%>
 <div
   id="paneflip"
-  class="fixed z-50 -translate-x-1/2 pointer-events-auto bottom-2 left-1/2"
+  class="fixed z-50 -translate-x-1/2  transition-transform duration-300 pointer-events-auto bottom-2 left-1/2"
   phx-hook="Sensei"
 >
   <svg
-    class={"z-[60] w-6 h-6 text-amber-400 items-center flex  m-auto  rounded-lg shadow-xl backdrop-blur-sm transform transition-transform duration-300" <> if(@pane, do: " rotate-180", else: "")}
+    class={"z-[60] w-6 h-6 text-brand/50 items-center flex  m-auto  rounded-lg shadow-xl backdrop-blur-sm transform transition-transform duration-300 hover:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
     phx-click="flipPane"
     viewBox="0 0 24 24"
     fill="none"
@@ -188,7 +192,7 @@
 <div class="fixed bottom-0 z-40 flex w-2/3 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto">
   <!-- Other people's turtles -->
   <div
-    :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
+    :for={{phx_ref, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
     :if={Map.has_key?(dis, :meta) && @pane}
     class={"rounded-lg transition mx-11 pb-4 pt-2 duration-200 ease-in-out flex-shrink-0 w-1/6" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
   >
@@ -196,19 +200,19 @@
       :if={@sensei}
       name="hero-cursor-arrow-ripple"
       phx-click="toggle-focus"
-      phx-value-disciple-phx_ref={dis.phx_ref}
+      phx-value-disciple-phx_ref={phx_ref}
       class="cursor-pointer pointer-events-auto text-brand"
     />
     <div
       phx-click="seeTurtle"
-      phx-value-addr={name}
+      phx-value-addr={phx_ref}
       class={[
         "relative flex justify-center h-32 lg:w-48 w-32 border pointer-events-auto rounded-md cursor-alias hover:scale-120 hover:border-2",
-        @outershell && @outershell.addr == name && "border-orange-500"
+        @outershell && @outershell.addr == phx_ref && "border-orange-500"
       ]}
     >
       <div class="absolute font-mono text-sm tracking-wider rotate-0 select-none top-2 right-2 text-amber-500/50">
-        {name}
+        {dis.name}
       </div>
 
       <img src={dis.meta.path} class="object-scale-down max-h-full m-auto" />

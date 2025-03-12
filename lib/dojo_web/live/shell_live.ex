@@ -29,6 +29,7 @@ defmodule DojoWeb.ShellLive do
        class: nil,
        disciples: %{},
        deck: true,
+       works: true,
        pane: true
      )
      |> assign(focused_phx_ref: "")}
@@ -81,22 +82,22 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_info(
-        {:join, "class:shell" <> _, %{name: name} = disciple},
+        {:join, "class:shell" <> _, %{phx_ref: ref} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
     {:noreply,
      socket
-     |> assign(:disciples, Map.put(d, name, disciple))}
+     |> assign(:disciples, Map.put(d, ref, disciple))}
   end
 
   def handle_info(
-        {:leave, "class:shell" <> _, %{name: name, phx_ref: ref} = disciple},
+        {:leave, "class:shell" <> _, %{phx_ref: ref} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
-    if d[name][:phx_ref] == ref do
+    if Map.has_key?(d, ref) do
       {:noreply,
        socket
-       |> assign(:disciples, Map.delete(d, name))}
+       |> assign(:disciples, Map.delete(d, ref))}
     else
       {:noreply, socket}
     end
@@ -175,7 +176,7 @@ defmodule DojoWeb.ShellLive do
         %{"commands" => commands, "path" => path},
         %{assigns: %{class: class}} = socket
       ) do
-    Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
+    Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(108)}, %{class: class})
     {:noreply, socket |> assign(myfunctions: commands |> Dojo.Turtle.filter_fns())}
   end
 
@@ -250,6 +251,7 @@ defmodule DojoWeb.ShellLive do
 
   def handle_event("flipDeck", _, socket), do: {:noreply, update(socket, :deck, &(!&1))}
   def handle_event("flipPane", _, socket), do: {:noreply, update(socket, :pane, &(!&1))}
+  def handle_event("flipWorks", _, socket), do: {:noreply, update(socket, :works, &(!&1))}
 
   def handle_event("opensenseime", _, %{assigns: %{sensei: bool}} = socket) do
     {:noreply, assign(socket, sensei: !bool)}
@@ -315,7 +317,7 @@ defmodule DojoWeb.ShellLive do
             >
               <div class="relative">
                 <!-- Main Button -->
-                <button class="flex items-center justify-center w-8 h-8 bg-amber-900/90 rounded-full border-2 border-amber-700 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
+                <button class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-brand/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
                   <svg
                     class="w-4 h-4 text-amber-400"
                     viewBox="0 0 24 24"
