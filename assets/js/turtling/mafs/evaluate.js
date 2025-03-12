@@ -1,9 +1,9 @@
 export class Evaluator {
     constructor() {
         this.constants = {
-            'pi': Math.PI,
-            'e': Math.E,
-            'random': Math.random()
+            'pi': () => Math.PI,
+            'e': () => Math.E,
+            'random': () => Math.random()
         };
 
         this.functions = {
@@ -17,6 +17,12 @@ export class Evaluator {
             'log': Math.log,
             'exp': Math.exp
         };
+
+    }
+
+    namespace_check(val) {
+        return val in this.constants
+
     }
 
     run(ast, context) {
@@ -25,10 +31,9 @@ export class Evaluator {
         if (ast.type === 'operand') {
             if (/^\d+\.?\d*$/.test(ast.value)) {
                 return parseFloat(ast.value);
-            } else if (ast.value === "random") {
-                return Math.random();
-            } else if (ast.value in this.constants) {
-                return this.constants[ast.value];
+            }
+            else if (ast.value in this.constants) {
+                return this.constants[ast.value]();
             } else {
                 return this.resolveContext(ast.value, context);
             }
