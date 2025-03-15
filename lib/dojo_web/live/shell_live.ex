@@ -104,8 +104,6 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_info({Dojo.PubSub, :focused_phx_ref, {focused_phx_ref}}, socket) do
-    IO.inspect(focused_phx_ref)
-
     {:noreply,
      socket
      |> assign(focused_phx_ref: focused_phx_ref)}
