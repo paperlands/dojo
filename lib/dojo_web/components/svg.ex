@@ -8,6 +8,15 @@ defmodule DojoWeb.SVGComponents do
   """
   end
 
+ def save(assigns) do
+ ~H"""
+ <svg class={@class} x="0px" y="0px" viewBox="0 0 100 100" stroke="currentColor"
+                    stroke-width="4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round" ><path d="M83.723,27.201h11.262v67.784H5.015V5.015H72.47v10.923h11.253V27.201z M72.47,16.273H61.317v22.52H27.54v-22.52H16.277  v67.45H27.54V61.537h44.93v22.185h11.253V27.201H72.47V16.273z M38.793,27.53h11.152V16.273H38.793V27.53z"/></svg>
+ """
+ end
+
   def cmd_icon(%{command: "fw"} = assigns) do
     ~H"""
     <svg class={@class} viewBox="0 0 256 256"  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

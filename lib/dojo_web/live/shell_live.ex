@@ -28,8 +28,7 @@ defmodule DojoWeb.ShellLive do
        outerfunctions: [],
        class: nil,
        disciples: %{},
-       deck: true,
-       works: true,
+       right: :deck,
        pane: true
      )
      |> assign(focused_phx_ref: "")}
@@ -209,11 +208,11 @@ defmodule DojoWeb.ShellLive do
        :outershell,
        %{
          addr: addr,
-         outerfunctions: dis[addr][:meta][:commands] |> Dojo.Turtle.filter_fns(),
-         resp: "#{addr}"
+         #outerfunctions: dis[addr][:meta][:commands] |> Dojo.Turtle.filter_fns(),
+         resp: "#{dis[addr][:name]}"
        }
      )
-     |> assign(:deck, false)}
+     |> assign(:right, :pane)}
   end
 
   def handle_event(
@@ -247,9 +246,9 @@ defmodule DojoWeb.ShellLive do
      )}
   end
 
-  def handle_event("flipDeck", _, socket), do: {:noreply, update(socket, :deck, &(!&1))}
+  def handle_event("flipDeck", _, socket), do: {:noreply, update(socket, :right, &(&1==:deck && true || :deck))}
+  def handle_event("flipWell", _, socket), do: {:noreply, update(socket, :right, &(&1==:well && true || :well))}
   def handle_event("flipPane", _, socket), do: {:noreply, update(socket, :pane, &(!&1))}
-  def handle_event("flipWorks", _, socket), do: {:noreply, update(socket, :works, &(!&1))}
 
   def handle_event("opensenseime", _, %{assigns: %{sensei: bool}} = socket) do
     {:noreply, assign(socket, sensei: !bool)}
@@ -300,7 +299,6 @@ defmodule DojoWeb.ShellLive do
     <!-- Command Deck Component (command_deck.html.heex) -->
     <div class="absolute flex px-1 pb-1 right-5 bottom-5">
       <!-- Command Deck Panel -->
-      <%= if @visible do %>
         <div class="fixed w-64 transition-all duration-500 ease-in-out transform rounded-lg shadow-xl right-5 bottom-20 xl:h-2/3 bg-brand-900/70 backdrop-blur-sm h-1/2 dark-scrollbar">
           <div class="h-full p-4">
             <!-- Header -->
@@ -378,7 +376,67 @@ defmodule DojoWeb.ShellLive do
           <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-24 -left-4 border-amber-400">
           </div>
         </div>
-      <% end %>
+    </div>
+    """
+  end
+
+  def memory_well(assigns) do
+    ~H"""
+    <!-- Memory Well Component (memory_well.html.heex) -->
+    <div class="fixed flex flex-col w-64 top-1/4 h-4/5 right-5 bottom-20">
+      <!-- Header -->
+      <div class="flex items-center justify-between p-4 mb-2 border-b border-amber-600/50">
+        <h2 class="text-xl font-bold text-amber-200">Memory Well</h2>
+
+        <!-- View Toggle -->
+        <div class="flex space-x-2">
+          <button phx-click="store-memory" class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-brand/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
+            <.save class="w-4 h-4 text-amber-400" />
+          </button>
+        </div>
+      </div>
+
+      <!-- Viewing Pane -->
+      <div class="flex-1 overflow-y-auto p-2 dark-scrollbar">
+        <div class="space-y-3">
+          <%= for mmr <- @memories do %>
+          <div :if={Map.has_key?(mmr, :meta)} class="flex items-center p-3 transition-colors rounded-lg bg-brand-900/70 hover:bg-brand-800/70">
+            <!-- Thumbnail -->
+            <div class="flex-shrink-0 w-16 h-16 mr-4 overflow-hidden rounded">
+              <img src={mmr.meta.path}  class="object-cover w-full h-full" />
+            </div>
+
+            <!-- Info -->
+            <div class="flex-1 min-w-0">
+              <h3 class="text-sm font-bold text-amber-300 truncate">{"title here"}</h3>
+              <p class="text-xs text-amber-400/60">{"date here"}</p>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex ml-2 space-x-2">
+              <button phx-click="view-item" phx-value-id={mmr.phx_ref} class="p-2 transition-colors rounded-full bg-amber-900/70 hover:bg-amber-800">
+                <svg class="w-4 h-4 text-amber-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </button>
+              <button phx-click="download-item" phx-value-id={mmr.phx_ref} class="p-2 transition-colors rounded-full bg-amber-900/70 hover:bg-amber-800">
+                <svg class="w-4 h-4 text-amber-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <% end %>
+        </div>
+        </div>
+      <!-- Decorative corners -->
+      <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-2 -left-4 border-amber-400"></div>
+      <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-2 right-1 border-amber-400"></div>
+      <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-2 -left-4 border-amber-400"></div>
+      <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-2 right-1 border-amber-400"></div>
     </div>
     """
   end

@@ -6,7 +6,7 @@
     phx-update="ignore"
     id="outercanvas"
     class={[
-      "fixed z-10 w-full h-full bg-transparent",
+      "fixed z-10 w-full h-full bg-black/50",
       !@outershell && "pointer-events-none"
     ]}
   >
@@ -41,7 +41,7 @@
       id="runenv"
       class="mt-8 rounded-sm pointer-events-auto cursor-text bg-amber-600/5 border-amber-600/20"
     >
-      <div phx-click="flipWorks">
+      <div phx-click="flipWell">
       <.folders  class="absolute top-5 right-6 w-5 h-5  fill-brand/50 hover:fill-amber-400 cursor-pointer" />
         </div>
       <div class="relative z-10">
@@ -124,7 +124,7 @@
     :if={@outershell}
     id="outerenv"
     phx-update="ignore"
-    class="absolute w-2/3 overflow-y-scroll border rounded-lg pointer-events-auto h-1/2 top-32 right-4 bottom-4 bg-amber-300/10 border-amber-600/20 dark-scrollbar"
+    class="absolute w-2/3 overflow-y-scroll border rounded-lg pointer-events-auto h-1/2 top-32 right-4 bottom-4 bg-amber-300/20 border-amber-600/20 dark-scrollbar"
   >
     <span
     :if={@outershell && @outershell.resp}
@@ -164,11 +164,13 @@
         <path d="M12 7v10M7 12h10" stroke-dasharray="2 2" />
       </svg>
     </button>
-    <div class="p-4 mt-12 mb-8 overflow-auto font-mono text-xs text-white bg-transparent resize-none backdrop-blur-sm h-11/12 focus:outline-none">
+    <div class="mt-12 mb-8 w-full overflow-auto font-mono  bg-transparent resize-none backdrop-blur-sm h-11/12 focus:outline-none">
       <textarea phx-update="ignore" id="outershell" phx-hook="OuterShell"></textarea>
     </div>
   </div>
-  <.command_deck visible={@deck} />
+
+  <.command_deck :if={@right == :deck}/>
+  <.memory_well :if={@right == :well} view="grid" memories={@disciples |> Enum.map(&(elem(&1,1)))} page={1} total_pages={1}/>
 </div>
 
 <%!-- Turtle viewing pane toggle icon --%>
