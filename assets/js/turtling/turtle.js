@@ -403,19 +403,17 @@ export class Turtle {
         // this.currentPath = null;
         this.requestRender();
         // this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        //
     }
 
-
-
     defineFunction(name, parameters, body) {
-        this.functions[name] = { parameters, body };
+        this.functions[name] = {
+            parameters, body
+        }
     }
 
     callFunction(name, args, ctx, depth =0) {
-        if (depth >= this.maxRecurseDepth) {
-            this.forward(0.01)
-            return;
-        }
+        if (depth >= this.maxRecurseDepth) return;
         // console.log(name , args ,ctx , depth)
         const func = this.functions[name] || (ctx[name] && this.functions[ctx[name]]);
         if (!func)

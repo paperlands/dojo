@@ -1,12 +1,11 @@
 // CodeMirror, copyright (c) by Marijn Haverbeke and others
 // Distributed under an MIT license: https://codemirror.net/5/LICENSE
-
 (function(mod) {
-  if (typeof exports == "object" && typeof module == "object") // CommonJS
+  if (typeof exports == "object" && typeof module == "object")
     mod(require("../../lib/codemirror"));
-  else if (typeof define == "function" && define.amd) // AMD
+  else if (typeof define == "function" && define.amd)
     define(["../../lib/codemirror"], mod);
-  else // Plain browser env
+  else
     mod(CodeMirror);
 })(function(CodeMirror) {
 "use strict";
@@ -18,19 +17,13 @@ function wordObj(words) {
 }
 
 var keywordList = [
-  "draw", "do", "BEGIN", "begin", "break", "case", "class", "def", "defined?",
-  "fw", "rt", "hd",  "lt", "show", "wait", "beColour", "jmp", "fill",
-  "elsif", "END", "end", "ensure", "false", "for", "if", "in", "module", "next", "not", "or",
-  "redo", "rescue", "retry", "return", "self", "super", "then", "true", "undef", "unless",
-  "until", "when", "while", "yield", "nil", "raise", "throw", "catch", "fail", "loop", "callcc",
-  "require_relative", "extend", "autoload", "__END__", "__FILE__", "__LINE__", "__dir__"
+  "draw", "do", "fw", "rt", "hd", "lt", "show", "wait", "beColour", "jmp", "fill",
+  "elsif", "END", "end", "ensure", "false", "for", "when", "loop"
 ], keywords = wordObj(keywordList);
 
-var indentWords = wordObj(["def", "draw", "when", "for", "do",
-                           "catch", "loop", "proc", "begin"]);
-var dedentWords = wordObj(["end", "until"]);
-var opening = {"[": "]", "{": "}", "(": ")"};
-var closing = {"]": "[", "}": "{", ")": "("};
+var indentWords = wordObj(["do"]);
+var dedentWords = wordObj(["end"]);
+var closing = wordObj([")", "]", "}"]);
 
 CodeMirror.defineMode("plang", function(config) {
   var curPunc;
@@ -54,16 +47,6 @@ CodeMirror.defineMode("plang", function(config) {
         return chain(readQuoted(ch, "string-2", true), stream, state);
       else
         return "operator";
-    } else if (ch == "%") {
-      var style = "string", embed = true;
-      if (stream.eat("s")) style = "atom";
-      else if (stream.eat(/[WQ]/)) style = "string";
-      else if (stream.eat(/[r]/)) style = "string-2";
-      else if (stream.eat(/[wxq]/)) { style = "string"; embed = false; }
-      var delim = stream.eat(/[^\w\s=]/);
-      if (!delim) return "operator";
-      if (opening.propertyIsEnumerable(delim)) delim = opening[delim];
-      return chain(readQuoted(delim, style, embed, true), stream, state);
     } else if (ch == "#") {
       stream.skipToEnd();
       return "comment";
@@ -77,34 +60,6 @@ CodeMirror.defineMode("plang", function(config) {
     } else if (/\d/.test(ch)) {
       stream.match(/^[\d_]*(?:\.[\d_]+)?(?:[eE][+\-]?[\d_]+)?/);
       return "number";
-    } else if (ch == "?") {
-      while (stream.match(/^\\[CM]-/)) {}
-      if (stream.eat("\\")) stream.eatWhile(/\w/);
-      else stream.next();
-      return "string";
-    } else if (ch == ":") {
-      if (stream.eat("'")) return chain(readQuoted("'", "atom", false), stream, state);
-      if (stream.eat('"')) return chain(readQuoted('"', "atom", true), stream, state);
-
-      // :> :>> :< :<< are valid symbols
-      if (stream.eat(/[\<\>]/)) {
-        stream.eat(/[\<\>]/);
-        return "atom";
-      }
-
-      // :+ :- :/ :* :| :& :! are valid symbols
-      if (stream.eat(/[\+\-\*\/\&\|\:\!]/)) {
-        return "atom";
-      }
-
-      // Symbols can't start by a digit
-      if (stream.eat(/[a-zA-Z$@_\xa1-\uffff]/)) {
-        stream.eatWhile(/[\w$\xa1-\uffff]/);
-        // Only one ? ! = is allowed and only as the last character
-        stream.eat(/[\?\!\=]/);
-        return "atom";
-      }
-      return "operator";
     } else if (ch == "@" && stream.match(/^@?[a-zA-Z_\xa1-\uffff]/)) {
       stream.eat("@");
       stream.eatWhile(/[\w\xa1-\uffff]/);
@@ -115,7 +70,7 @@ CodeMirror.defineMode("plang", function(config) {
       } else if (stream.eat(/\d/)) {
         stream.eat(/\d/);
       } else {
-        stream.next(); // Must be a special global like $: or $!
+        stream.next();
       }
       return "variable-3";
     } else if (/[a-zA-Z_\xa1-\uffff]/.test(ch)) {
@@ -141,154 +96,140 @@ CodeMirror.defineMode("plang", function(config) {
   }
 
   function regexpAhead(stream) {
-    var start = stream.pos, depth = 0, next, found = false, escaped = false
+    var start = stream.pos, depth = 0, next, found = false, escaped = false;
     while ((next = stream.next()) != null) {
       if (!escaped) {
         if ("[{(".indexOf(next) > -1) {
-          depth++
+          depth++;
         } else if ("]})".indexOf(next) > -1) {
-          depth--
-          if (depth < 0) break
+          depth--;
+          if (depth < 0) break;
         } else if (next == "/" && depth == 0) {
-          found = true
-          break
-        }
-        escaped = next == "\\"
-      } else {
-        escaped = false
-      }
-    }
-    stream.backUp(stream.pos - start)
-    return found
-  }
-
-  function tokenBaseUntilBrace(depth) {
-    if (!depth) depth = 1;
-    return function(stream, state) {
-      if (stream.peek() == "}") {
-        if (depth == 1) {
-          state.tokenize.pop();
-          return state.tokenize[state.tokenize.length-1](stream, state);
-        } else {
-          state.tokenize[state.tokenize.length - 1] = tokenBaseUntilBrace(depth - 1);
-        }
-      } else if (stream.peek() == "{") {
-        state.tokenize[state.tokenize.length - 1] = tokenBaseUntilBrace(depth + 1);
-      }
-      return tokenBase(stream, state);
-    };
-  }
-  function tokenBaseOnce() {
-    var alreadyCalled = false;
-    return function(stream, state) {
-      if (alreadyCalled) {
-        state.tokenize.pop();
-        return state.tokenize[state.tokenize.length-1](stream, state);
-      }
-      alreadyCalled = true;
-      return tokenBase(stream, state);
-    };
-  }
-  function readQuoted(quote, style, embed, unescaped) {
-    return function(stream, state) {
-      var escaped = false, ch;
-
-      if (state.context.type === 'read-quoted-paused') {
-        state.context = state.context.prev;
-        stream.eat("}");
-      }
-
-      while ((ch = stream.next()) != null) {
-        if (ch == quote && (unescaped || !escaped)) {
-          state.tokenize.pop();
+          found = true;
           break;
         }
-        if (embed && ch == "#" && !escaped) {
-          if (stream.eat("{")) {
-            if (quote == "}") {
-              state.context = {prev: state.context, type: 'read-quoted-paused'};
-            }
-            state.tokenize.push(tokenBaseUntilBrace());
-            break;
-          } else if (/[@\$]/.test(stream.peek())) {
-            state.tokenize.push(tokenBaseOnce());
-            break;
-          }
-        }
-        escaped = !escaped && ch == "\\";
+        escaped = next == "\\";
+      } else {
+        escaped = false;
       }
-      return style;
-    };
-  }
-  function readHereDoc(phrase, mayIndent) {
-    return function(stream, state) {
-      if (mayIndent) stream.eatSpace()
-      if (stream.match(phrase)) state.tokenize.pop();
-      else stream.skipToEnd();
-      return "string";
-    };
-  }
-  function readBlockComment(stream, state) {
-    if (stream.sol() && stream.match("=end") && stream.eol())
-      state.tokenize.pop();
-    stream.skipToEnd();
-    return "comment";
+    }
+    stream.backUp(stream.pos - start);
+    return found;
   }
 
   return {
     startState: function() {
-      return {tokenize: [tokenBase],
-              indented: 0,
-              context: {type: "top", indented: -config.indentUnit},
-              continuedLine: false,
-              lastTok: null,
-              varList: false};
+      return {
+        tokenize: [tokenBase],
+        indented: 0,
+        context: {type: "top", indented: 0, blockIndent: false}, // Corrected indented to 0
+        continuedLine: false,
+        lastTok: null,
+        varList: false,
+        indentStack: [],
+        dedentPending: false,
+        lastIndent: 0, // Corrected initial lastIndent to 0
+        nestedBlockLevel: 0
+      };
     },
 
     token: function(stream, state) {
       curPunc = null;
-      if (stream.sol()) state.indented = stream.indentation();
+      if (stream.sol()) {
+        state.indented = stream.indentation();
+      }
+
       var style = state.tokenize[state.tokenize.length-1](stream, state), kwtype;
       var thisTok = curPunc;
+
       if (style == "ident") {
         var word = stream.current();
         style = state.lastTok == "." ? "property"
           : keywords.propertyIsEnumerable(stream.current()) ? "keyword"
           : /^[A-Z]/.test(word) ? "tag"
-          : (state.lastTok == "def" || state.lastTok == "class" || state.varList) ? "def"
+          : (state.lastTok == "do" || state.lastTok == "class" || state.varList) ? "def"
           : "variable";
+
         if (style == "keyword") {
           thisTok = word;
-          if (indentWords.propertyIsEnumerable(word)) kwtype = "indent";
-          else if (word=="end") kwtype = "dedent";
-          else if ((word == "if" || word == "unless") && stream.column() == stream.indentation())
-            kwtype = "indent";
-          else if (word == "do" && state.context.indented < state.indented)
-            kwtype = "indent";
+
+          if (indentWords.propertyIsEnumerable(word)) {
+            state.nestedBlockLevel++;
+            state.indentStack.push(state.indented);
+            state.context = {
+              prev: state.context,
+              type: word,
+              indented: state.indented,
+              blockIndent: true
+            };
+          } else if (dedentWords.propertyIsEnumerable(word)) {
+            if (state.nestedBlockLevel > 0) {
+              state.nestedBlockLevel--;
+            }
+            state.lastIndent = state.indentStack.length > 0 ? state.indentStack.pop() : 0;
+            if (state.context && state.context.prev) {
+              state.context = state.context.prev;
+            }
+            state.dedentPending = true; // Trigger dedent for the next line
+          }
         }
       }
+
       if (curPunc || (style && style != "comment")) state.lastTok = thisTok;
       if (curPunc == "|") state.varList = !state.varList;
 
-      if (kwtype == "indent" || /[\(\[\{]/.test(curPunc))
-        state.context = {prev: state.context, type: curPunc || style, indented: state.indented};
-      else if ((kwtype == "dedent" || /[\)\]\}]/.test(curPunc)) && state.context.prev)
+      if (/[\(\[\{]/.test(curPunc)) {
+        state.context = {
+          prev: state.context,
+          type: curPunc,
+          indented: state.indented,
+          blockIndent: false
+        };
+      } else if (/[\)\]\}]/.test(curPunc) && state.context.prev) {
         state.context = state.context.prev;
+      }
 
       if (stream.eol())
         state.continuedLine = (curPunc == "\\" || style == "operator");
+
       return style;
     },
 
     indent: function(state, textAfter) {
-      if (state.tokenize[state.tokenize.length-1] != tokenBase) return CodeMirror.Pass;
       var firstChar = textAfter && textAfter.charAt(0);
-      var ct = state.context;
-      var closed = ct.type == closing[firstChar] ||
-        ct.type == "keyword" && /^(?:end)\b/.test(textAfter);
-      if (state.lastTok == "end") ct.indented = ct.indented-2
-      return ct.indented + (closed ? 0 : config.indentUnit) +
-        (state.continuedLine ? config.indentUnit : 0) ;
+      var firstWord = textAfter && textAfter.match(/^\s*(\w+)/);
+
+      var isDedent = firstWord && dedentWords.propertyIsEnumerable(firstWord[1]) ||
+                     firstChar && closing.propertyIsEnumerable(firstChar);
+
+
+      // Handle lines starting with dedent keywords/closing brackets
+      if (isDedent) {
+        return state.indentStack.length > 0
+          ? state.indentStack[state.indentStack.length - 1]
+          : state.context.indented;
+      }
+
+      // Apply pending dedent from previous line's 'end'
+      if (state.dedentPending) {
+        console.log(state.indentStack)
+        state.dedentPending = false;
+        return state.lastIndent;
+      }
+
+
+
+      // Handle continued lines
+      if (state.continuedLine) {
+        return state.indented + config.indentUnit;
+      }
+
+      // Indent if inside a block
+      if (state.context.blockIndent) {
+        return state.context.indented + config.indentUnit;
+      }
+
+      return state.indented;
     },
 
     electricInput: /^\s*(?:end|rescue|elsif|else|\})$/,
@@ -298,7 +239,5 @@ CodeMirror.defineMode("plang", function(config) {
 });
 
 CodeMirror.defineMIME("text/x-plang", "plang");
-
 CodeMirror.registerHelper("hintWords", "plang", keywordList);
-
 });
