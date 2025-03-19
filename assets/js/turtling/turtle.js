@@ -30,6 +30,7 @@ export class Turtle {
             home: this.spawn.bind(this),
             fill: this.fill.bind(this),
             wait: this.wait.bind(this),
+            limitRecurse: this.setRecurseLimit.bind(this),
             beColour: this.setColor.bind(this)
         };
         this.functions = {};
@@ -608,6 +609,10 @@ export class Turtle {
 
     unhideTurtle() {
         this.showTurtle = true;
+    }
+
+    setRecurseLimit(limit = 360) {
+        this.maxRecurseDepth = limit
     }
 
     setColor(color = "silver") {
