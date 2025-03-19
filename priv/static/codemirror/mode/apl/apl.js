@@ -162,6 +162,7 @@ CodeMirror.defineMode("plang", function(config) {
               indented: state.indented,
               blockIndent: true
             };
+            state.dedentPending = false
           } else if (dedentWords.propertyIsEnumerable(word)) {
             if (state.nestedBlockLevel > 0) {
               state.nestedBlockLevel--;
@@ -171,6 +172,9 @@ CodeMirror.defineMode("plang", function(config) {
               state.context = state.context.prev;
             }
             state.dedentPending = true; // Trigger dedent for the next line
+            if (state.nestedBlockLevel == 0) {
+              state.dedentPending = false
+            }
           }
         }
       }
