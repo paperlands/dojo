@@ -4,7 +4,7 @@ import OuterShell from "./outershell.js";
 import Draggables from "./draggable.js";
 import Sensei from "./sensei.js";
 
-let Hooks = {
+const Hooks = {
   OuterShell,
   Shell,
   Box,

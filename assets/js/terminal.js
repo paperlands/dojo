@@ -11,6 +11,14 @@ export class Terminal {
         // Initialize the shell
         this.shell = this.CM.fromTextArea(this.editor, this.opts());
         this.shell.initOpts = this.opts();
+        // init listeners
+        //
+        //
+        this.shell.on("gutterClick", function(cm, n) {
+            cm.focus()
+            cm.setSelection({line: n, ch: 0}, {line: n, ch: 100});
+
+        });
         // Create the initial buffer
         return this.shell;
     }

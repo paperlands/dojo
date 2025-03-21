@@ -614,8 +614,10 @@ export class Turtle {
     }
 
     setColor(color = "silver") {
+        console.log(color)
         this.color = color;
         if (color == "invisible") this.color = "#00000000"
+        if (Number.isFinite(color)) this.color = `hsla(${~~(360 * color)}, 70%,  72%, 0.8)`
         if (color == "random") this.color = `hsla(${~~(360 * Math.random())}, 70%,  72%, 0.8)`
         this.ctx.strokeStyle = this.color;
         //break path for new path
