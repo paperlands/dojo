@@ -17,8 +17,8 @@ function wordObj(words) {
 }
 
 var keywordList = [
-  "draw", "do", "fw", "rt", "hd", "lt", "show", "wait", "beColour", "jmp", "fill",
-  "elsif", "END", "end", "ensure", "false", "for", "when", "loop"
+  "draw", "label", "erase", "goto", "do", "fw", "rt", "hd", "lt", "show", "wait", "beColour", "jmp", "fill",
+  "jmpto", "faceto", "END", "end", "ensure", "false", "for", "when", "loop"
 ], keywords = wordObj(keywordList);
 
 var indentWords = wordObj(["do"]);
@@ -93,6 +93,38 @@ CodeMirror.defineMode("plang", function(config) {
     } else {
       return null;
     }
+  }
+
+  function readQuoted(quote, style, embed, unescaped) {
+    return function(stream, state) {
+      var escaped = false, ch;
+
+      if (state.context.type === 'read-quoted-paused') {
+        state.context = state.context.prev;
+        stream.eat("}");
+      }
+
+      while ((ch = stream.next()) != null) {
+        if (ch == quote && (unescaped || !escaped)) {
+          state.tokenize.pop();
+          break;
+        }
+        if (embed && ch == "#" && !escaped) {
+          if (stream.eat("{")) {
+            if (quote == "}") {
+              state.context = {prev: state.context, type: 'read-quoted-paused'};
+            }
+            state.tokenize.push(tokenBaseUntilBrace());
+            break;
+          } else if (/[@\$]/.test(stream.peek())) {
+            state.tokenize.push(tokenBaseOnce());
+            break;
+          }
+        }
+        escaped = !escaped && ch == "\\";
+      }
+      return style;
+    };
   }
 
   function regexpAhead(stream) {

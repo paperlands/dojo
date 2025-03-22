@@ -26,6 +26,7 @@ export class Turtle {
             goto: this.goto.bind(this),
             faceto: this.faceto.bind(this),
             jmpto: this.jmpto.bind(this),
+            label: this.label.bind(this),
             erase: this.erase.bind(this),
             home: this.spawn.bind(this),
             fill: this.fill.bind(this),
@@ -195,6 +196,12 @@ export class Turtle {
                     console.warn('Error drawing path:', error);
                 }
                 break;
+            case "text":
+                ctx.strokeStyle = path.color
+                ctx.fillStyle = path.color;
+                ctx.strokeText(path.text, path.points[0][0], path.points[0][1])
+                ctx.fillText(path.text, path.points[0][0], path.points[0][1])
+                break;
             }
 
         });
@@ -336,6 +343,23 @@ export class Turtle {
             type: "clear"
         };
 
+        const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
+        currentFrame.push(this.currentPath);
+        this.timeline.frames.set(this.timeline.currentTime, currentFrame);
+        this.currentPath = null;
+    }
+
+
+    label(text){
+        this.currentPath = {
+            ...this.pathTemplate,
+            type: "text",
+            points: [[this.x, this.y, this.z]],
+            color: this.color,
+            text: text
+        };
+
+        //should outsource to seperate canvas
         const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
         currentFrame.push(this.currentPath);
         this.timeline.frames.set(this.timeline.currentTime, currentFrame);
@@ -506,6 +530,9 @@ export class Turtle {
         this.color = 'DarkOrange';
         this.ctx.strokeStyle = this.color;
         this.ctx.lineWidth = 2;
+        this.ctx.fillStyle = 'DarkOrange';
+        this.ctx.font = "bold italic 80px paperlang";
+        this.ctx.textBaseline = "top";
         // this.ctx.shadowBlur = 8;
         // this.ctx.shadowColor = "white";
         this.ctx.imageSmoothingEnabled = false;
@@ -614,12 +641,10 @@ export class Turtle {
     }
 
     setColor(color = "silver") {
-        console.log(color)
         this.color = color;
         if (color == "invisible") this.color = "#00000000"
         if (Number.isFinite(color)) this.color = `hsla(${~~(360 * color)}, 70%,  72%, 0.8)`
         if (color == "random") this.color = `hsla(${~~(360 * Math.random())}, 70%,  72%, 0.8)`
-        this.ctx.strokeStyle = this.color;
         //break path for new path
         this.currentPath = null;
     }
