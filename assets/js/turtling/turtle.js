@@ -197,6 +197,7 @@ export class Turtle {
                 }
                 break;
             case "text":
+                ctx.font = `80px paperlang`
                 ctx.strokeStyle = path.color
                 ctx.fillStyle = path.color;
                 ctx.strokeText(path.text, path.points[0][0], path.points[0][1])
@@ -350,7 +351,7 @@ export class Turtle {
     }
 
 
-    label(text){
+    label(text="⚙"){
         this.currentPath = {
             ...this.pathTemplate,
             type: "text",
@@ -506,6 +507,7 @@ export class Turtle {
     }
 
     evaluateExpression(expr, context) {
+        if(expr.startsWith("'") || expr.startsWith('"')) return expr.replace(/^['"""']+|['"""']+$/g, '')
         if (this.math.parser.isNumeric(expr)) return parseFloat(expr);
         if (context[expr] != null) return context[expr];
         const tree = this.math.parser.run(expr)
@@ -531,8 +533,8 @@ export class Turtle {
         this.ctx.strokeStyle = this.color;
         this.ctx.lineWidth = 2;
         this.ctx.fillStyle = 'DarkOrange';
-        this.ctx.font = "bold italic 80px paperlang";
-        this.ctx.textBaseline = "top";
+        this.ctx.textAlign = "center";
+        this.ctx.textBaseline = "middle";
         // this.ctx.shadowBlur = 8;
         // this.ctx.shadowColor = "white";
         this.ctx.imageSmoothingEnabled = false;
