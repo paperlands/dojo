@@ -30,7 +30,7 @@ defmodule DojoWeb.BootLive do
         %{"username" => name},
         %{assigns: %{session: sess}} = socket
       ) when is_binary(name) do
-    login_sess = %{sess | name: name}
+    login_sess = %{sess | name: name, id: Ecto.UUID.generate()}
 
     {:noreply,
      socket

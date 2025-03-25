@@ -81,6 +81,8 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
+  #presence handlers => move to more pull based approach -> concern of class genserver instead c5 for personal shell
+
   def handle_info(
         {:join, "class:shell" <> _, %{phx_ref: ref} = disciple},
         %{assigns: %{disciples: d}} = socket
@@ -172,9 +174,30 @@ defmodule DojoWeb.ShellLive do
   def handle_event(
         "hatchTurtle",
         %{"commands" => commands, "path" => path},
-        %{assigns: %{class: class}} = socket
-      ) do
-    Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(108)}, %{class: class})
+        %{assigns: %{class: class, clan: clan, session: %{name: name, last_opened: time}}} = socket
+      ) when is_binary(name) do
+
+    dest_dir = Path.join([:code.priv_dir(:dojo), "static", "frames", clan])
+
+    if !File.dir?(dest_dir) do
+      File.mkdir(dest_dir)
+    end
+
+    id = name <> Base.encode64(to_string(time))
+    with file when is_binary(file) <- DojoWeb.Utils.Base64.to_file(path, Path.join([dest_dir, id])),
+         ext when byte_size(ext)>0 <- Path.extname(file) do
+        Dojo.Turtle.hatch(%{path: Path.join(["frames", clan, id]) <> ext <> "#bump=#{System.os_time(:second)}" , commands: commands |> Enum.take(108)}, %{class: class})
+      else
+        _ -> nil
+    end
+
+    {:noreply, socket |> assign(myfunctions: commands |> Dojo.Turtle.filter_fns())}
+  end
+
+  def handle_event("hatchTurtle",
+                   %{"commands" => commands},
+                   socket) do
+
     {:noreply, socket |> assign(myfunctions: commands |> Dojo.Turtle.filter_fns())}
   end
 
@@ -309,8 +332,7 @@ defmodule DojoWeb.ShellLive do
             <%!-- Undo button --%>
             <div
               class="absolute z-50 pointer-events-auto top-4 right-4 group"
-              phx-click="tellTurtle"
-              phx-value-cmd="undo"
+              phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
             >
               <div class="relative">
                 <!-- Main Button -->
