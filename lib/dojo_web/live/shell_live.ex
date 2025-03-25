@@ -49,6 +49,7 @@ defmodule DojoWeb.ShellLive do
 
   defp sync_session(%{assigns: %{session: %Session{name: name} = sess, clan: clan}} = socket)
        when is_binary(name) do
+
     parent = self()
 
     socket
@@ -124,23 +125,23 @@ defmodule DojoWeb.ShellLive do
      |> assign(disciples: active_dis)}
   end
 
-  def handle_event(
-        "tellTurtle",
-        %{"cmd" => cmd},
-        socket
-      ) do
-    # Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
-    {:noreply, socket |> push_event("writeShell", %{"command" => cmd})}
-  end
+  # def handle_event(
+  #       "tellTurtle",
+  #       %{"cmd" => cmd},
+  #       socket
+  #     ) do
+  #   # Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
+  #   {:noreply, socket |> push_event("writeShell", %{"command" => cmd})}
+  # end
 
-  def handle_event(
-        "tellTurtle",
-        _,
-        socket
-      ) do
-    # Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
-    {:noreply, socket}
-  end
+  # def handle_event(
+  #       "tellTurtle",
+  #       _,
+  #       socket
+  #     ) do
+  #   # Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
+  #   {:noreply, socket}
+  # end
 
   def handle_event(
         "keepTurtle",
@@ -349,9 +350,8 @@ defmodule DojoWeb.ShellLive do
                 {"beColour", "Set your Color", "beColour red"}
               ] do %>
                 <div
-                  phx-click="tellTurtle"
-                  phx-value-cmd={code}
-                  class="flex items-center p-2 transition-colors rounded pointer-events-auto hover:bg-amber-900/50 group"
+                  phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => code})}
+                  class="flex items-center p-2 transition-colors rounded pointer-events-auto hover:bg-amber-900/50 group cursor-pointer"
                 >
                   <div class="mr-3 text-amber-400">
                     <.cmd_icon command={cmd} class="w-8 h-8 fill-brand" />

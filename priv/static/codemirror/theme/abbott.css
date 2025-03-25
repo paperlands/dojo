@@ -142,7 +142,7 @@
 
 /* Equivalent to Vim's Constant group. */
 .cm-s-abbott span.cm-number,
-.cm-s-abbott span.cm-string.cm-url { color: #f63f05 /* cinnabar */; }
+.cm-s-abbott span.cm-string.cm-url { color: #D42A04 /* cinnabar */; }
 
 /* Roughly equivalent to Vim's SpecialKey group. */
 .cm-s-abbott span.cm-invalidchar { color: #00ff7f /* seafoam_green */; }
