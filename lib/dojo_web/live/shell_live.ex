@@ -223,11 +223,16 @@ defmodule DojoWeb.ShellLive do
      )}
   end
 
-  def handle_event("seeTurtle", %{"addr" => addr}, %{assigns: %{disciples: dis}} = socket)
+  def handle_event("seeTurtle", %{"addr" => addr}, %{assigns: %{disciples: dis, class: class}} = socket)
       when is_binary(addr) do
+
+    command = case GenServer.call(dis[addr][:node], {:last, :hatch}) do
+                %{commands: ast} -> ast
+                  _ -> %{}
+              end
     {:noreply,
      socket
-     |> push_event("seeOuterShell", %{ast: dis[addr][:meta][:commands], addr: addr, mod: "root"})
+     |> push_event("seeOuterShell", %{ast: command, addr: addr, mod: "root"})
      |> assign(
        :outershell,
        %{

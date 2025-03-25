@@ -120,18 +120,20 @@
     </span>
   </div>
 
+  <span
+      id="outershell-head"
+    :if={@outershell && @outershell.resp}
+    class="absolute text-lg font-bold w-2/3 right-2 text-amber-200 top-36"
+  >
+    @{@outershell.resp}'s code
+    </span>
   <div
     :if={@outershell}
     id="outerenv"
     phx-update="ignore"
     class="absolute w-2/3 overflow-y-scroll border rounded-lg pointer-events-auto h-1/2 top-32 right-4 bottom-4 bg-amber-300/20 border-amber-600/20 dark-scrollbar"
   >
-    <span
-    :if={@outershell && @outershell.resp}
-    class="absolute text-lg font-bold left-2 text-amber-200 top-4"
-  >
-    @{@outershell.resp}'s code
-  </span>
+
     <button
       phx-click="seeTurtle"
       class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full shadow-xl opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-4 right-4  border-amber-600"
@@ -207,6 +209,7 @@
     />
     <div
       phx-click="seeTurtle"
+      phx-throttle="1000"
       phx-value-addr={phx_ref}
       class={[
         "relative flex justify-center h-32 lg:w-48 w-32 border pointer-events-auto rounded-md cursor-alias hover:scale-120 hover:border-2",

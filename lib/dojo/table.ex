@@ -12,13 +12,6 @@ defmodule Dojo.Table do
 
   def last(_, _event), do: nil
 
-
-  def last_animate(pid) when is_pid(pid) do
-    GenServer.call(pid, :last_animate)
-  end
-
-  def last_animate(_), do: nil
-
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
   end
@@ -29,22 +22,13 @@ defmodule Dojo.Table do
     {:ok, %{track_pid: pid, topic: topic, disciple: %{disciple | phx_ref: ref}, animate_msg: nil, last: %{}}}
   end
 
-  def handle_cast({:publish, msg, :animate}, %{topic: topic, disciple: %{phx_ref: phx_ref}} = state) do
-    Dojo.PubSub.publish({phx_ref, msg}, :animate, topic)
-    {:noreply, %{state | animate_msg: msg}}
-  end
-
-  def handle_cast({:publish, msg, event}, %{last: last, topic: topic, disciple: %{phx_ref: phx_ref}} = state) do
-    Dojo.PubSub.publish({phx_ref, msg}, event, topic)
-    {:noreply, %{state | last: last |> Map.put(event, msg)}}
+  def handle_cast({:publish, {source, msg ,store}, event}, %{last: last, topic: topic, disciple: %{phx_ref: phx_ref}} = state) do
+    Dojo.PubSub.publish({phx_ref, {source, msg}}, event, topic)
+    {:noreply, %{state | last: last |> Map.put(event, store)}}
   end
 
   def handle_call({:last, event}, __from, %{last: last} = state) do
     {:reply, Map.get(last, event, nil), state}
-  end
-
-  def handle_call(:last_animate, __from, %{animate_msg: msg} = state) do
-    {:reply, msg, state}
   end
 
 end
