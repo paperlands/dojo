@@ -120,18 +120,20 @@
     </span>
   </div>
 
+  <span
+      id="outershell-head"
+    :if={@outershell && @outershell.resp}
+    class="absolute text-lg font-bold w-2/3 right-2 text-amber-200 top-36"
+  >
+    @{@outershell.resp}'s code
+    </span>
   <div
     :if={@outershell}
     id="outerenv"
     phx-update="ignore"
     class="absolute w-2/3 overflow-y-scroll border rounded-lg pointer-events-auto h-1/2 top-32 right-4 bottom-4 bg-amber-300/20 border-amber-600/20 dark-scrollbar"
   >
-    <span
-    :if={@outershell && @outershell.resp}
-    class="absolute text-lg font-bold left-2 text-amber-200 top-4"
-  >
-    @{@outershell.resp}'s code
-  </span>
+
     <button
       phx-click="seeTurtle"
       class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full shadow-xl opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-4 right-4  border-amber-600"
@@ -191,7 +193,7 @@
   </svg>
 </div>
 <%!-- Turtle viewing pane --%>
-<div class="fixed bottom-0 z-40 flex w-2/3 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto">
+<div class="fixed bottom-0 z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto">
   <!-- Other people's turtles -->
   <div
     :for={{phx_ref, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
@@ -207,6 +209,7 @@
     />
     <div
       phx-click="seeTurtle"
+      phx-throttle="1000"
       phx-value-addr={phx_ref}
       class={[
         "relative flex justify-center h-32 lg:w-48 w-32 border pointer-events-auto rounded-md cursor-alias hover:scale-120 hover:border-2",
@@ -217,7 +220,7 @@
         {dis.name}
       </div>
 
-      <img src={dis.meta.path} class="object-scale-down max-h-full m-auto" />
+      <img src={dis.meta.path} onerror="this.src='/images/turtlehead.png';" class="object-scale-down max-h-full m-auto" />
     </div>
   </div>
 

@@ -148,7 +148,6 @@ export class Turtle {
 
         // Draw turtle on final frame if needed
         if (this.timeline.lastRenderTime > this.timeline.endTime && this.showTurtle) {
-            console.warn("DRAW HEAD")
             this.drawHead(scale);
         }
 
@@ -159,7 +158,6 @@ export class Turtle {
         paths.forEach(path => {
             switch(path.type) {
             case "clear":
-                console.warn(path)
                 ctx.closePath();
                 ctx.save();
                 ctx.setTransform(1, 0, 0, 1, 0, 0);
