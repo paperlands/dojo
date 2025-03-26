@@ -1,5 +1,5 @@
 defmodule DojoWeb.BootLive do
-  use DojoWeb, :live_view
+  use DojoWeb, :live_shell
   import DojoWeb.SVGComponents
 
   def mount(params, _session, socket) do
