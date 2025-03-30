@@ -1,5 +1,6 @@
 import { Parser } from "./mafs/parse.js"
 import { Evaluator } from "./mafs/evaluate.js"
+//import { Typesetter } from "./mafs/typesetter.js"
 import { Versor } from "./mafs/versors.js"
 import { RenderLoop } from "./renderer.js"
 import { Camera } from "./camera.js"
@@ -195,11 +196,24 @@ export class Turtle {
                 }
                 break;
             case "text":
-                ctx.font = `80px paperlang`
-                ctx.strokeStyle = path.color
+                ctx.save();
+                // Apply turtle rotation with error handling
+                try {
+                    ctx.transform(
+                        path.text_rotation.a, path.text_rotation.b,
+                        path.text_rotation.c, path.text_rotation.d,
+                        path.text_rotation.e, path.text_rotation.f
+                    );
+                } catch (error) {
+                    console.warn('Error applying turtle rotation:', error);
+                    // Use identity transform if rotation fails
+                    ctx.transform(1, 0, 0, 1, 0, 0);
+                }
+
+                ctx.font = `${path.text_size||80}px paperlang`
                 ctx.fillStyle = path.color;
-                ctx.strokeText(path.text, path.points[0][0], path.points[0][1])
                 ctx.fillText(path.text, path.points[0][0], path.points[0][1])
+                ctx.restore();
                 break;
             }
 
@@ -349,13 +363,15 @@ export class Turtle {
     }
 
 
-    label(text="⚙"){
+    label(text="⚙", size=10){
         this.currentPath = {
             ...this.pathTemplate,
             type: "text",
             points: [[this.x, this.y, this.z]],
             color: this.color,
-            text: text
+            text: text,
+            text_size: size*10,
+            text_rotation: this.rotation.getTransformValues()
         };
 
         //should outsource to seperate canvas

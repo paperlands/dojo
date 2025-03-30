@@ -49,7 +49,20 @@ function parseLine(line, lines, blockStack) {
     } else if (!command) {
         return litcomment;
     } else {
-        const args = tokens.map(arg => new ASTNode('Argument', arg));
+        //multi space string handling
+        const args = tokens.reduce((acc, token) => {
+            const { args, buffer } = acc;
+            const newBuffer = [...buffer, token];
+            const containsQuote = token.includes('"');
+
+            // Create new args and reset or keep buffer as needed
+            return !buffer.length && !containsQuote
+                ? { args: [...args, new ASTNode('Argument', token)], buffer: [] }
+            : containsQuote && buffer.length
+                ? { args: [...args, new ASTNode('Argument', newBuffer.join(' '))], buffer: [] }
+            : { args, buffer: newBuffer };
+        }, { args: [], buffer: [] }).args;
+
         return new ASTNode('Call', command, args);
     }
 }
@@ -57,7 +70,6 @@ function parseLine(line, lines, blockStack) {
 // Main function to parse the entire program
 export function parseProgram(program) {
     const lines = tokenize(program);
-    console.log(lines)
     const ast = [];
     const blockStack = [ast];
 
