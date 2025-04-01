@@ -51,16 +51,51 @@ function parseLine(line, lines, blockStack) {
     } else {
         //multi space string handling
         const args = tokens.reduce((acc, token) => {
-            const { args, buffer } = acc;
-            const newBuffer = [...buffer, token];
-            const containsQuote = token.includes('"');
+    const { args, buffer } = acc;
 
-            // Create new args and reset or keep buffer as needed
-            return !buffer.length && !containsQuote
-                ? { args: [...args, new ASTNode('Argument', token)], buffer: [] }
-            : containsQuote && buffer.length
-                ? { args: [...args, new ASTNode('Argument', newBuffer.join(' '))], buffer: [] }
-            : { args, buffer: newBuffer };
+            // Check quote conditions
+            const startsWithQuote = token.startsWith('"');
+            const endsWithQuote = token.endsWith('"') && token.length >= 1;
+            const isCompleteQuote = startsWithQuote && endsWithQuote;
+
+            // Case 1: We have an empty buffer and a complete quoted string (like "hello")
+            if (!buffer.length && isCompleteQuote) {
+                return {
+                    args: [...args, new ASTNode('Argument', token)],
+                    buffer: []
+                };
+            }
+
+            // Case 2: We have an empty buffer and start a new quoted string
+            if (!buffer.length && startsWithQuote) {
+                return {
+                    args,
+                    buffer: [token]
+                };
+            }
+
+            // Case 3: We have a non-empty buffer and the current token ends with a quote
+            if (buffer.length && endsWithQuote) {
+                const newBuffer = [...buffer, token];
+                return {
+                    args: [...args, new ASTNode('Argument', newBuffer.join(' '))],
+                    buffer: []
+                };
+            }
+
+            // Case 4: We have a non-empty buffer, continue accumulating
+            if (buffer.length) {
+                return {
+                    args,
+                    buffer: [...buffer, token]
+                };
+            }
+
+            // Case 5: Just a regular non-quoted argument
+            return {
+                args: [...args, new ASTNode('Argument', token)],
+                buffer: []
+            };
         }, { args: [], buffer: [] }).args;
 
         return new ASTNode('Call', command, args);

@@ -1,6 +1,6 @@
 import { Parser } from "./mafs/parse.js"
 import { Evaluator } from "./mafs/evaluate.js"
-//import { Typesetter } from "./mafs/typesetter.js"
+import { Typesetter } from "./mafs/typesetter.js"
 import { Versor } from "./mafs/versors.js"
 import { RenderLoop } from "./renderer.js"
 import { Camera } from "./camera.js"
@@ -33,6 +33,7 @@ export class Turtle {
             fill: this.fill.bind(this),
             wait: this.wait.bind(this),
             limitRecurse: this.setRecurseLimit.bind(this),
+            limitCommand: this.setCommandLimit.bind(this),
             beColour: this.setColor.bind(this)
         };
         this.functions = {};
@@ -77,13 +78,14 @@ export class Turtle {
         this.camera = new Camera(canvas, {
             pub: () => this.requestRerender()
         })
+
         this.speed = 0
 
         this.rotation = new Versor(1, 0, 0, 0); // Identity quaternion
         // Command execution tracking
         this.commandCount = 0;
         this.recurseCount = 0,
-        this.maxRecurses = 888888;
+        this.maxRecurses = 8888888;
         this.maxCommands = 88888;
         this.maxRecurseDepth = 360
 
@@ -197,7 +199,11 @@ export class Turtle {
                 break;
             case "text":
                 ctx.save();
-                // Apply turtle rotation with error handling
+
+                // const typist = new Typesetter(ctx, {fontSize: path.text_size, baseColor: path.color})
+                // typist.render(path.text, path.points[0][0], path.points[0][1])
+                // ctx.restore()
+                //Apply turtle rotation with error handling
                 try {
                     ctx.transform(
                         path.text_rotation.a, path.text_rotation.b,
@@ -654,6 +660,10 @@ export class Turtle {
 
     setRecurseLimit(limit = 360) {
         this.maxRecurseDepth = limit
+    }
+
+    setCommandLimit(limit = 100000) {
+        this.maxCommands = limit
     }
 
     setColor(color = "silver") {
