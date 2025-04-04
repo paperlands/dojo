@@ -29,6 +29,7 @@ module.exports = {
         gradient: 'gradient-anim 30s ease infinite',
         flicker: 'flicker 1s linear infinite',
         fade: 'fadeIn 2s ease-in-out',
+        fadeawhile: 'fadeWait 5s ease-in',
         fadeout: 'fadeOut 5s forwards',
         glitchy: 'glitchy 5s ease-in-out infinite',
         wiggle: 'wiggle 5s ease-in-out infinite',
@@ -68,6 +69,20 @@ module.exports = {
 					from: { opacity: 0 },
 					to: { opacity: 1 },
 				},
+        fadeWait: {
+          '0%': {
+            opacity: '0',
+          },
+          '50%': {
+            opacity: '0',
+          },
+          '75.0%': {
+            opacity: '0.5',
+          },
+          '100%': {
+            opacity: '1',
+          },
+        },
         fadeOut: {
 					from: { opacity: 1 },
 					to: { opacity: 0 },

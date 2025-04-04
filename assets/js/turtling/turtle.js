@@ -199,12 +199,9 @@ export class Turtle {
                 break;
             case "text":
                 ctx.save();
-
-                // const typist = new Typesetter(ctx, {fontSize: path.text_size, baseColor: path.color})
-                // typist.render(path.text, path.points[0][0], path.points[0][1])
-                // ctx.restore()
                 //Apply turtle rotation with error handling
                 try {
+                    ctx.translate(path.points[0][0], path.points[0][1])
                     ctx.transform(
                         path.text_rotation.a, path.text_rotation.b,
                         path.text_rotation.c, path.text_rotation.d,
@@ -216,10 +213,13 @@ export class Turtle {
                     ctx.transform(1, 0, 0, 1, 0, 0);
                 }
 
-                ctx.font = `${path.text_size||80}px paperlang`
-                ctx.fillStyle = path.color;
-                ctx.fillText(path.text, path.points[0][0], path.points[0][1])
-                ctx.restore();
+                const typist = new Typesetter(ctx, {fontSize: path.text_size, baseColor: path.color, lineWidth: 1/scale})
+                typist.render(path.text, 0, 0)
+                ctx.restore()
+                // ctx.font = `${path.text_size||80}px paperlang`
+                // ctx.fillStyle = path.color;
+                // ctx.fillText(path.text, 0, 0)
+                // ctx.restore();
                 break;
             }
 
