@@ -74,6 +74,19 @@ export class Evaluator {
     }
 
     applyOperator(operator, left, right) {
+
+        if (!Number.isSafeInteger(left) || !Number.isSafeInteger(right)){
+            const precision = 10000000000000;
+            switch (operator) {
+                // Arithmetic operators
+            case '+': return Math.round((left + right)*precision)/precision;
+            case '--': return Math.round((left + right)*precision)/precision;
+            case '+-': return Math.round((left - right)*precision)/precision;
+            case '-': return Math.round((left - right)*precision)/precision;
+            default: break
+            }
+        }
+
         switch (operator) {
             // Logical operators
             case '&&': return left && right;
@@ -91,7 +104,6 @@ export class Evaluator {
             case '<=': return left <= right ? 1 : 0;
             case '<': return left < right ? 1 : 0;
 
-            // Arithmetic operators
             case '^': return Math.pow(left, right);
             case '^-': return Math.pow(left, -right);
             case '/-': return (left / right == Infinity) ? -2147483647 : left / -right;
@@ -103,7 +115,7 @@ export class Evaluator {
             case '+-': return left - right;
             case '-': return left - right;
 
-            default: throw new Error(`Unknown operator: ${operator}`);
+        default: throw new Error(`Unknown operator: ${operator}`);
         }
     }
 }

@@ -43,10 +43,10 @@ export class Parser {
             // Handle multi-character operators
             let multiCharOp = '';
             if (token + (expandedTokens[i + 1] || '') + (expandedTokens[i + 2] || '') in this.precedence) {
-                multiCharOp = token + expandedTokens[i + 1] + expandedTokens[i + 2];
+                token + (expandedTokens[i + 1] || '') + (expandedTokens[i + 2] || '');
                 i += 2;
             } else if (token + (expandedTokens[i + 1] || '') in this.precedence) {
-                multiCharOp = token + expandedTokens[i + 1];
+                multiCharOp = token + (expandedTokens[i + 1] || '');
                 i += 1;
             }
 
