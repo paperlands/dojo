@@ -62,16 +62,10 @@
 <!-- Right Editor -->
 <div
   id="rightpane"
-  class="fixed top-0 right-0 z-20 flex flex-col w-1/3 h-screen p-4 pointer-events-none min-w-min"
+  class="fixed top-0 right-0 z-20 flex flex-col  h-screen p-4 pointer-events-none "
   <!-- Session -->
-  <div id="sessionbox" class={["absolute top-4 right-4 z-20
-            w-64
-            max-w-[calc(100vw-2rem)]
-            bg-transparent backdrop-blur-sm
-            rounded-lg border-none
-            p-3 font-mono text-xs text-brand
-            shadow-lg", @session.name && "outline outline-2 p-2"]}>
-    <div :if={!@session.name} class="relative group ">
+  <div id="sessionbox" >
+    <div :if={!@session.name} class="relative group w-60 max-w-[calc(100vw-2rem)]">
       <!-- Login Link Button -->
       <.link
         navigate={~p"/welcome"}
@@ -92,39 +86,51 @@
       </.link>
     </div>
 
-    <span :if={@session.name} class="flex block">
-      &gt; welcome {@session.name} to {to_titlecase(@clan)}'s shell <span class="relative flex items-center space-x-2"></span>
-      <!-- Command Deck Button -->
-      <div class="flex pointer-events-auto" phx-click="flipDeck">
-        <div class="w-2 h-6"></div>
-        <!-- Make the clickable area larger -->
-        <svg
-          class="w-6 h-6 transition-transform duration-700 text-brand hover:rotate-180"
-          viewBox="0 0 24 24"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z"
-            fill="#FCD34D"
-          />
-          <path
-            d="M12 3C11.175 3 10.5 3.675 10.5 4.5V4.71094C10.5 5.32494 10.074 5.86494 9.48901 6.05994C9.33001 6.11394 9.17397 6.17397 9.01697 6.23397C8.43897 6.47797 7.76901 6.35191 7.34001 5.92191L7.17999 5.76205C6.60999 5.19205 5.69498 5.19205 5.12598 5.76105L4.76562 6.12109C4.19563 6.69109 4.19563 7.60595 4.76562 8.17595L4.92603 8.33594C5.35703 8.76494 5.48292 9.43494 5.23792 10.0129C5.17792 10.1699 5.11897 10.326 5.06397 10.486C4.86897 11.071 4.32897 11.4961 3.71497 11.4961H3.5C2.675 11.4961 2 12.1721 2 12.9971C2 13.8221 2.675 14.4971 3.5 14.4971H3.71094C4.32494 14.4971 4.86494 14.923 5.05994 15.508C5.11394 15.667 5.17397 15.8231 5.23397 15.9801C5.47797 16.5581 5.35191 17.228 4.92191 17.657L4.76205 17.817C4.19205 18.387 4.19205 19.302 4.76205 19.871L5.12207 20.231C5.69207 20.801 6.60693 20.801 7.17693 20.231L7.33691 20.071C7.76591 19.64 8.43592 19.514 9.01392 19.759C9.17092 19.819 9.32703 19.878 9.48703 19.933C10.072 20.128 10.4971 20.668 10.4971 21.282V21.4971C10.4971 22.3221 11.1731 22.9971 11.9981 22.9971C12.8231 22.9971 13.4981 22.3221 13.4981 21.4971V21.2861C13.4981 20.6721 13.924 20.1321 14.509 19.9371C14.668 19.8831 14.824 19.8231 14.981 19.7631C15.559 19.5191 16.229 19.6451 16.658 20.0751L16.818 20.2349C17.388 20.8049 18.303 20.8049 18.872 20.2349L19.232 19.8749C19.802 19.3049 19.802 18.39 19.232 17.82L19.072 17.66C18.641 17.231 18.515 16.561 18.76 15.983C18.82 15.826 18.879 15.67 18.934 15.51C19.129 14.925 19.669 14.5 20.283 14.5H20.4981C21.3231 14.5 21.9981 13.825 21.9981 13C21.9981 12.175 21.3231 11.5 20.4981 11.5H20.2871C19.6731 11.5 19.1331 11.074 18.9381 10.489C18.8841 10.33 18.8241 10.174 18.7641 10.017C18.5201 9.43896 18.6451 8.76901 19.0751 8.34001L19.2349 8.17999C19.8049 7.60999 19.8049 6.69498 19.2349 6.12598L18.8749 5.76562C18.3049 5.19563 17.39 5.19563 16.82 5.76562L16.66 5.92603C16.231 6.35703 15.561 6.48292 14.983 6.23792C14.826 6.17792 14.67 6.11897 14.51 6.06397C13.925 5.86897 13.5 5.32897 13.5 4.71497V4.5C13.5 3.675 12.825 3 12 3ZM12 17C9.23858 17 7 14.7614 7 12C7 9.23858 9.23858 7 12 7C14.7614 7 17 9.23858 17 12C17 14.7614 14.7614 17 12 17Z"
-            fill="#FCD34D"
-          />
-        </svg>
+    <div :if={@session.name} class="fixed font-mono right-4 text-amber-400 bg-transparent bg-opacity-80 border border-none rounded px-2 py-1 shadow-lg w-1/2 max-w-xs">
+      <!-- Welcome message row -->
+      <div class="flex items-center text-xs mb-1 border-b border-amber-800 pb-1 overflow-hidden">
+        <span class="flex items-center">
+          &gt; welcome {@session.name} to {to_titlecase(@clan)}'s shell
+          <span class="relative flex items-center ml-1">
+            <span class="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+          </span>
+        </span>
       </div>
-    </span>
 
-    <span :if={@outershell && @outershell.resp} class="block">
-      &gt; summoning @{@outershell.resp}'s code ☄
-    </span>
+      <!-- Command keys row -->
+      <div class="flex items-center justify-between">
+          <div :if={@outershell && @outershell.resp} class="w-20 sm:w-32 overflow-hidden whitespace-nowrap flex-shrink-1 sm:flex-shrink-0 flex items-center text-xs mr-1 sm:mr-2 min-w-0">
+    <span class="text-amber-600">summoning @{@outershell.resp}'s code ☄</span>
+  </div>
+  <!-- Empty spacer div with minimum width on small screens -->
+
+
+  <!-- Command buttons always aligned to right and given prio -->
+  <div class="flex flex-shrink-0 ml-auto cursor-pointer pointer-events-auto">
+          <button class="relative w-8 h-8 border-2 border-brand/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation">
+            <.share class="w-5 h-5 sm:w-3 sm:h-3 fill-brand/50 text-amber-400"/>
+          </button>
+
+          <button class="relative w-8 h-8 border-2 border-brand/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation" phx-click="flipDeck">
+            <.manual class="w-5 h-5 transition-transform duration-700 rotate-[-60deg] fill-amber-400 text-amber-400/50 hover:rotate-[-40deg]"/>
+          </button>
+
+        </div>
+        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-amber-500"></div>
+        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-amber-500">
+        </div>
+        <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-amber-500">
+        </div>
+        <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-amber-500">
+        </div>
+      </div>
+    </div>
   </div>
 
   <span
       id="outershell-head"
     :if={@outershell && @outershell.resp}
-    class="absolute text-lg font-bold w-2/3 right-2 text-amber-200 top-36"
+    class="fixed text-lg font-bold w-1/3 right-2 text-amber-200 top-36"
   >
     @{@outershell.resp}'s code
     </span>
@@ -132,7 +138,7 @@
     :if={@outershell}
     id="outerenv"
     phx-update="ignore"
-    class="absolute w-2/3 overflow-y-scroll border rounded-lg pointer-events-auto h-1/2 top-32 right-4 bottom-4 bg-amber-300/20 border-amber-600/20 dark-scrollbar"
+    class="fixed w-1/3 overflow-y-scroll border rounded-lg pointer-events-auto h-1/2 top-32 right-4 bottom-4 bg-amber-300/20 border-amber-600/20 dark-scrollbar"
   >
 
     <button
