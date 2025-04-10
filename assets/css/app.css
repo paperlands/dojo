@@ -17,6 +17,15 @@
 /* This file is for your main application CSS */
 
 
+@font-face {
+    font-family: "paperLang";
+    src: url('/fonts/paperLang.woff2') format('woff2'),
+         url('/fonts/paperLang.woff') format('woff'),
+         url("/fonts/paperLang.ttf") format("truetype"),
+  }
+
+
+
 /* add the code bellow */
 @layer utilities {
       /* Hide scrollbar for Chrome, Safari and Opera */

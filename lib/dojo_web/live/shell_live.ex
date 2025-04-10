@@ -357,14 +357,14 @@ defmodule DojoWeb.ShellLive do
                 </button>
               </div>
               <!-- Tooltip -->
-              <div class="absolute mb-2 transition-opacity duration-200 opacity-0 bottom-full -right-2 group-hover:opacity-100">
-                <div class="px-2 py-1 text-xs border rounded bg-amber-900/90 text-amber-200 border-amber-600 backdrop-blur-sm whitespace-nowrap">
+              <div class="absolute pointer-events-none mb-2 transition-opacity duration-200  opacity-0 -top-4 -right-8 group-hover:opacity-100">
+                <div class="px-2 py-1 text-xs border rounded bg-amber-700/50 text-amber-200 border-amber-600 backdrop-blur-sm whitespace-nowrap">
                   Undo
                 </div>
               </div>
             </div>
             <!-- Command List -->
-            <div class="h-full space-y-2 overflow-y-scroll">
+            <div class="h-full overflow-y-scroll">
               <%= for {cmd, desc, code} <- [
                 {"fw", "Move Forward", "fw 100"},
                 {"rt", "Face Right", "rt 30"},
@@ -392,8 +392,8 @@ defmodule DojoWeb.ShellLive do
             </div>
             <!-- Footer -->
             <div class="pt-4 mt-4 text-center border-t border-amber-600/50">
-              <p class="font-serif text-xs italic text-amber-200/60">
-                Turtle Navigation System v0.8
+              <p class="font-paperlang text-xs italic text-amber-200/60">
+                paperLang v0.8
               </p>
             </div>
           </div>

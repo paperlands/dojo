@@ -38,6 +38,9 @@ module.exports = {
         spinslow: 'spin 12s linear infinite',
         caret: 'typewriter 2s steps(11) forwards, blink 1s steps(11) infinite 2s',
       },
+      fontFamily: {
+        paperlang: ['"paperLang"', "sans-serif"]
+      },
       keyframes: {
         typewriter: {
           to: {
@@ -143,6 +146,8 @@ module.exports = {
       
     },
   },
+
+
   plugins: [
     require("@tailwindcss/forms"),
     // Allows prefixing tailwind classes with LiveView classes to add rules

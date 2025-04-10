@@ -106,7 +106,7 @@
 
 
   <!-- Command buttons always aligned to right and given prio -->
-  <div class="flex flex-shrink-0 ml-auto cursor-pointer pointer-events-auto">
+  <div class="flex flex-shrink-0 z-30 ml-auto cursor-pointer pointer-events-auto">
           <button class="relative w-8 h-8 border-2 border-brand/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation">
             <.share class="w-5 h-5 sm:w-3 sm:h-3 fill-brand/50 text-amber-400"/>
           </button>
@@ -185,11 +185,11 @@
 <%!-- Turtle viewing pane toggle icon --%>
 <div
   id="paneflip"
-  class="fixed z-50 -translate-x-1/2  transition-transform duration-300 pointer-events-auto bottom-2 left-1/2"
+  class="fixed z-50 -translate-x-1/2 pointer-events-auto  transition-transform duration-300 pointer-events-none bottom-2 left-1/2"
   phx-hook="Sensei"
 >
   <svg
-    class={"z-[60] w-6 h-6 text-brand/50 items-center flex  m-auto  rounded-lg shadow-xl backdrop-blur-sm transform transition-transform duration-300 hover:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
+    class={"z-[60] w-6 h-6  text-brand/50 items-center flex  m-auto  rounded-lg shadow-xl backdrop-blur-sm transform transition-transform duration-300 hover:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
     phx-click="flipPane"
     viewBox="0 0 24 24"
     fill="none"
@@ -200,12 +200,12 @@
   </svg>
 </div>
 <%!-- Turtle viewing pane --%>
-<div class="fixed bottom-0 z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto">
+<div class="fixed bottom-0 pointer-events-none z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto">
   <!-- Other people's turtles -->
   <div
     :for={{phx_ref, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
     :if={Map.has_key?(dis, :meta) && @pane}
-    class={"rounded-lg transition mx-11 pb-4 pt-2 duration-200 ease-in-out flex-shrink-0 w-1/6" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
+    class={"rounded-lg transition mx-11 pb-4  pt-2 duration-200 ease-in-out flex-shrink-0 w-1/6" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
   >
     <.icon
       :if={@sensei}
