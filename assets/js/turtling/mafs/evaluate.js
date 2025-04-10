@@ -76,7 +76,7 @@ export class Evaluator {
     applyOperator(operator, left, right) {
 
         if (!Number.isSafeInteger(left) || !Number.isSafeInteger(right)){
-            const precision = 10000000000000;
+            const precision = 100000000000000;
             switch (operator) {
                 // Arithmetic operators
             case '+': return Math.round((left + right)*precision)/precision;
@@ -89,31 +89,32 @@ export class Evaluator {
 
         switch (operator) {
             // Logical operators
-            case '&&': return left && right;
-            case '||': return left || right;
-            case '&': return left & right;  // Bitwise AND
-            case '|': return left | right;  // Bitwise OR
+        case '&&': return left && right;
+        case '||': return left || right;
+        case '&': return left & right;  // Bitwise AND
+        case '|': return left | right;  // Bitwise OR
 
             // Comparison operators
-            case '===': return left === right ? 1 : 0;
-            case '!==': return left !== right ? 1 : 0;
-            case '==': return left == right ? 1 : 0;
-            case '!=': return left != right ? 1 : 0;
-            case '>=': return left >= right ? 1 : 0;
-            case '>': return left > right ? 1 : 0;
-            case '<=': return left <= right ? 1 : 0;
-            case '<': return left < right ? 1 : 0;
+        case '===': return left === right ? 1 : 0;
+        case '!==': return left !== right ? 1 : 0;
+        case '==': return left == right ? 1 : 0;
+        case '!=': return left != right ? 1 : 0;
+        case '>=': return left >= right ? 1 : 0;
+        case '>': return left > right ? 1 : 0;
+        case '<=': return left <= right ? 1 : 0;
+        case '<': return left < right ? 1 : 0;
 
-            case '^': return Math.pow(left, right);
-            case '^-': return Math.pow(left, -right);
-            case '/-': return (left / right == Infinity) ? -2147483647 : left / -right;
-            case '*': return left * right;
-            case '*-': return left * -right;
-            case '/': return (left / right == Infinity) ? 2147483647 : left / right;
-            case '+': return left + right;
-            case '--': return left + right;
-            case '+-': return left - right;
-            case '-': return left - right;
+        case '^': return Math.pow(left, right);
+        case '^-': return Math.pow(left, -right);
+        case '/-': return (left / right == Infinity) ? -2147483647 : left / -right;
+        case '//': return right % left;
+        case '*': return left * right;
+        case '*-': return left * -right;
+        case '/': return (left / right == Infinity) ? 2147483647 : left / right;
+        case '+': return left + right;
+        case '--': return left + right;
+        case '+-': return left - right;
+        case '-': return left - right;
 
         default: throw new Error(`Unknown operator: ${operator}`);
         }
