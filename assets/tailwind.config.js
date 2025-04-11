@@ -25,7 +25,7 @@ module.exports = {
       },
       animation: {
         halfmarquee: 'halfmarquee 30s linear infinite',
-        marquee: 'fullmarquee 30s linear infinite',
+        marquee: 'fullmarquee 15s linear infinite',
         gradient: 'gradient-anim 30s ease infinite',
         flicker: 'flicker 1s linear infinite',
         fade: 'fadeIn 2s ease-in-out',
@@ -100,8 +100,8 @@ module.exports = {
           '100%': {transform: 'translateY(-100%)'}
         },
         fullmarquee: {
-          '0%': {transform: 'translateY(66vh)'},
-          '100%': {transform: 'translateY(-100%)'}
+          '0%': {transform: 'translateX(120%)'},
+          '100%': {transform: 'translateX(-100%)'}
         },
         'gradient-anim': {
           '0%': { backgroundPosition: '0% 0%' },

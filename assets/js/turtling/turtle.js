@@ -25,6 +25,7 @@ export class Turtle {
             mv: this.move.bind(this),
             //fn: this.func.bind(this),
             goto: this.goto.bind(this),
+            //iamat: this.iamat.bind(this),
             faceto: this.faceto.bind(this),
             jmpto: this.jmpto.bind(this),
             label: this.label.bind(this),
@@ -36,6 +37,8 @@ export class Turtle {
             limitCommand: this.setCommandLimit.bind(this),
             beColour: this.setColor.bind(this)
         };
+
+        this.places = {};
         this.functions = {};
         this.instructions = [];
 
@@ -212,14 +215,17 @@ export class Turtle {
                     // Use identity transform if rotation fails
                     ctx.transform(1, 0, 0, 1, 0, 0);
                 }
-
+                if (1==0) {
+                //if (typeof path.text === 'string') {
                 const typist = new Typesetter(ctx, {fontSize: path.text_size, baseColor: path.color, lineWidth: 1/scale})
-                typist.render(path.text, 0, 0)
-                ctx.restore()
-                // ctx.font = `${path.text_size||80}px paperlang`
-                // ctx.fillStyle = path.color;
-                // ctx.fillText(path.text, 0, 0)
-                // ctx.restore();
+                typist.renderText(path.text, {x: 0, y: 0})
+                }
+                else {
+                    ctx.font = `${path.text_size||80}px paperLang`
+                    ctx.fillStyle = path.color;
+                    ctx.fillText(path.text, 0, 0)
+                    }
+                ctx.restore();
                 break;
             }
 
@@ -457,10 +463,11 @@ export class Turtle {
         }
     }
 
-    callFunction(name, args, ctx, depth =0) {
-        if (depth >= this.maxRecurseDepth) return;
-        // console.log(name , args ,ctx , depth)
-        const func = this.functions[name] || (ctx[name] && this.functions[ctx[name]]);
+    callFunction(name, args, ctx, depth=0) {
+        if (depth > this.maxRecurseDepth) return;
+        // get from local scope first
+        name = ctx[name] || name
+        const func = this.functions[name];
         if (!func)
         {this.callCommand(name, ...args)}
         else
@@ -527,6 +534,27 @@ export class Turtle {
     }
 
     evaluateExpression(expr, context) {
+        const quoteRegex = /^(['"])(.*?)\1$/;
+        const quoteMatch = expr.match(quoteRegex);
+        if (quoteMatch) {
+            const [_, quote, stringContent] = quoteMatch;
+
+            // process nested interpolations from inside out
+            let processed = stringContent;
+            let previous;
+            do {
+                previous = processed;
+                processed = processed.replace(
+                    /\[([^[\]](?:[^[\]]|\[(?:\\.|[^[\]])*\])*)\]/g,
+                    (match, innerExpr) => {
+                        const value = this.evaluateExpression(innerExpr.trim(), context);
+                        return value !== undefined ? String(value) : match;
+                    }
+                );
+            } while (processed !== previous);
+
+            return processed;
+        }
         if(expr.startsWith("'") || expr.startsWith('"')) return expr.replace(/^['"""']+|['"""']+$/g, '')
         if (this.math.parser.isNumeric(expr)) return parseFloat(expr);
         if (context[expr] != null) return context[expr];
@@ -658,8 +686,8 @@ export class Turtle {
         this.showTurtle = true;
     }
 
-    setRecurseLimit(limit = 360) {
-        this.maxRecurseDepth = limit
+    setRecurseLimit(limit = 361) {
+        this.maxRecurseDepth = limit+1
     }
 
     setCommandLimit(limit = 100000) {
