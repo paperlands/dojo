@@ -534,12 +534,13 @@ export class Turtle {
     }
 
     evaluateExpression(expr, context) {
+        //string support
         const quoteRegex = /^(['"])(.*?)\1$/;
         const quoteMatch = expr.match(quoteRegex);
         if (quoteMatch) {
             const [_, quote, stringContent] = quoteMatch;
 
-            // process nested interpolations from inside out
+            // process nested interpolations from inside out "sine is [sin[theta]]"
             let processed = stringContent;
             let previous;
             do {
@@ -555,7 +556,7 @@ export class Turtle {
 
             return processed;
         }
-        if(expr.startsWith("'") || expr.startsWith('"')) return expr.replace(/^['"""']+|['"""']+$/g, '')
+
         if (this.math.parser.isNumeric(expr)) return parseFloat(expr);
         if (context[expr] != null) return context[expr];
         const tree = this.math.parser.run(expr)
@@ -699,6 +700,7 @@ export class Turtle {
         if (color == "invisible") this.color = "#00000000"
         if (Number.isFinite(color)) this.color = `hsla(${~~(360 * color)}, 70%,  72%, 0.8)`
         if (color == "random") this.color = `hsla(${~~(360 * Math.random())}, 70%,  72%, 0.8)`
+        if(/([0-9a-f]{3}){1,2}$/i.test(color)) this.color = "#" + color
         //break path for new path
         this.currentPath = null;
     }

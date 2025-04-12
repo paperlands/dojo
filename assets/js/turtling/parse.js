@@ -51,11 +51,11 @@ function parseLine(line, lines, blockStack) {
     } else {
         //multi space string handling
         const args = tokens.reduce((acc, token) => {
-    const { args, buffer } = acc;
+            const { args, buffer } = acc;
 
             // Check quote conditions
-            const startsWithQuote = token.startsWith('"');
-            const endsWithQuote = token.endsWith('"') && token.length >= 1;
+            const startsWithQuote = token.startsWith('"') || token.startsWith("'");
+            const endsWithQuote = token.endsWith('"') || token.endsWith("'") && token.length >= 1;
             const isCompleteQuote = startsWithQuote && endsWithQuote;
 
             // Case 1: We have an empty buffer and a complete quoted string (like "hello")
