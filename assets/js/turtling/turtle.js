@@ -1,6 +1,6 @@
 import { Parser } from "./mafs/parse.js"
 import { Evaluator } from "./mafs/evaluate.js"
-import { Typesetter } from "./mafs/typesetter.js"
+import { Typesetter } from "./mafs/typist.js"
 import { Versor } from "./mafs/versors.js"
 import { RenderLoop } from "./renderer.js"
 import { Camera } from "./camera.js"
@@ -74,6 +74,9 @@ export class Turtle {
         });
 
         // this.setupContinuousRendering();
+
+        this.typist = new Typesetter(this.ctx)
+
         this.reset();
 
         // Set up animation frame for continuous rendering
@@ -91,7 +94,6 @@ export class Turtle {
         this.maxRecurses = 8888888;
         this.maxCommands = 88888;
         this.maxRecurseDepth = 360
-
 
         //mafs
         this.math = {
@@ -146,6 +148,11 @@ export class Turtle {
 
         // Render only the new paths
         if (newPaths.length > 0) {
+            // const lastClearIndex = newPaths.findLastIndex(path => path.type === "clear");
+            // if (lastClearIndex !== -1) {
+            //     newPaths = newPaths.slice(lastClearIndex);
+            // }
+
             this.drawPaths(this.ctx, newPaths, scale);
         }
 
@@ -215,16 +222,19 @@ export class Turtle {
                     // Use identity transform if rotation fails
                     ctx.transform(1, 0, 0, 1, 0, 0);
                 }
-                if (1==0) {
-                //if (typeof path.text === 'string') {
-                const typist = new Typesetter(ctx, {fontSize: path.text_size, baseColor: path.color, lineWidth: 1/scale})
-                typist.renderText(path.text, {x: 0, y: 0})
+
+                if (typeof path.text === 'string') {
+                    this.typist.write(path.text,
+                                      {x:0, y:0,
+                                       fontSize: path.text_size,
+                                       baseColor: path.color
+                                      })
                 }
                 else {
                     ctx.font = `${path.text_size||80}px paperLang`
                     ctx.fillStyle = path.color;
                     ctx.fillText(path.text, 0, 0)
-                    }
+                }
                 ctx.restore();
                 break;
             }
@@ -548,6 +558,10 @@ export class Turtle {
                 processed = processed.replace(
                     /\[([^[\]](?:[^[\]]|\[(?:\\.|[^[\]])*\])*)\]/g,
                     (match, innerExpr) => {
+                        // Skip evaluation if inner expression is wrapped in curly braces
+                        if (innerExpr.trim().match(/^\`.*\`$/)) {
+                            return match;
+                        }
                         const value = this.evaluateExpression(innerExpr.trim(), context);
                         return value !== undefined ? String(value) : match;
                     }
