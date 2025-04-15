@@ -61,7 +61,10 @@ export class Evaluator {
 
     applyFunction(func, arg) {
         if (func in this.functions) {
-            return this.functions[func](arg);
+            const evals = this.functions[func](arg)
+            if (Number.isSafeInteger(evals)) return evals
+            const precision = 100000000000000;
+            return Math.round((evals)*precision)/precision
         }
         throw new Error(`Undefined function: ${func}`);
     }
@@ -106,11 +109,11 @@ export class Evaluator {
 
         case '^': return Math.pow(left, right);
         case '^-': return Math.pow(left, -right);
-        case '/-': return (left / right == Infinity) ? -2147483647 : left / -right;
+        case '/-': return left / -right;
         case '//': return right % left;
         case '*': return left * right;
         case '*-': return left * -right;
-        case '/': return (left / right == Infinity) ? 2147483647 : left / right;
+        case '/': return left / right;
         case '+': return left + right;
         case '--': return left + right;
         case '+-': return left - right;

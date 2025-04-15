@@ -39,12 +39,15 @@
       }
       /* WebKit-based browsers (Chrome, Safari, Edge) */
       .dark-scrollbar::-webkit-scrollbar {
-        width: 12px; /* Width of the scrollbar */
+        -webkit-appearance: none;
+        display: none;
+        width: 0;
+        height: 0;
       }
       .dark-scrollbar::-webkit-scrollbar-thumb {
         background-color: #555; /* Color of the scrollbar thumb */
-        border-radius: 6px; /* Rounded corners */
-        border: 3px solid #222; /* Optional: space between thumb and track */
+        border-radius: 2px; /* Rounded corners */
+        border: 1px solid transparent; /* Optional: space between thumb and track */
       }
       .dark-scrollbar::-webkit-scrollbar-track {
         background-color: #222; /* Color of the scrollbar track */
@@ -52,7 +55,14 @@
 
       /* Firefox */
       .dark-scrollbar {
-        scrollbar-color: #444 #222; /* Thumb color and track color */
+        -ms-overflow-style: -ms-autohiding-scrollbar
+        scrollbar-color: rgba(255,153,51,0.05) transparent; /* Thumb color and track color */
         scrollbar-width: thin; /* Thin scrollbar */
+        scrollbar-width-legacy: 5px;
       }
+
+      .dark-scrollbar:hover {
+    --fix: ; /* This custom property invalidates styles on hover, thereby enforcing a style recomputation. This is needed to work around a bug in Safari. */
+      }
+
 }

@@ -13,7 +13,7 @@
   </canvas>
   
 <!-- Left Coder pane container -->
-  <div class="relative left-0 z-20 w-1/2 lg:w-1/3 h-screen pl-4 overflow-y-scroll shadow-lg pointer-events-none min-w-min scrollbar-hide">
+  <div class="relative left-0 z-20 w-1/2 lg:w-1/3 h-screen pl-4 overflow-y-hidden shadow-lg pointer-events-none min-w-min scrollbar-hide">
     <!-- Function Marks -->
     <div class="flex justify-start space-x-0.5 py-1">
       <div class="fixed flex pointer-events-auto">
@@ -39,7 +39,7 @@
     <div
       phx-update="ignore"
       id="runenv"
-      class="mt-8 rounded-sm pointer-events-auto cursor-text bg-amber-600/5 border-amber-600/20"
+      class="my-6 rounded-sm pointer-events-auto dark-scrollbar [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-text bg-amber-600/5 border-amber-600/20 h-[80dvh]"
     >
       <div phx-click="flipWell">
       <.folders :if={false}  class="absolute top-5 right-6 w-5 h-5  fill-brand/50 hover:fill-amber-400 cursor-pointer" />
@@ -47,7 +47,7 @@
       <div class="relative z-10">
         <.slider slider_value="50" />
       </div>
-      <textarea id="your-buffer" class="rounded-sm pointer-events-auto cursor-text bg-inherit border-none" phx-hook="Shell"></textarea>
+      <textarea id="your-buffer" class="relative rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full" phx-hook="Shell"/>
     </div>
     <!-- Code Output -->
     <div
@@ -138,17 +138,17 @@
     :if={@outershell}
     id="outerenv"
     phx-update="ignore"
-    class="fixed w-1/3 overflow-y-scroll border rounded-lg pointer-events-auto h-1/2 top-32 right-4 bottom-4 bg-amber-300/20 border-amber-600/20 dark-scrollbar"
+    class="fixed w-1/3  overflow-y-scroll border rounded-lg pointer-events-auto h-1/2 top-32 right-4 bottom-4 bg-amber-400/10 border-amber-600/20 dark-scrollbar scrollbar-hide my-12 rounded-sm pointer-events-auto cursor-text"
   >
 
     <button
       phx-click="seeTurtle"
-      class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full shadow-xl opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-4 right-4  border-amber-600"
+      class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full shadow-xl opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-2 right-2  border-amber-600"
     >
       <!-- Base Crosshair -->
       <div class="absolute inset-0 flex items-center justify-center">
         <svg
-          class="w-5 h-5 transition-colors text-red-600 group-hover:text-amber-300"
+          class="w-4 h-4 transition-colors text-red-600 group-hover:text-amber-300"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -173,9 +173,7 @@
         <path d="M12 7v10M7 12h10" stroke-dasharray="2 2" />
       </svg>
     </button>
-    <div class="mt-12 mb-8 w-full overflow-auto font-mono  bg-transparent resize-none backdrop-blur-sm h-11/12 focus:outline-none">
-      <textarea phx-update="ignore" id="outershell" phx-hook="OuterShell"></textarea>
-    </div>
+    <textarea phx-update="ignore" id="outershell" class="relative rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full" phx-hook="OuterShell"></textarea>
   </div>
 
   <.command_deck :if={@right == :deck}/>

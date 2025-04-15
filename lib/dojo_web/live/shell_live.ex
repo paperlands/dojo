@@ -328,7 +328,7 @@ defmodule DojoWeb.ShellLive do
     <!-- Command Deck Component (command_deck.html.heex) -->
     <div class="absolute flex px-1 pb-1 right-5 bottom-5">
       <!-- Command Deck Panel -->
-        <div class="fixed w-64 transition-all duration-500 ease-in-out transform rounded-lg shadow-xl right-5 bottom-20 xl:h-2/3 bg-brand-900/70 backdrop-blur-sm h-1/2 dark-scrollbar">
+        <div class="fixed w-64 transition-all duration-500 ease-in-out transform rounded-lg shadow-xl right-5 bottom-20 xl:h-2/3 bg-brand-900/70 backdrop-blur-sm h-1/2 scrollbar-hide dark-scrollbar">
           <div class="h-full p-4">
             <!-- Header -->
             <div class="flex items-center justify-between mb-4">

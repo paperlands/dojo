@@ -1,14 +1,12 @@
 /* BASICS */
+/* BASICS */
 
 .CodeMirror {
   /* Set height, width, borders, and global font properties here */
   font-family: monospace;
-  height: 80%;
-  margin: 8px;
+  height: 100%;
   color: black;
-  z-index: 2;
   direction: ltr;
-  background-color: rgba(255, 255, 255, .1)
 }
 
 /* PADDING */
@@ -36,7 +34,7 @@
 .CodeMirror-linenumber {
   padding: 0 3px 0 5px;
   min-width: 20px;
-  text-align: left;
+  text-align: center;
   color: #999;
   white-space: nowrap;
 }
@@ -153,7 +151,9 @@ div.CodeMirror span.CodeMirror-nonmatchingbracket {color: #a22;}
    the editor. You probably shouldn't touch them. */
 
 .CodeMirror {
+  position: relative;
   overflow: hidden;
+  background: white;
 }
 
 .CodeMirror-scroll {
@@ -228,6 +228,70 @@ div.CodeMirror span.CodeMirror-nonmatchingbracket {color: #a22;}
 }
 .CodeMirror-gutter-wrapper ::selection { background-color: transparent }
 .CodeMirror-gutter-wrapper ::-moz-selection { background-color: transparent }
+
+.CodeMirror-hints {
+  position: absolute;
+  z-index: 10;
+  overflow: hidden;
+  list-style: none;
+
+  margin: 0;
+  padding: 2px;
+
+  -webkit-box-shadow: 2px 3px 5px rgba(0,0,0,.2);
+  -moz-box-shadow: 2px 3px 5px rgba(0,0,0,.2);
+  box-shadow: 2px 3px 5px rgba(0,0,0,.2);
+  border-radius: 3px;
+  border: 1px solid silver;
+
+  background: white;
+  font-size: 90%;
+  font-family: monospace;
+
+  max-height: 20em;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.CodeMirror-hint {
+  margin: 0;
+  padding: 0 4px;
+  border-radius: 2px;
+  white-space: pre;
+  color: black;
+  cursor: pointer;
+}
+
+.CodeMirror-foldmarker {
+  text-shadow: #fff 1px 1px 2px, #b9f -1px -1px 2px, #b9f 1px -1px 2px, #b9f -1px 1px 2px;
+  line-height: .3;
+  cursor: pointer;
+  content: "❦";
+}
+.CodeMirror-foldgutter {
+width: 1em;
+}
+.CodeMirror-foldgutter-open,
+.CodeMirror-foldgutter-folded {
+  cursor: pointer;
+  font-size: 16px;
+  margin-left: -10px
+  z-index: 5;
+}
+.CodeMirror-foldgutter-open:after {
+  content: "\25BE";
+
+}
+.CodeMirror-foldgutter-folded:after {
+  content: "\25B8";
+}
+
+
+li.CodeMirror-hint-active {
+  background: #08f;
+  color: white;
+}
+
 
 .CodeMirror-lines {
   cursor: text;
@@ -322,69 +386,6 @@ div.CodeMirror-dragcursors {
 .CodeMirror-crosshair { cursor: crosshair; }
 .CodeMirror-line::selection, .CodeMirror-line > span::selection, .CodeMirror-line > span > span::selection { background: #d7d4f0; }
 .CodeMirror-line::-moz-selection, .CodeMirror-line > span::-moz-selection, .CodeMirror-line > span > span::-moz-selection { background: #d7d4f0; }
-
-.CodeMirror-hints {
-  position: absolute;
-  z-index: 10;
-  overflow: hidden;
-  list-style: none;
-
-  margin: 0;
-  padding: 2px;
-
-  -webkit-box-shadow: 2px 3px 5px rgba(0,0,0,.2);
-  -moz-box-shadow: 2px 3px 5px rgba(0,0,0,.2);
-  box-shadow: 2px 3px 5px rgba(0,0,0,.2);
-  border-radius: 3px;
-  border: 1px solid silver;
-
-  background: white;
-  font-size: 90%;
-  font-family: monospace;
-
-  max-height: 20em;
-  overflow-y: auto;
-  box-sizing: border-box;
-}
-
-.CodeMirror-hint {
-  margin: 0;
-  padding: 0 4px;
-  border-radius: 2px;
-  white-space: pre;
-  color: black;
-  cursor: pointer;
-}
-
-.CodeMirror-foldmarker {
-  text-shadow: #fff 1px 1px 2px, #b9f -1px -1px 2px, #b9f 1px -1px 2px, #b9f -1px 1px 2px;
-  line-height: .3;
-  cursor: pointer;
-  content: "❦";
-}
-.CodeMirror-foldgutter {
-width: 1em;
-}
-.CodeMirror-foldgutter-open,
-.CodeMirror-foldgutter-folded {
-  cursor: pointer;
-  font-size: 16px;
-  margin-left: -5px
-  z-index: 5;
-}
-.CodeMirror-foldgutter-open:after {
-  content: "\25BE";
-
-}
-.CodeMirror-foldgutter-folded:after {
-  content: "\25B8";
-}
-
-
-li.CodeMirror-hint-active {
-  background: #08f;
-  color: white;
-}
 
 .cm-searching {
   background-color: #ffa;
