@@ -50,7 +50,7 @@ function parseLine(line, lines, blockStack) {
         return litcomment;
     } else {
         //multi space string handling
-        const args = tokens.reduce((acc, token) => {
+        const stringexpr = tokens.reduce((acc, token) => {
             const { args, buffer } = acc;
 
             // Check quote conditions
@@ -96,9 +96,11 @@ function parseLine(line, lines, blockStack) {
                 args: [...args, new ASTNode('Argument', token)],
                 buffer: []
             };
-        }, { args: [], buffer: [] }).args;
+        }, { args: [], buffer: [] });
 
-        return new ASTNode('Call', command, args);
+        // made string more error-friendly takes left over buffer if closing apostrope forgetten
+        const cmds = (Object.keys(stringexpr.buffer).length > 0) ? [...stringexpr.args, new ASTNode('Argument', stringexpr.buffer.join(' '))] : stringexpr.args
+        return new ASTNode('Call', command, cmds);
     }
 }
 

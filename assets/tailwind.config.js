@@ -25,10 +25,11 @@ module.exports = {
       },
       animation: {
         halfmarquee: 'halfmarquee 30s linear infinite',
+        popin: 'popIn 300ms ease-out forwards',
         marquee: 'fullmarquee 15s linear infinite',
         gradient: 'gradient-anim 30s ease infinite',
         flicker: 'flicker 1s linear infinite',
-        fade: 'fadeIn 2s ease-in-out',
+        fade: 'fadeIn 1s ease-in-out',
         fadeawhile: 'fadeWait 5s ease-in',
         fadeout: 'fadeOut 5s forwards',
         glitchy: 'glitchy 5s ease-in-out infinite',
@@ -69,8 +70,8 @@ module.exports = {
           to: {filter: 'grayscale(0)' },
         },
         fadeIn: {
-					from: { opacity: 0 },
-					to: { opacity: 1 },
+					from: { opacity: 0},
+					to: { opacity: 1,},
 				},
         fadeWait: {
           '0%': {

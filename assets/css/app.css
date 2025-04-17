@@ -65,4 +65,17 @@
     --fix: ; /* This custom property invalidates styles on hover, thereby enforcing a style recomputation. This is needed to work around a bug in Safari. */
       }
 
+      .flash-highlight {
+        animation: flash-animation 1.5s;
+      }
+
+      @keyframes flash-animation {
+        0%, 100% {
+          background-color: transparent;
+        }
+        10%, 80% {
+          background-color: rgba(254, 243, 180, 1); /* same highlight as our selected abbott */
+        }
+      }
+
 }

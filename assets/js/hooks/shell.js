@@ -27,21 +27,48 @@ Shell = {
       const cachedVal = loadEditorContent()
 
       this.handleEvent("writeShell", (instruction) => {
-        var cmd = instruction["command"]
+        const cmd = instruction["command"]
+        const args = instruction["args"]
         switch (cmd) {
         case "undo":
           shell.undo()
           break;
         default:
-          var doc = shell.getDoc();
-          var token = shell.getTokenAt(shell.getCursor());
-          var cursor = doc.getCursor(); // gets the line number in the cursor position
-          var line = doc.getLine(cursor.line); // get the line contents
-          var pos = { // create a new object to avoid mutation of the original selection
+          const doc = shell.getDoc();
+          const token = shell.getTokenAt(shell.getCursor());
+          const cursor = doc.getCursor(); // gets the line number in the cursor position
+          const line = doc.getLine(cursor.line); // get the line contents
+          const pos = { // create a new object to avoid mutation of the original selection
             line: cursor.line,
             ch: line.length // set the character position to the end of the line
           }
-          doc.replaceRange("\n".padEnd(1+token.state.indented) + cmd, pos); // adds a new line
+          if (args && args.length > 0) {
+            const argstr = args.reduce((acc, arg) => {
+              const cmdparam = document.getElementById("cmdparam-" + cmd + "-" + arg)
+              acc += " " + cmdparam.value || cmdparam.defaulted
+              return acc
+            }, "")
+            doc.replaceRange("\n".padEnd(1+token.state.indented) + cmd + argstr, pos);
+          } else {
+            doc.replaceRange("\n".padEnd(1+token.state.indented) + cmd , pos);
+          }
+          // Add the new line
+
+
+          // Get the new line number (cursor.line + 1)
+          const newLineNumber = cursor.line + 1;
+
+          // Create a marker for the new line
+          const marker = doc.markText(
+            {line: newLineNumber, ch: 0},
+            {line: newLineNumber, ch: doc.getLine(newLineNumber).length},
+            {className: 'flash-highlight'}
+          );
+
+          // Remove the marker after a delay
+          setTimeout(() => {
+            marker.clear();
+          }, 1500); // Duration of the flash effect (1.5 seconds)
         }
       });
 

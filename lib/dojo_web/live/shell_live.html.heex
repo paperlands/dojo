@@ -176,7 +176,7 @@
     <textarea phx-update="ignore" id="outershell" class="relative rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full" phx-hook="OuterShell"></textarea>
   </div>
 
-  <.command_deck :if={@right == :deck}/>
+  <.command_deck active={@right == :deck}/>
   <.memory_well :if={@right == :well} view="grid" memories={@disciples |> Enum.map(&(elem(&1,1)))} page={1} total_pages={1}/>
 </div>
 

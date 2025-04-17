@@ -326,9 +326,9 @@ defmodule DojoWeb.ShellLive do
   def command_deck(assigns) do
     ~H"""
     <!-- Command Deck Component (command_deck.html.heex) -->
-    <div class="absolute flex px-1 pb-1 right-5 bottom-5">
+    <div class={["absolute flex px-1 pb-1 right-5 bottom-5  animate-fade", !@active && "hidden"]}>
       <!-- Command Deck Panel -->
-        <div class="fixed w-64 transition-all duration-500 ease-in-out transform rounded-lg shadow-xl right-5 bottom-20 xl:h-2/3 bg-brand-900/70 backdrop-blur-sm h-1/2 scrollbar-hide dark-scrollbar">
+        <div class="fixed w-64 transition-all duration-500  ease-in-out transform rounded-lg shadow-xl right-5 bottom-20 xl:h-2/3 bg-brand-900/70  h-1/2 scrollbar-hide dark-scrollbar">
           <div class="h-full p-4">
             <!-- Header -->
             <div class="flex items-center justify-between mb-4">
@@ -340,7 +340,6 @@ defmodule DojoWeb.ShellLive do
               phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
             >
               <div class="relative">
-                <!-- Main Button -->
                 <button class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-brand/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
                   <svg
                     class="w-4 h-4 text-amber-400"
@@ -364,32 +363,54 @@ defmodule DojoWeb.ShellLive do
               </div>
             </div>
             <!-- Command List -->
-            <div class="h-full overflow-y-scroll">
-              <%= for {cmd, desc, code} <- [
-                {"fw", "Move Forward", "fw 100"},
-                {"rt", "Face Right", "rt 30"},
-                {"lt", "Face Left", "lt 30"},
-                {"jmp", "Jump Forward", "jmp 100"},
-                {"wait", "Wait for a while ", "wait 1"},
-                {"label", "Write Hello", "label 'Hello' 10"},
-                {"faceto", "Face Towards Start", "faceto 0 0"},
-                {"hd", "Hide your Head", "hd"},
-                {"goto", "Go To Start", "goto 0 0"},
-                {"show", "Show your Head", "show"},
-                {"beColour", "Set your Color", "beColour red"}
-              ] do %>
-                <div
-                  phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => code})}
-                  class="flex items-center p-2 transition-colors rounded pointer-events-auto hover:bg-amber-900/50 group cursor-pointer"
-                >
-                  <div class="mr-3 text-amber-400">
-                    <.cmd_icon command={cmd} class="w-8 h-8 fill-brand" />
-                  </div>
-                  <div>
-                    <code class="font-mono text-sm text-amber-300">{cmd}</code>
-                    <p class="text-xs text-amber-200/80">{desc}</p>
-                  </div>
+            <div id="test" class="h-full overflow-y-scroll">
+              <%= for {cmd, desc, vals} <- [
+                {"fw", "Move Forward", [length: 50]},
+                {"rt", "Face Right", [angle: 30]},
+                {"lt", "Face Left", [angle: 30]},
+                {"jmp", "Jump Forward", [length: 50]},
+                {"wait", "Wait a While", [time: 1]},
+                {"label", "Write Something", ["text": "'Hello'", size: 10]},
+                {"faceto", "Face Towards Start", ["→": 0, "↑": 0]},
+                {"goto", "Go To Start", ["→": 0, "↑": 0]},
+                {"hd", "Hide your Head", nil},
+                {"show", "Show your Head", nil},
+                {"beColour", "Set Colour to", [colour: "red"]}
+                ] do %>
+              <div
+                phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => cmd, "args" => vals && Keyword.keys(vals)})}
+                class="flex  items-center p-2 transition-colors rounded pointer-events-auto hover:bg-amber-900/50 group cursor-pointer"
+              >
+                <div class="mr-3 text-amber-400">
+                  <.cmd_icon command={cmd} class="w-8 h-8 fill-brand" />
                 </div>
+                <div class="flex-grow">
+                  <code class="font-mono text-sm text-amber-300"><%= desc %></code>
+                  <p class="text-xs text-[#d80450] flex items-baseline flex-wrap">
+                    <%= cmd %>
+                    <span :if={vals} class="relative grid-cols-3  ">
+                      <input
+                        :for={{arg, val} <- vals}
+                        type="text"
+                        id={"cmdparam-#{cmd}-#{arg}"}
+                        value={val}
+                        defaulted={val}
+                        class="ml-[1ch] border-amber-500/50 bg-amber-500/5  hover:bg-amber-500/10 focus-within:bg-amber-500/15  border-t-0 border-l-0 border-r-0 border-b-2 outline-none focus:border-amber-500 focus:ring-0 text-amber-100 focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
+                        placeholder={arg}
+                        phx-update="ignore"
+                        oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
+                        onclick="event.stopPropagation()"
+                          
+                      />
+                    </span>
+                  </p>
+                  <script>
+                    // Initialize all input fields lengths
+                      window.addEventListener('DOMContentLoaded', () => { document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});});
+                  </script>
+
+                </div>
+              </div>
               <% end %>
             </div>
             <!-- Footer -->
