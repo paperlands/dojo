@@ -370,9 +370,11 @@ defmodule DojoWeb.ShellLive do
                 {"rt", "Face Right", "rt 30"},
                 {"lt", "Face Left", "lt 30"},
                 {"jmp", "Jump Forward", "jmp 100"},
-                {"goto", "Go To Start", "goto 0 0"},
-                {"hd", "Hide your Head", "hd"},
                 {"wait", "Wait for a while ", "wait 1"},
+                {"label", "Write Hello", "label 'Hello' 10"},
+                {"faceto", "Face Towards Start", "faceto 0 0"},
+                {"hd", "Hide your Head", "hd"},
+                {"goto", "Go To Start", "goto 0 0"},
                 {"show", "Show your Head", "show"},
                 {"beColour", "Set your Color", "beColour red"}
               ] do %>

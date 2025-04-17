@@ -55,7 +55,7 @@
 
       /* Firefox */
       .dark-scrollbar {
-        -ms-overflow-style: -ms-autohiding-scrollbar
+        -ms-overflow-style: -ms-autohiding-scrollbar;
         scrollbar-color: rgba(255,153,51,0.05) transparent; /* Thumb color and track color */
         scrollbar-width: thin; /* Thin scrollbar */
         scrollbar-width-legacy: 5px;
