@@ -8,7 +8,7 @@ defmodule DojoKino.Animate do
   @spec new(list() | Range.t() | nil, (integer() -> any()), list()) :: Kino.JS.Live.t()
   def new(range_or_list \\ nil, function, opts \\ [])
 
-  def new(nil, start..finish = range, opts) when is_list(opts) do
+  def new(nil, start..finish//_ = range, opts) when is_list(opts) do
     component(%{
       start: start,
       finish: finish,
@@ -35,7 +35,7 @@ defmodule DojoKino.Animate do
     })
   end
 
-  def new(start..finish, function, opts) when is_function(function) and is_list(opts) do
+  def new(start..finish//_, function, opts) when is_function(function) and is_list(opts) do
     component(%{
       start: start,
       finish: finish,

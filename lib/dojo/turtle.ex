@@ -1,6 +1,6 @@
 defmodule Dojo.Turtle do
 
-  def hatch(%{path: path, commands: cmd} = body, %{class: pid}) do
+  def hatch(%{path: path, commands: _cmd} = body, %{class: pid}) do
     Dojo.Table.publish(pid, {__MODULE__, %{path: path}, body}, :hatch)
   end
   def hatch() do
@@ -8,7 +8,7 @@ defmodule Dojo.Turtle do
   end
   def filter_fns(ast) when is_map(ast) do
     ast |> Enum.reject(fn
-    %{"type" => "Define", "value" => value, "meta" => %{"args" => args}, "children" => children} ->
+    %{"type" => "Define", "value" => _value, "meta" => %{"args" => _args}, "children" => _children} ->
       false
       _ ->
         true

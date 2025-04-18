@@ -85,10 +85,10 @@ defmodule Dojo.World do
 
     DojoKino.Animate.new(0..timesteps, fn index ->
       Enum.reduce_while(str, [], fn
-        x, acc when length(acc) > index ->
+        _x, acc when length(acc) > index ->
           {:halt, Enum.reverse(acc)}
 
-        x, acc when length(acc) == timesteps ->
+        _x, acc when length(acc) == timesteps ->
           {:halt, Enum.reverse(acc)}
 
         x, acc ->
@@ -110,6 +110,17 @@ defmodule Dojo.World do
     |> Kino.Markdown.new()
   end
 
+  def print(gen, list: true) when is_binary(gen) do
+    [gen]
+    |> Enum.map(&print_world(&1))
+  end
+
+  def print(gen, list: true) when is_list(gen) do
+    gen
+    |> Enum.map(&print_world(&1))
+  end
+
+
   def print(str) when is_binary(str) do
     print_world(str)
   end
@@ -121,15 +132,6 @@ defmodule Dojo.World do
     |> print_world()
   end
 
-  def print(gen, list: true) when is_binary(gen) do
-    [gen]
-    |> Enum.map(&print_world(&1))
-  end
-
-  def print(gen, list: true) when is_list(gen) do
-    gen
-    |> Enum.map(&print_world(&1))
-  end
 
   @doc """
   Evolves the cellular automaton through a series of generations.
@@ -150,9 +152,9 @@ defmodule Dojo.World do
 
   """
 
-  def next(state, rule, times, opts \\ %{})
+  def next(state, _rule, times, opts \\ %{})
 
-  def next(state, rule, 0, _) do
+  def next(state, _rule, 0, _) do
     state |> Enum.reverse()
   end
 

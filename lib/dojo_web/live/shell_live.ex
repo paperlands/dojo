@@ -47,7 +47,7 @@ defmodule DojoWeb.ShellLive do
     |> start_async(:list_disciples, fn -> Dojo.Class.list_disciples("shell:" <> clan) end)
   end
 
-  defp sync_session(%{assigns: %{session: %Session{name: name} = sess, clan: clan}} = socket)
+  defp sync_session(%{assigns: %{session: %Session{name: name} = _sess, clan: clan}} = socket)
        when is_binary(name) do
 
     parent = self()
@@ -72,7 +72,7 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-  def handle_async(:join_disciples, {:ok, class}, %{assigns: %{clan: clan}} = socket) do
+  def handle_async(:join_disciples, {:ok, class}, %{assigns: %{clan: _clan}} = socket) do
     {:noreply, assign(socket, :class, class)}
   end
 
@@ -93,7 +93,7 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_info(
-        {:leave, "class:shell" <> _, %{phx_ref: ref} = disciple},
+        {:leave, "class:shell" <> _, %{phx_ref: ref} = _disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
     if Map.has_key?(d, ref) do
@@ -223,7 +223,7 @@ defmodule DojoWeb.ShellLive do
      )}
   end
 
-  def handle_event("seeTurtle", %{"addr" => addr}, %{assigns: %{disciples: dis, class: class}} = socket)
+  def handle_event("seeTurtle", %{"addr" => addr}, %{assigns: %{disciples: dis, class: _class}} = socket)
       when is_binary(addr) do
 
     command = case GenServer.call(dis[addr][:node], {:last, :hatch}) do
@@ -370,7 +370,7 @@ defmodule DojoWeb.ShellLive do
                 {"lt", "Face Left", [angle: 30]},
                 {"jmp", "Jump Forward", [length: 50]},
                 {"wait", "Wait a While", [time: 1]},
-                {"label", "Write Something", ["text": "'Hello'", size: 10]},
+                {"label", "Write Something", [text: "'Hello'", size: 10]},
                 {"faceto", "Face Towards Start", ["→": 0, "↑": 0]},
                 {"goto", "Go To Start", ["→": 0, "↑": 0]},
                 {"hd", "Hide your Head", nil},

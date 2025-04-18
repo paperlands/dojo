@@ -29,9 +29,6 @@ defmodule DojoWeb.Utils.Base64 do
 
   def to_file(_, _), do: nil
 
-  @doc """
-  Extracts MIME type and base64 content from the data URI.
-  """
   defp extract_data(data_uri) do
     case :binary.match(data_uri, ";base64,") do
       :nomatch -> {:error, "Invalid data URI format"}
@@ -46,9 +43,6 @@ defmodule DojoWeb.Utils.Base64 do
     end
   end
 
-  @doc """
-  Gets the file extension from the MIME type.
-  """
   defp get_extension(mime_type) do
     case mime_type do
       "image/jpeg" -> ".jpg"
@@ -61,10 +55,6 @@ defmodule DojoWeb.Utils.Base64 do
     end
   end
 
-
-  @doc """
-  Writes the decoded content to a file.
-  """
   defp write_file(filename, content) do
     case File.open(filename, [:write]) do
       {:ok, file} ->

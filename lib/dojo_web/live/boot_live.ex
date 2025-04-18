@@ -1,6 +1,6 @@
 defmodule DojoWeb.BootLive do
   use DojoWeb, :live_shell
-  import DojoWeb.SVGComponents
+  #import DojoWeb.SVGComponents
 
   def mount(params, _session, socket) do
     {:ok, socket
@@ -9,12 +9,12 @@ defmodule DojoWeb.BootLive do
     }
   end
 
-  def boot(%{assigns: %{session: %DojoWeb.Session{name: name} = sess}} = socket, time \\ 200) when is_binary(name) do
+  def boot(socket, time \\ 200)
+  def boot(%{assigns: %{session: %DojoWeb.Session{name: name}}} = socket, time) when is_binary(name) do
     Process.send_after(self(), :boot, time)
     socket
   end
-
-  def boot(socket, time) do
+  def boot(socket, _time) do
     socket
   end
 
