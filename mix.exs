@@ -59,6 +59,7 @@ defmodule Dojo.MixProject do
       {:jason, "~> 1.2"},
       {:kino, "~> 0.12.3"},
       {:nebulex, "~> 2.6"},
+      {:shards, "~> 1.1"},
       {:observer_cli, "~> 1.8"},
       {:kino_vega_lite, "~> 0.1.11"},
       {:dns_cluster, "~> 0.1.1"},

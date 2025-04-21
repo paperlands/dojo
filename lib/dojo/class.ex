@@ -2,6 +2,8 @@ defmodule Dojo.Class do
   use DynamicSupervisor
   alias Dojo.Table
 
+  # takes care of all disciples across all tables
+
   def start_link(init_arg) do
     DynamicSupervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
   end

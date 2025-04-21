@@ -28,6 +28,7 @@ defmodule DojoWeb.ShellLive do
        outerfunctions: [],
        class: nil,
        disciples: %{},
+       visible_disciples: [],
        right: :deck,
        pane: true
      )
@@ -37,7 +38,7 @@ defmodule DojoWeb.ShellLive do
   def handle_params(params, _url, socket) do
     {:noreply,
      socket
-     |> join_clan(params["clan"] || "dojo")
+     |> join_clan(params["clan"] || "paperland")
      |> sync_session()}
   end
 
@@ -109,6 +110,22 @@ defmodule DojoWeb.ShellLive do
     {:noreply,
      socket
      |> assign(focused_phx_ref: focused_phx_ref)}
+  end
+
+  def handle_info(:refreshDisciples, %{assigns: %{disciples: dis, visible_disciples: visible_dis}} = socket) do
+    Process.send_after(self(), :refreshDisciples, 1500)
+    new_dis = Enum.reduce(visible_dis, dis, fn ref, acc ->
+      case dis[ref] && Dojo.Table.last(dis[ref][:node], :hatch) do
+        nil -> acc
+        #check time on genserver before update case do
+        %{path: path} ->
+          put_in(acc, [ref, :meta], %{path: path})
+      end
+    end)
+
+    {:noreply,
+     socket
+     |> assign(disciples: new_dis)}
   end
 
   def handle_info(
@@ -226,7 +243,7 @@ defmodule DojoWeb.ShellLive do
   def handle_event("seeTurtle", %{"addr" => addr}, %{assigns: %{disciples: dis, class: _class}} = socket)
       when is_binary(addr) do
 
-    command = case GenServer.call(dis[addr][:node], {:last, :hatch}) do
+    command = case Dojo.Table.last(dis[addr][:node], :hatch) do
                 %{commands: ast} -> ast
                   _ -> %{}
               end
@@ -275,6 +292,13 @@ defmodule DojoWeb.ShellLive do
      )}
   end
 
+  # Handle the viewport update event from the hook
+  def handle_event("seeDisciples", %{"visible_disciples" => visible_refs }, %{assigns: %{disciples: _dis}} = socket) do
+    Process.send_after(self(), :refreshDisciples, 200)
+    {:noreply, assign(socket, visible_disciples: visible_refs)}
+  end
+
+
   def handle_event("flipDeck", _, socket), do: {:noreply, update(socket, :right, &(&1==:deck && true || :deck))}
   def handle_event("flipWell", _, socket), do: {:noreply, update(socket, :right, &(&1==:well && true || :well))}
   def handle_event("flipPane", _, socket), do: {:noreply, update(socket, :pane, &(!&1))}
@@ -316,10 +340,12 @@ defmodule DojoWeb.ShellLive do
   # pokemon clause
   def handle_event(
         e,
-        _p,
+        p,
         socket
       ) do
     IO.inspect("pokemon handle event: " <> e)
+    IO.inspect(p, label: "pokemon params")
+
     {:noreply, socket}
   end
 
