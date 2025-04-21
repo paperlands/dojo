@@ -224,7 +224,11 @@
         {dis.name}
       </div>
 
-      <img :if={Map.has_key?(dis, :meta)} src={dis.meta.path} onerror="this.src='/images/turtlehead.png';" class="object-scale-down max-h-full m-auto" />
+      <img :if={Map.has_key?(dis, :meta)} src={dis.meta.path} onerror="this.src='/images/turtlehead.png';"
+        class="object-scale-down max-h-full m-auto"
+        loading="eager"
+        decoding="sync"
+      />
     </div>
   </div>
 

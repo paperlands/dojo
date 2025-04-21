@@ -27,7 +27,7 @@ export class Parser {
             ['sqrt', 1], ['log', 1], ['exp', 1]
         ]);
     }
-
+//if (expr.match(/^(?![0-9]+[a-zA-Z])([a-zA-Z_][a-zA-Z0-9_]*)$/)) return tree.value
     run(expression) {
         const tokens = this.tokenise(expression);
         // preprocess with implicit operators
