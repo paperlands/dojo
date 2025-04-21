@@ -27,7 +27,7 @@ Shell = {
       const cachedVal = loadEditorContent()
 
       this.handleEvent("selfkeepCanvas", (details) => {
-        const userFilename = prompt('Enter filename for your PNG:', details.title) || "details.title";
+        const userFilename = prompt('Enter filename for your PNG:', details.title) || details.title;
 
         if (userFilename) {
           // Add .png extension if not included

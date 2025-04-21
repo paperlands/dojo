@@ -255,6 +255,7 @@ defmodule DojoWeb.ShellLive do
        :outershell,
        %{
          addr: addr,
+         title: command |> Dojo.Turtle.find_title(),
          #outerfunctions: dis[addr][:meta][:commands] |> Dojo.Turtle.filter_fns(),
          resp: "#{dis[addr][:name]}"
        }
