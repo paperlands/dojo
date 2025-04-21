@@ -6,6 +6,18 @@ defmodule Dojo.Turtle do
   def hatch() do
     nil
   end
+
+  def find_title(ast) when is_list(ast) do
+    lol = Enum.reduce_while(ast, "",
+                      fn %{"meta" => %{"lit" => title}}, _acc when is_binary(title)->
+                        {:halt, title}
+                        _,_ -> {:cont, ""}
+                      end)
+  end
+
+  def find_title(_) do
+    ""
+  end
   def filter_fns(ast) when is_map(ast) do
     ast |> Enum.reject(fn
     %{"type" => "Define", "value" => _value, "meta" => %{"args" => _args}, "children" => _children} ->

@@ -25,6 +25,7 @@ defmodule DojoWeb.ShellLive do
        outershell: nil,
        sensei: false,
        myfunctions: [],
+       mytitle: "paperland",
        outerfunctions: [],
        class: nil,
        disciples: %{},
@@ -208,14 +209,14 @@ defmodule DojoWeb.ShellLive do
         _ -> nil
     end
 
-    {:noreply, socket |> assign(myfunctions: commands |> Dojo.Turtle.filter_fns())}
+    {:noreply, socket |> assign(mytitle: commands |> Dojo.Turtle.find_title())}
   end
 
   def handle_event("hatchTurtle",
                    %{"commands" => commands},
                    socket) do
 
-    {:noreply, socket |> assign(myfunctions: commands |> Dojo.Turtle.filter_fns())}
+    {:noreply, socket |> assign(mytitle: commands |> Dojo.Turtle.find_title())}
   end
 
   def handle_event(

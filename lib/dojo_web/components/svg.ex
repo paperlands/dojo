@@ -46,15 +46,37 @@ def manual(assigns) do
 """
 end
 
- def save(assigns) do
- ~H"""
- <svg class={@class} x="0px" y="0px" viewBox="0 0 100 100" stroke="currentColor"
-                    stroke-width="4"
-                    stroke-linecap="round"
-                    stroke-linejoin="round" ><path d="M83.723,27.201h11.262v67.784H5.015V5.015H72.47v10.923h11.253V27.201z M72.47,16.273H61.317v22.52H27.54v-22.52H16.277  v67.45H27.54V61.537h44.93v22.185h11.253V27.201H72.47V16.273z M38.793,27.53h11.152V16.273H38.793V27.53z"/></svg>
- """
- end
-
+def save(assigns) do
+  ~H"""
+  <div class="group relative inline-block">
+    <svg 
+      class={@class} 
+      viewBox="2 2 20 20" 
+      fill="none" 
+      stroke="currentColor" 
+      stroke-width="3" 
+      stroke-linecap="round" 
+      stroke-linejoin="round">
+      
+      <!-- Container box for download -->
+      <path 
+        class="transition duration-300 ease-in-out" 
+        d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      
+      <!-- The download arrow with animation -->
+      <g class="transform transition-all duration-300 ease-in-out group-hover:translate-y-0.5">
+        <polyline points="7 10 12 15 17 10" />
+        <line 
+          x1="12" 
+          y1="15" 
+          x2="12" 
+          y2="3" 
+          class="origin-top transition-all duration-300 ease-in-out group-hover:scale-y-105" />
+      </g>
+    </svg>
+  </div>
+  """
+end
   def cmd_icon(%{command: "fw"} = assigns) do
     ~H"""
     <svg class={@class} viewBox="0 0 256 256"  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
