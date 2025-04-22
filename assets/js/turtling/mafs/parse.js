@@ -12,7 +12,7 @@ export class Parser {
             '>=': 6, '>': 6, '<=': 6, '<': 6, // Inequality  Operators
             '+': 7, '-': 7,
             '+-': 7, '--': 7,
-            '*': 8, '/': 8,
+            '*': 8, '/': 8, '//':8,
             '*-': 9, '/-': 9,
             '!': 9,
             '^': 10,
@@ -27,7 +27,7 @@ export class Parser {
             ['sqrt', 1], ['log', 1], ['exp', 1]
         ]);
     }
-
+//if (expr.match(/^(?![0-9]+[a-zA-Z])([a-zA-Z_][a-zA-Z0-9_]*)$/)) return tree.value
     run(expression) {
         const tokens = this.tokenise(expression);
         // preprocess with implicit operators
@@ -43,10 +43,10 @@ export class Parser {
             // Handle multi-character operators
             let multiCharOp = '';
             if (token + (expandedTokens[i + 1] || '') + (expandedTokens[i + 2] || '') in this.precedence) {
-                multiCharOp = token + expandedTokens[i + 1] + expandedTokens[i + 2];
+                token + (expandedTokens[i + 1] || '') + (expandedTokens[i + 2] || '');
                 i += 2;
             } else if (token + (expandedTokens[i + 1] || '') in this.precedence) {
-                multiCharOp = token + expandedTokens[i + 1];
+                multiCharOp = token + (expandedTokens[i + 1] || '');
                 i += 1;
             }
 

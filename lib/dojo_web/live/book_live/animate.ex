@@ -15,14 +15,13 @@ defmodule DojoWeb.Animate do
 
   # init clause
   def update(%{id: id, class_id: class_id, name: name, show_controls: show_controls}, socket) do
-    {list, source} =
-      case Dojo.Table.last_animate(class_id) do
-        {m, f, a} ->
-          {apply(m, f, a), to_source({m, f, a})}
+    {list, source} = case Dojo.Table.last(class_id, :animate) do
+      {m, f, a} ->
+        {apply(m, f, a), to_source({m, f, a})}
 
-        _ ->
-          {Dojo.World.create("1"), "Dojo.World.create(\"1\")"}
-      end
+      _ ->
+        {Dojo.World.create("1"), "Dojo.World.create(\"1\")"}
+    end
 
     list =
       list

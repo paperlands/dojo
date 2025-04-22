@@ -43,7 +43,7 @@ defmodule DojoWeb do
         layouts: [html: DojoWeb.Layouts]
 
       import Plug.Conn
-      import DojoWeb.Gettext
+      use Gettext, backend: DojoWeb.Gettext
 
       unquote(verified_routes())
     end
@@ -94,7 +94,8 @@ defmodule DojoWeb do
       import Phoenix.HTML
       # Core UI components and translation
       import DojoWeb.CoreComponents
-      import DojoWeb.Gettext
+
+      use Gettext, backend: DojoWeb.Gettext
 
       # Shortcut for generating JS commands
       alias Phoenix.LiveView.JS

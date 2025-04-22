@@ -62,6 +62,15 @@ config :logger, :console,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+
+config :dojo, Dojo.Cache,
+       gc_interval: :timer.minutes(5),
+       backend: :shards,
+       # Very short minimum cleanup timeout
+       gc_cleanup_min_timeout: :timer.seconds(1),
+       # Short maximum cleanup timeout
+       gc_cleanup_max_timeout: :timer.seconds(30)
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

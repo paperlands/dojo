@@ -61,7 +61,10 @@ export class Evaluator {
 
     applyFunction(func, arg) {
         if (func in this.functions) {
-            return this.functions[func](arg);
+            const evals = this.functions[func](arg)
+            if (Number.isSafeInteger(evals)) return evals
+            const precision = 100000000000000;
+            return Math.round((evals)*precision)/precision
         }
         throw new Error(`Undefined function: ${func}`);
     }
@@ -74,36 +77,49 @@ export class Evaluator {
     }
 
     applyOperator(operator, left, right) {
+
+        if (!Number.isSafeInteger(left) || !Number.isSafeInteger(right)){
+            const precision = 100000000000000;
+            switch (operator) {
+                // Arithmetic operators
+            case '+': return Math.round((left + right)*precision)/precision;
+            case '--': return Math.round((left + right)*precision)/precision;
+            case '+-': return Math.round((left - right)*precision)/precision;
+            case '-': return Math.round((left - right)*precision)/precision;
+            default: break
+            }
+        }
+
         switch (operator) {
             // Logical operators
-            case '&&': return left && right;
-            case '||': return left || right;
-            case '&': return left & right;  // Bitwise AND
-            case '|': return left | right;  // Bitwise OR
+        case '&&': return left && right;
+        case '||': return left || right;
+        case '&': return left & right;  // Bitwise AND
+        case '|': return left | right;  // Bitwise OR
 
             // Comparison operators
-            case '===': return left === right ? 1 : 0;
-            case '!==': return left !== right ? 1 : 0;
-            case '==': return left == right ? 1 : 0;
-            case '!=': return left != right ? 1 : 0;
-            case '>=': return left >= right ? 1 : 0;
-            case '>': return left > right ? 1 : 0;
-            case '<=': return left <= right ? 1 : 0;
-            case '<': return left < right ? 1 : 0;
+        case '===': return left === right ? 1 : 0;
+        case '!==': return left !== right ? 1 : 0;
+        case '==': return left == right ? 1 : 0;
+        case '!=': return left != right ? 1 : 0;
+        case '>=': return left >= right ? 1 : 0;
+        case '>': return left > right ? 1 : 0;
+        case '<=': return left <= right ? 1 : 0;
+        case '<': return left < right ? 1 : 0;
 
-            // Arithmetic operators
-            case '^': return Math.pow(left, right);
-            case '^-': return Math.pow(left, -right);
-            case '/-': return (left / right == Infinity) ? -2147483647 : left / -right;
-            case '*': return left * right;
-            case '*-': return left * -right;
-            case '/': return (left / right == Infinity) ? 2147483647 : left / right;
-            case '+': return left + right;
-            case '--': return left + right;
-            case '+-': return left - right;
-            case '-': return left - right;
+        case '^': return Math.pow(left, right);
+        case '^-': return Math.pow(left, -right);
+        case '/-': return left / -right;
+        case '//': return right % left;
+        case '*': return left * right;
+        case '*-': return left * -right;
+        case '/': return left / right;
+        case '+': return left + right;
+        case '--': return left + right;
+        case '+-': return left - right;
+        case '-': return left - right;
 
-            default: throw new Error(`Unknown operator: ${operator}`);
+        default: throw new Error(`Unknown operator: ${operator}`);
         }
     }
 }

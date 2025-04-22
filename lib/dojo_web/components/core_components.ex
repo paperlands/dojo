@@ -17,7 +17,7 @@ defmodule DojoWeb.CoreComponents do
   use Phoenix.Component
 
   alias Phoenix.LiveView.JS
-  import DojoWeb.Gettext
+  use Gettext, backend: DojoWeb.Gettext
 
   @doc """
   Renders a modal.

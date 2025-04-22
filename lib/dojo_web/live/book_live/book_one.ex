@@ -23,49 +23,49 @@ defmodule DojoWeb.BookOneLive do
      |> assign(show_controls: false)}
   end
 
-  defp kernel(assigns) do
-    ~H"""
-    <div
-      id={@id}
-      class="inline-flex p-4 bg-white border-2 border-gray-200 border-dashed rounded-lg cursor-pointer"
-      phx-hook="ImageInput"
-      data-height={@height}
-      data-width={@width}
-    >
-      <input id={"#{@id}-input"} type="file" class="hidden" />
-      <div class="flex items-center justify-center p-8" id={"#{@id}-preview"}>
-        <%!-- input grid_map --%>
-        <div class="text-center text-gray-500">
-          <div class="">
-            <%= for i <- 1..3 do %>
-              <div class="flex justify-evenly">
-                <%= for j <- 1..3 do %>
-                  <div
-                    class={"w-24 h-24 outline rounded hover:bg-slate-700 #{check_cell_status(@grid_map, i * 10 + j)}"}
-                    phx-click="cell-click"
-                    phx-value-cell-value={i * 10 + j}
-                  >
-                  </div>
-                <% end %>
-              </div>
-            <% end %>
-          </div>
-          <br /> Construct a simple 3x3 starting grid
-        </div>
-      </div>
-    </div>
-    """
-  end
+  # defp kernel(assigns) do
+  #   ~H"""
+  #   <div
+  #     id={@id}
+  #     class="inline-flex p-4 bg-white border-2 border-gray-200 border-dashed rounded-lg cursor-pointer"
+  #     phx-hook="ImageInput"
+  #     data-height={@height}
+  #     data-width={@width}
+  #   >
+  #     <input id={"#{@id}-input"} type="file" class="hidden" />
+  #     <div class="flex items-center justify-center p-8" id={"#{@id}-preview"}>
+  #       <%!-- input grid_map --%>
+  #       <div class="text-center text-gray-500">
+  #         <div class="">
+  #           <%= for i <- 1..3 do %>
+  #           <div class="flex justify-evenly">
+  #             <%= for j <- 1..3 do %>
+  #             <div
+  #               class={"w-24 h-24 outline rounded hover:bg-slate-700 #{check_cell_status(@grid_map, i * 10 + j)}"}
+  #               phx-click="cell-click"
+  #               phx-value-cell-value={i * 10 + j}
+  #             >
+  #             </div>
+  #             <% end %>
+  #           </div>
+  #           <% end %>
+  #         </div>
+  #         <br /> Construct a simple 3x3 starting grid
+  #       </div>
+  #     </div>
+  #   </div>
+  #   """
+  # end
 
-  defp check_cell_status(grid_map, cell_value) do
-    case grid_map[Integer.to_string(cell_value)] do
-      true ->
-        "bg-slate-800"
+  # defp check_cell_status(grid_map, cell_value) do
+  #   case grid_map[Integer.to_string(cell_value)] do
+  #     true ->
+  #       "bg-slate-800"
 
-      false ->
-        ""
-    end
-  end
+  #     false ->
+  #       ""
+  #   end
+  # end
 
   def handle_event("cell-click", %{"cell-value" => cell_value}, socket) do
     grid_map = socket.assigns.grid_map

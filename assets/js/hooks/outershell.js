@@ -36,6 +36,54 @@ OuterShell = {
         const turtle = new Turtle(outercanvas);
         this.shell = new Terminal(el, CodeMirror).init();
 
+
+
+      this.handleEvent("outerkeepCanvas", (details) => {
+        const userFilename = prompt('Enter filename for your PNG:', details.title) || details.title;
+
+        if (userFilename) {
+          // Add .png extension if not included
+          const filename = userFilename.endsWith('.png') ? userFilename : `${userFilename}.png`;
+
+          // Create a temporary canvas for post-processing
+          const offscreen = new OffscreenCanvas(canvas.width, canvas.height);
+          const tempCtx = offscreen.getContext('2d');
+
+          // First fill with black background
+          tempCtx.fillStyle = 'black';
+          tempCtx.fillRect(0, 0, offscreen.width, offscreen.height);
+
+          // Then draw the original canvas content on top
+          tempCtx.drawImage(canvas, 0, 0);
+
+          offscreen.convertToBlob({ type: 'image/png', quality: 1.0 }).then((blob) => {
+            if (!blob) {
+              console.error('Failed to convert canvas to Blob.');
+              return;
+            }
+
+            // Create a URL for the blob
+            const url = URL.createObjectURL(blob);
+
+            // Create and trigger download
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            // Revoke the object URL after download to free memory
+            URL.revokeObjectURL(url);
+
+
+          }).catch((err) => {
+            console.error('Error during canvas blob conversion:', err);
+          })
+
+        }
+      })
+
         const debouncedRunCode = debounce(this.run, 180);
 
         this.active = true

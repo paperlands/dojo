@@ -25,9 +25,11 @@ defmodule DojoWeb.ShellLive do
        outershell: nil,
        sensei: false,
        myfunctions: [],
+       mytitle: "paperland",
        outerfunctions: [],
        class: nil,
        disciples: %{},
+       visible_disciples: [],
        right: :deck,
        pane: true
      )
@@ -37,7 +39,7 @@ defmodule DojoWeb.ShellLive do
   def handle_params(params, _url, socket) do
     {:noreply,
      socket
-     |> join_clan(params["clan"] || "dojo")
+     |> join_clan(params["clan"] || "paperland")
      |> sync_session()}
   end
 
@@ -47,8 +49,9 @@ defmodule DojoWeb.ShellLive do
     |> start_async(:list_disciples, fn -> Dojo.Class.list_disciples("shell:" <> clan) end)
   end
 
-  defp sync_session(%{assigns: %{session: %Session{name: name} = sess, clan: clan}} = socket)
+  defp sync_session(%{assigns: %{session: %Session{name: name} = _sess, clan: clan}} = socket)
        when is_binary(name) do
+
     parent = self()
 
     socket
@@ -71,7 +74,7 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-  def handle_async(:join_disciples, {:ok, class}, %{assigns: %{clan: clan}} = socket) do
+  def handle_async(:join_disciples, {:ok, class}, %{assigns: %{clan: _clan}} = socket) do
     {:noreply, assign(socket, :class, class)}
   end
 
@@ -79,6 +82,8 @@ defmodule DojoWeb.ShellLive do
     IO.inspect(reason, label: "disciples join failed")
     {:noreply, socket}
   end
+
+  #presence handlers => move to more pull based approach -> concern of class genserver instead c5 for personal shell
 
   def handle_info(
         {:join, "class:shell" <> _, %{phx_ref: ref} = disciple},
@@ -90,7 +95,7 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_info(
-        {:leave, "class:shell" <> _, %{phx_ref: ref} = disciple},
+        {:leave, "class:shell" <> _, %{phx_ref: ref} = _disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
     if Map.has_key?(d, ref) do
@@ -106,6 +111,22 @@ defmodule DojoWeb.ShellLive do
     {:noreply,
      socket
      |> assign(focused_phx_ref: focused_phx_ref)}
+  end
+
+  def handle_info(:refreshDisciples, %{assigns: %{disciples: dis, visible_disciples: visible_dis}} = socket) do
+    Process.send_after(self(), :refreshDisciples, 1500)
+    new_dis = Enum.reduce(visible_dis, dis, fn ref, acc ->
+      case dis[ref] && Dojo.Table.last(dis[ref][:node], :hatch) do
+        nil -> acc
+        #check time on genserver before update case do
+        %{path: path} ->
+          put_in(acc, [ref, :meta], %{path: path})
+      end
+    end)
+
+    {:noreply,
+     socket
+     |> assign(disciples: new_dis)}
   end
 
   def handle_info(
@@ -124,23 +145,23 @@ defmodule DojoWeb.ShellLive do
      |> assign(disciples: active_dis)}
   end
 
-  def handle_event(
-        "tellTurtle",
-        %{"cmd" => cmd},
-        socket
-      ) do
-    # Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
-    {:noreply, socket |> push_event("writeShell", %{"command" => cmd})}
-  end
+  # def handle_event(
+  #       "tellTurtle",
+  #       %{"cmd" => cmd},
+  #       socket
+  #     ) do
+  #   # Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
+  #   {:noreply, socket |> push_event("writeShell", %{"command" => cmd})}
+  # end
 
-  def handle_event(
-        "tellTurtle",
-        _,
-        socket
-      ) do
-    # Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
-    {:noreply, socket}
-  end
+  # def handle_event(
+  #       "tellTurtle",
+  #       _,
+  #       socket
+  #     ) do
+  #   # Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
+  #   {:noreply, socket}
+  # end
 
   def handle_event(
         "keepTurtle",
@@ -171,10 +192,31 @@ defmodule DojoWeb.ShellLive do
   def handle_event(
         "hatchTurtle",
         %{"commands" => commands, "path" => path},
-        %{assigns: %{class: class}} = socket
-      ) do
-    Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(108)}, %{class: class})
-    {:noreply, socket |> assign(myfunctions: commands |> Dojo.Turtle.filter_fns())}
+        %{assigns: %{class: class, clan: clan, session: %{name: name, last_opened: time}}} = socket
+      ) when is_binary(name) do
+
+    dest_dir = Path.join([:code.priv_dir(:dojo), "static", "frames", clan])
+
+    if !File.dir?(dest_dir) do
+      File.mkdir(dest_dir)
+    end
+
+    id = name <> Base.encode64(to_string(time))
+    with file when is_binary(file) <- DojoWeb.Utils.Base64.to_file(path, Path.join([dest_dir, id])),
+         ext when byte_size(ext)>0 <- Path.extname(file) do
+        Dojo.Turtle.hatch(%{path: Path.join(["frames", clan, id]) <> ext <> "#bump=#{System.os_time(:second)}" , commands: commands |> Enum.take(108)}, %{class: class})
+      else
+        _ -> nil
+    end
+
+    {:noreply, socket |> assign(mytitle: commands |> Dojo.Turtle.find_title())}
+  end
+
+  def handle_event("hatchTurtle",
+                   %{"commands" => commands},
+                   socket) do
+
+    {:noreply, socket |> assign(mytitle: commands |> Dojo.Turtle.find_title())}
   end
 
   def handle_event(
@@ -199,15 +241,21 @@ defmodule DojoWeb.ShellLive do
      )}
   end
 
-  def handle_event("seeTurtle", %{"addr" => addr}, %{assigns: %{disciples: dis}} = socket)
+  def handle_event("seeTurtle", %{"addr" => addr}, %{assigns: %{disciples: dis, class: _class}} = socket)
       when is_binary(addr) do
+
+    command = case Dojo.Table.last(dis[addr][:node], :hatch) do
+                %{commands: ast} -> ast
+                  _ -> %{}
+              end
     {:noreply,
      socket
-     |> push_event("seeOuterShell", %{ast: dis[addr][:meta][:commands], addr: addr, mod: "root"})
+     |> push_event("seeOuterShell", %{ast: command, addr: addr, mod: "root"})
      |> assign(
        :outershell,
        %{
          addr: addr,
+         title: command |> Dojo.Turtle.find_title(),
          #outerfunctions: dis[addr][:meta][:commands] |> Dojo.Turtle.filter_fns(),
          resp: "#{dis[addr][:name]}"
        }
@@ -245,6 +293,13 @@ defmodule DojoWeb.ShellLive do
        nil
      )}
   end
+
+  # Handle the viewport update event from the hook
+  def handle_event("seeDisciples", %{"visible_disciples" => visible_refs }, %{assigns: %{disciples: _dis}} = socket) do
+    Process.send_after(self(), :refreshDisciples, 200)
+    {:noreply, assign(socket, visible_disciples: visible_refs)}
+  end
+
 
   def handle_event("flipDeck", _, socket), do: {:noreply, update(socket, :right, &(&1==:deck && true || :deck))}
   def handle_event("flipWell", _, socket), do: {:noreply, update(socket, :right, &(&1==:well && true || :well))}
@@ -287,19 +342,21 @@ defmodule DojoWeb.ShellLive do
   # pokemon clause
   def handle_event(
         e,
-        _p,
+        p,
         socket
       ) do
     IO.inspect("pokemon handle event: " <> e)
+    IO.inspect(p, label: "pokemon params")
+
     {:noreply, socket}
   end
 
   def command_deck(assigns) do
     ~H"""
     <!-- Command Deck Component (command_deck.html.heex) -->
-    <div class="absolute flex px-1 pb-1 right-5 bottom-5">
+    <div class={["absolute flex px-1 pb-1 right-5 bottom-5  animate-fade", !@active && "hidden"]}>
       <!-- Command Deck Panel -->
-        <div class="fixed w-64 transition-all duration-500 ease-in-out transform rounded-lg shadow-xl right-5 bottom-20 xl:h-2/3 bg-brand-900/70 backdrop-blur-sm h-1/2 dark-scrollbar">
+        <div class="fixed w-64 transition-all duration-500  ease-in-out transform rounded-lg shadow-xl right-5 bottom-20 xl:h-2/3 bg-brand-900/70  h-1/2 scrollbar-hide dark-scrollbar">
           <div class="h-full p-4">
             <!-- Header -->
             <div class="flex items-center justify-between mb-4">
@@ -308,11 +365,9 @@ defmodule DojoWeb.ShellLive do
             <%!-- Undo button --%>
             <div
               class="absolute z-50 pointer-events-auto top-4 right-4 group"
-              phx-click="tellTurtle"
-              phx-value-cmd="undo"
+              phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
             >
               <div class="relative">
-                <!-- Main Button -->
                 <button class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-brand/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
                   <svg
                     class="w-4 h-4 text-amber-400"
@@ -329,44 +384,67 @@ defmodule DojoWeb.ShellLive do
                 </button>
               </div>
               <!-- Tooltip -->
-              <div class="absolute mb-2 transition-opacity duration-200 opacity-0 bottom-full -right-2 group-hover:opacity-100">
-                <div class="px-2 py-1 text-xs border rounded bg-amber-900/90 text-amber-200 border-amber-600 backdrop-blur-sm whitespace-nowrap">
+              <div class="absolute pointer-events-none mb-2 transition-opacity duration-200  opacity-0 -top-4 -right-8 group-hover:opacity-100">
+                <div class="px-2 py-1 text-xs border rounded bg-amber-700/50 text-amber-200 border-amber-600 backdrop-blur-sm whitespace-nowrap">
                   Undo
                 </div>
               </div>
             </div>
             <!-- Command List -->
-            <div class="h-full space-y-2 overflow-y-scroll">
-              <%= for {cmd, desc, code} <- [
-                {"fw", "Move Forward", "fw 100"},
-                {"rt", "Face Right", "rt 30"},
-                {"lt", "Face Left", "lt 30"},
-                {"jmp", "Jump Forward", "jmp 100"},
-                {"goto", "Go To Start", "goto 0 0"},
-                {"hd", "Hide your Head", "hd"},
-                {"wait", "Wait for a while ", "wait 1"},
-                {"show", "Show your Head", "show"},
-                {"beColour", "Set your Color", "beColour red"}
-              ] do %>
-                <div
-                  phx-click="tellTurtle"
-                  phx-value-cmd={code}
-                  class="flex items-center p-2 transition-colors rounded pointer-events-auto hover:bg-amber-900/50 group"
-                >
-                  <div class="mr-3 text-amber-400">
-                    <.cmd_icon command={cmd} class="w-8 h-8 fill-brand" />
-                  </div>
-                  <div>
-                    <code class="font-mono text-sm text-amber-300">{cmd}</code>
-                    <p class="text-xs text-amber-200/80">{desc}</p>
-                  </div>
+            <div id="test" class="h-full overflow-y-scroll">
+              <%= for {cmd, desc, vals} <- [
+                {"fw", "Move Forward", [length: 50]},
+                {"rt", "Face Right", [angle: 30]},
+                {"lt", "Face Left", [angle: 30]},
+                {"jmp", "Jump Forward", [length: 50]},
+                {"wait", "Wait a While", [time: 1]},
+                {"label", "Write Something", [text: "'Hello'", size: 10]},
+                {"faceto", "Face Towards Start", ["→": 0, "↑": 0]},
+                {"goto", "Go To Start", ["→": 0, "↑": 0]},
+                {"hd", "Hide your Head", nil},
+                {"show", "Show your Head", nil},
+                {"beColour", "Set Colour to", [colour: "red"]}
+                ] do %>
+              <div
+                phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => cmd, "args" => vals && Keyword.keys(vals)})}
+                class="flex  items-center p-2 transition-colors rounded pointer-events-auto hover:bg-amber-900/50 group cursor-pointer"
+              >
+                <div class="mr-3 text-amber-400">
+                  <.cmd_icon command={cmd} class="w-8 h-8 fill-brand" />
                 </div>
+                <div class="flex-grow">
+                  <code class="font-mono text-sm text-amber-300"><%= desc %></code>
+                  <p class="text-xs text-[#d80450] flex items-baseline flex-wrap">
+                    <%= cmd %>
+                    <span :if={vals} class="relative grid-cols-3  ">
+                      <input
+                        :for={{arg, val} <- vals}
+                        type="text"
+                        id={"cmdparam-#{cmd}-#{arg}"}
+                        value={val}
+                        defaulted={val}
+                        class="ml-[1ch] border-amber-500/50 bg-amber-500/5  hover:bg-amber-500/10 focus-within:bg-amber-500/15  border-t-0 border-l-0 border-r-0 border-b-2 outline-none focus:border-amber-500 focus:ring-0 text-amber-100 focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
+                        placeholder={arg}
+                        phx-update="ignore"
+                        oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
+                        onclick="event.stopPropagation()"
+                          
+                      />
+                    </span>
+                  </p>
+                  <script>
+                    // Initialize all input fields lengths
+                      window.addEventListener('DOMContentLoaded', () => { document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});});
+                  </script>
+
+                </div>
+              </div>
               <% end %>
             </div>
             <!-- Footer -->
             <div class="pt-4 mt-4 text-center border-t border-amber-600/50">
-              <p class="font-serif text-xs italic text-amber-200/60">
-                Turtle Navigation System v0.8
+              <p class="font-paperlang text-xs italic text-amber-200/60">
+                paperLang v0.8
               </p>
             </div>
           </div>

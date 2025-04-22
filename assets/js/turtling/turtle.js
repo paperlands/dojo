@@ -1,5 +1,6 @@
 import { Parser } from "./mafs/parse.js"
 import { Evaluator } from "./mafs/evaluate.js"
+import { Typesetter } from "./mafs/typist.js"
 import { Versor } from "./mafs/versors.js"
 import { RenderLoop } from "./renderer.js"
 import { Camera } from "./camera.js"
@@ -24,6 +25,7 @@ export class Turtle {
             mv: this.move.bind(this),
             //fn: this.func.bind(this),
             goto: this.goto.bind(this),
+            //iamat: this.iamat.bind(this),
             faceto: this.faceto.bind(this),
             jmpto: this.jmpto.bind(this),
             label: this.label.bind(this),
@@ -32,8 +34,11 @@ export class Turtle {
             fill: this.fill.bind(this),
             wait: this.wait.bind(this),
             limitRecurse: this.setRecurseLimit.bind(this),
+            limitCommand: this.setCommandLimit.bind(this),
             beColour: this.setColor.bind(this)
         };
+
+        this.places = {};
         this.functions = {};
         this.instructions = [];
 
@@ -69,6 +74,9 @@ export class Turtle {
         });
 
         // this.setupContinuousRendering();
+
+        this.typist = new Typesetter(this.ctx)
+
         this.reset();
 
         // Set up animation frame for continuous rendering
@@ -76,16 +84,16 @@ export class Turtle {
         this.camera = new Camera(canvas, {
             pub: () => this.requestRerender()
         })
+
         this.speed = 0
 
         this.rotation = new Versor(1, 0, 0, 0); // Identity quaternion
         // Command execution tracking
         this.commandCount = 0;
         this.recurseCount = 0,
-        this.maxRecurses = 888888;
+        this.maxRecurses = 8888888;
         this.maxCommands = 88888;
         this.maxRecurseDepth = 360
-
 
         //mafs
         this.math = {
@@ -140,6 +148,11 @@ export class Turtle {
 
         // Render only the new paths
         if (newPaths.length > 0) {
+            // const lastClearIndex = newPaths.findLastIndex(path => path.type === "clear");
+            // if (lastClearIndex !== -1) {
+            //     newPaths = newPaths.slice(lastClearIndex);
+            // }
+
             this.drawPaths(this.ctx, newPaths, scale);
         }
 
@@ -148,7 +161,6 @@ export class Turtle {
 
         // Draw turtle on final frame if needed
         if (this.timeline.lastRenderTime > this.timeline.endTime && this.showTurtle) {
-            console.warn("DRAW HEAD")
             this.drawHead(scale);
         }
 
@@ -159,7 +171,6 @@ export class Turtle {
         paths.forEach(path => {
             switch(path.type) {
             case "clear":
-                console.warn(path)
                 ctx.closePath();
                 ctx.save();
                 ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -197,11 +208,34 @@ export class Turtle {
                 }
                 break;
             case "text":
-                ctx.font = `80px paperlang`
-                ctx.strokeStyle = path.color
-                ctx.fillStyle = path.color;
-                ctx.strokeText(path.text, path.points[0][0], path.points[0][1])
-                ctx.fillText(path.text, path.points[0][0], path.points[0][1])
+                ctx.save();
+                //Apply turtle rotation with error handling
+                try {
+                    ctx.translate(path.points[0][0], path.points[0][1])
+                    ctx.transform(
+                        path.text_rotation.a, path.text_rotation.b,
+                        path.text_rotation.c, path.text_rotation.d,
+                        path.text_rotation.e, path.text_rotation.f
+                    );
+                } catch (error) {
+                    console.warn('Error applying turtle rotation:', error);
+                    // Use identity transform if rotation fails
+                    ctx.transform(1, 0, 0, 1, 0, 0);
+                }
+
+                if (typeof path.text === 'string') {
+                    this.typist.write(path.text,
+                                      {x:0, y:0,
+                                       fontSize: path.text_size,
+                                       baseColor: path.color
+                                      })
+                }
+                else {
+                    ctx.font = `${path.text_size||80}px paperLang`
+                    ctx.fillStyle = path.color;
+                    ctx.fillText(path.text, 0, 0)
+                }
+                ctx.restore();
                 break;
             }
 
@@ -351,13 +385,15 @@ export class Turtle {
     }
 
 
-    label(text="⚙"){
+    label(text="⚙", size=10){
         this.currentPath = {
             ...this.pathTemplate,
             type: "text",
             points: [[this.x, this.y, this.z]],
             color: this.color,
-            text: text
+            text: text,
+            text_size: size*10,
+            text_rotation: this.rotation.getTransformValues()
         };
 
         //should outsource to seperate canvas
@@ -437,10 +473,11 @@ export class Turtle {
         }
     }
 
-    callFunction(name, args, ctx, depth =0) {
-        if (depth >= this.maxRecurseDepth) return;
-        // console.log(name , args ,ctx , depth)
-        const func = this.functions[name] || (ctx[name] && this.functions[ctx[name]]);
+    callFunction(name, args, ctx, depth=0) {
+        if (depth > this.maxRecurseDepth) return;
+        // get from local scope first
+        name = ctx[name] || name
+        const func = this.functions[name];
         if (!func)
         {this.callCommand(name, ...args)}
         else
@@ -507,7 +544,33 @@ export class Turtle {
     }
 
     evaluateExpression(expr, context) {
-        if(expr.startsWith("'") || expr.startsWith('"')) return expr.replace(/^['"""']+|['"""']+$/g, '')
+        //string support
+        const quoteRegex = /^(['"])(.*?)\1$/;
+        const quoteMatch = expr.match(quoteRegex);
+        if (quoteMatch) {
+            const [_, quote, stringContent] = quoteMatch;
+
+            // process nested interpolations from inside out "sine is [sin[theta]]"
+            let processed = stringContent;
+            let previous;
+            do {
+                previous = processed;
+                processed = processed.replace(
+                    /\[([^[\]](?:[^[\]]|\[(?:\\.|[^[\]])*\])*)\]/g,
+                    (match, innerExpr) => {
+                        // Skip evaluation if inner expression is wrapped in curly braces
+                        if (innerExpr.trim().match(/^\`.*\`$/)) {
+                            return match;
+                        }
+                        const value = this.evaluateExpression(innerExpr.trim(), context);
+                        return value !== undefined ? String(value) : match;
+                    }
+                );
+            } while (processed !== previous);
+
+            return processed;
+        }
+
         if (this.math.parser.isNumeric(expr)) return parseFloat(expr);
         if (context[expr] != null) return context[expr];
         const tree = this.math.parser.run(expr)
@@ -638,8 +701,12 @@ export class Turtle {
         this.showTurtle = true;
     }
 
-    setRecurseLimit(limit = 360) {
-        this.maxRecurseDepth = limit
+    setRecurseLimit(limit = 361) {
+        this.maxRecurseDepth = limit+1
+    }
+
+    setCommandLimit(limit = 100000) {
+        this.maxCommands = limit
     }
 
     setColor(color = "silver") {
@@ -647,6 +714,7 @@ export class Turtle {
         if (color == "invisible") this.color = "#00000000"
         if (Number.isFinite(color)) this.color = `hsla(${~~(360 * color)}, 70%,  72%, 0.8)`
         if (color == "random") this.color = `hsla(${~~(360 * Math.random())}, 70%,  72%, 0.8)`
+        if(/^([0-9a-f]{3}){1,2}$/i.test(color)) this.color = "#" + color
         //break path for new path
         this.currentPath = null;
     }

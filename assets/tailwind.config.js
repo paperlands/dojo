@@ -25,10 +25,12 @@ module.exports = {
       },
       animation: {
         halfmarquee: 'halfmarquee 30s linear infinite',
-        marquee: 'fullmarquee 30s linear infinite',
+        popin: 'popIn 300ms ease-out forwards',
+        marquee: 'fullmarquee 15s linear infinite',
         gradient: 'gradient-anim 30s ease infinite',
         flicker: 'flicker 1s linear infinite',
-        fade: 'fadeIn 2s ease-in-out',
+        fade: 'fadeIn 1s ease-in-out',
+        fadeawhile: 'fadeWait 5s ease-in',
         fadeout: 'fadeOut 5s forwards',
         glitchy: 'glitchy 5s ease-in-out infinite',
         wiggle: 'wiggle 5s ease-in-out infinite',
@@ -36,6 +38,9 @@ module.exports = {
         typewriter: 'typewriter 2s steps(11) forwards',
         spinslow: 'spin 12s linear infinite',
         caret: 'typewriter 2s steps(11) forwards, blink 1s steps(11) infinite 2s',
+      },
+      fontFamily: {
+        paperlang: ['"paperLang"', "sans-serif"]
       },
       keyframes: {
         typewriter: {
@@ -65,9 +70,23 @@ module.exports = {
           to: {filter: 'grayscale(0)' },
         },
         fadeIn: {
-					from: { opacity: 0 },
-					to: { opacity: 1 },
+					from: { opacity: 0},
+					to: { opacity: 1,},
 				},
+        fadeWait: {
+          '0%': {
+            opacity: '0',
+          },
+          '50%': {
+            opacity: '0',
+          },
+          '75.0%': {
+            opacity: '0.5',
+          },
+          '100%': {
+            opacity: '1',
+          },
+        },
         fadeOut: {
 					from: { opacity: 1 },
 					to: { opacity: 0 },
@@ -82,8 +101,8 @@ module.exports = {
           '100%': {transform: 'translateY(-100%)'}
         },
         fullmarquee: {
-          '0%': {transform: 'translateY(66vh)'},
-          '100%': {transform: 'translateY(-100%)'}
+          '0%': {transform: 'translateX(120%)'},
+          '100%': {transform: 'translateX(-100%)'}
         },
         'gradient-anim': {
           '0%': { backgroundPosition: '0% 0%' },
@@ -128,6 +147,8 @@ module.exports = {
       
     },
   },
+
+
   plugins: [
     require("@tailwindcss/forms"),
     // Allows prefixing tailwind classes with LiveView classes to add rules
