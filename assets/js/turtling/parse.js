@@ -40,7 +40,7 @@ function parseLine(tokens, lines, blockStack) {
         const times = tokens.shift();
         if (tokens.shift() !== 'do') throw new Error("Expected ' do' after 'for'");
         return new ASTNode('Loop', times, parseBlock(lines, blockStack));
-    } else if (command === 'draw') {
+    } else if (command === 'draw' || command === 'def') {
         const funcName = tokens.shift();
         if (tokens.pop() !== 'do') throw new Error("Expected ' do' at the end of 'draw'");
         const args = tokens.map(arg => new ASTNode('Argument', arg));
@@ -151,7 +151,7 @@ export function printAST(ast) {
             node.children.forEach(child => visit(child, indent + 1));
             output.push(`${indentStr}end`);
         } else if (node.type === 'Define') {
-            output.push(`${indentStr}draw ${node.value} ${(node.meta.args || []).map(arg => visit(arg, 0)).join(' ')} do`);
+            output.push(`${indentStr}def ${node.value} ${(node.meta.args || []).map(arg => visit(arg, 0)).join(' ')} do`);
             node.children.forEach(child => visit(child, indent + 1));
             output.push(`${indentStr}end`);
         }

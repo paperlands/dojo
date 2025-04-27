@@ -401,9 +401,10 @@ defmodule DojoWeb.ShellLive do
                 {"label", "Write Something", [text: "'Hello'", size: 10]},
                 {"faceto", "Face Towards Start", ["→": 0, "↑": 0]},
                 {"goto", "Go To Start", ["→": 0, "↑": 0]},
+                {"erase", "Wipe Everything", nil},
                 {"hd", "Hide your Head", nil},
                 {"show", "Show your Head", nil},
-                {"beColour", "Set Colour to", [colour: "red"]}
+                {"beColour", "Set Colour to", [colour: "'red'"]}
                 ] do %>
               <div
                 phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => cmd, "args" => vals && Keyword.keys(vals)})}
