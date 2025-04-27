@@ -53,6 +53,55 @@ def droplet_loader(assigns) do
 
 end
 
+def centering(assigns) do
+  ~H"""
+   <svg xmlns="http://www.w3.org/2000/svg" class={@class} viewBox="0 0 100 100" fill="inherit" stroke="currentColor" 
+      stroke-width="8" 
+      stroke-linecap="round" 
+      stroke-linejoin="round"
+      >
+       <style>
+         .arrow-path {
+           transition: transform 0.3s ease-out;
+         }
+
+         svg:hover .top-left {
+           transform: translate(5px, 5px);
+         }
+
+         svg:hover .top-right {
+           transform: translate(-5px, 5px);
+         }
+
+         svg:hover .bottom-left {
+           transform: translate(5px, -5px);
+         }
+
+         svg:hover .bottom-right {
+           transform: translate(-5px, -5px);
+         }
+       </style>
+
+       <!-- Center circle -->
+       <path class="center-circle" fill="inherit" d="M52.828,47.172c1.562,1.562,1.562,4.095,0,5.657c-1.562,1.562-4.095,1.562-5.657,0c-1.562-1.562-1.562-4.095,0-5.657 C48.734,45.609,51.266,45.609,52.828,47.172z"/>
+
+       <!-- Top Left Arrow -->
+       <path class="arrow-path top-left"  fill="inherit" d="M42.146,34.854L40,37l-5.293-5.293c-0.391-0.391-1.024-0.391-1.414,0l-1.586,1.586c-0.391,0.391-0.391,1.024,0,1.414L37,40 l-2.146,2.146C34.539,42.461,34.762,43,35.207,43H42c0.552,0,1-0.448,1-1v-6.793C43,34.762,42.461,34.539,42.146,34.854z"/>
+
+       <!-- Top Right Arrow -->
+       <path class="arrow-path top-right" fill="inherit" d="M58,43h6.793c0.445,0,0.669-0.539,0.354-0.854L63,40l5.293-5.293c0.391-0.391,0.391-1.024,0-1.414l-1.586-1.586 c-0.391-0.391-1.024-0.391-1.414,0L60,37l-2.146-2.146C57.539,34.539,57,34.762,57,35.207V42C57,42.552,57.448,43,58,43z"/>
+
+       <!-- Bottom Left Arrow -->
+       <path class="arrow-path bottom-left" fill="inherit" d="M42,57h-6.793c-0.445,0-0.669,0.539-0.354,0.854L37,60l-5.293,5.293c-0.391,0.391-0.391,1.024,0,1.414l1.586,1.586 c0.391,0.391,1.024,0.391,1.414,0L40,63l2.146,2.146C42.461,65.461,43,65.238,43,64.793V58C43,57.448,42.552,57,42,57z"/>
+
+       <!-- Bottom Right Arrow -->
+       <path class="arrow-path bottom-right" d="M63,60l2.146-2.146C65.461,57.539,65.238,57,64.793,57H58c-0.552,0-1,0.448-1,1v6.793c0,0.445,0.539,0.669,0.854,0.354L60,63l5.293,5.293c0.391,0.391,1.024,0.391,1.414,0l1.586-1.586c0.391-0.391,0.391-1.024,0-1.414L63,60z"/>
+     </svg>
+
+  """
+
+end
+
 def save(assigns) do
   ~H"""
   <div class="group relative inline-block">

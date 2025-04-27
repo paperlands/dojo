@@ -1,3 +1,4 @@
+import {cameraBridge} from "../bridged.js"
 // Vector2D utils class for canvas & device window ops
 class Vector2D {
     constructor(x = 0, y = 0) {
@@ -74,6 +75,10 @@ class CameraInputHandler {
         // Add event listeners
         this.camera.canvas.addEventListener('mousedown', this.boundMouseDown);
         this.camera.canvas.addEventListener('wheel', this.handleWheel.bind(this));
+
+        cameraBridge.sub((payload) => {
+            if (payload[0] == "recenter") this.camera.state.targetPosition = new Vector2D(0, 0)
+        })
 
         // Touch event listeners
         this.camera.canvas.addEventListener('touchstart', this.boundTouchStart, { passive: false });

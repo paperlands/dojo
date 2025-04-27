@@ -1,7 +1,7 @@
 import { Turtle } from "../turtling/turtle.js"
 import { Terminal } from "../terminal.js"
 import {printAST, parseProgram } from "../turtling/parse.js"
-import {seaBridge} from "../bridged.js" 
+import {seaBridge, cameraBridge} from "../bridged.js"
 import { computePosition, offset, inline, autoUpdate } from "../../vendor/floating-ui.dom.umd.min";
 
 const snippets = [
@@ -25,6 +25,11 @@ Shell = {
       const debouncedRunCode = debounce(this.run, 180);
 
       const cachedVal = loadEditorContent()
+
+
+      this.handleEvent("centerCamera", (details) => {
+        cameraBridge.pub(["recenter", {}])
+      })
 
       this.handleEvent("selfkeepCanvas", (details) => {
         const userFilename = prompt('Enter filename for your PNG:', details.title) || details.title;
