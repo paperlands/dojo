@@ -77,7 +77,10 @@ class CameraInputHandler {
         this.camera.canvas.addEventListener('wheel', this.handleWheel.bind(this));
 
         cameraBridge.sub((payload) => {
-            if (payload[0] == "recenter") this.camera.state.targetPosition = new Vector2D(0, 0)
+            if (payload[0] == "recenter") {
+                this.camera.state.targetPosition = new Vector2D(0, 0)
+                this.camera.state.targetZoom = 500;
+            }
         })
 
         // Touch event listeners

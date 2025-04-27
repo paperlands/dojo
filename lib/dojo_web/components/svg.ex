@@ -55,8 +55,8 @@ end
 
 def centering(assigns) do
   ~H"""
-   <svg xmlns="http://www.w3.org/2000/svg" class={@class} viewBox="0 0 100 100" fill="inherit" stroke="currentColor" 
-      stroke-width="8" 
+   <svg xmlns="http://www.w3.org/2000/svg" class={@class} viewBox="20 20 60 60" fill="inherit" stroke="currentColor" 
+      stroke-width="3" 
       stroke-linecap="round" 
       stroke-linejoin="round"
       >
