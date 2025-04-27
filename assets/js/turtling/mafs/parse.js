@@ -125,12 +125,13 @@ export class Parser {
                 // Cases where we need to insert multiplication:
                 // 1. Number followed by variable: 2x
                 // 2. Number followed by function: 2sin[x]
-                // 3. Variable/closing bracket followed by number: x2 or ]2
-                // 4. Closing bracket followed by variable or function: ]x or ]sin
+                // 3. Closing bracket followed by variable or function: ]x or ]sin
+                // Cases where we should not
+                // 4. Variable/closing bracket followed by number: x2 or ]2
+                // 5. _ followed by number: n_2 (snake case) or n-2 (kebab case)
                 if (
                     (this.isNumeric(current) && (this.isVariable(next) || this.isFunction(next))) ||
-                    ((this.isVariable(current) || current === ']') && this.isNumeric(next)) ||
-                    (current === ']' && (this.isVariable(next) || this.isFunction(next)))
+                        (current === ']' && (this.isVariable(next) || this.isFunction(next)))
                 ) {
                     result.push('*');
                 }
