@@ -44,6 +44,9 @@ defmodule DojoWeb.ShellLive do
   end
 
   defp join_clan(socket, clan) do
+
+    Process.send_after(self(), :refreshDisciples, 200)
+
     socket
     |> assign(clan: clan)
     |> start_async(:list_disciples, fn -> Dojo.Class.list_disciples("shell:" <> clan) end)
@@ -113,17 +116,23 @@ defmodule DojoWeb.ShellLive do
      |> assign(focused_phx_ref: focused_phx_ref)}
   end
 
+  # lets move this towards an async pull based pattern
   def handle_info(:refreshDisciples, %{assigns: %{disciples: dis, visible_disciples: visible_dis}} = socket) do
-    Process.send_after(self(), :refreshDisciples, 1500)
+    Process.send_after(self(), :refreshDisciples, 3000)
     new_dis = Enum.reduce(visible_dis, dis, fn ref, acc ->
-      case dis[ref] && Dojo.Table.last(dis[ref][:node], :hatch) do
-        nil -> acc
-        #check time on genserver before update case do
-        %{path: path} ->
-          put_in(acc, [ref, :meta], %{path: path})
+      try do
+        case dis[ref] && Dojo.Table.last(dis[ref][:node], :hatch) do
+          nil -> acc
+          %{path: path} ->
+            put_in(acc, [ref, :meta], %{path: path})
+          _ -> acc  # Catch-all for any other unexpected return values
+        end
+      catch
+        _kind, _error ->
+          # Skip this disciple if Dojo.Table.last throws an error
+          acc
       end
     end)
-
     {:noreply,
      socket
      |> assign(disciples: new_dis)}
@@ -296,7 +305,6 @@ defmodule DojoWeb.ShellLive do
 
   # Handle the viewport update event from the hook
   def handle_event("seeDisciples", %{"visible_disciples" => visible_refs }, %{assigns: %{disciples: _dis}} = socket) do
-    Process.send_after(self(), :refreshDisciples, 200)
     {:noreply, assign(socket, visible_disciples: visible_refs)}
   end
 
