@@ -1,5 +1,5 @@
 <div class="relative max-h-dvh overflow-hidden bg-black">
-  <!-- Canvas background -->
+  <!-- Canvas background bg-[#fdf6e3]-->
   <canvas phx-update="ignore" id="canvas" class="fixed w-full h-full bg-inherit"></canvas>
   <canvas
     :if={@outershell && @outershell.resp}
@@ -107,7 +107,24 @@
 
   <!-- Command buttons always aligned to right and given prio -->
   <div class="flex flex-shrink-0 z-30 ml-auto cursor-pointer pointer-events-auto">
-         <button class="relative w-8 h-8 border-2 border-brand/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation" phx-click={JS.dispatch("phx:centerCamera", detail: %{})}>
+
+    <button id="endrecording" class="relative hidden w-8 h-8 border-2 border-brand/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation"
+      phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "end_record"})
+        |> JS.hide(to: "#endrecording")
+        |> JS.show(to: "#startrecording")}
+      >
+
+      <.record class="w-5 h-5 animate-rotate transition-transform duration-700  fill-red-800 text-amber-400/50 hover:rotate-[-40deg]"/>
+    </button>
+
+    <button id="startrecording" class="relative w-8 h-8 border-2 border-brand/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation" phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "start_record"})
+      |> JS.hide(to: "#startrecording")
+      |> JS.show(to: "#endrecording")}
+    >
+
+      <.record class="w-5 h-5 transition-transform duration-700  fill-amber-400 text-amber-400/50 hover:rotate-[-40deg]"/>
+    </button>
+         <button class="relative w-8 h-8 border-2 border-brand/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation" phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "center_camera"})}>
             <.centering class="w-5 h-5 transition-transform duration-700  fill-amber-400 text-amber-400/50 hover:rotate-[-40deg]"/>
           </button>
 

@@ -25,6 +25,7 @@ module.exports = {
       },
       animation: {
         halfmarquee: 'halfmarquee 30s linear infinite',
+        rotate: 'rotateanimation 3s infinite',
         popin: 'popIn 300ms ease-out forwards',
         marquee: 'fullmarquee 15s linear infinite',
         gradient: 'gradient-anim 30s ease infinite',
@@ -43,6 +44,10 @@ module.exports = {
         paperlang: ['"paperLang"', "sans-serif"]
       },
       keyframes: {
+        rotateanimation: {
+          '0%': { transform: 'rotate(-360deg)' },
+          '100%': { transform: 'rotate(360deg)' },
+        },
         typewriter: {
           to: {
             left: '100%',

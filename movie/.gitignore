@@ -1,0 +1,7 @@
+
+# Ignore all directories (subfolders)
+*/
+
+# But do not ignore files in the current directory
+!*/
+!*.*

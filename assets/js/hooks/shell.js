@@ -27,8 +27,21 @@ Shell = {
       const cachedVal = loadEditorContent()
 
 
-      this.handleEvent("centerCamera", (details) => {
-        cameraBridge.pub(["recenter", {}])
+      this.handleEvent("relayCamera", (details) => {
+        switch (details.command) {
+        case 'center_camera':
+          cameraBridge.pub(["recenter", {}])
+          break;
+        case 'start_record':
+          cameraBridge.pub(["record", {}])
+          break;
+        case 'end_record':
+          cameraBridge.pub(["endrecord", {}])
+          break;
+        default:
+          //nothing
+
+            }
       })
 
       this.handleEvent("selfkeepCanvas", (details) => {

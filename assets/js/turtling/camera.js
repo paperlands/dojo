@@ -1,4 +1,5 @@
 import {cameraBridge} from "../bridged.js"
+import {CameraRecorder} from "./export/recorder.js"
 // Vector2D utils class for canvas & device window ops
 class Vector2D {
     constructor(x = 0, y = 0) {
@@ -75,13 +76,6 @@ class CameraInputHandler {
         // Add event listeners
         this.camera.canvas.addEventListener('mousedown', this.boundMouseDown);
         this.camera.canvas.addEventListener('wheel', this.handleWheel.bind(this));
-
-        cameraBridge.sub((payload) => {
-            if (payload[0] == "recenter") {
-                this.camera.state.targetPosition = new Vector2D(0, 0)
-                this.camera.state.targetZoom = 500;
-            }
-        })
 
         // Touch event listeners
         this.camera.canvas.addEventListener('touchstart', this.boundTouchStart, { passive: false });
@@ -324,6 +318,42 @@ export class Camera {
             (e) => this.inputHandler.handleMouseDown(e));
         this.canvas.addEventListener('wheel',
             (e) => this.inputHandler.handleWheel(e));
+
+        cameraBridge.sub((payload) => {
+            switch (payload[0]) {
+            case 'recenter':
+                this.state.targetPosition = new Vector2D(0, 0)
+                this.state.targetZoom = 500;
+                break;
+            case 'record':
+                this.beginRecording()
+                break;
+            case 'endrecord':
+                this.endRecording()
+                break;
+            default:
+            }
+        })
+    }
+
+
+    beginRecording() {
+        this.recorder = new CameraRecorder({
+            canvas: this.canvas,
+            framerate: 24,
+            filename: 'animate'
+        });
+
+        this.recorder.start();
+
+    }
+
+    endRecording() {
+
+        this.recorder.stop()
+        this.recorder.destroy();
+
+
     }
 
     startSmoothAnimation() {
