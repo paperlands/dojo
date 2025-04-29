@@ -1,7 +1,7 @@
 #!/bin/bash
 # This script converts a sequence of numbered image files to various formats
 # with support for dimensions, alpha transparency, and multiple encoding options
-
+# ../imaginator.sh  -i animate-00%03d.png -o dance.gif --format gif  --optimize 3 --gif-dither sierra2_4a --format gif --gif-colors 0
 # Default values
 INPUT_PATTERN="img%04d.png"  # Default input pattern
 OUTPUT_FILE="output.mp4"     # Default output filename
@@ -193,7 +193,7 @@ generate_palette() {
 
     # Add transparency handling if requested
     if [ "$GIF_TRANSPARENCY" == "1" ]; then
-        filters="$filters,palettegen=reserve_transparent=1:stats_mode=diff"
+        filters="$filters,palettegen=reserve_transparent=1:stats_mode=full"
     else
         filters="$filters,palettegen=stats_mode=full"
     fi
@@ -265,8 +265,14 @@ optimize_gif() {
     local temp_gif="$TEMP_DIR/optimized.gif"
 
     # Run gifsicle
-    gifsicle $optimization_args $lossy_args --colors $GIF_COLORS "$OUTPUT_FILE" -o "$temp_gif"
+    #gifsicle $optimization_args $lossy_args --colors $GIF_COLORS "$OUTPUT_FILE" -o "$temp_gif"
 
+    if [ "$GIF_COLORS" -eq 0 ]; then
+        colors_arg="--colors 0"
+    else
+        colors_arg="--colors $GIF_COLORS"
+    fi
+    gifsicle $optimization_args $lossy_args $colors_arg "$OUTPUT_FILE" -o "$temp_gif"
     if [ $? -eq 0 ]; then
         # Replace original with optimized version
         mv "$temp_gif" "$OUTPUT_FILE"
