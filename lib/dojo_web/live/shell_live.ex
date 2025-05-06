@@ -154,6 +154,17 @@ defmodule DojoWeb.ShellLive do
      |> assign(disciples: active_dis)}
   end
 
+  def handle_info({Dojo.Controls, command, arg}, socket) do
+
+    {:noreply, socket |> push_event("mutateShell", %{"command" => command, "args" => arg})}
+  end
+
+  def handle_info(event, socket) do
+    IO.inspect(event, label: "pokemon catch event")
+
+    {:noreply, socket}
+  end
+
   # def handle_event(
   #       "tellTurtle",
   #       %{"cmd" => cmd},

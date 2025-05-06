@@ -22,7 +22,7 @@ Shell = {
       const turtle = new Turtle(canvas);
       const shell = new Terminal(this.el, CodeMirror).init();
       // set up event listeners
-      const debouncedRunCode = debounce(this.run, 180);
+      const debouncedRunCode = debounce(this.run, 150);
 
       const cachedVal = loadEditorContent()
 
@@ -135,6 +135,96 @@ Shell = {
             marker.clear();
           }, 1500); // Duration of the flash effect (1.5 seconds)
         }
+      });
+
+      this.handleEvent("mutateShell", (instruction) => {
+        const cmd = instruction["command"];
+        const args = instruction["args"];
+
+        switch (cmd) {
+        case "undo":
+          shell.undo();
+          break;
+        default:
+          const doc = shell.getDoc();
+          const cursor = doc.getCursor(); // gets the line number in the cursor position
+          const line = doc.getLine(cursor.line); // get the line contents
+          const token = shell.getTokenAt(shell.getCursor());
+
+          // Check if the current line starts with the command
+          const currentLineCommand = line.trim().split(" ")[0];
+
+          if (currentLineCommand === cmd) {
+            // Replace the current line if the command matches
+            const startPos = {
+              line: cursor.line,
+              ch: 0
+            };
+
+            const endPos = {
+              line: cursor.line,
+              ch: line.length
+            };
+
+            // Construct the new line with proper indentation and arguments
+            let newLine = "".padEnd(token.state.indented) + cmd;
+            if (args && args.length > 0) {
+              const argstr = args.reduce((acc, arg) => {
+                acc += " " + arg;
+                return acc;
+              }, "");
+              newLine += argstr;
+            }
+
+            // Replace the current line
+            doc.replaceRange(newLine, startPos, endPos);
+
+            // Create a marker for the modified line
+            const marker = doc.markText(
+              {line: cursor.line, ch: 0},
+              {line: cursor.line, ch: doc.getLine(cursor.line).length},
+              {className: 'flash-highlight'}
+            );
+
+            // Remove the marker after a delay
+            setTimeout(() => {
+              marker.clear();
+            }, 500); // Duration of the flash effect (1.5 seconds)
+
+          } else {
+            // Append a new line as in the original behavior
+            const pos = { // create a new object to avoid mutation of the original selection
+              line: cursor.line,
+              ch: line.length // set the character position to the end of the line
+            };
+
+            if (args && args.length > 0) {
+              const argstr = args.reduce((acc, arg) => {
+                acc += " " + arg;
+                return acc;
+              }, "");
+              doc.replaceRange("\n".padEnd(1+token.state.indented) + cmd + argstr, pos);
+            } else {
+              doc.replaceRange("\n".padEnd(1+token.state.indented) + cmd, pos);
+            }
+
+            // Get the new line number (cursor.line + 1)
+            const newLineNumber = cursor.line + 1;
+
+            // Create a marker for the new line
+            const marker = doc.markText(
+              {line: newLineNumber, ch: 0},
+              {line: newLineNumber, ch: doc.getLine(newLineNumber).length},
+              {className: 'flash-highlight'}
+            );
+
+            // Remove the marker after a delay
+            setTimeout(() => {
+              marker.clear();
+            }, 1000); // Duration of the flash effect
+          }
+        }
+
       });
 
       // seabridge dispatcher babyy

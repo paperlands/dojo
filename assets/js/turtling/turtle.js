@@ -182,7 +182,8 @@ export class Turtle {
                 // Start drawing a new path
                 ctx.beginPath();
                 ctx.strokeStyle = path.color || 'DarkOrange';
-                ctx.lineWidth = 2/scale
+                ctx.shadowColor = path.color || "DarkOrange";
+                ctx.lineWidth = 5/scale
 
                 try {
                     // Iterate through each point in the path
@@ -598,8 +599,8 @@ export class Turtle {
         this.ctx.fillStyle = 'DarkOrange';
         this.ctx.textAlign = "center";
         this.ctx.textBaseline = "middle";
-        // this.ctx.shadowBlur = 8;
-        // this.ctx.shadowColor = "white";
+        this.ctx.shadowBlur = 10;
+        this.ctx.shadowColor = "DarkOrange";
         this.ctx.imageSmoothingEnabled = false;
         this.ctx.lineCap = 'round';
         this.ctx.lineJoin = 'round'
