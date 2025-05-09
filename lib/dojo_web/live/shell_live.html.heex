@@ -1,4 +1,4 @@
-<div class="relative max-h-dvh overflow-hidden bg-black">
+<div class="relative max-h-dvh overflow-hidden bg-base-200">
   <!-- Canvas background bg-[#fdf6e3]-->
   <canvas phx-update="ignore" id="canvas" class="fixed w-full h-full bg-inherit"></canvas>
   <canvas
@@ -19,14 +19,14 @@
       <div class="fixed flex pointer-events-auto">
         <!-- Example bookmarks -->
         <div
-          class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none outline outline-1 outline-gray-500 text-brand hover:bg-amber-400 hover:text-black"
+          class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none outline outline-1 outline-gray-500 text-primary hover:bg-amber-400 hover:text-black"
           phx-click="seeTurtle"
         >
           ~
         </div>
         <div
           :for={%{"value" => value} <- @myfunctions}
-          class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none outline outline-1 outline-gray-500 text-brand hover:bg-yellow-300"
+          class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none outline outline-1 outline-gray-500 text-primary hover:bg-yellow-300"
           phx-click="seeTurtle"
           phx-value-function={value}
         >
@@ -42,7 +42,7 @@
       class="my-6 rounded-sm pointer-events-auto dark-scrollbar [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-text bg-amber-600/5 border-amber-600/20 h-[80dvh]"
     >
       <div phx-click="flipWell">
-      <.folders :if={false}  class="absolute top-5 right-6 w-5 h-5  fill-brand/50 hover:fill-amber-400 cursor-pointer" />
+      <.folders :if={false}  class="absolute top-5 right-6 w-5 h-5  fill-primary/50 hover:fill-amber-400 cursor-pointer" />
         </div>
       <div class="relative z-10">
         <.slider slider_value="50" />
@@ -53,7 +53,7 @@
     <div
       phx-update="ignore"
       id="output"
-      class="fixed bottom-0 overflow-y-auto font-mono border-none text-brand left-2"
+      class="fixed bottom-0 overflow-y-auto font-mono border-none text-primary left-2"
     >
     </div>
   </div>
@@ -86,7 +86,7 @@
       </.link>
     </div>
 
-    <div :if={@session.name} class="fixed font-mono right-4 text-amber-400 bg-transparent bg-opacity-80 border border-none rounded px-2 py-1 shadow-lg w-1/2 max-w-xs">
+    <div :if={@session.name} class="fixed font-mono right-4 text-amber-400/80 bg-transparent  border border-none rounded px-2 py-1 shadow-lg w-1/2 max-w-xs">
       <!-- Welcome message row -->
       <div class="flex items-center text-xs mb-1 border-b border-amber-800 pb-1 overflow-hidden">
         <span class="flex items-center">
@@ -108,7 +108,7 @@
   <!-- Command buttons always aligned to right and given prio -->
   <div class="flex flex-shrink-0 z-30 ml-auto cursor-pointer pointer-events-auto">
 
-    <button id="endrecording" class="relative hidden w-8 h-8 border-2 border-brand/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation"
+    <button id="endrecording" class="relative hidden w-8 h-8 border-2 border-primary/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
       phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "end_record"})
         |> JS.hide(to: "#endrecording")
         |> JS.show(to: "#startrecording")}
@@ -117,23 +117,23 @@
       <.record class="w-5 h-5 animate-rotate transition-transform duration-700  fill-red-800 text-amber-400/50 hover:rotate-[-40deg]"/>
     </button>
 
-    <button id="startrecording" class="relative w-8 h-8 border-2 border-brand/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation" phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "start_record"})
+    <button id="startrecording" class="relative w-8 h-8 border-2 border-primary/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation" phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "start_record"})
       |> JS.hide(to: "#startrecording")
       |> JS.show(to: "#endrecording")}
     >
 
       <.record class="w-5 h-5 transition-transform duration-700  fill-amber-400 text-amber-400/50 hover:rotate-[-40deg]"/>
     </button>
-         <button class="relative w-8 h-8 border-2 border-brand/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation" phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "center_camera"})}>
+         <button class="relative w-8 h-8 border-2 border-primary/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation" phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "center_camera"})}>
             <.centering class="w-5 h-5 transition-transform duration-700  fill-amber-400 text-amber-400/50 hover:rotate-[-40deg]"/>
           </button>
 
-          <button class="relative w-8 h-8 border-2 border-brand/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation"
+          <button class="relative w-8 h-8 border-2 border-primary/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
             phx-click={@outershell && JS.dispatch("phx:outerkeepCanvas", detail: %{"title" => @outershell.resp <>  "'s " <> @outershell.title}) || JS.dispatch("phx:selfkeepCanvas", detail: %{"title" =>  @session.name <> "'s " <> @mytitle})}>
-            <.save class="w-5 h-5 sm:w-3 sm:h-3 fill-brand/50 text-amber-400"/>
+            <.save class="w-5 h-5 sm:w-3 sm:h-3 fill-primary/50 text-amber-400"/>
           </button>
 
-          <button class="relative w-8 h-8 border-2 border-brand/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation" phx-click="flipDeck">
+          <button class="relative w-8 h-8 border-2 border-primary/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation" phx-click="flipDeck">
             <.manual class="w-5 h-5 transition-transform duration-700 rotate-[-60deg] cursor-help fill-amber-400 text-amber-400/50 hover:rotate-[-40deg]"/>
           </button>
 
@@ -209,7 +209,7 @@
   phx-hook="Sensei"
 >
   <svg
-    class={"z-[60] w-6 h-6  text-brand/50 items-center flex  m-auto  rounded-lg shadow-xl backdrop-blur-sm transform transition-transform duration-300 hover:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
+    class={"z-60 w-6 h-6  text-primary/50 items-center flex  m-auto  rounded-lg shadow-xl backdrop-blur-sm transform transition-transform duration-300 hover:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
     phx-click="flipPane"
     viewBox="0 0 24 24"
     fill="none"
@@ -231,7 +231,7 @@
       name="hero-cursor-arrow-ripple"
       phx-click="toggle-focus"
       phx-value-disciple-phx_ref={phx_ref}
-      class="cursor-pointer pointer-events-auto text-brand"
+      class="cursor-pointer pointer-events-auto text-primary"
     />
     <div
       phx-click="seeTurtle"

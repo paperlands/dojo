@@ -364,7 +364,7 @@ defmodule DojoWeb.ShellLive do
     <!-- Command Deck Component (command_deck.html.heex) -->
     <div class={["absolute flex px-1 pb-1 right-5 bottom-5  animate-fade", !@active && "hidden"]}>
       <!-- Command Deck Panel -->
-        <div class="fixed w-64 transition-all duration-500  ease-in-out transform rounded-lg shadow-xl right-5 bottom-20 xl:h-2/3 bg-brand-900/70  h-1/2 scrollbar-hide dark-scrollbar">
+        <div class="fixed w-64 transition-all duration-500  ease-in-out transform rounded-lg shadow-xl right-5 bottom-20 xl:h-2/3 bg-primary-900/70  h-1/2 scrollbar-hide dark-scrollbar">
           <div class="h-full p-4">
             <!-- Header -->
             <div class="flex items-center justify-between mb-4">
@@ -376,7 +376,7 @@ defmodule DojoWeb.ShellLive do
               phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
             >
               <div class="relative">
-                <button class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-brand/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
+                <button class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-primary/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
                   <svg
                     class="w-4 h-4 text-amber-400"
                     viewBox="0 0 24 24"
@@ -419,7 +419,7 @@ defmodule DojoWeb.ShellLive do
                 class="flex  items-center p-2 transition-colors rounded pointer-events-auto hover:bg-amber-900/50 group cursor-pointer"
               >
                 <div class="mr-3 text-amber-400">
-                  <.cmd_icon command={cmd} class="w-8 h-8 fill-brand" />
+                  <.cmd_icon command={cmd} class="w-8 h-8 fill-primary" />
                 </div>
                 <div class="flex-grow">
                   <code class="font-mono text-sm text-amber-300"><%= desc %></code>
@@ -477,7 +477,7 @@ defmodule DojoWeb.ShellLive do
 
         <!-- View Toggle -->
         <div class="flex space-x-2">
-          <button phx-click="store-memory" class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-brand/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
+          <button phx-click="store-memory" class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-primary/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
             <.save class="w-4 h-4 text-amber-400" />
           </button>
         </div>
@@ -487,7 +487,7 @@ defmodule DojoWeb.ShellLive do
       <div class="flex-1 overflow-y-auto p-2 dark-scrollbar">
         <div class="space-y-3">
           <%= for mmr <- @memories do %>
-          <div :if={Map.has_key?(mmr, :meta)} class="flex items-center p-3 transition-colors rounded-lg bg-brand-900/70 hover:bg-brand-800/70">
+          <div :if={Map.has_key?(mmr, :meta)} class="flex items-center p-3 transition-colors rounded-lg bg-primary-900/70 hover:bg-primary-800/70">
             <!-- Thumbnail -->
             <div class="flex-shrink-0 w-16 h-16 mr-4 overflow-hidden rounded">
               <img src={mmr.meta.path}  class="object-cover w-full h-full" />
@@ -646,7 +646,7 @@ defmodule DojoWeb.ShellLive do
   defp is_main_focus(phx_ref, focused_phx_ref) do
     case phx_ref do
       ^focused_phx_ref -> " scale-150"
-      _ -> " border-brand"
+      _ -> " border-primary"
     end
   end
 
