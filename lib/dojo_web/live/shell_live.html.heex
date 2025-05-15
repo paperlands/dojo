@@ -1,4 +1,4 @@
-<div class="relative max-h-dvh overflow-hidden bg-base-200">
+<div class="relative max-h-dvh overflow-hidden bg-canvas">
   <!-- Canvas background bg-[#fdf6e3]-->
   <canvas phx-update="ignore" id="canvas" class="fixed w-full h-full bg-inherit"></canvas>
   <canvas
@@ -205,7 +205,7 @@
 <%!-- Turtle viewing pane toggle icon --%>
 <div
   id="paneflip"
-  class="fixed z-50 -translate-x-1/2 pointer-events-auto  transition-transform duration-300 pointer-events-none bottom-2 left-1/2"
+  class="fixed z-50 -translate-x-1/2 pointer-events-auto  transition-transform duration-300 pointer-events-auto bottom-2 left-1/2"
   phx-hook="Sensei"
 >
   <svg

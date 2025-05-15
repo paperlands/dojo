@@ -19,14 +19,15 @@
   We ship with two themes, a light one inspired on Phoenix colors and a dark one inspired
   on Elixir colors. Build your own at: https://daisyui.com/theme-generator/ */
 @plugin "../vendor/daisyui-theme" {
-  name: "dark";
+  name: "light";
   default: false;
   prefersdark: true;
-  color-scheme: "dark";
-  --color-base-100: oklch(30.33% 0.016 252.42);
-  --color-base-200: oklch(25.26% 0.014 253.1);
-  --color-base-300: oklch(20.15% 0.012 254.09);
+  color-scheme: "light";
+  --color-base-100: oklch(98% 0 0);
+  --color-base-200: oklch(96% 0.001 286.375);
+  --color-base-300: oklch(92% 0.004 286.32);
   --color-base-content: oklch(97.807% 0.029 256.847);
+  --color-canvas: #fdf6e3;
   --color-primary: oklch(0.77 0.1629 60.28);
   --color-primary-content: oklch(96% 0.018 272.314);
   --color-secondary: oklch(58% 0.233 277.117);
@@ -54,14 +55,15 @@
 }
 
 @plugin "../vendor/daisyui-theme" {
-  name: "light";
+  name: "dark";
   default: true;
   prefersdark: false;
-  color-scheme: "light";
-  --color-base-100: oklch(98% 0 0);
-  --color-base-200: oklch(96% 0.001 286.375);
-  --color-base-300: oklch(92% 0.004 286.32);
+  color-scheme: "dark";
+  --color-base-100: oklch(30.33% 0.016 252.42);
+  --color-base-200: oklch(25.26% 0.014 253.1);
+  --color-base-300: oklch(20.15% 0.012 254.09);
   --color-base-content: oklch(21% 0.006 285.885);
+  --color-canvas: #000000;
   --color-primary: oklch(0.77 0.1629 60.28);
   --color-primary-content: oklch(98% 0.016 73.684);
   --color-secondary: oklch(55% 0.027 264.364);
@@ -124,7 +126,7 @@
 
 @theme {
   --color-brand: #FF9933;
-  --color-ink: #1E1024;
+  --color-canvas: #1E1024;
 }
 
 /* add the code bellow */
@@ -278,10 +280,13 @@
       0 0 20px rgba(200, 200, 255, 0.5),
       0 2px 3px #00664f;
   }
-  20%, 21.9%, 63%, 63.9%, 65%, 69.9% {
+
+   20%, 21.9%, 63%, 63.9%, 65%, 69.9% {
     opacity: 0.4;
     text-shadow: none;
   }
+}
+
 
   /* Animate utils */
 
