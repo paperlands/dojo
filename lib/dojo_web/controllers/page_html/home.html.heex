@@ -307,16 +307,11 @@ hr {
 }
 </style>
 <.flash_group flash={@flash} />
-<div class="left-[40rem] fixed inset-y-0 right-0 z-0 hidden lg:block xl:left-[50rem]">
+<div class="left-[40rem] text-zinc-100 fixed inset-y-0 right-0 z-0 hidden lg:block xl:left-[50rem]">
 <div class="bgimg">
   <div class="middle">
     <div class="wrap">
-    <div class="bg">
-      <div class="loading">
-       <span class="title">Enter the Dojo </span>
-        <span class="text"><%= assigns[:reason] && @reason.message || "▅▓░ 🪷 ░▓" %></span>
-      </div>
-    </div>
+
   </div>
     <hr>
     <p id="demo" style="font-size:30px"></p>
@@ -326,36 +321,39 @@ hr {
   </div>
 </div>
 </div>
-<div class="px-4 py-10 bg-white sm:px-6 sm:py-28 lg:px-8 xl:px-28 xl:py-32">
+<div class="px-4 py-10 bg-canvas sm:px-6 sm:py-28 lg:px-8 xl:px-28 xl:py-32">
   <div class="mx-auto max-w-xl lg:mx-0">
     <svg viewBox="0 0 100 47" class="h-20" aria-hidden="true">
      <image xlink:href="/images/logo.svg" width="100" height="88"/>
     </svg>
     <h1 class="text-brand mt-10 flex items-center text-sm font-semibold leading-6">
       Paperland
-      <small class="bg-brand text-[0.8125rem] ml-3 rounded-full px-2 font-medium leading-6">
+      <small class=" text-[0.8125rem] ml-3 rounded-full px-2 font-medium leading-6">
         v<%= Application.spec(:dojo, :vsn) %>
       </small>
+      <div class="mx-2" />
+      <.theme_toggle />
     </h1>
-    <p class="text-[3em] mt-4 font-semibold leading-10 tracking-tighter text-zinc-900">
+
+    <p class="text-[3em] mt-4 font-semibold leading-10 tracking-tighter text-base-100">
       Welcome to the Dojo
     </p>
-    <p class="mt-4 text-base leading-7 text-zinc-600">
-      do computers dream in maths
+    <p class="mt-4 text-base leading-7 text-base-200">
+      wrestling with math together
     </p>
     <div class="flex">
-      <div class="w-full sm:w-auto">
-        <div class="mt-10 grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
+      <div class="w-full text-base-100 sm:w-auto">
+        <div class="mt-10  grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
           <.link
             navigate={~p"/welcome"}
-            class="group relative rounded-2xl px-6 py-4 text-sm font-semibold leading-6 text-zinc-900 sm:py-6"
+            class="group relative rounded-2xl px-6 py-4 text-sm font-semibold leading-6 fill-base-100 sm:py-6"
           >
-            <span class="absolute inset-0 rounded-2xl bg-zinc-50 transition group-hover:bg-zinc-100 sm:group-hover:scale-105">
+            <span class="absolute inset-0 rounded-2xl transition group-hover:bg-zinc-100 sm:group-hover:scale-105">
             </span>
             <span class="relative flex items-center gap-4 sm:flex-col">
-              <svg viewBox="0 0 300 300" fill="none" aria-hidden="true" class="h-6 w-6">
+              <svg viewBox="0 0 300 300" fill="none" aria-hidden="true" class="h-6 w-6 fill-base-100">
 <g transform="translate(0.000000,428.000000) scale(0.100000,-0.100000)"
-fill="#000000" stroke="none">
+ stroke="none">
 <path d="M150 2660 l0 -1430 415 0 415 0 0 -590 0 -590 885 0 885 0 0 1430 0
 1430 -415 0 -415 0 0 590 0 590 -885 0 -885 0 0 -1430z m1445 1404 c-196 -35
 -406 -114 -581 -220 -140 -83 -198 -128 -328 -254 -246 -238 -413 -530 -485
@@ -416,17 +414,17 @@ c-3 -9 -163 -12 -757 -11 l-753 1 111 23 c466 95 868 368 1127 765 122 187
            </.link>
           <a
             href="https://github.com/deusludum/dojo/"
-            class="group relative rounded-2xl px-6 py-4 text-sm font-semibold leading-6 text-zinc-900 sm:py-6"
+            class="group relative rounded-2xl px-6 py-4 text-sm font-semibold leading-6  sm:py-6"
           >
-            <span class="absolute inset-0 rounded-2xl bg-zinc-50 transition group-hover:bg-zinc-100 sm:group-hover:scale-105">
+            <span class="absolute inset-0 rounded-2xl  transition  group-hover:bg-zinc-100 sm:group-hover:scale-105">
             </span>
             <span class="relative flex items-center gap-4 sm:flex-col">
-              <svg viewBox="0 0 24 24" aria-hidden="true" class="h-6 w-6">
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="h-6 w-6 fill-base-100">
                 <path
                   fill-rule="evenodd"
                   clip-rule="evenodd"
                   d="M12 0C5.37 0 0 5.506 0 12.303c0 5.445 3.435 10.043 8.205 11.674.6.107.825-.262.825-.585 0-.292-.015-1.261-.015-2.291C6 21.67 5.22 20.346 4.98 19.654c-.135-.354-.72-1.446-1.23-1.738-.42-.23-1.02-.8-.015-.815.945-.015 1.62.892 1.845 1.261 1.08 1.86 2.805 1.338 3.495 1.015.105-.8.42-1.338.765-1.645-2.67-.308-5.46-1.37-5.46-6.075 0-1.338.465-2.446 1.23-3.307-.12-.308-.54-1.569.12-3.26 0 0 1.005-.323 3.3 1.26.96-.276 1.98-.415 3-.415s2.04.139 3 .416c2.295-1.6 3.3-1.261 3.3-1.261.66 1.691.24 2.952.12 3.26.765.861 1.23 1.953 1.23 3.307 0 4.721-2.805 5.767-5.475 6.075.435.384.81 1.122.81 2.276 0 1.645-.015 2.968-.015 3.383 0 .323.225.707.825.585a12.047 12.047 0 0 0 5.919-4.489A12.536 12.536 0 0 0 24 12.304C24 5.505 18.63 0 12 0Z"
-                  fill="#18181B"
+
                 />
               </svg>
               Source Code
@@ -434,9 +432,9 @@ c-3 -9 -163 -12 -757 -11 l-753 1 111 23 c466 95 868 368 1127 765 122 187
           </a>
           <a
             href={"https://paperlands.github.io"}
-            class="group relative rounded-2xl px-6 py-4 text-sm font-semibold leading-6 text-zinc-900 sm:py-6"
+            class="group relative rounded-2xl px-6 py-4 text-sm font-semibold leading-6  sm:py-6"
           >
-            <span class="absolute inset-0 rounded-2xl bg-zinc-50 transition group-hover:bg-zinc-100 sm:group-hover:scale-105">
+            <span class="absolute inset-0 rounded-2xl  transition group-hover:bg-zinc-100 sm:group-hover:scale-105">
             </span>
             <span class="relative flex items-center gap-4 sm:flex-col">
             <svg
@@ -451,7 +449,7 @@ c-3 -9 -163 -12 -757 -11 l-753 1 111 23 c466 95 868 368 1127 765 122 187
             </span>
           </a>
         </div>
-        <.theme_toggle />
+
 
       </div>
     </div>
