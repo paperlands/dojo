@@ -395,11 +395,11 @@ defmodule DojoWeb.ShellLive do
     <!-- Command Deck Component (command_deck.html.heex) -->
     <div class={["absolute flex px-1 pb-1 right-5 bottom-5  animate-fade", !@active && "hidden"]}>
       <!-- Command Deck Panel -->
-      <div class="fixed w-64 transition-all duration-500  ease-in-out transform rounded-lg shadow-xl right-5 bottom-20 xl:h-2/3 bg-primary-900/70  h-1/2 scrollbar-hide dark-scrollbar">
+      <div class="fixed w-64 transition-all duration-500  ease-in-out transform rounded-lg right-5 bottom-20 xl:h-2/3 bg-primary-900/70  h-1/2 scrollbar-hide dark-scrollbar">
         <div class="h-full p-4">
           <!-- Header -->
           <div class="flex items-center justify-between mb-4">
-            <h2 class="text-xl font-bold text-amber-200">Command Deck</h2>
+            <h2 class="text-primary-content font-bold text-amber-200">Command Deck</h2>
           </div>
           <%!-- Undo button --%>
           <div
@@ -407,9 +407,9 @@ defmodule DojoWeb.ShellLive do
             phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
           >
             <div class="relative">
-              <button class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-primary/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
+              <button class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-primary-content/50 backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
                 <svg
-                  class="w-4 h-4 text-amber-400"
+                  class="w-4 h-4 text-primary-content"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -451,13 +451,13 @@ defmodule DojoWeb.ShellLive do
                     detail: %{"command" => cmd, "args" => vals && Keyword.keys(vals)}
                   )
                 }
-                class="flex  items-center p-2 transition-colors rounded pointer-events-auto hover:bg-amber-900/50 group cursor-pointer"
+                class="flex items-center p-2 transition-colors rounded pointer-events-auto hover:bg-primary/50 group cursor-pointer"
               >
-                <div class="mr-3 text-amber-400">
-                  <.cmd_icon command={cmd} class="w-8 h-8 fill-primary" />
+                <div class="mr-3">
+                  <.cmd_icon command={cmd} class="w-8 h-8 fill-primary-content" />
                 </div>
                 <div class="flex-grow">
-                  <code class="font-mono text-sm text-amber-300">{desc}</code>
+                  <code class="font-mono text-sm text-primary-content">{desc}</code>
                   <p class="text-xs text-[#d80450] flex items-baseline flex-wrap">
                     {cmd}
                     <span :if={vals} class="relative grid-cols-3  ">
@@ -467,7 +467,7 @@ defmodule DojoWeb.ShellLive do
                         id={"cmdparam-#{cmd}-#{arg}"}
                         value={val}
                         defaulted={val}
-                        class="ml-[1ch] border-amber-500/50 bg-amber-500/5  hover:bg-amber-500/10 focus-within:bg-amber-500/15  border-t-0 border-l-0 border-r-0 border-b-2 outline-none focus:border-amber-500 focus:ring-0 text-amber-100 focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
+                        class="ml-[1ch] bg-base-200 hover:bg-base-100 focus-within:bg-primary border-primary border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-primary-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
                         placeholder={arg}
                         phx-update="ignore"
                         oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
@@ -484,16 +484,19 @@ defmodule DojoWeb.ShellLive do
             <% end %>
           </div>
           <!-- Footer -->
-          <div class="pt-4 mt-4 text-center border-t border-amber-600/50">
+          <%!-- <div class="pt-4 mt-4 text-center border-t border-amber-600/50">
             <p class="font-paperlang text-xs italic text-amber-200/60">
               paperLang v0.8
             </p>
-          </div>
+          </div> --%>
         </div>
         <!-- Decorative corners -->
-        <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-2 -left-4 border-amber-400"></div>
-        <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-2 right-1 border-amber-400"></div>
-        <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-24 -left-4 border-amber-400"></div>
+        <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-2 -left-4 border-primary-content">
+        </div>
+        <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-2 right-1 border-primary-content">
+        </div>
+        <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-12 -left-4 border-primary-content">
+        </div>
       </div>
     </div>
     """
@@ -511,7 +514,7 @@ defmodule DojoWeb.ShellLive do
         <div class="flex space-x-2">
           <button
             phx-click="store-memory"
-            class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-primary/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0"
+            class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-primary/50 backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0"
           >
             <.save class="w-4 h-4 text-amber-400" />
           </button>
@@ -594,7 +597,7 @@ defmodule DojoWeb.ShellLive do
     ~H"""
     <div
       phx-click="keepTurtle"
-      class="relative z-[60] flex items-center m-auto gap-2 px-4 py-2 bg-transparent rounded-lg shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-105 group z-[100]"
+      class="relative z-[60] flex items-center m-auto gap-2 px-4 py-2 bg-transparent rounded-lg backdrop-blur-sm transform transition-all duration-300 hover:scale-105 group z-[100]"
     >
       <div class="relative w-6 h-6">
         <svg
@@ -665,7 +668,7 @@ defmodule DojoWeb.ShellLive do
           <div
             id="slider-thumb"
             phx-hook="Draggables"
-            class="absolute w-6 h-6 transition-transform duration-300 transform -translate-x-1/2 -translate-y-1/2 border-2 rounded-full shadow-lg cursor-pointer top-1/2 bg-amber-900 border-amber-600 hover:scale-110 active:scale-125"
+            class="absolute w-6 h-6 transition-transform duration-300 transform  -translate-x-1/2 -translate-y-1/2 border-2 rounded-full cursor-pointer top-1/2 bg-amber-900 border-amber-600 hover:scale-110 active:scale-125"
             style={"left: #{@slider_value}%"}
           >
             <!-- Inner Gear Detail -->
