@@ -259,7 +259,7 @@ export class Turtle {
         // theres a 32 bit overflow
         if (isFinite(Math.fround(this.x)) && isFinite(Math.fround(this.y))){
 
-            const headSize = 12 / scale;
+            const headSize = 24 / scale;
             this.ctx.save();
 
             this.ctx.fillStyle = this.color;
