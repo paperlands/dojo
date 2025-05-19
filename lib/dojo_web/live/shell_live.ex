@@ -44,7 +44,6 @@ defmodule DojoWeb.ShellLive do
   end
 
   defp join_clan(socket, clan) do
-
     Process.send_after(self(), :refreshDisciples, 200)
 
     socket
@@ -54,7 +53,6 @@ defmodule DojoWeb.ShellLive do
 
   defp sync_session(%{assigns: %{session: %Session{name: name} = _sess, clan: clan}} = socket)
        when is_binary(name) do
-
     parent = self()
 
     socket
@@ -86,7 +84,7 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-  #presence handlers => move to more pull based approach -> concern of class genserver instead c5 for personal shell
+  # presence handlers => move to more pull based approach -> concern of class genserver instead c5 for personal shell
 
   def handle_info(
         {:join, "class:shell" <> _, %{phx_ref: ref} = disciple},
@@ -117,22 +115,33 @@ defmodule DojoWeb.ShellLive do
   end
 
   # lets move this towards an async pull based pattern
-  def handle_info(:refreshDisciples, %{assigns: %{disciples: dis, visible_disciples: visible_dis}} = socket) do
+  def handle_info(
+        :refreshDisciples,
+        %{assigns: %{disciples: dis, visible_disciples: visible_dis}} = socket
+      ) do
     Process.send_after(self(), :refreshDisciples, 3000)
-    new_dis = Enum.reduce(visible_dis, dis, fn ref, acc ->
-      try do
-        case dis[ref] && Dojo.Table.last(dis[ref][:node], :hatch) do
-          nil -> acc
-          %{path: path} ->
-            put_in(acc, [ref, :meta], %{path: path})
-          _ -> acc  # Catch-all for any other unexpected return values
+
+    new_dis =
+      Enum.reduce(visible_dis, dis, fn ref, acc ->
+        try do
+          case dis[ref] && Dojo.Table.last(dis[ref][:node], :hatch) do
+            nil ->
+              acc
+
+            %{path: path} ->
+              put_in(acc, [ref, :meta], %{path: path})
+
+            # Catch-all for any other unexpected return values
+            _ ->
+              acc
+          end
+        catch
+          _kind, _error ->
+            # Skip this disciple if Dojo.Table.last throws an error
+            acc
         end
-      catch
-        _kind, _error ->
-          # Skip this disciple if Dojo.Table.last throws an error
-          acc
-      end
-    end)
+      end)
+
     {:noreply,
      socket
      |> assign(disciples: new_dis)}
@@ -201,9 +210,10 @@ defmodule DojoWeb.ShellLive do
   def handle_event(
         "hatchTurtle",
         %{"commands" => commands, "path" => path},
-        %{assigns: %{class: class, clan: clan, session: %{name: name, last_opened: time}}} = socket
-      ) when is_binary(name) do
-
+        %{assigns: %{class: class, clan: clan, session: %{name: name, last_opened: time}}} =
+          socket
+      )
+      when is_binary(name) do
     dest_dir = Path.join([:code.priv_dir(:dojo), "static", "frames", clan])
 
     if !File.dir?(dest_dir) do
@@ -211,20 +221,29 @@ defmodule DojoWeb.ShellLive do
     end
 
     id = name <> Base.encode64(to_string(time))
-    with file when is_binary(file) <- DojoWeb.Utils.Base64.to_file(path, Path.join([dest_dir, id])),
-         ext when byte_size(ext)>0 <- Path.extname(file) do
-        Dojo.Turtle.hatch(%{path: Path.join(["frames", clan, id]) <> ext <> "#bump=#{System.os_time(:second)}" , commands: commands |> Enum.take(108)}, %{class: class})
-      else
-        _ -> nil
+
+    with file when is_binary(file) <-
+           DojoWeb.Utils.Base64.to_file(path, Path.join([dest_dir, id])),
+         ext when byte_size(ext) > 0 <- Path.extname(file) do
+      Dojo.Turtle.hatch(
+        %{
+          path: Path.join(["frames", clan, id]) <> ext <> "#bump=#{System.os_time(:second)}",
+          commands: commands |> Enum.take(108)
+        },
+        %{class: class}
+      )
+    else
+      _ -> nil
     end
 
     {:noreply, socket |> assign(mytitle: commands |> Dojo.Turtle.find_title())}
   end
 
-  def handle_event("hatchTurtle",
-                   %{"commands" => commands},
-                   socket) do
-
+  def handle_event(
+        "hatchTurtle",
+        %{"commands" => commands},
+        socket
+      ) do
     {:noreply, socket |> assign(mytitle: commands |> Dojo.Turtle.find_title())}
   end
 
@@ -250,13 +269,18 @@ defmodule DojoWeb.ShellLive do
      )}
   end
 
-  def handle_event("seeTurtle", %{"addr" => addr}, %{assigns: %{disciples: dis, class: _class}} = socket)
+  def handle_event(
+        "seeTurtle",
+        %{"addr" => addr},
+        %{assigns: %{disciples: dis, class: _class}} = socket
+      )
       when is_binary(addr) do
+    command =
+      case Dojo.Table.last(dis[addr][:node], :hatch) do
+        %{commands: ast} -> ast
+        _ -> %{}
+      end
 
-    command = case Dojo.Table.last(dis[addr][:node], :hatch) do
-                %{commands: ast} -> ast
-                  _ -> %{}
-              end
     {:noreply,
      socket
      |> push_event("seeOuterShell", %{ast: command, addr: addr, mod: "root"})
@@ -265,7 +289,7 @@ defmodule DojoWeb.ShellLive do
        %{
          addr: addr,
          title: command |> Dojo.Turtle.find_title(),
-         #outerfunctions: dis[addr][:meta][:commands] |> Dojo.Turtle.filter_fns(),
+         # outerfunctions: dis[addr][:meta][:commands] |> Dojo.Turtle.filter_fns(),
          resp: "#{dis[addr][:name]}"
        }
      )
@@ -304,13 +328,20 @@ defmodule DojoWeb.ShellLive do
   end
 
   # Handle the viewport update event from the hook
-  def handle_event("seeDisciples", %{"visible_disciples" => visible_refs }, %{assigns: %{disciples: _dis}} = socket) do
+  def handle_event(
+        "seeDisciples",
+        %{"visible_disciples" => visible_refs},
+        %{assigns: %{disciples: _dis}} = socket
+      ) do
     {:noreply, assign(socket, visible_disciples: visible_refs)}
   end
 
+  def handle_event("flipDeck", _, socket),
+    do: {:noreply, update(socket, :right, &((&1 == :deck && true) || :deck))}
 
-  def handle_event("flipDeck", _, socket), do: {:noreply, update(socket, :right, &(&1==:deck && true || :deck))}
-  def handle_event("flipWell", _, socket), do: {:noreply, update(socket, :right, &(&1==:well && true || :well))}
+  def handle_event("flipWell", _, socket),
+    do: {:noreply, update(socket, :right, &((&1 == :well && true) || :well))}
+
   def handle_event("flipPane", _, socket), do: {:noreply, update(socket, :pane, &(!&1))}
 
   def handle_event("opensenseime", _, %{assigns: %{sensei: bool}} = socket) do
@@ -364,43 +395,43 @@ defmodule DojoWeb.ShellLive do
     <!-- Command Deck Component (command_deck.html.heex) -->
     <div class={["absolute flex px-1 pb-1 right-5 bottom-5  animate-fade", !@active && "hidden"]}>
       <!-- Command Deck Panel -->
-        <div class="fixed w-64 transition-all duration-500  ease-in-out transform rounded-lg shadow-xl right-5 bottom-20 xl:h-2/3 bg-primary-900/70  h-1/2 scrollbar-hide dark-scrollbar">
-          <div class="h-full p-4">
-            <!-- Header -->
-            <div class="flex items-center justify-between mb-4">
-              <h2 class="text-xl font-bold text-amber-200">Command Deck</h2>
+      <div class="fixed w-64 transition-all duration-500  ease-in-out transform rounded-lg shadow-xl right-5 bottom-20 xl:h-2/3 bg-primary-900/70  h-1/2 scrollbar-hide dark-scrollbar">
+        <div class="h-full p-4">
+          <!-- Header -->
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold text-amber-200">Command Deck</h2>
+          </div>
+          <%!-- Undo button --%>
+          <div
+            class="absolute z-50 pointer-events-auto top-4 right-4 group"
+            phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
+          >
+            <div class="relative">
+              <button class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-primary/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
+                <svg
+                  class="w-4 h-4 text-amber-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M9 14L4 9L9 4" />
+                  <path d="M4 9H13.5C16.5376 9 19 11.4624 19 14.5C19 17.5376 16.5376 20 13.5 20H11" />
+                </svg>
+              </button>
             </div>
-            <%!-- Undo button --%>
-            <div
-              class="absolute z-50 pointer-events-auto top-4 right-4 group"
-              phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
-            >
-              <div class="relative">
-                <button class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-primary/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
-                  <svg
-                    class="w-4 h-4 text-amber-400"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="M9 14L4 9L9 4" />
-                    <path d="M4 9H13.5C16.5376 9 19 11.4624 19 14.5C19 17.5376 16.5376 20 13.5 20H11" />
-                  </svg>
-                </button>
-              </div>
-              <!-- Tooltip -->
-              <div class="absolute pointer-events-none mb-2 transition-opacity duration-200  opacity-0 -top-4 -right-8 group-hover:opacity-100">
-                <div class="px-2 py-1 text-xs border rounded bg-amber-700/50 text-amber-200 border-amber-600 backdrop-blur-sm whitespace-nowrap">
-                  Undo
-                </div>
+            <!-- Tooltip -->
+            <div class="absolute pointer-events-none mb-2 transition-opacity duration-200  opacity-0 -top-4 -right-8 group-hover:opacity-100">
+              <div class="px-2 py-1 text-xs border rounded bg-amber-700/50 text-amber-200 border-amber-600 backdrop-blur-sm whitespace-nowrap">
+                Undo
               </div>
             </div>
-            <!-- Command List -->
-            <div id="test" class="h-full overflow-y-scroll">
-              <%= for {cmd, desc, vals} <- [
+          </div>
+          <!-- Command List -->
+          <div id="test" class="h-full overflow-y-scroll">
+            <%= for {cmd, desc, vals} <- [
                 {"fw", "Move Forward", [length: 50]},
                 {"rt", "Face Right", [angle: 30]},
                 {"lt", "Face Left", [angle: 30]},
@@ -415,16 +446,20 @@ defmodule DojoWeb.ShellLive do
                 {"beColour", "Set Colour to", [colour: "'red'"]}
                 ] do %>
               <div
-                phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => cmd, "args" => vals && Keyword.keys(vals)})}
+                phx-click={
+                  JS.dispatch("phx:writeShell",
+                    detail: %{"command" => cmd, "args" => vals && Keyword.keys(vals)}
+                  )
+                }
                 class="flex  items-center p-2 transition-colors rounded pointer-events-auto hover:bg-amber-900/50 group cursor-pointer"
               >
                 <div class="mr-3 text-amber-400">
                   <.cmd_icon command={cmd} class="w-8 h-8 fill-primary" />
                 </div>
                 <div class="flex-grow">
-                  <code class="font-mono text-sm text-amber-300"><%= desc %></code>
+                  <code class="font-mono text-sm text-amber-300">{desc}</code>
                   <p class="text-xs text-[#d80450] flex items-baseline flex-wrap">
-                    <%= cmd %>
+                    {cmd}
                     <span :if={vals} class="relative grid-cols-3  ">
                       <input
                         :for={{arg, val} <- vals}
@@ -437,7 +472,6 @@ defmodule DojoWeb.ShellLive do
                         phx-update="ignore"
                         oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
                         onclick="event.stopPropagation()"
-                          
                       />
                     </span>
                   </p>
@@ -445,24 +479,22 @@ defmodule DojoWeb.ShellLive do
                     // Initialize all input fields lengths
                       window.addEventListener('DOMContentLoaded', () => { document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});});
                   </script>
-
                 </div>
               </div>
-              <% end %>
-            </div>
-            <!-- Footer -->
-            <div class="pt-4 mt-4 text-center border-t border-amber-600/50">
-              <p class="font-paperlang text-xs italic text-amber-200/60">
-                paperLang v0.8
-              </p>
-            </div>
+            <% end %>
           </div>
-          <!-- Decorative corners -->
-          <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-2 -left-4 border-amber-400"></div>
-          <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-2 right-1 border-amber-400"></div>
-          <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-24 -left-4 border-amber-400">
+          <!-- Footer -->
+          <div class="pt-4 mt-4 text-center border-t border-amber-600/50">
+            <p class="font-paperlang text-xs italic text-amber-200/60">
+              paperLang v0.8
+            </p>
           </div>
         </div>
+        <!-- Decorative corners -->
+        <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-2 -left-4 border-amber-400"></div>
+        <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-2 right-1 border-amber-400"></div>
+        <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-24 -left-4 border-amber-400"></div>
+      </div>
     </div>
     """
   end
@@ -474,51 +506,81 @@ defmodule DojoWeb.ShellLive do
       <!-- Header -->
       <div class="flex items-center justify-between p-4 mb-2 border-b border-amber-600/50">
         <h2 class="text-xl font-bold text-amber-200">Memory Well</h2>
-
-        <!-- View Toggle -->
+        
+    <!-- View Toggle -->
         <div class="flex space-x-2">
-          <button phx-click="store-memory" class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-primary/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
+          <button
+            phx-click="store-memory"
+            class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-primary/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0"
+          >
             <.save class="w-4 h-4 text-amber-400" />
           </button>
         </div>
       </div>
-
-      <!-- Viewing Pane -->
+      
+    <!-- Viewing Pane -->
       <div class="flex-1 overflow-y-auto p-2 dark-scrollbar">
         <div class="space-y-3">
           <%= for mmr <- @memories do %>
-          <div :if={Map.has_key?(mmr, :meta)} class="flex items-center p-3 transition-colors rounded-lg bg-primary-900/70 hover:bg-primary-800/70">
-            <!-- Thumbnail -->
-            <div class="flex-shrink-0 w-16 h-16 mr-4 overflow-hidden rounded">
-              <img src={mmr.meta.path}  class="object-cover w-full h-full" />
+            <div
+              :if={Map.has_key?(mmr, :meta)}
+              class="flex items-center p-3 transition-colors rounded-lg bg-primary-900/70 hover:bg-primary-800/70"
+            >
+              <!-- Thumbnail -->
+              <div class="flex-shrink-0 w-16 h-16 mr-4 overflow-hidden rounded">
+                <img src={mmr.meta.path} class="object-cover w-full h-full" />
+              </div>
+              
+    <!-- Info -->
+              <div class="flex-1 min-w-0">
+                <h3 class="text-sm font-bold text-amber-300 truncate">{"title here"}</h3>
+                <p class="text-xs text-amber-400/60">{"date here"}</p>
+              </div>
+              
+    <!-- Actions -->
+              <div class="flex ml-2 space-x-2">
+                <button
+                  phx-click="view-item"
+                  phx-value-id={mmr.phx_ref}
+                  class="p-2 transition-colors rounded-full bg-amber-900/70 hover:bg-amber-800"
+                >
+                  <svg
+                    class="w-4 h-4 text-amber-300"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                </button>
+                <button
+                  phx-click="download-item"
+                  phx-value-id={mmr.phx_ref}
+                  class="p-2 transition-colors rounded-full bg-amber-900/70 hover:bg-amber-800"
+                >
+                  <svg
+                    class="w-4 h-4 text-amber-300"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                </button>
+              </div>
             </div>
-
-            <!-- Info -->
-            <div class="flex-1 min-w-0">
-              <h3 class="text-sm font-bold text-amber-300 truncate">{"title here"}</h3>
-              <p class="text-xs text-amber-400/60">{"date here"}</p>
-            </div>
-
-            <!-- Actions -->
-            <div class="flex ml-2 space-x-2">
-              <button phx-click="view-item" phx-value-id={mmr.phx_ref} class="p-2 transition-colors rounded-full bg-amber-900/70 hover:bg-amber-800">
-                <svg class="w-4 h-4 text-amber-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
-              </button>
-              <button phx-click="download-item" phx-value-id={mmr.phx_ref} class="p-2 transition-colors rounded-full bg-amber-900/70 hover:bg-amber-800">
-                <svg class="w-4 h-4 text-amber-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-              </button>
-            </div>
-          </div>
           <% end %>
         </div>
-        </div>
+      </div>
       <!-- Decorative corners -->
       <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-2 -left-4 border-amber-400"></div>
       <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-2 right-1 border-amber-400"></div>
@@ -657,7 +719,7 @@ defmodule DojoWeb.ShellLive do
       String.capitalize(<<first_grapheme::utf8>>) <> rest
     end)
     |> Enum.join(" ")
-
   end
+
   defp to_titlecase(_), do: ""
 end

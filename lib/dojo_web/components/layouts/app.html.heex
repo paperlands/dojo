@@ -4,15 +4,12 @@
       <a href="/">
         <img src={~p"/images/logo.svg"} width="36" />
       </a>
-      <p class="bg-brand/5 text-brand rounded-full px-2 font-medium leading-6">
-        v<%= Application.spec(:dojo, :vsn) %>
+      <p class="bg-brand/5 text-primary rounded-full px-2 font-medium leading-6">
+        v{Application.spec(:dojo, :vsn)}
       </p>
     </div>
     <div class="flex items-center gap-4 font-semibold leading-6 text-zinc-900">
-      <a
-        href="/"
-        class="rounded-lg bg-zinc-100 px-2 py-1 hover:bg-zinc-200/80"
-      >
+      <a href="/" class="rounded-lg bg-zinc-100 px-2 py-1 hover:bg-zinc-200/80">
         ~/dojo <span aria-hidden="true">&rarr;</span>
       </a>
     </div>
@@ -21,6 +18,6 @@
 <main class="px-4 py-20 sm:px-6 lg:px-8">
   <div class="mx-auto max-w-2xl">
     <.flash_group flash={@flash} />
-    <%= @inner_content %>
+    {@inner_content}
   </div>
 </main>
