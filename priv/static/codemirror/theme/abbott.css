@@ -40,6 +40,44 @@
  *   seafoam_green: #00ff7f
  */
 
+
+ /* code linting (dark mode) */
+ /*
+* 1. commands (fw, rt, lt, draw, def...)
+* #d80450 crimson 
+* oklch(0.5633 0.2237 12.47)
+
+* 2. numbers 
+* #D42A04  cinnabar 
+* oklch(0.5633 0.2085 32.5)
+
+* 3. fn name & variable
+* #D3D05B  periwinkle_blue 
+* oklch(0.8373 0.1388 107.69)
+
+* 4. comments & toggle arrow
+* #fbb32f  marigold 
+* oklch(0.8148 0.158 76.95)
+
+* 5. line number
+* #FF9933  brand saffron 
+* oklch(0.7737 0.1629 60.28)
+
+* 6. input string color
+* #e6a2f3  lavender 
+* oklch(0.7737 0.1629 60.28)
+
+* 7. brackets (/[]^>=)
+* #48c0a3  pastel_chartreuse ;
+* oklch(0.7327 0.1153 174.02)
+
+* 8. I cursor?
+* 9. selected highlight color?
+* 10. background color?
+*/
+
+
+
 /* Style the UI: */
 
 /* Equivalent to Vim's Normal group. */
