@@ -31,6 +31,7 @@ defmodule DojoWeb.ShellLive do
        disciples: %{},
        visible_disciples: [],
        right: :deck,
+       deck: :command,
        pane: true
      )
      |> assign(focused_phx_ref: "")}
@@ -309,7 +310,9 @@ defmodule DojoWeb.ShellLive do
   end
 
 
-  def handle_event("flipDeck", _, socket), do: {:noreply, update(socket, :right, &(&1==:deck && true || :deck))}
+  def handle_event("flipDeck", _, socket), do: {:noreply, update(socket, :right, &((&1==:deck) && true || :deck))}
+  def handle_event("flipControl", _, socket), do: {:noreply, update(socket, :deck, &(&1=:control))}
+  def handle_event("flipCommand", _, socket), do: {:noreply, update(socket, :deck, &(&1=:command))}
   def handle_event("flipWell", _, socket), do: {:noreply, update(socket, :right, &(&1==:well && true || :well))}
   def handle_event("flipPane", _, socket), do: {:noreply, update(socket, :pane, &(!&1))}
 
@@ -347,6 +350,8 @@ defmodule DojoWeb.ShellLive do
      |> assign(focused_phx_ref: new_phx_ref)}
   end
 
+
+
   # pokemon clause
   def handle_event(
         e,
@@ -359,7 +364,22 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-  def command_deck(assigns) do
+  def deck(assigns) do
+    primitive = %{command: [
+                    {"fw", "Move Forward", [length: 50]},
+                    {"rt", "Face Right", [angle: 30]},
+                    {"lt", "Face Left", [angle: 30]},
+                    {"jmp", "Jump Forward", [length: 50]},
+                    {"wait", "Wait a While", [time: 1]},
+                    {"label", "Write Something", [text: "'Hello'", size: 10]},
+                    {"faceto", "Face Towards Start", ["→": 0, "↑": 0]},
+                    {"goto", "Go To Start", ["→": 0, "↑": 0]},
+                    {"erase", "Wipe Everything", nil},
+                    {"hd", "Hide your Head", nil},
+                    {"show", "Show your Head", nil},
+                    {"beColour", "Set Colour to", [colour: "'red'"]}
+                  ],
+                  control: [{"loop", "Repeat Commands", [times: 5]}]}
     ~H"""
     <!-- Command Deck Component (command_deck.html.heex) -->
     <div class={["absolute flex px-1 pb-1 right-5 bottom-5  animate-fade", !@active && "hidden"]}>
@@ -368,7 +388,7 @@ defmodule DojoWeb.ShellLive do
           <div class="h-full p-4">
             <!-- Header -->
             <div class="flex items-center justify-between mb-4">
-              <h2 class="text-xl font-bold text-amber-200">Command Deck</h2>
+              <h2 class="text-xl font-bold text-amber-200"><%= to_titlecase("#{@type} Deck") %></h2>
             </div>
             <%!-- Undo button --%>
             <div
@@ -399,24 +419,13 @@ defmodule DojoWeb.ShellLive do
               </div>
             </div>
             <!-- Command List -->
-            <div id="test" class="h-full overflow-y-scroll">
-              <%= for {cmd, desc, vals} <- [
-                {"fw", "Move Forward", [length: 50]},
-                {"rt", "Face Right", [angle: 30]},
-                {"lt", "Face Left", [angle: 30]},
-                {"jmp", "Jump Forward", [length: 50]},
-                {"wait", "Wait a While", [time: 1]},
-                {"label", "Write Something", [text: "'Hello'", size: 10]},
-                {"faceto", "Face Towards Start", ["→": 0, "↑": 0]},
-                {"goto", "Go To Start", ["→": 0, "↑": 0]},
-                {"erase", "Wipe Everything", nil},
-                {"hd", "Hide your Head", nil},
-                {"show", "Show your Head", nil},
-                {"beColour", "Set Colour to", [colour: "'red'"]}
-                ] do %>
+            <div  id="deckofcards" class="h-full overflow-y-scroll">
+              <%=
+                IO.inspect(@type)
+                for {cmd, desc, vals} <- primitive[@type] do %>
               <div
-                phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => cmd, "args" => vals && Keyword.keys(vals)})}
-                class="flex  items-center p-2 transition-colors rounded pointer-events-auto hover:bg-amber-900/50 group cursor-pointer"
+                phx-click={JS.dispatch("phx:writeShell", detail: %{@type => cmd, "args" => vals && Keyword.keys(vals)})}
+                class="flex duration-500 animate-fade items-center p-2 transition-colors rounded pointer-events-auto hover:bg-amber-900/50 group cursor-pointer"
               >
                 <div class="mr-3 text-amber-400">
                   <.cmd_icon command={cmd} class="w-8 h-8 fill-primary" />
@@ -443,7 +452,20 @@ defmodule DojoWeb.ShellLive do
                   </p>
                   <script>
                     // Initialize all input fields lengths
-                      window.addEventListener('DOMContentLoaded', () => { document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});});
+                      window.addEventListener('DOMContentLoaded', () => {
+document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
+                        const mutobserver = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      // If nodes were added or attributes changed, resize inputs
+      if (mutation.type === 'childList' || mutation.type === 'attributes') {
+        document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
+      }
+    });
+  });
+                          const targetNode = document.getElementById("deckofcards");
+                        mutobserver.observe(targetNode, {childList: true});
+
+});
                   </script>
 
                 </div>

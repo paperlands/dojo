@@ -24,6 +24,11 @@ Shell = {
       // set up event listeners
       const debouncedRunCode = debounce(this.run, 180);
 
+      const debouncedPushEvent = debounceIdem((eventName, eventData) => {
+        this.pushEvent(eventName, eventData);
+      }, 180);
+
+
       const cachedVal = loadEditorContent()
 
 
@@ -43,6 +48,24 @@ Shell = {
 
             }
       })
+
+      shell.on('beforeSelectionChange', (cmInstance, changeObj) => {
+        // Log information about the selection change
+        console.log('Selection is about to change');
+
+        // Access the ranges (array of {anchor, head} objects)
+        const ranges = changeObj.ranges;
+        if (changeObj.ranges.length === 1) {
+          const range = changeObj.ranges[0];
+          // Only proceed if there's an actual selection (anchor != head)
+          if (range.anchor.line !== range.head.line || range.anchor.ch !== range.head.ch) {
+            debouncedPushEvent("flipControl", {})
+          } else {
+            debouncedPushEvent("flipCommand", {})
+          }
+        }
+      });
+
 
       this.handleEvent("selfkeepCanvas", (details) => {
         const userFilename = prompt('Enter filename for your PNG:', details.title) || details.title;
@@ -83,60 +106,121 @@ Shell = {
             URL.revokeObjectURL(url);
 
 
-            }).catch((err) => {
-      console.error('Error during canvas blob conversion:', err);
-    })
-
-        }
+          }).catch((err) => {
+            console.error('Error during canvas blob conversion:', err);
+          })}
 
       })
 
       this.handleEvent("writeShell", (instruction) => {
-        const cmd = instruction["command"]
-        const args = instruction["args"]
-        switch (cmd) {
-        case "undo":
-          shell.undo()
-          break;
-        default:
-          const doc = shell.getDoc();
-          const token = shell.getTokenAt(shell.getCursor());
-          const cursor = doc.getCursor(); // gets the line number in the cursor position
-          const line = doc.getLine(cursor.line); // get the line contents
-          const pos = { // create a new object to avoid mutation of the original selection
-            line: cursor.line,
-            ch: line.length // set the character position to the end of the line
+        // Extract instruction details
+        const { command: cmd, control: ctrl, args = [] } = instruction;
+
+        // Get editor state
+        const doc = shell.getDoc();
+        const cursor = doc.getCursor();
+        const token = shell.getTokenAt(cursor);
+        const indentation = token?.state?.indented || 0;
+
+        // Define an operations registry with unified handling
+        const operations = {
+          // Special operation for undo command
+          undo: () => shell.undo(),
+
+          // Standard command operation (adds a single line)
+          command: (name, indentLevel) => {
+            // Get current line and position
+            const line = doc.getLine(cursor.line) || "";
+            const pos = { line: cursor.line, ch: line.length };
+
+            // Format with proper indentation and arguments
+            const argStr = formatArgs(name, args);
+            const text = `\n${"".repeat(indentLevel)}${name}${argStr}`;
+
+            // Insert and highlight
+            const insertPos = doc.replaceRange(text, pos);
+            highlightRange(doc,
+              { line: cursor.line + 1, ch: 0 },
+              { line: cursor.line + 1, ch: text.length - 1 }
+            );
+
+            return insertPos;
+          },
+
+          // Control structure operation (wraps selected text)
+          control: (name, indentLevel) => {
+            // Get selection boundaries
+            const from = doc.getCursor('from');
+            const to = doc.getCursor('to');
+            const selection = doc.getSelection();
+
+            if (!selection) return null;
+
+            // Format opening statement with proper indentation and arguments
+            const argStr = formatArgs(name, args) || "1"; // Default to "1" if no args
+            const prefix = `${" ".repeat(indentLevel)}${name}${argStr} do`;
+
+            // Format selected content with proper indentation
+            const baseIndent = " ".repeat(indentLevel);
+            const innerIndent = " ".repeat(indentLevel + 2); // Double space for inner content
+            const formattedContent = selection.split('\n')
+              .map(line => line.trim() ? `${innerIndent}${line.trim()}` : line)
+              .join('\n');
+
+            // Format closing statement
+            const suffix = `\n${baseIndent}end`;
+
+            // Build and insert the full structure
+            const text = `${prefix}\n${formattedContent}${suffix}`;
+            doc.replaceRange(text, from, to);
+
+            // Highlight the entire insertion
+            highlightRange(doc, from, {
+              line: doc.posFromIndex(doc.indexFromPos(from) + text.length).line,
+              ch: doc.posFromIndex(doc.indexFromPos(from) + text.length).ch
+            });
+
+            return { from, to };
           }
-          if (args && args.length > 0) {
-            const argstr = args.reduce((acc, arg) => {
-              const cmdparam = document.getElementById("cmdparam-" + cmd + "-" + arg)
-              acc += " " + cmdparam.value || cmdparam.defaulted
-              return acc
-            }, "")
-            doc.replaceRange("\n".padEnd(1+token.state.indented) + cmd + argstr, pos);
-          } else {
-            doc.replaceRange("\n".padEnd(1+token.state.indented) + cmd , pos);
+        };
+
+        // Utility functions
+        const formatArgs = (name, argList) => {
+          if (!argList || argList.length === 0) return "";
+
+          return argList.reduce((acc, arg) => {
+            const paramId = `cmdparam-${name}-${arg}`;
+            const element = document.getElementById(paramId);
+            if (!element) return acc;
+
+            const value = element.value || element.defaulted || "";
+            return `${acc} ${value}`;
+          }, "");
+        };
+
+        const highlightRange = (docRef, from, to) => {
+          try {
+            const marker = docRef.markText(from, to, { className: 'flash-highlight' });
+            setTimeout(() => marker.clear(), 1500);
+          } catch (error) {
+            console.warn("Highlighting failed:", error);
           }
-          // Add the new line
+        };
 
-
-          // Get the new line number (cursor.line + 1)
-          const newLineNumber = cursor.line + 1;
-
-          // Create a marker for the new line
-          const marker = doc.markText(
-            {line: newLineNumber, ch: 0},
-            {line: newLineNumber, ch: doc.getLine(newLineNumber).length},
-            {className: 'flash-highlight'}
-          );
-
-          // Remove the marker after a delay
-          setTimeout(() => {
-            marker.clear();
-          }, 1500); // Duration of the flash effect (1.5 seconds)
+        try {
+          // Determine which operation to perform based on instruction type
+          if (cmd === "undo") {
+            operations.undo();
+          } else if (cmd) {
+            operations.command(cmd, indentation + 1);
+          } else if (ctrl) {
+            operations.control(ctrl, indentation);
+          }
+        } catch (error) {
+          console.error("Operation failed:", error);
         }
       });
-
+      
       // seabridge dispatcher babyy
       seaBridge.sub((payload) =>
         this.pushEvent(payload[0], payload[1])
@@ -309,6 +393,31 @@ function debounce(func, wait) {
         timeout = setTimeout(later, wait);
     };
 }
+
+function debounceIdem(fn, delay) {
+  let timer;
+  let lastArgs = null;
+
+  return (...args) => {
+    // Convert args to a string for comparison
+    const argsKey = JSON.stringify(args);
+
+    // If args are identical to last call, don't reset the timer
+    if (lastArgs === argsKey) {
+      return;
+    }
+
+    // Store the new args
+    lastArgs = argsKey;
+
+    // Clear previous timer and set a new one
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      fn(...args);
+    }, delay);
+  };
+};
+
 
 function saveEditorContent(val) {
   localStorage.setItem('@my.turtle', val);
