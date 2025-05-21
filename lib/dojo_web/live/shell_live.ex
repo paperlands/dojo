@@ -420,21 +420,25 @@ defmodule DojoWeb.ShellLive do
     <!-- Command Deck Component (command_deck.html.heex) -->
     <div class={["absolute flex px-1 pb-1 right-5 bottom-5  animate-fade", !@active && "hidden"]}>
       <!-- Command Deck Panel -->
-      <div class="fixed w-64 transition-all duration-500  ease-in-out transform rounded-lg shadow-xl right-5 bottom-20 xl:h-2/3 bg-primary-900/70  h-1/2 scrollbar-hide dark-scrollbar">
-        <div class="h-full p-4">
+      <div class="fixed w-64 transition-all duration-500 ease-in-out transform right-5 bottom-20 xl:h-2/3 h-1/2 scrollbar-hide dark-scrollbar">
+        <%!-- Top row --%>
+        <div class="flex pl-6 pt-4 ">
           <!-- Header -->
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-xl font-bold text-amber-200">{to_titlecase("#{@type} Deck")}</h2>
+          <div class="flex items-center justify-between">
+            <h2 class="text-xl font-bold text-lint-function-names">
+              {to_titlecase("#{@type} Deck")}
+            </h2>
           </div>
+
           <%!-- Undo button --%>
           <div
-            class="absolute z-50 pointer-events-auto top-4 right-4 group"
+            class="z-50 pointer-events-auto group pl-6 pt-1"
             phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
           >
             <div class="relative">
-              <button class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-primary/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
+              <button class="flex items-center justify-center w-8 h-8 rounded-full border-1 border-primary/50 backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
                 <svg
-                  class="w-4 h-4 text-amber-400"
+                  class="w-4 h-4 text-primary"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -448,80 +452,74 @@ defmodule DojoWeb.ShellLive do
               </button>
             </div>
             <!-- Tooltip -->
-            <div class="absolute pointer-events-none mb-2 transition-opacity duration-200  opacity-0 -top-4 -right-8 group-hover:opacity-100">
-              <div class="px-2 py-1 text-xs border rounded bg-amber-700/50 text-amber-200 border-amber-600 backdrop-blur-sm whitespace-nowrap">
+            <div class="absolute pointer-events-none mb-2 transition-opacity duration-200 opacity-0 -top-3 right-6 group-hover:opacity-100">
+              <div class="px-2 py-1 text-xs border rounded bg-primary/30 text-primary-content border-primary backdrop-blur-sm whitespace-nowrap">
                 Undo
               </div>
             </div>
           </div>
-          <!-- Command List -->
-          <div id="deckofcards" class="h-full overflow-y-scroll">
-            <%= IO.inspect(@type)
-                for {cmd, desc, vals} <- primitive[@type] do %>
-              <div
-                phx-click={
-                  JS.dispatch("phx:writeShell",
-                    detail: %{@type => cmd, "args" => vals && Keyword.keys(vals)}
-                  )
-                }
-                class="flex duration-500 animate-fade items-center p-2 transition-colors rounded pointer-events-auto hover:bg-amber-900/50 group cursor-pointer"
-              >
-                <div class="mr-3">
-                  <.cmd_icon command={cmd} class="w-8 h-8 fill-primary-content" />
-                </div>
-                <div class="flex-grow">
-                  <code class="font-mono text-sm text-amber-300">{desc}</code>
-                  <p class="text-xs text-[#d80450] flex items-baseline flex-wrap">
-                    {cmd}
-                    <span :if={vals} class="relative grid-cols-3  ">
-                      <input
-                        :for={{arg, val} <- vals}
-                        type="text"
-                        id={"cmdparam-#{cmd}-#{arg}"}
-                        value={val}
-                        defaulted={val}
-                        class="ml-[1ch] bg-base-200 hover:bg-base-100 focus-within:bg-primary border-primary border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-primary-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
-                        placeholder={arg}
-                        phx-update="ignore"
-                        oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
-                        onclick="event.stopPropagation()"
-                      />
-                    </span>
-                  </p>
-                  <script>
-                    // Initialize all input fields lengths
-                    window.addEventListener('DOMContentLoaded', () => {
-                      document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
-                      const mutobserver = new MutationObserver((mutations) => {
-                        mutations.forEach((mutation) => {
-                        // If nodes were added or attributes changed, resize inputs
-                        if (mutation.type === 'childList' || mutation.type === 'attributes') {
-                          document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
-                        }
-                        });
-                      });
-                      const targetNode = document.getElementById("deckofcards");
-                      mutobserver.observe(targetNode, {childList: true});
-                    });
-                  </script>
-                </div>
+        </div>
+        <!-- Command&Control Dropdown -->
+        <div id="deckofcards" class="h-11/12 overflow-y-scroll p-2 px-4">
+          <%= for {cmd, desc, vals} <- primitive[@type] do %>
+            <div
+              phx-click={
+                JS.dispatch("phx:writeShell",
+                  detail: %{@type => cmd, "args" => vals && Keyword.keys(vals)}
+                )
+              }
+              class="flex duration-500 animate-fade items-center p-2 transition-colors rounded pointer-events-auto hover:bg-primary-content/20 group cursor-pointer"
+            >
+              <%!-- Icon --%>
+              <div class="mr-3">
+                <.cmd_icon command={cmd} class="w-8 h-8 fill-lint-line-numbers" />
               </div>
-            <% end %>
-          </div>
-          <!-- Footer -->
-          <%!-- <div class="pt-4 mt-4 text-center border-t border-amber-600/50">
-            <p class="font-paperlang text-xs italic text-amber-200/60">
-              paperLang v0.8
-            </p>
-          </div> --%>
+              <div class="flex-grow">
+                <%!-- Description --%>
+                <code class="font-mono text-sm text-lint-comments">{desc}</code>
+                <%!-- Sample code --%>
+                <p class="text-xs text-lint-commands flex items-baseline flex-wrap">
+                  {cmd}
+                  <span :if={vals} class="relative grid-cols-3  ">
+                    <input
+                      :for={{arg, val} <- vals}
+                      type="text"
+                      id={"cmdparam-#{cmd}-#{arg}"}
+                      value={val}
+                      defaulted={val}
+                      class="ml-[1ch] bg-base-200 hover:bg-base-100 focus-within:border-primary border-primary/50 focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-primary-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
+                      placeholder={arg}
+                      phx-update="ignore"
+                      oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
+                      onclick="event.stopPropagation()"
+                    />
+                  </span>
+                </p>
+                <script>
+                  // Initialize all input fields lengths
+                  window.addEventListener('DOMContentLoaded', () => {
+                    document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
+                    const mutobserver = new MutationObserver((mutations) => {
+                      mutations.forEach((mutation) => {
+                      // If nodes were added or attributes changed, resize inputs
+                      if (mutation.type === 'childList' || mutation.type === 'attributes') {
+                        document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
+                      }
+                      });
+                    });
+                    const targetNode = document.getElementById("deckofcards");
+                    mutobserver.observe(targetNode, {childList: true});
+                  });
+                </script>
+              </div>
+            </div>
+          <% end %>
         </div>
         <!-- Decorative corners -->
-        <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-2 -left-4 border-primary-content">
-        </div>
-        <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-2 right-1 border-primary-content">
-        </div>
-        <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-12 -left-4 border-primary-content">
-        </div>
+        <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-1 -left-1 border-primary"></div>
+        <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-1 right-1 border-primary"></div>
+        <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-8 -left-1 border-primary"></div>
+        <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-8 -right-1 border-primary"></div>
       </div>
     </div>
     """
@@ -640,28 +638,25 @@ defmodule DojoWeb.ShellLive do
         </svg>
       </div>
 
-      <span class="font-mono text-sm tracking-wide transition-all duration-300 transform text-amber-300 group-hover:text-amber-200">
+      <span class="font-mono text-sm tracking-wide transition-all duration-300 transform text-primary group-hover:text-primary">
         Keep Creations
       </span>
       <!-- Decorative corners -->
-      <div class="absolute w-2 h-2 border-t-2 border-l-2 -top-1 animate-pulse -left-1 border-amber-400">
+      <div class="absolute w-2 h-2 border-t-2 border-l-2 -top-1 animate-pulse -left-1 border-primary">
       </div>
-      <div class="absolute w-2 h-2 border-t-2 border-r-2 -top-1 animate-pulse -right-1 border-amber-400">
+      <div class="absolute w-2 h-2 border-t-2 border-r-2 -top-1 animate-pulse -right-1 border-primary">
       </div>
-      <div class="absolute w-2 h-2 border-b-2 border-l-2 -bottom-1 animate-pulse -left-1 border-amber-400">
+      <div class="absolute w-2 h-2 border-b-2 border-l-2 -bottom-1 animate-pulse -left-1 border-primary">
       </div>
-      <div class="absolute w-2 h-2 border-b-2 border-r-2 -bottom-1 animate-pulse -right-1 border-amber-400">
+      <div class="absolute w-2 h-2 border-b-2 border-r-2 -bottom-1 animate-pulse -right-1 border-primary">
       </div>
     </div>
     <!-- Tooltip -->
     <div class="absolute mb-2 transition-opacity duration-200 -translate-x-1/2 opacity-0 bottom-full left-1/2 group-hover:opacity-100">
-      <div class="px-2 py-1 text-xs border rounded bg-amber-900/90 text-amber-200 border-amber-600 backdrop-blur-sm whitespace-nowrap">
+      <div class="px-2 py-1 text-xs border rounded bg-primary/90 text-primary border-primary backdrop-blur-sm whitespace-nowrap">
         Download Your Creation
       </div>
     </div>
-
-    <script>
-    </script>
     """
   end
 

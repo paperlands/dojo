@@ -1,4 +1,4 @@
-<div class="relative max-h-dvh overflow-hidden bg-base-300">
+<div class="relative max-h-dvh overflow-hidden bg-base-100">
   <!-- Canvas background bg-[#fdf6e3]-->
   <canvas phx-update="ignore" id="canvas" class="fixed w-full h-full bg-inherit"></canvas>
   <canvas
@@ -97,7 +97,7 @@
 
     <div
       :if={@session.name}
-      class="fixed font-mono right-4 text-primary-content bg-transparent  border border-none rounded px-2 py-1 w-1/2 max-w-xs"
+      class="fixed font-mono right-4 text-primary bg-transparent  border border-none rounded px-2 py-1 w-1/2 max-w-xs"
     >
       <!-- Welcome message row -->
       <div class="flex items-center text-xs mb-1 border-b border-amber-800 pb-1 overflow-hidden">
@@ -178,12 +178,11 @@
             <.manual class="w-5 h-5 transition-transform duration-700 rotate-[-60deg] cursor-help fill-amber-400 text-amber-400/50 hover:rotate-[-40deg]" />
           </button>
         </div>
-        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-amber-500"></div>
-        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-amber-500">
+        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary"></div>
+        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary"></div>
+        <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-primary">
         </div>
-        <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-amber-500">
-        </div>
-        <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-amber-500">
+        <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-primary">
         </div>
       </div>
     </div>
