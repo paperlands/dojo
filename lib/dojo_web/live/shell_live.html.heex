@@ -242,7 +242,7 @@
     ></textarea>
   </div>
 
-  <.command_deck active={@right == :deck} />
+  <.deck active={@right == :deck} type={@deck} />
   <.memory_well
     :if={@right == :well}
     view="grid"
