@@ -1,4 +1,4 @@
-<div class="fixed inset-0 bg-base-100 min-h-dvh  flex flex-col  items-center justify-center z-50">
+<div class="fixed inset-0 bg-secondary min-h-dvh  flex flex-col  items-center justify-center z-50">
   <svg id="logo" class="pt-16" viewBox="0 0  3000 2400" xmlns="http://www.w3.org/2000/svg">
     <g
       id="l7FepJA2HlIKjbTaOfBKIiU"
@@ -71,21 +71,21 @@
 
   <div
     id="login"
-    class="relative flex-row mt-24 px-12 bg-base-100/80 border-amber-800/50 rounded-lg animate-fade"
+    class="relative flex-row mt-24 px-12 bg-inherit border-amber-800/50 rounded-lg animate-fade"
     phx-hook="Box"
   >
     <!-- Login Form -->
-    <span class="block text-primary-content">welcome to the shell</span>
+    <span class="block text-primary">welcome to the shell</span>
     <form id="boot" phx-submit="login" class="space-y-4 animate-glitchy">
-      <div class="font-mono text-primary-content tracking-wide">
+      <div class="font-mono text-primary tracking-wide">
         <div class="flex items-center">
-          <span class="mr-2">></span>
+          <span class="mr-2 text-primary-content">></span>
           <span>{@session.name}</span>
           <input
             :if={!@session.name}
             type="text"
             name="username"
-            class="flex-1 bg-transparent caret-current border-none focus:border-transparent focus:ring-0 outline-none text-primary-content placeholder-primary-content/50"
+            class="flex-1 bg-transparent caret-current border-none focus:border-transparent focus:ring-0 outline-none text-primary placeholder-primary/80"
             placeholder="enter your name"
             autocomplete="off"
             spellcheck="false"
@@ -100,7 +100,7 @@
             <svg
               xml:space="preserve"
               version="1.1"
-              class="w-8 h-8 fill-primary-content rotate-180"
+              class="w-8 h-8 fill-primary rotate-180"
               style="shape-rendering:geometricPrecision;text-rendering:geometricPrecision;image-rendering:optimizeQuality;"
               viewBox="0 0 847 1058.75"
               x="0px"
@@ -120,8 +120,8 @@
         </div>
       </div>
     </form>
-    
-<!-- Decorative corners -->
+
+    <!-- Decorative corners -->
     <div class="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-primary-content">
     </div>
     <div class="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-primary-content">

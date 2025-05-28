@@ -19,7 +19,7 @@
       <div class="fixed flex pointer-events-auto">
         <!-- Example bookmarks -->
         <div
-          class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none outline outline-1 outline-gray-500 text-primary hover:bg-amber-400 hover:text-black"
+          class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none border border-accent/50 text-primary hover:bg-primary hover:text-primary-content"
           phx-click="seeTurtle"
         >
           ~
@@ -51,7 +51,7 @@
       </div>
       <textarea
         id="your-buffer"
-        class="relative rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full"
+        class="relative rounded-sm pointer-events-auto cursor-text bg-bg-amber-600/5 border-none h-full"
         phx-hook="Shell"
       />
     </div>
@@ -85,24 +85,24 @@
         <span class="inline-block w-2 h-0.5 ml-1 bg-amber-400 animate-flicker">_</span>
         
 <!-- Decorative corners (smaller size for subtlety) -->
-        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-amber-500"></div>
-        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-amber-500">
+        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content"></div>
+        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary-content">
         </div>
-        <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-amber-500">
+        <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-primary-content">
         </div>
-        <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-amber-500">
+        <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-primary-content">
         </div>
       </.link>
     </div>
 
     <div
       :if={@session.name}
-      class="fixed font-mono right-4 text-lint-function-names bg-transparent  border border-none rounded px-2 py-1 w-1/2 max-w-xs"
+      class="fixed font-mono right-4 text-primary bg-transparent  border border-none rounded px-2 py-1 w-1/2 max-w-xs"
     >
       <!-- Welcome message row -->
-      <div class="flex items-center text-xs mb-1 border-b border-amber-800 pb-1 overflow-hidden">
+      <div class="flex items-center text-xs mb-1 border-b border-accent/50  pb-1 overflow-hidden">
         <span class="flex items-center">
-          &gt; {@session.name}'s {to_titlecase(@clan)} shell
+          &gt; welcome {@session.name} to {to_titlecase(@clan)}'s shell
           <span class="relative flex items-center ml-1">
             <span class="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
           </span>
@@ -140,7 +140,7 @@
           <button
             :if={@sensei}
             id="startrecording"
-            class="relative w-8 h-8 border-2 border-primary/50  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+            class="relative w-8 h-8 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
             phx-click={
               JS.dispatch("phx:relayCamera", detail: %{command: "start_record"})
               |> JS.hide(to: "#startrecording")
@@ -150,14 +150,14 @@
             <.record class="w-5 h-5 transition-transform duration-700  fill-amber-400 text-amber-400/50 hover:rotate-[-40deg]" />
           </button>
           <button
-            class="relative w-8 h-8 border-2 border-lint-function-names/40 backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+            class="relative w-8 h-8 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-primary touch-manipulation"
             phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "center_camera"})}
           >
-            <.centering class="w-5 h-5 transition-transform duration-700  fill-lint-function-names hover:rotate-[-40deg]" />
+            <.centering class="w-7 h-7 transition-transform duration-700  fill-primary-content hover:rotate-[-40deg]" />
           </button>
 
           <button
-            class="relative w-8 h-8 border-2 border-lint-function-names/50 backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+            class="relative w-8 h-8 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
             phx-click={
               (@outershell &&
                  JS.dispatch("phx:outerkeepCanvas",
@@ -168,21 +168,21 @@
                 )
             }
           >
-            <.save class="w-5 h-5 sm:w-3 sm:h-3 fill-lint-function-names" />
+            <.save class="w-6 h-6 sm:w-3 sm:h-3 " />
           </button>
 
           <button
-            class="relative w-8 h-8 border-2 border-lint-function-names/50  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+            class="relative w-8 h-8 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
             phx-click="flipDeck"
           >
-            <.manual class="w-5 h-5 transition-transform duration-700 rotate-[-60deg] cursor-help fill-lint-function-names hover:rotate-[-40deg]" />
+            <.manual class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-primary hover:rotate-[-40deg]" />
           </button>
         </div>
-        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary"></div>
-        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary"></div>
-        <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-primary">
+        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content"></div>
+        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary-content"></div>
+        <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-primary-content">
         </div>
-        <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-primary">
+        <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-primary-content">
         </div>
       </div>
     </div>
@@ -292,12 +292,12 @@
       phx-throttle="1000"
       phx-value-addr={phx_ref}
       class={[
-        "relative flex justify-center items-center h-32 lg:w-48 w-32 border border-primary-content rounded-md  hover:scale-120 hover:border-2",
+        "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md  hover:scale-120 hover:border-2",
         (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") || "cursor-progress",
-        @outershell && @outershell.addr == phx_ref && "border-primary"
+        @outershell && @outershell.addr == phx_ref && "border-accent-content" || "border-accent/50"
       ]}
     >
-      <div class="absolute font-mono text-sm tracking-wider rotate-0 select-none top-2 right-2 text-lint-comments">
+      <div class="absolute font-mono text-sm tracking-wider rotate-0 select-none top-2 right-2 text-accent">
         {dis.name}
       </div>
 

@@ -425,7 +425,7 @@ defmodule DojoWeb.ShellLive do
         <div class="flex pl-6 pt-4 ">
           <!-- Header -->
           <div class="flex items-center justify-between">
-            <h2 class="text-xl font-bold text-lint-function-names">
+            <h2 class="text-xl font-bold text-base-content">
               {to_titlecase("#{@type} Deck")}
             </h2>
           </div>
@@ -436,9 +436,9 @@ defmodule DojoWeb.ShellLive do
             phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
           >
             <div class="relative">
-              <button class="flex items-center justify-center w-8 h-8 rounded-full border-1 border-primary/50 backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
+              <button class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
                 <svg
-                  class="w-4 h-4 text-primary"
+                  class="w-4 h-4 text-primary-content"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -453,7 +453,7 @@ defmodule DojoWeb.ShellLive do
             </div>
             <!-- Tooltip -->
             <div class="absolute pointer-events-none mb-2 transition-opacity duration-200 opacity-0 -top-3 right-6 group-hover:opacity-100">
-              <div class="px-2 py-1 text-xs border rounded bg-primary/30 text-primary-content border-primary backdrop-blur-sm whitespace-nowrap">
+              <div class="px-2 py-1 text-xs border rounded bg-secondary text-secondary-content border-primary backdrop-blur-sm whitespace-nowrap">
                 Undo
               </div>
             </div>
@@ -468,15 +468,15 @@ defmodule DojoWeb.ShellLive do
                   detail: %{@type => cmd, "args" => vals && Keyword.keys(vals)}
                 )
               }
-              class="flex duration-500 animate-fade items-center p-2 transition-colors rounded pointer-events-auto hover:bg-primary-content/20 group cursor-pointer"
+              class="flex duration-500 animate-fade items-center p-2 transition-colors rounded pointer-events-auto hover:bg-accent/50 group cursor-pointer"
             >
               <%!-- Icon --%>
               <div class="mr-3">
-                <.cmd_icon command={cmd} class="w-8 h-8 fill-lint-line-numbers" />
+                <.cmd_icon command={cmd} class="w-8 h-8 fill-primary" />
               </div>
               <div class="flex-grow">
                 <%!-- Description --%>
-                <code class="font-mono text-sm text-lint-comments">{desc}</code>
+                <code class="font-mono text-sm text-primary-content">{desc}</code>
                 <%!-- Sample code --%>
                 <p class="text-xs text-lint-commands flex items-baseline flex-wrap">
                   {cmd}
@@ -487,7 +487,7 @@ defmodule DojoWeb.ShellLive do
                       id={"cmdparam-#{cmd}-#{arg}"}
                       value={val}
                       defaulted={val}
-                      class="ml-[1ch] bg-base-200/50 hover:bg-base-100 focus-within:border-primary border-primary/50 focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-primary-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
+                      class="ml-[1ch] bg-base-200/50 hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
                       placeholder={arg}
                       phx-update="ignore"
                       oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
@@ -516,10 +516,10 @@ defmodule DojoWeb.ShellLive do
           <% end %>
         </div>
         <!-- Decorative corners -->
-        <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-1 -left-1 border-primary"></div>
-        <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-1 right-1 border-primary"></div>
-        <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-8 -left-1 border-primary"></div>
-        <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-8 -right-1 border-primary"></div>
+        <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-1 -left-1 border-primary-content"></div>
+        <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-1 right-1 border-primary-content"></div>
+        <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-8 -left-1 border-primary-content"></div>
+        <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-8 -right-1 border-primary-content"></div>
       </div>
     </div>
     """
@@ -716,7 +716,7 @@ defmodule DojoWeb.ShellLive do
         </div>
       </div>
       <!-- Ornamental -->
-      <div class="absolute w-2 h-2 border-t-2 border-l-2 rounded-tl-sm -top-1 -left-1 border-amber-400">
+      <div class="absolute w-2 h-2 border-t-2 border-l-2 rounded-tl-sm -top-1 -left-1 border-primary-content">
       </div>
       <div class="absolute w-2 h-2 border-t-2 border-r-2 rounded-tr-sm -top-1 -right-1 border-amber-400">
       </div>

@@ -182,7 +182,7 @@ defmodule DojoWeb.SVGComponents do
 
   def save(assigns) do
     ~H"""
-    <div class="group relative inline-block">
+    
       <svg
         class={@class}
         viewBox="2 2 20 20"
@@ -211,7 +211,6 @@ defmodule DojoWeb.SVGComponents do
           />
         </g>
       </svg>
-    </div>
     """
   end
 
