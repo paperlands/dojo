@@ -1,5 +1,7 @@
 <div class="flex flex-col items-center">
-  <h1 class="text-3xl font-extrabold tracking-tight text-center text-brand">Dojo Book 1</h1>
+  <h1 class="text-3xl font-extrabold tracking-tight text-center text-primary">
+    Dojo Book 1
+  </h1>
   <div phx-window-keydown="keyboard">
     <div :if={@sensei} class="flex text-red-600">
       Sensei Mode
@@ -18,13 +20,17 @@
     Check out other people's models!
   </p>
   <div class="grid grid-cols-1 gap-8 my-8 lg:grid-cols-2 auto-cols-min auto-rows-min">
-    <div :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
+    <div
+      :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
       class={"max-h-96 max-w-96 text-white transition duration-200 ease-in-out border-4 rounded shadow bg-brand hover:border-blue-500" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
     >
-    <.icon :if={@sensei} name="hero-cursor-arrow-ripple"
-           phx-click="toggle-focus"
-           phx-value-disciple-phx_ref={dis.phx_ref} class="cursor-pointer"
-           />
+      <.icon
+        :if={@sensei}
+        name="hero-cursor-arrow-ripple"
+        phx-click="toggle-focus"
+        phx-value-disciple-phx_ref={dis.phx_ref}
+        class="cursor-pointer"
+      />
       <.live_component
         id={idfy(dis.phx_ref, "animate")}
         name={name}
@@ -40,5 +46,5 @@
 </div>
 
 <style>
-    <%= [safe: Makeup.stylesheet(Makeup.Styles.HTML.StyleMap.fruity_style())] %>
+  <%= [safe: Makeup.stylesheet(Makeup.Styles.HTML.StyleMap.fruity_style())] %>
 </style>

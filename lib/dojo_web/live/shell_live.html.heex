@@ -1,4 +1,4 @@
-<div class="relative max-h-dvh overflow-hidden bg-black">
+<div class="relative max-h-dvh overflow-hidden bg-base">
   <!-- Canvas background bg-[#fdf6e3]-->
   <canvas phx-update="ignore" id="canvas" class="fixed w-full h-full bg-inherit"></canvas>
   <canvas
@@ -13,26 +13,25 @@
   </canvas>
   
 <!-- Left Coder pane container -->
-  <div class="relative left-0 z-20 w-1/2 lg:w-1/3 h-screen pl-4 overflow-y-hidden shadow-lg pointer-events-none min-w-min scrollbar-hide">
+  <div class="relative left-0 z-20 w-1/2 lg:w-1/3 h-screen pl-4 overflow-y-hidden pointer-events-none min-w-min scrollbar-hide">
     <!-- Function Marks -->
     <div class="flex justify-start space-x-0.5 py-1">
       <div class="fixed flex pointer-events-auto">
         <!-- Example bookmarks -->
         <div
-          class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none outline outline-1 outline-gray-500 text-brand hover:bg-amber-400 hover:text-black"
+          class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none border border-accent/50 text-primary hover:bg-primary hover:text-primary-content"
           phx-click="seeTurtle"
         >
           ~
         </div>
         <div
           :for={%{"value" => value} <- @myfunctions}
-          class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none outline outline-1 outline-gray-500 text-brand hover:bg-yellow-300"
+          class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none outline outline-1 outline-gray-500 text-primary hover:bg-yellow-300"
           phx-click="seeTurtle"
           phx-value-function={value}
         >
           {value}
         </div>
-
       </div>
     </div>
     <!-- Editor -->
@@ -42,18 +41,25 @@
       class="my-6 rounded-sm pointer-events-auto dark-scrollbar [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-text bg-amber-600/5 border-amber-600/20 h-[80dvh]"
     >
       <div phx-click="flipWell">
-      <.folders :if={false}  class="absolute top-5 right-6 w-5 h-5  fill-brand/50 hover:fill-amber-400 cursor-pointer" />
-        </div>
+        <.folders
+          :if={false}
+          class="absolute top-5 right-6 w-5 h-5  fill-primary/50 hover:fill-amber-400 cursor-pointer"
+        />
+      </div>
       <div class="relative z-10">
         <.slider slider_value="50" />
       </div>
-      <textarea id="your-buffer" class="relative rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full" phx-hook="Shell"/>
+      <textarea
+        id="your-buffer"
+        class="relative rounded-sm pointer-events-auto cursor-text bg-bg-amber-600/5 border-none h-full"
+        phx-hook="Shell"
+      />
     </div>
     <!-- Code Output -->
     <div
       phx-update="ignore"
       id="output"
-      class="fixed bottom-0 overflow-y-auto font-mono border-none text-brand left-2"
+      class="fixed bottom-0 overflow-y-auto font-mono border-none text-primary left-2"
     >
     </div>
   </div>
@@ -63,8 +69,11 @@
 <div
   id="rightpane"
   class="fixed top-0 right-0 z-20 flex flex-col  h-screen p-4 pointer-events-none "
-  <!-- Session -->
-  <div id="sessionbox" >
+  <!--
+  Session
+  --
+>
+  <div id="sessionbox">
     <div :if={!@session.name} class="relative group w-60 max-w-[calc(100vw-2rem)]">
       <!-- Login Link Button -->
       <.link
@@ -76,19 +85,22 @@
         <span class="inline-block w-2 h-0.5 ml-1 bg-amber-400 animate-flicker">_</span>
         
 <!-- Decorative corners (smaller size for subtlety) -->
-        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-amber-500"></div>
-        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-amber-500">
+        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content"></div>
+        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary-content">
         </div>
-        <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-amber-500">
+        <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-primary-content">
         </div>
-        <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-amber-500">
+        <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-primary-content">
         </div>
       </.link>
     </div>
 
-    <div :if={@session.name} class="fixed font-mono right-4 text-amber-400 bg-transparent bg-opacity-80 border border-none rounded px-2 py-1 shadow-lg w-1/2 max-w-xs">
+    <div
+      :if={@session.name}
+      class="fixed font-mono right-4 text-primary bg-transparent  border border-none rounded px-2 py-1 w-1/2 max-w-xs"
+    >
       <!-- Welcome message row -->
-      <div class="flex items-center text-xs mb-1 border-b border-amber-800 pb-1 overflow-hidden">
+      <div class="flex items-center text-xs mb-1 border-b border-accent/50  pb-1 overflow-hidden">
         <span class="flex items-center">
           &gt; welcome {@session.name} to {to_titlecase(@clan)}'s shell
           <span class="relative flex items-center ml-1">
@@ -96,76 +108,102 @@
           </span>
         </span>
       </div>
-
-      <!-- Command keys row -->
+      
+<!-- Command keys row -->
       <div class="flex items-center justify-between">
-          <div :if={@outershell && @outershell.resp} class="w-20 sm:w-32 lg:w-48 overflow-hidden whitespace-nowrap flex-shrink-1 sm:flex-shrink-0 flex items-center  text-xs mr-1 sm:mr-2 min-w-0">
-    <span class="text-amber-600 animate-marquee">summoning @{@outershell.resp}'s code ☄</span>
-  </div>
-  <!-- Empty spacer div with minimum width on small screens -->
+        <div
+          :if={@outershell && @outershell.resp}
+          class="w-20 sm:w-32 lg:w-48 overflow-hidden whitespace-nowrap flex-shrink-1 sm:flex-shrink-0 flex items-center  text-xs mr-1 sm:mr-2 min-w-0"
+        >
+          <span class="text-amber-600 animate-marquee">
+            summoning @{@outershell.resp}'s code ☄
+          </span>
+        </div>
+        <!-- Empty spacer div with minimum width on small screens -->
 
 
   <!-- Command buttons always aligned to right and given prio -->
-  <div class="flex flex-shrink-0 z-30 ml-auto cursor-pointer pointer-events-auto">
-
-    <button id="endrecording" class="relative hidden w-8 h-8 border-2 border-brand/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation"
-      phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "end_record"})
-        |> JS.hide(to: "#endrecording")
-        |> JS.show(to: "#startrecording")}
-      >
-
-      <.record class="w-5 h-5 animate-rotate transition-transform duration-700  fill-red-800 text-amber-400/50 hover:rotate-[-40deg]"/>
-    </button>
-
-    <button id="startrecording" class="relative w-8 h-8 border-2 border-brand/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation" phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "start_record"})
-      |> JS.hide(to: "#startrecording")
-      |> JS.show(to: "#endrecording")}
-    >
-
-      <.record class="w-5 h-5 transition-transform duration-700  fill-amber-400 text-amber-400/50 hover:rotate-[-40deg]"/>
-    </button>
-         <button class="relative w-8 h-8 border-2 border-brand/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation" phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "center_camera"})}>
-            <.centering class="w-5 h-5 transition-transform duration-700  fill-amber-400 text-amber-400/50 hover:rotate-[-40deg]"/>
+        <div class="flex flex-shrink-0 z-30 ml-auto cursor-pointer pointer-events-auto">
+          <button
+            :if={@sensei}
+            id="endrecording"
+            class="relative hidden w-8 h-8 border-2 border-primary/50  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+            phx-click={
+              JS.dispatch("phx:relayCamera", detail: %{command: "end_record"})
+              |> JS.hide(to: "#endrecording")
+              |> JS.show(to: "#startrecording")
+            }
+          >
+            <.record class="w-5 h-5 animate-rotate transition-transform duration-700  fill-red-800 text-amber-400/50 hover:rotate-[-40deg]" />
           </button>
 
-          <button class="relative w-8 h-8 border-2 border-brand/50 shadow-xl backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation"
-            phx-click={@outershell && JS.dispatch("phx:outerkeepCanvas", detail: %{"title" => @outershell.resp <>  "'s " <> @outershell.title}) || JS.dispatch("phx:selfkeepCanvas", detail: %{"title" =>  @session.name <> "'s " <> @mytitle})}>
-            <.save class="w-5 h-5 sm:w-3 sm:h-3 fill-brand/50 text-amber-400"/>
+          <button
+            :if={@sensei}
+            id="startrecording"
+            class="relative w-8 h-8 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+            phx-click={
+              JS.dispatch("phx:relayCamera", detail: %{command: "start_record"})
+              |> JS.hide(to: "#startrecording")
+              |> JS.show(to: "#endrecording")
+            }
+          >
+            <.record class="w-5 h-5 transition-transform duration-700  fill-amber-400 text-amber-400/50 hover:rotate-[-40deg]" />
+          </button>
+          <button
+            class="relative w-8 h-8 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-primary touch-manipulation"
+            phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "center_camera"})}
+          >
+            <.centering class="w-7 h-7 transition-transform duration-700  fill-primary-content hover:rotate-[-40deg]" />
           </button>
 
-          <button class="relative w-8 h-8 border-2 border-brand/50 shadow-xl  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-brand active:border-amber-500 touch-manipulation" phx-click="flipDeck">
-            <.manual class="w-5 h-5 transition-transform duration-700 rotate-[-60deg] cursor-help fill-amber-400 text-amber-400/50 hover:rotate-[-40deg]"/>
+          <button
+            class="relative w-8 h-8 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+            phx-click={
+              (@outershell &&
+                 JS.dispatch("phx:outerkeepCanvas",
+                   detail: %{"title" => @outershell.resp <> "'s " <> @outershell.title}
+                 )) ||
+                JS.dispatch("phx:selfkeepCanvas",
+                  detail: %{"title" => @session.name <> "'s " <> @mytitle}
+                )
+            }
+          >
+            <.save class="w-6 h-6 sm:w-3 sm:h-3 " />
           </button>
 
+          <button
+            class="relative w-8 h-8 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+            phx-click="flipDeck"
+          >
+            <.manual class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-primary hover:rotate-[-40deg]" />
+          </button>
         </div>
-        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-amber-500"></div>
-        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-amber-500">
+        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content"></div>
+        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary-content"></div>
+        <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-primary-content">
         </div>
-        <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-amber-500">
-        </div>
-        <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-amber-500">
+        <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-primary-content">
         </div>
       </div>
     </div>
   </div>
 
   <span
-      id="outershell-head"
     :if={@outershell && @outershell.resp}
+    id="outershell-head"
     class="fixed text-lg font-bold w-1/3 right-2 text-amber-200 top-36"
   >
     @{@outershell.resp}'s code
-    </span>
+  </span>
   <div
     :if={@outershell}
     id="outerenv"
     phx-update="ignore"
     class="fixed w-1/3  overflow-y-scroll border rounded-lg pointer-events-auto h-1/2 top-32 right-4 bottom-4 bg-black/30 border-amber-600/20 dark-scrollbar scrollbar-hide my-12 rounded-sm pointer-events-auto cursor-text"
   >
-
     <button
       phx-click="seeTurtle"
-      class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full shadow-xl opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-2 right-2  border-amber-600"
+      class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-2 right-2  border-amber-600"
     >
       <!-- Base Crosshair -->
       <div class="absolute inset-0 flex items-center justify-center">
@@ -195,21 +233,32 @@
         <path d="M12 7v10M7 12h10" stroke-dasharray="2 2" />
       </svg>
     </button>
-    <textarea phx-update="ignore" id="outershell" class="relative rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full" phx-hook="OuterShell"></textarea>
+    <textarea
+      phx-update="ignore"
+      id="outershell"
+      class="relative rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full"
+      phx-hook="OuterShell"
+    ></textarea>
   </div>
 
-  <.command_deck active={@right == :deck}/>
-  <.memory_well :if={@right == :well} view="grid" memories={@disciples |> Enum.map(&(elem(&1,1)))} page={1} total_pages={1}/>
+  <.deck active={@right == :deck} type={@deck} />
+  <.memory_well
+    :if={@right == :well}
+    view="grid"
+    memories={@disciples |> Enum.map(&elem(&1, 1))}
+    page={1}
+    total_pages={1}
+  />
 </div>
 
 <%!-- Turtle viewing pane toggle icon --%>
 <div
   id="paneflip"
-  class="fixed z-50 -translate-x-1/2 pointer-events-auto  transition-transform duration-300 pointer-events-none bottom-2 left-1/2"
+  class="fixed z-50 -translate-x-1/2 pointer-events-auto  transition-transform duration-300 pointer-events-auto bottom-2 left-1/2"
   phx-hook="Sensei"
 >
   <svg
-    class={"z-[60] w-6 h-6  text-brand/50 items-center flex  m-auto  rounded-lg shadow-xl backdrop-blur-sm transform transition-transform duration-300 hover:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
+    class={"z-60 w-6 h-6  text-primary/50 items-center flex  m-auto  rounded-lg backdrop-blur-sm transform transition-transform duration-300 hover:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
     phx-click="flipPane"
     viewBox="0 0 24 24"
     fill="none"
@@ -220,7 +269,12 @@
   </svg>
 </div>
 <%!-- Turtle viewing pane --%>
-<div id="disciple_panels" phx-hook="DiscipleWindow" :if={@pane} class="fixed bottom-0 pointer-events-none z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto">
+<div
+  :if={@pane}
+  id="disciple_panels"
+  phx-hook="DiscipleWindow"
+  class="fixed bottom-0 pointer-events-none z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto"
+>
   <!-- Other people's turtles -->
   <div
     :for={{phx_ref, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
@@ -231,7 +285,7 @@
       name="hero-cursor-arrow-ripple"
       phx-click="toggle-focus"
       phx-value-disciple-phx_ref={phx_ref}
-      class="cursor-pointer pointer-events-auto text-brand"
+      class="cursor-pointer pointer-events-auto text-primary"
     />
     <div
       phx-click="seeTurtle"
@@ -239,20 +293,24 @@
       phx-value-addr={phx_ref}
       class={[
         "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md  hover:scale-120 hover:border-2",
-        Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto" || "cursor-progress",
-        @outershell && @outershell.addr == phx_ref && "border-orange-500"
+        (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") || "cursor-progress",
+        @outershell && @outershell.addr == phx_ref && "border-accent-content" || "border-accent/50"
       ]}
     >
-      <div class="absolute font-mono text-sm tracking-wider rotate-0 select-none top-2 right-2 text-amber-500/50">
+      <div class="absolute font-mono text-sm tracking-wider rotate-0 select-none top-2 right-2 text-accent">
         {dis.name}
       </div>
 
-      <.droplet_loader :if={!Map.has_key?(dis, :meta)}
+      <.droplet_loader
+        :if={!Map.has_key?(dis, :meta)}
         class="size-10 fill-amber-600"
         loading="eager"
         decoding="sync"
       />
-      <img :if={Map.has_key?(dis, :meta)} src={dis.meta.path} onerror="this.src='/images/turtlehead.png';"
+      <img
+        :if={Map.has_key?(dis, :meta)}
+        src={dis.meta.path}
+        onerror="this.src='/images/turtlehead.png';"
         class="object-scale-down max-h-full m-auto"
         loading="eager"
         decoding="sync"

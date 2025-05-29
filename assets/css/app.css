@@ -1,4 +1,134 @@
-@import "tailwindcss/base";
+@import "tailwindcss" source(none);
+@source "../css";
+@source "../js";
+@source "../../lib/dojo_web";
+
+/* A Tailwind plugin that makes "hero-#{ICON}" classes available.
+   The heroicons installation itself is managed by your mix.exs */
+@plugin "../vendor/heroicons";
+
+/* daisyUI Tailwind Plugin. You can update this file by fetching the latest version with:
+   curl -sLO https://github.com/saadeghi/daisyui/releases/latest/download/daisyui.js
+   Make sure to look at the daisyUI changelog: https://daisyui.com/docs/changelog/ */
+@plugin "../vendor/daisyui" {
+  themes: false;
+}
+
+/* daisyUI theme plugin. You can update this file by fetching the latest version with:
+  curl -sLO https://github.com/saadeghi/daisyui/releases/latest/download/daisyui-theme.js
+  We ship with two themes, a light one inspired on Phoenix colors and a dark one inspired
+  on Elixir colors. Build your own at: https://daisyui.com/theme-generator/ */
+@plugin "../vendor/daisyui-theme" {
+  name: "light";
+  default: false;
+  prefersdark: true;
+  color-scheme: "light";
+  --color-base: oklch(97.35% 0.0261 90.1);
+  --color-base-100: oklch(97.35% 0.0261 90.1);
+  --color-base-200: oklch(92.84% 0.0263 90.1);
+  --color-base-300: oklch(88.33% 0.0265 90.1);
+  --color-base-content: oklch(21% 0.006 285.885);
+
+  --color-primary: oklch(77% 0.1629 60.28);
+  --color-primary-content: oklch(35% 0.1629 60.28);
+
+  --color-secondary: oklch(65% 0.241 354.308);
+  --color-secondary-content: oklch(94% 0.028 342.258);
+
+  --color-accent: oklch(77% 0.152 181.912);
+  --color-accent-content: oklch(38% 0.063 188.416);
+
+  --color-neutral: oklch(14% 0.005 285.823);
+  --color-neutral-content: oklch(92% 0.004 286.32);
+
+  --color-info: oklch(74% 0.16 232.661);
+  --color-info-content: oklch(29% 0.066 243.157);
+
+  --color-success: oklch(76% 0.177 163.223);
+  --color-success-content: oklch(37% 0.077 168.94);
+
+  --color-warning: oklch(82% 0.189 84.429);
+  --color-warning-content: oklch(51% 0 0);
+
+  --color-error: oklch(71% 0.194 13.428);
+  --color-error-content: oklch(27% 0.105 12.094);
+
+  --radius-selector: 0.5rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+
+  --color-lint-commands: oklch(0.5924 0.2025 355.89);
+  --color-lint-numbers: oklch(0.5808 0.1732 39.5);
+  --color-lint-function-names: oklch(0.5823 0.1261 279.1);
+  --color-lint-function-variables: oklch(0.5823 0.1261 279.1);
+  --color-lint-comments: oklch(0.6444 0.1508 118.6);
+  --color-lint-toggle-arrow: oklch(0.6444 0.1508 118.6);
+  --color-lint-line-numbers: oklch(0.5682 0.0285 221.9);
+  --color-lint-input-string: oklch(0.6437 0.1019 187.38);
+  --color-lint-operators: oklch(0.6545 0.134 85.72);
+}
+
+@plugin "../vendor/daisyui-theme" {
+  name: "dark";
+  default: true;
+  prefersdark: false;
+  color-scheme: "dark";
+  --color-base: oklch(0 0 0);
+  --color-base-100: oklch(15.33% 0.012 254.09);
+  --color-base-200: oklch(20.33% 0.014 253.1);
+  --color-base-300: oklch(25.33% 0.016 252.42);
+  --color-base-content: oklch(94.3% 0.0551 97.75); /* oklch(0.7737 0.1629 60.28);*/
+  --color-primary: oklch(77.37% 0.1629 60.28); /*oklch(0.7737 0.1629 60.28)*/
+  --color-primary-content: oklch(87.9% 0.1534 91.61);
+  --color-secondary: oklch(0% 0 0);
+  --color-secondary-content: oklch(92.43% 0.1151 95.75);
+  --color-accent: oklch(37.32% 0.0888 88.8); /*oklch(0.4225 0.1621 23.27);  ;*/
+  --color-accent-content: oklch(77% 0.1629 60.28);
+  --color-neutral: oklch(14% 0.005 285.823);
+  --color-neutral-content: oklch(92% 0.004 286.32);
+  --color-info: oklch(74% 0.16 232.661);
+  --color-info-content: oklch(29% 0.066 243.157);
+  --color-success: oklch(76% 0.177 163.223);
+  --color-success-content: oklch(37% 0.077 168.94);
+  --color-warning: oklch(82% 0.189 84.429);
+  --color-warning-content: oklch(41% 0.112 45.904);
+  --color-error: oklch(71% 0.194 13.428);
+  --color-error-content: oklch(27% 0.105 12.094);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+
+  --color-lint-commands: oklch(0.5633 0.2237 12.47);
+  --color-lint-numbers: oklch(0.5633 0.2085 32.5);
+  --color-lint-function-names: oklch(0.8373 0.1388 107.69);
+  --color-lint-function-variables: oklch(0.8373 0.1388 107.69);
+  --color-lint-comments: oklch(0.8148 0.158 76.95);
+  --color-lint-toggle-arrow: oklch(0.8148 0.158 76.95);
+  --color-lint-line-numbers: oklch(0.7737 0.1629 60.28);
+  --color-lint-input-string: oklch(0.8044 0.1325 320.97);
+  --color-lint-operators: oklch(0.7327 0.1153 174.02);
+}
+
+/* Add variants based on LiveView classes */
+@custom-variant phx-click-loading (.phx-click-loading&, .phx-click-loading &);
+@custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);
+@custom-variant phx-change-loading (.phx-change-loading&, .phx-change-loading &);
+
+/* Make LiveView wrapper divs transparent for layout */
+[data-phx-session] { display: contents }
+
 @layer base {
   h1 {
     @apply text-3xl;
@@ -9,12 +139,12 @@
   h3 {
     @apply text-xl;
   }
+  .font-paperlang {
+    font-family: "paperLang", sans-serif;
+  }
 }
 
-@import "tailwindcss/components";
-@import "tailwindcss/utilities";
-
-/* This file is for your main application CSS */
+/* This file is for main application CSS */
 
 
 @font-face {
@@ -25,57 +155,227 @@
   }
 
 
+@theme {
+  --color-brand: #FF9933;
+  --color-canvas: #1E1024;
+  --color-lint-commands: var(--color-lint-commands);
+  --color-lint-numbers: var(--color-lint-numbers);
+  --color-lint-function-names: var(--color-lint-function-names);
+  --color-lint-function-variables: var(--color-lint-function-variables);
+  --color-lint-comments: var(--color-lint-comments);
+  --color-lint-toggle-arrow: var(--color-lint-toggle-arrow);
+  --color-lint-line-numbers: var(--color-lint-line-numbers);
+  --color-lint-input-string: var(--color-lint-input-string);
+  --color-lint-operators: var(--color-lint-operators);
+}
 
 /* add the code bellow */
 @layer utilities {
-      /* Hide scrollbar for Chrome, Safari and Opera */
-      .scrollbar-hide::-webkit-scrollbar {
-          display: none;
-      }
-     /* Hide scrollbar for IE, Edge and Firefox */
-      .scrollbar-hide {
-        -ms-overflow-style: none;  /* IE and Edge */
-        scrollbar-width: none;  /* Firefox */
-      }
-      /* WebKit-based browsers (Chrome, Safari, Edge) */
-      .dark-scrollbar::-webkit-scrollbar {
-        -webkit-appearance: none;
-        display: none;
-        width: 0;
-        height: 0;
-      }
-      .dark-scrollbar::-webkit-scrollbar-thumb {
-        background-color: #555; /* Color of the scrollbar thumb */
-        border-radius: 2px; /* Rounded corners */
-        border: 1px solid transparent; /* Optional: space between thumb and track */
-      }
-      .dark-scrollbar::-webkit-scrollbar-track {
-        background-color: #222; /* Color of the scrollbar track */
-      }
 
-      /* Firefox */
-      .dark-scrollbar {
-        -ms-overflow-style: -ms-autohiding-scrollbar;
-        scrollbar-color: rgba(255,153,51,0.05) transparent; /* Thumb color and track color */
-        scrollbar-width: thin; /* Thin scrollbar */
-        scrollbar-width-legacy: 5px;
-      }
+  .drop-shadow-glow {
+    filter: drop-shadow(0 0px 20px rgba(255, 255, 255, 0.35))
+            drop-shadow(0 0px 65px rgba(255, 255, 255, 0.2));
+  }
 
-      .dark-scrollbar:hover {
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  /* Hide scrollbar for IE, Edge and Firefox */
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+  /* WebKit-based browsers (Chrome, Safari, Edge) */
+  .dark-scrollbar::-webkit-scrollbar {
+    -webkit-appearance: none;
+    display: none;
+    width: 0;
+    height: 0;
+  }
+  .dark-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #555; /* Color of the scrollbar thumb */
+    border-radius: 2px; /* Rounded corners */
+    border: 1px solid transparent; /* Optional: space between thumb and track */
+  }
+  .dark-scrollbar::-webkit-scrollbar-track {
+    background-color: #222; /* Color of the scrollbar track */
+  }
+
+  /* Firefox */
+  .dark-scrollbar {
+    -ms-overflow-style: -ms-autohiding-scrollbar;
+    scrollbar-color: rgba(255,153,51,0.05) transparent; /* Thumb color and track color */
+    scrollbar-width: thin; /* Thin scrollbar */
+    scrollbar-width-legacy: 5px;
+  }
+
+  .dark-scrollbar:hover {
     --fix: ; /* This custom property invalidates styles on hover, thereby enforcing a style recomputation. This is needed to work around a bug in Safari. */
-      }
+  }
 
-      .flash-highlight {
-        animation: flash-animation 1.5s;
-      }
+  .flash-highlight {
+    animation: flash-animation 1.5s;
+  }
 
-      @keyframes flash-animation {
-        0%, 100% {
-          background-color: transparent;
-        }
-        10%, 80% {
-          background-color: rgba(254, 243, 180, 1); /* same highlight as our selected abbott */
-        }
-      }
+  /* Custom keyframes */
+
+  @keyframes flash-animation {
+    0%, 100% {
+      background-color: transparent;
+    }
+    10%, 80% {
+      background-color: rgba(254, 243, 180, 1); /* same highlight as our selected abbott */
+    }
+  }
+
+  @keyframes rotateanimation {
+  0% { transform: rotate(-360deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes typewriter {
+  to { left: 100%; }
+}
+
+@keyframes blink {
+  0% { opacity: 0; }
+  0.1% { opacity: 1; }
+  50% { opacity: 1; }
+  50.1% { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+@keyframes colourise {
+  from { filter: grayscale(1); }
+  to { filter: grayscale(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeWait {
+  0% { opacity: 0; }
+  50% { opacity: 0; }
+  75.0% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes wiggle {
+  0% { transform: rotate(0deg); }
+  50% { transform: rotate(10deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes halfmarquee {
+  0% { transform: translateY(42vh); }
+  100% { transform: translateY(-100%); }
+}
+
+@keyframes fullmarquee {
+  0% { transform: translateX(120%); }
+  100% { transform: translateX(-100%); }
+}
+
+@keyframes gradient-anim {
+  0% { background-position: 0% 0%; }
+  10% { background-position: 20% 0%; }
+  20% { background-position: 40% 0%; }
+  30% { background-position: 20% 30%; }
+  36% { background-position: 0% 0%; }
+  72% { background-position: 36% 36%; }
+  80% { background-position: 45% 45%; }
+  88% { background-position: 20% 20%; }
+  100% { background-position: 0% 0%; }
+}
+
+@keyframes glitchy {
+  0% { transform: translate(0); }
+  20% { transform: translate(-2px, 2px); }
+  40% { transform: translate(-2px, -2px); }
+  60% { transform: translate(2px, 2px); }
+  80% { transform: translate(2px, -2px); }
+  100% { transform: translate(0); }
+}
+
+@keyframes flicker {
+  0%, 19.9%, 22%, 62.9%, 64%, 64.9%, 70%, 100% {
+    opacity: 0.99;
+    text-shadow:
+      -1px -1px 0 rgba(255, 255, 255, 0.6),
+      1px -1px 0 rgba(255, 255, 255, 0.6),
+      -1px 1px 0 rgba(255, 255, 255, 0.6),
+      1px 1px 0 rgba(255, 255, 255, 0.6),
+      0 -2px 8px rgba(255, 255, 255, 0.8),
+      0 0 2px rgba(255, 255, 255, 0.8),
+      0 0 5px rgba(255, 255, 255, 0.9),
+      0 0 15px rgba(200, 200, 255, 0.7),
+      0 0 20px rgba(200, 200, 255, 0.5),
+      0 2px 3px #00664f;
+  }
+
+   20%, 21.9%, 63%, 63.9%, 65%, 69.9% {
+    opacity: 0.4;
+    text-shadow: none;
+  }
+}
+
+
+  /* Animate utils */
+
+  .animate-halfmarquee {
+    animation: halfmarquee 30s linear infinite;
+  }
+  .animate-rotate {
+    animation: rotateanimation 3s infinite;
+  }
+  .animate-popin {
+    animation: popIn 300ms ease-out forwards;
+  }
+  .animate-marquee {
+    animation: fullmarquee 15s linear infinite;
+  }
+  .animate-gradient {
+    animation: gradient-anim 30s ease infinite;
+  }
+  .animate-flicker {
+    animation: flicker 1s linear infinite;
+  }
+  .animate-fade {
+    animation: fadeIn 1s ease-in-out;
+  }
+  .animate-fadeawhile {
+    animation: fadeWait 5s ease-in;
+  }
+  .animate-fadeout {
+    animation: fadeOut 5s forwards;
+  }
+  .animate-glitchy {
+    animation: glitchy 5s ease-in-out infinite;
+  }
+  .animate-wiggle {
+    animation: wiggle 5s ease-in-out infinite;
+  }
+  .animate-colourise {
+    animation: colourise 2s ease-in-out forwards;
+  }
+  .animate-typewriter {
+    animation: typewriter 2s steps(11) forwards;
+  }
+  .animate-spinslow {
+    animation: spin 12s linear infinite;
+  }
+  .animate-caret {
+    animation: typewriter 2s steps(11) forwards, blink 1s steps(11) infinite 2s;
+  }
+
+
 
 }
