@@ -1,4 +1,4 @@
-<div class="relative max-h-dvh overflow-hidden bg-base">
+<div class="relative transition-all bg-secondary max-h-dvh overflow-hidden bg-base">
   <!-- Canvas background bg-[#fdf6e3]-->
   <canvas phx-update="ignore" id="canvas" class="fixed w-full h-full bg-inherit"></canvas>
   <canvas
@@ -153,7 +153,7 @@
             class="relative w-8 h-8 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-primary touch-manipulation"
             phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "center_camera"})}
           >
-            <.centering class="w-7 h-7 transition-transform duration-700  fill-primary-content hover:rotate-[-40deg]" />
+            <.centering class="w-7 h-7 transition-transform duration-700  fill-primary hover:rotate-[-40deg]" />
           </button>
 
           <button

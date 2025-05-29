@@ -487,7 +487,7 @@ defmodule DojoWeb.ShellLive do
               </div>
               <div class="flex-grow">
                 <%!-- Description --%>
-                <code class="font-mono text-sm text-primary-content">{desc}</code>
+                <code class="font-mono text-sm text-secondary-content">{desc}</code>
                 <%!-- Sample code --%>
                 <p class="text-xs text-lint-commands flex items-baseline flex-wrap">
                   {cmd}

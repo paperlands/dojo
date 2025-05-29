@@ -22,7 +22,7 @@ Shell = {
       const turtle = new Turtle(canvas);
       const shell = new Terminal(this.el, CodeMirror).init();
       // set up event listeners
-      const debouncedRunCode = debounce(this.run, 40);
+      const debouncedRunCode = debounce(this.run, 25);
 
       const debouncedPushEvent = debounceIdem((eventName, eventData) => {
         this.pushEvent(eventName, eventData);

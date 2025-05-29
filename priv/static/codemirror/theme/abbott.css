@@ -171,7 +171,7 @@ oklch(0.6545 0.134 85.72)
 /* Roughly equivalent to Vim's Visual group. */
 .cm-s-abbott .CodeMirror-selected,
 .cm-s-abbott.CodeMirror-focused .CodeMirror-selected {
-  background: rgba(0, 187, 51,0.4) /* dark_olive */;
+  background: rgba(0, 197, 90,0.4) /* dark_olive */;
 }
 .cm-s-abbott .CodeMirror-line::selection,
 .cm-s-abbott .CodeMirror-line > span::selection,
@@ -314,7 +314,7 @@ oklch(0.6545 0.134 85.72)
 
 .cm-s-abbott .CodeMirror-matchingtag,
 .cm-s-abbott .cm-matchhighlight {
-  outline: 1px solid #39a78d /* zomp */;
+  outline: 1px solid #19a78d /* zomp */;
 }
 
 /* Equivalent to Vim's CursorLine group. */
