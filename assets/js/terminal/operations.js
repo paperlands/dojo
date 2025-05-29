@@ -44,7 +44,18 @@ const commands = {
                                     "*replace-" + cmd // Atomic operation - groups with other *replace-cmd operations
                                    );
             flash(doc, range);
-        } else {
+        }
+        else if ((currentCmd === "lt" || currentCmd === "rt") && (cmd === "lt" || cmd ==="rt") && batch) {
+            const newText = "".padEnd(indent) + cmd + argText;
+            const range = transform(doc,
+                                    { from: { line: cursor.line, ch: 0 }, to: { line: cursor.line, ch: line.length } },
+                                    newText,
+                                    "*replace-rotate" // Atomic operation - groups with other *replace-cmd operations
+                                   );
+            flash(doc, range);
+        }
+
+        else {
             // Append new line - default undo behavior
             const newText = `\n${"".padEnd(indent)}${cmd}${argText}`;
             const range = transform(doc, { from: { line: cursor.line, ch: line.length } }, newText, "*replace-" + cmd);
