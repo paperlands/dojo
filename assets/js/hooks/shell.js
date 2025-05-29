@@ -29,8 +29,7 @@ Shell = {
       }, 180);
 
 
-      const cachedVal = loadEditorContent()
-
+      this.run(shell.cached, canvas, turtle);
 
       this.handleEvent("relayCamera", (details) => {
         switch (details.command) {
@@ -52,7 +51,6 @@ Shell = {
       shell.on('beforeSelectionChange', (cmInstance, changeObj) => {
         // Log information about the selection change
         console.log('Selection is about to change');
-
         // Access the ranges (array of {anchor, head} objects)
         const ranges = changeObj.ranges;
         if (changeObj.ranges.length === 1) {
@@ -116,105 +114,14 @@ Shell = {
         // Extract instruction details
         const { command: cmd, control: ctrl, args = [] } = instruction;
 
-        // Get editor state
-        const doc = shell.getDoc();
-        const cursor = doc.getCursor();
-        const token = shell.getTokenAt(cursor);
-        const indentation = token?.state?.indented || 0;
-
-        // Define an operations registry with unified handling
-        const operations = {
-          // Special operation for undo command
-          undo: () => shell.undo(),
-
-          // Standard command operation (adds a single line)
-          command: (name, indentLevel) => {
-            // Get current line and position
-            const line = doc.getLine(cursor.line) || "";
-            const pos = { line: cursor.line, ch: line.length };
-
-            // Format with proper indentation and arguments
-            const argStr = formatArgs(name, args);
-            const text = `\n${"".repeat(indentLevel)}${name}${argStr}`;
-
-            // Insert and highlight
-            const insertPos = doc.replaceRange(text, pos);
-            highlightRange(doc,
-              { line: cursor.line + 1, ch: 0 },
-              { line: cursor.line + 1, ch: text.length - 1 }
-            );
-
-            return insertPos;
-          },
-
-          // Control structure operation (wraps selected text)
-          control: (name, indentLevel) => {
-            // Get selection boundaries
-            const from = doc.getCursor('from');
-            const to = doc.getCursor('to');
-            const selection = doc.getSelection();
-
-            if (!selection) return null;
-
-            // Format opening statement with proper indentation and arguments
-            const argStr = formatArgs(name, args) || "1"; // Default to "1" if no args
-            const prefix = `${" ".repeat(indentLevel)}${name}${argStr} do`;
-
-            // Format selected content with proper indentation
-            const baseIndent = " ".repeat(indentLevel);
-            const innerIndent = " ".repeat(indentLevel + 2); // Double space for inner content
-            const formattedContent = selection.split('\n')
-              .map(line => line.trim() ? `${innerIndent}${line.trim()}` : line)
-              .join('\n');
-
-            // Format closing statement
-            const suffix = `\n${baseIndent}end`;
-
-            // Build and insert the full structure
-            const text = `${prefix}\n${formattedContent}${suffix}`;
-            doc.replaceRange(text, from, to);
-
-            // Highlight the entire insertion
-            highlightRange(doc, from, {
-              line: doc.posFromIndex(doc.indexFromPos(from) + text.length).line,
-              ch: doc.posFromIndex(doc.indexFromPos(from) + text.length).ch
-            });
-
-            return { from, to };
-          }
-        };
-
-        // Utility functions
-        const formatArgs = (name, argList) => {
-          if (!argList || argList.length === 0) return "";
-
-          return argList.reduce((acc, arg) => {
-            const paramId = `cmdparam-${name}-${arg}`;
-            const element = document.getElementById(paramId);
-            if (!element) return acc;
-
-            const value = element.value || element.defaulted || "";
-            return `${acc} ${value}`;
-          }, "");
-        };
-
-        const highlightRange = (docRef, from, to) => {
-          try {
-            const marker = docRef.markText(from, to, { className: 'flash-highlight' });
-            setTimeout(() => marker.clear(), 1500);
-          } catch (error) {
-            console.warn("Highlighting failed:", error);
-          }
-        };
-
         try {
           // Determine which operation to perform based on instruction type
           if (cmd === "undo") {
-            operations.undo();
+            shell.run({ command: "undo"})
           } else if (cmd) {
-            operations.command(cmd, indentation + 1);
+            shell.run({ command: cmd, args: args, batch: false})
           } else if (ctrl) {
-            operations.control(ctrl, indentation);
+            shell.run({ control: ctrl,  args: args })
           }
         } catch (error) {
           console.error("Operation failed:", error);
@@ -227,98 +134,19 @@ Shell = {
 
         switch (cmd) {
         case "undo":
-          shell.undo();
+          shell.run({ command: "undo"})
           break;
         default:
-          const doc = shell.getDoc();
-          const cursor = doc.getCursor(); // gets the line number in the cursor position
-          const line = doc.getLine(cursor.line); // get the line contents
-          const token = shell.getTokenAt(shell.getCursor());
-
-          // Check if the current line starts with the command
-          const currentLineCommand = line.trim().split(" ")[0];
-
-          if (currentLineCommand === cmd) {
-            // Replace the current line if the command matches
-            const startPos = {
-              line: cursor.line,
-              ch: 0
-            };
-
-            const endPos = {
-              line: cursor.line,
-              ch: line.length
-            };
-
-            // Construct the new line with proper indentation and arguments
-            let newLine = "".padEnd(token.state.indented) + cmd;
-            if (args && args.length > 0) {
-              const argstr = args.reduce((acc, arg) => {
-                acc += " " + arg;
-                return acc;
-              }, "");
-              newLine += argstr;
-            }
-
-            // Replace the current line
-            doc.replaceRange(newLine, startPos, endPos);
-
-            // Create a marker for the modified line
-            const marker = doc.markText(
-              {line: cursor.line, ch: 0},
-              {line: cursor.line, ch: doc.getLine(cursor.line).length},
-              {className: 'flash-highlight'}
-            );
-
-            // Remove the marker after a delay
-            setTimeout(() => {
-              marker.clear();
-            }, 500); // Duration of the flash effect (1.5 seconds)
-
-          } else {
-            // Append a new line as in the original behavior
-            const pos = { // create a new object to avoid mutation of the original selection
-              line: cursor.line,
-              ch: line.length // set the character position to the end of the line
-            };
-
-            if (args && args.length > 0) {
-              const argstr = args.reduce((acc, arg) => {
-                acc += " " + arg;
-                return acc;
-              }, "");
-              doc.replaceRange("\n".padEnd(1+token.state.indented) + cmd + argstr, pos);
-            } else {
-              doc.replaceRange("\n".padEnd(1+token.state.indented) + cmd, pos);
-            }
-
-            // Get the new line number (cursor.line + 1)
-            const newLineNumber = cursor.line + 1;
-
-            // Create a marker for the new line
-            const marker = doc.markText(
-              {line: newLineNumber, ch: 0},
-              {line: newLineNumber, ch: doc.getLine(newLineNumber).length},
-              {className: 'flash-highlight'}
-            );
-
-            // Remove the marker after a delay
-            setTimeout(() => {
-              marker.clear();
-            }, 1000); // Duration of the flash effect
-          }
+          shell.run({ command: cmd, args: args})
         }
 
       });
-
 
       // seabridge dispatcher babyy
       seaBridge.sub((payload) =>
         this.pushEvent(payload[0], payload[1])
       )
-      // init editor state
-      shell.setValue(cachedVal);
-      this.run(cachedVal, canvas, turtle);
+
 
       // start listening
       shell.on('change', function(cm, change) {
@@ -327,21 +155,21 @@ Shell = {
         debouncedRunCode(val, canvas, turtle)
       })
 
-      shell.on('beforeSelectionChange', (cm, select) => {
-        const lineNumbers = new Set(); // Use Set to avoid duplicates
+      // shell.on('beforeSelectionChange', (cm, select) => {
+      //   const lineNumbers = new Set(); // Use Set to avoid duplicates
 
-        select.ranges.forEach(range => {
-          const startLine = range.anchor.line;
-          const endLine = range.head.line;
+      //   select.ranges.forEach(range => {
+      //     const startLine = range.anchor.line;
+      //     const endLine = range.head.line;
 
-          // Add all lines between start and end, inclusive
-          for (let line = Math.min(startLine, endLine);
-               line <= Math.max(startLine, endLine);
-               line++) {
-            lineNumbers.add(line);
-          }
-        });
-      });
+      //     // Add all lines between start and end, inclusive
+      //     for (let line = Math.min(startLine, endLine);
+      //          line <= Math.max(startLine, endLine);
+      //          line++) {
+      //       lineNumbers.add(line);
+      //     }
+      //   });
+      // });
 
       let sliderhideoutId;
       const old_slider = document.getElementById('slider');
@@ -513,22 +341,6 @@ function debounceIdem(fn, delay) {
 function saveEditorContent(val) {
   localStorage.setItem('@my.turtle', val);
 }
-
-function loadEditorContent() {
-  return localStorage.getItem('@my.turtle') || `
-draw spiral size fo fi do
- # character arc begins
- for 360/[2*4] do
-  fw size
-  rt 2
-  wait 1/36
- end
- spiral size*[fo+fi]/fi fi fi+fo #fibo go brrr
-end
-hd
-spiral 1 1 1`;
-}
-
 
 
 export default Shell;
