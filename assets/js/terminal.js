@@ -29,7 +29,7 @@ export class Terminal {
     }
 
     opts() {
-        return {theme: "abbott", mode: "plang", lineNumbers: true, lineWrapping: true,
+        return {theme: "everforest", mode: "plang", lineNumbers: true, lineWrapping: true,
                 styleActiveLine: {nonEmpty: true},
                 styleActiveSelected: true,
             autocorrect: true,

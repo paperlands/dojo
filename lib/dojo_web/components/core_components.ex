@@ -580,7 +580,7 @@ defmodule DojoWeb.CoreComponents do
   def theme_toggle(assigns) do
     ~H"""
     <div class="relative flex flex-row items-center border-2 border-base-300 rounded-full">
-      <div class="absolute w-1/3 h-full rounded-full bg-secondary left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 transition-[left]" />
+      <div class="absolute w-1/3 h-full rounded-full bg-accent/50 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 transition-[left]" />
 
       <button
         phx-click={JS.dispatch("phx:set-theme", detail: %{theme: "system"})}

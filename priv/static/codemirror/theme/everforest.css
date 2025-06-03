@@ -1,0 +1,259 @@
+/* Everforest Light CodeMirror Theme */
+
+/* Equivalent to Vim's Normal group. */
+.cm-s-everforest.CodeMirror {
+    background: rgba(253,246,227, .1);
+    color: #5c6a72;
+}
+
+/* Roughly equivalent to Vim's LineNr group. */
+.cm-s-everforest .CodeMirror-gutters {
+    background: rgba(253,246,227, .1);
+    border: none;
+}
+
+.cm-s-everforest .CodeMirror-linenumber {
+    color: rgba(164, 173, 158, 0.63);
+}
+
+.cm-s-everforest .CodeMirror-guttermarker {
+    color: #8da101;
+}
+
+/* Roughly equivalent to Vim's FoldColumn group. */
+.cm-s-everforest .CodeMirror-guttermarker-subtle {
+    color: #8da101;
+}
+
+/* Roughly equivalent to Vim's CursorColumn group. */
+.cm-s-everforest .CodeMirror-ruler {
+    border-color: rgba(135, 150, 134, 0.13);
+}
+
+/* Equivalent to Vim's Cursor group in insert mode. */
+.cm-s-everforest .CodeMirror-cursor {
+    border-color: #5c6a72;
+}
+
+/* Equivalent to Vim's Cursor group in normal mode. */
+.cm-s-everforest.cm-fat-cursor .CodeMirror-cursor,
+.cm-s-everforest .cm-animate-fat-cursor {
+    background: rgba(92, 106, 114, 0.5);
+}
+
+.cm-s-everforest.cm-fat-cursor .CodeMirror-cursors {
+    z-index: 3;
+}
+
+/* Equivalent to Vim's Cursor group in replace mode. */
+.cm-s-everforest .CodeMirror-overwrite .CodeMirror-cursor {
+    border-bottom: 1px solid #5c6a72;
+    border-left: none;
+    width: auto;
+}
+
+/* Roughly equivalent to Vim's CursorIM group. */
+.cm-s-everforest .CodeMirror-secondarycursor {
+    border-color: #35a77c;
+}
+
+/* Roughly equivalent to Vim's Visual group. */
+.cm-s-everforest .CodeMirror-selected,
+.cm-s-everforest.CodeMirror-focused .CodeMirror-selected {
+    background: rgba(230, 226, 204, 0.63);
+}
+
+.cm-s-everforest .CodeMirror-line::selection,
+.cm-s-everforest .CodeMirror-line > span::selection,
+.cm-s-everforest .CodeMirror-line > span > span::selection {
+    background: rgba(230, 226, 204, 0.5);
+}
+
+.cm-s-everforest .CodeMirror-line::-moz-selection,
+.cm-s-everforest .CodeMirror-line > span::-moz-selection,
+.cm-s-everforest .CodeMirror-line > span > span::-moz-selection {
+    background: rgba(230, 226, 204, 0.5);
+}
+
+/* Roughly equivalent to Vim's SpecialKey group. */
+.cm-s-everforest .cm-tab {
+    color: rgba(135, 150, 134, 0.13);
+}
+
+/* Equivalent to Vim's Search group. */
+.cm-s-everforest .cm-searching {
+    background: rgba(164, 187, 74, 0.25) !important;
+    color: #8da101 !important;
+}
+
+/* Current line highlight */
+.cm-s-everforest .CodeMirror-activeline-background {
+    background: rgba(239, 235, 212, 0.44);
+}
+
+/* Style syntax highlighting modes: */
+
+/* Equivalent to Vim's Comment group. */
+.cm-s-everforest span.cm-comment {
+    color: #C89B40;
+    font-style: italic;
+}
+
+/* Equivalent to Vim's String group. */
+.cm-s-everforest span.cm-string,
+.cm-s-everforest span.cm-string-2 {
+    color: #dfa000;
+}
+
+/* plang numbers Equivalent to Vim's Constant group. */
+.cm-s-everforest span.cm-number {
+    color: #F59E00;
+}
+
+.cm-s-everforest span.cm-string.cm-url {
+    color: #35a77c;
+}
+
+/* Roughly equivalent to Vim's SpecialKey group. */
+.cm-s-everforest span.cm-invalidchar {
+    color: #f85552;
+}
+
+/* Equivalent to Vim's Special group. */
+.cm-s-everforest span.cm-atom {
+    color: #df69ba;
+}
+
+/* Equivalent to Vim's Delimiter group. */
+.cm-s-everforest span.cm-bracket,
+.cm-s-everforest span.cm-punctuation {
+    color: #5c6a72;
+}
+
+/* Equivalent Vim's Operator group. */
+.cm-s-everforest span.cm-operator {
+    color: #f57d26;
+}
+
+/* plang function names Roughly equivalent to Vim's Identifier group. */
+.cm-s-everforest span.cm-def,
+.cm-s-everforest span.cm-variable,
+.cm-s-everforest span.cm-variable-2,
+.cm-s-everforest span.cm-variable-3 {
+    color: #8da101;
+}
+
+/* Roughly equivalent to Vim's Function group. */
+.cm-s-everforest span.cm-builtin,
+.cm-s-everforest span.cm-property,
+.cm-s-everforest span.cm-qualifier {
+    color: #8da101;
+}
+
+/* Equivalent to Vim's Type group. */
+.cm-s-everforest span.cm-type {
+    color: #3a94c5;
+}
+
+/* plang commands Equivalent to Vim's Keyword group. */
+.cm-s-everforest span.cm-keyword {
+    color: #E34234;
+}
+
+/* Equivalent to Vim's PreProc group. */
+.cm-s-everforest span.cm-meta {
+    color: #35a77c;
+}
+
+/* Equivalent to Vim's htmlTagName group (linked to Statement). */
+.cm-s-everforest span.cm-tag {
+    color: #f57d26;
+}
+
+/* Equivalent to Vim's htmlArg group (linked to Type). */
+.cm-s-everforest span.cm-attribute {
+    color: #dfa000;
+}
+
+/* Equivalent to Vim's htmlH1, markdownH1, etc. groups (linked to Title). */
+.cm-s-everforest span.cm-header {
+    color: #f85552;
+    font-weight: bold;
+}
+
+/* Equivalent to Vim's markdownRule group (linked to PreProc). */
+.cm-s-everforest span.cm-hr {
+    color: #35a77c;
+}
+
+/* Roughly equivalent to Vim's Underlined group. */
+.cm-s-everforest span.cm-link {
+    color: #3a94c5;
+    text-decoration: underline;
+}
+
+/* Equivalent to Vim's diffRemoved group. */
+.cm-s-everforest span.cm-negative {
+    background: rgba(241, 112, 111, 0.19);
+    color: #f85552;
+}
+
+/* Equivalent to Vim's diffAdded group. */
+.cm-s-everforest span.cm-positive {
+    background: rgba(110, 195, 152, 0.19);
+    color: #8da101;
+}
+
+/* Equivalent to Vim's Error group. */
+.cm-s-everforest span.cm-error {
+    background: #f85552;
+    color: #fdf6e3;
+}
+
+/* Style addons: */
+
+/* Equivalent to Vim's MatchParen group. */
+.cm-s-everforest span.CodeMirror-matchingbracket {
+    background: rgba(164, 187, 74, 0.25) !important;
+    color: #8da101 !important;
+    font-weight: bold;
+}
+
+/* Roughly equivalent to Vim's Error group for mismatched brackets */
+.cm-s-everforest span.CodeMirror-nonmatchingbracket {
+    background: #f85552 !important;
+    color: #fdf6e3 !important;
+}
+
+.cm-s-everforest .CodeMirror-matchingtag,
+.cm-s-everforest .cm-matchhighlight {
+    outline: 1px solid #8da101;
+}
+
+/* Equivalent to Vim's CursorLine group. */
+.cm-s-everforest .CodeMirror-activeline-background,
+.cm-s-everforest .CodeMirror-activeline-gutter {
+    background: rgba(239, 235, 212, 0.44);
+}
+
+/* Equivalent to Vim's CursorLineNr group. */
+.cm-s-everforest .CodeMirror-activeline-gutter .CodeMirror-linenumber {
+    color: #5c6a72;
+    font-weight: bold;
+}
+
+/* Roughly equivalent to Vim's Folded group. */
+.cm-s-everforest .CodeMirror-foldmarker {
+    color: #8da101;
+    text-shadow: none;
+}
+
+/* Additional highlighting for boolean/null/undefined */
+.cm-s-everforest span.cm-atom {
+    color: #df69ba;
+}
+
+/* Special handling for this/self/super keywords */
+.cm-s-everforest span.cm-variable.cm-def {
+    color: #df6900;
+}

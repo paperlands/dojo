@@ -734,9 +734,9 @@ defmodule Bindings do
     new()
     |> button(0, Gen.duration(:rotator))
     |> button(1, Gen.duration(:fw))
-    |> button(2, Gen.duration(:jmp))
+    |> button(2, Gen.duration(:rt))
     |> button(3, Gen.duration(:undo))
-    |> knob(0, Gen.delta(&(&1 > 0 && :rt || :lt), value_fn: &(abs(round(&1 / 3) * 3))))
+    |> knob(0, Gen.delta(&(&1 > 0 && :lt || :rt), value_fn: &(abs(round(&1 / 3) * 3))))
   end
 end
 
@@ -763,7 +763,7 @@ defmodule Pirate.Controller do
     |> reduce({List, :to_string, []})
     |> ignore(json_marker_end)
     |> optional(string("\r"))
-
+  
   # d0_parse
   defparsec(:do_parse, json_content)
 
@@ -924,7 +924,7 @@ end
 
 ```elixir
 {:ok, pid}= Pirate.Controller.start_link() 
-Pirate.Controller.find_ports(pid, 115200)
+Pirate.Controller.find_ports(pid, 115200) 
 ```
 
 ```elixir

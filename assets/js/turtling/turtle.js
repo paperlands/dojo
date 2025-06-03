@@ -23,6 +23,7 @@ export class Turtle {
             hd: this.hideTurtle.bind(this),
             jmp: this.jump.bind(this),
             mv: this.move.bind(this),
+            glow: this.glow.bind(this),
             //fn: this.func.bind(this),
             goto: this.goto.bind(this),
             //iamat: this.iamat.bind(this),
@@ -109,6 +110,10 @@ export class Turtle {
         this.currentPath=null
     }
 
+    glow(x=5) {
+        this.ctx.shadowBlur = x;
+    }
+
     // turtle interface for renderer
     requestRender() {
         this.renderLoop.start();
@@ -183,7 +188,7 @@ export class Turtle {
                 ctx.beginPath();
                 ctx.strokeStyle = path.color || 'DarkOrange';
                 ctx.shadowColor = path.color || "DarkOrange";
-                ctx.lineWidth = 5/scale
+                ctx.lineWidth = 2/scale
 
                 try {
                     // Iterate through each point in the path
@@ -259,7 +264,7 @@ export class Turtle {
         // theres a 32 bit overflow
         if (isFinite(Math.fround(this.x)) && isFinite(Math.fround(this.y))){
 
-            const headSize = 24 / scale;
+            const headSize = 8 / scale;
             this.ctx.save();
 
             this.ctx.fillStyle = this.color;
@@ -599,7 +604,7 @@ export class Turtle {
         this.ctx.fillStyle = 'DarkOrange';
         this.ctx.textAlign = "center";
         this.ctx.textBaseline = "middle";
-        this.ctx.shadowBlur = 10;
+        // this.ctx.shadowBlur = 10;
         this.ctx.shadowColor = "DarkOrange";
         this.ctx.imageSmoothingEnabled = false;
         this.ctx.lineCap = 'round';

@@ -240,7 +240,7 @@ defmodule DojoWeb.ShellLive do
       Dojo.Turtle.hatch(
         %{
           path: Path.join(["frames", clan, id]) <> ext <> "#bump=#{System.os_time(:second)}",
-          commands: commands |> Enum.take(108)
+          commands: commands |> Enum.take(1008)
         },
         %{class: class}
       )

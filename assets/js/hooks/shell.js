@@ -4,14 +4,6 @@ import {printAST, parseProgram } from "../turtling/parse.js"
 import {seaBridge, cameraBridge} from "../bridged.js"
 import { computePosition, offset, inline, autoUpdate } from "../../vendor/floating-ui.dom.umd.min";
 
-const snippets = [
-  { text: 'fw 1', displayText: 'go forward 1 unit' },
-  { text: 'hd', displayText: 'hide turtle' },
-  { text: 'jmp 1', displayText: 'jump by 1 unit' },
-  { text: 'rt 90', displayText: 'turn right angle 90' },
-  { text: 'lt 90', displayText: 'turn left angle 90 ' },
-  { text: 'for 2 ()', displayText: 'repeat twice' },
-];
 
 Shell = {
     mounted() {
@@ -109,6 +101,31 @@ Shell = {
           })}
 
       })
+
+
+      function handleShellTheme(theme) {
+        switch(theme) {
+        case "light":
+          shell.setOption('theme', "everforest")
+          // code block
+          break;
+        case "dark":
+          shell.setOption('theme', "abbott")
+
+          // code block
+          break;
+        default:
+          shell.setOption('theme', "everforest")
+          // code block
+        }
+      }
+
+      // check theme
+      new MutationObserver(() => handleShellTheme(document.documentElement.getAttribute('data-theme')))
+        .observe(document.documentElement, {attributes: true, attributeFilter: ['data-theme']});
+
+      handleShellTheme(document.documentElement.getAttribute('data-theme')); //
+
 
       this.handleEvent("writeShell", (instruction) => {
         // Extract instruction details

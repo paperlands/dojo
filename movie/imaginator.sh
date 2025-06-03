@@ -292,7 +292,7 @@ optimize_gif() {
 create_video_with_alpha() {
     echo "Creating video with alpha transparency support..."
 
-    local filters=""
+    local filters="-vf pad=ceil(iw/2)*2:ceil(ih/2)*2"
     local pix_fmt_arg=""
 
     # Set pixel format based on alpha method
