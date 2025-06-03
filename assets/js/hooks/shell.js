@@ -4,14 +4,6 @@ import {printAST, parseProgram } from "../turtling/parse.js"
 import {seaBridge, cameraBridge} from "../bridged.js"
 import { computePosition, offset, inline, autoUpdate } from "../../vendor/floating-ui.dom.umd.min";
 
-const snippets = [
-  { text: 'fw 1', displayText: 'go forward 1 unit' },
-  { text: 'hd', displayText: 'hide turtle' },
-  { text: 'jmp 1', displayText: 'jump by 1 unit' },
-  { text: 'rt 90', displayText: 'turn right angle 90' },
-  { text: 'lt 90', displayText: 'turn left angle 90 ' },
-  { text: 'for 2 ()', displayText: 'repeat twice' },
-];
 
 Shell = {
     mounted() {
@@ -22,10 +14,14 @@ Shell = {
       const turtle = new Turtle(canvas);
       const shell = new Terminal(this.el, CodeMirror).init();
       // set up event listeners
-      const debouncedRunCode = debounce(this.run, 180);
+      const debouncedRunCode = debounce(this.run, 25);
 
-      const cachedVal = loadEditorContent()
+      const debouncedPushEvent = debounceIdem((eventName, eventData) => {
+        this.pushEvent(eventName, eventData);
+      }, 180);
 
+
+      this.run(shell.cached, canvas, turtle);
 
       this.handleEvent("relayCamera", (details) => {
         switch (details.command) {
@@ -43,6 +39,23 @@ Shell = {
 
             }
       })
+
+      shell.on('beforeSelectionChange', (cmInstance, changeObj) => {
+        // Log information about the selection change
+        console.log('Selection is about to change');
+        // Access the ranges (array of {anchor, head} objects)
+        const ranges = changeObj.ranges;
+        if (changeObj.ranges.length === 1) {
+          const range = changeObj.ranges[0];
+          // Only proceed if there's an actual selection (anchor != head)
+          if (range.anchor.line !== range.head.line || range.anchor.ch !== range.head.ch) {
+            debouncedPushEvent("flipControl", {})
+          } else {
+            debouncedPushEvent("flipCommand", {})
+          }
+        }
+      });
+
 
       this.handleEvent("selfkeepCanvas", (details) => {
         const userFilename = prompt('Enter filename for your PNG:', details.title) || details.title;
@@ -83,67 +96,74 @@ Shell = {
             URL.revokeObjectURL(url);
 
 
-            }).catch((err) => {
-      console.error('Error during canvas blob conversion:', err);
-    })
-
-        }
+          }).catch((err) => {
+            console.error('Error during canvas blob conversion:', err);
+          })}
 
       })
 
-      this.handleEvent("writeShell", (instruction) => {
-        const cmd = instruction["command"]
-        const args = instruction["args"]
-        switch (cmd) {
-        case "undo":
-          shell.undo()
+
+      function handleShellTheme(theme) {
+        switch(theme) {
+        case "light":
+          shell.setOption('theme', "everforest")
+          // code block
+          break;
+        case "dark":
+          shell.setOption('theme', "abbott")
+
+          // code block
           break;
         default:
-          const doc = shell.getDoc();
-          const token = shell.getTokenAt(shell.getCursor());
-          const cursor = doc.getCursor(); // gets the line number in the cursor position
-          const line = doc.getLine(cursor.line); // get the line contents
-          const pos = { // create a new object to avoid mutation of the original selection
-            line: cursor.line,
-            ch: line.length // set the character position to the end of the line
-          }
-          if (args && args.length > 0) {
-            const argstr = args.reduce((acc, arg) => {
-              const cmdparam = document.getElementById("cmdparam-" + cmd + "-" + arg)
-              acc += " " + cmdparam.value || cmdparam.defaulted
-              return acc
-            }, "")
-            doc.replaceRange("\n".padEnd(1+token.state.indented) + cmd + argstr, pos);
-          } else {
-            doc.replaceRange("\n".padEnd(1+token.state.indented) + cmd , pos);
-          }
-          // Add the new line
-
-
-          // Get the new line number (cursor.line + 1)
-          const newLineNumber = cursor.line + 1;
-
-          // Create a marker for the new line
-          const marker = doc.markText(
-            {line: newLineNumber, ch: 0},
-            {line: newLineNumber, ch: doc.getLine(newLineNumber).length},
-            {className: 'flash-highlight'}
-          );
-
-          // Remove the marker after a delay
-          setTimeout(() => {
-            marker.clear();
-          }, 1500); // Duration of the flash effect (1.5 seconds)
+          shell.setOption('theme', "everforest")
+          // code block
         }
+      }
+
+      // check theme
+      new MutationObserver(() => handleShellTheme(document.documentElement.getAttribute('data-theme')))
+        .observe(document.documentElement, {attributes: true, attributeFilter: ['data-theme']});
+
+      handleShellTheme(document.documentElement.getAttribute('data-theme')); //
+
+
+      this.handleEvent("writeShell", (instruction) => {
+        // Extract instruction details
+        const { command: cmd, control: ctrl, args = [] } = instruction;
+
+        try {
+          // Determine which operation to perform based on instruction type
+          if (cmd === "undo") {
+            shell.run({ command: "undo"})
+          } else if (cmd) {
+            shell.run({ command: cmd, args: args, batch: false})
+          } else if (ctrl) {
+            shell.run({ control: ctrl,  args: args })
+          }
+        } catch (error) {
+          console.error("Operation failed:", error);
+        }
+      });
+
+      this.handleEvent("mutateShell", (instruction) => {
+        const cmd = instruction["command"];
+        const args = instruction["args"];
+
+        switch (cmd) {
+        case "undo":
+          shell.run({ command: "undo"})
+          break;
+        default:
+          shell.run({ command: cmd, args: args})
+        }
+
       });
 
       // seabridge dispatcher babyy
       seaBridge.sub((payload) =>
         this.pushEvent(payload[0], payload[1])
       )
-      // init editor state
-      shell.setValue(cachedVal);
-      this.run(cachedVal, canvas, turtle);
+
 
       // start listening
       shell.on('change', function(cm, change) {
@@ -152,21 +172,21 @@ Shell = {
         debouncedRunCode(val, canvas, turtle)
       })
 
-      shell.on('beforeSelectionChange', (cm, select) => {
-        const lineNumbers = new Set(); // Use Set to avoid duplicates
+      // shell.on('beforeSelectionChange', (cm, select) => {
+      //   const lineNumbers = new Set(); // Use Set to avoid duplicates
 
-        select.ranges.forEach(range => {
-          const startLine = range.anchor.line;
-          const endLine = range.head.line;
+      //   select.ranges.forEach(range => {
+      //     const startLine = range.anchor.line;
+      //     const endLine = range.head.line;
 
-          // Add all lines between start and end, inclusive
-          for (let line = Math.min(startLine, endLine);
-               line <= Math.max(startLine, endLine);
-               line++) {
-            lineNumbers.add(line);
-          }
-        });
-      });
+      //     // Add all lines between start and end, inclusive
+      //     for (let line = Math.min(startLine, endLine);
+      //          line <= Math.max(startLine, endLine);
+      //          line++) {
+      //       lineNumbers.add(line);
+      //     }
+      //   });
+      // });
 
       let sliderhideoutId;
       const old_slider = document.getElementById('slider');
@@ -310,25 +330,34 @@ function debounce(func, wait) {
     };
 }
 
+function debounceIdem(fn, delay) {
+  let timer;
+  let lastArgs = null;
+
+  return (...args) => {
+    // Convert args to a string for comparison
+    const argsKey = JSON.stringify(args);
+
+    // If args are identical to last call, don't reset the timer
+    if (lastArgs === argsKey) {
+      return;
+    }
+
+    // Store the new args
+    lastArgs = argsKey;
+
+    // Clear previous timer and set a new one
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      fn(...args);
+    }, delay);
+  };
+};
+
+
 function saveEditorContent(val) {
   localStorage.setItem('@my.turtle', val);
 }
-
-function loadEditorContent() {
-  return localStorage.getItem('@my.turtle') || `
-draw spiral size fo fi do
- # character arc begins
- for 360/[2*4] do
-  fw size
-  rt 2
-  wait 1/36
- end
- spiral size*[fo+fi]/fi fi fi+fo #fibo go brrr
-end
-hd
-spiral 1 1 1`;
-}
-
 
 
 export default Shell;

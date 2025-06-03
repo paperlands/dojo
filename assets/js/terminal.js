@@ -1,3 +1,5 @@
+import { execute } from "./terminal/operations.js"
+
 export class Terminal {
     constructor(editor, CodeMirror) {
         this.editor = editor;
@@ -12,19 +14,22 @@ export class Terminal {
         this.shell = this.CM.fromTextArea(this.editor, this.opts());
         this.shell.initOpts = this.opts();
         // init listeners
-        //
-        //
         this.shell.on("gutterClick", function(cm, n) {
             cm.focus()
             cm.setSelection({line: n, ch: 0}, {line: n, ch: 100});
 
         });
+
+        this.shell.cached = this.loadEditorContent()
+
+        this.openBuffer("~", this.shell.cached , "plang")
+        this.shell.run = this.run.bind(this)
         // Create the initial buffer
         return this.shell;
     }
 
     opts() {
-        return {theme: "abbott", mode: "plang", lineNumbers: true, lineWrapping: true,
+        return {theme: "everforest", mode: "plang", lineNumbers: true, lineWrapping: true,
                 styleActiveLine: {nonEmpty: true},
                 styleActiveSelected: true,
             autocorrect: true,
@@ -97,4 +102,24 @@ export class Terminal {
             cm.replaceSelection(commented.join('\n'));
         }
     }
+
+    run(instructions) {
+        execute(this.shell, instructions)
+    }
+
+    loadEditorContent() {
+        return localStorage.getItem('@my.turtle') || `
+draw spiral size fo fi do
+ # character arc begins
+ for 360/[2*4] do
+  fw size
+  rt 2
+  wait 1/36
+ end
+ spiral size*[fo+fi]/fi fi fi+fo #fibo go brrr
+end
+hd
+spiral 1 1 1`;
+    }
+
 }

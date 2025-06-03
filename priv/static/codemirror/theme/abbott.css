@@ -40,6 +40,73 @@
  *   seafoam_green: #00ff7f
  */
 
+
+/* code linting (dark mode) */
+/*
+
+#! Dark theme
+1. commands (fw, rt, lt, draw, def)
+#d80450 crimson 
+oklch(0.5633 0.2237 12.47)
+
+2. numbers 
+#D42A04  cinnabar 
+oklch(0.5633 0.2085 32.5)
+
+3. fn name & variable
+#D3D05B  periwinkle_blue 
+oklch(0.8373 0.1388 107.69)
+
+4. comments & toggle arrow
+#fbb32f  marigold 
+oklch(0.8148 0.158 76.95)
+
+5. line number
+#FF9933  brand saffron 
+oklch(0.7737 0.1629 60.28)
+
+6. input string color
+#e6a2f3  lavender 
+oklch(0.7737 0.1629 60.28)
+
+7. brackets (/[]^>=)
+
+#48c0a3  pastel_chartreuse ;
+oklch(0.7327 0.1153 174.02)
+
+
+#! Light theme
+1. commands (fw, rt, lt, draw, def)
+#d33682 Magenta
+oklch(0.5924 0.2025 355.89)
+
+2. numbers 
+#cb4b16 Orange
+oklch(0.5808 0.1732 39.5)
+
+3. fn name & variable
+#6c71c4 Violet
+oklch(0.5823 0.1261 279.1)
+
+4. comments & toggle arrow
+#859900 Light Olive
+oklch(0.6444 0.1508 118.6) 
+
+5. line number
+#657b83
+oklch(0.5682 0.0285 221.9)
+
+6. input string color
+#2aa198 Cyan
+oklch(0.6437 0.1019 187.38)
+
+7. brackets (/[]^>=)
+#b58900 Yellow
+oklch(0.6545 0.134 85.72)
+*/
+
+
+
 /* Style the UI: */
 
 /* Equivalent to Vim's Normal group. */
@@ -104,7 +171,7 @@
 /* Roughly equivalent to Vim's Visual group. */
 .cm-s-abbott .CodeMirror-selected,
 .cm-s-abbott.CodeMirror-focused .CodeMirror-selected {
-  background: rgba(0, 187, 51,0.4) /* dark_olive */;
+  background: rgba(0, 197, 90,0.4) /* dark_olive */;
 }
 .cm-s-abbott .CodeMirror-line::selection,
 .cm-s-abbott .CodeMirror-line > span::selection,
@@ -247,7 +314,7 @@
 
 .cm-s-abbott .CodeMirror-matchingtag,
 .cm-s-abbott .cm-matchhighlight {
-  outline: 1px solid #39a78d /* zomp */;
+  outline: 1px solid #19a78d /* zomp */;
 }
 
 /* Equivalent to Vim's CursorLine group. */

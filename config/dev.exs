@@ -59,7 +59,7 @@ config :dojo, DojoWeb.Endpoint,
     patterns: [
       ~r"priv/static/(?!frames/).*(js|css|png|jpeg|jpg|gif|svg)$",
       ~r"priv/gettext/.*(po)$",
-      ~r"lib/dojo_web/(controllers|live|components)/.*(ex|heex)$"
+      ~r"lib/dojo_web/(controllers|live|components|router)/.*(ex|heex)$"
     ]
   ]
 
