@@ -369,9 +369,10 @@ li.CodeMirror-hint-active {
 .CodeMirror-measure pre { position: static; }
 
 div.CodeMirror-cursors {
-  visibility: hidden;
+  visibility: visible;
   position: relative;
   z-index: 3;
+
 }
 div.CodeMirror-dragcursors {
   visibility: visible;

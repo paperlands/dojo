@@ -424,7 +424,7 @@ defmodule DojoWeb.ShellLive do
         {"show", "Show your Head", nil},
         {"beColour", "Set Colour to", [colour: "'red'"]}
       ],
-      control: [{"loop", "Repeat Commands", [times: 5]}]
+      control: [{"loop", "Repeat Commands", [times: 5]},{"def", "Name your Command", [name: "my_cmd"]}]
     }
 
     ~H"""
@@ -501,6 +501,10 @@ defmodule DojoWeb.ShellLive do
                       class="ml-[1ch] bg-base-200/50 hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
                       placeholder={arg}
                       phx-update="ignore"
+                      phx-keydown={JS.dispatch("phx:writeShell",
+                  detail: %{@type => cmd, "args" => vals && Keyword.keys(vals)}
+                )}
+                      phx-key="Enter"
                       oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
                       onclick="event.stopPropagation()"
                     />

@@ -72,11 +72,18 @@ const commands = {
         const baseIndent = " ".repeat(indent);
         const innerIndent = " ".repeat(indent + 2);
 
-        const wrapped = [
+        const structure = [
             `${baseIndent}${ctrl}${argText} do`,
             selection.text.split('\n').map(l => l.trim() ? `${innerIndent}${l.trim()}` : l).join('\n'),
             `${baseIndent}end`
-        ].join('\n');
+        ]
+
+        if(ctrl === "def") {
+            console.log(argText)
+            structure.push(`${argText}`.trim())
+        }
+
+        wrapped = structure.join('\n');
 
         const range = transform(doc, selection, wrapped, "*wrap-ctrl"); // Atomic wrap operation
         flash(doc, range);
