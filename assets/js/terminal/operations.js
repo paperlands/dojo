@@ -61,6 +61,10 @@ const commands = {
             const range = transform(doc, { from: { line: cursor.line, ch: line.length } }, newText, "*replace-" + cmd);
             flash(doc, { from: { line: cursor.line + 1, ch: 0 }, to: range.to });
         }
+
+        setTimeout(() => {
+            shell.scrollIntoView({line: cursor.line, ch: 0}, 60);
+        }, 0);
     },
 
     // Control structure wrapping - atomic operation
