@@ -409,7 +409,7 @@ defmodule DojoWeb.ShellLive do
   end
 
   def deck(assigns) do
-    primitive = %{
+    assigns = assign(assigns, :primitive, %{
       command: [
         {"fw", "Move Forward", [length: 50]},
         {"rt", "Face Right", [angle: 30]},
@@ -425,7 +425,7 @@ defmodule DojoWeb.ShellLive do
         {"beColour", "Set Colour to", [colour: "'red'"]}
       ],
       control: [{"loop", "Repeat Commands", [times: 5]},{"def", "Name your Command", [name: "my_cmd"]}]
-    }
+    })
 
     ~H"""
     <!-- Command Deck Component (command_deck.html.heex) -->
@@ -472,7 +472,7 @@ defmodule DojoWeb.ShellLive do
         </div>
         <!-- Command&Control Dropdown -->
         <div id="deckofcards" class="h-11/12 overflow-y-scroll p-2 px-4">
-          <%= for {cmd, desc, vals} <- primitive[@type] do %>
+          <%= for {cmd, desc, vals} <- @primitive[@type] do %>
             <div
               phx-click={
                 JS.dispatch("phx:writeShell",
