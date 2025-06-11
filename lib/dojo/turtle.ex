@@ -8,7 +8,7 @@ defmodule Dojo.Turtle do
   end
 
   def find_title(ast) when is_list(ast) do
-    lol = Enum.reduce_while(ast, "",
+    Enum.reduce_while(ast, "",
                       fn %{"meta" => %{"lit" => title}}, _acc when is_binary(title)->
                         {:halt, title}
                         _,_ -> {:cont, ""}

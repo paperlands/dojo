@@ -172,21 +172,16 @@ Shell = {
         debouncedRunCode(val, canvas, turtle)
       })
 
-      // shell.on('beforeSelectionChange', (cm, select) => {
-      //   const lineNumbers = new Set(); // Use Set to avoid duplicates
 
-      //   select.ranges.forEach(range => {
-      //     const startLine = range.anchor.line;
-      //     const endLine = range.head.line;
-
-      //     // Add all lines between start and end, inclusive
-      //     for (let line = Math.min(startLine, endLine);
-      //          line <= Math.max(startLine, endLine);
-      //          line++) {
-      //       lineNumbers.add(line);
-      //     }
-      //   });
-      // });
+      document.addEventListener('keydown', e => {
+        if (!e.ctrlKey && !e.metaKey && (e.key.length === 1 || ['Enter', 'Backspace', 'Delete'].includes(event.key)) && !['INPUT', 'TEXTAREA','SELECT', 'BUTTON'].includes(document.activeElement?.tagName)
+ && !shell.hasFocus()) {
+          shell.focus();
+          const lastLine = shell.lastLine();
+          shell.setCursor(lastLine, shell.getLine(lastLine).length);
+          shell.scrollIntoView(null, 50);
+        }
+      })
 
       let sliderhideoutId;
       const old_slider = document.getElementById('slider');

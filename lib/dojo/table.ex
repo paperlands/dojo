@@ -28,7 +28,7 @@ defmodule Dojo.Table do
   end
 
   # this has to publish to a shared datastore per topic instance maybe ets(?)
-  def handle_cast({:publish, {source, msg ,store}, event}, %{last: last, track_pid: pid, topic: topic, disciple: %{phx_ref: phx_ref}} = state) do
+  def handle_cast({:publish, {_source, _msg ,store}, event}, %{last: last, track_pid: pid, topic: _topic, disciple: %{phx_ref: _phx_ref}} = state) do
     #Dojo.PubSub.publish({phx_ref, {source, msg}}, event, topic)
     Cache.put({__MODULE__, :last, pid, event}, store, ttl: @ttl)
     {:noreply, %{state | last: last |> Map.put(event, store)}}

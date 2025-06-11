@@ -105,9 +105,9 @@
     color: #dfa000;
 }
 
-/* plang numbers Equivalent to Vim's Constant group. */
+/* plang numbers argument Equivalent to Vim's Constant group. */
 .cm-s-everforest span.cm-number {
-    color: #F59E00;
+    color: #5c6a72;
 }
 
 .cm-s-everforest span.cm-string.cm-url {

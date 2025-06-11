@@ -61,6 +61,10 @@ const commands = {
             const range = transform(doc, { from: { line: cursor.line, ch: line.length } }, newText, "*replace-" + cmd);
             flash(doc, { from: { line: cursor.line + 1, ch: 0 }, to: range.to });
         }
+
+        setTimeout(() => {
+            shell.scrollIntoView({line: cursor.line, ch: 0}, 60);
+        }, 0);
     },
 
     // Control structure wrapping - atomic operation
@@ -72,11 +76,18 @@ const commands = {
         const baseIndent = " ".repeat(indent);
         const innerIndent = " ".repeat(indent + 2);
 
-        const wrapped = [
+        const structure = [
             `${baseIndent}${ctrl}${argText} do`,
             selection.text.split('\n').map(l => l.trim() ? `${innerIndent}${l.trim()}` : l).join('\n'),
             `${baseIndent}end`
-        ].join('\n');
+        ]
+
+        if(ctrl === "def") {
+            console.log(argText)
+            structure.push(`${argText}`.trim())
+        }
+
+        wrapped = structure.join('\n');
 
         const range = transform(doc, selection, wrapped, "*wrap-ctrl"); // Atomic wrap operation
         flash(doc, range);
