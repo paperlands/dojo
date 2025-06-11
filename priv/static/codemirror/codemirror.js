@@ -10793,6 +10793,258 @@ CodeMirror.registerHelper("fold", "indent", function(cm, start) {
 
 
 });
+
+(function(mod) {
+  if (typeof exports == "object" && typeof module == "object") // CommonJS
+    mod(require("../../lib/codemirror"));
+  else if (typeof define == "function" && define.amd) // AMD
+    define(["../../lib/codemirror"], mod);
+  else // Plain browser env
+    mod(CodeMirror);
+})(function(CodeMirror) {
+  var ie_lt8 = /MSIE \d/.test(navigator.userAgent) &&
+    (document.documentMode == null || document.documentMode < 8);
+
+  var Pos = CodeMirror.Pos;
+
+  // Unified delimiter configuration
+  var delimiters = [
+    {open: "(", close: ")", type: "char"},
+    {open: "[", close: "]", type: "char"},
+    {open: "{", close: "}", type: "char"},
+    {open: "<", close: ">", type: "char"},
+    {open: "do", close: "end", type: "word"}
+  ];
+
+  // Core primitive: token extractor
+  function extractToken(line, pos, type) {
+    if (type === "char") {
+      return pos < line.length ? {
+        value: line.charAt(pos),
+        start: pos,
+        end: pos + 1
+      } : null;
+    }
+
+    if (type === "word") {
+      // First try to extract word starting exactly at pos
+      if (pos < line.length && /\w/.test(line.charAt(pos))) {
+        var start = pos, end = pos;
+        while (end < line.length && /\w/.test(line.charAt(end))) end++;
+
+        if (start < end) {
+          return {
+            value: line.slice(start, end),
+            start: start,
+            end: end
+          };
+        }
+      }
+
+      // If that fails, try traditional word boundary detection
+      var start = pos, end = pos;
+      while (start > 0 && /\w/.test(line.charAt(start - 1))) start--;
+      while (end < line.length && /\w/.test(line.charAt(end))) end++;
+
+      return start < end ? {
+        value: line.slice(start, end),
+        start: start,
+        end: end
+      } : null;
+    }
+
+    return null;
+  }
+
+  // Core primitive: delimiter matcher
+  function findDelimiterAt(line, pos) {
+    for (var i = 0; i < delimiters.length; i++) {
+      var delim = delimiters[i];
+      var token = extractToken(line, pos, delim.type);
+
+      if (token && (token.value === delim.open || token.value === delim.close)) {
+        return {
+          delimiter: delim,
+          token: token,
+          isOpen: token.value === delim.open,
+          direction: token.value === delim.open ? 1 : -1
+        };
+      }
+    }
+    return null;
+  }
+
+  // Core primitive: balanced scanner
+  function scanForMatch(cm, startPos, delim, direction, style, config) {
+    var maxScanLen = (config && config.maxScanLineLength) || 10000;
+    var maxScanLines = (config && config.maxScanLines) || 1000;
+    var depth = 0;
+
+    var lineEnd = direction > 0
+      ? Math.min(startPos.line + maxScanLines, cm.lastLine() + 1)
+      : Math.max(cm.firstLine() - 1, startPos.line - maxScanLines);
+
+    var depthlim = direction > 0 ? 0 : 1
+    for (var lineNo = startPos.line; lineNo !== lineEnd; lineNo += direction) {
+      var line = cm.getLine(lineNo);
+      if (!line || line.length > maxScanLen) continue;
+
+      var pos = lineNo === startPos.line ? startPos.ch : (direction > 0 ? 0 : line.length - 1);
+      var end = direction > 0 ? line.length : -1;
+
+      while (pos !== end) {
+        var match = findDelimiterAt(line, pos);
+        if (match && match.delimiter === delim) {
+          if (style === undefined ||
+              (cm.getTokenTypeAt(Pos(lineNo, pos + 1)) || "") === (style || "")) {
+
+            if (match.direction === direction) {
+              depth++;
+            } else {
+              if (depth === depthlim) {
+                return {pos: Pos(lineNo, match.token.start), token: match.token};
+              }
+              depth--;
+            }
+          }
+        }
+        // Handle ALL delimiters for proper nesting (e.g., if-end blocks inside do-end)
+        else if (match) {
+          if (style === undefined ||
+              (cm.getTokenTypeAt(Pos(lineNo, pos + 1)) || "") === (style || "")) {
+
+            if (match.direction === direction) {
+              depth++;
+            } else if (depth > 0) {
+              depth--;
+            }
+          }
+        }
+        pos += direction;
+      }
+    }
+
+    return null;
+  }
+
+  // Unified matching function
+  function findMatchingDelimiter(cm, where, config) {
+    var line = cm.getLineHandle(where.line);
+    var afterCursor = config && config.afterCursor;
+    if (afterCursor == null)
+      afterCursor = /(^| )cm-fat-cursor($| )/.test(cm.getWrapperElement().className);
+
+    // Try at cursor position
+    var match = findDelimiterAt(line.text, where.ch);
+
+    // Try before cursor if not found and not afterCursor
+    if (!match && !afterCursor && where.ch > 0) {
+      match = findDelimiterAt(line.text, where.ch - 1);
+    }
+
+    if (!match) return null;
+
+    if (config && config.strict &&
+        (match.direction > 0) !== (match.token.start >= where.ch)) return null;
+
+    var style = cm.getTokenTypeAt(Pos(where.line, match.token.start + 1));
+    var searchStart = Pos(where.line,
+      match.token.start + (match.direction > 0 ? match.token.end - match.token.start : 0));
+
+    var found = scanForMatch(cm, searchStart, match.delimiter, match.direction, style, config);
+
+    if (!found) return null;
+
+    return {
+      from: Pos(where.line, match.token.start),
+      fromEnd: Pos(where.line, match.token.end),
+      to: found.pos,
+      toEnd: Pos(found.pos.line, found.token.end),
+      match: true,
+      forward: match.direction > 0
+    };
+  }
+
+  function matchBrackets(cm, autoclear, config) {
+    var maxHighlightLen = cm.state.matchBrackets.maxHighlightLineLength || 1000;
+    var highlightNonMatching = config && config.highlightNonMatching;
+    var marks = [], ranges = cm.listSelections();
+
+    for (var i = 0; i < ranges.length; i++) {
+      var match = ranges[i].empty() && findMatchingDelimiter(cm, ranges[i].head, config);
+
+      if (match && (match.match || highlightNonMatching !== false) &&
+          cm.getLine(match.from.line).length <= maxHighlightLen) {
+        var style = match.match ? "CodeMirror-matchingbracket" : "CodeMirror-nonmatchingbracket";
+
+        marks.push(cm.markText(match.from, match.fromEnd, {className: style}));
+        if (match.to && cm.getLine(match.to.line).length <= maxHighlightLen) {
+          marks.push(cm.markText(match.to, match.toEnd, {className: style}));
+        }
+      }
+    }
+
+    if (marks.length) {
+      if (ie_lt8 && cm.state.focused) cm.focus();
+
+      var clear = function() {
+        cm.operation(function() {
+          for (var i = 0; i < marks.length; i++) marks[i].clear();
+        });
+      };
+
+      if (autoclear) setTimeout(clear, 800);
+      else return clear;
+    }
+  }
+
+  function doMatchBrackets(cm) {
+    cm.operation(function() {
+      if (cm.state.matchBrackets.currentlyHighlighted) {
+        cm.state.matchBrackets.currentlyHighlighted();
+        cm.state.matchBrackets.currentlyHighlighted = null;
+      }
+      cm.state.matchBrackets.currentlyHighlighted = matchBrackets(cm, false, cm.state.matchBrackets);
+    });
+  }
+
+  function clearHighlighted(cm) {
+    if (cm.state.matchBrackets && cm.state.matchBrackets.currentlyHighlighted) {
+      cm.state.matchBrackets.currentlyHighlighted();
+      cm.state.matchBrackets.currentlyHighlighted = null;
+    }
+  }
+
+  // Configuration API
+  CodeMirror.defineOption("matchBrackets", false, function(cm, val, old) {
+    if (old && old != CodeMirror.Init) {
+      cm.off("cursorActivity", doMatchBrackets);
+      cm.off("focus", doMatchBrackets);
+      cm.off("blur", clearHighlighted);
+      clearHighlighted(cm);
+    }
+    if (val) {
+      cm.state.matchBrackets = typeof val == "object" ? val : {};
+      cm.on("cursorActivity", doMatchBrackets);
+      cm.on("focus", doMatchBrackets);
+      cm.on("blur", clearHighlighted);
+    }
+  });
+
+  // Public API
+  CodeMirror.defineExtension("matchBrackets", function() {
+    matchBrackets(this, true);
+  });
+
+  CodeMirror.defineExtension("findMatchingBracket", function(pos, config) {
+    return findMatchingDelimiter(this, pos, config);
+  });
+
+  // Configuration extension
+  CodeMirror.defineExtension("addDelimiterPair", function(open, close, type) {
+    delimiters.push({open: open, close: close, type: type || "word"});
+  });
+});
 // (function(mod) {
 //   if (typeof exports == "object" && typeof module == "object") // CommonJS
 //     mod(require("../../lib/codemirror"));

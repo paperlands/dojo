@@ -30,7 +30,7 @@ function parseBlock(lines, blockStack) {
 
         block.push(node);
     }
-    throw new Error("Unmatched opening block");
+    throw new Error("Missing end for opening do block");
 }
 
 // Function to parse a single line

@@ -349,7 +349,7 @@
     animation: flicker 1s linear infinite;
   }
   .animate-fade {
-    animation: fadeIn 1s ease-in-out;
+    animation: fadeIn 0.2s ease-in-out;
   }
   .animate-fadeawhile {
     animation: fadeWait 5s ease-in;
@@ -375,7 +375,5 @@
   .animate-caret {
     animation: typewriter 2s steps(11) forwards, blink 1s steps(11) infinite 2s;
   }
-
-
 
 }

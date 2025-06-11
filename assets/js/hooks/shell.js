@@ -240,7 +240,7 @@ Shell = {
         clearTimeout(sliderhideoutId);
         sliderhideoutId = setTimeout(function() {
           old_slider.classList.add("hidden");
-        }, 3000);
+        }, 2000);
       }
 
       function initializeSliderObserver(old_slider, cm, pos, line, tokenString) {

@@ -32,8 +32,13 @@ export class Terminal {
         return {theme: "everforest", mode: "plang", lineNumbers: true, lineWrapping: true,
                 styleActiveLine: {nonEmpty: true},
                 styleActiveSelected: true,
-            autocorrect: true,
-            foldGutter: true,
+                autocorrect: true,
+                foldGutter: true,
+                matchBrackets: {
+                    enableWordMatching: true,  // Enable do-end matching (default: true)
+                    highlightNonMatching: true,
+                    maxScanLines: 1000
+                },
             smartIndent: true,
             gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
 

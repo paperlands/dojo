@@ -297,7 +297,7 @@ oklch(0.6545 0.134 85.72)
 
 /* Equivalent to Vim's MatchParen group. */
 .cm-s-abbott span.CodeMirror-matchingbracket {
-  background: #745d42 /* cocoa */ !important;
+  background: #fef3b4 /* cocoa */ !important;
   color: #231c14 /* bistre */ !important;
   font-weight: bold;
 }
@@ -308,7 +308,7 @@ oklch(0.6545 0.134 85.72)
  * mark mismatched brackets as Error.)
  */
 .cm-s-abbott span.CodeMirror-nonmatchingbracket {
-  background: #d80450 /* crimson */ !important;
+  background: #f80450 /* crimson */ !important;
   color: #231c14 /* bistre */ !important;
 }
 
