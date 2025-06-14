@@ -32,7 +32,7 @@ const commands = {
     // Command insertion with replacement logic and proper history grouping
     cmd: (shell, { command: cmd, args = [] , batch = true}) => {
         const { doc, cursor, line, indent } = getContext(shell);
-        const argText = formatArgs(cmd, args);
+        const argText = formatArgs(cmd, args || []);
         const currentCmd = line.trim().split(" ")[0];
 
         if (currentCmd === cmd && batch) {
@@ -95,7 +95,7 @@ const commands = {
 };
 
 // Argument formatting - simple and extensible
-const formatArgs = (cmd, args) =>
+const formatArgs = (cmd, args=[]) =>
       args.reduce((acc, arg) => {
           if(Number.isInteger(arg)) return arg ? `${acc} ${arg}` : acc
           const el = document.getElementById(`cmdparam-${cmd}-${arg}`);

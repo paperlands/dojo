@@ -200,7 +200,7 @@ defmodule DojoWeb.SVGComponents do
         />
         
     <!-- The download arrow with animation -->
-        <g class="transform transition-all duration-300 ease-in-out group-hover:translate-y-0.5">
+        <g class="transform transition-all duration-300 ease-in-out hover:translate-y-0.5">
           <polyline points="7 10 12 15 17 10" />
           <line
             x1="12"

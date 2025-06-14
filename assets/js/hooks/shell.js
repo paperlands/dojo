@@ -174,8 +174,9 @@ Shell = {
 
 
       document.addEventListener('keydown', e => {
-        if (!e.ctrlKey && !e.metaKey && (e.key.length === 1 || ['Enter', 'Backspace', 'Delete'].includes(event.key)) && !['INPUT', 'TEXTAREA','SELECT', 'BUTTON'].includes(document.activeElement?.tagName)
- && !shell.hasFocus()) {
+
+        if(!e.ctrlKey && !e.metaKey && (e.key.length === 1 || ['Enter', 'Backspace', 'Delete'].includes(event.key)) && !['INPUT', 'TEXTAREA','SELECT', 'BUTTON'].includes(document.activeElement?.tagName)
+           && !shell.hasFocus()) {
           shell.focus();
           const lastLine = shell.lastLine();
           shell.setCursor(lastLine, shell.getLine(lastLine).length);

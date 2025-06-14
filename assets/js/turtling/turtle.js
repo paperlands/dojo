@@ -192,12 +192,17 @@ export class Turtle {
 
                 try {
                     // Iterate through each point in the path
+                    let prevPoint = null;
                     path.points.forEach((point, index) => {
-                        // Move to or draw line to the current point
                         if (index === 0) {
                             ctx.moveTo(point.x, point.y);
+                            prevPoint = point;
                         } else {
-                            ctx.lineTo(point.x, point.y);
+                            // Only draw line if current point is different from previous point
+                            if (point.x !== prevPoint.x || point.y !== prevPoint.y) {
+                                ctx.lineTo(point.x, point.y);
+                            }
+                            prevPoint = point;
                         }
                     });
 

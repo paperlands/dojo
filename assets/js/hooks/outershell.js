@@ -37,6 +37,29 @@ OuterShell = {
         this.shell = new Terminal(el, CodeMirror).init();
 
 
+      function handleShellTheme(theme, shell) {
+        switch(theme) {
+        case "light":
+          shell.setOption('theme', "everforest")
+          // code block
+          break;
+        case "dark":
+          shell.setOption('theme', "abbott")
+
+          // code block
+          break;
+        default:
+          shell.setOption('theme', "everforest")
+          // code block
+        }
+      }
+
+      // check theme
+      new MutationObserver(() => handleShellTheme(document.documentElement.getAttribute('data-theme')))
+        .observe(document.documentElement, {attributes: true, attributeFilter: ['data-theme']});
+
+      handleShellTheme(document.documentElement.getAttribute('data-theme'), this.shell); //
+
 
       this.handleEvent("outerkeepCanvas", (details) => {
         const userFilename = prompt('Enter filename for your PNG:', details.title) || details.title;
