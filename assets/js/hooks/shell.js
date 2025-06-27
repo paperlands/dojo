@@ -300,6 +300,11 @@ Shell = {
       const commands = parseProgram(code);
       turtle.draw(commands)
 
+      // call world send parsed
+      // camera goes to world
+      // pass render context
+      //
+
       // Display output
       output.innerHTML = `${turtle.commandCount}`;
 

@@ -339,6 +339,7 @@ defmodule DojoWeb.ShellLive do
      )}
   end
 
+
   # Handle the viewport update event from the hook
   def handle_event(
         "seeDisciples",
@@ -424,20 +425,45 @@ defmodule DojoWeb.ShellLive do
         {"show", "Show your Head", nil},
         {"beColour", "Set Colour to", [colour: "'red'"]}
       ],
-      control: [{"loop", "Repeat Commands", [times: 5]},{"def", "Name your Command", [name: "my_cmd"]}]
+      control: [
+        {"loop", "Repeat Commands", [times: 5]},
+        {"def", "Name your Command", [name: "my_cmd"]}
+      ]
     })
 
     ~H"""
     <!-- Command Deck Component (command_deck.html.heex) -->
-    <div class={["absolute flex px-1 pb-1 right-5 bottom-5 animate-fade", !@active && "hidden"]}>
+    <div class={["absolute flex select-none px-1 pb-1 right-5 bottom-5 animate-fade", !@active && "hidden"]}>
       <!-- Command Deck Panel -->
       <div class="fixed w-64 transition-all duration-100 ease-in-out transform right-5 bottom-20 xl:h-2/3 h-1/2 scrollbar-hide dark-scrollbar">
         <%!-- Top row --%>
         <div class="flex pl-6 pt-4 ">
           <!-- Header -->
           <div class="flex items-center justify-between">
-            <h2 class="text-xl font-bold text-base-content">
-              {to_titlecase("#{@type} Deck")}
+            <h2 class="z-50  pointer-events-auto text-xl font-bold text-base-content">
+              <div class="dropdown dropdown-top">
+                <div tabindex="0" role="button" class="inline-block group cursor-pointer  bg-base-200/50 hover:bg-base-100 transform transition-transform focus-within:border-accent-content border-accent  border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none ">
+                  {to_titlecase("#{@type}")}
+                  <svg
+                    class={"z-50 w-4 h-4 -ml-3 -mr-2 inline-block  bg-transparent group-focus:text-primary hover:text-primary text-primary/50 items-center group-focus:rotate-180 flex duration-300"}
+                    viewBox="0 0 24 24"
+                    fill="transparent"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="M18 15l-6-6-6 6" />
+                  </svg>
+
+                </div>
+                <ul tabindex="0" class="dropdown-content dropdown-left text-lg font-bold menu rounded bg-transparent  rounded-box z-60 w-32 p-2 shadow-sm">
+                  <li :if={!(@type == :command)} class="hover:bg-accent/50 border-0 rounded-t-lg  border-t-2 border-primary " phx-click="flipCommand" ><a>Command</a></li>
+                  <li :if={!(@type == :control)} class="hover:bg-accent/50 border-0 rounded-t-lg   border-t-2 border-primary " phx-click="flipControl" ><a>Control</a></li>
+                </ul>
+              <span class="inline-block">
+                Deck
+              </span>
+
+              </div>
             </h2>
           </div>
 
@@ -447,7 +473,7 @@ defmodule DojoWeb.ShellLive do
             phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
           >
             <div class="relative">
-              <button class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
+              <button class="flex items-center focus-within:border-accent-content justify-center w-8 h-8 rounded-full border-2 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
                 <svg
                   class="w-4 h-4 text-primary-content"
                   viewBox="0 0 24 24"

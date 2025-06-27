@@ -70,7 +70,6 @@ const commands = {
     // Control structure wrapping - atomic operation
     ctrl: (shell, { control: ctrl, args = [] }) => {
         const { doc, selection, indent } = getContext(shell);
-        if (!selection.text.trim()) return;
 
         const argText = formatArgs(ctrl, args) || " 1";
         const baseIndent = " ".repeat(indent);
@@ -79,15 +78,15 @@ const commands = {
         const structure = [
             `${baseIndent}${ctrl}${argText} do`,
             selection.text.split('\n').map(l => l.trim() ? `${innerIndent}${l.trim()}` : l).join('\n'),
-            `${baseIndent}end`
+            `${baseIndent}end`,
         ]
 
         if(ctrl === "def") {
-            console.log(argText)
             structure.push(`${argText}`.trim())
         }
 
         wrapped = structure.join('\n');
+        if (!selection.text.trim()) wrapped = "\n" + wrapped + "\n" // naive so when control structure is inserted doesn't concat with current focussed line
 
         const range = transform(doc, selection, wrapped, "*wrap-ctrl"); // Atomic wrap operation
         flash(doc, range);

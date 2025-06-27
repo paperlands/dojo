@@ -1,6 +1,6 @@
 <div class="relative transition-all bg-secondary max-h-dvh overflow-hidden bg-base">
   <!-- Canvas background bg-[#fdf6e3]-->
-  <canvas phx-update="ignore" id="canvas" class="fixed w-full h-full bg-inherit"></canvas>
+  <canvas phx-update="ignore" id="canvas" class="fixed antialiased w-full h-full bg-inherit"></canvas>
   <canvas
     :if={@outershell && @outershell.resp}
     phx-update="ignore"
@@ -13,30 +13,37 @@
   </canvas>
   <canvas
     phx-update="ignore"
-    id="transientcanvas"
+    id="ephemeralcanvas"
     class="fixed z-15 w-full h-full bg-transparent pointer-events-none"
   >
   </canvas>
   
 <!-- Left Coder pane container -->
-  <div class="relative left-0 z-20 w-[30ch] h-screen pl-4 overflow-y-hidden pointer-events-none  scrollbar-hide">
+  <div class="relative left-0 z-20 w-[30ch] h-screen pl-2 pt-2 overflow-y-hidden pointer-events-none  scrollbar-hide">
     <!-- Function Marks -->
-    <div class="flex justify-start space-x-0.5 py-1">
+    <div class="flex justify-start space-x-0.5">
       <div class="fixed flex pointer-events-auto">
         <!-- Example bookmarks -->
         <div
-          class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none border border-accent/50 text-primary hover:bg-primary hover:text-primary-content"
+          class="px-2 font-mono text-xs transition duration-200 rounded  cursor-pointer focus:outline-none  border-r-2 border-accent/50 text-primary hover:bg-accent/50 hover:text-primary-content"
           phx-click="seeTurtle"
         >
           ~
         </div>
         <div
           :for={%{"value" => value} <- @myfunctions}
-          class="px-3 py-1 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none outline outline-1 outline-gray-500 text-primary hover:bg-yellow-300"
+          class="px-2 font-mono text-xs transition duration-200 rounded rounded-t-lg cursor-pointer focus:outline-none outline outline-1 outline-gray-500 text-accent hover:bg-yellow-300"
           phx-click="seeTurtle"
           phx-value-function={value}
         >
           {value}
+        </div>
+        <div
+          class="px-1 font-mono text-xs transition duration-200 cursor-pointer focus:outline-none text-primary-content hover:border-primary hover:border-1 hover:border-rounded"
+
+          phx-click="addTurtle"
+        >
+          +
         </div>
       </div>
     </div>
@@ -44,7 +51,7 @@
     <div
       phx-update="ignore"
       id="runenv"
-      class="my-6 rounded-sm pointer-events-auto dark-scrollbar [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-text bg-amber-600/5 border-amber-600/20 h-[88dvh]"
+      class="mt-4 mb-6 rounded-sm pointer-events-auto dark-scrollbar [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-text bg-amber-600/5 border-amber-600/20 h-[88dvh]"
     >
       <div phx-click="flipWell">
         <.folders
