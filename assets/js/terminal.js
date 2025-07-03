@@ -72,12 +72,11 @@ export class Terminal {
         this.#setupEventListeners();
         this.#loadBuffersFromStorage();
         this.#selectInitialBuffer();
-
-        terminalBridge.pub(this.buffers.get(this.currentBuffer).content);
+        this.shell.promptBridge =
         // Expose run method
         this.shell.run = this.run.bind(this);
 
-        return this.shell;
+        return this;
     }
 
     #buildOptions() {
@@ -161,6 +160,10 @@ export class Terminal {
     }
 
     // Public API methods
+    triggerBridge() {
+        terminalBridge.pub(this.buffers.get(this.currentBuffer).content);
+    }
+
     createBuffer(name = null, content = '', mode = 'plang') {
         const bufferName = name || nameGen()
 

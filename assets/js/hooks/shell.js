@@ -3,357 +3,328 @@ import { Terminal } from "../terminal.js"
 import {printAST, parseProgram } from "../turtling/parse.js"
 import {terminalBridge, seaBridge, cameraBridge} from "../bridged.js"
 import { computePosition, offset, inline, autoUpdate } from "../../vendor/floating-ui.dom.umd.min";
+import { temporal } from "../utils/temporal.js"
 
 
-Shell = {
-    mounted() {
-      // on init find the triumvirate
-      const canvas = document.getElementById('canvas');
-      const output = document.getElementById('output');
-      // const world = new World(canvas);
-      const turtle = new Turtle(canvas);
-      const debouncedRunCode = debounce(this.run, 30);
-
-    const debouncedPushEvent = debounceIdem((eventName, eventData) => {
-      // set up event listeners
-        this.pushEvent(eventName, eventData);
-      }, 180);
-
-
-      terminalBridge.sub((val) =>
-        debouncedRunCode(val, canvas, turtle)
-      )
-      const shell = new Terminal(this.el, CodeMirror)
-
-
-
-      this.handleEvent("relayCamera", (details) => {
-        switch (details.command) {
-        case 'center_camera':
-          cameraBridge.pub(["recenter", {}])
-          break;
-        case 'start_record':
-          cameraBridge.pub(["record", {}])
-          break;
-        case 'end_record':
-          cameraBridge.pub(["endrecord", {}])
-          break;
-        default:
-          //nothing
-
-            }
-      })
-
-      shell.on('beforeSelectionChange', (cmInstance, changeObj) => {
-        // Log information about the selection change
-        console.log('Selection is about to change');
-        // Access the ranges (array of {anchor, head} objects)
-        const ranges = changeObj.ranges;
-        if (changeObj.ranges.length === 1) {
-          const range = changeObj.ranges[0];
-          // Only proceed if there's an actual selection (anchor != head)
-          if (range.anchor.line !== range.head.line || range.anchor.ch !== range.head.ch) {
-            debouncedPushEvent("flipControl", {})
-          } else {
-            debouncedPushEvent("flipCommand", {})
-          }
-        }
-      });
-
-
-      this.handleEvent("selfkeepCanvas", (details) => {
-        const userFilename = prompt('Enter filename for your PNG:', details.title) || details.title;
-
-        if (userFilename) {
-          // Add .png extension if not included
-          const filename = userFilename.endsWith('.png') ? userFilename : `${userFilename}.png`;
-
-          // Create a temporary canvas for post-processing
-          const offscreen = new OffscreenCanvas(canvas.width, canvas.height);
-          const tempCtx = offscreen.getContext('2d');
-
-          // First fill with black background
-          tempCtx.fillStyle = 'black';
-          tempCtx.fillRect(0, 0, offscreen.width, offscreen.height);
-
-          // Then draw the original canvas content on top
-          tempCtx.drawImage(canvas, 0, 0);
-
-          offscreen.convertToBlob({ type: 'image/png', quality: 1.0 }).then((blob) => {
-            if (!blob) {
-              console.error('Failed to convert canvas to Blob.');
-              return;
-            }
-
-            // Create a URL for the blob
-            const url = URL.createObjectURL(blob);
-
-            // Create and trigger download
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            // Revoke the object URL after download to free memory
-            URL.revokeObjectURL(url);
-
-
-          }).catch((err) => {
-            console.error('Error during canvas blob conversion:', err);
-          })}
-
-      })
-
-
-      function handleShellTheme(theme) {
-        switch(theme) {
-        case "light":
-          shell.setOption('theme', "everforest")
-          // code block
-          break;
-        case "dark":
-          shell.setOption('theme', "abbott")
-
-          // code block
-          break;
-        default:
-          shell.setOption('theme', "everforest")
-          // code block
-        }
-      }
-
-      // check theme
-      new MutationObserver(() => handleShellTheme(document.documentElement.getAttribute('data-theme')))
-        .observe(document.documentElement, {attributes: true, attributeFilter: ['data-theme']});
-
-      handleShellTheme(document.documentElement.getAttribute('data-theme')); //
-
-
-      this.handleEvent("writeShell", (instruction) => {
-        // Extract instruction details
-        const { command: cmd, control: ctrl, args = [] } = instruction;
-
-        try {
-          // Determine which operation to perform based on instruction type
-          if (cmd === "undo") {
-            shell.run({ command: "undo"})
-          } else if (cmd) {
-            shell.run({ command: cmd, args: args, batch: false})
-          } else if (ctrl) {
-            shell.run({ control: ctrl,  args: args })
-          }
-        } catch (error) {
-          console.error("Operation failed:", error);
-        }
-      });
-
-      this.handleEvent("mutateShell", (instruction) => {
-        const cmd = instruction["command"];
-        const args = instruction["args"];
-
-        switch (cmd) {
-        case "undo":
-          shell.run({ command: "undo"})
-          break;
-        default:
-          shell.run({ command: cmd, args: args})
-        }
-
-      });
-
-      // seabridge dispatcher babyy
-      seaBridge.sub((payload) =>
-        this.pushEvent(payload[0], payload[1])
-      )
-
-
-      // start listening
-
-
-
-      document.addEventListener('keydown', e => {
-
-        if(!e.ctrlKey && !e.metaKey && (e.key.length === 1 || ['Enter', 'Backspace', 'Delete'].includes(event.key)) && !['INPUT', 'TEXTAREA','SELECT', 'BUTTON'].includes(document.activeElement?.tagName)
-           && !shell.hasFocus()) {
-          shell.focus();
-          const lastLine = shell.lastLine();
-          shell.setCursor(lastLine, shell.getLine(lastLine).length);
-          shell.scrollIntoView(null, 50);
-        }
-      })
-
-      let sliderhideoutId;
-      const old_slider = document.getElementById('slider');
-
-      old_slider.addEventListener('mouseover', () => {
-            clearTimeout(sliderhideoutId); // Clear the timeout when hovering over the message
-        });
-
-      old_slider.addEventListener('mouseleave', resetSliderHideout);
-
-      shell.on('dblclick', function(cm, change) {
-        const selection = window.getSelection();
-
-        resetSliderHideout();
-
-
-        if (!selection || selection.rangeCount <= 0) {
-          old_slider.classList.add("hidden");
-          return;
-        }
-
-        const pos = cm.coordsChar({ left: event.clientX, top: event.clientY });
-        const line = cm.getLine(pos.line);
-        let token = cm.getTokenAt(pos);
-        if (token.type == null) {
-          // so that it checks one character to the right as well
-          pos.ch += 1
-          token = cm.getTokenAt(pos)
-        }
-        const numpat = /[+-]?\d*\.\d+|[+-]?\d+/g;
-
-        // Check if the token is a number
-        if (token.string.match(numpat)) {
-          // Initialize the slider observer
-          initializeSliderObserver(old_slider, cm, pos, line, token.string);
-
-          // Position the slider near the hovered number
-          old_slider.classList.remove("hidden");
-          const getSelectRect = selection.getRangeAt(0).getBoundingClientRect();
-
-          computePosition(event.target, old_slider, {placement: 'top-end', middleware: [offset(5)]}).then(({x, y}) => {
-            Object.assign(old_slider.style, {
-              left: `${getSelectRect.x}px`,
-              top: `${y}px`,
-            });
-          });
-        } else {
-          old_slider.classList.add("hidden");
-          if (slideObserver) slideObserver.disconnect();
-        }
-      });
-
-      let slideObserver;
-
-      function resetSliderHideout() {
-        clearTimeout(sliderhideoutId);
-        sliderhideoutId = setTimeout(function() {
-          old_slider.classList.add("hidden");
-        }, 2000);
-      }
-
-      function initializeSliderObserver(old_slider, cm, pos, line, tokenString) {
-        if (slideObserver) slideObserver.disconnect(); // Disconnect previous observer if exists
-
-        slideObserver = new MutationObserver(function(mut) {
-          let charCount = 0;
-          let val = null;
-          let index = 0;
-
-          // Split line into words and whitespace
-          const wsregex = /(\S+|\s+)/g;
-          const linecode = line.split(wsregex);
-
-          for (let i = 0; i < linecode.length; i++) {
-            const str = linecode[i];
-            charCount += str.length;
-
-            if (charCount >= pos.ch && str.includes(tokenString)) {
-              val = str;
-              index = i;
-              break; // Exit loop once we find the match
-            }
-          }
-
-          if (val) {
-            // Slider value get
-            const sliderValue = Math.round((7.2 * (mut[0].target.getAttribute(mut[0].attributeName) - 50)));
-            linecode[index] = sliderValue;
-
-            // Replace all numbers in the line with the slider value
-            const replacedLine = linecode.join('');
-            cm.replaceRange(replacedLine, { line: pos.line, ch: 0 }, { line: pos.line, ch: 100 });
-          }
-        });
-
-        slideObserver.observe(old_slider, {
-          subtree: true,
-          childList: true,
-          attributeFilter: ['slideval'],
-        });
-      }
-
-
-    },
-
-  run(val, canvas, turtle) {
+const commands = {
+  // Canvas commands
+  render: (canvas, turtle) => (code) => {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-
-    const code = val;
-
-
     try {
       const commands = parseProgram(code);
-      turtle.draw(commands)
-
-      // call world send parsed
-      // camera goes to world
-      // pass render context
-      //
-
-      // Display output
-      output.innerHTML = `${turtle.commandCount}`;
-
-
+      turtle.draw(commands);
+      return { success: true, commandCount: turtle.commandCount };
     } catch (error) {
-      output.innerHTML = `Error: ${error.message}`;
-      console.error(error);
+      return { success: false, error: error.message };
     }
+  },
 
+  // Shell commands
+  execute: (shell) => ({ command, control, args = [] }) => {
+    try {
+      if (command === "undo") {
+        shell.run({ command: "undo" });
+      } else if (command) {
+        shell.run({ command, args, batch: false });
+      } else if (control) {
+        shell.run({ control, args });
+      }
+    } catch (error) {
+      console.error("Shell execution failed:", error);
+    }
+  },
 
-  }
-
-}
-
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
+  // Camera commands
+  camera: (bridge) => (command) => {
+    const actions = {
+      'center_camera': () => bridge.pub(["recenter", {}]),
+      'start_record': () => bridge.pub(["record", {}]),
+      'end_record': () => bridge.pub(["endrecord", {}])
     };
-}
+    actions[command]?.();
+  },
 
-function debounceIdem(fn, delay) {
-  let timer;
-  let lastArgs = null;
+  // File operations
+  saveCanvas: (canvas) => async (title) => {
+    const filename = prompt('Enter filename:', title) || title;
+    if (!filename) return;
 
-  return (...args) => {
-    // Convert args to a string for comparison
-    const argsKey = JSON.stringify(args);
+    const finalName = filename.endsWith('.png') ? filename : `${filename}.png`;
 
-    // If args are identical to last call, don't reset the timer
-    if (lastArgs === argsKey) {
-      return;
+    try {
+      const offscreen = new OffscreenCanvas(canvas.width, canvas.height);
+      const ctx = offscreen.getContext('2d');
+
+      ctx.fillStyle = 'black';
+      ctx.fillRect(0, 0, offscreen.width, offscreen.height);
+      ctx.drawImage(canvas, 0, 0);
+
+      const blob = await offscreen.convertToBlob({ type: 'image/png', quality: 1.0 });
+      const url = URL.createObjectURL(blob);
+
+      const link = Object.assign(document.createElement('a'), {
+        href: url,
+        download: finalName
+      });
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Canvas save failed:', error);
     }
-
-    // Store the new args
-    lastArgs = argsKey;
-
-    // Clear previous timer and set a new one
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      fn(...args);
-    }, delay);
-  };
+  }
 };
 
+// =============================================================================
+// LISTENERS (Input Detection)
+// =============================================================================
+
+const listeners = {
+  // Keyboard listener
+  keyboard: (shell) => {
+    const shouldCapture = (e) =>
+      !e.ctrlKey && !e.metaKey &&
+      (e.key.length === 1 || ['Enter', 'Backspace', 'Delete'].includes(e.key)) &&
+      !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(document.activeElement?.tagName) &&
+      !shell.hasFocus();
+
+    return {
+      mount: () => {
+        const handler = (e) => {
+          if (shouldCapture(e)) {
+            shell.focus();
+            const lastLine = shell.lastLine();
+            shell.setCursor(lastLine, shell.getLine(lastLine).length);
+            shell.scrollIntoView(null, 50);
+          }
+        };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+      }
+    };
+  },
+
+  // Selection listener
+  selection: (shell, pushEvent) => {
+    const debouncedPush = temporal.debounceIdem(
+      (eventName, eventData) => pushEvent(eventName, eventData),
+      180
+    );
+
+    return {
+      mount: () => {
+        const handler = (cm, changeObj) => {
+          if (changeObj.ranges.length !== 1) return;
+
+          const range = changeObj.ranges[0];
+          const hasSelection = range.anchor.line !== range.head.line ||
+                              range.anchor.ch !== range.head.ch;
+
+          debouncedPush(hasSelection ? "flipControl" : "flipCommand", {});
+        };
+
+        shell.on('beforeSelectionChange', handler);
+        return () => shell.off('beforeSelectionChange', handler);
+      }
+    };
+  },
+
+  // Theme listener
+  theme: (callback) => ({
+    mount: () => {
+      const handler = () => {
+        const theme = document.documentElement.getAttribute('data-theme');
+        callback(theme === 'dark' ? 'abbott' : 'everforest');
+      };
+
+      const observer = new MutationObserver(handler);
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-theme']
+      });
+
+      handler(); // Initial call
+      return () => observer.disconnect();
+    }
+  }),
+
+  // Slider Listener
+   slider: (shell, slider) => {
+
+
+    return {
+      mount: () => {
+        const handler = (cm, event) => {
+          const selection = window.getSelection();
+          if (!selection || selection.rangeCount <= 0) return slider.hide();
+
+          const pos = cm.coordsChar({ left: event.clientX, top: event.clientY });
+          const line = cm.getLine(pos.line);
+          let token = cm.getTokenAt(pos);
+
+          if (token.type == null) {
+            pos.ch += 1;
+            token = cm.getTokenAt(pos);
+          }
+
+          if (/[+-]?\d*\.\d+|[+-]?\d+/g.test(token.string)) {
+            slider.show(cm, pos, line, token.string, event);
+          } else {
+            slider.hide();
+          }
+        }
+
+        shell.on('dblclick', handler);
+        return () => shell.off('dblclick', handler);
+      }
+    };
+  },
+
+
+};
+
+// =============================================================================
+// MUTATORS (Output Actions)
+// =============================================================================
+
+const mutators = {
+  // Display mutator
+  display: (element) => ({
+    success: (count) => element.innerHTML = `${count}`,
+    error: (message) => element.innerHTML = `Error: ${message}`
+  }),
+
+  // Slider mutator
+  slider: (sliderId) => {
+    const element = document.getElementById(sliderId);
+    let hideTimer, observer;
+
+    const hide = () => {
+      element.classList.add('hidden');
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+    };
+
+    const resetHideTimer = () => {
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(hide, 2000);
+    };
+
+    return {
+      mount: () => {
+        element.addEventListener('mouseover', () => clearTimeout(hideTimer));
+        element.addEventListener('mouseleave', resetHideTimer);
+        return hide;
+      },
+
+      show: (cm, pos, line, token, event) => {
+        element.classList.remove('hidden');
+
+        // Position slider
+        const selection = window.getSelection();
+        const rect = selection.getRangeAt(0).getBoundingClientRect();
+
+        computePosition(event.target, element, {
+          placement: 'top-end',
+          middleware: [offset(5)]
+        }).then(({x, y}) => {
+          Object.assign(element.style, { left: `${rect.x}px`, top: `${y}px` });
+        });
+
+        // Setup value observer
+        if (observer) observer.disconnect();
+        observer = new MutationObserver((mutations) => {
+          const sliderValue = Math.round(7.2 * (mutations[0].target.getAttribute('slideval') - 50));
+
+          const parts = line.split(/(\S+|\s+)/g);
+          let charCount = 0;
+
+          for (let i = 0; i < parts.length; i++) {
+            charCount += parts[i].length;
+            if (charCount >= pos.ch && parts[i].includes(token)) {
+              parts[i] = sliderValue.toString();
+              break;
+            }
+          }
+
+          cm.replaceRange(parts.join(''),
+            { line: pos.line, ch: 0 },
+            { line: pos.line, ch: 100 }
+          );
+        });
+
+        observer.observe(element, {
+          subtree: true,
+          childList: true,
+          attributeFilter: ['slideval']
+        });
+
+        resetHideTimer();
+      },
+
+      hide
+    };
+  }
+};
+
+
+const Shell = {
+  mounted() {
+    // Initialize domain objects
+    const canvas = document.getElementById('canvas');
+    const output = document.getElementById('output');
+    const turtle = new Turtle(canvas);
+    const term = new Terminal(this.el, CodeMirror);
+
+    // Create command handlers
+    const renderCommand = commands.render(canvas, turtle);
+    const executeCommand = commands.execute(term.shell);
+    const cameraCommand = commands.camera(cameraBridge);
+    const saveCommand = commands.saveCanvas(canvas);
+
+    // Create mutators
+    const display = mutators.display(output);
+    const slider = mutators.slider('slider');
+
+    // Mount listeners and store cleanup functions
+    this.cleanup = [
+      listeners.keyboard(term.shell).mount(),
+      listeners.selection(term.shell, this.pushEvent.bind(this)).mount(),
+      listeners.theme(theme => term.shell.setOption('theme', theme)).mount(),
+      //slider is mutated and also is activate by a listener
+      slider.mount(),
+      listeners.slider(term.shell, slider).mount()
+    ];
+
+    // Setup rendering pipeline
+    const debouncedRender = temporal.debounce((code) => {
+      const result = renderCommand(code);
+      result.success ? display.success(result.commandCount) : display.error(result.error);
+    }, 35);
+
+    // Connect bridges
+    terminalBridge.sub(debouncedRender);
+    seaBridge.sub(([event, payload]) => this.pushEvent(event, payload));
+    term.triggerBridge()
+
+    // Setup LiveView event handlers
+    this.handleEvent("relayCamera", ({ command }) => cameraCommand(command));
+    this.handleEvent("selfkeepCanvas", ({ title }) => saveCommand(title));
+    this.handleEvent("writeShell", executeCommand);
+
+    // Setup slider interaction
+
+  },
+
+  destroyed() {
+    this.cleanup?.forEach(fn => fn());
+  }
+};
 
 export default Shell;

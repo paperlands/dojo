@@ -166,7 +166,7 @@ defmodule DojoWeb.ShellLive do
 
   def handle_info({Dojo.Controls, command, arg}, socket) do
 
-    {:noreply, socket |> push_event("mutateShell", %{"command" => command, "args" => arg})}
+    {:noreply, socket |> push_event("writeShell", %{"command" => command, "args" => arg})}
   end
 
   def handle_info(event, socket) do
@@ -705,7 +705,7 @@ defmodule DojoWeb.ShellLive do
     ~H"""
     <div
       id="slider"
-      class="absolute hidden w-full max-w-xs transition-opacity duration-300 ease-in-out opacity-50 group hover:opacity-100 group-hover:block"
+      class="absolute hidden w-2/3 max-w-xs transition-opacity duration-300 ease-in-out opacity-50 group hover:opacity-100 group-hover:block"
     >
       <div class="flex items-center space-x-3">
         <!-- Value Display -->
