@@ -4,7 +4,7 @@ import { Typesetter } from "./mafs/typist.js"
 import { Versor } from "./mafs/versors.js"
 import { RenderLoop } from "./renderer.js"
 import { Camera } from "./camera.js"
-import { seaBridge, cameraBridge } from "../bridged.js"
+import {cameraBridge, bridged } from "../bridged.js"
 
 export class Turtle {
     constructor(canvas) {
@@ -40,6 +40,7 @@ export class Turtle {
         };
 
         this.places = {};
+        this.bridge = bridged("turtle")
         this.functions = {};
         this.instructions = [];
 
@@ -697,7 +698,7 @@ export class Turtle {
 
             setTimeout(() => {
                 if(options.comms){
-               seaBridge.pub(["hatchTurtle", {"commands": instructions, "path": trimImage(this.ctx)}])
+               this.bridge.pub(["hatchTurtle", {"commands": instructions, "path": trimImage(this.ctx)}])
                 }
             }, 1000)
 

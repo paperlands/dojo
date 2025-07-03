@@ -69,7 +69,5 @@ export const bridged = (eventName) => { // TODO: consider renaming to registerBr
     return { sub, pub, dispatch };
 };
 
-export const seaBridge = bridged("sea");
+
 export const cameraBridge = bridged("cam");
-export const terminalBridge = bridged("shell");
-export const outershellBridge = bridged("outershell");

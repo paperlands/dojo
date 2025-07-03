@@ -66,6 +66,7 @@
         id="your-buffer"
         class="relative rounded-sm pointer-events-auto cursor-text bg-amber-600/5 border-none h-full"
         phx-hook="Shell"
+        data-target="canvas"
       />
     </div>
     <!-- Code Output -->
@@ -250,7 +251,8 @@
       phx-update="ignore"
       id="outershell"
       class="relative rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full"
-      phx-hook="OuterShell"
+      phx-hook="Shell"
+      data-target="outercanvas"
     ></textarea>
   </div>
 

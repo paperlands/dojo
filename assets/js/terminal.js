@@ -1,5 +1,5 @@
 import { execute } from "./terminal/operations.js"
-import {terminalBridge} from "./bridged.js"
+import {bridged} from "./bridged.js"
 import {nameGen} from "./utils/nama.js"
 
 
@@ -63,18 +63,24 @@ export class Terminal {
         this.currentBuffer = null;
         this.shell = null;
         this.autosaveTimer = null;
-
-        return this.#init();
-    }
-
-    #init() {
         this.shell = this.CM.fromTextArea(this.editor, this.#buildOptions());
         this.#setupEventListeners();
+        this.bridge = bridged("terminal")
         this.#loadBuffersFromStorage();
-        this.#selectInitialBuffer();
-        this.shell.promptBridge =
-        // Expose run method
         this.shell.run = this.run.bind(this);
+        return this
+    }
+
+    inner() {
+
+        this.#selectInitialBuffer();
+
+        return this;
+    }
+
+    outer(code) {
+
+        this.swapBuffer("@outer.shell", code);
 
         return this;
     }
@@ -114,7 +120,7 @@ export class Terminal {
             clearTimeout(this.autosaveTimer);
             this.autosaveTimer = setTimeout(() => this.#saveToStorage(), 500);
 
-            terminalBridge.pub(content);
+            this.bridge.pub(content);
 
         });
 
@@ -161,32 +167,45 @@ export class Terminal {
 
     // Public API methods
     triggerBridge() {
-        terminalBridge.pub(this.buffers.get(this.currentBuffer).content);
+        this.bridge.pub(this.buffers.get(this.currentBuffer).content);
     }
 
     createBuffer(name = null, content = '', mode = 'plang') {
         const bufferName = name || nameGen()
 
-        if (this.buffers.has(bufferName)) {
-            throw new Error(`Buffer '${bufferName}' already exists`);
+        if (!this.buffers.has(bufferName)) {
+            throw new Error(`Buffer already exists`);
         }
 
         const { buffer, doc } = this.#createBufferDoc(bufferName, content, mode);
+
+
         this.selectBuffer(bufferName);
 
 
         return bufferName;
     }
 
+    swapBuffer(bufferName, content, mode) {
+        const { buffer, doc } = this.#createBufferDoc(bufferName, content, mode);
+        this.currentBuffer = bufferName;
+        this.shell.swapDoc(doc)
+        this.triggerBridge()
+    }
+
+
     selectBuffer(name) {
         if (!this.buffers.has(name)) {
             throw new Error(`Buffer '${name}' not found`);
         }
 
+
         this.currentBuffer = name;
         const doc = this.docs.get(name);
         this.shell.swapDoc(doc);
+        this.triggerBridge()
         this.shell.focus();
+
 
         return this;
     }

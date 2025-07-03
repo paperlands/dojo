@@ -1,7 +1,7 @@
 import { Turtle } from "../turtling/turtle.js"
 import { Terminal } from "../terminal.js"
 import {printAST, parseProgram } from "../turtling/parse.js"
-import {terminalBridge, seaBridge, cameraBridge} from "../bridged.js"
+import {cameraBridge} from "../bridged.js"
 import { computePosition, offset, inline, autoUpdate } from "../../vendor/floating-ui.dom.umd.min";
 import { temporal } from "../utils/temporal.js"
 
@@ -277,7 +277,8 @@ const mutators = {
 const Shell = {
   mounted() {
     // Initialize domain objects
-    const canvas = document.getElementById('canvas');
+    const shellTarget = this.el.dataset.target
+    const canvas = document.getElementById( shellTarget || 'canvas');
     const output = document.getElementById('output');
     const turtle = new Turtle(canvas);
     const term = new Terminal(this.el, CodeMirror);
@@ -309,16 +310,26 @@ const Shell = {
     }, 35);
 
     // Connect bridges
-    terminalBridge.sub(debouncedRender);
-    seaBridge.sub(([event, payload]) => this.pushEvent(event, payload));
-    term.triggerBridge()
+    term.bridge.sub(debouncedRender);
 
     // Setup LiveView event handlers
     this.handleEvent("relayCamera", ({ command }) => cameraCommand(command));
     this.handleEvent("selfkeepCanvas", ({ title }) => saveCommand(title));
     this.handleEvent("writeShell", executeCommand);
 
-    // Setup slider interaction
+    // differences shell behaviour
+    if(shellTarget=="outercanvas"){
+      this.handleEvent("seeOuterShell", (sight) => {
+        const code = printAST(sight.ast)
+        term.outer(code)
+      });
+    } else {
+      turtle.bridge.sub(([event, payload]) => this.pushEvent(event, payload));
+      term.inner()
+    }
+
+
+
 
   },
 
