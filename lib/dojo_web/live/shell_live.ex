@@ -455,9 +455,9 @@ defmodule DojoWeb.ShellLive do
                   </svg>
 
                 </div>
-                <ul tabindex="0" class="dropdown-content dropdown-left text-lg font-bold menu rounded bg-transparent  rounded-box z-60 w-32 p-2 shadow-sm">
-                  <li :if={!(@type == :command)} class="hover:bg-accent/50 border-0 rounded-t-lg  border-t-2 border-primary " phx-click="flipCommand" ><a>Command</a></li>
-                  <li :if={!(@type == :control)} class="hover:bg-accent/50 border-0 rounded-t-lg   border-t-2 border-primary " phx-click="flipControl" ><a>Control</a></li>
+                <ul tabindex="0" class="dropdown-content text-lg font-bold menu rounded bg-transparent transition duration-200 rounded-box z-60 w-32 p-2 shadow-sm">
+                  <li :if={!(@type == :command)} class="border-0 rounded-t-lg  border-t-2 border-accent hover:border-primary " phx-click="flipCommand" ><a>Command</a></li>
+                  <li :if={!(@type == :control)} class=" border-0 rounded-t-lg   border-t-2 border-accent hover:border-primary " phx-click="flipControl" ><a>Control</a></li>
                 </ul>
               <span class="inline-block">
                 Deck

@@ -1,7 +1,7 @@
 import { Turtle } from "../turtling/turtle.js"
 import { Terminal } from "../terminal.js"
 import {printAST, parseProgram } from "../turtling/parse.js"
-import {seaBridge, cameraBridge} from "../bridged.js"
+import {terminalBridge, seaBridge, cameraBridge} from "../bridged.js"
 import { computePosition, offset, inline, autoUpdate } from "../../vendor/floating-ui.dom.umd.min";
 
 
@@ -12,16 +12,20 @@ Shell = {
       const output = document.getElementById('output');
       // const world = new World(canvas);
       const turtle = new Turtle(canvas);
-      const shell = new Terminal(this.el, CodeMirror).init();
-      // set up event listeners
-      const debouncedRunCode = debounce(this.run, 25);
+      const debouncedRunCode = debounce(this.run, 30);
 
-      const debouncedPushEvent = debounceIdem((eventName, eventData) => {
+    const debouncedPushEvent = debounceIdem((eventName, eventData) => {
+      // set up event listeners
         this.pushEvent(eventName, eventData);
       }, 180);
 
 
-      this.run(shell.cached, canvas, turtle);
+      terminalBridge.sub((val) =>
+        debouncedRunCode(val, canvas, turtle)
+      )
+      const shell = new Terminal(this.el, CodeMirror)
+
+
 
       this.handleEvent("relayCamera", (details) => {
         switch (details.command) {
@@ -166,11 +170,7 @@ Shell = {
 
 
       // start listening
-      shell.on('change', function(cm, change) {
-        const val = cm.getValue()
-        saveEditorContent(val);
-        debouncedRunCode(val, canvas, turtle)
-      })
+
 
 
       document.addEventListener('keydown', e => {
@@ -354,11 +354,6 @@ function debounceIdem(fn, delay) {
     }, delay);
   };
 };
-
-
-function saveEditorContent(val) {
-  localStorage.setItem('@my.turtle', val);
-}
 
 
 export default Shell;

@@ -22,7 +22,7 @@
   <div class="relative left-0 z-20 w-[30ch] h-screen pl-2 pt-2 overflow-y-hidden pointer-events-none  scrollbar-hide">
     <!-- Function Marks -->
     <div class="flex justify-start space-x-0.5">
-      <div class="fixed flex pointer-events-auto">
+      <div class="fixed select-none flex pointer-events-auto">
         <!-- Example bookmarks -->
         <div
           class="px-2 font-mono text-xs transition duration-200 rounded  cursor-pointer focus:outline-none  border-r-2 border-accent/50 text-primary hover:bg-accent/50 hover:text-primary-content"
@@ -39,7 +39,7 @@
           {value}
         </div>
         <div
-          class="px-1 font-mono text-xs transition duration-200 cursor-pointer focus:outline-none text-primary-content hover:border-primary hover:border-1 hover:border-rounded"
+          class="px-1 font-mono text-xs transition duration-200 cursor-pointer focus:outline-none text-primary-content rounded-r-lg  hover:border-r-2 hover:border-accent"
 
           phx-click="addTurtle"
         >

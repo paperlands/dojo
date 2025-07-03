@@ -77,8 +77,10 @@ const commands = {
 
         const structure = [
             `${baseIndent}${ctrl}${argText} do`,
-            selection.text.split('\n').map(l => l.trim() ? `${innerIndent}${l.trim()}` : l).join('\n'),
-            `${baseIndent}end`,
+            selection && selection.text ?
+                selection.text.split('\n').filter(l => l.trim()).map(l => `${innerIndent}${l}`).join('\n') :
+                '',
+            `${baseIndent}end\n`,
         ]
 
         if(ctrl === "def") {
@@ -86,10 +88,13 @@ const commands = {
         }
 
         wrapped = structure.join('\n');
-        if (!selection.text.trim()) wrapped = "\n" + wrapped + "\n" // naive so when control structure is inserted doesn't concat with current focussed line
+        if (!selection.text.trim()) wrapped = "\n" + wrapped // naive so when control structure is inserted doesn't concat with current focussed line
 
         const range = transform(doc, selection, wrapped, "*wrap-ctrl"); // Atomic wrap operation
         flash(doc, range);
+
+        doc.setCursor(selection.text.trim() && range.to.line-2, 100);
+        doc.cm.focus();
     }
 };
 
