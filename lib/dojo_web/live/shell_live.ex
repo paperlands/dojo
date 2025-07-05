@@ -165,7 +165,6 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_info({Dojo.Controls, command, arg}, socket) do
-
     {:noreply, socket |> push_event("writeShell", %{"command" => command, "args" => arg})}
   end
 
@@ -339,7 +338,6 @@ defmodule DojoWeb.ShellLive do
      )}
   end
 
-
   # Handle the viewport update event from the hook
   def handle_event(
         "seeDisciples",
@@ -410,26 +408,27 @@ defmodule DojoWeb.ShellLive do
   end
 
   def deck(assigns) do
-    assigns = assign(assigns, :primitive, %{
-      command: [
-        {"fw", "Move Forward", [length: 50]},
-        {"rt", "Face Right", [angle: 30]},
-        {"lt", "Face Left", [angle: 30]},
-        {"jmp", "Jump Forward", [length: 50]},
-        {"wait", "Wait a While", [time: 1]},
-        {"label", "Write Something", [text: "'Hello'", size: 10]},
-        {"faceto", "Face Towards Start", ["→": 0, "↑": 0]},
-        {"goto", "Go To Start", ["→": 0, "↑": 0]},
-        {"erase", "Wipe Everything", nil},
-        {"hd", "Hide your Head", nil},
-        {"show", "Show your Head", nil},
-        {"beColour", "Set Colour to", [colour: "'red'"]}
-      ],
-      control: [
-        {"loop", "Repeat Commands", [times: 5]},
-        {"def", "Name your Command", [name: "my_cmd"]}
-      ]
-    })
+    assigns =
+      assign(assigns, :primitive, %{
+        command: [
+          {"fw", "Move Forward", [length: 50]},
+          {"rt", "Face Right", [angle: 30]},
+          {"lt", "Face Left", [angle: 30]},
+          {"jmp", "Jump Forward", [length: 50]},
+          {"wait", "Wait a While", [time: 1]},
+          {"label", "Write Something", [text: "'Hello'", size: 10]},
+          {"faceto", "Face Towards Start", ["→": 0, "↑": 0]},
+          {"goto", "Go To Start", ["→": 0, "↑": 0]},
+          {"erase", "Wipe Everything", nil},
+          {"hd", "Hide your Head", nil},
+          {"show", "Show your Head", nil},
+          {"beColour", "Set Colour to", [colour: "'red'"]}
+        ],
+        control: [
+          {"loop", "Repeat Commands", [times: 5]},
+          {"def", "Name your Command", [name: "my_cmd"]}
+        ]
+      })
 
     ~H"""
     <!-- Command Deck Component (command_deck.html.heex) -->
@@ -442,18 +441,8 @@ defmodule DojoWeb.ShellLive do
           <div class="flex items-center justify-between">
             <h2 class="z-50  pointer-events-auto text-xl font-bold text-base-content">
               <div class="dropdown dropdown-top">
-                <div tabindex="0" role="button" class="inline-block group cursor-pointer  bg-base-200/50 hover:bg-base-100 transform transition-transform focus-within:border-accent-content border-accent  border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none ">
+                <div tabindex="0" role="button" class="inline-block group cursor-pointer bg-base-200/50 hover:bg-base-100 transform transition-transform focus-within:border-accent-content border-accent  border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none inline-flex items-end">
                   {to_titlecase("#{@type}")}
-                  <svg
-                    class={"z-50 w-4 h-4 -ml-3 -mr-2 inline-block  bg-transparent group-focus:text-primary hover:text-primary text-primary/50 items-center group-focus:rotate-180 flex duration-300"}
-                    viewBox="0 0 24 24"
-                    fill="transparent"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <path d="M18 15l-6-6-6 6" />
-                  </svg>
-
                 </div>
                 <ul tabindex="0" class="dropdown-content text-lg font-bold menu rounded bg-transparent transition duration-200 rounded-box z-60 w-32 p-2 shadow-sm">
                   <li :if={!(@type == :command)} class="border-0 rounded-t-lg  border-t-2 border-accent hover:border-primary " phx-click="flipCommand" ><a>Command</a></li>
@@ -573,7 +562,7 @@ defmodule DojoWeb.ShellLive do
       <!-- Header -->
       <div class="flex items-center justify-between p-4 mb-2 border-b border-amber-600/50">
         <h2 class="text-xl font-bold text-amber-200">Memory Well</h2>
-        
+
     <!-- View Toggle -->
         <div class="flex space-x-2">
           <button
@@ -584,7 +573,7 @@ defmodule DojoWeb.ShellLive do
           </button>
         </div>
       </div>
-      
+
     <!-- Viewing Pane -->
       <div class="flex-1 overflow-y-auto p-2 dark-scrollbar">
         <div class="space-y-3">
@@ -597,13 +586,13 @@ defmodule DojoWeb.ShellLive do
               <div class="flex-shrink-0 w-16 h-16 mr-4 overflow-hidden rounded">
                 <img src={mmr.meta.path} class="object-cover w-full h-full" />
               </div>
-              
+
     <!-- Info -->
               <div class="flex-1 min-w-0">
                 <h3 class="text-sm font-bold text-amber-300 truncate">{"title here"}</h3>
                 <p class="text-xs text-amber-400/60">{"date here"}</p>
               </div>
-              
+
     <!-- Actions -->
               <div class="flex ml-2 space-x-2">
                 <button
