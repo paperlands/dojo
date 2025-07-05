@@ -4,15 +4,21 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
-    <meta name="description" content="Wrestle with math together">
-    <meta property="og:image" content="/images/mathland.jpg">
-    <link rel="icon" href="/favicon.ico"/>
+    <meta name="description" content="Wrestle with math together" />
+    <meta property="og:image" content="/images/mathland.jpg" />
+    <link rel="icon" href="/favicon.ico" />
 
     <.live_title suffix=" · Dojo">
-      <%= assigns[:page_title] || "Paperland" %>
+      {assigns[:page_title] || "Paperland"}
     </.live_title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
-    <script defer fetchpriority="high" phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
+    <script
+      defer
+      fetchpriority="high"
+      phx-track-static
+      type="text/javascript"
+      src={~p"/assets/js/app.js"}
+    >
     </script>
     <script>
       (() => {
@@ -32,9 +38,14 @@
         window.addEventListener("phx:set-theme", ({ detail: { theme } }) => setTheme(theme));
       })();
     </script>
-    <script defer data-domain="dojo.paperland.sg" src="https://odin.fly.dev/js/script.file-downloads.hash.outbound-links.pageview-props.tagged-events.js"></script>
+    <script
+      defer
+      data-domain="dojo.paperland.sg"
+      src="https://odin.fly.dev/js/script.file-downloads.hash.outbound-links.pageview-props.tagged-events.js"
+    >
+    </script>
   </head>
   <body class="">
-    <%= @inner_content %>
+    {@inner_content}
   </body>
 </html>

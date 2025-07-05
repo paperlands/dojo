@@ -4,8 +4,8 @@ defmodule Dojo.Clan do
 
   @separator "-"
 
-  def find(id) when is_binary(id) , do: %Dojo.Clan{name: id}
-  def find(_) , do: nil
+  def find(id) when is_binary(id), do: %Dojo.Clan{name: id}
+  def find(_), do: nil
 
   def start(), do: %Dojo.Clan{name: gen_clan_name()}
 
@@ -14,7 +14,6 @@ defmodule Dojo.Clan do
   end
 
   def get_name_frags(num) when is_integer(num) do
-    Dojo.Clan.Name.list |> Enum.take_random(num)
+    Dojo.Clan.Name.list() |> Enum.take_random(num)
   end
-
 end

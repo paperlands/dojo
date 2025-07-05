@@ -432,7 +432,10 @@ defmodule DojoWeb.ShellLive do
 
     ~H"""
     <!-- Command Deck Component (command_deck.html.heex) -->
-    <div class={["absolute flex select-none px-1 pb-1 right-5 bottom-5 animate-fade", !@active && "hidden"]}>
+    <div class={[
+      "absolute flex select-none px-1 pb-1 right-5 bottom-5 animate-fade",
+      !@active && "hidden"
+    ]}>
       <!-- Command Deck Panel -->
       <div class="fixed w-64 transition-all duration-100 ease-in-out transform right-5 bottom-20 xl:h-2/3 h-1/2 scrollbar-hide dark-scrollbar">
         <%!-- Top row --%>
@@ -441,17 +444,35 @@ defmodule DojoWeb.ShellLive do
           <div class="flex items-center justify-between">
             <h2 class="z-50  pointer-events-auto text-xl font-bold text-base-content">
               <div class="dropdown dropdown-top">
-                <div tabindex="0" role="button" class="inline-block group cursor-pointer bg-base-200/50 hover:bg-base-100 transform transition-transform focus-within:border-accent-content border-accent  border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none inline-flex items-end">
+                <div
+                  tabindex="0"
+                  role="button"
+                  class="inline-block group cursor-pointer bg-base-200/50 hover:bg-base-100 transform transition-transform focus-within:border-accent-content border-accent  border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none inline-flex items-end"
+                >
                   {to_titlecase("#{@type}")}
                 </div>
-                <ul tabindex="0" class="dropdown-content text-lg font-bold menu rounded bg-transparent transition duration-200 rounded-box z-60 w-32 p-2 shadow-sm">
-                  <li :if={!(@type == :command)} class="border-0 rounded-t-lg  border-t-2 border-accent hover:border-primary " phx-click="flipCommand" ><a>Command</a></li>
-                  <li :if={!(@type == :control)} class=" border-0 rounded-t-lg   border-t-2 border-accent hover:border-primary " phx-click="flipControl" ><a>Control</a></li>
+                <ul
+                  tabindex="0"
+                  class="dropdown-content text-lg font-bold menu rounded bg-transparent transition duration-200 rounded-box z-60 w-32 p-2 shadow-sm"
+                >
+                  <li
+                    :if={!(@type == :command)}
+                    class="border-0 rounded-t-lg  border-t-2 border-accent hover:border-primary "
+                    phx-click="flipCommand"
+                  >
+                    <a>Command</a>
+                  </li>
+                  <li
+                    :if={!(@type == :control)}
+                    class=" border-0 rounded-t-lg   border-t-2 border-accent hover:border-primary "
+                    phx-click="flipControl"
+                  >
+                    <a>Control</a>
+                  </li>
                 </ul>
-              <span class="inline-block">
-                Deck
-              </span>
-
+                <span class="inline-block">
+                  Deck
+                </span>
               </div>
             </h2>
           </div>
@@ -516,9 +537,11 @@ defmodule DojoWeb.ShellLive do
                       class="ml-[1ch] bg-base-200/50 hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
                       placeholder={arg}
                       phx-update="ignore"
-                      phx-keydown={JS.dispatch("phx:writeShell",
-                  detail: %{@type => cmd, "args" => vals && Keyword.keys(vals)}
-                )}
+                      phx-keydown={
+                        JS.dispatch("phx:writeShell",
+                          detail: %{@type => cmd, "args" => vals && Keyword.keys(vals)}
+                        )
+                      }
                       phx-key="Enter"
                       oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
                       onclick="event.stopPropagation()"
@@ -546,10 +569,14 @@ defmodule DojoWeb.ShellLive do
           <% end %>
         </div>
         <!-- Decorative corners -->
-        <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-1 -left-1 border-primary-content"></div>
-        <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-1 right-1 border-primary-content"></div>
-        <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-8 -left-1 border-primary-content"></div>
-        <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-8 -right-1 border-primary-content"></div>
+        <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-1 -left-1 border-primary-content">
+        </div>
+        <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-1 right-1 border-primary-content">
+        </div>
+        <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-8 -left-1 border-primary-content">
+        </div>
+        <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-8 -right-1 border-primary-content">
+        </div>
       </div>
     </div>
     """
@@ -562,7 +589,7 @@ defmodule DojoWeb.ShellLive do
       <!-- Header -->
       <div class="flex items-center justify-between p-4 mb-2 border-b border-amber-600/50">
         <h2 class="text-xl font-bold text-amber-200">Memory Well</h2>
-
+        
     <!-- View Toggle -->
         <div class="flex space-x-2">
           <button
@@ -573,7 +600,7 @@ defmodule DojoWeb.ShellLive do
           </button>
         </div>
       </div>
-
+      
     <!-- Viewing Pane -->
       <div class="flex-1 overflow-y-auto p-2 dark-scrollbar">
         <div class="space-y-3">
@@ -586,13 +613,13 @@ defmodule DojoWeb.ShellLive do
               <div class="flex-shrink-0 w-16 h-16 mr-4 overflow-hidden rounded">
                 <img src={mmr.meta.path} class="object-cover w-full h-full" />
               </div>
-
+              
     <!-- Info -->
               <div class="flex-1 min-w-0">
                 <h3 class="text-sm font-bold text-amber-300 truncate">{"title here"}</h3>
                 <p class="text-xs text-amber-400/60">{"date here"}</p>
               </div>
-
+              
     <!-- Actions -->
               <div class="flex ml-2 space-x-2">
                 <button

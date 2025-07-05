@@ -40,7 +40,6 @@
         </div>
         <div
           class="px-1 font-mono text-xs transition duration-200 cursor-pointer focus:outline-none text-primary-content rounded-r-lg  hover:border-r-2 hover:border-accent"
-
           phx-click="addTurtle"
         >
           +
@@ -99,7 +98,8 @@
         <span class="inline-block w-2 h-0.5 ml-1 bg-amber-400 animate-flicker">_</span>
         
 <!-- Decorative corners (smaller size for subtlety) -->
-        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content"></div>
+        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content">
+        </div>
         <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary-content">
         </div>
         <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-primary-content">
@@ -192,8 +192,10 @@
             <.manual class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-primary hover:rotate-[-40deg]" />
           </button>
         </div>
-        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content"></div>
-        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary-content"></div>
+        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content">
+        </div>
+        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary-content">
+        </div>
         <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-primary-content">
         </div>
         <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-primary-content">
@@ -309,7 +311,8 @@
       class={[
         "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md  hover:scale-120 hover:border-2",
         (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") || "cursor-progress",
-        @outershell && @outershell.addr == phx_ref && "border-accent-content" || "border-accent/50"
+        (@outershell && @outershell.addr == phx_ref && "border-accent-content") ||
+          "border-accent/50"
       ]}
     >
       <div class="absolute font-mono text-sm tracking-wider rotate-0 select-none top-2 right-2 text-accent">

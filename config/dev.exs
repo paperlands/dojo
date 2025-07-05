@@ -70,7 +70,6 @@ config :dojo, dev_routes: true
 config :logger, :console, format: "[$level] $message\n"
 config :logger, truncate: 1000
 
-
 # Set a higher stacktrace during development. Avoid configuring such
 # in production as building large stacktraces may be expensive.
 config :phoenix, :stacktrace_depth, 20

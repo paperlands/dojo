@@ -1,41 +1,52 @@
 defmodule Dojo.Turtle do
-
   def hatch(%{path: path, commands: _cmd} = body, %{class: pid}) do
     Dojo.Table.publish(pid, {__MODULE__, %{path: path}, body}, :hatch)
   end
+
   def hatch() do
     nil
   end
 
   def find_title(ast) when is_list(ast) do
-    Enum.reduce_while(ast, "",
-                      fn %{"meta" => %{"lit" => title}}, _acc when is_binary(title)->
-                        {:halt, title}
-                        _,_ -> {:cont, ""}
-                      end)
+    Enum.reduce_while(ast, "", fn
+      %{"meta" => %{"lit" => title}}, _acc when is_binary(title) ->
+        {:halt, title}
+
+      _, _ ->
+        {:cont, ""}
+    end)
   end
 
   def find_title(_) do
     ""
   end
+
   def filter_fns(ast) when is_map(ast) do
-    ast |> Enum.reject(fn
-    %{"type" => "Define", "value" => _value, "meta" => %{"args" => _args}, "children" => _children} ->
-      false
+    ast
+    |> Enum.reject(fn
+      %{
+        "type" => "Define",
+        "value" => _value,
+        "meta" => %{"args" => _args},
+        "children" => _children
+      } ->
+        false
+
       _ ->
         true
     end)
   end
 
-  def filter_fns(_)  do
+  def filter_fns(_) do
     []
   end
 
   def find_fn(ast, name) do
+    ast
+    |> Enum.reject(fn
+      %{"type" => "Define", "value" => ^name} ->
+        false
 
-    ast |> Enum.reject(fn
-    %{"type" => "Define", "value" => ^name} ->
-      false
       _ ->
         true
     end)
@@ -64,6 +75,7 @@ defmodule Dojo.Turtle do
 
   defp visit(%{"type" => "Loop", "value" => value, "children" => children}) do
     child_output = children |> Enum.map(&visit/1) |> Enum.join("\n")
+
     """
     for #{value} do
     #{indent_lines(child_output)}
@@ -73,6 +85,7 @@ defmodule Dojo.Turtle do
 
   defp visit(%{"type" => "When", "value" => value, "children" => children}) do
     child_output = children |> Enum.map(&visit/1) |> Enum.join("\n")
+
     """
     when #{value} do
     #{indent_lines(child_output)}
@@ -80,9 +93,15 @@ defmodule Dojo.Turtle do
     """
   end
 
-  defp visit(%{"type" => "Define", "value" => value, "meta" => %{"args" => args}, "children" => children}) do
+  defp visit(%{
+         "type" => "Define",
+         "value" => value,
+         "meta" => %{"args" => args},
+         "children" => children
+       }) do
     arg_output = args |> Enum.map(&visit/1) |> Enum.join(" ")
     child_output = children |> Enum.map(&visit/1) |> Enum.join("\n")
+
     """
     draw #{value} #{arg_output} do
     #{indent_lines(child_output)}

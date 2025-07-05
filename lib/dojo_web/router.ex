@@ -20,12 +20,11 @@ defmodule DojoWeb.Router do
     get "/", PageController, :home
 
     live_session :dojo_session,
-    on_mount: [{DojoWeb.Session, :anon}] do
+      on_mount: [{DojoWeb.Session, :anon}] do
       live("/book1", BookOneLive, :index)
       live("/shell", ShellLive, :index)
       live("/welcome", BootLive, :index)
     end
-
   end
 
   # Other scopes may use custom stacks.

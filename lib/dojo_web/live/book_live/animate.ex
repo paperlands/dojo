@@ -15,13 +15,14 @@ defmodule DojoWeb.Animate do
 
   # init clause
   def update(%{id: id, class_id: class_id, name: name, show_controls: show_controls}, socket) do
-    {list, source} = case Dojo.Table.last(class_id, :animate) do
-      {m, f, a} ->
-        {apply(m, f, a), to_source({m, f, a})}
+    {list, source} =
+      case Dojo.Table.last(class_id, :animate) do
+        {m, f, a} ->
+          {apply(m, f, a), to_source({m, f, a})}
 
-      _ ->
-        {Dojo.World.create("1"), "Dojo.World.create(\"1\")"}
-    end
+        _ ->
+          {Dojo.World.create("1"), "Dojo.World.create(\"1\")"}
+      end
 
     list =
       list
@@ -72,27 +73,32 @@ defmodule DojoWeb.Animate do
      |> increment_step_if_static()}
   end
 
-  def update(%{id: _id, function: {list, {m,f,a}}}, socket) when is_list(list) do
+  def update(%{id: _id, function: {list, {m, f, a}}}, socket) when is_list(list) do
     list =
       [
         safe: "<p>" <> Dojo.World.print(list, view: true) <> "</p>"
         # |> DojoWeb.Utils.DOMParser.extract_html_from_md() #! this DOMparser fn is faulty. Doesnt do <br> well
       ]
 
-    {:ok, assign(socket, last: length(list), function: fn index -> Enum.at(list, index) end, source: to_source({m, f, a}))}
+    {:ok,
+     assign(socket,
+       last: length(list),
+       function: fn index -> Enum.at(list, index) end,
+       source: to_source({m, f, a})
+     )}
   end
 
   def render(assigns) do
     ~H"""
     <div id={@id <> "smart-animation"} class="">
       <div class="flex justify-between m-4">
-        <div class="text-2xl font-bold"><%= @name %></div>
+        <div class="text-2xl font-bold">{@name}</div>
         <div class="flex">
-          step:<div class="ml-1 font-bold"><%= @step %>/<%= @last %></div>
+          step:<div class="ml-1 font-bold">{@step}/{@last}</div>
         </div>
       </div>
       <div class="px-1 py-2 overflow-auto text-sm bg-white rounded max-h-60">
-        <%= @function.(@step - 1) %>
+        {@function.(@step - 1)}
       </div>
       <section class={"flex justify-between p-2 font-medium text-gray-600 rounded-md bg-orange-100/40" <> show_controls(@show_controls)}>
         <span class="hover:text-black hover:cursor-pointer" phx-click="reset" phx-target={@myself}>
@@ -131,7 +137,7 @@ defmodule DojoWeb.Animate do
           phx-target={@myself}
           class="px-4 hover:text-black hover:cursor-pointer"
         >
-          <%= "#{@speed_multiplier}x" %>
+          {"#{@speed_multiplier}x"}
         </span>
       </section>
       <div class="py-1 rounded-lg" />
@@ -139,11 +145,13 @@ defmodule DojoWeb.Animate do
         <.icon
           name="hero-clipboard"
           class="w-3 h-3 ml-2 active:bg-brand active:animate-spin hover:cursor-copy"
-          phx-click={JS.dispatch("dojo:yoink", to: "##{@id}-source") |> JS.push("yoink", value: %{name: @name})}
+          phx-click={
+            JS.dispatch("dojo:yoink", to: "##{@id}-source") |> JS.push("yoink", value: %{name: @name})
+          }
         />
-        <div id={@id <>"-source"} class="hidden text"><%= @source %></div>
+        <div id={@id <>"-source"} class="hidden text">{@source}</div>
         <div class="px-8 overflow-x-auto">
-          <%= [safe: Makeup.highlight(@source)] %>
+          {[safe: Makeup.highlight(@source)]}
           <div class="w-full max-w-2xl m-2 animate-pulse"></div>
         </div>
       </div>

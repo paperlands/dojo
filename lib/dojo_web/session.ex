@@ -15,10 +15,12 @@ defmodule DojoWeb.Session do
     {:cont,
      socket
      |> assign(
-     locale: get_connect_params(socket)["locale"] || @default_locale,
-     tz: %{timezone: get_connect_params(socket)["timezone"] || @timezone,
-           timezone_offset: get_connect_params(socket)["timezone_offset"] || @timezone_offset},
-     session: get_connect_params(socket)["session"] |> mutate_session(params)
+       locale: get_connect_params(socket)["locale"] || @default_locale,
+       tz: %{
+         timezone: get_connect_params(socket)["timezone"] || @timezone,
+         timezone_offset: get_connect_params(socket)["timezone_offset"] || @timezone_offset
+       },
+       session: get_connect_params(socket)["session"] |> mutate_session(params)
      )}
   end
 
@@ -31,6 +33,7 @@ defmodule DojoWeb.Session do
 
     struct(%__MODULE__{}, atomised_sess)
   end
+
   # false first load
   defp mutate_session(_, _), do: %__MODULE__{}
 
@@ -39,4 +42,4 @@ defmodule DojoWeb.Session do
   end
 
   defp hydrate_session(acc, _key, _val), do: acc
- end
+end
