@@ -6,7 +6,17 @@ import {nameGen} from "./utils/nama.js"
 // Storage abstraction for Buffer Management
 class BufferStorage {
     static STORAGE_KEY = '@paperland.buffers';
-    static DEFAULT_BUFFER = { name: '~', content: `label 'welcome to PaperLand'`, mode: 'plang' };
+    static DEFAULT_BUFFER = { name: '~', content: `jmpto 0 125
+  beColour red
+  label "Delete all the code here to begin 🧙‍♂️" 20
+  jmp -200
+  rt 180
+  fw 50
+  label "➤" 20
+  beColour DarkOrange
+  jmpto 0 0
+  rt 180
+  label "Welcome to PaperLand" 60`, mode: 'plang' };
 
     static load() {
         try {
