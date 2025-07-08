@@ -40,7 +40,7 @@ defmodule DojoWeb.ShellLive do
   def handle_params(params, _url, socket) do
     {:noreply,
      socket
-     |> join_clan(params["clan"] || "paperland")
+     |> join_clan(params["clan"] || "PaperLand")
      |> sync_session()}
   end
 
@@ -534,7 +534,7 @@ defmodule DojoWeb.ShellLive do
                       id={"cmdparam-#{cmd}-#{arg}"}
                       value={val}
                       defaulted={val}
-                      class="ml-[1ch] bg-base-200/50 hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
+                      class="ml-[1ch] bg-base-200/50 caret-accent-content hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
                       placeholder={arg}
                       phx-update="ignore"
                       phx-keydown={

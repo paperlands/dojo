@@ -110,7 +110,7 @@ const listeners = {
 
   // Selection listener
   selection: (shell, pushEvent) => {
-    const debouncedPush = temporal.debounceIdem(
+    const debouncedPush = temporal.debounce(
       (eventName, eventData) => pushEvent(eventName, eventData),
       180
     );
@@ -293,7 +293,33 @@ const Shell = {
     const display = mutators.display(output);
     const slider = mutators.slider('slider');
 
-    // Mount listeners and store cleanup functions
+
+    // Setup rendering pipeline
+    const debouncedRender = temporal.debounce((code) => {
+      const result = renderCommand(code);
+      result.success ? display.success(result.commandCount) : display.error(result.error);
+    }, 20);
+
+    // Connect bridges
+    term.bridge.sub(debouncedRender);
+
+        const debouncedPushUp = temporal.throttle(
+      (eventName, eventData) => this.pushEvent(eventName, eventData),
+      200
+    );
+
+    // differences shell behaviour
+    if(shellTarget=="outercanvas"){
+      this.handleEvent("seeOuterShell", (sight) => {
+        const code = printAST(sight.ast)
+        term.outer(code)
+      });
+    } else {
+      turtle.bridge.sub(([event, payload]) => debouncedPushUp(event, payload));
+      term.inner()
+    }
+
+        // Mount listeners and store cleanup functions
     this.cleanup = [
       listeners.keyboard(term.shell).mount(),
       listeners.selection(term.shell, this.pushEvent.bind(this)).mount(),
@@ -303,30 +329,14 @@ const Shell = {
       listeners.slider(term.shell, slider).mount()
     ];
 
-    // Setup rendering pipeline
-    const debouncedRender = temporal.debounce((code) => {
-      const result = renderCommand(code);
-      result.success ? display.success(result.commandCount) : display.error(result.error);
-    }, 35);
-
-    // Connect bridges
-    term.bridge.sub(debouncedRender);
 
     // Setup LiveView event handlers
     this.handleEvent("relayCamera", ({ command }) => cameraCommand(command));
     this.handleEvent("selfkeepCanvas", ({ title }) => saveCommand(title));
     this.handleEvent("writeShell", executeCommand);
+    this.handleEvent("opBuffer", ({ op, target }) => console.log(target));
 
-    // differences shell behaviour
-    if(shellTarget=="outercanvas"){
-      this.handleEvent("seeOuterShell", (sight) => {
-        const code = printAST(sight.ast)
-        term.outer(code)
-      });
-    } else {
-      turtle.bridge.sub(([event, payload]) => this.pushEvent(event, payload));
-      term.inner()
-    }
+
 
 
 

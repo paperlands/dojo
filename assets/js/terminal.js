@@ -1,35 +1,62 @@
 import { execute } from "./terminal/operations.js"
-import {bridged} from "./bridged.js"
-import {nameGen} from "./utils/nama.js"
+import { bridged } from "./bridged.js"
+import { nameGen, idGen } from "./utils/nama.js"
 
+// =============================================================================
+// STORAGE LAYER
+// =============================================================================
 
-// Storage abstraction for Buffer Management
 class BufferStorage {
     static STORAGE_KEY = '@paperland.buffers';
-    static DEFAULT_BUFFER = { name: '~', content: `label 'welcome to PaperLand'`, mode: 'plang' };
+
+    static #createDefaultBuffer() {
+        return {
+            id: idGen(),
+            name: '~',
+            content: `jmpto 0 125
+beColour red
+label "Delete all the code here to begin 🧙‍♂️" 20
+jmp -200
+rt 180
+fw 50
+label "➤" 20
+beColour DarkOrange
+jmpto 0 0
+rt 180
+label "Welcome to PaperLand" 50`,
+            mode: 'plang',
+            created: Date.now(),
+            lastModified: Date.now()
+        };
+    }
 
     static load() {
         try {
             const stored = localStorage.getItem(this.STORAGE_KEY);
-            return stored ? JSON.parse(stored) : { [this.DEFAULT_BUFFER.name]: this.DEFAULT_BUFFER };
+            const buffers = stored ? JSON.parse(stored) : {};
+
+            // Ensure at least one buffer exists
+            if (Object.keys(buffers).length === 0) {
+                const defaultBuffer = this.#createDefaultBuffer();
+                buffers[defaultBuffer.id] = defaultBuffer;
+            }
+
+            return buffers;
         } catch (e) {
-            console.warn('Failed to load buffers from storage:', e);
-            return { [this.DEFAULT_BUFFER.name]: this.DEFAULT_BUFFER };
+            console.warn('Storage load failed, using defaults:', e);
+            const defaultBuffer = this.#createDefaultBuffer();
+            return { [defaultBuffer.id]: defaultBuffer };
         }
     }
 
     static save(buffers) {
         try {
             localStorage.setItem(this.STORAGE_KEY, JSON.stringify(buffers));
+            return true;
         } catch (e) {
-            console.warn('Failed to save buffers to storage:', e);
+            console.warn('Storage save failed:', e);
+            return false;
         }
-    }
-
-    static saveBuffer(name, content, mode = 'plang') {
-        const buffers = this.load();
-        buffers[name] = { name, content, mode, lastModified: Date.now() };
-        this.save(buffers);
     }
 }
 
@@ -129,8 +156,8 @@ export class Terminal {
     #loadBuffersFromStorage() {
         const storedBuffers = BufferStorage.load();
 
-        Object.values(storedBuffers).forEach(({ name, content, mode }) => {
-            this.#createBufferDoc(name, content, mode);
+        Object.values(storedBuffers).forEach((buffer) => {
+            this.#recreateBufferDoc(buffer);
         });
     }
 
@@ -143,23 +170,49 @@ export class Terminal {
         }
     }
 
-    #createBufferDoc(name, content = '', mode = 'plang') {
-        const doc = this.CM.Doc(content, mode);
-        const buffer = { name, content, mode, created: Date.now(), lastModified: Date.now() };
+    #createBufferDoc(name, content = '') {
+        return recreateBufferDoc({name: name, content: content});
+    }
 
-        this.buffers.set(name, buffer);
-        this.docs.set(name, doc);
+    #recreateBufferDoc(buffer) {
+        const updatedBuffer = {
+            id: buffer.id ?? idGen(),
+            name: buffer.name ?? nameGen(),
+            mode: buffer.mode ?? 'plang',
+            content: buffer.content ?? `jmpto 0 125
+beColour red
+label "Delete all the code here to begin 🧙‍♂️" 20
+jmp -200
+rt 180
+fw 50
+label "➤" 20
+beColour DarkOrange
+jmpto 0 0
+rt 180
+label "Welcome to PaperLand" 50`,
+            created: buffer.created ?? Date.now(),
+            lastModified: buffer.lastModified ?? Date.now(),
+        };
 
-        return { buffer, doc };
+        const doc = this.CM.Doc(updatedBuffer.content, updatedBuffer.mode);
+
+        this.buffers.set(updatedBuffer.id, updatedBuffer);
+        this.docs.set(updatedBuffer.id, doc);
+
+        return { id: updatedBuffer.id, buffer: updatedBuffer, doc };
     }
 
     #saveToStorage() {
         const bufferData = {};
-        this.buffers.forEach((buffer, name) => {
-            bufferData[name] = {
+        this.buffers.forEach((buffer, id) => {
+            bufferData[id] = {
+                id: id,
                 name: buffer.name,
                 content: buffer.content,
-                mode: buffer.mode
+                mode: buffer.mode,
+                created: buffer.created,
+                lastModified: buffer.lastModified
+
             };
         });
         BufferStorage.save(bufferData);
@@ -173,35 +226,31 @@ export class Terminal {
     createBuffer(name = null, content = '', mode = 'plang') {
         const bufferName = name || nameGen()
 
-        if (!this.buffers.has(bufferName)) {
-            throw new Error(`Buffer already exists`);
-        }
-
-        const { buffer, doc } = this.#createBufferDoc(bufferName, content, mode);
+        const {uuid,  buffer, doc } = this.#createBufferDoc(bufferName, content);
 
 
-        this.selectBuffer(bufferName);
+        this.selectBuffer(uuid);
 
 
-        return bufferName;
+        return uuid;
     }
 
     swapBuffer(bufferName, content, mode) {
-        const { buffer, doc } = this.#createBufferDoc(bufferName, content, mode);
-        this.currentBuffer = bufferName;
+        const { uuid, buffer, doc } = this.#createBufferDoc(bufferName, content);
+        this.currentBuffer = uuid;
         this.shell.swapDoc(doc)
         this.triggerBridge()
     }
 
 
-    selectBuffer(name) {
-        if (!this.buffers.has(name)) {
+    selectBuffer(id) {
+        if (!this.buffers.has(id)) {
             throw new Error(`Buffer '${name}' not found`);
         }
 
 
-        this.currentBuffer = name;
-        const doc = this.docs.get(name);
+        this.currentBuffer = id;
+        const doc = this.docs.get(id);
         this.shell.swapDoc(doc);
         this.triggerBridge()
         this.shell.focus();
@@ -210,9 +259,9 @@ export class Terminal {
         return this;
     }
 
-    closeBuffer(name = this.currentBuffer) {
-        if (!name || !this.buffers.has(name)) {
-            throw new Error(`Buffer '${name}' not found`);
+    closeBuffer(id = this.currentBuffer) {
+        if (!id || !this.buffers.has(id)) {
+            throw new Error(`Buffer '${id}' not found`);
         }
 
         if (this.buffers.size === 1) {
@@ -220,15 +269,15 @@ export class Terminal {
         }
 
         // Switch to another buffer if closing current
-        if (name === this.currentBuffer) {
-            const bufferNames = Array.from(this.buffers.keys());
-            const currentIndex = bufferNames.indexOf(name);
-            const nextBuffer = bufferNames[currentIndex + 1] || bufferNames[currentIndex - 1];
+        if (id === this.currentBuffer) {
+            const bufferIds = Array.from(this.buffers.keys());
+            const currentIndex = bufferIds.indexOf(id);
+            const nextBuffer = bufferIds[currentIndex + 1] || bufferIds[currentIndex - 1];
             this.selectBuffer(nextBuffer);
         }
 
-        this.buffers.delete(name);
-        this.docs.delete(name);
+        this.buffers.delete(id);
+        this.docs.delete(id);
 
         // Update storage
         this.#saveToStorage();

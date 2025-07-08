@@ -620,7 +620,7 @@ export class Turtle {
         this.showTurtle = true;
         this.currentPath = null;
 
-        this.requestRender();
+        //this.requestRender();
     }
 
 
@@ -685,6 +685,7 @@ export class Turtle {
         if(this.instructions.length > 0)
             requestAnimationFrame(() => {
             this.reset();
+            this.requestRender();
             this.executeBody(this.instructions, {})
             });
     }
@@ -692,6 +693,7 @@ export class Turtle {
     draw(instructions, opts= {}) {
         const options = { ...{comms: true}, ...opts };
         this.reset();
+        this.requestRender();
         this.executeBody(instructions, {});
 
         this.instructions = instructions
@@ -700,7 +702,7 @@ export class Turtle {
                 if(options.comms){
                this.bridge.pub(["hatchTurtle", {"commands": instructions, "path": trimImage(this.ctx)}])
                 }
-            }, 1000)
+            }, 200)
 
     }
 
