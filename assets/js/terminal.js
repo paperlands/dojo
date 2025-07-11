@@ -171,7 +171,7 @@ export class Terminal {
     }
 
     #createBufferDoc(name, content = '') {
-        return recreateBufferDoc({name: name, content: content});
+        return this.#recreateBufferDoc({name: name, content: content});
     }
 
     #recreateBufferDoc(buffer) {
@@ -220,7 +220,7 @@ label "Welcome to PaperLand" 50`,
 
     // Public API methods
     triggerBridge() {
-        this.bridge.pub(this.buffers.get(this.currentBuffer).content);
+        this.bridge.pub(this.getCurrentBuffer().content);
     }
 
     createBuffer(name = null, content = '', mode = 'plang') {
@@ -236,8 +236,8 @@ label "Welcome to PaperLand" 50`,
     }
 
     swapBuffer(bufferName, content, mode) {
-        const { uuid, buffer, doc } = this.#createBufferDoc(bufferName, content);
-        this.currentBuffer = uuid;
+        const { id, buffer, doc } = this.#createBufferDoc(bufferName, content);
+        this.currentBuffer = id;
         this.shell.swapDoc(doc)
         this.triggerBridge()
     }

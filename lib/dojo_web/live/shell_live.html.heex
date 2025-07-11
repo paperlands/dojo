@@ -21,7 +21,7 @@
 <!-- Left Coder pane container -->
   <div class="relative left-0 z-20 w-[30ch] h-screen pl-2 pt-2 overflow-y-hidden pointer-events-none  scrollbar-hide">
     <!-- Function Marks -->
-    <div class="flex justify-start space-x-0.5">
+    <div class="flex justify-start space-x-0.5 pb-[3px]">
       <div class="fixed select-none flex pointer-events-auto caret-[#a0ea00]">
         <!-- Example bookmarks -->
         <div
@@ -30,14 +30,15 @@
         >
          <span class="font-paperlang inline">~</span>
         </div>
-        <div id="tabs">
-        <div
-          :for={%{"value" => value} <- [%{"value"=> "template"}]}
-          class="px-2 font-mono text-xs transition-all duration-200 cursor-pointer focus-within:outline-none text-primary-content rounded-r-lg hover:border-r-2 hover:border-accent hover:text-accent-content active:border-primary group"
-          id="tab-scaffold"
-          phx-click={JS.dispatch("phx:opBuffer", detail: %{op: "select", target: value})}
-          phx-value-function={value}
-          ondblclick="const input=this.querySelector('input');input.disabled=false;input.focus();;this.style.pointerEvents='none'"
+        <div id="tabs" class="flex items-center" phx-update="ignore" phx-hook="TabCreator">
+          <div
+          :for={%{"value" => value} <- [%{"value"=> "Papert"}]}
+          data-alive
+          data-tab-id="root"
+          class="tab-instance  pl-1 pr-2 font-mono text-xs transition-all duration-200  border-r-1 focus-within:outline-none text-primary-content rounded-r-lg hover:border-r-2 hover:border-primary hover:text-accent-content border-accent group flex items-center  data-alive:border-accent-content data-alive:border-accent-content data-alive:border-b-1"
+          id="tab-scaffold-root"
+          phx-click={JS.dispatch("phx:opBuffer", detail: %{op: "select", target: "root"})}
+          ondblclick="const input=this.querySelector('input');input.disabled=false;input.focus();"
         >
           <input
             type="text"
@@ -46,44 +47,40 @@
             data-original={value}
             class="bg-transparent hover:bg-base-100 pointer-events-none hover:bg-base-100/20 focus:bg-base-100/30 border-transparent focus:border-accent/50 border-b transition-all duration-200 outline-none text-primary-content focus:text-base-content -mr-1 placeholder-primary-content/60 text-xs min-w-[1ch] max-w-[7ch] w-full group-hover:bg-base-100/10"
             placeholder="name"
-            onfocus="var value = this.value; this.value = null; this.value = value;"
+            onfocus="var value = this.value; this.value = null; this.value = value;this.style.pointerEvents='auto'"
             phx-update="ignore"
             phx-keydown={
               JS.dispatch("phx:opBuffer",
-              detail: %{"op" => "rename", "target" => "tab-#{value}"}
-            )
-            }
+              detail: %{"op" => "rename", "target" => "tab-#{value}"})}
             phx-key="Enter"
             disabled
-            onblur="this.disabled=true;this.closest('[id=tab-scaffold]').style.pointerEvents='auto';this.style.width=Math.max(this.value.length||this.placeholder.length,3)+1+'ch';window.dispatchEvent(new CustomEvent('phx:opBuffer',{detail:{op:'rename',target:this.id}}))"
+            onblur="this.disabled=true;this.style.pointerEvents='none';this.closest('[id^=\'tab-scaffold\']').style.pointerEvents='auto';this.style.width=Math.max(this.value.length||this.placeholder.length,1)+'ch';window.dispatchEvent(new CustomEvent('phx:opBuffer',{detail:{op:'rename',target:this.id}}));this.setSelectionRange(0, 0);"
             onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.value=this.dataset.original;this.blur()}"
-            oninput="this.style.width=Math.max(this.value.length||this.placeholder.length,3)+1+'ch'"
+            oninput="this.style.width=Math.max(this.value.length||this.placeholder.length,1)+1+'ch'"
           />
+          <button
+            class="close ml-1 pl-1 pointer-events-auto -mr-1 w-1 h-3 opacity-0 group-hover:w-3 group-hover:opacity-60 cursor-pointer hover:opacity-100 transition-opacity duration-200 flex items-center justify-center text-red-500/70 hover:text-red-500"
+            title="Close tab"
+          >
+            <svg class="w-2 h-2" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 3l6 6M9 3l-6 6"/>
+            </svg>
+          </button>
         </div>
 
 <script>
   window.addEventListener('DOMContentLoaded', () => {
-                    document.querySelectorAll('input[id^="tab-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
-                    const mutobserver = new MutationObserver((mutations) => {
-                      mutations.forEach((mutation) => {
-                      // If nodes were added or attributes changed, resize inputs
-                      if (mutation.type === 'childList' || mutation.type === 'attributes') {
-                        document.querySelectorAll('input[id^="tab-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
-                      }
-                      });
-                    });
-                    const targetNode = document.getElementById("deckofcards");
-                    mutobserver.observe(targetNode, {childList: true});
+                    document.querySelectorAll('input[id^="tab-"]').forEach(input => {input.style.width=Math.max(input.value.length||input.placeholder.length,1)+'ch';});
                   });
 </script>
-        </div>
+          </div>
         <!-- New Tab Creator Button -->
-<div
-  class="px-1 font-mono text-xs transition-all duration-300 cursor-pointer focus:outline-none text-primary-content rounded-r-lg hover:text-primary hover:border-r-2 hover:border-accent active:border-primary transform  group"
+<button
+  class="px-1 ml-1 font-mono text-xs transition-all duration-300 focus:outline-none text-primary-content rounded-r-lg hover:text-primary hover:border-r-2 hover:border-accent active:border-primary transform  cursor-copy group"
   phx-click={JS.dispatch("phx:opBuffer", detail: %{op: "add"})}
 >
   <span class="inline transition-all duration-300 group-hover:scale-110">+</span>
-</div>
+</button>
 
       </div>
     </div>
