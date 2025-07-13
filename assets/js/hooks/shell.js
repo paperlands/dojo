@@ -334,7 +334,7 @@ const Shell = {
     this.handleEvent("relayCamera", ({ command }) => cameraCommand(command));
     this.handleEvent("selfkeepCanvas", ({ title }) => saveCommand(title));
     this.handleEvent("writeShell", executeCommand);
-    this.handleEvent("opBuffer", ({ op, target }) => console.log(target));
+    this.handleEvent("opBuffer", (event) => term.opBufferHandler(event));
 
 
 

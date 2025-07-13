@@ -1,4 +1,5 @@
 import { execute } from "./terminal/operations.js"
+import { Tabber } from "./terminal/tabber.js"
 import { bridged } from "./bridged.js"
 import { nameGen, idGen } from "./utils/nama.js"
 
@@ -9,10 +10,12 @@ import { nameGen, idGen } from "./utils/nama.js"
 class BufferStorage {
     static STORAGE_KEY = '@paperland.buffers';
 
+    // needs to by dynamic
     static #createDefaultBuffer() {
         return {
             id: idGen(),
-            name: '~',
+            name: 'Papert',
+            active: true,
             content: `jmpto 0 125
 beColour red
 label "Delete all the code here to begin 🧙‍♂️" 20
@@ -82,6 +85,7 @@ export class Terminal {
     };
 
     constructor(editor, CodeMirror, options = {}) {
+
         this.editor = editor;
         this.CM = CodeMirror;
         this.options = { ...Terminal.DEFAULT_OPTIONS, ...options };
@@ -89,7 +93,9 @@ export class Terminal {
         this.docs = new Map(); // Separate CodeMirror docs from buffer metadata
         this.currentBuffer = null;
         this.shell = null;
+        this.nameGen = nameGen();
         this.autosaveTimer = null;
+        this.tabs = new Tabber()
         this.shell = this.CM.fromTextArea(this.editor, this.#buildOptions());
         this.#setupEventListeners();
         this.bridge = bridged("terminal")
@@ -112,13 +118,33 @@ export class Terminal {
         return this;
     }
 
+    // buffermanagement
+    opBufferHandler(event) {
+        console.log(event)
+        const { op, target } = event;
+        switch(op) {
+        case 'add':
+            this.createBuffer()
+            break;
+        case 'select':
+            this.selectBuffer(target);
+            break;
+        case 'rename':
+            this.renameBuffer(target)
+            break;
+        case 'close':
+            this.closeBuffer(target);
+            break;
+        }
+    }
+
+
     #buildOptions() {
         return {
             ...this.options,
             extraKeys: {
                 'Ctrl-/': (cm) => this.toggleComment(cm),
-                'Alt-T': () => this.createBuffer(),
-                'Alt-W': () => this.closeBuffer(),
+                'Ctrl-A': (cm) => cm.execCommand("selectAll"),
                 'Shift-Tab': () => this.switchToNextBuffer(),
                 'Ctrl-Shift-Tab': () => this.switchToPrevBuffer(),
                 ...this.options.extraKeys
@@ -162,12 +188,11 @@ export class Terminal {
     }
 
     #selectInitialBuffer() {
-        const bufferNames = Array.from(this.buffers.keys());
-        const defaultBuffer = bufferNames.includes('~') ? '~' : bufferNames[0];
+        const defaultBuffer = this.buffers.keys()[0];
 
-        if (defaultBuffer) {
-            this.selectBuffer(defaultBuffer);
-        }
+        console.log(defaultBuffer)
+
+        this.currentBuffer && this.selectBuffer(this.currentBuffer) || this.selectBuffer(defaultBuffer);
     }
 
     #createBufferDoc(name, content = '') {
@@ -177,7 +202,7 @@ export class Terminal {
     #recreateBufferDoc(buffer) {
         const updatedBuffer = {
             id: buffer.id ?? idGen(),
-            name: buffer.name ?? nameGen(),
+            name: buffer.name ?? this.nameGen(),
             mode: buffer.mode ?? 'plang',
             content: buffer.content ?? `jmpto 0 125
 beColour red
@@ -199,6 +224,12 @@ label "Welcome to PaperLand" 50`,
         this.buffers.set(updatedBuffer.id, updatedBuffer);
         this.docs.set(updatedBuffer.id, doc);
 
+        this.tabs.addTab(updatedBuffer.id, updatedBuffer.name)
+
+        if(buffer.active) {
+            this.currentBuffer = updatedBuffer.id
+        }
+
         return { id: updatedBuffer.id, buffer: updatedBuffer, doc };
     }
 
@@ -208,6 +239,7 @@ label "Welcome to PaperLand" 50`,
             bufferData[id] = {
                 id: id,
                 name: buffer.name,
+                active: this.currentBuffer == id,
                 content: buffer.content,
                 mode: buffer.mode,
                 created: buffer.created,
@@ -223,16 +255,13 @@ label "Welcome to PaperLand" 50`,
         this.bridge.pub(this.getCurrentBuffer().content);
     }
 
-    createBuffer(name = null, content = '', mode = 'plang') {
-        const bufferName = name || nameGen()
 
-        const {uuid,  buffer, doc } = this.#createBufferDoc(bufferName, content);
+    createBuffer(name = '', content = '', mode = 'plang'){
+        const bufferName = name || this.nameGen()
+        const {id,  buffer, doc } = this.#createBufferDoc(bufferName, content);
+        this.selectBuffer(id);
 
-
-        this.selectBuffer(uuid);
-
-
-        return uuid;
+        return id;
     }
 
     swapBuffer(bufferName, content, mode) {
@@ -247,16 +276,16 @@ label "Welcome to PaperLand" 50`,
         if (!this.buffers.has(id)) {
             throw new Error(`Buffer '${name}' not found`);
         }
-
-
         this.currentBuffer = id;
         const doc = this.docs.get(id);
         this.shell.swapDoc(doc);
         this.triggerBridge()
         this.shell.focus();
 
+        this.tabs.selectTab(id)
 
-        return this;
+
+        return this.buffers.get(id);
     }
 
     closeBuffer(id = this.currentBuffer) {
@@ -276,39 +305,21 @@ label "Welcome to PaperLand" 50`,
             this.selectBuffer(nextBuffer);
         }
 
+        this.tabs.closeTab(id)
+
         this.buffers.delete(id);
         this.docs.delete(id);
 
-        // Update storage
         this.#saveToStorage();
 
         return this;
     }
 
-    renameBuffer(oldName, newName) {
-        if (!this.buffers.has(oldName)) {
-            throw new Error(`Buffer '${oldName}' not found`);
-        }
-
-        if (this.buffers.has(newName)) {
-            throw new Error(`Buffer '${newName}' already exists`);
-        }
-
-        const buffer = this.buffers.get(oldName);
-        const doc = this.docs.get(oldName);
-
-        buffer.name = newName;
-
-        this.buffers.delete(oldName);
-        this.docs.delete(oldName);
-        this.buffers.set(newName, buffer);
-        this.docs.set(newName, doc);
-
-        if (this.currentBuffer === oldName) {
-            this.currentBuffer = newName;
-        }
-
-        this.#saveToStorage();
+    renameBuffer(id) {
+        const newName = this.tabs.renameTab(id);
+        const buffer = this.selectBuffer(id);
+        buffer.name = newName
+        console.log(buffer)
 
         return this;
     }

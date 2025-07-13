@@ -30,14 +30,13 @@
         >
          <span class="font-paperlang inline">~</span>
         </div>
-        <div id="tabs" class="flex items-center" phx-update="ignore" phx-hook="TabCreator">
+        <div id="tabs" class="flex items-center" phx-update="ignore">
           <div
           :for={%{"value" => value} <- [%{"value"=> "Papert"}]}
           data-alive
           data-tab-id="root"
-          class="tab-instance  pl-1 pr-2 font-mono text-xs transition-all duration-200  border-r-1 focus-within:outline-none text-primary-content rounded-r-lg hover:border-r-2 hover:border-primary hover:text-accent-content border-accent group flex items-center  data-alive:border-accent-content data-alive:border-accent-content data-alive:border-b-1"
+          class="tab-instance animate-fade select-none hidden pl-1 pr-2 font-mono text-xs transition-all duration-200  border-r-1 focus-within:outline-none text-primary-content rounded-r-lg hover:border-r-2 hover:border-primary hover:text-accent-content border-accent group flex items-center  data-alive:border-accent-content data-alive:border-accent-content data-alive:border-b-1"
           id="tab-scaffold-root"
-          phx-click={JS.dispatch("phx:opBuffer", detail: %{op: "select", target: "root"})}
           ondblclick="const input=this.querySelector('input');input.disabled=false;input.focus();"
         >
           <input
@@ -49,18 +48,15 @@
             placeholder="name"
             onfocus="var value = this.value; this.value = null; this.value = value;this.style.pointerEvents='auto'"
             phx-update="ignore"
-            phx-keydown={
-              JS.dispatch("phx:opBuffer",
-              detail: %{"op" => "rename", "target" => "tab-#{value}"})}
-            phx-key="Enter"
             disabled
-            onblur="this.disabled=true;this.style.pointerEvents='none';this.closest('[id^=\'tab-scaffold\']').style.pointerEvents='auto';this.style.width=Math.max(this.value.length||this.placeholder.length,1)+'ch';window.dispatchEvent(new CustomEvent('phx:opBuffer',{detail:{op:'rename',target:this.id}}));this.setSelectionRange(0, 0);"
+            onblur="this.disabled=true;this.style.pointerEvents='none';this.closest('[id^=\'tab-scaffold\']').style.pointerEvents='auto';this.style.width=Math.max(this.value.length||this.placeholder.length,1)+'ch';this.setSelectionRange(0, 0);"
             onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.value=this.dataset.original;this.blur()}"
             oninput="this.style.width=Math.max(this.value.length||this.placeholder.length,1)+1+'ch'"
           />
           <button
             class="close ml-1 pl-1 pointer-events-auto -mr-1 w-1 h-3 opacity-0 group-hover:w-3 group-hover:opacity-60 cursor-pointer hover:opacity-100 transition-opacity duration-200 flex items-center justify-center text-red-500/70 hover:text-red-500"
             title="Close tab"
+            onclick="event.stopPropagation()"
           >
             <svg class="w-2 h-2" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 3l6 6M9 3l-6 6"/>
@@ -349,11 +345,11 @@
       class={[
         "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md  hover:scale-120 hover:border-2",
         (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") || "cursor-progress",
-        (@outershell && @outershell.addr == phx_ref && "border-accent-content") ||
-          "border-accent/50"
+        (@outershell && @outershell.addr == phx_ref && "border-accent-content text-accent-content") ||
+          "border-accent/50 text-accent"
       ]}
     >
-      <div class="absolute font-mono text-sm tracking-wider rotate-0 select-none top-2 right-2 text-accent">
+      <div class="absolute font-mono text-sm tracking-wider rotate-0 select-none top-2 right-2">
         {dis.name}
       </div>
 
