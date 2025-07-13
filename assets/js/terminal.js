@@ -20,17 +20,39 @@ class BufferStorage {
             id: idGen(),
             name: 'Papert',
             active: true,
-            content: `jmpto 0 125
-beColour red
-label "Delete all the code here to begin 🧙‍♂️" 20
-jmp -200
-rt 180
-fw 50
-label "➤" 20
-beColour DarkOrange
-jmpto 0 0
-rt 180
-label "Welcome to PaperLand" 50`,
+            content: `def wave phase amp do
+    fw amp*sin[phase]
+    lt 90
+    jmp -5
+    rt  90
+    fw -amp*sin[phase]
+    wave phase+5 amp
+end
+
+loop 30 do
+  jmpto 0 125
+  erase
+  beColour purple
+  when random<0.5 do
+    beColour purple
+    label "Delete code on the left to begin 🧙‍♂️" 20
+  end
+  when random do
+    beColour gold
+    label "Delete code on the left to begin 🧙‍♂️✨" 20
+  end
+  jmp -200
+  rt 180
+  fw 50
+  label "➤" 30
+  jmpto 0 0
+  jmp -1000
+  rt 270
+  beColour darkorange
+  wave random*180 15
+  lt 90
+  wait 1
+end`,
             mode: 'plang',
             created: Date.now(),
             lastModified: Date.now()
@@ -103,19 +125,20 @@ export class Terminal {
         this.shell = this.CM.fromTextArea(this.editor, this.#buildOptions());
         this.#setupEventListeners();
         this.bridge = bridged("terminal")
-        this.shell.run = this.run.bind(this);
         return this
     }
 
     inner() {
         this.bufferStore = new BufferStorage()
         this.#loadBuffersFromStorage()
+        this.shell.run = this.run.bind(this);
         this.#selectInitialBuffer();
 
         return this;
     }
 
     outer(code) {
+        this.shell.run = this.run.bind(this);
 
         this.swapBuffer("@outer.shell", code);
 
@@ -303,22 +326,26 @@ label "Welcome to PaperLand" 50`,
             throw new Error('Cannot close the last buffer');
         }
 
-        // Switch to another buffer if closing current
-        if (id === this.currentBuffer) {
-            const bufferIds = Array.from(this.buffers.keys());
-            const currentIndex = bufferIds.indexOf(id);
-            const nextBuffer = bufferIds[currentIndex + 1] || bufferIds[currentIndex - 1];
-            this.selectBuffer(nextBuffer);
+        const confirmed = prompt(`Are you sure you want to kill ${this.buffers.get(id)["name"]}?`);
+        if (confirmed === '') {
+
+            // Switch to another buffer if closing current
+            if (id === this.currentBuffer) {
+                const bufferIds = Array.from(this.buffers.keys());
+                const currentIndex = bufferIds.indexOf(id);
+                const nextBuffer = bufferIds[currentIndex + 1] || bufferIds[currentIndex - 1];
+                this.selectBuffer(nextBuffer);
+            }
+
+            this.tabs.closeTab(id)
+
+            this.buffers.delete(id);
+            this.docs.delete(id);
+
+            this.#saveToStorage();
+
+            return this;
         }
-
-        this.tabs.closeTab(id)
-
-        this.buffers.delete(id);
-        this.docs.delete(id);
-
-        this.#saveToStorage();
-
-        return this;
     }
 
     renameBuffer(id) {

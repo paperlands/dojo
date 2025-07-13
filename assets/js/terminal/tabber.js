@@ -82,13 +82,16 @@ export class Tabber {
         // Activate target tab
         tab.setAttribute('data-alive', '');
 
-        // Focus input for editing
+    }
+
+    focusTab(tab){
         const input = tab.querySelector('input');
         if (input) {
-            input.disabled = true;
+            input.disabled = false;
             input.focus();
             input.select();
         }
+
     }
 
     selectTab(targetId) {
@@ -108,11 +111,7 @@ export class Tabber {
     closeTab(targetId) {
         const tab = this.container.querySelector(`[data-tab-id="${targetId}"]`);
         if (!tab) return;
-
-        const input = tab.querySelector('input');
-        const confirmed = prompt(`Are you sure you want to kill ${input.value}?`);
-
-        if (confirmed === '') tab.remove();
+        tab.remove();
     }
 
     resizeInput(input) {
