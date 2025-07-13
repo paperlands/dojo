@@ -8,10 +8,14 @@ import { nameGen, idGen } from "./utils/nama.js"
 // =============================================================================
 
 class BufferStorage {
-    static STORAGE_KEY = '@paperland.buffers';
+    STORAGE_KEY = '@paperlands.buffers';
+
+    constructor(name="inner") {
+        this.name = this.STORAGE_KEY + "@" + name
+    }
 
     // needs to by dynamic
-    static #createDefaultBuffer() {
+    #createDefaultBuffer() {
         return {
             id: idGen(),
             name: 'Papert',
@@ -33,9 +37,9 @@ label "Welcome to PaperLand" 50`,
         };
     }
 
-    static load() {
+     load() {
         try {
-            const stored = localStorage.getItem(this.STORAGE_KEY);
+            const stored = localStorage.getItem(this.name);
             const buffers = stored ? JSON.parse(stored) : {};
 
             // Ensure at least one buffer exists
@@ -52,9 +56,9 @@ label "Welcome to PaperLand" 50`,
         }
     }
 
-    static save(buffers) {
+     save(buffers) {
         try {
-            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(buffers));
+            localStorage.setItem(this.name, JSON.stringify(buffers));
             return true;
         } catch (e) {
             console.warn('Storage save failed:', e);
@@ -99,13 +103,13 @@ export class Terminal {
         this.shell = this.CM.fromTextArea(this.editor, this.#buildOptions());
         this.#setupEventListeners();
         this.bridge = bridged("terminal")
-        this.#loadBuffersFromStorage();
         this.shell.run = this.run.bind(this);
         return this
     }
 
     inner() {
-
+        this.bufferStore = new BufferStorage()
+        this.#loadBuffersFromStorage()
         this.#selectInitialBuffer();
 
         return this;
@@ -180,10 +184,15 @@ export class Terminal {
     }
 
     #loadBuffersFromStorage() {
-        const storedBuffers = BufferStorage.load();
+        const storedBuffers = this.bufferStore.load();
 
         Object.values(storedBuffers).forEach((buffer) => {
             this.#recreateBufferDoc(buffer);
+            this.tabs.addTab(buffer.id, buffer.name)
+
+            if(buffer.active) {
+                this.currentBuffer = buffer.id
+            }
         });
     }
 
@@ -224,16 +233,11 @@ label "Welcome to PaperLand" 50`,
         this.buffers.set(updatedBuffer.id, updatedBuffer);
         this.docs.set(updatedBuffer.id, doc);
 
-        this.tabs.addTab(updatedBuffer.id, updatedBuffer.name)
-
-        if(buffer.active) {
-            this.currentBuffer = updatedBuffer.id
-        }
-
         return { id: updatedBuffer.id, buffer: updatedBuffer, doc };
     }
 
     #saveToStorage() {
+        if(this.bufferStore) {
         const bufferData = {};
         this.buffers.forEach((buffer, id) => {
             bufferData[id] = {
@@ -247,7 +251,8 @@ label "Welcome to PaperLand" 50`,
 
             };
         });
-        BufferStorage.save(bufferData);
+        this.bufferStore.save(bufferData);
+        }
     }
 
     // Public API methods
@@ -259,6 +264,7 @@ label "Welcome to PaperLand" 50`,
     createBuffer(name = '', content = '', mode = 'plang'){
         const bufferName = name || this.nameGen()
         const {id,  buffer, doc } = this.#createBufferDoc(bufferName, content);
+        this.tabs.addTab(id, buffer.name)
         this.selectBuffer(id);
 
         return id;
