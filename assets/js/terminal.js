@@ -129,9 +129,9 @@ export class Terminal {
     }
 
     inner() {
+        this.shell.run = this.run.bind(this);
         this.bufferStore = new BufferStorage()
         this.#loadBuffersFromStorage()
-        this.shell.run = this.run.bind(this);
         this.#selectInitialBuffer();
 
         return this;
@@ -221,8 +221,6 @@ export class Terminal {
 
     #selectInitialBuffer() {
         const defaultBuffer = this.buffers.keys()[0];
-
-        console.log(defaultBuffer)
 
         this.currentBuffer && this.selectBuffer(this.currentBuffer) || this.selectBuffer(defaultBuffer);
     }

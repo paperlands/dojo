@@ -602,6 +602,7 @@ export class Turtle {
         };
         this.commandCount = 0
         this.recurseCount = 0
+        this.maxRecurseDepth = 360
         this.rotation = new Versor(1, 0, 0, 0);
         this.penDown = true;
         this.color = 'DarkOrange';
