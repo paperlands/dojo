@@ -47,7 +47,7 @@ export class Turtle {
         this.executionState = {
             x: 0,
             y: 0,
-            z: 10,
+            z: 0,
             rotation: new Versor(1, 0, 0, 0)
         };
 
@@ -139,7 +139,7 @@ export class Turtle {
         }
 
         // Calculate perspective scale
-        const scale = 100 / Math.max(cam.z, 1);
+        const scale = 100 / cam.z;
 
         // Save context state and apply transformations
         this.ctx.save();
@@ -195,6 +195,7 @@ export class Turtle {
                     // Iterate through each point in the path
                     let prevPoint = null;
                     path.points.forEach((point, index) => {
+                        point = {x: point.x, y: point.y}
                         if (index === 0) {
                             ctx.moveTo(point.x, point.y);
                             prevPoint = point;
@@ -300,13 +301,13 @@ export class Turtle {
             this.ctx.fill();
 
             this.ctx.restore();
-    }}
+        }
+    }
 
     goto(x=0, y=0, z=null) {
 
-        // not sure why we need to *10
-        const newX = x*10;
-        const newY = -y*10;
+        const newX = x;
+        const newY = -y;
         const newZ = z ?? this.z
 
         if (this.penDown) {
@@ -315,7 +316,7 @@ export class Turtle {
                     this.currentPath = {
                         ...this.pathTemplate,
                         color: this.color,
-                        points: [{x: this.x, y: this.y}]
+                        points: [{x: this.x, y: this.y, z: this.z}]
                     };
 
                     const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
@@ -323,7 +324,7 @@ export class Turtle {
                     this.timeline.frames.set(this.timeline.currentTime, currentFrame);
                 }
                 //color transition
-                this.currentPath.points.push({x: newX, y: newY});
+                this.currentPath.points.push({x: newX, y: newY, z: newZ});
             }
         else {
             this.currentPath= null
@@ -356,8 +357,8 @@ export class Turtle {
 
     faceto(targetX=0, targetY=0, targetZ=null) {
         // Convert target coordinates to the same scale as internal coordinates
-        const tx = targetX * 10;
-        const ty = -targetY * 10;
+        const tx = targetX;
+        const ty = -targetY;
         const tz = targetZ ?? this.z;
 
         // Calculate direction vector from current position to target
@@ -404,7 +405,8 @@ export class Turtle {
             points: [[this.x, this.y, this.z]],
             color: this.color,
             text: text,
-            text_size: size*10,
+            // html canvas cant space numbers accurately below this
+            text_size: size > 0.025 ? size : 0.025,
             text_rotation: this.rotation.getTransformValues()
         };
 
@@ -416,7 +418,7 @@ export class Turtle {
     }
 
     forward(distance=0) {
-            const direction = { x: 10, y: 0, z: 0 };
+            const direction = { x: 1, y: 0, z: 0 };
             const rotatedDirection = this.rotation.rotate(direction);
             const newX = this.x + rotatedDirection.x * distance;
             const newY = this.y + rotatedDirection.y * distance;
@@ -428,15 +430,17 @@ export class Turtle {
                 this.currentPath = {
                     ...this.pathTemplate,
                     color: this.color,
-                    points: [{x: this.x, y: this.y}]
+                    points: [{x: this.x, y: this.y, z: this.z}]
                 };
+
 
                 const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
                 currentFrame.push(this.currentPath);
                 this.timeline.frames.set(this.timeline.currentTime, currentFrame);
             }
+            console.log(newZ)
             //color transition
-            this.currentPath.points.push({x: newX, y: newY});
+            this.currentPath.points.push({x: newX, y: newY, z: newZ});
         }
         else {
             this.currentPath= null

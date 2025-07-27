@@ -29,7 +29,7 @@ class CameraState {
     constructor(config = {}) {
         this.position = new Vector2D(config.x || 0, config.y || 0);
         this.targetPosition = this.position.clone();
-        this.zoom = config.zoom || 500;
+        this.zoom = config.zoom || 50;
         this.targetZoom = this.zoom;
         this.velocity = config.velocity || 0;
     }
@@ -50,7 +50,7 @@ class CameraConfig {
     constructor(options = {}) {
         this.smoothingFactor = options.smoothingFactor || 0.1;
         this.zoomSpeed = options.zoomSpeed || 0.02;
-        this.minZoom = options.minZoom || 1;
+        this.minZoom = options.minZoom || 0.01;
         this.maxZoom = options.maxZoom || 100000000;
         this.framerate = options.framerate || 60;
     }
@@ -98,7 +98,7 @@ class CameraInputHandler {
         const delta = currentPosition.subtract(this.lastPosition);
         const zoomFactor = this.camera.state.zoom / 100;
         this.camera.state.targetPosition = this.camera.state.targetPosition.subtract(
-            delta.scale(zoomFactor/2)
+            delta.scale(zoomFactor)
         );
         this.lastPosition = currentPosition;
     }
@@ -323,7 +323,7 @@ export class Camera {
             switch (payload[0]) {
             case 'recenter':
                 this.state.targetPosition = new Vector2D(0, 0)
-                this.state.targetZoom = 500;
+                this.state.targetZoom = 50;
                 break;
             case 'record':
                 this.beginRecording()
