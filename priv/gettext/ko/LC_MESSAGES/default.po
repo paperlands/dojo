@@ -12,142 +12,114 @@ msgstr ""
 "Plural-Forms: nplurals=1; plural=0;\n"
 
 #: lib/dojo_web/live/shell_live.html.heex:246
-#, elixir-autogen, elixir-format
 msgid "@%{addr}'s code"
-msgstr ""
+msgstr "@%{addr}의 부호"
 
 #: lib/dojo_web/components/core_components.ex:484
-#, elixir-autogen, elixir-format
 msgid "Actions"
-msgstr ""
+msgstr "할 일들"
 
 #: lib/dojo_web/components/core_components.ex:160
-#, elixir-autogen, elixir-format
 msgid "Attempting to reconnect"
-msgstr ""
+msgstr "다시 만나려고 해요"
 
 #: lib/dojo_web/live/shell_live.ex:463
-#, elixir-autogen, elixir-format
 msgid "Command"
-msgstr ""
+msgstr "명령"
 
 #: lib/dojo_web/live/shell_live.ex:470
-#, elixir-autogen, elixir-format
 msgid "Control"
-msgstr ""
+msgstr "조종"
 
 #: lib/dojo_web/live/shell_live.ex:474
-#, elixir-autogen, elixir-format
 msgid "Deck"
-msgstr ""
+msgstr "갑판"
 
 #: lib/dojo_web/components/core_components.ex:151
-#, elixir-autogen, elixir-format
 msgid "Error!"
-msgstr ""
+msgstr "앗!"
 
 #: lib/dojo_web/live/shell_live.ex:416
-#, elixir-autogen, elixir-format
 msgid "Face Left"
-msgstr ""
+msgstr "왼쪽을 바라봐"
 
 #: lib/dojo_web/live/shell_live.ex:415
-#, elixir-autogen, elixir-format
 msgid "Face Right"
-msgstr ""
+msgstr "오른쪽을 바라봐"
 
 #: lib/dojo_web/live/shell_live.ex:420
-#, elixir-autogen, elixir-format
 msgid "Face Towards Start"
-msgstr ""
+msgstr "시작을 바라봐"
 
 #: lib/dojo_web/live/shell_live.ex:421
-#, elixir-autogen, elixir-format
 msgid "Go To Start"
-msgstr ""
+msgstr "시작으로 가"
 
 #: lib/dojo_web/components/core_components.ex:172
-#, elixir-autogen, elixir-format
 msgid "Hang in there while we get back on track"
-msgstr ""
+msgstr "길을 찾는 동안 잠깐만 기다려줘"
 
 #: lib/dojo_web/live/shell_live.ex:423
-#, elixir-autogen, elixir-format
 msgid "Hide your Head"
-msgstr ""
+msgstr "머리를 숨겨"
 
 #: lib/dojo_web/live/shell_live.ex:417
-#, elixir-autogen, elixir-format
 msgid "Jump Forward"
-msgstr ""
+msgstr "앞으로 뛰어"
 
 #: lib/dojo_web/live/shell_live.ex:414
-#, elixir-autogen, elixir-format
 msgid "Move Forward"
-msgstr ""
+msgstr "앞으로 가"
 
 #: lib/dojo_web/live/shell_live.ex:429
-#, elixir-autogen, elixir-format
 msgid "Name your Command"
-msgstr ""
+msgstr "명령에 이름을 지어줘"
 
 #: lib/dojo_web/live/shell_live.ex:428
-#, elixir-autogen, elixir-format
 msgid "Repeat Commands"
-msgstr ""
+msgstr "명령을 반복해"
 
 #: lib/dojo_web/live/shell_live.ex:425
-#, elixir-autogen, elixir-format
 msgid "Set Colour to"
-msgstr ""
+msgstr "색깔을 바꿔"
 
 #: lib/dojo_web/live/shell_live.ex:424
-#, elixir-autogen, elixir-format
 msgid "Show your Head"
-msgstr ""
+msgstr "머리를 보여줘"
 
 #: lib/dojo_web/components/core_components.ex:167
-#, elixir-autogen, elixir-format
 msgid "Something went wrong!"
-msgstr ""
+msgstr "뭔가 잘못됐어!"
 
 #: lib/dojo_web/components/core_components.ex:150
-#, elixir-autogen, elixir-format
 msgid "Success!"
-msgstr ""
+msgstr "성공!"
 
 #: lib/dojo_web/live/shell_live.ex:418
-#, elixir-autogen, elixir-format
 msgid "Wait a While"
-msgstr ""
+msgstr "잠깐 기다려"
 
 #: lib/dojo_web/components/core_components.ex:155
-#, elixir-autogen, elixir-format
 msgid "We can't find the internet"
-msgstr ""
+msgstr "인터넷을 찾을 수 없어"
 
 #: lib/dojo_web/live/shell_live.ex:422
-#, elixir-autogen, elixir-format
 msgid "Wipe Everything"
-msgstr ""
+msgstr "모든 걸 지워"
 
 #: lib/dojo_web/live/shell_live.ex:419
-#, elixir-autogen, elixir-format
 msgid "Write Something"
-msgstr ""
+msgstr "뭔가 써봐"
 
 #: lib/dojo_web/components/core_components.ex:76
 #: lib/dojo_web/components/core_components.ex:130
-#, elixir-autogen, elixir-format
 msgid "close"
-msgstr ""
+msgstr "닫기"
 
 #: lib/dojo_web/live/shell_live.html.heex:167
-#, elixir-autogen, elixir-format
 msgid "summoning @%{addr}'s code"
-msgstr ""
+msgstr "@%{addr}의 마법을 불러오는 중"
 
 #: lib/dojo_web/live/shell_live.html.heex:153
-#, elixir-autogen, elixir-format
 msgid "welcome %{name} to⠀%{clan}'s shell"
-msgstr "nihao %{name} to⠀%{clan}'s shell"
+msgstr "안녕 %{name}, %{clan}의 세계로 어서와"
