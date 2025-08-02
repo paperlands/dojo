@@ -2,7 +2,7 @@ import { Parser } from "./mafs/parse.js"
 import { Evaluator } from "./mafs/evaluate.js"
 import { Typesetter } from "./mafs/typist.js"
 import { Versor } from "./mafs/versors.js"
-import { RenderLoop } from "./renderer.js"
+import Render from "./render/index.js"
 import { Camera } from "./camera.js"
 import {cameraBridge, bridged } from "../bridged.js"
 
@@ -70,7 +70,7 @@ export class Turtle {
         };
 
 
-        this.renderLoop = new RenderLoop(canvas, {
+        this.renderLoop = new Render.Loop(canvas, {
             onRender: (currentTime) => this.renderIncremental(currentTime),
             stopCondition: () => this.timeline.lastRenderTime > this.timeline.endTime
         });

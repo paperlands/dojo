@@ -152,6 +152,15 @@ const listeners = {
     }
   }),
 
+  // Resize Listener
+  resizer: (callback) => ({
+    mount: (canvas) => {
+      const observer = new ResizeObserver(callback);
+      observer.observe(canvas);
+      return () => observer.disconnect();
+    }
+  }),
+
   // Slider Listener
    slider: (shell, slider) => {
 
@@ -324,6 +333,7 @@ const Shell = {
       listeners.keyboard(term.shell).mount(),
       listeners.selection(term.shell, this.pushEvent.bind(this)).mount(),
       listeners.theme(theme => term.shell.setOption('theme', theme)).mount(),
+      listeners.resizer(resize => term.triggerBridge()).mount(canvas),
       //slider is mutated and also is activate by a listener
       slider.mount(),
       listeners.slider(term.shell, slider).mount()

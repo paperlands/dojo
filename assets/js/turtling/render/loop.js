@@ -1,4 +1,5 @@
-export class RenderLoop {
+// handles rendertimeloop
+export default class Loop {
     constructor(canvas, options) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
