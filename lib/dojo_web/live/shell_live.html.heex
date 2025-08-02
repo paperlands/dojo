@@ -150,7 +150,7 @@
       <!-- Welcome message row -->
       <div class="flex items-center text-xs mb-1 border-b border-accent/50  pb-1 overflow-hidden">
         <span class="flex items-center">
-          &gt; welcome {@session.name} to⠀{to_titlecase(@clan)}'s shell
+          &gt; <%= gettext "welcome %{name} to⠀%{clan}'s shell", clan: to_titlecase(@clan), name: @session.name%>
           <span class="relative flex items-center ml-1">
             <span class="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
           </span>
@@ -164,7 +164,7 @@
           class="w-20 sm:w-32 lg:w-48 overflow-hidden whitespace-nowrap flex-shrink-1 sm:flex-shrink-0 flex items-center  text-xs mr-1 sm:mr-2 min-w-0"
         >
           <span class="text-amber-600 animate-marquee">
-            summoning @{@outershell.resp}'s code ☄
+            <%= gettext "summoning @%{addr}'s code", addr: @outershell.resp %> ☄
           </span>
         </div>
         <!-- Empty spacer div with minimum width on small screens -->
@@ -243,7 +243,7 @@
     id="outershell-head"
     class="fixed text-lg font-bold w-1/3 right-2 text-amber-200 top-36"
   >
-    @{@outershell.resp}'s code
+    <%= gettext "@%{addr}'s code", addr: @outershell.resp %>
   </span>
   <div
     :if={@outershell}

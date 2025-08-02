@@ -55,7 +55,7 @@ defmodule Dojo.MixProject do
       {:finch, "~> 0.13"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
-      {:gettext, "~> 0.20"},
+      {:gettext, "~> 0.26"},
       {:jason, "~> 1.2"},
       {:kino, "~> 0.12.3"},
       {:nebulex, "~> 2.6"},
