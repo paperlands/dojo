@@ -440,9 +440,9 @@ defmodule DojoWeb.ShellLive do
       <!-- Command Deck Panel -->
       <div class="fixed w-64 transition-all duration-100 ease-in-out transform right-5 bottom-20 xl:h-2/3 h-1/2 scrollbar-hide dark-scrollbar">
         <%!-- Top row --%>
-        <div class="flex pl-6 pt-4 ">
+        <div class="flex flex-row pl-6 pt-4">
           <!-- Header -->
-          <div class="flex items-center justify-between">
+          <div class="flex grow-5 items-center justify-between">
             <h2 class="z-50  pointer-events-auto text-xl font-bold text-base-content">
               <div class="dropdown dropdown-top">
                 <div
@@ -480,7 +480,7 @@ defmodule DojoWeb.ShellLive do
 
           <%!-- Undo button --%>
           <div
-            class="z-50 pointer-events-auto group pl-6 pt-1"
+            class="z-50 grow-1 pointer-events-auto group pt-1"
             phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
           >
             <div class="relative">

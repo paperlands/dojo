@@ -98,7 +98,7 @@ class CameraInputHandler {
         const delta = currentPosition.subtract(this.lastPosition);
         const zoomFactor = this.camera.state.zoom / 100;
         this.camera.state.targetPosition = this.camera.state.targetPosition.subtract(
-            delta.scale(zoomFactor/2)
+            delta.scale(zoomFactor)
         );
         this.lastPosition = currentPosition;
     }
