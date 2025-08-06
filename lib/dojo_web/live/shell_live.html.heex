@@ -329,7 +329,7 @@
   <!-- Other people's turtles -->
   <div
     :for={{phx_ref, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
-    class={"rounded-lg transition mx-11 pb-4  pt-2 duration-500 ease-in-out animate-fade flex-shrink-0 w-1/6" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
+    class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out animate-fade flex-shrink-0" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
   >
     <.icon
       :if={@sensei}
@@ -343,8 +343,9 @@
       phx-throttle="1000"
       phx-value-addr={phx_ref}
       class={[
-        "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md  hover:scale-120 hover:border-2",
-        (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") || "cursor-progress",
+        "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md hover:border-primary",
+        (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") ||
+          "cursor-progress pointer-events-auto",
         (@outershell && @outershell.addr == phx_ref && "border-accent-content text-accent-content") ||
           "border-accent/50 text-accent"
       ]}
@@ -374,6 +375,20 @@
     <.export />
   </div>
 </div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    var el = document.getElementById('disciple_panels');
+    if (el) {
+      el.addEventListener('wheel', function(e) {
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+          e.preventDefault();
+          el.scrollLeft += e.deltaY;
+        }
+      }, { passive: false });
+    }
+  });
+</script>
 
 <style>
   /* Custom styles for editor width */
