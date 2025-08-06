@@ -91,7 +91,8 @@
         <span class="inline-block w-2 h-0.5 ml-1 bg-amber-400 animate-flicker">_</span>
         
 <!-- Decorative corners (smaller size for subtlety) -->
-        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content"></div>
+        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content">
+        </div>
         <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary-content">
         </div>
         <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-primary-content">
@@ -184,8 +185,10 @@
             <.manual class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-primary hover:rotate-[-40deg]" />
           </button>
         </div>
-        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content"></div>
-        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary-content"></div>
+        <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content">
+        </div>
+        <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary-content">
+        </div>
         <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-primary-content">
         </div>
         <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-primary-content">
@@ -284,7 +287,7 @@
   <!-- Other people's turtles -->
   <div
     :for={{phx_ref, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
-    class={"rounded-lg transition mx-11 pb-4  pt-2 duration-500 ease-in-out animate-fade flex-shrink-0 w-1/6" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
+    class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out animate-fade flex-shrink-0" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
   >
     <.icon
       :if={@sensei}
@@ -298,12 +301,14 @@
       phx-throttle="1000"
       phx-value-addr={phx_ref}
       class={[
-        "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md  hover:scale-120 hover:border-2",
-        (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") || "cursor-progress",
-        @outershell && @outershell.addr == phx_ref && "border-accent-content" || "border-accent/50"
+        "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md hover:border-primary",
+        (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") ||
+          "cursor-auto pointer-events-auto",
+        (@outershell && @outershell.addr == phx_ref && "border-accent-content text-accent-content") ||
+          "border-accent/50 text-accent"
       ]}
     >
-      <div class="absolute font-mono text-sm tracking-wider rotate-0 select-none top-2 right-2 text-accent">
+      <div class="absolute font-mono text-sm tracking-wider rotate-0 select-none top-2 right-2">
         {dis.name}
       </div>
 
@@ -328,6 +333,20 @@
     <.export />
   </div>
 </div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    var el = document.getElementById('disciple_panels');
+    if (el) {
+      el.addEventListener('wheel', function(e) {
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+          e.preventDefault();
+          el.scrollLeft += e.deltaY;
+        }
+      }, { passive: false });
+    }
+  });
+</script>
 
 <style>
   /* Custom styles for editor width */
