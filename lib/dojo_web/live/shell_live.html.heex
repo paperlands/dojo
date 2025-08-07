@@ -324,13 +324,12 @@
   :if={@pane}
   id="disciple_panels"
   phx-hook="DiscipleWindow"
-  class="fixed bottom-0 pointer-events-none z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto"
+  class="fixed bottom-0 pointer-events-none  z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto"
 >
   <!-- Other people's turtles -->
   <div
-    :for={{phx_ref, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
-    class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out animate-fade flex-shrink-0" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}
-  >
+    :for={{phx_ref, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)} class="bg-transparent pointer-events-auto">
+    <div class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out mx-2 animate-fade flex-shrink-0" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}>
     <.icon
       :if={@sensei}
       name="hero-cursor-arrow-ripple"
@@ -345,7 +344,7 @@
       class={[
         "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md hover:border-primary",
         (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") ||
-          "cursor-progress pointer-events-auto",
+          "cursor-progress pointer-events-none",
         (@outershell && @outershell.addr == phx_ref && "border-accent-content text-accent-content") ||
           "border-accent/50 text-accent"
       ]}
@@ -368,6 +367,7 @@
         loading="eager"
         decoding="sync"
       />
+      </div>
     </div>
   </div>
 
@@ -376,19 +376,7 @@
   </div>
 </div>
 
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    var el = document.getElementById('disciple_panels');
-    if (el) {
-      el.addEventListener('wheel', function(e) {
-        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-          e.preventDefault();
-          el.scrollLeft += e.deltaY;
-        }
-      }, { passive: false });
-    }
-  });
-</script>
+
 
 <style>
   /* Custom styles for editor width */
