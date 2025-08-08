@@ -14,18 +14,18 @@ defmodule Dojo.Class do
   end
 
   def join(pid, book, disciple) do
+    spec = %{
+      id: Table,
+      start: {Table, :start_link, [%{track_pid: pid, topic: topic(book), disciple: disciple}]}
+    }
 
-    spec = %{id: Table, start: {Table, :start_link, [%{track_pid: pid, topic: topic(book), disciple: disciple}]}}
-
-    DynamicSupervisor.start_child({:via, PartitionSupervisor, {__MODULE__, self()}}, spec )
-
+    DynamicSupervisor.start_child({:via, PartitionSupervisor, {__MODULE__, self()}}, spec)
   end
 
   def join!(pid, book, disciple) do
     {:ok, class} = join(pid, book, disciple)
     class
   end
-
 
   ## helper fns
 
@@ -36,7 +36,6 @@ defmodule Dojo.Class do
   def list_disciples(book) do
     Dojo.Gate.list_users(topic(book))
     |> Enum.into(%{}, fn %{phx_ref: ref} = dis -> {ref, dis} end)
-
   end
 
   def listen(book) do
@@ -46,5 +45,4 @@ defmodule Dojo.Class do
   defp topic(book) do
     "class:" <> book
   end
-
 end

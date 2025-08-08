@@ -26,14 +26,14 @@ defmodule DojoWeb.Endpoint do
     only: DojoWeb.static_paths()
 
   plug Plug.Static,
-       at: "/frames",
-       from: {:dojo, "priv/static/frames"},
-       gzip: true,
-       headers: %{
-         "cache-control" => "no-store, no-cache, must-revalidate, max-age=0",
-         "pragma" => "no-cache",
-         "expires" => "0"
-       }
+    at: "/frames",
+    from: {:dojo, "priv/static/frames"},
+    gzip: true,
+    headers: %{
+      "cache-control" => "no-store, no-cache, must-revalidate, max-age=0",
+      "pragma" => "no-cache",
+      "expires" => "0"
+    }
 
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.

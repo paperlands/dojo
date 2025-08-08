@@ -1,0 +1,125 @@
+## "msgid"s in this file come from POT (.pot) files.
+###
+### Do not add, change, or remove "msgid"s manually here as
+### they're tied to the ones in the corresponding POT file
+### (with the same domain).
+###
+### Use "mix gettext.extract --merge" or "mix gettext.merge"
+### to merge POT files into PO files.
+msgid ""
+msgstr ""
+"Language: ko\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: lib/dojo_web/live/shell_live.html.heex:246
+msgid "@%{addr}'s code"
+msgstr "@%{addr}의 부호"
+
+#: lib/dojo_web/components/core_components.ex:484
+msgid "Actions"
+msgstr "할 일들"
+
+#: lib/dojo_web/components/core_components.ex:160
+msgid "Attempting to reconnect"
+msgstr "다시 만나려고 해요"
+
+#: lib/dojo_web/live/shell_live.ex:463
+msgid "Command"
+msgstr "명령"
+
+#: lib/dojo_web/live/shell_live.ex:470
+msgid "Control"
+msgstr "조종"
+
+#: lib/dojo_web/live/shell_live.ex:474
+msgid "Deck"
+msgstr "갑판"
+
+#: lib/dojo_web/components/core_components.ex:151
+msgid "Error!"
+msgstr "앗!"
+
+#: lib/dojo_web/live/shell_live.ex:416
+msgid "Face Left"
+msgstr "왼쪽을 바라봐"
+
+#: lib/dojo_web/live/shell_live.ex:415
+msgid "Face Right"
+msgstr "오른쪽을 바라봐"
+
+#: lib/dojo_web/live/shell_live.ex:420
+msgid "Face Towards Start"
+msgstr "시작을 바라봐"
+
+#: lib/dojo_web/live/shell_live.ex:421
+msgid "Go To Start"
+msgstr "시작으로 가"
+
+#: lib/dojo_web/components/core_components.ex:172
+msgid "Hang in there while we get back on track"
+msgstr "길을 찾는 동안 잠깐만 기다려줘"
+
+#: lib/dojo_web/live/shell_live.ex:423
+msgid "Hide your Head"
+msgstr "머리를 숨겨"
+
+#: lib/dojo_web/live/shell_live.ex:417
+msgid "Jump Forward"
+msgstr "앞으로 뛰어"
+
+#: lib/dojo_web/live/shell_live.ex:414
+msgid "Move Forward"
+msgstr "앞으로 가"
+
+#: lib/dojo_web/live/shell_live.ex:429
+msgid "Name your Command"
+msgstr "명령에 이름을 지어줘"
+
+#: lib/dojo_web/live/shell_live.ex:428
+msgid "Repeat Commands"
+msgstr "명령을 반복해"
+
+#: lib/dojo_web/live/shell_live.ex:425
+msgid "Set Colour to"
+msgstr "색깔을 바꿔"
+
+#: lib/dojo_web/live/shell_live.ex:424
+msgid "Show your Head"
+msgstr "머리를 보여줘"
+
+#: lib/dojo_web/components/core_components.ex:167
+msgid "Something went wrong!"
+msgstr "뭔가 잘못됐어!"
+
+#: lib/dojo_web/components/core_components.ex:150
+msgid "Success!"
+msgstr "성공!"
+
+#: lib/dojo_web/live/shell_live.ex:418
+msgid "Wait a While"
+msgstr "잠깐 기다려"
+
+#: lib/dojo_web/components/core_components.ex:155
+msgid "We can't find the internet"
+msgstr "인터넷을 찾을 수 없어"
+
+#: lib/dojo_web/live/shell_live.ex:422
+msgid "Wipe Everything"
+msgstr "모든 걸 지워"
+
+#: lib/dojo_web/live/shell_live.ex:419
+msgid "Write Something"
+msgstr "뭔가 써봐"
+
+#: lib/dojo_web/components/core_components.ex:76
+#: lib/dojo_web/components/core_components.ex:130
+msgid "close"
+msgstr "닫기"
+
+#: lib/dojo_web/live/shell_live.html.heex:167
+msgid "summoning @%{addr}'s code"
+msgstr "@%{addr}의 마법을 불러오는 중"
+
+#: lib/dojo_web/live/shell_live.html.heex:153
+msgid "welcome %{name} to⠀%{clan}'s shell"
+msgstr "안녕 %{name}, %{clan}의 세계로 어서와"

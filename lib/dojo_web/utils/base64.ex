@@ -20,8 +20,8 @@ defmodule DojoWeb.Utils.Base64 do
   def to_file(data_uri, filename) when is_binary(data_uri) do
     with {:ok, mime_type, base64_content} <- extract_data(data_uri),
          ext <- get_extension(mime_type),
-         :ok <- write_file(filename<>ext, base64_content) do
-      filename<>ext
+         :ok <- write_file(filename <> ext, base64_content) do
+      filename <> ext
     else
       {:error, reason} -> {:error, reason}
     end
@@ -31,10 +31,14 @@ defmodule DojoWeb.Utils.Base64 do
 
   defp extract_data(data_uri) do
     case :binary.match(data_uri, ";base64,") do
-      :nomatch -> {:error, "Invalid data URI format"}
+      :nomatch ->
+        {:error, "Invalid data URI format"}
+
       {start, length} ->
         mime_type = binary_part(data_uri, 5, start - 5)
-        base64_content = binary_part(data_uri, start + length, byte_size(data_uri) - start - length)
+
+        base64_content =
+          binary_part(data_uri, start + length, byte_size(data_uri) - start - length)
 
         case Base.decode64(base64_content) do
           {:ok, decoded} -> {:ok, mime_type, decoded}

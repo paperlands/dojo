@@ -21,6 +21,7 @@ import "phoenix_html";
 import { Socket } from "phoenix";
 import { LiveSocket } from "phoenix_live_view";
 import topbar from "../vendor/topbar";
+import {hooks as colocatedHooks} from "phoenix-colocated/dojo"
 import  Hooks  from "./hooks/index.js";
 
 let csrfToken = document
@@ -43,7 +44,7 @@ let liveSocket = new LiveSocket("/live", Socket, {
       };
     },
   },
-  hooks: Hooks,
+    hooks: {...colocatedHooks, ...Hooks}
 });
 
 

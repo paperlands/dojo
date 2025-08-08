@@ -7,6 +7,7 @@ defmodule Dojo.Room do
       nil ->
         Cache.put({__MODULE__, :leaderboard, topic}, %{}, ttl: :timer.hours(@ttl))
         %{}
+
       leaderboard ->
         leaderboard
     end
@@ -14,12 +15,12 @@ defmodule Dojo.Room do
 
   def add_leaderboard!(topic, name) do
     case Cache.get({__MODULE__, :leaderboard, topic}) do
-      nil  ->
+      nil ->
         map = Map.new([{name, %{count: 1, history: [{time_now(), 1}]}}])
         Cache.put({__MODULE__, :leaderboard, topic}, map, ttl: :timer.hours(@ttl))
         map
 
-     %{^name => %{count: c, history: ts}} = leaderboard when is_list(ts) ->
+      %{^name => %{count: c, history: ts}} = leaderboard when is_list(ts) ->
         map = Map.put(leaderboard, name, %{count: c + 1, history: [{time_now(), 1} | ts]})
         Cache.put({__MODULE__, :leaderboard, topic}, map, ttl: :timer.hours(@ttl))
         map
@@ -31,10 +32,7 @@ defmodule Dojo.Room do
     end
   end
 
-
   defp time_now() do
-    (System.os_time/1000000000) |> floor
+    (System.os_time() / 1_000_000_000) |> floor
   end
-
-
 end

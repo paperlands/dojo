@@ -1,5 +1,5 @@
 defmodule Dojo.World do
-    @moduledoc """
+  @moduledoc """
   Implements functionality for simulating and visualizing elementary cellular automata.
 
   Provides functions to create, print, and evolve cellular automata based on given rules.
@@ -35,7 +35,6 @@ defmodule Dojo.World do
     [w_pad <> str <> w_pad]
   end
 
-
   @doc """
   Prints the current state of the cellular automaton.
 
@@ -59,7 +58,6 @@ defmodule Dojo.World do
     |> print_world()
     |> Kino.Markdown.new()
   end
-
 
   def print(str, view: true) when is_list(str) do
     str
@@ -120,7 +118,6 @@ defmodule Dojo.World do
     |> Enum.map(&print_world(&1))
   end
 
-
   def print(str) when is_binary(str) do
     print_world(str)
   end
@@ -131,7 +128,6 @@ defmodule Dojo.World do
 ")
     |> print_world()
   end
-
 
   @doc """
   Evolves the cellular automaton through a series of generations.

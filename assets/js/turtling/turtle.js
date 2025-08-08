@@ -4,7 +4,7 @@ import { Typesetter } from "./mafs/typist.js"
 import { Versor } from "./mafs/versors.js"
 import { RenderLoop } from "./renderer.js"
 import { Camera } from "./camera.js"
-import { seaBridge, cameraBridge } from "../bridged.js"
+import {cameraBridge, bridged } from "../bridged.js"
 
 export class Turtle {
     constructor(canvas) {
@@ -40,6 +40,7 @@ export class Turtle {
         };
 
         this.places = {};
+        this.bridge = bridged("turtle")
         this.functions = {};
         this.instructions = [];
 
@@ -601,6 +602,7 @@ export class Turtle {
         };
         this.commandCount = 0
         this.recurseCount = 0
+        this.maxRecurseDepth = 360
         this.rotation = new Versor(1, 0, 0, 0);
         this.penDown = true;
         this.color = 'DarkOrange';
@@ -619,7 +621,7 @@ export class Turtle {
         this.showTurtle = true;
         this.currentPath = null;
 
-        this.requestRender();
+        //this.requestRender();
     }
 
 
@@ -684,6 +686,7 @@ export class Turtle {
         if(this.instructions.length > 0)
             requestAnimationFrame(() => {
             this.reset();
+            this.requestRender();
             this.executeBody(this.instructions, {})
             });
     }
@@ -691,15 +694,16 @@ export class Turtle {
     draw(instructions, opts= {}) {
         const options = { ...{comms: true}, ...opts };
         this.reset();
+        this.requestRender();
         this.executeBody(instructions, {});
 
         this.instructions = instructions
 
             setTimeout(() => {
                 if(options.comms){
-               seaBridge.pub(["hatchTurtle", {"commands": instructions, "path": trimImage(this.ctx)}])
+               this.bridge.pub(["hatchTurtle", {"commands": instructions, "path": trimImage(this.ctx)}])
                 }
-            }, 1000)
+            }, 200)
 
     }
 

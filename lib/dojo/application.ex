@@ -9,7 +9,7 @@ defmodule Dojo.Application do
   def start(_type, _args) do
     children = [
       DojoWeb.Telemetry,
-      #Dojo.Repo,
+      # Dojo.Repo,
       {DNSCluster, query: Application.get_env(:dojo, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Dojo.PubSub},
       {Dojo.Gate,
@@ -34,7 +34,7 @@ defmodule Dojo.Application do
     opts = [strategy: :one_for_one, name: Dojo.Supervisor]
 
     # register the kinos
-    #Kino.SmartCell.register(DojoKino.Incognito)
+    # Kino.SmartCell.register(DojoKino.Incognito)
 
     Supervisor.start_link(children, opts)
   end

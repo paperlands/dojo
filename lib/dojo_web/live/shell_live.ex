@@ -40,7 +40,7 @@ defmodule DojoWeb.ShellLive do
   def handle_params(params, _url, socket) do
     {:noreply,
      socket
-     |> join_clan(params["clan"] || "paperland")
+     |> join_clan(params["clan"] || "PaperLand")
      |> sync_session()}
   end
 
@@ -165,8 +165,7 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_info({Dojo.Controls, command, arg}, socket) do
-
-    {:noreply, socket |> push_event("mutateShell", %{"command" => command, "args" => arg})}
+    {:noreply, socket |> push_event("writeShell", %{"command" => command, "args" => arg})}
   end
 
   def handle_info(event, socket) do
@@ -409,45 +408,83 @@ defmodule DojoWeb.ShellLive do
   end
 
   def deck(assigns) do
-    assigns = assign(assigns, :primitive, %{
-      command: [
-        {"fw", "Move Forward", [length: 50]},
-        {"rt", "Face Right", [angle: 30]},
-        {"lt", "Face Left", [angle: 30]},
-        {"jmp", "Jump Forward", [length: 50]},
-        {"wait", "Wait a While", [time: 1]},
-        {"label", "Write Something", [text: "'Hello'", size: 10]},
-        {"faceto", "Face Towards Start", ["→": 0, "↑": 0]},
-        {"goto", "Go To Start", ["→": 0, "↑": 0]},
-        {"erase", "Wipe Everything", nil},
-        {"hd", "Hide your Head", nil},
-        {"show", "Show your Head", nil},
-        {"beColour", "Set Colour to", [colour: "'red'"]}
-      ],
-      control: [{"loop", "Repeat Commands", [times: 5]},{"def", "Name your Command", [name: "my_cmd"]}]
-    })
+    assigns =
+      assign(assigns, :primitive, %{
+        command: [
+          {"fw", gettext("Move Forward"), [length: 50]},
+          {"rt", gettext("Face Right"), [angle: 30]},
+          {"lt", gettext("Face Left"), [angle: 30]},
+          {"jmp", gettext("Jump Forward"), [length: 50]},
+          {"wait", gettext("Wait a While"), [time: 1]},
+          {"label", gettext("Write Something"), [text: gettext("'Hello'"), size: 10]},
+          {"faceto", gettext("Face Towards Start"), ["→": 0, "↑": 0]},
+          {"goto", gettext("Go To Start"), ["→": 0, "↑": 0]},
+          {"erase", gettext("Wipe Everything"), nil},
+          {"hd", gettext("Hide your Head"), nil},
+          {"show", gettext("Show your Head"), nil},
+          {"beColour", gettext("Set Colour to"), [colour: "'red'"]}
+        ],
+        control: [
+          {"loop", gettext("Repeat Commands"), [times: 5]},
+          {"def", gettext("Name your Command"), [name: "my_cmd"]}
+        ]
+      })
+    |> assign(:titledeck, Gettext.gettext(DojoWeb.Gettext, assigns.type |> to_string |> to_titlecase))
 
     ~H"""
     <!-- Command Deck Component (command_deck.html.heex) -->
-    <div class={["absolute flex px-1 pb-1 right-5 bottom-5 animate-fade", !@active && "hidden"]}>
+    <div class={[
+      "absolute flex select-none px-1 pb-1 right-5 bottom-5 animate-fade",
+      !@active && "hidden"
+    ]}>
       <!-- Command Deck Panel -->
       <div class="fixed w-64 transition-all duration-100 ease-in-out transform right-5 bottom-20 xl:h-2/3 h-1/2 scrollbar-hide dark-scrollbar">
         <%!-- Top row --%>
-        <div class="flex pl-6 pt-4 ">
+        <div class="flex flex-row pl-6 pt-4">
           <!-- Header -->
-          <div class="flex items-center justify-between">
-            <h2 class="text-xl font-bold text-base-content">
-              {to_titlecase("#{@type} Deck")}
+          <div class="flex grow-5 items-center justify-between">
+            <h2 class="z-50  pointer-events-auto text-xl font-bold text-base-content">
+              <div class="dropdown dropdown-top">
+                <div
+                  tabindex="0"
+                  role="button"
+                  class="inline-block group cursor-pointer bg-base-200/50 hover:bg-base-100 transform transition-transform focus-within:border-accent-content border-accent  border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none inline-flex items-end"
+                >
+                  {@titledeck}
+                </div>
+                <ul
+                  tabindex="0"
+                  class="dropdown-content text-lg font-bold menu rounded bg-transparent transition duration-200 rounded-box z-60 w-32 p-2 shadow-sm"
+                >
+                  <li
+                    :if={!(@type == :command)}
+                    class="border-0 rounded-t-lg  border-t-2 border-accent hover:border-primary "
+                    phx-click="flipCommand"
+                  >
+                    <a><%= gettext "Command" %></a>
+                  </li>
+                  <li
+                    :if={!(@type == :control)}
+                    class=" border-0 rounded-t-lg   border-t-2 border-accent hover:border-primary "
+                    phx-click="flipControl"
+                  >
+                    <a><%= gettext "Control" %></a>
+                  </li>
+                </ul>
+                <span class="inline-block">
+                  <%= gettext "Deck" %>
+                </span>
+              </div>
             </h2>
           </div>
 
           <%!-- Undo button --%>
           <div
-            class="z-50 pointer-events-auto group pl-6 pt-1"
+            class="z-50 grow-1 pointer-events-auto group pt-1"
             phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
           >
             <div class="relative">
-              <button class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
+              <button class="flex items-center focus-within:border-accent-content justify-center w-8 h-8 rounded-full border-2 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
                 <svg
                   class="w-4 h-4 text-primary-content"
                   viewBox="0 0 24 24"
@@ -471,7 +508,7 @@ defmodule DojoWeb.ShellLive do
           </div>
         </div>
         <!-- Command&Control Dropdown -->
-        <div id="deckofcards" class="h-11/12 overflow-y-scroll p-2 px-4">
+        <div id="deckofcards" class="h-11/12 z-80 overflow-y-scroll p-2 px-4">
           <%= for {cmd, desc, vals} <- @primitive[@type] do %>
             <div
               phx-click={
@@ -498,12 +535,14 @@ defmodule DojoWeb.ShellLive do
                       id={"cmdparam-#{cmd}-#{arg}"}
                       value={val}
                       defaulted={val}
-                      class="ml-[1ch] bg-base-200/50 hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
+                      class="ml-[1ch] bg-base-200/50 caret-accent-content hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
                       placeholder={arg}
                       phx-update="ignore"
-                      phx-keydown={JS.dispatch("phx:writeShell",
-                  detail: %{@type => cmd, "args" => vals && Keyword.keys(vals)}
-                )}
+                      phx-keydown={
+                        JS.dispatch("phx:writeShell",
+                          detail: %{@type => cmd, "args" => vals && Keyword.keys(vals)}
+                        )
+                      }
                       phx-key="Enter"
                       oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
                       onclick="event.stopPropagation()"
@@ -531,10 +570,14 @@ defmodule DojoWeb.ShellLive do
           <% end %>
         </div>
         <!-- Decorative corners -->
-        <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-1 -left-1 border-primary-content"></div>
-        <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-1 right-1 border-primary-content"></div>
-        <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-8 -left-1 border-primary-content"></div>
-        <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-8 -right-1 border-primary-content"></div>
+        <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-1 -left-1 border-primary-content">
+        </div>
+        <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-1 right-1 border-primary-content">
+        </div>
+        <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-8 -left-1 border-primary-content">
+        </div>
+        <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-8 -right-1 border-primary-content">
+        </div>
       </div>
     </div>
     """
@@ -679,7 +722,7 @@ defmodule DojoWeb.ShellLive do
     ~H"""
     <div
       id="slider"
-      class="absolute hidden w-full max-w-xs transition-opacity duration-300 ease-in-out opacity-50 group hover:opacity-100 group-hover:block"
+      class="absolute hidden w-2/3 max-w-xs transition-opacity duration-300 ease-in-out opacity-50 group hover:opacity-100 group-hover:block"
     >
       <div class="flex items-center space-x-3">
         <!-- Value Display -->

@@ -20,7 +20,11 @@ config :dojo, DojoWeb.Endpoint,
     layout: false
   ],
   pubsub_server: Dojo.PubSub,
-  check_origin: ["https://dojo.paperland.sg", "https://dojo.paperland.in", "https://thedojo.fly.dev"],
+  check_origin: [
+    "https://dojo.paperland.sg",
+    "https://dojo.paperland.in",
+    "https://thedojo.fly.dev"
+  ],
   live_view: [signing_salt: "ko/5Xrfn"]
 
 # Configures the mailer
@@ -37,9 +41,9 @@ config :esbuild,
   version: "0.17.11",
   dojo: [
     args:
-      ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --external:/codemirror/*),
+      ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --external:/codemirror/* --alias:@=.),
     cd: Path.expand("../assets", __DIR__),
-    env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
+    env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]
 
 # Configure tailwind (the version is required)
@@ -61,14 +65,13 @@ config :logger, :console,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
-
 config :dojo, Dojo.Cache,
-       gc_interval: :timer.minutes(5),
-       backend: :shards,
-       # Very short minimum cleanup timeout
-       gc_cleanup_min_timeout: :timer.seconds(1),
-       # Short maximum cleanup timeout
-       gc_cleanup_max_timeout: :timer.seconds(30)
+  gc_interval: :timer.minutes(5),
+  backend: :shards,
+  # Very short minimum cleanup timeout
+  gc_cleanup_min_timeout: :timer.seconds(1),
+  # Short maximum cleanup timeout
+  gc_cleanup_max_timeout: :timer.seconds(30)
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

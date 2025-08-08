@@ -33,8 +33,8 @@ defmodule DojoWeb.Telemetry do
       #         unit: {:native, :millisecond}
       # ),
       summary("phoenix.router_dispatch.exception.duration",
-              tags: [:route],
-              unit: {:native, :millisecond}
+        tags: [:route],
+        unit: {:native, :millisecond}
       ),
       # summary("phoenix.router_dispatch.stop.duration",
       #   tags: [:route],
@@ -83,8 +83,8 @@ defmodule DojoWeb.Telemetry do
 
       # Count exceptions
       counter("dojo.cache.command.exception.duration",
-              tags: [:function_name, :kind]
-      ),
+        tags: [:function_name, :kind]
+      )
 
       # # Track command execution counts
       # counter("dojo.cache.command.stop.duration",
@@ -103,7 +103,6 @@ defmodule DojoWeb.Telemetry do
       #         end
       # ),
 
-
       # VM Metrics
       # summary("vm.memory.total", unit: {:byte, :kilobyte}),
       # summary("vm.total_run_queue_lengths.total"),
@@ -118,7 +117,7 @@ defmodule DojoWeb.Telemetry do
       # This function must call :telemetry.execute/3 and a metric must be added above.
       # {DojoWeb, :count_users, []}
       #
-      #{Dojo.Cache, :dispatch_stats, []}
+      # {Dojo.Cache, :dispatch_stats, []}
     ]
   end
 end

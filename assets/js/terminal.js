@@ -1,130 +1,439 @@
 import { execute } from "./terminal/operations.js"
+import { Tabber } from "./terminal/tabber.js"
+import { bridged } from "./bridged.js"
+import { nameGen, idGen } from "./utils/nama.js"
 
-export class Terminal {
-    constructor(editor, CodeMirror) {
-        this.editor = editor;
-        this.CM = CodeMirror;
-        this.buffers = {}; // Store buffers
-        this.currentBufferName = null; // Track the current buffer
-        this.shell = null; // Store the CodeMirror instance for the terminal
+// =============================================================================
+// STORAGE LAYER
+// =============================================================================
+
+class BufferStorage {
+    STORAGE_KEY = '@paperlands.buffers';
+
+    constructor(name="inner") {
+        this.name = this.STORAGE_KEY + "@" + name
     }
 
-    init() {
-        // Initialize the shell
-        this.shell = this.CM.fromTextArea(this.editor, this.opts());
-        this.shell.initOpts = this.opts();
-        // init listeners
-        this.shell.on("gutterClick", function(cm, n) {
-            cm.focus()
-            cm.setSelection({line: n, ch: 0}, {line: n, ch: 100});
+    // needs to by dynamic
+    #createDefaultBuffer() {
+        return {
+            id: idGen(),
+            name: 'Papert',
+            active: true,
+            content: `def wave phase amp do
+    fw amp*sin[phase]
+    lt 90
+    jmp -5
+    rt  90
+    fw -amp*sin[phase]
+    wave phase+5 amp
+end
+
+loop 30 do
+  jmpto 0 125
+  erase
+  beColour purple
+  when random<0.5 do
+    beColour purple
+    label "Delete code on the left to begin 🧙‍♂️" 20
+  end
+  when random do
+    beColour gold
+    label "Delete code on the left to begin 🧙‍♂️✨" 20
+  end
+  jmp -200
+  rt 180
+  fw 50
+  label "➤" 30
+  jmpto 0 0
+  jmp -1000
+  rt 270
+  beColour darkorange
+  wave random*180 15
+  lt 90
+  wait 1
+end`,
+            mode: 'plang',
+            created: Date.now(),
+            lastModified: Date.now()
+        };
+    }
+
+     load() {
+        try {
+            const stored = localStorage.getItem(this.name);
+            const buffers = stored ? JSON.parse(stored) : {};
+
+            // Ensure at least one buffer exists
+            if (Object.keys(buffers).length === 0) {
+                const defaultBuffer = this.#createDefaultBuffer();
+                buffers[defaultBuffer.id] = defaultBuffer;
+            }
+
+            return buffers;
+        } catch (e) {
+            console.warn('Storage load failed, using defaults:', e);
+            const defaultBuffer = this.#createDefaultBuffer();
+            return { [defaultBuffer.id]: defaultBuffer };
+        }
+    }
+
+     save(buffers) {
+        try {
+            localStorage.setItem(this.name, JSON.stringify(buffers));
+            return true;
+        } catch (e) {
+            console.warn('Storage save failed:', e);
+            return false;
+        }
+    }
+}
+
+
+export class Terminal {
+    // Default CodeMirror configuration
+    static DEFAULT_OPTIONS = {
+        theme: 'everforest',
+        mode: 'plang',
+        lineNumbers: true,
+        lineWrapping: true,
+        styleActiveLine: { nonEmpty: true },
+        styleActiveSelected: true,
+        autocorrect: true,
+        foldGutter: true,
+        matchBrackets: {
+            enableWordMatching: true,
+            highlightNonMatching: true,
+            maxScanLines: 200
+        },
+        smartIndent: true,
+        gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter']
+    };
+
+    constructor(editor, CodeMirror, options = {}) {
+
+        this.editor = editor;
+        this.CM = CodeMirror;
+        this.options = { ...Terminal.DEFAULT_OPTIONS, ...options };
+        this.buffers = new Map(); // Use Map for better performance
+        this.docs = new Map(); // Separate CodeMirror docs from buffer metadata
+        this.currentBuffer = null;
+        this.shell = null;
+        this.nameGen = nameGen();
+        this.autosaveTimer = null;
+        this.tabs = new Tabber()
+        this.shell = this.CM.fromTextArea(this.editor, this.#buildOptions());
+        this.#setupEventListeners();
+        this.bridge = bridged("terminal")
+        return this
+    }
+
+    inner() {
+        this.shell.run = this.run.bind(this);
+        this.bufferStore = new BufferStorage()
+        this.#loadBuffersFromStorage()
+        this.#selectInitialBuffer();
+
+        return this;
+    }
+
+    outer(code) {
+        this.shell.run = this.run.bind(this);
+
+        this.swapBuffer("@outer.shell", code);
+
+        return this;
+    }
+
+    // buffermanagement
+    opBufferHandler(event) {
+        console.log(event)
+        const { op, target } = event;
+        switch(op) {
+        case 'add':
+            this.createBuffer()
+            break;
+        case 'select':
+            this.selectBuffer(target);
+            break;
+        case 'rename':
+            this.renameBuffer(target)
+            break;
+        case 'close':
+            this.closeBuffer(target);
+            break;
+        }
+    }
+
+
+    #buildOptions() {
+        return {
+            ...this.options,
+            extraKeys: {
+                'Ctrl-/': (cm) => this.toggleComment(cm),
+                'Ctrl-A': (cm) => cm.execCommand("selectAll"),
+                'Shift-Tab': () => this.switchToNextBuffer(),
+                'Ctrl-Shift-Tab': () => this.switchToPrevBuffer(),
+                ...this.options.extraKeys
+            }
+        };
+    }
+
+    #setupEventListeners() {
+        // Gutter click selection
+        this.shell.on('gutterClick', (cm, line) => {
+            cm.focus();
+            cm.setSelection({ line, ch: 0 }, { line, ch: cm.getLine(line).length });
+        });
+
+        // Content change handling with debounced autosave
+        this.shell.on('change', (cm) => {
+            const content = cm.getValue();
+
+            // Update current buffer
+            if (this.currentBuffer) {
+                this.buffers.get(this.currentBuffer).content = content;
+
+            }
+
+            // Debounced save to localStorage
+            clearTimeout(this.autosaveTimer);
+            this.autosaveTimer = setTimeout(() => this.#saveToStorage(), 500);
+
+            this.bridge.pub(content);
 
         });
 
-        this.shell.cached = this.loadEditorContent()
-
-        this.openBuffer("~", this.shell.cached , "plang")
-        this.shell.run = this.run.bind(this)
-        // Create the initial buffer
-        return this.shell;
     }
 
-    opts() {
-        return {theme: "everforest", mode: "plang", lineNumbers: true, lineWrapping: true,
-                styleActiveLine: {nonEmpty: true},
-                styleActiveSelected: true,
-                autocorrect: true,
-                foldGutter: true,
-                matchBrackets: {
-                    enableWordMatching: true,  // Enable do-end matching (default: true)
-                    highlightNonMatching: true,
-                    maxScanLines: 1000
-                },
-            smartIndent: true,
-            gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
+    #loadBuffersFromStorage() {
+        const storedBuffers = this.bufferStore.load();
 
-            extraKeys: {
-                "Ctrl-Space": () => this.snippet(),
-                "Ctrl-/": (cm) => this.toggleComment(cm)
-            }}
+        Object.values(storedBuffers).forEach((buffer) => {
+            this.#recreateBufferDoc(buffer);
+            this.tabs.addTab(buffer.id, buffer.name)
+
+            if(buffer.active) {
+                this.currentBuffer = buffer.id
+            }
+        });
     }
 
-    openBuffer(name, text, mode) {
-        if (this.buffers[name]) {
-            alert("Buffer with this name already exists.");
-            return;
-        }
+    #selectInitialBuffer() {
+        const defaultBuffer = this.buffers.keys()[0];
 
-        const newDoc = this.CM.Doc(text, mode);
-        this.buffers[name] = newDoc;
-        this.selectBuffer(name); // Automatically select the newly created buffer
-
-        // Update the buffer selection UI
-        this.updateBufferSelectionUI(name);
+        this.currentBuffer && this.selectBuffer(this.currentBuffer) || this.selectBuffer(defaultBuffer);
     }
 
-    updateBufferSelectionUI(name) {
-
+    #createBufferDoc(name, content = '') {
+        return this.#recreateBufferDoc({name: name, content: content});
     }
 
-    selectBuffer(name) {
-        if (!this.buffers[name]) {
-            alert("Buffer not found.");
-            return;
-        }
+    #recreateBufferDoc(buffer) {
+        const updatedBuffer = {
+            id: buffer.id ?? idGen(),
+            name: buffer.name ?? this.nameGen(),
+            mode: buffer.mode ?? 'plang',
+            content: buffer.content ?? `jmpto 0 125
+beColour red
+label "Delete all the code here to begin 🧙‍♂️" 20
+jmp -200
+rt 180
+fw 50
+label "➤" 20
+beColour DarkOrange
+jmpto 0 0
+rt 180
+label "Welcome to PaperLand" 50`,
+            created: buffer.created ?? Date.now(),
+            lastModified: buffer.lastModified ?? Date.now(),
+        };
 
-        this.currentBufferName = name;
-        const buf = this.buffers[name];
-        this.shell.swapDoc(buf);
-        this.shell.focus();
+        const doc = this.CM.Doc(updatedBuffer.content, updatedBuffer.mode);
+
+        this.buffers.set(updatedBuffer.id, updatedBuffer);
+        this.docs.set(updatedBuffer.id, doc);
+
+        return { id: updatedBuffer.id, buffer: updatedBuffer, doc };
     }
 
-    snippet() {
-        this.CM.showHint(this.shell, () => {
-            const cursor = this.shell.getCursor();
-            const token = this.shell.getTokenAt(cursor);
-            const start = token.start;
-            const end = cursor.ch;
-            const line = cursor.line;
-            const currentWord = token.string;
+    #saveToStorage() {
+        if(this.bufferStore) {
+        const bufferData = {};
+        this.buffers.forEach((buffer, id) => {
+            bufferData[id] = {
+                id: id,
+                name: buffer.name,
+                active: this.currentBuffer == id,
+                content: buffer.content,
+                mode: buffer.mode,
+                created: buffer.created,
+                lastModified: buffer.lastModified
 
-            const list = snippets.filter(item => item.text.indexOf(currentWord) >= 0);
-
-            return {
-                list: list.length ? list : snippets,
-                from: this.CM.Pos(line, start),
-                to: this.CM.Pos(line, end)
             };
-        }, { completeSingle: true });
+        });
+        this.bufferStore.save(bufferData);
+        }
     }
+
+    // Public API methods
+    triggerBridge() {
+        this.bridge.pub(this.getCurrentBuffer().content);
+    }
+
+
+    createBuffer(name = '', content = '', mode = 'plang'){
+        const bufferName = name || this.nameGen()
+        const {id,  buffer, doc } = this.#createBufferDoc(bufferName, content);
+        this.tabs.addTab(id, buffer.name)
+        this.selectBuffer(id);
+
+        return id;
+    }
+
+    swapBuffer(bufferName, content, mode) {
+        const { id, buffer, doc } = this.#createBufferDoc(bufferName, content);
+        this.currentBuffer = id;
+        this.shell.swapDoc(doc)
+        this.triggerBridge()
+    }
+
+
+    selectBuffer(id) {
+        if (!this.buffers.has(id)) {
+            throw new Error(`Buffer '${name}' not found`);
+        }
+        this.currentBuffer = id;
+        const doc = this.docs.get(id);
+        this.shell.swapDoc(doc);
+        this.triggerBridge()
+        this.shell.focus();
+
+        this.tabs.selectTab(id)
+
+
+        return this.buffers.get(id);
+    }
+
+    closeBuffer(id = this.currentBuffer) {
+        if (!id || !this.buffers.has(id)) {
+            throw new Error(`Buffer '${id}' not found`);
+        }
+
+        if (this.buffers.size === 1) {
+            throw new Error('Cannot close the last buffer');
+        }
+
+        const confirmed = prompt(`Are you sure you want to kill ${this.buffers.get(id)["name"]}?`);
+        if (confirmed === '') {
+
+            // Switch to another buffer if closing current
+            if (id === this.currentBuffer) {
+                const bufferIds = Array.from(this.buffers.keys());
+                const currentIndex = bufferIds.indexOf(id);
+                const nextBuffer = bufferIds[currentIndex + 1] || bufferIds[currentIndex - 1];
+                this.selectBuffer(nextBuffer);
+            }
+
+            this.tabs.closeTab(id)
+
+            this.buffers.delete(id);
+            this.docs.delete(id);
+
+            this.#saveToStorage();
+
+            return this;
+        }
+    }
+
+    renameBuffer(id) {
+        const newName = this.tabs.renameTab(id);
+        const buffer = this.selectBuffer(id);
+        buffer.name = newName
+        console.log(buffer)
+
+        return this;
+    }
+
+    switchToNextBuffer() {
+        const names = Array.from(this.buffers.keys());
+        const currentIndex = names.indexOf(this.currentBuffer);
+        const nextIndex = (currentIndex + 1) % names.length;
+        this.selectBuffer(names[nextIndex]);
+        return this;
+    }
+
+    switchToPrevBuffer() {
+        const names = Array.from(this.buffers.keys());
+        const currentIndex = names.indexOf(this.currentBuffer);
+        const prevIndex = currentIndex === 0 ? names.length - 1 : currentIndex - 1;
+        this.selectBuffer(names[prevIndex]);
+        return this;
+    }
+
+    getBufferList() {
+        return Array.from(this.buffers.values()).map(buffer => ({
+            name: buffer.name,
+            mode: buffer.mode,
+            active: buffer.name === this.currentBuffer,
+            modified: buffer.lastModified
+        }));
+    }
+
+    getCurrentBuffer() {
+        return this.currentBuffer ? this.buffers.get(this.currentBuffer) : null;
+    }
+
 
     toggleComment(cm) {
-        const selected = cm.getSelection();
-        if (selected) {
-            const lines = selected.split('\n');
-            const commented = lines.map(line => {
-                return line.startsWith('#') ? line.slice(1) : '# ' + line;
+        const selections = cm.listSelections();
+
+        cm.operation(() => {
+            selections.forEach(sel => {
+                const { anchor, head } = sel;
+                const startLine = Math.min(anchor.line, head.line);
+                const endLine = Math.max(anchor.line, head.line);
+
+                // Check if all lines are commented
+                let allCommented = true;
+                for (let i = startLine; i <= endLine; i++) {
+                    const line = cm.getLine(i).trim();
+                    if (line && !line.startsWith('#')) {
+                        allCommented = false;
+                        break;
+                    }
+                }
+
+                // Toggle comments
+                for (let i = startLine; i <= endLine; i++) {
+                    const line = cm.getLine(i);
+                    if (allCommented) {
+                        // Remove comment
+                        const uncommented = line.replace(/^(\s*)#\s?/, '$1');
+                        cm.replaceRange(uncommented, { line: i, ch: 0 }, { line: i, ch: line.length });
+                    } else {
+                        // Add comment
+                        const indent = line.match(/^(\s*)/)[1];
+                        const commented = indent + '# ' + line.slice(indent.length);
+                        cm.replaceRange(commented, { line: i, ch: 0 }, { line: i, ch: line.length });
+                    }
+                }
             });
-            cm.replaceSelection(commented.join('\n'));
-        }
+        });
     }
 
     run(instructions) {
-        execute(this.shell, instructions)
+        if (typeof execute === 'function') {
+            execute(this.shell, instructions);
+        } else {
+            console.warn('Execute function not available');
+        }
     }
 
-    loadEditorContent() {
-        return localStorage.getItem('@my.turtle') || `
-draw spiral size fo fi do
- # character arc begins
- for 360/[2*4] do
-  fw size
-  rt 2
-  wait 1/36
- end
- spiral size*[fo+fi]/fi fi fi+fo #fibo go brrr
-end
-hd
-spiral 1 1 1`;
+    // Cleanup method
+    destroy() {
+        clearTimeout(this.autosaveTimer);
+        this.#saveToStorage();
+        this.shell?.toTextArea();
     }
-
 }

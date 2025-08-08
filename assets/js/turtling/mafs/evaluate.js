@@ -110,7 +110,7 @@ export class Evaluator {
         case '^': return Math.pow(left, right);
         case '^-': return Math.pow(left, -right);
         case '/-': return left / -right;
-        case '//': return right % left;
+        case '//': return left % right;
         case '*': return left * right;
         case '*-': return left * -right;
         case '/': return left / right;
