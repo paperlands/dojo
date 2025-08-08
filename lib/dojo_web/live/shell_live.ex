@@ -508,7 +508,7 @@ defmodule DojoWeb.ShellLive do
           </div>
         </div>
         <!-- Command&Control Dropdown -->
-        <div id="deckofcards" class="h-11/12 overflow-y-scroll p-2 px-4">
+        <div id="deckofcards" class="h-11/12 z-80 overflow-y-scroll p-2 px-4">
           <%= for {cmd, desc, vals} <- @primitive[@type] do %>
             <div
               phx-click={
