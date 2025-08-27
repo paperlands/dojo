@@ -9,8 +9,8 @@ import { temporal } from "../utils/temporal.js"
 const commands = {
   // Canvas commands
   render: (canvas, turtle) => (code) => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    // canvas.width = window.innerWidth;
+    // canvas.height = window.innerHeight;
 
     try {
       const commands = parseProgram(code);
@@ -305,14 +305,17 @@ const Shell = {
 
     // Setup rendering pipeline
     const debouncedRender = temporal.debounce((code) => {
+
       const result = renderCommand(code);
       result.success ? display.success(result.commandCount) : display.error(result.error);
+      // recenter camera to reset view upon tab change
+      //cameraBridge.pub(["recenter", {}])
     }, 20);
 
     // Connect bridges
     term.bridge.sub(debouncedRender);
 
-        const debouncedPushUp = temporal.throttle(
+    const debouncedPushUp = temporal.throttle(
       (eventName, eventData) => this.pushEvent(eventName, eventData),
       200
     );
@@ -333,7 +336,7 @@ const Shell = {
       listeners.keyboard(term.shell).mount(),
       listeners.selection(term.shell, this.pushEvent.bind(this)).mount(),
       listeners.theme(theme => term.shell.setOption('theme', theme)).mount(),
-      listeners.resizer(resize => term.triggerBridge()).mount(canvas),
+      //listeners.resizer(resize => term.triggerBridge()).mount(canvas),
       //slider is mutated and also is activate by a listener
       slider.mount(),
       listeners.slider(term.shell, slider).mount()

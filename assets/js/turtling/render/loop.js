@@ -1,8 +1,8 @@
 // handles rendertimeloop
 export default class Loop {
     constructor(canvas, options) {
-        this.canvas = canvas;
-        this.ctx = canvas.getContext('2d');
+        // this.canvas = canvas;
+        //this.ctx = canvas.getContext('2d');
         this.onRender = options.onRender;
         this.stopCondition = options.stopCondition;
 
@@ -67,7 +67,7 @@ export default class Loop {
     }
 
     clear() {
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        //this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
     restart(timestamp) {

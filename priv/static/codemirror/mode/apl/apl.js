@@ -17,8 +17,8 @@ function wordObj(words) {
 }
 
 var keywordList = [
-  "draw", "def", "label", "erase", "goto", "do", "fw", "rt", "hd", "lt", "show", "wait", "beColour", "jmp", "fill",
-  "jmpto", "faceto", "END", "end", "ensure", "false", "for", "when", "loop"
+  "draw", "def", "label", "erase", "goto", "do", "fw", "rt", "dive", "roll", "hd", "lt", "show", "wait", "beColour", "jmp", "fill",
+  "jmpto", "faceto", "END", "end", "ensure", "for", "when", "loop"
 ], keywords = wordObj(keywordList);
 
 var indentWords = wordObj(["do"]);

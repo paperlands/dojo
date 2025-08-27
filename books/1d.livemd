@@ -54,7 +54,7 @@ We begin with a
 ```elixir
 # init condition goes here Liv
 # build a list
-Dojo.World.create("10101", %{class: class})
+Dojo.World.create("111", %{class: class})
 |> Dojo.World.print(book: true)
 ```
 
@@ -83,25 +83,42 @@ This may lead you to write some code like this:
 
 ```elixir
 # Define the rule set
-rule_set =
+# rule_set =
+#   %{
+#     "000" => "1",
+#     "001" => "1",
+#     "010" => "1",
+#     "011" => "1",
+#     "100" => "1",
+#     "101" => "0",
+#     "110" => "0",
+#     "111" => "0"
+#   }
+
+nand =
   %{
-    "000" => "0",
-    "001" => "1",
-    "010" => "1",
-    "011" => "1",
-    "100" => "1",
-    "101" => "0",
-    "110" => "0",
-    "111" => "0"
+    "00" => "1",
+    "01" => "1",
+    "10" => "1",
+    "11" => "0",
+
   }
 
-rule_set
+andd =
+  %{
+    "00" => "0",
+    "01" => "0",
+    "10" => "0",
+    "11" => "1",
+
+  }
+andd
 |> Dojo.World.print(book: true)
 ```
 
 ```elixir
-Dojo.World.create("010")
-|> Dojo.World.next(20, 15, %{class: class})
+Dojo.World.create("00100")
+|> Dojo.World.next(20, 50, %{class: class})
 |> Dojo.World.print(animate: true)
 ```
 
@@ -114,8 +131,8 @@ What is the total number of kernel rules you can create?
 
 ```elixir
 str =
-  Dojo.World.create("010")
-  |> Dojo.World.next(20, 5)
+  Dojo.World.create("00100")
+  |> Dojo.World.next(20, 10)
   |> Dojo.World.print(spacetime: true)
 ```
 
