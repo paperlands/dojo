@@ -7,7 +7,6 @@ import  {OrbitControls}  from '../utils/threeorbital';
 import  {WebGLRenderer}  from '../utils/threerender';
 import  snapshot  from '../utils/canvas.js';
 import Render from "./render/index.js"
-import Head from "./head.js"
 //import { Camera } from "./camera.js"
 import {cameraBridge, bridged } from "../bridged.js"
 
@@ -74,7 +73,7 @@ export class Turtle {
 
         this.glyphist = new Render.Glyph(this.glyphGroup);
 
-        this.shapist = new Render.Shape(this.pathGroup, {layerMethod: 'polygonOffset', polygonOffset: { factor: -2, units: -2 }})
+        this.shapist = new Render.Shape(this.pathGroup, {layerMethod: 'polygonOffset', polygonOffset: { factor: -0.1, units: -1 }})
 
         // Temporal state
         this.timeline = {
@@ -84,10 +83,6 @@ export class Turtle {
             lastRenderTime: 0,
             lastRenderFrame: 0
         };
-
-
-
-
 
 
         // Set up animation frame for continuous rendering
@@ -107,11 +102,8 @@ export class Turtle {
         });
 
 
+        this.head = new Render.Head(this.scene)
         this.reset();
-
-        //this.head = new Head(this.scene)
-
-        this.rotation = new Versor(1, 0, 0, 0); // Identity quaternion
         // Command execution tracking
         this.commandCount = 0;
         this.recurseCount = 0,
@@ -138,7 +130,7 @@ export class Turtle {
 
     setupCamera() {
         const aspect = window.innerWidth / window.innerHeight;
-        this.camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 10000);
+        this.camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 10000000);
         this.camera.lookAt(0, 0, 0);
         this.camera.position.set(0, 0, 500);
 
@@ -225,7 +217,27 @@ export class Turtle {
         this.controls.update();
         this.renderer.render(this.scene, this.camera);
 
-        if(this.snapshot==null && (t>100 || t >= this.timeline.endTime)) {
+        // if we want to scale head
+        //console.log(this.camera.position.distanceTo(this.head.position()))
+        //const scaleFactor = Math.max(0.1, distanceToCamera * 0.02); // Adjust multiplier as needed
+
+        if(this.endTurtle=="start" && t>=this.timeline.endTime){
+            if (this.showTurtle) {
+                this.head.show()
+                this.head.update([this.x, this.y,this.z], this.rotation, this.color)
+            }
+            this.endTurtle="reaching"
+        }
+
+        if(this.endTurtle=="reaching") {
+            //for some reason needs to be next frame after head render
+            if (t>=(100+this.timeline.endTime)) {
+                this.hatch()
+                this.endTurtle="reached"
+            }
+        }
+
+        if(this.snapshot==null && t>200) {
             // needs to snapshot and send immediately after render because no drawing buffer
             this.hatch()
         }
@@ -240,19 +252,20 @@ export class Turtle {
             case "clear":
                 this.pathGroup.clear()
                 break;
+
+            case "head":
+                if (path.visible){
+                    this.head.show()
+                    this.head.update(path.points, path.rotation, path.color)
+                } else {
+                    this.head.hide()
+                }
+                break;
+
             case "path" :
                 try {
                 if (!path.points || path.points.length === 0) return;
-                // Start drawing a new path
-
-                const geometry = new THREE.BufferGeometry().setFromPoints(path.points);
-                const material = new THREE.LineBasicMaterial({
-                    color: path.color || 'DarkOrange',
-                    linewidth: 2
-                });
-
-                const mesh = new THREE.Line(geometry, material);
-                this.pathGroup.add(mesh);
+                    // Start drawing a new path
 
                     if(path.filled) {
 
@@ -262,11 +275,16 @@ export class Turtle {
                                                                useShapeGeometry: false,    // Use THREE.Shape for 2D-like polygons
                                                                forceTriangulation: true});
 
+                    }
+                    else {
+                        const geometry = new THREE.BufferGeometry().setFromPoints(path.points);
+                        const material = new THREE.LineBasicMaterial({
+                            color: path.color || 'DarkOrange',
+                            linewidth: 2
+                        });
 
-                        // const wow = addShape(path, this.pathGroup)
-                        // this.pathGroup.add(wow);
-
-
+                        const mesh = new THREE.Line(geometry, material);
+                        this.pathGroup.add(mesh);
                     }
 
                 } catch (error) {
@@ -276,7 +294,7 @@ export class Turtle {
             case "text":
                 try {
                       const quaternion = new THREE.Quaternion();
-                      quaternion.copy(path.text_rotation)
+                      quaternion.copy(path.rotation)
                       this.glyphist.setGlyph(path.text, path.text, {position: new THREE.Vector3(...path.points[0]),
                                              rotation: quaternion,
                                              scale: new THREE.Vector3(...[path.text_size, path.text_size, path.text_size])
@@ -305,8 +323,24 @@ export class Turtle {
     }
 
     wait(duration=1) {
+        // record a head entry for rendering head
+        this.currentPath = {
+            ...this.pathTemplate,
+            type: "head",
+            points: [this.x, this.y, this.z],
+            color: this.color,
+            rotation: this.rotation,
+            visible: this.showTurtle
+        };
+
+        const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
+        currentFrame.push(this.currentPath);
+        this.timeline.frames.set(this.timeline.currentTime, currentFrame);
+
         this.timeline.currentTime += duration*1000;
         this.timeline.endTime = Math.max(this.timeline.endTime, this.timeline.currentTime);
+
+
 
         // Create new frame entry if it doesn't exist
         if (!this.timeline.frames.has(this.timeline.currentTime)) {
@@ -314,43 +348,6 @@ export class Turtle {
         }
         this.currentPath= null
         this.requestRestart();
-    }
-
-    drawHead(scale) {
-        // theres a 32 bit overflow
-        if (isFinite(Math.fround(this.x)) && isFinite(Math.fround(this.y))){
-
-            const headSize = 8 / scale;
-            this.ctx.save();
-
-            this.ctx.fillStyle = this.color;
-
-            this.ctx.translate(this.x, this.y);
-
-            // Apply turtle rotation with error handling
-            try {
-                const transformValues = this.rotation.getTransformValues();
-                this.ctx.transform(
-                    transformValues.a, transformValues.b,
-                    transformValues.c, transformValues.d,
-                    transformValues.e, transformValues.f
-                );
-            } catch (error) {
-                console.warn('Error applying turtle rotation:', error);
-                // Use identity transform if rotation fails
-                this.ctx.transform(1, 0, 0, 1, 0, 0);
-            }
-
-            // Draw turtle head
-            this.ctx.beginPath();
-            this.ctx.moveTo(headSize, 0);
-            this.ctx.lineTo(-headSize / 2, headSize / 2);
-            this.ctx.lineTo(-headSize / 2, -headSize / 2);
-            this.ctx.closePath();
-            this.ctx.fill();
-
-            this.ctx.restore();
-        }
     }
 
     goto(x=0, y=0, z=null) {
@@ -456,7 +453,7 @@ export class Turtle {
             text: text,
             // html canvas cant space numbers accurately below this
             text_size: size > 0.025 ? size : 0.025,
-            text_rotation: this.rotation.scale(1)
+            rotation: this.rotation
             //id: crypto.getRandomValues(new Uint32Array(1))[0]
         };
 
@@ -661,8 +658,10 @@ export class Turtle {
         this.penDown = true;
         this.color = 'DarkOrange';
         this.snapshot = null
+        this.endTurtle = "start"
         this.showTurtle = true;
         this.currentPath = null;
+        this.renderLoop.requestRestart();
     }
 
 
