@@ -302,7 +302,7 @@ export class Turtle {
                     newText.fontSize = path.text_size
                     newText.textAlign = 'center'
                     newText.anchorX = 'center'
-                    newText.anchorY = 'middle'
+                    newText.anchorY = '45%'
                     newText.font= '/fonts/paperLang.ttf'
                     newText.position.x= path.points[0][0]
                     newText.position.y= path.points[0][1]
