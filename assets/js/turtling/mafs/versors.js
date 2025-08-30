@@ -10,6 +10,19 @@ export class Versor {
         this.normalize();
     }
 
+    add(other) {
+        return new Versor(
+            this.w + other.w,
+            this.x + other.x,
+            this.y + other.y,
+            this.z + other.z
+        );
+    }
+
+    scale(s) {
+        return {x: this.x * s, y: this.y * s, z: this.z * s};
+    }
+
     normalize() {
         const lengthSq = this.w * this.w + this.x * this.x + this.y * this.y + this.z * this.z;
         if (Math.abs(lengthSq) > Versor.EPSILON) {
@@ -19,13 +32,11 @@ export class Versor {
             this.y *= scale;
             this.z *= scale;
         }
-
         // Clean up near-zero components
         if (Math.abs(this.w) < Versor.EPSILON) this.w = 0;
         if (Math.abs(this.x) < Versor.EPSILON) this.x = 0;
         if (Math.abs(this.y) < Versor.EPSILON) this.y = 0;
         if (Math.abs(this.z) < Versor.EPSILON) this.z = 0;
-
         return this;
     }
 
@@ -62,7 +73,6 @@ export class Versor {
         const x = this.w * q.x + this.x * q.w + this.y * q.z - this.z * q.y;
         const y = this.w * q.y - this.x * q.z + this.y * q.w + this.z * q.x;
         const z = this.w * q.z + this.x * q.y - this.y * q.x + this.z * q.w;
-
         return new Versor(w, x, y, z);
     }
 
@@ -73,22 +83,39 @@ export class Versor {
             Math.abs(this.y) < Versor.EPSILON &&
             Math.abs(this.z) < Versor.EPSILON) {
             return {
-                x: Number(v.x), // Ensure numeric type
+                x: Number(v.x),
                 y: Number(v.y),
                 z: Number(v.z)
             };
         }
 
-        // For non-identity quaternions, use precise rotation
-        const ix = this.w * v.x + this.y * v.z - this.z * v.y;
-        const iy = this.w * v.y + this.z * v.x - this.x * v.z;
-        const iz = this.w * v.z + this.x * v.y - this.y * v.x;
-        const iw = -this.x * v.x - this.y * v.y - this.z * v.z;
+        // Efficient quaternion rotation: v' = q * v * q*
+        // Using optimized formula: v' = v + 2 * qv × (qv × v + qw * v)
+        // where qv = (qx, qy, qz) and qw = this.w
 
+        const qx = this.x, qy = this.y, qz = this.z, qw = this.w;
+        const vx = v.x, vy = v.y, vz = v.z;
+
+        // First cross product: qv × v
+        const cx1 = qy * vz - qz * vy;
+        const cy1 = qz * vx - qx * vz;
+        const cz1 = qx * vy - qy * vx;
+
+        // qv × v + qw * v
+        const tx = cx1 + qw * vx;
+        const ty = cy1 + qw * vy;
+        const tz = cz1 + qw * vz;
+
+        // Second cross product: qv × (qv × v + qw * v)
+        const cx2 = qy * tz - qz * ty;
+        const cy2 = qz * tx - qx * tz;
+        const cz2 = qx * ty - qy * tx;
+
+        // Final result: v + 2 * (qv × (qv × v + qw * v))
         return {
-            x: Number(ix * this.w + iw * -this.x + iy * -this.z - iz * -this.y),
-            y: Number(iy * this.w + iw * -this.y + iz * -this.x - ix * -this.z),
-            z: Number(iz * this.w + iw * -this.z + ix * -this.y - iy * -this.x)
+            x: Number(vx + 2 * cx2),
+            y: Number(vy + 2 * cy2),
+            z: Number(vz + 2 * cz2)
         };
     }
 

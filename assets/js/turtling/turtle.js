@@ -2,14 +2,21 @@ import { Parser } from "./mafs/parse.js"
 import { Evaluator } from "./mafs/evaluate.js"
 import { Typesetter } from "./mafs/typist.js"
 import { Versor } from "./mafs/versors.js"
-import { RenderLoop } from "./renderer.js"
-import { Camera } from "./camera.js"
+import * as THREE from '../utils/three.core.min.js';
+import  {OrbitControls}  from '../utils/threeorbital';
+import  {WebGLRenderer}  from '../utils/threerender';
+import {Text} from '../utils/threetext'
+import  snapshot  from '../utils/canvas.js';
+import Render from "./render/index.js"
+//import { Camera } from "./camera.js"
 import {cameraBridge, bridged } from "../bridged.js"
 
 export class Turtle {
     constructor(canvas) {
-        this.ctx = canvas.getContext('2d');
+
         this.canvas = canvas;
+
+        this.ctx = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
         this.commands = {
             // Add other command references here
             fw: this.forward.bind(this),
@@ -47,7 +54,7 @@ export class Turtle {
         this.executionState = {
             x: 0,
             y: 0,
-            z: 10,
+            z: 0,
             rotation: new Versor(1, 0, 0, 0)
         };
 
@@ -59,6 +66,15 @@ export class Turtle {
             filled: false,
         };
 
+        this.currentPath=null
+        //https://threejs.org/docs/#api/en/core/Object3D
+        this.pathGroup = new THREE.Group();
+
+        this.glyphGroup = new THREE.Group();
+        this.glyphGroup.elements = []
+        //this.glyphist = new Render.Glyph(this.glyphGroup);
+
+        this.shapist = new Render.Shape(this.pathGroup, {layerMethod: 'polygonOffset', polygonOffset: { factor: -0.1, units: -1 }})
 
         // Temporal state
         this.timeline = {
@@ -70,31 +86,30 @@ export class Turtle {
         };
 
 
-        this.renderLoop = new RenderLoop(canvas, {
+        // Set up animation frame for continuous rendering
+        // THREEJS
+        this.setupScene();
+        this.setupCamera();
+        this.setupRenderer(canvas)
+
+
+        this.scene.add(this.pathGroup);
+        this.scene.add(this.glyphGroup);
+
+        this.renderLoop = new Render.Loop(null, {
             onRender: (currentTime) => this.renderIncremental(currentTime),
-            stopCondition: () => this.timeline.lastRenderTime > this.timeline.endTime
+            // camera used to be seperate now tied with rendering
+            stopCondition: () => false
         });
 
-        // this.setupContinuousRendering();
 
-        this.typist = new Typesetter(this.ctx)
-
+        this.head = new Render.Head(this.scene)
         this.reset();
-
-        // Set up animation frame for continuous rendering
-
-        this.camera = new Camera(canvas, {
-            pub: () => this.requestRerender()
-        })
-
-        this.speed = 0
-
-        this.rotation = new Versor(1, 0, 0, 0); // Identity quaternion
         // Command execution tracking
         this.commandCount = 0;
         this.recurseCount = 0,
         this.maxRecurses = 8888888;
-        this.maxCommands = 88888;
+        this.maxCommands = 888888888;
         this.maxRecurseDepth = 360
 
         //mafs
@@ -107,8 +122,69 @@ export class Turtle {
     spawn() {
         this.x = 0;
         this.y = 0;
-        this.z = 10
-        this.currentPath=null
+        this.z = 0
+    }
+
+    setupScene() {
+        this.scene = new THREE.Scene();
+    }
+
+    setupCamera() {
+        const aspect = window.innerWidth / window.innerHeight;
+        this.camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 10000000);
+        this.camera.lookAt(0, 0, 0);
+        this.camera.position.set(0, 0, 500);
+
+        this.camera.updateProjectionMatrix();
+        this.controls = new OrbitControls( this.camera, this.canvas );
+        this.controls.target.set(0, 0, 0)
+        this.controls.mouseButtons = {
+	        RIGHT: THREE.MOUSE.ROTATE,
+	        MIDDLE: THREE.MOUSE.DOLLY,
+	        LEFT: THREE.MOUSE.PAN
+        }
+        this.controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+		this.controls.dampingFactor = 0.2;
+        this.controls.zoomToCursor = true
+        this.controls.update()
+
+        cameraBridge.sub((payload) => {
+            switch (payload[0]) {
+            case 'recenter':
+                // this.controls.target.set(0, 0, 0)
+                //this.controls.update()
+                // gotta slerp this
+                this.controls.reset();
+                break;
+            case 'record':
+                this.beginRecording()
+                break;
+            case 'endrecord':
+                this.endRecording()
+                break;
+            default:
+            }
+        })
+
+        //ensure camera rerenders when window resizes
+        window.addEventListener('resize', () => {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    }
+
+    setupRenderer(canvas) {
+        this.renderer = new WebGLRenderer({canvas ,
+            antialias: true,
+            alpha: true
+        });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.outputEncoding = THREE.sRGBEncoding;
+        this.renderer.capabilities.logarithmicDepthBuffer = true;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        this.renderer.sortObjects = false;
     }
 
     glow(x=5) {
@@ -129,184 +205,177 @@ export class Turtle {
         this.renderLoop.requestRestart();
     }
 
-    renderIncremental(currRenderTime) {
-        const cam = this.camera.now();
-
-        // Only clear canvas if camera has moved
-        if (this.camera.hasChanged) {
-            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            this.timeline.lastRenderTime = 0; // Force re-render of all paths
-        }
-
-        // Calculate perspective scale
-        const scale = 100 / Math.max(cam.z, 1);
-
-        // Save context state and apply transformations
-        this.ctx.save();
-        this.ctx.translate(this.canvas.width / 2, this.canvas.height / 2);
-        this.ctx.scale(scale, scale);
-        this.ctx.translate(-cam.x, -cam.y);
-
-        // Get only new paths since last render
+    renderIncremental(t) {
         const newPaths = Array.from(this.timeline.frames.entries())
-              .filter(([time]) => time >= this.timeline.lastRenderTime && time < currRenderTime)
+              .filter(([time]) => time >= this.timeline.lastRenderTime && time < t)
               .flatMap(([_, frame]) => frame);
 
-        // Render only the new paths
         if (newPaths.length > 0) {
-            // const lastClearIndex = newPaths.findLastIndex(path => path.type === "clear");
-            // if (lastClearIndex !== -1) {
-            //     newPaths = newPaths.slice(lastClearIndex);
-            // }
-
-            this.drawPaths(this.ctx, newPaths, scale);
+            this.drawPaths(newPaths)
         }
 
-        // Update last render time
-        this.timeline.lastRenderTime = currRenderTime;
+        // Ensure matrix is current
+        this.controls.update();
+        this.renderer.render(this.scene, this.camera);
 
-        // Draw turtle on final frame if needed
-        if (this.timeline.lastRenderTime > this.timeline.endTime && this.showTurtle) {
-            this.drawHead(scale);
+        // if we want to scale head
+        //console.log(this.camera.position.distanceTo(this.head.position()))
+        //const scaleFactor = Math.max(0.1, distanceToCamera * 0.02); // Adjust multiplier as needed
+
+        if(this.endTurtle=="start" && t>=this.timeline.endTime){
+            if (this.showTurtle) {
+                this.head.show()
+                this.head.update([this.x, this.y,this.z], this.rotation, this.color)
+            } else {
+                this.head.hide()
+            }
+            this.endTurtle="reaching"
         }
 
-        this.ctx.restore();
+        if(this.endTurtle=="reaching") {
+            //for some reason needs to be next frame after head render
+            if (t>=(100+this.timeline.endTime)) {
+                this.hatch()
+                this.endTurtle="reached"
+            }
+        }
+
+        if(this.snapshot==null && t>200) {
+            // needs to snapshot and send immediately after render because no drawing buffer
+            this.hatch()
+        }
+
+        this.timeline.lastRenderTime = t;
+
     }
 
-    drawPaths(ctx, paths, scale) {
+    drawPaths(paths) {
         paths.forEach(path => {
             switch(path.type) {
             case "clear":
-                ctx.closePath();
-                ctx.save();
-                ctx.setTransform(1, 0, 0, 1, 0, 0);
-                ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                ctx.restore();
+                this.pathGroup.clear()
+                this.glyphGroup.clear()
+                this.glyphGroup.elements.map(text => text.dispose())
                 break;
-            case "path" :
-                if (!path.points || path.points.length === 0) return;
-                // Start drawing a new path
-                ctx.beginPath();
-                ctx.strokeStyle = path.color || 'DarkOrange';
-                ctx.shadowColor = path.color || "DarkOrange";
-                ctx.lineWidth = 2/scale
 
+            case "head":
+                if (path.visible){
+                    this.head.show()
+                    this.head.update(path.points, path.rotation, path.color)
+                } else {
+                    this.head.hide()
+                }
+                break;
+
+            case "path" :
                 try {
-                    // Iterate through each point in the path
-                    let prevPoint = null;
-                    path.points.forEach((point, index) => {
-                        if (index === 0) {
-                            ctx.moveTo(point.x, point.y);
-                            prevPoint = point;
-                        } else {
-                            // Only draw line if current point is different from previous point
-                            if (point.x !== prevPoint.x || point.y !== prevPoint.y) {
-                                ctx.lineTo(point.x, point.y);
-                            }
-                            prevPoint = point;
-                        }
+                    if (!path.points || path.points.length === 0) return;
+                    // Start drawing a new path
+                    const geometry = new THREE.BufferGeometry().setFromPoints(path.points);
+                    const material = new THREE.LineBasicMaterial({
+                        color: path.color || 'DarkOrange',
+                        linewidth: 2
                     });
 
-                    // Final stroke for the last segment
-                    ctx.stroke();
+                    const mesh = new THREE.Line(geometry, material);
+                    this.pathGroup.add(mesh);
 
-                    // Fill if necessary
-                    if (path.filled) {
-                        ctx.fillStyle = path.color || 'DarkOrange';
-                        ctx.fill();
+                    if(path.filled) {
+
+
+                        this.shapist.addPolygon(path.points,  {color: path.color,
+                                                               //wireframe: true,
+                                                               forceTriangulation: true});
+
                     }
+
+
                 } catch (error) {
                     console.warn('Error drawing path:', error);
                 }
                 break;
             case "text":
-                ctx.save();
-                //Apply turtle rotation with error handling
                 try {
-                    ctx.translate(path.points[0][0], path.points[0][1])
-                    ctx.transform(
-                        path.text_rotation.a, path.text_rotation.b,
-                        path.text_rotation.c, path.text_rotation.d,
-                        path.text_rotation.e, path.text_rotation.f
-                    );
-                } catch (error) {
-                    console.warn('Error applying turtle rotation:', error);
-                    // Use identity transform if rotation fails
-                    ctx.transform(1, 0, 0, 1, 0, 0);
-                }
+                    const newText = new Text()
+                    this.glyphGroup.add(newText)
 
-                if (typeof path.text === 'string') {
-                    this.typist.write(path.text,
-                                      {x:0, y:0,
-                                       fontSize: path.text_size,
-                                       baseColor: path.color
-                                      })
+                    // Set properties to configure:
+                    newText.text = path.text
+                    newText.fontSize = path.text_size
+                    newText.textAlign = 'center'
+                    newText.anchorX = 'center'
+                    newText.anchorY = '45%'
+                    newText.font= '/fonts/paperLang.ttf'
+                    newText.position.x= path.points[0][0]
+                    newText.position.y= path.points[0][1]
+                    newText.position.z= path.points[0][2]
+                    console.log(path.rotation)
+                    newText.quaternion.copy(path.rotation)
+
+                    newText.color = path.color
+                    newText.sync()
+                    this.glyphGroup.elements.push(newText);
+
+
+
+                    // this.glyphist.setGlyph(path.text, path.text, {position: new THREE.Vector3(...path.points[0]),
+                    //                                               rotation: path.rotation,
+                    //                                               scale: new THREE.Vector3(...[path.text_size, path.text_size, path.text_size])
+                    //                                              });
+
+                     } catch (error) {
+                    console.warn('Error writing text:', error);
                 }
-                else {
-                    ctx.font = `${path.text_size||80}px paperLang`
-                    ctx.fillStyle = path.color;
-                    ctx.fillText(path.text, 0, 0)
-                }
-                ctx.restore();
                 break;
             }
 
         });
     }
 
+    hatch(){
+        const width = this.canvas.width;
+        const height = this.canvas.height
+        const pixels = new Uint8Array(width * height * 4); // RGBA
+        this.ctx.readPixels(0, 0, width, height, this.ctx.RGBA, this.ctx.UNSIGNED_BYTE, pixels);
+        this.snapshot = pixels
+        setTimeout(() => {
+            if(this.snapshot) {
+            this.bridge.pub(["hatchTurtle", {"commands": this.instructions, "path": processImage(this.snapshot, this.canvas.width, this.canvas.height)}])
+            }
+        }, 0)
+    }
+
     wait(duration=1) {
+        // record a head entry for rendering head at end of timeframe
+        this.currentPath = {
+            ...this.pathTemplate,
+            type: "head",
+            points: [this.x, this.y, this.z],
+            color: this.color,
+            rotation: this.rotation,
+            visible: this.showTurtle
+        };
+
+        const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
+        currentFrame.push(this.currentPath);
+        this.timeline.frames.set(this.timeline.currentTime, currentFrame);
+
         this.timeline.currentTime += duration*1000;
         this.timeline.endTime = Math.max(this.timeline.endTime, this.timeline.currentTime);
+
+
 
         // Create new frame entry if it doesn't exist
         if (!this.timeline.frames.has(this.timeline.currentTime)) {
             this.timeline.frames.set(this.timeline.currentTime, []);
         }
         this.currentPath= null
-        this.requestRestart();
     }
-
-    drawHead(scale) {
-        // theres a 32 bit overflow
-        if (isFinite(Math.fround(this.x)) && isFinite(Math.fround(this.y))){
-
-            const headSize = 8 / scale;
-            this.ctx.save();
-
-            this.ctx.fillStyle = this.color;
-
-            this.ctx.translate(this.x, this.y);
-
-            // Apply turtle rotation with error handling
-            try {
-                const transformValues = this.rotation.getTransformValues();
-                this.ctx.transform(
-                    transformValues.a, transformValues.b,
-                    transformValues.c, transformValues.d,
-                    transformValues.e, transformValues.f
-                );
-            } catch (error) {
-                console.warn('Error applying turtle rotation:', error);
-                // Use identity transform if rotation fails
-                this.ctx.transform(1, 0, 0, 1, 0, 0);
-            }
-
-            // Draw turtle head
-            this.ctx.beginPath();
-            this.ctx.moveTo(headSize, 0);
-            this.ctx.lineTo(-headSize / 2, headSize / 2);
-            this.ctx.lineTo(-headSize / 2, -headSize / 2);
-            this.ctx.closePath();
-            this.ctx.fill();
-
-            this.ctx.restore();
-    }}
 
     goto(x=0, y=0, z=null) {
 
-        // not sure why we need to *10
-        const newX = x*10;
-        const newY = -y*10;
+        const newX = x;
+        const newY = y;
         const newZ = z ?? this.z
 
         if (this.penDown) {
@@ -315,7 +384,7 @@ export class Turtle {
                     this.currentPath = {
                         ...this.pathTemplate,
                         color: this.color,
-                        points: [{x: this.x, y: this.y}]
+                        points: [{x: this.x, y: this.y, z: this.z}]
                     };
 
                     const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
@@ -323,7 +392,7 @@ export class Turtle {
                     this.timeline.frames.set(this.timeline.currentTime, currentFrame);
                 }
                 //color transition
-                this.currentPath.points.push({x: newX, y: newY});
+                this.currentPath.points.push({x: newX, y: newY, z: newZ});
             }
         else {
             this.currentPath= null
@@ -356,8 +425,8 @@ export class Turtle {
 
     faceto(targetX=0, targetY=0, targetZ=null) {
         // Convert target coordinates to the same scale as internal coordinates
-        const tx = targetX * 10;
-        const ty = -targetY * 10;
+        const tx = targetX;
+        const ty = targetY;
         const tz = targetZ ?? this.z;
 
         // Calculate direction vector from current position to target
@@ -404,8 +473,10 @@ export class Turtle {
             points: [[this.x, this.y, this.z]],
             color: this.color,
             text: text,
-            text_size: size*10,
-            text_rotation: this.rotation.getTransformValues()
+            // html canvas cant space numbers accurately below this
+            text_size: size,
+            rotation: this.rotation
+            //id: crypto.getRandomValues(new Uint32Array(1))[0]
         };
 
         //should outsource to seperate canvas
@@ -416,7 +487,7 @@ export class Turtle {
     }
 
     forward(distance=0) {
-            const direction = { x: 10, y: 0, z: 0 };
+            const direction = { x: 1, y: 0, z: 0 };
             const rotatedDirection = this.rotation.rotate(direction);
             const newX = this.x + rotatedDirection.x * distance;
             const newY = this.y + rotatedDirection.y * distance;
@@ -428,15 +499,16 @@ export class Turtle {
                 this.currentPath = {
                     ...this.pathTemplate,
                     color: this.color,
-                    points: [{x: this.x, y: this.y}]
+                    points: [{x: this.x, y: this.y, z: this.z}]
                 };
+
 
                 const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
                 currentFrame.push(this.currentPath);
                 this.timeline.frames.set(this.timeline.currentTime, currentFrame);
             }
             //color transition
-            this.currentPath.points.push({x: newX, y: newY});
+            this.currentPath.points.push({x: newX, y: newY, z: newZ});
         }
         else {
             this.currentPath= null
@@ -471,12 +543,11 @@ export class Turtle {
     clear() {
 
         this.currentPath = null;
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.pathGroup.clear()
+        this.glyphGroup.clear()
+        this.glyphGroup.elements.map(text => text.dispose())
         this.timeline.lastRenderTime = 0;
-        // this.currentPath = null;
         this.requestRender();
-        // this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        //
     }
 
     defineFunction(name, parameters, body) {
@@ -593,6 +664,9 @@ export class Turtle {
     reset() {
         this.spawn()
         this.clear();
+        this.renderdepth = 0
+        //this.glyphist.clear()
+        this.shapist.dispose()
         this.timeline = {
             currentTime: 0,
             endTime: 0,
@@ -606,36 +680,15 @@ export class Turtle {
         this.rotation = new Versor(1, 0, 0, 0);
         this.penDown = true;
         this.color = 'DarkOrange';
-        this.ctx.strokeStyle = this.color;
-        this.ctx.lineWidth = 2;
-        this.ctx.fillStyle = 'DarkOrange';
-        this.ctx.textAlign = "center";
-        this.ctx.textBaseline = "middle";
-        // this.ctx.shadowBlur = 10;
-        this.ctx.shadowColor = "DarkOrange";
-        this.ctx.imageSmoothingEnabled = false;
-        this.ctx.lineCap = 'round';
-        this.ctx.lineJoin = 'round'
-        this.ctx.beginPath();
-        this.ctx.moveTo(this.x, this.y);
+        this.snapshot = null
+        this.endTurtle = "start"
         this.showTurtle = true;
         this.currentPath = null;
-
-        //this.requestRender();
+        this.renderLoop.requestRestart();
     }
 
 
-    projectX(x, z) {
-        const cam = this.camera.now()
-        const perspective = cam.z > z ? cam.z / (cam.z - z) : 0;
-        return (x - cam.x) * perspective + this.ctx.canvas.width / 2;
-    }
 
-    projectY(y, z) {
-        const cam = this.camera.now()
-        const perspective = cam.z > z ? cam.z / (cam.z - z) : 0;
-        return (y - cam.y) * perspective + this.ctx.canvas.height / 2;
-    }
 
     roll(angle=0) {
         const rotation = Versor.fromAxisAngle({ x: 1, y: 0, z: 0 }, angle);
@@ -653,11 +706,11 @@ export class Turtle {
     }
 
     left(angle=0) {
-        this.yaw(-angle);
+        this.yaw(angle);
     }
 
     right(angle=0) {
-        this.yaw(angle);
+        this.yaw(-angle);
     }
 
     jump(distance){
@@ -694,16 +747,11 @@ export class Turtle {
     draw(instructions, opts= {}) {
         const options = { ...{comms: true}, ...opts };
         this.reset();
+        if (options.comms) this.snapshot=null
         this.requestRender();
         this.executeBody(instructions, {});
-
         this.instructions = instructions
 
-            setTimeout(() => {
-                if(options.comms){
-               this.bridge.pub(["hatchTurtle", {"commands": instructions, "path": trimImage(this.ctx)}])
-                }
-            }, 200)
 
     }
 
@@ -735,45 +783,74 @@ export class Turtle {
     }
 }
 
-   function trimImage(ctx) {
-        const canvas = ctx.canvas;
-        const width = canvas.width;
-        const height = canvas.height;
-        const imageData = ctx.getImageData(0, 0, width, height);
-        let xMin = width, xMax = -1, yMin = height, yMax = -1;
+function processImage(pixels, width, height) {
+    const halfHeight = Math.floor(height / 2);
+    const bytesPerRow = width * 4;
+    const temp = new Uint8Array(bytesPerRow);
+    //flipPixelsVertically
+    for (let y = 0; y < halfHeight; y++) {
+        const topOffset = y * bytesPerRow;
+        const bottomOffset = (height - y - 1) * bytesPerRow;
+        temp.set(pixels.subarray(topOffset, topOffset + bytesPerRow));
+        pixels.copyWithin(topOffset, bottomOffset, bottomOffset + bytesPerRow);
+        pixels.set(temp, bottomOffset);
+    }
+    const imagedata = new ImageData(new Uint8ClampedArray(pixels), width, height)
+    return trimImage(imagedata, width, height)
+}
 
-        // Loop through pixels to find the bounding box of non-transparent pixels
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                const index = (y * width + x) * 4;
-                if (imageData.data[index + 3] > 0) { // Check alpha channel
-                    if (x < xMin) xMin = x;
-                    if (x > xMax) xMax = x;
-                    if (y < yMin) yMin = y;
-                    if (y > yMax) yMax = y;
-                }
+
+function trimImage(imageData, width, height) {
+    const data = imageData.data;
+
+    let xMin = width, xMax = -1, yMin = height, yMax = -1;
+
+    // Loop through pixels to find the bounding box of non-transparent pixels
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const index = (y * width + x) * 4;
+            if (data[index + 3] > 0) { // Check alpha channel
+                if (x < xMin) xMin = x;
+                if (x > xMax) xMax = x;
+                if (y < yMin) yMin = y;
+                if (y > yMax) yMax = y;
             }
         }
-
-        // If no pixels found, return early
-        if (xMax < xMin || yMax < yMin) return null;
-
-        const newWidth = xMax - xMin + 1;
-        const newHeight = yMax - yMin + 1;
-
-        // Create an offscreen canvas
-        const offscreenCanvas = document.createElement('canvas');
-        offscreenCanvas.width = newWidth;
-        offscreenCanvas.height = newHeight;
-
-        const offscreenCtx = offscreenCanvas.getContext('2d');
-
-        // Extract the cropped image data from the original canvas
-        const cut = ctx.getImageData(xMin, yMin, newWidth, newHeight);
-
-        // Put the cropped image data into the offscreen canvas
-        offscreenCtx.putImageData(cut, 0, 0);
-
-        // Return the cropped image as a data URL
-        return offscreenCanvas.toDataURL();
     }
+
+    // If no pixels found, return early
+    if (xMax < xMin || yMax < yMin) return null;
+
+    const newWidth = xMax - xMin + 1;
+    const newHeight = yMax - yMin + 1;
+
+    // Create an offscreen canvas
+    const offscreenCanvas = document.createElement('canvas');
+    offscreenCanvas.width = newWidth;
+    offscreenCanvas.height = newHeight;
+    const offscreenCtx = offscreenCanvas.getContext('2d');
+
+    // Create new ImageData for the cropped region
+    const croppedImageData = offscreenCtx.createImageData(newWidth, newHeight);
+    const croppedData = croppedImageData.data;
+
+    // Copy pixels from original to cropped image data
+    for (let y = 0; y < newHeight; y++) {
+        for (let x = 0; x < newWidth; x++) {
+            const srcIndex = ((yMin + y) * width + (xMin + x)) * 4;
+            const dstIndex = (y * newWidth + x) * 4;
+
+            croppedData[dstIndex] = data[srcIndex];         // R
+            croppedData[dstIndex + 1] = data[srcIndex + 1]; // G
+            croppedData[dstIndex + 2] = data[srcIndex + 2]; // B
+            croppedData[dstIndex + 3] = data[srcIndex + 3]; // A
+        }
+    }
+
+    // Put the cropped image data into the offscreen canvas
+    offscreenCtx.putImageData(croppedImageData, 0, 0);
+
+    // Return the cropped image as a data URL
+    return offscreenCanvas.toDataURL();
+}
+
