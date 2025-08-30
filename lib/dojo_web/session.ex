@@ -11,7 +11,11 @@ defmodule DojoWeb.Session do
 
   def on_mount(:anon, params, _sessions, socket) do
     # get_connect_params returns nil on the first (static rendering) mount call, and has the added connect params from the js LiveSocket creation on the subsequent (LiveSocket) call
-    #
+    # locale to langcode
+    locale = get_connect_params(socket)["locale"] || @default_locale
+    lang_code = String.split(locale, "-") |> List.first()
+    Gettext.put_locale(DojoWeb.Gettext, lang_code)
+
     {:cont,
      socket
      |> assign(

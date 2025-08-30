@@ -411,24 +411,25 @@ defmodule DojoWeb.ShellLive do
     assigns =
       assign(assigns, :primitive, %{
         command: [
-          {"fw", "Move Forward", [length: 50]},
-          {"rt", "Face Right", [angle: 30]},
-          {"lt", "Face Left", [angle: 30]},
-          {"jmp", "Jump Forward", [length: 50]},
-          {"wait", "Wait a While", [time: 1]},
-          {"label", "Write Something", [text: "'Hello'", size: 10]},
-          {"faceto", "Face Towards Start", ["→": 0, "↑": 0]},
-          {"goto", "Go To Start", ["→": 0, "↑": 0]},
-          {"erase", "Wipe Everything", nil},
-          {"hd", "Hide your Head", nil},
-          {"show", "Show your Head", nil},
-          {"beColour", "Set Colour to", [colour: "'red'"]}
+          {"fw", gettext("Move Forward"), [length: 50]},
+          {"rt", gettext("Face Right"), [angle: 30]},
+          {"lt", gettext("Face Left"), [angle: 30]},
+          {"jmp", gettext("Jump Forward"), [length: 50]},
+          {"wait", gettext("Wait a While"), [time: 1]},
+          {"label", gettext("Write Something"), [text: gettext("'Hello'"), size: 10]},
+          {"faceto", gettext("Face Towards Start"), ["→": 0, "↑": 0]},
+          {"goto", gettext("Go To Start"), ["→": 0, "↑": 0]},
+          {"erase", gettext("Wipe Everything"), nil},
+          {"hd", gettext("Hide your Head"), nil},
+          {"show", gettext("Show your Head"), nil},
+          {"beColour", gettext("Set Colour to"), [colour: "'red'"]}
         ],
         control: [
-          {"loop", "Repeat Commands", [times: 5]},
-          {"def", "Name your Command", [name: "my_cmd"]}
+          {"loop", gettext("Repeat Commands"), [times: 5]},
+          {"def", gettext("Name your Command"), [name: "my_cmd"]}
         ]
       })
+    |> assign(:titledeck, Gettext.gettext(DojoWeb.Gettext, assigns.type |> to_string |> to_titlecase))
 
     ~H"""
     <!-- Command Deck Component (command_deck.html.heex) -->
@@ -439,9 +440,9 @@ defmodule DojoWeb.ShellLive do
       <!-- Command Deck Panel -->
       <div class="fixed w-64 transition-all duration-100 ease-in-out transform right-5 bottom-20 xl:h-2/3 h-1/2 scrollbar-hide dark-scrollbar">
         <%!-- Top row --%>
-        <div class="flex pl-6 pt-4 ">
+        <div class="flex flex-row pl-6 pt-4">
           <!-- Header -->
-          <div class="flex items-center justify-between">
+          <div class="flex grow-5 items-center justify-between">
             <h2 class="z-50  pointer-events-auto text-xl font-bold text-base-content">
               <div class="dropdown dropdown-top">
                 <div
@@ -449,7 +450,7 @@ defmodule DojoWeb.ShellLive do
                   role="button"
                   class="inline-block group cursor-pointer bg-base-200/50 hover:bg-base-100 transform transition-transform focus-within:border-accent-content border-accent  border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none inline-flex items-end"
                 >
-                  {to_titlecase("#{@type}")}
+                  {@titledeck}
                 </div>
                 <ul
                   tabindex="0"
@@ -460,18 +461,18 @@ defmodule DojoWeb.ShellLive do
                     class="border-0 rounded-t-lg  border-t-2 border-accent hover:border-primary "
                     phx-click="flipCommand"
                   >
-                    <a>Command</a>
+                    <a><%= gettext "Command" %></a>
                   </li>
                   <li
                     :if={!(@type == :control)}
                     class=" border-0 rounded-t-lg   border-t-2 border-accent hover:border-primary "
                     phx-click="flipControl"
                   >
-                    <a>Control</a>
+                    <a><%= gettext "Control" %></a>
                   </li>
                 </ul>
                 <span class="inline-block">
-                  Deck
+                  <%= gettext "Deck" %>
                 </span>
               </div>
             </h2>
@@ -479,7 +480,7 @@ defmodule DojoWeb.ShellLive do
 
           <%!-- Undo button --%>
           <div
-            class="z-50 pointer-events-auto group pl-6 pt-1"
+            class="z-50 grow-1 pointer-events-auto group pt-1"
             phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
           >
             <div class="relative">
@@ -507,7 +508,7 @@ defmodule DojoWeb.ShellLive do
           </div>
         </div>
         <!-- Command&Control Dropdown -->
-        <div id="deckofcards" class="h-11/12 overflow-y-scroll p-2 px-4">
+        <div id="deckofcards" class="h-11/12 z-80 overflow-y-scroll p-2 px-4">
           <%= for {cmd, desc, vals} <- @primitive[@type] do %>
             <div
               phx-click={

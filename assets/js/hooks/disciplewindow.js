@@ -58,6 +58,13 @@ const DiscipleWindow = {
     this.scrollThrottleTimer = null;
     this.handleScroll = this.handleScroll.bind(this);
     this.el.addEventListener('scroll', this.handleScroll, { passive: true });
+    var el = document.getElementById('disciple_panels');
+    el.addEventListener('wheel', function(e) {
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+          e.preventDefault();
+          el.scrollLeft += e.deltaY;
+        }
+      }, { passive: false })
   },
 
   updated() {
