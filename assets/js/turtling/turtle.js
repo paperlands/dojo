@@ -226,6 +226,8 @@ export class Turtle {
             if (this.showTurtle) {
                 this.head.show()
                 this.head.update([this.x, this.y,this.z], this.rotation, this.color)
+            } else {
+                this.head.hide()
             }
             this.endTurtle="reaching"
         }
