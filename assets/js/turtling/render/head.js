@@ -130,7 +130,6 @@ export default class Head {
     }
 
     update(position, rotation, color, scaleFactor=1) {
-        console.log(this.turtleGroup.position)
         // Update position
         this.turtleGroup.position.set(...position);
         this.turtleGroup.quaternion.copy(rotation)
@@ -139,7 +138,7 @@ export default class Head {
             this.setHeadColor(color)
         }
         // Apply scale for scale invariance
-        //this.turtleGroup.scale.setScalar(scaleFactor);
+        this.turtleGroup.scale.setScalar(scaleFactor);
     }
 
     reset(){

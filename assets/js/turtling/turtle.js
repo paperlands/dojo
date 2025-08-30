@@ -5,6 +5,7 @@ import { Versor } from "./mafs/versors.js"
 import * as THREE from '../utils/three.core.min.js';
 import  {OrbitControls}  from '../utils/threeorbital';
 import  {WebGLRenderer}  from '../utils/threerender';
+import {Text} from '../utils/threetext'
 import  snapshot  from '../utils/canvas.js';
 import Render from "./render/index.js"
 //import { Camera } from "./camera.js"
@@ -70,8 +71,8 @@ export class Turtle {
         this.pathGroup = new THREE.Group();
 
         this.glyphGroup = new THREE.Group();
-
-        this.glyphist = new Render.Glyph(this.glyphGroup);
+        this.glyphGroup.elements = []
+        //this.glyphist = new Render.Glyph(this.glyphGroup);
 
         this.shapist = new Render.Shape(this.pathGroup, {layerMethod: 'polygonOffset', polygonOffset: { factor: -0.1, units: -1 }})
 
@@ -108,7 +109,7 @@ export class Turtle {
         this.commandCount = 0;
         this.recurseCount = 0,
         this.maxRecurses = 8888888;
-        this.maxCommands = 88888;
+        this.maxCommands = 888888888;
         this.maxRecurseDepth = 360
 
         //mafs
@@ -210,7 +211,7 @@ export class Turtle {
               .flatMap(([_, frame]) => frame);
 
         if (newPaths.length > 0) {
-            this.drawPaths(null, newPaths, 0)
+            this.drawPaths(newPaths)
         }
 
         // Ensure matrix is current
@@ -246,11 +247,13 @@ export class Turtle {
 
     }
 
-    drawPaths(ctx, paths, scale) {
+    drawPaths(paths) {
         paths.forEach(path => {
             switch(path.type) {
             case "clear":
                 this.pathGroup.clear()
+                this.glyphGroup.clear()
+                this.glyphGroup.elements.map(text => text.dispose())
                 break;
 
             case "head":
@@ -264,28 +267,26 @@ export class Turtle {
 
             case "path" :
                 try {
-                if (!path.points || path.points.length === 0) return;
+                    if (!path.points || path.points.length === 0) return;
                     // Start drawing a new path
+                    const geometry = new THREE.BufferGeometry().setFromPoints(path.points);
+                    const material = new THREE.LineBasicMaterial({
+                        color: path.color || 'DarkOrange',
+                        linewidth: 2
+                    });
+
+                    const mesh = new THREE.Line(geometry, material);
+                    this.pathGroup.add(mesh);
 
                     if(path.filled) {
 
 
                         this.shapist.addPolygon(path.points,  {color: path.color,
                                                                //wireframe: true,
-                                                               useShapeGeometry: false,    // Use THREE.Shape for 2D-like polygons
                                                                forceTriangulation: true});
 
                     }
-                    else {
-                        const geometry = new THREE.BufferGeometry().setFromPoints(path.points);
-                        const material = new THREE.LineBasicMaterial({
-                            color: path.color || 'DarkOrange',
-                            linewidth: 2
-                        });
 
-                        const mesh = new THREE.Line(geometry, material);
-                        this.pathGroup.add(mesh);
-                    }
 
                 } catch (error) {
                     console.warn('Error drawing path:', error);
@@ -293,12 +294,32 @@ export class Turtle {
                 break;
             case "text":
                 try {
-                      const quaternion = new THREE.Quaternion();
-                      quaternion.copy(path.rotation)
-                      this.glyphist.setGlyph(path.text, path.text, {position: new THREE.Vector3(...path.points[0]),
-                                             rotation: quaternion,
-                                             scale: new THREE.Vector3(...[path.text_size, path.text_size, path.text_size])
-                                            });
+                    const newText = new Text()
+                    this.glyphGroup.add(newText)
+
+                    // Set properties to configure:
+                    newText.text = path.text
+                    newText.fontSize = path.text_size
+                    newText.textAlign = 'center'
+                    newText.anchorX = 'center'
+                    newText.anchorY = 'middle'
+                    newText.font= '/fonts/paperLang.ttf'
+                    newText.position.x= path.points[0][0]
+                    newText.position.y= path.points[0][1]
+                    newText.position.z= path.points[0][2]
+                    console.log(path.rotation)
+                    newText.quaternion.copy(path.rotation)
+
+                    newText.color = path.color
+                    newText.sync()
+                    this.glyphGroup.elements.push(newText);
+
+
+
+                    // this.glyphist.setGlyph(path.text, path.text, {position: new THREE.Vector3(...path.points[0]),
+                    //                                               rotation: path.rotation,
+                    //                                               scale: new THREE.Vector3(...[path.text_size, path.text_size, path.text_size])
+                    //                                              });
 
                      } catch (error) {
                     console.warn('Error writing text:', error);
@@ -323,7 +344,7 @@ export class Turtle {
     }
 
     wait(duration=1) {
-        // record a head entry for rendering head
+        // record a head entry for rendering head at end of timeframe
         this.currentPath = {
             ...this.pathTemplate,
             type: "head",
@@ -347,7 +368,6 @@ export class Turtle {
             this.timeline.frames.set(this.timeline.currentTime, []);
         }
         this.currentPath= null
-        this.requestRestart();
     }
 
     goto(x=0, y=0, z=null) {
@@ -444,7 +464,7 @@ export class Turtle {
     }
 
 
-    label(text="⚙", size=1){
+    label(text="⚙", size=10){
         this.currentPath = {
             ...this.pathTemplate,
             type: "text",
@@ -452,7 +472,7 @@ export class Turtle {
             color: this.color,
             text: text,
             // html canvas cant space numbers accurately below this
-            text_size: size > 0.025 ? size : 0.025,
+            text_size: size,
             rotation: this.rotation
             //id: crypto.getRandomValues(new Uint32Array(1))[0]
         };
@@ -523,6 +543,7 @@ export class Turtle {
         this.currentPath = null;
         this.pathGroup.clear()
         this.glyphGroup.clear()
+        this.glyphGroup.elements.map(text => text.dispose())
         this.timeline.lastRenderTime = 0;
         this.requestRender();
     }
@@ -642,7 +663,7 @@ export class Turtle {
         this.spawn()
         this.clear();
         this.renderdepth = 0
-        this.glyphist.clear()
+        //this.glyphist.clear()
         this.shapist.dispose()
         this.timeline = {
             currentTime: 0,
