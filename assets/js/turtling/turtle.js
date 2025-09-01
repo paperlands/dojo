@@ -33,7 +33,7 @@ export class Turtle {
             hd: this.hideTurtle.bind(this),
             jmp: this.jump.bind(this),
             mv: this.move.bind(this),
-            glow: this.glow.bind(this),
+            bold: this.thickness.bind(this),
             fn: this.func.bind(this),
             goto: this.goto.bind(this),
             //iamat: this.iamat.bind(this),
@@ -65,6 +65,7 @@ export class Turtle {
         this.pathTemplate = {
             type: "path",
             points: [],
+            thickness: null,
             color: null,
             filled: false,
         };
@@ -190,8 +191,8 @@ export class Turtle {
         this.renderer.sortObjects = false;
     }
 
-    glow(x=5) {
-        this.ctx.shadowBlur = x;
+    thickness(x=1) {
+        this.thickness = x*2;
     }
 
     // turtle interface for renderer
@@ -282,12 +283,12 @@ export class Turtle {
 
                     // Create LineGeometry and set positions
                     const geometry = new LineGeometry();
-                    console.log(positions)
+
                     geometry.setPositions(positions);
 
                     const material = new LineMaterial({
                         color: path.color || 0xff4500, // DarkOrange as hex
-                        linewidth: 2, 
+                        linewidth: path.thickness || 2,
                         vertexColors: false,
                         dashed: false,
                     });
@@ -410,6 +411,7 @@ export class Turtle {
                     this.currentPath = {
                         ...this.pathTemplate,
                         color: this.color,
+                        thickness: this.thickness,
                         points: [{x: this.x, y: this.y, z: this.z}]
                     };
 
@@ -525,6 +527,7 @@ export class Turtle {
                 this.currentPath = {
                     ...this.pathTemplate,
                     color: this.color,
+                    thickness: this.thickness,
                     points: [{x: this.x, y: this.y, z: this.z}]
                 };
 
@@ -712,6 +715,7 @@ export class Turtle {
         this.rotation = new Versor(1, 0, 0, 0);
         this.penDown = true;
         this.color = 'DarkOrange';
+        this.thickness = 2;
         this.snapshot = null
         this.endTurtle = "start"
         this.showTurtle = true;
