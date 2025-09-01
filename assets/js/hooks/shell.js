@@ -117,14 +117,26 @@ const listeners = {
 
     return {
       mount: () => {
+        let hadSelection = false; // Moved outside handler to persist
+
         const handler = (cm, changeObj) => {
           if (changeObj.ranges.length !== 1) return;
 
           const range = changeObj.ranges[0];
           const hasSelection = range.anchor.line !== range.head.line ||
-                              range.anchor.ch !== range.head.ch;
+                range.anchor.ch !== range.head.ch;
 
-          debouncedPush(hasSelection ? "flipControl" : "flipCommand", {});
+          console.log('hasSelection:', hasSelection, 'hadSelection:', hadSelection);
+
+          if (hadSelection && !hasSelection) {
+            // Had selection, now doesn't - flip to command
+            debouncedPush("flipCommand", {});
+          } else if (!hadSelection && hasSelection) {
+            // Didn't have selection, now does - flip to control
+            debouncedPush("flipControl", {});
+          }
+
+          hadSelection = hasSelection;
         };
 
         shell.on('beforeSelectionChange', handler);

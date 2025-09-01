@@ -723,22 +723,19 @@ export class Turtle {
         this.renderLoop.requestRestart();
     }
 
-
-
-
-    roll(angle=0) {
+    roll(angle = 0) {
         const rotation = Versor.fromAxisAngle({ x: 1, y: 0, z: 0 }, angle);
-        this.rotation = rotation.multiply(this.rotation);
+        this.rotation = this.rotation.multiply(rotation);
     }
 
-    pitch(angle=0) {
+    pitch(angle = 0) {
         const rotation = Versor.fromAxisAngle({ x: 0, y: 1, z: 0 }, angle);
-        this.rotation = rotation.multiply(this.rotation);
+        this.rotation = this.rotation.multiply(rotation);
     }
 
-    yaw(angle=0) {
+    yaw(angle = 0) {
         const rotation = Versor.fromAxisAngle({ x: 0, y: 0, z: 1 }, angle);
-        this.rotation = rotation.multiply(this.rotation);
+        this.rotation = this.rotation.multiply(rotation);
     }
 
     left(angle=0) {
