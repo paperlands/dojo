@@ -8,6 +8,9 @@ import  {WebGLRenderer}  from '../utils/threerender';
 import {Text} from '../utils/threetext'
 import  snapshot  from '../utils/canvas.js';
 import Render from "./render/index.js"
+import { Line2 } from './render/line/Line2.js';
+import { LineMaterial } from './render/line/LineMaterial.js';
+import { LineGeometry } from './render/line/LineGeometry.js';
 //import { Camera } from "./camera.js"
 import {cameraBridge, bridged } from "../bridged.js"
 
@@ -31,7 +34,7 @@ export class Turtle {
             jmp: this.jump.bind(this),
             mv: this.move.bind(this),
             glow: this.glow.bind(this),
-            //fn: this.func.bind(this),
+            fn: this.func.bind(this),
             goto: this.goto.bind(this),
             //iamat: this.iamat.bind(this),
             faceto: this.faceto.bind(this),
@@ -108,8 +111,8 @@ export class Turtle {
         // Command execution tracking
         this.commandCount = 0;
         this.recurseCount = 0,
-        this.maxRecurses = 8888888;
-        this.maxCommands = 888888888;
+        this.maxRecurses = 888888;
+        this.maxCommands = 88888888;
         this.maxRecurseDepth = 360
 
         //mafs
@@ -271,14 +274,37 @@ export class Turtle {
                 try {
                     if (!path.points || path.points.length === 0) return;
                     // Start drawing a new path
-                    const geometry = new THREE.BufferGeometry().setFromPoints(path.points);
-                    const material = new THREE.LineBasicMaterial({
-                        color: path.color || 'DarkOrange',
-                        linewidth: 2
+                    //flattne position
+                    const positions = [];
+                    path.points.forEach(point => {
+                        positions.push(point.x, point.y, point.z);
                     });
 
-                    const mesh = new THREE.Line(geometry, material);
+                    // Create LineGeometry and set positions
+                    const geometry = new LineGeometry();
+                    console.log(positions)
+                    geometry.setPositions(positions);
+
+                    const material = new LineMaterial({
+                        color: path.color || 0xff4500, // DarkOrange as hex
+                        linewidth: 2, 
+                        vertexColors: false,
+                        dashed: false,
+                    });
+
+                    material.resolution.set(window.innerWidth, window.innerHeight);
+
+                    // Create Line2 mesh
+                    const mesh = new Line2(geometry, material);
                     this.pathGroup.add(mesh);
+                    // const geometry = new THREE.BufferGeometry().setFromPoints(path.points);
+                    // const material = new THREE.LineBasicMaterial({
+                    //     color: path.color || 'DarkOrange',
+                    //     linewidth: 2
+                    // });
+
+                    // const mesh = new THREE.Line(geometry, material);
+                    // this.pathGroup.add(mesh);
 
                     if(path.filled) {
 
@@ -509,6 +535,7 @@ export class Turtle {
             }
             //color transition
             this.currentPath.points.push({x: newX, y: newY, z: newZ});
+            console.log(this.currentPath)
         }
         else {
             this.currentPath= null
@@ -659,6 +686,11 @@ export class Turtle {
         const tree = this.math.parser.run(expr)
         if (tree.children.length > 0 || this.math.evaluator.namespace_check(tree.value)) return this.math.evaluator.run(tree, context);
         return tree.value // probably a string
+    }
+
+    func(expr, implement){
+        console.log(expr)
+        console.log(this.math.parser.run(expr))
     }
 
     reset() {

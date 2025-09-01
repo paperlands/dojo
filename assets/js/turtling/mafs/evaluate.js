@@ -41,13 +41,13 @@ export class Evaluator {
             const arg = this.run(ast.children[0], context);
             return this.applyFunction(ast.value, arg);
         } else if (ast.type === 'operator') {
-            if (ast.value === '!') {
-                const operand = this.run(ast.children[0], context);
-                return !operand;
-            }
             const left = this.run(ast.children[0], context);
             const right = this.run(ast.children[1], context);
             return this.applyOperator(ast.value, left, right);
+        }
+        else if (ast.type === 'unary_operator'){
+            const operand = this.run(ast.left, context);
+            return this.applyUnaryOperator(ast.value, operand)
         }
     }
 
@@ -76,6 +76,20 @@ export class Evaluator {
         throw new Error(`Undefined variable: ${variable}`);
     }
 
+
+    applyUnaryOperator(operator, operand) {
+        switch(operator) {
+        case '!':
+            return !operand;
+        case '+':
+            return +operand;
+        case '-':
+            return -operand;
+        default:
+            throw new Error('Unsupported operator');
+        }
+    }
+
     applyOperator(operator, left, right) {
 
         if (!Number.isSafeInteger(left) || !Number.isSafeInteger(right)){
@@ -90,6 +104,13 @@ export class Evaluator {
             }
         }
 
+        if(operator == "-") return left - right
+
+        // account of negative numbers
+        if (operator[operator.length - 1] == "-") {
+            right = -right
+            operator = operator.slice(0, -1)
+        }
         switch (operator) {
             // Logical operators
         case '&&': return left && right;
@@ -108,15 +129,10 @@ export class Evaluator {
         case '<': return left < right ? 1 : 0;
 
         case '^': return Math.pow(left, right);
-        case '^-': return Math.pow(left, -right);
-        case '/-': return left / -right;
         case '//': return left % right;
         case '*': return left * right;
-        case '*-': return left * -right;
         case '/': return left / right;
         case '+': return left + right;
-        case '--': return left + right;
-        case '+-': return left - right;
         case '-': return left - right;
 
         default: throw new Error(`Unknown operator: ${operator}`);
