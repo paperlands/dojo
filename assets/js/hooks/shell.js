@@ -37,42 +37,32 @@ const commands = {
   },
 
   // Camera commands
-  camera: (bridge) => (command) => {
+  camera: (bridge) => (command, payload={}) => {
     const actions = {
-      'center_camera': () => bridge.pub(["recenter", {}]),
-      'start_record': () => bridge.pub(["record", {}]),
-      'end_record': () => bridge.pub(["endrecord", {}])
+      'center_camera': () => bridge.pub(["recenter", payload]),
+      'snap_record': () => bridge.pub(["snap", payload]),
+      'start_record': () => bridge.pub(["record", payload]),
+      'end_record': () => bridge.pub(["endrecord", payload])
     };
     actions[command]?.();
   },
 
   // File operations
-  saveCanvas: (canvas) => async (title) => {
+  saveImage: () => async (url, title) => {
     const filename = prompt('Enter filename:', title) || title;
     if (!filename) return;
 
     const finalName = filename.endsWith('.png') ? filename : `${filename}.png`;
 
     try {
-      const offscreen = new OffscreenCanvas(canvas.width, canvas.height);
-      const ctx = offscreen.getContext('2d');
-
-      ctx.fillStyle = 'black';
-      ctx.fillRect(0, 0, offscreen.width, offscreen.height);
-      ctx.drawImage(canvas, 0, 0);
-
-      const blob = await offscreen.convertToBlob({ type: 'image/png', quality: 1.0 });
-      const url = URL.createObjectURL(blob);
-
       const link = Object.assign(document.createElement('a'), {
         href: url,
         download: finalName
       });
-
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+
     } catch (error) {
       console.error('Canvas save failed:', error);
     }
@@ -87,7 +77,7 @@ const listeners = {
   // Keyboard listener
   keyboard: (shell) => {
     const shouldCapture = (e) =>
-      !e.ctrlKey && !e.metaKey &&
+      !e.ctr1lKey && !e.metaKey &&
       (e.key.length === 1 || ['Enter', 'Backspace', 'Delete'].includes(e.key)) &&
       !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(document.activeElement?.tagName) &&
       !shell.hasFocus();
@@ -129,10 +119,10 @@ const listeners = {
           console.log('hasSelection:', hasSelection, 'hadSelection:', hadSelection);
 
           if (hadSelection && !hasSelection) {
-            // Had selection, now doesn't - flip to command
+            // Had selection flip to command
             debouncedPush("flipCommand", {});
           } else if (!hadSelection && hasSelection) {
-            // Didn't have selection, now does - flip to control
+            // Didn't have selection flip to control
             debouncedPush("flipControl", {});
           }
 
@@ -308,7 +298,7 @@ const Shell = {
     const renderCommand = commands.render(canvas, turtle);
     const executeCommand = commands.execute(term.shell);
     const cameraCommand = commands.camera(cameraBridge);
-    const saveCommand = commands.saveCanvas(canvas);
+    const saveImage = commands.saveImage();
 
     // Create mutators
     const display = mutators.display(output);
@@ -339,11 +329,20 @@ const Shell = {
         term.outer(code)
       });
     } else {
-      turtle.bridge.sub(([event, payload]) => debouncedPushUp(event, payload));
+      turtle.bridge.sub(([event, payload]) =>{
+        switch(event) {
+        case "saveRecord":
+          console.log(payload, "SAVE")
+          saveImage(payload.snapshot, payload.title)
+          break;
+        default:
+          debouncedPushUp(event, payload)
+        }
+      });
       term.inner()
     }
 
-        // Mount listeners and store cleanup functions
+    // Mount listeners and store cleanup functions
     this.cleanup = [
       listeners.keyboard(term.shell).mount(),
       listeners.selection(term.shell, this.pushEvent.bind(this)).mount(),
@@ -357,7 +356,7 @@ const Shell = {
 
     // Setup LiveView event handlers
     this.handleEvent("relayCamera", ({ command }) => cameraCommand(command));
-    this.handleEvent("selfkeepCanvas", ({ title }) => saveCommand(title));
+    this.handleEvent("selfkeepCanvas", ({ title }) => cameraCommand("snap_record", {title: title}));
     this.handleEvent("writeShell", executeCommand);
     this.handleEvent("opBuffer", (event) => term.opBufferHandler(event));
 

@@ -6,12 +6,11 @@ import * as THREE from '../utils/three.core.min.js';
 import  {OrbitControls}  from '../utils/threeorbital';
 import  {WebGLRenderer}  from '../utils/threerender';
 import {Text} from '../utils/threetext'
-import  snapshot  from '../utils/canvas.js';
 import Render from "./render/index.js"
 import { Line2 } from './render/line/Line2.js';
 import { LineMaterial } from './render/line/LineMaterial.js';
 import { LineGeometry } from './render/line/LineGeometry.js';
-//import { Camera } from "./camera.js"
+import { Recorder } from "./export/recorder.js"
 import {cameraBridge, bridged } from "../bridged.js"
 
 export class Turtle {
@@ -96,7 +95,6 @@ export class Turtle {
         this.setupCamera();
         this.setupRenderer(canvas)
 
-
         this.scene.add(this.pathGroup);
         this.scene.add(this.glyphGroup);
 
@@ -160,11 +158,14 @@ export class Turtle {
                 // gotta slerp this
                 this.controls.reset();
                 break;
+            case 'snap':
+                this.renderstate.snapshot = {frame: null, save: true, title: payload[1].title}
+                break;
             case 'record':
-                this.beginRecording()
+
                 break;
             case 'endrecord':
-                this.endRecording()
+
                 break;
             default:
             }
@@ -189,6 +190,8 @@ export class Turtle {
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
         this.renderer.sortObjects = false;
+
+        this.recorder = new Recorder(canvas)
     }
 
     thickness(x=1) {
@@ -226,25 +229,25 @@ export class Turtle {
         //console.log(this.camera.position.distanceTo(this.head.position()))
         //const scaleFactor = Math.max(0.1, distanceToCamera * 0.02); // Adjust multiplier as needed
 
-        if(this.endTurtle=="start" && t>=this.timeline.endTime){
+        if(this.renderstate.phase=="start" && t>=this.timeline.endTime){
             if (this.showTurtle) {
                 this.head.show()
                 this.head.update([this.x, this.y,this.z], this.rotation, this.color)
             } else {
                 this.head.hide()
             }
-            this.endTurtle="reaching"
+            this.renderstate.phase="reaching"
         }
 
-        if(this.endTurtle=="reaching") {
+        if(this.renderstate.phase=="reaching") {
             //for some reason needs to be next frame after head render
-            if (t>=(100+this.timeline.endTime)) {
+            if (t>=(1000+this.timeline.endTime)) {
                 this.hatch()
-                this.endTurtle="reached"
+                this.renderstate.phase="reached"
             }
         }
 
-        if(this.snapshot==null && t>200) {
+        if(this.renderstate.snapshot.frame==null && t>500) {
             // needs to snapshot and send immediately after render because no drawing buffer
             this.hatch()
         }
@@ -336,19 +339,12 @@ export class Turtle {
                     newText.position.x= path.points[0][0]
                     newText.position.y= path.points[0][1]
                     newText.position.z= path.points[0][2]
-                    console.log(path.rotation)
                     newText.quaternion.copy(path.rotation)
 
                     newText.color = path.color
                     newText.sync()
                     this.glyphGroup.elements.push(newText);
 
-
-
-                    // this.glyphist.setGlyph(path.text, path.text, {position: new THREE.Vector3(...path.points[0]),
-                    //                                               rotation: path.rotation,
-                    //                                               scale: new THREE.Vector3(...[path.text_size, path.text_size, path.text_size])
-                    //                                              });
 
                      } catch (error) {
                     console.warn('Error writing text:', error);
@@ -360,15 +356,20 @@ export class Turtle {
     }
 
     hatch(){
+
         const width = this.canvas.width;
         const height = this.canvas.height
         const pixels = new Uint8Array(width * height * 4); // RGBA
         this.ctx.readPixels(0, 0, width, height, this.ctx.RGBA, this.ctx.UNSIGNED_BYTE, pixels);
-        this.snapshot = pixels
+        this.renderstate.snapshot.frame = pixels
         setTimeout(() => {
-            if(this.snapshot) {
-            this.bridge.pub(["hatchTurtle", {"commands": this.instructions, "path": processImage(this.snapshot, this.canvas.width, this.canvas.height)}])
+            const [image, dataurl] = this.recorder.takeSnapshot(pixels, width, height)
+            if(this.renderstate.snapshot.save){
+                this.bridge.pub(["saveRecord", {snapshot: image, title: this.renderstate.snapshot.title}])
+                this.renderstate.snapshot.save=false
             }
+            this.bridge.pub(["hatchTurtle", {"commands": this.instructions, "path":  dataurl}])
+
         }, 0)
     }
 
@@ -637,6 +638,9 @@ export class Turtle {
                 this.callFunction(node.value, args, context, currDepth + 1); // ...args
                 break;
 
+            case 'Func':
+                break;
+
             case 'Define':
                 const params = node.meta?.args?.map(n => n.value) || []
                 this.defineFunction(node.value,  params, node.children)
@@ -716,10 +720,13 @@ export class Turtle {
         this.penDown = true;
         this.color = 'DarkOrange';
         this.thickness = 2;
-        this.snapshot = null
-        this.endTurtle = "start"
         this.showTurtle = true;
         this.currentPath = null;
+        //initialise render state
+        this.renderstate = {
+            phase: "start",
+            snapshot: {frame: null, save: false}
+        }
         this.renderLoop.requestRestart();
     }
 
@@ -778,9 +785,7 @@ export class Turtle {
     }
 
     draw(instructions, opts= {}) {
-        const options = { ...{comms: true}, ...opts };
         this.reset();
-        if (options.comms) this.snapshot=null
         this.requestRender();
         this.executeBody(instructions, {});
         this.instructions = instructions
