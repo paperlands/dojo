@@ -32,7 +32,8 @@ defmodule DojoWeb.ShellLive do
        visible_disciples: [],
        right: :deck,
        deck: :command,
-       pane: true
+       pane: true,
+       editor: true
      )
      |> assign(focused_phx_ref: "")}
   end
@@ -332,10 +333,8 @@ defmodule DojoWeb.ShellLive do
   def handle_event("seeTurtle", _, socket) do
     {:noreply,
      socket
-     |> assign(
-       :outershell,
-       nil
-     )}
+     |> assign(:outershell, nil)
+     |> assign(:editor, !socket.assigns.editor)}
   end
 
   # Handle the viewport update event from the hook
@@ -429,50 +428,53 @@ defmodule DojoWeb.ShellLive do
           {"def", gettext("Name your Command"), [name: "my_cmd"]}
         ]
       })
-    |> assign(:titledeck, Gettext.gettext(DojoWeb.Gettext, assigns.type |> to_string |> to_titlecase))
+      |> assign(
+        :titledeck,
+        Gettext.gettext(DojoWeb.Gettext, assigns.type |> to_string |> to_titlecase)
+      )
 
     ~H"""
     <!-- Command Deck Component (command_deck.html.heex) -->
     <div class={[
-      "absolute flex select-none px-1 pb-1 right-5 bottom-5 animate-fade",
+      "flex select-none",
       !@active && "hidden"
     ]}>
       <!-- Command Deck Panel -->
-      <div class="fixed w-64 transition-all duration-100 ease-in-out transform right-5 bottom-20 xl:h-2/3 h-1/2 scrollbar-hide dark-scrollbar">
+      <div class="relative flex flex-col h-1/2 scrollbar-hide dark-scrollbar">
         <%!-- Top row --%>
-        <div class="flex flex-row pl-6 pt-4">
+        <div class="flex flex-row pt-4 pl-6">
           <!-- Header -->
-          <div class="flex grow-5 items-center justify-between">
-            <h2 class="z-50  pointer-events-auto text-xl font-bold text-base-content">
+          <div class="flex items-center justify-between">
+            <h2 class="z-50 text-xl font-bold pointer-events-auto text-base-content">
               <div class="dropdown dropdown-top">
                 <div
                   tabindex="0"
                   role="button"
-                  class="inline-block group cursor-pointer bg-base-200/50 hover:bg-base-100 transform transition-transform focus-within:border-accent-content border-accent  border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none inline-flex items-end"
+                  class="inline-flex items-end inline-block transform border-t-0 border-b-2 border-l-0 border-r-0 outline-none cursor-pointer group bg-base-200/50 hover:bg-base-100 focus-within:border-accent-content border-accent text-base-content focus:outline-none"
                 >
                   {@titledeck}
                 </div>
                 <ul
                   tabindex="0"
-                  class="dropdown-content text-lg font-bold menu rounded bg-transparent transition duration-200 rounded-box z-60 w-32 p-2 shadow-sm"
+                  class="w-32 p-2 text-lg font-bold bg-transparent rounded shadow-sm dropdown-content menu rounded-box z-60"
                 >
                   <li
                     :if={!(@type == :command)}
-                    class="border-0 rounded-t-lg  border-t-2 border-accent hover:border-primary "
+                    class="border-0 border-t-2 rounded-t-lg border-accent hover:border-primary "
                     phx-click="flipCommand"
                   >
-                    <a><%= gettext "Command" %></a>
+                    <a>{gettext("Command")}</a>
                   </li>
                   <li
                     :if={!(@type == :control)}
-                    class=" border-0 rounded-t-lg   border-t-2 border-accent hover:border-primary "
+                    class="border-0 border-t-2 rounded-t-lg border-accent hover:border-primary"
                     phx-click="flipControl"
                   >
-                    <a><%= gettext "Control" %></a>
+                    <a>{gettext("Control")}</a>
                   </li>
                 </ul>
                 <span class="inline-block">
-                  <%= gettext "Deck" %>
+                  {gettext("Deck")}
                 </span>
               </div>
             </h2>
@@ -480,11 +482,11 @@ defmodule DojoWeb.ShellLive do
 
           <%!-- Undo button --%>
           <div
-            class="z-50 grow-1 pointer-events-auto group pt-1"
+            class="z-20 m-2 pointer-events-auto group"
             phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
           >
             <div class="relative">
-              <button class="flex items-center focus-within:border-accent-content justify-center w-8 h-8 rounded-full border-2 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
+              <button class="flex items-center focus-within:border-accent-content justify-center w-8 h-8 rounded-full border-2 border-accent backdrop-blur-sm hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
                 <svg
                   class="w-4 h-4 text-primary-content"
                   viewBox="0 0 24 24"
@@ -500,7 +502,7 @@ defmodule DojoWeb.ShellLive do
               </button>
             </div>
             <!-- Tooltip -->
-            <div class="absolute pointer-events-none mb-2 transition-opacity duration-200 opacity-0 -top-3 right-6 group-hover:opacity-100">
+            <div class="absolute mb-2 opacity-0 pointer-events-none -top-3 right-6 group-hover:opacity-100">
               <div class="px-2 py-1 text-xs border rounded bg-secondary text-secondary-content border-primary backdrop-blur-sm whitespace-nowrap">
                 Undo
               </div>
@@ -508,7 +510,7 @@ defmodule DojoWeb.ShellLive do
           </div>
         </div>
         <!-- Command&Control Dropdown -->
-        <div id="deckofcards" class="h-11/12 z-80 overflow-y-scroll p-2 px-4">
+        <div id="deckofcards" class="z-30 h-full p-2 px-4 overflow-y-scroll">
           <%= for {cmd, desc, vals} <- @primitive[@type] do %>
             <div
               phx-click={
@@ -516,7 +518,7 @@ defmodule DojoWeb.ShellLive do
                   detail: %{@type => cmd, "args" => vals && Keyword.keys(vals)}
                 )
               }
-              class="flex duration-500 animate-fade items-center p-2 transition-colors rounded pointer-events-auto hover:bg-accent/50 group cursor-pointer"
+              class="flex items-center p-2 rounded cursor-pointer pointer-events-auto animate-fade hover:bg-accent/50 group"
             >
               <%!-- Icon --%>
               <div class="mr-3">
@@ -526,9 +528,9 @@ defmodule DojoWeb.ShellLive do
                 <%!-- Description --%>
                 <code class="font-mono text-sm text-secondary-content">{desc}</code>
                 <%!-- Sample code --%>
-                <p class="text-xs text-lint-commands flex items-baseline flex-wrap">
+                <p class="flex flex-wrap items-baseline text-xs text-lint-commands">
                   {cmd}
-                  <span :if={vals} class="relative grid-cols-3  ">
+                  <span :if={vals} class="relative grid-cols-3 ">
                     <input
                       :for={{arg, val} <- vals}
                       type="text"
@@ -569,14 +571,18 @@ defmodule DojoWeb.ShellLive do
             </div>
           <% end %>
         </div>
-        <!-- Decorative corners -->
-        <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-1 -left-1 border-primary-content">
+        <button
+          class="pt-2 mx-4 border-t text-primary border-accent/50 hover:bg-accent/50"
+          phx-click="flipDeck"
+        >
+          ^
+        </button>
+        <%!-- Decorative borders --%>
+        <div class="absolute w-2 h-2 border-t border-l -top-0 -left-0 border-primary-content"></div>
+        <div class="absolute w-2 h-2 border-t border-r -top-0 -right-0 border-primary-content"></div>
+        <div class="absolute w-2 h-2 border-b border-l -bottom-0 -left-0 border-primary-content">
         </div>
-        <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-1 right-1 border-primary-content">
-        </div>
-        <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-8 -left-1 border-primary-content">
-        </div>
-        <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-8 -right-1 border-primary-content">
+        <div class="absolute w-2 h-2 border-b border-r -bottom-0 -right-0 border-primary-content">
         </div>
       </div>
     </div>
@@ -603,7 +609,7 @@ defmodule DojoWeb.ShellLive do
       </div>
       
     <!-- Viewing Pane -->
-      <div class="flex-1 overflow-y-auto p-2 dark-scrollbar">
+      <div class="flex-1 p-2 overflow-y-auto dark-scrollbar">
         <div class="space-y-3">
           <%= for mmr <- @memories do %>
             <div
@@ -617,7 +623,7 @@ defmodule DojoWeb.ShellLive do
               
     <!-- Info -->
               <div class="flex-1 min-w-0">
-                <h3 class="text-sm font-bold text-amber-300 truncate">{"title here"}</h3>
+                <h3 class="text-sm font-bold truncate text-amber-300">{"title here"}</h3>
                 <p class="text-xs text-amber-400/60">{"date here"}</p>
               </div>
               
@@ -746,7 +752,7 @@ defmodule DojoWeb.ShellLive do
           <div
             id="slider-thumb"
             phx-hook="Draggables"
-            class="absolute w-6 h-6 transition-transform duration-300 transform  -translate-x-1/2 -translate-y-1/2 border-2 rounded-full cursor-pointer top-1/2 bg-amber-900 border-amber-600 hover:scale-110 active:scale-125"
+            class="absolute w-6 h-6 transition-transform duration-300 transform -translate-x-1/2 -translate-y-1/2 border-2 rounded-full cursor-pointer top-1/2 bg-amber-900 border-amber-600 hover:scale-110 active:scale-125"
             style={"left: #{@slider_value}%"}
           >
             <!-- Inner Gear Detail -->
@@ -781,6 +787,85 @@ defmodule DojoWeb.ShellLive do
       <div class="absolute w-2 h-2 border-b-2 border-l-2 rounded-bl-sm -bottom-1 -left-1 border-amber-400">
       </div>
       <div class="absolute w-2 h-2 border-b-2 border-r-2 rounded-br-sm -bottom-1 -right-1 border-amber-400">
+      </div>
+    </div>
+    """
+  end
+
+  def sharing_panel(assigns) do
+    ~H"""
+    <%!-- Turtle viewing pane toggle icon --%>
+    <div
+      id="paneflip"
+      class="fixed z-30 transition-transform duration-300 -translate-x-1/2 pointer-events-auto bottom-2 left-1/2"
+      phx-hook="Sensei"
+    >
+      <svg
+        class={"w-8 h-8 text-primary/50 items-center flex m-auto rounded-lg transform transition-transform duration-300 hover:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        phx-click="flipPane"
+      >
+        <path d="M18 15l-6-6-6 6" />
+      </svg>
+    </div>
+    <%!-- Turtle viewing pane --%>
+    <div
+      :if={@pane}
+      id="disciple_panels"
+      phx-hook="DiscipleWindow"
+      class="fixed bottom-0 z-20 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto"
+    >
+      <!-- Other people's turtles -->
+      <div
+        :for={{phx_ref, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
+        class="bg-transparent pointer-events-auto"
+        id={"disciple-" <> to_string(phx_ref)}
+      >
+        <div class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out mx-2 animate-fade flex-shrink-0" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}>
+          <.icon
+            :if={@sensei}
+            name="hero-cursor-arrow-ripple"
+            phx-click="toggle-focus"
+            phx-value-disciple-phx_ref={phx_ref}
+            class="cursor-pointer pointer-events-auto text-primary"
+          />
+          <div
+            phx-click="seeTurtle"
+            phx-throttle="1000"
+            phx-value-addr={phx_ref}
+            class={[
+              "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md hover:border-primary",
+              (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") ||
+                "cursor-progress pointer-events-none",
+              (@outershell && @outershell.addr == phx_ref &&
+                 "border-accent-content text-accent-content") || "border-accent/50 text-accent"
+            ]}
+          >
+            <div class="absolute font-mono text-sm tracking-wider rotate-0 select-none top-2 right-2">
+              {dis.name}
+            </div>
+            <.droplet_loader
+              :if={!Map.has_key?(dis, :meta)}
+              class="size-10 fill-amber-600"
+              loading="eager"
+              decoding="sync"
+            />
+            <img
+              :if={Map.has_key?(dis, :meta)}
+              src={dis.meta.path}
+              onerror="this.src='/images/turtlehead.png';"
+              class="object-scale-down max-h-full m-auto"
+              loading="eager"
+              decoding="sync"
+            />
+          </div>
+        </div>
+      </div>
+      <div :if={@sensei} class="z-20 flex mb-2 pointer-events-auto">
+        <.export />
       </div>
     </div>
     """
