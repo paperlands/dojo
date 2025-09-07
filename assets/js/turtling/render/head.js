@@ -60,6 +60,8 @@ export default class Head {
             wireframe: ColorConverter.toHex(defaultColors.wireframe)
         };
 
+        this.current = {scale: 1}
+
         this.scene = scene;
         this.turtleGroup = new THREE.Group();
 
@@ -129,7 +131,7 @@ export default class Head {
         this.createTurtleMesh();
     }
 
-    update(position, rotation, color, scaleFactor=1) {
+    update(position, rotation, color) {
         // Update position
         this.turtleGroup.position.set(...position);
         this.turtleGroup.quaternion.copy(rotation)
@@ -137,8 +139,18 @@ export default class Head {
         if(this.colors.headkey !== color) {
             this.setHeadColor(color)
         }
+
+
+    }
+
+    scale(scaleFactor=2){
+        scaleFactor = Math.round(scaleFactor * 10) / 10
         // Apply scale for scale invariance
-        this.turtleGroup.scale.setScalar(scaleFactor);
+        if(this.current.scale != scaleFactor){
+            this.current.scale = scaleFactor
+            console.log(scaleFactor)
+            this.turtleGroup.scale.setScalar(scaleFactor);
+        }
     }
 
     reset(){

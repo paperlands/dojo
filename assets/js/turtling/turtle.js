@@ -145,6 +145,7 @@ export class Turtle {
 	        MIDDLE: THREE.MOUSE.DOLLY,
 	        LEFT: THREE.MOUSE.PAN
         }
+        this.controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE}
         this.controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
 		this.controls.dampingFactor = 0.2;
         this.controls.zoomToCursor = true
@@ -221,13 +222,12 @@ export class Turtle {
             this.drawPaths(newPaths)
         }
 
+        // scale invariant head
+        const scaleFactor = this.camera.position.distanceTo(this.head.position())/250 // Adjust multiplier as needed Math.tan((60 * Math.PI / 180) / 2)
+        this.head.scale(scaleFactor)
         // Ensure matrix is current
         this.controls.update();
         this.renderer.render(this.scene, this.camera);
-
-        // if we want to scale head
-        //console.log(this.camera.position.distanceTo(this.head.position()))
-        //const scaleFactor = Math.max(0.1, distanceToCamera * 0.02); // Adjust multiplier as needed
 
         if(this.renderstate.phase=="start" && t>=this.timeline.endTime){
             if (this.showTurtle) {
@@ -798,7 +798,7 @@ export class Turtle {
         this.showTurtle = false;
     }
 
-    unhideTurtle() {
+    unhideTurtle(size) {
         this.showTurtle = true;
     }
 
