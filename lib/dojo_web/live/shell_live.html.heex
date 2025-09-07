@@ -29,10 +29,10 @@
     <div class="w-8/12 h-full md:w-6/12 lg:w-3/12" id="leftCodeEditor">
       <div>
         <!-- Left Coder pane container -->
-        <div class="relative left-0 w-[30ch] pl-2 pt-2 overflow-y-hidden pointer-events-none  scrollbar-hide">
+        <div class="relative left-0 w-[30ch] pl-2 pt-2 pointer-events-none scrollbar-hide ">
           <!-- Function Marks -->
           <div class="flex justify-start space-x-0.5 pb-[3px]">
-            <div class="select-none flex pointer-events-auto caret-[#a0ea00]">
+            <div class="fixed select-none flex pointer-events-auto caret-[#a0ea00]">
               <!-- Example bookmarks -->
               <div
                 class="px-2 font-mono text-xs transition duration-200 border-r-2 rounded cursor-pointer focus:outline-none border-accent/50 text-primary hover:bg-accent/50 hover:text-primary-content"
@@ -100,7 +100,7 @@
             :if={@editor}
             phx-update="ignore"
             id="runenv"
-            class="mt-4 mb-6 rounded-sm pointer-events-auto dark-scrollbar [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-text bg-amber-600/5 border-amber-600/20 h-[40dvh] md:h-[55dvh] lg:h-[88dvh] border-b border-accent/50"
+            class="mt-8 mb-6 rounded-sm pointer-events-auto dark-scrollbar [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-text bg-amber-600/5 border-amber-600/20 h-[40dvh] md:h-[55dvh] lg:h-[88dvh] border-b border-accent/50"
           >
             <div phx-click="flipWell">
               <.folders
@@ -113,7 +113,7 @@
             </div>
             <textarea
               id="your-buffer"
-              class="relative border-none rounded-sm pointer-events-auto cursor-text bg-amber-600/5"
+              class="border-none rounded-sm pointer-events-auto cursor-text bg-amber-600/5"
               phx-hook="Shell"
               data-target="canvas"
             />
@@ -167,7 +167,7 @@
         <%!-- Logged in command panel --%>
         <div
           :if={@session.name}
-          class="relative px-3 py-2 font-mono bg-transparent rounded text-primary"
+          class="fixed px-3 py-2 font-mono bg-transparent rounded right-4 text-primary"
         >
           <!-- Welcome message row -->
           <div class="flex items-center pb-1 mb-1 overflow-hidden text-xs border-b border-accent/50">
@@ -263,7 +263,7 @@
   </div>
 
   <%!--! Mobile Sharing Panel --%>
-  <div class="w-full mt-28 lg:hidden">
+  <div class="h-[40vh] md:h-[30vh] lg:hidden">
     <.sharing_panel
       pane={@pane}
       disciples={@disciples}
@@ -273,18 +273,6 @@
     />
   </div>
 </div>
-
-<script>
-  function toggleVisibility(id) {
-    const el = document.getElementById(id);
-    if (el.classList.contains('hidden')) {
-      el.classList.remove('hidden');
-      console.log("asd");
-    } else {
-      el.classList.add('hidden');
-    }
-  }
-</script>
 
 <%!-- ! ################################################### --%>
 <%!-- ! ################################################### --%>

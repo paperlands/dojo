@@ -440,7 +440,7 @@ defmodule DojoWeb.ShellLive do
       !@active && "hidden"
     ]}>
       <!-- Command Deck Panel -->
-      <div class="relative flex flex-col h-1/2 scrollbar-hide dark-scrollbar">
+      <div class="fixed flex flex-col right-4 top-24 h-1/2 scrollbar-hide dark-scrollbar">
         <%!-- Top row --%>
         <div class="flex flex-row pt-4 pl-6">
           <!-- Header -->
