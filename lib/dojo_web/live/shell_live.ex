@@ -434,11 +434,11 @@ defmodule DojoWeb.ShellLive do
     ~H"""
     <!-- Command Deck Component (command_deck.html.heex) -->
     <div class={[
-      "absolute flex select-none px-1 pb-1 right-5 bottom-5 animate-fade",
+      "flex select-none px-1 pb-1  animate-fade",
       !@active && "hidden"
     ]}>
       <!-- Command Deck Panel -->
-      <div class="fixed w-64 transition-all duration-100 ease-in-out transform right-5 bottom-20 xl:h-2/3 h-1/2 scrollbar-hide dark-scrollbar">
+      <div class="absolute h-3/4 bottom-12 w-64 transition-all duration-100 ease-in-out transform right-5 xl:h-3/4 scrollbar-hide dark-scrollbar">
         <%!-- Top row --%>
         <div class="flex flex-row pl-6 pt-4">
           <!-- Header -->

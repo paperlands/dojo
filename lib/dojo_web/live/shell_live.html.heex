@@ -1,127 +1,118 @@
-<div id="mathjax-hidden" style="visibility:hidden;position:absolute;top:-9999px;"></div>
-<div class="relative transition-all bg-secondary max-h-dvh overflow-hidden bg-base">
-  <!-- Canvas background bg-[#fdf6e3]-->
-  <canvas phx-update="ignore" id="canvas"  class="fixed w-full h-full bg-inherit select-none" ></canvas>
+<div class="relative w-screen h-screen bg-secondary">
+  <canvas phx-update="ignore" id="canvas"  class="fixed inset-0 z-0 bg-inherit select-none" ></canvas>
   <canvas
     :if={@outershell && @outershell.resp}
     phx-update="ignore"
     id="outercanvas"
     class={[
-      "fixed z-10 w-full h-full bg-black/50 select-none",
+      "fixed inset-0 z-0 bg-black/50 select-none",
       !@outershell && "pointer-events-none"
     ]}
   >
   </canvas>
-  <canvas
-    phx-update="ignore"
-    id="ephemeralcanvas"
-    class="fixed z-15 w-full h-full bg-transparent pointer-events-none select-none"
-  >
-  </canvas>
-  
-<!-- Left Coder pane container -->
-  <div class="relative left-0 z-20 w-[30ch] h-screen pl-2 pt-2 overflow-y-hidden pointer-events-none  scrollbar-hide">
-    <!-- Function Marks -->
-    <div class="flex justify-start space-x-0.5 pb-[3px]">
-      <div class="fixed select-none flex pointer-events-auto caret-[#a0ea00]">
-        <!-- Example bookmarks -->
-        <div
-          class="px-2 font-mono text-xs transition duration-200 rounded  cursor-pointer focus:outline-none  border-r-2 border-accent/50 text-primary hover:bg-accent/50 hover:text-primary-content"
-          phx-click="seeTurtle"
-        >
-         <span class="font-paperlang inline">~</span>
-        </div>
-        <div id="tabs" class="flex items-center" phx-update="ignore">
-          <div
-          :for={%{"value" => value} <- [%{"value"=> "Papert"}]}
-          data-alive
-          data-tab-id="root"
-          class="tab-instance animate-fade select-none hidden pl-1 pr-2 font-mono text-xs transition-all duration-200  border-r-1 focus-within:outline-none text-primary-content rounded-r-lg hover:border-r-2 hover:border-primary hover:text-accent-content border-accent group flex items-center  data-alive:border-accent-content data-alive:border-accent-content data-alive:border-b-1"
-          id="tab-scaffold-root"
-          ondblclick="const input=this.querySelector('input');input.disabled=false;input.focus();"
-        >
-          <input
-            type="text"
-            id={"tab-#{value}"}
-            value={value}
-            data-original={value}
-            class="bg-transparent hover:bg-base-100 pointer-events-none hover:bg-base-100/20 focus:bg-base-100/30 border-transparent focus:border-accent/50 border-b transition-all duration-200 outline-none text-primary-content focus:text-base-content -mr-1 placeholder-primary-content/60 text-xs min-w-[1ch] max-w-[7ch] w-full group-hover:bg-base-100/10"
-            placeholder="name"
-            onfocus="var value = this.value; this.value = null; this.value = value;this.style.pointerEvents='auto'"
-            phx-update="ignore"
-            disabled
-            onblur="this.disabled=true;this.style.pointerEvents='none';this.closest('[id^=\'tab-scaffold\']').style.pointerEvents='auto';this.style.width=Math.max(this.value.length||this.placeholder.length,1)+'ch';this.setSelectionRange(0, 0);"
-            onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.value=this.dataset.original;this.blur()}"
-            oninput="this.style.width=Math.max(this.value.length||this.placeholder.length,1)+1+'ch'"
-          />
-          <button
-            class="close ml-1 pl-1 pointer-events-auto -mr-1 w-1 h-3 opacity-0 group-hover:w-3 group-hover:opacity-60 cursor-pointer hover:opacity-100 transition-opacity duration-200 flex items-center justify-center text-red-500/70 hover:text-red-500"
-            title="Close tab"
-            onclick="event.stopPropagation()"
-          >
-            <svg class="w-2 h-2" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 3l6 6M9 3l-6 6"/>
-            </svg>
-          </button>
-        </div>
+  <!-- Desktop Layout (lg and up) -->
+  <div class="h-screen grid grid-cols-3  grid-rows-[60vh_40vh]  lg:grid-cols-[25%_50%_25%]  lg:grid-rows-[1fr_30vh]  gap-1">
 
-<script>
-  window.addEventListener('DOMContentLoaded', () => {
+    <!-- Left Pane - Code Editor -->
+    <div class=" row-span-1 col-span-1 lg:row-span-2 mt-2 lg:col-span-1 overflow-y-hidden pointer-events-none  scrollbar-hide">
+      <!-- Function Marks -->
+      <div class="flex justify-start space-x-0.5 pb-[3px]">
+        <div class="fixed select-none flex pointer-events-auto caret-[#a0ea00]">
+          <!-- Example bookmarks -->
+          <div
+            class="px-2 font-mono text-xs transition duration-200 rounded  cursor-pointer focus:outline-none  border-r-2 border-accent/50 text-primary hover:bg-accent/50 hover:text-primary-content"
+            phx-click="seeTurtle"
+          >
+            <span class="font-paperlang inline">~</span>
+          </div>
+          <div id="tabs" class="flex items-center" phx-update="ignore">
+            <div
+              :for={%{"value" => value} <- [%{"value"=> "Papert"}]}
+              data-alive
+              data-tab-id="root"
+              class="tab-instance animate-fade select-none hidden pl-1 pr-2 font-mono text-xs transition-all duration-200  border-r-1 focus-within:outline-none text-primary-content rounded-r-lg hover:border-r-2 hover:border-primary hover:text-accent-content border-accent group flex items-center  data-alive:border-accent-content data-alive:border-accent-content data-alive:border-b-1"
+              id="tab-scaffold-root"
+              ondblclick="const input=this.querySelector('input');input.disabled=false;input.focus();"
+            >
+              <input
+                type="text"
+                id={"tab-#{value}"}
+                value={value}
+                data-original={value}
+                class="bg-transparent hover:bg-base-100 pointer-events-none hover:bg-base-100/20 focus:bg-base-100/30 border-transparent focus:border-accent/50 border-b transition-all duration-200 outline-none text-primary-content focus:text-base-content -mr-1 placeholder-primary-content/60 text-xs min-w-[1ch] max-w-[7ch] w-full group-hover:bg-base-100/10"
+                placeholder="name"
+                onfocus="var value = this.value; this.value = null; this.value = value;this.style.pointerEvents='auto'"
+                phx-update="ignore"
+                disabled
+                onblur="this.disabled=true;this.style.pointerEvents='none';this.closest('[id^=\'tab-scaffold\']').style.pointerEvents='auto';this.style.width=Math.max(this.value.length||this.placeholder.length,1)+'ch';this.setSelectionRange(0, 0);"
+                onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.value=this.dataset.original;this.blur()}"
+                oninput="this.style.width=Math.max(this.value.length||this.placeholder.length,1)+1+'ch'"
+              />
+              <button
+                class="close ml-1 pl-1 pointer-events-auto -mr-1 w-1 h-3 opacity-0 group-hover:w-3 group-hover:opacity-60 cursor-pointer hover:opacity-100 transition-opacity duration-200 flex items-center justify-center text-red-500/70 hover:text-red-500"
+                title="Close tab"
+                onclick="event.stopPropagation()"
+              >
+                <svg class="w-2 h-2" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 3l6 6M9 3l-6 6"/>
+                </svg>
+              </button>
+            </div>
+
+            <script>
+              window.addEventListener('DOMContentLoaded', () => {
                     document.querySelectorAll('input[id^="tab-"]').forEach(input => {input.style.width=Math.max(input.value.length||input.placeholder.length,1)+'ch';});
                   });
-</script>
+            </script>
           </div>
-        <!-- New Tab Creator Button -->
-<button
-  class="px-1 ml-1 font-mono text-xs transition-all duration-300 focus:outline-none text-primary-content rounded-r-lg hover:text-primary hover:border-r-2 hover:border-accent active:border-primary transform  cursor-copy group"
-  phx-click={JS.dispatch("phx:opBuffer", detail: %{op: "add"})}
->
-  <span class="inline transition-all duration-300 group-hover:scale-110">+</span>
-</button>
+          <!-- New Tab Creator Button -->
+          <button
+            class="px-1 ml-1 font-mono text-xs transition-all duration-300 focus:outline-none text-primary-content rounded-r-lg hover:text-primary hover:border-r-2 hover:border-accent active:border-primary transform  cursor-copy group"
+            phx-click={JS.dispatch("phx:opBuffer", detail: %{op: "add"})}
+          >
+            <span class="inline transition-all duration-300 group-hover:scale-110">+</span>
+          </button>
 
+        </div>
       </div>
-    </div>
-    <!-- Editor -->
-    <div
-      phx-update="ignore"
-      id="runenv"
-      class="mt-4 mb-6 rounded-sm pointer-events-auto dark-scrollbar [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-text bg-amber-600/5 border-amber-600/20 h-[88dvh]"
-    >
-      <div phx-click="flipWell">
-        <.folders
-          :if={false}
-          class="absolute top-5 right-6 w-5 h-5  fill-primary/50 hover:fill-amber-400 cursor-pointer"
+      <!-- Editor -->
+      <div
+        phx-update="ignore"
+        id="runenv"
+        class="mt-4 mb-6 rounded-sm backdrop-blur-xs  pointer-events-auto dark-scrollbar [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-text bg-amber-600/5 border-amber-600/20 h-8/9"
+      >
+        <div phx-click="flipWell">
+          <.folders
+            :if={false}
+            class="absolute top-5 right-6 w-5 h-5  fill-primary/50 hover:fill-amber-400 cursor-pointer"
+          />
+        </div>
+        <div class="relative z-10">
+          <.slider slider_value="50" />
+        </div>
+        <textarea
+          id="your-buffer"
+          class="relative rounded-sm pointer-events-auto cursor-text bg-amber-600/5 border-none h-11/12"
+          phx-hook="Shell"
+          data-target="canvas"
         />
+        <div
+        phx-update="ignore"
+        id="output"
+        class="fixed -bottom-1/12 overflow-y-auto font-mono border-none text-primary left-2"
+      >
       </div>
-      <div class="relative z-10">
-        <.slider slider_value="50" />
       </div>
-      <textarea
-        id="your-buffer"
-        class="relative rounded-sm pointer-events-auto cursor-text bg-amber-600/5 border-none h-full"
-        phx-hook="Shell"
-        data-target="canvas"
-      />
-    </div>
-    <!-- Code Output -->
-    <div
-      phx-update="ignore"
-      id="output"
-      class="fixed bottom-0 overflow-y-auto font-mono border-none text-primary left-2"
-    >
-    </div>
-  </div>
-</div>
+      <!-- Code Output -->
 
-<!-- Right Editor -->
-<div
-  id="rightpane"
-  class="fixed top-0 right-0 z-20 flex flex-col  h-screen p-4 pointer-events-none "
-  <!--
-  Session
-  --
->
-  <div id="sessionbox">
+
+    </div>
+    <!-- Zhong -->
+    <div class="bg-transparent pointer-events-none select-none" />
+
+    <!-- Right pane -->
+    <div class="row-span-1 col-span-1  lg:row-span-2 relative p-4">
+      <div id="sessionbox">
     <div :if={!@session.name} class="relative group w-60 max-w-[calc(100vw-2rem)]">
       <!-- Login Link Button -->
       <.link
@@ -131,7 +122,7 @@
         <span class="relative z-10 text-end">Enter the Shell</span>
         <!-- Animated underscore cursor -->
         <span class="inline-block w-2 h-0.5 ml-1 bg-amber-400 animate-flicker">_</span>
-        
+
 <!-- Decorative corners (smaller size for subtlety) -->
         <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content">
         </div>
@@ -146,18 +137,18 @@
 
     <div
       :if={@session.name}
-      class="fixed font-mono right-4 text-primary bg-transparent  border border-none rounded px-2 py-1 w-1/2 max-w-xs"
+      class="fixed font-mono right-4 text-primary bg-transparent  border border-none rounded px-2 py-1 w-full max-w-xs"
     >
       <!-- Welcome message row -->
       <div class="flex items-center text-xs mb-1 border-b border-accent/50  pb-1 overflow-hidden">
-        <span class="flex items-center">
+        <span class="flex items-center truncate">
           &gt; <%= gettext "welcome %{name} to⠀%{clan}'s shell", clan: to_titlecase(@clan), name: @session.name%>
           <span class="relative flex items-center ml-1">
             <span class="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
           </span>
         </span>
       </div>
-      
+
 <!-- Command keys row -->
       <div class="flex items-center justify-between">
         <div
@@ -294,17 +285,14 @@
   </div>
 
   <.deck active={@right == :deck} type={@deck} />
-  <.memory_well
-    :if={@right == :well}
-    view="grid"
-    memories={@disciples |> Enum.map(&elem(&1, 1))}
-    page={1}
-    total_pages={1}
-  />
-</div>
+      
 
-<%!-- Turtle viewing pane toggle icon --%>
-<div
+    </div>
+
+    <!-- <div class="backdrop-blur-sm border border-gray-700/50 rounded-lg p-4"/> -->
+    <!-- Bottom Pane - Visual Previews (spans both columns) -->
+    <div class="col-span-3 row-start-2 lg:row-span-1 lg:col-span-1 ">
+      <div
   id="paneflip"
   class="fixed z-50 -translate-x-1/2 pointer-events-auto  transition-transform duration-300 pointer-events-auto bottom-2 left-1/2"
   phx-hook="Sensei"
@@ -325,7 +313,7 @@
   :if={@pane}
   id="disciple_panels"
   phx-hook="DiscipleWindow"
-  class="fixed bottom-0 pointer-events-none  z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto"
+  class="fixed bg-transparent bottom-0 pointer-events-none  z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto"
 >
   <!-- Other people's turtles -->
   <div
@@ -377,11 +365,16 @@
   </div>
 </div>
 
+    </div>
+  </div>
+</div>
+
+
 
 
 <style>
   /* Custom styles for editor width */
-  #editor {
+    #editor {
   width: 80ch; /* 80 characters width */
   }
 </style>
