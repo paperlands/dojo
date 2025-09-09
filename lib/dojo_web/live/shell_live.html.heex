@@ -1,4 +1,4 @@
-<div class="relative w-screen h-screen bg-secondary">
+<div class="relative h-screen w-screen bg-secondary">
   <canvas phx-update="ignore" id="canvas"  class="fixed inset-0 z-0 bg-inherit select-none" ></canvas>
   <canvas
     :if={@outershell && @outershell.resp}
@@ -11,7 +11,7 @@
   >
   </canvas>
   <!-- Desktop Layout (lg and up) -->
-  <div class="h-screen grid grid-cols-3  grid-rows-[60vh_40vh]  lg:grid-cols-[25%_50%_25%]  lg:grid-rows-[1fr_30vh]  gap-1">
+  <div class="fixed inset-0 grid grid-cols-3  grid-rows-[60vh_40vh]  lg:grid-cols-[25%_50%_25%]  lg:grid-rows-[1fr_30vh]  gap-1 pointer-events-none">
 
     <!-- Left Pane - Code Editor -->
     <div class=" row-span-1 col-span-1 lg:row-span-2 mt-2 lg:col-span-1 overflow-y-hidden pointer-events-none  scrollbar-hide">
