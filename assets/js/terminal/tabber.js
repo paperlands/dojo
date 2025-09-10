@@ -81,6 +81,28 @@ export class Tabber {
 
         // Activate target tab
         tab.setAttribute('data-alive', '');
+        this.scrolltoTab(tab)
+    }
+
+    scrolltoTab(tab) {
+
+        // Calculate scroll position to center the tab
+        const tabLeft = tab.offsetLeft;
+        const tabWidth = tab.offsetWidth;
+        const containerWidth = this.container.clientWidth;
+        const currentScroll = this.container.scrollLeft;
+
+        // Position to center the tab
+        const targetScroll = tabLeft - (containerWidth / 2) + (tabWidth / 2);
+
+        // Ensure we don't scroll beyond boundaries
+        const maxScroll = this.container.scrollWidth - containerWidth;
+        const boundedScroll = Math.max(0, Math.min(targetScroll, maxScroll));
+
+        this.container.scrollTo({
+            left: boundedScroll,
+            behavior: 'smooth'
+        });
 
     }
 
