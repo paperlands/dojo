@@ -84,9 +84,9 @@ export default class Head {
             side: THREE.DoubleSide
         });
         // Main mesh - render first (deepest)
-        // turtleMaterial.polygonOffset = true;
-        // turtleMaterial.polygonOffsetFactor = -999;
-        // turtleMaterial.polygonOffsetUnits = -999;
+        turtleMaterial.polygonOffset = true;
+        turtleMaterial.polygonOffsetFactor = -9999999;
+        turtleMaterial.polygonOffsetUnits = -9999999;
         this.turtleMesh = new THREE.Mesh(turtleGeometry, turtleMaterial);
         this.turtleGroup.add(this.turtleMesh);
 
@@ -148,7 +148,6 @@ export default class Head {
         // Apply scale for scale invariance
         if(this.current.scale != scaleFactor){
             this.current.scale = scaleFactor
-            console.log(scaleFactor)
             this.turtleGroup.scale.setScalar(scaleFactor);
         }
     }

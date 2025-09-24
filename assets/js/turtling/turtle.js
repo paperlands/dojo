@@ -33,7 +33,6 @@ export class Turtle {
             jmp: this.jump.bind(this),
             mv: this.move.bind(this),
             bold: this.thickness.bind(this),
-            fn: this.func.bind(this),
             goto: this.goto.bind(this),
             //iamat: this.iamat.bind(this),
             faceto: this.faceto.bind(this),
@@ -629,6 +628,12 @@ export class Turtle {
                 }
                 break;
             case 'Call':
+                if(node.value == "fn" || node.value == "make") {
+                    //escape evaluation
+                    this.func(...node.children.map(arg => arg.value))
+
+                    break
+                }
                 const args = node.children.map(arg => this.evaluateExpression(arg.value, context));
                 const currDepth = context['__depth__'] || 0;
                 if(currDepth > 1) this.recurseCount++ ;
@@ -695,9 +700,9 @@ export class Turtle {
         return tree.value // probably a string
     }
 
-    func(expr, implement){
-        console.log(expr)
-        console.log(this.math.parser.run(expr))
+    func(signature, expression){
+        console.log(expression)
+        console.log(this.math.parser.defineFunction(signature, expression))
     }
 
     reset() {
