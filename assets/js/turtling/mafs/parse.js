@@ -26,54 +26,51 @@ export class Parser {
             ['abs', 1], ['floor', 1], ['ceil', 1]
         ]);
 
+        // User-defined functions keys by [name, arity]: [ast, params]
         this.userspace = new Map();
         this.lexer = new Lexer();
     }
 
-    run(expression) {
+    parse(expression, options = {}) {
         try {
             const tokens = this.lexer.tokenize(expression);
-            return this.parseExpression(tokens);
+            this.tokens = tokens;
+            this.position = 0;
+
+            const ast = this.parseExpression(0, options);
+
+            // Check for unexpected trailing tokens
+            if (this.position < this.tokens.length) {
+                const token = this.currentToken();
+                if (token.value === ')' || token.value === ']') {
+                    throw new Error('Missing opening brackets');
+                }
+                throw new Error(`Unexpected token: ${token.value}`);
+            }
+
+            return ast;
         } catch (error) {
-            throw new Error(`${error.message}`);
+            throw new Error(error.message);
         }
     }
 
-    parseExpression(tokens) {
-        this.tokens = tokens;
-        this.position = 0;
+    // Precedence climbing parser
+    parseExpression(minPrec, options = {}) {
+        let left = this.parsePrimary(options);
 
-        const ast = this.parseExpression_Precedence(0);
-
-        if (this.position < this.tokens.length) {
-            if (this.currentToken().value == ")" || this.currentToken().value == "]") throw new Error(`Missing opening backets`)
-            throw new Error(`Unexpected token: ${this.currentToken().value}`);
-        }
-
-        return ast;
-    }
-
-    // Precedence climbing algorithm not shunting yard
-    parseExpression_Precedence(minPrec) {
-        let left = this.parsePrimary();
-
-        while (this.position < this.tokens.length) {
+        while (this.hasMoreTokens()) {
             const token = this.currentToken();
 
-            if (token.type !== 'OPERATOR' || !(token.value in this.precedence)) {
-                break;
-            }
+            if (!this.isBinaryOperator(token)) break;
 
             const prec = this.precedence[token.value];
-            if (prec < minPrec) {
-                break;
-            }
+            if (prec < minPrec) break;
 
             const op = token.value;
             this.advance();
 
             const nextMinPrec = this.rightAssociative.has(op) ? prec : prec + 1;
-            const right = this.parseExpression_Precedence(nextMinPrec);
+            const right = this.parseExpression(nextMinPrec, options);
 
             left = new ASTNode('operator', op, [left, right]);
         }
@@ -81,160 +78,248 @@ export class Parser {
         return left;
     }
 
-    parsePrimary() {
+    parsePrimary(options = {}) {
         const token = this.currentToken();
 
         if (!token) {
             throw new Error('Unexpected end of expression');
         }
 
-        // Handle unary operators
-        if (token.type === 'OPERATOR' && this.unaryOperators.has(token.value)) {
+        // Unary operators
+        if (this.isUnaryOperator(token)) {
             const op = token.value;
             this.advance();
-            const operand = this.parsePrimary(); // Recursive call for right associativity
+            const operand = this.parsePrimary(options);
             return new ASTNode('unary_operator', op, [operand]);
         }
 
-        // Handle numbers
+        // Numbers
         if (token.type === 'NUMBER') {
             this.advance();
-            return new ASTNode('operand', token.value);
+            return new ASTNode('operand', parseFloat(token.value));
         }
 
-        // Handle identifiers (variables or functions)
+        // Identifiers (variables, constants, functions)
         if (token.type === 'IDENTIFIER') {
-            const name = token.value;
-            this.advance();
-
-            // Check if it's a function call
-            if (this.position < this.tokens.length && this.currentToken().type === 'LPAREN') {
-                return this.parseFunctionCall(name);
-            }
-
-            // It's a variable
-            return new ASTNode('operand', name);
+            return this.parseIdentifier(options);
         }
 
-        // Handle parentheses
+        // Parentheses
         if (token.type === 'LPAREN') {
-            this.advance(); // consume '('
-            const expr = this.parseExpression_Precedence(0);
-
-            if (!this.currentToken() || this.currentToken().type !== 'RPAREN') {
-                throw new Error('Missing closing brackets');
-            }
-
-            this.advance(); // consume ')'
-            return expr;
+            return this.parseParentheses(options);
         }
-
 
         throw new Error(`Unexpected token: ${token.value}`);
     }
 
-    parseFunctionCall(name) {
-        this.advance(); // consume '('
+    parseIdentifier(options) {
+        const name = this.currentToken().value;
+        this.advance();
 
-        const args = [];
-
-        // Handle empty argument list
-        if (this.currentToken() && this.currentToken().type === 'RPAREN') {
-            this.advance();
-            const expectedArity = this.getFunctionArity(name);
-            if (expectedArity !== 0) {
-                throw new Error(`Function ${name} expects ${expectedArity} arguments, but got 0`);
-            }
-            return new ASTNode('function', name, args);
+        // Function call
+        if (this.hasMoreTokens() && this.currentToken().type === 'LPAREN') {
+            return this.parseFunctionCall(name, options);
         }
 
-        // Parse arguments
-        do {
-            args.push(this.parseExpression_Precedence(0));
+        // User-defined constant (0-arity function)
+        if (this.isConstant(name) && !options.skipValidation) {
+            return this.cloneAST(this.getUserFunction(name, 0)[0]);
+        }
 
-            if (this.currentToken() && this.currentToken().type === 'COMMA') {
-                this.advance(); // eat ','
-            } else {
-                break;
-            }
-        } while (this.position < this.tokens.length);
+        // Variable
+        return new ASTNode('operand', name);
+    }
+
+    parseFunctionCall(name, options = {}) {
+        this.advance(); // consume '('
+        const args = this.parseArgumentList(options);
 
         if (!this.currentToken() || this.currentToken().type !== 'RPAREN') {
             throw new Error('Missing closing parenthesis in function call');
         }
+        this.advance(); // consume ')'
 
-        this.advance(); // eat ')'
+        // Validation and substitution
+        if (!options.skipValidation) {
+            if (!this.functionExists(name, args.length)) {
+                throw new Error(`Unknown function: ${name} with ${args.length} arguments`);
+            }
 
-        // Validate arity
-        const expectedArity = this.getFunctionArity(name);
-        if (expectedArity !== args.length) {
-            throw new Error(`Function ${name} expects ${expectedArity} arguments, but got ${args.length}`);
+            if (this.isUserDefined(name, args.length)) {
+                return this.substituteUserFunction(name, args);
+            }
         }
 
         return new ASTNode('function', name, args);
     }
 
+    parseArgumentList(options) {
+        const args = [];
+
+        // Empty argument list
+        if (this.currentToken()?.type === 'RPAREN') {
+            return args;
+        }
+
+        // Parse comma-separated arguments
+        do {
+            args.push(this.parseExpression(0, options));
+
+            if (this.currentToken()?.type === 'COMMA') {
+                this.advance();
+            } else {
+                break;
+            }
+        } while (this.hasMoreTokens());
+
+        return args;
+    }
+
+    parseParentheses(options) {
+        this.advance(); // consume '('
+        const expr = this.parseExpression(0, options);
+
+        if (!this.currentToken() || this.currentToken().type !== 'RPAREN') {
+            throw new Error('Missing closing brackets');
+        }
+        this.advance(); // consume ')'
+
+        return expr;
+    }
+
+    // User-defined function management
+    defineFunction(signature, expression, ctx = {}) {
+        const signatureAST = this.parseSignature(signature);
+        const { name, params } = this.extractSignature(signatureAST);
+
+        if (this.builtins.has(name)) {
+            throw new Error(`Cannot override built-in function ${name}`);
+        }
+
+        const expressionAST = this.parse(expression);
+        const key = this.makeKey(name, params.length);
+        this.userspace.set(key, [expressionAST, params, ctx]);
+    }
+
+    parseSignature(signature) {
+        try {
+            return this.parse(signature, { skipValidation: true });
+        } catch (error) {
+            throw new Error(`Invalid function signature: ${signature}`);
+        }
+    }
+
+    extractSignature(ast) {
+        if (ast.type === 'operand') {
+            // Constant definition: f = expression
+            return { name: ast.value, params: [] };
+        }
+
+        if (ast.type === 'function') {
+            // Function definition: f(x, y) = expression
+            const name = ast.value;
+            const params = ast.children.map(child => {
+                if (child.type !== 'operand') {
+                    throw new Error('Function parameters must be identifiers');
+                }
+                return child.value;
+            });
+            return { name, params };
+        }
+
+        throw new Error('Invalid function signature format');
+    }
+
+    substituteUserFunction(name, args) {
+        const [ast, params, ctx] = this.getUserFunction(name, args.length);
+
+        if (args.length === 0) {
+            // Constant - return cloned AST
+            return this.cloneAST(ast);
+        }
+
+        // Create parameter substitution map
+        const substitutions = new Map(Object.entries(ctx));
+
+        for (let i = 0; i < params.length; i++) {
+            substitutions.set(params[i], args[i]);
+        }
+
+        // Substitute parameters in the function body
+        return this.substituteParameters(this.cloneAST(ast), substitutions);
+    }
+
+    substituteParameters(ast, substitutions) {
+        if (ast.type === 'operand' && typeof ast.value === 'string') {
+            // Replace parameter with argument
+            if (substitutions.has(ast.value)) {
+                return this.cloneAST(substitutions.get(ast.value));
+            }
+        }
+
+        // Recursively substitute in children
+        if (ast.children) {
+            ast.children = ast.children.map(child =>
+                this.substituteParameters(child, substitutions)
+            );
+        }
+
+        return ast;
+    }
+
+    cloneAST(ast) {
+        const cloned = new ASTNode(ast.type, ast.value, [], { ...ast.meta });
+        if (ast.children) {
+            cloned.children = ast.children.map(child => this.cloneAST(child));
+        }
+        return cloned;
+    }
+
+    // Function lookup helpers
+    makeKey(name, arity) {
+        return `${name}:${arity}`;
+    }
+
+    functionExists(name, arity) {
+        return this.builtins.has(name) && this.builtins.get(name) === arity ||
+               this.userspace.has(this.makeKey(name, arity));
+    }
+
+    getUserFunction(name, arity) {
+        const key = this.makeKey(name, arity);
+        if (!this.userspace.has(key)) {
+            throw new Error(`Unknown user function: ${name} with ${arity} arguments`);
+        }
+        return this.userspace.get(key);
+    }
+
+    // Token and operator helpers
     currentToken() {
-        return this.position < this.tokens.length ? this.tokens[this.position] : null;
+        return this.hasMoreTokens() ? this.tokens[this.position] : null;
     }
 
     advance() {
         this.position++;
     }
 
-
-
-    defineFunction(signature, expression) {
-        // parse signature in defn mode
-        const signatureAST = this.parseSignature(signature);
-
-        const name = signatureAST.value;
-        const params = signatureAST.children.map(child => {
-            if (child.type !== 'operand') {
-                throw new Error(`Function parameters must be identifiers: ${signature}`);
-            }
-            return child.value;
-        });
-
-        if (this.builtins.has(name)) {
-            throw new Error(`Cannot override built-in function ${name}`);
-        }
-
-        // Parse expression once and store as lazy AST
-        const expressionAST = this.run(expression);
-
-        this.userspace.set(name, [expressionAST, params.length, params]);
+    hasMoreTokens() {
+        return this.position < this.tokens.length;
     }
 
-    parseSignature(signature) {
-        // Temporarily allow unknown functions during signature parsing
-        const originalIsFunction = this.isFunction.bind(this);
-        this.isFunction = (token) => originalIsFunction(token) || /^[a-zA-Z][a-zA-Z0-9_]*$/.test(token);
-
-        try {
-            const ast = this.run(signature);
-            if (ast.type !== 'function') {
-                throw new Error(`Invalid function signature: ${signature}`);
-            }
-            return ast;
-        } finally {
-            // Restore original function check
-            this.isFunction = originalIsFunction;
-        }
+    isBinaryOperator(token) {
+        return token?.type === 'OPERATOR' && this.precedence.hasOwnProperty(token.value);
     }
 
-    getFunctionArity(funcName) {
-        if (this.builtins.has(funcName)) {
-            return this.builtins.get(funcName);
-        }
-        if (this.userspace.has(funcName)) {
-            return this.userspace.get(funcName)[1];
-        }
-        throw new Error(`Unknown function: ${funcName}`);
+    isUnaryOperator(token) {
+        return token?.type === 'OPERATOR' && this.unaryOperators.has(token.value);
     }
 
-    isFunction(token) {
-        return this.builtins.has(token) || this.userspace.has(token);
+    isConstant(name) {
+        return this.userspace.has(this.makeKey(name, 0));
+    }
+
+    isUserDefined(name, arity) {
+        return this.userspace.has(this.makeKey(name, arity));
     }
 
     isNumeric(str) {

@@ -630,7 +630,7 @@ export class Turtle {
             case 'Call':
                 if(node.value == "fn" || node.value == "make") {
                     //escape evaluation
-                    this.func(...node.children.map(arg => arg.value))
+                    this.func(...node.children.map(arg => arg.value), context)
 
                     break
                 }
@@ -695,14 +695,13 @@ export class Turtle {
 
         if (this.math.parser.isNumeric(expr)) return parseFloat(expr);
         if (context[expr] != null) return context[expr];
-        const tree = this.math.parser.run(expr)
+        const tree = this.math.parser.parse(expr)
         if (tree.children.length > 0 || this.math.evaluator.namespace_check(tree.value)) return this.math.evaluator.run(tree, context);
         return tree.value // probably a string
     }
 
-    func(signature, expression){
-        console.log(expression)
-        console.log(this.math.parser.defineFunction(signature, expression))
+    func(signature, expression, ctx){
+        this.math.parser.defineFunction(signature, expression, ctx)
     }
 
     reset() {
