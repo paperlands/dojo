@@ -123,7 +123,7 @@ export class Parser {
 
         // User-defined constant (0-arity function)
         if (this.isConstant(name) && !options.skipValidation) {
-            return this.cloneAST(this.getUserFunction(name, 0)[0]);
+            return this.substituteUserFunction(name, [])
         }
 
         // Variable
@@ -197,8 +197,18 @@ export class Parser {
         }
 
         const expressionAST = this.parse(expression);
+
+        const substitutions = new Map();
+
+        for (const key of Object.keys(ctx)) {
+            substitutions.set(key, new ASTNode('operand', ctx[key]));
+        }
+
+        const subexpressionAST = this.substituteParameters(expressionAST, substitutions)
+
+
         const key = this.makeKey(name, params.length);
-        this.userspace.set(key, [expressionAST, params, ctx]);
+        this.userspace.set(key, [subexpressionAST, params]);
     }
 
     parseSignature(signature) {
@@ -231,15 +241,15 @@ export class Parser {
     }
 
     substituteUserFunction(name, args) {
-        const [ast, params, ctx] = this.getUserFunction(name, args.length);
+        const [ast, params] = this.getUserFunction(name, args.length);
 
-        if (args.length === 0) {
+        if (args.length === 0 ) {
             // Constant - return cloned AST
             return this.cloneAST(ast);
         }
 
-        // Create parameter substitution map
-        const substitutions = new Map(Object.entries(ctx));
+        // Create parameter substitution map Object.entries(ctx)
+        const substitutions = new Map();
 
         for (let i = 0; i < params.length; i++) {
             substitutions.set(params[i], args[i]);
@@ -325,5 +335,9 @@ export class Parser {
     isNumeric(str) {
         if (typeof str !== "string") return false;
         return !isNaN(str) && !isNaN(parseFloat(str));
+    }
+
+    reset() {
+        this.userspace = new Map();
     }
 }

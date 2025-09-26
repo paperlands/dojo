@@ -105,19 +105,14 @@ export class Turtle {
 
 
         this.head = new Render.Head(this.scene)
-        this.reset();
-        // Command execution tracking
-        this.commandCount = 0;
-        this.recurseCount = 0,
-        this.maxRecurses = 888888;
-        this.maxCommands = 88888888;
-        this.maxRecurseDepth = 360
 
         //mafs
         this.math = {
             parser: new Parser(),
             evaluator: new Evaluator()
         }
+
+        this.reset();
     }
 
     spawn() {
@@ -717,9 +712,13 @@ export class Turtle {
             lastRenderTime: 0,
             lastRenderFrame: 0
         };
+        // Command execution tracking
         this.commandCount = 0
         this.recurseCount = 0
         this.maxRecurseDepth = 360
+        this.maxRecurses = 888888;
+        this.maxCommands = 88888888;
+
         this.rotation = new Versor(1, 0, 0, 0);
         this.penDown = true;
         this.color = 'DarkOrange';
@@ -731,6 +730,7 @@ export class Turtle {
             phase: "start",
             snapshot: {frame: null, save: false}
         }
+        this.math.parser.reset()
         this.renderLoop.requestRestart();
     }
 
