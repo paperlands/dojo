@@ -12,7 +12,7 @@
   >
   </canvas>
   <!-- Desktop Layout (lg and up) -->
-  <div class="fixed inset-0 grid grid-cols-[50dvw_0dvw_50dvw] md:grid-cols-[35dvw_30dvw_35dvw]  grid-rows-[60vh_40vh]  lg:grid-cols-[25%_50%_25%]  lg:grid-rows-[1fr_30vh] gap-1 pointer-events-none">
+  <div class="fixed inset-0 grid grid-cols-[50dvw_10dvw_40dvw] md:grid-cols-[35dvw_30dvw_35dvw]  grid-rows-[60vh_40vh]  lg:grid-cols-[25dvw_55dvw_20dvw]  lg:grid-rows-[1fr_30vh] gap-1 pointer-events-none">
     
 <!-- Left Pane - Code Editor -->
     <div class="row-span-1 col-span-1 lg:row-span-2 mt-2 lg:col-span-1 overflow-y-hidden pointer-events-none  scrollbar-hide">
@@ -61,7 +61,7 @@
                   oninput="this.style.width=Math.max(this.value.length||this.placeholder.length,1)+1+'ch'"
                 />
                 <button
-                  class="close ml-1 pl-1 pointer-events-auto -mr-1 w-1 h-3 opacity-0 group-hover:w-3 group-hover:opacity-60 cursor-pointer hover:opacity-100 transition-opacity duration-200 flex items-center justify-center text-red-500/70 hover:text-red-500"
+                  class="close ml-1 pl-1 pointer-events-auto -mr-1 w-1 h-3 opacity-0 group-hover:w-3 group-hover:opacity-60 cursor-pointer hover:opacity-100 transition-opacity duration-200 flex items-center justify-center text-red-500/70 hover:text-red-500 data-alive:w-3  data-alive:opacity-100"
                   title="Close tab"
                   onclick="event.stopPropagation()"
                 >
@@ -128,11 +128,10 @@
     </div>
     <!-- Zhong -->
     <div class="bg-transparent pointer-events-none select-none" />
-    
 <!-- Right pane -->
-    <div class="row-span-1 col-span-1 lg:row-span-2 relative p-4">
-      <div id="sessionbox">
-        <div :if={!@session.name} class="relative group w-60 ">
+    <div class="row-span-1 col-span-1 lg:row-span-2 p-4 relative ">
+      <div id="sessionbox" >
+        <div :if={!@session.name} class="relative group w-60">
           <!-- Login Link Button -->
           <.link
             navigate={~p"/welcome"}
@@ -141,16 +140,7 @@
             <span class="relative z-10 text-end">Enter the Shell</span>
             <!-- Animated underscore cursor -->
             <span class="inline-block w-2 h-0.5 ml-1 bg-amber-400 animate-flicker">_</span>
-            
-<!-- Decorative corners (smaller size for subtlety) -->
-            <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content">
-            </div>
-            <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary-content">
-            </div>
-            <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-primary-content">
-            </div>
-            <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-primary-content">
-            </div>
+
           </.link>
         </div>
 
@@ -158,6 +148,7 @@
           :if={@session.name}
           class="relative font-mono right-2 text-primary bg-transparent border border-none rounded px-2 py-1 w-full max-w-xs"
         >
+
           <!-- Welcome message row -->
           <div class="flex items-center text-xs mb-1 border-b border-accent/50 pb-1 overflow-hidden">
             <span class="flex items-center truncate">
@@ -170,7 +161,7 @@
               </span>
             </span>
           </div>
-          
+
 <!-- Command keys row -->
           <div class="flex items-center justify-between">
             <div
@@ -241,6 +232,9 @@
                 <.manual class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-primary hover:rotate-[-40deg]" />
               </button>
             </div>
+
+          </div>
+          <!-- Decorative corners (smaller size for subtlety) -->
             <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content">
             </div>
             <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary-content">
@@ -249,7 +243,6 @@
             </div>
             <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-primary-content">
             </div>
-          </div>
         </div>
       </div>
 
