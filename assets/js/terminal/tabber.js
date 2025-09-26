@@ -77,11 +77,14 @@ export class Tabber {
     activateTab(tab) {
         // Deactivate all tabs
         this.container.querySelectorAll('.tab-instance')
-            .forEach(t => t.removeAttribute('data-alive'));
+            .forEach(t => {t.removeAttribute('data-alive')
+                           t.querySelector('.close').removeAttribute('data-alive', '')}
+                    );
 
         // Activate target tab
         tab.setAttribute('data-alive', '');
         this.scrolltoTab(tab)
+        tab.querySelector('.close').setAttribute('data-alive', '')
     }
 
     scrolltoTab(tab) {
