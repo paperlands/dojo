@@ -11090,3 +11090,568 @@ CodeMirror.registerHelper("fold", "indent", function(cm, start) {
 // });
 
 // });
+
+/**
+ * CodeMirror v5 Production-Grade Mobile Enhancement
+ * Built for seamless touch experiences with proper gesture recognition
+ */
+
+(function(CodeMirror) {
+  'use strict';
+
+  const isMobile = /Mobi|Android/i.test(navigator.userAgent) || 'ontouchstart' in window;
+  if (!isMobile) return;
+
+  //  based on apple/android platform guidelines
+  const TOUCH_CONSTANTS = {
+    MIN_TARGET_SIZE: 44, // iOS HIG minimum
+    DOUBLE_TAP_THRESHOLD: 400, // More forgiving timing
+    LONG_PRESS_THRESHOLD: 350, // Faster than iOS 500ms for better UX
+    TOUCH_SLOP: 8, // Android's touch slop
+    GESTURE_TIMEOUT: 600,
+    HAPTIC_LIGHT: 1,
+    HAPTIC_MEDIUM: 2
+  };
+
+  CodeMirror.defineOption('mobileEnhanced', false, function(cm, val, old) {
+    if (old && old !== CodeMirror.Init) {
+      cleanup(cm);
+    }
+    if (val) {
+      initMobile(cm);
+    }
+  });
+
+  function initMobile(cm) {
+    const state = cm.state.mobileEnhanced = {
+      // Gesture state machine
+      gestureState: 'idle', // idle, tracking, selecting, dragging
+      touchSequence: [],
+      activeTouch: null,
+
+      // Selection system
+      selectionProxy: null,
+      handles: { start: null, end: null, cursor: null },
+
+      // Keyboard management
+      viewport: {
+        initial: window.visualViewport?.height || window.innerHeight,
+        current: window.visualViewport?.height || window.innerHeight,
+        keyboardHeight: 0
+      },
+
+      // Performance
+      raf: null,
+      resizeObserver: null,
+
+      // Elements
+      overlay: null,
+      toolbar: null
+    };
+
+    setupViewportTracking(cm);
+    createOverlay(cm);
+    setupGestureRecognition(cm);
+    setupCursorTracking(cm);
+
+    // Immediate setup
+    requestAnimationFrame(() => updateHandles(cm));
+  }
+
+  function setupViewportTracking(cm) {
+    const state = cm.state.mobileEnhanced;
+
+    // Use Visual Viewport API for accurate keyboard detection
+    if (window.visualViewport) {
+      const handleViewportChange = () => {
+        const newHeight = window.visualViewport.height;
+        const heightDiff = state.viewport.initial - newHeight;
+
+        state.viewport.current = newHeight;
+        state.viewport.keyboardHeight = Math.max(0, heightDiff);
+
+        // Debounced cursor positioning
+        clearTimeout(state.viewportTimeout);
+        state.viewportTimeout = setTimeout(() => {
+          if (heightDiff > 100) { // Keyboard likely open
+            positionCursorOptimally(cm);
+          }
+        }, 50);
+      };
+
+      window.visualViewport.addEventListener('resize', handleViewportChange);
+      state.viewportCleanup = () => {
+        window.visualViewport.removeEventListener('resize', handleViewportChange);
+      };
+    } else {
+      // Fallback for older browsers
+      const handleResize = () => {
+        const heightDiff = state.viewport.initial - window.innerHeight;
+        state.viewport.keyboardHeight = Math.max(0, heightDiff);
+
+        if (heightDiff > 100) {
+          positionCursorOptimally(cm);
+        }
+      };
+
+      window.addEventListener('resize', handleResize, { passive: true });
+      state.viewportCleanup = () => {
+        window.removeEventListener('resize', handleResize);
+      };
+    }
+  }
+
+  function setupGestureRecognition(cm) {
+    const state = cm.state.mobileEnhanced;
+    const wrapper = cm.getWrapperElement();
+
+    // Unified touch handler with proper state machine
+    const gestureHandler = new TouchGestureHandler(cm);
+
+    wrapper.addEventListener('touchstart', gestureHandler.onTouchStart.bind(gestureHandler), { passive: false });
+    wrapper.addEventListener('touchmove', gestureHandler.onTouchMove.bind(gestureHandler), { passive: false });
+    wrapper.addEventListener('touchend', gestureHandler.onTouchEnd.bind(gestureHandler), { passive: false });
+    wrapper.addEventListener('touchcancel', gestureHandler.onTouchCancel.bind(gestureHandler));
+
+    state.gestureCleanup = () => {
+      wrapper.removeEventListener('touchstart', gestureHandler.onTouchStart);
+      wrapper.removeEventListener('touchmove', gestureHandler.onTouchMove);
+      wrapper.removeEventListener('touchend', gestureHandler.onTouchEnd);
+      wrapper.removeEventListener('touchcancel', gestureHandler.onTouchCancel);
+    };
+  }
+
+  class TouchGestureHandler {
+    constructor(cm) {
+      this.cm = cm;
+      this.state = cm.state.mobileEnhanced;
+      this.tapHistory = [];
+      this.longPressTimer = null;
+      this.preventNextClick = false;
+    }
+
+    onTouchStart(e) {
+      // Prevent if more than one finger (pinch/zoom)
+      if (e.touches.length > 1) {
+        this.cancelAllGestures();
+        return;
+      }
+
+      const touch = e.touches[0];
+      const now = Date.now();
+
+      // Clean old taps
+      this.tapHistory = this.tapHistory.filter(tap => now - tap.time < TOUCH_CONSTANTS.GESTURE_TIMEOUT);
+
+      // Record this touch
+      const touchData = {
+        id: touch.identifier,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        time: now,
+        moved: false,
+        pos: this.cm.coordsChar({ left: touch.clientX, top: touch.clientY })
+      };
+
+      this.state.activeTouch = touchData;
+      this.state.gestureState = 'tracking';
+
+      // Setup long press detection
+      this.longPressTimer = setTimeout(() => {
+        if (this.state.gestureState === 'tracking' && !touchData.moved) {
+          this.handleLongPress(touchData);
+        }
+      }, TOUCH_CONSTANTS.LONG_PRESS_THRESHOLD);
+
+      // Prevent default zoom behavior
+      e.preventDefault();
+    }
+
+    onTouchMove(e) {
+      if (!this.state.activeTouch || e.touches.length !== 1) return;
+
+      const touch = e.touches[0];
+      const activeTouch = this.state.activeTouch;
+
+      const deltaX = Math.abs(touch.clientX - activeTouch.startX);
+      const deltaY = Math.abs(touch.clientY - activeTouch.startY);
+
+      // Mark as moved if beyond touch slop
+      if (deltaX > TOUCH_CONSTANTS.TOUCH_SLOP || deltaY > TOUCH_CONSTANTS.TOUCH_SLOP) {
+        activeTouch.moved = true;
+        clearTimeout(this.longPressTimer);
+
+        if (this.state.gestureState === 'tracking') {
+          // Start selection if we have existing selection
+          if (this.cm.somethingSelected()) {
+            this.state.gestureState = 'selecting';
+          }
+        }
+
+        if (this.state.gestureState === 'selecting') {
+          const currentPos = this.cm.coordsChar({ left: touch.clientX, top: touch.clientY });
+          if (currentPos && activeTouch.pos) {
+            this.cm.setSelection(activeTouch.pos, currentPos);
+          }
+        }
+      }
+    }
+
+    onTouchEnd(e) {
+      if (!this.state.activeTouch) return;
+
+      clearTimeout(this.longPressTimer);
+      const touch = this.state.activeTouch;
+      const now = Date.now();
+
+      if (!touch.moved && this.state.gestureState === 'tracking') {
+        // This was a tap
+        this.tapHistory.push({
+          x: touch.startX,
+          y: touch.startY,
+          time: now,
+          pos: touch.pos
+        });
+
+        const recentTaps = this.tapHistory.filter(tap =>
+          now - tap.time < TOUCH_CONSTANTS.DOUBLE_TAP_THRESHOLD &&
+          Math.abs(tap.x - touch.startX) < TOUCH_CONSTANTS.MIN_TARGET_SIZE &&
+          Math.abs(tap.y - touch.startY) < TOUCH_CONSTANTS.MIN_TARGET_SIZE
+        );
+
+        if (recentTaps.length >= 2) {
+          // Double tap - select word with smooth animation
+          this.handleDoubleTap(touch);
+        } else {
+          // Single tap - position cursor
+          this.handleSingleTap(touch);
+        }
+      }
+
+      this.state.activeTouch = null;
+      this.state.gestureState = 'idle';
+
+      // Update UI
+      requestAnimationFrame(() => {
+        updateHandles(this.cm);
+      });
+    }
+
+    onTouchCancel(e) {
+      this.cancelAllGestures();
+    }
+
+    handleSingleTap(touch) {
+      if (touch.pos) {
+        // Smooth cursor positioning with animation hint
+        this.cm.setCursor(touch.pos);
+        this.provideTactileFeedback('light');
+
+      }
+    }
+
+    handleDoubleTap(touch) {
+      if (!touch.pos) return;
+
+      // Clear tap history to prevent triple-tap issues
+      this.tapHistory = [];
+
+      // Select word with smooth expansion animation
+      const wordRange = this.cm.findWordAt(touch.pos);
+      this.cm.setSelection(wordRange.anchor, wordRange.head);
+
+      this.provideTactileFeedback('medium');
+
+      // Show toolbar after brief delay for smooth UX
+    }
+
+    handleLongPress(touch) {
+      if (!touch.pos) return;
+
+      this.state.gestureState = 'selecting';
+
+      // Select word and show handles
+      const wordRange = this.cm.findWordAt(touch.pos);
+      this.cm.setSelection(wordRange.anchor, wordRange.head);
+
+      this.provideTactileFeedback('medium');
+
+      // Immediate visual feedback
+      updateHandles(this.cm);
+    }
+
+    provideTactileFeedback(type) {
+      if (navigator.vibrate) {
+        const pattern = type === 'light' ? [10] : [10, 10, 10];
+        navigator.vibrate(pattern);
+      }
+    }
+
+    cancelAllGestures() {
+      clearTimeout(this.longPressTimer);
+      this.state.activeTouch = null;
+      this.state.gestureState = 'idle';
+      this.tapHistory = [];
+    }
+  }
+
+  function createOverlay(cm) {
+    const overlay = document.createElement('div');
+    overlay.className = 'cm-mobile-overlay';
+    overlay.style.cssText = `
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none;
+      z-index: 10;
+      overflow: hidden;
+    `;
+
+    cm.getWrapperElement().appendChild(overlay);
+    cm.state.mobileEnhanced.overlay = overlay;
+  }
+
+  function updateHandles(cm) {
+    const state = cm.state.mobileEnhanced;
+    const overlay = state.overlay;
+
+    // Clear existing handles
+    overlay.innerHTML = '';
+
+    const selection = cm.listSelections()[0];
+    if (!selection) return;
+
+    if (cm.somethingSelected()) {
+      // Create selection handles
+      const startCoords = cm.cursorCoords(selection.anchor, 'local');
+      const endCoords = cm.cursorCoords(selection.head, 'local');
+
+      state.handles.start = createSelectionHandle(cm, startCoords, 'start', selection.anchor);
+      state.handles.end = createSelectionHandle(cm, endCoords, 'end', selection.head);
+
+      overlay.appendChild(state.handles.start);
+      overlay.appendChild(state.handles.end);
+    } else {
+      // Create cursor handle (smaller, more subtle)
+      const cursorCoords = cm.cursorCoords(selection.head, 'local');
+      state.handles.cursor = createCursorHandle(cm, cursorCoords, selection.head);
+      overlay.appendChild(state.handles.cursor);
+    }
+  }
+
+  function createSelectionHandle(cm, coords, type, pos) {
+    const handle = document.createElement('div');
+    const size = TOUCH_CONSTANTS.MIN_TARGET_SIZE;
+
+    handle.className = `cm-selection-handle cm-handle-${type}`;
+    handle.style.cssText = `
+      position: absolute;
+      width: ${size}px; height: ${size}px;
+      background: #007AFF;
+      border: 3px solid white;
+      border-radius: 50%;
+      box-shadow: 0 3px 12px rgba(0,122,255,0.4);
+      pointer-events: all;
+      cursor: grab;
+      transform: translate(-50%, -50%);
+      transition: transform 0.15s cubic-bezier(0.2, 0, 0, 1);
+      z-index: 11;
+    `;
+
+    // Position handle
+    handle.style.left = `${coords.left}px`;
+    handle.style.top = `${coords.top + (type === 'start' ? -8 : 8)}px`;
+
+    // Enhanced drag behavior
+    setupHandleDragging(cm, handle, type, pos);
+
+    return handle;
+  }
+
+  function createCursorHandle(cm, coords, pos) {
+    const handle = document.createElement('div');
+
+    handle.className = 'cm-cursor-handle';
+    handle.style.cssText = `
+      position: absolute;
+      width: 20px; height: 20px;
+      background: rgba(0,122,255,0.8);
+      border: 2px solid white;
+      border-radius: 50% 50% 50% 0;
+      transform: translate(-25%, -75%) rotate(-45deg);
+      pointer-events: all;
+      cursor: grab;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      opacity: 0.9;
+      z-index: 11;
+    `;
+
+    handle.style.left = `${coords.left}px`;
+    handle.style.top = `${coords.top - 10}px`;
+
+    setupHandleDragging(cm, handle, 'cursor', pos);
+
+    return handle;
+  }
+
+  function setupHandleDragging(cm, handle, type, initialPos) {
+    let isDragging = false;
+    let startTouch = null;
+
+    const onTouchStart = (e) => {
+      if (e.touches.length !== 1) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      isDragging = true;
+      startTouch = e.touches[0];
+      handle.style.cursor = 'grabbing';
+      handle.style.transform = handle.style.transform.replace('scale(1)', 'scale(1.1)');
+
+      // Provide haptic feedback
+      if (navigator.vibrate) navigator.vibrate(10);
+    };
+
+    const onTouchMove = (e) => {
+      if (!isDragging || e.touches.length !== 1) return;
+
+      e.preventDefault();
+
+      const touch = e.touches[0];
+      const pos = cm.coordsChar({ left: touch.clientX, top: touch.clientY });
+
+      if (pos) {
+        const selection = cm.listSelections()[0];
+
+        if (type === 'start') {
+          cm.setSelection(pos, selection.head);
+        } else if (type === 'end') {
+          cm.setSelection(selection.anchor, pos);
+        } else if (type === 'cursor') {
+          cm.setCursor(pos);
+        }
+      }
+    };
+
+    const onTouchEnd = (e) => {
+      if (!isDragging) return;
+
+      isDragging = false;
+      handle.style.cursor = 'grab';
+      handle.style.transform = handle.style.transform.replace('scale(1.1)', 'scale(1)');
+
+      // Ensure cursor visibility after drag
+      setTimeout(() => positionCursorOptimally(cm), 100);
+    };
+
+    handle.addEventListener('touchstart', onTouchStart, { passive: false });
+    handle.addEventListener('touchmove', onTouchMove, { passive: false });
+    handle.addEventListener('touchend', onTouchEnd);
+  }
+
+  function positionCursorOptimally(cm) {
+    const state = cm.state.mobileEnhanced;
+    if (!state) return;
+
+    const cursor = cm.getCursor();
+    const coords = cm.cursorCoords(cursor, 'local');
+    const scrollInfo = cm.getScrollInfo();
+
+    // Calculate optimal position (golden ratio from top)
+    const availableHeight = state.viewport.current;
+    const targetY = availableHeight * 0.382; // Golden ratio
+
+    // Current cursor position relative to viewport
+    const currentY = coords.top - scrollInfo.top;
+
+    // Only scroll if cursor is significantly out of position
+    if (Math.abs(currentY - targetY) > 30) {
+      const newScrollTop = coords.top - targetY;
+      cm.scrollTo(null, Math.max(0, newScrollTop));
+    }
+  }
+
+
+
+
+  async function pasteText(cm) {
+    try {
+      const text = await navigator.clipboard.readText();
+      cm.replaceSelection(text);
+    } catch {
+      // Fallback: focus and trigger paste event
+      cm.focus();
+      document.execCommand('paste');
+    }
+  }
+
+  function setupCursorTracking(cm) {
+    cm.on('cursorActivity', () => {
+      requestAnimationFrame(() => {
+        updateHandles(cm);
+        if (cm.state.mobileEnhanced.viewport.keyboardHeight > 0) {
+          positionCursorOptimally(cm);
+        }
+      });
+    });
+  }
+
+  function cleanup(cm) {
+    const state = cm.state.mobileEnhanced;
+    if (!state) return;
+
+    if (state.viewportCleanup) state.viewportCleanup();
+    if (state.gestureCleanup) state.gestureCleanup();
+    if (state.overlay) state.overlay.remove();
+    if (state.toolbar) state.toolbar.remove();
+
+    clearTimeout(state.viewportTimeout);
+
+    delete cm.state.mobileEnhanced;
+  }
+
+  // Auto-inject optimized styles
+  if (!document.getElementById('cm-mobile-styles')) {
+    const styles = document.createElement('style');
+    styles.id = 'cm-mobile-styles';
+    styles.textContent = `
+      .CodeMirror {
+        touch-action: pan-x pan-y;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      .CodeMirror-scroll {
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+      }
+
+      .CodeMirror-selected {
+        background: rgba(0,122,255,0.15) !important;
+      }
+
+      .cm-selection-handle:active,
+      .cm-cursor-handle:active {
+        transform: translate(-50%, -50%) scale(1.15) !important;
+      }
+
+      @media (max-width: 768px) {
+        .CodeMirror {
+          font-size: 16px !important; /* Prevent iOS zoom */
+        }
+        .CodeMirror-cursor {
+          border-left-width: 2px;
+          animation: blink 1s step-end infinite;
+        }
+      }
+
+      @supports (backdrop-filter: blur(1px)) {
+        .cm-smart-toolbar {
+          background: rgba(0,0,0,0.7) !important;
+        }
+      }
+    `;
+    document.head.appendChild(styles);
+  }
+
+})(CodeMirror);

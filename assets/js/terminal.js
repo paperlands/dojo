@@ -123,6 +123,7 @@ export class Terminal {
         this.autosaveTimer = null;
         this.tabs = new Tabber()
         this.shell = this.CM.fromTextArea(this.editor, this.#buildOptions());
+
         this.#setupEventListeners();
         this.bridge = bridged("terminal")
         return this
