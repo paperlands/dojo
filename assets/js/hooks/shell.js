@@ -17,6 +17,7 @@ const commands = {
       turtle.draw(commands);
       return { success: true, commandCount: turtle.commandCount };
     } catch (error) {
+      console.error(error);
       return { success: false, error: error.message };
     }
   },
@@ -116,8 +117,6 @@ const listeners = {
           const hasSelection = range.anchor.line !== range.head.line ||
                 range.anchor.ch !== range.head.ch;
 
-          console.log('hasSelection:', hasSelection, 'hadSelection:', hadSelection);
-
           if (hadSelection && !hasSelection) {
             // Had selection flip to command
             debouncedPush("flipCommand", {});
@@ -206,7 +205,9 @@ const mutators = {
   // Display mutator
   display: (element) => ({
     success: (count) => element.innerHTML = `${count}`,
-    error: (message) => element.innerHTML = `Error: ${message}`
+    error: (message) => {
+      element.innerHTML = `Error: ${message}`
+    }
   }),
 
   // Slider mutator

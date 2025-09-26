@@ -1,261 +1,329 @@
 import { ASTNode } from "../ast.js"
-
+import { Lexer } from "./lexer.js"
 
 export class Parser {
     constructor() {
+        // Clean precedence table - only binary operators and their precedence
         this.precedence = {
             '||': 1,
             '&&': 2,
             '|': 3,
             '&': 4,
-            '===-': 5, '!==-': 5, '==-': 5, '!=-': 5, '===': 5, '!==': 5, '==': 5, '!=': 5,
-            '>=-': 6, '>-': 6, '<=-': 6, '<-': 6, '>=': 6, '>': 6, '<=': 6, '<': 6,
+            '===': 5, '!==': 5, '==': 5, '!=': 5,
+            '>=': 6, '>': 6, '<=': 6, '<': 6,
             '+': 7, '-': 7,
-            '+-': 7, '--': 7,
             '*': 8, '/': 8, '//': 8,
-            '*-': 9, '/-': 9,
-            'unary-': 10, 'unary+': 10, 'unary!': 10, // Unary operators have high precedence
-            '^': 11,
-            '^-': 11
+            '^': 9
         };
 
-        // Right-associative operators
-        this.rightAssociative = new Set(['^', '^-', 'unary-', 'unary+', '!']);
+        this.rightAssociative = new Set(['^']);
+        this.unaryOperators = new Set(['+', '-', '!']);
 
-        this.userspace = new Map();
         this.builtins = new Map([
             ['sin', 1], ['cos', 1], ['tan', 1],
             ['asin', 1], ['acos', 1], ['atan', 1],
-            ['sqrt', 1], ['log', 1], ['exp', 1]
+            ['sqrt', 1], ['log', 1], ['exp', 1],
+            ['abs', 1], ['floor', 1], ['ceil', 1]
         ]);
+
+        // User-defined functions keys by [name, arity]: [ast, params]
+        this.userspace = new Map();
+        this.lexer = new Lexer();
     }
 
-    run(expression) {
-        const tokens = this.tokenise(expression);
-        const processedTokens = this.preprocessUnaryOperators(tokens);
-        const expandedTokens = this.insertImplicitMultiplication(processedTokens);
+    parse(expression, options = {}) {
+        try {
+            const tokens = this.lexer.tokenize(expression);
+            this.tokens = tokens;
+            this.position = 0;
 
-        const output = [];
-        const operators = [];
-        let expectFunction = false;
-        let argCount = 0;
+            const ast = this.parseExpression(0, options);
 
-        for (let i = 0; i < expandedTokens.length; i++) {
-            const token = expandedTokens[i];
-
-            // Handle multi-character operators
-            let multiCharOp = '';
-            if (token + (expandedTokens[i + 1] || '') + (expandedTokens[i + 2] || '') in this.precedence) {
-                multiCharOp = token + (expandedTokens[i + 1] || '') + (expandedTokens[i + 2] || '');
-                i += 2;
-            } else if (token + (expandedTokens[i + 1] || '') in this.precedence) {
-                multiCharOp = token + (expandedTokens[i + 1] || '');
-                i += 1;
+            // Check for unexpected trailing tokens
+            if (this.position < this.tokens.length) {
+                const token = this.currentToken();
+                if (token.value === ')' || token.value === ']') {
+                    throw new Error('Missing opening brackets');
+                }
+                throw new Error(`Unexpected token: ${token.value}`);
             }
 
-            if (multiCharOp) {
-                this.processOperator(multiCharOp, operators, output);
-                continue;
+            return ast;
+        } catch (error) {
+            throw new Error(error.message);
+        }
+    }
+
+    // Precedence climbing parser
+    parseExpression(minPrec, options = {}) {
+        let left = this.parsePrimary(options);
+
+        while (this.hasMoreTokens()) {
+            const token = this.currentToken();
+
+            if (!this.isBinaryOperator(token)) break;
+
+            const prec = this.precedence[token.value];
+            if (prec < minPrec) break;
+
+            const op = token.value;
+            this.advance();
+
+            const nextMinPrec = this.rightAssociative.has(op) ? prec : prec + 1;
+            const right = this.parseExpression(nextMinPrec, options);
+
+            left = new ASTNode('operator', op, [left, right]);
+        }
+
+        return left;
+    }
+
+    parsePrimary(options = {}) {
+        const token = this.currentToken();
+
+        if (!token) {
+            throw new Error('Unexpected end of expression');
+        }
+
+        // Unary operators
+        if (this.isUnaryOperator(token)) {
+            const op = token.value;
+            this.advance();
+            const operand = this.parsePrimary(options);
+            return new ASTNode('unary_operator', op, [operand]);
+        }
+
+        // Numbers
+        if (token.type === 'NUMBER') {
+            this.advance();
+            return new ASTNode('operand', parseFloat(token.value));
+        }
+
+        // Identifiers (variables, constants, functions)
+        if (token.type === 'IDENTIFIER') {
+            return this.parseIdentifier(options);
+        }
+
+        // Parentheses
+        if (token.type === 'LPAREN') {
+            return this.parseParentheses(options);
+        }
+
+        throw new Error(`Unexpected token: ${token.value}`);
+    }
+
+    parseIdentifier(options) {
+        const name = this.currentToken().value;
+        this.advance();
+
+        // Function call
+        if (this.hasMoreTokens() && this.currentToken().type === 'LPAREN') {
+            return this.parseFunctionCall(name, options);
+        }
+
+        // User-defined constant (0-arity function)
+        if (this.isConstant(name) && !options.skipValidation) {
+            return this.cloneAST(this.getUserFunction(name, 0)[0]);
+        }
+
+        // Variable
+        return new ASTNode('operand', name);
+    }
+
+    parseFunctionCall(name, options = {}) {
+        this.advance(); // consume '('
+        const args = this.parseArgumentList(options);
+
+        if (!this.currentToken() || this.currentToken().type !== 'RPAREN') {
+            throw new Error('Missing closing parenthesis in function call');
+        }
+        this.advance(); // consume ')'
+
+        // Validation and substitution
+        if (!options.skipValidation) {
+            if (!this.functionExists(name, args.length)) {
+                throw new Error(`Unknown function: ${name} with ${args.length} arguments`);
             }
 
-            if (this.isFunction(token)) {
-                operators.push(token);
-                expectFunction = true;
-                argCount = 0;
-            } else if (this.isOperand(token)) {
-                output.push(new ASTNode('operand', token));
-            } else if (token in this.precedence) {
-                this.processOperator(token, operators, output);
-            } else if (token === '[') {
-                if (expectFunction) {
-                    expectFunction = false;
-                }
-                operators.push(token);
-            } else if (token === ',') {
-                while (operators.length > 0 && operators[operators.length - 1] !== '[') {
-                    this.createOperatorNode(operators, output);
-                }
-                argCount++;
-            } else if (token === ']') {
-                while (operators.length > 0 && operators[operators.length - 1] !== '[') {
-                    this.createOperatorNode(operators, output);
-                }
-                if (operators.length > 0) {
-                    operators.pop(); // Remove '['
-                    if (operators.length > 0 && this.isFunction(operators[operators.length - 1])) {
-                        const func = operators.pop();
-                        const args = [];
-                        for (let j = 0; j <= argCount; j++) {
-                            args.unshift(output.pop());
-                        }
-                        const expectedArity = this.getFunctionArity(func);
-                        if (expectedArity !== args.length) {
-                            throw new Error(`Function ${func} expects ${expectedArity} arguments, but got ${args.length}`);
-                        }
-                        output.push(new ASTNode('function', func, args));
-                    }
-                }
-                argCount = 0;
+            if (this.isUserDefined(name, args.length)) {
+                return this.substituteUserFunction(name, args);
             }
         }
 
-        while (operators.length > 0) {
-            this.createOperatorNode(operators, output);
-        }
-
-        return output[0] || null;
+        return new ASTNode('function', name, args);
     }
 
-    preprocessUnaryOperators(tokens) {
-        const result = [];
+    parseArgumentList(options) {
+        const args = [];
 
-        for (let i = 0; i < tokens.length; i++) {
-            const token = tokens[i];
-            const prevToken = i > 0 ? tokens[i - 1] : null;
+        // Empty argument list
+        if (this.currentToken()?.type === 'RPAREN') {
+            return args;
+        }
 
-            // Determine if this is a unary operator
-            if ((token === '-' || token === '+' || token === '!') && this.isUnaryContext(prevToken)) {
-                // Mark as unary operator
-                result.push(`unary${token}`);
+        // Parse comma-separated arguments
+        do {
+            args.push(this.parseExpression(0, options));
+
+            if (this.currentToken()?.type === 'COMMA') {
+                this.advance();
             } else {
-                result.push(token);
+                break;
             }
+        } while (this.hasMoreTokens());
+
+        return args;
+    }
+
+    parseParentheses(options) {
+        this.advance(); // consume '('
+        const expr = this.parseExpression(0, options);
+
+        if (!this.currentToken() || this.currentToken().type !== 'RPAREN') {
+            throw new Error('Missing closing brackets');
         }
+        this.advance(); // consume ')'
 
-        return result;
+        return expr;
     }
 
-    isUnaryContext(prevToken) {
-        // Unary operators appear:
-        // 1. At the beginning of expression
-        // 2. After opening bracket [
-        // 3. After another operator
-        // 4. After comma ,
-        return (
-            prevToken === null ||
-            prevToken === '[' ||
-            prevToken === ',' ||
-            (prevToken in this.precedence && prevToken !== ']') ||
-            prevToken.startsWith('unary')
-        );
-    }
+    // User-defined function management
+    defineFunction(signature, expression, ctx = {}) {
+        const signatureAST = this.parseSignature(signature);
+        const { name, params } = this.extractSignature(signatureAST);
 
-    processOperator(operator, operators, output) {
-        if (this.rightAssociative.has(operator)) {
-            // Right-associative operators (including unary)
-            while (operators.length > 0 &&
-                   operators[operators.length - 1] !== '[' &&
-                   this.precedence[operators[operators.length - 1]] > this.precedence[operator]) {
-                this.createOperatorNode(operators, output);
-            }
-        } else {
-            // Left-associative operators
-            while (operators.length > 0 &&
-                   operators[operators.length - 1] !== '[' &&
-                   this.precedence[operators[operators.length - 1]] >= this.precedence[operator]) {
-                this.createOperatorNode(operators, output);
-            }
-        }
-        operators.push(operator);
-    }
-
-    insertImplicitMultiplication(tokens) {
-        const result = [];
-        for (let i = 0; i < tokens.length; i++) {
-            result.push(tokens[i]);
-            if (i < tokens.length - 1) {
-                const current = tokens[i];
-                const next = tokens[i + 1];
-
-                // Insert multiplication between:
-                // 1. Number and variable: 2x
-                // 2. Number and function: 2sin
-                // 3. Closing bracket and variable/function: ]x or ]sin
-                // 4. Variable and variable: xy
-                // 5. Number and opening bracket: 2[x]
-                // 6. Variable and opening bracket: x[y]
-                // 7. Closing bracket and opening bracket: ][
-
-                if (
-                    (this.isNumeric(current) && (this.isVariable(next) || this.isFunction(next) || next === '[')) ||
-                    (current === ']' && (this.isVariable(next) || this.isFunction(next) || next === '[')) ||
-                    (this.isVariable(current) && (this.isVariable(next) || this.isFunction(next) || next === '[')) ||
-                    (this.isVariable(current) && this.isNumeric(next))
-                ) {
-                    result.push('*');
-                }
-            }
-        }
-        return result;
-    }
-
-    createOperatorNode(operators, output) {
-        const operator = operators.pop();
-
-        if (this.isFunction(operator)) {
-            const arg = output.pop();
-            output.push(new ASTNode('function', operator, [arg]));
-        } else if (operator.startsWith('unary') || operator === '!') {
-            // Handle unary operators
-            const operand = output.pop();
-            if (!operand) {
-                throw new Error(`Missing operand for unary operator ${operator}`);
-            }
-            // Store the actual operator symbol (without 'unary' prefix)
-            const actualOp = operator.startsWith('unary') ? operator.slice(5) : operator;
-            output.push(new ASTNode('unary_operator', actualOp, [operand]));
-        } else {
-            // Handle binary operators
-            const right = output.pop();
-            const left = output.pop();
-
-            if (!right) {
-                throw new Error(`Missing right operand for operator ${operator}`);
-            }
-            if (!left) {
-                throw new Error(`Missing left operand for operator ${operator}`);
-            }
-
-            output.push(new ASTNode('operator', operator, [left, right]));
-        }
-    }
-
-    defineFunction(name, implementation, arity) {
         if (this.builtins.has(name)) {
             throw new Error(`Cannot override built-in function ${name}`);
         }
-        this.userspace.set(name, [implementation, arity]);
+
+        const expressionAST = this.parse(expression);
+        const key = this.makeKey(name, params.length);
+        this.userspace.set(key, [expressionAST, params, ctx]);
     }
 
-    getFunctionArity(funcName) {
-        if (this.builtins.has(funcName)) {
-            return this.builtins.get(funcName);
+    parseSignature(signature) {
+        try {
+            return this.parse(signature, { skipValidation: true });
+        } catch (error) {
+            throw new Error(`Invalid function signature: ${signature}`);
         }
-        if (this.userspace.has(funcName)) {
-            return this.userspace.get(funcName)[1];
+    }
+
+    extractSignature(ast) {
+        if (ast.type === 'operand') {
+            // Constant definition: f = expression
+            return { name: ast.value, params: [] };
         }
-        throw new Error(`Unknown function: ${funcName}`);
+
+        if (ast.type === 'function') {
+            // Function definition: f(x, y) = expression
+            const name = ast.value;
+            const params = ast.children.map(child => {
+                if (child.type !== 'operand') {
+                    throw new Error('Function parameters must be identifiers');
+                }
+                return child.value;
+            });
+            return { name, params };
+        }
+
+        throw new Error('Invalid function signature format');
     }
 
-    tokenise(expression) {
-        // Enhanced tokenizer that handles multi-character operators and preserves order
-        return expression.match(/===|!==|&&|\|\||>=|<=|==|!=|[a-zA-Z]+|\d+\.?\d*|,|\[|\]|\S/g) || [];
+    substituteUserFunction(name, args) {
+        const [ast, params, ctx] = this.getUserFunction(name, args.length);
+
+        if (args.length === 0) {
+            // Constant - return cloned AST
+            return this.cloneAST(ast);
+        }
+
+        // Create parameter substitution map
+        const substitutions = new Map(Object.entries(ctx));
+
+        for (let i = 0; i < params.length; i++) {
+            substitutions.set(params[i], args[i]);
+        }
+
+        // Substitute parameters in the function body
+        return this.substituteParameters(this.cloneAST(ast), substitutions);
     }
 
-    isOperand(token) {
-        return /^\d+\.?\d*$/.test(token) || /^[a-zA-Z]+$/.test(token);
+    substituteParameters(ast, substitutions) {
+        if (ast.type === 'operand' && typeof ast.value === 'string') {
+            // Replace parameter with argument
+            if (substitutions.has(ast.value)) {
+                return this.cloneAST(substitutions.get(ast.value));
+            }
+        }
+
+        // Recursively substitute in children
+        if (ast.children) {
+            ast.children = ast.children.map(child =>
+                this.substituteParameters(child, substitutions)
+            );
+        }
+
+        return ast;
     }
 
-    isVariable(token) {
-        return /^[a-zA-Z]+$/.test(token) && !this.isFunction(token);
+    cloneAST(ast) {
+        const cloned = new ASTNode(ast.type, ast.value, [], { ...ast.meta });
+        if (ast.children) {
+            cloned.children = ast.children.map(child => this.cloneAST(child));
+        }
+        return cloned;
+    }
+
+    // Function lookup helpers
+    makeKey(name, arity) {
+        return `${name}:${arity}`;
+    }
+
+    functionExists(name, arity) {
+        return this.builtins.has(name) && this.builtins.get(name) === arity ||
+               this.userspace.has(this.makeKey(name, arity));
+    }
+
+    getUserFunction(name, arity) {
+        const key = this.makeKey(name, arity);
+        if (!this.userspace.has(key)) {
+            throw new Error(`Unknown user function: ${name} with ${arity} arguments`);
+        }
+        return this.userspace.get(key);
+    }
+
+    // Token and operator helpers
+    currentToken() {
+        return this.hasMoreTokens() ? this.tokens[this.position] : null;
+    }
+
+    advance() {
+        this.position++;
+    }
+
+    hasMoreTokens() {
+        return this.position < this.tokens.length;
+    }
+
+    isBinaryOperator(token) {
+        return token?.type === 'OPERATOR' && this.precedence.hasOwnProperty(token.value);
+    }
+
+    isUnaryOperator(token) {
+        return token?.type === 'OPERATOR' && this.unaryOperators.has(token.value);
+    }
+
+    isConstant(name) {
+        return this.userspace.has(this.makeKey(name, 0));
+    }
+
+    isUserDefined(name, arity) {
+        return this.userspace.has(this.makeKey(name, arity));
     }
 
     isNumeric(str) {
         if (typeof str !== "string") return false;
         return !isNaN(str) && !isNaN(parseFloat(str));
-    }
-
-    isFunction(token) {
-        return this.builtins.has(token) || this.userspace.has(token);
     }
 }
