@@ -533,7 +533,6 @@ export class Turtle {
             }
             //color transition
             this.currentPath.points.push({x: newX, y: newY, z: newZ});
-            console.log(this.currentPath)
         }
         else {
             this.currentPath= null
@@ -636,9 +635,6 @@ export class Turtle {
                     throw new Error(`Maximum recurse limit of ${this.maxRecurses} reached`);
                 }
                 this.callFunction(node.value, args, context, currDepth + 1); // ...args
-                break;
-
-            case 'Func':
                 break;
 
             case 'Define':
@@ -817,8 +813,8 @@ export class Turtle {
     setColor(color = "silver") {
         this.color = color;
         if (color == "invisible") this.color = "#00000000"
-        if (Number.isFinite(color)) this.color = `hsla(${~~(360 * color)}, 70%,  72%, 0.8)`
-        if (color == "random") this.color = `hsla(${~~(360 * Math.random())}, 70%,  72%, 0.8)`
+        if (Number.isFinite(color)) this.color = `hsla(${~~(360 * color)}, 70%,  72%)`
+        if (color == "random") this.color = `hsla(${~~(360 * Math.random())}, 70%,  72%)`
         if(/^([0-9a-f]{3}){1,2}$/i.test(color)) this.color = "#" + color
         //break path for new path
         this.currentPath = null;

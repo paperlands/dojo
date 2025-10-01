@@ -1,163 +1,450 @@
 import { ASTNode } from "./ast.js"
 
-function tokenize(program) {
-    return program
-        .replace(/\bend\b(?!\n)/g, 'end\n') // Ensure 'end' is on a new line
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
-}
 
-// Helper function to parse a single line into tokens
-function parseTokens(line) {
-    const [code, commie] = line.split('#');
-    return [code.trim().split(/\s+/), commie];
-}
-
-// Helper function to parse a block of lines
-function parseBlock(lines, blockStack) {
-    const block = [];
-    blockStack.push(block);
-    while (lines.length > 0) {
-        const line = lines.shift();
-        if (line === 'end') {
-            return blockStack.pop();
-        }
-
-        const [tokens, litcomment] = parseTokens(line);
-        const node = parseLine(tokens, lines, blockStack)
-        node.assign_meta("lit", litcomment)
-
-        block.push(node);
+//manage state
+class ParserState {
+    constructor(lines) {
+        this.lines = lines;
+        this.pos = 0;
+        this.len = lines.length;
     }
-    throw new Error("Missing end for opening do block");
-}
 
-// Function to parse a single line
-function parseLine(tokens, lines, blockStack) {
-    const command = tokens.shift();
-    if (command === 'for' || command === 'loop') {
-        const times = tokens.shift();
-        if (tokens.shift() !== 'do') throw new Error("Expected ' do' after 'for'");
-        return new ASTNode('Loop', times, parseBlock(lines, blockStack));
-    } else if (command === 'draw' || command === 'def') {
-        const funcName = tokens.shift();
-        if (tokens.pop() !== 'do') throw new Error("Expected ' do' at the end of 'draw'");
-        const args = tokens.map(arg => new ASTNode('Argument', arg));
-        return new ASTNode('Define', funcName, parseBlock(lines, blockStack), { args: args });
-    } else if (command === 'when') {
-        const pattern = tokens.shift();
-        if (tokens.pop() !== 'do') throw new Error("Expected ' do' at the end of 'when'");
-        return new ASTNode('When', pattern, parseBlock(lines, blockStack));
-    } else if (!command) {
-        return new ASTNode('Empty', "")
-    } else {
-        //multi space string handling
-        const stringexpr = tokens.reduce((acc, token) => {
-            const { args, buffer } = acc;
+    hasMore() {
+        return this.pos < this.len;
+    }
 
-            // Check quote conditions
-            const startsWithQuote = token.startsWith('"') || token.startsWith("'");
-            const endsWithQuote = token.endsWith('"') || token.endsWith("'") && token.length >= 1;
-            const isCompleteQuote = startsWithQuote && endsWithQuote;
-
-            // Case 1: We have an empty buffer and a complete quoted string (like "hello")
-            if (!buffer.length && isCompleteQuote) {
-                return {
-                    args: [...args, new ASTNode('Argument', token)],
-                    buffer: []
-                };
-            }
-
-            // Case 2: We have an empty buffer and start a new quoted string
-            if (!buffer.length && startsWithQuote) {
-                return {
-                    args,
-                    buffer: [token]
-                };
-            }
-
-            // Case 3: We have a non-empty buffer and the current token ends with a quote
-            if (buffer.length && endsWithQuote) {
-                const newBuffer = [...buffer, token];
-                return {
-                    args: [...args, new ASTNode('Argument', newBuffer.join(' '))],
-                    buffer: []
-                };
-            }
-
-            // Case 4: We have a non-empty buffer, continue accumulating
-            if (buffer.length) {
-                return {
-                    args,
-                    buffer: [...buffer, token]
-                };
-            }
-
-            // Case 5: Just a regular non-quoted argument
-            return {
-                args: [...args, new ASTNode('Argument', token)],
-                buffer: []
-            };
-        }, { args: [], buffer: [] });
-
-        // made string more error-friendly takes left over buffer if closing apostrope forgetten
-        const cmds = (Object.keys(stringexpr.buffer).length > 0) ? [...stringexpr.args, new ASTNode('Argument', stringexpr.buffer.join(' '))] : stringexpr.args
-        return new ASTNode('Call', command, cmds);
+    next() {
+        return this.lines[this.pos++];
     }
 }
 
-// Main function to parse the entire program
+
+// ============================================================================
+//  Keyword Lookup Tables
+// ============================================================================
+
+const END = 'end';
+const DO = 'do';
+const COMMENT = '#';
+
+// Bracket/quote matching (O(1) lookup)
+const CLOSERS = { '"': '"', "'": "'", '[': ']', '(': ')' };
+const OPENS_BRACKET = { '[': 1, '(': 1 };
+
+// Block keyword lookup (O(1))
+const BLOCK_KW = { for: 1, loop: 1, def: 1, draw: 1, when: 1 };
+
+
+
+// main parser
 export function parseProgram(program) {
     const lines = tokenize(program);
+    const state = new ParserState(lines);
     const ast = [];
-    const blockStack = [ast];
-
-    while (lines.length > 0) {
-        const line = lines.shift();
-
-        const [tokens, litcomment] = parseTokens(line);
-        const node = parseLine(tokens, lines, blockStack)
-        node.assign_meta("lit", litcomment)
-        blockStack[blockStack.length - 1].push(node);
+    
+    while (state.hasMore()) {
+        const line = state.next();
+        const [tokens, comment] = tokenizeLine(line);
+        
+        if (tokens.length === 0) {
+            const node = new ASTNode('Empty', '');
+            if (comment) node.assign_meta('lit', comment);
+            ast.push(node);
+            continue;
+        }
+        
+        const node = parseStatement(tokens, state);
+        if (comment) node.assign_meta('lit', comment);
+        ast.push(node);
     }
-
-    if (blockStack.length > 1) {
-        throw new Error("Missing end unmatched opening do");
-    }
-
+    
     return ast;
 }
 
-export function printAST(ast) {
-    let output = [];
 
-    function visit(node, indent = 0) {
-        const indentStr = ' '.repeat(indent * 2);
-        const maybeCom = node.meta.lit && (" #" + node.meta.lit) || ""
+//tokenizer
+function tokenize(program) {
+    const len = program.length;
+    const lines = [];
+    let start = 0;
+    let i = 0;
+    let needsEndNewline = false;
+    
+    // Single pass through string
+    while (i < len) {
+        const ch = program[i];
+        
+        // Check for 'end' keyword that needs newline injection
+        if (ch === 'e' && i + 3 <= len && program.substr(i, 3) === END) {
+            const after = i + 3;
+            if (after < len && program[after] !== '\n' && program[after] !== '\r') {
+                needsEndNewline = true;
+            }
+        }
+        
+        // Line break
+        if (ch === '\n' || ch === '\r') {
+            const line = program.slice(start, i).trim();
+            if (line) lines.push(line);
+            
+            // Handle \r\n
+            if (ch === '\r' && i + 1 < len && program[i + 1] === '\n') {
+                i++;
+            }
+            
+            start = i + 1;
+        }
+        
+        i++;
+    }
+    
+    // Final line
+    const line = program.slice(start).trim();
+    if (line) lines.push(line);
+    
+    // Handle end newline injection if needed (rare case)
+    if (needsEndNewline) {
+        return program.replace(/\bend\b(?!\n)/g, 'end\n')
+            .split(/\r?\n/)
+            .map(l => l.trim())
+            .filter(l => l);
+    }
+    
+    return lines;
+}
 
-        if (node.type === 'Call') {
-            output.push(`${indentStr}${node.value} ${node.children.map(child => visit(child, 0)).join(' ')}` + maybeCom);
-        } else if (node.type === 'Argument') {
-            return node.value;
-        } else if (node.type === 'Empty') {
-            output.push(`${indentStr}`+ maybeCom);
-        } else if (node.type === 'Loop') {
-            output.push(`${indentStr}for ${node.value} do`);
-            node.children.forEach(child => visit(child, indent + 1));
-            output.push(`${indentStr}end`);
-        } else if (node.type === 'When') {
-            output.push(`${indentStr}when ${node.value} do`);
-            node.children.forEach(child => visit(child, indent + 1));
-            output.push(`${indentStr}end`);
-        } else if (node.type === 'Define') {
-            output.push(`${indentStr}def ${node.value} ${(node.meta.args || []).map(arg => visit(arg, 0)).join(' ')} do`);
-            node.children.forEach(child => visit(child, indent + 1));
-            output.push(`${indentStr}end`);
+// ============================================================================
+// Line Tokenizer - Context-Aware preserving groups [  ] and " "
+// ============================================================================
+
+function tokenizeLine(line) {
+    const commentIdx = line.indexOf(COMMENT);
+    
+    // Extract comment if present
+    const code = commentIdx === -1 ? line : line.slice(0, commentIdx).trim();
+    const comment = commentIdx === -1 ? undefined : line.slice(commentIdx + 1).trim() || undefined;
+    
+    if (!code) return [[], comment];
+    
+    const tokens = [];
+    const len = code.length;
+    let start = 0;
+    let i = 0;
+    let inGroup = null;  // Track quote/bracket context
+    let depth = 0;       // Track bracket nesting
+    
+    while (i < len) {
+        const ch = code[i];
+        
+        // Not in a group - check for delimiters and group starts
+        if (!inGroup) {
+            // Whitespace - token boundary
+            if (ch === ' ' || ch === '\t') {
+                if (i > start) tokens.push(code.slice(start, i));
+                start = i + 1;
+                i++;
+                continue;
+            }
+            
+            // Check if starting a grouped context
+            const closer = CLOSERS[ch];
+            if (closer) {
+                inGroup = closer;
+                if (OPENS_BRACKET[ch]) depth = 1;
+            }
+            
+            i++;
+        }
+        // In a group - look for closing delimiter
+        else {
+            // Bracket - track nesting
+            if (OPENS_BRACKET[inGroup === ']' ? '[' : inGroup === ')' ? '(' : null]) {
+                const opener = inGroup === ']' ? '[' : '(';
+                if (ch === opener) {
+                    depth++;
+                } else if (ch === inGroup) {
+                    depth--;
+                    if (depth === 0) inGroup = null;
+                }
+            }
+            // Quote - simple close check
+            else if (ch === inGroup) {
+                inGroup = null;
+            }
+            
+            i++;
         }
     }
+    
+    // Flush final token
+    if (i > start) tokens.push(code.slice(start, i));
+    
+    return [tokens, comment];
+}
 
-    ast.forEach(node => visit(node));
-    return output.join('\n');
+// ============================================================================
+// Argument Parser - Single Pass 
+// ============================================================================
 
+function parseArguments(tokens) {
+    const len = tokens.length;
+    if (len === 0) return [];
+    
+    const args = [];
+    let bufStart = -1;
+    let closer = null;
+    let depth = 0;
+    
+    for (let i = 0; i < len; i++) {
+        const token = tokens[i];
+        const firstCh = token[0];
+        
+        // Not in grouped context
+        if (bufStart === -1) {
+            const match = CLOSERS[firstCh];
+            
+            if (!match) {
+                // Regular arg - fast path
+                args.push(new ASTNode('Argument', token));
+                continue;
+            }
+            
+            closer = match;
+            const lastCh = token[token.length - 1];
+            
+            // Bracket type - needs depth tracking
+            if (OPENS_BRACKET[firstCh]) {
+                depth = 1;
+                const tLen = token.length;
+                
+                // Count depth in single pass
+                for (let j = 1; j < tLen; j++) {
+                    const ch = token[j];
+                    if (ch === firstCh) depth++;
+                    else if (ch === closer) depth--;
+                }
+                
+                if (depth === 0) {
+                    // Complete in single token
+                    args.push(new ASTNode('Argument', token));
+                    closer = null;
+                } else {
+                    bufStart = i;
+                }
+            } else {
+                // Quote type - no nesting
+                if (token.length > 1 && lastCh === closer) {
+                    args.push(new ASTNode('Argument', token));
+                    closer = null;
+                } else {
+                    bufStart = i;
+                }
+            }
+        } 
+        // In grouped context - accumulate
+        else {
+            // Bracket depth tracking
+            if (OPENS_BRACKET[closer === ']' ? '[' : '(']) {
+                const opener = closer === ']' ? '[' : '(';
+                const tLen = token.length;
+                
+                for (let j = 0; j < tLen; j++) {
+                    const ch = token[j];
+                    if (ch === opener) depth++;
+                    else if (ch === closer) depth--;
+                }
+                
+                if (depth === 0) {
+                    // Build from buffer
+                    let joined = tokens[bufStart];
+                    for (let k = bufStart + 1; k <= i; k++) {
+                        joined += ' ' + tokens[k];
+                    }
+                    args.push(new ASTNode('Argument', joined));
+                    bufStart = -1;
+                    closer = null;
+                }
+            } else {
+                // Quote - check last char
+                if (token[token.length - 1] === closer) {
+                    let joined = tokens[bufStart];
+                    for (let k = bufStart + 1; k <= i; k++) {
+                        joined += ' ' + tokens[k];
+                    }
+                    args.push(new ASTNode('Argument', joined));
+                    bufStart = -1;
+                    closer = null;
+                }
+            }
+        }
+    }
+    
+    // Unclosed group - flush buffer
+    if (bufStart !== -1) {
+        let joined = tokens[bufStart];
+        for (let k = bufStart + 1; k < len; k++) {
+            joined += ' ' + tokens[k];
+        }
+        args.push(new ASTNode('Argument', joined));
+    }
+    
+    return args;
+}
+
+function parseBlock(state) {
+    const block = [];
+    
+    while (state.hasMore()) {
+        const line = state.next();
+        
+        if (line === END) return block;
+        
+        const [tokens, comment] = tokenizeLine(line);
+        
+        if (tokens.length === 0) {
+            const node = new ASTNode('Empty', '');
+            if (comment) node.assign_meta('lit', comment);
+            block.push(node);
+            continue;
+        }
+        
+        const node = parseStatement(tokens, state);
+        if (comment) node.assign_meta('lit', comment);
+        block.push(node);
+    }
+    
+    throw new Error(`Missing 'end' at line ${state.pos}`);
+}
+
+
+// parse all actions 
+function parseStatement(tokens, state) {
+    const kw = tokens[0];
+    const len = tokens.length;
+    
+    // Most common case first: commands
+    if (!BLOCK_KW[kw]) {
+        return new ASTNode('Call', kw, parseArguments(tokens.slice(1)));
+    }
+    
+    // Block constructs - validate structure
+    const last = tokens[len - 1];
+    if (last !== DO) {
+        throw new Error(`Expected 'do' at end of '${kw}'`);
+    }
+    
+    // Loop: for/loop <n> do
+    if (kw === 'for' || kw === 'loop') {
+        if (len < 3) throw new Error(`'${kw}' requires number of loops`);
+        return new ASTNode('Loop', tokens[1], parseBlock(state));
+    }
+    
+    // Function def: def/draw <name> [args...] do
+    if (kw === 'def' || kw === 'draw') {
+        if (len < 3) throw new Error(`'${kw}' requires function name`);
+        
+        const name = tokens[1];
+        const argTokens = tokens.slice(2, len - 1);
+        const args = argTokens.map(arg => new ASTNode('Argument', arg));
+        
+        return new ASTNode('Define', name, parseBlock(state), { args });
+    }
+    
+    // When: when <pattern> do
+    if (kw === 'when') {
+        if (len < 3) throw new Error("'when' requires checking truthiness");
+        return new ASTNode('When', tokens[1], parseBlock(state));
+    }
+    
+    throw new Error(`Unknown keyword: ${kw}`);
+}
+
+
+// print ast fn
+export function printAST(ast) {
+    const out = [];
+    
+    function visit(node, depth) {
+        const indent = depth ? '  '.repeat(depth) : '';
+        const comment = node.meta.lit ? ` #${node.meta.lit}` : '';
+        
+        switch (node.type) {
+            case 'Call': {
+                const children = node.children;
+                const len = children.length;
+                
+                if (len === 0) {
+                    out.push(indent + node.value + comment);
+                } else {
+                    let args = children[0].value;
+                    for (let i = 1; i < len; i++) {
+                        args += ' ' + children[i].value;
+                    }
+                    out.push(indent + node.value + ' ' + args + comment);
+                }
+                break;
+            }
+            
+            case 'Argument':
+                return node.value;
+            
+            case 'Empty':
+                out.push(indent + comment);
+                break;
+            
+            case 'Loop':
+                out.push(`${indent}for ${node.value} do`);
+                node.children.forEach(c => visit(c, depth + 1));
+                out.push(indent + END);
+                break;
+            
+            case 'When':
+                out.push(`${indent}when ${node.value} do`);
+                node.children.forEach(c => visit(c, depth + 1));
+                out.push(indent + END);
+                break;
+            
+            case 'Define': {
+                const args = node.meta.args || [];
+                const len = args.length;
+                let argStr = '';
+                
+                if (len > 0) {
+                    argStr = args[0].value;
+                    for (let i = 1; i < len; i++) {
+                        argStr += ' ' + args[i].value;
+                    }
+                    argStr = ' ' + argStr;
+                }
+                
+                out.push(`${indent}def ${node.value}${argStr} do`);
+                node.children.forEach(c => visit(c, depth + 1));
+                out.push(indent + END);
+                break;
+            }
+        }
+    }
+    
+    ast.forEach(node => visit(node, 0));
+    return out.join('\n');
+}
+
+// ============================================================================
+// Validation Utility
+// ============================================================================
+
+export function validateAST(ast) {
+    function check(node, ctx) {
+        if (!(node instanceof ASTNode)) {
+            throw new Error(`Invalid node at ${ctx}`);
+        }
+        if (!node.type) {
+            throw new Error(`Missing type at ${ctx}`);
+        }
+        if (node.children) {
+            node.children.forEach((c, i) => check(c, `${ctx}[${i}]`));
+        }
+    }
+    
+    ast.forEach((node, i) => check(node, `root[${i}]`));
 }

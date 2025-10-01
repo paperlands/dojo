@@ -7,46 +7,50 @@ import { temporal } from "../utils/temporal.js"
 
 
 const commands = {
-  // Canvas commands
-  render: (canvas, turtle) => (code) => {
-    // canvas.width = window.innerWidth;
-    // canvas.height = window.innerHeight;
+    // Canvas commands
+    render: (canvas, turtle) => (code) => {
+        try {
+            const startTime = performance.now();
+            const commands = parseProgram(code);
+            var endTime = performance.now();
+            var executionTime = endTime - startTime;
+            console.log(`Parser Time took ${executionTime} milliseconds.`);
+            turtle.draw(commands);
+            endTime = performance.now();
+            executionTime = endTime-startTime-executionTime
+            console.log(`Drawing Time took ${executionTime} milliseconds.`);
+            return { success: true, commandCount: turtle.commandCount };
+        } catch (error) {
+            console.error(error);
+            return { success: false, error: error.message };
+        }
+    },
 
-    try {
-      const commands = parseProgram(code);
-      turtle.draw(commands);
-      return { success: true, commandCount: turtle.commandCount };
-    } catch (error) {
-      console.error(error);
-      return { success: false, error: error.message };
-    }
-  },
+    // Shell commands
+    execute: (shell) => ({ command, control, args = [] }) => {
+        try {
+            if (command === "undo") {
+                shell.run({ command: "undo" });
+            } else if (command) {
+                shell.run({ command, args, batch: false });
+            } else if (control) {
+                shell.run({ control, args });
+            }
+        } catch (error) {
+            console.error("Shell execution failed:", error);
+        }
+    },
 
-  // Shell commands
-  execute: (shell) => ({ command, control, args = [] }) => {
-    try {
-      if (command === "undo") {
-        shell.run({ command: "undo" });
-      } else if (command) {
-        shell.run({ command, args, batch: false });
-      } else if (control) {
-        shell.run({ control, args });
-      }
-    } catch (error) {
-      console.error("Shell execution failed:", error);
-    }
-  },
-
-  // Camera commands
-  camera: (bridge) => (command, payload={}) => {
-    const actions = {
-      'center_camera': () => bridge.pub(["recenter", payload]),
-      'snap_record': () => bridge.pub(["snap", payload]),
-      'start_record': () => bridge.pub(["record", payload]),
-      'end_record': () => bridge.pub(["endrecord", payload])
-    };
-    actions[command]?.();
-  },
+    // Camera commands
+    camera: (bridge) => (command, payload={}) => {
+        const actions = {
+            'center_camera': () => bridge.pub(["recenter", payload]),
+            'snap_record': () => bridge.pub(["snap", payload]),
+            'start_record': () => bridge.pub(["record", payload]),
+            'end_record': () => bridge.pub(["endrecord", payload])
+        };
+        actions[command]?.();
+    },
 
   // File operations
   saveImage: () => async (url, title) => {

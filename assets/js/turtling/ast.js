@@ -10,6 +10,6 @@ export class ASTNode {
 
     assign_meta(key, attr) {
         this.meta[key] = attr
-
+        return this
     }
 }
