@@ -119,7 +119,7 @@
         <div
           phx-update="ignore"
           id="output"
-          class="fixed -bottom-1/12 overflow-y-auto font-mono border-none text-primary left-2"
+          class="fixed -bottom-1/12 overflow-y-auto pb-1 font-mono border-none text-primary left-2"
         >
         </div>
       </div>
@@ -166,11 +166,13 @@
           <div class="flex items-center justify-between">
             <div
               :if={@outershell && @outershell.resp}
-              class="w-20 sm:w-32 lg:w-48 overflow-hidden whitespace-nowrap flex-shrink-1 sm:flex-shrink-0 flex items-center  text-xs mr-1 sm:mr-2 min-w-0"
+              class="max-w-20 bg-gradient-to-r from-background to-transparent overflow-hidden whitespace-nowrap flex-shrink-1 sm:flex-shrink-0 flex items-center  text-xs mr-1 sm:mr-2 min-w-0"
             >
+              
               <span class="text-amber-600 animate-marquee">
-                {gettext("summoning @%{addr}'s code", addr: @outershell.resp)} ☄
+                {gettext("summoning @%{addr}'s code", addr: @outershell.resp)} ☄  
               </span>
+              
             </div>
             <!-- Empty spacer div with minimum width on small screens -->
 
