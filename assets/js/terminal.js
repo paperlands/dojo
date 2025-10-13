@@ -173,8 +173,8 @@ export class Terminal {
             extraKeys: {
                 'Ctrl-/': (cm) => this.toggleComment(cm),
                 'Ctrl-A': (cm) => cm.execCommand("selectAll"),
-                'Shift-Tab': () => this.switchToNextBuffer(),
-                'Ctrl-Shift-Tab': () => this.switchToPrevBuffer(),
+                'Ctrl-,': () => this.switchToNextBuffer(),
+                'Ctrl-.': () => this.switchToPrevBuffer(),
                 ...this.options.extraKeys
             }
         };

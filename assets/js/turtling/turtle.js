@@ -489,7 +489,7 @@ export class Turtle {
     }
 
 
-    label(text="⚙", size=10){
+    label(text="·", size=10){
         this.currentPath = {
             ...this.pathTemplate,
             type: "text",

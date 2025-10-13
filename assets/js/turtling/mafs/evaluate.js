@@ -46,7 +46,7 @@ export class Evaluator {
             return this.applyOperator(ast.value, left, right);
         }
         else if (ast.type === 'unary_operator'){
-            const operand = this.run(ast.left, context);
+            const operand = this.run(ast.children[0], context);
             return this.applyUnaryOperator(ast.value, operand)
         }
     }
