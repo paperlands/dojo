@@ -423,8 +423,10 @@ label "Welcome to PaperLand" 50`,
         });
     }
 
+    // mutate terminal state
     run(instructions) {
         if (typeof execute === 'function') {
+            // operations and instructions for cntrl and command deck
             execute(this.shell, instructions);
         } else {
             console.warn('Execute function not available');

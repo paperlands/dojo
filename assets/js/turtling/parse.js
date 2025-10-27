@@ -393,7 +393,7 @@ export function printAST(ast) {
                 break;
             
             case 'Loop':
-                out.push(`${indent}for ${node.value} do`);
+                out.push(`${indent}loop ${node.value} do`);
                 node.children.forEach(c => visit(c, depth + 1));
                 out.push(indent + END);
                 break;

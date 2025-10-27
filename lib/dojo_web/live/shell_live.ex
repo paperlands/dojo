@@ -30,8 +30,6 @@ defmodule DojoWeb.ShellLive do
        class: nil,
        disciples: %{},
        visible_disciples: [],
-       right: :deck,
-       deck: :command,
        pane: true
      )
      |> assign(focused_phx_ref: "")}
@@ -303,8 +301,7 @@ defmodule DojoWeb.ShellLive do
          # outerfunctions: dis[addr][:meta][:commands] |> Dojo.Turtle.filter_fns(),
          resp: "#{dis[addr][:name]}"
        }
-     )
-     |> assign(:right, :pane)}
+     )}
   end
 
   def handle_event(
@@ -346,18 +343,6 @@ defmodule DojoWeb.ShellLive do
       ) do
     {:noreply, assign(socket, visible_disciples: visible_refs)}
   end
-
-  def handle_event("flipDeck", _, socket),
-    do: {:noreply, update(socket, :right, &((&1 == :deck && true) || :deck))}
-
-  def handle_event("flipControl", _, socket),
-    do: {:noreply, update(socket, :deck, &(&1 = :control))}
-
-  def handle_event("flipCommand", _, socket),
-    do: {:noreply, update(socket, :deck, &(&1 = :command))}
-
-  def handle_event("flipWell", _, socket),
-    do: {:noreply, update(socket, :right, &((&1 == :well && true) || :well))}
 
   def handle_event("flipPane", _, socket), do: {:noreply, update(socket, :pane, &(!&1))}
 
@@ -407,6 +392,64 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
+  def outershell(assigns) do
+    ~H"""
+    <div class="top-5/8">
+      <span
+        id="outershell-head"
+        class="fixed text-lg font-bold pt-7 w-1/3 top-1/9 right-2 text-amber-200 "
+      >
+        {gettext("@%{addr}'s code", addr: @outershell.resp)}
+      </span>
+      <div
+        id="outerenv"
+        phx-update="ignore"
+        class="fixed w-1/3  top-1/8 overflow-y-scroll border rounded-lg pointer-events-auto h-1/2 right-4 bottom-4 bg-black/30 border-amber-600/20 dark-scrollbar scrollbar-hide my-12 rounded-sm pointer-events-auto cursor-text"
+      >
+        <button
+          phx-click="seeTurtle"
+          class="absolute z-50 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-2 right-2  border-amber-600"
+        >
+          <!-- Base Crosshair -->
+          <div class="absolute inset-0 flex items-center justify-center">
+            <svg
+              class="w-4 h-4 transition-colors text-red-600 group-hover:text-amber-300"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </div>
+          <!-- Mechanical Cross Overlay -->
+          <svg
+            class="absolute inset-0 w-full h-full transition-opacity text-amber-600 opacity-30 group-hover:opacity-50"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1"
+          >
+            <path d="M12 2v20M2 12h20" />
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 7v10M7 12h10" stroke-dasharray="2 2" />
+          </svg>
+        </button>
+        <textarea
+          phx-update="ignore"
+          id="outershell"
+          class="relative z-40 rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full"
+          phx-hook="Shell"
+          data-target="outercanvas"
+        ></textarea>
+      </div>
+    </div>
+    """
+  end
+
   def deck(assigns) do
     assigns =
       assign(assigns, :primitive, %{
@@ -417,26 +460,26 @@ defmodule DojoWeb.ShellLive do
           {"jmp", gettext("Jump Forward"), [length: 50]},
           {"wait", gettext("Wait a While"), [time: 1]},
           {"label", gettext("Write Something"), [text: gettext("'Hello'"), size: 10]},
-          {"faceto", gettext("Face Towards Start"), ["→": 0, "↑": 0]},
           {"goto", gettext("Go To Start"), ["→": 0, "↑": 0]},
-          {"erase", gettext("Wipe Everything"), nil},
+          {"jmpto", gettext("Jump To Start"), ["→": 0, "↑": 0]},
+          {"grid", gettext("Create a Grid"), [size: 100, unit: 10]},
+          {"faceto", gettext("Face Towards Start"), ["→": 0, "↑": 0]},
+          {"dive", gettext("Dive Into Page"), [angle: 45]},
+          {"roll", gettext("Tilt Right"), [angle: 45]},
+          {"beColour", gettext("Set Colour to"), [colour: "'red'"]},
           {"hd", gettext("Hide your Head"), nil},
-          {"show", gettext("Show your Head"), nil},
-          {"beColour", gettext("Set Colour to"), [colour: "'red'"]}
+          {"show", gettext("Show your Head"), [size: 10]},
+          {"erase", gettext("Wipe Everything"), nil}
         ],
         control: [
           {"loop", gettext("Repeat Commands"), [times: 5]},
           {"def", gettext("Name your Command"), [name: "my_cmd"]}
         ]
       })
-    |> assign(:titledeck, Gettext.gettext(DojoWeb.Gettext, assigns.type |> to_string |> to_titlecase))
 
     ~H"""
     <!-- Command Deck Component (command_deck.html.heex) -->
-    <div class={[
-      "flex select-none px-1 pb-1  animate-fade",
-      !@active && "hidden"
-    ]}>
+    <div id="commanddeck" class="rightthird deck flex select-none px-1 pb-1  animate-fade" phx-update="ignore">
       <!-- Command Deck Panel -->
       <div class="absolute h-3/4 bottom-12 w-64 transition-all duration-100 ease-in-out transform right-5 xl:h-3/4 scrollbar-hide dark-scrollbar">
         <%!-- Top row --%>
@@ -450,29 +493,37 @@ defmodule DojoWeb.ShellLive do
                   role="button"
                   class="inline-block group cursor-pointer bg-base-200/50 hover:bg-base-100 transform transition-transform focus-within:border-accent-content border-accent  border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none inline-flex items-end"
                 >
-                  {@titledeck}
+                  <span
+                    :for={{key, _} <- @primitive}
+                    class={["#{key}", "keygroup"]}
+                    {!(key == :command) && %{hidden: true} || %{hidden: false}}
+                  >
+                    {Gettext.gettext(DojoWeb.Gettext, key |> to_string |> to_titlecase)}
+                  </span>
                 </div>
                 <ul
                   tabindex="0"
                   class="dropdown-content text-lg font-bold menu rounded bg-transparent transition duration-200 rounded-box z-60 w-32 p-2 shadow-sm"
                 >
                   <li
-                    :if={!(@type == :command)}
-                    class="border-0 rounded-t-lg  border-t-2 border-accent hover:border-primary "
-                    phx-click="flipCommand"
+                    :for={{key, _} <- @primitive}
+                    class={["#{key}-keydeck keydeck border-0 rounded-t-lg  border-t-2 border-accent hover:border-primary", (key == :command) && "hidden" || ""]}
+                    phx-click={
+                      JS.set_attribute({"hidden", "true"}, to: ".keydeck")
+                      |> JS.remove_attribute("hidden", to: ".#{key}-keydeck")
+                      |> JS.set_attribute({"hidden", "true"}, to: ".keygroup")
+                      |> JS.remove_attribute("hidden", to: ".#{key}")
+                      # JS.show(to: ".keydeck")
+                      # |> JS.hide(to: ".#{key}-keydeck")
+                      # |> JS.show(to: ".#{key}")
+                      # |> JS.hide(to: ".keygroup")
+                    }
                   >
-                    <a><%= gettext "Command" %></a>
-                  </li>
-                  <li
-                    :if={!(@type == :control)}
-                    class=" border-0 rounded-t-lg   border-t-2 border-accent hover:border-primary "
-                    phx-click="flipControl"
-                  >
-                    <a><%= gettext "Control" %></a>
+                    <a>{Gettext.gettext(DojoWeb.Gettext, key |> to_string |> to_titlecase)}</a>
                   </li>
                 </ul>
                 <span class="inline-block">
-                  <%= gettext "Deck" %>
+                  {gettext("Deck")}
                 </span>
               </div>
             </h2>
@@ -509,63 +560,67 @@ defmodule DojoWeb.ShellLive do
         </div>
         <!-- Command&Control Dropdown -->
         <div id="deckofcards" class="h-11/12 z-80 overflow-y-scroll p-2 px-4">
-          <%= for {cmd, desc, vals} <- @primitive[@type] do %>
-            <div
-              phx-click={
-                JS.dispatch("phx:writeShell",
-                  detail: %{@type => cmd, "args" => vals && Keyword.keys(vals)}
-                )
-              }
-              class="flex duration-500 animate-fade items-center p-2 transition-colors rounded pointer-events-auto hover:bg-accent/50 group cursor-pointer"
-            >
-              <%!-- Icon --%>
-              <div class="mr-3">
-                <.cmd_icon command={cmd} class="w-8 h-8 fill-primary" />
-              </div>
-              <div class="flex-grow">
-                <%!-- Description --%>
-                <code class="font-mono text-sm text-secondary-content">{desc}</code>
-                <%!-- Sample code --%>
-                <p class="text-xs text-lint-commands flex items-baseline flex-wrap">
-                  {cmd}
-                  <span :if={vals} class="relative grid-cols-3  ">
-                    <input
-                      :for={{arg, val} <- vals}
-                      type="text"
-                      id={"cmdparam-#{cmd}-#{arg}"}
-                      value={val}
-                      defaulted={val}
-                      class="ml-[1ch] bg-base-200/50 caret-accent-content hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
-                      placeholder={arg}
-                      phx-update="ignore"
-                      phx-keydown={
-                        JS.dispatch("phx:writeShell",
-                          detail: %{@type => cmd, "args" => vals && Keyword.keys(vals)}
-                        )
-                      }
-                      phx-key="Enter"
-                      oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
-                      onclick="event.stopPropagation()"
-                    />
-                  </span>
-                </p>
-                <script>
-                  // Initialize all input fields lengths
-                  window.addEventListener('DOMContentLoaded', () => {
-                    document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
-                    const mutobserver = new MutationObserver((mutations) => {
-                      mutations.forEach((mutation) => {
-                      // If nodes were added or attributes changed, resize inputs
-                      if (mutation.type === 'childList' || mutation.type === 'attributes') {
+          <%= for {key, spec} <- @primitive do %>
+            <div class={[key, "keygroup"]} {!(key == :command) && %{hidden: true} || %{hidden: false}}>
+              <%= for {cmd, desc, vals} <- spec do %>
+                <div
+                  phx-click={
+                    JS.dispatch("phx:writeShell",
+                      detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
+                    )
+                  }
+                  class="flex duration-500 animate-fade items-center p-2 transition-colors rounded pointer-events-auto hover:bg-accent/50 group cursor-pointer"
+                >
+                  <%!-- Icon --%>
+                  <div class="mr-3">
+                    <.cmd_icon command={cmd} class="w-8 h-8 fill-primary" />
+                  </div>
+                  <div class="flex-grow">
+                    <%!-- Description --%>
+                    <code class="font-mono text-sm text-secondary-content">{desc}</code>
+                    <%!-- Sample code --%>
+                    <p class="text-xs text-lint-commands flex items-baseline flex-wrap">
+                      {cmd}
+                      <span :if={vals} class="relative grid-cols-3  ">
+                        <input
+                          :for={{arg, val} <- vals}
+                          type="text"
+                          id={"cmdparam-#{cmd}-#{arg}"}
+                          value={val}
+                          defaulted={val}
+                          class="ml-[1ch] bg-base-200/50 caret-accent-content hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
+                          placeholder={arg}
+                          phx-update="ignore"
+                          phx-keydown={
+                            JS.dispatch("phx:writeShell",
+                              detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
+                            )
+                          }
+                          phx-key="Enter"
+                          oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
+                          onclick="event.stopPropagation()"
+                        />
+                      </span>
+                    </p>
+                    <script>
+                      // Initialize all input fields lengths
+                      window.addEventListener('DOMContentLoaded', () => {
                         document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
-                      }
+                        const mutobserver = new MutationObserver((mutations) => {
+                          mutations.forEach((mutation) => {
+                          // If nodes were added or attributes changed, resize inputs
+                          if (mutation.type === 'childList' || mutation.type === 'attributes') {
+                            document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
+                          }
+                          });
+                        });
+                        const targetNode = document.getElementById("deckofcards");
+                        mutobserver.observe(targetNode, {childList: true});
                       });
-                    });
-                    const targetNode = document.getElementById("deckofcards");
-                    mutobserver.observe(targetNode, {childList: true});
-                  });
-                </script>
-              </div>
+                    </script>
+                  </div>
+                </div>
+              <% end %>
             </div>
           <% end %>
         </div>

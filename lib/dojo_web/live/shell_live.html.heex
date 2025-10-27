@@ -128,9 +128,9 @@
     </div>
     <!-- Zhong -->
     <div class="bg-transparent pointer-events-none select-none" />
-<!-- Right pane -->
+    <!-- Right pane -->
     <div class="row-span-1 col-span-1 lg:row-span-2 p-4 relative ">
-      <div id="sessionbox" >
+      <div id="sessionbox">
         <div :if={!@session.name} class="relative group w-60">
           <!-- Login Link Button -->
           <.link
@@ -140,7 +140,6 @@
             <span class="relative z-10 text-end">Enter the Shell</span>
             <!-- Animated underscore cursor -->
             <span class="inline-block w-2 h-0.5 ml-1 bg-amber-400 animate-flicker">_</span>
-
           </.link>
         </div>
 
@@ -148,8 +147,8 @@
           :if={@session.name}
           class="relative font-mono right-2 text-primary bg-transparent border border-none rounded px-2 py-1 w-full max-w-xs"
         >
-
-          <!-- Welcome message row -->
+          
+<!-- Welcome message row -->
           <div class="flex items-center text-xs mb-1 border-b border-accent/50 pb-1 overflow-hidden">
             <span class="flex items-center truncate">
               &gt; {gettext("welcome %{name} to⠀%{clan}'s shell",
@@ -161,18 +160,16 @@
               </span>
             </span>
           </div>
-
+          
 <!-- Command keys row -->
           <div class="flex items-center justify-between">
             <div
               :if={@outershell && @outershell.resp}
               class="max-w-20 bg-gradient-to-r from-background to-transparent overflow-hidden whitespace-nowrap flex-shrink-1 sm:flex-shrink-0 flex items-center  text-xs mr-1 sm:mr-2 min-w-0"
             >
-              
               <span class="text-amber-600 animate-marquee">
-                {gettext("summoning @%{addr}'s code", addr: @outershell.resp)} ☄  
+                {gettext("summoning @%{addr}'s code", addr: @outershell.resp)} ☄
               </span>
-              
             </div>
             <!-- Empty spacer div with minimum width on small screens -->
 
@@ -229,80 +226,25 @@
 
               <button
                 class="relative w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
-                phx-click="flipDeck"
+                phx-click={ JS.toggle(to: ".deck")}
               >
                 <.manual class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-primary hover:rotate-[-40deg]" />
               </button>
             </div>
-
           </div>
           <!-- Decorative corners (smaller size for subtlety) -->
-            <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content">
-            </div>
-            <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary-content">
-            </div>
-            <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-primary-content">
-            </div>
-            <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-primary-content">
-            </div>
+          <div class="absolute -top-0.5 -left-0.5 w-2 h-2 border-t border-l border-primary-content">
+          </div>
+          <div class="absolute -top-0.5 -right-0.5 w-2 h-2 border-t border-r border-primary-content">
+          </div>
+          <div class="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b border-l border-primary-content">
+          </div>
+          <div class="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b border-r border-primary-content">
+          </div>
         </div>
       </div>
-
-      <span
-        :if={@outershell && @outershell.resp}
-        id="outershell-head"
-        class="fixed text-lg font-bold w-1/3 right-2 text-amber-200 top-36"
-      >
-        {gettext("@%{addr}'s code", addr: @outershell.resp)}
-      </span>
-      <div
-        :if={@outershell}
-        id="outerenv"
-        phx-update="ignore"
-        class="fixed w-1/3  overflow-y-scroll border rounded-lg pointer-events-auto h-1/2 top-32 right-4 bottom-4 bg-black/30 border-amber-600/20 dark-scrollbar scrollbar-hide my-12 rounded-sm pointer-events-auto cursor-text"
-      >
-        <button
-          phx-click="seeTurtle"
-          class="absolute z-10 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-2 right-2  border-amber-600"
-        >
-          <!-- Base Crosshair -->
-          <div class="absolute inset-0 flex items-center justify-center">
-            <svg
-              class="w-4 h-4 transition-colors text-red-600 group-hover:text-amber-300"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </div>
-          <!-- Mechanical Cross Overlay -->
-          <svg
-            class="absolute inset-0 w-full h-full transition-opacity text-amber-600 opacity-30 group-hover:opacity-50"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1"
-          >
-            <path d="M12 2v20M2 12h20" />
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 7v10M7 12h10" stroke-dasharray="2 2" />
-          </svg>
-        </button>
-        <textarea
-          phx-update="ignore"
-          id="outershell"
-          class="relative rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full"
-          phx-hook="Shell"
-          data-target="outercanvas"
-        ></textarea>
-      </div>
-
-      <.deck active={@right == :deck} type={@deck} />
+      <.outershell :if={@outershell && @outershell.resp} outershell={@outershell}/>
+      <.deck/>
     </div>
     
 <!-- <div class="backdrop-blur-sm border border-gray-700/50 rounded-lg p-4"/> -->
@@ -310,11 +252,11 @@
     <div class="col-span-3 row-start-2 lg:row-span-1 lg:col-span-1 ">
       <div
         id="paneflip"
-        class="fixed z-50 -translate-x-1/2 pointer-events-auto  transition-transform duration-300 pointer-events-auto bottom-2 left-1/2"
+        class="fixed z-30 -translate-x-1/2 pointer-events-auto  transition-transform duration-300 pointer-events-auto bottom-2 left-1/2"
         phx-hook="Sensei"
       >
         <svg
-          class={"z-60 w-6 h-6  text-primary/50 items-center flex  m-auto  rounded-lg backdrop-blur-sm transform transition-transform duration-300 hover:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
+          class={"z-20 w-6 h-6  text-primary/50 items-center flex  m-auto  rounded-lg backdrop-blur-sm transform transition-transform duration-300 hover:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
           phx-click="flipPane"
           viewBox="0 0 24 24"
           fill="none"
@@ -345,8 +287,8 @@
               class="cursor-pointer pointer-events-auto text-primary"
             />
             <div
-              phx-click="seeTurtle"
-              phx-throttle="1000"
+              phx-click={JS.push("seeTurtle") |> JS.hide(to: ".rightthird")}
+              phx-throttle="500"
               phx-value-addr={phx_ref}
               class={[
                 "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md hover:border-primary",
