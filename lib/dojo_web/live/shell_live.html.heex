@@ -226,7 +226,7 @@
 
               <button
                 class="relative w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
-                phx-click={ JS.toggle(to: ".deck")}
+                phx-click={ JS.toggle(to: ".deck", in: "fade-in-scale", out: "fade-out-scale")}
               >
                 <.manual class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-primary hover:rotate-[-40deg]" />
               </button>

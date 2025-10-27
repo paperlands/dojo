@@ -467,7 +467,7 @@ defmodule DojoWeb.ShellLive do
           {"dive", gettext("Dive Into Page"), [angle: 45]},
           {"roll", gettext("Tilt Right"), [angle: 45]},
           {"beColour", gettext("Set Colour to"), [colour: "'red'"]},
-          {"hd", gettext("Hide your Head"), nil},
+          {"hide", gettext("Hide your Head"), nil},
           {"show", gettext("Show your Head"), [size: 10]},
           {"erase", gettext("Wipe Everything"), nil}
         ],

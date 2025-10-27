@@ -3,6 +3,7 @@ import { Evaluator } from "./mafs/evaluate.js"
 import { Typesetter } from "./mafs/typist.js"
 import { Versor } from "./mafs/versors.js"
 import * as THREE from '../utils/three.core.min.js';
+import {ColorConverter} from '../utils/color.js'
 import  {OrbitControls}  from '../utils/threeorbital';
 import  {WebGLRenderer}  from '../utils/threerender';
 import {Text} from '../utils/threetext'
@@ -29,10 +30,12 @@ export class Turtle {
             dive: this.pitch.bind(this),
             roll: this.roll.bind(this),
             show: this.unhideTurtle.bind(this),
+            hide: this.hideTurtle.bind(this),
             hd: this.hideTurtle.bind(this),
             jmp: this.jump.bind(this),
             mv: this.move.bind(this),
             bold: this.thickness.bind(this),
+            grid: this.grid.bind(this),
             goto: this.goto.bind(this),
             //iamat: this.iamat.bind(this),
             faceto: this.faceto.bind(this),
@@ -71,12 +74,12 @@ export class Turtle {
         this.currentPath=null
         //https://threejs.org/docs/#api/en/core/Object3D
         this.pathGroup = new THREE.Group();
-
+        this.gridGroup = new THREE.Group();
         this.glyphGroup = new THREE.Group();
         this.glyphGroup.elements = []
         //this.glyphist = new Render.Glyph(this.glyphGroup);
 
-        this.shapist = new Render.Shape(this.pathGroup, {layerMethod: 'polygonOffset', polygonOffset: { factor: -0.1, units: -1 }})
+        this.shapist = new Render.Shape(this.pathGroup, {layerMethod: 'renderOrder', polygonOffset: { factor: -0.1, units: -1 }})
 
         // Temporal state
         this.timeline = {
@@ -95,6 +98,7 @@ export class Turtle {
         this.setupRenderer(canvas)
 
         this.scene.add(this.pathGroup);
+        this.scene.add(this.gridGroup);
         this.scene.add(this.glyphGroup);
 
         this.renderLoop = new Render.Loop(null, {
@@ -226,7 +230,7 @@ export class Turtle {
         if(this.renderstate.phase=="start" && t>=this.timeline.endTime){
             if (this.showTurtle) {
                 this.head.show()
-                this.head.update([this.x, this.y,this.z], this.rotation, this.color)
+                this.head.update([this.x, this.y,this.z], this.rotation, this.color, this.showTurtle)
             } else {
                 this.head.hide()
             }
@@ -256,13 +260,14 @@ export class Turtle {
             case "clear":
                 this.pathGroup.clear()
                 this.glyphGroup.clear()
+                this.gridGroup.clear()
                 this.glyphGroup.elements.map(text => text.dispose())
                 break;
 
             case "head":
-                if (path.visible){
+                if (path.headsize){
                     this.head.show()
-                    this.head.update(path.points, path.rotation, path.color)
+                    this.head.update(path.points, path.rotation, path.color, path.headsize)
                 } else {
                     this.head.hide()
                 }
@@ -295,14 +300,7 @@ export class Turtle {
                     // Create Line2 mesh
                     const mesh = new Line2(geometry, material);
                     this.pathGroup.add(mesh);
-                    // const geometry = new THREE.BufferGeometry().setFromPoints(path.points);
-                    // const material = new THREE.LineBasicMaterial({
-                    //     color: path.color || 'DarkOrange',
-                    //     linewidth: 2
-                    // });
-
-                    // const mesh = new THREE.Line(geometry, material);
-                    // this.pathGroup.add(mesh);
+                    
 
                     if(path.filled) {
 
@@ -344,6 +342,13 @@ export class Turtle {
                     console.warn('Error writing text:', error);
                 }
                 break;
+
+            case "grid":
+                const gridHelper = new THREE.GridHelper( path.size, path.division, path.color,  ColorConverter.toHex(ColorConverter.adjust(path.color, 0.25)));
+                gridHelper.position.set(...path.point)
+                gridHelper.quaternion.copy(path.rotation)
+                this.gridGroup.add( gridHelper );
+                break;
             }
 
         });
@@ -375,7 +380,7 @@ export class Turtle {
             points: [this.x, this.y, this.z],
             color: this.color,
             rotation: this.rotation,
-            visible: this.showTurtle
+            headsize: this.showTurtle
         };
 
         const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
@@ -568,8 +573,10 @@ export class Turtle {
 
         this.currentPath = null;
         this.pathGroup.clear()
+        this.gridGroup.clear()
         this.glyphGroup.clear()
         this.glyphGroup.elements.map(text => text.dispose())
+        this.glyphGroup.elements = []
         this.timeline.lastRenderTime = 0;
         this.requestRender();
     }
@@ -719,7 +726,7 @@ export class Turtle {
         this.penDown = true;
         this.color = 'DarkOrange';
         this.thickness = 2;
-        this.showTurtle = true;
+        this.showTurtle = 10;
         this.currentPath = null;
         //initialise render state
         this.renderstate = {
@@ -728,6 +735,32 @@ export class Turtle {
         }
         this.math.parser.reset()
         this.renderLoop.requestRestart();
+    }
+
+
+    grid(divisions=100, unit=10){
+        const rotation = Versor.fromAxisAngle({ x: 1, y: 0, z: 0 }, 90);
+
+        this.currentPath = {
+            ...this.pathTemplate,
+            type: "grid",
+            point: [this.x, this.y, this.z],
+            color: this.color,
+            // html canvas cant space numbers accurately below this
+            size: unit*divisions,
+            division: divisions,
+            rotation: this.rotation.multiply(rotation)
+            //id: crypto.getRandomValues(new Uint32Array(1))[0]
+        };
+
+        const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
+        currentFrame.push(this.currentPath);
+        this.timeline.frames.set(this.timeline.currentTime, currentFrame);
+        this.currentPath = null;
+        //const gridHelper = new THREE.GridHelper( unit*divisions, divisions, this.color );
+        //gridHelper.material.color.set(this.color);
+        //gridHelper.material.vertexColors = false;
+        
     }
 
     roll(angle = 0) {
@@ -773,17 +806,6 @@ export class Turtle {
     }
 
 
-
-    redraw() {
-        // if(this.instructions.length > 0) requestAnimationFrame(this.executeBody(this.instructions, {}));
-        if(this.instructions.length > 0)
-            requestAnimationFrame(() => {
-            this.reset();
-            this.requestRender();
-            this.executeBody(this.instructions, {})
-            });
-    }
-
     draw(instructions, opts= {}) {
         this.reset();
         this.requestRender();
@@ -798,8 +820,8 @@ export class Turtle {
         this.showTurtle = false;
     }
 
-    unhideTurtle(size) {
-        this.showTurtle = true;
+    unhideTurtle(size=10) {
+        this.showTurtle = size;
     }
 
     setRecurseLimit(limit = 361) {

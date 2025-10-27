@@ -17,7 +17,7 @@ function wordObj(words) {
 }
 
 var keywordList = [
-  "draw", "def", "label", "erase", "goto", "do", "fw", "rt", "dive", "roll", "hd", "lt", "show", "wait", "beColour", "jmp", "fill",
+    "draw", "def", "label", "erase", "goto", "do", "fw", "rt", "dive", "roll", "hd", "hide", "grid", "lt", "show", "wait", "beColour", "jmp", "fill",
   "jmpto", "faceto", "END", "end", "ensure", "for", "when", "loop", "bold", "fn"
 ], keywords = wordObj(keywordList);
 
