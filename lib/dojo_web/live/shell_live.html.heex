@@ -287,7 +287,7 @@
               class="cursor-pointer pointer-events-auto text-primary"
             />
             <div
-              phx-click={JS.push("seeTurtle") |> JS.hide(to: ".rightthird")}
+              phx-click={(@outershell && @outershell.addr == phx_ref && JS.push("closeTurtle") |> JS.show(to: ".rightthird")) ||  JS.push("seeTurtle") |> JS.hide(to: ".rightthird")}
               phx-throttle="500"
               phx-value-addr={phx_ref}
               class={[

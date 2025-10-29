@@ -335,6 +335,15 @@ defmodule DojoWeb.ShellLive do
      )}
   end
 
+  def handle_event("closeTurtle", _, socket) do
+    {:noreply,
+     socket
+     |> assign(
+       :outershell,
+       nil
+     )}
+  end
+
   # Handle the viewport update event from the hook
   def handle_event(
         "seeDisciples",
