@@ -123,11 +123,11 @@ const listeners = {
 
           if (hadSelection && !hasSelection) {
             // Had selection flip to command
-            document.querySelector('.command-keydeck').click()
+            document.querySelector('.command-keyselector').click()
 
           } else if (!hadSelection && hasSelection) {
             // Didn't have selection flip to control
-            document.querySelector('.control-keydeck').click()
+            document.querySelector('.control-keyselector').click()
           }
 
           hadSelection = hasSelection;

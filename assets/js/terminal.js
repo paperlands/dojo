@@ -121,15 +121,14 @@ export class Terminal {
         this.shell = null;
         this.nameGen = nameGen();
         this.autosaveTimer = null;
-        this.tabs = new Tabber()
         this.shell = this.CM.fromTextArea(this.editor, this.#buildOptions());
-
         this.#setupEventListeners();
         this.bridge = bridged("terminal")
         return this
     }
 
     inner() {
+        this.tabs = new Tabber()
         this.shell.run = this.run.bind(this);
         this.bufferStore = new BufferStorage()
         this.#loadBuffersFromStorage()

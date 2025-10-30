@@ -403,21 +403,30 @@ defmodule DojoWeb.ShellLive do
 
   def outershell(assigns) do
     ~H"""
-    <div class="top-5/8">
-      <span
-        id="outershell-head"
-        class="fixed text-lg font-bold pt-7 w-1/3 top-1/9 right-2 text-amber-200 "
-      >
-        {gettext("@%{addr}'s code", addr: @outershell.resp)}
+    <div class="relative pt-10 right-2 w-full lg:-left-1/2 lg:w-[150%] ">
+      <div class="flex items-start justify-between gap-2 mb-3">
+    <span
+      id="top-head"
+      class="text-lg font-bold text-amber-200 flex-1 leading-tight"
+    >
+      {gettext("@%{addr}'s code", addr: @outershell.resp)}
+    </span>
+    
+    <span phx-click="followTurtle" class="pointer-events-auto  relative flex h-2 w-2 flex-shrink-0 mt-1 mr-3 ">
+      <span class="absolute inline-flex h-full w-full rounded-full bg-primary opacity-75">
       </span>
+      <span class="relative inline-flex rounded-full h-2 w-2 bg-primaryAccent"></span>
+    </span>
+  </div>
+  
       <div
         id="outerenv"
         phx-update="ignore"
-        class="fixed w-1/3  top-1/8 overflow-y-scroll border rounded-lg pointer-events-auto h-1/2 right-4 bottom-4 bg-black/30 border-amber-600/20 dark-scrollbar scrollbar-hide my-12 rounded-sm pointer-events-auto cursor-text"
+        class="overflow-y-scroll relative border pointer-events-auto rounded-lg h-[50vh] bg-black/30 border-amber-600/20 dark-scrollbar scrollbar-hide cursor-text"
       >
         <button
-          phx-click="seeTurtle"
-          class="absolute z-50 flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-2 right-2  border-amber-600"
+          phx-click="closeTurtle"
+          class="z-50 absolute flex  items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-2 right-2  border-amber-600"
         >
           <!-- Base Crosshair -->
           <div class="absolute inset-0 flex items-center justify-center">
@@ -516,16 +525,14 @@ defmodule DojoWeb.ShellLive do
                 >
                   <li
                     :for={{key, _} <- @primitive}
-                    class={["#{key}-keydeck keydeck border-0 rounded-t-lg  border-t-2 border-accent hover:border-primary", (key == :command) && "hidden" || ""]}
+                    class={["#{key}-keyselector keyselector border-0 rounded-t-lg  border-t-2 border-accent hover:border-primary"]}
+                    {(key == :command) && %{hidden: true} || %{hidden: false}}
                     phx-click={
-                      JS.set_attribute({"hidden", "true"}, to: ".keydeck")
-                      |> JS.remove_attribute("hidden", to: ".#{key}-keydeck")
-                      |> JS.set_attribute({"hidden", "true"}, to: ".keygroup")
+                      
+                      JS.set_attribute({"hidden", "true"}, to: ".keygroup")
                       |> JS.remove_attribute("hidden", to: ".#{key}")
-                      # JS.show(to: ".keydeck")
-                      # |> JS.hide(to: ".#{key}-keydeck")
-                      # |> JS.show(to: ".#{key}")
-                      # |> JS.hide(to: ".keygroup")
+                      |> JS.remove_attribute("hidden", to: ".keyselector")
+                      |> JS.set_attribute({"hidden", "true"}, to: ".#{key}-keyselector")
                     }
                   >
                     <a>{Gettext.gettext(DojoWeb.Gettext, key |> to_string |> to_titlecase)}</a>
