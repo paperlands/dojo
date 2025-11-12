@@ -400,7 +400,7 @@ defmodule DojoWeb.SVGComponents do
     """
   end
 
-  def cmd_icon(%{command: "hd"} = assigns) do
+  def cmd_icon(%{command: "hide"} = assigns) do
     ~H"""
     <svg version="1.1" x="0px" y="0px" class={@class} viewBox="0 0 100 125">
       <g transform="translate(0.1185,12.409)">

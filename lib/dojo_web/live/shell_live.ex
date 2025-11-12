@@ -1,6 +1,7 @@
 defmodule DojoWeb.ShellLive do
   use DojoWeb, :live_shell
   alias DojoWeb.Session
+  alias DojoWeb.ShellLive.{OuterShell}
   import DojoWeb.SVGComponents
 
   @moduledoc """
@@ -22,7 +23,7 @@ defmodule DojoWeb.ShellLive do
      |> assign(
        label: nil,
        clan: nil,
-       outershell: nil,
+       outershell: %OuterShell{},
        sensei: false,
        myfunctions: [],
        mytitle: "paperland",
@@ -114,48 +115,30 @@ defmodule DojoWeb.ShellLive do
   end
 
   # lets move this towards an async pull based pattern
-  def handle_info(
-        :refreshDisciples,
-        %{assigns: %{disciples: dis, visible_disciples: visible_dis}} = socket
-      ) do
+
+  def handle_info(:refreshDisciples, %{assigns: assigns} = socket) do
     Process.send_after(self(), :refreshDisciples, 3000)
-
-    new_dis =
-      Enum.reduce(visible_dis, dis, fn ref, acc ->
-        try do
-          case dis[ref] && Dojo.Table.last(dis[ref][:node], :hatch) do
-            nil ->
-              acc
-
-            %{path: path} ->
-              put_in(acc, [ref, :meta], %{path: path})
-
-            # Catch-all for any other unexpected return values
-            _ ->
-              acc
-          end
-        catch
-          _kind, _error ->
-            # Skip this disciple if Dojo.Table.last throws an error
-            acc
-        end
-      end)
-
-    {:noreply,
-     socket
-     |> assign(disciples: new_dis)}
+    
+    updated_disciples = update_disciples_metadata(assigns.disciples, assigns.visible_disciples)
+    
+    socket =
+      socket
+      |> assign(disciples: updated_disciples)
+      |> maybe_update_active_disciples()
+    
+    {:noreply, socket}
   end
 
   def handle_info(
-        {Dojo.PubSub, :hatch, {name, {Dojo.Turtle, meta}}},
-        %{assigns: %{disciples: dis}} = socket
-      ) do
+    {Dojo.PubSub, :hatch, {name, {Dojo.Turtle, meta}}},
+    %{assigns: %{disciples: dis}} = socket
+  ) do
     active_dis =
-      if Map.has_key?(dis, name) do
-        put_in(dis, [name, :meta], meta)
-      else
-        dis
-      end
+    if Map.has_key?(dis, name) do
+      put_in(dis, [name, :meta], meta)
+    else
+      dis
+    end
 
     {:noreply,
      socket
@@ -237,7 +220,8 @@ defmodule DojoWeb.ShellLive do
       Dojo.Turtle.hatch(
         %{
           path: Path.join(["frames", clan, id]) <> ext <> "#bump=#{System.os_time(:second)}",
-          commands: commands |> Enum.take(1008)
+          commands: commands |> Enum.take(1008),
+          time: System.os_time(:second)
         },
         %{class: class}
       )
@@ -256,27 +240,27 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket |> assign(mytitle: commands |> Dojo.Turtle.find_title())}
   end
 
-  def handle_event(
-        "seeTurtle",
-        %{"addr" => addr, "function" => func},
-        %{assigns: %{disciples: dis}} = socket
-      ) do
-    {:noreply,
-     socket
-     |> push_event("seeOuterShell", %{
-       ast: dis[addr][:meta][:commands] |> Dojo.Turtle.find_fn(func),
-       addr: addr,
-       mod: "lambda",
-       name: func
-     })
-     |> assign(
-       :outershell,
-       %{
-         addr: addr,
-         resp: "drawing @#{addr}'s #{func}"
-       }
-     )}
-  end
+  # def handle_event(
+  #       "seeTurtle",
+  #       %{"addr" => addr, "function" => func},
+  #       %{assigns: %{disciples: dis}} = socket
+  #     ) do
+  #   {:noreply,
+  #    socket
+  #    |> push_event("seeOuterShell", %{
+  #      ast: dis[addr][:meta][:commands] |> Dojo.Turtle.find_fn(func),
+  #      addr: addr,
+  #      mod: "lambda",
+  #      name: func
+  #    })
+  #    |> assign(
+  #      :outershell,
+  #      %{
+  #        addr: addr,
+  #        resp: "drawing @#{addr}'s #{func}"
+  #      }
+  #    )}
+  # end
 
   def handle_event(
         "seeTurtle",
@@ -295,43 +279,54 @@ defmodule DojoWeb.ShellLive do
      |> push_event("seeOuterShell", %{ast: command, addr: addr, mod: "root"})
      |> assign(
        :outershell,
-       %{
+       %OuterShell{
          addr: addr,
          title: command |> Dojo.Turtle.find_title(),
+         active: true,
          # outerfunctions: dis[addr][:meta][:commands] |> Dojo.Turtle.filter_fns(),
-         resp: "#{dis[addr][:name]}"
+         name: "#{dis[addr][:name]}"
        }
      )}
   end
 
-  def handle_event(
-        "seeTurtle",
-        %{"function" => func},
-        %{assigns: %{myfunctions: commands}} = socket
-      ) do
-    {:noreply,
-     socket
-     |> push_event("seeOuterShell", %{
-       ast: commands |> Dojo.Turtle.find_fn(func),
-       addr: "my",
-       mod: "lambda",
-       name: func
-     })
-     |> assign(
-       :outershell,
-       %{
-         addr: "my",
-         resp: "drawing your #{func}"
-       }
-     )}
-  end
+      # def handle_event(
+      #   "seeTurtle",
+      #   %{"function" => func},
+      #   %{assigns: %{myfunctions: commands}} = socket
+      # ) do
+      #   {:noreply,
+      #    socket
+      #    |> push_event("seeOuterShell", %{
+      #          ast: commands |> Dojo.Turtle.find_fn(func),
+      #          addr: "my",
+      #          mod: "lambda",
+      #          name: func
+      #                  })
+      #                  |> assign(
+      #      :outershell,
+      #    %{
+      #      addr: "my",
+      #      resp: "drawing your #{func}"
+      #    }
+      #    )}
+      # end
 
   def handle_event("seeTurtle", _, socket) do
     {:noreply,
      socket
      |> assign(
        :outershell,
-       nil
+       %OuterShell{}
+     )}
+  end
+
+  
+  def handle_event("followTurtle", _, %{assigns: %{outershell: shell}}=socket) do
+    {:noreply,
+     socket
+     |> assign(
+       :outershell,
+       %{shell | follow: !shell.follow} 
      )}
   end
 
@@ -340,7 +335,7 @@ defmodule DojoWeb.ShellLive do
      socket
      |> assign(
        :outershell,
-       nil
+       %OuterShell{}
      )}
   end
 
@@ -401,24 +396,50 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
+  defp update_disciples_metadata(disciples, visible_disciples) do
+    Enum.reduce(visible_disciples, disciples, fn ref, acc ->
+      with %{node: node} <- disciples[ref],
+      %{path: path} <- Dojo.Table.last(node, :hatch) do
+        put_in(acc, [ref, :meta], %{path: path})
+      else
+        _ -> acc
+      end
+    end)
+  end
+
+  defp maybe_update_active_disciples(socket = %{assigns: %{disciples: dis, outershell: %{addr: addr, follow: true} =outershell}}) when not is_nil(addr) do
+      case Dojo.Table.last(dis[addr][:node], :hatch) do
+        %{commands: ast, time: time} = table_state when time > outershell.last_active ->
+          socket
+          |> assign(:outershell, %{outershell | last_active: table_state.time})
+          |> push_event("seeOuterShell", %{ast: ast, addr: addr, mod: "root"})
+        _ -> socket
+      end
+  end
+  
+
+  defp maybe_update_active_disciples(socket), do: socket
+
   def outershell(assigns) do
     ~H"""
     <div class="relative pt-10 right-2 w-full lg:-left-1/2 lg:w-[150%] ">
       <div class="flex items-start justify-between gap-2 mb-3">
-    <span
-      id="top-head"
-      class="text-lg font-bold text-amber-200 flex-1 leading-tight"
-    >
-      {gettext("@%{addr}'s code", addr: @outershell.resp)}
-    </span>
-    
-    <span phx-click="followTurtle" class="pointer-events-auto  relative flex h-2 w-2 flex-shrink-0 mt-1 mr-3 ">
-      <span class="absolute inline-flex h-full w-full rounded-full bg-primary opacity-75">
-      </span>
-      <span class="relative inline-flex rounded-full h-2 w-2 bg-primaryAccent"></span>
-    </span>
-  </div>
-  
+        <span
+          id="top-head"
+          class="text-lg font-bold text-amber-200 flex-1 leading-tight"
+        >
+          {gettext("@%{addr}'s code", addr: @outershell.name)}
+        </span>
+
+        <span
+          phx-click="followTurtle"
+          class="pointer-events-auto cursor-pointer relative flex h-2 w-2 flex-shrink-0 mt-1 mr-3 "
+        >
+          <span class={["absolute inline-flex h-full w-full rounded-full  opacity-75", @outershell.follow && "bg-accent-content animate-ping" || "bg-primary"]}></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-primaryAccent"></span>
+        </span>
+      </div>
+
       <div
         id="outerenv"
         phx-update="ignore"
@@ -497,7 +518,11 @@ defmodule DojoWeb.ShellLive do
 
     ~H"""
     <!-- Command Deck Component (command_deck.html.heex) -->
-    <div id="commanddeck" class="rightthird deck flex select-none px-1 pb-1  animate-fade" phx-update="ignore">
+    <div
+      id="commanddeck"
+      class="rightthird deck flex select-none px-1 pb-1  animate-fade"
+      phx-update="ignore"
+    >
       <!-- Command Deck Panel -->
       <div class="absolute h-3/4 bottom-12 w-64 transition-all duration-100 ease-in-out transform right-5 xl:h-3/4 scrollbar-hide dark-scrollbar">
         <%!-- Top row --%>
@@ -525,10 +550,11 @@ defmodule DojoWeb.ShellLive do
                 >
                   <li
                     :for={{key, _} <- @primitive}
-                    class={["#{key}-keyselector keyselector border-0 rounded-t-lg  border-t-2 border-accent hover:border-primary"]}
+                    class={[
+                      "#{key}-keyselector keyselector border-0 rounded-t-lg  border-t-2 border-accent hover:border-primary"
+                    ]}
                     {(key == :command) && %{hidden: true} || %{hidden: false}}
                     phx-click={
-                      
                       JS.set_attribute({"hidden", "true"}, to: ".keygroup")
                       |> JS.remove_attribute("hidden", to: ".#{key}")
                       |> JS.remove_attribute("hidden", to: ".keyselector")
