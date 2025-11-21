@@ -118,27 +118,27 @@ defmodule DojoWeb.ShellLive do
 
   def handle_info(:refreshDisciples, %{assigns: assigns} = socket) do
     Process.send_after(self(), :refreshDisciples, 3000)
-    
+
     updated_disciples = update_disciples_metadata(assigns.disciples, assigns.visible_disciples)
-    
+
     socket =
       socket
       |> assign(disciples: updated_disciples)
       |> maybe_update_active_disciples()
-    
+
     {:noreply, socket}
   end
 
   def handle_info(
-    {Dojo.PubSub, :hatch, {name, {Dojo.Turtle, meta}}},
-    %{assigns: %{disciples: dis}} = socket
-  ) do
+        {Dojo.PubSub, :hatch, {name, {Dojo.Turtle, meta}}},
+        %{assigns: %{disciples: dis}} = socket
+      ) do
     active_dis =
-    if Map.has_key?(dis, name) do
-      put_in(dis, [name, :meta], meta)
-    else
-      dis
-    end
+      if Map.has_key?(dis, name) do
+        put_in(dis, [name, :meta], meta)
+      else
+        dis
+      end
 
     {:noreply,
      socket
@@ -212,7 +212,9 @@ defmodule DojoWeb.ShellLive do
       File.mkdir(dest_dir)
     end
 
-    id = name <> Base.encode64(to_string(time))
+    #this is user sesion first logintime
+    id = (name <> Base.encode64(to_string(time)))
+    |> String.replace(~r/[^a-zA-Z0-9]/, "")
 
     with file when is_binary(file) <-
            DojoWeb.Utils.Base64.to_file(path, Path.join([dest_dir, id])),
@@ -232,13 +234,30 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket |> assign(mytitle: commands |> Dojo.Turtle.find_title())}
   end
 
-  def handle_event(
+      def handle_event(
         "hatchTurtle",
         %{"commands" => commands},
         socket
       ) do
-    {:noreply, socket |> assign(mytitle: commands |> Dojo.Turtle.find_title())}
-  end
+        {:noreply, socket |> assign(mytitle: commands |> Dojo.Turtle.find_title())}
+      end
+
+      def handle_event(
+        "brokeTurtle",
+        %{"err_source" => src, "err" => err},
+        %{assigns: %{class: class}} = socket
+      ) do
+        Dojo.Turtle.broke(
+          %{
+            source: src,
+            err: err,
+            time: System.os_time(:second)
+          },
+          %{class: class}
+        )
+        
+        {:noreply, socket}
+      end
 
   # def handle_event(
   #       "seeTurtle",
@@ -289,27 +308,27 @@ defmodule DojoWeb.ShellLive do
      )}
   end
 
-      # def handle_event(
-      #   "seeTurtle",
-      #   %{"function" => func},
-      #   %{assigns: %{myfunctions: commands}} = socket
-      # ) do
-      #   {:noreply,
-      #    socket
-      #    |> push_event("seeOuterShell", %{
-      #          ast: commands |> Dojo.Turtle.find_fn(func),
-      #          addr: "my",
-      #          mod: "lambda",
-      #          name: func
-      #                  })
-      #                  |> assign(
-      #      :outershell,
-      #    %{
-      #      addr: "my",
-      #      resp: "drawing your #{func}"
-      #    }
-      #    )}
-      # end
+  # def handle_event(
+  #   "seeTurtle",
+  #   %{"function" => func},
+  #   %{assigns: %{myfunctions: commands}} = socket
+  # ) do
+  #   {:noreply,
+  #    socket
+  #    |> push_event("seeOuterShell", %{
+  #          ast: commands |> Dojo.Turtle.find_fn(func),
+  #          addr: "my",
+  #          mod: "lambda",
+  #          name: func
+  #                  })
+  #                  |> assign(
+  #      :outershell,
+  #    %{
+  #      addr: "my",
+  #      resp: "drawing your #{func}"
+  #    }
+  #    )}
+  # end
 
   def handle_event("seeTurtle", _, socket) do
     {:noreply,
@@ -320,13 +339,12 @@ defmodule DojoWeb.ShellLive do
      )}
   end
 
-  
-  def handle_event("followTurtle", _, %{assigns: %{outershell: shell}}=socket) do
+  def handle_event("followTurtle", _, %{assigns: %{outershell: shell}} = socket) do
     {:noreply,
      socket
      |> assign(
        :outershell,
-       %{shell | follow: !shell.follow} 
+       %{shell | follow: !shell.follow}
      )}
   end
 
@@ -399,7 +417,7 @@ defmodule DojoWeb.ShellLive do
   defp update_disciples_metadata(disciples, visible_disciples) do
     Enum.reduce(visible_disciples, disciples, fn ref, acc ->
       with %{node: node} <- disciples[ref],
-      %{path: path} <- Dojo.Table.last(node, :hatch) do
+           %{path: path} <- Dojo.Table.last(node, :hatch) do
         put_in(acc, [ref, :meta], %{path: path})
       else
         _ -> acc
@@ -407,22 +425,28 @@ defmodule DojoWeb.ShellLive do
     end)
   end
 
-  defp maybe_update_active_disciples(socket = %{assigns: %{disciples: dis, outershell: %{addr: addr, follow: true} =outershell}}) when not is_nil(addr) do
-      case Dojo.Table.last(dis[addr][:node], :hatch) do
-        %{commands: ast, time: time} = table_state when time > outershell.last_active ->
-          socket
-          |> assign(:outershell, %{outershell | last_active: table_state.time})
-          |> push_event("seeOuterShell", %{ast: ast, addr: addr, mod: "root"})
-        _ -> socket
-      end
+  defp maybe_update_active_disciples(
+         socket = %{
+           assigns: %{disciples: dis, outershell: %{addr: addr, follow: true} = outershell}
+         }
+       )
+       when not is_nil(addr) do
+    case Dojo.Table.last(dis[addr][:node], :hatch) do
+      %{commands: ast, time: time} = table_state when time > outershell.last_active ->
+        socket
+        |> assign(:outershell, %{outershell | last_active: table_state.time})
+        |> push_event("seeOuterShell", %{ast: ast, addr: addr, mod: "root"})
+
+      _ ->
+        socket
+    end
   end
-  
 
   defp maybe_update_active_disciples(socket), do: socket
 
   def outershell(assigns) do
     ~H"""
-    <div class="relative pt-10 right-2 w-full lg:-left-1/2 lg:w-[150%] ">
+    <div class="relative rightthird pt-10 right-2 w-full lg:-left-1/2 lg:w-[150%] ">
       <div class="flex items-start justify-between gap-2 mb-3">
         <span
           id="top-head"
@@ -435,7 +459,11 @@ defmodule DojoWeb.ShellLive do
           phx-click="followTurtle"
           class="pointer-events-auto cursor-pointer relative flex h-2 w-2 flex-shrink-0 mt-1 mr-3 "
         >
-          <span class={["absolute inline-flex h-full w-full rounded-full  opacity-75", @outershell.follow && "bg-accent-content animate-ping" || "bg-primary"]}></span>
+          <span class={[
+            "absolute inline-flex h-full w-full rounded-full  opacity-75",
+            (@outershell.follow && "bg-accent-content animate-ping") || "bg-primary"
+          ]}>
+          </span>
           <span class="relative inline-flex rounded-full h-2 w-2 bg-primaryAccent"></span>
         </span>
       </div>
@@ -482,8 +510,34 @@ defmodule DojoWeb.ShellLive do
           id="outershell"
           class="relative z-40 rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full"
           phx-hook="Shell"
-          data-target="outercanvas"
+          data-target="outer"
         ></textarea>
+      </div>
+      <div
+          phx-update="ignore"
+          id="outer-output"
+          class="-bottom-1/12 opacity-80 transition-colors delay-150 duration-300 overflow-y-auto pb-1 font-mono border-none text-primary left-2"
+        >
+      </div>
+    </div>
+    """
+  end
+
+  def nerve(assigns) do
+    ~H"""
+    <div class="relative hidden rightthird nerve pt-10 right-2 w-full lg:-left-1/5 lg:w-[120%] ">
+      <div class="h-full w-full max-w-2xl mx-auto">
+        <div class="relative h-full overflow-hidden">
+          <div class="h-full overflow-y-auto space-y-1 text-sm">
+            <p class="text-primary-content">远山如黛</p>
+            <p class="text-primary">The mountains fade into mist</p>
+            <p class="text-primary-content">江流天地外</p>
+            <p class="text-primary" >Rivers flow beyond heaven and earth</p>
+          </div>
+
+          <div class="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-transparent to-black/100   pointer-events-none">
+          </div>
+        </div>
       </div>
     </div>
     """

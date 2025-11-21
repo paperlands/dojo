@@ -1,6 +1,6 @@
 import { Turtle } from "../turtling/turtle.js"
 import { Terminal } from "../terminal.js"
-import {printAST, parseProgram } from "../turtling/parse.js"
+import {printAST} from "../turtling/parse.js"
 import {cameraBridge} from "../bridged.js"
 import { computePosition, offset, inline, autoUpdate } from "../../vendor/floating-ui.dom.umd.min";
 import { temporal } from "../utils/temporal.js"
@@ -8,22 +8,8 @@ import { temporal } from "../utils/temporal.js"
 
 const commands = {
     // Canvas commands
-    render: (canvas, turtle) => (code) => {
-        try {
-            const startTime = performance.now();
-            const commands = parseProgram(code);
-            var endTime = performance.now();
-            var executionTime = endTime - startTime;
-            console.log(`Parser Time took ${executionTime} milliseconds.`);
-            turtle.draw(commands);
-            endTime = performance.now();
-            executionTime = endTime-startTime-executionTime
-            console.log(`Drawing Time took ${executionTime} milliseconds.`);
-            return { success: true, commandCount: turtle.commandCount };
-        } catch (error) {
-            console.error(error);
-            return { success: false, error: error.message };
-        }
+    render: (turtle) => (code) => {
+        return turtle.draw(code);
     },
 
     // Shell commands
@@ -209,8 +195,12 @@ const listeners = {
 const mutators = {
   // Display mutator
   display: (element) => ({
-    success: (count) => element.innerHTML = `${count}`,
+      success: (count) => {
+          element.style.color = "#FF9933";
+          element.innerHTML = `${count}`
+      },
     error: (message) => {
+        element.style.color = "#FF0000";
       element.innerHTML = `Error: ${message}`
     }
   }),
@@ -295,13 +285,14 @@ const Shell = {
   mounted() {
     // Initialize domain objects
     const shellTarget = this.el.dataset.target
-    const canvas = document.getElementById( shellTarget || 'canvas');
-    const output = document.getElementById('output');
+    console.log(shellTarget)
+    const canvas = document.getElementById( shellTarget && shellTarget + "-canvas" || 'core-canvas');
+    const output = document.getElementById(shellTarget && shellTarget + "-output" || 'core-output');
     const turtle = new Turtle(canvas);
     const term = new Terminal(this.el, CodeMirror);
 
     // Create command handlers
-    const renderCommand = commands.render(canvas, turtle);
+    const renderCommand = commands.render(turtle);
     const executeCommand = commands.execute(term.shell);
     const cameraCommand = commands.camera(cameraBridge);
     const saveImage = commands.saveImage();
@@ -329,7 +320,7 @@ const Shell = {
     );
 
     // differences shell behaviour
-    if(shellTarget=="outercanvas"){
+    if(shellTarget=="outer"){
       this.handleEvent("seeOuterShell", (sight) => {
         const code = printAST(sight.ast)
         term.outer(code)

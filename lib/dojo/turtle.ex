@@ -1,11 +1,21 @@
 defmodule Dojo.Turtle do
-  def hatch(%{path: path, commands: _cmd} = body, %{class: pid}) do
-    Dojo.Table.publish(pid, {__MODULE__, %{path: path}, body}, :hatch)
+  def hatch(%{path: _path, commands: _cmd} = body, %{class: pid}) do
+    Dojo.Table.publish(pid, {__MODULE__, nil, body}, :hatch)
   end
-
-  def hatch() do
+  
+  def hatch(_,_) do
     nil
   end
+
+  
+  def broke(%{err: _err} = body, %{class: pid}) do
+    Dojo.Table.publish(pid, {__MODULE__, nil, body}, :broke)
+  end
+
+  def broke(_,_) do
+    nil
+  end
+  
 
   def find_title(ast) when is_list(ast) do
     Enum.reduce_while(ast, "", fn

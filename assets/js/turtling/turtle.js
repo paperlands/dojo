@@ -1,4 +1,5 @@
 import { Parser } from "./mafs/parse.js"
+import {parseProgram} from "./parse.js"
 import { Evaluator } from "./mafs/evaluate.js"
 import { Typesetter } from "./mafs/typist.js"
 import { Versor } from "./mafs/versors.js"
@@ -806,13 +807,26 @@ export class Turtle {
     }
 
 
-    draw(instructions, opts= {}) {
-        this.reset();
-        this.requestRender();
-        this.executeBody(instructions, {});
-        this.instructions = instructions
-
-
+    draw(code, opts= {}) {
+        try {
+            const startTime = performance.now();
+            const instructions = parseProgram(code);
+            var endTime = performance.now();
+            var executionTime = endTime - startTime;
+            console.log(`Parser Time took ${executionTime} milliseconds.`);            
+            this.reset();
+            this.requestRender();
+            this.executeBody(instructions, {});
+            this.instructions = instructions
+            endTime = performance.now();
+            executionTime = endTime-startTime-executionTime
+            console.log(`Drawing Time took ${executionTime} milliseconds.`);
+            return { success: true, commandCount: this.commandCount };
+        } catch (error) {
+            console.error(error);
+            this.bridge.pub(["brokeTurtle", {"err_source": code, "err":  error.message}])
+            return { success: false, error: error.message };
+        }
     }
 
 

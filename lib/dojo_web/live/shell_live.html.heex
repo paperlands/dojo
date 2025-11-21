@@ -1,10 +1,10 @@
 <div class="relative h-screen w-screen bg-secondary">
-  <canvas phx-update="ignore" id="canvas" class="fixed inset-0 z-0 bg-inherit select-none">
+  <canvas phx-update="ignore" id="core-canvas" class="fixed inset-0 z-0 bg-inherit select-none">
   </canvas>
   <canvas
     :if={@outershell.active}
     phx-update="ignore"
-    id="outercanvas"
+    id="outer-canvas"
     class={[
       "fixed inset-0 z-0 bg-black/50 select-none",
       !@outershell && "pointer-events-none"
@@ -118,12 +118,12 @@
           id="your-buffer"
           class="relative rounded-sm pointer-events-auto cursor-text bg-amber-600/5 border-none h-11/12"
           phx-hook="Shell"
-          data-target="canvas"
+          data-target="core"
         />
         <div
           phx-update="ignore"
-          id="output"
-          class="fixed -bottom-1/12 overflow-y-auto pb-1 font-mono border-none text-primary left-2"
+          id="core-output"
+          class="opacity-80 transition-colors delay-150 duration-300 -bottom-1/12 overflow-y-auto pb-1 font-mono border-none text-primary left-2"
         >
         </div>
       </div>
@@ -216,7 +216,7 @@
               <button
                 class="relative w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 mx-2 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
                 phx-click={
-                  (@outershell &&
+                  (@outershell.active &&
                      JS.dispatch("phx:outerkeepCanvas",
                        detail: %{"title" => @outershell.name <> "'s " <> @outershell.title}
                      )) ||
@@ -234,6 +234,12 @@
               >
                 <.manual class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-primary hover:rotate-[-40deg]" />
               </button>
+              <!-- <button -->
+              <!--   class="relative w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation" -->
+              <!--   phx-click={JS.hide(to: ".rightthird", transition: "fade-out-scale") |> JS.toggle(to: ".nerve", in: "fade-in-scale", out: "fade-out-scale")} -->
+              <!-- > -->
+              <!--   <.tyger class="w-7 h-7" /> -->
+              <!-- </button> -->
             </div>
           </div>
           <!-- Decorative corners (smaller size for subtlety) -->
@@ -249,6 +255,7 @@
       </div>
       <.outershell :if={@outershell.active} outershell={@outershell} />
       <.deck />
+      <!-- <.nerve messages={@disciples} /> -->
     </div>
     
 <!-- <div class="backdrop-blur-sm border border-gray-700/50 rounded-lg p-4"/> -->
