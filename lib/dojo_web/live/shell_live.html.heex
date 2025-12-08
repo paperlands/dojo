@@ -123,7 +123,7 @@
         <div
           phx-update="ignore"
           id="core-output"
-          class="fixed opacity-80 transition-colors delay-150 duration-300 bottom-[-10px] overflow-y-auto pb-1 font-mono border-none text-primary left-2"
+          class="fixed opacity-80 transition-colors delay-150 duration-300 -bottom-[35px] overflow-y-auto pb-1 font-mono border-none text-primary left-2"
         >
         </div>
       </div>
@@ -309,7 +309,7 @@
                 "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md hover:border-primary transition-colors delay-150 ",
                 (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") ||
                   "cursor-progress pointer-events-none",
-                (Map.has_key?(dis, :meta) && dis.meta.state == :error && "border-error/75") || (@outershell && @outershell.addr == phx_ref &&
+                (Map.has_key?(dis, :meta) && dis.meta.state == :error && "border-error/50") || (@outershell && @outershell.addr == phx_ref &&
                    "border-accent-content text-accent-content") ||
                   "border-accent/50 text-accent"
               ]}
