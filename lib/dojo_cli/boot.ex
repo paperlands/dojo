@@ -76,6 +76,10 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     bottom_right = "╯"
     horizontal = "─"
     vertical = "│"
+    left_fleuron = "☙"
+    right_fleuron = "❧"
+    center_ornament = "☀"
+    inner_width = box_width - 6
     
     # Create hyperlinks (OSC 8 standard - works in modern terminals)
     ip_link = "http://#{get_local_ip()}:#{4000}"
@@ -87,6 +91,21 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     # Build the box
     IO.puts(orange<>splash())
     IO.puts("\n")
+    # Fleurons at the ends with strong center ornament
+    
+
+    # Calculate the line segments between fleurons and center
+    # Format: ☙ ─── ✦ ─── ❧
+    total_fleuron_length = String.length(left_fleuron) + String.length(right_fleuron) + String.length(center_ornament)
+    remaining_space = max(0, inner_width - total_fleuron_length - 4) # 4 for the spaces around ornaments
+
+    # Divide the remaining space for lines on each side
+    line_length = div(remaining_space, 2)
+    line = String.duplicate("─", line_length)
+
+    # Build the complete fleuron separator
+    fleuron_separator = "#{left_fleuron} #{line} #{center_ornament} #{line} #{right_fleuron}"
+
     IO.puts("#{dim}#{top_left}#{String.duplicate(horizontal, box_width - 2)}#{top_right}#{reset}")
     IO.puts("#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}")
     
@@ -96,9 +115,10 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     IO.puts("#{dim}#{vertical}#{reset}#{String.duplicate(" ", padding)}#{bold}#{orange}#{IO.ANSI.blink_slow()}#{title}#{reset}#{String.duplicate(" ", box_width - 2 - padding - String.length(title))}#{dim}#{vertical}#{reset}")
     
     IO.puts("#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}")
+
     
-    # Separator
-    IO.puts("#{dim}#{vertical}#{reset}  #{dim}#{String.duplicate("─", box_width - 6)}#{reset}  #{dim}#{vertical}#{reset}")
+    # Seperator
+    IO.puts("#{dim}#{vertical}#{reset}  #{orange}#{fleuron_separator}#{reset}   #{dim}#{vertical}#{reset}")
     IO.puts("#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}")
     
     # Local IP info
