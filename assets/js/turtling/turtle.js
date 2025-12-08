@@ -43,7 +43,7 @@ export class Turtle {
             jmpto: this.jmpto.bind(this),
             label: this.label.bind(this),
             erase: this.erase.bind(this),
-            home: this.spawn.bind(this),
+            home: this.jmpto.bind(this,...[0,0,0]),
             fill: this.fill.bind(this),
             wait: this.wait.bind(this),
             limitRecurse: this.setRecurseLimit.bind(this),
@@ -54,7 +54,6 @@ export class Turtle {
         this.places = {};
         this.bridge = bridged("turtle")
         this.functions = {};
-        this.instructions = [];
 
         this.executionState = {
             x: 0,
@@ -368,8 +367,8 @@ export class Turtle {
                 this.bridge.pub(["saveRecord", {snapshot: image, title: this.renderstate.snapshot.title}])
                 this.renderstate.snapshot.save=false
             }
-            this.bridge.pub(["hatchTurtle", {"commands": this.instructions, "path":  dataurl}])
-
+            this.renderstate.meta.path = dataurl
+            this.bridge.pub(["hatchTurtle", this.renderstate.meta])
         }, 0)
     }
 
@@ -457,21 +456,43 @@ export class Turtle {
         const tx = targetX;
         const ty = targetY;
         const tz = targetZ ?? this.z;
-
+        
         // Calculate direction vector from current position to target
         const dx = tx - this.x;
         const dy = ty - this.y;
         const dz = tz - this.z;
-
-        // Calculate angle in the XY plane (yaw)
-        let angle = Math.atan2(dy, dx) * (180 / Math.PI);
-
-        // Create rotation versor for this angle
-        const rotation = Versor.fromAxisAngle({ x: 0, y: 0, z: 1 }, angle);
-
-        // Reset current rotation and apply new rotation
-        this.rotation = rotation;
-
+        
+        // Calculate distance in XY plane and total distance
+        const distXY = Math.sqrt(dx * dx + dy * dy);
+        const distTotal = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        
+        // Handle edge case: target is at current position
+        if (distTotal < Versor.EPSILON) {
+            return;
+        }
+        
+        // Normalize direction vector
+        const ndx = dx / distTotal;
+        const ndy = dy / distTotal;
+        const ndz = dz / distTotal;
+        
+        // Calculate yaw (rotation around Z axis)
+        const yaw = Math.atan2(dy, dx) * (180 / Math.PI);
+        
+        // Calculate pitch (rotation around perpendicular axis)
+        // Pitch is the angle from XY plane to target
+        const pitch = -Math.atan2(dz, distXY) * (180 / Math.PI);
+        
+        // Create rotation: first yaw, then pitch
+        // Yaw rotation around Z axis
+        const yawRotation = Versor.fromAxisAngle({ x: 0, y: 0, z: 1 }, yaw);
+        
+        // Pitch rotation around Y axis (perpendicular to forward direction)
+        const pitchRotation = Versor.fromAxisAngle({ x: 0, y: 1, z: 0 }, pitch);
+        
+        // Combine rotations: apply yaw first, then pitch
+        this.rotation = yawRotation.multiply(pitchRotation);
+        
         // Update execution state
         this.executionState.rotation = new Versor(
             this.rotation.w,
@@ -480,6 +501,35 @@ export class Turtle {
             this.rotation.z
         );
     }
+
+    // faceto(targetX=0, targetY=0, targetZ=null) {
+    //     // Convert target coordinates to the same scale as internal coordinates
+    //     const tx = targetX;
+    //     const ty = targetY;
+    //     const tz = targetZ ?? this.z;
+
+    //     // Calculate direction vector from current position to target
+    //     const dx = tx - this.x;
+    //     const dy = ty - this.y;
+    //     const dz = tz - this.z;
+
+    //     // Calculate angle in the XY plane (yaw)
+    //     let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+    //     // Create rotation versor for this angle
+    //     const rotation = Versor.fromAxisAngle({ x: 0, y: 0, z: 1 }, angle);
+
+    //     // Reset current rotation and apply new rotation
+    //     this.rotation = rotation;
+
+    //     // Update execution state
+    //     this.executionState.rotation = new Versor(
+    //         this.rotation.w,
+    //         this.rotation.x,
+    //         this.rotation.y,
+    //         this.rotation.z
+    //     );
+    // }
 
 
     erase(){
@@ -732,7 +782,8 @@ export class Turtle {
         //initialise render state
         this.renderstate = {
             phase: "start",
-            snapshot: {frame: null, save: false}
+            snapshot: {frame: null, save: false},
+            meta: {state: null, message: null, commands: []}
         }
         this.math.parser.reset()
         this.renderLoop.requestRestart();
@@ -817,14 +868,14 @@ export class Turtle {
             this.reset();
             this.requestRender();
             this.executeBody(instructions, {});
-            this.instructions = instructions
+            this.renderstate.meta = {state: "success", commands: instructions}
             endTime = performance.now();
             executionTime = endTime-startTime-executionTime
             console.log(`Drawing Time took ${executionTime} milliseconds.`);
             return { success: true, commandCount: this.commandCount };
         } catch (error) {
             console.error(error);
-            this.bridge.pub(["brokeTurtle", {"err_source": code, "err":  error.message}])
+            this.renderstate.meta = {state: "error", message: error.message, source: code}
             return { success: false, error: error.message };
         }
     }

@@ -25,9 +25,6 @@ defmodule DojoWeb.ShellLive do
        clan: nil,
        outershell: %OuterShell{},
        sensei: false,
-       myfunctions: [],
-       mytitle: "paperland",
-       outerfunctions: [],
        class: nil,
        disciples: %{},
        visible_disciples: [],
@@ -155,24 +152,6 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-  # def handle_event(
-  #       "tellTurtle",
-  #       %{"cmd" => cmd},
-  #       socket
-  #     ) do
-  #   # Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
-  #   {:noreply, socket |> push_event("writeShell", %{"command" => cmd})}
-  # end
-
-  # def handle_event(
-  #       "tellTurtle",
-  #       _,
-  #       socket
-  #     ) do
-  #   # Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
-  #   {:noreply, socket}
-  # end
-
   def handle_event(
         "keepTurtle",
         _,
@@ -195,140 +174,59 @@ defmodule DojoWeb.ShellLive do
         end
       )
 
-    # Dojo.Turtle.hatch(%{path: path, commands: commands |> Enum.take(88)}, %{class: class})
     {:noreply, push_socket}
   end
 
   def handle_event(
-        "hatchTurtle",
-        %{"commands" => commands, "path" => path},
-        %{assigns: %{class: class, clan: clan, session: %{name: name, last_opened: time}}} =
-          socket
-      )
-      when is_binary(name) do
-    dest_dir = Path.join([:code.priv_dir(:dojo), "static", "frames", clan])
-
-    if !File.dir?(dest_dir) do
-      File.mkdir(dest_dir)
-    end
+    "hatchTurtle",
+    %{"state" => _state} = payload,
+    %{assigns: %{class: class, clan: clan, session: %{name: name, last_opened: time}}} =
+      socket) when is_binary(name) do
+    
 
     #this is user sesion first logintime
     id = (name <> Base.encode64(to_string(time)))
     |> String.replace(~r/[^a-zA-Z0-9]/, "")
 
-    with file when is_binary(file) <-
-           DojoWeb.Utils.Base64.to_file(path, Path.join([dest_dir, id])),
-         ext when byte_size(ext) > 0 <- Path.extname(file) do
-      Dojo.Turtle.hatch(
-        %{
-          path: Path.join(["frames", clan, id]) <> ext <> "#bump=#{System.os_time(:second)}",
-          commands: commands |> Enum.take(1008),
-          time: System.os_time(:second)
-        },
-        %{class: class}
-      )
-    else
-      _ -> nil
-    end
+    Dojo.Turtle.reflect(payload, %{topic: :hatch, class: class, node: node(), id: id, clan: clan})
 
-    {:noreply, socket |> assign(mytitle: commands |> Dojo.Turtle.find_title())}
+    {:noreply, socket}
   end
 
-      def handle_event(
-        "hatchTurtle",
-        %{"commands" => commands},
-        socket
-      ) do
-        {:noreply, socket |> assign(mytitle: commands |> Dojo.Turtle.find_title())}
-      end
-
-      def handle_event(
-        "brokeTurtle",
-        %{"err_source" => src, "err" => err},
-        %{assigns: %{class: class}} = socket
-      ) do
-        Dojo.Turtle.broke(
-          %{
-            source: src,
-            err: err,
-            time: System.os_time(:second)
-          },
-          %{class: class}
-        )
-        
-        {:noreply, socket}
-      end
-
-  # def handle_event(
-  #       "seeTurtle",
-  #       %{"addr" => addr, "function" => func},
-  #       %{assigns: %{disciples: dis}} = socket
-  #     ) do
-  #   {:noreply,
-  #    socket
-  #    |> push_event("seeOuterShell", %{
-  #      ast: dis[addr][:meta][:commands] |> Dojo.Turtle.find_fn(func),
-  #      addr: addr,
-  #      mod: "lambda",
-  #      name: func
-  #    })
-  #    |> assign(
-  #      :outershell,
-  #      %{
-  #        addr: addr,
-  #        resp: "drawing @#{addr}'s #{func}"
-  #      }
-  #    )}
-  # end
-
   def handle_event(
+    "hatchTurtle",
+    %{"commands" => _commands},
+    socket
+  ) do
+    {:noreply, socket}
+  end
+
+
+      def handle_event(
         "seeTurtle",
         %{"addr" => addr},
         %{assigns: %{disciples: dis, class: _class}} = socket
       )
       when is_binary(addr) do
-    command =
-      case Dojo.Table.last(dis[addr][:node], :hatch) do
-        %{commands: ast} -> ast
-        _ -> %{}
+        case  Dojo.Table.last(dis[addr][:node], :hatch) do
+          %Dojo.Turtle{state: state} = table_state -> 
+            {:noreply,
+             socket
+             |> push_event("seeOuterShell",  Map.from_struct(table_state))
+             |> assign(
+               :outershell,
+             %OuterShell{
+               state: state, 
+               addr: addr,
+               active: true,
+               name: "#{dis[addr][:name]}"
+             }
+             )}
+
+          _ -> {:noreply, socket}
+        end
       end
 
-    {:noreply,
-     socket
-     |> push_event("seeOuterShell", %{ast: command, addr: addr, mod: "root"})
-     |> assign(
-       :outershell,
-       %OuterShell{
-         addr: addr,
-         title: command |> Dojo.Turtle.find_title(),
-         active: true,
-         # outerfunctions: dis[addr][:meta][:commands] |> Dojo.Turtle.filter_fns(),
-         name: "#{dis[addr][:name]}"
-       }
-     )}
-  end
-
-  # def handle_event(
-  #   "seeTurtle",
-  #   %{"function" => func},
-  #   %{assigns: %{myfunctions: commands}} = socket
-  # ) do
-  #   {:noreply,
-  #    socket
-  #    |> push_event("seeOuterShell", %{
-  #          ast: commands |> Dojo.Turtle.find_fn(func),
-  #          addr: "my",
-  #          mod: "lambda",
-  #          name: func
-  #                  })
-  #                  |> assign(
-  #      :outershell,
-  #    %{
-  #      addr: "my",
-  #      resp: "drawing your #{func}"
-  #    }
-  #    )}
-  # end
 
   def handle_event("seeTurtle", _, socket) do
     {:noreply,
@@ -414,11 +312,24 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
+    # pokemon clause
+  def handle_call(
+        e,
+        p,
+        socket
+      ) do
+    dbg()
+    IO.inspect(p, label: "pokemon params")
+
+    {:noreply, socket}
+  end
+
+
   defp update_disciples_metadata(disciples, visible_disciples) do
     Enum.reduce(visible_disciples, disciples, fn ref, acc ->
       with %{node: node} <- disciples[ref],
-           %{path: path} <- Dojo.Table.last(node, :hatch) do
-        put_in(acc, [ref, :meta], %{path: path})
+      %{path: path, state: state} <- Dojo.Table.last(node, :hatch) do
+        put_in(acc, [ref, :meta], %{path: path, state: state})
       else
         _ -> acc
       end
@@ -432,10 +343,10 @@ defmodule DojoWeb.ShellLive do
        )
        when not is_nil(addr) do
     case Dojo.Table.last(dis[addr][:node], :hatch) do
-      %{commands: ast, time: time} = table_state when time > outershell.last_active ->
+      %{state: state, time: time} = table_state when time > outershell.last_active ->
         socket
-        |> assign(:outershell, %{outershell | last_active: table_state.time})
-        |> push_event("seeOuterShell", %{ast: ast, addr: addr, mod: "root"})
+        |> assign(:outershell, %{outershell | state: state, last_active: time})
+        |> push_event("seeOuterShell", Map.from_struct(table_state))
 
       _ ->
         socket
@@ -446,22 +357,22 @@ defmodule DojoWeb.ShellLive do
 
   def outershell(assigns) do
     ~H"""
-    <div class="relative rightthird pt-10 right-2 w-full lg:-left-1/2 lg:w-[150%] ">
+    <div class="relative outershell  pt-10 right-2 w-full lg:-left-1/2 lg:w-[150%] ">
       <div class="flex items-start justify-between gap-2 mb-3">
         <span
           id="top-head"
-          class="text-lg font-bold text-amber-200 flex-1 leading-tight"
+          class="text-lg font-bold text-secondary-content flex-1 leading-tight"
         >
           {gettext("@%{addr}'s code", addr: @outershell.name)}
         </span>
 
         <span
           phx-click="followTurtle"
-          class="pointer-events-auto cursor-pointer relative flex h-2 w-2 flex-shrink-0 mt-1 mr-3 "
+          class="pointer-events-auto cursor-pointer relative flex h-2 w-2 flex-shrink-0 mt-1 mr-3 transition-colors delay-150"
         >
           <span class={[
             "absolute inline-flex h-full w-full rounded-full  opacity-75",
-            (@outershell.follow && "bg-accent-content animate-ping") || "bg-primary"
+            (@outershell.state == :error && "bg-error") || (@outershell.follow && "bg-accent-content animate-ping") || "bg-primary"
           ]}>
           </span>
           <span class="relative inline-flex rounded-full h-2 w-2 bg-primaryAccent"></span>
@@ -471,16 +382,16 @@ defmodule DojoWeb.ShellLive do
       <div
         id="outerenv"
         phx-update="ignore"
-        class="overflow-y-scroll relative border pointer-events-auto rounded-lg h-[50vh] bg-black/30 border-amber-600/20 dark-scrollbar scrollbar-hide cursor-text"
+        class="overflow-y-scroll relative border pointer-events-auto rounded-lg h-[50vh]  border-amber-600/20 dark-scrollbar backdrop-blur-xs scrollbar-hide cursor-text"
       >
         <button
           phx-click="closeTurtle"
-          class="z-50 absolute flex  items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 hover:bg-red-900/90 group hover:opacity-100 top-2 right-2  border-amber-600"
+          class="z-50 absolute flex  items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 group hover:opacity-100 top-2 right-2 border-accent focus-within:border-none"
         >
           <!-- Base Crosshair -->
           <div class="absolute inset-0 flex items-center justify-center">
             <svg
-              class="w-4 h-4 transition-colors text-red-600 group-hover:text-amber-300"
+              class="w-4 h-4 transition-colors text-error text-shadow-error group-hover:text-primary-content"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -492,32 +403,38 @@ defmodule DojoWeb.ShellLive do
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
           </div>
-          <!-- Mechanical Cross Overlay -->
-          <svg
-            class="absolute inset-0 w-full h-full transition-opacity text-amber-600 opacity-30 group-hover:opacity-50"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1"
-          >
-            <path d="M12 2v20M2 12h20" />
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 7v10M7 12h10" stroke-dasharray="2 2" />
-          </svg>
+          
         </button>
+        <!--
+        <div class="relative z-4 rounded-sm pointer-events-auto cursor-text border-none h-full" >
         <textarea
           phx-update="ignore"
           id="outershell"
-          class="relative z-40 rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full"
           phx-hook="Shell"
-          data-target="outer"
-        ></textarea>
+          data-target="outer"/>
       </div>
+      -->
+        <div
+          phx-update="ignore"
+          id="outershell"
+          phx-hook="Shell"
+          class="relative z-40 rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full"
+          data-target="outer"
+        />
+      </div>
+      <div class="flex" class="-bottom-1/12  transition-colors delay-150 duration-300 overflow-y-auto pb-1 ">
       <div
           phx-update="ignore"
           id="outer-output"
-          class="-bottom-1/12 opacity-80 transition-colors delay-150 duration-300 overflow-y-auto pb-1 font-mono border-none text-primary left-2"
-        >
+          class="w-1/2 left-2 flex-auto opacity-80 font-mono border-none text-primary text-sm"
+        />
+      
+
+    <div
+          phx-update="ignore"
+          id="outermerge-output"
+          class="w-1/2 flex-auto font-mono  opacity-80 border-none text-primary text-sm"
+        />
       </div>
     </div>
     """
@@ -768,7 +685,7 @@ defmodule DojoWeb.ShellLive do
               
     <!-- Info -->
               <div class="flex-1 min-w-0">
-                <h3 class="text-sm font-bold text-amber-300 truncate">{"title here"}</h3>
+                <h3 class="text-sm font-bold text-primary-content truncate">{"title here"}</h3>
                 <p class="text-xs text-amber-400/60">{"date here"}</p>
               </div>
               
@@ -780,7 +697,7 @@ defmodule DojoWeb.ShellLive do
                   class="p-2 transition-colors rounded-full bg-amber-900/70 hover:bg-amber-800"
                 >
                   <svg
-                    class="w-4 h-4 text-amber-300"
+                    class="w-4 h-4 text-primary-content"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -798,7 +715,7 @@ defmodule DojoWeb.ShellLive do
                   class="p-2 transition-colors rounded-full bg-amber-900/70 hover:bg-amber-800"
                 >
                   <svg
-                    class="w-4 h-4 text-amber-300"
+                    class="w-4 h-4 text-primary-content"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -833,7 +750,7 @@ defmodule DojoWeb.ShellLive do
     >
       <div class="relative w-6 h-6">
         <svg
-          class="absolute inset-0 w-6 h-6 text-amber-300 transform transition-transform group-hover:translate-y-0.5"
+          class="absolute inset-0 w-6 h-6 text-primary-content transform transition-transform group-hover:translate-y-0.5"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -878,7 +795,7 @@ defmodule DojoWeb.ShellLive do
       <div class="flex items-center space-x-3">
         <!-- Value Display -->
         <div class="w-4 mr-4 -ml-4 text-left">
-          <span class="font-mono text-sm text-amber-300">
+          <span class="font-mono text-sm text-primary-content">
             -360
           </span>
         </div>
@@ -913,7 +830,7 @@ defmodule DojoWeb.ShellLive do
         </div>
         <!-- Value Display -->
         <div class="w-4 text-right">
-          <span class="font-mono text-sm text-amber-300">
+          <span class="font-mono text-sm text-primary-content">
             360
           </span>
         </div>

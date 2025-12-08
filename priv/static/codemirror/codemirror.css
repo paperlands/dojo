@@ -383,6 +383,11 @@ div.CodeMirror-dragcursors {
   visibility: visible;
 }
 
+.CodeMirror:not(.CodeMirror-focused) .CodeMirror-cursor {
+  visibility: visible;
+  border-left-color: grey; /* Example color for the inactive cursor */
+}
+
 .CodeMirror-selected { background: #d9d9d9; }
 .CodeMirror-focused .CodeMirror-selected { background: #d7d4f0; }
 .CodeMirror-crosshair { cursor: crosshair; }
@@ -409,3 +414,189 @@ div.CodeMirror-dragcursors {
 
 /* Help users use markselection to safely style text background */
 span.CodeMirror-selectedtext { background: none; }
+
+/* CodeMirror Merge CSS */
+/* CodeMirror Merge CSS - Shanshui CRT Style */
+  .CodeMirror-merge {
+    position: relative;
+    white-space: pre;
+    border: 1px solid rgba(100, 120, 100, 0.15);
+  }
+
+  .CodeMirror-merge, .CodeMirror-merge .CodeMirror {
+      height: 50dvh;
+      color: rgba(150, 200, 160, 0.1);
+  }
+
+  .CodeMirror-merge-2pane .CodeMirror-merge-pane { width: 48%;}
+  .CodeMirror-merge-2pane .CodeMirror-merge-gap { width: 22px; }
+  .CodeMirror-merge-3pane .CodeMirror-merge-pane { width: 31%; }
+  .CodeMirror-merge-3pane .CodeMirror-merge-gap { width: 3.5%; }
+
+  .CodeMirror-merge-pane {
+    display: inline-block;
+    white-space: normal;
+    vertical-align: top;
+    background: transparent;
+  }
+
+  .CodeMirror-merge-pane-rightmost {
+    position: absolute;
+    right: 0px;
+    z-index: 1;
+  }
+
+  .CodeMirror-merge-gap {
+    z-index: 2;
+    display: inline-block;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    position: relative;
+    
+    /* border-left: 1px solid rgba(100, 150, 120, 0.1); */
+  }
+
+  .CodeMirror-merge-scrolllock-wrap {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+  }
+
+  .CodeMirror-merge-scrolllock {
+    position: relative;
+    left: -50%;
+    cursor: pointer;
+    color: rgba(150, 200, 160, 0.6);
+    line-height: 1;
+    text-shadow: 0 0 8px rgba(150, 200, 160, 0.4);
+  }
+
+  .CodeMirror-merge-copybuttons-left,
+  .CodeMirror-merge-copybuttons-right {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    line-height: 1;
+  }
+
+  .CodeMirror-merge-copy {
+    position: absolute;
+    cursor: pointer;
+    color: rgba(231, 0, 11, 0.5);
+    /* color: rgba(50, 180, 140, 0.7); */
+    text-shadow: 0 0 6px rgba(231, 0, 11, 0.8);
+    transition: all 0.3s ease;
+  }
+
+  .CodeMirror-merge-copy:hover {
+    color: rgba(250, 200, 48, 1);
+    /* color: rgba(150, 220, 170, 1); */
+    text-shadow: 0 0 12px ;
+  }
+
+  .CodeMirror-merge-copy-reverse {
+    position: absolute;
+    cursor: pointer;
+    color: rgba(120, 180, 140, 0.7);
+    text-shadow: 0 0 6px rgba(120, 180, 140, 0.5);
+  }
+
+  .CodeMirror-merge-copybuttons-left .CodeMirror-merge-copy { left: 2px; }
+  .CodeMirror-merge-copybuttons-right .CodeMirror-merge-copy { right: 2px; }
+
+  /* Inserted lines - misty green glow */
+  .CodeMirror-merge-r-inserted {
+      background: rgba(50, 180, 30, 0.2);
+      border-bottom: 1px solid rgba(100, 180, 30, 0.5);
+      box-shadow: 0 0 15px rgba(100, 250, 30, 0.2);
+  }
+  .CodeMirror-merge-l-inserted {
+    background: rgba(100, 22, 24, 0.5);
+    border-bottom: 1px solid rgba(100, 22, 24, 0.5);
+    box-shadow: 0 0 15px rgba(200, 22, 24, 0.5);
+  }
+
+
+  /* Deleted lines - faded ink wash */
+  .CodeMirror-merge-r-deleted,
+  .CodeMirror-merge-l-deleted {
+    background: rgba(140, 160, 140, 0.05);
+    border-bottom: 1px solid rgba(140, 160, 140, 0.12);
+    opacity: 0.5;
+  }
+
+  /* Right chunk - bamboo mist */
+  .CodeMirror-merge-r-chunk {
+    background:  rgba(100, 150, 30, 0.1)
+  }
+
+  .CodeMirror-merge-r-chunk-start {
+    border-top: 1px solid rgba(180, 200, 150, 0.15);
+  }
+
+  .CodeMirror-merge-r-chunk-end {
+    border-bottom: 1px solid rgba(180, 200, 150, 0.15);
+  }
+
+  .CodeMirror-merge-r-connect {
+    fill: rgba(180, 200, 160, 0.06);
+    stroke: rgba(180, 200, 150, 0.2);
+    stroke-width: 1px;
+    filter: drop-shadow(0 0 3px rgba(180, 200, 150, 0.2));
+  }
+
+  /* Left chunk - mountain mist */
+  .CodeMirror-merge-l-chunk {
+    background: rgba(140, 170, 150, 0.06);
+  }
+
+  .CodeMirror-merge-l-chunk-start {
+    border-top: 1px solid rgba(120, 160, 140, 0.15);
+  }
+
+  .CodeMirror-merge-l-chunk-end {
+    border-bottom: 1px solid rgba(120, 160, 140, 0.15);
+  }
+
+  .CodeMirror-merge-l-connect {
+    fill: rgba(140, 170, 150, 0.06);
+    stroke: rgba(120, 160, 140, 0.2);
+    stroke-width: 1px;
+    filter: drop-shadow(0 0 3px rgba(120, 160, 140, 0.2));
+  }
+
+  /* Merged chunk - harmonious jade */
+  .CodeMirror-merge-l-chunk.CodeMirror-merge-r-chunk {
+    background: rgba(130, 180, 150, 0.08);
+  }
+
+  .CodeMirror-merge-l-chunk-start.CodeMirror-merge-r-chunk-start {
+    border-top: 1px solid rgba(120, 180, 140, 0.2);
+  }
+
+  .CodeMirror-merge-l-chunk-end.CodeMirror-merge-r-chunk-end {
+    border-bottom: 1px solid rgba(120, 180, 140, 0.2);
+  }
+
+  /* Collapsed widget - ink seal */
+  .CodeMirror-merge-collapsed-widget:before {
+    content: "(...)";
+  }
+
+  .CodeMirror-merge-collapsed-widget {
+    cursor: pointer;
+    color: rgba(130, 170, 150, 0.8);
+    background: rgba(130, 170, 150, 0.08);
+    border: 1px solid rgba(130, 170, 150, 0.2);
+    font-size: 90%;
+    padding: 0 3px;
+    border-radius: 2px;
+    text-shadow: 0 0 5px rgba(130, 170, 150, 0.3);
+  }
+
+  .CodeMirror-merge-collapsed-line .CodeMirror-gutter-elt {
+    display: none;
+  }

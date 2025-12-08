@@ -2,6 +2,7 @@ import { execute } from "./terminal/operations.js"
 import { Tabber } from "./terminal/tabber.js"
 import { bridged } from "./bridged.js"
 import { nameGen, idGen } from "./utils/nama.js"
+import {printAST} from "./turtling/parse.js"
 
 // =============================================================================
 // STORAGE LAYER
@@ -93,7 +94,7 @@ end`,
 export class Terminal {
     // Default CodeMirror configuration
     static DEFAULT_OPTIONS = {
-        theme: 'everforest',
+        theme: 'abbott',
         mode: 'plang',
         lineNumbers: true,
         lineWrapping: true,
@@ -121,13 +122,17 @@ export class Terminal {
         this.shell = null;
         this.nameGen = nameGen();
         this.autosaveTimer = null;
-        this.shell = this.CM.fromTextArea(this.editor, this.#buildOptions());
-        this.#setupEventListeners();
+        // Merge state - null when in single-pane mode
+        this.merge = null;
+
+        
         this.bridge = bridged("terminal")
         return this
     }
 
     inner() {
+        this.shell = this.CM.fromTextArea(this.editor, this.#buildOptions());
+        this.#setupEventListeners(this.shell);
         this.tabs = new Tabber()
         this.shell.run = this.run.bind(this);
         this.bufferStore = new BufferStorage()
@@ -137,12 +142,35 @@ export class Terminal {
         return this;
     }
 
-    outer(code) {
+    outer(code="") {
+        this.shell = this.#enterMerge("")
+        this.#setupEventListeners(this.shell);
         this.shell.run = this.run.bind(this);
-
         this.swapBuffer("@outer.shell", code);
-
+        this.rightPane().output = document.getElementById("outermerge-output");
         return this;
+    }
+
+    changeouter(payload) {
+        switch(payload.state) {
+        case 'success':
+            const code = printAST(payload.commands)
+            this.swapBuffer("@outer.shell", code);
+            this.rightPane().setValue(code)
+            this.rightPane().output.style.color = "#FF9933";
+            this.rightPane().output.innerHTML = `${payload.message || ""}`
+            break;
+        case 'error':
+            if(payload.commands?.length>0) {
+                const code = printAST(payload.commands)
+                this.swapBuffer("@outer.shell", code);
+            }
+            this.rightPane().setValue(payload.source)
+            this.rightPane().output.style.color = "#FF0000";
+            this.rightPane().output.innerHTML = `${payload.message}`
+            break;
+            
+        }
     }
 
     // buffermanagement
@@ -179,15 +207,15 @@ export class Terminal {
         };
     }
 
-    #setupEventListeners() {
+    #setupEventListeners(shell) {
         // Gutter click selection
-        this.shell.on('gutterClick', (cm, line) => {
+        shell.on('gutterClick', (cm, line) => {
             cm.focus();
             cm.setSelection({ line, ch: 0 }, { line, ch: cm.getLine(line).length });
         });
 
         // Content change handling with debounced autosave
-        this.shell.on('change', (cm) => {
+        shell.on('change', (cm) => {
             const content = cm.getValue();
 
             // Update current buffer
@@ -205,6 +233,83 @@ export class Terminal {
         });
 
     }
+
+    // Core primitive: capture editor state for restoration
+    #captureState(ed = this.shell) {
+        return {
+            value: ed.getValue(),
+            cursor: ed.getCursor(),
+            scroll: ed.getScrollInfo(),
+            selections: ed.listSelections()
+        };
+    }
+
+    // Core primitive: restore editor state after transition
+    #restoreState(ed, state) {
+        ed.setValue(state.value);
+        ed.setSelections(state.selections);
+        ed.scrollTo(state.scroll.left, state.scroll.top);
+    }
+
+     // Enter merge view mode
+    #enterMerge(orig, opts = {}) {
+        // Capture current editor state
+        // const state = this.#captureState();
+        
+        const container = document.getElementById('outershell');
+        
+        this.merge = {}
+        
+        // Create merge view with combined options
+        this.merge.view = this.CM.MergeView(container, {
+            ...this.options,
+            value: "",
+            orig: orig,
+            connect: 'align',
+            collapseIdentical: false,
+            
+            ...opts
+        });
+        
+
+        
+
+        return this.merge.view.editor()
+    }
+
+
+    setOption(option, delta) {
+        if (this.merge?.view.editor()) {
+            this.merge.view.editor().setOption(option, delta)
+            this.merge.view.rightOriginal().setOption(option, delta)
+        }
+        
+        this.shell.setOption(option, delta);
+        this.options[option] = delta
+        // if merge else shell
+        return true  
+    }
+
+    // Get currently active editor (works in both modes)
+    active() {
+        return this.merge?.view.editor() || this.shell;
+    }
+
+    // Get right pane editor (only in merge mode)
+    rightPane() {
+        return this.merge?.view.rightOriginal() || null;
+    }
+
+    // Update right pane content (only in merge mode)
+    updateRightPane(content) {
+        if (!this.merge) {
+            console.warn('Not in merge mode');
+            return false;
+        }
+        this.rightPane?.setValue(content);
+        return true;
+    }
+
 
     #loadBuffersFromStorage() {
         const storedBuffers = this.bufferStore.load();
@@ -294,7 +399,7 @@ label "Welcome to PaperLand" 50`,
     swapBuffer(bufferName, content, mode) {
         const { id, buffer, doc } = this.#createBufferDoc(bufferName, content);
         this.currentBuffer = id;
-        this.shell.swapDoc(doc)
+        this.active().swapDoc(doc)
         this.triggerBridge()
     }
 
@@ -426,7 +531,7 @@ label "Welcome to PaperLand" 50`,
     run(instructions) {
         if (typeof execute === 'function') {
             // operations and instructions for cntrl and command deck
-            execute(this.shell, instructions);
+            execute(this.active(), instructions);
         } else {
             console.warn('Execute function not available');
         }

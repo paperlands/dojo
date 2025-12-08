@@ -1,6 +1,5 @@
 import { Turtle } from "../turtling/turtle.js"
 import { Terminal } from "../terminal.js"
-import {printAST} from "../turtling/parse.js"
 import {cameraBridge} from "../bridged.js"
 import { computePosition, offset, inline, autoUpdate } from "../../vendor/floating-ui.dom.umd.min";
 import { temporal } from "../utils/temporal.js"
@@ -321,15 +320,14 @@ const Shell = {
 
     // differences shell behaviour
     if(shellTarget=="outer"){
-      this.handleEvent("seeOuterShell", (sight) => {
-        const code = printAST(sight.ast)
-        term.outer(code)
+      this.handleEvent("seeOuterShell", (payload) => {
+          term.changeouter(payload) 
       });
+       term.outer()
     } else {
       turtle.bridge.sub(([event, payload]) =>{
         switch(event) {
         case "saveRecord":
-          console.log(payload, "SAVE")
           saveImage(payload.snapshot, payload.title)
           break;
         default:
@@ -343,7 +341,10 @@ const Shell = {
     this.cleanup = [
       listeners.keyboard(term.shell).mount(),
       listeners.selection(term.shell, this.pushEvent.bind(this)).mount(),
-      listeners.theme(theme => term.shell.setOption('theme', theme)).mount(),
+        listeners.theme(theme => {
+          term.setOption('theme', theme)
+        }
+      ).mount(),
       //listeners.resizer(resize => term.triggerBridge()).mount(canvas),
       //slider is mutated and also is activate by a listener
       slider.mount(),

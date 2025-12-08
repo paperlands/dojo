@@ -6,7 +6,7 @@
     phx-update="ignore"
     id="outer-canvas"
     class={[
-      "fixed inset-0 z-0 bg-black/50 select-none",
+      "fixed inset-0 z-0 bg-secondary/50 select-none",
       !@outershell && "pointer-events-none"
     ]}
   >
@@ -123,7 +123,7 @@
         <div
           phx-update="ignore"
           id="core-output"
-          class="opacity-80 transition-colors delay-150 duration-300 -bottom-1/12 overflow-y-auto pb-1 font-mono border-none text-primary left-2"
+          class="fixed opacity-80 transition-colors delay-150 duration-300 bottom-[-10px] overflow-y-auto pb-1 font-mono border-none text-primary left-2"
         >
         </div>
       </div>
@@ -139,7 +139,7 @@
           <!-- Login Link Button -->
           <.link
             navigate={~p"/welcome"}
-            class="relative px-4 py-2 ml-10 font-mono text-sm transition-colors duration-300 pointer-events-auto text-amber-400/80 hover:text-amber-300"
+            class="relative px-4 py-2 ml-10 font-mono text-sm transition-colors duration-300 pointer-events-auto text-primary hover:text-primary-content"
           >
             <span class="relative z-10 text-end">Enter the Shell</span>
             <!-- Animated underscore cursor -->
@@ -218,10 +218,10 @@
                 phx-click={
                   (@outershell.active &&
                      JS.dispatch("phx:outerkeepCanvas",
-                       detail: %{"title" => @outershell.name <> "'s " <> @outershell.title}
+                       detail: %{"title" => @outershell.name <> "'s creation"}
                      )) ||
                     JS.dispatch("phx:selfkeepCanvas",
-                      detail: %{"title" => @session.name <> "'s " <> @mytitle}
+                      detail: %{"title" => @session.name <> "'s creation"}
                     )
                 }
               >
@@ -300,16 +300,16 @@
             <div
               phx-click={
                 (@outershell && @outershell.addr == phx_ref &&
-                   JS.push("closeTurtle") |> JS.show(to: ".rightthird")) ||
-                  JS.push("seeTurtle") |> JS.hide(to: ".rightthird")
+                   JS.push("closeTurtle")) ||
+                  JS.push("seeTurtle") |> JS.hide(to: ".rightthird") |> JS.show(to: ".outershell")
               }
               phx-throttle="500"
               phx-value-addr={phx_ref}
               class={[
-                "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md hover:border-primary",
+                "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md hover:border-primary transition-colors delay-150 ",
                 (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") ||
                   "cursor-progress pointer-events-none",
-                (@outershell && @outershell.addr == phx_ref &&
+                (Map.has_key?(dis, :meta) && dis.meta.state == :error && "border-error/75") || (@outershell && @outershell.addr == phx_ref &&
                    "border-accent-content text-accent-content") ||
                   "border-accent/50 text-accent"
               ]}
@@ -328,7 +328,7 @@
                 :if={Map.has_key?(dis, :meta)}
                 src={dis.meta.path}
                 onerror="this.src='/images/turtlehead.png';"
-                class="object-scale-down max-h-full m-auto"
+                class="object-scale-down p-1 max-h-full m-auto"
                 loading="eager"
                 decoding="sync"
               />

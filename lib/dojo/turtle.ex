@@ -1,20 +1,63 @@
 defmodule Dojo.Turtle do
-  def hatch(%{path: _path, commands: _cmd} = body, %{class: pid}) do
-    Dojo.Table.publish(pid, {__MODULE__, nil, body}, :hatch)
+  defstruct state: :hatch, path: nil, commands: [], source: nil, message: nil, time: nil
+
+
+  def reflect(%{"state" => "success"} = body, opts) do
+    body
+    |> Map.new(fn {k, v} -> {to_atom(k), v} end)
+    |> (&struct(__MODULE__, &1) ).()
+    |> Map.merge(%{state: :success, time: System.os_time(:second)})
+    |> Map.update(:path, nil, &store(&1, opts))
+    |> Map.update(:commands, [], &Enum.take(&1, 1008))
+    |> reflect(opts)
   end
   
-  def hatch(_,_) do
+  def reflect(%{"state" => "error"} = body, opts) do
+    body
+    |> Map.new(fn {k, v} -> {to_atom(k), v} end)
+    |> (&struct(__MODULE__, &1)).()
+    |> Map.merge(%{state: :error, time: System.os_time(:second)})
+    |> Map.update(:path, nil, &store(&1, opts))
+    |> reflect(opts)
+  end
+  
+  def reflect(%__MODULE__{} = body, %{topic: topic, class: pid}) do
+    Dojo.Table.publish(pid, {__MODULE__, nil, body}, topic)
+  end
+  
+  def reflect(_body,_) do
     nil
   end
 
-  
-  def broke(%{err: _err} = body, %{class: pid}) do
-    Dojo.Table.publish(pid, {__MODULE__, nil, body}, :broke)
+  def store(path , %{id: id, clan: clan}) when is_binary(path) do
+    dest_dir = Path.join([:code.priv_dir(:dojo), "static", "frames", clan])
+    if !File.dir?(dest_dir) do
+      File.mkdir(dest_dir)
+    end
+
+    with file when is_binary(file) <-
+         DojoWeb.Utils.Base64.to_file(path, Path.join([dest_dir, id])),
+           ext when byte_size(ext) > 0 <- Path.extname(file) do       
+           Path.join(["frames", clan, id]) <> ext <> "#bump=#{System.os_time(:second)}"
+         else
+           _ -> nil
+         end
+         
   end
 
-  def broke(_,_) do
+  def store(_,_) do
     nil
   end
+
+  defp to_atom(key) when is_atom(key), do: key
+  defp to_atom(key) when is_binary(key) do
+    try do
+      String.to_existing_atom(key)
+    rescue
+      ArgumentError -> key  # Keep as string if atom doesn't exist
+    end
+  end
+
   
 
   def find_title(ast) when is_list(ast) do
