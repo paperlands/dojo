@@ -133,8 +133,8 @@ export class Terminal {
     inner() {
         this.shell = this.CM.fromTextArea(this.editor, this.#buildOptions());
         this.#setupEventListeners(this.shell);
-        this.tabs = new Tabber()
         this.shell.run = this.run.bind(this);
+        this.tabs = new Tabber()
         this.bufferStore = new BufferStorage()
         this.#loadBuffersFromStorage()
         this.#selectInitialBuffer();

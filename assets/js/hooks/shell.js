@@ -12,14 +12,14 @@ const commands = {
     },
 
     // Shell commands
-    execute: (shell) => ({ command, control, args = [] }) => {
+    execute: (term) => ({ command, control, args = [] }) => {
         try {
             if (command === "undo") {
-                shell.run({ command: "undo" });
+                term.shell.run({ command: "undo" });
             } else if (command) {
-                shell.run({ command, args, batch: false });
+                term.shell.run({ command, args, batch: false });
             } else if (control) {
-                shell.run({ control, args });
+                term.shell.run({ control, args });
             }
         } catch (error) {
             console.error("Shell execution failed:", error);
@@ -292,7 +292,7 @@ const Shell = {
 
     // Create command handlers
     const renderCommand = commands.render(turtle);
-    const executeCommand = commands.execute(term.shell);
+    const executeCommand = commands.execute(term);
     const cameraCommand = commands.camera(cameraBridge);
     const saveImage = commands.saveImage();
 

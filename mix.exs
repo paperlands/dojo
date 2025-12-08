@@ -7,11 +7,12 @@ defmodule Dojo.MixProject do
       version: "0.2.0",
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
-      start_permanent: Mix.env() == :prod,
+      start_permanent: Mix.env() in [:prod, :local],
       aliases: aliases(),
       deps: deps(),
       listeners: [Phoenix.CodeReloader],
-      compilers: [:phoenix_live_view] ++ Mix.compilers()
+      compilers: [:phoenix_live_view] ++ Mix.compilers(),
+      releases: releases()
     ]
   end
 
@@ -21,7 +22,7 @@ defmodule Dojo.MixProject do
   def application do
     [
       mod: {Dojo.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      extra_applications: [:logger, :runtime_tools, :inets]
     ]
   end
 
@@ -71,7 +72,8 @@ defmodule Dojo.MixProject do
       {:earmark_parser, "1.4.44"},
       {:html_sanitize_ex, "~> 1.4"},
       {:makeup, "~> 1.1"},
-      {:makeup_elixir, "~> 0.16"}
+      {:makeup_elixir, "~> 0.16"},
+      {:burrito, "~> 1.5"}
     ]
   end
 
@@ -83,7 +85,7 @@ defmodule Dojo.MixProject do
   # See the documentation for `Mix` for more info on aliases.
   defp aliases do
     [
-      setup: ["deps.get", "ecto.setup", "assets.setup", "assets.build"],
+      setup: ["deps.get", "assets.setup", "assets.build"],
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
@@ -95,5 +97,28 @@ defmodule Dojo.MixProject do
         "phx.digest"
       ]
     ]
+  end
+
+  def releases do
+    steps = if Mix.env() == :local do
+      [:assemble, &Burrito.wrap/1]
+    else
+      [:assemble]
+    end
+    
+    [
+      dojo: [
+        steps: steps,
+        burrito: [
+          targets: [
+            macos: [os: :darwin, cpu: :x86_64],
+            macos_silicon: [os: :darwin, cpu: :aarch64],
+            linux: [os: :linux, cpu: :x86_64],
+            windows: [os: :windows, cpu: :x86_64]
+          ]
+        ]
+      ]
+    ]
+
   end
 end

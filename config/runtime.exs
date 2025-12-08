@@ -16,9 +16,25 @@ import Config
 #
 # Alternatively, you can use `mix phx.gen.release` to generate a `bin/server`
 # script that automatically sets the env var above.
-if System.get_env("PHX_SERVER") do
+if config_env() == :local do
   config :dojo, DojoWeb.Endpoint, server: true
+
+  secret_key_base = 
+    System.get_env("SECRET_KEY_BASE") || :crypto.strong_rand_bytes(64) |> Base.encode64()
+
+  config :dojo, DojoWeb.Endpoint,
+    url: [host: "#{:net_adm.localhost}", port: System.get_env("PORT") || 4000],
+    http: [ip: {0, 0, 0, 0}, port: System.get_env("PORT") || 4000],
+    check_origin: false,
+    secret_key_base: secret_key_base
+
+  
+else
+  if System.get_env("PHX_SERVER") do
+    config :dojo, DojoWeb.Endpoint, server: true
+  end
 end
+
 
 if config_env() == :prod do
   # database_url =
