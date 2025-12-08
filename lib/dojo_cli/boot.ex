@@ -78,7 +78,7 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     vertical = "│"
     left_fleuron = "☙"
     right_fleuron = "❧"
-    center_ornament = "☀"
+    center_ornament = "🔆"
     inner_width = box_width - 6
     
     # Create hyperlinks (OSC 8 standard - works in modern terminals)
@@ -137,12 +137,19 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     IO.puts("\n#{dim}  Press Ctrl+C to stop#{reset}\n")
   end
 
-    @doc """
+   @doc """
   Gets the local IP address that other devices on the same LAN can use.
   Returns the first active physical network interface with a private IP.
   """
   def get_local_ip do
-    case :inet.getifaddrs() do
+    # Windows-specific: Try querying hostname first (more reliable on Windows)
+    ip = case :os.type() do
+      {:win32, _} -> try_windows_hostname_method()
+      _ -> nil
+    end
+
+    # Fall back to interface enumeration
+    ip || case :inet.getifaddrs() do
       {:ok, ifaddrs} ->
         ifaddrs
         |> filter_physical_interfaces()
@@ -153,6 +160,25 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
         end
 
       _ -> "127.0.0.1"
+    end
+  end
+
+  # Windows-specific: Use hostname resolution which is more reliable
+  defp try_windows_hostname_method do
+    with {:ok, hostname} <- :inet.gethostname(),
+         {:ok, {:hostent, _, _, :inet, _, addresses}} <- :inet.gethostbyname(hostname) do
+      
+      # Find first private IP (skip 127.0.0.1)
+      addresses
+      |> Enum.find(fn ip -> 
+        is_private_ip(ip) and ip != {127, 0, 0, 1}
+      end)
+      |> case do
+        nil -> nil
+        ip -> ip |> :inet.ntoa() |> to_string()
+      end
+    else
+      _ -> nil
     end
   end
 
@@ -167,17 +193,41 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
   end
 
   defp is_physical_interface(iface) do
-    iface_str = to_string(iface)
+    iface_str = to_string(iface) |> String.downcase()
     
-    # Only allow physical interfaces - eth, en, wlan, wlp, eno, ens, em, etc.
-    # Block: lo (loopback), docker, vbox, vmnet, veth, tun, tap, utun, wg (wireguard)
+    # Windows interface names are different - they use GUIDs or descriptive names
+    # Examples: "{GUID}", "local area connection", "ethernet", "wi-fi", "wireless"
+    
+    # Unix/Linux physical interfaces
     physical_patterns = ["eth", "en", "wlan", "wlp", "eno", "ens", "em", "wl"]
-    virtual_patterns = ["lo", "docker", "vbox", "vmnet", "veth", "tun", "tap", "utun", "wg", "br-"]
     
-    starts_with_physical = Enum.any?(physical_patterns, &String.starts_with?(iface_str, &1))
-    starts_with_virtual = Enum.any?(virtual_patterns, &String.starts_with?(iface_str, &1))
+    # Virtual/tunnel interfaces to block
+    virtual_patterns = ["lo", "docker", "vbox", "vmnet", "veth", "tun", "tap", 
+                        "utun", "wg", "br-", "virbr", "vmware", "hyper-v"]
     
-    starts_with_physical and not starts_with_virtual
+    # Check if it's a virtual interface first
+    is_virtual = Enum.any?(virtual_patterns, fn pattern ->
+      String.contains?(iface_str, pattern)
+    end)
+    
+    if is_virtual do
+      false
+    else
+      # For Unix: must start with physical pattern
+      # For Windows: allow anything that's not virtual (Windows uses GUIDs/descriptive names)
+      is_unix_physical = Enum.any?(physical_patterns, &String.starts_with?(iface_str, &1))
+      
+      # If it looks like a Unix interface, require physical pattern
+      # Otherwise (Windows GUIDs, etc), allow it through
+      looks_like_unix = String.match?(iface_str, ~r/^[a-z]+\d/)
+      
+      if looks_like_unix do
+        is_unix_physical
+      else
+        # Windows or other - allow if not virtual
+        true
+      end
+    end
   end
 
   defp is_interface_up(opts) do
@@ -269,12 +319,21 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     case :inet.getifaddrs() do
       {:ok, ifaddrs} ->
         ifaddrs
-        |> filter_physical_interfaces()
+        |> Enum.filter(fn {iface, opts} ->
+          # On Windows, be more lenient - just check if it's up and has broadcast
+          case :os.type() do
+            {:win32, _} -> 
+              is_interface_up(opts) and has_broadcast(opts)
+            _ -> 
+              is_physical_interface(iface) and is_interface_up(opts) and has_broadcast(opts)
+          end
+        end)
         |> Enum.flat_map(fn {iface, opts} ->
           opts
           |> Keyword.get_values(:addr)
           |> Enum.filter(&is_ipv4/1)
           |> Enum.filter(&is_private_ip/1)
+          |> Enum.filter(fn ip -> ip != {127, 0, 0, 1} end)
           |> Enum.map(fn ip ->
             {to_string(iface), ip |> :inet.ntoa() |> to_string()}
           end)
