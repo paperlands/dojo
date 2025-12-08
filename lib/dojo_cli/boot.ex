@@ -118,7 +118,7 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
 
     
     # Seperator
-    IO.puts("#{dim}#{vertical}#{reset}  #{orange}#{fleuron_separator}#{reset}   #{dim}#{vertical}#{reset}")
+    IO.puts("#{dim}#{vertical}#{reset}  #{orange}#{fleuron_separator}#{reset}  #{dim}#{vertical}#{reset}")
     IO.puts("#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}")
     
     # Local IP info
