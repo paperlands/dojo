@@ -62,6 +62,7 @@ defmodule DojoWeb.SVGComponents do
       xmlns="http://www.w3.org/2000/svg"
       xmlns:xlink="http://www.w3.org/1999/xlink"
       version="1.0"
+      id={@id}
       class={@class}
       viewBox="-15 -15 150 150"
       xml:space="preserve"

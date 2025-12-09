@@ -133,7 +133,7 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     IO.puts("#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}")
     IO.puts("#{dim}#{bottom_left}#{String.duplicate(horizontal, box_width - 2)}#{bottom_right}#{reset}")
     
-    IO.puts("\n#{green}  Remember to be in the same Local Wifi or Ethernet Network#{reset}")
+    IO.puts("\n#{green}  Remember to connect to the same Local Area Network Wifi or Ethernet Network#{reset}")
     IO.puts("\n#{dim}  Press Ctrl+C to stop#{reset}\n")
   end
 

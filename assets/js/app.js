@@ -60,7 +60,6 @@ window.addEventListener("phx:download-file", (event) => {
        document.body.removeChild(element);
 });
 
-
 window.addEventListener("dojo:yoink", (event) => {
   if ("clipboard" in navigator) {
     const text = event.target.textContent;

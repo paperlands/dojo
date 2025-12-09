@@ -180,31 +180,6 @@
 
             <!-- Command buttons always aligned to right and given prio -->
             <div class="flex flex-shrink-0 z-30 ml-auto cursor-pointer pointer-events-auto justify-end">
-              <button
-                :if={@sensei}
-                id="endrecording"
-                class="relative hidden w-8 h-8 border-2 border-primary/50  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
-                phx-click={
-                  JS.dispatch("phx:relayCamera", detail: %{command: "end_record"})
-                  |> JS.hide(to: "#endrecording")
-                  |> JS.show(to: "#startrecording")
-                }
-              >
-                <.record class="w-5 h-5 animate-rotate transition-transform duration-700  fill-red-800 text-amber-400/50 hover:rotate-[-40deg]" />
-              </button>
-
-              <button
-                :if={@sensei}
-                id="startrecording"
-                class="relative w-8 h-8 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 sm:w-6 sm:h-6 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
-                phx-click={
-                  JS.dispatch("phx:relayCamera", detail: %{command: "start_record"})
-                  |> JS.hide(to: "#startrecording")
-                  |> JS.show(to: "#endrecording")
-                }
-              >
-                <.record class="w-5 h-5 transition-transform duration-700  fill-amber-400 text-amber-400/50 hover:rotate-[-40deg]" />
-              </button>
 
               <button
                 class="relative w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-primary touch-manipulation"
@@ -213,20 +188,68 @@
                 <.centering class="w-7 h-7 transition-transform duration-700  fill-primary hover:rotate-[-40deg]" />
               </button>
 
-              <button
-                class="relative w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 mx-2 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+                <button
+                id="endrecording"
+                class="relative hidden w-9 h-9 border-2 border-primary/50  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
                 phx-click={
-                  (@outershell.active &&
-                     JS.dispatch("phx:outerkeepCanvas",
-                       detail: %{"title" => @outershell.name <> "'s creation"}
-                     )) ||
-                    JS.dispatch("phx:selfkeepCanvas",
-                      detail: %{"title" => @session.name <> "'s creation"}
-                    )
+                  JS.dispatch("phx:relayCamera", detail: %{command: "end_record"})
+                  |> JS.hide(to: "#endrecording")
+                  |> JS.show(to: "#startrecording")
                 }
               >
-                <.save class="w-4 h-4 duration-700  transition-transform duration-700  " />
+                <.record id="apertureopen" class="w-7 h-7 animate-rotate transition-transform duration-700  fill-error drop-shadow-xs drop-shadow-error text-amber-400/50 hover:rotate-[-40deg]" />
               </button>
+
+              <button
+                id="startrecording"
+                class="relative w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+                phx-click={
+                  JS.dispatch("phx:relayCamera", detail: %{command: "start_record"})
+                  |> JS.hide(to: "#startrecording")
+                  |> JS.show(to: "#endrecording")
+                }
+                phx-hook=".rtclick"
+
+                phx-rtclick={
+                  ((@outershell.active &&
+                     JS.dispatch("phx:outerkeepCanvas",
+                       detail: %{"title" => @outershell.name <> "'s creation"}
+                     ) ||
+                    JS.dispatch("phx:selfkeepCanvas",
+                      detail: %{"title" => @session.name <> "'s creation"}
+                    ))) |> JS.add_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: "#apertureclose")
+                    |> JS.remove_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content", to: "#apertureclose", transition: "ease-out duration-1000", time: 1000)
+                }
+              >
+                <.record id="apertureclose"  class="w-6 h-6 transition-transform duration-700  fill-primary text-amber-400/50 hover:rotate-[-40deg]" />
+              </button>
+              <script :type={Phoenix.LiveView.ColocatedHook} name=".rtclick">
+                export default {
+                    mounted() {
+                        this.el.addEventListener("contextmenu", e => {
+                            
+                            e.preventDefault();
+                            this.liveSocket.execJS(e.currentTarget,
+                                                   e.currentTarget.getAttribute("phx-rtclick"))
+                        })
+                    }
+                }
+              </script>
+              
+              <!-- <button -->
+              <!--   class="relative w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 mx-2 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation" -->
+              <!--   phx-click={ -->
+              <!--     (@outershell.active && -->
+              <!--        JS.dispatch("phx:outerkeepCanvas", -->
+              <!--          detail: %{"title" => @outershell.name <> "'s creation"} -->
+              <!--        )) || -->
+              <!--       JS.dispatch("phx:selfkeepCanvas", -->
+              <!--         detail: %{"title" => @session.name <> "'s creation"} -->
+              <!--       ) -->
+              <!--   } -->
+              <!-- > -->
+              <!--   <.save class="w-4 h-4 duration-700  transition-transform duration-700  " /> -->
+              <!-- </button> -->
 
               <button
                 class="relative w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"

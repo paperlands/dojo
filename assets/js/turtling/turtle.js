@@ -149,7 +149,7 @@ export class Turtle {
         this.controls.zoomToCursor = true
         this.controls.update()
 
-        cameraBridge.sub((payload) => {
+        cameraBridge.sub(async (payload) => {
             switch (payload[0]) {
             case 'recenter':
                 // this.controls.target.set(0, 0, 0)
@@ -161,10 +161,14 @@ export class Turtle {
                 this.renderstate.snapshot = {frame: null, save: true, title: payload[1].title}
                 break;
             case 'record':
+                this.recorder.startRecording()
 
                 break;
             case 'endrecord':
-
+                this.recorder.stopRecording()
+                const video = this.recorder.getLastRecording()
+                console.log(video)
+                this.bridge.pub(["saveRecord", {snapshot: video, type: "video", title: this.renderstate.snapshot.title}])
                 break;
             default:
             }
@@ -364,7 +368,7 @@ export class Turtle {
         setTimeout(() => {
             const [image, dataurl] = this.recorder.takeSnapshot(pixels, width, height)
             if(this.renderstate.snapshot.save){
-                this.bridge.pub(["saveRecord", {snapshot: image, title: this.renderstate.snapshot.title}])
+                this.bridge.pub(["saveRecord", {snapshot: image, type: "image", title: this.renderstate.snapshot.title}])
                 this.renderstate.snapshot.save=false
             }
             this.renderstate.meta.path = dataurl

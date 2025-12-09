@@ -37,26 +37,54 @@ const commands = {
         actions[command]?.();
     },
 
-  // File operations
-  saveImage: () => async (url, title) => {
-    const filename = prompt('Enter filename:', title) || title;
-    if (!filename) return;
+    // File operations
+    saveImage: () => async (url, title) => {
+        const filename = prompt('Enter filename:', title) || title;
+        if (!filename) return;
 
-    const finalName = filename.endsWith('.png') ? filename : `${filename}.png`;
+        const finalName = filename.endsWith('.png') ? filename : `${filename}.png`;
 
-    try {
-      const link = Object.assign(document.createElement('a'), {
-        href: url,
-        download: finalName
-      });
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+        try {
+            const link = Object.assign(document.createElement('a'), {
+                href: url,
+                download: finalName
+            });
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
 
-    } catch (error) {
-      console.error('Canvas save failed:', error);
+        } catch (error) {
+            console.error('Canvas save failed:', error);
+        }
+    },
+    
+    saveRecording: () => async (blob, defaultTitle = 'my PaperLand movie') => {
+        if (!blob) {
+            console.warn('No recording available to save');
+            return;
+        }
+        
+        const filename = prompt('Enter filename:', defaultTitle) || defaultTitle;
+        if (!filename) return;
+        
+        const finalName = filename.endsWith('.webm') ? filename : `${filename}.webm`;
+        
+        try {
+            const url = URL.createObjectURL(blob);
+            const link = Object.assign(document.createElement('a'), {
+                href: url,
+                download: finalName
+            });
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Clean up the object URL after a short delay
+            setTimeout(() => URL.revokeObjectURL(url), 100);
+        } catch (error) {
+            console.error('Recording save failed:', error);
+        }
     }
-  }
 };
 
 // =============================================================================
@@ -295,6 +323,7 @@ const Shell = {
     const executeCommand = commands.execute(term);
     const cameraCommand = commands.camera(cameraBridge);
     const saveImage = commands.saveImage();
+    const saveRecording = commands.saveRecording();
 
     // Create mutators
     const display = mutators.display(output);
@@ -328,7 +357,8 @@ const Shell = {
       turtle.bridge.sub(([event, payload]) =>{
         switch(event) {
         case "saveRecord":
-          saveImage(payload.snapshot, payload.title)
+            if(payload.type== "video") saveRecording(payload.snapshot, payload.title)
+            if(payload.type=="image") saveImage(payload.snapshot, payload.title)
           break;
         default:
           debouncedPushUp(event, payload)
