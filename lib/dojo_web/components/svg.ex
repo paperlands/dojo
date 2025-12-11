@@ -43,6 +43,7 @@ defmodule DojoWeb.SVGComponents do
   def manual(assigns) do
     ~H"""
     <svg
+      id={@id}
       class={@class}
       x="0px"
       y="0px"
@@ -228,77 +229,84 @@ defmodule DojoWeb.SVGComponents do
     </svg>
     """
   end
-
-  def centering(assigns) do
-    ~H"""
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
+  
+def centering(assigns) do
+  ~H"""
+     <svg
+      id={@id}
       class={@class}
-      viewBox="20 20 60 60"
-      fill="inherit"
-      stroke="currentColor"
-      stroke-width="3"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    >
-      <style>
-        .arrow-path {
-          transition: transform 0.3s ease-out;
-        }
+      viewBox="27.5 27.5 45 45"
+      fill="currentColor"
+      version="1.1"
+      xmlns="http://www.w3.org/2000/svg"
+      xmlns:svg="http://www.w3.org/2000/svg">
+     <style
+        id="style1">
+         .centering-arrow { transition: transform 0.3s ease-out; }
+         svg:hover .tl { transform: translate(5px, 5px); }
+         svg:hover .tr { transform: translate(-5px, 5px); }
+         svg:hover .bl { transform: translate(5px, -5px); }
+         svg:hover .br { transform: translate(-5px, -5px); }
+       </style>
+     <g
+        id="g5">
+       <path
+          d="m 47,45 11,5 -11,5 z"
+          id="path1" />
+       <path
+          class="centering-arrow tl"
+          d="M 42.146,34.854 40,37 34.707,31.707 c -0.391,-0.391 -1.024,-0.391 -1.414,0 l -1.586,1.586 c -0.391,0.391 -0.391,1.024 0,1.414 L 37,40 34.854,42.146 C 34.539,42.461 34.762,43 35.207,43 H 42 c 0.552,0 1,-0.448 1,-1 v -6.793 c 0,-0.445 -0.539,-0.668 -0.854,-0.353 z"
+          id="path2" />
+       <path
+          class="centering-arrow tr"
+          d="m 58,43 h 6.793 c 0.445,0 0.669,-0.539 0.354,-0.854 L 63,40 68.293,34.707 c 0.391,-0.391 0.391,-1.024 0,-1.414 l -1.586,-1.586 c -0.391,-0.391 -1.024,-0.391 -1.414,0 L 60,37 57.854,34.854 C 57.539,34.539 57,34.762 57,35.207 V 42 c 0,0.552 0.448,1 1,1 z"
+          id="path3" />
+       <path
+          class="centering-arrow bl"
+          d="m 42,57 h -6.793 c -0.445,0 -0.669,0.539 -0.354,0.854 L 37,60 31.707,65.293 c -0.391,0.391 -0.391,1.024 0,1.414 l 1.586,1.586 c 0.391,0.391 1.024,0.391 1.414,0 L 40,63 42.146,65.146 C 42.461,65.461 43,65.238 43,64.793 V 58 c 0,-0.552 -0.448,-1 -1,-1 z"
+          id="path4" />
+       <path
+          class="centering-arrow br"
+          d="m 63,60 2.146,-2.146 C 65.461,57.539 65.238,57 64.793,57 H 58 c -0.552,0 -1,0.448 -1,1 v 6.793 c 0,0.445 0.539,0.669 0.854,0.354 L 60,63 l 5.293,5.293 c 0.391,0.391 1.024,0.391 1.414,0 l 1.586,-1.586 c 0.391,-0.391 0.391,-1.024 0,-1.414 z"
+          id="path5" />
+     </g>
+   </svg>
+  """
+end
 
-        svg:hover .top-left {
-          transform: translate(5px, 5px);
-        }
-
-        svg:hover .top-right {
-          transform: translate(-5px, 5px);
-        }
-
-        svg:hover .bottom-left {
-          transform: translate(5px, -5px);
-        }
-
-        svg:hover .bottom-right {
-          transform: translate(-5px, -5px);
-        }
-      </style>
-      
-    <!-- Center circle -->
-      <path
-        class="center-circle"
-        fill="inherit"
-        d="M52.828,47.172c1.562,1.562,1.562,4.095,0,5.657c-1.562,1.562-4.095,1.562-5.657,0c-1.562-1.562-1.562-4.095,0-5.657 C48.734,45.609,51.266,45.609,52.828,47.172z"
-      />
-      
-    <!-- Top Left Arrow -->
-      <path
-        class="arrow-path top-left"
-        fill="inherit"
-        d="M42.146,34.854L40,37l-5.293-5.293c-0.391-0.391-1.024-0.391-1.414,0l-1.586,1.586c-0.391,0.391-0.391,1.024,0,1.414L37,40 l-2.146,2.146C34.539,42.461,34.762,43,35.207,43H42c0.552,0,1-0.448,1-1v-6.793C43,34.762,42.461,34.539,42.146,34.854z"
-      />
-      
-    <!-- Top Right Arrow -->
-      <path
-        class="arrow-path top-right"
-        fill="inherit"
-        d="M58,43h6.793c0.445,0,0.669-0.539,0.354-0.854L63,40l5.293-5.293c0.391-0.391,0.391-1.024,0-1.414l-1.586-1.586 c-0.391-0.391-1.024-0.391-1.414,0L60,37l-2.146-2.146C57.539,34.539,57,34.762,57,35.207V42C57,42.552,57.448,43,58,43z"
-      />
-      
-    <!-- Bottom Left Arrow -->
-      <path
-        class="arrow-path bottom-left"
-        fill="inherit"
-        d="M42,57h-6.793c-0.445,0-0.669,0.539-0.354,0.854L37,60l-5.293,5.293c-0.391,0.391-0.391,1.024,0,1.414l1.586,1.586 c0.391,0.391,1.024,0.391,1.414,0L40,63l2.146,2.146C42.461,65.461,43,65.238,43,64.793V58C43,57.448,42.552,57,42,57z"
-      />
-      
-    <!-- Bottom Right Arrow -->
-      <path
-        class="arrow-path bottom-right"
-        d="M63,60l2.146-2.146C65.461,57.539,65.238,57,64.793,57H58c-0.552,0-1,0.448-1,1v6.793c0,0.445,0.539,0.669,0.854,0.354L60,63l5.293,5.293c0.391,0.391,1.024,0.391,1.414,0l1.586-1.586c0.391-0.391,0.391-1.024,0-1.414L63,60z"
-      />
-    </svg>
-    """
-  end
+def centered(assigns) do
+  ~H"""
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    class={@class}
+    viewBox="27.5 27.5 45 45"
+    fill="currentColor"
+  >
+    <style>
+      @keyframes pulse-out {
+        0%, 100% { transform: translate(0, 0); opacity: 1; }
+        50% { transform: translate(var(--tx), var(--ty)); opacity: 0.6; }
+      }
+      @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+      .arrow { animation: pulse-out 2s ease-in-out infinite; }
+      .tl { --tx: 8px; --ty: 8px; }
+      .tr { --tx: -8px; --ty: 8px; }
+      .bl { --tx: 8px; --ty: -8px; }
+      .br { --tx: -8px; --ty: -8px; }
+      .center { animation: blink 2s ease-in-out infinite; }
+    </style>
+    
+    <path class="center" d="M47,45 L58,50 L47,55 Z" />
+    <path class="arrow tl" d="M42.146,34.854L40,37l-5.293-5.293c-0.391-0.391-1.024-0.391-1.414,0l-1.586,1.586c-0.391,0.391-0.391,1.024,0,1.414L37,40l-2.146,2.146C34.539,42.461,34.762,43,35.207,43H42c0.552,0,1-0.448,1-1v-6.793C43,34.762,42.461,34.539,42.146,34.854z" />
+    <path class="arrow tr" d="M58,43h6.793c0.445,0,0.669-0.539,0.354-0.854L63,40l5.293-5.293c0.391-0.391,0.391-1.024,0-1.414l-1.586-1.586c-0.391-0.391-1.024-0.391-1.414,0L60,37l-2.146-2.146C57.539,34.539,57,34.762,57,35.207V42C57,42.552,57.448,43,58,43z" />
+    <path class="arrow bl" d="M42,57h-6.793c-0.445,0-0.669,0.539-0.354,0.854L37,60l-5.293,5.293c-0.391,0.391-0.391,1.024,0,1.414l1.586,1.586c0.391,0.391,1.024,0.391,1.414,0L40,63l2.146,2.146C42.461,65.461,43,65.238,43,64.793V58C43,57.448,42.552,57,42,57z" />
+    <path class="arrow br" d="M63,60l2.146-2.146C65.461,57.539,65.238,57,64.793,57H58c-0.552,0-1,0.448-1,1v6.793c0,0.445,0.539,0.669,0.854,0.354L60,63l5.293,5.293c0.391,0.391,1.024,0.391,1.414,0l1.586-1.586c0.391-0.391,0.391-1.024,0-1.414L63,60z" />
+  </svg>
+  """
+end
 
   def save(assigns) do
     ~H"""

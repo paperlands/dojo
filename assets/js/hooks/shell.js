@@ -30,6 +30,8 @@ const commands = {
     camera: (bridge) => (command, payload={}) => {
         const actions = {
             'center_camera': () => bridge.pub(["recenter", payload]),
+            'start_track': () => bridge.pub(["track", payload]),
+            'end_track': () => bridge.pub(["endtrack", payload]),
             'snap_record': () => bridge.pub(["snap", payload]),
             'start_record': () => bridge.pub(["record", payload]),
             'end_record': () => bridge.pub(["endrecord", payload])

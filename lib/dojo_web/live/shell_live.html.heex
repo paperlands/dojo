@@ -179,18 +179,45 @@
 
 
             <!-- Command buttons always aligned to right and given prio -->
-            <div class="flex flex-shrink-0 z-30 ml-auto cursor-pointer pointer-events-auto justify-end">
+            <div class="flex flex-shrink-0 gap-1 z-30 ml-auto cursor-pointer pointer-events-auto justify-end">
 
               <button
-                class="relative w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-primary touch-manipulation"
-                phx-click={JS.dispatch("phx:relayCamera", detail: %{command: "center_camera"})}
-              >
-                <.centering class="w-7 h-7 transition-transform duration-700  fill-primary hover:rotate-[-40deg]" />
+                id="centering"
+                class=" flex items-center justify-center  w-9 h-9 border border-accent backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0   rounded-sm  lg:w-8 lg:h-8   fill-primary hover:fill-primary active:border-primary touch-manipulation"
+                phx-click={
+                JS.dispatch("phx:relayCamera", detail: %{command: "start_track"})
+                |> JS.toggle_class("hidden", to: "#centering")
+                |> JS.toggle_class("hidden", to: "#centered")
+                }
+
+                phx-hook=".rtclick"
+
+                phx-rtclick={
+                JS.dispatch("phx:relayCamera", detail: %{command: "center_camera"})
+                   |> JS.add_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: ".centering-arrow")
+                    |> JS.remove_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content", to: ".centering-arrow", transition: "ease-out duration-500", time: 500)
+                }
+                >
+                <.centering id="centeringarrow" class="w-6 h-6" />
               </button>
+
+              <button
+                id="centered"
+                class=" flex items-center justify-center hidden w-9 h-9 border border-accent backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0  rounded-sm  lg:w-8 lg:h-8   fill-primary hover:fill-primary active:border-primary touch-manipulation"
+                phx-click={
+                JS.dispatch("phx:relayCamera", detail: %{command: "end_track"})
+                |> JS.toggle_class("hidden", to: "#centering")
+                |> JS.toggle_class("hidden", to: "#centered")
+                
+                }
+                >
+                <.centered class="w-7 h-7 fill-secondary-content drop-shadow-md drop-shadow-secondary-content" />
+              </button>
+
 
                 <button
                 id="endrecording"
-                class="relative hidden w-9 h-9 border-2 border-primary/50  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+                class="flex items-center justify-center hidden w-9 h-9 border-2 border-primary/50  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8   rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
                 phx-click={
                   JS.dispatch("phx:relayCamera", detail: %{command: "end_record"})
                   |> JS.hide(to: "#endrecording")
@@ -202,7 +229,7 @@
 
               <button
                 id="startrecording"
-                class="relative w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 mx-0.5 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+                class="flex items-center justify-center w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8   rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
                 phx-click={
                   JS.dispatch("phx:relayCamera", detail: %{command: "start_record"})
                   |> JS.hide(to: "#startrecording")
@@ -237,7 +264,7 @@
               </script>
               
               <!-- <button -->
-              <!--   class="relative w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 mx-2 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation" -->
+              <!--   class="relative w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 mx-2  rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation" -->
               <!--   phx-click={ -->
               <!--     (@outershell.active && -->
               <!--        JS.dispatch("phx:outerkeepCanvas", -->
@@ -252,10 +279,10 @@
               <!-- </button> -->
 
               <button
-                class="relative w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
-                phx-click={JS.toggle(to: ".deck", in: "fade-in-scale", out: "fade-out-scale")}
+                class="flex items-center justify-center w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+                phx-click={JS.toggle(to: ".deck", in: "fade-in-scale", out: "fade-out-scale") |> JS.toggle_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: "#manualdeckbutton")}
               >
-                <.manual class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-primary hover:rotate-[-40deg]" />
+                <.manual id="manualdeckbutton" class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-secondary-content drop-shadow-md drop-shadow-secondary-content fill-primary hover:rotate-[-40deg]" />
               </button>
               <!-- <button -->
               <!--   class="relative w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation" -->

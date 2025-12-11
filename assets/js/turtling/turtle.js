@@ -136,6 +136,7 @@ export class Turtle {
         this.camera.position.set(0, 0, 500);
 
         this.camera.updateProjectionMatrix();
+        this.camera.desire = {}
         this.controls = new OrbitControls( this.camera, this.canvas );
         this.controls.target.set(0, 0, 0)
         this.controls.mouseButtons = {
@@ -155,11 +156,26 @@ export class Turtle {
                 // this.controls.target.set(0, 0, 0)
                 //this.controls.update()
                 // gotta slerp this
-                this.controls.reset();
+                this.camera.position.set(0, 0, 500);
+                this.controls.target.set(0, 0, 0)
+                this.controls.update();
+
+                //this.controls.reset();
                 break;
             case 'snap':
                 this.renderstate.snapshot = {frame: null, save: true, title: payload[1].title}
                 break;
+
+            case 'track':
+                this.camera.desire.track = true
+
+                break;
+
+            case 'endtrack':
+                this.camera.desire.track = false
+
+                break;
+                
             case 'record':
                 this.recorder.startRecording()
 
@@ -238,6 +254,11 @@ export class Turtle {
             } else {
                 this.head.hide()
             }
+            if (this.camera.desire.track) {
+                    // this.camera.quaternion.copy(rotation);
+                    this.controls.target.set(...[this.x, this.y,this.z])
+                    this.controls.update();
+                }
             this.renderstate.phase="reaching"
         }
 
@@ -274,6 +295,11 @@ export class Turtle {
                     this.head.update(path.points, path.rotation, path.color, path.headsize)
                 } else {
                     this.head.hide()
+                }
+                if (this.camera.desire.track) {
+                    // this.camera.quaternion.copy(rotation);
+                    this.controls.target.set(...path.points)
+                    this.controls.update();
                 }
                 break;
 
