@@ -235,7 +235,7 @@ def centering(assigns) do
      <svg
       id={@id}
       class={@class}
-      viewBox="27.5 27.5 45 45"
+      viewBox="30 30 40 40"
       fill="currentColor"
       version="1.1"
       xmlns="http://www.w3.org/2000/svg"

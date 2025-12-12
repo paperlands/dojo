@@ -581,12 +581,14 @@ defmodule DojoWeb.ShellLive do
                     JS.dispatch("phx:writeShell",
                       detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
                     )
+                    |> JS.add_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: "#cmdicon-#{cmd}")
+                    |> JS.remove_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content", to: "#cmdicon-#{cmd}", transition: "ease-out duration-1200", time: 1200)
                   }
                   class="flex duration-500 animate-fade items-center p-2 transition-colors rounded pointer-events-auto hover:bg-accent/50 group cursor-pointer"
                 >
                   <%!-- Icon --%>
-                  <div class="mr-3">
-                    <.cmd_icon command={cmd} class="w-8 h-8 fill-primary" />
+                  <div id={"cmdicon-#{cmd}"} class="mr-3 fill-primary">
+                    <.cmd_icon command={cmd} class="w-8 h-8 " />
                   </div>
                   <div class="flex-grow">
                     <%!-- Description --%>
@@ -608,6 +610,9 @@ defmodule DojoWeb.ShellLive do
                             JS.dispatch("phx:writeShell",
                               detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
                             )
+                            |> JS.add_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: "#cmdicon-#{cmd}")
+                            |> JS.remove_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content", to: "#cmdicon-#{cmd}", transition: "ease-out duration-200", time: 200)
+                            
                           }
                           phx-key="Enter"
                           oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
