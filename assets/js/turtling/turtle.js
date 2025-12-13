@@ -136,7 +136,6 @@ export class Turtle {
         this.camera.position.set(0, 0, 500);
 
         this.camera.updateProjectionMatrix();
-        this.camera.desire = {}
         this.controls = new OrbitControls( this.camera, this.canvas );
         this.controls.target.set(0, 0, 0)
         this.controls.mouseButtons = {
@@ -166,13 +165,18 @@ export class Turtle {
                 this.renderstate.snapshot = {frame: null, save: true, title: payload[1].title}
                 break;
 
+            case 'pan':
+                this.camera.desire = "pan"
+
+                break;
+
             case 'track':
-                this.camera.desire.track = true
+                this.camera.desire = "track"
 
                 break;
 
             case 'endtrack':
-                this.camera.desire.track = false
+                this.camera.desire = null
 
                 break;
                 
@@ -254,11 +258,25 @@ export class Turtle {
             } else {
                 this.head.hide()
             }
-            if (this.camera.desire.track) {
-                    // this.camera.quaternion.copy(rotation);
-                    this.controls.target.set(...[this.x, this.y,this.z])
-                    this.controls.update();
-                }
+
+            switch (this.camera.desire) {
+            case 'track':
+                const deltaMovement = new THREE.Vector3(...[this.x, this.y,this.z]);
+                this.camera.lookAt(deltaMovement);
+                deltaMovement.sub(this.head.position());
+                this.camera.position.add(deltaMovement)
+                this.controls.target.set(...[this.x, this.y,this.z])
+                this.controls.update();
+                
+                break;
+
+            case 'pan':
+                this.controls.target.set(...[this.x, this.y,this.z])
+                this.controls.update();
+                
+                break;
+            }
+            
             this.renderstate.phase="reaching"
         }
 
@@ -290,17 +308,30 @@ export class Turtle {
                 break;
 
             case "head":
+                switch (this.camera.desire) {
+                case 'track':
+                    const deltaMovement = new THREE.Vector3(...path.points);
+                    this.camera.lookAt(deltaMovement);
+                    deltaMovement.sub(this.head.position());
+                    this.camera.position.add(deltaMovement)
+                    this.controls.target.set(...path.points)
+                    this.controls.update();
+                    break;
+
+                case 'pan':
+                    this.controls.target.set(...path.points)
+                    this.controls.update();
+                    
+                    break;
+                }
+
                 if (path.headsize){
                     this.head.show()
                     this.head.update(path.points, path.rotation, path.color, path.headsize)
                 } else {
                     this.head.hide()
                 }
-                if (this.camera.desire.track) {
-                    // this.camera.quaternion.copy(rotation);
-                    this.controls.target.set(...path.points)
-                    this.controls.update();
-                }
+                
                 break;
 
             case "path" :
