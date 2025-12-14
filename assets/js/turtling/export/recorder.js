@@ -24,7 +24,7 @@ export class Recorder {
             // Video recording options
             videoFPS: options.videoFPS || 24,
             videoBitrate: options.videoBitrate || 5000000, // 5 Mbps
-            videoMimeType: options.videoMimeType || 'video/webm; codecs=vp9',
+            videoMimeType: options.videoMimeType || 'video/mp4',
             videoTimeSlice: options.videoTimeSlice || 100, // ms
 
             // Snapshot options
@@ -32,7 +32,7 @@ export class Recorder {
             snapshotQuality: options.snapshotQuality || 0.95,
 
             // Performance options
-            useOffscreenCanvas: options.useOffscreenCanvas !== false,
+            useOffscreenCanvas: options.useOffscreenCanvas || true,
             poolSize: options.poolSize || 3,
 
             ...options
@@ -198,10 +198,10 @@ export class Recorder {
 
             // Fallback mime types if primary not supported
             const mimeTypes = [
+                'video/mp4',
                 'video/webm; codecs=vp9',
                 'video/webm; codecs=vp8',
-                'video/webm',
-                'video/mp4'
+                'video/webm'
             ];
 
             let selectedMimeType = mediaRecorderOptions.mimeType;
@@ -440,9 +440,20 @@ export class Recorder {
             return null;
         }
 
-        return new Blob(this.recording.chunks, {
-            type: this.recording.mediaRecorder?.mimeType || 'video/webm'
-        });
+        let extension = ".bin"; // Fallback
+        const mimeType = this.recording.mediaRecorder?.mimeType || 'video/mp4'
+                                
+        if (mimeType.includes("video/webm")) {
+            extension = ".webm";
+        } else if (mimeType.includes("video/mp4")) {
+            extension = ".mp4";
+        } else if (mimeType.includes("video/ogg")) {
+            extension = ".ogv";
+        }
+
+        return {blob: new Blob(this.recording.chunks, {
+            type: mimeType || 'video/webm'
+        }), ext: extension};
     }
 
     /**
@@ -485,11 +496,11 @@ export class Recorder {
      */
     static getSupportedFormats() {
         const formats = [
+            'video/mp4; codecs=h264',
+            'video/mp4',
             'video/webm; codecs=vp9',
             'video/webm; codecs=vp8',
-            'video/webm',
-            'video/mp4; codecs=h264',
-            'video/mp4'
+            'video/webm'
         ];
 
         return formats.filter(format => MediaRecorder.isTypeSupported(format));

@@ -207,13 +207,14 @@
                 class=" flex items-center justify-center hidden w-9 h-9 border border-accent backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0  rounded-sm  lg:w-8 lg:h-8   fill-primary hover:fill-primary active:border-primary touch-manipulation"
                 phx-click={
                 JS.dispatch("phx:relayCamera", detail: %{command: "track"})
-                |> JS.add_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: ".centered-arrow")
+                |> JS.toggle_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: ".centered-arrow")
                 }
                 phx-hook=".rtclick"
                 phx-rtclick={
                 JS.dispatch("phx:relayCamera", detail: %{command: "endtrack"})
                 |> JS.toggle_class("hidden", to: "#centering")
                 |> JS.toggle_class("hidden", to: "#centered")
+                |> JS.remove_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: ".centered-arrow")
                 }
                 >
                 <.centered class="w-7 h-7 fill-secondary-content drop-shadow-md drop-shadow-secondary-content" />

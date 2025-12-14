@@ -52,22 +52,21 @@ const commands = {
         }
     },
     
-    saveRecording: () => async (blob, defaultTitle = 'my PaperLand movie') => {
+    saveRecording: () => async (blob, ext, title = "myPaperLand Movie") => {
         if (!blob) {
             console.warn('No recording available to save');
             return;
         }
         
-        const filename = prompt('Enter filename:', defaultTitle) || defaultTitle;
+        const filename = prompt('Enter filename:', title + ext) || title + ext;
         if (!filename) return;
         
-        const finalName = filename.endsWith('.webm') ? filename : `${filename}.webm`;
         
         try {
             const url = URL.createObjectURL(blob);
             const link = Object.assign(document.createElement('a'), {
                 href: url,
-                download: finalName
+                download: filename
             });
             document.body.appendChild(link);
             link.click();

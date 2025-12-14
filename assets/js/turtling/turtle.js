@@ -166,13 +166,11 @@ export class Turtle {
                 break;
 
             case 'pan':
-                this.camera.desire = "pan"
-
+                (this.camera.desire != "pan") ? this.camera.desire = "pan" : this.camera.desire = "track"
                 break;
 
             case 'track':
-                this.camera.desire = "track"
-
+                (this.camera.desire != "track") ? this.camera.desire = "track" : this.camera.desire = "pan"
                 break;
 
             case 'endtrack':
@@ -186,9 +184,9 @@ export class Turtle {
                 break;
             case 'endrecord':
                 this.recorder.stopRecording()
-                const video = this.recorder.getLastRecording()
+                const video  = this.recorder.getLastRecording()
                 console.log(video)
-                this.bridge.pub(["saveRecord", {snapshot: video, type: "video", title: this.renderstate.snapshot.title}])
+                this.bridge.pub(["saveRecord", {snapshot: video.blob, type: "video", title: video.ext}])
                 break;
             default:
             }
@@ -260,22 +258,17 @@ export class Turtle {
             }
 
             switch (this.camera.desire) {
-            case 'track':
-                const deltaMovement = new THREE.Vector3(...[this.x, this.y,this.z]);
-                this.camera.lookAt(deltaMovement);
-                deltaMovement.sub(this.head.position());
-                this.camera.position.add(deltaMovement)
-                this.controls.target.set(...[this.x, this.y,this.z])
-                this.controls.update();
-                
-                break;
+                case 'track':
+                    const deltaMovement = new THREE.Vector3(...[this.x, this.y,this.z]);
+                    deltaMovement.sub(this.head.position());
+                    this.camera.position.add(deltaMovement)
+                    this.controls.target.set(...[this.x, this.y,this.z])
+                    break;
 
-            case 'pan':
-                this.controls.target.set(...[this.x, this.y,this.z])
-                this.controls.update();
-                
-                break;
-            }
+                case 'pan':
+                    this.controls.target.set(...[this.x, this.y,this.z])
+                    break;
+                }
             
             this.renderstate.phase="reaching"
         }
@@ -311,17 +304,13 @@ export class Turtle {
                 switch (this.camera.desire) {
                 case 'track':
                     const deltaMovement = new THREE.Vector3(...path.points);
-                    this.camera.lookAt(deltaMovement);
                     deltaMovement.sub(this.head.position());
                     this.camera.position.add(deltaMovement)
                     this.controls.target.set(...path.points)
-                    this.controls.update();
                     break;
 
                 case 'pan':
                     this.controls.target.set(...path.points)
-                    this.controls.update();
-                    
                     break;
                 }
 
