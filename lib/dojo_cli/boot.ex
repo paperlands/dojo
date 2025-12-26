@@ -1,6 +1,28 @@
 defmodule DojoCLI.Boot do
 
 
+  defdelegate open(url), to: DojoCLI.Browser
+  defdelegate open_sync(url), to: DojoCLI.Browser
+
+  @doc """
+  Opens URL and prints fallback message if browser unavailable.
+
+  This is the UX pattern for CLI apps: attempt to open browser,
+  but give user the URL if that fails.
+  """
+  def open_with_fallback(url, device \\ :stdio) do
+    case open_sync(url) do
+      :ok ->
+        :ok
+
+      {:error, _} ->
+        IO.puts(device, "\nOpen in your browser: #{url}")
+        :ok
+    end
+  end
+
+
+
   def splash() do
     "
 
@@ -134,6 +156,7 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     IO.puts("#{dim}#{bottom_left}#{String.duplicate(horizontal, box_width - 2)}#{bottom_right}#{reset}")
     
     IO.puts("\n#{green}  Remember to connect to the same Local Area Network Wifi or Ethernet Network#{reset}")
+    open_with_fallback(ip_visible <> "/welcome")
     IO.puts("\n#{dim}  Press Ctrl+C to stop#{reset}\n")
   end
 

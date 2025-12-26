@@ -6,10 +6,16 @@
     <meta name="csrf-token" content={get_csrf_token()} />
     <meta name="description" content="Wrestle with math together" />
     <meta property="og:image" content="/images/mathland.jpg" />
-    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="PaperLand" />
+    <meta name="theme-color" content="#ff9933" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
 
     <.live_title suffix=" · Dojo">
-      {assigns[:page_title] || "Paperland"}
+      {assigns[:page_title] || "PaperLand"}
     </.live_title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script
