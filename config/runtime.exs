@@ -36,6 +36,79 @@ else
 end
 
 
+# --erl "-start_epmd false -kernel dist_auto_connect never"
+
+#config :kernel,
+#   # Disable standard dist
+#   dist_auto_connect: :never,
+#   # Stop EPMD from booting
+#   start_epmd: false 
+port = 53627-:rand.uniform(100)
+System.put_env("PARTISAN_PORT", "#{port}")
+partisan_name = "admin@" <> Ecto.UUID.generate()
+System.put_env("PARTISAN_NAME", partisan_name)
+
+config :partisan,
+  # The Identity. Default is name@host, but we want UUID-based for roaming.
+  # We implement a custom callback to return a stable UUID from disk.
+  name: String.to_atom(partisan_name),
+  authentication: :partisan_auth_hmac,
+  # HyParView: The specific topology for high-churn environments
+  peer_service_manager: :partisan_hyparview_peer_service_manager,
+  pid_encoding: false,
+  ref_encoding: false,
+  # Fanout: Keep active view small (5 peers) to minimize bandwidth
+  hyparview_active_view_size: 3,
+  # Passive View: Keep a large backup list (24) for quick healing
+  hyparview_passive_view_size: 15,
+  listen_addrs: [%{port: port, ip: {127, 0, 0, 1}}],
+  # Parallelism: separate control (heartbeats) from data (state)
+  channels: %{
+    # 'gossip' is a reserved/default channel name usually required for HyParView
+    gossip: %{
+      parallelism: 1
+    },
+    undefined: %{
+      parallelism: 1
+    },
+    # Custom data channel
+    data: %{
+      parallelism: 2,
+      # compression: true,
+      # monotonic: false, # No HOL blocking
+      # distance_enabled: false, # random selection
+      # ingress_delay: 0, # no latency
+      # exchange_tick_period: 10000 #best effort pubsub
+      
+    },
+    # Custom control channel
+    control: %{
+      parallelism: 1,
+      monotonic: true
+    }
+  },
+  phi_threshold: 12.0,
+  secret: System.get_env("DOJO_CLUSTER_SECRET") || "dev_secret",
+  # Sample window size
+  gossip_interval: 1000, # 1 second heartbeats
+   listen_options: [
+    {:raw, 1, 15, <<1 :: native-32>>} # SO_REUSEPORT = 15 on Linux/Android usually CHECK IF LINUX ENV
+  ]
+
+config :dojo, Phoenix.PubSub.Partisan,
+  # Map adapter logic to Partisan channels
+  channel_data: :data,
+  channel_control: :control
+
+config :mdns_lite,
+  # 1. Identity: How we appear to others
+  hosts: [:hostname],
+  instance_name: Dojo.Clan.gen_name(3),
+  # This allows us to query `_dojo_cluster._tcp.local` via Erlang
+  dns_bridge_enabled: true,
+  dns_bridge_ip: {127, 0, 0, 53},
+  dns_bridge_port: 1212
+  
 if config_env() == :prod do
   # database_url =
   #   System.get_env("DATABASE_URL") ||

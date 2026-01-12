@@ -43,7 +43,7 @@ defmodule Dojo.MixProject do
       {:phoenix_html, "~> 4.0"},
       {:phoenix_live_reload, "~> 1.5", only: :dev},
       {:phoenix_live_view, "~> 1.1.3"},
-      {:phoenix_pubsub, "~> 2.1"},
+      {:phoenix_pubsub, "~> 2.2"},
       {:floki, ">= 0.30.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.8.6"},
       {:esbuild, "~> 0.9", runtime: Mix.env() == :dev},
@@ -66,14 +66,19 @@ defmodule Dojo.MixProject do
       {:shards, "~> 1.1.1"},
       {:observer_cli, "~> 1.8"},
       {:kino_vega_lite, "~> 0.1.11"},
-      {:dns_cluster, "~> 0.1.1"},
+      {:dns_cluster, "~> 0.2"},
       {:bandit, "~> 1.2"},
       {:earmark, "1.5.0-pre1", override: true},
       {:earmark_parser, "1.4.44"},
       {:html_sanitize_ex, "~> 1.4"},
       {:makeup, "~> 1.1"},
       {:makeup_elixir, "~> 0.16"},
-      {:burrito, "~> 1.5"}
+      {:burrito, "~> 1.5"},
+      {:partisan, "~> 5.0.3"},  
+      # Protocol Buffers for safe, non-atom signaling
+      {:protox, "~> 2.0"},
+      {:mdns_lite, "~> 0.9.1"},
+      {:libcluster, "~> 3.3.0"}
     ]
   end
 

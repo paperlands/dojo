@@ -76,7 +76,6 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
              !PPPPPPPJ   JPPP5.          YPPPPPPJ   JPPPPPPY          .5PPP?   YPPPPPPP~
 
   "
-
   end
 
   def display() do
@@ -104,10 +103,10 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     inner_width = box_width - 6
     
     # Create hyperlinks (OSC 8 standard - works in modern terminals)
-    ip_link = "http://#{get_local_ip()}:#{4000}"
+    ip_link = "http://#{get_local_ip()}:#{System.get_env("PORT") || 4000}"
     
     # Hyperlink format: \e]8;;URL\e\\TEXT\e]8;;\e\\
-    ip_hyperlink = "\e]8;;#{ip_link}\e\\#{red}#{get_local_ip()}:4000#{reset}\e]8;;\e\\"
+    ip_hyperlink = "\e]8;;#{ip_link}\e\\#{red}#{get_local_ip()}:#{System.get_env("PORT") || 4000}#{reset}\e]8;;\e\\"
 
     
     # Build the box
@@ -146,7 +145,7 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     # Local IP info
     label = "URL LINK:"
     # Calculate visible length without ANSI codes for proper spacing
-    ip_visible = "#{get_local_ip()}:4000"
+    ip_visible = "#{get_local_ip()}:" <> System.get_env("PORT") || "4000"
     spacing = box_width - 2 - 4 - String.length(label) - String.length(ip_visible) - 2
     IO.puts("#{dim}#{vertical}#{reset}    #{white}#{label}#{reset}  #{ip_hyperlink}#{String.duplicate(" ", spacing)}#{dim}#{vertical}#{reset}")
     

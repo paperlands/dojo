@@ -7,9 +7,9 @@ defmodule Dojo.Clan do
   def find(id) when is_binary(id), do: %Dojo.Clan{name: id}
   def find(_), do: nil
 
-  def start(), do: %Dojo.Clan{name: gen_clan_name()}
+  def start(), do: %Dojo.Clan{name: gen_name()}
 
-  def gen_clan_name(count \\ 2) do
+  def gen_name(count \\ 2) do
     get_name_frags(count) |> Enum.join(@separator)
   end
 

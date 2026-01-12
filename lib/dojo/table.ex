@@ -8,14 +8,24 @@ defmodule Dojo.Table do
     GenServer.cast(pid, {:publish, msg, event})
   end
 
-  def last(pid, event) when is_pid(pid) do
+
+  def last({pid, target_node}, event) when is_pid(pid) do
+    IO.inspect(pid)
     case Cache.get({__MODULE__, :last, pid, event}) do
-      nil -> GenServer.call(pid, {:last, event})
+      # partisan_genserver client lookup or service discovery for image hosting
+      nil -> if target_node == :partisan.node() do 
+          GenServer.call(pid, {:last, event})
+             else
+               :partisan_gen_server.call(target_node, pid, event)
+        end
       last -> last
     end
   end
 
-  def last(_, _event), do: nil
+  def last(node, event) do
+    IO.inspect(node)
+    nil
+  end
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
@@ -23,7 +33,7 @@ defmodule Dojo.Table do
 
   def init(%{track_pid: pid, topic: topic, disciple: disciple}) do
     # this track_pid is the liveview pid
-    {:ok, ref} = Dojo.Gate.track(pid, topic, %{disciple | node: self()})
+    {:ok, ref} = Dojo.Gate.track(pid, topic, %{disciple | node: {self(), :partisan.node()}})
 
     {:ok,
      %{

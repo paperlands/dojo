@@ -209,7 +209,7 @@ defmodule DojoWeb.ShellLive do
       )
       when is_binary(addr) do
         case  Dojo.Table.last(dis[addr][:node], :hatch) do
-          %Dojo.Turtle{state: state} = table_state -> 
+          %Dojo.Turtle{state: state} = table_state ->
             {:noreply,
              socket
              |> push_event("seeOuterShell",  Map.from_struct(table_state))
