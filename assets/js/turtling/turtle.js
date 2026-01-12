@@ -110,10 +110,11 @@ export class Turtle {
 
         this.head = new Render.Head(this.scene)
 
+        enableLazyBinding(Turtle, ['getTime']);
         //mafs
         this.math = {
             parser: new Parser(),
-            evaluator: new Evaluator()
+            evaluator: new Evaluator({time: this.getTime})
         }
 
         this.reset();
@@ -128,6 +129,10 @@ export class Turtle {
     setupScene() {
         this.scene = new THREE.Scene();
     }
+
+    getTime() {
+    return this.timeline.currentTime;
+  }
 
     setupCamera() {
         const aspect = window.innerWidth / window.innerHeight;
@@ -595,7 +600,7 @@ export class Turtle {
     }
 
 
-    label(text="·", size=10){
+    label(text="·", size=1){
         this.currentPath = {
             ...this.pathTemplate,
             type: "text",
@@ -603,7 +608,7 @@ export class Turtle {
             color: this.color,
             text: text,
             // html canvas cant space numbers accurately below this
-            text_size: size,
+            text_size: size*5,
             rotation: this.rotation
             //id: crypto.getRandomValues(new Uint32Array(1))[0]
         };
@@ -956,6 +961,45 @@ export class Turtle {
         //break path for new path
         this.currentPath = null;
     }
+}
+
+/**
+ * Converts specified methods into lazy-bound getters.
+ * On first access, it binds the method to the instance and overwrites the property.
+ */
+function enableLazyBinding(ClassRef, methodNames) {
+  methodNames.forEach((methodName) => {
+    // 1. Capture the original method from the prototype
+    const originalMethod = ClassRef.prototype[methodName];
+
+    if (!originalMethod) {
+      console.warn(`Method ${methodName} not found on class.`);
+      return;
+    }
+
+    // 2. Redefine the property on the prototype
+    Object.defineProperty(ClassRef.prototype, methodName, {
+      configurable: true,
+      // The Getter
+      get() {
+        // 'this' refers to the instance (e.g., new Parent())
+        console.log(`Lazy binding triggered for: ${methodName}`);
+        
+        const boundMethod = originalMethod.bind(this);
+
+        // 3. Shadowing: Define a value property on the INSTANCE
+        // This effectively "deletes" the getter for this specific instance
+        // and replaces it with the bound function.
+        Object.defineProperty(this, methodName, {
+          value: boundMethod,
+          configurable: true,
+          writable: true
+        });
+
+        return boundMethod;
+      }
+    });
+  });
 }
 
 function processImage(pixels, width, height) {

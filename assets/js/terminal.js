@@ -21,39 +21,8 @@ class BufferStorage {
             id: idGen(),
             name: 'Papert',
             active: true,
-            content: `def wave phase amp do
-    fw amp*sin[phase]
-    lt 90
-    jmp -5
-    rt  90
-    fw -amp*sin[phase]
-    wave phase+5 amp
-end
-
-loop 30 do
-  jmpto 0 125
-  erase
-  beColour purple
-  when random<0.5 do
-    beColour purple
-    label "Delete code on the left to begin 🧙‍♂️" 20
-  end
-  when random do
-    beColour gold
-    label "Delete code on the left to begin 🧙‍♂️✨" 20
-  end
-  jmp -200
-  rt 180
-  fw 50
-  label "➤" 30
-  jmpto 0 0
-  jmp -1000
-  rt 270
-  beColour darkorange
-  wave random*180 15
-  lt 90
-  wait 1
-end`,
+            content: `label 'hello.' 10
+jmp 50`,
             mode: 'plang',
             created: Date.now(),
             lastModified: Date.now()
