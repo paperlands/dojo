@@ -593,7 +593,7 @@ defmodule DojoWeb.CoreComponents do
         phx-click={JS.dispatch("phx:set-theme", detail: %{theme: "dark"})}
         class="flex p-2 cursor-pointer w-1/2"
       >
-        <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100 [[data-theme=dark]_&]:text-secondary-content [[data-theme=dark]_&]:drop-shadow-md [[data-theme=dark]_&]:drop-shadow-secondary-content" />
       </button>
     </div>
     """

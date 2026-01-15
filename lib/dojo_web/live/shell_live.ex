@@ -357,7 +357,7 @@ defmodule DojoWeb.ShellLive do
 
   def outershell(assigns) do
     ~H"""
-    <div class="relative outershell  pt-10 right-2 w-full lg:-left-1/2 lg:w-[150%] ">
+    <div class="relative outershell  pt-20 right-2 w-full lg:-left-1/2 lg:w-[150%] ">
       <div class="flex items-start justify-between gap-2 mb-3">
         <span
           id="top-head"
@@ -491,13 +491,13 @@ defmodule DojoWeb.ShellLive do
     <!-- Command Deck Component (command_deck.html.heex) -->
     <div
       id="commanddeck"
-      class="rightthird deck flex select-none px-1 pb-1  animate-fade"
+      class="rightthird relative flex w-[135%] -left-1/3 md:left-1 lg:w-full deck mt-[25dvh] lg:mt-[15dvh] h-3/5 lg:h-4/5 select-none  animate-fade"
       phx-update="ignore"
     >
       <!-- Command Deck Panel -->
-      <div class="absolute h-3/4 bottom-12 w-64 transition-all duration-100 ease-in-out transform right-5 xl:h-3/4 scrollbar-hide dark-scrollbar">
+      <div class="h-5/6 w-full md:h-full transition-all duration-100 ease-in-out transform scrollbar-hide dark-scrollbar">
         <%!-- Top row --%>
-        <div class="flex flex-row pl-6 pt-4">
+        <div class="flex flex-row pl-5 pt-4">
           <!-- Header -->
           <div class="flex grow-5 items-center justify-between">
             <h2 class="z-50  pointer-events-auto text-xl font-bold text-base-content">
@@ -544,7 +544,7 @@ defmodule DojoWeb.ShellLive do
 
           <%!-- Undo button --%>
           <div
-            class="z-50 grow-1 pointer-events-auto group pt-1"
+            class="z-50 grow-1 pointer-events-auto group pt-1 pr-2"
             phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
           >
             <div class="relative">
@@ -564,7 +564,7 @@ defmodule DojoWeb.ShellLive do
               </button>
             </div>
             <!-- Tooltip -->
-            <div class="absolute pointer-events-none mb-2 transition-opacity duration-200 opacity-0 -top-3 right-6 group-hover:opacity-100">
+            <div class="absolute pointer-events-none mb-2 transition-opacity duration-200 opacity-0 -top-3 right-8 group-hover:opacity-100">
               <div class="px-2 py-1 text-xs border rounded bg-secondary text-secondary-content border-primary backdrop-blur-sm whitespace-nowrap">
                 Undo
               </div>
@@ -649,8 +649,9 @@ defmodule DojoWeb.ShellLive do
         </div>
         <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-8 -left-1 border-primary-content">
         </div>
-        <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-8 -right-1 border-primary-content">
+        <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-8 right-1 border-primary-content">
         </div>
+         
       </div>
     </div>
     """

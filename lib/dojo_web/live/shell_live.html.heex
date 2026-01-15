@@ -103,7 +103,7 @@
       <div
         phx-update="ignore"
         id="runenv"
-        class="w-full mt-5 mb-6 rounded-sm backdrop-blur-xs  pointer-events-auto dark-scrollbar [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-text bg-amber-600/5 border-amber-600/20 h-8/9"
+        class="w-full mt-5 mb-6 rounded-sm backdrop-blur-xs  pointer-events-auto dark-scrollbar [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-text bg-radial-[at_-25%_10%] from-primary/8 to-transparent  h-8/9"
       >
         <div phx-click="flipWell">
           <.folders
@@ -116,7 +116,7 @@
         </div>
         <textarea
           id="your-buffer"
-          class="relative rounded-sm pointer-events-auto cursor-text bg-amber-600/5 border-none h-11/12"
+          class="relative rounded-sm pointer-events-auto cursor-text bg-transparent border-none h-11/12"
           phx-hook="Shell"
           data-target="core"
         />
@@ -134,8 +134,8 @@
     <div class="bg-transparent pointer-events-none select-none" />
     <!-- Right pane -->
     <div class="row-span-1 col-span-1 lg:row-span-2 p-4 relative ">
-      <div id="sessionbox">
-        <div :if={!@session.name} class="relative group w-60">
+      <div id="sessionbox" class="fixed right-0 ml-4 ">
+        <div :if={!@session.name} class="relative right-0 group">
           <!-- Login Link Button -->
           <.link
             navigate={~p"/welcome"}
@@ -153,7 +153,7 @@
         >
           
 <!-- Welcome message row -->
-          <div class="flex items-center text-xs mb-1 border-b border-accent/50 pb-1 overflow-hidden">
+          <div class="flex items-center text-[12px] sm:text-xs mb-1 border-b border-accent/50 pb-1 overflow-hidden">
             <span class="flex items-center truncate">
               &gt; {gettext("welcome %{name} to⠀%{clan}'s shell",
                 clan: to_titlecase(@clan),
@@ -313,7 +313,6 @@
       <.deck />
       <!-- <.nerve messages={@disciples} /> -->
     </div>
-    
 <!-- <div class="backdrop-blur-sm border border-gray-700/50 rounded-lg p-4"/> -->
     <!-- Bottom Pane - Visual Previews (spans both columns) -->
     <div class="col-span-3 row-start-2 lg:row-span-1 lg:col-span-1 ">

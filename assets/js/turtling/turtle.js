@@ -190,7 +190,6 @@ export class Turtle {
             case 'endrecord':
                 this.recorder.stopRecording()
                 const video  = this.recorder.getLastRecording()
-                console.log(video)
                 this.bridge.pub(["saveRecord", {snapshot: video.blob, type: "video", title: video.ext}])
                 break;
             default:
@@ -735,9 +734,9 @@ export class Turtle {
                 }
                 break;
             case 'Call':
-                if(node.value == "fn" || node.value == "make") {
+                if(node.value == "fn" || node.value == "func") {
                     //escape evaluation
-                    this.func(...node.children.map(arg => arg.value), context)
+                    this.func(context, ...node.children.map(arg => arg.value))
 
                     break
                 }
@@ -804,7 +803,7 @@ export class Turtle {
         return tree.value // probably a string
     }
 
-    func(signature, expression, ctx){
+    func(ctx,signature, expression=0){
         this.math.parser.defineFunction(signature, expression, ctx)
     }
 
