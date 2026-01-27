@@ -382,6 +382,7 @@ label "Welcome to PaperLand" 50`,
         this.shell.swapDoc(doc);
         this.triggerBridge()
         this.shell.focus();
+        this.shell.setCursor(this.shell.lineCount(), 0);
 
         this.tabs.selectTab(id)
 

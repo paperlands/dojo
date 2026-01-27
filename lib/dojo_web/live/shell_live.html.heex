@@ -61,7 +61,7 @@
                   phx-update="ignore"
                   disabled
                   onblur="this.disabled=true;this.style.pointerEvents='none';this.closest('[id^=\'tab-scaffold\']').style.pointerEvents='auto';this.style.width=Math.max(this.value.length||this.placeholder.length,1)+'ch';this.setSelectionRange(0, 0);"
-                  onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.value=this.dataset.original;this.blur()}"
+                  onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.value=this.defaultValue;this.blur()}"
                   oninput="this.style.width=Math.max(this.value.length||this.placeholder.length,1)+1+'ch'"
                 />
                 <button
@@ -152,25 +152,59 @@
           class="relative font-mono right-2 text-primary bg-transparent border border-none rounded px-2 py-1 w-full max-w-xs"
         >
           
-<!-- Welcome message row -->
+          <!-- Welcome message row -->
           <div class="flex items-center text-[12px] sm:text-xs mb-1 border-b border-accent/50 pb-1 overflow-hidden">
             <span class="flex items-center truncate">
-              &gt; {gettext("welcome %{name} to⠀%{clan}'s shell",
-                clan: to_titlecase(@clan),
-                name: @session.name
-              )}
+              <span>&gt; welcome</span>
+
+              <span class="pointer-events-auto  relative group ml-1">
+                
+                <!-- <span -->
+                <!--   id="name-view" -->
+                <!--   ondblclick={ -->
+                <!--   JS.toggle(to: "#name-view") -->
+                <!--   |> JS.toggle(to: "#name-edit") -->
+                <!--   |> JS.focus(to: "#change-name") -->
+                <!--   } -->
+                <!--   class="cursor-pointer font-bold text-accent hover:underline hover:text-accent-focus select-none" -->
+                <!--   > -->
+                <!--   {@session.name} -->
+                <!-- </span> -->
+
+                <span id="name-edit" class="">
+                  <input
+                    type="text"
+                    id="change-name"
+                    phx-blur="changeName"
+                    value={@session.name}
+                    class="bg-base-200/50 text-[12px] ml-[0.5ch] sm:text-xs caret-accent-content hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-primary-content focus:text-base-content focus:outline-none text-xs -mb-1 min-w-[2ch]"
+                    style={"width: #{String.length(@session.name)}ch"} 
+                    phx-update="ignore"
+                    onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.value=this.defaultValue;this.blur()}"
+                    phx-key="Enter"
+                    onblur=";this.style.width=Math.max(this.value.length||this.placeholder.length,1)+'ch';this.setSelectionRange(0, 0);"
+                  oninput="this.style.width = (this.value.length || this.placeholder.length) + 'ch';"
+                  onclick="event.stopPropagation()"
+                  />
+                </span>
+              </span>
+
+              <span class="ml-[1ch]">
+                {gettext("to %{clan}'s shell", clan: to_titlecase(@clan))}
+              </span>
+
               <span class="relative flex items-center ml-1">
                 <span class="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
               </span>
             </span>
           </div>
           
-<!-- Command keys row -->
+          <!-- Command keys row -->
           <div class="flex items-center justify-between">
             <div
               :if={@outershell.active}
-              class="max-w-20 bg-gradient-to-r from-background to-transparent overflow-hidden whitespace-nowrap flex-shrink-1 sm:flex-shrink-0 flex items-center  text-xs mr-1 sm:mr-2 min-w-0"
-            >
+              class="max-w-20 bg-gradient-to-r from-background to-transparent overflow-hidden whitespace-nowrap flex-shrink-1 sm:flex-shrink-0 flex items-center text-xs mr-1 sm:mr-2 min-w-0"
+              >
               <span class="text-amber-600 animate-marquee">
                 {gettext("summoning @%{name}'s code", name: @outershell.name)} ☄
               </span>

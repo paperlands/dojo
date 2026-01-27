@@ -152,6 +152,11 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
+  def handle_event("changeName", %{"value" => name}, %{assigns: %{session: %Session{name: username}, clan: clan}} = socket) do
+    Dojo.Class.change_meta(username, "shell:" <> clan, {:name, name})
+    {:noreply, socket}
+  end
+
   def handle_event(
         "keepTurtle",
         _,
@@ -202,30 +207,30 @@ defmodule DojoWeb.ShellLive do
   end
 
 
-      def handle_event(
-        "seeTurtle",
-        %{"addr" => addr},
-        %{assigns: %{disciples: dis, class: _class}} = socket
-      )
-      when is_binary(addr) do
-        case  Dojo.Table.last(dis[addr][:node], :hatch) do
-          %Dojo.Turtle{state: state} = table_state -> 
-            {:noreply,
-             socket
-             |> push_event("seeOuterShell",  Map.from_struct(table_state))
-             |> assign(
-               :outershell,
-             %OuterShell{
-               state: state, 
-               addr: addr,
-               active: true,
-               name: "#{dis[addr][:name]}"
-             }
-             )}
+  def handle_event(
+    "seeTurtle",
+    %{"addr" => addr},
+    %{assigns: %{disciples: dis, class: _class}} = socket
+  )
+  when is_binary(addr) do
+    case  Dojo.Table.last(dis[addr][:node], :hatch) do
+      %Dojo.Turtle{state: state} = table_state -> 
+        {:noreply,
+         socket
+         |> push_event("seeOuterShell",  Map.from_struct(table_state))
+         |> assign(
+           :outershell,
+         %OuterShell{
+           state: state, 
+           addr: addr,
+           active: true,
+           name: "#{dis[addr][:name]}"
+         }
+         )}
 
-          _ -> {:noreply, socket}
-        end
-      end
+      _ -> {:noreply, socket}
+    end
+  end
 
 
   def handle_event("seeTurtle", _, socket) do

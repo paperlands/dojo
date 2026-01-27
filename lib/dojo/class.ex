@@ -33,6 +33,10 @@ defmodule Dojo.Class do
     Dojo.Gate.get_by_key(topic(book), username)
   end
 
+  def change_meta(username, book, {_k, _v} = delta) do
+    Dojo.Gate.change(self(), topic(book), username, delta)
+  end
+
   def list_disciples(book) do
     Dojo.Gate.list_users(topic(book))
     |> Enum.into(%{}, fn %{phx_ref: ref} = dis -> {ref, dis} end)
