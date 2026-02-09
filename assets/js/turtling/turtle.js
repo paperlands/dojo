@@ -188,9 +188,8 @@ export class Turtle {
 
                 break;
             case 'endrecord':
-                this.recorder.stopRecording()
-                const video  = this.recorder.getLastRecording()
-                this.bridge.pub(["saveRecord", {snapshot: video.blob, type: "video", title: video.ext}])
+                const video = await this.recorder.stopRecording()
+                this.bridge.pub(["saveRecord", {snapshot: video.blob, type: "video"}])
                 break;
             default:
             }
@@ -216,7 +215,10 @@ export class Turtle {
 
         this.renderer.sortObjects = false;
 
-        this.recorder = new Recorder(canvas)
+        this.recorder = new Recorder(canvas, {
+            // useMp4Muxing: true,
+            // fragmentDuration: 500
+        })
     }
 
     thickness(x=1) {
@@ -283,6 +285,10 @@ export class Turtle {
                 this.hatch()
                 this.renderstate.phase="reached"
             }
+        }
+
+        if (this.recorder.isRecording) {
+            this.recorder.captureFrame()
         }
 
         if(this.renderstate.snapshot.frame==null && t>500) {
@@ -409,21 +415,36 @@ export class Turtle {
     }
 
     hatch(){
-
         const width = this.canvas.width;
-        const height = this.canvas.height
-        const pixels = new Uint8Array(width * height * 4); // RGBA
+        const height = this.canvas.height;
+        
+        // Get buffer from recorder's pool instead of allocating new one
+        const pixels = new Uint8Array(width * height * 4);
+    
+        
         this.ctx.readPixels(0, 0, width, height, this.ctx.RGBA, this.ctx.UNSIGNED_BYTE, pixels);
-        this.renderstate.snapshot.frame = pixels
-        setTimeout(() => {
-            const [image, dataurl] = this.recorder.takeSnapshot(pixels, width, height)
-            if(this.renderstate.snapshot.save){
-                this.bridge.pub(["saveRecord", {snapshot: image, type: "image", title: this.renderstate.snapshot.title}])
-                this.renderstate.snapshot.save=false
+        this.renderstate.snapshot.frame = pixels;
+        
+        // Process asynchronously
+        queueMicrotask(async () => {
+            const result = await this.recorder.takeSnapshot({ pixels, width, height });
+            
+            if (result) {
+                
+                if (this.renderstate.snapshot.save) {
+                    this.bridge.pub(["saveRecord", {
+                        snapshot: result.full,
+                        type: "image",
+                        title: this.renderstate.snapshot.title
+                    }]);
+                    this.renderstate.snapshot.save = false;
+                }
+                
+                this.renderstate.meta.path = result.trimmed;
+                this.bridge.pub(["hatchTurtle", this.renderstate.meta]);
             }
-            this.renderstate.meta.path = dataurl
-            this.bridge.pub(["hatchTurtle", this.renderstate.meta])
-        }, 0)
+        });
+
     }
 
     wait(duration=1) {

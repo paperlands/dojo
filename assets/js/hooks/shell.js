@@ -58,11 +58,12 @@ const commands = {
             return;
         }
         
-        const filename = prompt('Enter filename:', title + ext) || title + ext;
+        const filename = prompt('Enter filename:', title) || title;
         if (!filename) return;
         
         
         try {
+            console.log(blob)
             const url = URL.createObjectURL(blob);
             const link = Object.assign(document.createElement('a'), {
                 href: url,
@@ -350,8 +351,8 @@ const Shell = {
       turtle.bridge.sub(([event, payload]) =>{
         switch(event) {
         case "saveRecord":
-            if(payload.type== "video") saveRecording(payload.snapshot, payload.title)
-            if(payload.type=="image") saveImage(payload.snapshot, payload.title)
+            if(payload.type== "video") saveRecording(payload.snapshot)
+            if(payload.type=="image") saveImage(payload.snapshot)
           break;
         default:
           debouncedPushUp(event, payload)
@@ -377,7 +378,7 @@ const Shell = {
 
     // Setup LiveView event handlers
     this.handleEvent("relayCamera", ({ command }) => cameraCommand(command));
-    this.handleEvent("selfkeepCanvas", ({ title }) => cameraCommand("snap_record", {title: title}));
+    this.handleEvent("selfkeepCanvas", ({ title }) => cameraCommand("snap", {title: title}));
     this.handleEvent("writeShell", executeCommand);
     this.handleEvent("opBuffer", (event) => term.opBufferHandler(event));
 
