@@ -483,7 +483,7 @@ defmodule DojoWeb.ShellLive do
           {"goto", gettext("Go To Start"), ["→": 0, "↑": 0]},
           {"jmpto", gettext("Jump To Start"), ["→": 0, "↑": 0]},
           {"grid", gettext("Create a Grid"), [size: 100, unit: 10]},
-          {"faceto", gettext("Face Towards Start"), ["→": 0, "↑": 0]},
+          {"faceto", gettext("Face a Point"), ["→": 0, "↑": 0]},
           {"dive", gettext("Dive Into Page"), [angle: 45]},
           {"roll", gettext("Tilt Right"), [angle: 45]},
           {"beColour", gettext("Set Colour to"), [colour: "'red'"]},
@@ -501,16 +501,16 @@ defmodule DojoWeb.ShellLive do
     <!-- Command Deck Component (command_deck.html.heex) -->
     <div
       id="commanddeck"
-      class="rightthird relative flex w-[135%] -left-1/3 md:left-1 lg:w-full deck mt-[25dvh] lg:mt-[15dvh] h-3/5 lg:h-4/5 select-none  animate-fade"
+      class="rightthird fixed right-0 flex deck mt-[15dvh] h-3/5 lg:h-4/5 select-none animate-fade"
       phx-update="ignore"
     >
       <!-- Command Deck Panel -->
-      <div class="h-5/6 w-full md:h-full transition-all duration-100 ease-in-out transform scrollbar-hide dark-scrollbar">
+      <div class="h-5/6 md:h-full transition-all duration-100 ease-in-out transform scrollbar-hide dark-scrollbar">
         <%!-- Top row --%>
-        <div class="flex flex-row pl-5 pt-4">
+        <div class="flex flex-row pl-5 pt-4 justify-between">
           <!-- Header -->
-          <div class="flex grow-5 items-center justify-between">
-            <h2 class="z-50  pointer-events-auto text-xl font-bold text-base-content">
+          <div class="flex items-center">
+            <h2 class="z-50 pointer-events-auto text-xl font-bold text-base-content">
               <div class="dropdown dropdown-top">
                 <div
                   tabindex="0"
@@ -545,6 +545,7 @@ defmodule DojoWeb.ShellLive do
                     <a>{Gettext.gettext(DojoWeb.Gettext, key |> to_string |> to_titlecase)}</a>
                   </li>
                 </ul>
+                <br class="sm:hidden" />
                 <span class="inline-block">
                   {gettext("Deck")}
                 </span>
@@ -554,7 +555,7 @@ defmodule DojoWeb.ShellLive do
 
           <%!-- Undo button --%>
           <div
-            class="z-50 grow-1 pointer-events-auto group pt-1 pr-2"
+            class="z-50 pointer-events-auto group pt-1 pr-5 ml-2 md:ml-4"
             phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
           >
             <div class="relative">
@@ -582,7 +583,10 @@ defmodule DojoWeb.ShellLive do
           </div>
         </div>
         <!-- Command&Control Dropdown -->
-        <div id="deckofcards" class="h-11/12 z-80 overflow-y-scroll p-2 px-4 pointer-events-auto">
+        <div
+          id="deckofcards"
+          class="h-10/12 z-80 overflow-y-scroll pl-4 sm:py-2 sm:px-4 pointer-events-auto mt-2"
+        >
           <%= for {key, spec} <- @primitive do %>
             <div class={[key, "keygroup"]} {!(key == :command) && %{hidden: true} || %{hidden: false}}>
               <%= for {cmd, desc, vals} <- spec do %>
@@ -608,7 +612,7 @@ defmodule DojoWeb.ShellLive do
                   <div id={"cmdicon-#{cmd}"} class="mr-3 fill-primary">
                     <.cmd_icon command={cmd} class="w-8 h-8 " />
                   </div>
-                  <div class="flex-grow">
+                  <div class="grow">
                     <%!-- Description --%>
                     <code class="font-mono text-sm text-secondary-content">{desc}</code>
                     <%!-- Sample code --%>
@@ -668,13 +672,12 @@ defmodule DojoWeb.ShellLive do
           <% end %>
         </div>
         <!-- Decorative corners -->
-        <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-1 -left-1 border-primary-content">
+        <div class="absolute w-3 h-3 border-t-2 border-l-2 top-0 left-0 border-primary-content"></div>
+        <div class="absolute w-3 h-3 border-t-2 border-r-2 top-0 right-2 border-primary-content">
         </div>
-        <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-1 right-1 border-primary-content">
+        <div class="absolute w-3 h-3 border-b-2 border-l-2 bottom-8 left-0 border-primary-content">
         </div>
-        <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-8 -left-1 border-primary-content">
-        </div>
-        <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-8 right-1 border-primary-content">
+        <div class="absolute w-3 h-3 border-b-2 border-r-2 bottom-8 right-2 border-primary-content">
         </div>
       </div>
     </div>
