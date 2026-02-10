@@ -152,14 +152,14 @@
           class="relative font-mono right-2 text-primary bg-transparent border border-none rounded px-2 py-1 w-full max-w-xs"
         >
           
-          <!-- Welcome message row -->
+<!-- Welcome message row -->
           <div class="flex items-center text-[12px] sm:text-xs mb-1 border-b border-accent/50 pb-1 overflow-hidden">
             <span class="flex items-center truncate">
               <span>&gt; welcome</span>
 
               <span class="pointer-events-auto  relative group ml-1">
                 
-                <!-- <span -->
+<!-- <span -->
                 <!--   id="name-view" -->
                 <!--   ondblclick={ -->
                 <!--   JS.toggle(to: "#name-view") -->
@@ -178,13 +178,13 @@
                     phx-blur="changeName"
                     value={@session.name}
                     class="bg-base-200/50 text-[12px] ml-[0.5ch] sm:text-xs caret-accent-content hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-primary-content focus:text-base-content focus:outline-none text-xs -mb-1 min-w-[2ch]"
-                    style={"width: #{String.length(@session.name)}ch"} 
+                    style={"width: #{String.length(@session.name)}ch"}
                     phx-update="ignore"
                     onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.value=this.defaultValue;this.blur()}"
                     phx-key="Enter"
                     onblur=";this.style.width=Math.max(this.value.length||this.placeholder.length,1)+'ch';this.setSelectionRange(0, 0);"
-                  oninput="this.style.width = (this.value.length || this.placeholder.length) + 'ch';"
-                  onclick="event.stopPropagation()"
+                    oninput="this.style.width = (this.value.length || this.placeholder.length) + 'ch';"
+                    onclick="event.stopPropagation()"
                   />
                 </span>
               </span>
@@ -199,12 +199,12 @@
             </span>
           </div>
           
-          <!-- Command keys row -->
+<!-- Command keys row -->
           <div class="flex items-center justify-between">
             <div
               :if={@outershell.active}
               class="max-w-20 bg-gradient-to-r from-background to-transparent overflow-hidden whitespace-nowrap flex-shrink-1 sm:flex-shrink-0 flex items-center text-xs mr-1 sm:mr-2 min-w-0"
-              >
+            >
               <span class="text-amber-600 animate-marquee">
                 {gettext("summoning @%{name}'s code", name: @outershell.name)} ☄
               </span>
@@ -214,25 +214,30 @@
 
             <!-- Command buttons always aligned to right and given prio -->
             <div class="flex flex-shrink-0 gap-1 z-30 ml-auto cursor-pointer pointer-events-auto justify-end">
-
               <button
                 id="centering"
                 class=" flex items-center justify-center  w-9 h-9 border border-accent backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0   rounded-sm  lg:w-8 lg:h-8   fill-primary hover:fill-primary active:border-primary touch-manipulation"
                 phx-rtclick={
-                JS.dispatch("phx:relayCamera", detail: %{command: "pan"})
-                |> JS.toggle_class("hidden", to: "#centering")
-                |> JS.toggle_class("hidden", to: "#centered")
-                |> JS.add_class("fill-primary", to: ".centered-arrow")
+                  JS.dispatch("phx:relayCamera", detail: %{command: "pan"})
+                  |> JS.toggle_class("hidden", to: "#centering")
+                  |> JS.toggle_class("hidden", to: "#centered")
+                  |> JS.add_class("fill-primary", to: ".centered-arrow")
                 }
-
                 phx-hook=".rtclick"
-
                 phx-click={
-                JS.dispatch("phx:relayCamera", detail: %{command: "recenter"})
-                   |> JS.add_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: ".centering-arrow")
-                    |> JS.remove_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content", to: ".centering-arrow", transition: "ease-out duration-500", time: 500)
+                  JS.dispatch("phx:relayCamera", detail: %{command: "recenter"})
+                  |> JS.add_class(
+                    "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",
+                    to: ".centering-arrow"
+                  )
+                  |> JS.remove_class(
+                    "fill-secondary-content drop-shadow-md drop-shadow-secondary-content",
+                    to: ".centering-arrow",
+                    transition: "ease-out duration-500",
+                    time: 500
+                  )
                 }
-                >
+              >
                 <.centering id="centeringarrow" class="w-6 h-6" />
               </button>
 
@@ -240,22 +245,27 @@
                 id="centered"
                 class=" flex items-center justify-center hidden w-9 h-9 border border-accent backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0  rounded-sm  lg:w-8 lg:h-8   fill-primary hover:fill-primary active:border-primary touch-manipulation"
                 phx-click={
-                JS.dispatch("phx:relayCamera", detail: %{command: "track"})
-                |> JS.toggle_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: ".centered-arrow")
+                  JS.dispatch("phx:relayCamera", detail: %{command: "track"})
+                  |> JS.toggle_class(
+                    "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",
+                    to: ".centered-arrow"
+                  )
                 }
                 phx-hook=".rtclick"
                 phx-rtclick={
-                JS.dispatch("phx:relayCamera", detail: %{command: "endtrack"})
-                |> JS.toggle_class("hidden", to: "#centering")
-                |> JS.toggle_class("hidden", to: "#centered")
-                |> JS.remove_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: ".centered-arrow")
+                  JS.dispatch("phx:relayCamera", detail: %{command: "endtrack"})
+                  |> JS.toggle_class("hidden", to: "#centering")
+                  |> JS.toggle_class("hidden", to: "#centered")
+                  |> JS.remove_class(
+                    "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",
+                    to: ".centered-arrow"
+                  )
                 }
-                >
+              >
                 <.centered class="w-7 h-7 fill-secondary-content drop-shadow-md drop-shadow-secondary-content" />
               </button>
 
-
-                <button
+              <button
                 id="endrecording"
                 class="flex items-center justify-center hidden w-9 h-9 border-2 border-primary/50  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8   rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
                 phx-click={
@@ -264,7 +274,10 @@
                   |> JS.show(to: "#startrecording")
                 }
               >
-                <.record id="apertureopen" class="w-7 h-7 animate-rotate transition-transform duration-700  fill-error drop-shadow-xs drop-shadow-error text-amber-400/50 hover:rotate-[-40deg]" />
+                <.record
+                  id="apertureopen"
+                  class="w-7 h-7 animate-rotate transition-transform duration-700  fill-error drop-shadow-xs drop-shadow-error text-amber-400/50 hover:rotate-[-40deg]"
+                />
               </button>
 
               <button
@@ -276,19 +289,30 @@
                   |> JS.show(to: "#endrecording")
                 }
                 phx-hook=".rtclick"
-
                 phx-rtclick={
                   ((@outershell.active &&
-                     JS.dispatch("phx:outerkeepCanvas",
-                       detail: %{"title" => @outershell.name <> "'s creation"}
-                     ) ||
-                    JS.dispatch("phx:selfkeepCanvas",
-                      detail: %{"title" => @session.name <> "'s creation"}
-                    ))) |> JS.add_class("fill-secondary-content drop-shadow-sm drop-shadow-secondary-content ", to: "#apertureclose")
-                    |> JS.remove_class("fill-secondary-content drop-shadow-sm drop-shadow-secondary-content", to: "#apertureclose", transition: "ease-out duration-1000", time: 1000)
+                      JS.dispatch("phx:outerkeepCanvas",
+                        detail: %{"title" => @outershell.name <> "'s creation"}
+                      )) ||
+                     JS.dispatch("phx:selfkeepCanvas",
+                       detail: %{"title" => @session.name <> "'s creation"}
+                     ))
+                  |> JS.add_class(
+                    "fill-secondary-content drop-shadow-sm drop-shadow-secondary-content ",
+                    to: "#apertureclose"
+                  )
+                  |> JS.remove_class(
+                    "fill-secondary-content drop-shadow-sm drop-shadow-secondary-content",
+                    to: "#apertureclose",
+                    transition: "ease-out duration-1000",
+                    time: 1000
+                  )
                 }
               >
-                <.record id="apertureclose"  class="w-6 h-6 transition-transform duration-700  fill-primary text-amber-400/50 hover:rotate-[-40deg]" />
+                <.record
+                  id="apertureclose"
+                  class="w-6 h-6 transition-transform duration-700  fill-primary text-amber-400/50 hover:rotate-[-40deg]"
+                />
               </button>
               <script :type={Phoenix.LiveView.ColocatedHook} name=".rtclick">
                 export default {
@@ -303,7 +327,7 @@
                 }
               </script>
               
-              <!-- <button -->
+<!-- <button -->
               <!--   class="relative w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 mx-2  rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation" -->
               <!--   phx-click={ -->
               <!--     (@outershell.active && -->
@@ -320,9 +344,18 @@
 
               <button
                 class="flex items-center justify-center w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
-                phx-click={JS.toggle(to: ".deck", in: "fade-in-scale", out: "fade-out-scale") |> JS.toggle_class("fill-secondary-content drop-shadow-sm drop-shadow-secondary-content ", to: "#manualdeckbutton")}
+                phx-click={
+                  JS.toggle(to: ".deck", in: "fade-in-scale", out: "fade-out-scale")
+                  |> JS.toggle_class(
+                    "fill-secondary-content drop-shadow-sm drop-shadow-secondary-content ",
+                    to: "#manualdeckbutton"
+                  )
+                }
               >
-                <.manual id="manualdeckbutton" class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-secondary-content drop-shadow-sm drop-shadow-secondary-content fill-primary hover:rotate-[-40deg]" />
+                <.manual
+                  id="manualdeckbutton"
+                  class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-secondary-content drop-shadow-sm drop-shadow-secondary-content fill-primary hover:rotate-[-40deg]"
+                />
               </button>
               <!-- <button -->
               <!--   class="relative w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation" -->
@@ -347,7 +380,7 @@
       <.deck />
       <!-- <.nerve messages={@disciples} /> -->
     </div>
-<!-- <div class="backdrop-blur-sm border border-gray-700/50 rounded-lg p-4"/> -->
+    <!-- <div class="backdrop-blur-sm border border-gray-700/50 rounded-lg p-4"/> -->
     <!-- Bottom Pane - Visual Previews (spans both columns) -->
     <div class="col-span-3 row-start-2 lg:row-span-1 lg:col-span-1 ">
       <div
@@ -371,7 +404,7 @@
         :if={@pane}
         id="disciple_panels"
         phx-hook="DiscipleWindow"
-        class="fixed bg-transparent bottom-0 pointer-events-none  z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto"
+        class="fixed bg-transparent bottom-0 pointer-events-auto z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto"
       >
         <!-- Other people's turtles -->
         <div
@@ -398,8 +431,9 @@
                 "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md hover:border-primary transition-colors delay-150 ",
                 (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") ||
                   "cursor-progress pointer-events-none",
-                (Map.has_key?(dis, :meta) && dis.meta.state == :error && "border-error/50") || (@outershell && @outershell.addr == phx_ref &&
-                   "border-accent-content text-accent-content") ||
+                (Map.has_key?(dis, :meta) && dis.meta.state == :error && "border-error/50") ||
+                  (@outershell && @outershell.addr == phx_ref &&
+                     "border-accent-content text-accent-content") ||
                   "border-accent/50 text-accent"
               ]}
             >
