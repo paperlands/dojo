@@ -152,7 +152,11 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-  def handle_event("changeName", %{"value" => name}, %{assigns: %{session: %Session{name: username}, clan: clan}} = socket) do
+  def handle_event(
+        "changeName",
+        %{"value" => name},
+        %{assigns: %{session: %Session{name: username}, clan: clan}} = socket
+      ) do
     Dojo.Class.change_meta(username, "shell:" <> clan, {:name, name})
     {:noreply, socket}
   end
@@ -183,15 +187,16 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_event(
-    "hatchTurtle",
-    %{"state" => _state} = payload,
-    %{assigns: %{class: class, clan: clan, session: %{name: name, last_opened: time}}} =
-      socket) when is_binary(name) do
-    
-
-    #this is user sesion first logintime
-    id = (name <> Base.encode64(to_string(time)))
-    |> String.replace(~r/[^a-zA-Z0-9]/, "")
+        "hatchTurtle",
+        %{"state" => _state} = payload,
+        %{assigns: %{class: class, clan: clan, session: %{name: name, last_opened: time}}} =
+          socket
+      )
+      when is_binary(name) do
+    # this is user sesion first logintime
+    id =
+      (name <> Base.encode64(to_string(time)))
+      |> String.replace(~r/[^a-zA-Z0-9]/, "")
 
     Dojo.Turtle.reflect(payload, %{topic: :hatch, class: class, node: node(), id: id, clan: clan})
 
@@ -199,39 +204,38 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_event(
-    "hatchTurtle",
-    %{"commands" => _commands},
-    socket
-  ) do
+        "hatchTurtle",
+        %{"commands" => _commands},
+        socket
+      ) do
     {:noreply, socket}
   end
 
-
   def handle_event(
-    "seeTurtle",
-    %{"addr" => addr},
-    %{assigns: %{disciples: dis, class: _class}} = socket
-  )
-  when is_binary(addr) do
-    case  Dojo.Table.last(dis[addr][:node], :hatch) do
-      %Dojo.Turtle{state: state} = table_state -> 
+        "seeTurtle",
+        %{"addr" => addr},
+        %{assigns: %{disciples: dis, class: _class}} = socket
+      )
+      when is_binary(addr) do
+    case Dojo.Table.last(dis[addr][:node], :hatch) do
+      %Dojo.Turtle{state: state} = table_state ->
         {:noreply,
          socket
-         |> push_event("seeOuterShell",  Map.from_struct(table_state))
+         |> push_event("seeOuterShell", Map.from_struct(table_state))
          |> assign(
            :outershell,
-         %OuterShell{
-           state: state, 
-           addr: addr,
-           active: true,
-           name: "#{dis[addr][:name]}"
-         }
+           %OuterShell{
+             state: state,
+             addr: addr,
+             active: true,
+             name: "#{dis[addr][:name]}"
+           }
          )}
 
-      _ -> {:noreply, socket}
+      _ ->
+        {:noreply, socket}
     end
   end
-
 
   def handle_event("seeTurtle", _, socket) do
     {:noreply,
@@ -317,7 +321,7 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-    # pokemon clause
+  # pokemon clause
   def handle_call(
         e,
         p,
@@ -329,11 +333,10 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-
   defp update_disciples_metadata(disciples, visible_disciples) do
     Enum.reduce(visible_disciples, disciples, fn ref, acc ->
       with %{node: node} <- disciples[ref],
-      %{path: path, state: state} <- Dojo.Table.last(node, :hatch) do
+           %{path: path, state: state} <- Dojo.Table.last(node, :hatch) do
         put_in(acc, [ref, :meta], %{path: path, state: state})
       else
         _ -> acc
@@ -377,7 +380,8 @@ defmodule DojoWeb.ShellLive do
         >
           <span class={[
             "absolute inline-flex h-full w-full rounded-full  opacity-75",
-            (@outershell.state == :error && "bg-error") || (@outershell.follow && "bg-accent-content animate-ping") || "bg-primary"
+            (@outershell.state == :error && "bg-error") ||
+              (@outershell.follow && "bg-accent-content animate-ping") || "bg-primary"
           ]}>
           </span>
           <span class="relative inline-flex rounded-full h-2 w-2 bg-primaryAccent"></span>
@@ -408,7 +412,6 @@ defmodule DojoWeb.ShellLive do
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
           </div>
-          
         </button>
         <!--
         <div class="relative z-4 rounded-sm pointer-events-auto cursor-text border-none h-full" >
@@ -427,15 +430,17 @@ defmodule DojoWeb.ShellLive do
           data-target="outer"
         />
       </div>
-      <div class="flex" class="-bottom-1/12  transition-colors delay-150 duration-300 overflow-y-auto pb-1 ">
       <div
+        class="flex"
+        class="-bottom-1/12  transition-colors delay-150 duration-300 overflow-y-auto pb-1 "
+      >
+        <div
           phx-update="ignore"
           id="outer-output"
           class="w-1/2 left-2 flex-auto opacity-80 font-mono border-none text-primary text-sm"
         />
-      
 
-    <div
+        <div
           phx-update="ignore"
           id="outermerge-output"
           class="w-1/2 flex-auto font-mono  opacity-80 border-none text-primary text-sm"
@@ -454,7 +459,7 @@ defmodule DojoWeb.ShellLive do
             <p class="text-primary-content">远山如黛</p>
             <p class="text-primary">The mountains fade into mist</p>
             <p class="text-primary-content">江流天地外</p>
-            <p class="text-primary" >Rivers flow beyond heaven and earth</p>
+            <p class="text-primary">Rivers flow beyond heaven and earth</p>
           </div>
 
           <div class="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-transparent to-black/100   pointer-events-none">
@@ -577,7 +582,7 @@ defmodule DojoWeb.ShellLive do
           </div>
         </div>
         <!-- Command&Control Dropdown -->
-        <div id="deckofcards" class="h-11/12 z-80 overflow-y-scroll p-2 px-4">
+        <div id="deckofcards" class="h-11/12 z-80 overflow-y-scroll p-2 px-4 pointer-events-auto">
           <%= for {key, spec} <- @primitive do %>
             <div class={[key, "keygroup"]} {!(key == :command) && %{hidden: true} || %{hidden: false}}>
               <%= for {cmd, desc, vals} <- spec do %>
@@ -586,8 +591,16 @@ defmodule DojoWeb.ShellLive do
                     JS.dispatch("phx:writeShell",
                       detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
                     )
-                    |> JS.add_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: "#cmdicon-#{cmd}")
-                    |> JS.remove_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content", to: "#cmdicon-#{cmd}", transition: "ease-out duration-1200", time: 1200)
+                    |> JS.add_class(
+                      "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",
+                      to: "#cmdicon-#{cmd}"
+                    )
+                    |> JS.remove_class(
+                      "fill-secondary-content drop-shadow-md drop-shadow-secondary-content",
+                      to: "#cmdicon-#{cmd}",
+                      transition: "ease-out duration-1200",
+                      time: 1200
+                    )
                   }
                   class="flex duration-500 animate-fade items-center p-2 transition-colors rounded pointer-events-auto hover:bg-accent/50 group cursor-pointer"
                 >
@@ -615,9 +628,16 @@ defmodule DojoWeb.ShellLive do
                             JS.dispatch("phx:writeShell",
                               detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
                             )
-                            |> JS.add_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: "#cmdicon-#{cmd}")
-                            |> JS.remove_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content", to: "#cmdicon-#{cmd}", transition: "ease-out duration-200", time: 200)
-                            
+                            |> JS.add_class(
+                              "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",
+                              to: "#cmdicon-#{cmd}"
+                            )
+                            |> JS.remove_class(
+                              "fill-secondary-content drop-shadow-md drop-shadow-secondary-content",
+                              to: "#cmdicon-#{cmd}",
+                              transition: "ease-out duration-200",
+                              time: 200
+                            )
                           }
                           phx-key="Enter"
                           oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
@@ -656,7 +676,6 @@ defmodule DojoWeb.ShellLive do
         </div>
         <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-8 right-1 border-primary-content">
         </div>
-         
       </div>
     </div>
     """
