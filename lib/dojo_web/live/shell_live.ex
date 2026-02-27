@@ -329,6 +329,7 @@ defmodule DojoWeb.ShellLive do
     Enum.reduce(visible_disciples, disciples, fn ref, acc ->
       with %{node: node} <- disciples[ref],
       %{path: path, state: state} <- Dojo.Table.last(node, :hatch) do
+        
         put_in(acc, [ref, :meta], %{path: path, state: state})
       else
         _ -> acc

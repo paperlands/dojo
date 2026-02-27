@@ -104,6 +104,8 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     
     # Create hyperlinks (OSC 8 standard - works in modern terminals)
     ip_link = "http://#{get_local_ip()}:#{System.get_env("PORT") || 4000}"
+    System.put_env("MY_IP_ADDR", "#{get_local_ip()}:#{System.get_env("PORT") || 4000}")
+    
     
     # Hyperlink format: \e]8;;URL\e\\TEXT\e]8;;\e\\
     ip_hyperlink = "\e]8;;#{ip_link}\e\\#{red}#{get_local_ip()}:#{System.get_env("PORT") || 4000}#{reset}\e]8;;\e\\"

@@ -27,6 +27,7 @@ defmodule Dojo.Application do
       # This starts the "Polyglot" strategy which immediately begins
       # scanning mDNS/BLE using the UUID from step 1.
       {Cluster.Supervisor, [topologies, [name: Dojo.ClusterSupervisor]]},
+      {Registry, keys: :unique, name: Dojo.TableRegistry},
       {Phoenix.PubSub, name: Dojo.PubSub, adapter: Phoenix.PubSub.Partisan},
       # Dojo.Repo,
       {DNSCluster, query: Application.get_env(:dojo, :dns_cluster_query) || :ignore},

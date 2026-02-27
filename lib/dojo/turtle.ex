@@ -38,7 +38,7 @@ defmodule Dojo.Turtle do
     with file when is_binary(file) <-
          DojoWeb.Utils.Base64.to_file(path, Path.join([dest_dir, id])),
            ext when byte_size(ext) > 0 <- Path.extname(file) do       
-           Path.join(["frames", clan, id]) <> ext <> "#bump=#{System.os_time(:second)}"
+           Path.join([System.get_env("MY_IP_ADDR"), "frames", clan, id]) <> ext <> "#bump=#{System.os_time(:second)}"
          else
            _ -> nil
          end
