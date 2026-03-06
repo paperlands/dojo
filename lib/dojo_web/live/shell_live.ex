@@ -209,7 +209,7 @@ defmodule DojoWeb.ShellLive do
       )
       when is_binary(addr) do
         case  Dojo.Table.last(dis[addr][:node], :hatch) do
-          %Dojo.Turtle{state: state} = table_state -> 
+          %Dojo.Turtle{state: state} = table_state ->
             {:noreply,
              socket
              |> push_event("seeOuterShell",  Map.from_struct(table_state))
@@ -329,6 +329,7 @@ defmodule DojoWeb.ShellLive do
     Enum.reduce(visible_disciples, disciples, fn ref, acc ->
       with %{node: node} <- disciples[ref],
       %{path: path, state: state} <- Dojo.Table.last(node, :hatch) do
+        
         put_in(acc, [ref, :meta], %{path: path, state: state})
       else
         _ -> acc

@@ -379,10 +379,10 @@
                 class="size-10 fill-amber-600"
                 loading="eager"
                 decoding="sync"
-              />
+                />
               <img
                 :if={Map.has_key?(dis, :meta)}
-                src={dis.meta.path}
+                src={"//"<> dis.meta.path}
                 onerror="this.src='/images/turtlehead.png';"
                 class="object-scale-down p-1 max-h-full m-auto"
                 loading="eager"
