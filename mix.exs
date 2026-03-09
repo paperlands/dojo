@@ -74,11 +74,10 @@ defmodule Dojo.MixProject do
       {:makeup, "~> 1.1"},
       {:makeup_elixir, "~> 0.16"},
       {:burrito, "~> 1.5"},
-      # {:partisan, "~> 5.0.3"},  
+      {:partisan, "~> 5.0.3"},  
       # Protocol Buffers for safe, non-atom signaling
       {:protox, "~> 2.0"},
-      # {:mdns_lite, "~> 0.9.1"},
-      {:libcluster, "~> 3.5.0"}
+      {:libcluster, "~> 3.3.0"}
     ]
   end
 

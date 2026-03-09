@@ -8,33 +8,22 @@ defmodule Dojo.Application do
   @impl true
   def start(_type, _args) do
     
-    # topologies = [
-    #   dojo_mesh: [
-    #     strategy: Dojo.Cluster,
-    #     config: [
-    #       # Pass the Partisan functions so the strategy can call them
-    #       # connect: &:partisan_peer_service.join/1,
-    #       # list_nodes: &:partisan_peer_service.members/0,
-    #       connect: &:partisan_peer_service.join/1,
-    #       list_nodes: &:partisan_peer_service.members/0,
-    #       # Custom mDNS Service Name to avoid collisions
-    #       service_name: "dojo_cluster" 
-    #     ]
-    #   ]
-    # ]
 
     topologies = [
-    dojo_mesh: [
-      strategy: Elixir.Cluster.Strategy.Gossip,
-      config: [
-        port: 45892,
-        # multicast_if: "192.168.1.1",
-        multicast_addr: "233.252.1.32",
-        multicast_ttl: 1
-        # if_addr: "0.0.0.0",
-        # multicast_addr: "255.255.255.255",
-        # broadcast_only: true
-      ]]]
+          dojo_mesh: [
+            strategy: Dojo.Partisan.Cluster,
+            config: [
+              port: 45892,
+              # if_addr: "0.0.0.0",
+              # multicast_if: "192.168.1.1",
+              multicast_addr: "233.252.1.32",
+              multicast_ttl: 1,
+              # secret: "somepassword",
+              join_cooldown_ms: 30_000,
+              reconcile_ms: 20_000,
+              socket_health_ms: 8_000,
+              max_tracked_peers: 128,
+              max_rejoin_per_cycle: 8]]]
         
     children = [
       DojoWeb.Telemetry,
@@ -44,7 +33,9 @@ defmodule Dojo.Application do
       {Cluster.Supervisor, [topologies, [name: Dojo.ClusterSupervisor]]},
       {Registry, keys: :unique, name: Dojo.TableRegistry},
       # {Phoenix.PubSub, name: Dojo.PubSub, adapter: Phoenix.PubSub.Partisan},
-      {Phoenix.PubSub, name: Dojo.PubSub},
+      # {Phoenix.PubSub, name: Dojo.PubSub},
+
+      {Phoenix.PubSub, name: Dojo.PubSub, adapter: Phoenix.PubSub.Partisan},
       # Dojo.Repo,
       {DNSCluster, query: Application.get_env(:dojo, :dns_cluster_query) || :ignore},
       {Dojo.Gate,
@@ -103,7 +94,7 @@ defmodule Dojo.Application do
   defp post_start_hook do
     # You might want a small sleep if you need to wait for external systems,
     # but usually, since the Supervisor started the children, they are ready.
-    uuid = System.get_env("PARTISAN_NAME")
+    #uuid = System.get_env("PARTISAN_NAME")
       
     # # Add the real service with dynamic UUID
     # MdnsLite.add_mdns_service(%{
@@ -113,9 +104,10 @@ defmodule Dojo.Application do
     #   port: String.to_integer(System.get_env("PORT")), 
     #   txt_payload: %{uuid: uuid}
     # })
+
     
     # Optional: Log that the hook completed
-    require Logger
-    Logger.info("Post-start hook completed: MDNS service updated for UUID #{uuid}")
+    # require Logger
+    # Logger.info("Post-start hook completed: MDNS service updated for UUID #{uuid}")
   end
 end
