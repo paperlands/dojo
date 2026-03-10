@@ -10,21 +10,18 @@ defmodule Dojo.Application do
     
 
     topologies = [
-          dojo_mesh: [
-            strategy: Dojo.Partisan.Cluster,
+      partisan_mdns: [
+            strategy:   Cluster.Strategy.MDNS,
+            connect:    {Cluster.Strategy.MDNS.Partisan, :connect, []},
+            disconnect: {Cluster.Strategy.MDNS.Partisan, :disconnect, []},
+            list_nodes: {:partisan, :nodes, []},
             config: [
-              port: 45892,
-              # if_addr: "0.0.0.0",
-              # multicast_if: "192.168.1.1",
-              multicast_addr: "233.252.1.32",
-              multicast_ttl: 1,
-              # secret: "somepassword",
-              join_cooldown_ms: 30_000,
-              reconcile_ms: 20_000,
-              socket_health_ms: 8_000,
-              max_tracked_peers: 128,
-              max_rejoin_per_cycle: 8]]]
-        
+              service: "_erlang._tcp",
+              poll_interval: 5_000
+            ]
+          ]
+    ]
+    
     children = [
       DojoWeb.Telemetry,
       # 3. The Cluster Supervisor (Libcluster)

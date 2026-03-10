@@ -31,7 +31,6 @@ defmodule Phoenix.PubSub.Partisan do
   # ----------------------------------------------------------------------------
 
   # Helper to lookup config
-  defp config_data_channel, do: Application.get_env(:dojo, Phoenix.PubSub.Partisan)[:channel_data] || :default
   defp config_control_channel, do: Application.get_env(:dojo, Phoenix.PubSub.Partisan)[:channel_control] || :default
   defp handler_name(adapter_name), do: Module.concat(adapter_name, Handler)
 

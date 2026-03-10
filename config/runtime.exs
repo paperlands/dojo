@@ -42,10 +42,15 @@ end
 #   dist_auto_connect: :never,
 #   # Stop EPMD from booting
 #   start_epmd: false 
-port = 53627-:rand.uniform(100)
-System.put_env("PARTISAN_PORT", "#{port}")
+partisan_port = 53627-:rand.uniform(100)
+System.put_env("PARTISAN_PORT", "#{partisan_port}")
 partisan_name = "admin@" <> Ecto.UUID.generate()
 System.put_env("PARTISAN_NAME", partisan_name)
+
+# Identity model uses UUIDs, not IPs. The mDNS layer is the IP-discovery plane. Partisan's TCP acceptor just needs to accept from anywhere.
+# UUID identity:  admin@550e8400-...        ← stable, survives roaming
+# mDNS:           announces current IP      ← dynamic, per-interface
+# Partisan TCP:   binds 0.0.0.0:PORT        ← accepts on whatever IP arrives
 
 config :partisan,
   # The Identity. Default is name@host, but we want UUID-based for roaming.
@@ -57,34 +62,24 @@ config :partisan,
   pid_encoding: false,
   ref_encoding: false,
   # Fanout: Keep active view small (5 peers) to minimize bandwidth
-  hyparview_active_view_size: 3,
+  hyparview_active_view_size: 5,
   # Passive View: Keep a large backup list (24) for quick healing
   hyparview_passive_view_size: 15,
-  listen_addrs: [%{port: port, ip: {127, 0, 0, 1}}],
+  listen_addrs: [%{ip: {0, 0, 0, 0}, port: partisan_port}],
+  #listen_addrs: [%{port: port, ip: {127, 0, 0, 1}}],
   # Parallelism: separate control (heartbeats) from data (state)
   channels: %{
-    # 'gossip' is a reserved/default channel name usually required for HyParView
-    gossip: %{
-      parallelism: 1
+    gossip:              %{monotonic: false, parallelism: 1, compression: false},
+    undefined:           %{monotonic: false, parallelism: 1, compression: false},
+    control:             %{monotonic: true,  parallelism: 1},
+    data:                %{monotonic: false, parallelism: 2, compression: false,
+                           # compression: true,
+                           # monotonic: false, # No HOL blocking
+                           # distance_enabled: false, # random selection
+                           # ingress_delay: 0, # no latency
+                           # exchange_tick_period: 10000 #best effort pubsub
     },
-    undefined: %{
-      parallelism: 1
-    },
-    # Custom data channel
-    data: %{
-      parallelism: 2,
-      # compression: true,
-      # monotonic: false, # No HOL blocking
-      # distance_enabled: false, # random selection
-      # ingress_delay: 0, # no latency
-      # exchange_tick_period: 10000 #best effort pubsub
-      
-    },
-    # Custom control channel
-    control: %{
-      parallelism: 1,
-      monotonic: true
-    }
+    partisan_membership: %{monotonic: false, parallelism: 1, compression: true}
   },
   phi_threshold: 12.0,
   secret: System.get_env("DOJO_CLUSTER_SECRET") || "dev_secret",
