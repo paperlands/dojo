@@ -78,14 +78,14 @@ config :partisan,
   hyparview_active_view_size: 5,
   # Passive View: Keep a large backup list (24) for quick healing
   hyparview_passive_view_size: 15,
-  listen_addrs: [%{ip: {0, 0, 0, 0}, port: partisan_port}],
+  listen_addrs: [%{port: partisan_port, ip: {0, 0, 0, 0}}],
   #listen_addrs: [%{port: port, ip: {127, 0, 0, 1}}],
   # Parallelism: separate control (heartbeats) from data (state)
   channels: %{
     gossip:              %{monotonic: false, parallelism: 1, compression: false},
     undefined:           %{monotonic: false, parallelism: 1, compression: false},
     control:             %{monotonic: true,  parallelism: 1},
-    data:                %{monotonic: false, parallelism: 2, compression: false,
+    data:                %{monotonic: false, parallelism: 2, compression: false
                            # compression: true,
                            # monotonic: false, # No HOL blocking
                            # distance_enabled: false, # random selection

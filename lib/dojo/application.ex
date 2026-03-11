@@ -36,6 +36,7 @@ defmodule Dojo.Application do
       # {Dojo.Worker, arg},
       # Start to serve requests, typically the last entry
       DojoWeb.Endpoint,
+      Dojo.Partisan.NetworkMonitor
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
