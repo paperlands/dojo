@@ -147,7 +147,7 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     # Local IP info
     label = "URL LINK:"
     # Calculate visible length without ANSI codes for proper spacing
-    ip_visible = "#{get_local_ip()}:" <> System.get_env("PORT") || "4000"
+    ip_visible = "#{get_local_ip()}:#{System.get_env("PORT") || "4000"}" 
     spacing = box_width - 2 - 4 - String.length(label) - String.length(ip_visible) - 2
     IO.puts("#{dim}#{vertical}#{reset}    #{white}#{label}#{reset}  #{ip_hyperlink}#{String.duplicate(" ", spacing)}#{dim}#{vertical}#{reset}")
     

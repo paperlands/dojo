@@ -51,6 +51,19 @@ System.put_env("PARTISAN_NAME", partisan_name)
 # UUID identity:  admin@550e8400-...        ← stable, survives roaming
 # mDNS:           announces current IP      ← dynamic, per-interface
 # Partisan TCP:   binds 0.0.0.0:PORT        ← accepts on whatever IP arrives
+config :partisan,
+  peer_discovery: %{
+    enabled:          true,
+    type:             Dojo.Cluster.MDNS.Discovery,
+    initial_delay:    2_000,     # wait for network stack
+    polling_interval: 5_000,     # lookup/2 called every 5s
+    timeout:          2_000,     # UDP collection window per cycle
+    config: %{
+      service:    "_erlang._tcp.local",
+      timeout_ms: 2_000
+    }
+  }
+
 
 config :partisan,
   # The Identity. Default is name@host, but we want UUID-based for roaming.

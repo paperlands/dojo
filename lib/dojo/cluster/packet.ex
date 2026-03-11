@@ -1,4 +1,4 @@
-defmodule Cluster.Strategy.MDNS.Packet do
+defmodule Dojo.Cluster.MDNS.Packet do
   import Bitwise
   @moduledoc """
   Low-level mDNS (RFC 6762) / DNS-SD (RFC 6763) packet codec.

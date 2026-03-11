@@ -7,27 +7,13 @@ defmodule Dojo.Application do
 
   @impl true
   def start(_type, _args) do
-    
-
-    topologies = [
-      partisan_mdns: [
-            strategy:   Cluster.Strategy.MDNS,
-            connect:    {Cluster.Strategy.MDNS.Partisan, :connect, []},
-            disconnect: {Cluster.Strategy.MDNS.Partisan, :disconnect, []},
-            list_nodes: {:partisan, :nodes, []},
-            config: [
-              service: "_erlang._tcp",
-              poll_interval: 5_000
-            ]
-          ]
-    ]
-    
+        
     children = [
       DojoWeb.Telemetry,
       # 3. The Cluster Supervisor (Libcluster)
       # This starts the "Polyglot" strategy which immediately begins
       # scanning mDNS/BLE using the UUID from step 1.
-      {Cluster.Supervisor, [topologies, [name: Dojo.ClusterSupervisor]]},
+      # {Cluster.Supervisor, [topologies, [name: Dojo.ClusterSupervisor]]},
       {Registry, keys: :unique, name: Dojo.TableRegistry},
       # {Phoenix.PubSub, name: Dojo.PubSub, adapter: Phoenix.PubSub.Partisan},
       # {Phoenix.PubSub, name: Dojo.PubSub},
