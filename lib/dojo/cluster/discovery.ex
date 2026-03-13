@@ -157,21 +157,49 @@ defmodule Dojo.Cluster.MDNS.Discovery do
   end
 
   # ── Announce / Query ─────────────────────────────────────────────────────────
+  # defp announce(%{socket: sock, own_name: name, own_port: port, service: svc}) do
+  #   name_str = Atom.to_string(name)
+    
+  #   # Use Partisan's configured listen_addrs as source of truth
+  #   addrs = case :partisan_config.get(:listen_addrs) do
+  #             addrs when is_list(addrs) and addrs != [] ->
+  #               Enum.map(addrs, fn %{ip: ip} -> ip end)
+  #             _ ->
+  #               routable_ipv4_addrs()  # fallback
+  #           end
+    
+  #   Logger.debug("[mDNS] announcing #{name_str}:#{port} on #{inspect(addrs)}")
+  #   Enum.each(addrs, fn ip ->
+  #     pkt = Dojo.Cluster.MDNS.Packet.announcement(svc, name_str, ip, 120, port)
+  #     :gen_udp.send(sock, @mdns_addr, @mdns_port, pkt)
+  #   end)
+  # end
+
+  # defp send_query(%{socket: sock, service: svc}) do
+  #   pkt = Dojo.Cluster.MDNS.Packet.query(svc)
+  #   :gen_udp.send(sock, @mdns_addr, @mdns_port, pkt)
+  # end
 
   defp announce(%{socket: sock, own_name: name, own_port: port, service: svc}) do
-    name_str = Atom.to_string(name)
-    addrs    = routable_ipv4_addrs()
-    Logger.debug("[mDNS] announcing #{name_str}:#{port} on #{inspect(addrs)}")
-    Enum.each(addrs, fn ip ->
-      pkt = Dojo.Cluster.MDNS.Packet.announcement(svc, name_str, ip, 120, port)
-      :gen_udp.send(sock, @mdns_addr, @mdns_port, pkt)
-    end)
-  end
+  name_str = Atom.to_string(name)
+  addrs = routable_ipv4_addrs()
+  Logger.debug("[mDNS] announcing #{name_str}:#{port} on #{inspect(addrs)}")
 
-  defp send_query(%{socket: sock, service: svc}) do
-    pkt = Dojo.Cluster.MDNS.Packet.query(svc)
+  Enum.each(addrs, fn ip ->
+    # Force this specific packet out through THIS interface
+    :inet.setopts(sock, [{:multicast_if, ip}])
+    pkt = Dojo.Cluster.MDNS.Packet.announcement(svc, name_str, ip, 120, port)
     :gen_udp.send(sock, @mdns_addr, @mdns_port, pkt)
-  end
+  end)
+end
+
+defp send_query(%{socket: sock, service: svc}) do
+  pkt = Dojo.Cluster.MDNS.Packet.query(svc)
+  Enum.each(routable_ipv4_addrs(), fn ip ->
+    :inet.setopts(sock, [{:multicast_if, ip}])
+    :gen_udp.send(sock, @mdns_addr, @mdns_port, pkt)
+  end)
+end
 
   # ── Packet parsing ───────────────────────────────────────────────────────────
 
@@ -221,22 +249,31 @@ defmodule Dojo.Cluster.MDNS.Discovery do
   end
 
   # ── Helpers ──────────────────────────────────────────────────────────────────
-
-  defp routable_ipv4_addrs do
+  def routable_ipv4_addrs do
     case :inet.getifaddrs() do
       {:ok, ifaddrs} ->
         ifaddrs
+        |> Enum.filter(fn {iface_name, opts} ->
+          name = to_string(iface_name)
+          flags = Keyword.get(opts, :flags, [])
+          :up in flags and :running in flags and
+          not String.starts_with?(name, "docker") and
+          not String.starts_with?(name, "br-") and
+          not String.starts_with?(name, "veth") and
+          not String.starts_with?(name, "lo")
+        end)
         |> Enum.flat_map(fn {_, opts} -> Keyword.get_values(opts, :addr) end)
         |> Enum.filter(fn
-          {127, _, _, _}          -> false
-          {169, 254, _, _}        -> false
+          {127, _, _, _}   -> false
+          {169, 254, _, _} -> false
           {a, _, _, _} when is_integer(a) -> true
-          _                       -> false
+          _ -> false
         end)
+        |> Enum.uniq()
       _ -> []
     end
   end
-
+  
   defp deadline(ms), do: System.monotonic_time(:millisecond) + ms
   defp fmt(ip),      do: ip |> :inet.ntoa() |> to_string()
 

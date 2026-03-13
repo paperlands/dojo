@@ -47,6 +47,13 @@ System.put_env("PARTISAN_PORT", "#{partisan_port}")
 partisan_name = "admin@" <> Ecto.UUID.generate()
 System.put_env("PARTISAN_NAME", partisan_name)
 
+
+listen_addrs =
+  case Dojo.Cluster.MDNS.Discovery.routable_ipv4_addrs() do
+    [] -> [%{ip: {127, 0, 0, 1}, port: partisan_port}]
+    ips -> Enum.map(ips, fn ip -> %{ip: ip, port: partisan_port} end)
+  end
+
 # Identity model uses UUIDs, not IPs. The mDNS layer is the IP-discovery plane. Partisan's TCP acceptor just needs to accept from anywhere.
 # UUID identity:  admin@550e8400-...        ← stable, survives roaming
 # mDNS:           announces current IP      ← dynamic, per-interface
@@ -78,7 +85,7 @@ config :partisan,
   hyparview_active_view_size: 5,
   # Passive View: Keep a large backup list (24) for quick healing
   hyparview_passive_view_size: 15,
-  listen_addrs: [%{port: partisan_port, ip: {0, 0, 0, 0}}],
+  listen_addrs: listen_addrs, #[%{port: partisan_port, ip: {0, 0, 0, 0}}],
   #listen_addrs: [%{port: port, ip: {127, 0, 0, 1}}],
   # Parallelism: separate control (heartbeats) from data (state)
   channels: %{
