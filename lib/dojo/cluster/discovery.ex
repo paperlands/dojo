@@ -22,42 +22,76 @@ defmodule Dojo.Cluster.MDNS.Discovery do
       join_multicast(socket, ifaces)
       Logger.info("[mDNS] agent init — #{own_name}:#{own_port} ifaces=#{inspect(ifaces)}")
 
-      {:ok, %{
+      state = %{
         socket:   socket,
         own_name: own_name,
         own_port: own_port,
         service:  service,
         timeout:  timeout,
         cache:    %{}
-      }}
+      }
+
+
+      #spawn jittering burst
+      spawn_link(fn ->
+      Enum.each(1..3, fn _ ->
+        announce(state)
+        send_query(state)
+        Process.sleep(150 + :rand.uniform(100))
+      end)
+      end)
+      
+      {:ok, state}
     end
   end
 
   # ── lookup/2 ────────────────────────────────────────────────────────────────
 
   @impl true
-  def lookup(%{socket: socket, own_name: _own_name} = state, _timeout) do
+  def lookup(%{socket: _socket, own_name: _own_name} = state, _timeout) do
+    # 1. Announce first — so peers we're about to query already know us
     announce(state)
+
+    # 2. Collect EXISTING buffered packets BEFORE sending query.
+    #    These are announcements from other nodes that arrived between cycles.
+    #    They contain valid peer data — don't throw them away.
+    cache = collect_buffered(state)
+
+    # 3. Now send query and collect fresh responses
     send_query(state)
-
-    # Drain any stale packets accumulated since last cycle before we start
-    # collecting fresh responses — avoids stale cache poisoning
-    flush_socket(socket)
-
-    cache = collect(state, deadline(state.timeout))
+    cache = collect(%{state | cache: cache}, deadline(state.timeout))
 
     specs = cache |> Map.values() |> Enum.map(&build_node_spec/1)
-
     Logger.debug("[mDNS] lookup → #{length(specs)} peers: " <>
-                 "#{inspect(Enum.map(specs, & &1.name))}")
-
+      "#{inspect(Enum.map(specs, & &1.name))}")
     {:ok, specs, %{state | cache: cache}}
   rescue
     e ->
-      Logger.error("[mDNS] lookup crashed: #{inspect(e)}\n#{Exception.format_stacktrace(__STACKTRACE__)}")
-      {:error, e, state}
+      Logger.error("[mDNS] lookup crashed: #{inspect(e)}\n" <>
+        "#{Exception.format_stacktrace(__STACKTRACE__)}")
+    {:error, e, state}
   end
 
+# Drain buffered packets but PARSE them instead of discarding.
+# These are announcements that arrived between lookup cycles.
+defp collect_buffered(%{socket: socket, own_name: own_name, service: service} = state) do
+  case :gen_udp.recv(socket, 0, 0) do
+    {:ok, {src_ip, _port, raw}} ->
+      cache = case Dojo.Cluster.MDNS.Packet.decode(raw) do
+                {:ok, records} ->
+                  peers = extract_peers(records, service, src_ip)
+                  Enum.reduce(peers, state.cache, fn {name, ip, port}, acc ->
+                    if name == own_name, do: acc,
+                      else: Map.put(acc, name, %{name: name, ip: ip, port: port})
+                  end)
+                _ -> state.cache
+              end
+      collect_buffered(%{state | cache: cache})
+
+    {:error, :timeout} -> state.cache
+    {:error, _} -> state.cache
+  end
+end
   # ── Socket — active: false ──────────────────────────────────────────────────
   # active: false means NO messages land in the gen_statem mailbox between
   # lookup cycles. We pull packets explicitly with :gen_udp.recv/3.
@@ -146,60 +180,27 @@ defmodule Dojo.Cluster.MDNS.Discovery do
     end
   end
 
-  # Drain accumulated packets before fresh collect window.
-  # These are stale announcements that arrived between lookup cycles.
-  defp flush_socket(socket) do
-    case :gen_udp.recv(socket, 0, 0) do
-      {:ok, _}         -> flush_socket(socket)
-      {:error, :timeout} -> :ok
-      {:error, _}      -> :ok
-    end
-  end
-
-  # ── Announce / Query ─────────────────────────────────────────────────────────
-  # defp announce(%{socket: sock, own_name: name, own_port: port, service: svc}) do
-  #   name_str = Atom.to_string(name)
-    
-  #   # Use Partisan's configured listen_addrs as source of truth
-  #   addrs = case :partisan_config.get(:listen_addrs) do
-  #             addrs when is_list(addrs) and addrs != [] ->
-  #               Enum.map(addrs, fn %{ip: ip} -> ip end)
-  #             _ ->
-  #               routable_ipv4_addrs()  # fallback
-  #           end
-    
-  #   Logger.debug("[mDNS] announcing #{name_str}:#{port} on #{inspect(addrs)}")
-  #   Enum.each(addrs, fn ip ->
-  #     pkt = Dojo.Cluster.MDNS.Packet.announcement(svc, name_str, ip, 120, port)
-  #     :gen_udp.send(sock, @mdns_addr, @mdns_port, pkt)
-  #   end)
-  # end
-
-  # defp send_query(%{socket: sock, service: svc}) do
-  #   pkt = Dojo.Cluster.MDNS.Packet.query(svc)
-  #   :gen_udp.send(sock, @mdns_addr, @mdns_port, pkt)
-  # end
 
   defp announce(%{socket: sock, own_name: name, own_port: port, service: svc}) do
-  name_str = Atom.to_string(name)
-  addrs = routable_ipv4_addrs()
-  Logger.debug("[mDNS] announcing #{name_str}:#{port} on #{inspect(addrs)}")
+    name_str = Atom.to_string(name)
+    addrs = routable_ipv4_addrs()
+    Logger.debug("[mDNS] announcing #{name_str}:#{port} on #{inspect(addrs)}")
 
-  Enum.each(addrs, fn ip ->
-    # Force this specific packet out through THIS interface
-    :inet.setopts(sock, [{:multicast_if, ip}])
-    pkt = Dojo.Cluster.MDNS.Packet.announcement(svc, name_str, ip, 120, port)
-    :gen_udp.send(sock, @mdns_addr, @mdns_port, pkt)
-  end)
-end
+    Enum.each(addrs, fn ip ->
+      # Force this specific packet out through THIS interface
+      :inet.setopts(sock, [{:multicast_if, ip}])
+      pkt = Dojo.Cluster.MDNS.Packet.announcement(svc, name_str, ip, 120, port)
+      :gen_udp.send(sock, @mdns_addr, @mdns_port, pkt)
+    end)
+  end
 
-defp send_query(%{socket: sock, service: svc}) do
-  pkt = Dojo.Cluster.MDNS.Packet.query(svc)
-  Enum.each(routable_ipv4_addrs(), fn ip ->
-    :inet.setopts(sock, [{:multicast_if, ip}])
-    :gen_udp.send(sock, @mdns_addr, @mdns_port, pkt)
-  end)
-end
+  defp send_query(%{socket: sock, service: svc}) do
+    pkt = Dojo.Cluster.MDNS.Packet.query(svc)
+    Enum.each(routable_ipv4_addrs(), fn ip ->
+      :inet.setopts(sock, [{:multicast_if, ip}])
+      :gen_udp.send(sock, @mdns_addr, @mdns_port, pkt)
+    end)
+  end
 
   # ── Packet parsing ───────────────────────────────────────────────────────────
 
