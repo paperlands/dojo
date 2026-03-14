@@ -91,6 +91,9 @@
             spellcheck="false"
             phx-debounce="300"
             autofocus
+            required
+            pattern="\S+.*"
+            title="Name cannot be empty"
           />
           <button
             :if={!@session.name}

@@ -81,6 +81,7 @@ export class Turtle {
 
         this.shapist = new Render.Shape(this.pathGroup, {layerMethod: 'renderOrder', polygonOffset: { factor: -0.1, units: -1 }})
 
+        
         // Temporal state
         this.timeline = {
             currentTime: 0, // Global wait temporal cursor
@@ -89,7 +90,6 @@ export class Turtle {
             lastRenderTime: 0,
             lastRenderFrame: 0
         };
-
 
         // Set up animation frame for continuous rendering
         // THREEJS
@@ -109,11 +109,10 @@ export class Turtle {
 
 
         this.head = new Render.Head(this.scene)
-
         //mafs
         this.math = {
             parser: new Parser(),
-            evaluator: new Evaluator()
+            evaluator: new Evaluator({time: this.getTime})
         }
 
         this.reset();
@@ -127,6 +126,10 @@ export class Turtle {
 
     setupScene() {
         this.scene = new THREE.Scene();
+    }
+
+    getTime() {
+        return this.timeline.currentTime;
     }
 
     setupCamera() {
@@ -183,10 +186,8 @@ export class Turtle {
 
                 break;
             case 'endrecord':
-                this.recorder.stopRecording()
-                const video  = this.recorder.getLastRecording()
-                console.log(video)
-                this.bridge.pub(["saveRecord", {snapshot: video.blob, type: "video", title: video.ext}])
+                const video = await this.recorder.stopRecording()
+                this.bridge.pub(["saveRecord", {snapshot: video.blob, type: "video"}])
                 break;
             default:
             }
@@ -212,7 +213,10 @@ export class Turtle {
 
         this.renderer.sortObjects = false;
 
-        this.recorder = new Recorder(canvas)
+        this.recorder = new Recorder(canvas, {
+            // useMp4Muxing: true,
+            // fragmentDuration: 500
+        })
     }
 
     thickness(x=1) {
@@ -279,6 +283,10 @@ export class Turtle {
                 this.hatch()
                 this.renderstate.phase="reached"
             }
+        }
+
+        if (this.recorder.isRecording) {
+            this.recorder.captureFrame()
         }
 
         if(this.renderstate.snapshot.frame==null && t>500) {
@@ -405,21 +413,36 @@ export class Turtle {
     }
 
     hatch(){
-
         const width = this.canvas.width;
-        const height = this.canvas.height
-        const pixels = new Uint8Array(width * height * 4); // RGBA
+        const height = this.canvas.height;
+        
+        // Get buffer from recorder's pool instead of allocating new one
+        const pixels = new Uint8Array(width * height * 4);
+    
+        
         this.ctx.readPixels(0, 0, width, height, this.ctx.RGBA, this.ctx.UNSIGNED_BYTE, pixels);
-        this.renderstate.snapshot.frame = pixels
-        setTimeout(() => {
-            const [image, dataurl] = this.recorder.takeSnapshot(pixels, width, height)
-            if(this.renderstate.snapshot.save){
-                this.bridge.pub(["saveRecord", {snapshot: image, type: "image", title: this.renderstate.snapshot.title}])
-                this.renderstate.snapshot.save=false
+        this.renderstate.snapshot.frame = pixels;
+        
+        // Process asynchronously
+        queueMicrotask(async () => {
+            const result = await this.recorder.takeSnapshot({ pixels, width, height });
+            
+            if (result) {
+                
+                if (this.renderstate.snapshot.save) {
+                    this.bridge.pub(["saveRecord", {
+                        snapshot: result.full,
+                        type: "image",
+                        title: this.renderstate.snapshot.title
+                    }]);
+                    this.renderstate.snapshot.save = false;
+                }
+                
+                this.renderstate.meta.path = result.trimmed;
+                this.bridge.pub(["hatchTurtle", this.renderstate.meta]);
             }
-            this.renderstate.meta.path = dataurl
-            this.bridge.pub(["hatchTurtle", this.renderstate.meta])
-        }, 0)
+        });
+
     }
 
     wait(duration=1) {
@@ -595,7 +618,7 @@ export class Turtle {
     }
 
 
-    label(text="·", size=10){
+    label(text="·", size=1){
         this.currentPath = {
             ...this.pathTemplate,
             type: "text",
@@ -603,7 +626,7 @@ export class Turtle {
             color: this.color,
             text: text,
             // html canvas cant space numbers accurately below this
-            text_size: size,
+            text_size: size*5,
             rotation: this.rotation
             //id: crypto.getRandomValues(new Uint32Array(1))[0]
         };
@@ -730,9 +753,9 @@ export class Turtle {
                 }
                 break;
             case 'Call':
-                if(node.value == "fn" || node.value == "make") {
+                if(node.value == "fn" || node.value == "func") {
                     //escape evaluation
-                    this.func(...node.children.map(arg => arg.value), context)
+                    this.func(context, ...node.children.map(arg => arg.value))
 
                     break
                 }
@@ -799,7 +822,7 @@ export class Turtle {
         return tree.value // probably a string
     }
 
-    func(signature, expression, ctx){
+    func(ctx,signature, expression=0){
         this.math.parser.defineFunction(signature, expression, ctx)
     }
 
@@ -956,6 +979,41 @@ export class Turtle {
         //break path for new path
         this.currentPath = null;
     }
+}
+
+
+enableLazyBinding(Turtle, ['getTime']);
+/**
+ * Converts specified methods into lazy-bound getters.
+ * On first access, it binds the method to the instance and overwrites the property.
+ */
+function enableLazyBinding(ClassRef, methodNames) {
+  methodNames.forEach((methodName) => {
+    // Capture BEFORE defineProperty replaces it
+    const originalMethod = ClassRef.prototype[methodName];
+
+    if (typeof originalMethod !== 'function') {
+      console.warn(`Method ${methodName} not found on class.`);
+      return;
+    }
+
+    Object.defineProperty(ClassRef.prototype, methodName, {
+      configurable: true,
+      get() {
+        console.log(`Lazy binding triggered for: ${methodName} on ${this.constructor.name}`);
+
+        const boundMethod = originalMethod.bind(this);
+
+        Object.defineProperty(this, methodName, {
+          value: boundMethod,
+          configurable: true,
+          writable: true,
+        });
+
+        return boundMethod;
+      },
+    });
+  });
 }
 
 function processImage(pixels, width, height) {

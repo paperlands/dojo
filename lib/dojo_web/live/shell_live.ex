@@ -153,6 +153,15 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_event(
+        "changeName",
+        %{"value" => name},
+        %{assigns: %{session: %Session{name: username}, clan: clan}} = socket
+      ) do
+    Dojo.Class.change_meta(username, "shell:" <> clan, {:name, name})
+    {:noreply, socket}
+  end
+
+  def handle_event(
         "keepTurtle",
         _,
         %{assigns: %{disciples: dis}} = socket
@@ -178,15 +187,16 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_event(
-    "hatchTurtle",
-    %{"state" => _state} = payload,
-    %{assigns: %{class: class, clan: clan, session: %{name: name, last_opened: time}}} =
-      socket) when is_binary(name) do
-    
-
-    #this is user sesion first logintime
-    id = (name <> Base.encode64(to_string(time)))
-    |> String.replace(~r/[^a-zA-Z0-9]/, "")
+        "hatchTurtle",
+        %{"state" => _state} = payload,
+        %{assigns: %{class: class, clan: clan, session: %{name: name, last_opened: time}}} =
+          socket
+      )
+      when is_binary(name) do
+    # this is user sesion first logintime
+    id =
+      (name <> Base.encode64(to_string(time)))
+      |> String.replace(~r/[^a-zA-Z0-9]/, "")
 
     Dojo.Turtle.reflect(payload, %{topic: :hatch, class: class, node: node(), id: id, clan: clan})
 
@@ -194,66 +204,65 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_event(
-    "hatchTurtle",
-    %{"commands" => _commands},
-    socket
-  ) do
+        "hatchTurtle",
+        %{"commands" => _commands},
+        socket
+      ) do
     {:noreply, socket}
   end
 
+  def handle_event(
+    "seeTurtle",
+    %{"addr" => addr},
+    %{assigns: %{disciples: dis, class: _class}} = socket
+  )
+  when is_binary(addr) do
 
-      def handle_event(
-        "seeTurtle",
-        %{"addr" => addr},
-        %{assigns: %{disciples: dis, class: _class}} = socket
-      )
-      when is_binary(addr) do
-        case  Dojo.Table.last(dis[addr][:node], :hatch) do
-          %Dojo.Turtle{state: state} = table_state ->
-            {:noreply,
-             socket
-             |> push_event("seeOuterShell",  Map.from_struct(table_state))
-             |> assign(
-               :outershell,
-             %OuterShell{
-               state: state, 
-               addr: addr,
-               active: true,
-               name: "#{dis[addr][:name]}"
-             }
-             )}
+    case  Dojo.Table.last(dis[addr][:node], :hatch) do
+      %Dojo.Turtle{state: state} = table_state ->
+        {:noreply,
+         socket
+         |> push_event("seeOuterShell",  Map.from_struct(table_state))
+         |> assign(
+           :outershell,
+         %OuterShell{
+           state: state, 
+           addr: addr,
+           active: true,
+           name: "#{dis[addr][:name]}"
+         }
+         )}
 
-          _ -> {:noreply, socket}
-        end
-      end
-
-
-  def handle_event("seeTurtle", _, socket) do
-    {:noreply,
-     socket
-     |> assign(
-       :outershell,
-       %OuterShell{}
-     )}
+      _ -> {:noreply, socket}
+    end
   end
 
-  def handle_event("followTurtle", _, %{assigns: %{outershell: shell}} = socket) do
-    {:noreply,
-     socket
-     |> assign(
-       :outershell,
-       %{shell | follow: !shell.follow}
-     )}
-  end
+def handle_event("seeTurtle", _, socket) do
+  {:noreply,
+   socket
+   |> assign(
+     :outershell,
+   %OuterShell{}
+   )}
+end
 
-  def handle_event("closeTurtle", _, socket) do
-    {:noreply,
-     socket
-     |> assign(
-       :outershell,
-       %OuterShell{}
-     )}
-  end
+def handle_event("followTurtle", _, %{assigns: %{outershell: shell}} = socket) do
+  {:noreply,
+   socket
+   |> assign(
+     :outershell,
+   %{shell | follow: !shell.follow}
+   )}
+end
+
+def handle_event("closeTurtle", _, socket) do
+  {:noreply,
+   socket
+   |> assign(
+     :outershell,
+   %OuterShell{}
+   )}
+end
 
   # Handle the viewport update event from the hook
   def handle_event(
@@ -312,7 +321,7 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-    # pokemon clause
+  # pokemon clause
   def handle_call(
         e,
         p,
@@ -324,12 +333,11 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-
   defp update_disciples_metadata(disciples, visible_disciples) do
     Enum.reduce(visible_disciples, disciples, fn ref, acc ->
       with %{node: node} <- disciples[ref],
       %{path: path, state: state} <- Dojo.Table.last(node, :hatch) do
-        
+
         put_in(acc, [ref, :meta], %{path: path, state: state})
       else
         _ -> acc
@@ -358,7 +366,7 @@ defmodule DojoWeb.ShellLive do
 
   def outershell(assigns) do
     ~H"""
-    <div class="relative outershell  pt-10 right-2 w-full lg:-left-1/2 lg:w-[150%] ">
+    <div class="relative outershell  pt-20 right-2 w-full lg:-left-1/2 lg:w-[150%] ">
       <div class="flex items-start justify-between gap-2 mb-3">
         <span
           id="top-head"
@@ -373,7 +381,8 @@ defmodule DojoWeb.ShellLive do
         >
           <span class={[
             "absolute inline-flex h-full w-full rounded-full  opacity-75",
-            (@outershell.state == :error && "bg-error") || (@outershell.follow && "bg-accent-content animate-ping") || "bg-primary"
+            (@outershell.state == :error && "bg-error") ||
+              (@outershell.follow && "bg-accent-content animate-ping") || "bg-primary"
           ]}>
           </span>
           <span class="relative inline-flex rounded-full h-2 w-2 bg-primaryAccent"></span>
@@ -404,7 +413,6 @@ defmodule DojoWeb.ShellLive do
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
           </div>
-          
         </button>
         <!--
         <div class="relative z-4 rounded-sm pointer-events-auto cursor-text border-none h-full" >
@@ -423,15 +431,17 @@ defmodule DojoWeb.ShellLive do
           data-target="outer"
         />
       </div>
-      <div class="flex" class="-bottom-1/12  transition-colors delay-150 duration-300 overflow-y-auto pb-1 ">
       <div
+        class="flex"
+        class="-bottom-1/12  transition-colors delay-150 duration-300 overflow-y-auto pb-1 "
+      >
+        <div
           phx-update="ignore"
           id="outer-output"
           class="w-1/2 left-2 flex-auto opacity-80 font-mono border-none text-primary text-sm"
         />
-      
 
-    <div
+        <div
           phx-update="ignore"
           id="outermerge-output"
           class="w-1/2 flex-auto font-mono  opacity-80 border-none text-primary text-sm"
@@ -450,7 +460,7 @@ defmodule DojoWeb.ShellLive do
             <p class="text-primary-content">远山如黛</p>
             <p class="text-primary">The mountains fade into mist</p>
             <p class="text-primary-content">江流天地外</p>
-            <p class="text-primary" >Rivers flow beyond heaven and earth</p>
+            <p class="text-primary">Rivers flow beyond heaven and earth</p>
           </div>
 
           <div class="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-transparent to-black/100   pointer-events-none">
@@ -474,7 +484,7 @@ defmodule DojoWeb.ShellLive do
           {"goto", gettext("Go To Start"), ["→": 0, "↑": 0]},
           {"jmpto", gettext("Jump To Start"), ["→": 0, "↑": 0]},
           {"grid", gettext("Create a Grid"), [size: 100, unit: 10]},
-          {"faceto", gettext("Face Towards Start"), ["→": 0, "↑": 0]},
+          {"faceto", gettext("Face a Point"), ["→": 0, "↑": 0]},
           {"dive", gettext("Dive Into Page"), [angle: 45]},
           {"roll", gettext("Tilt Right"), [angle: 45]},
           {"beColour", gettext("Set Colour to"), [colour: "'red'"]},
@@ -492,16 +502,16 @@ defmodule DojoWeb.ShellLive do
     <!-- Command Deck Component (command_deck.html.heex) -->
     <div
       id="commanddeck"
-      class="rightthird deck flex select-none px-1 pb-1  animate-fade"
+      class="rightthird fixed right-0 flex deck mt-[15dvh] h-3/5 lg:h-4/5 select-none animate-fade hidden sm:block"
       phx-update="ignore"
     >
       <!-- Command Deck Panel -->
-      <div class="absolute h-3/4 bottom-12 w-64 transition-all duration-100 ease-in-out transform right-5 xl:h-3/4 scrollbar-hide dark-scrollbar">
+      <div class="h-5/6 md:h-full transition-all duration-100 ease-in-out transform scrollbar-hide dark-scrollbar">
         <%!-- Top row --%>
-        <div class="flex flex-row pl-6 pt-4">
+        <div class="flex flex-row pl-5 pt-4 justify-between">
           <!-- Header -->
-          <div class="flex grow-5 items-center justify-between">
-            <h2 class="z-50  pointer-events-auto text-xl font-bold text-base-content">
+          <div class="flex items-center">
+            <h2 class="z-50 pointer-events-auto text-xl font-bold text-base-content">
               <div class="dropdown dropdown-top">
                 <div
                   tabindex="0"
@@ -536,6 +546,7 @@ defmodule DojoWeb.ShellLive do
                     <a>{Gettext.gettext(DojoWeb.Gettext, key |> to_string |> to_titlecase)}</a>
                   </li>
                 </ul>
+                <br class="sm:hidden" />
                 <span class="inline-block">
                   {gettext("Deck")}
                 </span>
@@ -545,7 +556,7 @@ defmodule DojoWeb.ShellLive do
 
           <%!-- Undo button --%>
           <div
-            class="z-50 grow-1 pointer-events-auto group pt-1"
+            class="z-50 pointer-events-auto group pt-1 pr-5 ml-2 md:ml-4"
             phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
           >
             <div class="relative">
@@ -565,7 +576,7 @@ defmodule DojoWeb.ShellLive do
               </button>
             </div>
             <!-- Tooltip -->
-            <div class="absolute pointer-events-none mb-2 transition-opacity duration-200 opacity-0 -top-3 right-6 group-hover:opacity-100">
+            <div class="absolute pointer-events-none mb-2 transition-opacity duration-200 opacity-0 -top-3 right-8 group-hover:opacity-100">
               <div class="px-2 py-1 text-xs border rounded bg-secondary text-secondary-content border-primary backdrop-blur-sm whitespace-nowrap">
                 Undo
               </div>
@@ -573,7 +584,10 @@ defmodule DojoWeb.ShellLive do
           </div>
         </div>
         <!-- Command&Control Dropdown -->
-        <div id="deckofcards" class="h-11/12 z-80 overflow-y-scroll p-2 px-4">
+        <div
+          id="deckofcards"
+          class="h-10/12 z-80 overflow-y-scroll pl-4 sm:py-2 sm:px-4 pointer-events-auto mt-2"
+        >
           <%= for {key, spec} <- @primitive do %>
             <div class={[key, "keygroup"]} {!(key == :command) && %{hidden: true} || %{hidden: false}}>
               <%= for {cmd, desc, vals} <- spec do %>
@@ -582,8 +596,16 @@ defmodule DojoWeb.ShellLive do
                     JS.dispatch("phx:writeShell",
                       detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
                     )
-                    |> JS.add_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: "#cmdicon-#{cmd}")
-                    |> JS.remove_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content", to: "#cmdicon-#{cmd}", transition: "ease-out duration-1200", time: 1200)
+                    |> JS.add_class(
+                      "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",
+                      to: "#cmdicon-#{cmd}"
+                    )
+                    |> JS.remove_class(
+                      "fill-secondary-content drop-shadow-md drop-shadow-secondary-content",
+                      to: "#cmdicon-#{cmd}",
+                      transition: "ease-out duration-1200",
+                      time: 1200
+                    )
                   }
                   class="flex duration-500 animate-fade items-center p-2 transition-colors rounded pointer-events-auto hover:bg-accent/50 group cursor-pointer"
                 >
@@ -591,7 +613,7 @@ defmodule DojoWeb.ShellLive do
                   <div id={"cmdicon-#{cmd}"} class="mr-3 fill-primary">
                     <.cmd_icon command={cmd} class="w-8 h-8 " />
                   </div>
-                  <div class="flex-grow">
+                  <div class="grow">
                     <%!-- Description --%>
                     <code class="font-mono text-sm text-secondary-content">{desc}</code>
                     <%!-- Sample code --%>
@@ -611,9 +633,16 @@ defmodule DojoWeb.ShellLive do
                             JS.dispatch("phx:writeShell",
                               detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
                             )
-                            |> JS.add_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content ", to: "#cmdicon-#{cmd}")
-                            |> JS.remove_class("fill-secondary-content drop-shadow-md drop-shadow-secondary-content", to: "#cmdicon-#{cmd}", transition: "ease-out duration-200", time: 200)
-                            
+                            |> JS.add_class(
+                              "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",
+                              to: "#cmdicon-#{cmd}"
+                            )
+                            |> JS.remove_class(
+                              "fill-secondary-content drop-shadow-md drop-shadow-secondary-content",
+                              to: "#cmdicon-#{cmd}",
+                              transition: "ease-out duration-200",
+                              time: 200
+                            )
                           }
                           phx-key="Enter"
                           oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
@@ -644,13 +673,12 @@ defmodule DojoWeb.ShellLive do
           <% end %>
         </div>
         <!-- Decorative corners -->
-        <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-1 -left-1 border-primary-content">
+        <div class="absolute w-3 h-3 border-t-2 border-l-2 top-0 left-0 border-primary-content"></div>
+        <div class="absolute w-3 h-3 border-t-2 border-r-2 top-0 right-2 border-primary-content">
         </div>
-        <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-1 right-1 border-primary-content">
+        <div class="absolute w-3 h-3 border-b-2 border-l-2 bottom-8 left-0 border-primary-content">
         </div>
-        <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-8 -left-1 border-primary-content">
-        </div>
-        <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-8 -right-1 border-primary-content">
+        <div class="absolute w-3 h-3 border-b-2 border-r-2 bottom-8 right-2 border-primary-content">
         </div>
       </div>
     </div>

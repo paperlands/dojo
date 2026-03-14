@@ -34,7 +34,7 @@ let liveSocket = new LiveSocket("/live", Socket, {
             locale: Intl.NumberFormat().resolvedOptions().locale,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             timezone_offset: -new Date().getTimezoneOffset(),
-            session:  JSON.parse(localStorage.getItem("session")) || {active: true}
+            session:  {...JSON.parse(localStorage.getItem("session")) || {}, 'active': true} 
           },
   metadata: {
     keydown: (event, element) => {

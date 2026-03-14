@@ -58,6 +58,10 @@ defmodule Dojo.Gate do
     Phoenix.Tracker.get_by_key(__MODULE__, topic, key)
   end
 
+  def change(pid, topic, username, {key, value}) do
+    Phoenix.Tracker.update(__MODULE__, pid, topic, username, fn meta -> Map.put(meta, key, value) end)
+  end
+
   def list(topic, timeout \\ 5000) do
     __MODULE__
     |> Phoenix.Tracker.Shard.name_for_topic(topic, pool_size())
