@@ -385,11 +385,11 @@
     <div class="col-span-3 row-start-2 lg:row-span-1 lg:col-span-1 ">
       <div
         id="paneflip"
-        class="fixed z-30 -translate-x-1/2 pointer-events-auto  transition-transform duration-300 pointer-events-auto bottom-2 left-1/2"
+        class="fixed z-50 -translate-x-1/2 pointer-events-auto transition-transform duration-300 bottom-2 left-1/2"
         phx-hook="Sensei"
       >
         <svg
-          class={"z-20 w-6 h-6  text-primary/50 items-center flex  m-auto  rounded-lg backdrop-blur-sm transform transition-transform duration-300 hover:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
+          class={"z-50 w-6 h-6 text-primary/50 items-center flex m-auto rounded-lg backdrop-blur-sm transform transition-transform duration-300 active:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
           phx-click="flipPane"
           viewBox="0 0 24 24"
           fill="none"
