@@ -29,6 +29,17 @@
         e.preventDefault();
       }
     }, { passive: false });
+
+    // On older iOS (< 15.4), dvh doesn't respond to the software keyboard.
+    // Use visualViewport to clamp the grid container height explicitly.
+    if (window.visualViewport) {
+      var grid = document.querySelector('.fixed.inset-0.grid');
+      var setHeight = function () {
+        if (grid) grid.style.height = window.visualViewport.height + 'px';
+      };
+      window.visualViewport.addEventListener('resize', setHeight);
+      setHeight();
+    }
   })();
 </script>
 
