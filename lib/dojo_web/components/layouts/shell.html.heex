@@ -3,6 +3,46 @@
   {@inner_content}
 </main>
 
+<script>
+  // Prevent browser pinch-to-zoom on all non-canvas elements.
+  // iOS Safari ignores the viewport user-scalable=no restriction, so we
+  // intercept touch events directly. Canvas elements handle their own
+  // zoom via JS and are left unrestricted.
+  (function () {
+    var isCanvas = function (el) { return el && el.closest && !!el.closest('canvas'); };
+
+    document.addEventListener('touchmove', function (e) {
+      if (e.touches.length > 1 && !isCanvas(e.target)) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    // gesturestart fires on iOS Safari for pinch gestures before touchmove
+    document.addEventListener('gesturestart', function (e) {
+      if (!isCanvas(e.target)) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    document.addEventListener('gesturechange', function (e) {
+      if (!isCanvas(e.target)) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    // On older iOS (< 15.4), dvh doesn't respond to the software keyboard.
+    // Use visualViewport to clamp the grid container height explicitly.
+    if (window.visualViewport) {
+      var grid = document.querySelector('.fixed.inset-0.grid');
+      var setHeight = function () {
+        if (grid) grid.style.height = window.visualViewport.height + 'px';
+      };
+      window.visualViewport.addEventListener('resize', setHeight);
+      setHeight();
+    }
+  })();
+</script>
+
 <script src="codemirror/codemirror.js" />
 
 <link rel="stylesheet" href="codemirror/codemirror.css" />
