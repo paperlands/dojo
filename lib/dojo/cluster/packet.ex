@@ -299,7 +299,7 @@ defmodule Dojo.Cluster.MDNS.Packet do
   end
 
   defp read_labels(pkt, <<len, rest :: binary>>, acc) when len > 0 and len < 64 do
-    <<label :: binary-size(len), remaining :: binary>> = rest
+    <<label :: binary-size(^len), remaining :: binary>> = rest
     read_labels(pkt, remaining, [label | acc])
   end
 

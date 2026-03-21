@@ -57,6 +57,7 @@ defmodule Dojo.MixProject do
        depth: 1},
       {:swoosh, "~> 1.5"},
       {:finch, "~> 0.13"},
+      {:telemetry, "~> 1.4"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
       {:gettext, "~> 0.26"},
@@ -74,11 +75,20 @@ defmodule Dojo.MixProject do
       {:makeup, "~> 1.1"},
       {:makeup_elixir, "~> 0.16"},
       {:burrito, "~> 1.5"},
-      {:partisan, "~> 5.0.3"},  
+      {:partisan, partisan_dep()},  
       # Protocol Buffers for safe, non-atom signaling
       {:protox, "~> 2.0"},
-      {:libcluster, "~> 3.3.0"}
+      # {:libcluster, "~> 3.3.0"}
     ]
+  end
+
+
+  defp partisan_dep() do
+    if path = System.get_env("PARTISAN_PATH") do
+      [path: path]
+    else
+      [github: "paperlands/partisan", commit: "c5309d4"]
+    end
   end
 
   # Aliases are shortcuts or tasks specific to the current project.

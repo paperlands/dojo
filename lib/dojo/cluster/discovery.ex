@@ -20,7 +20,6 @@ defmodule Dojo.Cluster.MDNS.Discovery do
     with {:ok, socket} <- open_socket() do
       ifaces = routable_ipv4_addrs()
       join_multicast(socket, ifaces)
-      Logger.info("[mDNS] agent init — #{own_name}:#{own_port} ifaces=#{inspect(ifaces)}")
 
       state = %{
         socket:   socket,
@@ -31,44 +30,39 @@ defmodule Dojo.Cluster.MDNS.Discovery do
         cache:    %{}
       }
 
-
-      #spawn jittering burst
+      # Boot burst
       spawn_link(fn ->
-      Enum.each(1..3, fn _ ->
-        announce(state)
-        send_query(state)
-        Process.sleep(150 + :rand.uniform(100))
+        Enum.each(1..3, fn _ ->
+          announce(state)
+          send_query(state)
+          Process.sleep(150 + :rand.uniform(100))
+        end)
       end)
-      end)
-      
+
+
       {:ok, state}
     end
   end
+
+
 
   # ── lookup/2 ────────────────────────────────────────────────────────────────
 
   @impl true
   def lookup(%{socket: _socket, own_name: _own_name} = state, _timeout) do
-    # 1. Announce first — so peers we're about to query already know us
     announce(state)
-
-    # 2. Collect EXISTING buffered packets BEFORE sending query.
-    #    These are announcements from other nodes that arrived between cycles.
-    #    They contain valid peer data — don't throw them away.
+    
+    # Parse buffered packets instead of flushing
     cache = collect_buffered(state)
-
-    # 3. Now send query and collect fresh responses
+    
     send_query(state)
     cache = collect(%{state | cache: cache}, deadline(state.timeout))
 
     specs = cache |> Map.values() |> Enum.map(&build_node_spec/1)
-    Logger.debug("[mDNS] lookup → #{length(specs)} peers: " <>
-      "#{inspect(Enum.map(specs, & &1.name))}")
     {:ok, specs, %{state | cache: cache}}
   rescue
     e ->
-      Logger.error("[mDNS] lookup crashed: #{inspect(e)}\n" <>
-        "#{Exception.format_stacktrace(__STACKTRACE__)}")
+      Logger.error("[mDNS] lookup crashed: #{inspect(e)}")
     {:error, e, state}
   end
 
@@ -107,9 +101,9 @@ end
     ]
 
     opts = case :gen_udp.open(0, [reuseport: true]) do
-      {:ok, s} -> :gen_udp.close(s); [{:reuseport, true} | base]
-      _        -> base
-    end
+             {:ok, s} -> :gen_udp.close(s); [{:reuseport, true} | base]
+             _        -> base
+           end
 
     case :gen_udp.open(@mdns_port, opts) do
       {:ok, socket} ->
@@ -119,7 +113,7 @@ end
         Logger.error("[mDNS] socket open failed: #{inspect(reason)}")
         err
     end
-  end
+end
 
   defp join_multicast(socket, ifaces) do
     Enum.each(ifaces, fn ip ->
@@ -137,50 +131,54 @@ end
   defp collect(%{socket: socket, own_name: own_name, service: service} = state, deadline) do
     now = System.monotonic_time(:millisecond)
     remaining = deadline - now
-
     if remaining <= 0 do
       state.cache
     else
       case :gen_udp.recv(socket, 0, remaining) do
         {:ok, {src_ip, _port, raw}} ->
-          cache = case Dojo.Cluster.MDNS.Packet.decode(raw) do
-            {:ok, records} ->
-              peers = extract_peers(records, service, src_ip)
-              before_count = map_size(state.cache)
+          cache = case classify_and_decode(raw, service) do
+                    {:response, records} ->
+                      # Normal response — extract peers
+                      peers = extract_peers(records, service, src_ip)
+                      Enum.reduce(peers, state.cache, fn {name, ip, port}, acc ->
+                        if name == own_name, do: acc,
+                          else: Map.put(acc, name, %{name: name, ip: ip, port: port})
+                      end)
 
-              new_cache = Enum.reduce(peers, state.cache, fn {name, ip, port}, acc ->
-                if name == own_name do
-                  acc
-                else
-                  Logger.debug("[mDNS] saw peer #{inspect(name)} @ #{fmt(ip)}:#{port}")
-                  Map.put(acc, name, %{name: name, ip: ip, port: port})
-                end
-              end)
+                    :query ->
+                      # Someone is querying — announce immediately so they hear us
+                      announce(state)
+                      state.cache
 
-              if map_size(new_cache) > before_count do
-                Logger.info("[mDNS] cache grew to #{map_size(new_cache)} peers")
-              end
-
-              new_cache
-
-            {:error, reason} ->
-              Logger.debug("[mDNS] decode error: #{inspect(reason)}")
-              state.cache
-          end
-
+                    :unknown ->
+                      state.cache
+                  end
           collect(%{state | cache: cache}, deadline)
 
-        {:error, :timeout} ->
-          state.cache
-
-        {:error, reason} ->
-          Logger.warning("[mDNS] recv error: #{inspect(reason)}")
-          state.cache
+        {:error, :timeout} -> state.cache
+        {:error, _} -> state.cache
       end
     end
   end
 
+  defp classify_and_decode(raw, _service) do
+    case raw do
+      <<_id::16, 0::1, _::7, _::8, qdcount::16, _ancount::16, _::binary>>
+      when qdcount > 0 ->
+        # QR=0, has questions → it's a query
+        :query
 
+      <<_id::16, 1::1, _::15, _rest::binary>> ->
+        # QR=1 → it's a response
+        case Dojo.Cluster.MDNS.Packet.decode(raw) do
+          {:ok, records} -> {:response, records}
+          _ -> :unknown
+        end
+
+      _ -> :unknown
+    end
+  end
+  
   defp announce(%{socket: sock, own_name: name, own_port: port, service: svc}) do
     name_str = Atom.to_string(name)
     addrs = routable_ipv4_addrs()

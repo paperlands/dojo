@@ -15,29 +15,34 @@ defmodule Dojo.Application do
       # scanning mDNS/BLE using the UUID from step 1.
       # {Cluster.Supervisor, [topologies, [name: Dojo.ClusterSupervisor]]},
       {Registry, keys: :unique, name: Dojo.TableRegistry},
-      # {Phoenix.PubSub, name: Dojo.PubSub, adapter: Phoenix.PubSub.Partisan},
-      # {Phoenix.PubSub, name: Dojo.PubSub},
-
-      {Phoenix.PubSub, name: Dojo.PubSub, adapter: Phoenix.PubSub.Partisan},
+      %{
+        id: Dojo.PubSub.Supervisor,
+        type: :supervisor,
+        start: {Supervisor, :start_link, [
+                   [
+                     {Phoenix.PubSub, name: Dojo.PubSub, adapter: Phoenix.PubSub.Partisan},
+                     {Dojo.Gate,
+                      name: Dojo.Gate,
+                      pubsub_server: Dojo.PubSub,
+                      pool_size: 1}
+                   ],
+                   [strategy: :one_for_all]
+                 ]}
+      },
       # Dojo.Repo,
       {DNSCluster, query: Application.get_env(:dojo, :dns_cluster_query) || :ignore},
-      {Dojo.Gate,
-       [
-         name: Dojo.Gate,
-         pubsub_server: Dojo.PubSub,
-         pool_size: :erlang.system_info(:schedulers_online)
-       ]},
       # Start the Finch HTTP client for sending emails
       {Finch, name: Dojo.Finch},
       Dojo.Cache,
+      
       {Task.Supervisor, name: Dojo.TaskSupervisor},
       {PartitionSupervisor, child_spec: DynamicSupervisor, name: Dojo.Class},
       # Start a worker by calling: Dojo.Worker.start_link(arg)
       # {Dojo.Worker, arg},
       # Start to serve requests, typically the last entry
       DojoWeb.Endpoint,
-      Dojo.Cluster.MDNS.Responder,
       Dojo.Cluster.NetworkMonitor
+      
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

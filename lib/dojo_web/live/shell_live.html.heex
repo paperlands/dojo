@@ -5,10 +5,7 @@
     :if={@outershell.active}
     phx-update="ignore"
     id="outer-canvas"
-    class={[
-      "fixed inset-0 z-0 bg-secondary/50 select-none",
-      !@outershell && "pointer-events-none"
-    ]}
+    class={["fixed inset-0 z-0 bg-secondary/50 select-none"]}
   >
   </canvas>
   <!-- Desktop Layout (lg and up) -->
@@ -404,7 +401,7 @@
         :if={@pane}
         id="disciple_panels"
         phx-hook="DiscipleWindow"
-        class="fixed bg-transparent bottom-0 pointer-events-auto z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto"
+        class="fixed bg-transparent bottom-0 pointer-events-auto z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto pointer-events-none"
       >
         <!-- Other people's turtles -->
         <div
