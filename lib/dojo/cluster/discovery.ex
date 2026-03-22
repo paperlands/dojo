@@ -272,8 +272,15 @@ end
       _ -> []
     end
   end
+
+  def get_routable_ipv4_addr do
+    routable_ipv4_addrs()
+    |> List.first()
+    |> fmt()
+  end
   
   defp deadline(ms), do: System.monotonic_time(:millisecond) + ms
+  defp fmt(nil),      do: ""
   defp fmt(ip),      do: ip |> :inet.ntoa() |> to_string()
 
   defp partisan_own_name do

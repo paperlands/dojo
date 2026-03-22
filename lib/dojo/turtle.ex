@@ -35,14 +35,15 @@ defmodule Dojo.Turtle do
       File.mkdir(dest_dir)
     end
 
+
+    # move to network detector to presence  (routable addr)
     with file when is_binary(file) <-
          DojoWeb.Utils.Base64.to_file(path, Path.join([dest_dir, id])),
            ext when byte_size(ext) > 0 <- Path.extname(file) do       
-           Path.join([System.get_env("MY_IP_ADDR"), "frames", clan, id]) <> ext <> "#bump=#{System.os_time(:second)}"
+           Path.join([Dojo.Cluster.MDNS.Discovery.get_routable_ipv4_addr() <> ":#{System.get_env("PORT") || 4000}", "frames", clan, id]) <> ext <> "#bump=#{System.os_time(:second)}"
          else
            _ -> nil
-         end
-         
+         end        
   end
 
   def store(_,_) do
