@@ -12,7 +12,8 @@ defmodule Dojo.MixProject do
       deps: deps(),
       listeners: [Phoenix.CodeReloader],
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
-      releases: releases()
+      releases: releases(),
+      usage_rules: usage_rules()
     ]
   end
 
@@ -35,6 +36,7 @@ defmodule Dojo.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:usage_rules, "~> 1.1", only: :dev},
       {:lazy_html, ">= 0.0.0", only: :test},
       {:phoenix, "~> 1.8"},
       {:phoenix_ecto, "~> 4.4"},
@@ -82,6 +84,22 @@ defmodule Dojo.MixProject do
     ]
   end
 
+
+  defp usage_rules do
+    [
+      file: "CLAUDE.md",
+      usage_rules: ["usage_rules:all"],
+      skills: [
+        location: ".claude/skills",
+        build: [
+          "phoenix-framework": [
+            description: "Use this skill when working with Phoenix Framework — controllers, LiveViews, routing, PubSub, Presence, and the web layer.",
+            usage_rules: [:phoenix, ~r/^phoenix_/]
+          ]
+        ]
+      ]
+    ]
+  end
 
   defp partisan_dep() do
     if path = System.get_env("PARTISAN_PATH") do
