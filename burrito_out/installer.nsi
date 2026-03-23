@@ -12,6 +12,13 @@ InstallDir "$PROGRAMFILES64\PaperLand Dojo"
 InstallDirRegKey HKLM "Software\PaperLand Dojo" "InstallDir"
 RequestExecutionLevel admin
 
+; App version — keep in sync with mix.exs
+!define APP_VERSION "0.2.2"
+
+; Firewall rule names (used in both install and uninstall)
+!define FW_RULE_APP  "PaperLand Dojo"
+!define FW_RULE_MDNS "PaperLand Dojo mDNS"
+
 ; UI Configuration
 !define MUI_ABORTWARNING
 !define MUI_ICON "resources/app-icon.ico"
@@ -204,9 +211,10 @@ Section "MainSection" SEC01
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "UninstallString" "$INSTDIR\Uninstall.exe"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "DisplayIcon" "$INSTDIR\app-icon.ico"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "Publisher" "PaperLand"
-    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "DisplayVersion" "1.0"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "DisplayVersion" "${APP_VERSION}"
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "NoModify" 1
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "NoRepair" 1
+    WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "EstimatedSize" 50000
     
     ; Store installation directory
     WriteRegStr HKLM "Software\PaperLand Dojo" "InstallDir" "$INSTDIR"
@@ -216,6 +224,19 @@ Section "MainSection" SEC01
     CreateShortCut "$SMPROGRAMS\PaperLand Dojo\PaperLand Dojo.lnk" "$INSTDIR\dojo_windows.exe" "" "$INSTDIR\app-icon.ico" 0
     CreateShortCut "$SMPROGRAMS\PaperLand Dojo\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
     CreateShortCut "$DESKTOP\PaperLand Dojo.lnk" "$INSTDIR\dojo_windows.exe" "" "$INSTDIR\app-icon.ico" 0
+
+    ; Windows Firewall rules
+    ; Rule scoped to the exe covers HTTP (TCP 4000) and Partisan peer port (TCP ~53527-53627)
+    ; automatically — no need to hardcode port numbers that may vary.
+    DetailPrint "Adding Windows Firewall rules..."
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_APP}"'
+    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_APP}" dir=in action=allow program="$INSTDIR\dojo_windows.exe" description="PaperLand Dojo — HTTP server and peer networking"'
+
+    ; mDNS (UDP 5353) is not associated with the exe by Windows, so needs its own rule.
+    ; This is required for local-network discovery between Dojo nodes.
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS}"'
+    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_MDNS}" dir=in action=allow protocol=UDP localport=5353 program="$INSTDIR\dojo_windows.exe" description="PaperLand Dojo — mDNS peer discovery"'
+
     DetailPrint "Installation completed successfully"
 SectionEnd
 
@@ -223,23 +244,27 @@ SectionEnd
 ; Uninstaller Section
 ;--------------------------------
 Section "Uninstall"
-    ; Remove files
-    Delete "$INSTDIR\dojo_windows.exe"
-    Delete "$INSTDIR\Uninstall.exe"
-    Delete "$INSTDIR\app-icon.ico"
-    ; Delete "$INSTDIR\other_files.exe"
-    ; RMDir /r "$INSTDIR\data"
-    
-    RMDir "$INSTDIR"
-    
+    ; Stop the app if it is running so the exe isn't locked during delete
+    DetailPrint "Stopping PaperLand Dojo if running..."
+    nsExec::ExecToLog 'taskkill /f /im dojo_windows.exe'
+
+    ; Remove firewall rules added at install time
+    DetailPrint "Removing Windows Firewall rules..."
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_APP}"'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS}"'
+
+    ; Remove all installed files and the install directory
+    RMDir /r "$INSTDIR"
+
     ; Remove Start Menu shortcuts
     Delete "$SMPROGRAMS\PaperLand Dojo\PaperLand Dojo.lnk"
     Delete "$SMPROGRAMS\PaperLand Dojo\Uninstall.lnk"
     RMDir "$SMPROGRAMS\PaperLand Dojo"
     Delete "$DESKTOP\PaperLand Dojo.lnk"
+
     ; Remove registry keys
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo"
     DeleteRegKey HKLM "Software\PaperLand Dojo"
-    
+
     DetailPrint "Uninstallation completed"
 SectionEnd

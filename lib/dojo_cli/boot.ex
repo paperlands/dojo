@@ -78,7 +78,19 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
   "
   end
 
+  @doc """
+  Prints the splash box to stdout. Safe to call before the supervision tree starts.
+  Does NOT open the browser — use `display/0` for that after the endpoint is ready.
+  """
+  def print_splash() do
+    display(open_browser: false)
+  end
+
   def display() do
+    display(open_browser: true)
+  end
+
+  defp display(opts) do
     box_width = 100
     
     # ANSI escape codes
@@ -157,7 +169,9 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     IO.puts("#{dim}#{bottom_left}#{String.duplicate(horizontal, box_width - 2)}#{bottom_right}#{reset}")
     
     IO.puts("\n#{green}  Remember to connect to the same Local Area Network Wifi or Ethernet Network#{reset}")
-    open_with_fallback(ip_visible <> "/welcome")
+    if Keyword.get(opts, :open_browser, true) do
+      open_with_fallback(ip_visible <> "/welcome")
+    end
     IO.puts("\n#{dim}  Press Ctrl+C to stop#{reset}\n")
   end
 end

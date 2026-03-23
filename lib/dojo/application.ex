@@ -51,16 +51,13 @@ defmodule Dojo.Application do
 
     # register the kinos
     # Kino.SmartCell.register(DojoKino.Incognito)
-    #
-    DojoCLI.Boot.display()
 
     # 2. Start the main supervision tree
     # This blocks until all children are started synchronously
     case Supervisor.start_link(children, opts) do
       {:ok, pid} ->
-        # 3. Execute Post-Start Hook
-        # We use start_child (fire-and-forget) so we don't block.
-        # It is supervised, so we get better error logging if it crashes.
+        # 3. Execute Post-Start Hook after the endpoint is bound and ready.
+        # Browser open happens here so we don't race against port binding.
         Task.Supervisor.start_child(Dojo.TaskSupervisor, &post_start_hook/0)
 
         {:ok, pid}
@@ -80,24 +77,8 @@ defmodule Dojo.Application do
     :ok
   end
 
-  # Encapsulate the logic in a private function for cleanliness
   defp post_start_hook do
-    # You might want a small sleep if you need to wait for external systems,
-    # but usually, since the Supervisor started the children, they are ready.
-    #uuid = System.get_env("PARTISAN_NAME")
-      
-    # # Add the real service with dynamic UUID
-    # MdnsLite.add_mdns_service(%{
-    #   id: :dojo_cluster,
-    #   protocol: "dojo_cluster",
-    #   transport: "tcp",
-    #   port: String.to_integer(System.get_env("PORT")), 
-    #   txt_payload: %{uuid: uuid}
-    # })
-
-    
-    # Optional: Log that the hook completed
-    # require Logger
-    # Logger.info("Post-start hook completed: MDNS service updated for UUID #{uuid}")
+    # Endpoint is bound by the time this task runs, so the browser won't race.
+    DojoCLI.Boot.display()
   end
 end

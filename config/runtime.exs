@@ -23,8 +23,8 @@ if config_env() == :local do
     System.get_env("SECRET_KEY_BASE") || :crypto.strong_rand_bytes(64) |> Base.encode64()
 
   config :dojo, DojoWeb.Endpoint,
-    url: [host: "#{:net_adm.localhost}", port: System.get_env("PORT") || 4000],
-    http: [ip: {0, 0, 0, 0}, port: System.get_env("PORT") || 4000],
+    url: [host: "#{:net_adm.localhost}", port: String.to_integer(System.get_env("PORT") || "4000")],
+    http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4000")],
     check_origin: false,
     secret_key_base: secret_key_base
   
@@ -105,9 +105,13 @@ config :partisan,
   secret: System.get_env("DOJO_CLUSTER_SECRET") || "dev_secret",
   # Sample window size
   gossip_interval: 1000, # 1 second heartbeats
-   listen_options: [
-    {:raw, 1, 15, <<1 :: native-32>>} # SO_REUSEPORT = 15 on Linux/Android usually CHECK IF LINUX ENV
-  ]
+  listen_options:
+    case :os.type() do
+      # SO_REUSEPORT (level SOL_SOCKET=1, optname=15) — Linux only.
+      # Windows uses SOL_SOCKET=0xFFFF and has no SO_REUSEPORT; macOS uses optname 0x200.
+      {:unix, :linux} -> [{:raw, 1, 15, <<1::native-32>>}]
+      _ -> []
+    end
 
 config :dojo, Phoenix.PubSub.Partisan,
   # Map adapter logic to Partisan channels
