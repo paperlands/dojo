@@ -191,7 +191,7 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
       "\n#{green}  Remember to connect to the same Local Area Network Wifi or Ethernet Network#{reset}"
     )
 
-    if Keyword.get(opts, :open_browser, true) do
+    if Keyword.get(opts, :open_browser, true) and is_nil(System.get_env("DOJO_SPLASH")) do
       open_with_fallback(ip_visible <> "/welcome")
     end
 

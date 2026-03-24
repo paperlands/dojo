@@ -53,7 +53,8 @@ RequestExecutionLevel admin
 !define MUI_WELCOMEFINISHPAGE_BITMAP "resources/dialog.bmp"
 ;!define MUI_WELCOMEFINISHPAGE_BITMAP_NOSTRETCH
 
-!define MUI_FINISHPAGE_RUN "$INSTDIR\dojo_windows.exe"
+!define MUI_FINISHPAGE_RUN "wscript.exe"
+!define MUI_FINISHPAGE_RUN_PARAMETERS '"$INSTDIR\launch.vbs"'
 !define MUI_FINISHPAGE_RUN_TEXT "Enter PaperLand"
 !define MUI_FINISHPAGE_RUN_NOTCHECKED
 
@@ -230,13 +231,27 @@ Section "MainSection" SEC01
     ; Install application files
     File "dojo_windows.exe"
     File "app-icon.ico"
+    File "resources/splash.html"
 
-    ; Create a VBScript launcher that hides the console window.
-    ; Burrito spawns erl.exe which inherits the console — this suppresses it.
-    ; The browser opens automatically so the user interacts with the web UI.
+    ; Create a VBScript launcher that:
+    ;   1. Opens splash.html in the default browser (instant feedback)
+    ;   2. Launches dojo_windows.exe hidden (Burrito + BEAM boot ~30s)
+    ;   3. Forwards DOJO_DEBUG env var as ?debug=1 query param
+    ; The splash page polls localhost:4000 and redirects to /welcome when ready.
+    ; DOJO_SPLASH=1 tells the Elixir side not to open a duplicate browser tab.
     FileOpen $0 "$INSTDIR\launch.vbs" w
     FileWrite $0 'Set WshShell = CreateObject("WScript.Shell")$\r$\n'
-    FileWrite $0 'WshShell.Run """$INSTDIR\dojo_windows.exe""", 0, False$\r$\n'
+    FileWrite $0 'Set env = WshShell.Environment("Process")$\r$\n'
+    FileWrite $0 'env("DOJO_SPLASH") = "0"$\r$\n'
+    FileWrite $0 '$\r$\n'
+    FileWrite $0 'Set sysEnv = WshShell.Environment("System")$\r$\n'
+    FileWrite $0 'If sysEnv("DOJO_DEBUG") = "1" Then$\r$\n'
+    FileWrite $0 '  WshShell.Run """$INSTDIR\splash.html?debug=1""", 1, False$\r$\n'
+    FileWrite $0 '  WshShell.Run """$INSTDIR\dojo_windows.exe""", 1, False$\r$\n'
+    FileWrite $0 'Else$\r$\n'
+    FileWrite $0 '  WshShell.Run """$INSTDIR\splash.html""", 1, False$\r$\n'
+    FileWrite $0 '  WshShell.Run """$INSTDIR\dojo_windows.exe""", 0, False$\r$\n'
+    FileWrite $0 'End If$\r$\n'
     FileClose $0
     
     ; Create uninstaller

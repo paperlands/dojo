@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PaperLand Dojo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0a;
+    color: #e8dcc8;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  .title {
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: #ff9933;
+    letter-spacing: 0.05em;
+    margin-bottom: 2rem;
+  }
+
+  .pulse-ring {
+    width: 48px;
+    height: 48px;
+    border: 3px solid rgba(255, 153, 51, 0.3);
+    border-top-color: #ff9933;
+    border-radius: 50%;
+    animation: spin 1.2s linear infinite;
+    margin-bottom: 1.8rem;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .status {
+    font-size: 0.95rem;
+    color: #8a8070;
+    letter-spacing: 0.08em;
+  }
+
+  .error {
+    display: none;
+    text-align: center;
+    margin-top: 2rem;
+  }
+
+  .error p {
+    color: #c44;
+    margin-bottom: 0.8rem;
+    font-size: 0.95rem;
+  }
+
+  .error a {
+    color: #ff9933;
+    text-decoration: underline;
+  }
+
+  /* Debug panel */
+  .debug-panel {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 30vh;
+    overflow-y: auto;
+    background: rgba(10, 10, 10, 0.92);
+    border-top: 1px solid #333;
+    padding: 0.6rem 1rem;
+    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+    font-size: 0.75rem;
+    color: #7a7a6a;
+  }
+
+  .debug-panel .log-line {
+    white-space: pre;
+    line-height: 1.5;
+  }
+
+  .debug-panel .log-line.ok { color: #6a4; }
+</style>
+</head>
+<body>
+
+<div class="title">PaperLand Dojo</div>
+<div class="pulse-ring"></div>
+<div class="status" id="status">entering the dojo...</div>
+<div class="error" id="error">
+  <p>The server is taking longer than expected to start.</p>
+  <p>Try opening <a href="http://localhost:4000/welcome">localhost:4000/welcome</a> manually,<br>
+     or restart PaperLand Dojo.</p>
+</div>
+
+<div class="debug-panel" id="debug"></div>
+
+<script>
+(function () {
+  var params = new URLSearchParams(window.location.search);
+  var debug = params.get("debug") === "1";
+  var debugPanel = document.getElementById("debug");
+  var statusEl = document.getElementById("status");
+  var errorEl = document.getElementById("error");
+  var startTime = Date.now();
+  var attempt = 0;
+  var POLL_INTERVAL = 1500;
+  var INITIAL_DELAY = 2000;
+  var TIMEOUT = 120000;
+  var TARGET = "http://localhost:4000";
+
+  if (debug) {
+    debugPanel.style.display = "block";
+    log("splash loaded");
+    log("polling " + TARGET + " ...");
+  }
+
+  function log(msg, ok) {
+    if (!debug) return;
+    var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    var line = document.createElement("div");
+    line.className = "log-line" + (ok ? " ok" : "");
+    line.textContent = "[" + elapsed + "s]  " + msg;
+    debugPanel.appendChild(line);
+    debugPanel.scrollTop = debugPanel.scrollHeight;
+  }
+
+  function poll() {
+    if (Date.now() - startTime > TIMEOUT) {
+      statusEl.style.display = "none";
+      document.querySelector(".pulse-ring").style.display = "none";
+      errorEl.style.display = "block";
+      log("timeout — server did not respond within " + (TIMEOUT / 1000) + "s");
+      return;
+    }
+
+    attempt++;
+    fetch(TARGET, { mode: "no-cors" }).then(function () {
+      log("poll attempt " + attempt + " \u2014 server responded", true);
+      log("redirecting to /welcome", true);
+      statusEl.textContent = "entering paperland...";
+      window.location.href = TARGET + "/welcome";
+    }).catch(function () {
+      log("poll attempt " + attempt + " \u2014 server unreachable");
+      setTimeout(poll, POLL_INTERVAL);
+    });
+  }
+
+  setTimeout(poll, INITIAL_DELAY);
+})();
+</script>
+
+</body>
+</html>
