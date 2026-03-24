@@ -1,6 +1,27 @@
 ; NSIS Installer Script with VC++ 2015-2022 Redistributable Check
 ; Modern UI and x64 support
 ; makensis installer.nsi in dir
+;
+; ── Code Signing ──────────────────────────────────────────────────────────
+; Both dojo_windows.exe AND the final PaperLandInstaller.exe must be signed
+; to avoid SmartScreen "Unknown Publisher" warnings. Sign the exe BEFORE
+; running makensis, then sign the installer AFTER:
+;
+;   osslsigncode sign -certs cert.pem -key key.pem \
+;     -n "PaperLand Dojo" -t http://timestamp.digicert.com \
+;     -in dojo_windows.exe -out dojo_windows_signed.exe
+;   mv dojo_windows_signed.exe dojo_windows.exe
+;   makensis installer.nsi
+;   osslsigncode sign -certs cert.pem -key key.pem \
+;     -n "PaperLand Dojo" -t http://timestamp.digicert.com \
+;     -in PaperLandInstaller.exe -out PaperLandInstaller_signed.exe
+;
+; Cheapest SmartScreen bypass options (2025):
+;   - Azure Trusted Signing (~$10/month) — immediate reputation
+;   - SignPath.io — free EV signing for open-source projects
+;   - OV cert from Sectigo/DigiCert (~$100-300/year) — reputation builds over time
+; ──────────────────────────────────────────────────────────────────────────
+
 !include "MUI2.nsh"
 !include "x64.nsh"
 !include "LogicLib.nsh"
@@ -13,7 +34,7 @@ InstallDirRegKey HKLM "Software\PaperLand Dojo" "InstallDir"
 RequestExecutionLevel admin
 
 ; App version — keep in sync with mix.exs
-!define APP_VERSION "0.2.2"
+!define APP_VERSION "0.3"
 
 ; Firewall rule names (used in both install and uninstall)
 !define FW_RULE_APP  "PaperLand Dojo"
@@ -60,6 +81,15 @@ RequestExecutionLevel admin
 
 Var VCRedistNeeded
 Var VCRedistArch
+
+;--------------------------------
+; Function: .onInit
+; Runs before the installer UI — stops any running instance so the exe isn't locked.
+;--------------------------------
+Function .onInit
+    ; Silent kill — if not running, taskkill exits non-zero silently
+    nsExec::Exec 'taskkill /f /im dojo_windows.exe'
+FunctionEnd
 
 ;--------------------------------
 ; Function: CheckVCRedist
@@ -197,11 +227,17 @@ Section "MainSection" SEC01
     ; Set output path and install your files
     SetOutPath "$INSTDIR"
     
-    ; Install your batch file and other application files
+    ; Install application files
     File "dojo_windows.exe"
-    File "app-icon.ico"   ; Installs the icon file
-    ; File "other_files.exe"
-    ; File /r "data\*.*"
+    File "app-icon.ico"
+
+    ; Create a VBScript launcher that hides the console window.
+    ; Burrito spawns erl.exe which inherits the console — this suppresses it.
+    ; The browser opens automatically so the user interacts with the web UI.
+    FileOpen $0 "$INSTDIR\launch.vbs" w
+    FileWrite $0 'Set WshShell = CreateObject("WScript.Shell")$\r$\n'
+    FileWrite $0 'WshShell.Run """$INSTDIR\dojo_windows.exe""", 0, False$\r$\n'
+    FileClose $0
     
     ; Create uninstaller
     WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -219,23 +255,29 @@ Section "MainSection" SEC01
     ; Store installation directory
     WriteRegStr HKLM "Software\PaperLand Dojo" "InstallDir" "$INSTDIR"
     
-    ; Create Start Menu shortcut
+    ; Create Start Menu and Desktop shortcuts pointing at the VBS launcher.
+    ; wscript.exe runs the .vbs which hides the console window.
     CreateDirectory "$SMPROGRAMS\PaperLand Dojo"
-    CreateShortCut "$SMPROGRAMS\PaperLand Dojo\PaperLand Dojo.lnk" "$INSTDIR\dojo_windows.exe" "" "$INSTDIR\app-icon.ico" 0
+    CreateShortCut "$SMPROGRAMS\PaperLand Dojo\PaperLand Dojo.lnk" "wscript.exe" '"$INSTDIR\launch.vbs"' "$INSTDIR\app-icon.ico" 0
     CreateShortCut "$SMPROGRAMS\PaperLand Dojo\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
-    CreateShortCut "$DESKTOP\PaperLand Dojo.lnk" "$INSTDIR\dojo_windows.exe" "" "$INSTDIR\app-icon.ico" 0
+    CreateShortCut "$DESKTOP\PaperLand Dojo.lnk" "wscript.exe" '"$INSTDIR\launch.vbs"' "$INSTDIR\app-icon.ico" 0
 
-    ; Windows Firewall rules
-    ; Rule scoped to the exe covers HTTP (TCP 4000) and Partisan peer port (TCP ~53527-53627)
-    ; automatically — no need to hardcode port numbers that may vary.
+    ; ── Windows Firewall rules ──────────────────────────────────────────────
+    ; profile=any ensures clustering works on Domain, Private AND Public networks.
+    ; Without this, a school laptop on a "Public" WiFi would silently block peers.
     DetailPrint "Adding Windows Firewall rules..."
-    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_APP}"'
-    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_APP}" dir=in action=allow program="$INSTDIR\dojo_windows.exe" description="PaperLand Dojo — HTTP server and peer networking"'
 
-    ; mDNS (UDP 5353) is not associated with the exe by Windows, so needs its own rule.
-    ; This is required for local-network discovery between Dojo nodes.
+    ; Inbound: program-scoped rule covers HTTP (TCP 4000) and Partisan (TCP ~53527).
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_APP}"'
+    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_APP}" dir=in action=allow program="$INSTDIR\dojo_windows.exe" profile=any description="PaperLand Dojo — HTTP server and peer networking"'
+
+    ; Inbound mDNS: UDP 5454 scoped to the exe, all profiles.
     nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS}"'
-    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_MDNS}" dir=in action=allow protocol=UDP localport=5353 program="$INSTDIR\dojo_windows.exe" description="PaperLand Dojo — mDNS peer discovery"'
+    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_MDNS}" dir=in action=allow protocol=UDP localport=5454 program="$INSTDIR\dojo_windows.exe" profile=any description="PaperLand Dojo — mDNS peer discovery"'
+
+    ; Outbound mDNS: needed on Public profile where outbound multicast may be blocked.
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS} Out"'
+    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_MDNS} Out" dir=out action=allow protocol=UDP remoteport=5454 program="$INSTDIR\dojo_windows.exe" profile=any description="PaperLand Dojo — mDNS multicast out"'
 
     DetailPrint "Installation completed successfully"
 SectionEnd
@@ -248,10 +290,11 @@ Section "Uninstall"
     DetailPrint "Stopping PaperLand Dojo if running..."
     nsExec::ExecToLog 'taskkill /f /im dojo_windows.exe'
 
-    ; Remove firewall rules added at install time
+    ; Remove all firewall rules added at install time
     DetailPrint "Removing Windows Firewall rules..."
     nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_APP}"'
     nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS}"'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS} Out"'
 
     ; Remove all installed files and the install directory
     RMDir /r "$INSTDIR"

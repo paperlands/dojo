@@ -16,7 +16,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
   alias Dojo.Cluster.MDNS.{Discovery, Packet}
 
   @mdns_addr {224, 0, 0, 251}
-  @mdns_port 5353
+  @mdns_port 5454
   @service "_erlang._tcp.local"
   @loopback {127, 0, 0, 1}
 
@@ -330,6 +330,379 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       updated = Discovery.update_cache(cache, records, @own_name, @service, @peer_ip)
       refute Map.has_key?(updated, @peer_atom)
       assert Map.has_key?(updated, :"admin@peer-c")
+    end
+  end
+
+  # ── Step 2: Cache-flush bit preservation ────────────────────────────────
+  # RFC 6762 §10.2 — decoded records now carry a `cache_flush` boolean
+  # so receivers can distinguish unique vs shared records.
+
+  describe "cache_flush flag in decoded records" do
+    setup do
+      pkt = Packet.announcement(@service, "admin@flush-test", @loopback, 120, 9090)
+      {:ok, records} = Packet.decode(pkt)
+      %{records: records}
+    end
+
+    test "PTR record has cache_flush: false (shared record)", %{records: records} do
+      ptr = Enum.find(records, &(&1.type == 12))
+      refute ptr.cache_flush, "PTR is a shared record — cache_flush must be false"
+    end
+
+    test "SRV, TXT, A records have cache_flush: true (unique records)", %{records: records} do
+      unique = Enum.filter(records, &(&1.type in [1, 16, 33]))
+      assert length(unique) == 3
+
+      Enum.each(unique, fn rr ->
+        assert rr.cache_flush,
+               "type=#{rr.type} should have cache_flush: true, got false"
+      end)
+    end
+
+    test "cache_flush flag coexists with stripped class value", %{records: records} do
+      Enum.each(records, fn rr ->
+        assert rr.class == 1, "class should be 1 (IN) after stripping flush bit"
+        # cache_flush is derived from the raw class, independent of the stripped value
+        assert is_boolean(rr.cache_flush)
+      end)
+    end
+  end
+
+  # ── Step 2: Known-answer suppression ────────────────────────────────────
+  # RFC 6762 §7.1 — queries include cached PTR records so that responders
+  # can suppress redundant replies.
+
+  describe "known-answer suppression" do
+    test "query with no known answers has ANCOUNT=0" do
+      pkt = Packet.query(@service)
+
+      <<_id::16, _flags::16, _qdcount::16, ancount::16, _rest::binary>> = pkt
+
+      assert ancount == 0
+    end
+
+    test "query with known answers has correct ANCOUNT" do
+      answers = [
+        {"admin-peer-a._erlang._tcp.local", 100},
+        {"admin-peer-b._erlang._tcp.local", 90}
+      ]
+
+      pkt = Packet.query(@service, answers)
+
+      <<_id::16, _flags::16, qdcount::16, ancount::16, _rest::binary>> = pkt
+
+      assert qdcount == 1
+      assert ancount == 2
+    end
+
+    test "known-answer records are decodable PTR records" do
+      answers = [{"admin-peer-x._erlang._tcp.local", 80}]
+      pkt = Packet.query(@service, answers)
+      {:ok, records} = Packet.decode(pkt)
+
+      ptrs = Enum.filter(records, &(&1.type == 12))
+      assert length(ptrs) == 1
+
+      [ptr] = ptrs
+      assert ptr.name == @service
+      assert ptr.ttl == 80
+      {:ptr, instance} = ptr.data
+      assert instance == "admin-peer-x._erlang._tcp.local"
+    end
+
+    test "known-answer records preserve remaining TTL" do
+      answers = [
+        {"instance-a._erlang._tcp.local", 115},
+        {"instance-b._erlang._tcp.local", 70}
+      ]
+
+      pkt = Packet.query(@service, answers)
+      {:ok, records} = Packet.decode(pkt)
+
+      ptrs = Enum.filter(records, &(&1.type == 12))
+      ttls = Enum.map(ptrs, & &1.ttl) |> Enum.sort()
+      assert ttls == [70, 115]
+    end
+
+    test "query still has QR=0 with known answers" do
+      answers = [{"x._erlang._tcp.local", 60}]
+      pkt = Packet.query(@service, answers)
+
+      <<_id::16, qr::1, _rest::bitstring>> = pkt
+      assert qr == 0
+    end
+  end
+
+  describe "build_known_answers" do
+    test "fresh cache entry (< half TTL age) is included" do
+      cache = peer_cache(:"admin@fresh-peer", now() - 10)
+      answers = Discovery.build_known_answers(cache, @service)
+      assert length(answers) == 1
+
+      [{instance_fqdn, remaining_ttl}] = answers
+      assert String.contains?(instance_fqdn, "admin-fresh-peer")
+      assert String.ends_with?(instance_fqdn, ".#{@service}")
+      assert remaining_ttl > 60
+    end
+
+    test "stale cache entry (> half TTL age) is excluded" do
+      # seen 70s ago → remaining = 120 - 70 = 50, which is ≤ 60 (half of 120)
+      cache = peer_cache(:"admin@stale-peer", now() - 70)
+      answers = Discovery.build_known_answers(cache, @service)
+      assert answers == []
+    end
+
+    test "entry at exactly half TTL boundary is excluded" do
+      # seen 60s ago → remaining = 60, which is NOT > 60
+      cache = peer_cache(:admin@boundary, now() - 60)
+      answers = Discovery.build_known_answers(cache, @service)
+      assert answers == []
+    end
+
+    test "entry just inside half TTL boundary is included" do
+      # seen 59s ago → remaining = 61, which IS > 60
+      cache = peer_cache(:"admin@just-inside", now() - 59)
+      answers = Discovery.build_known_answers(cache, @service)
+      assert length(answers) == 1
+    end
+
+    test "empty cache produces no known answers" do
+      assert Discovery.build_known_answers(%{}, @service) == []
+    end
+
+    test "mixed cache: only entries with remaining TTL > half are included" do
+      cache =
+        peer_cache(:admin@fresh, now() - 5)
+        # 50s old → remaining=70 > 60 → included
+        |> Map.merge(peer_cache(:admin@medium, now() - 50))
+        # 100s old → remaining=20 ≤ 60 → excluded
+        |> Map.merge(peer_cache(:admin@stale, now() - 100))
+
+      answers = Discovery.build_known_answers(cache, @service)
+      assert length(answers) == 2
+
+      fqdns = Enum.map(answers, fn {fqdn, _} -> fqdn end)
+      assert Enum.any?(fqdns, &String.contains?(&1, "admin-fresh"))
+      assert Enum.any?(fqdns, &String.contains?(&1, "admin-medium"))
+      refute Enum.any?(fqdns, &String.contains?(&1, "admin-stale"))
+    end
+
+    test "instance FQDN correctly normalizes @ and - in node name" do
+      cache = peer_cache(:"admin@550e-8400-dead-beef", now())
+      [{fqdn, _}] = Discovery.build_known_answers(cache, @service)
+      # @ and - both become -
+      assert String.starts_with?(fqdn, "admin-550e-8400-dead-beef")
+      assert String.ends_with?(fqdn, ".#{@service}")
+    end
+  end
+
+  # ── Step 3: POOF (Passive Observation Of Failure) ─────────────────────
+  # RFC 6762 §10.5 — peers that don't respond to queries get evicted
+  # faster than the hard TTL, based on consecutive missed query cycles.
+
+  describe "POOF (apply_poof)" do
+    test "peer not refreshed has missed_queries incremented" do
+      seen = now() - 5
+
+      cache = %{
+        :peer_a => %{name: :peer_a, ip: @loopback, port: 9090, seen_at: seen, missed_queries: 0}
+      }
+
+      pre_seen = %{peer_a: seen}
+
+      result = Discovery.apply_poof(cache, pre_seen)
+      assert result[:peer_a].missed_queries == 1
+    end
+
+    test "peer refreshed during cycle has missed_queries reset to 0" do
+      cache = %{
+        :peer_a => %{name: :peer_a, ip: @loopback, port: 9090, seen_at: now(), missed_queries: 3}
+      }
+
+      # pre_seen has older value — peer was refreshed since snapshot
+      pre_seen = %{peer_a: now() - 10}
+
+      result = Discovery.apply_poof(cache, pre_seen)
+      assert result[:peer_a].missed_queries == 0
+    end
+
+    test "peer with missed_queries reaching threshold is evicted" do
+      seen = now() - 10
+      # missed_queries is 1, will be incremented to 2 (= @poof_min_missed)
+      cache = %{
+        :peer_a => %{name: :peer_a, ip: @loopback, port: 9090, seen_at: seen, missed_queries: 1}
+      }
+
+      pre_seen = %{peer_a: seen}
+
+      result = Discovery.apply_poof(cache, pre_seen)
+      refute Map.has_key?(result, :peer_a), "peer should be evicted at missed_queries >= 2"
+    end
+
+    test "peer with missed_queries below threshold survives" do
+      seen = now() - 5
+      # missed_queries is 0, will be incremented to 1 (< 2)
+      cache = %{
+        :peer_a => %{name: :peer_a, ip: @loopback, port: 9090, seen_at: seen, missed_queries: 0}
+      }
+
+      pre_seen = %{peer_a: seen}
+
+      result = Discovery.apply_poof(cache, pre_seen)
+      assert Map.has_key?(result, :peer_a)
+      assert result[:peer_a].missed_queries == 1
+    end
+
+    test "newly discovered peer (not in pre_seen) has missed_queries = 0" do
+      cache = %{
+        :new_peer => %{
+          name: :new_peer,
+          ip: @loopback,
+          port: 9090,
+          seen_at: now(),
+          missed_queries: 0
+        }
+      }
+
+      pre_seen = %{}
+
+      result = Discovery.apply_poof(cache, pre_seen)
+      assert result[:new_peer].missed_queries == 0
+    end
+
+    test "mixed: evicts unresponsive, keeps responsive and new peers" do
+      seen_old = now() - 15
+
+      cache = %{
+        :dead => %{name: :dead, ip: @loopback, port: 9090, seen_at: seen_old, missed_queries: 1},
+        :alive => %{name: :alive, ip: @loopback, port: 9090, seen_at: now(), missed_queries: 2},
+        :fresh => %{name: :fresh, ip: @loopback, port: 9090, seen_at: now(), missed_queries: 0}
+      }
+
+      # :dead was not refreshed, :alive was refreshed (seen_at changed), :fresh is new
+      pre_seen = %{dead: seen_old, alive: now() - 5}
+
+      result = Discovery.apply_poof(cache, pre_seen)
+      refute Map.has_key?(result, :dead), "dead peer (missed=2) should be evicted"
+      assert result[:alive].missed_queries == 0, "alive peer should have missed reset"
+      assert Map.has_key?(result, :fresh), "fresh peer should survive"
+    end
+
+    test "POOF evicts faster than hard TTL" do
+      # A peer at 10s old would survive sweep_cache (needs 30s to expire).
+      # But with 2 missed queries, POOF evicts it immediately.
+      seen = now() - 10
+
+      cache = %{
+        :slow_death => %{
+          name: :slow_death,
+          ip: @loopback,
+          port: 9090,
+          seen_at: seen,
+          missed_queries: 1
+        }
+      }
+
+      pre_seen = %{slow_death: seen}
+
+      # Would survive sweep_cache
+      assert Map.has_key?(Discovery.sweep_cache(cache), :slow_death)
+      # But POOF evicts it
+      refute Map.has_key?(Discovery.apply_poof(cache, pre_seen), :slow_death)
+    end
+
+    test "cache entries without missed_queries field default to 0" do
+      seen = now() - 5
+      # Legacy entry without missed_queries
+      cache = %{:legacy => %{name: :legacy, ip: @loopback, port: 9090, seen_at: seen}}
+      pre_seen = %{legacy: seen}
+
+      result = Discovery.apply_poof(cache, pre_seen)
+      assert result[:legacy].missed_queries == 1
+    end
+  end
+
+  # ── Step 3: Probe wire format ─────────────────────────────────────────
+  # RFC 6762 §8.1 — probes check for name conflicts before announcing.
+
+  describe "probe wire format" do
+    test "probe has QR=0 (query)" do
+      pkt = Packet.probe("admin-test._erlang._tcp.local")
+      <<_id::16, qr::1, _rest::bitstring>> = pkt
+      assert qr == 0
+    end
+
+    test "probe has QTYPE=ANY (255)" do
+      pkt = Packet.probe("admin-test._erlang._tcp.local")
+      <<_header::binary-size(12), rest::binary>> = pkt
+      {_name, after_name} = Packet.read_name(pkt, rest)
+      <<qtype::16, _qclass::16>> = after_name
+      assert qtype == 255
+    end
+
+    test "probe has QU bit set in QCLASS (0x8001)" do
+      pkt = Packet.probe("admin-test._erlang._tcp.local")
+      <<_header::binary-size(12), rest::binary>> = pkt
+      {_name, after_name} = Packet.read_name(pkt, rest)
+      <<_qtype::16, qclass::16>> = after_name
+      assert qclass == 0x8001
+    end
+
+    test "probe encodes the instance FQDN as the question name" do
+      instance = "admin-550e-8400._erlang._tcp.local"
+      pkt = Packet.probe(instance)
+      <<_header::binary-size(12), rest::binary>> = pkt
+      {name, _} = Packet.read_name(pkt, rest)
+      assert name == instance
+    end
+
+    test "probe has QDCOUNT=1 and zero answer/authority/additional" do
+      pkt = Packet.probe("test._erlang._tcp.local")
+      <<_id::16, _flags::16, qdcount::16, ancount::16, nscount::16, arcount::16, _::binary>> = pkt
+      assert qdcount == 1
+      assert ancount == 0
+      assert nscount == 0
+      assert arcount == 0
+    end
+  end
+
+  # ── Step 3: Exponential backoff schedule ──────────────────────────────
+  # RFC 6762 §11 — proactive announcements space out exponentially.
+
+  describe "exponential backoff schedule (advance_announce_schedule)" do
+    test "doubles the interval" do
+      state = %{announce_interval: 1, next_announce_at: 0}
+      result = Discovery.advance_announce_schedule(state, 100)
+      assert result.announce_interval == 2
+    end
+
+    test "successive doublings: 1 → 2 → 4 → 8 → 16 → 32 → 60 (capped)" do
+      state = %{announce_interval: 1, next_announce_at: 0}
+
+      {intervals, _} =
+        Enum.map_reduce(1..7, state, fn _, s ->
+          new_s = Discovery.advance_announce_schedule(s, 0)
+          {new_s.announce_interval, new_s}
+        end)
+
+      assert intervals == [2, 4, 8, 16, 32, 60, 60]
+    end
+
+    test "next_announce_at is set to now + new_interval" do
+      state = %{announce_interval: 4, next_announce_at: 0}
+      result = Discovery.advance_announce_schedule(state, 1000)
+      assert result.next_announce_at == 1000 + 8
+      assert result.announce_interval == 8
+    end
+
+    test "cap at 60 seconds" do
+      state = %{announce_interval: 32, next_announce_at: 0}
+      result = Discovery.advance_announce_schedule(state, 0)
+      assert result.announce_interval == 60
+
+      # Already at cap — stays at 60
+      result2 = Discovery.advance_announce_schedule(result, 100)
+      assert result2.announce_interval == 60
     end
   end
 

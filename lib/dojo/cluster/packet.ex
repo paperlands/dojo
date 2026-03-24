@@ -39,9 +39,13 @@ defmodule Dojo.Cluster.MDNS.Packet do
   @type_aaaa 28
   @type_srv 33
 
+  @type_any 255
+
   @class_in 1
   # Cache-flush bit for our own records (RFC 6762 §11.3)
   @class_flush 0x8001
+  # QU (unicast-response) bit for questions (RFC 6762 §5.4)
+  @class_qu 0x8001
 
   # mDNS query flags: QR=0, Opcode=0, RD=0
   @flags_query 0x0000
@@ -58,10 +62,25 @@ defmodule Dojo.Cluster.MDNS.Packet do
   The packet sets ID=0 and RD=0 as required by RFC 6762 §18.
   QU (unicast-response) bit is not set; we want multicast responses so all
   peers on the link hear the reply and can update their own caches.
+
+  When `known_answers` is non-empty, the listed PTR records are included
+  in the Answer Section (RFC 6762 §7.1 known-answer suppression). A responder
+  that sees its own record with TTL ≥ half the original will suppress its
+  response, reducing unnecessary traffic on the link.
+
+  Each known answer is `{instance_fqdn, remaining_ttl}`.
   """
-  @spec query(String.t()) :: binary()
-  def query(service_fqdn) do
+  @spec query(String.t(), [{String.t(), non_neg_integer()}]) :: binary()
+  def query(service_fqdn, known_answers \\ []) do
     qname = encode_name(service_fqdn)
+    ancount = length(known_answers)
+
+    answer_section =
+      IO.iodata_to_binary(
+        Enum.map(known_answers, fn {instance_fqdn, remaining_ttl} ->
+          rr(service_fqdn, @type_ptr, @class_in, remaining_ttl, encode_name(instance_fqdn))
+        end)
+      )
 
     <<
       # ID  — always 0 for mDNS
@@ -70,14 +89,40 @@ defmodule Dojo.Cluster.MDNS.Packet do
       # QDCOUNT
       1::16,
       # ANCOUNT
-      0::16,
+      ancount::16,
       # NSCOUNT
       0::16,
       # ARCOUNT
       0::16,
       qname::binary,
       @type_ptr::16,
-      @class_in::16
+      @class_in::16,
+      answer_section::binary
+    >>
+  end
+
+  @doc """
+  Build an mDNS probe query for `instance_fqdn` (RFC 6762 §8.1).
+
+  Sends a question with QTYPE=ANY and the QU (unicast-response) bit set.
+  Used at startup to check for name conflicts before announcing.
+  For UUID-based names, collision is vanishingly unlikely, but a single
+  probe is still good practice per the RFC.
+  """
+  @spec probe(String.t()) :: binary()
+  def probe(instance_fqdn) do
+    qname = encode_name(instance_fqdn)
+
+    <<
+      0::16,
+      @flags_query::16,
+      1::16,
+      0::16,
+      0::16,
+      0::16,
+      qname::binary,
+      @type_any::16,
+      @class_qu::16
     >>
   end
 
@@ -154,11 +199,12 @@ defmodule Dojo.Cluster.MDNS.Packet do
   Each record is a map with at least:
 
       %{
-        name:  "some.label.local",
-        type:  12,          # @type_ptr etc.
-        class: 1,           # RCLASS with cache-flush bit masked out
-        ttl:   120,
-        data:  {:ptr, "instance.service.local"}   # decoded RDATA
+        name:        "some.label.local",
+        type:        12,          # @type_ptr etc.
+        class:       1,           # RCLASS with cache-flush bit masked out
+        cache_flush: true,        # RFC 6762 §10.2 — high bit of RCLASS
+        ttl:         120,
+        data:        {:ptr, "instance.service.local"}   # decoded RDATA
       }
 
   Possible `:data` variants:
@@ -245,8 +291,9 @@ defmodule Dojo.Cluster.MDNS.Packet do
     rr = %{
       name: name,
       type: type,
-      # strip cache-flush bit
+      # strip cache-flush bit from class, preserve as boolean
       class: class &&& 0x7FFF,
+      cache_flush: (class &&& 0x8000) != 0,
       ttl: ttl,
       data: decode_rdata(type, pkt, rdata)
     }
