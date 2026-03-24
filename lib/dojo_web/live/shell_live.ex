@@ -212,57 +212,57 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_event(
-    "seeTurtle",
-    %{"addr" => addr},
-    %{assigns: %{disciples: dis, class: _class}} = socket
-  )
-  when is_binary(addr) do
-
-    case  Dojo.Table.last(dis[addr][:node], :hatch) do
+        "seeTurtle",
+        %{"addr" => addr},
+        %{assigns: %{disciples: dis, class: _class}} = socket
+      )
+      when is_binary(addr) do
+    case Dojo.Table.last(dis[addr][:node], :hatch) do
       %Dojo.Turtle{state: state} = table_state ->
         {:noreply,
          socket
-         |> push_event("seeOuterShell",  Map.from_struct(table_state))
+         |> push_event("seeOuterShell", Map.from_struct(table_state))
          |> assign(
            :outershell,
-         %OuterShell{
-           state: state, 
-           addr: addr,
-           active: true,
-           name: "#{dis[addr][:name]}"
-         }
+           %OuterShell{
+             state: state,
+             addr: addr,
+             active: true,
+             name: "#{dis[addr][:name]}"
+           }
          )}
 
-      _ -> {:noreply, socket}
+      _ ->
+        {:noreply, socket}
     end
   end
 
-def handle_event("seeTurtle", _, socket) do
-  {:noreply,
-   socket
-   |> assign(
-     :outershell,
-   %OuterShell{}
-   )}
-end
+  def handle_event("seeTurtle", _, socket) do
+    {:noreply,
+     socket
+     |> assign(
+       :outershell,
+       %OuterShell{}
+     )}
+  end
 
-def handle_event("followTurtle", _, %{assigns: %{outershell: shell}} = socket) do
-  {:noreply,
-   socket
-   |> assign(
-     :outershell,
-   %{shell | follow: !shell.follow}
-   )}
-end
+  def handle_event("followTurtle", _, %{assigns: %{outershell: shell}} = socket) do
+    {:noreply,
+     socket
+     |> assign(
+       :outershell,
+       %{shell | follow: !shell.follow}
+     )}
+  end
 
-def handle_event("closeTurtle", _, socket) do
-  {:noreply,
-   socket
-   |> assign(
-     :outershell,
-   %OuterShell{}
-   )}
-end
+  def handle_event("closeTurtle", _, socket) do
+    {:noreply,
+     socket
+     |> assign(
+       :outershell,
+       %OuterShell{}
+     )}
+  end
 
   # Handle the viewport update event from the hook
   def handle_event(
@@ -336,8 +336,7 @@ end
   defp update_disciples_metadata(disciples, visible_disciples) do
     Enum.reduce(visible_disciples, disciples, fn ref, acc ->
       with %{node: node} <- disciples[ref],
-      %{path: path, state: state} <- Dojo.Table.last(node, :hatch) do
-
+           %{path: path, state: state} <- Dojo.Table.last(node, :hatch) do
         put_in(acc, [ref, :meta], %{path: path, state: state})
       else
         _ -> acc

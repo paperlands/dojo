@@ -1,9 +1,10 @@
 defmodule Dojo.Cluster.MDNS.Packet do
   import Bitwise
+
   @moduledoc """
   Low-level mDNS (RFC 6762) / DNS-SD (RFC 6763) packet codec.
   https://datatracker.ietf.org/doc/html/rfc6762
-  
+
   Handles the binary wire format for:
   - PTR query packets (service discovery)
   - Announcement response packets (PTR + TXT + A)
@@ -32,18 +33,18 @@ defmodule Dojo.Cluster.MDNS.Packet do
   # DNS type / class constants
   ##############################################################################
 
-  @type_a     1
-  @type_ptr  12
-  @type_txt  16
+  @type_a 1
+  @type_ptr 12
+  @type_txt 16
   @type_aaaa 28
-  @type_srv  33
+  @type_srv 33
 
-  @class_in    1
+  @class_in 1
   # Cache-flush bit for our own records (RFC 6762 §11.3)
   @class_flush 0x8001
 
   # mDNS query flags: QR=0, Opcode=0, RD=0
-  @flags_query    0x0000
+  @flags_query 0x0000
   # mDNS response flags: QR=1, AA=1
   @flags_response 0x8400
 
@@ -63,15 +64,20 @@ defmodule Dojo.Cluster.MDNS.Packet do
     qname = encode_name(service_fqdn)
 
     <<
-      0         :: 16,   # ID  — always 0 for mDNS
-      @flags_query :: 16,
-      1         :: 16,   # QDCOUNT
-      0         :: 16,   # ANCOUNT
-      0         :: 16,   # NSCOUNT
-      0         :: 16,   # ARCOUNT
-      qname     :: binary,
-      @type_ptr :: 16,
-      @class_in :: 16
+      # ID  — always 0 for mDNS
+      0::16,
+      @flags_query::16,
+      # QDCOUNT
+      1::16,
+      # ANCOUNT
+      0::16,
+      # NSCOUNT
+      0::16,
+      # ARCOUNT
+      0::16,
+      qname::binary,
+      @type_ptr::16,
+      @class_in::16
     >>
   end
 
@@ -90,36 +96,53 @@ defmodule Dojo.Cluster.MDNS.Packet do
 
   Pass `ttl: 0` to emit a RFC 6762 §11.3 "goodbye" packet on shutdown.
   """
-  @spec announcement(String.t(), String.t(), :inet.ip4_address(), non_neg_integer(), :inet.port_number()) :: binary()
+  @spec announcement(
+          String.t(),
+          String.t(),
+          :inet.ip4_address(),
+          non_neg_integer(),
+          :inet.port_number()
+        ) :: binary()
   def announcement(service_fqdn, own_name_str, ip, ttl, port) do
-  # own_name_str is already "admin@<uuid>" — use it directly
-  instance_lbl  = String.replace(own_name_str, ~r/[@\-]/, "-")
-  instance_fqdn = "#{instance_lbl}.#{service_fqdn}"
-  # Use only the basename part for the A record host
-  host_local    = (own_name_str |> String.split("@") |> hd()) <> ".local"
+    # own_name_str is already "admin@<uuid>" — use it directly
+    instance_lbl = String.replace(own_name_str, ~r/[@\-]/, "-")
+    instance_fqdn = "#{instance_lbl}.#{service_fqdn}"
+    # Use only the basename part for the A record host
+    host_local = (own_name_str |> String.split("@") |> hd()) <> ".local"
 
-  ptr_rr = rr(service_fqdn,  @type_ptr,   @class_in,    ttl, encode_name(instance_fqdn))
-  srv_rdata = <<0::16, 0::16, port::16, encode_name(host_local)::binary>>
-  srv_rr    = rr(instance_fqdn, @type_srv, @class_flush, ttl, srv_rdata)
-  # 3. ADD partisan_port to TXT
-  txt_rr = rr(instance_fqdn, @type_txt, @class_flush, ttl,
-    encode_txt([
-      {"erlang_node",   own_name_str},
-      {"partisan_port", Integer.to_string(port)}
-    ]))
-  a_rr = rr(host_local, @type_a, @class_flush, ttl, encode_a(ip))
+    ptr_rr = rr(service_fqdn, @type_ptr, @class_in, ttl, encode_name(instance_fqdn))
+    srv_rdata = <<0::16, 0::16, port::16, encode_name(host_local)::binary>>
+    srv_rr = rr(instance_fqdn, @type_srv, @class_flush, ttl, srv_rdata)
+    # 3. ADD partisan_port to TXT
+    txt_rr =
+      rr(
+        instance_fqdn,
+        @type_txt,
+        @class_flush,
+        ttl,
+        encode_txt([
+          {"erlang_node", own_name_str},
+          {"partisan_port", Integer.to_string(port)}
+        ])
+      )
+
+    a_rr = rr(host_local, @type_a, @class_flush, ttl, encode_a(ip))
 
     <<
-      0               :: 16,
-      @flags_response :: 16,
-      0               :: 16,   # QDCOUNT = 0
-      4               :: 16,   # ANCOUNT = 4  (PTR + SRV + TXT + A)
-      0               :: 16,   # NSCOUNT
-      0               :: 16,   # ARCOUNT
-      ptr_rr          :: binary,
-      srv_rr          :: binary,
-      txt_rr          :: binary,
-      a_rr            :: binary
+      0::16,
+      @flags_response::16,
+      # QDCOUNT = 0
+      0::16,
+      # ANCOUNT = 4  (PTR + SRV + TXT + A)
+      4::16,
+      # NSCOUNT
+      0::16,
+      # ARCOUNT
+      0::16,
+      ptr_rr::binary,
+      srv_rr::binary,
+      txt_rr::binary,
+      a_rr::binary
     >>
   end
 
@@ -162,26 +185,28 @@ defmodule Dojo.Cluster.MDNS.Packet do
   # Decoder internals
   ##############################################################################
 
-  defp decode!(<<
-    _id      :: 16,
-    _qr      :: 1,
-    _opcode  :: 4,
-    _aa      :: 1,
-    _tc      :: 1,
-    _rd      :: 1,
-    _ra      :: 1,
-    _z       :: 3,
-    _rcode   :: 4,
-    qdcount  :: 16,
-    ancount  :: 16,
-    nscount  :: 16,
-    arcount  :: 16,
-    rest     :: binary
-  >> = pkt) do
-    {_,   r1} = skip_questions(pkt, rest,  qdcount)
+  defp decode!(
+         <<
+           _id::16,
+           _qr::1,
+           _opcode::4,
+           _aa::1,
+           _tc::1,
+           _rd::1,
+           _ra::1,
+           _z::3,
+           _rcode::4,
+           qdcount::16,
+           ancount::16,
+           nscount::16,
+           arcount::16,
+           rest::binary
+         >> = pkt
+       ) do
+    {_, r1} = skip_questions(pkt, rest, qdcount)
     {ans, r2} = decode_rrs(pkt, r1, ancount)
-    {_,   r3} = decode_rrs(pkt, r2, nscount)
-    {add, _}  = decode_rrs(pkt, r3, arcount)
+    {_, r3} = decode_rrs(pkt, r2, nscount)
+    {add, _} = decode_rrs(pkt, r3, arcount)
     {:ok, ans ++ add}
   end
 
@@ -194,7 +219,7 @@ defmodule Dojo.Cluster.MDNS.Packet do
   defp skip_questions(_pkt, data, 0), do: {[], data}
 
   defp skip_questions(pkt, data, n) do
-    {_, rest}                     = read_name(pkt, data)
+    {_, rest} = read_name(pkt, data)
     <<_type::16, _class::16, r2::binary>> = rest
     skip_questions(pkt, r2, n - 1)
   end
@@ -206,23 +231,24 @@ defmodule Dojo.Cluster.MDNS.Packet do
   defp decode_rrs(_pkt, data, 0), do: {[], data}
 
   defp decode_rrs(pkt, data, n) do
-    {name, rest}  = read_name(pkt, data)
+    {name, rest} = read_name(pkt, data)
 
     <<
-      type  :: 16,
-      class :: 16,
-      ttl   :: 32,
-      rdlen :: 16,
-      rdata :: binary-size(rdlen),
-      rest2 :: binary
+      type::16,
+      class::16,
+      ttl::32,
+      rdlen::16,
+      rdata::binary-size(rdlen),
+      rest2::binary
     >> = rest
 
     rr = %{
-      name:  name,
-      type:  type,
-      class: class &&& 0x7FFF,   # strip cache-flush bit
-      ttl:   ttl,
-      data:  decode_rdata(type, pkt, rdata)
+      name: name,
+      type: type,
+      # strip cache-flush bit
+      class: class &&& 0x7FFF,
+      ttl: ttl,
+      data: decode_rdata(type, pkt, rdata)
     }
 
     {more, rest3} = decode_rrs(pkt, rest2, n - 1)
@@ -247,18 +273,24 @@ defmodule Dojo.Cluster.MDNS.Packet do
   end
 
   defp decode_rdata(@type_aaaa, _pkt, <<
-    a::16, b::16, c::16, d::16,
-    e::16, f::16, g::16, h::16
-  >>) do
+         a::16,
+         b::16,
+         c::16,
+         d::16,
+         e::16,
+         f::16,
+         g::16,
+         h::16
+       >>) do
     {:aaaa, {a, b, c, d, e, f, g, h}}
   end
 
   defp decode_rdata(@type_srv, pkt, <<
-    priority :: 16,
-    weight   :: 16,
-    port     :: 16,
-    rest     :: binary
-  >>) do
+         priority::16,
+         weight::16,
+         port::16,
+         rest::binary
+       >>) do
     {target, _} = read_name(pkt, rest)
     {:srv, %{priority: priority, weight: weight, port: port, target: target}}
   end
@@ -271,16 +303,18 @@ defmodule Dojo.Cluster.MDNS.Packet do
 
   defp parse_txt(<<>>, acc), do: Enum.reverse(acc)
 
-  defp parse_txt(<<len :: 8, str :: binary-size(len), rest :: binary>>, acc) do
+  defp parse_txt(<<len::8, str::binary-size(len), rest::binary>>, acc) do
     entry =
       case String.split(str, "=", parts: 2) do
         [k, v] -> {k, v}
-        [k]    -> {k, ""}
+        [k] -> {k, ""}
       end
+
     parse_txt(rest, [entry | acc])
   end
 
-  defp parse_txt(_, acc), do: Enum.reverse(acc)  # truncated — return what we have
+  # truncated — return what we have
+  defp parse_txt(_, acc), do: Enum.reverse(acc)
 
   ##############################################################################
   # DNS name reader — RFC 1035 §4.1.4 pointer compression
@@ -293,27 +327,28 @@ defmodule Dojo.Cluster.MDNS.Packet do
   @doc false
   def read_name(full_pkt, data), do: read_labels(full_pkt, data, [])
 
-  defp read_labels(_pkt, <<0, rest :: binary>>, acc) do
+  defp read_labels(_pkt, <<0, rest::binary>>, acc) do
     name = acc |> Enum.reverse() |> Enum.join(".")
     {name, rest}
   end
 
-  defp read_labels(pkt, <<len, rest :: binary>>, acc) when len > 0 and len < 64 do
-    <<label :: binary-size(^len), remaining :: binary>> = rest
+  defp read_labels(pkt, <<len, rest::binary>>, acc) when len > 0 and len < 64 do
+    <<label::binary-size(^len), remaining::binary>> = rest
     read_labels(pkt, remaining, [label | acc])
   end
 
   # Compression pointer: 2 high bits = 11
-  defp read_labels(pkt, <<0b11 :: 2, ptr :: 14, caller_rest :: binary>>, acc) do
+  defp read_labels(pkt, <<0b11::2, ptr::14, caller_rest::binary>>, acc) do
     # Jump into the original packet at `ptr`; ignore the rest from that path
-    target   = :binary.part(pkt, ptr, byte_size(pkt) - ptr)
+    target = :binary.part(pkt, ptr, byte_size(pkt) - ptr)
     {suffix, _} = read_labels(pkt, target, [])
 
     prefix_parts = Enum.reverse(acc)
+
     full =
       case prefix_parts do
         [] -> suffix
-        _  -> Enum.join(prefix_parts, ".") <> if(suffix == "", do: "", else: "." <> suffix)
+        _ -> Enum.join(prefix_parts, ".") <> if(suffix == "", do: "", else: "." <> suffix)
       end
 
     # Return with the original `caller_rest` — 2 bytes consumed for the pointer
@@ -332,7 +367,7 @@ defmodule Dojo.Cluster.MDNS.Packet do
   # Single resource record
   defp rr(name, type, class, ttl, rdata) do
     rdlen = byte_size(rdata)
-    <<encode_name(name) :: binary, type :: 16, class :: 16, ttl :: 32, rdlen :: 16, rdata :: binary>>
+    <<encode_name(name)::binary, type::16, class::16, ttl::32, rdlen::16, rdata::binary>>
   end
 
   @doc """
@@ -347,7 +382,7 @@ defmodule Dojo.Cluster.MDNS.Packet do
     parts =
       name
       |> String.split(".")
-      |> Enum.map(fn label -> <<byte_size(label) :: 8, label :: binary>> end)
+      |> Enum.map(fn label -> <<byte_size(label)::8, label::binary>> end)
 
     IO.iodata_to_binary(parts ++ [<<0>>])
   end
@@ -357,7 +392,7 @@ defmodule Dojo.Cluster.MDNS.Packet do
     IO.iodata_to_binary(
       Enum.map(pairs, fn {k, v} ->
         s = "#{k}=#{v}"
-        <<byte_size(s) :: 8, s :: binary>>
+        <<byte_size(s)::8, s::binary>>
       end)
     )
   end

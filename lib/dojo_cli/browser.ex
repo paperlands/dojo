@@ -85,7 +85,8 @@ defmodule DojoCLI.Browser do
       # Fallbacks for older/minimal systems
       {~c"gnome-open", [:url]},
       {~c"kde-open", [:url]},
-      {~c"wslview", [:url]}  # WSL support
+      # WSL support
+      {~c"wslview", [:url]}
     ]
   end
 
@@ -133,17 +134,18 @@ defmodule DojoCLI.Browser do
   defp exec_command({cmd, arg_template}, url) do
     # Convert charlist command to string for System.find_executable
     cmd_string = List.to_string(cmd)
-    
+
     case System.find_executable(cmd_string) do
       nil ->
         {:error, :command_not_found}
 
       exe_path ->
-        args = Enum.map(arg_template, fn
-          :url -> url
-          arg when is_list(arg) -> List.to_string(arg)
-          arg -> arg
-        end)
+        args =
+          Enum.map(arg_template, fn
+            :url -> url
+            arg when is_list(arg) -> List.to_string(arg)
+            arg -> arg
+          end)
 
         # System.cmd is more reliable across platforms than Port.open
         # Use :stderr_to_stdout to suppress error noise
@@ -155,7 +157,7 @@ defmodule DojoCLI.Browser do
               _ -> :error
             end
           end)
-          
+
           :ok
         rescue
           e ->

@@ -1,6 +1,4 @@
 defmodule DojoCLI.Boot do
-
-
   defdelegate open(url), to: DojoCLI.Browser
   defdelegate open_sync(url), to: DojoCLI.Browser
 
@@ -20,8 +18,6 @@ defmodule DojoCLI.Boot do
         :ok
     end
   end
-
-
 
   def splash() do
     "
@@ -92,7 +88,7 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
 
   defp display(opts) do
     box_width = 100
-    
+
     # ANSI escape codes
     reset = IO.ANSI.reset()
     bold = IO.ANSI.bright()
@@ -101,7 +97,7 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     green = IO.ANSI.green()
     white = IO.ANSI.white()
     orange = IO.ANSI.color(214)
-    
+
     # Box drawing characters
     top_left = "╭"
     top_right = "╮"
@@ -113,26 +109,27 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     right_fleuron = "❧"
     center_ornament = "🔆"
     inner_width = box_width - 6
-    
+
     # Create hyperlinks (OSC 8 standard - works in modern terminals)
     ip_link = "http://127.0.0.1:#{System.get_env("PORT") || 4000}"
-    #System.put_env("MY_IP_ADDR", "#{get_local_ip()}:#{System.get_env("PORT") || 4000}")
-    
-    
-    # Hyperlink format: \e]8;;URL\e\\TEXT\e]8;;\e\\
-    ip_hyperlink = "\e]8;;#{ip_link}\e\\#{red}localhost:#{System.get_env("PORT") || 4000}#{reset}\e]8;;\e\\"
+    # System.put_env("MY_IP_ADDR", "#{get_local_ip()}:#{System.get_env("PORT") || 4000}")
 
-    
+    # Hyperlink format: \e]8;;URL\e\\TEXT\e]8;;\e\\
+    ip_hyperlink =
+      "\e]8;;#{ip_link}\e\\#{red}localhost:#{System.get_env("PORT") || 4000}#{reset}\e]8;;\e\\"
+
     # Build the box
-    IO.puts(orange<>splash())
+    IO.puts(orange <> splash())
     IO.puts("\n")
     # Fleurons at the ends with strong center ornament
-    
 
     # Calculate the line segments between fleurons and center
     # Format: ☙ ─── ✦ ─── ❧
-    total_fleuron_length = String.length(left_fleuron) + String.length(right_fleuron) + String.length(center_ornament)
-    remaining_space = max(0, inner_width - total_fleuron_length - 4) # 4 for the spaces around ornaments
+    total_fleuron_length =
+      String.length(left_fleuron) + String.length(right_fleuron) + String.length(center_ornament)
+
+    # 4 for the spaces around ornaments
+    remaining_space = max(0, inner_width - total_fleuron_length - 4)
 
     # Divide the remaining space for lines on each side
     line_length = div(remaining_space, 2)
@@ -142,36 +139,62 @@ JPPPP?~^::::::         .YPPP5:     7PPPPPJ~    ^!~^^~!~.     .YPPPY.   !PPPP~   
     fleuron_separator = "#{left_fleuron} #{line} #{center_ornament} #{line} #{right_fleuron}"
 
     IO.puts("#{dim}#{top_left}#{String.duplicate(horizontal, box_width - 2)}#{top_right}#{reset}")
-    IO.puts("#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}")
-    
+
+    IO.puts(
+      "#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}"
+    )
+
     # Title
     title = "Ready to enter PaperLand?"
     padding = div(box_width - 2 - String.length(title), 2)
-    IO.puts("#{dim}#{vertical}#{reset}#{String.duplicate(" ", padding)}#{bold}#{orange}#{IO.ANSI.blink_slow()}#{title}#{reset}#{String.duplicate(" ", box_width - 2 - padding - String.length(title))}#{dim}#{vertical}#{reset}")
-    
-    IO.puts("#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}")
 
-    
+    IO.puts(
+      "#{dim}#{vertical}#{reset}#{String.duplicate(" ", padding)}#{bold}#{orange}#{IO.ANSI.blink_slow()}#{title}#{reset}#{String.duplicate(" ", box_width - 2 - padding - String.length(title))}#{dim}#{vertical}#{reset}"
+    )
+
+    IO.puts(
+      "#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}"
+    )
+
     # Seperator
-    IO.puts("#{dim}#{vertical}#{reset}  #{orange}#{fleuron_separator}#{reset}  #{dim}#{vertical}#{reset}")
-    IO.puts("#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}")
-    
+    IO.puts(
+      "#{dim}#{vertical}#{reset}  #{orange}#{fleuron_separator}#{reset}  #{dim}#{vertical}#{reset}"
+    )
+
+    IO.puts(
+      "#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}"
+    )
+
     # Local IP info
     label = "URL LINK:"
     # Calculate visible length without ANSI codes for proper spacing
-    ip_visible = "127.0.0.1:#{System.get_env("PORT") || "4000"}" 
+    ip_visible = "127.0.0.1:#{System.get_env("PORT") || "4000"}"
     spacing = box_width - 2 - 4 - String.length(label) - String.length(ip_visible) - 2
-    IO.puts("#{dim}#{vertical}#{reset}    #{white}#{label}#{reset}  #{ip_hyperlink}#{String.duplicate(" ", spacing)}#{dim}#{vertical}#{reset}")
-    
-    IO.puts("#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}")
-    
-    IO.puts("#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}")
-    IO.puts("#{dim}#{bottom_left}#{String.duplicate(horizontal, box_width - 2)}#{bottom_right}#{reset}")
-    
-    IO.puts("\n#{green}  Remember to connect to the same Local Area Network Wifi or Ethernet Network#{reset}")
+
+    IO.puts(
+      "#{dim}#{vertical}#{reset}    #{white}#{label}#{reset}  #{ip_hyperlink}#{String.duplicate(" ", spacing)}#{dim}#{vertical}#{reset}"
+    )
+
+    IO.puts(
+      "#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}"
+    )
+
+    IO.puts(
+      "#{dim}#{vertical}#{reset}#{String.duplicate(" ", box_width - 2)}#{dim}#{vertical}#{reset}"
+    )
+
+    IO.puts(
+      "#{dim}#{bottom_left}#{String.duplicate(horizontal, box_width - 2)}#{bottom_right}#{reset}"
+    )
+
+    IO.puts(
+      "\n#{green}  Remember to connect to the same Local Area Network Wifi or Ethernet Network#{reset}"
+    )
+
     if Keyword.get(opts, :open_browser, true) do
       open_with_fallback(ip_visible <> "/welcome")
     end
+
     IO.puts("\n#{dim}  Press Ctrl+C to stop#{reset}\n")
   end
 end

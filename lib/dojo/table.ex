@@ -23,11 +23,11 @@ defmodule Dojo.Table do
     else
       # It's on a remote node. Use Partisan's RPC to execute `local_fetch/2` OVER THERE.
       case :partisan_rpc.call(target_node, __MODULE__, :local_fetch, [topic, event], 5000) do
-        {:badrpc, reason} -> 
+        {:badrpc, reason} ->
           # Handle network failures, node down, or timeout cleanly
           {:error, {:rpc_failed, reason}}
-          
-        result -> 
+
+        result ->
           result
       end
     end
@@ -41,7 +41,7 @@ defmodule Dojo.Table do
     try do
       GenServer.call({:via, Registry, {Dojo.TableRegistry, topic}}, {:last, event}, 5000)
     catch
-      :exit, {:noproc, _} -> 
+      :exit, {:noproc, _} ->
         {:error, :table_not_found_on_node}
     end
   end
@@ -59,8 +59,6 @@ defmodule Dojo.Table do
   #   end
   # end
 
-  
-
   # def last(node, event) do
   #   IO.inspect(node)
   #   nil
@@ -76,7 +74,6 @@ defmodule Dojo.Table do
     args = Map.put(args, :reg_id, Ecto.UUID.generate())
     GenServer.start_link(__MODULE__, args, name: via_tuple(args.reg_id))
   end
-    
 
   def init(%{track_pid: pid, topic: topic, disciple: disciple, reg_id: reg_id}) do
     # this track_pid is the liveview pid
@@ -92,24 +89,26 @@ defmodule Dojo.Table do
      }}
   end
 
-
   def handle_cast(
-    {:publish, {_source, _msg, %{state: :error} = store}, :hatch},
-    %{last: %{hatch: %{commands: [_|_] = cmds}} = last, topic: _topic, disciple: %{phx_ref: _phx_ref}} = state
-  ) do
+        {:publish, {_source, _msg, %{state: :error} = store}, :hatch},
+        %{
+          last: %{hatch: %{commands: [_ | _] = cmds}} = last,
+          topic: _topic,
+          disciple: %{phx_ref: _phx_ref}
+        } = state
+      ) do
     # check if previously active turtle
     hydrated_store = %{store | commands: cmds}
-    
+
     Cache.put({__MODULE__, :last, self(), :hatch}, hydrated_store, ttl: @ttl)
     {:noreply, %{state | last: last |> Map.put(:hatch, hydrated_store)}}
   end
 
-
   # this has to publish to a shared datastore per topic instance maybe ets(?)
   def handle_cast(
-    {:publish, {_source, _msg, store}, event},
-    %{last: last, topic: _topic, disciple: %{phx_ref: _phx_ref}} = state
-  ) do
+        {:publish, {_source, _msg, store}, event},
+        %{last: last, topic: _topic, disciple: %{phx_ref: _phx_ref}} = state
+      ) do
     # Dojo.PubSub.publish({phx_ref, {source, msg}}, event, topic)
     Cache.put({__MODULE__, :last, self(), event}, store, ttl: @ttl)
     {:noreply, %{state | last: last |> Map.put(event, store)}}

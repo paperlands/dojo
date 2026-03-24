@@ -59,7 +59,9 @@ defmodule Dojo.Gate do
   end
 
   def change(pid, topic, username, {key, value}) do
-    Phoenix.Tracker.update(__MODULE__, pid, topic, username, fn meta -> Map.put(meta, key, value) end)
+    Phoenix.Tracker.update(__MODULE__, pid, topic, username, fn meta ->
+      Map.put(meta, key, value)
+    end)
   end
 
   def list(topic, timeout \\ 5000) do

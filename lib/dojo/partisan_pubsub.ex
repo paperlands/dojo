@@ -2,9 +2,10 @@ defmodule Phoenix.PubSub.Partisan do
   @moduledoc """
   A Phoenix.PubSub adapter using Partisan's Plumtree backend.
   """
-  
+
   @behaviour Phoenix.PubSub.Adapter
   use Supervisor
+
   def start_link(opts) do
     adapter_name = Keyword.fetch!(opts, :adapter_name)
     supervisor_name = Module.concat(adapter_name, "Supervisor")
@@ -31,7 +32,9 @@ defmodule Phoenix.PubSub.Partisan do
   # ----------------------------------------------------------------------------
 
   # Helper to lookup config
-  defp config_control_channel, do: Application.get_env(:dojo, Phoenix.PubSub.Partisan)[:channel_control] || :default
+  defp config_control_channel,
+    do: Application.get_env(:dojo, Phoenix.PubSub.Partisan)[:channel_control] || :default
+
   defp handler_name(adapter_name), do: Module.concat(adapter_name, Handler)
 
   @impl true
@@ -41,7 +44,7 @@ defmodule Phoenix.PubSub.Partisan do
   def broadcast(adapter_name, topic, message, dispatcher) do
     # 1. Local Optimization (keep as is)
     # We still send to the local process for local dispatching
-    pubsub_name= :persistent_term.get({adapter_name, :pubsub})
+    pubsub_name = :persistent_term.get({adapter_name, :pubsub})
     local_handler = handler_name(pubsub_name)
     send(local_handler, {:direct, topic, message, dispatcher})
 
@@ -54,7 +57,7 @@ defmodule Phoenix.PubSub.Partisan do
     # FIX B: Pass the MODULE name (Phoenix.PubSub.Partisan.Handler), 
     #        not the Process Name (local_handler).
     :partisan_plumtree_broadcast.broadcast(payload, Phoenix.PubSub.Partisan.Handler)
-    
+
     :ok
   end
 
@@ -62,7 +65,7 @@ defmodule Phoenix.PubSub.Partisan do
 
   def direct_broadcast(adapter_name, target_node, topic, message, dispatcher) do
     # Calculate the handler name once
-    pubsub_name= :persistent_term.get({adapter_name, :pubsub})
+    pubsub_name = :persistent_term.get({adapter_name, :pubsub})
     local_handler = handler_name(pubsub_name)
 
     if target_node == :partisan.node() do
@@ -73,21 +76,21 @@ defmodule Phoenix.PubSub.Partisan do
       # Remote Forwarding (Control Channel)
       payload = {:direct, topic, message, dispatcher}
       opts = %{channel: config_control_channel()}
-      
+
       # Note: This relies on the remote handler having the same name
       :partisan.forward_message(target_node, local_handler, payload, opts)
     end
+
     :ok
   end
 end
-
 
 defmodule Phoenix.PubSub.Partisan.Handler do
   @moduledoc """
   The bridge between the Partisan Runtime and the local Phoenix Registry.
   """
   use GenServer
-  
+
   # 1. BEHAVIOUR
   @behaviour :partisan_plumtree_broadcast_handler
 
@@ -96,7 +99,7 @@ defmodule Phoenix.PubSub.Partisan.Handler do
   # ----------------------------------------------------------------------------
   # API & Init
   # ----------------------------------------------------------------------------
-  def start_link({server_name , pubsub_name}) do
+  def start_link({server_name, pubsub_name}) do
     GenServer.start_link(__MODULE__, pubsub_name, name: server_name)
   end
 
@@ -124,9 +127,11 @@ defmodule Phoenix.PubSub.Partisan.Handler do
     rescue
       # If the PubSub system (Registry) is down or named differently, catch the crash.
       e in ArgumentError ->
-        Logger.error("Partisan Delivery Failed: PubSub process '#{inspect(pubsub_name)}' is not running on this node. Error: #{inspect(e)}")
-      
-      e -> 
+        Logger.error(
+          "Partisan Delivery Failed: PubSub process '#{inspect(pubsub_name)}' is not running on this node. Error: #{inspect(e)}"
+        )
+
+      e ->
         Logger.error("Partisan Delivery Failed: Unknown error #{inspect(e)}")
     end
 
@@ -139,6 +144,7 @@ defmodule Phoenix.PubSub.Partisan.Handler do
     Logger.warning("Partisan ignored unknown payload: ID #{inspect(id)} Data: #{inspect(data)}")
     true
   end
+
   # FIX: 'exchange/1' takes 1 argument (Peer), not 2.
   # We return :ignore because PubSub is ephemeral; we don't sync historical messages.
   @impl true
@@ -157,7 +163,8 @@ defmodule Phoenix.PubSub.Partisan.Handler do
 
   # FIX: 'broadcast_channel/0' is recommended to define the channel.
   @impl true
-  def broadcast_channel, do: :data # or whatever channel you configured
+  # or whatever channel you configured
+  def broadcast_channel, do: :data
 
   # ----------------------------------------------------------------------------
   # 3. DIRECT UNICAST (The Control Plane)

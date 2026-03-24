@@ -77,13 +77,12 @@ defmodule Dojo.MixProject do
       {:makeup, "~> 1.1"},
       {:makeup_elixir, "~> 0.16"},
       {:burrito, "~> 1.5"},
-      {:partisan, partisan_dep()},  
+      {:partisan, partisan_dep()},
       # Protocol Buffers for safe, non-atom signaling
-      {:protox, "~> 2.0"},
+      {:protox, "~> 2.0"}
       # {:libcluster, "~> 3.3.0"}
     ]
   end
-
 
   defp usage_rules do
     [
@@ -93,7 +92,8 @@ defmodule Dojo.MixProject do
         location: ".claude/skills",
         build: [
           "phoenix-framework": [
-            description: "Use this skill when working with Phoenix Framework — controllers, LiveViews, routing, PubSub, Presence, and the web layer.",
+            description:
+              "Use this skill when working with Phoenix Framework — controllers, LiveViews, routing, PubSub, Presence, and the web layer.",
             usage_rules: [:phoenix, ~r/^phoenix_/]
           ]
         ]
@@ -120,7 +120,7 @@ defmodule Dojo.MixProject do
       setup: ["deps.get", "compile", "assets.setup", "assets.build", "assets.deploy"],
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
-      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      test: ["test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["tailwind dojo", "esbuild dojo"],
       "assets.deploy": [
@@ -132,12 +132,13 @@ defmodule Dojo.MixProject do
   end
 
   def releases do
-    steps = if Mix.env() == :local do
-      [:assemble, &Burrito.wrap/1]
-    else
-      [:assemble]
-    end
-    
+    steps =
+      if Mix.env() == :local do
+        [:assemble, &Burrito.wrap/1]
+      else
+        [:assemble]
+      end
+
     [
       dojo: [
         steps: steps,
@@ -151,6 +152,5 @@ defmodule Dojo.MixProject do
         ]
       ]
     ]
-
   end
 end

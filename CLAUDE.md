@@ -84,7 +84,7 @@ Dojo.Supervisor
 ### Mix Aliases
 
 - `mix setup` — full dev setup (deps + assets)
-- `mix test` — runs `ecto.create --quiet`, `ecto.migrate --quiet`, then ExUnit
+- `mix test` — runs `ExUnit`
 - `mix ecto.reset` — drops and recreates the database
 
 ### Environment Variables

@@ -7,7 +7,6 @@ defmodule Dojo.Application do
 
   @impl true
   def start(_type, _args) do
-        
     children = [
       DojoWeb.Telemetry,
       # 3. The Cluster Supervisor (Libcluster)
@@ -18,23 +17,21 @@ defmodule Dojo.Application do
       %{
         id: Dojo.PubSub.Supervisor,
         type: :supervisor,
-        start: {Supervisor, :start_link, [
-                   [
-                     {Phoenix.PubSub, name: Dojo.PubSub, adapter: Phoenix.PubSub.Partisan},
-                     {Dojo.Gate,
-                      name: Dojo.Gate,
-                      pubsub_server: Dojo.PubSub,
-                      pool_size: 1}
-                   ],
-                   [strategy: :one_for_all]
-                 ]}
+        start:
+          {Supervisor, :start_link,
+           [
+             [
+               {Phoenix.PubSub, name: Dojo.PubSub, adapter: Phoenix.PubSub.Partisan},
+               {Dojo.Gate, name: Dojo.Gate, pubsub_server: Dojo.PubSub, pool_size: 1}
+             ],
+             [strategy: :one_for_all]
+           ]}
       },
       # Dojo.Repo,
       {DNSCluster, query: Application.get_env(:dojo, :dns_cluster_query) || :ignore},
       # Start the Finch HTTP client for sending emails
       {Finch, name: Dojo.Finch},
       Dojo.Cache,
-      
       {Task.Supervisor, name: Dojo.TaskSupervisor},
       {PartitionSupervisor, child_spec: DynamicSupervisor, name: Dojo.Class},
       # Start a worker by calling: Dojo.Worker.start_link(arg)
@@ -42,7 +39,6 @@ defmodule Dojo.Application do
       # Start to serve requests, typically the last entry
       DojoWeb.Endpoint,
       Dojo.Cluster.NetworkMonitor
-      
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
@@ -66,11 +62,27 @@ defmodule Dojo.Application do
         error
     end
 
-    #Supervisor.start_link(children, opts)
+    # Supervisor.start_link(children, opts)
   end
 
   # Tell Phoenix to update the endpoint configuration
   # whenever the application is updated.
+  @impl true
+  def prep_stop(state) do
+    # Disable the discovery agent first — this synchronously waits for any
+    # in-flight lookup/2 to finish, then prevents further lookups.
+    # Without this, a lookup could send a TTL=120 announcement immediately
+    # after our TTL=0 goodbye, undoing it.
+    try do
+      :partisan_peer_discovery_agent.disable()
+    catch
+      _, _ -> :ok
+    end
+
+    Dojo.Cluster.MDNS.Discovery.goodbye()
+    state
+  end
+
   @impl true
   def config_change(changed, _new, removed) do
     DojoWeb.Endpoint.config_change(changed, removed)

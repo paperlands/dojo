@@ -3,10 +3,18 @@ defmodule Dojo.Cluster.MDNS.Discovery do
 
   require Logger
 
-  @mdns_addr   {224, 0, 0, 251}
-  @mdns_port   5353
+  @mdns_addr {224, 0, 0, 251}
+  @mdns_port 5353
   @dns_type_ptr 12
   @dns_type_txt 16
+
+  # seconds — evict peers unseen for this long
+  @peer_ttl 30
+  # send multiple goodbyes for WiFi multicast reliability
+  @goodbye_count 2
+  # ms between goodbye packets
+  @goodbye_interval 250
+  @service_fqdn "_erlang._tcp.local"
 
   # ── init/1 ──────────────────────────────────────────────────────────────────
 
@@ -14,20 +22,20 @@ defmodule Dojo.Cluster.MDNS.Discovery do
   def init(opts) do
     own_name = partisan_own_name()
     own_port = partisan_own_port()
-    service  = Map.get(opts, :service, "_erlang._tcp.local")
-    timeout  = Map.get(opts, :timeout_ms, 2_000)
+    service = Map.get(opts, :service, "_erlang._tcp.local")
+    timeout = Map.get(opts, :timeout_ms, 2_000)
 
     with {:ok, socket} <- open_socket() do
       ifaces = routable_ipv4_addrs()
       join_multicast(socket, ifaces)
 
       state = %{
-        socket:   socket,
+        socket: socket,
         own_name: own_name,
         own_port: own_port,
-        service:  service,
-        timeout:  timeout,
-        cache:    %{}
+        service: service,
+        timeout: timeout,
+        cache: %{}
       }
 
       # Boot burst
@@ -39,22 +47,20 @@ defmodule Dojo.Cluster.MDNS.Discovery do
         end)
       end)
 
-
       {:ok, state}
     end
   end
-
-
 
   # ── lookup/2 ────────────────────────────────────────────────────────────────
 
   @impl true
   def lookup(%{socket: _socket, own_name: _own_name} = state, _timeout) do
+    state = %{state | cache: sweep_cache(state.cache)}
     announce(state)
-    
+
     # Parse buffered packets instead of flushing
     cache = collect_buffered(state)
-    
+
     send_query(state)
     cache = collect(%{state | cache: cache}, deadline(state.timeout))
 
@@ -63,29 +69,54 @@ defmodule Dojo.Cluster.MDNS.Discovery do
   rescue
     e ->
       Logger.error("[mDNS] lookup crashed: #{inspect(e)}")
-    {:error, e, state}
+      {:error, e, state}
   end
 
-# Drain buffered packets but PARSE them instead of discarding.
-# These are announcements that arrived between lookup cycles.
-defp collect_buffered(%{socket: socket, own_name: own_name, service: service} = state) do
-  case :gen_udp.recv(socket, 0, 0) do
-    {:ok, {src_ip, _port, raw}} ->
-      cache = case Dojo.Cluster.MDNS.Packet.decode(raw) do
-                {:ok, records} ->
-                  peers = extract_peers(records, service, src_ip)
-                  Enum.reduce(peers, state.cache, fn {name, ip, port}, acc ->
-                    if name == own_name, do: acc,
-                      else: Map.put(acc, name, %{name: name, ip: ip, port: port})
-                  end)
-                _ -> state.cache
-              end
-      collect_buffered(%{state | cache: cache})
+  # ── Public API: goodbye / reannounce ──────────────────────────────────────
+  # These open ephemeral sockets and read identity from config/env,
+  # independent of the callback state held by Partisan's gen_statem.
 
-    {:error, :timeout} -> state.cache
-    {:error, _} -> state.cache
+  @doc """
+  Send mDNS goodbye packets (TTL=0) to tell peers we're departing.
+  Sends `@goodbye_count` rounds with `@goodbye_interval` ms gap.
+  """
+  def goodbye(ips \\ routable_ipv4_addrs()) do
+    send_announcements(ips, 0, @goodbye_count, @goodbye_interval)
   end
-end
+
+  @doc """
+  Send mDNS re-announcement (TTL=120) on the given IPs.
+  Used by NetworkMonitor after an IP change to make the node
+  visible on the new network without waiting for the next lookup cycle.
+  """
+  def reannounce(ips \\ routable_ipv4_addrs()) do
+    send_announcements(ips, 120, 1, 0)
+  end
+
+  # Drain buffered packets but PARSE them instead of discarding.
+  # These are announcements that arrived between lookup cycles.
+  defp collect_buffered(%{socket: socket, own_name: own_name, service: service} = state) do
+    case :gen_udp.recv(socket, 0, 0) do
+      {:ok, {src_ip, _port, raw}} ->
+        cache =
+          case Dojo.Cluster.MDNS.Packet.decode(raw) do
+            {:ok, records} ->
+              update_cache(state.cache, records, own_name, service, src_ip)
+
+            _ ->
+              state.cache
+          end
+
+        collect_buffered(%{state | cache: cache})
+
+      {:error, :timeout} ->
+        state.cache
+
+      {:error, _} ->
+        state.cache
+    end
+  end
+
   # ── Socket — active: false ──────────────────────────────────────────────────
   # active: false means NO messages land in the gen_statem mailbox between
   # lookup cycles. We pull packets explicitly with :gen_udp.recv/3.
@@ -93,27 +124,35 @@ end
   defp open_socket do
     base = [
       :binary,
-      active:         false,    # ← KEY: we control reads, nothing leaks to gen_statem
-      reuseaddr:      true,
-      multicast_loop: true,     # same-machine discovery
-      multicast_ttl:  255,
-      ip:             {0, 0, 0, 0}
+      # ← KEY: we control reads, nothing leaks to gen_statem
+      active: false,
+      reuseaddr: true,
+      # same-machine discovery
+      multicast_loop: true,
+      multicast_ttl: 255,
+      ip: {0, 0, 0, 0}
     ]
 
-    opts = case :gen_udp.open(0, [reuseport: true]) do
-             {:ok, s} -> :gen_udp.close(s); [{:reuseport, true} | base]
-             _        -> base
-           end
+    opts =
+      case :gen_udp.open(0, reuseport: true) do
+        {:ok, s} ->
+          :gen_udp.close(s)
+          [{:reuseport, true} | base]
+
+        _ ->
+          base
+      end
 
     case :gen_udp.open(@mdns_port, opts) do
       {:ok, socket} ->
         Logger.debug("[mDNS] socket opened on *:#{@mdns_port}")
         {:ok, socket}
+
       {:error, reason} = err ->
         Logger.error("[mDNS] socket open failed: #{inspect(reason)}")
         err
     end
-end
+  end
 
   defp join_multicast(socket, ifaces) do
     Enum.each(ifaces, fn ip ->
@@ -131,32 +170,33 @@ end
   defp collect(%{socket: socket, own_name: own_name, service: service} = state, deadline) do
     now = System.monotonic_time(:millisecond)
     remaining = deadline - now
+
     if remaining <= 0 do
       state.cache
     else
       case :gen_udp.recv(socket, 0, remaining) do
         {:ok, {src_ip, _port, raw}} ->
-          cache = case classify_and_decode(raw, service) do
-                    {:response, records} ->
-                      # Normal response — extract peers
-                      peers = extract_peers(records, service, src_ip)
-                      Enum.reduce(peers, state.cache, fn {name, ip, port}, acc ->
-                        if name == own_name, do: acc,
-                          else: Map.put(acc, name, %{name: name, ip: ip, port: port})
-                      end)
+          cache =
+            case classify_and_decode(raw, service) do
+              {:response, records} ->
+                update_cache(state.cache, records, own_name, service, src_ip)
 
-                    :query ->
-                      # Someone is querying — announce immediately so they hear us
-                      announce(state)
-                      state.cache
+              :query ->
+                # Someone is querying — announce immediately so they hear us
+                announce(state)
+                state.cache
 
-                    :unknown ->
-                      state.cache
-                  end
+              :unknown ->
+                state.cache
+            end
+
           collect(%{state | cache: cache}, deadline)
 
-        {:error, :timeout} -> state.cache
-        {:error, _} -> state.cache
+        {:error, :timeout} ->
+          state.cache
+
+        {:error, _} ->
+          state.cache
       end
     end
   end
@@ -175,10 +215,11 @@ end
           _ -> :unknown
         end
 
-      _ -> :unknown
+      _ ->
+        :unknown
     end
   end
-  
+
   defp announce(%{socket: sock, own_name: name, own_port: port, service: svc}) do
     name_str = Atom.to_string(name)
     addrs = routable_ipv4_addrs()
@@ -194,6 +235,7 @@ end
 
   defp send_query(%{socket: sock, service: svc}) do
     pkt = Dojo.Cluster.MDNS.Packet.query(svc)
+
     Enum.each(routable_ipv4_addrs(), fn ip ->
       :inet.setopts(sock, [{:multicast_if, ip}])
       :gen_udp.send(sock, @mdns_addr, @mdns_port, pkt)
@@ -211,17 +253,20 @@ end
     records
     |> Enum.filter(&match?(%{type: @dns_type_ptr, name: ^service}, &1))
     |> Enum.flat_map(fn %{data: {:ptr, instance_fqdn}} ->
-      with kv        <- Map.get(txt_idx, instance_fqdn),
-           true      <- not is_nil(kv),
-           node_str  <- kv_get(kv, "erlang_node"),
-           true      <- is_binary(node_str) and node_str != "",
-           port_str  <- kv_get(kv, "partisan_port"),
-           {port, ""} <- (if is_binary(port_str), do: Integer.parse(port_str), else: :error) do
+      with kv <- Map.get(txt_idx, instance_fqdn),
+           true <- not is_nil(kv),
+           node_str <- kv_get(kv, "erlang_node"),
+           true <- is_binary(node_str) and node_str != "",
+           port_str <- kv_get(kv, "partisan_port"),
+           {port, ""} <- if(is_binary(port_str), do: Integer.parse(port_str), else: :error) do
         [{String.to_atom(node_str), src_ip, port}]
       else
         _ ->
-          Logger.debug("[mDNS] skipping instance #{instance_fqdn} — " <>
-                       "missing/bad TXT records in #{inspect(txt_idx[instance_fqdn])}")
+          Logger.debug(
+            "[mDNS] skipping instance #{instance_fqdn} — " <>
+              "missing/bad TXT records in #{inspect(txt_idx[instance_fqdn])}"
+          )
+
           []
       end
     end)
@@ -230,7 +275,7 @@ end
   defp kv_get(kv, key) do
     case List.keyfind(kv, key, 0) do
       {^key, v} -> v
-      _         -> nil
+      _ -> nil
     end
   end
 
@@ -247,6 +292,74 @@ end
     end
   end
 
+  # ── Cache management ─────────────────────────────────────────────────────────
+
+  @doc false
+  def sweep_cache(cache) do
+    now = System.monotonic_time(:second)
+    Map.filter(cache, fn {_name, %{seen_at: seen_at}} -> now - seen_at < @peer_ttl end)
+  end
+
+  @doc false
+  def update_cache(cache, records, own_name, service, src_ip) do
+    peers = extract_peers(records, service, src_ip)
+    is_goodbye = Enum.all?(records, &(&1.ttl == 0))
+
+    Enum.reduce(peers, cache, fn {name, ip, port}, acc ->
+      cond do
+        name == own_name ->
+          acc
+
+        is_goodbye ->
+          Logger.debug("[mDNS] goodbye received for #{name} — evicting from cache")
+          Map.delete(acc, name)
+
+        true ->
+          Map.put(acc, name, %{
+            name: name,
+            ip: ip,
+            port: port,
+            seen_at: System.monotonic_time(:second)
+          })
+      end
+    end)
+  end
+
+  # ── Ephemeral announcement helpers ─────────────────────────────────────────
+  # Used by goodbye/1 and reannounce/1. Opens a temporary socket,
+  # sends packets, and closes it — independent of the callback socket.
+
+  defp send_announcements(ips, ttl, count, interval) do
+    name_str = Atom.to_string(partisan_own_name())
+    port = partisan_own_port()
+
+    case open_ephemeral_socket() do
+      {:ok, sock} ->
+        try do
+          Enum.each(1..count, fn i ->
+            Enum.each(ips, fn ip ->
+              :inet.setopts(sock, [{:multicast_if, ip}])
+              pkt = Dojo.Cluster.MDNS.Packet.announcement(@service_fqdn, name_str, ip, ttl, port)
+              :gen_udp.send(sock, @mdns_addr, @mdns_port, pkt)
+            end)
+
+            if i < count, do: Process.sleep(interval)
+          end)
+        after
+          :gen_udp.close(sock)
+        end
+
+      {:error, reason} ->
+        Logger.warning("[mDNS] ephemeral socket failed: #{inspect(reason)}")
+    end
+
+    :ok
+  end
+
+  defp open_ephemeral_socket do
+    :gen_udp.open(0, [:binary, multicast_loop: true, multicast_ttl: 255])
+  end
+
   # ── Helpers ──────────────────────────────────────────────────────────────────
   def routable_ipv4_addrs do
     case :inet.getifaddrs() do
@@ -255,21 +368,24 @@ end
         |> Enum.filter(fn {iface_name, opts} ->
           name = to_string(iface_name)
           flags = Keyword.get(opts, :flags, [])
+
           :up in flags and :running in flags and
-          not String.starts_with?(name, "docker") and
-          not String.starts_with?(name, "br-") and
-          not String.starts_with?(name, "veth") and
-          not String.starts_with?(name, "lo")
+            not String.starts_with?(name, "docker") and
+            not String.starts_with?(name, "br-") and
+            not String.starts_with?(name, "veth") and
+            not String.starts_with?(name, "lo")
         end)
         |> Enum.flat_map(fn {_, opts} -> Keyword.get_values(opts, :addr) end)
         |> Enum.filter(fn
-          {127, _, _, _}   -> false
+          {127, _, _, _} -> false
           {169, 254, _, _} -> false
           {a, _, _, _} when is_integer(a) -> true
           _ -> false
         end)
         |> Enum.uniq()
-      _ -> []
+
+      _ ->
+        []
     end
   end
 
@@ -278,10 +394,10 @@ end
     |> List.first()
     |> fmt()
   end
-  
+
   defp deadline(ms), do: System.monotonic_time(:millisecond) + ms
-  defp fmt(nil),      do: ""
-  defp fmt(ip),      do: ip |> :inet.ntoa() |> to_string()
+  defp fmt(nil), do: ""
+  defp fmt(ip), do: ip |> :inet.ntoa() |> to_string()
 
   defp partisan_own_name do
     case System.get_env("PARTISAN_NAME") do
@@ -297,8 +413,9 @@ end
           {n, ""} when n > 0 and n < 65536 -> n
           _ -> 9090
         end
-      _ -> 9090
+
+      _ ->
+        9090
     end
   end
 end
-
