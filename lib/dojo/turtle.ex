@@ -40,7 +40,7 @@ defmodule Dojo.Turtle do
            DojoWeb.Utils.Base64.to_file(path, Path.join([dest_dir, id])),
          ext when byte_size(ext) > 0 <- Path.extname(file) do
       Path.join([
-        Dojo.Cluster.MDNS.Discovery.get_routable_ipv4_addr() <>
+        Dojo.Cluster.MDNS.get_routable_ipv4_addr() <>
           ":#{System.get_env("PORT") || 4000}",
         "frames",
         clan,

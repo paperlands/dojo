@@ -158,7 +158,7 @@ defmodule Dojo.Cluster.MDNS.Packet do
     ptr_rr = rr(service_fqdn, @type_ptr, @class_in, ttl, encode_name(instance_fqdn))
     srv_rdata = <<0::16, 0::16, port::16, encode_name(host_local)::binary>>
     srv_rr = rr(instance_fqdn, @type_srv, @class_flush, ttl, srv_rdata)
-    # 3. ADD partisan_port to TXT
+    # 3. TXT: node identity + port
     txt_rr =
       rr(
         instance_fqdn,
@@ -167,7 +167,7 @@ defmodule Dojo.Cluster.MDNS.Packet do
         ttl,
         encode_txt([
           {"erlang_node", own_name_str},
-          {"partisan_port", Integer.to_string(port)}
+          {"port", Integer.to_string(port)}
         ])
       )
 

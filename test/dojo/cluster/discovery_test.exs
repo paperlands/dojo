@@ -13,7 +13,8 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
   """
   use ExUnit.Case, async: false
 
-  alias Dojo.Cluster.MDNS.{Discovery, Packet}
+  alias Dojo.Cluster.MDNS
+  alias Dojo.Cluster.MDNS.Packet
 
   @mdns_addr {224, 0, 0, 251}
   @mdns_port 5454
@@ -52,11 +53,11 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       assert String.starts_with?(instance, "admin-550e-8400")
     end
 
-    test "TXT record carries erlang_node and partisan_port", %{records: records} do
+    test "TXT record carries erlang_node and port", %{records: records} do
       txt = Enum.find(records, &(&1.type == 16))
       {:txt, kv} = txt.data
       assert List.keyfind(kv, "erlang_node", 0) == {"erlang_node", "admin@550e-8400"}
-      assert List.keyfind(kv, "partisan_port", 0) == {"partisan_port", "9090"}
+      assert List.keyfind(kv, "port", 0) == {"port", "9090"}
     end
 
     test "SRV record carries correct port and target", %{records: records} do
@@ -166,27 +167,27 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
   describe "cache eviction" do
     test "fresh entry survives sweep" do
       cache = peer_cache(:alive, now())
-      swept = Discovery.sweep_cache(cache)
+      swept = MDNS.sweep_cache(cache)
       assert Map.has_key?(swept, :alive)
     end
 
     test "entry at TTL-1 (29s old) survives" do
       cache = peer_cache(:borderline, now() - (@peer_ttl - 1))
-      assert Map.has_key?(Discovery.sweep_cache(cache), :borderline)
+      assert Map.has_key?(MDNS.sweep_cache(cache), :borderline)
     end
 
     test "entry at TTL (30s old) is evicted" do
       cache = peer_cache(:expired, now() - @peer_ttl)
-      assert Discovery.sweep_cache(cache) == %{}
+      assert MDNS.sweep_cache(cache) == %{}
     end
 
     test "entry well beyond TTL (120s old) is evicted" do
       cache = peer_cache(:ancient, now() - 120)
-      assert Discovery.sweep_cache(cache) == %{}
+      assert MDNS.sweep_cache(cache) == %{}
     end
 
     test "empty cache sweeps to empty" do
-      assert Discovery.sweep_cache(%{}) == %{}
+      assert MDNS.sweep_cache(%{}) == %{}
     end
 
     test "mixed cache: only stale entries removed" do
@@ -196,7 +197,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
         |> Map.merge(peer_cache(:stale, now() - 31))
         |> Map.merge(peer_cache(:ancient, now() - 120))
 
-      swept = Discovery.sweep_cache(cache)
+      swept = MDNS.sweep_cache(cache)
       assert Map.has_key?(swept, :fresh)
       assert Map.has_key?(swept, :recent)
       refute Map.has_key?(swept, :stale)
@@ -210,13 +211,13 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       # Peer B crashes — SIGKILL, OOM, battery death — no goodbye sent.
       # Peer A's cache retains B's entry until @peer_ttl elapses without refresh.
       cache = peer_cache(:"crashed@192.168.1.50", now() - @peer_ttl, {192, 168, 1, 50})
-      assert Discovery.sweep_cache(cache) == %{}
+      assert MDNS.sweep_cache(cache) == %{}
     end
 
     test "peer refreshed just before TTL boundary survives" do
       # Same peer, but it managed to announce 1 second before eviction.
       cache = peer_cache(:"crashed@192.168.1.50", now() - (@peer_ttl - 1), {192, 168, 1, 50})
-      assert map_size(Discovery.sweep_cache(cache)) == 1
+      assert map_size(MDNS.sweep_cache(cache)) == 1
     end
 
     test "sudden network partition: all peers on a subnet go silent" do
@@ -230,7 +231,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
         |> Map.merge(peer_cache(:"node3@192.168.1.12", partition_time, {192, 168, 1, 12}))
         |> Map.merge(peer_cache(:"node4@10.0.0.5", now() - 2, {10, 0, 0, 5}))
 
-      swept = Discovery.sweep_cache(cache)
+      swept = MDNS.sweep_cache(cache)
       assert map_size(swept) == 1
       assert Map.has_key?(swept, :"node4@10.0.0.5")
     end
@@ -240,7 +241,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       # the cache result is the same: the peer disappears.
       # Goodbye just makes it faster (immediate on receipt vs. waiting TTL).
       stale = peer_cache(:departed, now() - @peer_ttl)
-      assert Discovery.sweep_cache(stale) == %{}
+      assert MDNS.sweep_cache(stale) == %{}
     end
 
     test "cache correctly handles sequential peer departures" do
@@ -253,7 +254,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
         |> Map.merge(peer_cache(:still_here, now() - 10))
         |> Map.merge(peer_cache(:just_arrived, now()))
 
-      swept = Discovery.sweep_cache(cache)
+      swept = MDNS.sweep_cache(cache)
       assert map_size(swept) == 2
       assert Map.has_key?(swept, :still_here)
       assert Map.has_key?(swept, :just_arrived)
@@ -279,7 +280,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       cache = peer_cache(@peer_atom, now(), @peer_ip)
       assert Map.has_key?(cache, @peer_atom)
 
-      updated = Discovery.update_cache(cache, records, @own_name, @service, @peer_ip)
+      updated = MDNS.update_cache(cache, records, @own_name, @service, @peer_ip)
       refute Map.has_key?(updated, @peer_atom), "goodbye should evict peer from cache"
     end
 
@@ -287,7 +288,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       ann_pkt = Packet.announcement(@service, @peer_name, @peer_ip, 120, 9090)
       {:ok, records} = Packet.decode(ann_pkt)
 
-      updated = Discovery.update_cache(%{}, records, @own_name, @service, @peer_ip)
+      updated = MDNS.update_cache(%{}, records, @own_name, @service, @peer_ip)
       assert Map.has_key?(updated, @peer_atom)
       assert updated[@peer_atom].ip == @peer_ip
       assert updated[@peer_atom].port == 9090
@@ -298,7 +299,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       {:ok, records} = Packet.decode(ann_pkt)
 
       old_cache = peer_cache(@peer_atom, now() - 20, @peer_ip)
-      updated = Discovery.update_cache(old_cache, records, @own_name, @service, @peer_ip)
+      updated = MDNS.update_cache(old_cache, records, @own_name, @service, @peer_ip)
 
       assert updated[@peer_atom].seen_at > old_cache[@peer_atom].seen_at
     end
@@ -307,7 +308,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       ann_pkt = Packet.announcement(@service, Atom.to_string(@own_name), @loopback, 120, 9090)
       {:ok, records} = Packet.decode(ann_pkt)
 
-      updated = Discovery.update_cache(%{}, records, @own_name, @service, @loopback)
+      updated = MDNS.update_cache(%{}, records, @own_name, @service, @loopback)
       assert updated == %{}
     end
 
@@ -315,7 +316,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       bye_pkt = Packet.announcement(@service, @peer_name, @peer_ip, 0, 9090)
       {:ok, records} = Packet.decode(bye_pkt)
 
-      updated = Discovery.update_cache(%{}, records, @own_name, @service, @peer_ip)
+      updated = MDNS.update_cache(%{}, records, @own_name, @service, @peer_ip)
       assert updated == %{}
     end
 
@@ -327,7 +328,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
         peer_cache(@peer_atom, now(), @peer_ip)
         |> Map.merge(peer_cache(:"admin@peer-c", now(), {192, 168, 1, 51}))
 
-      updated = Discovery.update_cache(cache, records, @own_name, @service, @peer_ip)
+      updated = MDNS.update_cache(cache, records, @own_name, @service, @peer_ip)
       refute Map.has_key?(updated, @peer_atom)
       assert Map.has_key?(updated, :"admin@peer-c")
     end
@@ -436,7 +437,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
   describe "build_known_answers" do
     test "fresh cache entry (< half TTL age) is included" do
       cache = peer_cache(:"admin@fresh-peer", now() - 10)
-      answers = Discovery.build_known_answers(cache, @service)
+      answers = MDNS.build_known_answers(cache, @service)
       assert length(answers) == 1
 
       [{instance_fqdn, remaining_ttl}] = answers
@@ -448,26 +449,26 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
     test "stale cache entry (> half TTL age) is excluded" do
       # seen 70s ago → remaining = 120 - 70 = 50, which is ≤ 60 (half of 120)
       cache = peer_cache(:"admin@stale-peer", now() - 70)
-      answers = Discovery.build_known_answers(cache, @service)
+      answers = MDNS.build_known_answers(cache, @service)
       assert answers == []
     end
 
     test "entry at exactly half TTL boundary is excluded" do
       # seen 60s ago → remaining = 60, which is NOT > 60
       cache = peer_cache(:admin@boundary, now() - 60)
-      answers = Discovery.build_known_answers(cache, @service)
+      answers = MDNS.build_known_answers(cache, @service)
       assert answers == []
     end
 
     test "entry just inside half TTL boundary is included" do
       # seen 59s ago → remaining = 61, which IS > 60
       cache = peer_cache(:"admin@just-inside", now() - 59)
-      answers = Discovery.build_known_answers(cache, @service)
+      answers = MDNS.build_known_answers(cache, @service)
       assert length(answers) == 1
     end
 
     test "empty cache produces no known answers" do
-      assert Discovery.build_known_answers(%{}, @service) == []
+      assert MDNS.build_known_answers(%{}, @service) == []
     end
 
     test "mixed cache: only entries with remaining TTL > half are included" do
@@ -478,7 +479,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
         # 100s old → remaining=20 ≤ 60 → excluded
         |> Map.merge(peer_cache(:admin@stale, now() - 100))
 
-      answers = Discovery.build_known_answers(cache, @service)
+      answers = MDNS.build_known_answers(cache, @service)
       assert length(answers) == 2
 
       fqdns = Enum.map(answers, fn {fqdn, _} -> fqdn end)
@@ -489,7 +490,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
 
     test "instance FQDN correctly normalizes @ and - in node name" do
       cache = peer_cache(:"admin@550e-8400-dead-beef", now())
-      [{fqdn, _}] = Discovery.build_known_answers(cache, @service)
+      [{fqdn, _}] = MDNS.build_known_answers(cache, @service)
       # @ and - both become -
       assert String.starts_with?(fqdn, "admin-550e-8400-dead-beef")
       assert String.ends_with?(fqdn, ".#{@service}")
@@ -510,7 +511,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
 
       pre_seen = %{peer_a: seen}
 
-      result = Discovery.apply_poof(cache, pre_seen)
+      result = MDNS.apply_poof(cache, pre_seen)
       assert result[:peer_a].missed_queries == 1
     end
 
@@ -522,7 +523,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       # pre_seen has older value — peer was refreshed since snapshot
       pre_seen = %{peer_a: now() - 10}
 
-      result = Discovery.apply_poof(cache, pre_seen)
+      result = MDNS.apply_poof(cache, pre_seen)
       assert result[:peer_a].missed_queries == 0
     end
 
@@ -535,7 +536,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
 
       pre_seen = %{peer_a: seen}
 
-      result = Discovery.apply_poof(cache, pre_seen)
+      result = MDNS.apply_poof(cache, pre_seen)
       refute Map.has_key?(result, :peer_a), "peer should be evicted at missed_queries >= 2"
     end
 
@@ -548,7 +549,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
 
       pre_seen = %{peer_a: seen}
 
-      result = Discovery.apply_poof(cache, pre_seen)
+      result = MDNS.apply_poof(cache, pre_seen)
       assert Map.has_key?(result, :peer_a)
       assert result[:peer_a].missed_queries == 1
     end
@@ -566,7 +567,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
 
       pre_seen = %{}
 
-      result = Discovery.apply_poof(cache, pre_seen)
+      result = MDNS.apply_poof(cache, pre_seen)
       assert result[:new_peer].missed_queries == 0
     end
 
@@ -582,7 +583,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       # :dead was not refreshed, :alive was refreshed (seen_at changed), :fresh is new
       pre_seen = %{dead: seen_old, alive: now() - 5}
 
-      result = Discovery.apply_poof(cache, pre_seen)
+      result = MDNS.apply_poof(cache, pre_seen)
       refute Map.has_key?(result, :dead), "dead peer (missed=2) should be evicted"
       assert result[:alive].missed_queries == 0, "alive peer should have missed reset"
       assert Map.has_key?(result, :fresh), "fresh peer should survive"
@@ -606,9 +607,9 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       pre_seen = %{slow_death: seen}
 
       # Would survive sweep_cache
-      assert Map.has_key?(Discovery.sweep_cache(cache), :slow_death)
+      assert Map.has_key?(MDNS.sweep_cache(cache), :slow_death)
       # But POOF evicts it
-      refute Map.has_key?(Discovery.apply_poof(cache, pre_seen), :slow_death)
+      refute Map.has_key?(MDNS.apply_poof(cache, pre_seen), :slow_death)
     end
 
     test "cache entries without missed_queries field default to 0" do
@@ -617,7 +618,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       cache = %{:legacy => %{name: :legacy, ip: @loopback, port: 9090, seen_at: seen}}
       pre_seen = %{legacy: seen}
 
-      result = Discovery.apply_poof(cache, pre_seen)
+      result = MDNS.apply_poof(cache, pre_seen)
       assert result[:legacy].missed_queries == 1
     end
   end
@@ -672,7 +673,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
   describe "exponential backoff schedule (advance_announce_schedule)" do
     test "doubles the interval" do
       state = %{announce_interval: 1, next_announce_at: 0}
-      result = Discovery.advance_announce_schedule(state, 100)
+      result = MDNS.advance_announce_schedule(state, 100)
       assert result.announce_interval == 2
     end
 
@@ -681,7 +682,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
 
       {intervals, _} =
         Enum.map_reduce(1..7, state, fn _, s ->
-          new_s = Discovery.advance_announce_schedule(s, 0)
+          new_s = MDNS.advance_announce_schedule(s, 0)
           {new_s.announce_interval, new_s}
         end)
 
@@ -690,18 +691,18 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
 
     test "next_announce_at is set to now + new_interval" do
       state = %{announce_interval: 4, next_announce_at: 0}
-      result = Discovery.advance_announce_schedule(state, 1000)
+      result = MDNS.advance_announce_schedule(state, 1000)
       assert result.next_announce_at == 1000 + 8
       assert result.announce_interval == 8
     end
 
     test "cap at 60 seconds" do
       state = %{announce_interval: 32, next_announce_at: 0}
-      result = Discovery.advance_announce_schedule(state, 0)
+      result = MDNS.advance_announce_schedule(state, 0)
       assert result.announce_interval == 60
 
       # Already at cap — stays at 60
-      result2 = Discovery.advance_announce_schedule(result, 100)
+      result2 = MDNS.advance_announce_schedule(result, 100)
       assert result2.announce_interval == 60
     end
   end
@@ -717,10 +718,11 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
   describe "goodbye packet delivery" do
     test "sends @goodbye_count TTL=0 packets on loopback" do
       with_multicast_listener(fn sock ->
-        Discovery.goodbye([@loopback])
+        MDNS.goodbye([@loopback])
         packets = collect_packets(sock, 800)
 
-        own_name = System.get_env("PARTISAN_NAME")
+        {own_name_atom, _port} = adapter().identity()
+        own_name = Atom.to_string(own_name_atom)
 
         # Filter to our goodbye packets (TTL=0, matching our node name)
         goodbyes =
@@ -744,7 +746,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
     test "goodbye packets are correctly spaced" do
       with_multicast_listener(fn sock ->
         t0 = System.monotonic_time(:millisecond)
-        Discovery.goodbye([@loopback])
+        MDNS.goodbye([@loopback])
         elapsed = System.monotonic_time(:millisecond) - t0
 
         # goodbye sends @goodbye_count packets with @goodbye_interval ms between.
@@ -761,10 +763,11 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
   describe "reannounce packet delivery" do
     test "sends a single TTL=120 announcement on loopback" do
       with_multicast_listener(fn sock ->
-        Discovery.reannounce([@loopback])
+        MDNS.reannounce([@loopback])
         packets = collect_packets(sock, 400)
 
-        own_name = System.get_env("PARTISAN_NAME")
+        {own_name_atom, _port} = adapter().identity()
+        own_name = Atom.to_string(own_name_atom)
 
         announcements =
           packets
@@ -785,13 +788,14 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
   describe "goodbye vs reannounce: same structure, different TTL" do
     test "both produce identical record structure" do
       with_multicast_listener(fn sock ->
-        Discovery.reannounce([@loopback])
+        MDNS.reannounce([@loopback])
         announce_packets = collect_packets(sock, 300)
 
-        Discovery.goodbye([@loopback])
+        MDNS.goodbye([@loopback])
         goodbye_packets = collect_packets(sock, 600)
 
-        own_name = System.get_env("PARTISAN_NAME")
+        {own_name_atom, _port} = adapter().identity()
+        own_name = Atom.to_string(own_name_atom)
 
         [ann | _] =
           announce_packets
@@ -821,6 +825,10 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
   end
 
   # ── Helpers ─────────────────────────────────────────────────────────────
+
+  defp adapter do
+    Application.get_env(:dojo, :cluster_adapter, Dojo.Cluster.MDNS.PartisanAdapter)
+  end
 
   defp now, do: System.monotonic_time(:second)
 

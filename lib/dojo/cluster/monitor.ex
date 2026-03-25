@@ -22,7 +22,7 @@ defmodule Dojo.Cluster.NetworkMonitor do
 
   @impl true
   def init(_opts) do
-    current_ips = Dojo.Cluster.MDNS.Discovery.routable_ipv4_addrs()
+    current_ips = Dojo.Cluster.MDNS.routable_ipv4_addrs()
     port = partisan_port()
 
     Logger.info(
@@ -35,7 +35,7 @@ defmodule Dojo.Cluster.NetworkMonitor do
 
   @impl true
   def handle_info(:poll, %{ips: old_ips, port: port} = state) do
-    new_ips = Dojo.Cluster.MDNS.Discovery.routable_ipv4_addrs()
+    new_ips = Dojo.Cluster.MDNS.routable_ipv4_addrs()
 
     state =
       if MapSet.new(new_ips) != MapSet.new(old_ips) do
@@ -60,7 +60,7 @@ defmodule Dojo.Cluster.NetworkMonitor do
     # 1. Goodbye on OLD IPs — tell peers on the departing network we're leaving.
     #    Must happen BEFORE config update so packets carry the recognizable identity.
     #    Sends @goodbye_count TTL=0 packets with @goodbye_interval ms gap.
-    Dojo.Cluster.MDNS.Discovery.goodbye(old_ips)
+    Dojo.Cluster.MDNS.goodbye(old_ips)
 
     new_addrs = Enum.map(new_ips, fn ip -> %{ip: ip, port: port} end)
 
@@ -77,7 +77,7 @@ defmodule Dojo.Cluster.NetworkMonitor do
 
     # 5. Re-announce on NEW IPs — make us visible on the new network immediately
     #    instead of waiting up to 5s for the next mDNS lookup cycle.
-    Dojo.Cluster.MDNS.Discovery.reannounce(new_ips)
+    Dojo.Cluster.MDNS.reannounce(new_ips)
   end
 
   defp restart_listeners do

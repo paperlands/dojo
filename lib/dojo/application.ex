@@ -7,6 +7,8 @@ defmodule Dojo.Application do
 
   @impl true
   def start(_type, _args) do
+    adapter = Application.get_env(:dojo, :cluster_adapter, Dojo.Cluster.MDNS.PartisanAdapter)
+
     children = [
       DojoWeb.Telemetry,
       # 3. The Cluster Supervisor (Libcluster)
@@ -38,6 +40,7 @@ defmodule Dojo.Application do
       # {Dojo.Worker, arg},
       # Start to serve requests, typically the last entry
       DojoWeb.Endpoint,
+      {Dojo.Cluster.MDNS, adapter: adapter, poll_interval: 5_000},
       Dojo.Cluster.NetworkMonitor
     ]
 
@@ -79,7 +82,7 @@ defmodule Dojo.Application do
       _, _ -> :ok
     end
 
-    Dojo.Cluster.MDNS.Discovery.goodbye()
+    Dojo.Cluster.MDNS.goodbye()
     state
   end
 

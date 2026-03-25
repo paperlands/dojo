@@ -35,3 +35,5 @@ config :phoenix, :plug_init_mode, :runtime
 config :phoenix_live_view,
   # Enable helpful, but potentially expensive runtime checks
   enable_expensive_runtime_checks: true
+
+config :dojo, :cluster_adapter, Dojo.Cluster.MDNS.DistAdapter

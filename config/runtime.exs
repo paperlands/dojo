@@ -57,10 +57,12 @@ listen_options =
   end
 
 listen_addrs =
-  case Dojo.Cluster.MDNS.Discovery.routable_ipv4_addrs() do
+  case Dojo.Cluster.MDNS.routable_ipv4_addrs() do
     [] -> [%{ip: {127, 0, 0, 1}, port: partisan_port}]
     ips -> Enum.map(ips, fn ip -> %{ip: ip, port: partisan_port} end)
   end
+
+config :dojo, :cluster_adapter, Dojo.Cluster.MDNS.PartisanAdapter
 
 # Identity model uses UUIDs, not IPs. The mDNS layer is the IP-discovery plane. Partisan's TCP acceptor just needs to accept from anywhere.
 # UUID identity:  admin@550e8400-...        ← stable, survives roaming
@@ -69,7 +71,7 @@ listen_addrs =
 config :partisan,
   peer_discovery: %{
     enabled: true,
-    type: Dojo.Cluster.MDNS.Discovery,
+    type: Dojo.Cluster.MDNS.PartisanAdapter,
     # wait for network stack
     initial_delay: 2_000,
     # lookup/2 called every 5s
