@@ -42,4 +42,54 @@ defmodule Dojo.Cluster.MDNS.DistAdapter do
 
   @impl Dojo.Cluster.Discovery
   def supports_node_monitor?, do: true
+
+  @impl Dojo.Cluster.Discovery
+  def diag do
+    %{
+      identity: identity(),
+      node: node(),
+      alive: Node.alive?(),
+      connected_nodes: Node.list(),
+      hidden_nodes: Node.list(:hidden),
+      cookie: Node.get_cookie(),
+      net_kernel: net_kernel_info(),
+      epmd: epmd_info()
+    }
+  end
+
+  defp net_kernel_info do
+    case Process.whereis(:net_kernel) do
+      nil ->
+        %{status: :not_running}
+
+      pid ->
+        %{
+          status: :running,
+          pid: pid,
+          dist_listen: safe(fn -> :net_kernel.get_state() end)
+        }
+    end
+  end
+
+  defp epmd_info do
+    safe(fn ->
+      {:ok, hostname} = :inet.gethostname()
+
+      case :erl_epmd.names(hostname) do
+        {:ok, names} ->
+          Enum.map(names, fn {name, port} -> %{name: to_string(name), port: port} end)
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end)
+  end
+
+  defp safe(fun) do
+    fun.()
+  rescue
+    e -> {:error, Exception.message(e)}
+  catch
+    :exit, reason -> {:error, {:exit, reason}}
+  end
 end

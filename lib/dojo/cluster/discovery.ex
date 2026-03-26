@@ -16,5 +16,8 @@ defmodule Dojo.Cluster.Discovery do
   @doc "Whether the adapter supports ERTS `Node.monitor/2` for reactive failover."
   @callback supports_node_monitor?() :: boolean()
 
-  @optional_callbacks [supports_node_monitor?: 0]
+  @doc "Return transport-layer diagnostic state (connections, views, config)."
+  @callback diag() :: map()
+
+  @optional_callbacks [supports_node_monitor?: 0, diag: 0]
 end

@@ -26,10 +26,13 @@ defmodule Dojo.Cluster.MDNS do
   @jitter_max_ms 120
   # Standard announcement TTL — used for known-answer suppression calculations
   @announcement_ttl 120
-  # POOF (RFC 6762 §10.5): evict after this many consecutive missed query cycles
-  @poof_min_missed 2
-  # Exponential backoff: cap proactive announcement interval (seconds)
-  @max_announce_interval_s 60
+  # POOF (RFC 6762 §10.5): evict after this many consecutive missed query cycles.
+  # Invariant: @poof_min_missed * poll_interval_s > @max_announce_interval_s
+  # With poll_interval=5s: 4 * 5 = 20s > 15s ✓
+  @poof_min_missed 4
+  # Exponential backoff: cap proactive announcement interval (seconds).
+  # Kept below POOF tolerance so peers are never evicted between proactive announces.
+  @max_announce_interval_s 15
   # Probe: wait time (ms) for conflict responses (RFC 6762 §8.1)
   @probe_wait_ms 250
 
@@ -44,6 +47,13 @@ defmodule Dojo.Cluster.MDNS do
     GenServer.call(__MODULE__, :cached_peers)
   catch
     :exit, _ -> []
+  end
+
+  @doc "Return a diagnostic snapshot of all observable mDNS state."
+  def diag do
+    GenServer.call(__MODULE__, :diag)
+  catch
+    :exit, _ -> {:error, :not_running}
   end
 
   @doc """
@@ -103,6 +113,7 @@ defmodule Dojo.Cluster.MDNS do
     {name, port} = adapter.identity()
     service = Keyword.get(opts, :service, @service_fqdn)
     timeout = Keyword.get(opts, :timeout, 2_000)
+    debug = Keyword.get(opts, :debug, false)
 
     state = %{
       socket: nil,
@@ -116,8 +127,11 @@ defmodule Dojo.Cluster.MDNS do
       next_announce_at: System.monotonic_time(:second),
       poll_interval: poll_interval,
       socket_retries: 0,
-      monitored_nodes: MapSet.new()
+      monitored_nodes: MapSet.new(),
+      debug: debug
     }
+
+    if debug, do: log_interface_report()
 
     case open_socket() do
       {:ok, socket} ->
@@ -165,6 +179,54 @@ defmodule Dojo.Cluster.MDNS do
     {:reply, {state.own_name, state.own_port}, state}
   end
 
+  def handle_call(:diag, _from, state) do
+    socket_info =
+      if state.socket do
+        case :inet.sockname(state.socket) do
+          {:ok, {addr, port}} -> %{bound: {addr, port}, status: :open}
+          _ -> %{status: :unknown}
+        end
+      else
+        %{status: :closed, retries: state.socket_retries}
+      end
+
+    diag = %{
+      socket: socket_info,
+      own_name: state.own_name,
+      own_port: state.own_port,
+      adapter: state.adapter,
+      cache: state.cache,
+      cache_size: map_size(state.cache),
+      interfaces: interface_report(),
+      monitored_nodes: state.monitored_nodes,
+      announce_interval: state.announce_interval,
+      next_announce_at: state.next_announce_at,
+      poll_interval: state.poll_interval,
+      debug: state.debug
+    }
+
+    {:reply, diag, state}
+  end
+
+  @impl true
+  def handle_cast({:rejoin_multicast, new_ips}, %{socket: socket} = state)
+      when not is_nil(socket) do
+    Logger.info("[mDNS] rejoining multicast on #{inspect(Enum.map(new_ips, &fmt/1))}")
+
+    # Drop existing memberships (best-effort — may fail if already dropped)
+    Enum.each(routable_ipv4_addrs(), fn ip ->
+      :inet.setopts(socket, [{:drop_membership, {@mdns_addr, ip}}])
+    end)
+
+    join_multicast(socket, new_ips)
+    {:noreply, state}
+  end
+
+  def handle_cast({:rejoin_multicast, _new_ips}, state) do
+    # Socket not open — will rejoin on next recovery
+    {:noreply, state}
+  end
+
   @impl true
   def handle_info(:poll, %{socket: nil} = state) do
     case open_socket() do
@@ -205,17 +267,36 @@ defmodule Dojo.Cluster.MDNS do
     # Snapshot seen_at before collection for POOF tracking
     pre_seen = Map.new(state.cache, fn {k, %{seen_at: s}} -> {k, s} end)
 
+    # Track whether any query was seen this cycle (for announce backoff reset)
+    Process.put(:mdns_query_seen, false)
+
     # Parse buffered packets instead of flushing
     cache = collect_buffered(state)
 
     send_query(%{state | cache: cache})
     cache = collect(%{state | cache: cache}, deadline(state.timeout))
 
+    # Reset announce backoff if peers are actively querying
+    state =
+      if Process.get(:mdns_query_seen) do
+        now_s = System.monotonic_time(:second)
+        %{state | announce_interval: 1, next_announce_at: now_s}
+      else
+        state
+      end
+
     # POOF: track missed queries and evict unresponsive peers
     cache = apply_poof(cache, pre_seen)
 
     # Notify adapter of discovered peers
     peers = cache |> Map.values() |> Enum.map(&{&1.name, &1.ip, &1.port})
+
+    if state.debug do
+      Logger.info(
+        "[mDNS:diag] poll cycle complete — cache=#{map_size(cache)} peers=#{inspect(Enum.map(peers, &elem(&1, 0)))}"
+      )
+    end
+
     state.adapter.on_peers_discovered(peers)
 
     peer_names = Enum.map(peers, &elem(&1, 0))
@@ -319,19 +400,21 @@ defmodule Dojo.Cluster.MDNS do
       ip: {0, 0, 0, 0}
     ]
 
-    opts =
+    {reuseport?, opts} =
       case :gen_udp.open(0, [:inet, reuseport: true]) do
         {:ok, s} ->
           :gen_udp.close(s)
-          [{:reuseport, true} | base]
+          {true, [{:reuseport, true} | base]}
 
         _ ->
-          base
+          {false, base}
       end
+
+    Logger.info("[mDNS] opening socket on *:#{@mdns_port} reuseport=#{reuseport?}")
 
     case :gen_udp.open(@mdns_port, opts) do
       {:ok, socket} ->
-        Logger.debug("[mDNS] socket opened on *:#{@mdns_port}")
+        Logger.info("[mDNS] socket opened on *:#{@mdns_port}")
         {:ok, socket}
 
       {:error, reason} = err ->
@@ -366,9 +449,23 @@ defmodule Dojo.Cluster.MDNS do
           cache =
             case classify_and_decode(raw, service) do
               {:response, records} ->
+                if state.debug do
+                  peers = extract_peers(records, service, src_ip)
+
+                  Logger.info(
+                    "[mDNS:diag] collect response from #{fmt(src_ip)} → peers=#{inspect(peers)}"
+                  )
+                end
+
                 update_cache(state.cache, records, own_name, service, src_ip)
 
               :query ->
+                Process.put(:mdns_query_seen, true)
+
+                if state.debug do
+                  Logger.info("[mDNS:diag] collect query from #{fmt(src_ip)} → re-announcing")
+                end
+
                 jitter = @jitter_min_ms + :rand.uniform(@jitter_max_ms - @jitter_min_ms)
 
                 spawn(fn ->
@@ -379,6 +476,7 @@ defmodule Dojo.Cluster.MDNS do
                 state.cache
 
               :unknown ->
+                if state.debug, do: Logger.info("[mDNS:diag] collect unknown from #{fmt(src_ip)}")
                 state.cache
             end
 
@@ -396,12 +494,43 @@ defmodule Dojo.Cluster.MDNS do
   defp collect_buffered(%{socket: socket, own_name: own_name, service: service} = state) do
     case :gen_udp.recv(socket, 0, 0) do
       {:ok, {src_ip, _port, raw}} ->
+        if state.debug do
+          Logger.info("[mDNS:diag] collect_buffered recv #{byte_size(raw)}B from #{fmt(src_ip)}")
+        end
+
         cache =
-          case Dojo.Cluster.MDNS.Packet.decode(raw) do
-            {:ok, records} ->
+          case classify_and_decode(raw, service) do
+            {:response, records} ->
+              if state.debug do
+                peers = extract_peers(records, service, src_ip)
+                Logger.info("[mDNS:diag] collect_buffered response → peers=#{inspect(peers)}")
+              end
+
               update_cache(state.cache, records, own_name, service, src_ip)
 
-            _ ->
+            :query ->
+              Process.put(:mdns_query_seen, true)
+
+              if state.debug do
+                Logger.info(
+                  "[mDNS:diag] collect_buffered query from #{fmt(src_ip)} → re-announcing"
+                )
+              end
+
+              jitter = @jitter_min_ms + :rand.uniform(@jitter_max_ms - @jitter_min_ms)
+
+              spawn(fn ->
+                Process.sleep(jitter)
+                do_announce(state)
+              end)
+
+              state.cache
+
+            :unknown ->
+              if state.debug do
+                Logger.info("[mDNS:diag] collect_buffered unknown packet from #{fmt(src_ip)}")
+              end
+
               state.cache
           end
 
@@ -444,11 +573,20 @@ defmodule Dojo.Cluster.MDNS do
     end)
   end
 
-  defp send_query(%{socket: sock, service: svc, cache: cache}) do
+  defp send_query(%{socket: sock, service: svc, cache: cache} = state) do
     known_answers = build_known_answers(cache, svc)
     pkt = Dojo.Cluster.MDNS.Packet.query(svc, known_answers)
+    addrs = routable_ipv4_addrs()
 
-    Enum.each(routable_ipv4_addrs(), fn ip ->
+    if Map.get(state, :debug) do
+      ka_names = Enum.map(known_answers, &elem(&1, 0))
+
+      Logger.info(
+        "[mDNS:diag] send_query known_answers=#{inspect(ka_names)} on #{inspect(Enum.map(addrs, &fmt/1))}"
+      )
+    end
+
+    Enum.each(addrs, fn ip ->
       :inet.setopts(sock, [{:multicast_if, ip}])
       :gen_udp.send(sock, @mdns_addr, @mdns_port, pkt)
     end)
@@ -485,9 +623,9 @@ defmodule Dojo.Cluster.MDNS do
       |> Enum.filter(&match?(%{type: @dns_type_txt, data: {:txt, _}}, &1))
       |> Map.new(fn %{name: n, data: {:txt, kv}} -> {n, kv} end)
 
-    records
-    |> Enum.filter(&match?(%{type: @dns_type_ptr, name: ^service}, &1))
-    |> Enum.flat_map(fn %{data: {:ptr, instance_fqdn}} ->
+    ptr_records = Enum.filter(records, &match?(%{type: @dns_type_ptr, name: ^service}, &1))
+
+    Enum.flat_map(ptr_records, fn %{data: {:ptr, instance_fqdn}} ->
       with kv <- Map.get(txt_idx, instance_fqdn),
            true <- not is_nil(kv),
            node_str <- kv_get(kv, "erlang_node"),
@@ -499,7 +637,10 @@ defmodule Dojo.Cluster.MDNS do
         _ ->
           Logger.debug(
             "[mDNS] skipping instance #{instance_fqdn} — " <>
-              "missing/bad TXT records in #{inspect(txt_idx[instance_fqdn])}"
+              "missing/bad TXT records in #{inspect(txt_idx[instance_fqdn])}" <>
+              " | txt_names=#{inspect(Map.keys(txt_idx))}" <>
+              " | record_types=#{inspect(Enum.map(records, & &1.type))}" <>
+              " | src=#{fmt(src_ip)}"
           )
 
           []
@@ -662,6 +803,71 @@ defmodule Dojo.Cluster.MDNS do
 
   defp open_ephemeral_socket do
     :gen_udp.open(0, [:binary, :inet, multicast_loop: true, multicast_ttl: 255])
+  end
+
+  # ── Diagnostics ────────────────────────────────────────────────────────
+
+  @doc false
+  def interface_report do
+    case :inet.getifaddrs() do
+      {:ok, ifaddrs} ->
+        Enum.map(ifaddrs, fn {iface_name, opts} ->
+          name = to_string(iface_name)
+          flags = Keyword.get(opts, :flags, [])
+
+          addrs =
+            opts
+            |> Keyword.get_values(:addr)
+            |> Enum.filter(fn
+              {a, _, _, _} when is_integer(a) -> true
+              _ -> false
+            end)
+
+          is_virtual = virtual_interface?(name)
+          up_and_running = :up in flags and :running in flags
+
+          routable =
+            Enum.filter(addrs, fn
+              {127, _, _, _} -> false
+              {169, 254, _, _} -> false
+              _ -> true
+            end)
+
+          %{
+            name: name,
+            flags: flags,
+            addrs: addrs,
+            routable_addrs: routable,
+            virtual: is_virtual,
+            up: up_and_running,
+            selected: up_and_running and not is_virtual and routable != []
+          }
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp log_interface_report do
+    report = interface_report()
+
+    Logger.info("[mDNS:diag] interface report:")
+
+    Enum.each(report, fn iface ->
+      marker = if iface.selected, do: ">>", else: "  "
+
+      Logger.info(
+        "[mDNS:diag] #{marker} #{iface.name} flags=#{inspect(iface.flags)} " <>
+          "addrs=#{inspect(iface.addrs)} virtual=#{iface.virtual} selected=#{iface.selected}"
+      )
+    end)
+
+    selected = Enum.filter(report, & &1.selected)
+
+    if selected == [] do
+      Logger.warning("[mDNS:diag] NO interfaces selected — discovery will be blind!")
+    end
   end
 
   # ── Helpers ──────────────────────────────────────────────────────────────

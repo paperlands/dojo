@@ -529,29 +529,29 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
 
     test "peer with missed_queries reaching threshold is evicted" do
       seen = now() - 10
-      # missed_queries is 1, will be incremented to 2 (= @poof_min_missed)
+      # missed_queries is 3, will be incremented to 4 (= @poof_min_missed)
       cache = %{
-        :peer_a => %{name: :peer_a, ip: @loopback, port: 9090, seen_at: seen, missed_queries: 1}
+        :peer_a => %{name: :peer_a, ip: @loopback, port: 9090, seen_at: seen, missed_queries: 3}
       }
 
       pre_seen = %{peer_a: seen}
 
       result = MDNS.apply_poof(cache, pre_seen)
-      refute Map.has_key?(result, :peer_a), "peer should be evicted at missed_queries >= 2"
+      refute Map.has_key?(result, :peer_a), "peer should be evicted at missed_queries >= 4"
     end
 
     test "peer with missed_queries below threshold survives" do
       seen = now() - 5
-      # missed_queries is 0, will be incremented to 1 (< 2)
+      # missed_queries is 2, will be incremented to 3 (< 4)
       cache = %{
-        :peer_a => %{name: :peer_a, ip: @loopback, port: 9090, seen_at: seen, missed_queries: 0}
+        :peer_a => %{name: :peer_a, ip: @loopback, port: 9090, seen_at: seen, missed_queries: 2}
       }
 
       pre_seen = %{peer_a: seen}
 
       result = MDNS.apply_poof(cache, pre_seen)
       assert Map.has_key?(result, :peer_a)
-      assert result[:peer_a].missed_queries == 1
+      assert result[:peer_a].missed_queries == 3
     end
 
     test "newly discovered peer (not in pre_seen) has missed_queries = 0" do
@@ -575,7 +575,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       seen_old = now() - 15
 
       cache = %{
-        :dead => %{name: :dead, ip: @loopback, port: 9090, seen_at: seen_old, missed_queries: 1},
+        :dead => %{name: :dead, ip: @loopback, port: 9090, seen_at: seen_old, missed_queries: 3},
         :alive => %{name: :alive, ip: @loopback, port: 9090, seen_at: now(), missed_queries: 2},
         :fresh => %{name: :fresh, ip: @loopback, port: 9090, seen_at: now(), missed_queries: 0}
       }
@@ -584,14 +584,14 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       pre_seen = %{dead: seen_old, alive: now() - 5}
 
       result = MDNS.apply_poof(cache, pre_seen)
-      refute Map.has_key?(result, :dead), "dead peer (missed=2) should be evicted"
+      refute Map.has_key?(result, :dead), "dead peer (missed=4) should be evicted"
       assert result[:alive].missed_queries == 0, "alive peer should have missed reset"
       assert Map.has_key?(result, :fresh), "fresh peer should survive"
     end
 
     test "POOF evicts faster than hard TTL" do
       # A peer at 10s old would survive sweep_cache (needs 30s to expire).
-      # But with 2 missed queries, POOF evicts it immediately.
+      # But with 4 missed queries, POOF evicts it immediately.
       seen = now() - 10
 
       cache = %{
@@ -600,7 +600,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
           ip: @loopback,
           port: 9090,
           seen_at: seen,
-          missed_queries: 1
+          missed_queries: 3
         }
       }
 
@@ -677,7 +677,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       assert result.announce_interval == 2
     end
 
-    test "successive doublings: 1 → 2 → 4 → 8 → 16 → 32 → 60 (capped)" do
+    test "successive doublings: 1 → 2 → 4 → 8 → 15 (capped)" do
       state = %{announce_interval: 1, next_announce_at: 0}
 
       {intervals, _} =
@@ -686,7 +686,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
           {new_s.announce_interval, new_s}
         end)
 
-      assert intervals == [2, 4, 8, 16, 32, 60, 60]
+      assert intervals == [2, 4, 8, 15, 15, 15, 15]
     end
 
     test "next_announce_at is set to now + new_interval" do
@@ -696,14 +696,14 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       assert result.announce_interval == 8
     end
 
-    test "cap at 60 seconds" do
-      state = %{announce_interval: 32, next_announce_at: 0}
+    test "cap at 15 seconds" do
+      state = %{announce_interval: 8, next_announce_at: 0}
       result = MDNS.advance_announce_schedule(state, 0)
-      assert result.announce_interval == 60
+      assert result.announce_interval == 15
 
-      # Already at cap — stays at 60
+      # Already at cap — stays at 15
       result2 = MDNS.advance_announce_schedule(result, 100)
-      assert result2.announce_interval == 60
+      assert result2.announce_interval == 15
     end
   end
 

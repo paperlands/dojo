@@ -75,7 +75,11 @@ defmodule Dojo.Cluster.NetworkMonitor do
     #    TCP connections on old IPs are half-dead; disconnecting triggers HyParView healing.
     disconnect_stale_peers()
 
-    # 5. Re-announce on NEW IPs — make us visible on the new network immediately
+    # 5. Rejoin multicast on the main mDNS socket for the new interfaces.
+    #    Without this, the socket can only hear multicast on the old interfaces.
+    GenServer.cast(Dojo.Cluster.MDNS, {:rejoin_multicast, new_ips})
+
+    # 6. Re-announce on NEW IPs — make us visible on the new network immediately
     #    instead of waiting up to 5s for the next mDNS lookup cycle.
     Dojo.Cluster.MDNS.reannounce(new_ips)
   end
