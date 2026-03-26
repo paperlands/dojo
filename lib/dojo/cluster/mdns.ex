@@ -127,6 +127,8 @@ defmodule Dojo.Cluster.MDNS do
       next_announce_at: System.monotonic_time(:second),
       poll_interval: poll_interval,
       socket_retries: 0,
+      poll_cycles: 0,
+      deaf_warned: false,
       monitored_nodes: MapSet.new(),
       debug: debug
     }
@@ -267,8 +269,7 @@ defmodule Dojo.Cluster.MDNS do
     # Snapshot seen_at before collection for POOF tracking
     pre_seen = Map.new(state.cache, fn {k, %{seen_at: s}} -> {k, s} end)
 
-    # Track whether any query was seen this cycle (for announce backoff reset)
-    Process.put(:mdns_query_seen, false)
+    pre_cache_size = map_size(state.cache)
 
     # Parse buffered packets instead of flushing
     cache = collect_buffered(state)
@@ -276,9 +277,12 @@ defmodule Dojo.Cluster.MDNS do
     send_query(%{state | cache: cache})
     cache = collect(%{state | cache: cache}, deadline(state.timeout))
 
-    # Reset announce backoff if peers are actively querying
+    # Reset announce backoff only when peer population changes
+    # (new peer discovered or existing peer departed).
+    # Previously reset on every query receipt, which meant backoff
+    # never kicked in because queries arrive every 5s from each peer.
     state =
-      if Process.get(:mdns_query_seen) do
+      if map_size(cache) != pre_cache_size do
         now_s = System.monotonic_time(:second)
         %{state | announce_interval: 1, next_announce_at: now_s}
       else
@@ -316,11 +320,34 @@ defmodule Dojo.Cluster.MDNS do
     # Node.monitor: monitor new connections for reactive failover
     state = maybe_monitor_nodes(%{state | cache: cache})
 
+    # Deaf-node detection: warn once if no peers found after several cycles
+    poll_cycles = state.poll_cycles + 1
+
+    state =
+      if poll_cycles >= 6 and map_size(cache) == 0 and not state.deaf_warned and
+           state.socket != nil do
+        Logger.warning("""
+        [mDNS] 0 peers discovered after #{poll_cycles * div(state.poll_interval, 1000)}s. \
+        Socket open, announcing normally.
+          If on Windows, check that inbound UDP port 5454 is allowed through the firewall.
+          Other nodes should still discover this node and connect via Partisan TCP.\
+        """)
+
+        %{state | deaf_warned: true, poll_cycles: poll_cycles}
+      else
+        %{state | poll_cycles: poll_cycles}
+      end
+
     schedule_poll(state)
     {:noreply, %{state | cache: cache}}
   rescue
     e ->
       Logger.error("[mDNS] poll crashed: #{inspect(e)}")
+      schedule_poll(state)
+      {:noreply, state}
+  catch
+    :exit, reason ->
+      Logger.error("[mDNS] poll exited: #{inspect(reason)}")
       schedule_poll(state)
       {:noreply, state}
   end
@@ -337,17 +364,23 @@ defmodule Dojo.Cluster.MDNS do
 
   @impl true
   def terminate(_reason, %{socket: socket} = state) when not is_nil(socket) do
-    ips = routable_ipv4_addrs()
-    {name, port} = {state.own_name, state.own_port}
-    name_str = Atom.to_string(name)
+    try do
+      ips = routable_ipv4_addrs()
+      {name, port} = {state.own_name, state.own_port}
+      name_str = Atom.to_string(name)
 
-    Enum.each(ips, fn ip ->
-      :inet.setopts(socket, [{:multicast_if, ip}])
-      pkt = Dojo.Cluster.MDNS.Packet.announcement(@service_fqdn, name_str, ip, 0, port)
-      :gen_udp.send(socket, @mdns_addr, @mdns_port, pkt)
-    end)
-
-    :gen_udp.close(socket)
+      Enum.each(ips, fn ip ->
+        :inet.setopts(socket, [{:multicast_if, ip}])
+        pkt = Dojo.Cluster.MDNS.Packet.announcement(@service_fqdn, name_str, ip, 0, port)
+        :gen_udp.send(socket, @mdns_addr, @mdns_port, pkt)
+      end)
+    rescue
+      _ -> :ok
+    catch
+      :exit, _ -> :ok
+    after
+      :gen_udp.close(socket)
+    end
   end
 
   def terminate(_reason, _state), do: :ok
@@ -390,7 +423,13 @@ defmodule Dojo.Cluster.MDNS do
   # ── Socket — active: false ──────────────────────────────────────────────
 
   defp open_socket do
-    base = [
+    # NOTE: we intentionally do NOT use SO_REUSEPORT here.
+    # On Linux, reuseport distributes incoming multicast packets across
+    # sockets via hash — meaning two nodes on the same machine each get
+    # ~half the packets instead of both receiving all of them.
+    # SO_REUSEADDR alone is sufficient for multicast port sharing and
+    # ensures every socket gets a copy of every multicast packet.
+    opts = [
       :binary,
       :inet,
       active: false,
@@ -400,17 +439,7 @@ defmodule Dojo.Cluster.MDNS do
       ip: {0, 0, 0, 0}
     ]
 
-    {reuseport?, opts} =
-      case :gen_udp.open(0, [:inet, reuseport: true]) do
-        {:ok, s} ->
-          :gen_udp.close(s)
-          {true, [{:reuseport, true} | base]}
-
-        _ ->
-          {false, base}
-      end
-
-    Logger.info("[mDNS] opening socket on *:#{@mdns_port} reuseport=#{reuseport?}")
+    Logger.info("[mDNS] opening socket on *:#{@mdns_port}")
 
     case :gen_udp.open(@mdns_port, opts) do
       {:ok, socket} ->
@@ -460,8 +489,6 @@ defmodule Dojo.Cluster.MDNS do
                 update_cache(state.cache, records, own_name, service, src_ip)
 
               :query ->
-                Process.put(:mdns_query_seen, true)
-
                 if state.debug do
                   Logger.info("[mDNS:diag] collect query from #{fmt(src_ip)} → re-announcing")
                 end
@@ -509,8 +536,6 @@ defmodule Dojo.Cluster.MDNS do
               update_cache(state.cache, records, own_name, service, src_ip)
 
             :query ->
-              Process.put(:mdns_query_seen, true)
-
               if state.debug do
                 Logger.info(
                   "[mDNS:diag] collect_buffered query from #{fmt(src_ip)} → re-announcing"

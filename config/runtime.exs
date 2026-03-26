@@ -93,10 +93,16 @@ config :partisan,
   peer_service_manager: :partisan_hyparview_peer_service_manager,
   pid_encoding: false,
   ref_encoding: false,
-  # Fanout: Keep active view small (5 peers) to minimize bandwidth
-  hyparview_active_view_size: 5,
-  # Passive View: Keep a large backup list (24) for quick healing
-  hyparview_passive_view_size: 15,
+  # HyParView tuning (must be nested under :hyparview key)
+  hyparview: %{
+    active_max_size: 5,
+    active_min_size: 3,
+    passive_max_size: 15,
+    random_promotion_interval: 3_000,
+    shuffle_interval: 10_000,
+    shuffle_k_active: 3,
+    shuffle_k_passive: 4
+  },
   # [%{port: partisan_port, ip: {0, 0, 0, 0}}],
   listen_addrs: listen_addrs,
   # listen_addrs: [%{port: port, ip: {127, 0, 0, 1}}],

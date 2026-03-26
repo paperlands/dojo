@@ -4,9 +4,15 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
 
   Implements both `Dojo.Cluster.Discovery` (for the mDNS engine) and
   `:partisan_peer_discovery_agent` (for Partisan's discovery polling).
+
+  Uses `join` for newly-discovered peers (immediate TCP connect) and
+  `update_members` for already-known peers (passive view refresh).
   """
   @behaviour Dojo.Cluster.Discovery
   @behaviour :partisan_peer_discovery_agent
+  require Logger
+
+  @known_peers_table :mdns_known_peers
 
   # ── Discovery behaviour ──────────────────────────────────────────────────
 
@@ -43,22 +49,62 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
 
   @impl Dojo.Cluster.Discovery
   def on_peers_discovered(peers) do
+    ensure_known_peers_table()
+
     specs =
       Enum.map(peers, fn {name, ip, port} ->
         %{name: name, listen_addrs: [%{ip: ip, port: port}], channels: channels()}
       end)
 
-    :partisan_peer_service.update_members(specs)
+    {new_specs, existing_specs} =
+      Enum.split_with(specs, fn spec ->
+        :ets.lookup(@known_peers_table, spec.name) == []
+      end)
+
+    # Join NEW peers immediately — triggers TCP connect + JOIN handshake
+    # This bypasses the passive view and directly enters the active view.
+    # Critical for Windows nodes that can't receive UDP multicast but can
+    # accept TCP connections from peers that discovered them.
+    Enum.each(new_specs, fn spec ->
+      Logger.info("[PartisanAdapter] joining new mDNS peer: #{spec.name}")
+      :partisan_peer_service.join(spec)
+      :ets.insert(@known_peers_table, {spec.name, System.monotonic_time(:second)})
+    end)
+
+    # Refresh existing peers via passive view update
+    if existing_specs != [] do
+      :partisan_peer_service.update_members(existing_specs)
+    end
+
     :ok
+  rescue
+    e ->
+      maybe_warn_partisan_unavailable("on_peers_discovered", e)
+      :ok
+  catch
+    :exit, reason ->
+      maybe_warn_partisan_unavailable("on_peers_discovered", {:exit, reason})
+      :ok
   end
 
   @impl Dojo.Cluster.Discovery
   def on_peer_departed(name) do
+    ensure_known_peers_table()
+    :ets.delete(@known_peers_table, name)
     :partisan_peer_service.leave(%{name: name, listen_addrs: [], channels: channels()})
     :ok
   rescue
-    _ -> :ok
+    e ->
+      maybe_warn_partisan_unavailable("on_peer_departed", e)
+      :ok
+  catch
+    :exit, reason ->
+      maybe_warn_partisan_unavailable("on_peer_departed", {:exit, reason})
+      :ok
   end
+
+  @impl Dojo.Cluster.Discovery
+  def supports_node_monitor?, do: false
 
   @impl Dojo.Cluster.Discovery
   def diag do
@@ -131,6 +177,28 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
     end)
   end
 
+  defp ensure_known_peers_table do
+    case :ets.info(@known_peers_table) do
+      :undefined -> :ets.new(@known_peers_table, [:named_table, :set, :public])
+      _ -> :ok
+    end
+  rescue
+    ArgumentError -> :ok
+  end
+
+  defp maybe_warn_partisan_unavailable(context, reason) do
+    now = System.monotonic_time(:second)
+    last = Process.get(:partisan_warn_at, 0)
+
+    if now - last >= 30 do
+      Process.put(:partisan_warn_at, now)
+
+      Logger.warning(
+        "[PartisanAdapter] #{context} failed: #{inspect(reason)} — Partisan may not be running"
+      )
+    end
+  end
+
   defp safe(fun) do
     fun.()
   rescue
@@ -158,5 +226,10 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
       end)
 
     {:ok, specs, state}
+  rescue
+    # Module may be temporarily unavailable during dev code reloading
+    UndefinedFunctionError -> {:ok, [], state}
+  catch
+    :exit, _ -> {:ok, [], state}
   end
 end
