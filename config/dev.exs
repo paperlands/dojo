@@ -70,6 +70,9 @@ config :dojo, dev_routes: true
 config :logger, :console, format: "[$level] $message\n"
 config :logger, truncate: 10000
 
+# Silence Partisan debug/trace noise so PubSub issues are visible
+config :dojo, :silence_partisan_logs, true
+
 # Set a higher stacktrace during development. Avoid configuring such
 # in production as building large stacktraces may be expensive.
 config :phoenix, :stacktrace_depth, 20

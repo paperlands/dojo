@@ -3,65 +3,101 @@
 ## Commands
 
 ```bash
-# Install deps and compile assets
-mix setup
+mix setup                  # Install deps and compile assets
+mix test                   # Run all tests
+mix test path:line         # Run a single test
+mix format                 # Format code
+mix release                # Build production release (multi-platform via Burrito)
 
 # Start development server (with clustering support)
 iex --sname dojo --cookie enterthedojo --dbg pry -S mix phx.server
-
-# Run all tests
-mix test
-
-# Run a single test file
-mix test test/dojo_web/controllers/page_controller_test.exs
-
-# Format code
-mix format
-
-# Build production release (multi-platform via Burrito)
-mix release
 ```
+
+## How to Work in This Codebase
+
+### Classify Before Exploring
+
+Before touching code, classify the task's complexity (Cynefin):
+
+| Domain | Signal | Approach |
+|--------|--------|----------|
+| **Simple** | Rename, typo fix, config change | Act directly. No exploration needed. |
+| **Complicated** | Add feature to existing module, fix bug with known symptoms | LSP navigate → read target → implement. |
+| **Complex** | New subsystem, cross-cutting change, distributed behavior | Probe with a spike. Read `specs/tensions/` and `specs/decisions/` for prior art. |
+| **Chaotic** | Production incident, data corruption, reframing, paradigm shift | Act first to stabilize, reflect after. Rethink from first principles and patterns, research deeply for prior art.|
+
+This classification determines how many tokens you spend understanding context. Simple tasks should not trigger deep exploration. Complex tasks should check `specs/` before rediscovering what's already been decided.
+
+### Navigate with Semantics, Not Text
+
+Use LSP as the primary navigation tool — it understands structure, not just strings:
+
+| Need | Tool | NOT |
+|------|------|----|
+| Find where something is defined | `goToDefinition` | Grepping for `defmodule`/`def` |
+| Find all call sites | `findReferences` | Grepping the function name |
+| Understand a function before modifying it | `hover` | Reading the whole file |
+| Map a file's structure | `documentSymbol` | Skimming with Read |
+| Find a module by name | `workspaceSymbol` | Globbing for filenames |
+| Trace call graphs | `incomingCalls`/`outgoingCalls` | Recursive grep |
+
+Fall back to Grep/Glob only for: string literals, config values, comments, non-Elixir files, HEEx templates, or when LSP errors.
+
+For dependency documentation, use `mix usage_rules.docs Module.function` instead of reading source in `deps/`.
+
+### Cross-Repository Navigation
+Partisan source lives at `/home/putra/Repos/partisan/src/` (not `deps/partisan/`). LSP won't index it — use Grep for Partisan-specific exploration.
+
+### Kumite: Cognitive Protocol
+
+This project uses a structured reasoning framework in `specs/`. Before significant design work:
+
+1. Check `specs/decisions/` — has this already been decided?
+2. Check `specs/tensions/` — is there an active tension on this topic?
+3. If the task is Complex (Cynefin), work through Kumite phases: ORIENT → EXPLORE → SYNTHESIZE → DECIDE → SPECIFY → IMPLEMENT → REFLECT
+4. Name tensions as they arise with `[⊗]` — don't resolve prematurely
+5. Use `[⏚] GROUND` to connect abstract reasoning to concrete code
+6. Use `[⚡] SPIKE` when reasoning stalls — build something small, let empirical data break the deadlock
+
+Cognitive lenses in `specs/_meta/lenses/` shape how to evaluate options:
+- **Pragmatist** — What ships? What's reversible? Write code that reveals the most about the problem first.
+- **Architect** — Does this strengthen existing centers? Keep the core empty, the periphery alive. Flow over obstruction.
+- **Systems** — Design how modules communicate, not their internal properties. Where are the feedback loops? Leverage points?
+- **Adversarial** — Stress-test the design, what is the initial state, what fails at the nth step. Think extremes . What would guarantee failure?
+- **Educator** — Sovereignty, autonomy, explorability. Structures that empower inhabitants and the ecosystem.
+
+Commit convention for reasoning work: `kumite(<phase>): <what happened>`
+
+### Design Principles
+
+- Write code that reveals the most about the problem first — steer the ship in fog
+- Minimize primitive count for agility; distinguish primitives that confer greatest flexibility
+- Design how modules communicate rather than their internal properties
+- If there's clearly a right way, do the right way. Discipline solves it.
+- Liberate well-defined structures: visibility, autonomy, tractability, explorability
 
 ## Architecture
 
-**Dojo** is a Phoenix/LiveView application for collaborative learning and exploration of mathematics, LOGO for the networked era with distributed clustering.
+**Dojo** — LOGO for the networked era. Phoenix/LiveView application for collaborative learning and exploration of mathematics with distributed clustering.
 
-### Distributed Clustering (Partisan)
+### Module Map
 
-The project replaces standard Erlang distribution with **Partisan** (a custom fork at `paperlands/partisan`). Nodes discover each other via **mDNS** (`_erlang._tcp.local`) and exchange metadata through DNS TXT records (node name, Partisan port).
+```
+Clustering           State                  Web                    World
+─────────────        ─────────────          ─────────────          ─────────────
+NetworkMonitor       Table (tuplespace)     ShellLive (/shell)     World (1D CA)
+MDNS.Discovery       TableRegistry          BootLive (/welcome)    Conways (2D GoL)
+MDNS.Packet          Cache (Nebulex)        PageController (/)     Automaton.Cell
+PartisanPubSub       Gate (Presence)        Router                 Turtle (graphics/geometry)
+```
 
-Key modules:
-- `Dojo.Cluster.NetworkMonitor` — GenServer that polls interface IPs every 3s. On change, hot-swaps Partisan TCP listeners and disconnects stale peers to force reconnection (supports WiFi roaming).
-- `Dojo.Cluster.MDNS.Discovery` — Sends mDNS announcements and handles peer responses.
-- `Dojo.Cluster.MDNS.Packet` — RFC 6762 binary codec for mDNS/DNS packets.
-- `Dojo.PartisanPubSub` — Configures Phoenix.PubSub to use the Partisan adapter instead of the default PG adapter.
+### Key Relationships
 
-### Per-Learner State (Tuplespace)
-
-`Dojo.Table` is a GenServer acting as a tuplespace per `Dojo.Disciple` (user). Processes are registered in `Dojo.TableRegistry` and sharded via `PartitionSupervisor` → `Dojo.Class` (DynamicSupervisor). State has a 10-minute TTL and supports both local calls and cross-node RPC via Partisan.
-
-### Real-Time Presence
-
-`Dojo.Gate` wraps `Phoenix.Tracker` for presence tracking. PubSub broadcasts join/leave events to topic subscribers.
-
-### Simulation Engines
-
-- `Dojo.World` — 1D elementary cellular automata (rule-based)
-- `Dojo.Conways` — 2D Conway's Game of Life
-- `Dojo.Automaton.Cell` — Individual cell state transitions
-- `Dojo.Turtle` — Graphics/AST output for visualizations
-
-### Distributed Cache
-
-`Dojo.Cache` uses **Nebulex** with a Shards backend for in-memory distributed state. This is the primary persistence layer — the Ecto database repo is configured but minimally used.
-
-### Web Layer
-
-Routes live in `DojoWeb.Router`. Main LiveViews:
-- `ShellLive` at `/shell` — REPL interface
-- `BootLive` at `/welcome` — onboarding screen
-
-The root `GET /` goes to `PageController`.
+- **Partisan** replaces Erlang distribution. Custom fork at `paperlands/partisan`. Nodes discover via mDNS (`_erlang._tcp.local`), exchange metadata through DNS TXT records.
+- **NetworkMonitor** → polls interface IPs every 3s → hot-swaps Partisan TCP listeners on change → disconnects stale peers (WiFi roaming support)
+- **Table** → GenServer per Disciple (user) → registered in TableRegistry → sharded via PartitionSupervisor → Dojo.Class (DynamicSupervisor) → 10-min TTL → cross-node RPC via Partisan
+- **Gate** → wraps Phoenix.Tracker → PubSub broadcasts join/leave
+- **Cache** → Nebulex + Shards backend → primary persistence (Ecto repo minimally used)
 
 ### Supervision Tree
 
@@ -80,12 +116,6 @@ Dojo.Supervisor
 ├── DojoWeb.Endpoint
 └── Dojo.Cluster.NetworkMonitor
 ```
-
-### Mix Aliases
-
-- `mix setup` — full dev setup (deps + assets)
-- `mix test` — runs `ExUnit`
-- `mix ecto.reset` — drops and recreates the database
 
 ### Environment Variables
 

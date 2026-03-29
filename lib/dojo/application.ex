@@ -7,6 +7,10 @@ defmodule Dojo.Application do
 
   @impl true
   def start(_type, _args) do
+    if Application.get_env(:dojo, :silence_partisan_logs, false) do
+      :logger.set_application_level(:partisan, :warning)
+    end
+
     adapter = Application.get_env(:dojo, :cluster_adapter, Dojo.Cluster.MDNS.PartisanAdapter)
 
     children = [
