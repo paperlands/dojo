@@ -405,31 +405,31 @@
       >
         <!-- Other people's turtles -->
         <div
-          :for={{phx_ref, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
+          :for={{name, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
           class="bg-transparent pointer-events-auto"
         >
-          <div class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out mx-2 animate-fade flex-shrink-0" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}>
+          <div class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out mx-2 animate-fade flex-shrink-0" <> is_main_focus(name, @focused_name)}>
             <.icon
               :if={@sensei}
               name="hero-cursor-arrow-ripple"
               phx-click="toggle-focus"
-              phx-value-disciple-phx_ref={phx_ref}
+              phx-value-disciple-name={name}
               class="cursor-pointer pointer-events-auto text-primary"
             />
             <div
               phx-click={
-                (@outershell && @outershell.addr == phx_ref &&
+                (@outershell && @outershell.addr == name &&
                    JS.push("closeTurtle")) ||
                   JS.push("seeTurtle") |> JS.hide(to: ".rightthird") |> JS.show(to: ".outershell")
               }
               phx-throttle="500"
-              phx-value-addr={phx_ref}
+              phx-value-addr={name}
               class={[
                 "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md hover:border-primary transition-colors delay-150 ",
                 (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") ||
                   "cursor-progress pointer-events-none",
                 (Map.has_key?(dis, :meta) && dis.meta.state == :error && "border-error/50") ||
-                  (@outershell && @outershell.addr == phx_ref &&
+                  (@outershell && @outershell.addr == name &&
                      "border-accent-content text-accent-content") ||
                   "border-accent/50 text-accent"
               ]}
@@ -446,7 +446,7 @@
               />
               <img
                 :if={Map.has_key?(dis, :meta)}
-                src={"//"<> dis.meta.path}
+                src={"//" <> (dis[:addr] || "") <> "/" <> dis.meta.path}
                 onerror="this.src='/images/turtlehead.png';"
                 class="object-scale-down p-1 max-h-full m-auto"
                 loading="eager"

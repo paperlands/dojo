@@ -589,7 +589,7 @@ defmodule Dojo.Cluster.MDNS do
   defp do_announce(%{socket: sock, own_name: name, own_port: port, service: svc}) do
     name_str = Atom.to_string(name)
     addrs = routable_ipv4_addrs()
-    Logger.debug("[mDNS] announcing #{name_str}:#{port} on #{inspect(addrs)}")
+    # Logger.debug("[mDNS] announcing #{name_str}:#{port} on #{inspect(addrs)}")
 
     Enum.each(addrs, fn ip ->
       :inet.setopts(sock, [{:multicast_if, ip}])

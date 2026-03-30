@@ -46,24 +46,6 @@ defmodule Dojo.Table do
     end
   end
 
-  # def last({pid, target_node}, event) when is_pid(pid) do
-  #   IO.inspect(pid)
-  #   case Cache.get({__MODULE__, :last, pid, event}) do
-  #     # partisan_genserver client lookup or service discovery for image hosting
-  #     nil -> if target_node == :partisan.node() do 
-  #         GenServer.call(pid, {:last, event})
-  #            else
-  #              :partisan_gen_server.call(target_node, pid, event)
-  #       end
-  #     last -> last
-  #   end
-  # end
-
-  # def last(node, event) do
-  #   IO.inspect(node)
-  #   nil
-  # end
-
   def via_tuple(topic) do
     {:via, Registry, {Dojo.TableRegistry, topic}}
   end
@@ -77,12 +59,14 @@ defmodule Dojo.Table do
 
   def init(%{track_pid: pid, topic: topic, disciple: disciple, reg_id: reg_id}) do
     # this track_pid is the liveview pid
+    Process.monitor(pid)
     {:ok, ref} = Dojo.Gate.track(pid, topic, %{disciple | node: {reg_id, :partisan.node()}})
 
     {:ok,
      %{
        track_pid: pid,
        topic: topic,
+       reg_id: reg_id,
        disciple: %{disciple | phx_ref: ref},
        animate_msg: nil,
        last: %{}
@@ -93,28 +77,47 @@ defmodule Dojo.Table do
         {:publish, {_source, _msg, %{state: :error} = store}, :hatch},
         %{
           last: %{hatch: %{commands: [_ | _] = cmds}} = last,
-          topic: _topic,
-          disciple: %{phx_ref: _phx_ref}
+          reg_id: reg_id,
+          topic: topic,
+          disciple: %{name: name}
         } = state
       ) do
-    # check if previously active turtle
+    # check if previously active turtle — hydrate error with previous commands
     hydrated_store = %{store | commands: cmds}
 
-    Cache.put({__MODULE__, :last, self(), :hatch}, hydrated_store, ttl: @ttl)
+    Cache.put({__MODULE__, :last, reg_id, :hatch}, hydrated_store, ttl: @ttl)
+    broadcast_hatch(topic, name, hydrated_store)
     {:noreply, %{state | last: last |> Map.put(:hatch, hydrated_store)}}
   end
 
-  # this has to publish to a shared datastore per topic instance maybe ets(?)
   def handle_cast(
         {:publish, {_source, _msg, store}, event},
-        %{last: last, topic: _topic, disciple: %{phx_ref: _phx_ref}} = state
+        %{last: last, reg_id: reg_id, topic: topic, disciple: %{name: name}} = state
       ) do
-    # Dojo.PubSub.publish({phx_ref, {source, msg}}, event, topic)
-    Cache.put({__MODULE__, :last, self(), event}, store, ttl: @ttl)
+    Cache.put({__MODULE__, :last, reg_id, event}, store, ttl: @ttl)
+
+    if event == :hatch do
+      broadcast_hatch(topic, name, store)
+    end
+
     {:noreply, %{state | last: last |> Map.put(event, store)}}
   end
 
-  def handle_call({:last, event}, __from, %{last: last} = state) do
+  def handle_call({:last, event}, _from, %{last: last} = state) do
     {:reply, Map.get(last, event, nil), state}
+  end
+
+  def handle_info({:DOWN, _ref, :process, pid, _reason}, %{track_pid: pid} = state) do
+    {:stop, :normal, state}
+  end
+
+  def terminate(_reason, %{reg_id: reg_id}) do
+    Cache.delete({__MODULE__, :last, reg_id, :hatch})
+    :ok
+  end
+
+  defp broadcast_hatch(topic, name, store) do
+    meta = Map.take(store, [:path, :state, :time])
+    Dojo.PubSub.publish({name, {Dojo.Turtle, meta}}, :hatch, topic)
   end
 end

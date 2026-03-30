@@ -35,10 +35,13 @@ defmodule Dojo.Gate do
   end
 
   def track(pid, topic, %Dojo.Disciple{name: username, action: state, node: node}) do
+    addr = routable_addr()
+
     case Phoenix.Tracker.track(__MODULE__, pid, topic, username, %{
            action: state,
            name: username,
            node: node,
+           addr: addr,
            online_at: System.os_time(:second)
          }) do
       {:ok, _ref} = resp ->
@@ -49,6 +52,7 @@ defmodule Dojo.Gate do
           action: state,
           name: username,
           node: node,
+          addr: addr,
           online_at: System.os_time(:second)
         })
     end
@@ -77,5 +81,9 @@ defmodule Dojo.Gate do
   defp pool_size() do
     [{:pool_size, size}] = :ets.lookup(__MODULE__, :pool_size)
     size
+  end
+
+  defp routable_addr do
+    Dojo.Cluster.MDNS.get_routable_ipv4_addr() <> ":#{System.get_env("PORT") || 4000}"
   end
 end

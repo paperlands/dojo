@@ -39,7 +39,7 @@ defmodule Dojo.Class do
 
   def list_disciples(book) do
     Dojo.Gate.list_users(topic(book))
-    |> Enum.into(%{}, fn %{phx_ref: ref} = dis -> {ref, dis} end)
+    |> Enum.into(%{}, fn %{name: name} = dis -> {name, dis} end)
   end
 
   def listen(book) do

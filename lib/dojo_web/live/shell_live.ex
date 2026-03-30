@@ -27,10 +27,10 @@ defmodule DojoWeb.ShellLive do
        sensei: false,
        class: nil,
        disciples: %{},
-       visible_disciples: [],
+       visible_disciples: MapSet.new(),
        pane: true
      )
-     |> assign(focused_phx_ref: "")}
+     |> assign(focused_name: "")}
   end
 
   def handle_params(params, _url, socket) do
@@ -41,8 +41,6 @@ defmodule DojoWeb.ShellLive do
   end
 
   defp join_clan(socket, clan) do
-    Process.send_after(self(), :refreshDisciples, 200)
-
     socket
     |> assign(clan: clan)
     |> start_async(:list_disciples, fn -> Dojo.Class.list_disciples("shell:" <> clan) end)
@@ -81,65 +79,85 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-  # presence handlers => move to more pull based approach -> concern of class genserver instead c5 for personal shell
+  def handle_async(:pull_visible, {:ok, metadata}, socket) do
+    disciples =
+      Enum.reduce(metadata, socket.assigns.disciples, fn {name, meta}, acc ->
+        if Map.has_key?(acc, name) do
+          existing_time = get_in(acc, [name, :meta, :time]) || 0
+
+          if (meta[:time] || 0) > existing_time do
+            put_in(acc, [name, :meta], meta)
+          else
+            acc
+          end
+        else
+          acc
+        end
+      end)
+
+    {:noreply, assign(socket, :disciples, disciples)}
+  end
+
+  def handle_async(:pull_visible, {:exit, _reason}, socket) do
+    {:noreply, socket}
+  end
+
+  # presence handlers — keyed by name (Decision 003)
 
   def handle_info(
-        {:join, "class:shell" <> _, %{phx_ref: ref} = disciple},
+        {:join, "class:shell" <> _, %{name: name} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
-    {:noreply,
-     socket
-     |> assign(:disciples, Map.put(d, ref, disciple))}
+    {:noreply, assign(socket, :disciples, Map.put(d, name, disciple))}
   end
 
   def handle_info(
-        {:leave, "class:shell" <> _, %{phx_ref: ref} = _disciple},
+        {:leave, "class:shell" <> _, %{name: name, phx_ref: ref}},
         %{assigns: %{disciples: d}} = socket
       ) do
-    if Map.has_key?(d, ref) do
-      {:noreply,
-       socket
-       |> assign(:disciples, Map.delete(d, ref))}
+    # only delete if the leaving ref matches the current ref for this name
+    # prevents stale-leave race when Gate.change regenerates phx_ref
+    if d[name][:phx_ref] == ref do
+      {:noreply, assign(socket, :disciples, Map.delete(d, name))}
     else
       {:noreply, socket}
     end
   end
 
-  def handle_info({Dojo.PubSub, :focused_phx_ref, {focused_phx_ref}}, socket) do
-    {:noreply,
-     socket
-     |> assign(focused_phx_ref: focused_phx_ref)}
+  def handle_info({Dojo.PubSub, :focused_name, {focused_name}}, socket) do
+    {:noreply, assign(socket, focused_name: focused_name)}
   end
 
-  # lets move this towards an async pull based pattern
-
-  def handle_info(:refreshDisciples, %{assigns: assigns} = socket) do
-    Process.send_after(self(), :refreshDisciples, 3000)
-
-    updated_disciples = update_disciples_metadata(assigns.disciples, assigns.visible_disciples)
-
-    socket =
-      socket
-      |> assign(disciples: updated_disciples)
-      |> maybe_update_active_disciples()
-
-    {:noreply, socket}
-  end
+  # hatch signal — PubSub push from Table (Decision 003, Layer 2)
 
   def handle_info(
         {Dojo.PubSub, :hatch, {name, {Dojo.Turtle, meta}}},
-        %{assigns: %{disciples: dis}} = socket
+        %{assigns: %{disciples: dis, outershell: outershell}} = socket
       ) do
-    active_dis =
+    socket =
       if Map.has_key?(dis, name) do
-        put_in(dis, [name, :meta], meta)
+        assign(socket, :disciples, put_in(dis, [name, :meta], meta))
       else
-        dis
+        socket
       end
 
-    {:noreply,
-     socket
-     |> assign(disciples: active_dis)}
+    # follow mode: push update if this is the followed disciple
+    socket =
+      if outershell.follow and outershell.addr == name do
+        case Dojo.Table.last(dis[name][:node], :hatch) do
+          %{state: state, time: time} = table_state when time > outershell.last_active ->
+            socket
+            |> assign(:outershell, %{outershell | state: state, last_active: time})
+            |> push_event("seeOuterShell", Map.from_struct(table_state))
+
+          _ ->
+            socket
+        end
+      else
+        socket
+      end
+
+    {:noreply, socket}
   end
 
   def handle_info({Dojo.Controls, command, arg}, socket) do
@@ -171,10 +189,10 @@ defmodule DojoWeb.ShellLive do
       |> Enum.reduce(
         socket,
         fn
-          {name, %{meta: %{path: path}}}, sock ->
+          {name, %{addr: addr, meta: %{path: path}}}, sock ->
             sock
             |> push_event("download-file", %{
-              href: path,
+              href: "//" <> (addr || "") <> "/" <> path,
               filename: name <> ".png"
             })
 
@@ -264,13 +282,25 @@ defmodule DojoWeb.ShellLive do
      )}
   end
 
-  # Handle the viewport update event from the hook
+  # Handle the viewport update event from the hook (Decision 003, Layer 3 — windowed pull)
   def handle_event(
         "seeDisciples",
-        %{"visible_disciples" => visible_refs},
-        %{assigns: %{disciples: _dis}} = socket
+        %{"visible_disciples" => visible_names},
+        %{assigns: %{disciples: dis, visible_disciples: old_visible}} = socket
       ) do
-    {:noreply, assign(socket, visible_disciples: visible_refs)}
+    new_visible = MapSet.new(visible_names)
+    newly_entered = MapSet.difference(new_visible, old_visible)
+
+    socket = assign(socket, visible_disciples: new_visible)
+
+    if MapSet.size(newly_entered) > 0 do
+      {:noreply,
+       start_async(socket, :pull_visible, fn ->
+         pull_metadata(dis, newly_entered)
+       end)}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_event("flipPane", _, socket), do: {:noreply, update(socket, :pane, &(!&1))}
@@ -281,32 +311,28 @@ defmodule DojoWeb.ShellLive do
 
   def handle_event(
         "toggle-focus",
-        %{"disciple-phx_ref" => _phx_ref},
+        %{"disciple-name" => _name},
         %{assigns: %{sensei: false}} = socket
       ),
       do: {:noreply, socket}
 
   def handle_event(
         "toggle-focus",
-        %{"disciple-phx_ref" => phx_ref},
+        %{"disciple-name" => name},
         %{assigns: %{sensei: true, clan: clan}} = socket
       ) do
-    old_phx_ref = socket.assigns.focused_phx_ref
+    old_name = socket.assigns.focused_name
 
-    new_phx_ref =
-      case old_phx_ref do
-        "" -> phx_ref
-        ^phx_ref -> ""
-        _ -> phx_ref
+    new_name =
+      case old_name do
+        "" -> name
+        ^name -> ""
+        _ -> name
       end
 
-    Dojo.PubSub.publish({new_phx_ref}, :focused_phx_ref, "class:shell:" <> clan)
+    Dojo.PubSub.publish({new_name}, :focused_name, "class:shell:" <> clan)
 
-    # TODO: store focused_phx_ref in presence tracking so that new liveviews know which to focus on
-
-    {:noreply,
-     socket
-     |> assign(focused_phx_ref: new_phx_ref)}
+    {:noreply, assign(socket, focused_name: new_name)}
   end
 
   # pokemon clause
@@ -333,35 +359,17 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-  defp update_disciples_metadata(disciples, visible_disciples) do
-    Enum.reduce(visible_disciples, disciples, fn ref, acc ->
-      with %{node: node} <- disciples[ref],
-           %{path: path, state: state} <- Dojo.Table.last(node, :hatch) do
-        put_in(acc, [ref, :meta], %{path: path, state: state})
+  # windowed pull — fetch metadata for newly visible disciples (Decision 003, Layer 3)
+  defp pull_metadata(disciples, names) do
+    Enum.reduce(names, %{}, fn name, acc ->
+      with %{node: node} <- disciples[name],
+           %{path: path, state: state, time: time} <- Dojo.Table.last(node, :hatch) do
+        Map.put(acc, name, %{path: path, state: state, time: time})
       else
         _ -> acc
       end
     end)
   end
-
-  defp maybe_update_active_disciples(
-         socket = %{
-           assigns: %{disciples: dis, outershell: %{addr: addr, follow: true} = outershell}
-         }
-       )
-       when not is_nil(addr) do
-    case Dojo.Table.last(dis[addr][:node], :hatch) do
-      %{state: state, time: time} = table_state when time > outershell.last_active ->
-        socket
-        |> assign(:outershell, %{outershell | state: state, last_active: time})
-        |> push_event("seeOuterShell", Map.from_struct(table_state))
-
-      _ ->
-        socket
-    end
-  end
-
-  defp maybe_update_active_disciples(socket), do: socket
 
   def outershell(assigns) do
     ~H"""
@@ -887,9 +895,9 @@ defmodule DojoWeb.ShellLive do
     """
   end
 
-  defp is_main_focus(phx_ref, focused_phx_ref) do
-    case phx_ref do
-      ^focused_phx_ref -> " scale-150"
+  defp is_main_focus(name, focused_name) do
+    case name do
+      ^focused_name -> " scale-150"
       _ -> " border-primary"
     end
   end
