@@ -25,6 +25,8 @@ defmodule DojoWeb.Endpoint do
     gzip: false,
     only: DojoWeb.static_paths()
 
+  plug DojoWeb.Plugs.FlyReplay
+
   plug Plug.Static,
     at: "/frames",
     from: {:dojo, "priv/static/frames"},

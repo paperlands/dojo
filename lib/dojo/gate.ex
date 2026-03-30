@@ -84,6 +84,6 @@ defmodule Dojo.Gate do
   end
 
   defp routable_addr do
-    Dojo.Cluster.MDNS.get_routable_ipv4_addr() <> ":#{System.get_env("PORT") || 4000}"
+    Dojo.Cluster.Routing.routable_addr()
   end
 end

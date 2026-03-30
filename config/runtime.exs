@@ -64,6 +64,13 @@ listen_addrs =
 
 config :dojo, :cluster_adapter, Dojo.Cluster.MDNS.PartisanAdapter
 
+config :dojo,
+  routing_strategy:
+    if(System.get_env("FLY_MACHINE_ID"),
+      do: Dojo.Cluster.Routing.Fly,
+      else: Dojo.Cluster.Routing.Local
+    )
+
 # Identity model uses UUIDs, not IPs. The mDNS layer is the IP-discovery plane. Partisan's TCP acceptor just needs to accept from anywhere.
 # UUID identity:  admin@550e8400-...        ← stable, survives roaming
 # mDNS:           announces current IP      ← dynamic, per-interface
