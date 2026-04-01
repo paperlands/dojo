@@ -46,13 +46,25 @@ defmodule DojoWeb.ShellLive do
     |> start_async(:list_disciples, fn -> Dojo.Class.list_disciples("shell:" <> clan) end)
   end
 
-  defp sync_session(%{assigns: %{session: %Session{name: name} = _sess, clan: clan}} = socket)
+  defp sync_session(
+         %{assigns: %{session: %Session{name: name, last_opened: time}, clan: clan}} = socket
+       )
        when is_binary(name) do
     parent = self()
 
+    # Compute user_id: combine name + first login time for unique session identity
+    # Same logic as hatchTurtle to ensure consistency
+    user_id =
+      (name <> Base.encode64(to_string(time)))
+      |> String.replace(~r/[^a-zA-Z0-9]/, "")
+
     socket
     |> start_async(:join_disciples, fn ->
-      Dojo.Class.join!(parent, "shell:" <> clan, %Dojo.Disciple{name: name, action: "active"})
+      Dojo.Class.join!(parent, "shell:" <> clan, %Dojo.Disciple{
+        name: name,
+        action: "active",
+        user_id: user_id
+      })
     end)
   end
 
@@ -191,9 +203,11 @@ defmodule DojoWeb.ShellLive do
   def handle_event(
         "changeName",
         %{"value" => name},
-        %{assigns: %{session: %Session{name: username}, clan: clan}} = socket
+        %{assigns: %{class: class}} = socket
       ) do
-    Dojo.Class.change_meta(username, "shell:" <> clan, {:name, name})
+    # Route through Table GenServer (which owns the presence entry)
+    # instead of through Class (which used the LiveView PID)
+    Dojo.Table.change_meta(class, {:name, name})
     {:noreply, socket}
   end
 

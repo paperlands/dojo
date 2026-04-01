@@ -14,12 +14,43 @@ defmodule Dojo.Class do
   end
 
   def join(pid, book, disciple) do
-    spec = %{
-      id: Table,
-      start: {Table, :start_link, [%{track_pid: pid, topic: topic(book), disciple: disciple}]}
-    }
+    topic_str = topic(book)
+    # Compute reg_key from user identity (name + optional user_id)
+    # user_id should be computed in ShellLive from (name + last_opened)
+    reg_key = "#{topic_str}:#{disciple.user_id || disciple.name}"
 
-    DynamicSupervisor.start_child({:via, PartitionSupervisor, {__MODULE__, self()}}, spec)
+    # Try to find existing Table singleton
+    case Registry.lookup(Dojo.TableRegistry, reg_key) do
+      [{table_pid, _}] ->
+        # Table exists — add this LiveView as a watcher
+        Table.add_watcher(table_pid, pid)
+        {:ok, table_pid}
+
+      [] ->
+        # No Table exists — start one
+        spec = %{
+          id: Table,
+          start:
+            {Table, :start_link,
+             [%{track_pid: pid, topic: topic_str, disciple: disciple, reg_key: reg_key}]}
+        }
+
+        case DynamicSupervisor.start_child(
+               {:via, PartitionSupervisor, {__MODULE__, pid}},
+               spec
+             ) do
+          {:ok, table_pid} ->
+            {:ok, table_pid}
+
+          # Race condition: another tab started it between our lookup and start
+          {:error, {:already_started, table_pid}} ->
+            Table.add_watcher(table_pid, pid)
+            {:ok, table_pid}
+
+          other ->
+            other
+        end
+    end
   end
 
   def join!(pid, book, disciple) do
@@ -31,10 +62,6 @@ defmodule Dojo.Class do
 
   def whereis(username, book) do
     Dojo.Gate.get_by_key(topic(book), username)
-  end
-
-  def change_meta(username, book, {_k, _v} = delta) do
-    Dojo.Gate.change(self(), topic(book), username, delta)
   end
 
   def list_disciples(book) do

@@ -1,11 +1,13 @@
 const DiscipleWindow = {
   mounted() {
-
-      // make sure uniq
+    // Visibility tracking: set of names currently visible
     this.visibleDisciples = new Set();
 
-    this.observedElements = new Map(); // name -> element
-    this.lastDiscipleCount = 0;
+    // DOM element tracking: name -> element reference
+    this.observedElements = new Map();
+
+    // Name set for detecting morphing/element replacement
+    this.lastNames = null;
 
     // debounce config
     this.debounceTimeout = null;
@@ -54,10 +56,22 @@ const DiscipleWindow = {
   },
 
   updated() {
-    // Only reset if the number of disciple elements changed
-    const currentCount = this.findDiscipleElements().length;
-    if (currentCount !== this.lastDiscipleCount) {
-      this.lastDiscipleCount = currentCount;
+    // Reset observations if disciple identity (name set) changed, not just count
+    // This handles element replacement from LiveView morphing (reorder/replace)
+    // without over-resetting on attribute changes to existing elements (image URL, class, etc)
+    const currentNames = new Set(
+      this.findDiscipleElements()
+        .map(el => this.ensureNameAttribute(el))
+        .filter(Boolean)
+    );
+
+    const namesChanged =
+      !this.lastNames ||
+      currentNames.size !== this.lastNames.size ||
+      [...currentNames].some(name => !this.lastNames.has(name));
+
+    if (namesChanged) {
+      this.lastNames = currentNames;
       this.resetObservations();
     }
   },

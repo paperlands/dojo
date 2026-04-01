@@ -8,6 +8,16 @@ defmodule Dojo.Table do
     GenServer.cast(pid, {:publish, msg, event})
   end
 
+  # Public APIs for watcher management and metadata changes
+
+  def add_watcher(table_pid, liveview_pid) do
+    GenServer.call(table_pid, {:add_watcher, liveview_pid})
+  end
+
+  def change_meta(table_pid, {_key, _value} = delta) do
+    GenServer.call(table_pid, {:change_meta, delta})
+  end
+
   def last({topic, target_node}, event) do
     # Check cache first (using topic instead of pid for the key)
     case Cache.get({__MODULE__, :last, topic, event}) do
@@ -33,7 +43,7 @@ defmodule Dojo.Table do
     end
   end
 
-  # 4. The Local Execution (Runs on whichever node owns the Table)
+  # The Local Execution (Runs on whichever node owns the Table)
   # We make this public (@doc false) so :partisan_rpc can invoke it remotely.
   @doc false
   def local_fetch(topic, event) do
@@ -46,27 +56,29 @@ defmodule Dojo.Table do
     end
   end
 
-  def via_tuple(topic) do
-    {:via, Registry, {Dojo.TableRegistry, topic}}
+  def via_tuple(reg_key) do
+    {:via, Registry, {Dojo.TableRegistry, reg_key}}
   end
 
   def start_link(args) do
-    # 2. Register using the deterministic topic string via the Registry
-    # This assumes `args` has a `:topic` key (e.g., "bbc2cb5a-9267-4124-99ff-27655771c0d1")
-    args = Map.put(args, :reg_id, Ecto.UUID.generate())
-    GenServer.start_link(__MODULE__, args, name: via_tuple(args.reg_id))
+    # Register using deterministic reg_key: "#{topic}:#{user_id}"
+    # This ensures singleton per user+clan with stable cache/presence keys
+    GenServer.start_link(__MODULE__, args, name: via_tuple(args.reg_key))
   end
 
-  def init(%{track_pid: pid, topic: topic, disciple: disciple, reg_id: reg_id}) do
-    # this track_pid is the liveview pid
-    Process.monitor(pid)
-    {:ok, ref} = Dojo.Gate.track(pid, topic, %{disciple | node: {reg_id, :partisan.node()}})
+  def init(%{track_pid: lv_pid, topic: topic, disciple: disciple, reg_key: reg_key}) do
+    # Monitor the initial LiveView PID as a watcher
+    Process.monitor(lv_pid)
+
+    # Track presence with Table's own PID (self), not the LiveView PID
+    # This allows presence to survive as long as ANY tab is connected
+    {:ok, ref} = Dojo.Gate.track(self(), topic, %{disciple | node: {reg_key, :partisan.node()}})
 
     {:ok,
      %{
-       track_pid: pid,
+       watchers: MapSet.new([lv_pid]),
        topic: topic,
-       reg_id: reg_id,
+       reg_key: reg_key,
        disciple: %{disciple | phx_ref: ref},
        animate_msg: nil,
        last: %{}
@@ -77,7 +89,7 @@ defmodule Dojo.Table do
         {:publish, {_source, _msg, %{state: :error} = store}, :hatch},
         %{
           last: %{hatch: %{commands: [_ | _] = cmds}} = last,
-          reg_id: reg_id,
+          reg_key: reg_key,
           topic: topic,
           disciple: %{name: name}
         } = state
@@ -85,16 +97,16 @@ defmodule Dojo.Table do
     # check if previously active turtle — hydrate error with previous commands
     hydrated_store = %{store | commands: cmds}
 
-    Cache.put({__MODULE__, :last, reg_id, :hatch}, hydrated_store, ttl: @ttl)
+    Cache.put({__MODULE__, :last, reg_key, :hatch}, hydrated_store, ttl: @ttl)
     broadcast_hatch(topic, name, hydrated_store)
     {:noreply, %{state | last: last |> Map.put(:hatch, hydrated_store)}}
   end
 
   def handle_cast(
         {:publish, {_source, _msg, store}, event},
-        %{last: last, reg_id: reg_id, topic: topic, disciple: %{name: name}} = state
+        %{last: last, reg_key: reg_key, topic: topic, disciple: %{name: name}} = state
       ) do
-    Cache.put({__MODULE__, :last, reg_id, event}, store, ttl: @ttl)
+    Cache.put({__MODULE__, :last, reg_key, event}, store, ttl: @ttl)
 
     if event == :hatch do
       broadcast_hatch(topic, name, store)
@@ -107,12 +119,45 @@ defmodule Dojo.Table do
     {:reply, Map.get(last, event, nil), state}
   end
 
-  def handle_info({:DOWN, _ref, :process, pid, _reason}, %{track_pid: pid} = state) do
-    {:stop, :normal, state}
+  def handle_call(
+        {:add_watcher, lv_pid},
+        _from,
+        %{watchers: watchers} = state
+      ) do
+    # Idempotent: if already watching this PID, don't monitor again
+    if MapSet.member?(watchers, lv_pid) do
+      {:reply, :ok, state}
+    else
+      Process.monitor(lv_pid)
+      {:reply, :ok, %{state | watchers: MapSet.put(watchers, lv_pid)}}
+    end
   end
 
-  def terminate(_reason, %{reg_id: reg_id}) do
-    Cache.delete({__MODULE__, :last, reg_id, :hatch})
+  def handle_call(
+        {:change_meta, {_key, _value} = delta},
+        _from,
+        %{topic: topic, disciple: %{name: name}} = state
+      ) do
+    # Route Gate.change through Table PID (which owns the presence entry)
+    Dojo.Gate.change(self(), topic, name, delta)
+    {:reply, :ok, state}
+  end
+
+  def handle_info(
+        {:DOWN, _ref, :process, pid, _reason},
+        %{watchers: watchers} = state
+      ) do
+    watchers = MapSet.delete(watchers, pid)
+
+    if MapSet.size(watchers) == 0 do
+      {:stop, :normal, state}
+    else
+      {:noreply, %{state | watchers: watchers}}
+    end
+  end
+
+  def terminate(_reason, %{reg_key: reg_key}) do
+    Cache.delete({__MODULE__, :last, reg_key, :hatch})
     :ok
   end
 
