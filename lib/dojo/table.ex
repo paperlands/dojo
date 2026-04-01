@@ -3,6 +3,7 @@ defmodule Dojo.Table do
   use GenServer
   alias Dojo.Cache
   @ttl 10 * 60 * 1000
+  @debounce_ms 100
 
   def publish(pid, msg, event) do
     GenServer.cast(pid, {:publish, msg, event})
@@ -81,7 +82,9 @@ defmodule Dojo.Table do
        reg_key: reg_key,
        disciple: %{disciple | phx_ref: ref},
        animate_msg: nil,
-       last: %{}
+       last: %{},
+       broadcast_timer: nil,
+       pending_broadcast: nil
      }}
   end
 
@@ -89,30 +92,31 @@ defmodule Dojo.Table do
         {:publish, {_source, _msg, %{state: :error} = store}, :hatch},
         %{
           last: %{hatch: %{commands: [_ | _] = cmds}} = last,
-          reg_key: reg_key,
-          topic: topic,
-          disciple: %{name: name}
+          reg_key: reg_key
         } = state
       ) do
     # check if previously active turtle — hydrate error with previous commands
     hydrated_store = %{store | commands: cmds}
 
-    Cache.put({__MODULE__, :last, reg_key, :hatch}, hydrated_store, ttl: @ttl)
-    broadcast_hatch(topic, name, hydrated_store)
-    {:noreply, %{state | last: last |> Map.put(:hatch, hydrated_store)}}
+    async_cache_put(reg_key, :hatch, hydrated_store)
+    new_last = Map.put(last, :hatch, hydrated_store)
+    {:noreply, state |> Map.put(:last, new_last) |> schedule_hatch_broadcast(hydrated_store)}
   end
 
   def handle_cast(
         {:publish, {_source, _msg, store}, event},
-        %{last: last, reg_key: reg_key, topic: topic, disciple: %{name: name}} = state
+        %{last: last, reg_key: reg_key} = state
       ) do
-    Cache.put({__MODULE__, :last, reg_key, event}, store, ttl: @ttl)
+    async_cache_put(reg_key, event, store)
+    new_last = Map.put(last, event, store)
+
+    state = %{state | last: new_last}
 
     if event == :hatch do
-      broadcast_hatch(topic, name, store)
+      {:noreply, schedule_hatch_broadcast(state, store)}
+    else
+      {:noreply, state}
     end
-
-    {:noreply, %{state | last: last |> Map.put(event, store)}}
   end
 
   def handle_call({:last, event}, _from, %{last: last} = state) do
@@ -143,6 +147,18 @@ defmodule Dojo.Table do
     {:reply, :ok, state}
   end
 
+  def handle_info(:flush_broadcast, %{pending_broadcast: nil} = state) do
+    {:noreply, %{state | broadcast_timer: nil}}
+  end
+
+  def handle_info(
+        :flush_broadcast,
+        %{pending_broadcast: store, topic: topic, disciple: %{name: name}} = state
+      ) do
+    broadcast_hatch(topic, name, store)
+    {:noreply, %{state | broadcast_timer: nil, pending_broadcast: nil}}
+  end
+
   def handle_info(
         {:DOWN, _ref, :process, pid, _reason},
         %{watchers: watchers} = state
@@ -161,8 +177,34 @@ defmodule Dojo.Table do
     :ok
   end
 
+  defp async_cache_put(reg_key, event, store) do
+    Task.Supervisor.start_child(Dojo.TaskSupervisor, fn ->
+      Cache.put({__MODULE__, :last, reg_key, event}, store, ttl: @ttl)
+    end)
+  end
+
+  defp schedule_hatch_broadcast(%{broadcast_timer: nil} = state, store) do
+    timer = Process.send_after(self(), :flush_broadcast, @debounce_ms)
+    %{state | broadcast_timer: timer, pending_broadcast: store}
+  end
+
+  defp schedule_hatch_broadcast(state, store) do
+    # Timer already running — just update pending to latest state
+    %{state | pending_broadcast: store}
+  end
+
   defp broadcast_hatch(topic, name, store) do
     meta = Map.take(store, [:path, :state, :time])
-    Dojo.PubSub.publish({name, {Dojo.Turtle, meta}}, :hatch, topic)
+
+    # Layer 2a: full payload to local subscribers (instant render, no Plumtree)
+    Phoenix.PubSub.local_broadcast(
+      Dojo.PubSub,
+      topic,
+      {Dojo.PubSub, :hatch, {name, {Dojo.Turtle, meta}}}
+    )
+
+    # Layer 2b: lightweight version signal to remote nodes via Plumtree
+    # ~30 bytes — remote LiveViews pull full data only if disciple is visible
+    Dojo.PubSub.publish({name, meta[:time]}, :hatch_version, topic)
   end
 end

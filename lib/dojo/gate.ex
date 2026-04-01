@@ -15,18 +15,19 @@ defmodule Dojo.Gate do
 
   def handle_diff(diff, state) do
     for {topic, {joins, leaves}} <- diff do
-      for {_key, meta} <- joins do
-        Task.start(fn ->
-          msg = {:join, topic, Map.put(meta, :topic, topic)}
-          # each tracker takes care of its own node
-          Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
-        end)
-      end
+      messages =
+        Enum.map(joins, fn {_key, meta} ->
+          {:join, topic, Map.put(meta, :topic, topic)}
+        end) ++
+          Enum.map(leaves, fn {_key, meta} ->
+            {:leave, topic, Map.put(meta, :topic, topic)}
+          end)
 
-      for {_key, meta} <- leaves do
-        Task.start(fn ->
-          msg = {:leave, topic, Map.put(meta, :topic, topic)}
-          Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
+      if messages != [] do
+        Task.Supervisor.start_child(Dojo.TaskSupervisor, fn ->
+          Enum.each(messages, fn msg ->
+            Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
+          end)
         end)
       end
     end

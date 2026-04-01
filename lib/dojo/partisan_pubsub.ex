@@ -121,19 +121,20 @@ defmodule Phoenix.PubSub.Partisan.Handler do
 
   @impl true
   def merge(_id, {:broadcast, pubsub_name, topic, message, dispatcher}) do
-    try do
-      # Attempt to deliver to the local PubSub system
-      Phoenix.PubSub.local_broadcast(pubsub_name, topic, message, dispatcher)
-    rescue
-      # If the PubSub system (Registry) is down or named differently, catch the crash.
-      e in ArgumentError ->
-        Logger.error(
-          "Partisan Delivery Failed: PubSub process '#{inspect(pubsub_name)}' is not running on this node. Error: #{inspect(e)}"
-        )
+    # Async delivery: unblock Plumtree handler for tree maintenance
+    Task.Supervisor.start_child(Dojo.TaskSupervisor, fn ->
+      try do
+        Phoenix.PubSub.local_broadcast(pubsub_name, topic, message, dispatcher)
+      rescue
+        e in ArgumentError ->
+          Logger.error(
+            "Partisan Delivery Failed: PubSub process '#{inspect(pubsub_name)}' is not running on this node. Error: #{inspect(e)}"
+          )
 
-      e ->
-        Logger.error("Partisan Delivery Failed: Unknown error #{inspect(e)}")
-    end
+        e ->
+          Logger.error("Partisan Delivery Failed: Unknown error #{inspect(e)}")
+      end
+    end)
 
     # Always return true to keep the gossip tree healthy
     true
@@ -173,7 +174,11 @@ defmodule Phoenix.PubSub.Partisan.Handler do
   # Used by Phoenix.Tracker for State Transfer (CRDT sync).
   @impl true
   def handle_info({:direct, topic, message, dispatcher}, state) do
-    Phoenix.PubSub.local_broadcast(state.pubsub_name, topic, message, dispatcher)
+    # Async delivery: unblock handler for incoming control messages
+    Task.Supervisor.start_child(Dojo.TaskSupervisor, fn ->
+      Phoenix.PubSub.local_broadcast(state.pubsub_name, topic, message, dispatcher)
+    end)
+
     {:noreply, state}
   end
 

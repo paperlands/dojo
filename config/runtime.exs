@@ -119,14 +119,9 @@ config :partisan,
     undefined: %{monotonic: false, parallelism: 1, compression: false},
     control: %{monotonic: true, parallelism: 1},
     data: %{
-      monotonic: false,
+      monotonic: true,
       parallelism: 2,
       compression: false
-      # compression: true,
-      # monotonic: false, # No HOL blocking
-      # distance_enabled: false, # random selection
-      # ingress_delay: 0, # no latency
-      # exchange_tick_period: 10000 #best effort pubsub
     },
     partisan_membership: %{monotonic: false, parallelism: 1, compression: true}
   },

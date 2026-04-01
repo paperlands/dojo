@@ -124,6 +124,25 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
+  def handle_async(:follow_pull, {:ok, {table_state, last_active}}, socket) do
+    outershell = socket.assigns.outershell
+
+    case table_state do
+      %{state: state, time: time} = full_state when time > last_active ->
+        {:noreply,
+         socket
+         |> assign(:outershell, %{outershell | state: state, last_active: time})
+         |> push_event("seeOuterShell", Map.from_struct(full_state))}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_async(:follow_pull, {:exit, _reason}, socket) do
+    {:noreply, socket}
+  end
+
   # presence handlers — keyed by name (Decision 003)
 
   def handle_info(
@@ -171,23 +190,41 @@ defmodule DojoWeb.ShellLive do
         socket
       end
 
-    # follow mode: single targeted RPC, only if this is the followed disciple
+    # follow mode: async RPC fetch, only if this is the followed disciple
     socket =
-      if outershell.follow and outershell.addr == name do
-        case Dojo.Table.last(dis[name][:node], :hatch) do
-          %{state: state, time: time} = table_state when time > outershell.last_active ->
-            socket
-            |> assign(:outershell, %{outershell | state: state, last_active: time})
-            |> push_event("seeOuterShell", Map.from_struct(table_state))
+      if outershell.follow and outershell.addr == name and dis[name][:node] do
+        node = dis[name][:node]
+        last_active = outershell.last_active
 
-          _ ->
-            socket
-        end
+        start_async(socket, :follow_pull, fn ->
+          {Dojo.Table.last(node, :hatch), last_active}
+        end)
       else
         socket
       end
 
     {:noreply, socket}
+  end
+
+  # Layer 2b: remote version signal — pull fresh data for visible disciples
+  def handle_info(
+        {Dojo.PubSub, :hatch_version, {name, time}},
+        %{assigns: %{disciples: dis, visible_disciples: visible}} = socket
+      ) do
+    if MapSet.member?(visible, name) and Map.has_key?(dis, name) do
+      existing_time = get_in(dis, [name, :meta, :time]) || 0
+
+      if (time || 0) > existing_time do
+        {:noreply,
+         start_async(socket, :pull_visible, fn ->
+           pull_metadata(dis, MapSet.new([name]))
+         end)}
+      else
+        {:noreply, socket}
+      end
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info({Dojo.Controls, command, arg}, socket) do

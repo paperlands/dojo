@@ -20,6 +20,9 @@ defmodule Dojo.Application do
       # scanning mDNS/BLE using the UUID from step 1.
       # {Cluster.Supervisor, [topologies, [name: Dojo.ClusterSupervisor]]},
       {Registry, keys: :unique, name: Dojo.TableRegistry},
+      # TaskSupervisor must start before PubSub — the Partisan PubSub handler
+      # dispatches local delivery via TaskSupervisor.start_child
+      {Task.Supervisor, name: Dojo.TaskSupervisor},
       %{
         id: Dojo.PubSub.Supervisor,
         type: :supervisor,
@@ -28,7 +31,8 @@ defmodule Dojo.Application do
            [
              [
                {Phoenix.PubSub, name: Dojo.PubSub, adapter: Phoenix.PubSub.Partisan},
-               {Dojo.Gate, name: Dojo.Gate, pubsub_server: Dojo.PubSub, pool_size: 1}
+               {Dojo.Gate,
+                name: Dojo.Gate, pubsub_server: Dojo.PubSub, pool_size: System.schedulers_online()}
              ],
              [strategy: :one_for_all]
            ]}
@@ -38,7 +42,6 @@ defmodule Dojo.Application do
       # Start the Finch HTTP client for sending emails
       {Finch, name: Dojo.Finch},
       Dojo.Cache,
-      {Task.Supervisor, name: Dojo.TaskSupervisor},
       {PartitionSupervisor, child_spec: DynamicSupervisor, name: Dojo.Class},
       # Start a worker by calling: Dojo.Worker.start_link(arg)
       # {Dojo.Worker, arg},
