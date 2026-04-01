@@ -5,6 +5,7 @@ const DiscipleWindow = {
     this.visibleDisciples = new Set();
 
     this.observedElements = new Map(); // name -> element
+    this.lastDiscipleCount = 0;
 
     // debounce config
     this.debounceTimeout = null;
@@ -20,32 +21,17 @@ const DiscipleWindow = {
       }
     );
 
-    //  mutation observer to detect DOM changes
+    //  mutation observer for attribute changes only (childList handled by updated() hook)
     this.mutationObserver = new MutationObserver((mutations) => {
-      let needsUpdate = false;
-
-      mutations.forEach(mutation => {
-        // check for added/removed nodes
-        if (mutation.type === 'childList') {
-          needsUpdate = true;
-        }
-        // attrs changes that might indicate name changes
-        else if (mutation.type === 'attributes' &&
-                (mutation.attributeName === 'data-name' ||
-                 mutation.attributeName === 'phx-value-disciple-name' ||
-                 mutation.attributeName === 'phx-value-addr')) {
-          needsUpdate = true;
-        }
-      });
-
-      if (needsUpdate) {
+      const attrChanged = mutations.some(m => m.type === 'attributes');
+      if (attrChanged) {
         this.resetObservations();
       }
     });
 
-    // start observing DOM
+    // start observing DOM — no childList, that's handled by updated()
     this.mutationObserver.observe(this.el, {
-      childList: true,
+      childList: false,
       subtree: true,
       attributes: true,
       attributeFilter: ['data-name', 'phx-value-disciple-name', 'phx-value-addr']
@@ -68,8 +54,12 @@ const DiscipleWindow = {
   },
 
   updated() {
-    // Clean and re-initialize on updates
-    this.resetObservations();
+    // Only reset if the number of disciple elements changed
+    const currentCount = this.findDiscipleElements().length;
+    if (currentCount !== this.lastDiscipleCount) {
+      this.lastDiscipleCount = currentCount;
+      this.resetObservations();
+    }
   },
 
   disconnected() {

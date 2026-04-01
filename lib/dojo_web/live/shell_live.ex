@@ -79,9 +79,15 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
+  def handle_async(:pull_visible, {:ok, metadata}, socket) when map_size(metadata) == 0 do
+    {:noreply, socket}
+  end
+
   def handle_async(:pull_visible, {:ok, metadata}, socket) do
+    current = socket.assigns.disciples
+
     disciples =
-      Enum.reduce(metadata, socket.assigns.disciples, fn {name, meta}, acc ->
+      Enum.reduce(metadata, current, fn {name, meta}, acc ->
         if Map.has_key?(acc, name) do
           existing_time = get_in(acc, [name, :meta, :time]) || 0
 
@@ -95,7 +101,11 @@ defmodule DojoWeb.ShellLive do
         end
       end)
 
-    {:noreply, assign(socket, :disciples, disciples)}
+    if disciples == current do
+      {:noreply, socket}
+    else
+      {:noreply, assign(socket, :disciples, disciples)}
+    end
   end
 
   def handle_async(:pull_visible, {:exit, _reason}, socket) do
@@ -132,16 +142,24 @@ defmodule DojoWeb.ShellLive do
 
   def handle_info(
         {Dojo.PubSub, :hatch, {name, {Dojo.Turtle, meta}}},
-        %{assigns: %{disciples: dis, outershell: outershell}} = socket
+        %{assigns: %{disciples: dis, outershell: outershell, visible_disciples: visible}} =
+          socket
       ) do
+    # Decision 003: only update assigns for VISIBLE disciples — zero DOM cost otherwise
     socket =
-      if Map.has_key?(dis, name) do
-        assign(socket, :disciples, put_in(dis, [name, :meta], meta))
+      if MapSet.member?(visible, name) and Map.has_key?(dis, name) do
+        existing_time = get_in(dis, [name, :meta, :time]) || 0
+
+        if (meta[:time] || 0) > existing_time do
+          assign(socket, :disciples, put_in(dis, [name, :meta], meta))
+        else
+          socket
+        end
       else
         socket
       end
 
-    # follow mode: push update if this is the followed disciple
+    # follow mode: single targeted RPC, only if this is the followed disciple
     socket =
       if outershell.follow and outershell.addr == name do
         case Dojo.Table.last(dis[name][:node], :hatch) do
@@ -289,17 +307,21 @@ defmodule DojoWeb.ShellLive do
         %{assigns: %{disciples: dis, visible_disciples: old_visible}} = socket
       ) do
     new_visible = MapSet.new(visible_names)
-    newly_entered = MapSet.difference(new_visible, old_visible)
 
-    socket = assign(socket, visible_disciples: new_visible)
-
-    if MapSet.size(newly_entered) > 0 do
-      {:noreply,
-       start_async(socket, :pull_visible, fn ->
-         pull_metadata(dis, newly_entered)
-       end)}
-    else
+    if MapSet.equal?(new_visible, old_visible) do
       {:noreply, socket}
+    else
+      newly_entered = MapSet.difference(new_visible, old_visible)
+      socket = assign(socket, visible_disciples: new_visible)
+
+      if MapSet.size(newly_entered) > 0 do
+        {:noreply,
+         start_async(socket, :pull_visible, fn ->
+           pull_metadata(dis, newly_entered)
+         end)}
+      else
+        {:noreply, socket}
+      end
     end
   end
 
