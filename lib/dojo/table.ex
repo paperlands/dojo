@@ -20,22 +20,31 @@ defmodule Dojo.Table do
   end
 
   def last({topic, target_node}, event) do
-    # Check cache first (using topic instead of pid for the key)
     case Cache.get({__MODULE__, :last, topic, event}) do
-      nil -> fetch_state(topic, target_node, event)
+      nil -> fetch_state(topic, target_node, event, :last)
       cached_state -> cached_state
     end
   end
 
-  defp fetch_state(topic, target_node, event) do
+  def last_meta({topic, target_node}, event) do
+    case Cache.get({__MODULE__, :last, topic, event}) do
+      nil -> fetch_state(topic, target_node, event, :last_meta)
+      cached -> Map.take(cached, [:path, :state, :time])
+    end
+  end
+
+  defp fetch_state(topic, target_node, event, call_type) do
     if target_node == :partisan.node() do
-      # It's on this node. Call it directly using the local Registry.
-      local_fetch(topic, event)
+      local_fetch(topic, event, call_type)
     else
-      # It's on a remote node. Use Partisan's RPC to execute `local_fetch/2` OVER THERE.
-      case :partisan_rpc.call(target_node, __MODULE__, :local_fetch, [topic, event], 5000) do
+      case :partisan_rpc.call(
+             target_node,
+             __MODULE__,
+             :local_fetch,
+             [topic, event, call_type],
+             5000
+           ) do
         {:badrpc, reason} ->
-          # Handle network failures, node down, or timeout cleanly
           {:error, {:rpc_failed, reason}}
 
         result ->
@@ -44,13 +53,10 @@ defmodule Dojo.Table do
     end
   end
 
-  # The Local Execution (Runs on whichever node owns the Table)
-  # We make this public (@doc false) so :partisan_rpc can invoke it remotely.
   @doc false
-  def local_fetch(topic, event) do
-    # This automatically looks up the PID in the local Dojo.TableRegistry
+  def local_fetch(topic, event, call_type \\ :last) do
     try do
-      GenServer.call({:via, Registry, {Dojo.TableRegistry, topic}}, {:last, event}, 5000)
+      GenServer.call({:via, Registry, {Dojo.TableRegistry, topic}}, {call_type, event}, 5000)
     catch
       :exit, {:noproc, _} ->
         {:error, :table_not_found_on_node}
@@ -123,6 +129,16 @@ defmodule Dojo.Table do
     {:reply, Map.get(last, event, nil), state}
   end
 
+  def handle_call({:last_meta, event}, _from, %{last: last} = state) do
+    meta =
+      case Map.get(last, event) do
+        nil -> nil
+        store -> Map.take(store, [:path, :state, :time])
+      end
+
+    {:reply, meta, state}
+  end
+
   def handle_call(
         {:add_watcher, lv_pid},
         _from,
@@ -153,9 +169,9 @@ defmodule Dojo.Table do
 
   def handle_info(
         :flush_broadcast,
-        %{pending_broadcast: store, topic: topic, disciple: %{name: name}} = state
+        %{pending_broadcast: store, topic: topic, reg_key: reg_key} = state
       ) do
-    broadcast_hatch(topic, name, store)
+    broadcast_hatch(topic, reg_key, store)
     {:noreply, %{state | broadcast_timer: nil, pending_broadcast: nil}}
   end
 
@@ -193,18 +209,18 @@ defmodule Dojo.Table do
     %{state | pending_broadcast: store}
   end
 
-  defp broadcast_hatch(topic, name, store) do
+  defp broadcast_hatch(topic, reg_key, store) do
     meta = Map.take(store, [:path, :state, :time])
 
     # Layer 2a: full payload to local subscribers (instant render, no Plumtree)
     Phoenix.PubSub.local_broadcast(
       Dojo.PubSub,
       topic,
-      {Dojo.PubSub, :hatch, {name, {Dojo.Turtle, meta}}}
+      {Dojo.PubSub, :hatch, {reg_key, {Dojo.Turtle, meta}}}
     )
 
     # Layer 2b: lightweight version signal to remote nodes via Plumtree
-    # ~30 bytes — remote LiveViews pull full data only if disciple is visible
-    Dojo.PubSub.publish({name, meta[:time]}, :hatch_version, topic)
+    # ~35 bytes — carries time + state so remote LiveViews can derive meta without RPC
+    Dojo.PubSub.publish({reg_key, meta[:time], meta[:state]}, :hatch_version, topic)
   end
 end

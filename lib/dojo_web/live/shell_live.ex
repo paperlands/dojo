@@ -124,42 +124,35 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-  def handle_async(:follow_pull, {:ok, {table_state, last_active}}, socket) do
+  def handle_async(:follow_code, {:ok, %Dojo.Turtle{} = turtle}, socket) do
     outershell = socket.assigns.outershell
 
-    case table_state do
-      %{state: state, time: time} = full_state when time > last_active ->
-        {:noreply,
-         socket
-         |> assign(:outershell, %{outershell | state: state, last_active: time})
-         |> push_event("seeOuterShell", Map.from_struct(full_state))}
-
-      _ ->
-        {:noreply, socket}
-    end
+    {:noreply,
+     socket
+     |> assign(:outershell, %{outershell | state: turtle.state, last_active: turtle.time})
+     |> push_event("seeOuterShell", Map.from_struct(turtle))}
   end
 
-  def handle_async(:follow_pull, {:exit, _reason}, socket) do
-    {:noreply, socket}
-  end
+  def handle_async(:follow_code, {:ok, _}, socket), do: {:noreply, socket}
+  def handle_async(:follow_code, {:exit, _reason}, socket), do: {:noreply, socket}
 
-  # presence handlers — keyed by name (Decision 003)
+  # presence handlers — keyed by reg_key from node tuple (stable unique identity)
 
   def handle_info(
-        {:join, "class:shell" <> _, %{name: name} = disciple},
+        {:join, "class:shell" <> _, %{node: {reg_key, _}} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
-    {:noreply, assign(socket, :disciples, Map.put(d, name, disciple))}
+    {:noreply, assign(socket, :disciples, Map.put(d, reg_key, disciple))}
   end
 
   def handle_info(
-        {:leave, "class:shell" <> _, %{name: name, phx_ref: ref}},
+        {:leave, "class:shell" <> _, %{node: {reg_key, _}, phx_ref: ref}},
         %{assigns: %{disciples: d}} = socket
       ) do
-    # only delete if the leaving ref matches the current ref for this name
+    # only delete if the leaving ref matches the current ref for this reg_key
     # prevents stale-leave race when Gate.change regenerates phx_ref
-    if d[name][:phx_ref] == ref do
-      {:noreply, assign(socket, :disciples, Map.delete(d, name))}
+    if d[reg_key][:phx_ref] == ref do
+      {:noreply, assign(socket, :disciples, Map.delete(d, reg_key))}
     else
       {:noreply, socket}
     end
@@ -169,20 +162,42 @@ defmodule DojoWeb.ShellLive do
     {:noreply, assign(socket, focused_name: focused_name)}
   end
 
-  # hatch signal — PubSub push from Table (Decision 003, Layer 2)
+  # Layer 2a: local hatch push — meta already in message, no RPC needed
+  def handle_info({Dojo.PubSub, :hatch, {reg_key, {Dojo.Turtle, meta}}}, socket) do
+    {:noreply,
+     socket
+     |> update_visible_meta(reg_key, meta)
+     |> maybe_follow_code(reg_key, meta[:time])}
+  end
 
+  # Layer 2b: remote version signal — derive meta from signal, no RPC for visible
+  # Version signals carry only {time, state} — path is preserved from prior pull/local hatch
   def handle_info(
-        {Dojo.PubSub, :hatch, {name, {Dojo.Turtle, meta}}},
-        %{assigns: %{disciples: dis, outershell: outershell, visible_disciples: visible}} =
-          socket
+        {Dojo.PubSub, :hatch_version, {reg_key, time, state}},
+        socket
       ) do
-    # Decision 003: only update assigns for VISIBLE disciples — zero DOM cost otherwise
-    socket =
-      if MapSet.member?(visible, name) and Map.has_key?(dis, name) do
-        existing_time = get_in(dis, [name, :meta, :time]) || 0
+    %{disciples: dis, visible_disciples: visible} = socket.assigns
 
-        if (meta[:time] || 0) > existing_time do
-          assign(socket, :disciples, put_in(dis, [name, :meta], meta))
+    socket =
+      if MapSet.member?(visible, reg_key) and Map.has_key?(dis, reg_key) do
+        existing_meta = get_in(dis, [reg_key, :meta]) || %{}
+        existing_time = existing_meta[:time] || 0
+
+        
+        if (time || 0) > existing_time do
+          # Keep existing path — only update timestamp on it and set new state
+          # a bit of a hack got to consolidate these patterns currently fugly
+          existing_path = existing_meta[:path] || pull_metadata(dis, [reg_key])[reg_key].path
+
+          new_meta = %{
+            path: bump_path_time(existing_path, time),
+            state: state,
+            time: time
+          }
+
+          IO.inspect(new_meta)
+
+          assign(socket, :disciples, put_in(dis, [reg_key, :meta], new_meta))
         else
           socket
         end
@@ -190,41 +205,7 @@ defmodule DojoWeb.ShellLive do
         socket
       end
 
-    # follow mode: async RPC fetch, only if this is the followed disciple
-    socket =
-      if outershell.follow and outershell.addr == name and dis[name][:node] do
-        node = dis[name][:node]
-        last_active = outershell.last_active
-
-        start_async(socket, :follow_pull, fn ->
-          {Dojo.Table.last(node, :hatch), last_active}
-        end)
-      else
-        socket
-      end
-
-    {:noreply, socket}
-  end
-
-  # Layer 2b: remote version signal — pull fresh data for visible disciples
-  def handle_info(
-        {Dojo.PubSub, :hatch_version, {name, time}},
-        %{assigns: %{disciples: dis, visible_disciples: visible}} = socket
-      ) do
-    if MapSet.member?(visible, name) and Map.has_key?(dis, name) do
-      existing_time = get_in(dis, [name, :meta, :time]) || 0
-
-      if (time || 0) > existing_time do
-        {:noreply,
-         start_async(socket, :pull_visible, fn ->
-           pull_metadata(dis, MapSet.new([name]))
-         end)}
-      else
-        {:noreply, socket}
-      end
-    else
-      {:noreply, socket}
-    end
+    {:noreply, maybe_follow_code(socket, reg_key, time)}
   end
 
   def handle_info({Dojo.Controls, command, arg}, socket) do
@@ -258,10 +239,10 @@ defmodule DojoWeb.ShellLive do
       |> Enum.reduce(
         socket,
         fn
-          {name, %{addr: addr, meta: %{path: path}}}, sock ->
+          {_reg_key, %{name: name, meta: %{path: path}}}, sock ->
             sock
             |> push_event("download-file", %{
-              href: "//" <> (addr || "") <> "/" <> path,
+              href: "///" <> path,
               filename: name <> ".png"
             })
 
@@ -432,17 +413,58 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-  # windowed pull — fetch metadata for newly visible disciples (Decision 003, Layer 3)
-  defp pull_metadata(disciples, names) do
-    Enum.reduce(names, %{}, fn name, acc ->
-      with %{node: node} <- disciples[name],
-           %{path: path, state: state, time: time} <- Dojo.Table.last(node, :hatch) do
-        Map.put(acc, name, %{path: path, state: state, time: time})
+  # Bootstrap pull — fetch meta for newly visible disciples (Decision 003, Layer 3)
+  # Only called on viewport entry (seeDisciples). Ongoing updates come from push/signal.
+  defp pull_metadata(disciples, reg_keys) do
+    Enum.reduce(reg_keys, %{}, fn reg_key, acc ->
+      with %{node: node} <- disciples[reg_key],
+           %{path: _, state: _, time: _} = meta <- Dojo.Table.last_meta(node, :hatch) do
+        Map.put(acc, reg_key, meta)
       else
         _ -> acc
       end
     end)
   end
+
+  defp update_visible_meta(socket, reg_key, meta) do
+    %{disciples: dis, visible_disciples: visible} = socket.assigns
+
+    if MapSet.member?(visible, reg_key) and Map.has_key?(dis, reg_key) do
+      existing_time = get_in(dis, [reg_key, :meta, :time]) || 0
+
+      if (meta[:time] || 0) > existing_time do
+        existing_meta = get_in(dis, [reg_key, :meta]) || %{}
+        # Preserve existing path when incoming signal has none — path is
+        # hydrated by pull_visible and only the timestamp needs bumping
+        merged = Map.merge(existing_meta, meta)
+        merged = %{merged | path: meta[:path] || existing_meta[:path]}
+        assign(socket, :disciples, put_in(dis, [reg_key, :meta], merged))
+      else
+        socket
+      end
+    else
+      socket
+    end
+  end
+
+  defp maybe_follow_code(socket, reg_key, time) do
+    %{outershell: outershell, disciples: dis} = socket.assigns
+
+    if outershell.follow and outershell.addr == reg_key and dis[reg_key][:node] do
+      if (time || 0) > outershell.last_active do
+        start_async(socket, :follow_code, fn ->
+          Dojo.Table.last(dis[reg_key][:node], :hatch)
+        end)
+      else
+        socket
+      end
+    else
+      socket
+    end
+  end
+
+  defp bump_path_time(nil, _time), do: nil
+  defp bump_path_time(path, time), do: Regex.replace(~r/\?t=\d+/, path, "?t=#{time}")
 
   def outershell(assigns) do
     ~H"""

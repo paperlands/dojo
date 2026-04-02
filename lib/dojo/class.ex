@@ -66,7 +66,7 @@ defmodule Dojo.Class do
 
   def list_disciples(book) do
     Dojo.Gate.list_users(topic(book))
-    |> Enum.into(%{}, fn %{name: name} = dis -> {name, dis} end)
+    |> Enum.into(%{}, fn %{node: {reg_key, _}} = dis -> {reg_key, dis} end)
   end
 
   def listen(book) do
