@@ -245,9 +245,24 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
   end
 
   defp peer_connected?(name) do
-    case safe(fn -> :partisan_peer_connections.count(name) end) do
-      n when is_integer(n) and n > 0 -> true
-      _ -> false
+    case safe(fn -> :partisan_peer_connections.connections(name) end) do
+      conns when is_list(conns) and conns != [] ->
+        {alive, dead} =
+          Enum.split_with(conns, fn conn ->
+            pid = :partisan_peer_connections.pid(conn)
+            is_pid(pid) and Process.alive?(pid)
+          end)
+
+        # Opportunistically prune dead connections we discover
+        Enum.each(dead, fn conn ->
+          pid = :partisan_peer_connections.pid(conn)
+          safe(fn -> :partisan_peer_connections.prune(pid) end)
+        end)
+
+        alive != []
+
+      _ ->
+        false
     end
   end
 
