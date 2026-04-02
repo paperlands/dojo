@@ -3,6 +3,8 @@ defmodule DojoWeb.BootLive do
   # import DojoWeb.SVGComponents
 
   def mount(params, _session, socket) do
+    if connected?(socket), do: Dojo.PubSub.subscribe("dojo:hotspot")
+
     {:ok,
      socket
      |> assign(:params, params)
@@ -19,6 +21,11 @@ defmodule DojoWeb.BootLive do
 
   def boot(socket, _time) do
     socket
+  end
+
+  def handle_info({Dojo.PubSub, :hotspot_changed, status}, socket) do
+    send_update(DojoWeb.HotspotLive, id: "hotspot", hotspot_status: status)
+    {:noreply, socket}
   end
 
   def handle_info(:boot, %{assigns: %{params: params}} = socket) do

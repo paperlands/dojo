@@ -48,7 +48,8 @@ defmodule Dojo.Application do
       # Start to serve requests, typically the last entry
       DojoWeb.Endpoint,
       {Dojo.Cluster.MDNS, adapter: adapter, poll_interval: 5_000},
-      Dojo.Cluster.NetworkMonitor
+      Dojo.Cluster.NetworkMonitor,
+      Dojo.Hotspot.Server
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
