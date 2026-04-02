@@ -171,41 +171,20 @@ defmodule DojoWeb.ShellLive do
   end
 
   # Layer 2b: remote version signal — derive meta from signal, no RPC for visible
-  # Version signals carry only {time, state} — path is preserved from prior pull/local hatch
+  # Map payload: extensible across rolling deploys. Path preserved from prior pull/local hatch.
+  def handle_info(
+        {Dojo.PubSub, :hatch_version, %{reg_key: reg_key} = version},
+        socket
+      ) do
+    {:noreply, apply_hatch_version(socket, reg_key, version[:time], version[:state])}
+  end
+
+  # Legacy 3-tuple from older nodes during rolling deploy — same semantics
   def handle_info(
         {Dojo.PubSub, :hatch_version, {reg_key, time, state}},
         socket
       ) do
-    %{disciples: dis, visible_disciples: visible} = socket.assigns
-
-    socket =
-      if MapSet.member?(visible, reg_key) and Map.has_key?(dis, reg_key) do
-        existing_meta = get_in(dis, [reg_key, :meta]) || %{}
-        existing_time = existing_meta[:time] || 0
-
-        
-        if (time || 0) > existing_time do
-          # Keep existing path — only update timestamp on it and set new state
-          # a bit of a hack got to consolidate these patterns currently fugly
-          existing_path = existing_meta[:path] || pull_metadata(dis, [reg_key])[reg_key].path
-
-          new_meta = %{
-            path: bump_path_time(existing_path, time),
-            state: state,
-            time: time
-          }
-
-          IO.inspect(new_meta)
-
-          assign(socket, :disciples, put_in(dis, [reg_key, :meta], new_meta))
-        else
-          socket
-        end
-      else
-        socket
-      end
-
-    {:noreply, maybe_follow_code(socket, reg_key, time)}
+    {:noreply, apply_hatch_version(socket, reg_key, time, state)}
   end
 
   def handle_info({Dojo.Controls, command, arg}, socket) do
@@ -417,13 +396,22 @@ defmodule DojoWeb.ShellLive do
   # Only called on viewport entry (seeDisciples). Ongoing updates come from push/signal.
   defp pull_metadata(disciples, reg_keys) do
     Enum.reduce(reg_keys, %{}, fn reg_key, acc ->
-      with %{node: node} <- disciples[reg_key],
-           %{path: _, state: _, time: _} = meta <- Dojo.Table.last_meta(node, :hatch) do
-        Map.put(acc, reg_key, meta)
-      else
-        _ -> acc
+      case pull_one_meta(disciples, reg_key) do
+        %{} = meta -> Map.put(acc, reg_key, meta)
+        nil -> acc
       end
     end)
+  end
+
+  # Single-key pull: returns %{path, state, time} or nil. Never crashes.
+  # Used both by batch pull_metadata and by apply_hatch_version for path hydration.
+  defp pull_one_meta(disciples, reg_key) do
+    with %{node: node} <- disciples[reg_key],
+         %{path: _, state: _, time: _} = meta <- Dojo.Table.last_meta(node, :hatch) do
+      meta
+    else
+      _ -> nil
+    end
   end
 
   defp update_visible_meta(socket, reg_key, meta) do
@@ -445,6 +433,36 @@ defmodule DojoWeb.ShellLive do
     else
       socket
     end
+  end
+
+  defp apply_hatch_version(socket, reg_key, time, state) do
+    %{disciples: dis, visible_disciples: visible} = socket.assigns
+
+    socket =
+      if MapSet.member?(visible, reg_key) and Map.has_key?(dis, reg_key) do
+        existing_meta = get_in(dis, [reg_key, :meta]) || %{}
+        existing_time = existing_meta[:time] || 0
+
+        if (time || 0) > existing_time do
+          path =
+            existing_meta[:path] ||
+              (pull_one_meta(dis, reg_key) || %{})[:path]
+
+          new_meta = %{
+            path: bump_path_time(path, time),
+            state: state,
+            time: time
+          }
+
+          assign(socket, :disciples, put_in(dis, [reg_key, :meta], new_meta))
+        else
+          socket
+        end
+      else
+        socket
+      end
+
+    maybe_follow_code(socket, reg_key, time)
   end
 
   defp maybe_follow_code(socket, reg_key, time) do

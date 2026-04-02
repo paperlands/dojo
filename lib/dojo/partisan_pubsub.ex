@@ -151,10 +151,12 @@ defmodule Phoenix.PubSub.Partisan.Handler do
   @impl true
   def exchange(_peer), do: :ignore
 
-  # FIX: 'graft/1' handles tree repairs.
-  # Since we don't keep a history of messages, we cannot satisfy grafts.
+  # 'graft/1' handles tree repairs — a peer missed a message and wants us to re-send it.
+  # PubSub is ephemeral: we don't keep message history, so we can't satisfy grafts.
+  # Return {:error, reason} — handle_graft/7 logs it and moves on.
+  # WARNING: :ignore crashes handle_graft (no matching clause) → cascading node failure.
   @impl true
-  def graft(_message_id), do: :ignore
+  def graft(_message_id), do: {:error, :no_history}
 
   # FIX: 'is_stale/1' checks if we've already seen this message.
   # For real-time PubSub, we assume nothing is stale to ensure propagation,
