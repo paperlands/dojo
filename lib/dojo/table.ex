@@ -220,7 +220,12 @@ defmodule Dojo.Table do
     )
 
     # Layer 2b: lightweight version signal to remote nodes via Plumtree
-    # ~35 bytes — carries time + state so remote LiveViews can derive meta without RPC
-    Dojo.PubSub.publish({reg_key, meta[:time], meta[:state]}, :hatch_version, topic)
+    # Map payload — extensible across rolling deploys without breaking receivers.
+    # Older nodes sending 3-tuples are handled by the legacy clause in ShellLive.
+    Dojo.PubSub.publish(
+      %{reg_key: reg_key, time: meta[:time], state: meta[:state]},
+      :hatch_version,
+      topic
+    )
   end
 end

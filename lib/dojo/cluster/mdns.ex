@@ -49,6 +49,13 @@ defmodule Dojo.Cluster.MDNS do
     :exit, _ -> []
   end
 
+  @doc "Evict a peer from the mDNS cache. Called by the adapter when persistent connection failures indicate the peer is unreachable."
+  def evict_peer(name) do
+    GenServer.cast(__MODULE__, {:evict_peer, name})
+  catch
+    :exit, _ -> :ok
+  end
+
   @doc "Return a diagnostic snapshot of all observable mDNS state."
   def diag do
     GenServer.call(__MODULE__, :diag)
@@ -211,6 +218,23 @@ defmodule Dojo.Cluster.MDNS do
   end
 
   @impl true
+  def handle_cast({:evict_peer, name}, state) do
+    if Map.has_key?(state.cache, name) do
+      Logger.info("[mDNS] evicting unreachable peer #{name} from cache (adapter request)")
+      cache = Map.delete(state.cache, name)
+      state.adapter.on_peer_departed(name)
+
+      :telemetry.execute([:dojo, :cluster, :peer_departed], %{}, %{
+        node: name,
+        reason: :connect_failure
+      })
+
+      {:noreply, %{state | cache: cache}}
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_cast({:rejoin_multicast, new_ips}, %{socket: socket} = state)
       when not is_nil(socket) do
     Logger.info("[mDNS] rejoining multicast on #{inspect(Enum.map(new_ips, &fmt/1))}")
