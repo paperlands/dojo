@@ -83,6 +83,7 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_async(:join_disciples, {:ok, class}, %{assigns: %{clan: _clan}} = socket) do
+    Process.monitor(class)
     {:noreply, assign(socket, :class, class)}
   end
 
@@ -189,6 +190,11 @@ defmodule DojoWeb.ShellLive do
 
   def handle_info({Dojo.Controls, command, arg}, socket) do
     {:noreply, socket |> push_event("writeShell", %{"command" => command, "args" => arg})}
+  end
+
+  def handle_info({:DOWN, _ref, :process, pid, _reason}, %{assigns: %{class: pid}} = socket) do
+    #nil our pid and rejoins 
+    {:noreply, socket |> assign(:class, nil) |> sync_session()}
   end
 
   def handle_info(event, socket) do

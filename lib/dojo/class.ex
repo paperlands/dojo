@@ -30,6 +30,7 @@ defmodule Dojo.Class do
         # No Table exists — start one
         spec = %{
           id: Table,
+          restart: :temporary,
           start:
             {Table, :start_link,
              [%{track_pid: pid, topic: topic_str, disciple: disciple, reg_key: reg_key}]}

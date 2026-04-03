@@ -34,7 +34,7 @@ defmodule Dojo.Application do
                {Dojo.Gate,
                 name: Dojo.Gate, pubsub_server: Dojo.PubSub, pool_size: System.schedulers_online()}
              ],
-             [strategy: :one_for_all]
+             [strategy: :rest_for_one]
            ]}
       },
       # Dojo.Repo,

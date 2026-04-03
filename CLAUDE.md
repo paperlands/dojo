@@ -23,7 +23,7 @@ Before touching code, classify the task's complexity (Cynefin):
 |--------|--------|----------|
 | **Simple** | Rename, typo fix, config change | Act directly. No exploration needed. |
 | **Complicated** | Add feature to existing module, fix bug with known symptoms | LSP navigate → read target → implement. |
-| **Complex** | New subsystem, cross-cutting change, distributed behavior | Probe with a spike. Read `specs/tensions/` and `specs/decisions/` for prior art. |
+| **Complex** | New subsystem, cross-cutting change, distributed behavior | Probe judiciously and assidiously with a spike. Consult design principles and technique. Read `specs/tensions/` and `specs/decisions/` for prior art but don't be dogmatic. |
 | **Chaotic** | Production incident, data corruption, reframing, paradigm shift | Act first to stabilize, reflect after. Rethink from first principles and patterns, research deeply for prior art.|
 
 This classification determines how many tokens you spend understanding context. Simple tasks should not trigger deep exploration. Complex tasks should check `specs/` before rediscovering what's already been decided.
@@ -75,6 +75,23 @@ Commit convention for reasoning work: `kumite(<phase>): <what happened>`
 - Design how modules communicate rather than their internal properties
 - If there's clearly a right way, do the right way. Discipline solves it.
 - Liberate well-defined structures: visibility, autonomy, tractability, explorability
+- Self healing , let it crash, fault tolerant.
+
+## Technique
+
+- Abstracting out concurrency — concurrent programs are, in some sense, more diecult to write than sequential programs. Instead of writing one module which has both concurrent and sequential code I show how to structure the code into two modules, one of which has all the concurrent code, the other having only purely sequential code. Behaviours should be abstracted out as generics to be battle tested independently of application logic.
+
+- Every thing is a process and they only interact by exchanging messages.  The key in making great and growable systems is much more to design how its modules communicate rather than what their internal properties and behaviors should be. When we interface Erlang programs to external sodware it is often convenient to write an interface program which maintains the illusion that“everything is a process.” This preserves isolation and coherence while allowing for interdependence and harmony.
+
+- Error Handling
+  - Let some other process do the error recovery. The error-handling code and the code which has the error execute within different threads of control. The code which solves the problem is not cluttered up with the code which handles the exception. The processes that are supposed to do things (the workers) do not have to worry about error handling with supervisors shepherding their lifecycle. The linked processes which receive these failure signals may or may not intercept and process these signals as if they were normal interprocess messages.
+  - If you can’t do what you want to do, die.
+  - Let it crash.
+  - Do not program defensively.
+  
+- To design and build a fault-tolerant system, you must understand how the system should work, how it might fail, and what kinds of errors can occur. Error detection is an essential component of fault tolerance. That is, if you know an error has occurred, you might be able to tolerate it by replacing the ocending component, using an alternative means of computation, or raising an exception. However, you want to avoid adding unnecessary complexity to enable fault tolerance because that complexity could result in a less reliable system.We say a system is fault-tolerant if its programs can be properly executed despite the occurrence of logic faults
+
+- Intentional programming — this is a programming style where the programmer can easily see from the code exactly what the programmer intended, rather than by guessing at the meaning from a superficial analysis of the code.When reading thousands of lines of code like this we begin to worry about intentionality—we ask ourselves the question “what did the programmer intend by this line of code?”
 
 ## Architecture
 
