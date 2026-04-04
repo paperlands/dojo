@@ -193,7 +193,7 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_info({:DOWN, _ref, :process, pid, _reason}, %{assigns: %{class: pid}} = socket) do
-    #nil our pid and rejoins 
+    # nil our pid and rejoins 
     {:noreply, socket |> assign(:class, nil) |> sync_session()}
   end
 

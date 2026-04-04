@@ -81,6 +81,7 @@ defmodule Dojo.MixProject do
       {:burrito, "~> 1.5"},
       {:partisan, partisan_dep()},
       # Protocol Buffers for safe, non-atom signaling
+      {:recon, "~> 2.5"},
       {:protox, "~> 2.0"}
       # {:libcluster, "~> 3.3.0"}
     ]

@@ -32,7 +32,7 @@ defmodule Dojo.Application do
              [
                {Phoenix.PubSub, name: Dojo.PubSub, adapter: Phoenix.PubSub.Partisan},
                {Dojo.Gate,
-                name: Dojo.Gate, pubsub_server: Dojo.PubSub, pool_size: System.schedulers_online()}
+                name: Dojo.Gate, pubsub_server: Dojo.PubSub, pool_size: 1, broadcast_period: 3_000}
              ],
              [strategy: :rest_for_one]
            ]}
