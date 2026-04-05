@@ -399,8 +399,8 @@ label "Welcome to PaperLand" 50`,
             throw new Error('Cannot close the last buffer');
         }
 
-        const confirmed = prompt(`Are you sure you want to kill ${this.buffers.get(id)["name"]}?`);
-        if (confirmed === '') {
+        const confirmed = confirm(`NOTE! You are destroying ${this.buffers.get(id)["name"]}`);
+        if (confirmed) {
 
             // Switch to another buffer if closing current
             if (id === this.currentBuffer) {

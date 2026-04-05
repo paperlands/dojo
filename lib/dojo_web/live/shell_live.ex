@@ -620,7 +620,7 @@ defmodule DojoWeb.ShellLive do
         ],
         control: [
           {"loop", gettext("Repeat Commands"), [times: 5]},
-          {"def", gettext("Name your Command"), [name: "my_cmd"]}
+          {"def", gettext("Name your Command"), [name: "name"]}
         ]
       })
 
