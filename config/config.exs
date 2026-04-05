@@ -23,7 +23,8 @@ config :dojo, DojoWeb.Endpoint,
   check_origin: [
     "https://dojo.paperland.sg",
     "https://dojo.paperland.in",
-    "https://thedojo.fly.dev"
+    "https://thedojo.fly.dev",
+    "https://paperland.fly.dev"
   ],
   live_view: [signing_salt: "ko/5Xrfn"]
 
