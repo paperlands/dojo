@@ -15,6 +15,9 @@ defmodule Dojo.Cluster.NetworkMonitor do
 
   # 3s — fast enough for WiFi hops, cheap enough for constrained devices
   @poll_interval 3_000
+  # Require N consecutive polls with same new IPs before triggering change.
+  # Absorbs transient WiFi flaps without delaying genuine roaming too much.
+  @debounce_stable_count 2
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -30,28 +33,50 @@ defmodule Dojo.Cluster.NetworkMonitor do
     )
 
     schedule_poll()
-    {:ok, %{ips: current_ips, port: port}}
+    {:ok, %{ips: current_ips, port: port, pending_ips: nil, stable_count: 0}}
   end
 
   @impl true
-  def handle_info(:poll, %{ips: old_ips, port: port} = state) do
+  def handle_info(:poll, state) do
     new_ips = Dojo.Cluster.MDNS.routable_ipv4_addrs()
-
-    state =
-      if MapSet.new(new_ips) != MapSet.new(old_ips) do
-        Logger.warning(
-          "[NetworkMonitor] IP change detected! " <>
-            "#{inspect(Enum.map(old_ips, &fmt/1))} → #{inspect(Enum.map(new_ips, &fmt/1))}"
-        )
-
-        handle_ip_change(new_ips, old_ips, port)
-        %{state | ips: new_ips}
-      else
-        state
-      end
-
+    state = debounce_ip_change(new_ips, state)
     schedule_poll()
     {:noreply, state}
+  end
+
+  # Debounce state machine: require @debounce_stable_count consecutive polls
+  # seeing the same new IPs before triggering the expensive handle_ip_change.
+  defp debounce_ip_change(new_ips, %{ips: old_ips} = state) do
+    new_set = MapSet.new(new_ips)
+    old_set = MapSet.new(old_ips)
+
+    cond do
+      # No change — reset any pending debounce
+      new_set == old_set ->
+        %{state | pending_ips: nil, stable_count: 0}
+
+      # Same new IPs seen again — increment stable count
+      state.pending_ips != nil and MapSet.new(state.pending_ips) == new_set ->
+        count = state.stable_count + 1
+
+        if count >= @debounce_stable_count do
+          Logger.warning(
+            "[NetworkMonitor] IP change confirmed after #{count} polls: " <>
+              "#{inspect(Enum.map(old_ips, &fmt/1))} → #{inspect(Enum.map(new_ips, &fmt/1))}"
+          )
+
+          handle_ip_change(new_ips, old_ips, state.port)
+          %{state | ips: new_ips, pending_ips: nil, stable_count: 0}
+        else
+          Logger.debug("[NetworkMonitor] debouncing IP change, stable_count=#{count}")
+          %{state | stable_count: count}
+        end
+
+      # New IPs detected (or different from pending) — start fresh debounce
+      true ->
+        Logger.debug("[NetworkMonitor] IP change detected, starting debounce")
+        %{state | pending_ips: new_ips, stable_count: 1}
+    end
   end
 
   # ── The critical hot-swap sequence ──────────────────────────────────────
@@ -110,14 +135,16 @@ defmodule Dojo.Cluster.NetworkMonitor do
 
   defp disconnect_stale_peers do
     try do
-      # partisan_peer_connections is the ETS table holding live TCP connections.
-      # Disconnecting peers forces HyParView to reconnect using fresh node_specs
-      # that now carry our updated listen_addrs.
       case :partisan_peer_service.members() do
         members when is_list(members) and members != [] ->
           Logger.info(
             "[NetworkMonitor] disconnecting #{length(members)} peers to force reconnect"
           )
+
+          # Clear PLUMTREE_OUTSTANDING lazy push entries for these peers BEFORE
+          # disconnecting. Without this, reconnection triggers a burst of stale
+          # i_have messages from accumulated outstanding entries.
+          clear_outstanding_for_peers(members)
 
           :partisan_peer_service_manager.disconnect(members)
 
@@ -127,6 +154,21 @@ defmodule Dojo.Cluster.NetworkMonitor do
     rescue
       _ -> :ok
     end
+  end
+
+  defp clear_outstanding_for_peers(members) do
+    # PLUMTREE_OUTSTANDING is a duplicate_bag ETS table owned by
+    # partisan_plumtree_broadcast. Entries are keyed by peer node.
+    # Deleting entries for disconnecting peers prevents stale i_have bursts.
+    Enum.each(members, fn member ->
+      try do
+        :ets.delete(:partisan_plumtree_broadcast, member)
+      catch
+        _, _ -> :ok
+      end
+    end)
+  rescue
+    _ -> :ok
   end
 
   # ── Helpers ─────────────────────────────────────────────────────────────

@@ -120,8 +120,8 @@ config :partisan,
     control: %{monotonic: true, parallelism: 1},
     data: %{
       monotonic: true,
-      parallelism: 1,
-      compression: false
+      parallelism: 2,
+      compression: true
     },
     partisan_membership: %{monotonic: false, parallelism: 1, compression: true}
   },

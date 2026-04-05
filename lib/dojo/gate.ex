@@ -14,21 +14,26 @@ defmodule Dojo.Gate do
   end
 
   def handle_diff(diff, state) do
+    # Inline delivery: direct_broadcast! sends to local Handler via send/2, non-blocking.
+    # Previous Task.Supervisor wrapper removed backpressure — under load, unbounded
+    # tasks accumulated. Inline gives natural backpressure to the Tracker shard.
     for {topic, {joins, leaves}} <- diff do
-      messages =
-        Enum.map(joins, fn {_key, meta} ->
+      for {_key, meta} <- joins do
+        Phoenix.PubSub.direct_broadcast!(
+          state.node_name,
+          state.pubsub_server,
+          topic,
           {:join, topic, Map.put(meta, :topic, topic)}
-        end) ++
-          Enum.map(leaves, fn {_key, meta} ->
-            {:leave, topic, Map.put(meta, :topic, topic)}
-          end)
+        )
+      end
 
-      if messages != [] do
-        Task.Supervisor.start_child(Dojo.TaskSupervisor, fn ->
-          Enum.each(messages, fn msg ->
-            Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
-          end)
-        end)
+      for {_key, meta} <- leaves do
+        Phoenix.PubSub.direct_broadcast!(
+          state.node_name,
+          state.pubsub_server,
+          topic,
+          {:leave, topic, Map.put(meta, :topic, topic)}
+        )
       end
     end
 

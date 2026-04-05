@@ -11,9 +11,9 @@ defmodule DojoWeb.Telemetry do
     children = [
       # Telemetry poller will execute the given period measurements
       # every 10_000ms. Learn more here: https://hexdocs.pm/telemetry_metrics
-      {:telemetry_poller, measurements: periodic_measurements(), period: 10_000},
+      {:telemetry_poller, measurements: periodic_measurements(), period: 10_000}
       # Add reporters as children of your supervision tree.
-      {Telemetry.Metrics.ConsoleReporter, metrics: metrics()}
+      # {Telemetry.Metrics.ConsoleReporter, metrics: metrics()}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -74,50 +74,26 @@ defmodule DojoWeb.Telemetry do
       #     "The time the connection spent waiting before being checked out for the query"
       # ),
 
-      # Add Nebulex Cache Metrics
-      # Command execution duration
+      # Nebulex Cache Metrics
       # summary("dojo.cache.command.stop.duration",
-      #         unit: {:native, :millisecond},
-      #         tags: [:function_name]
+      #   unit: {:native, :millisecond},
+      #   tags: [:function_name]
       # ),
-
-      # Count exceptions
-      counter("dojo.cache.command.exception.duration",
-        tags: [:function_name, :kind]
-      )
-
-      # # Track command execution counts
-      # counter("dojo.cache.command.stop.duration",
-      #         tags: [:function_name]
-      # ),
-
-      # counter("dojo.cache.command.stop.duration",
-      #         tags: [:function_name, :result],
-      #         tag_values: fn metadata ->
-      #           result = case metadata.result do
-      #             nil -> :miss
-      #             _ -> :hit
-      #           end
-
-      #           Map.put(metadata, :result, result)
-      #         end
+      # counter("dojo.cache.command.exception.duration",
+      #   tags: [:function_name, :kind]
       # ),
 
       # VM Metrics
-      # summary("vm.memory.total", unit: {:byte, :kilobyte}),
-      # summary("vm.total_run_queue_lengths.total"),
-      # summary("vm.total_run_queue_lengths.cpu"),
-      # summary("vm.total_run_queue_lengths.io")
+      summary("vm.memory.total", unit: {:byte, :kilobyte}),
+      summary("vm.total_run_queue_lengths.total"),
+      summary("vm.total_run_queue_lengths.cpu"),
+      summary("vm.total_run_queue_lengths.io")
     ]
   end
 
   defp periodic_measurements do
     [
-      # A module, function and arguments to be invoked periodically.
-      # This function must call :telemetry.execute/3 and a metric must be added above.
-      # {DojoWeb, :count_users, []}
-      #
-      # {Dojo.Cache, :dispatch_stats, []}
+      {Dojo.Diag, :emit_vm_stats, []}
     ]
   end
 end
