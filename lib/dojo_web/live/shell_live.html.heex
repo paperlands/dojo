@@ -408,7 +408,7 @@
           :for={{reg_key, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
           class="bg-transparent pointer-events-auto"
         >
-          <div class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out mx-2 animate-fade flex-shrink-0" <> is_main_focus(reg_key, @focused_name)}>
+          <div class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out mx-2 backdrop-blur-[1px] animate-fade flex-shrink-0" <> is_main_focus(reg_key, @focused_name)}>
             <.icon
               :if={@sensei}
               name="hero-cursor-arrow-ripple"
@@ -434,7 +434,7 @@
                   "border-accent/50 text-accent"
               ]}
             >
-              <div class="absolute font-mono text-sm tracking-wider rotate-0 select-none top-2 right-2">
+              <div class="absolute font-mono  text-sm tracking-wider rotate-0 select-none top-2 right-2">
                 {dis.name}
               </div>
 
@@ -445,6 +445,7 @@
                 decoding="sync"
                 />
               <img
+            
                 :if={Map.has_key?(dis, :meta)}
                 src={"//" <> (dis[:addr] || "") <> "/#{dis.meta.path}"}
                 onerror="this.src='/images/turtlehead.png';"

@@ -628,7 +628,7 @@ defmodule DojoWeb.ShellLive do
     <!-- Command Deck Component (command_deck.html.heex) -->
     <div
       id="commanddeck"
-      class="rightthird fixed right-0 flex deck mt-[15dvh] h-3/5 lg:h-4/5 select-none animate-fade hidden sm:block"
+      class="rightthird fixed right-0 flex deck mt-[15dvh] h-3/5 lg:h-4/5 select-none animate-fade sm:block"
       phx-update="ignore"
     >
       <!-- Command Deck Panel -->
