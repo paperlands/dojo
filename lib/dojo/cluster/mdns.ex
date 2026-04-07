@@ -948,6 +948,6 @@ defmodule Dojo.Cluster.MDNS do
   end
 
   defp deadline(ms), do: System.monotonic_time(:millisecond) + ms
-  defp fmt(nil), do: ""
+  defp fmt(nil), do: nil
   defp fmt(ip), do: ip |> :inet.ntoa() |> to_string()
 end

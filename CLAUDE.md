@@ -23,7 +23,7 @@ Before touching code, classify the task's complexity (Cynefin):
 |--------|--------|----------|
 | **Simple** | Rename, typo fix, config change | Act directly. No exploration needed. |
 | **Complicated** | Add feature to existing module, fix bug with known symptoms | LSP navigate → read target → implement. |
-| **Complex** | New subsystem, cross-cutting change, distributed behavior | Probe judiciously and assidiously with a spike. Consult design principles and technique. Read `specs/tensions/` and `specs/decisions/` for prior art but don't be dogmatic. |
+| **Complex** | New subsystem, cross-cutting change, distributed behavior | **First question: Is causation established?** If a symptom is described but mechanism is unknown, diagnostic spike first (trace source code), solution proposals after. Probe judiciously and assidiously. Read `specs/tensions/` and `specs/decisions/` for prior art but don't be dogmatic. |
 | **Chaotic** | Production incident, data corruption, reframing, paradigm shift | Act first to stabilize, reflect after. Rethink from first principles and patterns, research deeply for prior art.|
 
 This classification determines how many tokens you spend understanding context. Simple tasks should not trigger deep exploration. Complex tasks should check `specs/` before rediscovering what's already been decided.
@@ -70,6 +70,7 @@ Commit convention for reasoning work: `kumite(<phase>): <what happened>`
 
 ### Design Principles
 
+- Diagnose before designing — in Complex/Chaotic domains, establish the causal mechanism *before* proposing architecture. If causation is unknown, the first probe must trace source code and mechanism, not propose solutions.
 - Write code that reveals the most about the problem first — steer the ship in fog
 - Minimize primitive count for agility; distinguish primitives that confer greatest flexibility
 - Design how modules communicate rather than their internal properties

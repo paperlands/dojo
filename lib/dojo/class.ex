@@ -23,40 +23,49 @@ defmodule Dojo.Class do
     case Registry.lookup(Dojo.TableRegistry, reg_key) do
       [{table_pid, _}] ->
         # Table exists — add this LiveView as a watcher
-        Table.add_watcher(table_pid, pid)
-        {:ok, table_pid}
+        try do
+          Table.add_watcher(table_pid, pid)
+          {:ok, table_pid}
+        catch
+          :exit, {:noproc, _} ->
+            # Table died between Registry lookup and our call — start fresh
+            start_table(pid, topic_str, disciple, reg_key)
+        end
 
       [] ->
-        # No Table exists — start one
-        spec = %{
-          id: Table,
-          restart: :temporary,
-          start:
-            {Table, :start_link,
-             [%{track_pid: pid, topic: topic_str, disciple: disciple, reg_key: reg_key}]}
-        }
-
-        case DynamicSupervisor.start_child(
-               {:via, PartitionSupervisor, {__MODULE__, pid}},
-               spec
-             ) do
-          {:ok, table_pid} ->
-            {:ok, table_pid}
-
-          # Race condition: another tab started it between our lookup and start
-          {:error, {:already_started, table_pid}} ->
-            Table.add_watcher(table_pid, pid)
-            {:ok, table_pid}
-
-          other ->
-            other
-        end
+        start_table(pid, topic_str, disciple, reg_key)
     end
   end
 
   def join!(pid, book, disciple) do
     {:ok, class} = join(pid, book, disciple)
     class
+  end
+
+  defp start_table(pid, topic_str, disciple, reg_key) do
+    spec = %{
+      id: Table,
+      restart: :temporary,
+      start:
+        {Table, :start_link,
+         [%{track_pid: pid, topic: topic_str, disciple: disciple, reg_key: reg_key}]}
+    }
+
+    case DynamicSupervisor.start_child(
+           {:via, PartitionSupervisor, {__MODULE__, pid}},
+           spec
+         ) do
+      {:ok, table_pid} ->
+        {:ok, table_pid}
+
+      # Race condition: another tab started it between our lookup and start
+      {:error, {:already_started, table_pid}} ->
+        Table.add_watcher(table_pid, pid)
+        {:ok, table_pid}
+
+      other ->
+        other
+    end
   end
 
   ## helper fns

@@ -32,6 +32,11 @@ defmodule Dojo.Cluster.NetworkMonitor do
       "[NetworkMonitor] init — IPs=#{inspect(Enum.map(current_ips, &fmt/1))} port=#{port}"
     )
 
+    # Seed addr cache so Gate.routable_addr/0 reads from cache instead of live syscall
+    current_addr = Dojo.Cluster.Routing.routable_addr()
+    :persistent_term.put({Dojo.Gate, :addr}, current_addr)
+    Logger.info("[NetworkMonitor] seeded addr=#{current_addr}")
+
     schedule_poll()
     {:ok, %{ips: current_ips, port: port, pending_ips: nil, stable_count: 0}}
   end
@@ -107,6 +112,17 @@ defmodule Dojo.Cluster.NetworkMonitor do
     # 6. Re-announce on NEW IPs — make us visible on the new network immediately
     #    instead of waiting up to 5s for the next mDNS lookup cycle.
     Dojo.Cluster.MDNS.reannounce(new_ips)
+
+    # 7. Update addr cache and notify all Tables on this node
+    new_addr = Dojo.Cluster.Routing.routable_addr()
+    :persistent_term.put({Dojo.Gate, :addr}, new_addr)
+
+    if Application.get_env(:dojo, :routing_strategy) == Dojo.Cluster.Routing.Local do
+      Phoenix.PubSub.local_broadcast(Dojo.PubSub, "system:network", {:network_change, new_addr})
+      Logger.info("[NetworkMonitor] addr updated → #{new_addr}, broadcast to system:network")
+    else
+      Logger.info("[NetworkMonitor] addr updated → #{new_addr}")
+    end
   end
 
   defp restart_listeners do

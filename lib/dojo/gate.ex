@@ -90,6 +90,6 @@ defmodule Dojo.Gate do
   end
 
   defp routable_addr do
-    Dojo.Cluster.Routing.routable_addr()
+    :persistent_term.get({__MODULE__, :addr}, Dojo.Cluster.Routing.routable_addr())
   end
 end

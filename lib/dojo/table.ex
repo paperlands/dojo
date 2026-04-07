@@ -81,6 +81,11 @@ defmodule Dojo.Table do
     # This allows presence to survive as long as ANY tab is connected
     {:ok, ref} = Dojo.Gate.track(self(), topic, %{disciple | node: {reg_key, :partisan.node()}})
 
+    # Subscribe to network roam events so we can refresh stale addr in presence
+    if Application.get_env(:dojo, :routing_strategy) == Dojo.Cluster.Routing.Local do
+      Phoenix.PubSub.subscribe(Dojo.PubSub, "system:network")
+    end
+
     {:ok,
      %{
        watchers: MapSet.new([lv_pid]),
@@ -173,6 +178,14 @@ defmodule Dojo.Table do
       ) do
     broadcast_hatch(topic, reg_key, store)
     {:noreply, %{state | broadcast_timer: nil, pending_broadcast: nil}}
+  end
+
+  def handle_info(
+        {:network_change, new_addr},
+        %{topic: topic, disciple: %{name: name}} = state
+      ) do
+    Dojo.Gate.change(self(), topic, name, {:addr, new_addr})
+    {:noreply, state}
   end
 
   def handle_info(

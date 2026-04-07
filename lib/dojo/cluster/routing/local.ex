@@ -3,7 +3,7 @@ defmodule Dojo.Cluster.Routing.Local do
 
   @impl true
   def routable_addr do
-    Dojo.Cluster.MDNS.get_routable_ipv4_addr() <> ":#{System.get_env("PORT") || 4000}"
+    "#{Dojo.Cluster.MDNS.get_routable_ipv4_addr() || "localhost"}:#{System.get_env("PORT") || 4000}"
   end
 
   @impl true
