@@ -235,12 +235,16 @@ defmodule Dojo.Cluster.MDNS do
     end
   end
 
-  def handle_cast({:rejoin_multicast, new_ips}, %{socket: socket} = state)
+  def handle_cast({:rejoin_multicast, old_ips, new_ips}, %{socket: socket} = state)
       when not is_nil(socket) do
-    Logger.info("[mDNS] rejoining multicast on #{inspect(Enum.map(new_ips, &fmt/1))}")
+    Logger.info(
+      "[mDNS] rejoining multicast: drop #{inspect(Enum.map(old_ips, &fmt/1))}, " <>
+        "join #{inspect(Enum.map(new_ips, &fmt/1))}"
+    )
 
-    # Drop existing memberships (best-effort — may fail if already dropped)
-    Enum.each(routable_ipv4_addrs(), fn ip ->
+    # Drop OLD memberships explicitly — using old_ips avoids the race where
+    # routable_ipv4_addrs() already returns the new IPs by this point.
+    Enum.each(old_ips, fn ip ->
       :inet.setopts(socket, [{:drop_membership, {@mdns_addr, ip}}])
     end)
 
@@ -248,7 +252,7 @@ defmodule Dojo.Cluster.MDNS do
     {:noreply, state}
   end
 
-  def handle_cast({:rejoin_multicast, _new_ips}, state) do
+  def handle_cast({:rejoin_multicast, _old_ips, _new_ips}, state) do
     # Socket not open — will rejoin on next recovery
     {:noreply, state}
   end

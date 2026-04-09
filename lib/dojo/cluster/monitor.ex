@@ -98,30 +98,54 @@ defmodule Dojo.Cluster.NetworkMonitor do
     :partisan_config.set(:listen_addrs, new_addrs)
     Logger.info("[NetworkMonitor] partisan_config:listen_addrs updated → #{inspect(new_addrs)}")
 
-    # 3. Restart the Partisan peer service server to rebind listeners.
-    restart_listeners()
+    # 3. Restart listeners — if bind fails, revert config and bail.
+    #    Without validation, we'd advertise IPs with no listener bound.
+    case restart_listeners() do
+      :ok ->
+        # 4. Force disconnect stale connections.
+        #    TCP connections on old IPs are half-dead; disconnecting triggers HyParView healing.
+        disconnect_stale_peers()
 
-    # 4. Force disconnect stale connections.
-    #    TCP connections on old IPs are half-dead; disconnecting triggers HyParView healing.
-    disconnect_stale_peers()
+        # 4.5 Reset adapter failure tracking — this is a network change, not peer death.
+        #     Without this, the adapter misinterprets post-disconnect connection failures
+        #     as peer death and evicts peers that are still alive on the new network.
+        Dojo.Cluster.MDNS.PartisanAdapter.on_network_change()
 
-    # 5. Rejoin multicast on the main mDNS socket for the new interfaces.
-    #    Without this, the socket can only hear multicast on the old interfaces.
-    GenServer.cast(Dojo.Cluster.MDNS, {:rejoin_multicast, new_ips})
+        # 5. Rejoin multicast on the main mDNS socket for the new interfaces.
+        #    Without this, the socket can only hear multicast on the old interfaces.
+        #    Pass old_ips explicitly — by this point routable_ipv4_addrs() returns
+        #    the new IPs, so the handler needs old_ips to know what to drop.
+        GenServer.cast(Dojo.Cluster.MDNS, {:rejoin_multicast, old_ips, new_ips})
 
-    # 6. Re-announce on NEW IPs — make us visible on the new network immediately
-    #    instead of waiting up to 5s for the next mDNS lookup cycle.
-    Dojo.Cluster.MDNS.reannounce(new_ips)
+        # 6. Re-announce on NEW IPs — make us visible on the new network immediately
+        #    instead of waiting up to 5s for the next mDNS lookup cycle.
+        Dojo.Cluster.MDNS.reannounce(new_ips)
 
-    # 7. Update addr cache and notify all Tables on this node
-    new_addr = Dojo.Cluster.Routing.routable_addr()
-    :persistent_term.put({Dojo.Gate, :addr}, new_addr)
+        # 7. Update addr cache and notify all Tables on this node
+        new_addr = Dojo.Cluster.Routing.routable_addr()
+        :persistent_term.put({Dojo.Gate, :addr}, new_addr)
 
-    if Application.get_env(:dojo, :routing_strategy) == Dojo.Cluster.Routing.Local do
-      Phoenix.PubSub.local_broadcast(Dojo.PubSub, "system:network", {:network_change, new_addr})
-      Logger.info("[NetworkMonitor] addr updated → #{new_addr}, broadcast to system:network")
-    else
-      Logger.info("[NetworkMonitor] addr updated → #{new_addr}")
+        if Application.get_env(:dojo, :routing_strategy) == Dojo.Cluster.Routing.Local do
+          Phoenix.PubSub.local_broadcast(
+            Dojo.PubSub,
+            "system:network",
+            {:network_change, new_addr}
+          )
+
+          Logger.info("[NetworkMonitor] addr updated → #{new_addr}, broadcast to system:network")
+        else
+          Logger.info("[NetworkMonitor] addr updated → #{new_addr}")
+        end
+
+      :error ->
+        # Bind failed — revert config so we don't advertise unreachable addrs.
+        # The next poll cycle will re-detect the IP change and retry.
+        old_addrs = Enum.map(old_ips, fn ip -> %{ip: ip, port: port} end)
+        :partisan_config.set(:listen_addrs, old_addrs)
+
+        Logger.warning(
+          "[NetworkMonitor] listener bind failed, reverted config — will retry next poll"
+        )
     end
   end
 
@@ -136,16 +160,21 @@ defmodule Dojo.Cluster.NetworkMonitor do
           case Supervisor.restart_child(:partisan_sup, :partisan_acceptor_socket_pool_sup) do
             {:ok, pid} ->
               Logger.info("[NetworkMonitor] acceptor pool restarted → #{inspect(pid)}")
+              :ok
 
             {:error, reason} ->
               Logger.error("[NetworkMonitor] acceptor pool restart failed: #{inspect(reason)}")
+              :error
           end
 
         {:error, reason} ->
           Logger.error("[NetworkMonitor] acceptor pool terminate failed: #{inspect(reason)}")
+          :error
       end
     rescue
-      e -> Logger.error("[NetworkMonitor] listener restart error: #{inspect(e)}")
+      e ->
+        Logger.error("[NetworkMonitor] listener restart error: #{inspect(e)}")
+        :error
     end
   end
 

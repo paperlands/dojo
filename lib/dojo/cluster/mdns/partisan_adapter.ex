@@ -101,6 +101,23 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
       :ok
   end
 
+  @doc """
+  Clear all peer tracking after a network change (WiFi roam / hotspot switch).
+
+  Called by NetworkMonitor when IPs change. Deletes all entries from the
+  known peers table so the next mDNS discovery poll treats every peer as
+  "new" — triggering `join` (not `update_members`). This is critical because
+  `join` → `add_to_active_view` fires the name-aware dedup that replaces
+  stale specs with old IPs.
+  """
+  def on_network_change do
+    ensure_known_peers_table()
+    :ets.delete_all_objects(@known_peers_table)
+    Logger.info("[PartisanAdapter] known peers cleared — will rejoin on next discovery")
+  rescue
+    _ -> :ok
+  end
+
   @impl Dojo.Cluster.Discovery
   def on_peer_departed(name) do
     ensure_known_peers_table()
