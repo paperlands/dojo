@@ -34,6 +34,8 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_params(params, _url, socket) do
+    if connected?(socket), do: Dojo.PubSub.subscribe("dojo:hotspot")
+
     {:noreply,
      socket
      |> join_clan(params["clan"] || "PaperLand")
@@ -190,6 +192,11 @@ defmodule DojoWeb.ShellLive do
 
   def handle_info({Dojo.Controls, command, arg}, socket) do
     {:noreply, socket |> push_event("writeShell", %{"command" => command, "args" => arg})}
+  end
+
+  def handle_info({Dojo.PubSub, :hotspot_changed, status}, socket) do
+    send_update(DojoWeb.HotspotLive, id: "hotspot", hotspot_status: status)
+    {:noreply, socket}
   end
 
   def handle_info({:DOWN, _ref, :process, pid, _reason}, %{assigns: %{class: pid}} = socket) do

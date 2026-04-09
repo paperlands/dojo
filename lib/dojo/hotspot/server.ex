@@ -17,7 +17,9 @@ defmodule Dojo.Hotspot.Server do
             password: @default_password,
             interface: nil,
             ip: nil,
-            error: nil
+            error: nil,
+            connected_to: nil,
+            peer_count: 0
 
   # ── Client API ─────────────────────────────────────────────────────
 
@@ -74,7 +76,18 @@ defmodule Dojo.Hotspot.Server do
     ssid = opts[:ssid] || state.ssid
     password = opts[:password] || state.password
 
-    state = %{state | status: :starting, ssid: ssid, password: password, error: nil}
+    connected_to =
+      if state.interface, do: Dojo.Hotspot.connected_ssid(state.interface)
+
+    state = %{
+      state
+      | status: :starting,
+        ssid: ssid,
+        password: password,
+        error: nil,
+        connected_to: connected_to
+    }
+
     broadcast(state)
 
     case Dojo.Hotspot.start(ssid, password) do
@@ -97,7 +110,7 @@ defmodule Dojo.Hotspot.Server do
 
     case Dojo.Hotspot.stop() do
       :ok ->
-        state = %{state | status: :inactive, ip: nil}
+        state = %{state | status: :inactive, ip: nil, connected_to: nil}
         broadcast(state)
         {:reply, :ok, state}
 
@@ -139,7 +152,8 @@ defmodule Dojo.Hotspot.Server do
           | status: :active,
             ssid: info.ssid || state.ssid,
             ip: info.ip,
-            interface: info.interface || state.interface
+            interface: info.interface || state.interface,
+            peer_count: count_peers()
         }
 
       {:ok, %{active: false}} ->
@@ -156,7 +170,7 @@ defmodule Dojo.Hotspot.Server do
 
   defp broadcast(state) do
     status_map = Map.from_struct(state)
-    #later handle local broadcasting on Dojo.Pubsub module itself
+    # later handle local broadcasting on Dojo.Pubsub module itself
     Phoenix.PubSub.local_broadcast(
       Dojo.PubSub,
       "dojo:hotspot",
@@ -166,19 +180,61 @@ defmodule Dojo.Hotspot.Server do
 
   defp schedule_poll, do: Process.send_after(self(), :poll, @poll_interval)
 
-  defp format_error(:privilege_required), do: "Permission denied. Check your user permissions."
-  defp format_error(:no_wifi), do: "No WiFi adapter found."
-  defp format_error(:nmcli_not_found), do: "nmcli not found. Install NetworkManager."
+  defp count_peers do
+    case :partisan_peer_service.members() do
+      members when is_list(members) -> length(members)
+      _ -> 0
+    end
+  catch
+    _, _ -> 0
+  end
+
+  defp format_error(:dnsmasq_not_found),
+    do: %{
+      message: "dnsmasq is required for hotspot mode",
+      hint: "sudo pacman -S dnsmasq",
+      kind: :needs_install
+    }
 
   defp format_error(:ip_config_failed),
-    do: "IP config failed. Try: nmcli connection delete Hotspot, then retry."
+    do: %{
+      message: "IP configuration failed after cleanup",
+      hint: "sudo systemctl restart NetworkManager",
+      kind: :needs_action
+    }
 
-  defp format_error(:powershell_not_found), do: "PowerShell not found."
+  defp format_error(:interface_busy),
+    do: %{message: "WiFi interface is busy", hint: nil, kind: :transient}
+
+  defp format_error(:privilege_required),
+    do: %{
+      message: "Permission denied",
+      hint: "Run with elevated privileges or add user to network group",
+      kind: :needs_action
+    }
+
+  defp format_error(:no_wifi),
+    do: %{message: "No WiFi adapter found", hint: nil, kind: :error}
+
+  defp format_error(:nmcli_not_found),
+    do: %{message: "nmcli not found", hint: "sudo pacman -S networkmanager", kind: :needs_install}
+
+  defp format_error(:powershell_not_found),
+    do: %{message: "PowerShell not found", hint: nil, kind: :error}
 
   defp format_error(:platform_limited),
-    do: "Enable Internet Sharing manually in System Preferences."
+    do: %{
+      message: "Enable Internet Sharing in System Preferences",
+      hint: nil,
+      kind: :needs_action
+    }
 
-  defp format_error(:launchctl_not_found), do: "launchctl not found."
-  defp format_error({:hotspot_failed, msg}), do: msg
-  defp format_error(other), do: inspect(other)
+  defp format_error(:launchctl_not_found),
+    do: %{message: "launchctl not found", hint: nil, kind: :error}
+
+  defp format_error({:hotspot_failed, msg}),
+    do: %{message: msg, hint: nil, kind: :error}
+
+  defp format_error(other),
+    do: %{message: inspect(other), hint: nil, kind: :error}
 end
