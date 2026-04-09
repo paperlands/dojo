@@ -23,7 +23,8 @@ config :dojo, DojoWeb.Endpoint,
   check_origin: [
     "https://dojo.paperland.sg",
     "https://dojo.paperland.in",
-    "https://thedojo.fly.dev"
+    "https://thedojo.fly.dev",
+    "https://paperland.fly.dev"
   ],
   live_view: [signing_salt: "ko/5Xrfn"]
 
@@ -66,11 +67,10 @@ config :logger, :console,
 config :phoenix, :json_library, Jason
 
 config :dojo, Dojo.Cache,
+  # stats: true,
   gc_interval: :timer.minutes(5),
   backend: :shards,
-  # Very short minimum cleanup timeout
   gc_cleanup_min_timeout: :timer.seconds(1),
-  # Short maximum cleanup timeout
   gc_cleanup_max_timeout: :timer.seconds(30)
 
 # Import environment specific config. This must remain at the bottom

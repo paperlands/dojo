@@ -152,7 +152,7 @@ defmodule Dojo.Cluster.MDNS do
         probe_and_claim(state)
 
         # Boot burst with exponential backoff (RFC 6762 §11)
-        spawn_link(fn ->
+        Task.Supervisor.start_child(Dojo.TaskSupervisor, fn ->
           do_announce(state)
           send_query(state)
           Process.sleep(1_000)
@@ -519,7 +519,7 @@ defmodule Dojo.Cluster.MDNS do
 
                 jitter = @jitter_min_ms + :rand.uniform(@jitter_max_ms - @jitter_min_ms)
 
-                spawn(fn ->
+                Task.Supervisor.start_child(Dojo.TaskSupervisor, fn ->
                   Process.sleep(jitter)
                   do_announce(state)
                 end)
@@ -948,6 +948,6 @@ defmodule Dojo.Cluster.MDNS do
   end
 
   defp deadline(ms), do: System.monotonic_time(:millisecond) + ms
-  defp fmt(nil), do: ""
+  defp fmt(nil), do: nil
   defp fmt(ip), do: ip |> :inet.ntoa() |> to_string()
 end

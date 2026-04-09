@@ -121,7 +121,7 @@ config :partisan,
     data: %{
       monotonic: true,
       parallelism: 2,
-      compression: false
+      compression: true
     },
     partisan_membership: %{monotonic: false, parallelism: 1, compression: true}
   },

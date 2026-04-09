@@ -17,6 +17,8 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
   @max_connect_failures 3
   # Grace period (seconds) before we start counting failures for a newly joined peer
   @connect_grace_s 15
+  # Cooldown (seconds) after eviction before allowing rejoin
+  @eviction_cooldown_s 30
 
   # ── Discovery behaviour ──────────────────────────────────────────────────
 
@@ -221,7 +223,8 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
                 "[PartisanAdapter] evicting #{name} — #{new_failures} consecutive poll cycles without TCP connection"
               )
 
-              :ets.delete(@known_peers_table, name)
+              # Record eviction time — cooldown prevents rapid rejoin storm
+              :ets.insert(@known_peers_table, {name, :evicted, System.monotonic_time(:second)})
               Dojo.Cluster.MDNS.evict_peer(name)
               false
             else
@@ -232,6 +235,17 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
               true
             end
         end
+
+      # Evicted peer — in cooldown, wait before allowing rediscovery
+      [{^name, :evicted, evicted_at}] ->
+        if now - evicted_at >= @eviction_cooldown_s do
+          # Cooldown elapsed — clear entry so next poll treats it as new
+          :ets.delete(@known_peers_table, name)
+
+          Logger.debug("[PartisanAdapter] #{name} eviction cooldown elapsed, eligible for rejoin")
+        end
+
+        false
 
       # Legacy 2-tuple entry (pre-failure-tracking) — upgrade in place
       [{^name, joined_at}] ->
@@ -245,9 +259,24 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
   end
 
   defp peer_connected?(name) do
-    case safe(fn -> :partisan_peer_connections.count(name) end) do
-      n when is_integer(n) and n > 0 -> true
-      _ -> false
+    case safe(fn -> :partisan_peer_connections.connections(name) end) do
+      conns when is_list(conns) and conns != [] ->
+        {alive, dead} =
+          Enum.split_with(conns, fn conn ->
+            pid = :partisan_peer_connections.pid(conn)
+            is_pid(pid) and Process.alive?(pid)
+          end)
+
+        # Opportunistically prune dead connections we discover
+        Enum.each(dead, fn conn ->
+          pid = :partisan_peer_connections.pid(conn)
+          safe(fn -> :partisan_peer_connections.prune(pid) end)
+        end)
+
+        alive != []
+
+      _ ->
+        false
     end
   end
 

@@ -9,7 +9,7 @@
   >
   </canvas>
   <!-- Desktop Layout (lg and up) -->
-  <div class="fixed inset-0 grid grid-cols-[40dvw_20dvw_40dvw] md:grid-cols-[35dvw_30dvw_35dvw]  grid-rows-[60vh_40vh]  lg:grid-cols-[25dvw_50dvw_25dvw]  lg:grid-rows-[1fr_30vh] gap-1 pointer-events-none">
+  <div class="fixed inset-0 grid grid-cols-[40dvw_20dvw_40dvw] md:grid-cols-[35dvw_30dvw_35dvw]  grid-rows-[60dvh_40dvh]  lg:grid-cols-[25dvw_50dvw_25dvw]  lg:grid-rows-[1fr_30dvh] gap-1 pointer-events-none">
     
 <!-- Left Pane - Code Editor -->
     <div
@@ -383,11 +383,11 @@
     <div class="col-span-3 row-start-2 lg:row-span-1 lg:col-span-1 ">
       <div
         id="paneflip"
-        class="fixed z-30 -translate-x-1/2 pointer-events-auto  transition-transform duration-300 pointer-events-auto bottom-2 left-1/2"
+        class="fixed z-50 -translate-x-1/2 pointer-events-auto transition-transform duration-300 bottom-2 left-1/2"
         phx-hook="Sensei"
       >
         <svg
-          class={"z-20 w-6 h-6  text-primary/50 items-center flex  m-auto  rounded-lg backdrop-blur-sm transform transition-transform duration-300 hover:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
+          class={"z-50 w-6 h-6 text-primary/50 items-center flex m-auto rounded-lg backdrop-blur-sm transform transition-transform duration-300 active:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
           phx-click="flipPane"
           viewBox="0 0 24 24"
           fill="none"
@@ -409,7 +409,7 @@
           :for={{reg_key, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
           class="bg-transparent pointer-events-auto"
         >
-          <div class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out mx-2 animate-fade flex-shrink-0" <> is_main_focus(reg_key, @focused_name)}>
+          <div class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out mx-2 backdrop-blur-[1px] animate-fade flex-shrink-0" <> is_main_focus(reg_key, @focused_name)}>
             <.icon
               :if={@sensei}
               name="hero-cursor-arrow-ripple"
@@ -435,7 +435,7 @@
                   "border-accent/50 text-accent"
               ]}
             >
-              <div class="absolute font-mono text-sm tracking-wider rotate-0 select-none top-2 right-2">
+              <div class="absolute font-mono  text-sm tracking-wider rotate-0 select-none top-2 right-2">
                 {dis.name}
               </div>
 
@@ -444,8 +444,9 @@
                 class="size-10 fill-amber-600"
                 loading="eager"
                 decoding="sync"
-              />
+                />
               <img
+            
                 :if={Map.has_key?(dis, :meta)}
                 src={"//" <> (dis[:addr] || "") <> "/#{dis.meta.path}"}
                 onerror="this.src='/images/turtlehead.png';"

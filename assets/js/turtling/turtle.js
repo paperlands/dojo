@@ -347,7 +347,7 @@ export class Turtle {
                     geometry.setPositions(positions);
 
                     const material = new LineMaterial({
-                        color: path.color || 0xff4500, // DarkOrange as hex
+                        color: path.color || 0xe77808, //0xff4500, // DarkOrange as hex
                         linewidth: path.thickness || 2,
                         vertexColors: false,
                         dashed: false,
@@ -848,7 +848,7 @@ export class Turtle {
 
         this.rotation = new Versor(1, 0, 0, 0);
         this.penDown = true;
-        this.color = 'DarkOrange';
+        this.color = '#e77808';
         this.thickness = 2;
         this.showTurtle = 10;
         this.currentPath = null;
