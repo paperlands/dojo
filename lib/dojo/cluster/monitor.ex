@@ -182,16 +182,30 @@ defmodule Dojo.Cluster.NetworkMonitor do
     try do
       case :partisan_peer_service.members() do
         members when is_list(members) and members != [] ->
-          Logger.info(
-            "[NetworkMonitor] disconnecting #{length(members)} peers to force reconnect"
-          )
+          Logger.info("[NetworkMonitor] leaving #{length(members)} peers to force clean rejoin")
 
           # Clear PLUMTREE_OUTSTANDING lazy push entries for these peers BEFORE
-          # disconnecting. Without this, reconnection triggers a burst of stale
+          # leaving. Without this, reconnection triggers a burst of stale
           # i_have messages from accumulated outstanding entries.
           clear_outstanding_for_peers(members)
 
-          :partisan_peer_service_manager.disconnect(members)
+          # Use `leave` (not `disconnect`) so HyParView's active AND passive
+          # views are purged atomically. `disconnect` only kills TCP + ETS
+          # records; it leaves stale specs in views, causing `random_promotion`
+          # to pick them every 3s and endlessly retry connections to dead IPs.
+          # With intro of name-aware leave handler partisan now removes by name so
+          # stale `listen_addrs` don't block matching.
+          Enum.each(members, fn member ->
+            try do
+              :partisan_peer_service.leave(%{
+                name: member,
+                listen_addrs: [],
+                channels: %{}
+              })
+            catch
+              _, _ -> :ok
+            end
+          end)
 
         _ ->
           :ok
