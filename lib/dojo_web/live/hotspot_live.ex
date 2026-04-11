@@ -148,10 +148,10 @@ defmodule DojoWeb.HotspotLive do
       <div
         :if={@status != :loading}
         id={"#{@id}-panel"}
-        class="hidden absolute right-0 top-full mt-2 z-50 w-64 bg-base-200/95 backdrop-blur-sm border border-accent/50 rounded-lg p-3 font-mono text-xs text-primary shadow-lg"
+        class="hidden absolute right-0 top-full mt-2 w-64 bg-base-200 backdrop-blur-sm border border-accent/50 rounded-lg p-3 font-mono text-xs text-primary shadow-lg"
       >
         <%!-- Status --%>
-        <div class="flex items-center justify-between mb-2 pb-2 border-b border-accent/30">
+        <div class="flex items-center justify-between mb-2 pb-2 border-b border-accent">
           <span class="text-primary-content/70">status</span>
           <span class={[
             "font-bold",

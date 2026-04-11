@@ -53,11 +53,13 @@ RequestExecutionLevel admin
 !define MUI_WELCOMEFINISHPAGE_BITMAP "resources/dialog.bmp"
 ;!define MUI_WELCOMEFINISHPAGE_BITMAP_NOSTRETCH
 
-!define MUI_FINISHPAGE_RUN "wscript.exe"
-!define MUI_FINISHPAGE_RUN_PARAMETERS '"$INSTDIR\launch.vbs"'
 !define MUI_FINISHPAGE_RUN_TEXT "Enter PaperLand"
 !define MUI_FINISHPAGE_RUN_NOTCHECKED
+!define MUI_FINISHPAGE_RUN_FUNCTION "LaunchDojo"
 
+Function LaunchDojo
+    ExecShell "open" "$INSTDIR\launch.vbs"
+FunctionEnd
 
 ; Pages
 !insertmacro MUI_PAGE_WELCOME
@@ -325,4 +327,8 @@ Section "Uninstall"
     DeleteRegKey HKLM "Software\PaperLand Dojo"
 
     DetailPrint "Uninstallation completed"
+SectionEnd
+
+Section "-KeepFunctions"
+    GetFunctionAddress $0 LaunchDojo
 SectionEnd

@@ -337,8 +337,8 @@
               <!--   } -->
               <!-- > -->
               <!--   <.save class="w-4 h-4 duration-700  transition-transform duration-700  " /> -->
-              <!-- </button> -->
-
+                <!-- </button> -->
+              <.live_component module={DojoWeb.HotspotLive} id="hotspot" />
               <button
                 class="flex items-center justify-center w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
                 phx-click={
@@ -359,8 +359,9 @@
               <!--   phx-click={JS.hide(to: ".rightthird", transition: "fade-out-scale") |> JS.toggle(to: ".nerve", in: "fade-in-scale", out: "fade-out-scale")} -->
               <!-- > -->
               <!--   <.tyger class="w-7 h-7" /> -->
-              <!-- </button> -->
-              <.live_component module={DojoWeb.HotspotLive} id="hotspot" />
+                <!-- </button> -->
+              
+              
             </div>
           </div>
           <!-- Decorative corners (smaller size for subtlety) -->
@@ -444,7 +445,8 @@
                 class="size-10 fill-amber-600"
                 loading="eager"
                 decoding="sync"
-              />
+                />
+              <%= Map.has_key?(dis, :meta) && IO.inspect("//" <> (dis[:addr] || "") <> "/#{dis.meta.path}") %>
               <img
                 :if={Map.has_key?(dis, :meta)}
                 src={"//" <> (dis[:addr] || "") <> "/#{dis.meta.path}"}

@@ -44,45 +44,57 @@ defmodule Dojo.Hotspot.Linux do
         {:error, :nmcli_not_found}
 
       exe ->
-        case System.cmd(exe, ["-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"],
-               stderr_to_stdout: true
-             ) do
-          {output, 0} ->
-            hotspot_names =
-              output
-              |> String.split("\n", trim: true)
-              |> Enum.filter(&String.starts_with?(&1, "Hotspot"))
-              |> Enum.map(fn line -> line |> String.split(":") |> hd() end)
+        # Grab the interface BEFORE we tear down — status returns nil after
+        iface =
+          case status() do
+            {:ok, %{active: true, interface: iface}} -> iface
+            _ -> nil
+          end
 
-            case hotspot_names do
-              [] ->
-                Logger.info("[Hotspot] no active hotspot to stop")
-                :ok
+        result =
+          case System.cmd(exe, ["-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"],
+                stderr_to_stdout: true
+              ) do
+            {output, 0} ->
+              hotspot_names =
+                output
+                |> String.split("\n", trim: true)
+                |> Enum.filter(&String.starts_with?(&1, "Hotspot"))
+                |> Enum.map(fn line -> line |> String.split(":") |> hd() end)
 
-              names ->
-                results =
-                  Enum.map(names, fn name ->
-                    case System.cmd(exe, ["connection", "down", name], stderr_to_stdout: true) do
-                      {_, 0} ->
-                        Logger.info("[Hotspot] stopped #{name}")
-                        :ok
+              case hotspot_names do
+                [] ->
+                  Logger.info("[Hotspot] no active hotspot to stop")
+                  :ok
 
-                      {out, _} ->
-                        Logger.warning("[Hotspot] stop #{name} failed: #{out}")
-                        {:error, :stop_failed}
-                    end
-                  end)
+                names ->
+                  results =
+                    Enum.map(names, fn name ->
+                      case System.cmd(exe, ["connection", "down", name], stderr_to_stdout: true) do
+                        {_, 0} ->
+                          Logger.info("[Hotspot] stopped #{name}")
+                          :ok
 
-                if Enum.all?(results, &(&1 == :ok)), do: :ok, else: {:error, :stop_failed}
-            end
+                        {out, _} ->
+                          Logger.warning("[Hotspot] stop #{name} failed: #{out}")
+                          {:error, :stop_failed}
+                      end
+                    end)
 
-          {_, _} ->
-            # Fallback: try default name
-            case System.cmd(exe, ["connection", "down", "Hotspot"], stderr_to_stdout: true) do
-              {_, 0} -> :ok
-              _ -> {:error, :stop_failed}
-            end
-        end
+                  if Enum.all?(results, &(&1 == :ok)), do: :ok, else: {:error, :stop_failed}
+              end
+
+            {_, _} ->
+              case System.cmd(exe, ["connection", "down", "Hotspot"], stderr_to_stdout: true) do
+                {_, 0} -> :ok
+                _ -> {:error, :stop_failed}
+              end
+          end
+
+        # Re-enable autoconnect regardless of stop result — best effort, non-fatal
+        if iface, do: reenable_autoconnect(exe, iface)
+
+        result
     end
   end
 
@@ -237,46 +249,58 @@ defmodule Dojo.Hotspot.Linux do
 
   defp disconnect_interface(iface) do
     case System.find_executable("nmcli") do
-      nil ->
-        :ok
-
+      nil -> :ok
       exe ->
         case System.cmd(exe, ["-t", "-f", "DEVICE,STATE", "device", "status"],
-               stderr_to_stdout: true
-             ) do
+              stderr_to_stdout: true) do
           {output, 0} ->
             connected? =
               output
               |> String.split("\n", trim: true)
               |> Enum.any?(fn line ->
-                case String.split(line, ":") do
-                  [^iface, "connected"] -> true
-                  _ -> false
-                end
-              end)
+              case String.split(line, ":") do
+                [^iface, "connected"] -> true
+                _ -> false
+              end
+            end)
 
             if connected? do
               Logger.info("[Hotspot] disconnecting #{iface} from current network")
 
-              case System.cmd(exe, ["device", "disconnect", iface], stderr_to_stdout: true) do
-                {_, 0} ->
-                  Process.sleep(1_000)
-                  :ok
-
+              with {_, 0} <- System.cmd(exe, ["device", "disconnect", iface],
+                        stderr_to_stdout: true),
+                   # --- KEY FIX: suppress autoconnect before NM races us ---
+                   {_, 0} <- System.cmd(exe, ["device", "set", iface, "autoconnect", "no"],
+                     stderr_to_stdout: true) do
+                Process.sleep(1_500)
+                :ok
+              else
                 {out, _} ->
-                  Logger.warning("[Hotspot] failed to disconnect #{iface}: #{out}")
-                  {:error, :interface_busy}
+                  Logger.warning("[Hotspot] failed to disconnect/suppress #{iface}: #{out}")
+                {:error, :interface_busy}
               end
             else
+              # Still suppress autoconnect even if not currently connected
+              System.cmd(exe, ["device", "set", iface, "autoconnect", "no"],
+                stderr_to_stdout: true)
               :ok
             end
 
-          _ ->
-            :ok
+          _ -> :ok
         end
     end
   end
 
+
+  defp reenable_autoconnect(exe, iface) do
+    case System.cmd(exe, ["device", "set", iface, "autoconnect", "yes"],
+          stderr_to_stdout: true) do
+      {_, 0} -> :ok
+      {out, _} ->
+        Logger.warning("[Hotspot] failed to re-enable autoconnect on #{iface}: #{out}")
+        :ok  # non-fatal
+    end
+  end
   # ── Helpers ──────────────────────────────────────────────────────────
 
   # Try with 2.4GHz band + channel 6 for maximum client compatibility,

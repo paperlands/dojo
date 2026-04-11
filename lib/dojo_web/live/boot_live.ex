@@ -23,11 +23,6 @@ defmodule DojoWeb.BootLive do
     socket
   end
 
-  def handle_info({Dojo.PubSub, :hotspot_changed, status}, socket) do
-    send_update(DojoWeb.HotspotLive, id: "hotspot", hotspot_status: status)
-    {:noreply, socket}
-  end
-
   def handle_info(:boot, %{assigns: %{params: params}} = socket) do
     {:noreply,
      socket
