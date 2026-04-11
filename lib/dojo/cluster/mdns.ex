@@ -617,7 +617,10 @@ defmodule Dojo.Cluster.MDNS do
   defp do_announce(%{socket: sock, own_name: name, own_port: port, service: svc}) do
     name_str = Atom.to_string(name)
     addrs = routable_ipv4_addrs()
-    # Logger.debug("[mDNS] announcing #{name_str}:#{port} on #{inspect(addrs)}")
+
+    Logger.info(
+      "[LC] mDNS announce #{name_str}:#{port} addrs=#{inspect(Enum.map(addrs, &fmt/1))}"
+    )
 
     Enum.each(addrs, fn ip ->
       :inet.setopts(sock, [{:multicast_if, ip}])
@@ -727,10 +730,24 @@ defmodule Dojo.Cluster.MDNS do
           acc
 
         is_goodbye ->
-          Logger.debug("[mDNS] goodbye received for #{name} — evicting from cache")
+          Logger.info("[LC] mDNS goodbye recv peer=#{name} src=#{fmt(src_ip)}")
           Map.delete(acc, name)
 
         true ->
+          prev_ip =
+            case Map.get(acc, name) do
+              %{ip: old_ip} -> old_ip
+              _ -> nil
+            end
+
+          if prev_ip != nil and prev_ip != ip do
+            Logger.info(
+              "[LC] mDNS cache UPDATE peer=#{name} #{fmt(prev_ip)} → #{fmt(ip)}:#{port} src=#{fmt(src_ip)}"
+            )
+          else
+            Logger.info("[LC] mDNS cache SET peer=#{name} #{fmt(ip)}:#{port} src=#{fmt(src_ip)}")
+          end
+
           Map.put(acc, name, %{
             name: name,
             ip: ip,

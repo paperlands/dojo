@@ -57,6 +57,11 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
   def on_peers_discovered(peers) do
     ensure_known_peers_table()
 
+    Logger.info(
+      "[LC] discover #{length(peers)} mDNS peers: " <>
+        inspect(Enum.map(peers, fn {n, ip, p} -> "#{n}@#{lc_fmt_ip(ip)}:#{p}" end))
+    )
+
     specs =
       Enum.map(peers, fn {name, ip, port} ->
         %{name: name, listen_addrs: [%{ip: ip, port: port}], channels: channels()}
@@ -72,7 +77,7 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
     # Critical for Windows nodes that can't receive UDP multicast but can
     # accept TCP connections from peers that discovered them.
     Enum.each(new_specs, fn spec ->
-      Logger.info("[PartisanAdapter] joining new mDNS peer: #{spec.name}")
+      Logger.info("[LC] JOIN new peer #{lc_fmt_spec(spec)}")
       :partisan_peer_service.join(spec)
       # {name, joined_at, failure_count}
       :ets.insert(@known_peers_table, {spec.name, System.monotonic_time(:second), 0})
@@ -87,9 +92,12 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
 
     # Refresh healthy existing peers via passive view update
     if healthy_specs != [] do
+      Logger.info("[LC] UPDATE_MEMBERS #{inspect(Enum.map(healthy_specs, &lc_fmt_spec/1))}")
+
       :partisan_peer_service.update_members(healthy_specs)
     end
 
+    lc_snapshot_views("poll")
     :ok
   rescue
     e ->
@@ -208,6 +216,48 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
     end)
   end
 
+  # ── [LC] Instrumentation helpers ────────────────────────────────────────
+
+  @doc """
+  Snapshot HyParView active/passive views with full listen_addrs.
+  Tagged with `label` so the caller can correlate across events.
+  """
+  def lc_snapshot_views(label) do
+    try do
+      {:ok, active} = :partisan_hyparview_peer_service_manager.active()
+      {:ok, passive} = :partisan_hyparview_peer_service_manager.passive()
+
+      Logger.info(
+        "[LC] hyparview[#{label}] active=#{inspect(lc_fmt_set(active))} " <>
+          "passive=#{inspect(lc_fmt_set(passive))}"
+      )
+    rescue
+      _ -> :ok
+    catch
+      _, _ -> :ok
+    end
+  end
+
+  @doc false
+  def lc_fmt_spec(%{name: name, listen_addrs: addrs}) do
+    addr_strs =
+      Enum.map(addrs, fn
+        %{ip: ip, port: port} -> "#{lc_fmt_ip(ip)}:#{port}"
+        other -> inspect(other)
+      end)
+
+    "#{name}→[#{Enum.join(addr_strs, ",")}]"
+  end
+
+  def lc_fmt_spec(other), do: inspect(other)
+
+  defp lc_fmt_set(set) do
+    set |> :sets.to_list() |> Enum.map(&lc_fmt_spec/1)
+  end
+
+  defp lc_fmt_ip(ip) when is_tuple(ip), do: ip |> :inet.ntoa() |> to_string()
+  defp lc_fmt_ip(ip), do: inspect(ip)
+
   # Returns true if the peer is healthy (keep in rotation), false if evicted.
   # Tracks consecutive connection failures in ETS and evicts from mDNS cache
   # when a peer exceeds @max_connect_failures after the grace period.
@@ -237,7 +287,7 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
 
             if new_failures >= @max_connect_failures do
               Logger.warning(
-                "[PartisanAdapter] evicting #{name} — #{new_failures} consecutive poll cycles without TCP connection"
+                "[LC] EVICT #{name} — #{new_failures} consecutive polls without TCP connection"
               )
 
               # Record eviction time — cooldown prevents rapid rejoin storm
@@ -245,9 +295,7 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
               Dojo.Cluster.MDNS.evict_peer(name)
               false
             else
-              Logger.debug(
-                "[PartisanAdapter] #{name} not connected (#{new_failures}/#{@max_connect_failures})"
-              )
+              Logger.info("[LC] fail-track #{name} (#{new_failures}/#{@max_connect_failures})")
 
               true
             end
