@@ -98,6 +98,17 @@ defmodule Dojo.Cluster.NetworkMonitor do
     :partisan_config.set(:listen_addrs, new_addrs)
     Logger.info("[NetworkMonitor] partisan_config:listen_addrs updated → #{inspect(new_addrs)}")
 
+    # 2.5 Refresh the HyParView manager's cached self-spec.
+    #     init/1 caches partisan:node_spec() in State#state.node_spec and
+    #     uses it as `Myself` in every outgoing JOIN / NEIGHBOR /
+    #     FORWARD_JOIN / SHUFFLE message, plus as the self element in the
+    #     active view set. Without this refresh, peers that process our
+    #     next JOIN will call connect(OurStaleSpec), dial dead IPs, fail
+    #     to add us to their active view, and never create the reverse
+    #     outbound connection that Phoenix.PubSub + Phoenix.Tracker need
+    #     to dispatch by name — presence never re-converges.
+    refresh_hyparview_node_spec()
+
     # 3. Restart listeners — if bind fails, revert config and bail.
     #    Without validation, we'd advertise IPs with no listener bound.
     case restart_listeners() do
@@ -146,6 +157,20 @@ defmodule Dojo.Cluster.NetworkMonitor do
         Logger.warning(
           "[NetworkMonitor] listener bind failed, reverted config — will retry next poll"
         )
+    end
+  end
+
+  defp refresh_hyparview_node_spec do
+    try do
+      case GenServer.call(:partisan_hyparview_peer_service_manager, :refresh_node_spec, 5_000) do
+        :updated -> Logger.info("[NetworkMonitor] hyparview node_spec refreshed")
+        :unchanged -> :ok
+        other -> Logger.debug("[NetworkMonitor] hyparview refresh: #{inspect(other)}")
+      end
+    catch
+      kind, reason ->
+        Logger.warning("[NetworkMonitor] hyparview refresh failed: #{inspect({kind, reason})}")
+        :ok
     end
   end
 
