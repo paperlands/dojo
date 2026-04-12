@@ -1,5 +1,6 @@
 defmodule Dojo.Gate do
   use Phoenix.Tracker
+  require Logger
 
   # disciple tracker ::: quis custodiet ipsos custodes
 
@@ -18,7 +19,12 @@ defmodule Dojo.Gate do
     # Previous Task.Supervisor wrapper removed backpressure — under load, unbounded
     # tasks accumulated. Inline gives natural backpressure to the Tracker shard.
     for {topic, {joins, leaves}} <- diff do
-      for {_key, meta} <- joins do
+      for {key, meta} <- joins do
+        Logger.info(
+          "[LC] Gate.handle_diff JOIN topic=#{topic} key=#{key} " <>
+            "node=#{inspect(meta[:node])} name=#{meta[:name]}"
+        )
+
         Phoenix.PubSub.direct_broadcast!(
           state.node_name,
           state.pubsub_server,
@@ -27,7 +33,12 @@ defmodule Dojo.Gate do
         )
       end
 
-      for {_key, meta} <- leaves do
+      for {key, meta} <- leaves do
+        Logger.info(
+          "[LC] Gate.handle_diff LEAVE topic=#{topic} key=#{key} " <>
+            "node=#{inspect(meta[:node])} name=#{meta[:name]}"
+        )
+
         Phoenix.PubSub.direct_broadcast!(
           state.node_name,
           state.pubsub_server,
@@ -87,6 +98,21 @@ defmodule Dojo.Gate do
   defp pool_size() do
     [{:pool_size, size}] = :ets.lookup(__MODULE__, :pool_size)
     size
+  end
+
+  @doc """
+  Diagnostic: dump Tracker state for a topic.
+  Call from iex: `Dojo.Gate.lc_dump("class:shell:PaperLand")`
+  """
+  def lc_dump(topic \\ "class:shell:PaperLand") do
+    entries = list(topic)
+
+    Logger.info(
+      "[LC] Gate.lc_dump topic=#{topic} count=#{length(entries)} " <>
+        "entries=#{inspect(Enum.map(entries, fn {key, meta} -> {key, meta[:name], meta[:node], meta[:addr]} end))}"
+    )
+
+    entries
   end
 
   defp routable_addr do
