@@ -182,7 +182,7 @@ defmodule Dojo.Hotspot.Server do
 
   defp count_peers do
     case :partisan_peer_service.members() do
-      members when is_list(members) -> length(members)
+      {:ok, members} when is_list(members) -> length(members)
       _ -> 0
     end
   catch

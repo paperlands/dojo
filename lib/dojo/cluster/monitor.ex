@@ -219,7 +219,7 @@ defmodule Dojo.Cluster.NetworkMonitor do
   defp disconnect_stale_peers do
     try do
       case :partisan_peer_service.members() do
-        members when is_list(members) and members != [] ->
+        {:ok, members} when is_list(members) and members != [] ->
           Logger.info("[LC] disconnect_stale_peers members=#{inspect(members)}")
 
           # Clear PLUMTREE_OUTSTANDING lazy push entries for these peers BEFORE
