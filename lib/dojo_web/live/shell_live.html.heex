@@ -446,7 +446,7 @@
                 loading="eager"
                 decoding="sync"
                 />
-              <!-- <%= Map.has_key?(dis, :meta) && IO.inspect("//" <> (dis[:addr] || "") <> "/#{dis.meta.path}") %> -->
+              <!-- <%= #Map.has_key?(dis, :meta) && IO.inspect("//" <> (dis[:addr] || "") <> "/#{dis.meta.path}") %> -->
               <img
                 :if={Map.has_key?(dis, :meta)}
                 src={"//" <> (dis[:addr] || "") <> "/#{dis.meta.path}"}

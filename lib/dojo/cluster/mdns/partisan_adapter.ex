@@ -57,11 +57,6 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
   def on_peers_discovered(peers) do
     ensure_known_peers_table()
 
-    Logger.info(
-      "[LC] discover #{length(peers)} mDNS peers: " <>
-        inspect(Enum.map(peers, fn {n, ip, p} -> "#{n}@#{lc_fmt_ip(ip)}:#{p}" end))
-    )
-
     specs =
       Enum.map(peers, fn {name, ip, port} ->
         %{name: name, listen_addrs: [%{ip: ip, port: port}], channels: channels()}
@@ -77,7 +72,7 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
     # Critical for Windows nodes that can't receive UDP multicast but can
     # accept TCP connections from peers that discovered them.
     Enum.each(new_specs, fn spec ->
-      Logger.info("[LC] JOIN new peer #{lc_fmt_spec(spec)}")
+      Logger.info("[PartisanAdapter] joining new mDNS peer: #{spec.name}")
       :partisan_peer_service.join(spec)
       # {name, joined_at, failure_count}
       :ets.insert(@known_peers_table, {spec.name, System.monotonic_time(:second), 0})
@@ -92,12 +87,9 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
 
     # Refresh healthy existing peers via passive view update
     if healthy_specs != [] do
-      Logger.info("[LC] UPDATE_MEMBERS #{inspect(Enum.map(healthy_specs, &lc_fmt_spec/1))}")
-
       :partisan_peer_service.update_members(healthy_specs)
     end
 
-    lc_snapshot_views("poll")
     :ok
   rescue
     e ->
@@ -215,8 +207,7 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
       }
     end)
   end
-
-  # ── [LC] Instrumentation helpers ────────────────────────────────────────
+# ── [LC] Instrumentation helpers ────────────────────────────────────────
 
   @doc """
   Snapshot HyParView active/passive views with full listen_addrs.
@@ -287,7 +278,7 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
 
             if new_failures >= @max_connect_failures do
               Logger.warning(
-                "[LC] EVICT #{name} — #{new_failures} consecutive polls without TCP connection"
+                "[PartisanAdapter] evicting #{name} — #{new_failures} consecutive poll cycles without TCP connection"
               )
 
               # Record eviction time — cooldown prevents rapid rejoin storm
@@ -295,7 +286,9 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
               Dojo.Cluster.MDNS.evict_peer(name)
               false
             else
-              Logger.info("[LC] fail-track #{name} (#{new_failures}/#{@max_connect_failures})")
+              Logger.debug(
+                "[PartisanAdapter] #{name} not connected (#{new_failures}/#{@max_connect_failures})"
+              )
 
               true
             end

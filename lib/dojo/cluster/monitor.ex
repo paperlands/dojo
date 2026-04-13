@@ -87,13 +87,6 @@ defmodule Dojo.Cluster.NetworkMonitor do
   # ── The critical hot-swap sequence ──────────────────────────────────────
 
   defp handle_ip_change(new_ips, old_ips, port) do
-    Logger.info(
-      "[LC] hot-swap START old=#{inspect(Enum.map(old_ips, &fmt/1))} " <>
-        "new=#{inspect(Enum.map(new_ips, &fmt/1))}"
-    )
-
-    Dojo.Cluster.MDNS.PartisanAdapter.lc_snapshot_views("hot-swap:before")
-
     # 1. Goodbye on OLD IPs — tell peers on the departing network we're leaving.
     #    Must happen BEFORE config update so packets carry the recognizable identity.
     #    Sends @goodbye_count TTL=0 packets with @goodbye_interval ms gap.
@@ -103,8 +96,7 @@ defmodule Dojo.Cluster.NetworkMonitor do
 
     # 2. Update Partisan's config so node_spec() returns new addresses.
     :partisan_config.set(:listen_addrs, new_addrs)
-
-    Logger.info("[LC] partisan_config:listen_addrs set → #{inspect(new_addrs)}")
+    Logger.info("[NetworkMonitor] partisan_config:listen_addrs updated → #{inspect(new_addrs)}")
 
     # 2.5 Refresh the HyParView manager's cached self-spec.
     #     init/1 caches partisan:node_spec() in State#state.node_spec and
@@ -124,8 +116,6 @@ defmodule Dojo.Cluster.NetworkMonitor do
         # 4. Force disconnect stale connections.
         #    TCP connections on old IPs are half-dead; disconnecting triggers HyParView healing.
         disconnect_stale_peers()
-
-        Dojo.Cluster.MDNS.PartisanAdapter.lc_snapshot_views("hot-swap:after-disconnect")
 
         # 4.5 Reset adapter failure tracking — this is a network change, not peer death.
         #     Without this, the adapter misinterprets post-disconnect connection failures
@@ -157,9 +147,6 @@ defmodule Dojo.Cluster.NetworkMonitor do
         else
           Logger.info("[NetworkMonitor] addr updated → #{new_addr}")
         end
-
-        Logger.info("[LC] hot-swap DONE")
-        Dojo.Cluster.MDNS.PartisanAdapter.lc_snapshot_views("hot-swap:after")
 
       :error ->
         # Bind failed — revert config so we don't advertise unreachable addrs.
@@ -220,8 +207,7 @@ defmodule Dojo.Cluster.NetworkMonitor do
     try do
       case :partisan_peer_service.members() do
         {:ok, members} when is_list(members) and members != [] ->
-          Logger.info("[LC] disconnect_stale_peers members=#{inspect(members)}")
-
+          Logger.info("[NetworkMonitor] leaving #{length(members)} peers to force clean rejoin")
           # Clear PLUMTREE_OUTSTANDING lazy push entries for these peers BEFORE
           # leaving. Without this, reconnection triggers a burst of stale
           # i_have messages from accumulated outstanding entries.
@@ -234,8 +220,6 @@ defmodule Dojo.Cluster.NetworkMonitor do
           # With intro of name-aware leave handler partisan now removes by name so
           # stale `listen_addrs` don't block matching.
           Enum.each(members, fn member ->
-            Logger.info("[LC] leave peer #{inspect(member)}")
-
             try do
               :partisan_peer_service.leave(%{
                 name: member,
@@ -248,7 +232,6 @@ defmodule Dojo.Cluster.NetworkMonitor do
           end)
 
         _ ->
-          Logger.info("[LC] disconnect_stale_peers members=[] — nothing to leave")
           :ok
       end
     rescue
