@@ -3,7 +3,6 @@ defmodule DojoWeb.ShellLive do
   alias DojoWeb.Session
   alias DojoWeb.ShellLive.{OuterShell}
   import DojoWeb.SVGComponents
-  require Logger
 
   @moduledoc """
   This LV module defines the Turtling Experience
@@ -76,10 +75,6 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_async(:list_disciples, {:ok, disciples}, %{assigns: %{clan: clan}} = socket) do
-    Logger.info(
-      "[LC] list_disciples initial=#{inspect(Map.keys(disciples))} count=#{map_size(disciples)}"
-    )
-
     Dojo.Class.listen("shell:" <> clan)
     {:noreply, assign(socket, :disciples, disciples)}
   end
@@ -150,7 +145,6 @@ defmodule DojoWeb.ShellLive do
         {:join, "class:shell" <> _, %{node: {reg_key, _}} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
-    Logger.info("[LC] ShellLive JOIN reg_key=#{reg_key} name=#{disciple[:name]}")
     {:noreply, assign(socket, :disciples, Map.put(d, reg_key, disciple))}
   end
 
@@ -161,10 +155,8 @@ defmodule DojoWeb.ShellLive do
     # only delete if the leaving ref matches the current ref for this reg_key
     # prevents stale-leave race when Gate.change regenerates phx_ref
     if d[reg_key][:phx_ref] == ref do
-      Logger.info("[LC] ShellLive LEAVE reg_key=#{reg_key} (ref match)")
       {:noreply, assign(socket, :disciples, Map.delete(d, reg_key))}
     else
-      Logger.debug("[LC] ShellLive LEAVE STALE reg_key=#{reg_key} (ref mismatch)")
       {:noreply, socket}
     end
   end
