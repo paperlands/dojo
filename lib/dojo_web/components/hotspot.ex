@@ -14,12 +14,13 @@ defmodule DojoWeb.HotspotLive do
   # ── Lifecycle ────────────────────────────────────────────────────────
 
   def mount(socket) do
+    
     {:ok,
      socket
      |> assign(
        status: :loading,
-       ssid: "Dojo",
-       password: "enterthedojo",
+       ssid: "PaperLand",
+       password: "enterpaperland",
        interface: nil,
        ip: nil,
        error: nil,
@@ -36,10 +37,10 @@ defmodule DojoWeb.HotspotLive do
   end
 
   # First update — kick off async fetch
-  def update(%{id: id}, socket) when not is_map_key(socket.assigns, :id) do
+  def update(%{id: id, username: name}, socket) when not is_map_key(socket.assigns, :id) do
     {:ok,
      socket
-     |> assign(id: id, show_password: false, confirming: false)
+     |> assign(id: id, ssid: "#{name}@PaperLand", show_password: false, confirming: false)
      |> start_async(:fetch_status, fn -> Dojo.Hotspot.Server.get_status() end)}
   end
 
@@ -99,7 +100,7 @@ defmodule DojoWeb.HotspotLive do
       <%!-- Loading skeleton --%>
       <div
         :if={@status == :loading}
-        class="flex items-center justify-center w-9 h-9 lg:w-8 lg:h-8"
+        class="flex items-center justify-center z-100 w-9 h-9 lg:w-8 lg:h-8"
       >
         <.icon name="hero-wifi" class="w-6 h-6 text-primary-content/30 animate-pulse" />
       </div>
@@ -148,7 +149,7 @@ defmodule DojoWeb.HotspotLive do
       <div
         :if={@status != :loading}
         id={"#{@id}-panel"}
-        class="hidden absolute right-0 top-full mt-2 w-64 bg-base-200 backdrop-blur-sm border border-accent/50 rounded-lg p-3 font-mono text-xs text-primary shadow-lg"
+        class="hidden absolute z-100 right-0 top-full mt-2 w-64 bg-base-200 backdrop-blur-sm border border-accent/50 rounded-lg p-3 font-mono text-xs text-primary shadow-lg"
       >
         <%!-- Status --%>
         <div class="flex items-center justify-between mb-2 pb-2 border-b border-accent">
@@ -296,18 +297,18 @@ defmodule DojoWeb.HotspotLive do
     {:noreply, assign(socket, confirming: true, connected_to: connected_to)}
   end
 
-  def handle_event("confirm_hotspot", _, socket) do
+  def handle_event("confirm_hotspot", _, %{assigns: %{ssid: ssid}} = socket) do
     {:noreply,
      socket
      |> assign(confirming: false, status: :starting, error: nil)
-     |> start_async(:start_hotspot, fn -> Dojo.Hotspot.Server.start_hotspot() end)}
+     |> start_async(:start_hotspot, fn -> Dojo.Hotspot.Server.start_hotspot(%{ssid: ssid}) end)}
   end
 
   def handle_event("cancel_hotspot", _, socket) do
     {:noreply, assign(socket, confirming: false)}
   end
 
-  def handle_event("toggle_password", _, socket) do
+  def handle_event("toggle_ssword", _, socket) do
     {:noreply, assign(socket, show_password: !socket.assigns.show_password)}
   end
 
@@ -316,7 +317,7 @@ defmodule DojoWeb.HotspotLive do
   defp assign_status(socket, status_map) do
     assign(socket,
       status: status_map.status,
-      ssid: status_map.ssid,
+      #ssid: status_map.ssid,
       password: status_map.password,
       interface: status_map.interface,
       ip: status_map.ip,
