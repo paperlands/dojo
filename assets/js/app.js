@@ -30,12 +30,17 @@ let csrfToken = document
 
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 5000,
-  params: { _csrf_token: csrfToken,
-            locale: Intl.NumberFormat().resolvedOptions().locale,
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            timezone_offset: -new Date().getTimezoneOffset(),
-            session:  {...JSON.parse(localStorage.getItem("session")) || {}, 'active': true} 
-          },
+  params: () => {
+    let session = {...(JSON.parse(localStorage.getItem("session")) || {}), active: true};
+    return {
+      _csrf_token: csrfToken,
+      locale: (session.settings && session.settings.locale) ||
+              Intl.NumberFormat().resolvedOptions().locale,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      timezone_offset: -new Date().getTimezoneOffset(),
+      session: session
+    };
+  },
   metadata: {
     keydown: (event, element) => {
       return {

@@ -149,5 +149,11 @@ msgstr "正召唤@%{addr}的代码"
 
 #: lib/dojo_web/live/shell_live.html.heex:153
 #, elixir-autogen, elixir-format
-msgid "welcome %{name} to⠀%{clan}'s shell"
-msgstr "欢迎%{name}来到⠀%{clan}的灵境"
+msgid "welcome"
+msgstr "欢迎"
+
+#: lib/dojo_web/live/shell_live.html.heex:153
+#, elixir-autogen, elixir-format
+msgid "to %{clan}'s shell"
+msgstr "来到⠀%{clan}的灵境"
+
