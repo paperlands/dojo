@@ -43,22 +43,19 @@ RequestExecutionLevel admin
 ; UI Configuration
 !define MUI_ABORTWARNING
 !define MUI_ICON "resources/app-icon.ico"
+!define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
 !define MUI_HEADERIMAGE
 !define MUI_HEADERIMAGE_BITMAP "resources/banner.bmp"
 !define MUI_HEADERIMAGE_BITMAP_NOSTRETCH
-
-;!define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
-!define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
-
 !define MUI_WELCOMEFINISHPAGE_BITMAP "resources/dialog.bmp"
-;!define MUI_WELCOMEFINISHPAGE_BITMAP_NOSTRETCH
 
-!define MUI_FINISHPAGE_RUN_TEXT "Enter PaperLand"
-!define MUI_FINISHPAGE_RUN_NOTCHECKED
+; Finish page — launch checkbox is checked by default
+!define MUI_FINISHPAGE_RUN "$INSTDIR\dojo_windows.exe"   ; ← required to show the checkbox
+!define MUI_FINISHPAGE_RUN_TEXT "Launch PaperLand Dojo now"
 !define MUI_FINISHPAGE_RUN_FUNCTION "LaunchDojo"
 
 Function LaunchDojo
-    ExecShell "open" "$INSTDIR\launch.vbs"
+    Exec '"$INSTDIR\dojo_windows.exe"'
 FunctionEnd
 
 ; Pages
@@ -76,7 +73,6 @@ FunctionEnd
 ; VC++ Registry Keys for Detection
 ; These cover all versions from 2015-2022 (v14.x)
 !define VCREDIST_X64_KEY "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
-;!define VCREDIST_X86_KEY "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86"
 
 ; Minimum required version (14.0 = VC++ 2015)
 !define MIN_VCREDIST_VERSION_MAJOR 14
@@ -92,6 +88,15 @@ Var VCRedistArch
 Function .onInit
     ; Silent kill — if not running, taskkill exits non-zero silently
     nsExec::Exec 'taskkill /f /im dojo_windows.exe'
+
+    System::Call 'kernel32::CreateMutexA(i 0, i 0, t "PaperLandDojoInstaller") i .r1 ?e'
+        Pop $R0
+        ${If} $R0 = 183  ; ERROR_ALREADY_EXISTS
+            MessageBox MB_OK|MB_ICONEXCLAMATION \
+                "The PaperLand Dojo installer is already running."
+            Abort
+        ${EndIf}
+
 FunctionEnd
 
 ;--------------------------------
@@ -102,20 +107,18 @@ Function CheckVCRedist
     SetRegView 64
     StrCpy $VCRedistNeeded "0"
     StrCpy $VCRedistArch ""
-    
+
     ${If} ${RunningX64}
         DetailPrint "Checking for VC++ Redistributable (x64)..."
-        
-        ; Check x64 version
+
         ReadRegDWORD $0 HKLM "${VCREDIST_X64_KEY}" "Installed"
         ${If} $0 == 1
             ReadRegDWORD $1 HKLM "${VCREDIST_X64_KEY}" "Major"
             ReadRegDWORD $2 HKLM "${VCREDIST_X64_KEY}" "Minor"
             ReadRegDWORD $3 HKLM "${VCREDIST_X64_KEY}" "Bld"
-            
+
             DetailPrint "Found VC++ x64: $1.$2.$3"
-            
-            ; Check if version meets minimum requirement
+
             ${If} $1 < ${MIN_VCREDIST_VERSION_MAJOR}
                 StrCpy $VCRedistNeeded "1"
                 StrCpy $VCRedistArch "x64"
@@ -136,86 +139,38 @@ Function CheckVCRedist
             StrCpy $VCRedistArch "x64"
             DetailPrint "VC++ x64 not found, installation required"
         ${EndIf}
-    ; ${Else}
-    ;     DetailPrint "Checking for VC++ Redistributable (x86)..."
-        
-    ;     ; Check x86 version on 32-bit system
-    ;     SetRegView 32
-    ;     ReadRegDWORD $0 HKLM "${VCREDIST_X86_KEY}" "Installed"
-    ;     ${If} $0 == 1
-    ;         ReadRegDWORD $1 HKLM "${VCREDIST_X86_KEY}" "Major"
-    ;         ReadRegDWORD $2 HKLM "${VCREDIST_X86_KEY}" "Minor"
-    ;         ReadRegDWORD $3 HKLM "${VCREDIST_X86_KEY}" "Bld"
-            
-    ;         DetailPrint "Found VC++ x86: $1.$2.$3"
-            
-    ;         ${If} $1 < ${MIN_VCREDIST_VERSION_MAJOR}
-    ;             StrCpy $VCRedistNeeded "1"
-    ;             StrCpy $VCRedistArch "x86"
-    ;             DetailPrint "VC++ x86 version too old, installation required"
-    ;         ${ElseIf} $1 == ${MIN_VCREDIST_VERSION_MAJOR}
-    ;             ${If} $2 < ${MIN_VCREDIST_VERSION_MINOR}
-    ;                 StrCpy $VCRedistNeeded "1"
-    ;                 StrCpy $VCRedistArch "x86"
-    ;                 DetailPrint "VC++ x86 version too old, installation required"
-    ;             ${Else}
-    ;                 DetailPrint "VC++ x86 is up to date"
-    ;             ${EndIf}
-    ;         ${Else}
-    ;             DetailPrint "VC++ x86 is up to date"
-    ;         ${EndIf}
-    ;     ${Else}
-    ;         StrCpy $VCRedistNeeded "1"
-    ;         StrCpy $VCRedistArch "x86"
-    ;         DetailPrint "VC++ x86 not found, installation required"
-    ;     ${EndIf}
-    ;
     ${EndIf}
 FunctionEnd
 
 ;--------------------------------
 ; Function: InstallVCRedist
-; Installs the Visual C++ Redistributable
+; Installs the Visual C++ Redistributable if needed
 ;--------------------------------
 Function InstallVCRedist
     ${If} $VCRedistNeeded == "1"
         DetailPrint "Installing Visual C++ 2015-2022 Redistributable ($VCRedistArch)..."
-        
-        ${If} $VCRedistArch == "x64"
-            ; Extract and install x64 redistributable
-            SetOutPath "$TEMP"
-            File "resources/vc_redist.x64.exe"
-            
-            ; Install with silent mode, no restart, and wait for completion
-            DetailPrint "Executing: $TEMP\vc_redist.x64.exe /install /quiet /norestart"
-            ExecWait '"$TEMP\vc_redist.x64.exe" /install /quiet /norestart' $0
-            
-            Delete "$TEMP\vc_redist.x64.exe"
-        ; ${Else}
-        ;     ; Extract and install x86 redistributable
-        ;     SetOutPath "$TEMP"
-        ;     File "resources/vc_redist.x86.exe"
-            
-        ;     DetailPrint "Executing: $TEMP\vc_redist.x86.exe /install /quiet /norestart"
-        ;     ExecWait '"$TEMP\vc_redist.x86.exe" /install /quiet /norestart' $0
-            
-        ;     Delete "$TEMP\vc_redist.x86.exe"
-        ${EndIf}
-        
-        ; Check return code
+
+        SetOutPath "$TEMP"
+        File "resources/vc_redist.x64.exe"
+
+        DetailPrint "Executing: $TEMP\vc_redist.x64.exe /install /quiet /norestart"
+        ExecWait '"$TEMP\vc_redist.x64.exe" /install /quiet /norestart' $0
+
+        Delete "$TEMP\vc_redist.x64.exe"
+
         ${If} $0 == 0
             DetailPrint "VC++ Redistributable installed successfully"
         ${ElseIf} $0 == 3010
             DetailPrint "VC++ Redistributable installed (reboot required)"
             SetRebootFlag true
         ${ElseIf} $0 == 1638
-            DetailPrint "VC++ Redistributable already installed (newer version)"
+            DetailPrint "VC++ Redistributable already installed (newer version present)"
         ${Else}
             DetailPrint "VC++ Redistributable installation returned code: $0"
             MessageBox MB_ICONEXCLAMATION|MB_OK "Visual C++ Redistributable installation completed with code $0.$\r$\nThe application may not work correctly."
         ${EndIf}
     ${Else}
-        DetailPrint "VC++ Redistributable check passed, no installation needed"
+        DetailPrint "VC++ Redistributable already present, skipping"
     ${EndIf}
 FunctionEnd
 
@@ -223,43 +178,18 @@ FunctionEnd
 ; Main Installation Section
 ;--------------------------------
 Section "MainSection" SEC01
-    ; Check and install VC++ if needed
     Call CheckVCRedist
     Call InstallVCRedist
-    
-    ; Set output path and install your files
+
     SetOutPath "$INSTDIR"
-    
-    ; Install application files
+
     File "dojo_windows.exe"
     File "app-icon.ico"
-    File "resources/splash.html"
 
-    ; Create a VBScript launcher that:
-    ;   1. Opens splash.html in the default browser (instant feedback)
-    ;   2. Launches dojo_windows.exe hidden (Burrito + BEAM boot ~30s)
-    ;   3. Forwards DOJO_DEBUG env var as ?debug=1 query param
-    ; The splash page polls localhost:4000 and redirects to /welcome when ready.
-    ; DOJO_SPLASH=1 tells the Elixir side not to open a duplicate browser tab.
-    FileOpen $0 "$INSTDIR\launch.vbs" w
-    FileWrite $0 'Set WshShell = CreateObject("WScript.Shell")$\r$\n'
-    FileWrite $0 'Set env = WshShell.Environment("Process")$\r$\n'
-    FileWrite $0 'env("DOJO_SPLASH") = "0"$\r$\n'
-    FileWrite $0 '$\r$\n'
-    FileWrite $0 'Set sysEnv = WshShell.Environment("System")$\r$\n'
-    FileWrite $0 'If sysEnv("DOJO_DEBUG") = "1" Then$\r$\n'
-    FileWrite $0 '  WshShell.Run """$INSTDIR\splash.html?debug=1""", 1, False$\r$\n'
-    FileWrite $0 '  WshShell.Run """$INSTDIR\dojo_windows.exe""", 1, False$\r$\n'
-    FileWrite $0 'Else$\r$\n'
-    FileWrite $0 '  WshShell.Run """$INSTDIR\splash.html""", 1, False$\r$\n'
-    FileWrite $0 '  WshShell.Run """$INSTDIR\dojo_windows.exe""", 0, False$\r$\n'
-    FileWrite $0 'End If$\r$\n'
-    FileClose $0
-    
     ; Create uninstaller
     WriteUninstaller "$INSTDIR\Uninstall.exe"
-    
-    ; Write registry keys for Add/Remove Programs
+
+    ; Add/Remove Programs registry entries
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "DisplayName" "PaperLand Dojo"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "UninstallString" "$INSTDIR\Uninstall.exe"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "DisplayIcon" "$INSTDIR\app-icon.ico"
@@ -268,34 +198,50 @@ Section "MainSection" SEC01
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "NoModify" 1
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "NoRepair" 1
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "EstimatedSize" 50000
-    
+
     ; Store installation directory
     WriteRegStr HKLM "Software\PaperLand Dojo" "InstallDir" "$INSTDIR"
-    
-    ; Create Start Menu and Desktop shortcuts pointing at the VBS launcher.
-    ; wscript.exe runs the .vbs which hides the console window.
+
+    ; Start Menu and Desktop shortcuts
     CreateDirectory "$SMPROGRAMS\PaperLand Dojo"
-    CreateShortCut "$SMPROGRAMS\PaperLand Dojo\PaperLand Dojo.lnk" "wscript.exe" '"$INSTDIR\launch.vbs"' "$INSTDIR\app-icon.ico" 0
+    CreateShortCut "$SMPROGRAMS\PaperLand Dojo\PaperLand Dojo.lnk" "$INSTDIR\dojo_windows.exe" "" "$INSTDIR\app-icon.ico" 0
     CreateShortCut "$SMPROGRAMS\PaperLand Dojo\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
-    CreateShortCut "$DESKTOP\PaperLand Dojo.lnk" "wscript.exe" '"$INSTDIR\launch.vbs"' "$INSTDIR\app-icon.ico" 0
+    CreateShortCut "$DESKTOP\PaperLand Dojo.lnk" "$INSTDIR\dojo_windows.exe" "" "$INSTDIR\app-icon.ico" 0
 
-    ; ── Windows Firewall rules ──────────────────────────────────────────────
-    ; profile=any ensures clustering works on Domain, Private AND Public networks.
-    ; Without this, a school laptop on a "Public" WiFi would silently block peers.
-    DetailPrint "Adding Windows Firewall rules..."
+    ; ── ERTS Firewall Rules ─────────────────────────────────────────────────
+    ; Covers beam.smp.exe, erl.exe, and epmd.exe so Windows never prompts.
+    ; profile=any = domain + private + public networks.
+    ; protocol=any = TCP + UDP in one rule (suppresses the WD dialog fully).
+    ; Both dir=in and dir=out are required — inbound-only still triggers the
+    ; popup on Windows 11 22H2+ for processes that also send multicast.
 
-    ; Inbound: program-scoped rule covers HTTP (TCP 4000) and Partisan (TCP ~53527).
-    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_APP}"'
-    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_APP}" dir=in action=allow program="$INSTDIR\dojo_windows.exe" profile=any description="PaperLand Dojo — HTTP server and peer networking"'
+    DetailPrint "Locating Erlang runtime directory..."
 
-    ; Inbound mDNS: UDP 5454 scoped to the exe, all profiles.
-    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS}"'
-    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_MDNS}" dir=in action=allow protocol=UDP localport=5454 program="$INSTDIR\dojo_windows.exe" profile=any description="PaperLand Dojo — mDNS peer discovery"'
+    FindFirst $R1 $R2 "$INSTDIR\erts-*"
+    ${If} $R2 != ""
+        StrCpy $R0 "$INSTDIR\$R2\bin"
+        DetailPrint "Found ERTS bin: $R0"
+        ; ── beam.smp.exe ──
+        nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo BEAM"'
+        nsExec::ExecToLog 'netsh advfirewall firewall add rule name="PaperLand Dojo BEAM" dir=in action=allow program="$R0\beam.smp.exe" protocol=any profile=any description="PaperLand Dojo Erlang VM inbound"'
+        nsExec::ExecToLog 'netsh advfirewall firewall add rule name="PaperLand Dojo BEAM Out" dir=out action=allow program="$R0\beam.smp.exe" protocol=any profile=any description="PaperLand Dojo Erlang VM outbound"'
 
-    ; Outbound mDNS: needed on Public profile where outbound multicast may be blocked.
-    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS} Out"'
-    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_MDNS} Out" dir=out action=allow protocol=UDP remoteport=5454 program="$INSTDIR\dojo_windows.exe" profile=any description="PaperLand Dojo — mDNS multicast out"'
+        ; ── erl.exe ──
+        nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo ERL"'
+        nsExec::ExecToLog 'netsh advfirewall firewall add rule name="PaperLand Dojo ERL" dir=in action=allow program="$R0\erl.exe" protocol=any profile=any description="PaperLand Dojo Erlang launcher inbound"'
+        nsExec::ExecToLog 'netsh advfirewall firewall add rule name="PaperLand Dojo ERL Out" dir=out action=allow program="$R0\erl.exe" protocol=any profile=any description="PaperLand Dojo Erlang launcher outbound"'
 
+        ; ── epmd.exe ──
+        nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo EPMD"'
+        nsExec::ExecToLog 'netsh advfirewall firewall add rule name="PaperLand Dojo EPMD" dir=in action=allow program="$R0\epmd.exe" protocol=any profile=any description="PaperLand Dojo EPMD inbound"'
+        nsExec::ExecToLog 'netsh advfirewall firewall add rule name="PaperLand Dojo EPMD Out" dir=out action=allow program="$R0\epmd.exe" protocol=any profile=any description="PaperLand Dojo EPMD outbound"'
+
+        DetailPrint "ERTS firewall rules added successfully"
+    ${Else}
+        DetailPrint "WARNING: erts-* directory not found under $INSTDIR"
+    ${EndIf}
+    FindClose $R1
+    
     DetailPrint "Installation completed successfully"
 SectionEnd
 
@@ -303,32 +249,29 @@ SectionEnd
 ; Uninstaller Section
 ;--------------------------------
 Section "Uninstall"
-    ; Stop the app if it is running so the exe isn't locked during delete
     DetailPrint "Stopping PaperLand Dojo if running..."
     nsExec::ExecToLog 'taskkill /f /im dojo_windows.exe'
 
-    ; Remove all firewall rules added at install time
     DetailPrint "Removing Windows Firewall rules..."
     nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_APP}"'
     nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS}"'
     nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS} Out"'
-
-    ; Remove all installed files and the install directory
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo ERTS"'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo BEAM"'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo BEAM Out"'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo ERL"'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo ERL Out"'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo EPMD"'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo EPMD Out"'
     RMDir /r "$INSTDIR"
 
-    ; Remove Start Menu shortcuts
     Delete "$SMPROGRAMS\PaperLand Dojo\PaperLand Dojo.lnk"
     Delete "$SMPROGRAMS\PaperLand Dojo\Uninstall.lnk"
     RMDir "$SMPROGRAMS\PaperLand Dojo"
     Delete "$DESKTOP\PaperLand Dojo.lnk"
 
-    ; Remove registry keys
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo"
     DeleteRegKey HKLM "Software\PaperLand Dojo"
 
     DetailPrint "Uninstallation completed"
-SectionEnd
-
-Section "-KeepFunctions"
-    GetFunctionAddress $0 LaunchDojo
 SectionEnd
