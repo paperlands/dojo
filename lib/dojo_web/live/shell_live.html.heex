@@ -131,7 +131,7 @@
     <div class="bg-transparent pointer-events-none select-none" />
     <!-- Right pane -->
     <div class="row-span-1 col-span-1 lg:row-span-2 p-4 relative ">
-      <div id="sessionbox" class="fixed right-0 ml-4 ">
+      <div id="sessionbox" class="fixed z-50 right-0 ml-4 ">
         <div :if={!@session.name} class="relative right-0 group">
           <!-- Login Link Button -->
           <.link
@@ -210,7 +210,7 @@
 
 
             <!-- Command buttons always aligned to right and given prio -->
-            <div class="flex flex-shrink-0 gap-1 z-30 ml-auto cursor-pointer pointer-events-auto justify-end">
+            <div class="flex flex-shrink-0 gap-1 ml-auto cursor-pointer pointer-events-auto justify-end">
               <button
                 id="centering"
                 class=" flex items-center justify-center  w-9 h-9 border border-accent backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0   rounded-sm  lg:w-8 lg:h-8   fill-primary hover:fill-primary active:border-primary touch-manipulation"
@@ -338,7 +338,7 @@
               <!-- > -->
               <!--   <.save class="w-4 h-4 duration-700  transition-transform duration-700  " /> -->
                 <!-- </button> -->
-              <.live_component module={DojoWeb.HotspotLive} id="hotspot" />
+              <.live_component :if={Mix.env()!==:prod} module={DojoWeb.HotspotLive} id="hotspot" username={binary_part(@session.name,0, min(20, byte_size(@session.name)))} />
               <button
                 class="flex items-center justify-center w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
                 phx-click={
@@ -446,7 +446,7 @@
                 loading="eager"
                 decoding="sync"
                 />
-              <%= Map.has_key?(dis, :meta) && IO.inspect("//" <> (dis[:addr] || "") <> "/#{dis.meta.path}") %>
+              <!-- <%= #Map.has_key?(dis, :meta) && IO.inspect("//" <> (dis[:addr] || "") <> "/#{dis.meta.path}") %> -->
               <img
                 :if={Map.has_key?(dis, :meta)}
                 src={"//" <> (dis[:addr] || "") <> "/#{dis.meta.path}"}

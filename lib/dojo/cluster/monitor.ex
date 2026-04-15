@@ -206,9 +206,8 @@ defmodule Dojo.Cluster.NetworkMonitor do
   defp disconnect_stale_peers do
     try do
       case :partisan_peer_service.members() do
-        members when is_list(members) and members != [] ->
+        {:ok, members} when is_list(members) and members != [] ->
           Logger.info("[NetworkMonitor] leaving #{length(members)} peers to force clean rejoin")
-
           # Clear PLUMTREE_OUTSTANDING lazy push entries for these peers BEFORE
           # leaving. Without this, reconnection triggers a burst of stale
           # i_have messages from accumulated outstanding entries.
