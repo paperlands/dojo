@@ -39,7 +39,7 @@ msgstr "تَحَكُّم"
 #: lib/dojo_web/live/shell_live.ex:684
 #, elixir-autogen, elixir-format
 msgid "Deck"
-msgstr "بطاقاتُ الأوامِر"
+msgstr "الورق"
 
 #: lib/dojo_web/components/core_components.ex:151
 #, elixir-autogen, elixir-format

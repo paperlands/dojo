@@ -131,7 +131,7 @@
     <div class="bg-transparent pointer-events-none select-none" />
     <!-- Right pane -->
     <div class="row-span-1 col-span-1 lg:row-span-2 p-4 relative ">
-      <div id="sessionbox" class="fixed right-0 ml-4 ">
+      <div id="sessionbox" phx-hook="Box" class="fixed right-0 ml-4 ">
         <div :if={!@session.name} class="relative right-0 group">
           <!-- Login Link Button -->
           <.link
@@ -187,7 +187,7 @@
               </span>
 
               <span class="ml-[1ch] hidden sm:block">
-                {gettext("to %{clan}'s shell", clan: to_titlecase(@clan))}
+                {Session.t(@locale, "to %{clan}'s shell", clan: to_titlecase(@clan))}
               </span>
 
               <span class="relative flex items-center ml-1">
@@ -203,7 +203,7 @@
               class="max-w-20 bg-gradient-to-r from-background to-transparent overflow-hidden whitespace-nowrap flex-shrink-1 sm:flex-shrink-0 flex items-center text-xs mr-1 sm:mr-2 min-w-0"
             >
               <span class="text-amber-600 animate-marquee">
-                {gettext("summoning @%{name}'s code", name: @outershell.name)} ☄
+                {Session.t(@locale, "summoning @%{name}'s code", name: @outershell.name)} ☄
               </span>
             </div>
             <!-- Empty spacer div with minimum width on small screens -->
@@ -338,6 +338,11 @@
               <!-- > -->
               <!--   <.save class="w-4 h-4 duration-700  transition-transform duration-700  " /> -->
                 <!-- </button> -->
+              <.live_component
+                module={DojoWeb.LocalePickerLive}
+                id="locale-picker"
+                current_locale={@locale}
+              />
               <.live_component module={DojoWeb.HotspotLive} id="hotspot" />
               <button
                 class="flex items-center justify-center w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
@@ -360,8 +365,7 @@
               <!-- > -->
               <!--   <.tyger class="w-7 h-7" /> -->
                 <!-- </button> -->
-              
-              
+
             </div>
           </div>
           <!-- Decorative corners (smaller size for subtlety) -->
@@ -375,8 +379,8 @@
           </div>
         </div>
       </div>
-      <.outershell :if={@outershell.active} outershell={@outershell} />
-      <.deck />
+      <.outershell :if={@outershell.active} outershell={@outershell} locale={@locale} />
+      <.live_component module={DojoWeb.DeckLive} id="command-deck" locale={@locale} />
       <!-- <.nerve messages={@disciples} /> -->
     </div>
     <!-- <div class="backdrop-blur-sm border border-gray-700/50 rounded-lg p-4"/> -->
@@ -445,8 +449,9 @@
                 class="size-10 fill-amber-600"
                 loading="eager"
                 decoding="sync"
-                />
-              <%= Map.has_key?(dis, :meta) && IO.inspect("//" <> (dis[:addr] || "") <> "/#{dis.meta.path}") %>
+              />
+              {Map.has_key?(dis, :meta) &&
+                IO.inspect("//" <> (dis[:addr] || "") <> "/#{dis.meta.path}")}
               <img
                 :if={Map.has_key?(dis, :meta)}
                 src={"//" <> (dis[:addr] || "") <> "/#{dis.meta.path}"}
