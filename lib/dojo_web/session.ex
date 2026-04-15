@@ -10,7 +10,7 @@ defmodule DojoWeb.Session do
             settings: %{}
 
   @default_locale "en"
-  @supported_locales ~w(en ar ko zh)
+  @supported_locales ~w(en ar es ko zh)
   @rtl_locales ~w(ar he fa ur)
   @timezone "UTC"
   @timezone_offset 0

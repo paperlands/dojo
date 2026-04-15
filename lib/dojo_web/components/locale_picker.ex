@@ -6,6 +6,7 @@ defmodule DojoWeb.LocalePickerLive do
   @locales [
     {"en", "en"},
     {"ar", "عر"},
+    {"es", "ñ"},
     {"ko", "한"},
     {"zh", "中"}
   ]
@@ -33,7 +34,6 @@ defmodule DojoWeb.LocalePickerLive do
       to: "##{id}-toggle"
     )
   end
-
 
   def render(assigns) do
     ~H"""
