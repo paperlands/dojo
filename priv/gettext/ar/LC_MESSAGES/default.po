@@ -149,6 +149,11 @@ msgstr "أَستَحضِرُ شِفرةَ @%{name}"
 
 #: lib/dojo_web/live/shell_live.html.heex:190
 #, elixir-autogen, elixir-format
+msgid "welcome"
+msgstr "مرحبا"
+
+#: lib/dojo_web/live/shell_live.html.heex:192
+#, elixir-autogen, elixir-format
 msgid "to %{clan}'s shell"
 msgstr "إلى صَدَفةِ %{clan}"
 

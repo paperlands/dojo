@@ -11,10 +11,13 @@ defmodule DojoWeb.Session do
 
   @default_locale "en"
   @supported_locales ~w(en ar ko zh)
+  @rtl_locales ~w(ar he fa ur)
   @timezone "UTC"
   @timezone_offset 0
 
   def supported_locales, do: @supported_locales
+  def rtl?(locale), do: locale in @rtl_locales
+  def dir(locale), do: if(rtl?(locale), do: "rtl", else: "ltr")
 
   def on_mount(:anon, params, _sessions, socket) do
     connect_params = get_connect_params(socket)
@@ -65,7 +68,7 @@ defmodule DojoWeb.Session do
     |> push_event("mutateSession", %{settings: %{locale: locale}})
   end
 
-  def apply_setting(socket, :name, name) when is_binary(name)  do
+  def apply_setting(socket, :name, name) when is_binary(name) do
     session = socket.assigns.session
     updated = %{session | name: name}
 
@@ -77,6 +80,7 @@ defmodule DojoWeb.Session do
   def apply_setting(socket, _, _) do
     socket
   end
+
   # ── Session Hydration ─────────────────────────────────────────────────
 
   # careful of client and server state race. id here is not SOT

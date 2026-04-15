@@ -121,5 +121,9 @@ msgid "summoning @%{addr}'s code"
 msgstr "@%{addr}의 마법을 불러오는 중"
 
 #: lib/dojo_web/live/shell_live.html.heex:153
-msgid "welcome %{name} to⠀%{clan}'s shell"
-msgstr "안녕 %{name}, %{clan}의 세계로 어서와"
+msgid "welcome"
+msgstr "안녕"
+
+#: lib/dojo_web/live/shell_live.html.heex:153
+msgid "to %{clan}'s shell"
+msgstr "%{clan}의 세계로 어서와"
