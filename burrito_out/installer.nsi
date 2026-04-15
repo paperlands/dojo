@@ -21,6 +21,23 @@
 ;   - SignPath.io — free EV signing for open-source projects
 ;   - OV cert from Sectigo/DigiCert (~$100-300/year) — reputation builds over time
 ; ──────────────────────────────────────────────────────────────────────────
+;
+; ── Burrito / ERTS Firewall Notes ─────────────────────────────────────────
+; dojo_windows.exe is a LAUNCHER STUB, not a self-contained binary.
+; On first run Burrito extracts the full Erlang runtime to:
+;
+;   %LOCALAPPDATA%\.burrito\dojo_erts-<erts_ver>_<app_ver>\erts-<erts_ver>\bin\
+;
+; Windows Firewall sees erl.exe (and epmd.exe) in that extracted tree as the
+; socket owners — NOT dojo_windows.exe — so rules scoped to the .exe alone
+; do nothing for real traffic.
+;
+; The path is both per-user AND per-version, so it cannot be hard-coded here.
+; Solution: install add_erts_fw_rules.ps1 and a SYSTEM scheduled task that
+; discovers every erl.exe / epmd.exe under any user's .burrito\dojo_erts-*
+; tree and adds inbound+outbound rules for each one.  The task fires at
+; every user logon, so it self-heals after upgrades and for new accounts.
+; ──────────────────────────────────────────────────────────────────────────
 
 !include "MUI2.nsh"
 !include "x64.nsh"
@@ -37,8 +54,15 @@ RequestExecutionLevel admin
 !define APP_VERSION "0.3"
 
 ; Firewall rule names (used in both install and uninstall)
-!define FW_RULE_APP  "PaperLand Dojo"
-!define FW_RULE_MDNS "PaperLand Dojo mDNS"
+!define FW_RULE_APP   "PaperLand Dojo"
+!define FW_RULE_MDNS  "PaperLand Dojo mDNS"
+!define FW_RULE_EPMD  "PaperLand Dojo EPMD"
+; Dynamic ERTS rules are named "PaperLand Dojo ERTS - <path>" by the PS1 script.
+; The uninstaller removes them via PowerShell using the "PaperLand Dojo ERTS -" prefix.
+!define FW_RULE_ERTS_PREFIX "PaperLand Dojo ERTS -"
+
+; Scheduled task name
+!define TASK_NAME "PaperLand Dojo - Update Firewall Rules"
 
 ; UI Configuration
 !define MUI_ABORTWARNING
@@ -50,7 +74,7 @@ RequestExecutionLevel admin
 !define MUI_WELCOMEFINISHPAGE_BITMAP "resources/dialog.bmp"
 
 ; Finish page — launch checkbox is checked by default
-!define MUI_FINISHPAGE_RUN "$INSTDIR\dojo_windows.exe"   ; ← required to show the checkbox
+!define MUI_FINISHPAGE_RUN "$INSTDIR\dojo_windows.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Launch PaperLand Dojo now"
 !define MUI_FINISHPAGE_RUN_FUNCTION "LaunchDojo"
 
@@ -71,10 +95,7 @@ FunctionEnd
 !insertmacro MUI_LANGUAGE "English"
 
 ; VC++ Registry Keys for Detection
-; These cover all versions from 2015-2022 (v14.x)
 !define VCREDIST_X64_KEY "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
-
-; Minimum required version (14.0 = VC++ 2015)
 !define MIN_VCREDIST_VERSION_MAJOR 14
 !define MIN_VCREDIST_VERSION_MINOR 0
 
@@ -83,25 +104,21 @@ Var VCRedistArch
 
 ;--------------------------------
 ; Function: .onInit
-; Runs before the installer UI — stops any running instance so the exe isn't locked.
 ;--------------------------------
 Function .onInit
-    ; Silent kill — if not running, taskkill exits non-zero silently
     nsExec::Exec 'taskkill /f /im dojo_windows.exe'
 
     System::Call 'kernel32::CreateMutexA(i 0, i 0, t "PaperLandDojoInstaller") i .r1 ?e'
         Pop $R0
-        ${If} $R0 = 183  ; ERROR_ALREADY_EXISTS
+        ${If} $R0 = 183
             MessageBox MB_OK|MB_ICONEXCLAMATION \
                 "The PaperLand Dojo installer is already running."
             Abort
         ${EndIf}
-
 FunctionEnd
 
 ;--------------------------------
 ; Function: CheckVCRedist
-; Checks if Visual C++ Redistributable is installed and meets minimum version
 ;--------------------------------
 Function CheckVCRedist
     SetRegView 64
@@ -144,7 +161,6 @@ FunctionEnd
 
 ;--------------------------------
 ; Function: InstallVCRedist
-; Installs the Visual C++ Redistributable if needed
 ;--------------------------------
 Function InstallVCRedist
     ${If} $VCRedistNeeded == "1"
@@ -175,6 +191,48 @@ Function InstallVCRedist
 FunctionEnd
 
 ;--------------------------------
+; Function: InstallERTSFirewallHelper
+;
+; Installs add_erts_fw_rules.ps1 and a SYSTEM scheduled task that runs it
+; at every user logon.  Also runs the script immediately so any already-
+; extracted ERTS tree (upgrade scenario) gets rules right away.
+;
+; Why a scheduled task instead of a one-shot run here?
+;   - The installer runs as admin but may be a different user than the one
+;     who will run the app (e.g. IT push).
+;   - Burrito extracts ERTS on FIRST RUN per user, so the path does not
+;     exist yet at install time for a fresh machine.
+;   - Each app upgrade creates a new versioned subdirectory, so rules need
+;     to be refreshed after every update as well.
+;--------------------------------
+Function InstallERTSFirewallHelper
+    DetailPrint "Installing Burrito ERTS firewall helper..."
+
+    ; Deploy the PowerShell script
+    SetOutPath "$INSTDIR"
+    File "resources\add_erts_fw_rules.ps1"
+
+    ; Run it immediately — covers the upgrade case where ERTS is already extracted
+    DetailPrint "Running ERTS firewall helper for existing extractions..."
+    nsExec::ExecToLog 'powershell -ExecutionPolicy Bypass -NonInteractive \
+        -WindowStyle Hidden -File "$INSTDIR\add_erts_fw_rules.ps1"'
+
+    ; Create a SYSTEM scheduled task that re-runs the script at every logon.
+    ; /f overwrites any existing task from a previous install.
+    ; Running as SYSTEM gives the required privilege to add firewall rules
+    ; without a UAC prompt, and SYSTEM can read all user profile directories.
+    DetailPrint "Registering scheduled task: ${TASK_NAME}"
+    nsExec::ExecToLog 'schtasks /create /f \
+        /tn "${TASK_NAME}" \
+        /tr "powershell -ExecutionPolicy Bypass -NonInteractive -WindowStyle Hidden -File \"$INSTDIR\add_erts_fw_rules.ps1\"" \
+        /sc onlogon \
+        /ru SYSTEM \
+        /rl HIGHEST'
+
+    DetailPrint "ERTS firewall helper installed"
+FunctionEnd
+
+;--------------------------------
 ; Main Installation Section
 ;--------------------------------
 Section "MainSection" SEC01
@@ -199,7 +257,6 @@ Section "MainSection" SEC01
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "NoRepair" 1
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PaperLand Dojo" "EstimatedSize" 50000
 
-    ; Store installation directory
     WriteRegStr HKLM "Software\PaperLand Dojo" "InstallDir" "$INSTDIR"
 
     ; Start Menu and Desktop shortcuts
@@ -208,40 +265,50 @@ Section "MainSection" SEC01
     CreateShortCut "$SMPROGRAMS\PaperLand Dojo\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
     CreateShortCut "$DESKTOP\PaperLand Dojo.lnk" "$INSTDIR\dojo_windows.exe" "" "$INSTDIR\app-icon.ico" 0
 
-    ; ── ERTS Firewall Rules ─────────────────────────────────────────────────
-    ; Covers beam.smp.exe, erl.exe, and epmd.exe so Windows never prompts.
-    ; profile=any = domain + private + public networks.
-    ; protocol=any = TCP + UDP in one rule (suppresses the WD dialog fully).
-    ; Both dir=in and dir=out are required — inbound-only still triggers the
-    ; popup on Windows 11 22H2+ for processes that also send multicast.
+    ; ── Windows Firewall rules ──────────────────────────────────────────────
+    ;
+    ; IMPORTANT: dojo_windows.exe is a Burrito launcher stub.  It extracts
+    ; the real Erlang runtime (ERTS) into:
+    ;
+    ;   %LOCALAPPDATA%\.burrito\dojo_erts-<erts_ver>_<app_ver>\erts-<erts_ver>\bin\
+    ;
+    ; Windows Firewall attributes sockets to erl.exe and epmd.exe in that
+    ; extracted tree, NOT to dojo_windows.exe.  The rules below for
+    ; dojo_windows.exe are kept for completeness (the stub does open one
+    ; internal pipe) but they are NOT sufficient on their own.
+    ;
+    ; The ERTS-specific rules are handled dynamically by InstallERTSFirewallHelper.
+    ; ──────────────────────────────────────────────────────────────────────────
+    DetailPrint "Adding Windows Firewall rules for launcher..."
 
-    DetailPrint "Locating Erlang runtime directory..."
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_APP}"'
+    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_APP}" dir=in action=allow program="$INSTDIR\dojo_windows.exe" protocol=any profile=any description="PaperLand Dojo — launcher stub"'
 
-    FindFirst $R1 $R2 "$INSTDIR\erts-*"
-    ${If} $R2 != ""
-        StrCpy $R0 "$INSTDIR\$R2\bin"
-        DetailPrint "Found ERTS bin: $R0"
-        ; ── beam.smp.exe ──
-        nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo BEAM"'
-        nsExec::ExecToLog 'netsh advfirewall firewall add rule name="PaperLand Dojo BEAM" dir=in action=allow program="$R0\beam.smp.exe" protocol=any profile=any description="PaperLand Dojo Erlang VM inbound"'
-        nsExec::ExecToLog 'netsh advfirewall firewall add rule name="PaperLand Dojo BEAM Out" dir=out action=allow program="$R0\beam.smp.exe" protocol=any profile=any description="PaperLand Dojo Erlang VM outbound"'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_APP} Out"'
+    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_APP} Out" dir=out action=allow program="$INSTDIR\dojo_windows.exe" protocol=any profile=any description="PaperLand Dojo — launcher stub outbound"'
 
-        ; ── erl.exe ──
-        nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo ERL"'
-        nsExec::ExecToLog 'netsh advfirewall firewall add rule name="PaperLand Dojo ERL" dir=in action=allow program="$R0\erl.exe" protocol=any profile=any description="PaperLand Dojo Erlang launcher inbound"'
-        nsExec::ExecToLog 'netsh advfirewall firewall add rule name="PaperLand Dojo ERL Out" dir=out action=allow program="$R0\erl.exe" protocol=any profile=any description="PaperLand Dojo Erlang launcher outbound"'
+    ; mDNS — UDP 5454 peer discovery (scoped to launcher; ERTS rules added by PS1)
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS}"'
+    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_MDNS}" dir=in action=allow protocol=UDP localport=5454 program="$INSTDIR\dojo_windows.exe" profile=any description="PaperLand Dojo — mDNS peer discovery"'
 
-        ; ── epmd.exe ──
-        nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo EPMD"'
-        nsExec::ExecToLog 'netsh advfirewall firewall add rule name="PaperLand Dojo EPMD" dir=in action=allow program="$R0\epmd.exe" protocol=any profile=any description="PaperLand Dojo EPMD inbound"'
-        nsExec::ExecToLog 'netsh advfirewall firewall add rule name="PaperLand Dojo EPMD Out" dir=out action=allow program="$R0\epmd.exe" protocol=any profile=any description="PaperLand Dojo EPMD outbound"'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS} Out"'
+    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_MDNS} Out" dir=out action=allow protocol=UDP remoteport=5454 program="$INSTDIR\dojo_windows.exe" profile=any description="PaperLand Dojo — mDNS multicast out"'
 
-        DetailPrint "ERTS firewall rules added successfully"
-    ${Else}
-        DetailPrint "WARNING: erts-* directory not found under $INSTDIR"
-    ${EndIf}
-    FindClose $R1
-    
+    ; ── EPMD port-based rules (belt-and-suspenders) ─────────────────────────
+    ; EPMD (Erlang Port Mapper Daemon) runs on TCP 4369 and is always owned
+    ; by epmd.exe inside the extracted ERTS tree.  The PS1 helper adds a
+    ; program-scoped rule for it, but add a port-based rule here as well so
+    ; clustering works even before the first-logon task has fired.
+    DetailPrint "Adding EPMD port-based firewall rules..."
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_EPMD}"'
+    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_EPMD}" dir=in action=allow protocol=TCP localport=4369 profile=any description="PaperLand Dojo — EPMD Erlang port mapper"'
+
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_EPMD} Out"'
+    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_EPMD} Out" dir=out action=allow protocol=TCP remoteport=4369 profile=any description="PaperLand Dojo — EPMD outbound"'
+
+    ; ── Dynamic ERTS rules via PowerShell helper ─────────────────────────────
+    Call InstallERTSFirewallHelper
+
     DetailPrint "Installation completed successfully"
 SectionEnd
 
@@ -251,18 +318,28 @@ SectionEnd
 Section "Uninstall"
     DetailPrint "Stopping PaperLand Dojo if running..."
     nsExec::ExecToLog 'taskkill /f /im dojo_windows.exe'
+    nsExec::ExecToLog 'taskkill /f /im erl.exe'
+    nsExec::ExecToLog 'taskkill /f /im epmd.exe'
 
-    DetailPrint "Removing Windows Firewall rules..."
+    ; Remove scheduled task first
+    DetailPrint "Removing scheduled task..."
+    nsExec::ExecToLog 'schtasks /delete /f /tn "${TASK_NAME}"'
+
+    ; Remove static firewall rules
+    DetailPrint "Removing static Windows Firewall rules..."
     nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_APP}"'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_APP} Out"'
     nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS}"'
     nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS} Out"'
-    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo ERTS"'
-    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo BEAM"'
-    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo BEAM Out"'
-    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo ERL"'
-    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo ERL Out"'
-    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo EPMD"'
-    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PaperLand Dojo EPMD Out"'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_EPMD}"'
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_EPMD} Out"'
+
+    ; Remove all dynamic ERTS rules (names start with the prefix set by the PS1 script)
+    DetailPrint "Removing dynamic ERTS firewall rules..."
+    nsExec::ExecToLog 'powershell -ExecutionPolicy Bypass -NonInteractive -WindowStyle Hidden \
+        -Command "Get-NetFirewallRule -DisplayName ''${FW_RULE_ERTS_PREFIX}*'' \
+        -ErrorAction SilentlyContinue | Remove-NetFirewallRule"'
+
     RMDir /r "$INSTDIR"
 
     Delete "$SMPROGRAMS\PaperLand Dojo\PaperLand Dojo.lnk"
