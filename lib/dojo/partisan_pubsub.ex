@@ -52,11 +52,13 @@ defmodule Phoenix.PubSub.Partisan do
     local_handler = handler_name(pubsub_name)
     send(local_handler, {:direct, topic, message, dispatcher})
 
+    Logger.debug("[LC:PubSub] broadcast topic=#{topic} msg_type=#{lc_msg_type(message)}")
+
     # 2. Remote dissemination with circuit breaker
     payload = {:broadcast, pubsub_name, topic, message, dispatcher}
 
     if plumtree_overloaded?() do
-      Logger.warning("Plumtree overloaded, dropping remote broadcast for #{topic}")
+      Logger.warning("[LC:PubSub] Plumtree overloaded, dropping remote broadcast for #{topic}")
     else
       :partisan_plumtree_broadcast.broadcast(payload, Phoenix.PubSub.Partisan.Handler)
     end
@@ -85,10 +87,15 @@ defmodule Phoenix.PubSub.Partisan do
     local_handler = handler_name(pubsub_name)
 
     if target_node == :partisan.node() do
-      # FIX: Send to the local Handler. 
+      # FIX: Send to the local Handler.
       # The Handler holds the `pubsub_name` and will call local_broadcast correctly.
       send(local_handler, {:direct, topic, message, dispatcher})
     else
+      Logger.debug(
+        "[LC:PubSub] direct_broadcast target=#{target_node} topic=#{topic} " <>
+          "channel=#{config_control_channel()} msg_type=#{lc_msg_type(message)}"
+      )
+
       # Remote Forwarding (Control Channel)
       payload = {:direct, topic, message, dispatcher}
       opts = %{channel: config_control_channel()}
@@ -99,6 +106,16 @@ defmodule Phoenix.PubSub.Partisan do
 
     :ok
   end
+
+  defp lc_msg_type({:pub, :heartbeat, {name, _vsn}, _, _}), do: "heartbeat:#{name}"
+  defp lc_msg_type({:pub, :heartbeat, {name, _vsn}, _}), do: "heartbeat:#{name}"
+  defp lc_msg_type({:pub, :transfer_req, _, _, _}), do: "transfer_req"
+  defp lc_msg_type({:pub, :transfer_ack, _, _}), do: "transfer_ack"
+  defp lc_msg_type({:pub, :graceful_permdown, _}), do: "graceful_permdown"
+  defp lc_msg_type({:join, _, _}), do: "join"
+  defp lc_msg_type({:leave, _, _}), do: "leave"
+  defp lc_msg_type(msg) when is_tuple(msg), do: msg |> elem(0) |> inspect()
+  defp lc_msg_type(_), do: "unknown"
 end
 
 defmodule Phoenix.PubSub.Partisan.Handler do
@@ -168,6 +185,8 @@ defmodule Phoenix.PubSub.Partisan.Handler do
       false
     else
       mark_seen(id)
+
+      Logger.debug("[LC:PubSub.Handler] merge topic=#{topic} msg_type=#{lc_msg_type(message)}")
 
       try do
         Phoenix.PubSub.local_broadcast(pubsub_name, topic, message, dispatcher)
@@ -263,6 +282,10 @@ defmodule Phoenix.PubSub.Partisan.Handler do
   # Used by Phoenix.Tracker for State Transfer (CRDT sync).
   @impl true
   def handle_info({:direct, topic, message, dispatcher}, state) do
+    Logger.debug(
+      "[LC:PubSub.Handler] direct recv topic=#{topic} msg_type=#{lc_msg_type(message)}"
+    )
+
     # Inline delivery: local_broadcast is non-blocking (send/2 via Registry).
     try do
       Phoenix.PubSub.local_broadcast(state.pubsub_name, topic, message, dispatcher)
@@ -277,4 +300,16 @@ defmodule Phoenix.PubSub.Partisan.Handler do
   def handle_info(_msg, state) do
     {:noreply, state}
   end
+
+  # -- LC helpers --------------------------------------------------------------
+
+  defp lc_msg_type({:pub, :heartbeat, {name, _vsn}, _, _}), do: "heartbeat:#{name}"
+  defp lc_msg_type({:pub, :heartbeat, {name, _vsn}, _}), do: "heartbeat:#{name}"
+  defp lc_msg_type({:pub, :transfer_req, _, _, _}), do: "transfer_req"
+  defp lc_msg_type({:pub, :transfer_ack, _, _}), do: "transfer_ack"
+  defp lc_msg_type({:pub, :graceful_permdown, _}), do: "graceful_permdown"
+  defp lc_msg_type({:join, _, _}), do: "join"
+  defp lc_msg_type({:leave, _, _}), do: "leave"
+  defp lc_msg_type(msg) when is_tuple(msg), do: msg |> elem(0) |> inspect()
+  defp lc_msg_type(_), do: "unknown"
 end

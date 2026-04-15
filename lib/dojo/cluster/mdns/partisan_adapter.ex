@@ -231,11 +231,50 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
         "[LC] hyparview[#{label}] active=#{inspect(lc_fmt_set(active))} " <>
           "passive=#{inspect(lc_fmt_set(passive))}"
       )
+
+      lc_channel_health(active)
     rescue
       _ -> :ok
     catch
       _, _ -> :ok
     end
+  end
+
+  @doc """
+  Log per-channel connection health for each active peer.
+  Reveals if specific channels (e.g. :data for Plumtree heartbeats) die
+  while others remain alive.
+  """
+  def lc_channel_health(active_set) do
+    active_set
+    |> :sets.to_list()
+    |> Enum.each(fn %{name: name} ->
+      case safe(fn -> :partisan_peer_connections.connections(name) end) do
+        conns when is_list(conns) and conns != [] ->
+          channel_summary =
+            conns
+            |> Enum.group_by(fn conn -> :partisan_peer_connections.channel(conn) end)
+            |> Enum.map(fn {channel, chan_conns} ->
+              {alive, dead} =
+                Enum.split_with(chan_conns, fn conn ->
+                  pid = :partisan_peer_connections.pid(conn)
+                  is_pid(pid) and Process.alive?(pid)
+                end)
+
+              "#{channel}=#{length(alive)}/#{length(alive) + length(dead)}"
+            end)
+            |> Enum.join(" ")
+
+          Logger.debug("[LC:PartisanAdapter] channels[#{name}] #{channel_summary}")
+
+        _ ->
+          Logger.debug("[LC:PartisanAdapter] channels[#{name}] NO_CONNECTIONS")
+      end
+    end)
+  rescue
+    _ -> :ok
+  catch
+    _, _ -> :ok
   end
 
   @doc false

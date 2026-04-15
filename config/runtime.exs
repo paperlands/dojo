@@ -45,9 +45,10 @@ end
 #   start_epmd: false 
 partisan_port = 53627 - :rand.uniform(100)
 System.put_env("PARTISAN_PORT", "#{partisan_port}")
-partisan_name = "admin@" <> Ecto.UUID.generate()
+partisan_name = "dojo@" <> Dojo.Clan.gen_name(3) #Ecto.UUID.generate()
 System.put_env("PARTISAN_NAME", partisan_name)
-
+IEx.configure(alive_prompt: "#{partisan_name}>")
+IEx.configure(default_prompt: "#{partisan_name}>")
 # SO_REUSEPORT (level SOL_SOCKET=1, optname=15) — Linux only.
 # Windows uses SOL_SOCKET=0xFFFF and has no SO_REUSEPORT; macOS uses optname 0x200.
 listen_options =
