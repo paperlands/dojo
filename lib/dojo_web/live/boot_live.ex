@@ -3,8 +3,6 @@ defmodule DojoWeb.BootLive do
   # import DojoWeb.SVGComponents
 
   def mount(params, _session, socket) do
-    if connected?(socket), do: Dojo.PubSub.subscribe("dojo:hotspot")
-
     {:ok,
      socket
      |> assign(:params, params)

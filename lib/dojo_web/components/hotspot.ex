@@ -14,12 +14,13 @@ defmodule DojoWeb.HotspotLive do
   # ── Lifecycle ────────────────────────────────────────────────────────
 
   def mount(socket) do
+    
     {:ok,
      socket
      |> assign(
        status: :loading,
-       ssid: "Dojo",
-       password: "enterthedojo",
+       ssid: "PaperLand",
+       password: "enterpaperland",
        interface: nil,
        ip: nil,
        error: nil,
@@ -36,10 +37,10 @@ defmodule DojoWeb.HotspotLive do
   end
 
   # First update — kick off async fetch
-  def update(%{id: id}, socket) when not is_map_key(socket.assigns, :id) do
+  def update(%{id: id, username: name}, socket) when not is_map_key(socket.assigns, :id) do
     {:ok,
      socket
-     |> assign(id: id, show_password: false, confirming: false)
+     |> assign(id: id, ssid: "#{name}@PaperLand", show_password: false, confirming: false)
      |> start_async(:fetch_status, fn -> Dojo.Hotspot.Server.get_status() end)}
   end
 
@@ -99,7 +100,7 @@ defmodule DojoWeb.HotspotLive do
       <%!-- Loading skeleton --%>
       <div
         :if={@status == :loading}
-        class="flex items-center justify-center w-9 h-9 lg:w-8 lg:h-8"
+        class="flex items-center justify-center z-100 w-9 h-9 lg:w-8 lg:h-8"
       >
         <.icon name="hero-wifi" class="w-6 h-6 text-primary-content/30 animate-pulse" />
       </div>
@@ -107,11 +108,11 @@ defmodule DojoWeb.HotspotLive do
       <%!-- Starting/stopping spinner --%>
       <button
         :if={@status in [:starting, :stopping]}
-        class="flex items-center justify-center w-9 h-9 border-1 border-amber-400/50 backdrop-blur-sm lg:w-8 lg:h-8 rounded-sm touch-manipulation"
+        class="flex items-center justify-center w-9 h-9 border-1 border-amber-400/50 backdrop-blur-xxs lg:w-8 lg:h-8 rounded-sm touch-manipulation"
         phx-click={JS.toggle(to: "##{@id}-panel", in: "fade-in-scale", out: "fade-out-scale")}
         phx-target={@myself}
       >
-        <.icon name="hero-arrow-path" class="w-5 h-5 text-amber-400 animate-spin" />
+        <.icon name="hero-wifi" class="w-6 h-6 text-primary-content animate-pulse" />
       </button>
 
       <%!-- Inactive / error / unsupported button --%>
@@ -137,10 +138,9 @@ defmodule DojoWeb.HotspotLive do
         phx-click={JS.toggle(to: "##{@id}-panel", in: "fade-in-scale", out: "fade-out-scale")}
         phx-target={@myself}
       >
-        <span class="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-green-500 animate-pulse" />
         <.icon
           name="hero-wifi"
-          class="w-6 h-6 text-accent-content drop-shadow-xs drop-shadow-accent-content"
+          class="w-6 h-6 text-accent-content drop-shadow-xs drop-shadow-accent-content  animate-pulse"
         />
       </button>
 
@@ -148,7 +148,7 @@ defmodule DojoWeb.HotspotLive do
       <div
         :if={@status != :loading}
         id={"#{@id}-panel"}
-        class="hidden absolute right-0 top-full mt-2 w-64 bg-base-200 backdrop-blur-sm border border-accent/50 rounded-lg p-3 font-mono text-xs text-primary shadow-lg"
+        class="hidden absolute z-100 right-0 top-full mt-2 w-64 bg-transparent backdrop-blur-sm border border-accent/50 rounded-lg p-3 font-mono text-xs text-primary shadow-lg"
       >
         <%!-- Status --%>
         <div class="flex items-center justify-between mb-2 pb-2 border-b border-accent">
@@ -253,7 +253,7 @@ defmodule DojoWeb.HotspotLive do
             <button
               phx-click="confirm_hotspot"
               phx-target={@myself}
-              class="px-2 py-1 bg-warning/20 border border-warning/50 rounded hover:bg-warning/30 transition-colors"
+              class="px-2 py-1 bg-warning/20 border border-accent-content/50 rounded hover:bg-warning/30 transition-colors"
             >
               proceed
             </button>
@@ -296,11 +296,11 @@ defmodule DojoWeb.HotspotLive do
     {:noreply, assign(socket, confirming: true, connected_to: connected_to)}
   end
 
-  def handle_event("confirm_hotspot", _, socket) do
+  def handle_event("confirm_hotspot", _, %{assigns: %{ssid: ssid}} = socket) do
     {:noreply,
      socket
      |> assign(confirming: false, status: :starting, error: nil)
-     |> start_async(:start_hotspot, fn -> Dojo.Hotspot.Server.start_hotspot() end)}
+     |> start_async(:start_hotspot, fn -> Dojo.Hotspot.Server.start_hotspot(%{ssid: ssid}) end)}
   end
 
   def handle_event("cancel_hotspot", _, socket) do
@@ -316,7 +316,7 @@ defmodule DojoWeb.HotspotLive do
   defp assign_status(socket, status_map) do
     assign(socket,
       status: status_map.status,
-      ssid: status_map.ssid,
+      #ssid: status_map.ssid,
       password: status_map.password,
       interface: status_map.interface,
       ip: status_map.ip,
@@ -328,12 +328,12 @@ defmodule DojoWeb.HotspotLive do
 
   # ── View helpers ─────────────────────────────────────────────────────
 
-  defp status_color(:active), do: "text-green-500"
+  defp status_color(:active), do: "text-accent-content"
   defp status_color(:starting), do: "text-amber-400 animate-pulse"
   defp status_color(:stopping), do: "text-amber-400 animate-pulse"
   defp status_color(:error), do: "text-error"
   defp status_color(:unsupported), do: "text-error"
-  defp status_color(_), do: "text-primary-content/50"
+  defp status_color(_), do: "text-primary-content"
 
   defp status_label(:active), do: "broadcasting"
   defp status_label(:starting), do: "starting..."
@@ -355,7 +355,7 @@ defmodule DojoWeb.HotspotLive do
     do: "opacity-50 cursor-not-allowed bg-base-300 border border-accent/30"
 
   defp toggle_button_class(_),
-    do: "bg-accent/20 border border-accent/50 hover:bg-accent/30 text-accent-content"
+    do: "bg-accent/20 border border-accent/50 hover:bg-accent/30 text-primary-content"
 
   defp toggle_label(:active), do: "stop hotspot"
   defp toggle_label(:starting), do: "starting..."

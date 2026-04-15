@@ -9,8 +9,8 @@ defmodule Dojo.Hotspot.Server do
   require Logger
 
   @poll_interval 5_000
-  @default_ssid "Dojo"
-  @default_password "enterthedojo"
+  @default_ssid "PaperLand"
+  @default_password "enterpaperland"
 
   defstruct status: :inactive,
             ssid: @default_ssid,
@@ -82,7 +82,7 @@ defmodule Dojo.Hotspot.Server do
     state = %{
       state
       | status: :starting,
-        ssid: ssid,
+        ssid: binary_part(ssid, 0, min(30, byte_size(ssid))), # ssid char limit 32bytes
         password: password,
         error: nil,
         connected_to: connected_to
@@ -182,7 +182,7 @@ defmodule Dojo.Hotspot.Server do
 
   defp count_peers do
     case :partisan_peer_service.members() do
-      members when is_list(members) -> length(members)
+      {:ok, members} when is_list(members) -> length(members)
       _ -> 0
     end
   catch

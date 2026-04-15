@@ -609,8 +609,6 @@ defmodule DojoWeb.ShellLive do
     """
   end
 
-  # Deck is now DojoWeb.DeckLive LiveComponent — mounted in the template
-
   def memory_well(assigns) do
     ~H"""
     <!-- Memory Well Component (memory_well.html.heex) -->
