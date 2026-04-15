@@ -157,11 +157,20 @@
     font-family: "paperLang";
     src: url('/fonts/paperLang.woff2') format('woff2'),
          url('/fonts/paperLang.woff') format('woff'),
-         url("/fonts/paperLang.ttf") format("truetype"),
+         url("/fonts/paperLang.ttf") format("truetype");
+  }
+
+@font-face {
+    font-family: "FiraCode";
+    src: url("/fonts/FiraCodeMonoRetina.ttf") format("truetype");
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
   }
 
 
 @theme {
+  --font-mono: "FiraCode", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --color-brand: #FF9933;
   --color-canvas: #1E1024;
   --color-lint-commands: var(--color-lint-commands);
