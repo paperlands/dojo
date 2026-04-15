@@ -65,6 +65,18 @@ defmodule DojoWeb.Session do
     |> push_event("mutateSession", %{settings: %{locale: locale}})
   end
 
+  def apply_setting(socket, :name, name) when is_binary(name)  do
+    session = socket.assigns.session
+    updated = %{session | name: name}
+
+    socket
+    |> assign(session: updated)
+    |> push_event("mutateSession", %{name: name})
+  end
+
+  def apply_setting(socket, _, _) do
+    socket
+  end
   # ── Session Hydration ─────────────────────────────────────────────────
 
   # careful of client and server state race. id here is not SOT

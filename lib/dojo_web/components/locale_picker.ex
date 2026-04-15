@@ -45,20 +45,17 @@ defmodule DojoWeb.LocalePickerLive do
         id={"#{@id}-panel"}
         phx-click-away="toggle"
         phx-target={@myself}
-        class="absolute right-0 top-full mt-2 bg-base-200 backdrop-blur-sm border border-accent/50 rounded-lg p-2 font-mono text-xs text-primary shadow-lg z-50"
+        class="absolute right-0 top-full mt-2 bg-transparent backdrop-blur-xs border border-accent/50 rounded-lg p-2 font-mono text-sm  text-primary shadow-lg z-50"
       >
         <button
           :for={{code, label} <- @locales}
+          :if={@current_locale !== code}
           phx-click="pick"
           phx-value-locale={code}
           phx-target={@myself}
           class={[
-            "block w-full px-3 py-1.5 text-left rounded transition-colors duration-200",
-            if(@current_locale == code,
-              do: "text-accent-content bg-accent/30 font-bold",
-              else: "text-primary-content/70 hover:text-primary-content hover:bg-base-300"
-            )
-          ]}
+            "block w-full p-1 text-center rounded transition-colors duration-200",
+              "text-primary-content/70 hover:text-primary-content hover:bg-base-300"]}
         >
           {label}
         </button>

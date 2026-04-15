@@ -222,6 +222,7 @@ defmodule DojoWeb.ShellLive do
     # Route through Table GenServer (which owns the presence entry)
     # instead of through Class (which used the LiveView PID)
     Dojo.Table.change_meta(class, {:name, name})
+    send(self(), {:setting, :name, name})
     {:noreply, socket}
   end
 
