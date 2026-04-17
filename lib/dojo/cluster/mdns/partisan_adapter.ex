@@ -101,6 +101,23 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
       :ok
   end
 
+  @doc """
+  Clear all peer tracking after a network change (WiFi roam / hotspot switch).
+
+  Called by NetworkMonitor when IPs change. Deletes all entries from the
+  known peers table so the next mDNS discovery poll treats every peer as
+  "new" — triggering `join` (not `update_members`). This is critical because
+  `join` → `add_to_active_view` fires the name-aware dedup that replaces
+  stale specs with old IPs.
+  """
+  def on_network_change do
+    ensure_known_peers_table()
+    :ets.delete_all_objects(@known_peers_table)
+    Logger.info("[PartisanAdapter] known peers cleared — will rejoin on next discovery")
+  rescue
+    _ -> :ok
+  end
+
   @impl Dojo.Cluster.Discovery
   def on_peer_departed(name) do
     ensure_known_peers_table()
@@ -190,6 +207,47 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
       }
     end)
   end
+# ── [LC] Instrumentation helpers ────────────────────────────────────────
+
+  @doc """
+  Snapshot HyParView active/passive views with full listen_addrs.
+  Tagged with `label` so the caller can correlate across events.
+  """
+  def lc_snapshot_views(label) do
+    try do
+      {:ok, active} = :partisan_hyparview_peer_service_manager.active()
+      {:ok, passive} = :partisan_hyparview_peer_service_manager.passive()
+
+      Logger.info(
+        "[LC] hyparview[#{label}] active=#{inspect(lc_fmt_set(active))} " <>
+          "passive=#{inspect(lc_fmt_set(passive))}"
+      )
+    rescue
+      _ -> :ok
+    catch
+      _, _ -> :ok
+    end
+  end
+
+  @doc false
+  def lc_fmt_spec(%{name: name, listen_addrs: addrs}) do
+    addr_strs =
+      Enum.map(addrs, fn
+        %{ip: ip, port: port} -> "#{lc_fmt_ip(ip)}:#{port}"
+        other -> inspect(other)
+      end)
+
+    "#{name}→[#{Enum.join(addr_strs, ",")}]"
+  end
+
+  def lc_fmt_spec(other), do: inspect(other)
+
+  defp lc_fmt_set(set) do
+    set |> :sets.to_list() |> Enum.map(&lc_fmt_spec/1)
+  end
+
+  defp lc_fmt_ip(ip) when is_tuple(ip), do: ip |> :inet.ntoa() |> to_string()
+  defp lc_fmt_ip(ip), do: inspect(ip)
 
   # Returns true if the peer is healthy (keep in rotation), false if evicted.
   # Tracks consecutive connection failures in ETS and evicts from mDNS cache

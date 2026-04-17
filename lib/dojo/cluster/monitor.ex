@@ -98,30 +98,79 @@ defmodule Dojo.Cluster.NetworkMonitor do
     :partisan_config.set(:listen_addrs, new_addrs)
     Logger.info("[NetworkMonitor] partisan_config:listen_addrs updated → #{inspect(new_addrs)}")
 
-    # 3. Restart the Partisan peer service server to rebind listeners.
-    restart_listeners()
+    # 2.5 Refresh the HyParView manager's cached self-spec.
+    #     init/1 caches partisan:node_spec() in State#state.node_spec and
+    #     uses it as `Myself` in every outgoing JOIN / NEIGHBOR /
+    #     FORWARD_JOIN / SHUFFLE message, plus as the self element in the
+    #     active view set. Without this refresh, peers that process our
+    #     next JOIN will call connect(OurStaleSpec), dial dead IPs, fail
+    #     to add us to their active view, and never create the reverse
+    #     outbound connection that Phoenix.PubSub + Phoenix.Tracker need
+    #     to dispatch by name — presence never re-converges.
+    refresh_hyparview_node_spec()
 
-    # 4. Force disconnect stale connections.
-    #    TCP connections on old IPs are half-dead; disconnecting triggers HyParView healing.
-    disconnect_stale_peers()
+    # 3. Restart listeners — if bind fails, revert config and bail.
+    #    Without validation, we'd advertise IPs with no listener bound.
+    case restart_listeners() do
+      :ok ->
+        # 4. Force disconnect stale connections.
+        #    TCP connections on old IPs are half-dead; disconnecting triggers HyParView healing.
+        disconnect_stale_peers()
 
-    # 5. Rejoin multicast on the main mDNS socket for the new interfaces.
-    #    Without this, the socket can only hear multicast on the old interfaces.
-    GenServer.cast(Dojo.Cluster.MDNS, {:rejoin_multicast, new_ips})
+        # 4.5 Reset adapter failure tracking — this is a network change, not peer death.
+        #     Without this, the adapter misinterprets post-disconnect connection failures
+        #     as peer death and evicts peers that are still alive on the new network.
+        Dojo.Cluster.MDNS.PartisanAdapter.on_network_change()
 
-    # 6. Re-announce on NEW IPs — make us visible on the new network immediately
-    #    instead of waiting up to 5s for the next mDNS lookup cycle.
-    Dojo.Cluster.MDNS.reannounce(new_ips)
+        # 5. Rejoin multicast on the main mDNS socket for the new interfaces.
+        #    Without this, the socket can only hear multicast on the old interfaces.
+        #    Pass old_ips explicitly — by this point routable_ipv4_addrs() returns
+        #    the new IPs, so the handler needs old_ips to know what to drop.
+        GenServer.cast(Dojo.Cluster.MDNS, {:rejoin_multicast, old_ips, new_ips})
 
-    # 7. Update addr cache and notify all Tables on this node
-    new_addr = Dojo.Cluster.Routing.routable_addr()
-    :persistent_term.put({Dojo.Gate, :addr}, new_addr)
+        # 6. Re-announce on NEW IPs — make us visible on the new network immediately
+        #    instead of waiting up to 5s for the next mDNS lookup cycle.
+        Dojo.Cluster.MDNS.reannounce(new_ips)
 
-    if Application.get_env(:dojo, :routing_strategy) == Dojo.Cluster.Routing.Local do
-      Phoenix.PubSub.local_broadcast(Dojo.PubSub, "system:network", {:network_change, new_addr})
-      Logger.info("[NetworkMonitor] addr updated → #{new_addr}, broadcast to system:network")
-    else
-      Logger.info("[NetworkMonitor] addr updated → #{new_addr}")
+        # 7. Update addr cache and notify all Tables on this node
+        new_addr = Dojo.Cluster.Routing.routable_addr()
+        :persistent_term.put({Dojo.Gate, :addr}, new_addr)
+
+        if Application.get_env(:dojo, :routing_strategy) == Dojo.Cluster.Routing.Local do
+          Phoenix.PubSub.local_broadcast(
+            Dojo.PubSub,
+            "system:network",
+            {:network_change, new_addr}
+          )
+
+          Logger.info("[NetworkMonitor] addr updated → #{new_addr}, broadcast to system:network")
+        else
+          Logger.info("[NetworkMonitor] addr updated → #{new_addr}")
+        end
+
+      :error ->
+        # Bind failed — revert config so we don't advertise unreachable addrs.
+        # The next poll cycle will re-detect the IP change and retry.
+        old_addrs = Enum.map(old_ips, fn ip -> %{ip: ip, port: port} end)
+        :partisan_config.set(:listen_addrs, old_addrs)
+
+        Logger.warning(
+          "[NetworkMonitor] listener bind failed, reverted config — will retry next poll"
+        )
+    end
+  end
+
+  defp refresh_hyparview_node_spec do
+    try do
+      case GenServer.call(:partisan_hyparview_peer_service_manager, :refresh_node_spec, 5_000) do
+        :updated -> Logger.info("[NetworkMonitor] hyparview node_spec refreshed")
+        :unchanged -> :ok
+        other -> Logger.debug("[NetworkMonitor] hyparview refresh: #{inspect(other)}")
+      end
+    catch
+      kind, reason ->
+        Logger.warning("[NetworkMonitor] hyparview refresh failed: #{inspect({kind, reason})}")
+        :ok
     end
   end
 
@@ -136,33 +185,51 @@ defmodule Dojo.Cluster.NetworkMonitor do
           case Supervisor.restart_child(:partisan_sup, :partisan_acceptor_socket_pool_sup) do
             {:ok, pid} ->
               Logger.info("[NetworkMonitor] acceptor pool restarted → #{inspect(pid)}")
+              :ok
 
             {:error, reason} ->
               Logger.error("[NetworkMonitor] acceptor pool restart failed: #{inspect(reason)}")
+              :error
           end
 
         {:error, reason} ->
           Logger.error("[NetworkMonitor] acceptor pool terminate failed: #{inspect(reason)}")
+          :error
       end
     rescue
-      e -> Logger.error("[NetworkMonitor] listener restart error: #{inspect(e)}")
+      e ->
+        Logger.error("[NetworkMonitor] listener restart error: #{inspect(e)}")
+        :error
     end
   end
 
   defp disconnect_stale_peers do
     try do
       case :partisan_peer_service.members() do
-        members when is_list(members) and members != [] ->
-          Logger.info(
-            "[NetworkMonitor] disconnecting #{length(members)} peers to force reconnect"
-          )
-
+        {:ok, members} when is_list(members) and members != [] ->
+          Logger.info("[NetworkMonitor] leaving #{length(members)} peers to force clean rejoin")
           # Clear PLUMTREE_OUTSTANDING lazy push entries for these peers BEFORE
-          # disconnecting. Without this, reconnection triggers a burst of stale
+          # leaving. Without this, reconnection triggers a burst of stale
           # i_have messages from accumulated outstanding entries.
           clear_outstanding_for_peers(members)
 
-          :partisan_peer_service_manager.disconnect(members)
+          # Use `leave` (not `disconnect`) so HyParView's active AND passive
+          # views are purged atomically. `disconnect` only kills TCP + ETS
+          # records; it leaves stale specs in views, causing `random_promotion`
+          # to pick them every 3s and endlessly retry connections to dead IPs.
+          # With intro of name-aware leave handler partisan now removes by name so
+          # stale `listen_addrs` don't block matching.
+          Enum.each(members, fn member ->
+            try do
+              :partisan_peer_service.leave(%{
+                name: member,
+                listen_addrs: [],
+                channels: %{}
+              })
+            catch
+              _, _ -> :ok
+            end
+          end)
 
         _ ->
           :ok

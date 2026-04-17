@@ -130,6 +130,9 @@ config :partisan,
   # Sample window size
   # 1 second heartbeats
   gossip_interval: 1000,
+  # 1.5s — generous for LAN; default 5s causes 25s worst-case per stale IP
+  # during WiFi roaming (5 channels × 5s timeout each)
+  connect_timeout: 1_500,
   listen_options: listen_options
 
 config :dojo, Phoenix.PubSub.Partisan,

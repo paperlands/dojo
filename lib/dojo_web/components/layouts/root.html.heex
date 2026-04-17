@@ -28,6 +28,13 @@
     </script>
     <script>
       (() => {
+        const sess = JSON.parse(localStorage.getItem("session") || "{}");
+        const locale = sess.settings && sess.settings.locale;
+        if (locale) document.documentElement.lang = locale;
+      })();
+    </script>
+    <script>
+      (() => {
         const setTheme = (theme) => {
           if (theme === "system") {
             localStorage.removeItem("phx:theme");
