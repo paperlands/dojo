@@ -5,7 +5,7 @@ import {ColorConverter} from '../../utils/color.js'
 export default class Head {
     constructor(scene) {
         const defaultColors = {
-            head: "DarkOrange",
+            head: "#e77808",
             wireframe: "black"
         };
         

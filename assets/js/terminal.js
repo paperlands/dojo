@@ -308,17 +308,8 @@ export class Terminal {
             id: buffer.id ?? idGen(),
             name: buffer.name ?? this.nameGen(),
             mode: buffer.mode ?? 'plang',
-            content: buffer.content ?? `jmpto 0 125
-beColour red
-label "Delete all the code here to begin 🧙‍♂️" 20
-jmp -200
-rt 180
-fw 50
-label "➤" 20
-beColour DarkOrange
-jmpto 0 0
-rt 180
-label "Welcome to PaperLand" 50`,
+            content: buffer.content ?? `label 'hello.' 10
+jmp 50`,
             created: buffer.created ?? Date.now(),
             lastModified: buffer.lastModified ?? Date.now(),
         };

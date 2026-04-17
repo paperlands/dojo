@@ -19,22 +19,135 @@ import Config
 if config_env() == :local do
   config :dojo, DojoWeb.Endpoint, server: true
 
-  secret_key_base = 
+  secret_key_base =
     System.get_env("SECRET_KEY_BASE") || :crypto.strong_rand_bytes(64) |> Base.encode64()
 
   config :dojo, DojoWeb.Endpoint,
-    url: [host: "#{:net_adm.localhost}", port: System.get_env("PORT") || 4000],
-    http: [ip: {0, 0, 0, 0}, port: System.get_env("PORT") || 4000],
+    url: [
+      host: "#{:net_adm.localhost()}",
+      port: String.to_integer(System.get_env("PORT") || "4000")
+    ],
+    http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4000")],
     check_origin: false,
     secret_key_base: secret_key_base
-
-  
 else
   if System.get_env("PHX_SERVER") do
     config :dojo, DojoWeb.Endpoint, server: true
   end
 end
 
+# --erl "-start_epmd false -kernel dist_auto_connect never"
+
+# config :kernel,
+#   # Disable standard dist
+#   dist_auto_connect: :never,
+#   # Stop EPMD from booting
+#   start_epmd: false 
+partisan_port = 53627 - :rand.uniform(100)
+System.put_env("PARTISAN_PORT", "#{partisan_port}")
+partisan_name = "admin@" <> Ecto.UUID.generate()
+System.put_env("PARTISAN_NAME", partisan_name)
+
+# SO_REUSEPORT (level SOL_SOCKET=1, optname=15) — Linux only.
+# Windows uses SOL_SOCKET=0xFFFF and has no SO_REUSEPORT; macOS uses optname 0x200.
+listen_options =
+  case :os.type() do
+    {:unix, :linux} -> [{:raw, 1, 15, <<1::native-32>>}]
+    _ -> []
+  end
+
+listen_addrs =
+  case Dojo.Cluster.MDNS.routable_ipv4_addrs() do
+    [] -> [%{ip: {127, 0, 0, 1}, port: partisan_port}]
+    ips -> Enum.map(ips, fn ip -> %{ip: ip, port: partisan_port} end)
+  end
+
+config :dojo, :cluster_adapter, Dojo.Cluster.MDNS.PartisanAdapter
+
+config :dojo,
+  routing_strategy:
+    if(System.get_env("FLY_MACHINE_ID"),
+      do: Dojo.Cluster.Routing.Fly,
+      else: Dojo.Cluster.Routing.Local
+    )
+
+# Identity model uses UUIDs, not IPs. The mDNS layer is the IP-discovery plane. Partisan's TCP acceptor just needs to accept from anywhere.
+# UUID identity:  admin@550e8400-...        ← stable, survives roaming
+# mDNS:           announces current IP      ← dynamic, per-interface
+# Partisan TCP:   binds 0.0.0.0:PORT        ← accepts on whatever IP arrives
+config :partisan,
+  peer_discovery: %{
+    enabled: true,
+    type: Dojo.Cluster.MDNS.PartisanAdapter,
+    # wait for network stack
+    initial_delay: 2_000,
+    # lookup/2 called every 5s
+    polling_interval: 5_000,
+    # UDP collection window per cycle
+    timeout: 2_000,
+    config: %{
+      service: "_erlang._tcp.local",
+      timeout_ms: 2_000
+    }
+  }
+
+config :partisan,
+  # The Identity. Default is name@host, but we want UUID-based for roaming.
+  # We implement a custom callback to return a stable UUID from disk.
+  name: String.to_atom(partisan_name),
+  authentication: :partisan_auth_hmac,
+  # HyParView: The specific topology for high-churn environments
+  peer_service_manager: :partisan_hyparview_peer_service_manager,
+  pid_encoding: false,
+  ref_encoding: false,
+  # HyParView tuning (must be nested under :hyparview key)
+  hyparview: %{
+    active_max_size: 5,
+    active_min_size: 3,
+    passive_max_size: 15,
+    random_promotion_interval: 3_000,
+    shuffle_interval: 10_000,
+    shuffle_k_active: 3,
+    shuffle_k_passive: 4
+  },
+  # [%{port: partisan_port, ip: {0, 0, 0, 0}}],
+  listen_addrs: listen_addrs,
+  # listen_addrs: [%{port: port, ip: {127, 0, 0, 1}}],
+  # Parallelism: separate control (heartbeats) from data (state)
+  channels: %{
+    gossip: %{monotonic: false, parallelism: 1, compression: false},
+    undefined: %{monotonic: false, parallelism: 1, compression: false},
+    control: %{monotonic: true, parallelism: 1},
+    data: %{
+      monotonic: true,
+      parallelism: 2,
+      compression: true
+    },
+    partisan_membership: %{monotonic: false, parallelism: 1, compression: true}
+  },
+  phi_threshold: 12.0,
+  secret: System.get_env("DOJO_CLUSTER_SECRET") || "dev_secret",
+  # Sample window size
+  # 1 second heartbeats
+  gossip_interval: 1000,
+  # 1.5s — generous for LAN; default 5s causes 25s worst-case per stale IP
+  # during WiFi roaming (5 channels × 5s timeout each)
+  connect_timeout: 1_500,
+  listen_options: listen_options
+
+config :dojo, Phoenix.PubSub.Partisan,
+  # Map adapter logic to Partisan channels
+  channel_data: :data,
+  channel_control: :control
+
+# config :mdns_lite,
+#   # 1. Identity: How we appear to others
+#   hosts: [:hostname],
+#   instance_name: Dojo.Clan.gen_name(3),
+#   # This allows us to query `_dojo_cluster._tcp.local` via Erlang
+#   dns_bridge_enabled: true,
+#   dns_bridge_ip: {127, 0, 0, 53},
+#   dns_bridge_port: 1212
 
 if config_env() == :prod do
   # database_url =
