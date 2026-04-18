@@ -53,8 +53,8 @@ defmodule Dojo.Hotspot.Linux do
 
         result =
           case System.cmd(exe, ["-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"],
-                stderr_to_stdout: true
-              ) do
+                 stderr_to_stdout: true
+               ) do
             {output, 0} ->
               hotspot_names =
                 output
@@ -249,58 +249,68 @@ defmodule Dojo.Hotspot.Linux do
 
   defp disconnect_interface(iface) do
     case System.find_executable("nmcli") do
-      nil -> :ok
+      nil ->
+        :ok
+
       exe ->
         case System.cmd(exe, ["-t", "-f", "DEVICE,STATE", "device", "status"],
-              stderr_to_stdout: true) do
+               stderr_to_stdout: true
+             ) do
           {output, 0} ->
             connected? =
               output
               |> String.split("\n", trim: true)
               |> Enum.any?(fn line ->
-              case String.split(line, ":") do
-                [^iface, "connected"] -> true
-                _ -> false
-              end
-            end)
+                case String.split(line, ":") do
+                  [^iface, "connected"] -> true
+                  _ -> false
+                end
+              end)
 
             if connected? do
               Logger.info("[Hotspot] disconnecting #{iface} from current network")
 
-              with {_, 0} <- System.cmd(exe, ["device", "disconnect", iface],
-                        stderr_to_stdout: true),
+              with {_, 0} <-
+                     System.cmd(exe, ["device", "disconnect", iface], stderr_to_stdout: true),
                    # --- KEY FIX: suppress autoconnect before NM races us ---
-                   {_, 0} <- System.cmd(exe, ["device", "set", iface, "autoconnect", "no"],
-                     stderr_to_stdout: true) do
+                   {_, 0} <-
+                     System.cmd(exe, ["device", "set", iface, "autoconnect", "no"],
+                       stderr_to_stdout: true
+                     ) do
                 Process.sleep(1_500)
                 :ok
               else
                 {out, _} ->
                   Logger.warning("[Hotspot] failed to disconnect/suppress #{iface}: #{out}")
-                {:error, :interface_busy}
+                  {:error, :interface_busy}
               end
             else
               # Still suppress autoconnect even if not currently connected
               System.cmd(exe, ["device", "set", iface, "autoconnect", "no"],
-                stderr_to_stdout: true)
+                stderr_to_stdout: true
+              )
+
               :ok
             end
 
-          _ -> :ok
+          _ ->
+            :ok
         end
     end
   end
 
-
   defp reenable_autoconnect(exe, iface) do
-    case System.cmd(exe, ["device", "set", iface, "autoconnect", "yes"],
-          stderr_to_stdout: true) do
-      {_, 0} -> :ok
+    case System.cmd(exe, ["device", "set", iface, "autoconnect", "yes"], stderr_to_stdout: true) do
+      {_, 0} ->
+        :ok
+
       {out, _} ->
         Logger.warning("[Hotspot] failed to re-enable autoconnect on #{iface}: #{out}")
-        :ok  # non-fatal
+        # non-fatal
+        :ok
     end
   end
+
   # ── Helpers ──────────────────────────────────────────────────────────
 
   # Try with 2.4GHz band + channel 6 for maximum client compatibility,
