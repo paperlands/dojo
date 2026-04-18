@@ -29,6 +29,13 @@ defmodule Dojo.Cluster.MDNS.PeerTrack do
           failures: non_neg_integer()
         }
 
+  @typedoc "Thresholds for the composed lifecycle transition."
+  @type config :: %{
+          grace_s: non_neg_integer(),
+          max_failures: non_neg_integer(),
+          cooldown_s: non_neg_integer()
+        }
+
   # ── Lifecycle transitions ────────────────────────────────
 
   @spec new(atom()) :: t()
@@ -45,6 +52,33 @@ defmodule Dojo.Cluster.MDNS.PeerTrack do
   @spec evict(t()) :: t()
   def evict(%__MODULE__{} = t) do
     %{t | status: :evicted, since: now(), failures: 0}
+  end
+
+  # ── Composed lifecycle transition ────────────────────────
+  #
+  # Each poll cycle the adapter observes a peer's TCP state and feeds
+  # the boolean into observe/4. Returns the next track state (or nil
+  # for "remove from tracking"). Pure — no ETS, no transport, no logging.
+
+  @spec observe(t() | nil, boolean(), atom(), config()) :: t() | nil
+
+  def observe(nil, _connected?, name, _config), do: new(name)
+
+  def observe(%__MODULE__{status: :evicted} = t, _connected?, _name, config) do
+    if cooldown_elapsed?(t, config.cooldown_s), do: nil, else: t
+  end
+
+  def observe(%__MODULE__{status: :active} = t, true, _name, _config) do
+    if t.failures > 0, do: reset(t), else: t
+  end
+
+  def observe(%__MODULE__{status: :active} = t, false, _name, config) do
+    if in_grace?(t, config.grace_s) do
+      t
+    else
+      t = fail(t)
+      if max_failures?(t, config.max_failures), do: evict(t), else: t
+    end
   end
 
   # ── Predicates ───────────────────────────────────────────
