@@ -12,13 +12,15 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
   @behaviour :partisan_peer_discovery_agent
   require Logger
 
+  alias Dojo.Cluster.MDNS.PeerTrack
+
   @known_peers_table :mdns_known_peers
-  # Skip peers that have been unreachable for this many consecutive poll cycles
-  @max_connect_failures 3
-  # Grace period (seconds) before we start counting failures for a newly joined peer
-  @connect_grace_s 15
-  # Cooldown (seconds) after eviction before allowing rejoin
-  @eviction_cooldown_s 30
+
+  @track_config %{
+    grace_s: 15,
+    max_failures: 3,
+    cooldown_s: 30
+  }
 
   # ── Discovery behaviour ──────────────────────────────────────────────────
 
@@ -62,32 +64,10 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
         %{name: name, listen_addrs: [%{ip: ip, port: port}], channels: channels()}
       end)
 
-    {new_specs, existing_specs} =
-      Enum.split_with(specs, fn spec ->
-        :ets.lookup(@known_peers_table, spec.name) == []
-      end)
+    update_specs = Enum.filter(specs, &evaluate_peer(&1, @track_config))
 
-    # Join NEW peers immediately — triggers TCP connect + JOIN handshake
-    # This bypasses the passive view and directly enters the active view.
-    # Critical for Windows nodes that can't receive UDP multicast but can
-    # accept TCP connections from peers that discovered them.
-    Enum.each(new_specs, fn spec ->
-      Logger.info("[PartisanAdapter] joining new mDNS peer: #{spec.name}")
-      :partisan_peer_service.join(spec)
-      # {name, joined_at, failure_count}
-      :ets.insert(@known_peers_table, {spec.name, System.monotonic_time(:second), 0})
-    end)
-
-    # For existing peers: cross-reference mDNS cache with Partisan connection state.
-    # Peers that remain in mDNS but persistently fail TCP get evicted.
-    {healthy_specs, _evicted} =
-      Enum.split_with(existing_specs, fn spec ->
-        check_and_track_connection(spec.name)
-      end)
-
-    # Refresh healthy existing peers via passive view update
-    if healthy_specs != [] do
-      :partisan_peer_service.update_members(healthy_specs)
+    if update_specs != [] do
+      :partisan_peer_service.update_members(update_specs)
     end
 
     :ok
@@ -249,70 +229,100 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
   defp lc_fmt_ip(ip) when is_tuple(ip), do: ip |> :inet.ntoa() |> to_string()
   defp lc_fmt_ip(ip), do: inspect(ip)
 
-  # Returns true if the peer is healthy (keep in rotation), false if evicted.
-  # Tracks consecutive connection failures in ETS and evicts from mDNS cache
-  # when a peer exceeds @max_connect_failures after the grace period.
-  defp check_and_track_connection(name) do
-    now = System.monotonic_time(:second)
+  # ── [LC] Instrumentation helpers ────────────────────────────────────────
 
+  @doc """
+  Snapshot HyParView active/passive views with full listen_addrs.
+  Tagged with `label` so the caller can correlate across events.
+  """
+  def lc_snapshot_views(label) do
+    try do
+      {:ok, active} = :partisan_hyparview_peer_service_manager.active()
+      {:ok, passive} = :partisan_hyparview_peer_service_manager.passive()
+
+      Logger.info(
+        "[LC] hyparview[#{label}] active=#{inspect(lc_fmt_set(active))} " <>
+          "passive=#{inspect(lc_fmt_set(passive))}"
+      )
+    rescue
+      _ -> :ok
+    catch
+      _, _ -> :ok
+    end
+  end
+
+  @doc false
+  def lc_fmt_spec(%{name: name, listen_addrs: addrs}) do
+    addr_strs =
+      Enum.map(addrs, fn
+        %{ip: ip, port: port} -> "#{lc_fmt_ip(ip)}:#{port}"
+        other -> inspect(other)
+      end)
+
+    "#{name}→[#{Enum.join(addr_strs, ",")}]"
+  end
+
+  def lc_fmt_spec(other), do: inspect(other)
+
+  defp lc_fmt_set(set) do
+    set |> :sets.to_list() |> Enum.map(&lc_fmt_spec/1)
+  end
+
+  defp lc_fmt_ip(ip) when is_tuple(ip), do: ip |> :inet.ntoa() |> to_string()
+  defp lc_fmt_ip(ip), do: inspect(ip)
+
+  # ── Peer evaluation pipeline ────────────────────────────────────────
+  # observe → compare → execute
+  #
+  # PeerTrack.observe/4 is the pure state transition.
+  # execute_transition/3 derives transport effects from old → new state.
+  # Returns true if the peer should be included in the update_members batch.
+
+  defp evaluate_peer(spec, config) do
+    old = lookup_track(spec.name)
+    connected? = if old != nil, do: peer_connected?(spec.name), else: false
+    new = PeerTrack.observe(old, connected?, spec.name, config)
+
+    persist_track(spec.name, new)
+    execute_transition(old, new, spec)
+  end
+
+  defp persist_track(name, nil), do: :ets.delete(@known_peers_table, name)
+
+  defp persist_track(_name, %PeerTrack{} = t),
+    do: :ets.insert(@known_peers_table, PeerTrack.to_ets(t))
+
+  # nil → active: first discovery → join
+  defp execute_transition(nil, %PeerTrack{status: :active}, spec) do
+    Logger.info("[PartisanAdapter] joining new mDNS peer: #{spec.name}")
+    :partisan_peer_service.join(spec)
+    false
+  end
+
+  # active → evicted: persistent TCP failure → evict from mDNS cache
+  defp execute_transition(%PeerTrack{status: :active}, %PeerTrack{status: :evicted}, spec) do
+    Logger.warning("[PartisanAdapter] evicting #{spec.name} — persistent TCP failure")
+    Dojo.Cluster.MDNS.evict_peer(spec.name)
+    false
+  end
+
+  # evicted → nil: cooldown elapsed → eligible for rediscovery
+  defp execute_transition(%PeerTrack{status: :evicted}, nil, spec) do
+    Logger.debug("[PartisanAdapter] #{spec.name} cooldown elapsed, eligible for rejoin")
+    false
+  end
+
+  # active → active: healthy (include in update_members batch)
+  defp execute_transition(%PeerTrack{status: :active}, %PeerTrack{status: :active}, _spec),
+    do: true
+
+  # evicted → evicted, or any other: noop
+  defp execute_transition(_old, _new, _spec), do: false
+
+  defp lookup_track(name) do
     case :ets.lookup(@known_peers_table, name) do
-      [{^name, joined_at, failures}] ->
-        connected = peer_connected?(name)
-
-        cond do
-          connected ->
-            # Reset failure count — peer is alive
-            if failures > 0 do
-              :ets.insert(@known_peers_table, {name, joined_at, 0})
-            end
-
-            true
-
-          now - joined_at < @connect_grace_s ->
-            # Still in grace period — don't count failures yet
-            true
-
-          true ->
-            new_failures = failures + 1
-            :ets.insert(@known_peers_table, {name, joined_at, new_failures})
-
-            if new_failures >= @max_connect_failures do
-              Logger.warning(
-                "[PartisanAdapter] evicting #{name} — #{new_failures} consecutive poll cycles without TCP connection"
-              )
-
-              # Record eviction time — cooldown prevents rapid rejoin storm
-              :ets.insert(@known_peers_table, {name, :evicted, System.monotonic_time(:second)})
-              Dojo.Cluster.MDNS.evict_peer(name)
-              false
-            else
-              Logger.debug(
-                "[PartisanAdapter] #{name} not connected (#{new_failures}/#{@max_connect_failures})"
-              )
-
-              true
-            end
-        end
-
-      # Evicted peer — in cooldown, wait before allowing rediscovery
-      [{^name, :evicted, evicted_at}] ->
-        if now - evicted_at >= @eviction_cooldown_s do
-          # Cooldown elapsed — clear entry so next poll treats it as new
-          :ets.delete(@known_peers_table, name)
-
-          Logger.debug("[PartisanAdapter] #{name} eviction cooldown elapsed, eligible for rejoin")
-        end
-
-        false
-
-      # Legacy 2-tuple entry (pre-failure-tracking) — upgrade in place
-      [{^name, joined_at}] ->
-        :ets.insert(@known_peers_table, {name, joined_at, 0})
-        true
-
-      [] ->
-        # Not in our table — shouldn't happen for existing specs, but be safe
-        true
+      [tuple] -> PeerTrack.from_ets(tuple)
+      [] -> nil
     end
   end
 

@@ -14,7 +14,6 @@ defmodule DojoWeb.HotspotLive do
   # ── Lifecycle ────────────────────────────────────────────────────────
 
   def mount(socket) do
-    
     {:ok,
      socket
      |> assign(
@@ -316,7 +315,7 @@ defmodule DojoWeb.HotspotLive do
   defp assign_status(socket, status_map) do
     assign(socket,
       status: status_map.status,
-      #ssid: status_map.ssid,
+      # ssid: status_map.ssid,
       password: status_map.password,
       interface: status_map.interface,
       ip: status_map.ip,

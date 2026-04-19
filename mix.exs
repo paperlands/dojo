@@ -137,11 +137,11 @@ defmodule Dojo.MixProject do
 
   def releases do
     steps =
-    if Mix.env() == :local do
-      [:assemble, &Burrito.wrap/1, &post_wrap/1]
-    else
-      [:assemble]
-    end
+      if Mix.env() == :local do
+        [:assemble, &Burrito.wrap/1, &post_wrap/1]
+      else
+        [:assemble]
+      end
 
     [
       dojo: [
@@ -157,6 +157,7 @@ defmodule Dojo.MixProject do
       ]
     ]
   end
+  
   defp post_wrap(%Mix.Release{} = release) do
     strip_linux(release)
     build_windows_installer(release)
@@ -196,50 +197,54 @@ defmodule Dojo.MixProject do
   end
 
   defp build_macos_app_bundle(%Mix.Release{name: name, version: version}) do
-  Enum.each([:macos, :macos_silicon], fn target ->
-    binary_name = "#{name}_#{target}"
-    binary_src = "burrito_out/#{binary_name}"
+    Enum.each([:macos, :macos_silicon], fn target ->
+      binary_name = "#{name}_#{target}"
+      binary_src = "burrito_out/#{binary_name}"
 
-    if File.exists?(binary_src) do
-      IO.puts("==> Creating macOS .app bundle for #{target}")
+      if File.exists?(binary_src) do
+        IO.puts("==> Creating macOS .app bundle for #{target}")
 
-      bundle_path = "burrito_out/PaperLandDojo_#{target}.app"
-      contents    = "#{bundle_path}/Contents"
-      macos_dir   = "#{contents}/MacOS"
-      resources_dir = "#{contents}/Resources"
+        bundle_path = "burrito_out/PaperLandDojo_#{target}.app"
+        contents = "#{bundle_path}/Contents"
+        macos_dir = "#{contents}/MacOS"
+        resources_dir = "#{contents}/Resources"
 
-      File.mkdir_p!(macos_dir)
-      File.mkdir_p!(resources_dir)
+        File.mkdir_p!(macos_dir)
+        File.mkdir_p!(resources_dir)
 
-      dest_binary = "#{macos_dir}/dojo"
-      File.copy!(binary_src, dest_binary)
-      File.chmod!(dest_binary, 0o755)
+        dest_binary = "#{macos_dir}/dojo"
+        File.copy!(binary_src, dest_binary)
+        File.chmod!(dest_binary, 0o755)
 
-      File.write!("#{contents}/Info.plist", info_plist(version))
-      File.write!("#{contents}/PkgInfo", "APPL????")
+        File.write!("#{contents}/Info.plist", info_plist(version))
+        File.write!("#{contents}/PkgInfo", "APPL????")
 
-      icns_src = "burrito_out/resources/app-icon.icns"
-      if File.exists?(icns_src) do
-        File.copy!(icns_src, "#{resources_dir}/app-icon.icns")
-        IO.puts("    Copied #{icns_src} into bundle")
+        icns_src = "burrito_out/resources/app-icon.icns"
+
+        if File.exists?(icns_src) do
+          File.copy!(icns_src, "#{resources_dir}/app-icon.icns")
+          IO.puts("    Copied #{icns_src} into bundle")
+        else
+          IO.puts(
+            "    No .icns found at #{icns_src} — skipping icon (convert burrito_out/resources/app-icon.ico first)"
+          )
+        end
+
+        IO.puts("    Bundle created at #{bundle_path}")
       else
-        IO.puts("    No .icns found at #{icns_src} — skipping icon (convert burrito_out/resources/app-icon.ico first)")
+        IO.puts("==> Skipping .app bundle for #{target} — #{binary_src} not found")
       end
-
-      IO.puts("    Bundle created at #{bundle_path}")
-    else
-      IO.puts("==> Skipping .app bundle for #{target} — #{binary_src} not found")
-    end
-  end)
+    end)
   end
 
   defp build_macos_dmg(%Mix.Release{name: _name, version: version}) do
     Enum.each([{"macos", "x86_64"}, {"macos_silicon", "arm64"}], fn {target, arch} ->
       app_name = "PaperLandDojo_#{target}.app"
       app_path = "burrito_out/#{app_name}"
-      dmg_out  = "burrito_out/PaperLandDojo_#{arch}.dmg"
+      dmg_out = "burrito_out/PaperLandDojo_#{arch}.dmg"
 
-      if File.exists?(app_path) do                      # ← mirrors your bundle guard
+      # ← mirrors your bundle guard
+      if File.exists?(app_path) do
         IO.puts("==> Building macOS DMG for #{target} (#{arch})")
         build_dmg(app_path, app_name, dmg_out, version)
       else
@@ -249,21 +254,28 @@ defmodule Dojo.MixProject do
   end
 
   defp build_dmg(app_path, app_name, dmg_out, _version) do
-    tmp_dir = System.tmp_dir!()
-    |> Path.join("dmgstage_#{:erlang.unique_integer([:positive])}")
+    tmp_dir =
+      System.tmp_dir!()
+      |> Path.join("dmgstage_#{:erlang.unique_integer([:positive])}")
+
     File.mkdir_p!(tmp_dir)
 
     try do
       run!("cp", ["-r", app_path, Path.join(tmp_dir, app_name)], "staging .app")
       File.ln_s!("/Applications", Path.join(tmp_dir, "Applications"))
 
-
-      run!("sh", ["-c", """
-      genisoimage \
-      -V "PaperLand Dojo" -D -R -apple -no-pad \
-      -o #{dmg_out} #{tmp_dir}
-      """], "genisoimage → #{dmg_out}")
-
+      run!(
+        "sh",
+        [
+          "-c",
+          """
+          genisoimage \
+          -V "PaperLand Dojo" -D -R -apple -no-pad \
+          -o #{dmg_out} #{tmp_dir}
+          """
+        ],
+        "genisoimage → #{dmg_out}"
+      )
 
       IO.puts("    DMG created at #{dmg_out}")
     after
@@ -275,8 +287,8 @@ defmodule Dojo.MixProject do
     IO.puts("    [#{label}] #{cmd} #{Enum.join(args, " ")}")
 
     case System.cmd(cmd, args, stderr_to_stdout: true) do
-      {_, 0}           -> :ok
-      {output, code}   -> Mix.raise("#{label} failed (exit #{code}):\n#{output}")
+      {_, 0} -> :ok
+      {output, code} -> Mix.raise("#{label} failed (exit #{code}):\n#{output}")
     end
   end
 

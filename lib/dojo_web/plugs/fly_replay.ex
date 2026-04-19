@@ -13,6 +13,8 @@ defmodule DojoWeb.Plugs.FlyReplay do
   def init(opts), do: opts
 
   def call(conn, _opts) do
+    conn = fetch_query_params(conn)
+
     with machine_id when is_binary(machine_id) <- System.get_env("FLY_MACHINE_ID"),
          %{"fly_instance_id" => target} <- conn.query_params,
          true <- target != machine_id do

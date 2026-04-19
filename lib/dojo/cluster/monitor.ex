@@ -120,7 +120,8 @@ defmodule Dojo.Cluster.NetworkMonitor do
         # 4.5 Reset adapter failure tracking — this is a network change, not peer death.
         #     Without this, the adapter misinterprets post-disconnect connection failures
         #     as peer death and evicts peers that are still alive on the new network.
-        Dojo.Cluster.MDNS.PartisanAdapter.on_network_change()
+        adapter = Application.get_env(:dojo, :cluster_adapter)
+        if function_exported?(adapter, :on_network_change, 0), do: adapter.on_network_change()
 
         # 5. Rejoin multicast on the main mDNS socket for the new interfaces.
         #    Without this, the socket can only hear multicast on the old interfaces.

@@ -9,6 +9,8 @@ defmodule Dojo.Cluster.MDNS do
   use GenServer
   require Logger
 
+  alias Dojo.Cluster.MDNS.Peer
+
   @mdns_addr {224, 0, 0, 251}
   @mdns_port 5454
   @dns_type_ptr 12
@@ -35,6 +37,24 @@ defmodule Dojo.Cluster.MDNS do
   @max_announce_interval_s 15
   # Probe: wait time (ms) for conflict responses (RFC 6762 §8.1)
   @probe_wait_ms 250
+
+  defstruct [
+    :socket,
+    :adapter,
+    :own_name,
+    :own_port,
+    :service,
+    :timeout,
+    :poll_interval,
+    cache: %{},
+    announce_interval: 1,
+    next_announce_at: 0,
+    socket_retries: 0,
+    poll_cycles: 0,
+    deaf_warned: false,
+    monitored_nodes: MapSet.new(),
+    debug: false
+  ]
 
   # ── Public API ──────────────────────────────────────────────────────────
 
@@ -122,21 +142,14 @@ defmodule Dojo.Cluster.MDNS do
     timeout = Keyword.get(opts, :timeout, 2_000)
     debug = Keyword.get(opts, :debug, false)
 
-    state = %{
-      socket: nil,
+    state = %__MODULE__{
       adapter: adapter,
       own_name: name,
       own_port: port,
       service: service,
       timeout: timeout,
-      cache: %{},
-      announce_interval: 1,
-      next_announce_at: System.monotonic_time(:second),
       poll_interval: poll_interval,
-      socket_retries: 0,
-      poll_cycles: 0,
-      deaf_warned: false,
-      monitored_nodes: MapSet.new(),
+      next_announce_at: System.monotonic_time(:second),
       debug: debug
     }
 
@@ -180,7 +193,7 @@ defmodule Dojo.Cluster.MDNS do
 
   @impl true
   def handle_call(:cached_peers, _from, state) do
-    peers = state.cache |> Map.values() |> Enum.map(&{&1.name, &1.ip, &1.port})
+    peers = state.cache |> Map.values() |> Enum.map(&Peer.to_tuple/1)
     {:reply, peers, state}
   end
 
@@ -321,7 +334,7 @@ defmodule Dojo.Cluster.MDNS do
     cache = apply_poof(cache, pre_seen)
 
     # Notify adapter of discovered peers
-    peers = cache |> Map.values() |> Enum.map(&{&1.name, &1.ip, &1.port})
+    peers = cache |> Map.values() |> Enum.map(&Peer.to_tuple/1)
 
     if state.debug do
       Logger.info(
@@ -440,12 +453,8 @@ defmodule Dojo.Cluster.MDNS do
 
   @doc false
   def advance_announce_schedule(state, now_s) do
-    interval = Map.get(state, :announce_interval, 1)
-    new_interval = min(interval * 2, @max_announce_interval_s)
-
-    state
-    |> Map.put(:announce_interval, new_interval)
-    |> Map.put(:next_announce_at, now_s + new_interval)
+    new_interval = min(state.announce_interval * 2, @max_announce_interval_s)
+    %{state | announce_interval: new_interval, next_announce_at: now_s + new_interval}
   end
 
   # ── Socket — active: false ──────────────────────────────────────────────
@@ -631,7 +640,7 @@ defmodule Dojo.Cluster.MDNS do
     pkt = Dojo.Cluster.MDNS.Packet.query(svc, known_answers)
     addrs = routable_ipv4_addrs()
 
-    if Map.get(state, :debug) do
+    if state.debug do
       ka_names = Enum.map(known_answers, &elem(&1, 0))
 
       Logger.info(
@@ -712,8 +721,7 @@ defmodule Dojo.Cluster.MDNS do
 
   @doc false
   def sweep_cache(cache) do
-    now = System.monotonic_time(:second)
-    Map.filter(cache, fn {_name, %{seen_at: seen_at}} -> now - seen_at < @peer_ttl end)
+    Map.reject(cache, fn {_name, peer} -> Peer.expired?(peer, @peer_ttl) end)
   end
 
   @doc false
@@ -731,13 +739,7 @@ defmodule Dojo.Cluster.MDNS do
           Map.delete(acc, name)
 
         true ->
-          Map.put(acc, name, %{
-            name: name,
-            ip: ip,
-            port: port,
-            seen_at: System.monotonic_time(:second),
-            missed_queries: 0
-          })
+          Map.put(acc, name, Peer.new(name, ip, port))
       end
     end)
   end
@@ -747,19 +749,16 @@ defmodule Dojo.Cluster.MDNS do
   @doc false
   def apply_poof(cache, pre_seen) do
     cache
-    |> Map.new(fn {name, entry} ->
-      old_seen = Map.get(pre_seen, name)
-      was_refreshed = old_seen == nil or entry.seen_at != old_seen
-      missed = if was_refreshed, do: 0, else: Map.get(entry, :missed_queries, 0) + 1
-      {name, Map.put(entry, :missed_queries, missed)}
+    |> Map.new(fn {name, peer} ->
+      refreshed? = pre_seen[name] == nil or peer.seen_at != pre_seen[name]
+      {name, if(refreshed?, do: Peer.reset_missed(peer), else: Peer.miss(peer))}
     end)
-    |> Map.filter(fn {name, entry} ->
-      missed = Map.get(entry, :missed_queries, 0)
+    |> Map.reject(fn {name, peer} ->
+      if Peer.stale?(peer, @poof_min_missed) do
+        Logger.debug(
+          "[mDNS] POOF: evicting #{name} after #{peer.missed_queries} unanswered queries"
+        )
 
-      if missed >= @poof_min_missed do
-        Logger.debug("[mDNS] POOF: evicting #{name} after #{missed} unanswered queries")
-        false
-      else
         true
       end
     end)

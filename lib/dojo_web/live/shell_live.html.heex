@@ -150,7 +150,10 @@
         >
           
 <!-- Welcome message row -->
-          <div dir={Session.dir(@locale)} class="flex items-center text-[12px] sm:text-xs mb-1 border-b border-accent/50 pb-1 overflow-hidden">
+          <div
+            dir={Session.dir(@locale)}
+            class="flex items-center text-[12px] sm:text-xs mb-1 border-b border-accent/50 pb-1 overflow-hidden"
+          >
             <span class="flex items-center truncate">
               <span>&gt;{Session.t(@locale, "welcome")}</span>
 
@@ -331,7 +334,12 @@
                 id="locale-picker"
                 current_locale={@locale}
               />
-              <.live_component :if={Mix.env()!==:prod} module={DojoWeb.HotspotLive} id="hotspot" username={binary_part(@session.name,0, min(20, byte_size(@session.name)))} />
+              <.live_component
+                :if={Mix.env() !== :prod}
+                module={DojoWeb.HotspotLive}
+                id="hotspot"
+                username={binary_part(@session.name, 0, min(20, byte_size(@session.name)))}
+              />
 
               <button
                 class="flex items-center justify-center w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
@@ -438,7 +446,7 @@
                 class="size-10 fill-amber-600"
                 loading="eager"
                 decoding="sync"
-                />
+              />
               <!-- <%= #Map.has_key?(dis, :meta) && IO.inspect("//" <> (dis[:addr] || "") <> "/#{dis.meta.path}") %> -->
               <img
                 :if={Map.has_key?(dis, :meta)}

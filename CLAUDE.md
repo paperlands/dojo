@@ -98,15 +98,17 @@ Commit convention for reasoning work: `kumite(<phase>): <what happened>`
 
 **Dojo** — LOGO for the networked era. Phoenix/LiveView application for collaborative learning and exploration of mathematics with distributed clustering.
 
+[Developing in](./ARCHITECTURE.org)
+
 ### Module Map
 
 ```
 Clustering           State                  Web                    World
 ─────────────        ─────────────          ─────────────          ─────────────
-NetworkMonitor       Table (tuplespace)     ShellLive (/shell)     World (1D CA)
-MDNS.Discovery       TableRegistry          BootLive (/welcome)    Conways (2D GoL)
-MDNS.Packet          Cache (Nebulex)        PageController (/)     Automaton.Cell
-PartisanPubSub       Gate (Presence)        Router                 Turtle (graphics/geometry)
+NetworkMonitor       Table (tuplespace)     ShellLive (/shell)     World (1D CA)/Conways (2D GoL)
+MDNS.Discovery       TableRegistry          BootLive (/welcome)    Live Coding IDE (shell.js)
+MDNS.Packet          Cache (Nebulex)        PageController (/)     Turtle (graphics/geometry) turtle.js
+PartisanPubSub       Gate (Presence)        Router
 ```
 
 ### Key Relationships
