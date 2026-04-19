@@ -1,0 +1,146 @@
+name: Release
+
+on:
+  push:
+    branches: [release]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  MIX_ENV: local
+  ELIXIR_VERSION: "1.19.5"
+  OTP_VERSION: "28.4.2"
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from mix.exs
+        id: version
+        run: |
+          VERSION=$(grep 'version:' mix.exs | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Detected version: $VERSION"
+
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Tag v$VERSION already exists. Bump the version in mix.exs before pushing to release."
+            exit 1
+          fi
+
+      - name: Setup Erlang & Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+
+      - name: Cache deps & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build/local
+          key: mix-local-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mix-local-${{ runner.os }}-
+
+      - name: Cache Zig toolchain (Burrito)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/burrito
+          key: zig-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq nsis genisoimage binutils
+
+      - name: Download VC++ Redistributable
+        run: |
+          mkdir -p rel/packaging/resources
+          curl -fSL -o rel/packaging/resources/VC_redist.x64.exe \
+            "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+          ls -lh rel/packaging/resources/VC_redist.x64.exe
+
+      - name: Install Elixir dependencies
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+
+      - name: Compile
+        run: mix compile --warnings-as-errors
+
+      - name: Build assets
+        run: mix assets.deploy
+
+      - name: Build release
+        run: mix release
+
+      - name: Rename artifacts to conventional names
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cd burrito_out
+          [ -f dojo_linux ] && mv dojo_linux "dojo-${VERSION}-linux-x86_64"
+          echo "=== Release artifacts ==="
+          ls -lh
+
+      - name: Verify artifacts
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          test -f "burrito_out/dojo-${VERSION}-linux-x86_64" || { echo "::error::Missing Linux binary"; exit 1; }
+          test -f "burrito_out/PaperLandDojo-${VERSION}-windows-x86_64-setup.exe" || { echo "::error::Missing Windows installer"; exit 1; }
+          test -f "burrito_out/PaperLandDojo-${VERSION}-macos-x86_64.dmg" || { echo "::error::Missing macOS x86_64 DMG"; exit 1; }
+          test -f "burrito_out/PaperLandDojo-${VERSION}-macos-arm64.dmg" || { echo "::error::Missing macOS ARM64 DMG"; exit 1; }
+          echo "All artifacts verified."
+
+      - name: Sign Windows artifacts (optional)
+        if: ${{ vars.CODE_SIGNING_ENABLED == 'true' }}
+        env:
+          CODE_SIGN_CERT: ${{ secrets.CODE_SIGN_CERT }}
+          CODE_SIGN_KEY: ${{ secrets.CODE_SIGN_KEY }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sudo apt-get install -yq osslsigncode
+          echo "$CODE_SIGN_CERT" | base64 -d > /tmp/cert.pem
+          echo "$CODE_SIGN_KEY" | base64 -d > /tmp/key.pem
+          INSTALLER="burrito_out/PaperLandDojo-${VERSION}-windows-x86_64-setup.exe"
+          osslsigncode sign -certs /tmp/cert.pem -key /tmp/key.pem \
+            -n "PaperLand Dojo" -t http://timestamp.digicert.com \
+            -in "$INSTALLER" -out "${INSTALLER}.signed"
+          mv "${INSTALLER}.signed" "$INSTALLER"
+          rm -f /tmp/cert.pem /tmp/key.pem
+
+      - name: Create git tag
+        run: |
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            --title "Dojo $TAG" \
+            --generate-notes \
+            "burrito_out/dojo-${VERSION}-linux-x86_64" \
+            "burrito_out/PaperLandDojo-${VERSION}-windows-x86_64-setup.exe" \
+            "burrito_out/PaperLandDojo-${VERSION}-macos-x86_64.dmg" \
+            "burrito_out/PaperLandDojo-${VERSION}-macos-arm64.dmg"
