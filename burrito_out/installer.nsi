@@ -51,8 +51,9 @@ InstallDirRegKey HKLM "Software\PaperLand Dojo" "InstallDir"
 RequestExecutionLevel admin
 
 ; App version — keep in sync with mix.exs
-!define APP_VERSION "0.3"
-
+!define APP_VERSION "0.3.5"
+!define ERTS_VER "16.3.1"
+!define BURRITO_ERL "$LOCALAPPDATA\.burrito\dojo_erts-${ERTS_VER}_${APP_VERSION}\erts-${ERTS_VER}\bin\erl.exe"
 ; Firewall rule names (used in both install and uninstall)
 !define FW_RULE_APP   "PaperLand Dojo"
 !define FW_RULE_MDNS  "PaperLand Dojo mDNS"
@@ -287,6 +288,13 @@ Section "MainSection" SEC01
     nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_APP} Out"'
     nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_APP} Out" dir=out action=allow program="$INSTDIR\dojo_windows.exe" protocol=any profile=any description="PaperLand Dojo — launcher stub outbound"'
 
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_ERTS_PREFIX} $LOCALAPPDATA\.burrito\dojo_erts-${ERTS_VER}_${APP_VERSION}\erts-${ERTS_VER}\bin\erl.exe In"'
+    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_ERTS_PREFIX} $LOCALAPPDATA\.burrito\dojo_erts-${ERTS_VER}_${APP_VERSION}\erts-${ERTS_VER}\bin\erl.exe In" dir=in action=allow program="$LOCALAPPDATA\.burrito\dojo_erts-${ERTS_VER}_${APP_VERSION}\erts-${ERTS_VER}\bin\erl.exe" protocol=any profile=any'
+
+    nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_ERTS_PREFIX} $LOCALAPPDATA\.burrito\dojo_erts-${ERTS_VER}_${APP_VERSION}\erts-${ERTS_VER}\bin\erl.exe Out"'
+    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_ERTS_PREFIX} $LOCALAPPDATA\.burrito\dojo_erts-${ERTS_VER}_${APP_VERSION}\erts-${ERTS_VER}\bin\erl.exe Out" dir=out action=allow program="$LOCALAPPDATA\.burrito\dojo_erts-${ERTS_VER}_${APP_VERSION}\erts-${ERTS_VER}\bin\erl.exe" protocol=any profile=any'
+    
+    
     ; mDNS — UDP 5454 peer discovery (scoped to launcher; ERTS rules added by PS1)
     nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE_MDNS}"'
     nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FW_RULE_MDNS}" dir=in action=allow protocol=UDP localport=5454 program="$INSTDIR\dojo_windows.exe" profile=any description="PaperLand Dojo — mDNS peer discovery"'
