@@ -15,12 +15,14 @@ env:
   MIX_ENV: local
   ELIXIR_VERSION: "1.19.5"
   OTP_VERSION: "28.4.2"
+  ZIG_VERSION: "0.15.2"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   release:
     name: Build & Release
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -41,36 +43,52 @@ jobs:
             exit 1
           fi
 
+      - name: Cache Zig
+        id: zig-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/zig
+          key: zig-linux-x86_64-${{ env.ZIG_VERSION }}
+
+      - name: Install Zig
+        if: steps.zig-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.local/zig
+          curl -fSL "https://ziglang.org/download/${{ env.ZIG_VERSION }}/zig-linux-x86_64-${{ env.ZIG_VERSION }}.tar.xz" \
+            | tar -xJ --strip-components=1 -C ~/.local/zig
+
+      - name: Add Zig to PATH
+        run: echo "$HOME/.local/zig" >> "$GITHUB_PATH"
+
       - name: Setup Erlang & Elixir
         uses: erlef/setup-beam@v1
         with:
           otp-version: ${{ env.OTP_VERSION }}
           elixir-version: ${{ env.ELIXIR_VERSION }}
 
-      - name: Cache deps & build
+      - name: Cache deps
         uses: actions/cache@v4
         with:
-          path: |
-            deps
-            _build/local
-          key: mix-local-${{ runner.os }}-${{ hashFiles('mix.lock') }}
-          restore-keys: |
-            mix-local-${{ runner.os }}-
+          path: deps
+          key: deps-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+          restore-keys: deps-${{ runner.os }}-
 
-      - name: Cache Zig toolchain (Burrito)
+      - name: Cache build
         uses: actions/cache@v4
         with:
-          path: ~/.cache/burrito
-          key: zig-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+          path: _build/local
+          key: build-local-${{ runner.os }}-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('mix.lock') }}-${{ hashFiles('lib/**/*.ex', 'config/*.exs') }}
+          restore-keys: |
+            build-local-${{ runner.os }}-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('mix.lock') }}-
+            build-local-${{ runner.os }}-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-
 
       - name: Install system packages
         run: |
           sudo apt-get update -q
-          sudo apt-get install -yq nsis genisoimage binutils
+          sudo apt-get install -yq nsis genisoimage xz-utils
 
       - name: Download VC++ Redistributable
         run: |
-          mkdir -p rel/packaging/resources
           curl -fSL -o rel/packaging/resources/VC_redist.x64.exe \
             "https://aka.ms/vs/17/release/vc_redist.x64.exe"
           ls -lh rel/packaging/resources/VC_redist.x64.exe
