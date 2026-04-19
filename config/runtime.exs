@@ -154,6 +154,9 @@ config :partisan,
   phi_threshold: 12.0,
   secret: System.get_env("DOJO_CLUSTER_SECRET") || "dev_secret",
   gossip_interval: 1000,
+  # 1.5s — generous for LAN; default 5s causes 25s worst-case per stale IP
+  # during WiFi roaming (5 channels × 5s timeout each)
+  connect_timeout: 1_500,
   listen_options: listen_options
 
 config :dojo, Phoenix.PubSub.Partisan,

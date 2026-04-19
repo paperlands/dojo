@@ -157,7 +157,7 @@ defmodule Dojo.MixProject do
       ]
     ]
   end
-
+  
   defp post_wrap(%Mix.Release{} = release) do
     strip_linux(release)
     build_windows_installer(release)
