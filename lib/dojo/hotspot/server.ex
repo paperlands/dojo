@@ -82,7 +82,8 @@ defmodule Dojo.Hotspot.Server do
     state = %{
       state
       | status: :starting,
-        ssid: binary_part(ssid, 0, min(30, byte_size(ssid))), # ssid char limit 32bytes
+        # ssid char limit 32bytes
+        ssid: binary_part(ssid, 0, min(30, byte_size(ssid))),
         password: password,
         error: nil,
         connected_to: connected_to

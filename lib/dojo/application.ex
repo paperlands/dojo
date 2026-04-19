@@ -11,46 +11,37 @@ defmodule Dojo.Application do
       :logger.set_application_level(:partisan, :warning)
     end
 
-    adapter = Application.get_env(:dojo, :cluster_adapter, Dojo.Cluster.MDNS.PartisanAdapter)
-
-    children = [
-      DojoWeb.Telemetry,
-      # 3. The Cluster Supervisor (Libcluster)
-      # This starts the "Polyglot" strategy which immediately begins
-      # scanning mDNS/BLE using the UUID from step 1.
-      # {Cluster.Supervisor, [topologies, [name: Dojo.ClusterSupervisor]]},
-      {Registry, keys: :unique, name: Dojo.TableRegistry},
-      # TaskSupervisor must start before PubSub — the Partisan PubSub handler
-      # dispatches local delivery via TaskSupervisor.start_child
-      {Task.Supervisor, name: Dojo.TaskSupervisor},
-      %{
-        id: Dojo.PubSub.Supervisor,
-        type: :supervisor,
-        start:
-          {Supervisor, :start_link,
-           [
+    children =
+      [
+        DojoWeb.Telemetry,
+        {Registry, keys: :unique, name: Dojo.TableRegistry},
+        # TaskSupervisor must start before PubSub — the Partisan PubSub handler
+        # dispatches local delivery via TaskSupervisor.start_child
+        {Task.Supervisor, name: Dojo.TaskSupervisor},
+        %{
+          id: Dojo.PubSub.Supervisor,
+          type: :supervisor,
+          start:
+            {Supervisor, :start_link,
              [
-               {Phoenix.PubSub, name: Dojo.PubSub, adapter: Phoenix.PubSub.Partisan},
-               {Dojo.Gate,
-                name: Dojo.Gate, pubsub_server: Dojo.PubSub, pool_size: 2, broadcast_period: 3_000}
-             ],
-             [strategy: :rest_for_one]
-           ]}
-      },
-      # Dojo.Repo,
-      {DNSCluster, query: Application.get_env(:dojo, :dns_cluster_query) || :ignore},
-      # Start the Finch HTTP client for sending emails
-      {Finch, name: Dojo.Finch},
-      Dojo.Cache,
-      {PartitionSupervisor, child_spec: DynamicSupervisor, name: Dojo.Class},
-      # Start a worker by calling: Dojo.Worker.start_link(arg)
-      # {Dojo.Worker, arg},
-      # Start to serve requests, typically the last entry
-      DojoWeb.Endpoint,
-      {Dojo.Cluster.MDNS, adapter: adapter, poll_interval: 5_000},
-      Dojo.Cluster.NetworkMonitor,
-      Dojo.Hotspot.Server
-    ]
+               [
+                 {Phoenix.PubSub, name: Dojo.PubSub, adapter: Phoenix.PubSub.Partisan},
+                 {Dojo.Gate,
+                  name: Dojo.Gate,
+                  pubsub_server: Dojo.PubSub,
+                  pool_size: 2,
+                  broadcast_period: 3_000}
+               ],
+               [strategy: :rest_for_one]
+             ]}
+        },
+        # Dojo.Repo,
+        {DNSCluster, query: Application.get_env(:dojo, :dns_cluster_query) || :ignore},
+        {Finch, name: Dojo.Finch},
+        Dojo.Cache,
+        {PartitionSupervisor, child_spec: DynamicSupervisor, name: Dojo.Class},
+        DojoWeb.Endpoint
+      ] ++ local_network_children()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
@@ -90,7 +81,7 @@ defmodule Dojo.Application do
       _, _ -> :ok
     end
 
-    Dojo.Cluster.MDNS.goodbye()
+    if Process.whereis(Dojo.Cluster.MDNS), do: Dojo.Cluster.MDNS.goodbye()
     state
   end
 
@@ -98,6 +89,20 @@ defmodule Dojo.Application do
   def config_change(changed, _new, removed) do
     DojoWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  defp local_network_children do
+    if Application.get_env(:dojo, :discovery) == :local do
+      adapter = Application.get_env(:dojo, :cluster_adapter)
+
+      [
+        {Dojo.Cluster.MDNS, adapter: adapter, poll_interval: 5_000},
+        Dojo.Cluster.NetworkMonitor,
+        Dojo.Hotspot.Server
+      ]
+    else
+      []
+    end
   end
 
   defp post_start_hook do

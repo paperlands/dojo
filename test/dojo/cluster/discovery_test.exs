@@ -14,7 +14,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
   use ExUnit.Case, async: false
 
   alias Dojo.Cluster.MDNS
-  alias Dojo.Cluster.MDNS.Packet
+  alias Dojo.Cluster.MDNS.{Packet, Peer}
 
   @mdns_addr {224, 0, 0, 251}
   @mdns_port 5454
@@ -506,7 +506,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       seen = now() - 5
 
       cache = %{
-        :peer_a => %{name: :peer_a, ip: @loopback, port: 9090, seen_at: seen, missed_queries: 0}
+        :peer_a => %Peer{name: :peer_a, ip: @loopback, port: 9090, seen_at: seen}
       }
 
       pre_seen = %{peer_a: seen}
@@ -517,7 +517,13 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
 
     test "peer refreshed during cycle has missed_queries reset to 0" do
       cache = %{
-        :peer_a => %{name: :peer_a, ip: @loopback, port: 9090, seen_at: now(), missed_queries: 3}
+        :peer_a => %Peer{
+          name: :peer_a,
+          ip: @loopback,
+          port: 9090,
+          seen_at: now(),
+          missed_queries: 3
+        }
       }
 
       # pre_seen has older value — peer was refreshed since snapshot
@@ -531,7 +537,13 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       seen = now() - 10
       # missed_queries is 3, will be incremented to 4 (= @poof_min_missed)
       cache = %{
-        :peer_a => %{name: :peer_a, ip: @loopback, port: 9090, seen_at: seen, missed_queries: 3}
+        :peer_a => %Peer{
+          name: :peer_a,
+          ip: @loopback,
+          port: 9090,
+          seen_at: seen,
+          missed_queries: 3
+        }
       }
 
       pre_seen = %{peer_a: seen}
@@ -544,7 +556,13 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       seen = now() - 5
       # missed_queries is 2, will be incremented to 3 (< 4)
       cache = %{
-        :peer_a => %{name: :peer_a, ip: @loopback, port: 9090, seen_at: seen, missed_queries: 2}
+        :peer_a => %Peer{
+          name: :peer_a,
+          ip: @loopback,
+          port: 9090,
+          seen_at: seen,
+          missed_queries: 2
+        }
       }
 
       pre_seen = %{peer_a: seen}
@@ -556,13 +574,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
 
     test "newly discovered peer (not in pre_seen) has missed_queries = 0" do
       cache = %{
-        :new_peer => %{
-          name: :new_peer,
-          ip: @loopback,
-          port: 9090,
-          seen_at: now(),
-          missed_queries: 0
-        }
+        :new_peer => %Peer{name: :new_peer, ip: @loopback, port: 9090, seen_at: now()}
       }
 
       pre_seen = %{}
@@ -575,9 +587,21 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       seen_old = now() - 15
 
       cache = %{
-        :dead => %{name: :dead, ip: @loopback, port: 9090, seen_at: seen_old, missed_queries: 3},
-        :alive => %{name: :alive, ip: @loopback, port: 9090, seen_at: now(), missed_queries: 2},
-        :fresh => %{name: :fresh, ip: @loopback, port: 9090, seen_at: now(), missed_queries: 0}
+        :dead => %Peer{
+          name: :dead,
+          ip: @loopback,
+          port: 9090,
+          seen_at: seen_old,
+          missed_queries: 3
+        },
+        :alive => %Peer{
+          name: :alive,
+          ip: @loopback,
+          port: 9090,
+          seen_at: now(),
+          missed_queries: 2
+        },
+        :fresh => %Peer{name: :fresh, ip: @loopback, port: 9090, seen_at: now()}
       }
 
       # :dead was not refreshed, :alive was refreshed (seen_at changed), :fresh is new
@@ -595,7 +619,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       seen = now() - 10
 
       cache = %{
-        :slow_death => %{
+        :slow_death => %Peer{
           name: :slow_death,
           ip: @loopback,
           port: 9090,
@@ -612,14 +636,9 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       refute Map.has_key?(MDNS.apply_poof(cache, pre_seen), :slow_death)
     end
 
-    test "cache entries without missed_queries field default to 0" do
-      seen = now() - 5
-      # Legacy entry without missed_queries
-      cache = %{:legacy => %{name: :legacy, ip: @loopback, port: 9090, seen_at: seen}}
-      pre_seen = %{legacy: seen}
-
-      result = MDNS.apply_poof(cache, pre_seen)
-      assert result[:legacy].missed_queries == 1
+    test "new peer struct defaults missed_queries to 0" do
+      peer = Peer.new(:test_peer, @loopback, 9090)
+      assert peer.missed_queries == 0
     end
   end
 
@@ -833,7 +852,7 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
   defp now, do: System.monotonic_time(:second)
 
   defp peer_cache(name, seen_at, ip \\ @loopback) do
-    %{name => %{name: name, ip: ip, port: 9090, seen_at: seen_at}}
+    %{name => %Peer{name: name, ip: ip, port: 9090, seen_at: seen_at}}
   end
 
   # Open a multicast listener on the mDNS port. Returns {:ok, socket} or :skip.

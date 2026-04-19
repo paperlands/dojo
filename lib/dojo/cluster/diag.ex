@@ -24,10 +24,10 @@ defmodule Dojo.Cluster.Diag do
     adapter = adapter_module()
 
     transport =
-      if function_exported?(adapter, :diag, 0) do
-        adapter.diag()
-      else
-        %{adapter: adapter, note: "no diag/0 callback"}
+      cond do
+        is_nil(adapter) -> %{mode: :dns}
+        function_exported?(adapter, :diag, 0) -> adapter.diag()
+        true -> %{adapter: adapter, note: "no diag/0 callback"}
       end
 
     %{
@@ -207,7 +207,7 @@ defmodule Dojo.Cluster.Diag do
   end
 
   defp adapter_module do
-    Application.get_env(:dojo, :cluster_adapter, Dojo.Cluster.MDNS.PartisanAdapter)
+    Application.get_env(:dojo, :cluster_adapter)
   end
 
   defp os_info do
