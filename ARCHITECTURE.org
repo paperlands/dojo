@@ -21,7 +21,7 @@
 #+END_QUOTE
 
 > Explore and engage with complexity, and inquire underlying deeprooted structure, and preserve engineering knowhow for posterity 
-> Enrich Wholeness of understanding of coupled behavior through simulation and instrumentation
+> Enrich wholeness of understanding of coupled behavior through simulation and instrumentation
 > Bring clarity and structure to elicit  understanding that unveil tacit implicit contracts
 > Reflect on and prepare for places to intervene
 
@@ -29,40 +29,1048 @@
 - *Skeleton*: Where is the boundary, that encompasses the smallest number of components: the primitives, within which the dynamic behavior under study is generated?
 - *Movement*: Where does state accumulate vs. flow through? Which nodes are reservoirs, which are conduits? What are the attractors — stable configurations the system returns to after disturbance? Where are the phase transitions?
 - *Sight*: How might we best represent this living, self-exploratory, and interconnected universe for others to incite others to create? Engage Generative systems behave same as the natural ones as through the methods of generative design the rules are incorporated in them living systems with a sense of the possibility of adaptation, reproduction and complexity of processing of information that shape it.
-- *Action*: Where are the leverage points — where does a small change produce large, lasting, systemic effects? What is the minimal probe that reveals the most without disturbing behavior? All code was written by humans and can be for humans. There is an eternal wheel of system design. Given a system, use practice to discover what is in tension, unresolved forces the bad , missing, or unnecessary. Then, use theory to fix the bad, add the missing, and remove the unnecessary. Repeat.
-
-#+BEGIN_QUOTE
-
-
-#+END_QUOTE
-
-
+- *Action*: Where are the leverage points — where does a small change produce large, lasting, systemic effects? What is the minimal probe that reveals the most without disturbing behavior? All code was written by humans  for humans. There is an eternal wheel of system design. Given a system, use practice to discover what is in tension, unresolved forces the bad , missing, or unnecessary. Then, use theory to fix the bad, add the missing, and remove the unnecessary. Repeat.
 ** Values
 | Painpoint                                | Values               |
 |------------------------------------------+----------------------|
 | Why are we afraid to play with the code? | Courage. Confidence  |
 | Why are we afraid to ask questions?      | Curious. Inquisitive |
 | What are we buidling  this for?          | Wonder. Belonging    |
-| Building understanding  is difficult.    | Principled. Joy      |
-
+| Building understanding is difficult.     | Principled. Joy      |
 
 
 * DESIGN
+:PROPERTIES:
+:ID: design
+:TYPE: generative
+:END:
+
+#+BEGIN_QUOTE
+"The future is already here – it's just not evenly distributed"
+#+END_QUOTE
+
+Dojo is LOGO hooked into the networked era: The design question that motivates: "What primitives generate the widest freedom from the smallest kernel?"
+
+** The Primitive Stack
+
+What is /essential/ sits low; what is /expressive/ sits high. Each layer is replaceable in principle — the higher layers depend only on the shape of what is below, not what it currently is..
+
+#+BEGIN_SRC mermaid :file diagrams/design-primitives.png
+graph BT
+  subgraph Periphery["Periphery — Expressive, Replaceable"]
+    Turtle["Turtle / Conways / World<br/>(generative languages)"]
+    Shell["ShellLive / BootLive<br/>(live coding surface)"]
+  end
+  subgraph Middle["Contracts — How Modules Speak"]
+    Table["Table (tuplespace per Disciple)<br/>singleton · watcher list · TTL"]
+    Gate["Gate (Phoenix.Tracker)<br/>presence as metadata transport"]
+    Cache["Cache (Nebulex + Shards)<br/>shared view of recent state"]
+  end
+  subgraph Core["Core — Minimal, Hard to Change"]
+    PubSub["Phoenix.PubSub :: Partisan adapter"]
+    Partisan["Partisan<br/>(HyParView · plumtree · RPC)"]
+    MDNS["mDNS discovery engine<br/>(socket + cache + poll cycle)"]
+    NetMon["NetworkMonitor<br/>(interface watcher · hot-swap)"]
+  end
+
+  Periphery --> Middle
+  Middle --> Core
+  MDNS <--> NetMon
+  Partisan --> PubSub
+  MDNS --> Partisan
+
+  classDef core fill:#1a1a2e,stroke:#f39c12,color:#ecf0f1
+  classDef mid fill:#16213e,stroke:#3498db,color:#ecf0f1
+  classDef peri fill:#0f3460,stroke:#2ecc71,color:#ecf0f1
+  class MDNS,NetMon,Partisan,PubSub core
+  class Table,Gate,Cache mid
+  class Turtle,Shell peri
+#+END_SRC
+
+#+RESULTS:
+[[file:diagrams/design-primitives.png]]
+
+** The Generative Sequence
+
+#+BEGIN_QUOTE
+The quality without a name. A building or a town will only be alive to the extent that it is governed by the timeless way. — Christopher Alexander
+#+END_QUOTE
+
+
+Dojo did not arrive as an architecture. It grew by a sequence in which each step /strengthened/ what came before rather than extending it sideways.
+
+#+BEGIN_SRC mermaid :file diagrams/design-genesis.png
+flowchart LR
+  S1["① Turtle on a page<br/>(single user, no network)"]
+  S2["② Shell + Live code<br/>(edit → reload → see)"]
+  S3["③ Table per Disciple<br/>(state has a home)"]
+  S4["④ Presence via Gate<br/>(who is here?)"]
+  S5["⑤ Partisan replaces<br/>Erlang distribution<br/>(any transport)"]
+  S6["⑥ mDNS discovery<br/>(no server needed)"]
+  S7["⑦ NetworkMonitor<br/>(roam without dying)"]
+  S8["⑧ Antifragile storm<br/>handling<br/>(absorb, don't amplify)"]
+
+  S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8
+  S8 -. reinforces .-> S1
+
+  classDef done fill:#27ae60,stroke:#1e8449,color:#fff
+  class S1,S2,S3,S4,S5,S6,S7,S8 done
+#+END_SRC
+
+#+RESULTS:
+[[file:diagrams/design-genesis.png]]
+
+Each step answered a tension raised by the previous one. Tables were invented
+/because/ shells needed somewhere to put shared state. Partisan was adopted
+/because/ the network topology was unreliable. NetworkMonitor was introduced
+/because/ Partisan alone couldn't survive WiFi hops. Antifragile storm handling
+emerged /because/ peer churn made broadcast amplification catastrophic. The
+sequence is irreversible in its logic: you cannot start at step ⑧.
+
+** Leverage Points
+
+Where does a small change produce a large, lasting effect?
+
+| Where                               | Why it leverages                                                                         |
+|-------------------------------------+------------------------------------------------------------------------------------------|
+| =Dojo.Cluster.Discovery= behaviour    | Can be hotswapped mDNS for BLE / DNSSD / libcluster is a new adapter                     |
+| =Phoenix.PubSub= adapter boundary     | Every message path between nodes passes through one pluggable module                     |
+| =Table= TTL + Registry contract       | Session lifetime, memory pressure, and reconnection behavior are all one policy          |
+| =NetworkMonitor=' debounce + hot-swap | "WiFi hop doesn't kill cluster"                                                          |
+| =Gate= metadata map                   | Tracks new cross-node observable (cursor, volume, status) rides for free as a meta field |
+
+** Cynefin as Navigational Aid
+
+Not every change is the same /kind/ of change. The reasoning depth should match the domain.
+
+#+BEGIN_SRC mermaid :file diagrams/design-cynefin.png
+quadrantChart
+  title Change classification in Dojo
+  x-axis "Cause & effect: Opaque" --> "Cause & effect: Clear"
+  y-axis "Scope: Local" --> "Scope: Cross-cutting"
+  quadrant-1 "Complex — spike, probe, specs/"
+  quadrant-2 "Chaotic — stabilize first"
+  quadrant-3 "Simple — just do it"
+  quadrant-4 "Complicated — LSP navigate + implement"
+  "Rename a variable": [0.9, 0.1]
+  "Add a field to Disciple": [0.75, 0.3]
+  "Fix a LiveView bug": [0.7, 0.45]
+  "Add a new routing strategy": [0.6, 0.7]
+  "Change Partisan transport": [0.35, 0.85]
+  "Diagnose broadcast storm": [0.15, 0.75]
+  "Production incident": [0.05, 0.9]
+#+END_SRC
+
+#+RESULTS:
+[[file:diagrams/design-cynefin.png]]
+
 * VISUAL
+:PROPERTIES:
+:ID: visual
+:TYPE: system
+:END:
+
+#+BEGIN_QUOTE
+Where does state accumulate vs. flow through? Which nodes are reservoirs,
+which are conduits? What are the attractors — stable configurations the
+system returns to after disturbance? — from [[id:context][CONTEXT/Movement]]
+#+END_QUOTE
+
+** Module Map — Skeleton
+
+The smallest boundary within which the dynamics are generated. Four quadrants; each has one responsibility.
+
+#+BEGIN_EXAMPLE
+  ┌──────────────────────────────┬──────────────────────────────┐
+  │ CLUSTERING                   │ STATE                        │
+  │ ─────────                    │ ─────                        │
+  │ • MDNS          (discovery)  │ • Table          (tuplespace │
+  │ • MDNS.Packet   (parse/emit) │                   per user)  │
+  │ • MDNS.Discovery (behaviour) │ • TableRegistry  (lookup)    │
+  │ • Monitor       (roam)       │ • Class          (dyn sup)   │
+  │ • PartisanPubSub             │ • Cache          (Nebulex)   │
+  │ • Routing {Local,Fly}        │ • Gate           (Tracker)   │
+  │                              │                              │
+  │    [transport]               │    [memory]                  │
+  ├──────────────────────────────┼──────────────────────────────┤
+  │ WEB                          │ WORLD                        │
+  │ ───                          │ ─────                        │
+  │ • ShellLive     (/shell)     │ • World   (1-D cellular      │
+  │ • BootLive      (/welcome)   │            automaton)        │
+  │ • PageController(/)          │ • Conways (2-D Game of Life) │
+  │ • Router                     │ • Turtle  (graphics/geom)    │
+  │                              │ • Automaton.Cell             │
+  │    [surface]                 │    [generative langs]        │
+  └──────────────────────────────┴──────────────────────────────┘
+                   │                     │
+                   └──── user lives at ──┘
+                              the seam
+#+END_EXAMPLE
+
+- /Skin/ = Web — user touches here.
+- /Muscle/ = State — holds what the user does.
+- /Nerves/ = Clustering — carries it to other bodies.
+- /Language/ = World — what can be said with the skin & muscle.
+
+** Supervision Tree — What Holds What Up
+
+Read top-down. =one_for_one= means siblings are independent; =rest_for_one=
+means later siblings restart when an earlier one crashes (order matters).
+
+#+BEGIN_SRC mermaid :file diagrams/visual-supervision.png
+graph TD
+  App["Dojo.Application<br/><i>one_for_one</i>"]
+  Tele["DojoWeb.Telemetry"]
+  Reg["Registry<br/>Dojo.TableRegistry"]
+  TaskSup["Task.Supervisor<br/>Dojo.TaskSupervisor"]
+  PubSupervisor["Dojo.PubSub.Supervisor<br/><i>rest_for_one</i>"]
+  PubSub["Phoenix.PubSub<br/>(Partisan adapter)"]
+  Gate["Dojo.Gate<br/>(Phoenix.Tracker, pool=2)"]
+  DNS["DNSCluster"]
+  Finch["Finch"]
+  Cache["Dojo.Cache<br/>(Nebulex partitioned)"]
+  Parts["PartitionSupervisor<br/>→ Dojo.Class<br/>(DynamicSupervisor per shard)"]
+  Tables["Dojo.Table instances<br/>(:temporary, TTL 10m)"]
+  Endpoint["DojoWeb.Endpoint"]
+  MDNSSvc["Dojo.Cluster.MDNS<br/>(GenServer · UDP socket)"]
+  NetMon["Dojo.Cluster.NetworkMonitor<br/>(3s poll · debounce · hot-swap)"]
+  Hotspot["Dojo.Hotspot.Server<br/>(OS-specific hotspot control)"]
+
+  App --> Tele
+  App --> Reg
+  App --> TaskSup
+  App --> PubSupervisor
+  PubSupervisor --> PubSub
+  PubSupervisor --> Gate
+  App --> DNS
+  App --> Finch
+  App --> Cache
+  App --> Parts
+  Parts -.dynamic.-> Tables
+  App --> Endpoint
+  App --> MDNSSvc
+  App --> NetMon
+  App --> Hotspot
+
+  TaskSup -. used by .- Gate
+  Tables -. via .- Reg
+
+  classDef app fill:#2c3e50,stroke:#ecf0f1,color:#fff
+  classDef sup fill:#8e44ad,stroke:#ecf0f1,color:#fff
+  classDef gs  fill:#c0392b,stroke:#ecf0f1,color:#fff
+  classDef dyn fill:#e67e22,stroke:#ecf0f1,color:#fff
+  class App,PubSupervisor app
+  class TaskSup,Parts sup
+  class MDNSSvc,NetMon,Hotspot,Gate,PubSub,Cache,Endpoint gs
+  class Tables dyn
+#+END_SRC
+
+#+RESULTS:
+[[file:diagrams/visual-supervision.png]]
+
+=TaskSupervisor= is listed before =PubSub.Supervisor= intentionally — the
+Partisan PubSub handler dispatches local delivery via =TaskSupervisor.start_child=,
+so it must exist first. The =rest_for_one= strategy inside
+=Dojo.PubSub.Supervisor= means Gate restarts if PubSub crashes (Gate depends
+on PubSub's routing table), but not the reverse.
+
+** Dynamics — Cluster Formation
+
+How does a fresh node find the others? No registry, no DNS SRV, no Consul.
+
+#+BEGIN_SRC mermaid :file diagrams/visual-discovery.png
+sequenceDiagram
+  autonumber
+  participant N1 as New Node
+  participant LAN as LAN Multicast<br/>(224.0.0.251:5454)
+  participant P1 as Peer A
+  participant P2 as Peer B
+
+  Note over N1: Application.start/2
+  N1->>N1: MDNS init → open UDP socket<br/>join multicast group
+  N1->>N1: NetworkMonitor init → seed IP cache<br/>:persistent_term.put(addr)
+  N1->>LAN: PTR query "_erlang._tcp.local"
+  LAN->>P1: query arrives
+  LAN->>P2: query arrives
+  P1->>LAN: PTR + TXT reply (name, addr, port)
+  P2->>LAN: PTR + TXT reply
+  LAN->>N1: responses
+  N1->>N1: cache[name] = {ip, port, ttl}
+  N1->>P1: Partisan JOIN → HyParView active view
+  N1->>P2: Partisan JOIN
+  Note over N1,P2: poll_interval=5s: sweep<br/>→ announce → query → collect<br/>→ reconcile connections
+  N1->>LAN: periodic announce (TTL=120)
+  Note over N1,P2: POOF: peer not seen for<br/>4 × poll_interval → evict
+#+END_SRC
+
+#+RESULTS:
+[[file:diagrams/visual-discovery.png]]
+
+- Steps 4–8 are the RFC 6762 discovery dance.
+- Step 9 is /adapter specific/: =MDNS.PartisanAdapter= on peer discovered → =:partisan_peer_service.join/1=.
+- Step 11 is /reconciliation/: libcluster-style MapSet diff (desired − connected).
+- Step 12 is the /safety net/: POOF eviction if reactive =:nodedown= misses.
+
+** Dynamics — Disciple Joins a Table
+
+What happens when a user opens =/shell= on a peer?
+
+#+BEGIN_SRC mermaid :file diagrams/visual-join.png
+sequenceDiagram
+  autonumber
+  participant LV as ShellLive (LV pid)
+  participant Class as Dojo.Class<br/>(PartitionSupervisor)
+  participant Reg as TableRegistry
+  participant Table as Dojo.Table<br/>(GenServer)
+  participant Gate as Dojo.Gate<br/>(Phoenix.Tracker)
+  participant PubSub
+
+  LV->>Class: join(pid, book, disciple)
+  Class->>Reg: lookup(reg_key = "class:book:user_id")
+  alt Table exists
+    Reg-->>Class: [{table_pid, _}]
+    Class->>Table: add_watcher(table_pid, lv_pid)
+    Table-->>Class: :ok
+  else No Table
+    Reg-->>Class: []
+    Class->>Class: DynamicSupervisor.start_child<br/>(via PartitionSupervisor)
+    Class->>Table: start_link(%{topic, disciple, reg_key})
+    Table->>Reg: register(reg_key)
+    Table->>Table: schedule TTL (10m)
+  end
+  Class-->>LV: {:ok, table_pid}
+  LV->>Gate: track(pid, topic, disciple)
+  Gate->>PubSub: broadcast :join diff
+  PubSub-->>LV: {:join, topic, meta}
+#+END_SRC
+
+#+RESULTS:
+[[file:diagrams/visual-join.png]]
+
+The =Table= is a /singleton per Disciple per book/, partitioned across
+schedulers by =PartitionSupervisor= keyed on the LiveView pid. It accepts
+additional watchers (multiple browser tabs of the same user) without
+duplicating state. Race condition handling is explicit: between the Registry
+lookup and the start_child call, another tab may win — the =:already_started=
+reply falls through to =add_watcher=.
+
+** Dynamics — NetworkMonitor Hot-Swap
+
+When the user's WiFi flaps or they roam to a new network, the BEAM does /not/
+restart. A choreographed sequence re-homes the node to its new address without
+dropping its identity.
+
+#+BEGIN_SRC mermaid :file diagrams/visual-hotswap.png
+sequenceDiagram
+  autonumber
+  participant NM as NetworkMonitor<br/>(3s poll)
+  participant MDNS
+  participant PC as :partisan_config
+  participant HV as HyParView<br/>Manager
+  participant PS as partisan_sup<br/>(acceptor pool)
+  participant PT as :persistent_term
+
+  loop every 3s
+    NM->>NM: new_ips = routable_ipv4_addrs()
+    alt IPs unchanged
+      NM->>NM: reset debounce
+    else IPs differ
+      NM->>NM: debounce (need 2 stable reads)
+    end
+  end
+
+  Note over NM: confirmed IP change
+  NM->>MDNS: goodbye(old_ips)  [TTL=0 ×2]
+  NM->>PC: set(:listen_addrs, new_addrs)
+  NM->>HV: refresh_node_spec  [fixes stale JOIN identity]
+  NM->>PS: terminate + restart acceptor_socket_pool_sup
+  alt bind ok
+    NM->>NM: disconnect_stale_peers (leave, not disconnect)
+    NM->>MDNS: rejoin multicast on new ifaces
+    NM->>MDNS: reannounce(new_ips)
+    NM->>PT: put({Gate, :addr}, new_addr)
+    NM->>MDNS: on_network_change (reset failure tracking)
+  else bind fails
+    NM->>PC: revert listen_addrs to old
+    Note over NM: retry next poll
+  end
+#+END_SRC
+
+#+RESULTS:
+[[file:diagrams/visual-hotswap.png]]
+
+Three pieces of non-obvious knowledge live in this sequence:
+
+1. /Goodbye before config update/ — packets must leave the interface that
+   peers still recognize, or they arrive on the new network and are dropped
+   as unknown.
+2. /Refresh HyParView node_spec/ — the manager caches =node_spec()= at init;
+   without refresh, outgoing JOINs carry dead IPs and peers never wire up
+   the reverse connection Phoenix.PubSub needs.
+3. /=leave= not =disconnect=/ — leave purges active AND passive views;
+   disconnect only kills TCP, leaving =random_promotion= to rediscover dead
+   IPs every 3s forever.
+
+** Attractor Map — Where State Lives
+
+Some state is /accumulated/ (reservoirs, survive churn). Some state is
+/flowing/ (conduits, exist only in transit). Others are /ephemeral/ (cached,
+rebuildable). Knowing which is which tells you what a crash costs.
+
+#+BEGIN_EXAMPLE
+  ┌──────────── RESERVOIRS (accumulate, cost on loss) ──────────────┐
+  │                                                                 │
+  │   Dojo.Table  ─────►  per-Disciple tuplespace, watcher list     │
+  │   Dojo.Gate   ─────►  presence metadata (who+where+addr)        │
+  │   :persistent_term ─► addr cache, read-hot, never copied        │
+  │                                                                 │
+  └─────────────────────────────────────────────────────────────────┘
+  ┌──────────── CONDUITS (flow, crash is safe) ─────────────────────┐
+  │                                                                 │
+  │   Phoenix.PubSub messages   (fan-out, no history)               │
+  │   Partisan plumtree gossip  (eventual delivery)                 │
+  │   mDNS multicast packets    (self-describing, rebroadcastable)  │
+  │                                                                 │
+  └─────────────────────────────────────────────────────────────────┘
+  ┌──────────── EPHEMERAL (cached, rebuildable) ────────────────────┐
+  │                                                                 │
+  │   Dojo.Cache    ─► Nebulex partitioned over schedulers          │
+  │   MDNS peer cache ─► rebuilt next poll cycle (5s)               │
+  │   HyParView views ─► re-converge after JOIN                     │
+  │                                                                 │
+  └─────────────────────────────────────────────────────────────────┘
+#+END_EXAMPLE
+
+Design rule implied by the map: /reservoirs must have a restart strategy/,
+/conduits must not own state/, /ephemeral stores must tolerate eviction/.
+When these rules are respected, "let it crash" is safe.
+
+** State Machine — Node Lifecycle
+
+A single node moves through these states. The transitions are what the
+failure modes act on.
+
+#+BEGIN_SRC mermaid :file diagrams/visual-node-lifecycle.png
+stateDiagram-v2
+  [*] --> UNBOUND
+  UNBOUND --> PROBING: open_socket ok
+  UNBOUND --> DEGRADED: open_socket fail
+  PROBING --> ANNOUNCING: no conflict (RFC 6762 §8.1)
+  PROBING --> UNBOUND: name conflict → rename
+  ANNOUNCING --> STEADY: announce sent
+  STEADY --> STEADY: poll cycle (5s)
+  STEADY --> DEGRADED: socket lost
+  DEGRADED --> RECOVERING: exponential backoff
+  RECOVERING --> PROBING: recovered
+  RECOVERING --> DEGRADED: still failing
+  STEADY --> DEPARTING: prep_stop /<br/>network change
+  DEPARTING --> STEADY: rebind on new IP
+  DEPARTING --> TERMINATED: application stop
+  TERMINATED --> [*]
+#+END_SRC
+
+#+RESULTS:
+[[file:diagrams/visual-node-lifecycle.png]]
+
+See [[file:specs/journeys/cluster-lifecycle.journey.md][specs/journeys/cluster-lifecycle]] for the derivation. Tests cover 9 of
+these transitions today.
+
+** Feedback Loops — The Live System
+
+Dojo's stability is not static; it is the /equilibrium of several loops/
+running at different timescales.
+
+#+BEGIN_SRC mermaid :file diagrams/visual-feedback.png
+graph LR
+  subgraph FAST["Fast loop (3s) — interface watch"]
+    A1[poll IPs] --> A2{changed?}
+    A2 -->|yes| A3[debounce 2 reads]
+    A3 --> A4[hot-swap]
+    A4 --> A1
+    A2 -->|no| A1
+  end
+
+  subgraph MED["Medium loop (5s) — mDNS poll"]
+    B1[sweep cache] --> B2[announce]
+    B2 --> B3[query]
+    B3 --> B4[collect replies]
+    B4 --> B5[reconcile connects]
+    B5 --> B1
+  end
+
+  subgraph SLOW["Slow loop (10m) — Table TTL"]
+    C1[Table alive] --> C2{watcher activity?}
+    C2 -->|yes| C1
+    C2 -->|no, 10m| C3[terminate]
+  end
+
+  subgraph EVENT["Event loop — presence diff"]
+    D1[Tracker diff] --> D2[broadcast join/leave]
+    D2 --> D3[LiveView re-render]
+  end
+
+  A4 -.triggers.-> B2
+  B5 -.triggers.-> D1
+  D1 -.may start.-> C1
+
+  classDef fast fill:#e74c3c,color:#fff
+  classDef med fill:#f39c12,color:#fff
+  classDef slow fill:#3498db,color:#fff
+  classDef event fill:#2ecc71,color:#fff
+  class A1,A2,A3,A4 fast
+  class B1,B2,B3,B4,B5 med
+  class C1,C2,C3 slow
+  class D1,D2,D3 event
+#+END_SRC
+
+#+RESULTS:
+[[file:diagrams/visual-feedback.png]]
+
+The loops are /decoupled in rate but coupled in causation/. Reactive events
+(=:nodedown=, presence diff) act as accelerators; the polling loops are the
+safety net that guarantees eventual consistency even when reactive signals
+are missed.
+
+** Minimal Probes — Seeing Without Disturbing
+
+When reasoning stalls, these probes reveal state without changing behavior:
+
+| Want to see                        | Probe                                                                    |
+|------------------------------------+--------------------------------------------------------------------------|
+| Who is in the cluster right now    | =:partisan_peer_service.members()=                                       |
+| What mDNS sees locally             | =Dojo.Cluster.MDNS.cached_peers()= / =Dojo.Cluster.MDNS.diag()=          |
+| Which Tables are alive             | =Registry.select(Dojo.TableRegistry, ...)=                               |
+| Presence state for a book          | =Dojo.Gate.list_users(topic)= / =Dojo.Class.list_disciples(book)=        |
+| Current routable address           | =:persistent_term.get({Dojo.Gate, :addr})=                               |
+| Partisan listen addrs              | =:partisan_config.get(:listen_addrs)=                                    |
+| Broadcast health                   | =:ets.tab2list(:partisan_plumtree_broadcast)=                            |
+
+Keep these in reach when Chaotic incidents surface — they let you act first
+and understand after.
+
+** Action - Intervention Points
+*Feedback loops active at any given moment:*
+
+#+BEGIN_SRC mermaid :file diagrams/lenses-systems-loops.png
+graph LR
+  A["peer joins"] -->|"+"| B["Tracker CRDT sync"]
+  B -->|"+"| C["Plumtree broadcasts"]
+  C -->|"+"| D["mailbox depth<br/>partisan_peer_service_client"]
+  D -->|"delays"| E["graft requests"]
+  E -->|pre-fix: +<br/>post-fix: 0| F["outstanding leak"]
+  F -.former amplifier.- C
+
+  G["poll cycle"] -->|"-"| H["cache eviction"]
+  H -->|"-"| I["connection set"]
+  I -->|"balances"| G
+
+  J["watchers = 0"] -->|"triggers"| K["Table terminate"]
+  K -->|"-"| L["memory pressure"]
+
+  classDef balance fill:#2ecc71,color:#fff
+  classDef reinforce fill:#e74c3c,color:#fff
+  classDef fixed fill:#3498db,color:#fff
+  class G,H,I,J,K,L balance
+  class A,B,C,D reinforce
+  class E,F fixed
+#+END_SRC
+
+#+RESULTS:
+[[file:diagrams/lenses-systems-loops.png]]
+
+*Leverage points* (Meadows, from weakest to strongest):
+- /Parameters/ — poll intervals (3s, 5s, 100ms debounce) — tunable
+- /Stocks and flows/ — Table TTL, announce backoff cap — structural
+- /Information flows/ — Presence metadata as transport — paradigm
+- /Rules/ — Plumtree handler contract 
+- /System goals/ — for e.g. "survive WiFi roaming"
+The highest leverage in Dojo's history came from changing /rules/ (fix
+handler contract) and /goals/ (make it roam-survivable), not from tuning
+parameters.
+
+* CELLS
+:PROPERTIES:
+:ID: cells
+:TYPE: process-anatomy
+:LENS: architect+systems
+:END:
+
+#+BEGIN_QUOTE
+Everything is a process. They only interact by exchanging messages. The key
+in making great and growable systems is much more to design how its modules
+communicate rather than what their internal properties and behaviors should be.
+#+END_QUOTE
+**** Cells as an idea
+The original conception of it had the following parts.
+
+
+
+  - I thought of objects being like biological cells and/or individual computers on a network, only able to communicate with messages (so messaging came at the very beginning -- it took a while to see how to  do messaging in a programming language efficiently enough to be useful).
+
+
+
+  - I wanted to get rid of data. The B5000 almost did this via its  almost unbelievable HW architecture. I realized that the  cell/whole-computer metaphor would get rid of data, and that "<-"  would be just another message token (it took me quite a while to  think this out because I really thought of all these symbols as names for functions and procedures.
+
+
+
+  - My math background made me realize that each object could have  several algebras associated with it, and there could be families of  these, and that these would be very very useful. The term  "polymorphism" was imposed much later (I think by Peter Wegner) and  it isn't quite valid, since it really comes from the nomenclature of  functions, and I wanted quite a bit more than functions. I made up a  term "genericity" for dealing with generic behaviors in a  quasi-algebraic form.
+
+    
+My original experiments with this architecture were done using a 
+
+model I adapted from van Wijngaarten's and Wirth's "Generalization of 
+
+Algol" and Wirth's Euler. Both of these were rather LISP-like but 
+
+with a more conventional readable syntax. I didn't understand the 
+
+monster LISP idea of tangible metalanguage then, but got kind of 
+
+close with ideas about extensible languages draw from various 
+
+sources, including Irons' IMP.
+
+
+
+The second phase of this was to finally understand LISP and then 
+
+using this understanding to make much nicer and smaller and more 
+
+powerful and more late bound understructures. Dave Fisher's thesis 
+
+was done in "McCarthy" style and his ideas about extensible control 
+
+structures were very helpful. Another big influence at this time was 
+
+Carl Hewitt's PLANNER (which has never gotten the recognition it 
+
+deserves, given how well and how earlier it was able to anticipate 
+
+Prolog).
+
+
+
+The original Smalltalk at Xerox PARC came out of the above. The 
+
+subsequent Smalltalk's are complained about in the end of the History 
+
+chapter: they backslid towards Simula and did not replace the 
+
+extension mechanisms with safer ones that were anywhere near as 
+
+useful.
+A BEAM process is not an object, not a thread, not a service. It is closer to
+a /cell/: an enclosed unit of state with a semi-permeable membrane, a nucleus
+that transforms incoming signals into outgoing ones, and a lifecycle governed
+by an external organ (its supervisor). When many cells coordinate by signals
+alone — no shared memory, no locks, no ambient authority — you get tissue.
+Tissues make organs. Organs make a /system/.
+
+This section dissects Dojo's key cells: what their membrane looks like, what
+lives in their nucleus, what signals they accept, and how they die.
+
+** Anatomy of a Dojo Cell
+
+#+BEGIN_SRC mermaid :file diagrams/cells-anatomy.png
+graph TB
+  subgraph Cell["A Process (cell)"]
+    direction TB
+    Membrane["MEMBRANE — public API<br/><i>start_link / call / cast / pid-sends</i>"]
+    Nucleus["NUCLEUS — internal state<br/><i>the struct/map inside handle_*</i>"]
+    Ribosome["TRANSFORMERS — handle_call/cast/info<br/><i>signal → new state + emissions</i>"]
+    Timer["CLOCK — Process.send_after / timers<br/><i>self-scheduled rhythm</i>"]
+    Monitor["RECEPTORS — Process.monitor refs<br/><i>sensing peer life</i>"]
+
+    Membrane -->|signals in| Ribosome
+    Ribosome <-->|reads / writes| Nucleus
+    Ribosome -->|signals out| Outbox
+    Timer -->|ticks| Ribosome
+    Monitor -->|:DOWN| Ribosome
+  end
+
+  Outbox["EMISSIONS<br/>• send/2 to other pids<br/>• PubSub.broadcast<br/>• Registry / Tracker updates"]
+  Supervisor["SUPERVISOR<br/><i>external organ</i>"]
+  Supervisor -. start / kill / restart .-> Cell
+
+  classDef mem fill:#16a085,color:#fff,stroke:#fff
+  classDef nuc fill:#8e44ad,color:#fff,stroke:#fff
+  classDef rib fill:#e67e22,color:#fff,stroke:#fff
+  classDef out fill:#2c3e50,color:#fff,stroke:#fff
+  classDef sup fill:#c0392b,color:#fff,stroke:#fff
+  class Membrane mem
+  class Nucleus nuc
+  class Ribosome,Timer,Monitor rib
+  class Outbox out
+  class Supervisor sup
+#+END_SRC
+
+#+RESULTS:
+[[file:diagrams/cells-anatomy.png]]
+
+Design rule that follows: /what a cell exposes is not what it is/. The membrane
+is the design surface; the nucleus is private. You can replace the nucleus
+entirely (rewrite the GenServer's state) as long as the signals remain the
+same shape. This is why Alexander's "positive space between modules" applies
+here literally — the contract IS a designed object.
+
+** =Dojo.Table= — Singleton Tuplespace Cell
+:PROPERTIES:
+:MODULE: Dojo.Table
+:END:
+
+#+transclude: [[file:lib/dojo/table.ex]]  :lines 1-30 :src elixir
+
+One cell per Disciple per book. A memory of what that learner has drawn,
+said, or computed, with a 10-minute forgetfulness if no tab is watching.
+
+#+BEGIN_EXAMPLE
+  ┌───────────────────────────── Dojo.Table ────────────────────────────┐
+  │                                                                     │
+  │  MEMBRANE                                                           │
+  │  ─────────                                                          │
+  │   publish(pid, msg, event)       → cast  {:publish, msg, event}     │
+  │   add_watcher(pid, lv_pid)       → call  {:add_watcher, lv_pid}     │
+  │   change_meta(pid, {k, v})       → call  {:change_meta, delta}      │
+  │   last({topic, node}, event)     → call  {:last, event} [local/RPC] │
+  │                                                                     │
+  │  NUCLEUS                                                            │
+  │  ───────                                                            │
+  │   %{ watchers :: MapSet<lv_pid>,                                    │
+  │      topic, reg_key, disciple,                                      │
+  │      last :: %{event ⇒ store},   ← in-process latest                │
+  │      broadcast_timer, pending_broadcast }                           │
+  │                                                                     │
+  │  TRANSFORMERS                                                       │
+  │  ────────────                                                       │
+  │   {:publish, _, :hatch}          → cache.put + debounce broadcast   │
+  │   {:add_watcher, pid}            → monitor + MapSet.put             │
+  │   :flush_broadcast               → local+remote PubSub              │
+  │   {:DOWN, _, :process, pid, _}   → remove watcher; empty → stop     │
+  │   {:network_change, new_addr}    → Gate.change (addr, new_addr)     │
+  │                                                                     │
+  │  CLOCK                                                              │
+  │  ─────                                                              │
+  │   send_after(:flush_broadcast, 100ms)  ← debounce                   │
+  │   TTL timer (10 min, external via Cache)                            │
+  │                                                                     │
+  │  DEATH                                                              │
+  │  ─────                                                              │
+  │   restart: :temporary                                               │
+  │   stop :normal when watchers = ∅                                    │
+  │   terminate/2 deletes own cache entry                               │
+  └─────────────────────────────────────────────────────────────────────┘
+#+END_EXAMPLE
+
+Lens read — /Architect/: the Brahmasthan of this cell is =last=. Everything
+else (watchers, timers, reg_key) orbits that emptiness: it is just a map
+from event atoms to whatever the Turtle produced. The cell imposes /no
+schema/ on its contents — pure Akasha. When a new event type appears, no
+code changes here.
+
+Lens read — /Systems/: two balancing loops. (1) Watcher-count loop: watchers
+go to zero → cell dies → memory returns to the pool. (2) Debounce loop: N
+publishes in 100ms window → 1 broadcast. Both prevent runaway accumulation.
+
+** =Dojo.Gate= — Presence Diffusion Cell
+:PROPERTIES:
+:MODULE: Dojo.Gate
+:END:
+
+#+transclude: [[file:lib/dojo/gate.ex]]  :lines 1-30 :src elixir
+
+=Phoenix.Tracker= with pool_size=2 shards. Each shard is a cell. They gossip
+presence deltas among themselves and across nodes via PubSub.
+
+#+BEGIN_EXAMPLE
+  ┌────────────────────────── Dojo.Gate (shard) ────────────────────────┐
+  │                                                                     │
+  │  MEMBRANE                                                           │
+  │   track(pid, topic, disciple)   → add to CRDT                       │
+  │   change(pid, topic, u, {k,v})  → update metadata                   │
+  │   list(topic)                   → query by topic                    │
+  │   get_by_key(topic, key)        → lookup                            │
+  │                                                                     │
+  │  NUCLEUS                                                            │
+  │   %{ pubsub_server, node_name } + Tracker's internal CRDT           │
+  │                                                                     │
+  │  CALLBACK :: handle_diff(diff, state)                               │
+  │   For each {topic, {joins, leaves}} ∈ diff:                         │
+  │     emit {:join, topic, meta}  via direct_broadcast!                │
+  │     emit {:leave, topic, meta} via direct_broadcast!                │
+  │                                                                     │
+  │  EMERGENT CONTRACT                                                  │
+  │   Presence metadata IS the cross-node metadata transport.           │
+  │   New observable? Add a meta field. No new wire protocol.           │
+  └─────────────────────────────────────────────────────────────────────┘
+#+END_EXAMPLE
+
+Lens read — /Educator/: the mental model is accurate all the way down.
+"Presence = who is here + what they are doing." Every addition (a cursor,
+a volume, a status) is just a key in =meta=. The learner does not have to
+relearn anything to add observability.
+
+Lens read — /Adversarial/: failure mode — =broadcast_period= too low under
+churn amplifies diffs into storms. Mitigation: pool_size splits work;
+Plumtree overload circuit-breaker in =PartisanPubSub.broadcast= drops
+remote fan-out while preserving local delivery.
+
+** =Dojo.Cluster.MDNS= — Sensory Cell
+:PROPERTIES:
+:MODULE: Dojo.Cluster.MDNS
+:END:
+
+#+transclude: [[file:lib/dojo/cluster/mdns.ex]]  :lines 1-30 :src elixir
+
+Owns the UDP socket, the peer cache, and the poll heartbeat. This cell
+/senses/ the network and /speaks/ on it.
+
+#+BEGIN_EXAMPLE
+  ┌───────────────────────── Dojo.Cluster.MDNS ─────────────────────────┐
+  │                                                                     │
+  │  MEMBRANE                                                           │
+  │   cached_peers()   evict_peer(name)   goodbye([ips])                │
+  │   reannounce([ips])   diag()                                        │
+  │                                                                     │
+  │  NUCLEUS                                                            │
+  │   %{ socket, adapter, own_name, own_port,                           │
+  │      cache :: %{name ⇒ peer_record},                                │
+  │      announce_interval  (exponential backoff, cap 15s),             │
+  │      poll_cycles, monitored_nodes, socket_retries }                 │
+  │                                                                     │
+  │  TRANSFORMERS                                                       │
+  │   {:udp, socket, ip, port, data}  → parse DNS packet, update cache  │
+  │   :poll                           → sweep → announce? → query       │
+  │   {:evict_peer, name}             → cache.del + adapter departed    │
+  │   {:rejoin_multicast, old, new}   → drop old membership, join new   │
+  │   {:nodedown, node}               → reactive failover (accelerator) │
+  │                                                                     │
+  │  CLOCK                                                              │
+  │   poll_interval = 5s                                                │
+  │   announce_interval grows 1s → 2s → 4s → 8s → 15s cap               │
+  │   POOF : evict if unseen for 4 × poll_interval                      │
+  └─────────────────────────────────────────────────────────────────────┘
+#+END_EXAMPLE
+
+Lens read — /Systems/: this cell is the canonical /sense-respond loop/.
+Stocks: =cache= (peer presence). Flows: announcements outbound, responses
+inbound. Delay: POOF tolerance (20s). Balancing: exponential backoff on
+announce to prevent multicast flooding.
+
+** =Dojo.Cluster.NetworkMonitor= — Proprioceptive Cell
+:PROPERTIES:
+:MODULE: Dojo.Cluster.NetworkMonitor
+:END:
+
+#+transclude: [[file:lib/dojo/cluster/monitor.ex]]  :lines 1-30 :src elixir
+    #+transclude: [[file:lib/dojo/cluster/monitor.ex]]  :lines 1-30 :src elixir
+    #+transclude: [[file:lib/dojo/cluster/monitor.ex]]  :lines 1-30 :src elixir
+    #+transclude: [[file:lib/dojo/cluster/monitor.ex]]  :lines 1-30 :src elixir
+    #+transclude: [[file:lib/dojo/cluster/monitor.ex]]  :lines 1-30 :src elixir
+
+Watches its own body (the machine's interfaces). The only cell that knows
+whether "we are on the same network we were 3 seconds ago."
+
+#+BEGIN_EXAMPLE
+  ┌──────────────────── Dojo.Cluster.NetworkMonitor ────────────────────┐
+  │                                                                     │
+  │  NUCLEUS                                                            │
+  │   %{ ips, port, pending_ips, stable_count }                         │
+  │                                                                     │
+  │  DEBOUNCE STATE MACHINE                                             │
+  │      same as last          → count ← 0                              │
+  │      new, first seen       → pending ← new, count ← 1               │
+  │      new, matches pending  → count ← count + 1                      │
+  │                               count = 2 → FIRE handle_ip_change     │
+  │                                                                     │
+  │  THE 7-STEP HOT-SWAP (fired once, atomically-ish)                   │
+  │    1. MDNS.goodbye(old_ips)                                         │
+  │    2. partisan_config:set(listen_addrs, new)                        │
+  │    3. HyParView refresh_node_spec                                   │
+  │    4. partisan_sup restart acceptor pool                            │
+  │    5. disconnect_stale_peers (via leave, not disconnect)            │
+  │    6. rejoin multicast on new ifaces                                │
+  │    7. reannounce + cache-addr + broadcast :network_change           │
+  └─────────────────────────────────────────────────────────────────────┘
+#+END_EXAMPLE
+
+Lens read — /Adversarial/ pre-mortem: what if step 4 (rebind) fails?
+→ revert listen_addrs to old, log warning, retry next poll. The cell never
+leaves Partisan advertising addresses with no listener bound. /Escape route
+exists/.
+
+** Cell Communication — A Signal's Life
+
+One published hatch event, traced from the user pressing Enter in ShellLive
+to every remote screen updating. This is the full lifeline of a signal.
+
+#+BEGIN_SRC mermaid :file diagrams/cells-signal-life.png
+sequenceDiagram
+  autonumber
+  participant User as User<br/>(browser)
+  participant LV as ShellLive<br/>(LV process)
+  participant Turtle as Turtle logic<br/>(in-process)
+  participant Table as Table<br/>(per-disciple cell)
+  participant Cache as Cache<br/>(Nebulex shard)
+  participant PubSub as PubSub<br/>(Partisan adapter)
+  participant Plumtree as Plumtree<br/>(gossip)
+  participant Remote as Remote Node<br/>(peer cell)
+
+  User->>LV: type command + Enter
+  LV->>Turtle: interpret → commands list
+  Turtle->>LV: new turtle state (store)
+  LV->>Table: cast {:publish, store, :hatch}
+  Table->>Cache: async Task.Supervisor<br/>Cache.put(reg_key, :hatch, store)
+  Table->>Table: send_after(:flush_broadcast, 100ms)
+  Note over Table: debounce window —<br/>further publishes update pending
+  Table->>Table: :flush_broadcast tick
+  Table->>PubSub: local_broadcast (full payload)<br/>{Dojo.PubSub, :hatch, {reg_key, {Turtle, meta}}}
+  PubSub-->>LV: instant render<br/>(same node)
+  Table->>PubSub: PubSub.publish (version signal)<br/>%{reg_key, time, state}
+  PubSub->>Plumtree: broadcast via Partisan
+  Plumtree->>Remote: eager push<br/>(or lazy + graft)
+  Remote->>Remote: merge/2 → true (fresh)
+  Remote->>Remote: local deliver to subscribers
+  Note over Remote: ShellLive on remote node<br/>uses version to request<br/>full payload via RPC
+  Remote->>Table: :partisan_rpc.call<br/>local_fetch(topic, :last, :hatch)
+  Table-->>Remote: full store
+  Remote-->>User: rendered update
+
+  Note over User,Remote: Three layers compose:<br/>• local broadcast (immediate)<br/>• gossip version (cheap fan-out)<br/>• pull-on-demand (authoritative payload)
+#+END_SRC
+
+#+RESULTS:
+[[file:diagrams/cells-signal-life.png]]
+
+Three layers of functionality emerge from this composition:
+
+1. =Instant local echo=: local subscribers render before the network even
+   hears about it. Latency = microseconds.
+2. =Version broadcast=: remote nodes learn a new version exists without
+   carrying the payload. Latency = gossip hops. Bandwidth = O(peers).
+3. =Pull-on-demand=: remote renderers fetch the full state when they
+   actually need it. Latency = one RPC. Bandwidth = O(actual viewers).
+
+None of these layers exists in code as a named abstraction. They are
+/emergent/ from the composition of cells.
+
+Lens read — /Pragmatist/: "what ships" is layer 1 alone. Dojo could have
+stopped there (single-node LOGO) and been useful. Layers 2+3 are what
+turned it into a cluster. Each layer was added without breaking the previous.
+
+Lens read — /Systems/: this is the resolution of the polling-vs-reactive
+polarity applied to /messages/: cheap gossip is the reactive accelerator,
+windowed pull is the safety net, local delivery is immediate. Three
+timescales, three bandwidth profiles, all composed from the same primitive
+(=send/2=).
+
+** Layer Composition — From Signals to a Living System
+
+How do simple message shapes stack up into "a collaborative learning
+environment"? The ladder:
+
+#+BEGIN_SRC mermaid :file diagrams/cells-layers.png
+graph BT
+  L0["LAYER 0 — send/2 and receive<br/><i>BEAM primitives</i>"]
+  L1["LAYER 1 — GenServer / Registry / Supervisor<br/><i>OTP idioms: named cells with restart policy</i>"]
+  L2["LAYER 2 — Phoenix.PubSub / Phoenix.Tracker<br/><i>topic-addressed fan-out, presence CRDT</i>"]
+  L3["LAYER 3 — Partisan / plumtree / HyParView<br/><i>transport-agnostic gossip across nodes</i>"]
+  L4["LAYER 4 — mDNS discovery + adapter<br/><i>membership without central registry</i>"]
+  L5["LAYER 5 — NetworkMonitor hot-swap<br/><i>identity survives physical-layer changes</i>"]
+  L6["LAYER 6 — Table singleton + watcher lifecycle<br/><i>per-user state with auto-cleanup</i>"]
+  L7["LAYER 7 — ShellLive + Turtle + Gate presence<br/><i>the surface the learner touches</i>"]
+
+  L0 --> L1 --> L2 --> L3 --> L4 --> L5
+  L2 --> L6
+  L5 --> L6
+  L6 --> L7
+
+  classDef beam fill:#2c3e50,color:#ecf0f1
+  classDef otp fill:#8e44ad,color:#ecf0f1
+  classDef phx fill:#e67e22,color:#ecf0f1
+  classDef cluster fill:#16a085,color:#ecf0f1
+  classDef app fill:#27ae60,color:#ecf0f1
+  class L0 beam
+  class L1 otp
+  class L2,L7 phx
+  class L3,L4,L5 cluster
+  class L6 app
+#+END_SRC
+
+#+RESULTS:
+[[file:diagrams/cells-layers.png]]
+
+Each layer adds exactly one capability over the one below, and only depends
+on the /interface/ of what lies beneath — not its identity. You could
+replace L3 (Partisan) with classic Erlang distribution and everything above
+L3 still works. You could replace L4 (mDNS) with a DNS SRV strategy and
+everything above L4 still works. This is what the Architect lens calls
+/levels of scale/ and what the Pragmatist calls /reversibility/.
 * DOCTOOLS
 :PROPERTIES:
+:ID: doctools
+:DOCTOOLS: t
 :END:
-** Keybinds
-| Keybinding | Function          |
-|------------+-------------------|
-| C-c C-l    | Insert link       |
-| C-c C-x p  | Set property      |
-| C-c C-c    | Add/modify tags   |
-| C-c C-t    | Cycle TODO states |
-| C-c C-q    | Set tags          |
-| C-c '      | Edit source block |
-| C-c C-v t  | Tangle Org Blocks |
 
+#+BEGIN_QUOTE
+The tools that maintain this document live inside this document.
+They are simultaneously documentation, implementation, and interface —
+callable by humans via keybindings and by agents via =emacsclient --eval=.
+#+END_QUOTE
+
+** Keybinds
+
+| Keybinding | Function                        | Agent equivalent                       |
+|------------+---------------------------------+----------------------------------------|
+| C-c C-l    | Insert link                     |                                        |
+| C-c C-x p  | Set property                    |                                        |
+| C-c C-c    | Execute block / toggle checkbox |                                        |
+| C-c C-v t  | Tangle Org Blocks               |                                        |
+| C-c '      | Edit source block               |                                        |
+| C-c t a    | Add transclusion at point       |                                        |
+| C-c t A    | Activate all transclusions      |                                        |
+| C-c t r    | Remove transclusion at point    |                                        |
+| C-c t g    | Refresh transclusions           |                                        |
+| C-c d l    | Filter buffer by lens           | =(dojo/lens-sparse-tree "architect")=    |
+| C-c d m    | Regenerate all mermaid diagrams | =(dojo/mermaid-regenerate-all)=          |
+| C-c d j    | Jump: doc heading → source      | =(dojo/jump-to-module-source)=           |
+| C-c d d    | Jump: source → doc heading      | =(dojo/jump-to-module-doc "Dojo.Table")= |
+| C-c d s    | Transclusion health status      | =(dojo/transclusion-status)=             |
+
+** Agent Bridge
+
+An agent (Claude Code, scripts, CI) can query this document's knowledge
+graph without opening Emacs interactively. The bridge is plain
+=emacsclient --eval= calls against functions defined in =config.el=.
+
+#+BEGIN_EXAMPLE
+# List all architecturally documented modules
+emacsclient --eval '(dojo/list-modules)'
+# => (("Dojo.Table" . "Dojo.Table — Singleton Tuplespace Cell") ...)
+
+# List all lens perspectives
+emacsclient --eval '(dojo/list-lenses)'
+# => (("CELLS" . "architect+systems") ("THROUGH LENSES" . "multi-perspective") ...)
+
+# List all org-roam IDs (navigable sections)
+emacsclient --eval '(dojo/list-ids)'
+# => (("context" . "CONTEXT") ("design" . "DESIGN") ("visual" . "VISUAL") ...)
+
+# Read the full body of a section by ID
+emacsclient --eval '(dojo/heading-body "cells")'
+
+# Find which section documents a module
+emacsclient --eval '(dojo/section-for-module "Dojo.Table")'
+# => ("Dojo.Table — Singleton Tuplespace Cell" . nil)
+
+# List all transclusion targets
+emacsclient --eval '(dojo/list-transclusions)'
+
+# Open ARCHITECTURE.org at the section for a module (interactive)
+emacsclient --eval '(dojo/jump-to-module-doc "Dojo.Gate")'
+#+END_EXAMPLE
+
+For Claude Code running inside vterm, these calls work directly via
+=emacsclient= since the Emacs server is the parent process.
 
 ** Aggregate Comments
 
@@ -74,8 +1082,8 @@
               (id (org-entry-get nil "ID"))
               (id (or id (org-id-get-create))))
          (push (list heading (format "[[id:%s][→]]" id)) comments)))
-     "comment"  
-     'file)    ; Search in current file or `agenda`
+     "comment"
+     'file)
     (if comments
         (append '(("Comment" "Link") hline)
                 (reverse comments))
@@ -87,5 +1095,59 @@
 |-------------------+------|
 | No comments found |      |
 
+** Aggregate by Property
 
- 
+Query headings by any property value. Generalizes the comment
+aggregator above to work with =:LENS:=, =:TYPE:=, =:MODULE:=, etc.
+
+#+name: dojo/aggregate-by-property
+#+BEGIN_SRC emacs-lisp :var prop="LENS" val="architect" :results value table
+  (let ((matches '()))
+    (org-map-entries
+     (lambda ()
+       (let ((pval (org-entry-get nil prop)))
+         (when (and pval (string-match-p (regexp-quote val) pval))
+           (let* ((heading (org-get-heading t t t t))
+                  (id (or (org-entry-get nil "ID") (org-id-get-create))))
+             (push (list heading pval (format "[[id:%s][→]]" id)) matches)))))
+     nil 'file)
+    (if matches
+        (append (list (list "Heading" prop "Link") 'hline)
+                (nreverse matches))
+      (list (list "Heading" prop "Link") 'hline
+            (list "No matches" "" ""))))
+#+END_SRC
+
+#+RESULTS:
+| Heading    | LENS | Link |
+|------------+------+------|
+| No matches |      |      |
+
+** Module Index
+
+All modules with =:MODULE:= property — the code↔doc anchors.
+
+#+BEGIN_SRC emacs-lisp :results value table
+  (let ((mods '()))
+    (org-map-entries
+     (lambda ()
+       (let ((mod (org-entry-get nil "MODULE")))
+         (when mod
+           (let ((heading (org-get-heading t t t t))
+                 (id (or (org-entry-get nil "ID") "")))
+             (push (list mod heading (format "[[id:%s][→]]" id)) mods)))))
+     nil 'file)
+    (if mods
+        (append '(("Module" "Section" "Link") hline)
+                (nreverse mods))
+      '(("Module" "Section" "Link") hline ("No modules" "" ""))))
+#+END_SRC
+
+#+RESULTS:
+| Module                      | Section                                           | Link |
+|-----------------------------+---------------------------------------------------+------|
+| Dojo.Table                  | =Dojo.Table= — Singleton Tuplespace Cell            | [[id:][→]]    |
+| Dojo.Gate                   | =Dojo.Gate= — Presence Diffusion Cell               | [[id:][→]]    |
+| Dojo.Cluster.MDNS           | =Dojo.Cluster.MDNS= — Sensory Cell                  | [[id:][→]]    |
+| Dojo.Cluster.NetworkMonitor | =Dojo.Cluster.NetworkMonitor= — Proprioceptive Cell | [[id:][→]]    |
+
