@@ -1,0 +1,188 @@
+## "msgid"s in this file come from POT (.pot) files.
+###
+### Do not add, change, or remove "msgid"s manually here as
+### they're tied to the ones in the corresponding POT file
+### (with the same domain).
+###
+### Use "mix gettext.extract --merge" or "mix gettext.merge"
+### to merge POT files into PO files.
+msgid ""
+msgstr ""
+"Language: es\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: lib/dojo_web/live/shell_live.ex:508
+#, elixir-autogen, elixir-format
+msgid "@%{addr}'s code"
+msgstr "el código de @%{addr}"
+
+#: lib/dojo_web/components/core_components.ex:484
+#, elixir-autogen, elixir-format
+msgid "Actions"
+msgstr "Acciones"
+
+#: lib/dojo_web/components/core_components.ex:160
+#, elixir-autogen, elixir-format
+msgid "Attempting to reconnect"
+msgstr "Buscando el camino de vuelta"
+
+#: lib/dojo_web/live/shell_live.ex:659
+#, elixir-autogen, elixir-format
+msgid "Command"
+msgstr "Órdenes"
+
+#: lib/dojo_web/live/shell_live.ex:659
+#, elixir-autogen, elixir-format
+msgid "Control"
+msgstr "Mando"
+
+#: lib/dojo_web/live/shell_live.ex:684
+#, elixir-autogen, elixir-format
+msgid "Deck"
+msgstr "Baraja"
+
+#: lib/dojo_web/components/core_components.ex:151
+#, elixir-autogen, elixir-format
+msgid "Error!"
+msgstr "¡Ay!"
+
+#: lib/dojo_web/live/shell_live.ex:613
+#, elixir-autogen, elixir-format
+msgid "Face Left"
+msgstr "Mira a la izquierda"
+
+#: lib/dojo_web/live/shell_live.ex:612
+#, elixir-autogen, elixir-format
+msgid "Face Right"
+msgstr "Mira a la derecha"
+
+#: lib/dojo_web/live/shell_live.ex:620
+#, elixir-autogen, elixir-format
+msgid "Face Towards Start"
+msgstr "Mira hacia el principio"
+
+#: lib/dojo_web/live/shell_live.ex:617
+#, elixir-autogen, elixir-format
+msgid "Go To Start"
+msgstr "Vuelve al principio"
+
+#: lib/dojo_web/components/core_components.ex:172
+#, elixir-autogen, elixir-format
+msgid "Hang in there while we get back on track"
+msgstr "Ten paciencia, pronto hallaremos el camino"
+
+#: lib/dojo_web/live/shell_live.ex:624
+#, elixir-autogen, elixir-format
+msgid "Hide your Head"
+msgstr "Esconde tu cabeza"
+
+#: lib/dojo_web/live/shell_live.ex:614
+#, elixir-autogen, elixir-format
+msgid "Jump Forward"
+msgstr "Salta adelante"
+
+#: lib/dojo_web/live/shell_live.ex:611
+#, elixir-autogen, elixir-format
+msgid "Move Forward"
+msgstr "Avanzar"
+
+#: lib/dojo_web/live/shell_live.ex:630
+#, elixir-autogen, elixir-format
+msgid "Name your Command"
+msgstr "Nombra tu orden"
+
+#: lib/dojo_web/live/shell_live.ex:629
+#, elixir-autogen, elixir-format
+msgid "Repeat Commands"
+msgstr "Repite las órdenes"
+
+#: lib/dojo_web/live/shell_live.ex:623
+#, elixir-autogen, elixir-format
+msgid "Set Colour to"
+msgstr "Píntate de"
+
+#: lib/dojo_web/live/shell_live.ex:625
+#, elixir-autogen, elixir-format
+msgid "Show your Head"
+msgstr "Asoma tu cabeza"
+
+#: lib/dojo_web/components/core_components.ex:167
+#, elixir-autogen, elixir-format
+msgid "Something went wrong!"
+msgstr "¡Algo extraño ha sucedido!"
+
+#: lib/dojo_web/components/core_components.ex:150
+#, elixir-autogen, elixir-format
+msgid "Success!"
+msgstr "¡Muy bien!"
+
+#: lib/dojo_web/live/shell_live.ex:615
+#, elixir-autogen, elixir-format
+msgid "Wait a While"
+msgstr "Espera un poco"
+
+#: lib/dojo_web/components/core_components.ex:155
+#, elixir-autogen, elixir-format
+msgid "We can't find the internet"
+msgstr "No hallamos el camino a la red"
+
+#: lib/dojo_web/live/shell_live.ex:626
+#, elixir-autogen, elixir-format
+msgid "Wipe Everything"
+msgstr "Borra todo"
+
+#: lib/dojo_web/live/shell_live.ex:616
+#, elixir-autogen, elixir-format
+msgid "Write Something"
+msgstr "Escribe algo"
+
+#: lib/dojo_web/components/core_components.ex:76
+#: lib/dojo_web/components/core_components.ex:130
+#, elixir-autogen, elixir-format
+msgid "close"
+msgstr "cerrar"
+
+#: lib/dojo_web/live/shell_live.html.heex:206
+#, elixir-autogen, elixir-format
+msgid "summoning @%{name}'s code"
+msgstr "invocando el código de @%{name}"
+
+#: lib/dojo_web/live/shell_live.html.heex:190
+#, elixir-autogen, elixir-format
+msgid "welcome"
+msgstr "bienvenido"
+
+#: lib/dojo_web/live/shell_live.html.heex:192
+#, elixir-autogen, elixir-format
+msgid "to %{clan}'s shell"
+msgstr "a la concha de %{clan}"
+
+#: lib/dojo_web/live/shell_live.ex:616
+#, elixir-autogen, elixir-format
+msgid "'Hello'"
+msgstr "'¡Hola!'"
+
+#: lib/dojo_web/live/shell_live.ex:618
+#, elixir-autogen, elixir-format
+msgid "Jump To Start"
+msgstr "Salta al principio"
+
+#: lib/dojo_web/live/shell_live.ex:619
+#, elixir-autogen, elixir-format
+msgid "Create a Grid"
+msgstr "Dibuja una cuadrícula"
+
+#: lib/dojo_web/live/shell_live.ex:620
+#, elixir-autogen, elixir-format
+msgid "Face a Point"
+msgstr "Mira hacia un punto"
+
+#: lib/dojo_web/live/shell_live.ex:621
+#, elixir-autogen, elixir-format
+msgid "Dive Into Page"
+msgstr "Sumérgete en la página"
+
+#: lib/dojo_web/live/shell_live.ex:622
+#, elixir-autogen, elixir-format
+msgid "Tilt Right"
+msgstr "Inclínate a la derecha"

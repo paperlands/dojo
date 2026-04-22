@@ -1,10 +1,13 @@
 const DiscipleWindow = {
   mounted() {
-
-      // make sure uniq
+    // Visibility tracking: set of names currently visible
     this.visibleDisciples = new Set();
 
-    this.observedElements = new Map(); // ref -> element
+    // DOM element tracking: name -> element reference
+    this.observedElements = new Map();
+
+    // Name set for detecting morphing/element replacement
+    this.lastNames = null;
 
     // debounce config
     this.debounceTimeout = null;
@@ -20,35 +23,20 @@ const DiscipleWindow = {
       }
     );
 
-    //  mutation observer to detect DOM changes
+    //  mutation observer for attribute changes only (childList handled by updated() hook)
     this.mutationObserver = new MutationObserver((mutations) => {
-      let needsUpdate = false;
-
-      mutations.forEach(mutation => {
-        // check for added/removed nodes
-        if (mutation.type === 'childList') {
-          needsUpdate = true;
-        }
-        // attrs changes that might indicate phx_ref changes
-        else if (mutation.type === 'attributes' &&
-                (mutation.attributeName === 'data-phx-ref' ||
-                 mutation.attributeName === 'phx-value-disciple-phx_ref' ||
-                 mutation.attributeName === 'phx-value-addr')) {
-          needsUpdate = true;
-        }
-      });
-
-      if (needsUpdate) {
+      const attrChanged = mutations.some(m => m.type === 'attributes');
+      if (attrChanged) {
         this.resetObservations();
       }
     });
 
-    // start observing DOM
+    // start observing DOM — no childList, that's handled by updated()
     this.mutationObserver.observe(this.el, {
-      childList: true,
+      childList: false,
       subtree: true,
       attributes: true,
-      attributeFilter: ['data-phx-ref', 'phx-value-disciple-phx_ref', 'phx-value-addr']
+      attributeFilter: ['data-name', 'phx-value-disciple-name', 'phx-value-addr']
     });
 
     // init observation
@@ -68,8 +56,24 @@ const DiscipleWindow = {
   },
 
   updated() {
-    // Clean and re-initialize on updates
-    this.resetObservations();
+    // Reset observations if disciple identity (name set) changed, not just count
+    // This handles element replacement from LiveView morphing (reorder/replace)
+    // without over-resetting on attribute changes to existing elements (image URL, class, etc)
+    const currentNames = new Set(
+      this.findDiscipleElements()
+        .map(el => this.ensureNameAttribute(el))
+        .filter(Boolean)
+    );
+
+    const namesChanged =
+      !this.lastNames ||
+      currentNames.size !== this.lastNames.size ||
+      [...currentNames].some(name => !this.lastNames.has(name));
+
+    if (namesChanged) {
+      this.lastNames = currentNames;
+      this.resetObservations();
+    }
   },
 
   disconnected() {
@@ -91,10 +95,10 @@ const DiscipleWindow = {
     const disciples = this.findDiscipleElements();
 
     disciples.forEach(element => {
-      const ref = this.ensurePhxRefAttribute(element);
-      if (ref) {
+      const name = this.ensureNameAttribute(element);
+      if (name) {
         // Store the element reference to avoid duplicate observations
-        this.observedElements.set(ref, element);
+        this.observedElements.set(name, element);
         // Start observing this element
         this.observer.observe(element);
       }
@@ -106,23 +110,23 @@ const DiscipleWindow = {
 
   cullInvisibleDisciples() {
     // Get current disciples in the DOM
-    const currentDiscipleRefs = new Set();
-    this.observedElements.forEach((_, ref) => {
-      currentDiscipleRefs.add(ref);
+    const currentNames = new Set();
+    this.observedElements.forEach((_, name) => {
+      currentNames.add(name);
     });
 
     // Find disciples in our visible set that no longer exist
     const toRemove = [];
-    this.visibleDisciples.forEach(ref => {
-      if (!currentDiscipleRefs.has(ref)) {
-        toRemove.push(ref);
+    this.visibleDisciples.forEach(name => {
+      if (!currentNames.has(name)) {
+        toRemove.push(name);
       }
     });
 
     // Remove disciples that no longer exist from the visible set
     let changed = false;
-    toRemove.forEach(ref => {
-      this.visibleDisciples.delete(ref);
+    toRemove.forEach(name => {
+      this.visibleDisciples.delete(name);
       changed = true;
     });
 
@@ -137,20 +141,20 @@ const DiscipleWindow = {
 
     entries.forEach(entry => {
       const element = entry.target;
-      const discipleRef = element.getAttribute("data-phx-ref");
+      const name = element.getAttribute("data-name");
 
-      if (!discipleRef) return;
+      if (!name) return;
 
       if (entry.isIntersecting) {
         // Add to visible set
-        if (!this.visibleDisciples.has(discipleRef)) {
-          this.visibleDisciples.add(discipleRef);
+        if (!this.visibleDisciples.has(name)) {
+          this.visibleDisciples.add(name);
           changed = true;
         }
       } else {
         // Remove from visible set
-        if (this.visibleDisciples.has(discipleRef)) {
-          this.visibleDisciples.delete(discipleRef);
+        if (this.visibleDisciples.has(name)) {
+          this.visibleDisciples.delete(name);
           changed = true;
         }
       }
@@ -176,10 +180,10 @@ const DiscipleWindow = {
     const disciples = this.findDiscipleElements();
 
     disciples.forEach(element => {
-      const ref = this.ensurePhxRefAttribute(element);
-      if (ref && !this.observedElements.has(ref)) {
+      const name = this.ensureNameAttribute(element);
+      if (name && !this.observedElements.has(name)) {
         // new element found, start observing it
-        this.observedElements.set(ref, element);
+        this.observedElements.set(name, element);
         this.observer.observe(element);
       }
     });
@@ -201,7 +205,7 @@ const DiscipleWindow = {
       });
     }, this.debounceDelay);
   },
-  
+
   findDiscipleElements() {
     // find all disciples, prioritizing the container if it exists
     const container = this.el.querySelector(".disciples-container") || this.el;
@@ -210,17 +214,17 @@ const DiscipleWindow = {
     });
   },
 
-  ensurePhxRefAttribute(element) {
-    if (element.hasAttribute("data-phx-ref")) {
-      return element.getAttribute("data-phx-ref");
+  ensureNameAttribute(element) {
+    if (element.hasAttribute("data-name")) {
+      return element.getAttribute("data-name");
     }
 
-    const phxRef = element.getAttribute("phx-value-disciple-phx_ref") ||
+    const name = element.getAttribute("phx-value-disciple-name") ||
                   element.querySelector("[phx-value-addr]")?.getAttribute("phx-value-addr");
 
-    if (phxRef) {
-      element.setAttribute("data-phx-ref", phxRef);
-      return phxRef;
+    if (name) {
+      element.setAttribute("data-name", name);
+      return name;
     }
 
     return null;

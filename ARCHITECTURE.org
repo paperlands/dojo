@@ -1,0 +1,91 @@
+#+title: Architecture
+#+AUTHOR: [ks0m1c]
+#+DATE: <2026-04-16 Thu>
+#+FILETAGS: :brainstorm:
+#+STARTUP: overview indent hidestars
+#+COLUMNS: %40ITEM(Comment) %ID
+#+PROPERTY: header-args :results output :exports both :eval never-export
+#+OPTIONS: toc:2 num:nil ^:{} tags:not-in-toc
+#+ROAM_ALIASES: 
+#+ROAM_REFS:
+
+* CONTEXT
+:PROPERTIES:
+:ID: context
+:TYPE: strategy
+:CREATED: [2026-04-16]
+:END:
+
+#+BEGIN_QUOTE
+夫道未始有封，言未始有常，為是而有畛也。請言其畛：有左，有右，有倫，有義，有分，有辯，有競，有爭，此之謂八德。六合之外，聖人存而不論；六合之內，聖人論而不議。春秋經世，先王之志，聖人議而不辯。故分也者，有不分也；辯也者，有不辯也。曰：何也？聖人懷之，眾人辯之以相示也。 – 莊子
+#+END_QUOTE
+
+> Explore and engage with complexity, and inquire underlying deeprooted structure, and preserve engineering knowhow for posterity 
+> Enrich Wholeness of understanding of coupled behavior through simulation and instrumentation
+> Bring clarity and structure to elicit  understanding that unveil tacit implicit contracts
+> Reflect on and prepare for places to intervene
+
+* QUESTIONS
+- *Skeleton*: Where is the boundary, that encompasses the smallest number of components: the primitives, within which the dynamic behavior under study is generated?
+- *Movement*: Where does state accumulate vs. flow through? Which nodes are reservoirs, which are conduits? What are the attractors — stable configurations the system returns to after disturbance? Where are the phase transitions?
+- *Sight*: How might we best represent this living, self-exploratory, and interconnected universe for others to incite others to create? Engage Generative systems behave same as the natural ones as through the methods of generative design the rules are incorporated in them living systems with a sense of the possibility of adaptation, reproduction and complexity of processing of information that shape it.
+- *Action*: Where are the leverage points — where does a small change produce large, lasting, systemic effects? What is the minimal probe that reveals the most without disturbing behavior? All code was written by humans and can be for humans. There is an eternal wheel of system design. Given a system, use practice to discover what is in tension, unresolved forces the bad , missing, or unnecessary. Then, use theory to fix the bad, add the missing, and remove the unnecessary. Repeat.
+
+#+BEGIN_QUOTE
+
+
+#+END_QUOTE
+
+
+** Values
+| Painpoint                                | Values               |
+|------------------------------------------+----------------------|
+| Why are we afraid to play with the code? | Courage. Confidence  |
+| Why are we afraid to ask questions?      | Curious. Inquisitive |
+| What are we buidling  this for?          | Wonder. Belonging    |
+| Building understanding  is difficult.    | Principled. Joy      |
+
+
+
+* DESIGN
+* VISUAL
+* DOCTOOLS
+:PROPERTIES:
+:END:
+** Keybinds
+| Keybinding | Function          |
+|------------+-------------------|
+| C-c C-l    | Insert link       |
+| C-c C-x p  | Set property      |
+| C-c C-c    | Add/modify tags   |
+| C-c C-t    | Cycle TODO states |
+| C-c C-q    | Set tags          |
+| C-c '      | Edit source block |
+| C-c C-v t  | Tangle Org Blocks |
+
+
+** Aggregate Comments
+
+#+BEGIN_SRC emacs-lisp :results value table
+  (let ((comments '()))
+    (org-map-entries
+     (lambda ()
+       (let* ((heading (org-get-heading t t t t))
+              (id (org-entry-get nil "ID"))
+              (id (or id (org-id-get-create))))
+         (push (list heading (format "[[id:%s][→]]" id)) comments)))
+     "comment"  
+     'file)    ; Search in current file or `agenda`
+    (if comments
+        (append '(("Comment" "Link") hline)
+                (reverse comments))
+      '(("Comment" "Link") hline ("No comments found" ""))))
+#+END_SRC
+
+#+RESULTS:
+| Comment           | Link |
+|-------------------+------|
+| No comments found |      |
+
+
+ 

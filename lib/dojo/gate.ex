@@ -14,20 +14,26 @@ defmodule Dojo.Gate do
   end
 
   def handle_diff(diff, state) do
+    # Inline delivery: direct_broadcast! sends to local Handler via send/2, non-blocking.
+    # Previous Task.Supervisor wrapper removed backpressure — under load, unbounded
+    # tasks accumulated. Inline gives natural backpressure to the Tracker shard.
     for {topic, {joins, leaves}} <- diff do
       for {_key, meta} <- joins do
-        Task.start(fn ->
-          msg = {:join, topic, Map.put(meta, :topic, topic)}
-          # each tracker takes care of its own node
-          Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
-        end)
+        Phoenix.PubSub.direct_broadcast!(
+          state.node_name,
+          state.pubsub_server,
+          topic,
+          {:join, topic, Map.put(meta, :topic, topic)}
+        )
       end
 
       for {_key, meta} <- leaves do
-        Task.start(fn ->
-          msg = {:leave, topic, Map.put(meta, :topic, topic)}
-          Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
-        end)
+        Phoenix.PubSub.direct_broadcast!(
+          state.node_name,
+          state.pubsub_server,
+          topic,
+          {:leave, topic, Map.put(meta, :topic, topic)}
+        )
       end
     end
 
@@ -35,10 +41,13 @@ defmodule Dojo.Gate do
   end
 
   def track(pid, topic, %Dojo.Disciple{name: username, action: state, node: node}) do
+    addr = routable_addr()
+
     case Phoenix.Tracker.track(__MODULE__, pid, topic, username, %{
            action: state,
            name: username,
            node: node,
+           addr: addr,
            online_at: System.os_time(:second)
          }) do
       {:ok, _ref} = resp ->
@@ -49,6 +58,7 @@ defmodule Dojo.Gate do
           action: state,
           name: username,
           node: node,
+          addr: addr,
           online_at: System.os_time(:second)
         })
     end
@@ -59,7 +69,9 @@ defmodule Dojo.Gate do
   end
 
   def change(pid, topic, username, {key, value}) do
-    Phoenix.Tracker.update(__MODULE__, pid, topic, username, fn meta -> Map.put(meta, key, value) end)
+    Phoenix.Tracker.update(__MODULE__, pid, topic, username, fn meta ->
+      Map.put(meta, key, value)
+    end)
   end
 
   def list(topic, timeout \\ 5000) do
@@ -75,5 +87,9 @@ defmodule Dojo.Gate do
   defp pool_size() do
     [{:pool_size, size}] = :ets.lookup(__MODULE__, :pool_size)
     size
+  end
+
+  defp routable_addr do
+    :persistent_term.get({__MODULE__, :addr}, Dojo.Cluster.Routing.routable_addr())
   end
 end

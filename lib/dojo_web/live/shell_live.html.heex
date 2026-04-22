@@ -5,10 +5,7 @@
     :if={@outershell.active}
     phx-update="ignore"
     id="outer-canvas"
-    class={[
-      "fixed inset-0 z-0 bg-secondary/50 select-none",
-      !@outershell && "pointer-events-none"
-    ]}
+    class={["fixed inset-0 z-0 bg-secondary/50 select-none"]}
   >
   </canvas>
   <!-- Desktop Layout (lg and up) -->
@@ -134,7 +131,7 @@
     <div class="bg-transparent pointer-events-none select-none" />
     <!-- Right pane -->
     <div class="row-span-1 col-span-1 lg:row-span-2 p-4 relative ">
-      <div id="sessionbox" class="fixed right-0 ml-4 ">
+      <div id="sessionbox" phx-hook="Box" class="fixed z-50 right-0 ml-4 ">
         <div :if={!@session.name} class="relative right-0 group">
           <!-- Login Link Button -->
           <.link
@@ -153,31 +150,21 @@
         >
           
 <!-- Welcome message row -->
-          <div class="flex items-center text-[12px] sm:text-xs mb-1 border-b border-accent/50 pb-1 overflow-hidden">
+          <div
+            dir={Session.dir(@locale)}
+            class="flex items-center text-[12px] sm:text-xs mb-1 border-b border-accent/50 pb-1 overflow-hidden"
+          >
             <span class="flex items-center truncate">
-              <span>&gt; welcome</span>
+              <span>&gt;{Session.t(@locale, "welcome")}</span>
 
-              <span class="pointer-events-auto  relative group ml-1">
-                
-<!-- <span -->
-                <!--   id="name-view" -->
-                <!--   ondblclick={ -->
-                <!--   JS.toggle(to: "#name-view") -->
-                <!--   |> JS.toggle(to: "#name-edit") -->
-                <!--   |> JS.focus(to: "#change-name") -->
-                <!--   } -->
-                <!--   class="cursor-pointer font-bold text-accent hover:underline hover:text-accent-focus select-none" -->
-                <!--   > -->
-                <!--   {@session.name} -->
-                <!-- </span> -->
-
+              <span class="pointer-events-auto relative group ms-1">
                 <span id="name-edit" class="">
                   <input
                     type="text"
                     id="change-name"
                     phx-blur="changeName"
                     value={@session.name}
-                    class="bg-base-200/50 text-[12px] ml-[0.5ch] sm:text-xs caret-accent-content hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-primary-content focus:text-base-content focus:outline-none text-xs -mb-1 min-w-[2ch]"
+                    class="bg-base-200/50 text-[12px] ms-[0.5ch] sm:text-xs caret-accent-content hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-primary-content focus:text-base-content focus:outline-none text-xs -mb-1 min-w-[2ch]"
                     style={"width: #{String.length(@session.name)}ch"}
                     phx-update="ignore"
                     onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.value=this.defaultValue;this.blur()}"
@@ -185,15 +172,16 @@
                     onblur=";this.style.width=Math.max(this.value.length||this.placeholder.length,1)+'ch';this.setSelectionRange(0, 0);"
                     oninput="this.style.width = (this.value.length || this.placeholder.length) + 'ch';"
                     onclick="event.stopPropagation()"
+                    maxlength="15"
                   />
                 </span>
               </span>
 
-              <span class="ml-[1ch] hidden sm:block">
-                {gettext("to %{clan}'s shell", clan: to_titlecase(@clan))}
+              <span class="ms-[1ch] hidden sm:block">
+                {Session.t(@locale, "to %{clan}'s shell", clan: to_titlecase(@clan))}
               </span>
 
-              <span class="relative flex items-center ml-1">
+              <span class="relative flex items-center ms-1">
                 <span class="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
               </span>
             </span>
@@ -205,15 +193,15 @@
               :if={@outershell.active}
               class="max-w-20 bg-gradient-to-r from-background to-transparent overflow-hidden whitespace-nowrap flex-shrink-1 sm:flex-shrink-0 flex items-center text-xs mr-1 sm:mr-2 min-w-0"
             >
-              <span class="text-amber-600 animate-marquee">
-                {gettext("summoning @%{name}'s code", name: @outershell.name)} ☄
+              <span dir={Session.dir(@locale)} class="text-amber-600 animate-marquee">
+                {Session.t(@locale, "summoning @%{name}'s code", name: @outershell.name)} ☄
               </span>
             </div>
             <!-- Empty spacer div with minimum width on small screens -->
 
 
             <!-- Command buttons always aligned to right and given prio -->
-            <div class="flex flex-shrink-0 gap-1 z-30 ml-auto cursor-pointer pointer-events-auto justify-end">
+            <div class="flex flex-shrink-0 gap-1 ml-auto cursor-pointer pointer-events-auto justify-end">
               <button
                 id="centering"
                 class=" flex items-center justify-center  w-9 h-9 border border-accent backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0   rounded-sm  lg:w-8 lg:h-8   fill-primary hover:fill-primary active:border-primary touch-manipulation"
@@ -340,7 +328,18 @@
               <!--   } -->
               <!-- > -->
               <!--   <.save class="w-4 h-4 duration-700  transition-transform duration-700  " /> -->
-              <!-- </button> -->
+                <!-- </button> -->
+              <.live_component
+                module={DojoWeb.LocalePickerLive}
+                id="locale-picker"
+                current_locale={@locale}
+              />
+              <.live_component
+                :if={Mix.env() !== :prod}
+                module={DojoWeb.HotspotLive}
+                id="hotspot"
+                username={binary_part(@session.name, 0, min(20, byte_size(@session.name)))}
+              />
 
               <button
                 class="flex items-center justify-center w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
@@ -362,7 +361,8 @@
               <!--   phx-click={JS.hide(to: ".rightthird", transition: "fade-out-scale") |> JS.toggle(to: ".nerve", in: "fade-in-scale", out: "fade-out-scale")} -->
               <!-- > -->
               <!--   <.tyger class="w-7 h-7" /> -->
-              <!-- </button> -->
+                <!-- </button> -->
+
             </div>
           </div>
           <!-- Decorative corners (smaller size for subtlety) -->
@@ -376,8 +376,8 @@
           </div>
         </div>
       </div>
-      <.outershell :if={@outershell.active} outershell={@outershell} />
-      <.deck />
+      <.outershell :if={@outershell.active} outershell={@outershell} locale={@locale} />
+      <.live_component module={DojoWeb.DeckLive} id="command-deck" locale={@locale} />
       <!-- <.nerve messages={@disciples} /> -->
     </div>
     <!-- <div class="backdrop-blur-sm border border-gray-700/50 rounded-lg p-4"/> -->
@@ -404,40 +404,40 @@
         :if={@pane}
         id="disciple_panels"
         phx-hook="DiscipleWindow"
-        class="fixed bg-transparent bottom-0 pointer-events-auto z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto"
+        class="fixed bg-transparent bottom-0 pointer-events-auto z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto pointer-events-none"
       >
         <!-- Other people's turtles -->
         <div
-          :for={{phx_ref, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
+          :for={{reg_key, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
           class="bg-transparent pointer-events-auto"
         >
-          <div class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out mx-2 animate-fade flex-shrink-0" <> is_main_focus(dis.phx_ref, @focused_phx_ref)}>
+          <div class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out mx-2 backdrop-blur-[1px] animate-fade flex-shrink-0" <> is_main_focus(reg_key, @focused_name)}>
             <.icon
               :if={@sensei}
               name="hero-cursor-arrow-ripple"
               phx-click="toggle-focus"
-              phx-value-disciple-phx_ref={phx_ref}
+              phx-value-disciple-name={reg_key}
               class="cursor-pointer pointer-events-auto text-primary"
             />
             <div
               phx-click={
-                (@outershell && @outershell.addr == phx_ref &&
+                (@outershell && @outershell.addr == reg_key &&
                    JS.push("closeTurtle")) ||
                   JS.push("seeTurtle") |> JS.hide(to: ".rightthird") |> JS.show(to: ".outershell")
               }
               phx-throttle="500"
-              phx-value-addr={phx_ref}
+              phx-value-addr={reg_key}
               class={[
                 "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md hover:border-primary transition-colors delay-150 ",
                 (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") ||
                   "cursor-progress pointer-events-none",
                 (Map.has_key?(dis, :meta) && dis.meta.state == :error && "border-error/50") ||
-                  (@outershell && @outershell.addr == phx_ref &&
+                  (@outershell && @outershell.addr == reg_key &&
                      "border-accent-content text-accent-content") ||
                   "border-accent/50 text-accent"
               ]}
             >
-              <div class="absolute font-mono text-sm tracking-wider rotate-0 select-none top-2 right-2">
+              <div class="absolute font-mono  text-sm tracking-wider rotate-0 select-none top-2 right-2">
                 {dis.name}
               </div>
 
@@ -447,9 +447,10 @@
                 loading="eager"
                 decoding="sync"
               />
+              <!-- <%= #Map.has_key?(dis, :meta) && IO.inspect("//" <> (dis[:addr] || "") <> "/#{dis.meta.path}") %> -->
               <img
                 :if={Map.has_key?(dis, :meta)}
-                src={dis.meta.path}
+                src={"//" <> (dis[:addr] || "") <> "/#{dis.meta.path}"}
                 onerror="this.src='/images/turtlehead.png';"
                 class="object-scale-down p-1 max-h-full m-auto"
                 loading="eager"

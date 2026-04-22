@@ -5,13 +5,13 @@ import Config
 # The MIX_TEST_PARTITION environment variable can be used
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
-config :dojo, Dojo.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "dojo_test#{System.get_env("MIX_TEST_PARTITION")}",
-  pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: System.schedulers_online() * 2
+# config :dojo, Dojo.Repo,
+#   username: "postgres",
+#   password: "postgres",
+#   hostname: "localhost",
+#   database: "dojo_test#{System.get_env("MIX_TEST_PARTITION")}",
+#   pool: Ecto.Adapters.SQL.Sandbox,
+#   pool_size: System.schedulers_online() * 2
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
@@ -35,3 +35,5 @@ config :phoenix, :plug_init_mode, :runtime
 config :phoenix_live_view,
   # Enable helpful, but potentially expensive runtime checks
   enable_expensive_runtime_checks: true
+
+config :dojo, :cluster_adapter, Dojo.Cluster.MDNS.DistAdapter

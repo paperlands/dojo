@@ -36,3 +36,9 @@ npm-debug.log
 /assets/node_modules/
 
 .elixir_ls/
+
+# Burrito build output (binaries, installers, DMGs).
+/burrito_out/
+
+# Downloaded at build time from Microsoft CDN.
+rel/packaging/resources/VC_redist.x64.exe

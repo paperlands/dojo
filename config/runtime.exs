@@ -19,22 +19,149 @@ import Config
 if config_env() == :local do
   config :dojo, DojoWeb.Endpoint, server: true
 
-  secret_key_base = 
+  secret_key_base =
     System.get_env("SECRET_KEY_BASE") || :crypto.strong_rand_bytes(64) |> Base.encode64()
 
   config :dojo, DojoWeb.Endpoint,
-    url: [host: "#{:net_adm.localhost}", port: System.get_env("PORT") || 4000],
-    http: [ip: {0, 0, 0, 0}, port: System.get_env("PORT") || 4000],
+    url: [
+      host: "#{:net_adm.localhost()}",
+      port: String.to_integer(System.get_env("PORT") || "4000")
+    ],
+    http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4000")],
     check_origin: false,
     secret_key_base: secret_key_base
-
-  
 else
   if System.get_env("PHX_SERVER") do
     config :dojo, DojoWeb.Endpoint, server: true
   end
 end
 
+# ── Partisan identity & discovery ──────────────────────────────────────
+#
+# Two modes: Prod (DNS-based, fixed port, deterministic name from IP)
+#            Dev  (mDNS-based, random port, UUID name for WiFi roaming)
+#
+# prod.exs sets :cluster_adapter to DNS.Adapter at compile time.
+# runtime.exs fills in the runtime values (IP, port, DNS query).
+# Shared config (channels, HyParView, auth) follows after the if/else.
+
+# SO_REUSEPORT (level SOL_SOCKET=1, optname=15) — Linux only.
+listen_options =
+  case :os.type() do
+    {:unix, :linux} -> [{:raw, 1, 15, <<1::native-32>>}]
+    _ -> []
+  end
+
+if config_env() == :prod do
+  # ── Production: DNS-based discovery ──────────────────────────────────
+  # Platform-specific env vars are read HERE and injected into config.
+  # The adapter module itself is platform-agnostic.
+  partisan_port = String.to_integer(System.get_env("PARTISAN_PORT") || "9090")
+
+  # Fly: FLY_PRIVATE_IP; K8s: POD_IP; bare metal: set PARTISAN_IP directly
+  own_ip = System.get_env("PARTISAN_IP") || System.get_env("FLY_PRIVATE_IP")
+  partisan_name = System.get_env("PARTISAN_NAME") || "dojo@#{own_ip}"
+  System.put_env("PARTISAN_PORT", "#{partisan_port}")
+  System.put_env("PARTISAN_NAME", partisan_name)
+
+  {:ok, ip_tuple} = :inet.parse_address(String.to_charlist(own_ip))
+
+  dns_query = System.get_env("DNS_CLUSTER_QUERY")
+
+  config :dojo,
+    routing_strategy:
+      if(System.get_env("FLY_MACHINE_ID"),
+        do: Dojo.Cluster.Routing.Fly,
+        else: Dojo.Cluster.Routing.Local
+      )
+
+  config :partisan,
+    name: String.to_atom(partisan_name),
+    listen_addrs: [%{ip: ip_tuple, port: partisan_port}],
+    peer_discovery: %{
+      enabled: true,
+      type: Dojo.Cluster.DNS.Adapter,
+      initial_delay: 5_000,
+      polling_interval: 10_000,
+      timeout: 5_000,
+      config: %{
+        query: dns_query,
+        port: partisan_port,
+        own_ip: own_ip
+      }
+    },
+    # Stable mesh — no WiFi roaming timeouts needed
+    connect_timeout: 5_000
+else
+  # ── Dev/Local: mDNS multicast discovery ────────────────────────────
+  # UUID identity survives WiFi roaming; mDNS TXT records carry the name.
+  partisan_port = 53627 - :rand.uniform(100)
+  System.put_env("PARTISAN_PORT", "#{partisan_port}")
+  partisan_name = "admin@" <> Ecto.UUID.generate()
+  System.put_env("PARTISAN_NAME", partisan_name)
+
+  listen_addrs =
+    case Dojo.Cluster.MDNS.routable_ipv4_addrs() do
+      [] -> [%{ip: {127, 0, 0, 1}, port: partisan_port}]
+      ips -> Enum.map(ips, fn ip -> %{ip: ip, port: partisan_port} end)
+    end
+
+  config :dojo, :discovery, :local
+  config :dojo, :cluster_adapter, Dojo.Cluster.MDNS.PartisanAdapter
+  config :dojo, routing_strategy: Dojo.Cluster.Routing.Local
+
+  config :partisan,
+    name: String.to_atom(partisan_name),
+    listen_addrs: listen_addrs,
+    peer_discovery: %{
+      enabled: true,
+      type: Dojo.Cluster.MDNS.PartisanAdapter,
+      initial_delay: 2_000,
+      polling_interval: 5_000,
+      timeout: 2_000,
+      config: %{
+        service: "_erlang._tcp.local",
+        timeout_ms: 2_000
+      }
+    },
+    # 1.5s — generous for LAN; default 5s causes 25s worst-case per stale IP
+    # during WiFi roaming (5 channels × 5s timeout each)
+    connect_timeout: 1_500
+end
+
+# ── Shared Partisan config (both prod and local) ──────────────────────
+config :partisan,
+  authentication: :partisan_auth_hmac,
+  peer_service_manager: :partisan_hyparview_peer_service_manager,
+  pid_encoding: false,
+  ref_encoding: false,
+  hyparview: %{
+    active_max_size: 5,
+    active_min_size: 3,
+    passive_max_size: 15,
+    random_promotion_interval: 3_000,
+    shuffle_interval: 10_000,
+    shuffle_k_active: 3,
+    shuffle_k_passive: 4
+  },
+  channels: %{
+    gossip: %{monotonic: false, parallelism: 1, compression: false},
+    undefined: %{monotonic: false, parallelism: 1, compression: false},
+    control: %{monotonic: true, parallelism: 1},
+    data: %{monotonic: true, parallelism: 2, compression: true},
+    partisan_membership: %{monotonic: false, parallelism: 1, compression: true}
+  },
+  phi_threshold: 12.0,
+  secret: System.get_env("DOJO_CLUSTER_SECRET") || "dev_secret",
+  gossip_interval: 1000,
+  # 1.5s — generous for LAN; default 5s causes 25s worst-case per stale IP
+  # during WiFi roaming (5 channels × 5s timeout each)
+  connect_timeout: 1_500,
+  listen_options: listen_options
+
+config :dojo, Phoenix.PubSub.Partisan,
+  channel_data: :data,
+  channel_control: :control
 
 if config_env() == :prod do
   # database_url =

@@ -12,7 +12,7 @@ defmodule DojoWeb.Endpoint do
   ]
 
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options, fullsweep_after: 0, compress: true]],
+    websocket: [connect_info: [session: @session_options], fullsweep_after: 20, compress: true],
     longpoll: [connect_info: [session: @session_options]]
 
   # Serve at "/" the static files from "priv/static" directory.
@@ -25,6 +25,8 @@ defmodule DojoWeb.Endpoint do
     gzip: false,
     only: DojoWeb.static_paths()
 
+  plug DojoWeb.Plugs.FlyReplay
+
   plug Plug.Static,
     at: "/frames",
     from: {:dojo, "priv/static/frames"},
@@ -34,6 +36,10 @@ defmodule DojoWeb.Endpoint do
       "pragma" => "no-cache",
       "expires" => "0"
     }
+
+  if Mix.env() == :dev do
+    plug Tidewave
+  end
 
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.

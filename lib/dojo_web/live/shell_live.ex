@@ -27,13 +27,15 @@ defmodule DojoWeb.ShellLive do
        sensei: false,
        class: nil,
        disciples: %{},
-       visible_disciples: [],
+       visible_disciples: MapSet.new(),
        pane: true
      )
-     |> assign(focused_phx_ref: "")}
+     |> assign(focused_name: "")}
   end
 
   def handle_params(params, _url, socket) do
+    if connected?(socket), do: Dojo.PubSub.subscribe("dojo:hotspot")
+
     {:noreply,
      socket
      |> join_clan(params["clan"] || "PaperLand")
@@ -41,20 +43,30 @@ defmodule DojoWeb.ShellLive do
   end
 
   defp join_clan(socket, clan) do
-    Process.send_after(self(), :refreshDisciples, 200)
-
     socket
     |> assign(clan: clan)
     |> start_async(:list_disciples, fn -> Dojo.Class.list_disciples("shell:" <> clan) end)
   end
 
-  defp sync_session(%{assigns: %{session: %Session{name: name} = _sess, clan: clan}} = socket)
+  defp sync_session(
+         %{assigns: %{session: %Session{name: name, last_opened: time}, clan: clan}} = socket
+       )
        when is_binary(name) do
     parent = self()
 
+    # Compute user_id: combine name + first login time for unique session identity
+    # Same logic as hatchTurtle to ensure consistency
+    user_id =
+      (name <> Base.encode64(to_string(time)))
+      |> String.replace(~r/[^a-zA-Z0-9]/, "")
+
     socket
     |> start_async(:join_disciples, fn ->
-      Dojo.Class.join!(parent, "shell:" <> clan, %Dojo.Disciple{name: name, action: "active"})
+      Dojo.Class.join!(parent, "shell:" <> clan, %Dojo.Disciple{
+        name: name,
+        action: "active",
+        user_id: user_id
+      })
     end)
   end
 
@@ -73,6 +85,7 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_async(:join_disciples, {:ok, class}, %{assigns: %{clan: _clan}} = socket) do
+    Process.monitor(class)
     {:noreply, assign(socket, :class, class)}
   end
 
@@ -81,69 +94,118 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-  # presence handlers => move to more pull based approach -> concern of class genserver instead c5 for personal shell
+  def handle_async(:pull_visible, {:ok, metadata}, socket) when map_size(metadata) == 0 do
+    {:noreply, socket}
+  end
 
-  def handle_info(
-        {:join, "class:shell" <> _, %{phx_ref: ref} = disciple},
-        %{assigns: %{disciples: d}} = socket
-      ) do
+  def handle_async(:pull_visible, {:ok, metadata}, socket) do
+    current = socket.assigns.disciples
+
+    disciples =
+      Enum.reduce(metadata, current, fn {name, meta}, acc ->
+        if Map.has_key?(acc, name) do
+          existing_time = get_in(acc, [name, :meta, :time]) || 0
+
+          if (meta[:time] || 0) > existing_time do
+            put_in(acc, [name, :meta], meta)
+          else
+            acc
+          end
+        else
+          acc
+        end
+      end)
+
+    if disciples == current do
+      {:noreply, socket}
+    else
+      {:noreply, assign(socket, :disciples, disciples)}
+    end
+  end
+
+  def handle_async(:pull_visible, {:exit, _reason}, socket) do
+    {:noreply, socket}
+  end
+
+  def handle_async(:follow_code, {:ok, %Dojo.Turtle{} = turtle}, socket) do
+    outershell = socket.assigns.outershell
+
     {:noreply,
      socket
-     |> assign(:disciples, Map.put(d, ref, disciple))}
+     |> assign(:outershell, %{outershell | state: turtle.state, last_active: turtle.time})
+     |> push_event("seeOuterShell", Map.from_struct(turtle))}
+  end
+
+  def handle_async(:follow_code, {:ok, _}, socket), do: {:noreply, socket}
+  def handle_async(:follow_code, {:exit, _reason}, socket), do: {:noreply, socket}
+
+  # presence handlers — keyed by reg_key from node tuple (stable unique identity)
+
+  def handle_info(
+        {:join, "class:shell" <> _, %{node: {reg_key, _}} = disciple},
+        %{assigns: %{disciples: d}} = socket
+      ) do
+    {:noreply, assign(socket, :disciples, Map.put(d, reg_key, disciple))}
   end
 
   def handle_info(
-        {:leave, "class:shell" <> _, %{phx_ref: ref} = _disciple},
+        {:leave, "class:shell" <> _, %{node: {reg_key, _}, phx_ref: ref}},
         %{assigns: %{disciples: d}} = socket
       ) do
-    if Map.has_key?(d, ref) do
-      {:noreply,
-       socket
-       |> assign(:disciples, Map.delete(d, ref))}
+    # only delete if the leaving ref matches the current ref for this reg_key
+    # prevents stale-leave race when Gate.change regenerates phx_ref
+    if d[reg_key][:phx_ref] == ref do
+      {:noreply, assign(socket, :disciples, Map.delete(d, reg_key))}
     else
       {:noreply, socket}
     end
   end
 
-  def handle_info({Dojo.PubSub, :focused_phx_ref, {focused_phx_ref}}, socket) do
+  def handle_info({Dojo.PubSub, :focused_name, {focused_name}}, socket) do
+    {:noreply, assign(socket, focused_name: focused_name)}
+  end
+
+  # Layer 2a: local hatch push — meta already in message, no RPC needed
+  def handle_info({Dojo.PubSub, :hatch, {reg_key, {Dojo.Turtle, meta}}}, socket) do
     {:noreply,
      socket
-     |> assign(focused_phx_ref: focused_phx_ref)}
+     |> update_visible_meta(reg_key, meta)
+     |> maybe_follow_code(reg_key, meta[:time])}
   end
 
-  # lets move this towards an async pull based pattern
-
-  def handle_info(:refreshDisciples, %{assigns: assigns} = socket) do
-    Process.send_after(self(), :refreshDisciples, 3000)
-
-    updated_disciples = update_disciples_metadata(assigns.disciples, assigns.visible_disciples)
-
-    socket =
-      socket
-      |> assign(disciples: updated_disciples)
-      |> maybe_update_active_disciples()
-
-    {:noreply, socket}
-  end
-
+  # Layer 2b: remote version signal — derive meta from signal, no RPC for visible
+  # Map payload: extensible across rolling deploys. Path preserved from prior pull/local hatch.
   def handle_info(
-        {Dojo.PubSub, :hatch, {name, {Dojo.Turtle, meta}}},
-        %{assigns: %{disciples: dis}} = socket
+        {Dojo.PubSub, :hatch_version, %{reg_key: reg_key} = version},
+        socket
       ) do
-    active_dis =
-      if Map.has_key?(dis, name) do
-        put_in(dis, [name, :meta], meta)
-      else
-        dis
-      end
+    {:noreply, apply_hatch_version(socket, reg_key, version[:time], version[:state])}
+  end
 
-    {:noreply,
-     socket
-     |> assign(disciples: active_dis)}
+  # Legacy 3-tuple from older nodes during rolling deploy — same semantics
+  def handle_info(
+        {Dojo.PubSub, :hatch_version, {reg_key, time, state}},
+        socket
+      ) do
+    {:noreply, apply_hatch_version(socket, reg_key, time, state)}
   end
 
   def handle_info({Dojo.Controls, command, arg}, socket) do
     {:noreply, socket |> push_event("writeShell", %{"command" => command, "args" => arg})}
+  end
+
+  def handle_info({Dojo.PubSub, :hotspot_changed, status}, socket) do
+    send_update(DojoWeb.HotspotLive, id: "hotspot", hotspot_status: status)
+    {:noreply, socket}
+  end
+
+  def handle_info({:DOWN, _ref, :process, pid, _reason}, %{assigns: %{class: pid}} = socket) do
+    # nil our pid and rejoins 
+    {:noreply, socket |> assign(:class, nil) |> sync_session()}
+  end
+
+  def handle_info({:setting, key, value}, socket) do
+    {:noreply, Session.apply_setting(socket, key, value)}
   end
 
   def handle_info(event, socket) do
@@ -155,9 +217,12 @@ defmodule DojoWeb.ShellLive do
   def handle_event(
         "changeName",
         %{"value" => name},
-        %{assigns: %{session: %Session{name: username}, clan: clan}} = socket
+        %{assigns: %{class: class}} = socket
       ) do
-    Dojo.Class.change_meta(username, "shell:" <> clan, {:name, name})
+    # Route through Table GenServer (which owns the presence entry)
+    # instead of through Class (which used the LiveView PID)
+    Dojo.Table.change_meta(class, {:name, name})
+    send(self(), {:setting, :name, name})
     {:noreply, socket}
   end
 
@@ -171,10 +236,10 @@ defmodule DojoWeb.ShellLive do
       |> Enum.reduce(
         socket,
         fn
-          {name, %{meta: %{path: path}}}, sock ->
+          {_reg_key, %{name: name, meta: %{path: path}}}, sock ->
             sock
             |> push_event("download-file", %{
-              href: path,
+              href: "///" <> path,
               filename: name <> ".png"
             })
 
@@ -264,13 +329,29 @@ defmodule DojoWeb.ShellLive do
      )}
   end
 
-  # Handle the viewport update event from the hook
+  # Handle the viewport update event from the hook (Decision 003, Layer 3 — windowed pull)
   def handle_event(
         "seeDisciples",
-        %{"visible_disciples" => visible_refs},
-        %{assigns: %{disciples: _dis}} = socket
+        %{"visible_disciples" => visible_names},
+        %{assigns: %{disciples: dis, visible_disciples: old_visible}} = socket
       ) do
-    {:noreply, assign(socket, visible_disciples: visible_refs)}
+    new_visible = MapSet.new(visible_names)
+
+    if MapSet.equal?(new_visible, old_visible) do
+      {:noreply, socket}
+    else
+      newly_entered = MapSet.difference(new_visible, old_visible)
+      socket = assign(socket, visible_disciples: new_visible)
+
+      if MapSet.size(newly_entered) > 0 do
+        {:noreply,
+         start_async(socket, :pull_visible, fn ->
+           pull_metadata(dis, newly_entered)
+         end)}
+      else
+        {:noreply, socket}
+      end
+    end
   end
 
   def handle_event("flipPane", _, socket), do: {:noreply, update(socket, :pane, &(!&1))}
@@ -281,32 +362,28 @@ defmodule DojoWeb.ShellLive do
 
   def handle_event(
         "toggle-focus",
-        %{"disciple-phx_ref" => _phx_ref},
+        %{"disciple-name" => _name},
         %{assigns: %{sensei: false}} = socket
       ),
       do: {:noreply, socket}
 
   def handle_event(
         "toggle-focus",
-        %{"disciple-phx_ref" => phx_ref},
+        %{"disciple-name" => name},
         %{assigns: %{sensei: true, clan: clan}} = socket
       ) do
-    old_phx_ref = socket.assigns.focused_phx_ref
+    old_name = socket.assigns.focused_name
 
-    new_phx_ref =
-      case old_phx_ref do
-        "" -> phx_ref
-        ^phx_ref -> ""
-        _ -> phx_ref
+    new_name =
+      case old_name do
+        "" -> name
+        ^name -> ""
+        _ -> name
       end
 
-    Dojo.PubSub.publish({new_phx_ref}, :focused_phx_ref, "class:shell:" <> clan)
+    Dojo.PubSub.publish({new_name}, :focused_name, "class:shell:" <> clan)
 
-    # TODO: store focused_phx_ref in presence tracking so that new liveviews know which to focus on
-
-    {:noreply,
-     socket
-     |> assign(focused_phx_ref: new_phx_ref)}
+    {:noreply, assign(socket, focused_name: new_name)}
   end
 
   # pokemon clause
@@ -333,35 +410,97 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-  defp update_disciples_metadata(disciples, visible_disciples) do
-    Enum.reduce(visible_disciples, disciples, fn ref, acc ->
-      with %{node: node} <- disciples[ref],
-           %{path: path, state: state} <- Dojo.Table.last(node, :hatch) do
-        put_in(acc, [ref, :meta], %{path: path, state: state})
-      else
-        _ -> acc
+  # Bootstrap pull — fetch meta for newly visible disciples (Decision 003, Layer 3)
+  # Only called on viewport entry (seeDisciples). Ongoing updates come from push/signal.
+  defp pull_metadata(disciples, reg_keys) do
+    Enum.reduce(reg_keys, %{}, fn reg_key, acc ->
+      case pull_one_meta(disciples, reg_key) do
+        %{} = meta -> Map.put(acc, reg_key, meta)
+        nil -> acc
       end
     end)
   end
 
-  defp maybe_update_active_disciples(
-         socket = %{
-           assigns: %{disciples: dis, outershell: %{addr: addr, follow: true} = outershell}
-         }
-       )
-       when not is_nil(addr) do
-    case Dojo.Table.last(dis[addr][:node], :hatch) do
-      %{state: state, time: time} = table_state when time > outershell.last_active ->
-        socket
-        |> assign(:outershell, %{outershell | state: state, last_active: time})
-        |> push_event("seeOuterShell", Map.from_struct(table_state))
-
-      _ ->
-        socket
+  # Single-key pull: returns %{path, state, time} or nil. Never crashes.
+  # Used both by batch pull_metadata and by apply_hatch_version for path hydration.
+  defp pull_one_meta(disciples, reg_key) do
+    with %{node: node} <- disciples[reg_key],
+         %{path: _, state: _, time: _} = meta <- Dojo.Table.last_meta(node, :hatch) do
+      meta
+    else
+      _ -> nil
     end
   end
 
-  defp maybe_update_active_disciples(socket), do: socket
+  defp update_visible_meta(socket, reg_key, meta) do
+    %{disciples: dis, visible_disciples: visible} = socket.assigns
+
+    if MapSet.member?(visible, reg_key) and Map.has_key?(dis, reg_key) do
+      existing_time = get_in(dis, [reg_key, :meta, :time]) || 0
+
+      if (meta[:time] || 0) > existing_time do
+        existing_meta = get_in(dis, [reg_key, :meta]) || %{}
+        # Preserve existing path when incoming signal has none — path is
+        # hydrated by pull_visible and only the timestamp needs bumping
+        merged = Map.merge(existing_meta, meta)
+        merged = %{merged | path: meta[:path] || existing_meta[:path]}
+        assign(socket, :disciples, put_in(dis, [reg_key, :meta], merged))
+      else
+        socket
+      end
+    else
+      socket
+    end
+  end
+
+  defp apply_hatch_version(socket, reg_key, time, state) do
+    %{disciples: dis, visible_disciples: visible} = socket.assigns
+
+    socket =
+      if MapSet.member?(visible, reg_key) and Map.has_key?(dis, reg_key) do
+        existing_meta = get_in(dis, [reg_key, :meta]) || %{}
+        existing_time = existing_meta[:time] || 0
+
+        if (time || 0) > existing_time do
+          path =
+            existing_meta[:path] ||
+              (pull_one_meta(dis, reg_key) || %{})[:path]
+
+          new_meta = %{
+            path: bump_path_time(path, time),
+            state: state,
+            time: time
+          }
+
+          assign(socket, :disciples, put_in(dis, [reg_key, :meta], new_meta))
+        else
+          socket
+        end
+      else
+        socket
+      end
+
+    maybe_follow_code(socket, reg_key, time)
+  end
+
+  defp maybe_follow_code(socket, reg_key, time) do
+    %{outershell: outershell, disciples: dis} = socket.assigns
+
+    if outershell.follow and outershell.addr == reg_key and dis[reg_key][:node] do
+      if (time || 0) > outershell.last_active do
+        start_async(socket, :follow_code, fn ->
+          Dojo.Table.last(dis[reg_key][:node], :hatch)
+        end)
+      else
+        socket
+      end
+    else
+      socket
+    end
+  end
+
+  defp bump_path_time(nil, _time), do: nil
+  defp bump_path_time(path, time), do: Regex.replace(~r/\?t=\d+/, path, "?t=#{time}")
 
   def outershell(assigns) do
     ~H"""
@@ -371,7 +510,7 @@ defmodule DojoWeb.ShellLive do
           id="top-head"
           class="text-lg font-bold text-secondary-content flex-1 leading-tight"
         >
-          {gettext("@%{addr}'s code", addr: @outershell.name)}
+          {Session.t(@locale, "@%{addr}'s code", addr: @outershell.name)}
         </span>
 
         <span
@@ -464,220 +603,6 @@ defmodule DojoWeb.ShellLive do
 
           <div class="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-transparent to-black/100   pointer-events-none">
           </div>
-        </div>
-      </div>
-    </div>
-    """
-  end
-
-  def deck(assigns) do
-    assigns =
-      assign(assigns, :primitive, %{
-        command: [
-          {"fw", gettext("Move Forward"), [length: 50]},
-          {"rt", gettext("Face Right"), [angle: 30]},
-          {"lt", gettext("Face Left"), [angle: 30]},
-          {"jmp", gettext("Jump Forward"), [length: 50]},
-          {"wait", gettext("Wait a While"), [time: 1]},
-          {"label", gettext("Write Something"), [text: gettext("'Hello'"), size: 10]},
-          {"goto", gettext("Go To Start"), ["→": 0, "↑": 0]},
-          {"jmpto", gettext("Jump To Start"), ["→": 0, "↑": 0]},
-          {"grid", gettext("Create a Grid"), [size: 100, unit: 10]},
-          {"faceto", gettext("Face a Point"), ["→": 0, "↑": 0]},
-          {"dive", gettext("Dive Into Page"), [angle: 45]},
-          {"roll", gettext("Tilt Right"), [angle: 45]},
-          {"beColour", gettext("Set Colour to"), [colour: "'red'"]},
-          {"hide", gettext("Hide your Head"), nil},
-          {"show", gettext("Show your Head"), [size: 10]},
-          {"erase", gettext("Wipe Everything"), nil}
-        ],
-        control: [
-          {"loop", gettext("Repeat Commands"), [times: 5]},
-          {"def", gettext("Name your Command"), [name: "name"]}
-        ]
-      })
-
-    ~H"""
-    <!-- Command Deck Component (command_deck.html.heex) -->
-    <div
-      id="commanddeck"
-      class="rightthird fixed right-0 flex deck mt-[15dvh] h-3/5 lg:h-4/5 select-none animate-fade hidden sm:block"
-      phx-update="ignore"
-    >
-      <!-- Command Deck Panel -->
-      <div class="h-5/6 md:h-full transition-all duration-100 ease-in-out transform scrollbar-hide dark-scrollbar">
-        <%!-- Top row --%>
-        <div class="flex flex-row pl-5 pt-4 justify-between">
-          <!-- Header -->
-          <div class="flex items-center">
-            <h2 class="z-50 pointer-events-auto text-xl font-bold text-base-content">
-              <div class="dropdown dropdown-top">
-                <div
-                  tabindex="0"
-                  role="button"
-                  class="inline-block group cursor-pointer bg-base-200/50 hover:bg-base-100 transform transition-transform focus-within:border-accent-content border-accent  border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none inline-flex items-end"
-                >
-                  <span
-                    :for={{key, _} <- @primitive}
-                    class={["#{key}", "keygroup"]}
-                    {!(key == :command) && %{hidden: true} || %{hidden: false}}
-                  >
-                    {Gettext.gettext(DojoWeb.Gettext, key |> to_string |> to_titlecase)}
-                  </span>
-                </div>
-                <ul
-                  tabindex="0"
-                  class="dropdown-content text-lg font-bold menu rounded bg-transparent transition duration-200 rounded-box z-60 w-32 p-2 shadow-sm"
-                >
-                  <li
-                    :for={{key, _} <- @primitive}
-                    class={[
-                      "#{key}-keyselector keyselector border-0 rounded-t-lg  border-t-2 border-accent hover:border-primary"
-                    ]}
-                    {(key == :command) && %{hidden: true} || %{hidden: false}}
-                    phx-click={
-                      JS.set_attribute({"hidden", "true"}, to: ".keygroup")
-                      |> JS.remove_attribute("hidden", to: ".#{key}")
-                      |> JS.remove_attribute("hidden", to: ".keyselector")
-                      |> JS.set_attribute({"hidden", "true"}, to: ".#{key}-keyselector")
-                    }
-                  >
-                    <a>{Gettext.gettext(DojoWeb.Gettext, key |> to_string |> to_titlecase)}</a>
-                  </li>
-                </ul>
-                <br class="sm:hidden" />
-                <span class="inline-block">
-                  {gettext("Deck")}
-                </span>
-              </div>
-            </h2>
-          </div>
-
-          <%!-- Undo button --%>
-          <div
-            class="z-50 pointer-events-auto group pt-1 pr-5 ml-2 md:ml-4"
-            phx-click={JS.dispatch("phx:writeShell", detail: %{"command" => "undo"})}
-          >
-            <div class="relative">
-              <button class="flex items-center focus-within:border-accent-content justify-center w-8 h-8 rounded-full border-2 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0">
-                <svg
-                  class="w-4 h-4 text-primary-content"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M9 14L4 9L9 4" />
-                  <path d="M4 9H13.5C16.5376 9 19 11.4624 19 14.5C19 17.5376 16.5376 20 13.5 20H11" />
-                </svg>
-              </button>
-            </div>
-            <!-- Tooltip -->
-            <div class="absolute pointer-events-none mb-2 transition-opacity duration-200 opacity-0 -top-3 right-8 group-hover:opacity-100">
-              <div class="px-2 py-1 text-xs border rounded bg-secondary text-secondary-content border-primary backdrop-blur-sm whitespace-nowrap">
-                Undo
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- Command&Control Dropdown -->
-        <div
-          id="deckofcards"
-          class="h-10/12 z-80 overflow-y-scroll pl-4 sm:py-2 sm:px-4 pointer-events-auto mt-2"
-        >
-          <%= for {key, spec} <- @primitive do %>
-            <div class={[key, "keygroup"]} {!(key == :command) && %{hidden: true} || %{hidden: false}}>
-              <%= for {cmd, desc, vals} <- spec do %>
-                <div
-                  phx-click={
-                    JS.dispatch("phx:writeShell",
-                      detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
-                    )
-                    |> JS.add_class(
-                      "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",
-                      to: "#cmdicon-#{cmd}"
-                    )
-                    |> JS.remove_class(
-                      "fill-secondary-content drop-shadow-md drop-shadow-secondary-content",
-                      to: "#cmdicon-#{cmd}",
-                      transition: "ease-out duration-1200",
-                      time: 1200
-                    )
-                  }
-                  class="flex duration-500 animate-fade items-center p-2 transition-colors rounded pointer-events-auto hover:bg-accent/50 group cursor-pointer"
-                >
-                  <%!-- Icon --%>
-                  <div id={"cmdicon-#{cmd}"} class="mr-3 fill-primary">
-                    <.cmd_icon command={cmd} class="w-8 h-8 " />
-                  </div>
-                  <div class="grow">
-                    <%!-- Description --%>
-                    <code class="font-mono text-sm text-secondary-content">{desc}</code>
-                    <%!-- Sample code --%>
-                    <p class="text-xs text-lint-commands flex items-baseline flex-wrap">
-                      {cmd}
-                      <span :if={vals} class="relative grid-cols-3  ">
-                        <input
-                          :for={{arg, val} <- vals}
-                          type="text"
-                          id={"cmdparam-#{cmd}-#{arg}"}
-                          value={val}
-                          defaulted={val}
-                          class="ml-[1ch] bg-base-200/50 caret-accent-content hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
-                          placeholder={arg}
-                          phx-update="ignore"
-                          phx-keydown={
-                            JS.dispatch("phx:writeShell",
-                              detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
-                            )
-                            |> JS.add_class(
-                              "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",
-                              to: "#cmdicon-#{cmd}"
-                            )
-                            |> JS.remove_class(
-                              "fill-secondary-content drop-shadow-md drop-shadow-secondary-content",
-                              to: "#cmdicon-#{cmd}",
-                              transition: "ease-out duration-200",
-                              time: 200
-                            )
-                          }
-                          phx-key="Enter"
-                          oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
-                          onclick="event.stopPropagation()"
-                        />
-                      </span>
-                    </p>
-                    <script>
-                      // Initialize all input fields lengths
-                      window.addEventListener('DOMContentLoaded', () => {
-                        document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
-                        const mutobserver = new MutationObserver((mutations) => {
-                          mutations.forEach((mutation) => {
-                          // If nodes were added or attributes changed, resize inputs
-                          if (mutation.type === 'childList' || mutation.type === 'attributes') {
-                            document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
-                          }
-                          });
-                        });
-                        const targetNode = document.getElementById("deckofcards");
-                        mutobserver.observe(targetNode, {childList: true});
-                      });
-                    </script>
-                  </div>
-                </div>
-              <% end %>
-            </div>
-          <% end %>
-        </div>
-        <!-- Decorative corners -->
-        <div class="absolute w-3 h-3 border-t-2 border-l-2 top-0 left-0 border-primary-content"></div>
-        <div class="absolute w-3 h-3 border-t-2 border-r-2 top-0 right-2 border-primary-content">
-        </div>
-        <div class="absolute w-3 h-3 border-b-2 border-l-2 bottom-8 left-0 border-primary-content">
-        </div>
-        <div class="absolute w-3 h-3 border-b-2 border-r-2 bottom-8 right-2 border-primary-content">
         </div>
       </div>
     </div>
@@ -887,9 +812,9 @@ defmodule DojoWeb.ShellLive do
     """
   end
 
-  defp is_main_focus(phx_ref, focused_phx_ref) do
-    case phx_ref do
-      ^focused_phx_ref -> " scale-150"
+  defp is_main_focus(name, focused_name) do
+    case name do
+      ^focused_name -> " scale-150"
       _ -> " border-primary"
     end
   end
