@@ -37,6 +37,7 @@ defmodule Dojo.MixProject do
   defp deps do
     [
       {:tidewave, "~> 0.5", only: [:dev]},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:igniter, "~> 0.6", only: [:dev, :test]},
       {:usage_rules, "~> 1.1", only: :dev},
       {:lazy_html, ">= 0.0.0", only: :test},

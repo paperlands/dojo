@@ -187,7 +187,8 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
       }
     end)
   end
-# ── [LC] Instrumentation helpers ────────────────────────────────────────
+
+  # ── [LC] Instrumentation helpers ────────────────────────────────────────
 
   @doc """
   Snapshot HyParView active/passive views with full listen_addrs.
@@ -228,7 +229,6 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
 
   defp lc_fmt_ip(ip) when is_tuple(ip), do: ip |> :inet.ntoa() |> to_string()
   defp lc_fmt_ip(ip), do: inspect(ip)
-
 
   # ── Peer evaluation pipeline ────────────────────────────────────────
   # observe → compare → execute
