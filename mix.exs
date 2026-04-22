@@ -37,6 +37,7 @@ defmodule Dojo.MixProject do
   defp deps do
     [
       {:tidewave, "~> 0.5", only: [:dev]},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:igniter, "~> 0.6", only: [:dev, :test]},
       {:usage_rules, "~> 1.1", only: :dev},
       {:lazy_html, ">= 0.0.0", only: :test},
@@ -157,7 +158,7 @@ defmodule Dojo.MixProject do
       ]
     ]
   end
-  
+
   defp post_wrap(%Mix.Release{} = release) do
     strip_linux(release)
     build_windows_installer(release)
@@ -181,18 +182,39 @@ defmodule Dojo.MixProject do
     end
   end
 
-  defp build_windows_installer(%Mix.Release{}) do
-    nsi = "burrito_out/installer.nsi"
+  defp build_windows_installer(%Mix.Release{version: version}) do
+    template = "rel/packaging/installer.nsi.eex"
 
-    if File.exists?(nsi) do
+    if File.exists?(template) do
       IO.puts("==> Building Windows installer with NSIS")
+
+      # Stage resources into burrito_out/ where NSIS expects them
+      File.mkdir_p!("burrito_out/resources")
+
+      for file <- File.ls!("rel/packaging/resources") do
+        File.copy!("rel/packaging/resources/#{file}", "burrito_out/resources/#{file}")
+      end
+
+      File.copy!("rel/packaging/resources/app-icon.ico", "burrito_out/app-icon.ico")
+
+      # Render the templated .nsi with version info
+      erts_version = :erlang.system_info(:version) |> to_string()
+
+      rendered =
+        template
+        |> File.read!()
+        |> EEx.eval_string(assigns: [app_version: version, erts_version: erts_version])
+
+      nsi = "burrito_out/installer.nsi"
+      File.write!(nsi, rendered)
+      IO.puts("    Rendered #{template} → #{nsi} (v#{version}, ERTS #{erts_version})")
 
       case System.cmd("makensis", [nsi], stderr_to_stdout: true) do
         {_, 0} -> IO.puts("    NSIS build successful")
         {output, code} -> Mix.raise("makensis failed (exit #{code}): #{output}")
       end
     else
-      IO.puts("==> Skipping NSIS — #{nsi} not found")
+      IO.puts("==> Skipping NSIS — #{template} not found")
     end
   end
 
@@ -219,14 +241,14 @@ defmodule Dojo.MixProject do
         File.write!("#{contents}/Info.plist", info_plist(version))
         File.write!("#{contents}/PkgInfo", "APPL????")
 
-        icns_src = "burrito_out/resources/app-icon.icns"
+        icns_src = "rel/packaging/resources/app-icon.icns"
 
         if File.exists?(icns_src) do
           File.copy!(icns_src, "#{resources_dir}/app-icon.icns")
           IO.puts("    Copied #{icns_src} into bundle")
         else
           IO.puts(
-            "    No .icns found at #{icns_src} — skipping icon (convert burrito_out/resources/app-icon.ico first)"
+            "    No .icns found at #{icns_src} — skipping icon (convert app-icon.ico to .icns)"
           )
         end
 
@@ -237,13 +259,12 @@ defmodule Dojo.MixProject do
     end)
   end
 
-  defp build_macos_dmg(%Mix.Release{name: _name, version: version}) do
+  defp build_macos_dmg(%Mix.Release{version: version}) do
     Enum.each([{"macos", "x86_64"}, {"macos_silicon", "arm64"}], fn {target, arch} ->
       app_name = "PaperLandDojo_#{target}.app"
       app_path = "burrito_out/#{app_name}"
-      dmg_out = "burrito_out/PaperLandDojo_#{arch}.dmg"
+      dmg_out = "burrito_out/PaperLandDojo-#{version}-macos-#{arch}.dmg"
 
-      # ← mirrors your bundle guard
       if File.exists?(app_path) do
         IO.puts("==> Building macOS DMG for #{target} (#{arch})")
         build_dmg(app_path, app_name, dmg_out, version)
