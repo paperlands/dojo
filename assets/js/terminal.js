@@ -1,507 +1,303 @@
+// Terminal coordinator — thin wiring layer.
+// Owns the mutable state atom. Each method sequences calls to extracted modules.
+// Factory function (not class) — matches bridged() pattern in the codebase.
+//
+// NOTE: view.setState() clears CM6 undo history (Transaction.clearHistory).
+// Per-buffer history preservation requires hidden EditorViews or historyField
+// serialisation — deferred to a future phase.
+
 import { execute } from "./terminal/operations.js"
 import { Tabber } from "./terminal/tabber.js"
 import { bridged } from "./bridged.js"
-import { nameGen, idGen } from "./utils/nama.js"
-import {printAST} from "./turtling/parse.js"
+import { nameGen as createNameGen, idGen } from "./utils/nama.js"
+import { themes } from "./editor/theme.js"
+import { createStorage } from "./terminal/storage.js"
+import * as buffers from "./terminal/buffers.js"
+import * as editorView from "./terminal/view.js"
+import { buildExtensions, reapplyCompartments } from "./terminal/extensions.js"
 
-// =============================================================================
-// STORAGE LAYER
-// =============================================================================
+const DEFAULT_OPTIONS = { theme: 'abbott', mode: 'plang' };
 
-class BufferStorage {
-    STORAGE_KEY = '@paperlands.buffers';
+/**
+ * @typedef {Object} Terminal
+ * @property {import('./bridged.js').Bridge} bridge - Content change events
+ * @property {import('./bridged.js').Bridge} selectionBridge - Selection change events
+ * @property {Object} shell - CM6 EditorView (mutable, via getter)
+ * @property {() => Terminal} inner - Initialize as editable inner shell
+ * @property {(code?: string) => Terminal} outer - Initialize as read-only outer shell
+ * @property {(payload: {source?: string}) => void} changeouter - Update outer shell content
+ * @property {(instructions: Object) => void} run - Execute a command/control instruction
+ * @property {() => string} getValue - Get current editor content
+ * @property {(content: string) => void} setValue - Set editor content
+ * @property {(option: string, value: *) => boolean} setOption - Change editor option (e.g. theme)
+ * @property {(name?: string, content?: string) => string} createBuffer - Create new buffer, returns id
+ * @property {(id?: string) => void} closeBuffer - Close buffer by id
+ * @property {(id: string) => void} renameBuffer - Rename buffer by id
+ * @property {(event: {op: string, target?: string}) => void} opBufferHandler - Buffer operation dispatch
+ * @property {() => void} triggerBridge - Force bridge publish of current content
+ * @property {() => void} destroy - Cleanup and save
+ */
 
-    constructor(name="inner") {
-        this.name = this.STORAGE_KEY + "@" + name
-    }
+/**
+ * @param {HTMLElement} element - Container element for the editor
+ * @param {Object} cm6 - CodeMirror 6 module bundle
+ * @param {Object} [options] - Configuration options
+ * @returns {Terminal}
+ */
+export const createTerminal = (element, cm6, options = {}) => {
+    const opts = { ...DEFAULT_OPTIONS, ...options };
+    const names = createNameGen();
 
-    // needs to by dynamic
-    #createDefaultBuffer() {
-        return {
-            id: idGen(),
-            name: 'Papert',
-            active: true,
-            content: `label 'hello.' 10
-jmp 50`,
-            mode: 'plang',
-            created: Date.now(),
-            lastModified: Date.now()
-        };
-    }
+    const bridge = bridged("terminal");
+    const selectionBridge = bridged("terminal.selection");
 
-     load() {
-        try {
-            const stored = localStorage.getItem(this.name);
-            const buffers = stored ? JSON.parse(stored) : {};
-
-            // Ensure at least one buffer exists
-            if (Object.keys(buffers).length === 0) {
-                const defaultBuffer = this.#createDefaultBuffer();
-                buffers[defaultBuffer.id] = defaultBuffer;
-            }
-
-            return buffers;
-        } catch (e) {
-            console.warn('Storage load failed, using defaults:', e);
-            const defaultBuffer = this.#createDefaultBuffer();
-            return { [defaultBuffer.id]: defaultBuffer };
-        }
-    }
-
-     save(buffers) {
-        try {
-            localStorage.setItem(this.name, JSON.stringify(buffers));
-            return true;
-        } catch (e) {
-            console.warn('Storage save failed:', e);
-            return false;
-        }
-    }
-}
-
-
-export class Terminal {
-    // Default CodeMirror configuration
-    static DEFAULT_OPTIONS = {
-        theme: 'abbott',
-        mode: 'plang',
-        lineNumbers: true,
-        lineWrapping: true,
-        styleActiveLine: { nonEmpty: true },
-        styleActiveSelected: true,
-        autocorrect: true,
-        foldGutter: true,
-        matchBrackets: {
-            enableWordMatching: true,
-            highlightNonMatching: true,
-            maxScanLines: 200
-        },
-        smartIndent: true,
-        gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter']
+    // --- State atom ---
+    // Single mutable reference. Transitions via pure functions from buffers.js.
+    // EditorState docs kept separate — they're CM6 values, not buffer data.
+    const state = {
+        collection: null,     // from buffers.js — plain data
+        docs: new Map(),      // Map<id, EditorState> — CM6 state per buffer
+        extensions: null,     // shared extension array
+        compartments: null,   // { theme, lang } — Compartment handles
+        autosaveTimer: null,
     };
 
-    constructor(editor, CodeMirror, options = {}) {
+    let shell = null;         // CM6 EditorView — inherently mutable
+    let tabs = null;          // Tabber instance
+    let store = null;         // localStorage wrapper
 
-        this.editor = editor;
-        this.CM = CodeMirror;
-        this.options = { ...Terminal.DEFAULT_OPTIONS, ...options };
-        this.buffers = new Map(); // Use Map for better performance
-        this.docs = new Map(); // Separate CodeMirror docs from buffer metadata
-        this.currentBuffer = null;
-        this.shell = null;
-        this.nameGen = nameGen();
-        this.autosaveTimer = null;
-        // Merge state - null when in single-pane mode
-        this.merge = null;
+    // --- Internal helpers ---
 
-        
-        this.bridge = bridged("terminal")
-        return this
-    }
+    const saveToStorage = () => {
+        if (!store || !state.collection) return;
+        store.save(buffers.serialize(state.collection));
+    };
 
-    inner() {
-        this.shell = this.CM.fromTextArea(this.editor, this.#buildOptions());
-        this.#setupEventListeners(this.shell);
-        this.shell.run = this.run.bind(this);
-        this.tabs = new Tabber()
-        this.bufferStore = new BufferStorage()
-        this.#loadBuffersFromStorage()
-        this.#selectInitialBuffer();
+    const triggerBridge = () => {
+        const content = editorView.getContent(shell);
+        bridge.pub(content);
+    };
 
-        return this;
-    }
+    // Create an EditorState for a buffer's content, using the shared extension array.
+    // Critical: all states share the same Compartment instances for live reconfiguration.
+    const createDoc = (content) =>
+        editorView.createState(cm6, content, state.extensions);
 
-    outer(code="") {
-        this.shell = this.#enterMerge("")
-        this.#setupEventListeners(this.shell);
-        this.shell.run = this.run.bind(this);
-        this.swapBuffer("@outer.shell", code);
-        this.rightPane().output = document.getElementById("outermerge-output");
-        return this;
-    }
-
-    changeouter(payload) {
-        switch(payload.state) {
-        case 'success':
-            const code = printAST(payload.commands)
-            this.swapBuffer("@outer.shell", code);
-            this.rightPane().setValue(code)
-            this.rightPane().output.style.color = "#FF9933";
-            this.rightPane().output.innerHTML = `${payload.message || ""}`
-            break;
-        case 'error':
-            if(payload.commands?.length>0) {
-                const code = printAST(payload.commands)
-                this.swapBuffer("@outer.shell", code);
-            }
-            this.rightPane().setValue(payload.source)
-            this.rightPane().output.style.color = "#FF0000";
-            this.rightPane().output.innerHTML = `${payload.message}`
-            break;
-            
+    // Save current EditorState before leaving a buffer (preserves doc + cursor).
+    const captureCurrentState = () => {
+        const currentId = state.collection?.currentId;
+        if (currentId && shell) {
+            state.docs.set(currentId, shell.state);
         }
-    }
+    };
 
-    // buffermanagement
-    opBufferHandler(event) {
-        console.log(event)
-        const { op, target } = event;
-        switch(op) {
-        case 'add':
-            this.createBuffer()
-            break;
-        case 'select':
-            this.selectBuffer(target);
-            break;
-        case 'rename':
-            this.renameBuffer(target)
-            break;
-        case 'close':
-            this.closeBuffer(target);
-            break;
-        }
-    }
+    const doSelectBuffer = (id) => {
+        if (!state.collection.items.has(id)) throw new Error(`Buffer '${id}' not found`);
 
+        // 1. Save current (CM6 concern)
+        const oldId = state.collection.currentId;
+        if (oldId && oldId !== id) captureCurrentState();
 
-    #buildOptions() {
-        return {
-            ...this.options,
-            extraKeys: {
-                'Ctrl-/': (cm) => this.toggleComment(cm),
-                'Ctrl-A': (cm) => cm.execCommand("selectAll"),
-                'Ctrl-.': () => this.switchToNextBuffer(),
-                'Ctrl-,': () => this.switchToPrevBuffer(),
-                ...this.options.extraKeys
-            }
-        };
-    }
+        // 2. Transition collection (pure data)
+        state.collection = buffers.selectCurrent(state.collection, id);
 
-    #setupEventListeners(shell) {
-        // Gutter click selection
-        shell.on('gutterClick', (cm, line) => {
-            cm.focus();
-            cm.setSelection({ line, ch: 0 }, { line, ch: cm.getLine(line).length });
-        });
+        // 3. Swap view (CM6 concern)
+        editorView.swapState(shell, state.docs.get(id));
+        reapplyCompartments(shell, state.compartments, cm6, opts.theme, themes);
+        editorView.cursorToEnd(shell, cm6);
+        shell.focus();
 
-        // Content change handling with debounced autosave
-        shell.on('change', (cm) => {
-            const content = cm.getValue();
+        // 4. Effects (each independent)
+        triggerBridge();
+        tabs?.selectTab(id);
 
-            // Update current buffer
-            if (this.currentBuffer) {
-                this.buffers.get(this.currentBuffer).content = content;
+        return state.collection.items.get(id);
+    };
 
-            }
+    // --- Public API ---
 
-            // Debounced save to localStorage
-            clearTimeout(this.autosaveTimer);
-            this.autosaveTimer = setTimeout(() => this.#saveToStorage(), 500);
+    const terminal = {
+        // Bridges — exposed for shell.js subscription
+        bridge,
+        selectionBridge,
 
-            this.bridge.pub(content);
+        // shell getter — shell.js listeners need the EditorView directly
+        get shell() { return shell; },
 
-        });
-
-    }
-
-    // Core primitive: capture editor state for restoration
-    #captureState(ed = this.shell) {
-        return {
-            value: ed.getValue(),
-            cursor: ed.getCursor(),
-            scroll: ed.getScrollInfo(),
-            selections: ed.listSelections()
-        };
-    }
-
-    // Core primitive: restore editor state after transition
-    #restoreState(ed, state) {
-        ed.setValue(state.value);
-        ed.setSelections(state.selections);
-        ed.scrollTo(state.scroll.left, state.scroll.top);
-    }
-
-     // Enter merge view mode
-    #enterMerge(orig, opts = {}) {
-        // Capture current editor state
-        // const state = this.#captureState();
-        
-        const container = document.getElementById('outershell');
-        
-        this.merge = {}
-        
-        // Create merge view with combined options
-        this.merge.view = this.CM.MergeView(container, {
-            ...this.options,
-            value: "",
-            orig: orig,
-            connect: 'align',
-            collapseIdentical: false,
-            
-            ...opts
-        });
-        
-
-        
-
-        return this.merge.view.editor()
-    }
-
-
-    setOption(option, delta) {
-        if (this.merge?.view.editor()) {
-            this.merge.view.editor().setOption(option, delta)
-            this.merge.view.rightOriginal().setOption(option, delta)
-        }
-        
-        this.shell.setOption(option, delta);
-        this.options[option] = delta
-        // if merge else shell
-        return true  
-    }
-
-    // Get currently active editor (works in both modes)
-    active() {
-        return this.merge?.view.editor() || this.shell;
-    }
-
-    // Get right pane editor (only in merge mode)
-    rightPane() {
-        return this.merge?.view.rightOriginal() || null;
-    }
-
-    // Update right pane content (only in merge mode)
-    updateRightPane(content) {
-        if (!this.merge) {
-            console.warn('Not in merge mode');
-            return false;
-        }
-        this.rightPane?.setValue(content);
-        return true;
-    }
-
-
-    #loadBuffersFromStorage() {
-        const storedBuffers = this.bufferStore.load();
-
-        Object.values(storedBuffers).forEach((buffer) => {
-            this.#recreateBufferDoc(buffer);
-            this.tabs.addTab(buffer.id, buffer.name)
-
-            if(buffer.active) {
-                this.currentBuffer = buffer.id
-            }
-        });
-    }
-
-    #selectInitialBuffer() {
-        const defaultBuffer = this.buffers.keys()[0];
-
-        this.currentBuffer && this.selectBuffer(this.currentBuffer) || this.selectBuffer(defaultBuffer);
-    }
-
-    #createBufferDoc(name, content = '') {
-        return this.#recreateBufferDoc({name: name, content: content});
-    }
-
-    #recreateBufferDoc(buffer) {
-        const updatedBuffer = {
-            id: buffer.id ?? idGen(),
-            name: buffer.name ?? this.nameGen(),
-            mode: buffer.mode ?? 'plang',
-            content: buffer.content ?? `label 'hello.' 10
-jmp 50`,
-            created: buffer.created ?? Date.now(),
-            lastModified: buffer.lastModified ?? Date.now(),
-        };
-
-        const doc = this.CM.Doc(updatedBuffer.content, updatedBuffer.mode);
-
-        this.buffers.set(updatedBuffer.id, updatedBuffer);
-        this.docs.set(updatedBuffer.id, doc);
-
-        return { id: updatedBuffer.id, buffer: updatedBuffer, doc };
-    }
-
-    #saveToStorage() {
-        if(this.bufferStore) {
-        const bufferData = {};
-        this.buffers.forEach((buffer, id) => {
-            bufferData[id] = {
-                id: id,
-                name: buffer.name,
-                active: this.currentBuffer == id,
-                content: buffer.content,
-                mode: buffer.mode,
-                created: buffer.created,
-                lastModified: buffer.lastModified
-
-            };
-        });
-        this.bufferStore.save(bufferData);
-        }
-    }
-
-    // Public API methods
-    triggerBridge() {
-        this.bridge.pub(this.getCurrentBuffer().content);
-    }
-
-
-    createBuffer(name = '', content = '', mode = 'plang'){
-        const bufferName = name || this.nameGen()
-        const {id,  buffer, doc } = this.#createBufferDoc(bufferName, content);
-        this.tabs.addTab(id, buffer.name)
-        this.selectBuffer(id);
-
-        return id;
-    }
-
-    swapBuffer(bufferName, content, mode) {
-        const { id, buffer, doc } = this.#createBufferDoc(bufferName, content);
-        this.currentBuffer = id;
-        this.active().swapDoc(doc)
-        this.triggerBridge()
-    }
-
-
-    selectBuffer(id) {
-        if (!this.buffers.has(id)) {
-            throw new Error(`Buffer '${name}' not found`);
-        }
-        this.currentBuffer = id;
-        const doc = this.docs.get(id);
-        this.shell.swapDoc(doc);
-        this.triggerBridge()
-        this.shell.focus();
-        this.shell.setCursor(this.shell.lineCount(), 0);
-
-        this.tabs.selectTab(id)
-
-
-        return this.buffers.get(id);
-    }
-
-    closeBuffer(id = this.currentBuffer) {
-        if (!id || !this.buffers.has(id)) {
-            throw new Error(`Buffer '${id}' not found`);
-        }
-
-        if (this.buffers.size === 1) {
-            throw new Error('Cannot close the last buffer');
-        }
-
-        const confirmed = confirm(`NOTE! You are destroying ${this.buffers.get(id)["name"]}`);
-        if (confirmed) {
-
-            // Switch to another buffer if closing current
-            if (id === this.currentBuffer) {
-                const bufferIds = Array.from(this.buffers.keys());
-                const currentIndex = bufferIds.indexOf(id);
-                const nextBuffer = bufferIds[currentIndex + 1] || bufferIds[currentIndex - 1];
-                this.selectBuffer(nextBuffer);
-            }
-
-            this.tabs.closeTab(id)
-
-            this.buffers.delete(id);
-            this.docs.delete(id);
-
-            this.#saveToStorage();
-
-            return this;
-        }
-    }
-
-    renameBuffer(id) {
-        const newName = this.tabs.renameTab(id);
-        const buffer = this.selectBuffer(id);
-        buffer.name = newName
-        console.log(buffer)
-
-        return this;
-    }
-
-    switchToNextBuffer() {
-        const names = Array.from(this.buffers.keys());
-        const currentIndex = names.indexOf(this.currentBuffer);
-        const nextIndex = (currentIndex + 1) % names.length;
-        this.selectBuffer(names[nextIndex]);
-        return this;
-    }
-
-    switchToPrevBuffer() {
-        const names = Array.from(this.buffers.keys());
-        const currentIndex = names.indexOf(this.currentBuffer);
-        const prevIndex = currentIndex === 0 ? names.length - 1 : currentIndex - 1;
-        this.selectBuffer(names[prevIndex]);
-        return this;
-    }
-
-    getBufferList() {
-        return Array.from(this.buffers.values()).map(buffer => ({
-            name: buffer.name,
-            mode: buffer.mode,
-            active: buffer.name === this.currentBuffer,
-            modified: buffer.lastModified
-        }));
-    }
-
-    getCurrentBuffer() {
-        return this.currentBuffer ? this.buffers.get(this.currentBuffer) : null;
-    }
-
-
-    toggleComment(cm) {
-        const selections = cm.listSelections();
-
-        cm.operation(() => {
-            selections.forEach(sel => {
-                const { anchor, head } = sel;
-                const startLine = Math.min(anchor.line, head.line);
-                const endLine = Math.max(anchor.line, head.line);
-
-                // Check if all lines are commented
-                let allCommented = true;
-                for (let i = startLine; i <= endLine; i++) {
-                    const line = cm.getLine(i).trim();
-                    if (line && !line.startsWith('#')) {
-                        allCommented = false;
-                        break;
+        inner() {
+            const { extensions, compartments } = buildExtensions(cm6, {
+                onDocChange: (content) => {
+                    // 1. Buffer content sync (pure data transition)
+                    if (state.collection?.currentId) {
+                        state.collection = buffers.updateContent(
+                            state.collection, state.collection.currentId, content
+                        );
                     }
-                }
-
-                // Toggle comments
-                for (let i = startLine; i <= endLine; i++) {
-                    const line = cm.getLine(i);
-                    if (allCommented) {
-                        // Remove comment
-                        const uncommented = line.replace(/^(\s*)#\s?/, '$1');
-                        cm.replaceRange(uncommented, { line: i, ch: 0 }, { line: i, ch: line.length });
-                    } else {
-                        // Add comment
-                        const indent = line.match(/^(\s*)/)[1];
-                        const commented = indent + '# ' + line.slice(indent.length);
-                        cm.replaceRange(commented, { line: i, ch: 0 }, { line: i, ch: line.length });
-                    }
-                }
+                    // 2. Autosave (scheduled effect)
+                    clearTimeout(state.autosaveTimer);
+                    state.autosaveTimer = setTimeout(saveToStorage, 500);
+                    // 3. Bridge (event effect)
+                    bridge.pub(content);
+                },
+                onSelectionChange: (selection) => {
+                    selectionBridge.pub(selection);
+                },
+                onSwitchNext: () => {
+                    const id = buffers.nextId(state.collection);
+                    doSelectBuffer(id);
+                },
+                onSwitchPrev: () => {
+                    const id = buffers.prevId(state.collection);
+                    doSelectBuffer(id);
+                },
+                onToggleComment: (view) => {
+                    editorView.toggleComment(view);
+                },
             });
+
+            state.extensions = extensions;
+            state.compartments = compartments;
+
+            const result = editorView.createInnerView(element, cm6, extensions);
+            shell = result.view;
+
+            // Wire PaperLang into the language compartment after view creation
+            reapplyCompartments(shell, compartments, cm6, opts.theme, themes);
+
+            // Load buffers from storage, create EditorStates, populate tabs
+            tabs = new Tabber();
+            store = createStorage();
+
+            const stored = store.load();
+            state.collection = stored
+                ? buffers.loadCollection(stored, names, idGen)
+                : buffers.createCollection(names, idGen);
+
+            // Create EditorState per buffer and populate tab UI
+            for (const [id, buffer] of state.collection.items) {
+                state.docs.set(id, createDoc(buffer.content));
+                tabs.addTab(id, buffer.name);
+            }
+
+            // Select initial buffer
+            doSelectBuffer(state.collection.currentId);
+
+            return terminal;
+        },
+
+        outer(_code = '') {
+            const { extensions, compartments } = buildExtensions(cm6, {});
+
+            state.extensions = extensions;
+            state.compartments = compartments;
+
+            const result = editorView.createOuterView(element, cm6, extensions);
+            shell = result.view;
+
+            reapplyCompartments(shell, compartments, cm6, opts.theme, themes);
+
+            return terminal;
+        },
+
+        changeouter(payload) {
+            editorView.updateOuter(shell, payload?.source ?? '');
+        },
+
+        run(instructions) {
+            if (typeof execute === 'function' && shell) {
+                execute(shell, instructions, cm6);
+            }
+        },
+
+        getValue() {
+            return editorView.getContent(shell);
+        },
+
+        setValue(content) {
+            editorView.setContent(shell, content);
+        },
+
+        setOption(option, value) {
+            opts[option] = value;
+            if (option === 'theme' && shell && state.compartments && themes[value]) {
+                const themeBundle = themes[value](cm6);
+                shell.dispatch({ effects: state.compartments.theme.reconfigure(themeBundle) });
+            }
+            return true;
+        },
+
+        opBufferHandler(event) {
+            const { op, target } = event;
+            switch (op) {
+            case 'add':    terminal.createBuffer(); break;
+            case 'select': doSelectBuffer(target); break;
+            case 'rename': terminal.renameBuffer(target); break;
+            case 'close':  terminal.closeBuffer(target); break;
+            }
+        },
+
+        createBuffer(name = '', content = '') {
+            const bufferName = name || names();
+            const { collection, id } = buffers.addBuffer(
+                state.collection, { name: bufferName, content }, names, idGen
+            );
+            state.collection = collection;
+            state.docs.set(id, createDoc(content));
+            tabs.addTab(id, bufferName);
+            doSelectBuffer(id);
+            return id;
+        },
+
+        closeBuffer(id) {
+            const targetId = id || state.collection.currentId;
+            if (!targetId || !state.collection.items.has(targetId)) return;
+            if (state.collection.items.size <= 1) return;
+
+            const buffer = state.collection.items.get(targetId);
+            const confirmed = confirm(`NOTE! You are destroying ${buffer.name}`);
+            if (!confirmed) return;
+
+            // If closing the active buffer, switch first
+            if (targetId === state.collection.currentId) {
+                const nextBufferId = buffers.nextId(state.collection);
+                if (nextBufferId !== targetId) doSelectBuffer(nextBufferId);
+            }
+
+            // Transition collection (pure data) + cleanup CM6 state
+            state.collection = buffers.removeBuffer(state.collection, targetId);
+            state.docs.delete(targetId);
+            tabs.closeTab(targetId);
+            saveToStorage();
+        },
+
+        renameBuffer(id) {
+            const newName = tabs.renameTab(id);
+            doSelectBuffer(id);
+            state.collection = buffers.renameCurrent(state.collection, id, newName);
+        },
+
+        triggerBridge,
+
+        destroy() {
+            clearTimeout(state.autosaveTimer);
+            saveToStorage();
+            editorView.destroy(shell, element);
+        },
+    };
+
+    return terminal;
+};
+
+// Backwards compatibility — shell.js uses `new Terminal(el, cm6)`
+// TODO: migrate shell.js to createTerminal(), then remove this class
+export class Terminal {
+    constructor(editor, cm6, options = {}) {
+        const term = createTerminal(editor, cm6, options);
+        Object.assign(this, term);
+        // Copy getter for shell
+        Object.defineProperty(this, 'shell', {
+            get: () => term.shell,
+            enumerable: true,
         });
-    }
-
-    // mutate terminal state
-    run(instructions) {
-        if (typeof execute === 'function') {
-            // operations and instructions for cntrl and command deck
-            execute(this.active(), instructions);
-        } else {
-            console.warn('Execute function not available');
-        }
-    }
-
-    // Cleanup method
-    destroy() {
-        clearTimeout(this.autosaveTimer);
-        this.#saveToStorage();
-        this.shell?.toTextArea();
     }
 }

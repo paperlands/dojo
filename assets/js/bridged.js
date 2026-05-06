@@ -13,6 +13,17 @@ class BridgedEventTarget extends EventTarget {}
  * which allows others to subscribe/publish to this topic, or to dispatch events (to the server)
  * using this EventTarget as a proxy.
  * */
+/**
+ * @typedef {Object} Bridge
+ * @property {(callback: function(*): void) => function(): void} sub - Subscribe; returns unsub fn
+ * @property {(payload: *) => void} pub - Publish payload to all subscribers
+ * @property {(el: {pushEvent: Function, pushEventTo: Function}, payload: *, selector?: string) => void} dispatch - Pub + pushEvent to server
+ */
+
+/**
+ * @param {string} eventName - Topic name for this bridge
+ * @returns {Bridge}
+ */
 export const bridged = (eventName) => { // TODO: consider renaming to registerBridgeEvent
     const customEventTarget = new BridgedEventTarget();
 

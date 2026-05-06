@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "module": "es2022",
+    "target": "es2022",
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./js/*"]
+    },
+    "checkJs": false,
+    "allowJs": true,
+    "noEmit": true
+  },
+  "include": ["js/**/*.js"],
+  "exclude": ["../priv/static", "../deps", "../_peer_build"]
+}

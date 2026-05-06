@@ -32,10 +32,16 @@
 
     // On older iOS (< 15.4), dvh doesn't respond to the software keyboard.
     // Use visualViewport to clamp the grid container height explicitly.
+    // Also floats the mobile char toolbar above the keyboard when it opens.
     if (window.visualViewport) {
       var grid = document.querySelector('.fixed.inset-0.grid');
+      var toolbar = null; // lazy — DOM may not exist yet at script eval time
       var setHeight = function () {
-        if (grid) grid.style.height = window.visualViewport.height + 'px';
+        var vvh = window.visualViewport.height;
+        var keyboardOffset = Math.max(0, window.innerHeight - vvh);
+        if (grid) grid.style.height = vvh + 'px';
+        if (!toolbar) toolbar = document.getElementById('char-toolbar');
+        if (toolbar) toolbar.style.bottom = keyboardOffset + 'px';
       };
       window.visualViewport.addEventListener('resize', setHeight);
       setHeight();
@@ -43,9 +49,3 @@
   })();
 </script>
 
-<script src="codemirror/codemirror.js" />
-
-<link rel="stylesheet" href="codemirror/codemirror.css" />
-<link rel="stylesheet" href="codemirror/theme/abbott.css" />
-<link rel="stylesheet" href="codemirror/theme/everforest.css" />
-<script src="codemirror/mode/apl/apl.js" />
