@@ -47,10 +47,13 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
             border:          'none',
         },
         '.cm-lineNumbers .cm-gutterElement': { color: '#FF9933' },     // brand saffron
-        '.cm-cursor, .cm-dropCursor':        { borderLeftColor: '#a0ea00' }, // chartreuse
+        '.cm-cursor':        { color: '#a0ea00' }, // chartreuse
+        '.cm-editor .cm-content':  {
+            'caret-color': "#a0ea00"
+        },
         '&.cm-focused .cm-selectionBackground': { background: 'rgba(0, 197, 90, 0.4)' },
         '.cm-selectionBackground':              { background: 'rgba(0, 197, 90, 0.4)' },
-        '.cm-activeLine':      { backgroundColor: 'rgba(60, 48, 34, 0.88)' }, // chocolate, semi-transparent so guides show
+        '.cm-activeLine':      { backgroundColor: 'rgba(60, 48, 34, 0.3)' }, // chocolate, semi-transparent so guides show
         '.cm-activeLineGutter':{ backgroundColor: '#3c3022' },
         '.cm-widgetBuffer': { color: '#fbb32f' },                   // marigold
         // Fold gutter markers: ▾ open, ▸ closed — brand saffron

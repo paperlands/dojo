@@ -199,8 +199,8 @@ export const createTerminal = (element, cm6, options = {}) => {
             return terminal;
         },
 
-        changeouter(payload) {
-            editorView.updateOuter(shell, payload?.source ?? '');
+        changeouter(code) {
+            editorView.updateOuter(shell, code);
         },
 
         run(instructions) {

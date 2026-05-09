@@ -85,30 +85,6 @@ defmodule DojoWeb.OuterShellLive do
         class="overflow-y-scroll relative border pointer-events-auto rounded-lg h-[50vh] border-amber-600/20 dark-scrollbar backdrop-blur-xs scrollbar-hide cursor-text"
       >
         <div class="z-50 absolute flex gap-1 top-2 right-2">
-          <button
-            phx-click="forkBuffer"
-            phx-target={@myself}
-            class="flex items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 group hover:opacity-100 border-accent focus-within:border-none"
-            title="Fork to your buffer"
-          >
-            <div class="absolute inset-0 flex items-center justify-center">
-              <svg
-                class="w-4 h-4 transition-colors text-primary group-hover:text-accent-content"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <circle cx="12" cy="18" r="3" />
-                <circle cx="6" cy="6" r="3" />
-                <circle cx="18" cy="6" r="3" />
-                <path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9" />
-                <path d="M12 12v3" />
-              </svg>
-            </div>
-          </button>
 
           <button
             phx-click="closeTurtle"

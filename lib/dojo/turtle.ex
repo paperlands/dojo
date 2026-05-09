@@ -106,8 +106,12 @@ defmodule Dojo.Turtle do
     end)
   end
 
-  def print(ast) when is_map(ast) do
+  def print(ast) when is_list(ast) do
     ast |> Enum.map(&visit/1) |> Enum.join("\n")
+  end
+
+  def print(ast) when is_map(ast) do
+    visit(ast)
   end
 
   def print(_) do

@@ -3,10 +3,15 @@ import { Terminal } from "../terminal.js"
 import { cameraBridge } from "../bridged.js"
 import { computePosition, offset } from "../../vendor/floating-ui.dom.umd.min";
 import { temporal } from "../utils/temporal.js"
+import {printAST} from "../turtling/parse.js"
 
 // Module-level CM6 cache — loaded once on first Shell mount, reused thereafter.
 // The browser also caches the ES module natively by URL.
 let cm6 = null;
+
+// Module-level core turtle reference — set by inner shell, used by outer shell
+// for guest rendering into the same scene via path groups.
+let coreTurtle = null;
 
 // ---------------------------------------------------------------------------
 // Numeric token finder — replaces CM5 getTokenAt for the slider feature.
@@ -17,7 +22,7 @@ const findNumericTokenAt = (line, ch) => {
     let match;
     while ((match = numRegex.exec(line)) !== null) {
         if (match.index <= ch && ch <= match.index + match[0].length) {
-            return match[0];
+            return { text: match[0], index: match.index };
         }
     }
     return null;
@@ -200,10 +205,10 @@ const listeners = {
                     const line     = lineInfo.text;
                     const ch       = offset - lineInfo.from;
 
-                    const token = findNumericTokenAt(line, ch) || findNumericTokenAt(line, ch + 1);
+                    const result = findNumericTokenAt(line, ch) || findNumericTokenAt(line, ch + 1);
 
-                    if (token) {
-                        slider.show(shell, { lineOffset: lineInfo.from, ch }, line, token, event);
+                    if (result) {
+                        slider.show(shell, { lineOffset: lineInfo.from, tokenStart: result.index }, result.text, event);
                     } else {
                         slider.hide();
                     }
@@ -253,8 +258,8 @@ const mutators = {
                 return hide;
             },
 
-            // view: EditorView; pos: { lineOffset, ch }; line: full line text
-            show: (view, pos, line, token, event) => {
+            // view: EditorView; pos: { lineOffset, tokenStart }; token: matched number string
+            show: (view, pos, token, event) => {
                 element.classList.remove('hidden');
 
                 const selection = window.getSelection();
@@ -267,25 +272,21 @@ const mutators = {
                     Object.assign(element.style, { left: `${rect.x}px`, top: `${y}px` });
                 });
 
+                // Absolute document offsets for the target token only
+                let tokenFrom = pos.lineOffset + pos.tokenStart;
+                let tokenTo = tokenFrom + token.length;
+
                 if (observer) observer.disconnect();
                 observer = new MutationObserver((mutations) => {
                     const sliderValue = Math.round(7.2 * (mutations[0].target.getAttribute('slideval') - 50));
+                    const newText = sliderValue.toString();
 
-                    const parts = line.split(/(\S+|\s+)/g);
-                    let charCount = 0;
-                    for (let i = 0; i < parts.length; i++) {
-                        charCount += parts[i].length;
-                        if (charCount >= pos.ch && parts[i].includes(token)) {
-                            parts[i] = sliderValue.toString();
-                            break;
-                        }
-                    }
-
-                    // CM6: dispatch change using the stored line offset
-                    const lineEnd = Math.min(pos.lineOffset + 100, pos.lineOffset + line.length);
                     view.dispatch({
-                        changes: { from: pos.lineOffset, to: lineEnd, insert: parts.join('') }
+                        changes: { from: tokenFrom, to: tokenTo, insert: newText }
                     });
+
+                    // Update range — replacement length may differ from original
+                    tokenTo = tokenFrom + newText.length;
                 });
 
                 observer.observe(element, {
@@ -311,40 +312,70 @@ const Shell = {
         if (!cm6) cm6 = await import('/vendor/cm6.js?v=6.36');
 
         const shellTarget = this.el.dataset.target;
-        const canvas  = document.getElementById(shellTarget && shellTarget + "-canvas" || 'core-canvas');
-        const output  = document.getElementById(shellTarget && shellTarget + "-output" || 'core-output');
-        const turtle  = new Turtle(canvas);
-        const term    = new Terminal(this.el, cm6);
-
-        const renderCommand   = commands.render(turtle);
-        const executeCommand  = commands.execute(term);
-        const cameraCommand   = commands.camera(cameraBridge);
-        const saveImage       = commands.saveImage();
-        const saveRecording   = commands.saveRecording();
-
-        const display = mutators.display(output);
-        const slider  = mutators.slider('slider');
-
-        const debouncedRender = temporal.debounce((code) => {
-            const result = renderCommand(code);
-            result.success ? display.success(result.commandCount) : display.error(result.error);
-        }, 20);
-
-        term.bridge.sub(debouncedRender);
-
-        const debouncedPushUp = temporal.throttle(
-            (eventName, eventData) => this.pushEvent(eventName, eventData),
-            200
-        );
+        const term = new Terminal(this.el, cm6);
 
         if (shellTarget === "outer") {
-            this.handleEvent("seeOuterShell", (payload) => term.changeouter(payload));
+            // Outer shell: read-only code viewer. Rendering goes through
+            // the core turtle's guest path groups — no second canvas.
+            const output = document.getElementById('outer-output');
+            const display = mutators.display(output);
+
+            const debouncedGuestRender = temporal.debounce((code) => {
+                if (!coreTurtle) return;
+                const result = coreTurtle.drawGuest(code);
+                if (result.success) {
+                    coreTurtle.setGuestOpacity(0.4);
+                    display.success(result.commandCount);
+                } else {
+                    display.error(result.error);
+                }
+            }, 20);
+
+            this.handleEvent("seeOuterShell", (payload) => {
+                if (payload?.state === "success" && payload?.commands) {
+                    const code = printAST(payload.commands);
+                    term.changeouter(code);
+                    debouncedGuestRender(code);
+                } else {
+                    // Peek: show raw broken source, don't render
+                    term.changeouter(payload?.source ?? '');
+                    if (payload?.message) display.error(payload.message);
+                }
+            });
+
             term.outer();
-            // Outer shell: read-only view — only theme toggling is needed.
+
             this.cleanup = [
                 listeners.theme(theme => term.setOption('theme', theme)).mount(),
+                () => coreTurtle?.clearGuest(),
             ];
         } else {
+            const canvas = document.getElementById('core-canvas');
+            const output = document.getElementById('core-output');
+            const turtle = new Turtle(canvas);
+            coreTurtle = turtle;
+
+            const renderCommand   = commands.render(turtle);
+            const executeCommand  = commands.execute(term);
+            const cameraCommand   = commands.camera(cameraBridge);
+            const saveImage       = commands.saveImage();
+            const saveRecording   = commands.saveRecording();
+
+            const display = mutators.display(output);
+            const slider  = mutators.slider('slider');
+
+            const debouncedRender = temporal.debounce((code) => {
+                const result = renderCommand(code);
+                result.success ? display.success(result.commandCount) : display.error(result.error);
+            }, 20);
+
+            term.bridge.sub(debouncedRender);
+
+            const debouncedPushUp = temporal.throttle(
+                (eventName, eventData) => this.pushEvent(eventName, eventData),
+                200
+            );
+
             turtle.bridge.sub(([event, payload]) => {
                 switch (event) {
                 case "saveRecord":
@@ -357,42 +388,26 @@ const Shell = {
             });
             term.inner();
 
-            // Mobile char toolbar — insert character or run indentWithTab at cursor.
-            const insertCharHandler = (e) => {
-                const { char } = e.detail;
-                if (!char || !term.shell) return;
-                if (char === 'tab') {
-                    cm6.indentWithTab.run(term.shell);
-                } else {
-                    const view = term.shell;
-                    const changes = view.state.selection.ranges.map(r => ({
-                        from: r.from, to: r.to, insert: char,
-                    }));
-                    view.dispatch({ changes, scrollIntoView: true });
-                }
-                term.shell.focus();
-            };
-            window.addEventListener('phx:insertChar', insertCharHandler);
-
+            
             this.cleanup = [
                 listeners.keyboard(term.shell, cm6).mount(),
-                // selection listener subscribes to the bridge, not shell.on()
                 listeners.selection(term.selectionBridge, this.pushEvent.bind(this)).mount(),
                 listeners.theme(theme => term.setOption('theme', theme)).mount(),
                 slider.mount(),
                 listeners.slider(term.shell, slider, cm6).mount(),
-                () => window.removeEventListener('phx:insertChar', insertCharHandler),
             ];
-        }
 
-        this.handleEvent("relayCamera",      ({ command }) => cameraCommand(command));
-        this.handleEvent("selfkeepCanvas",   ({ title })   => cameraCommand("snap", { title }));
-        this.handleEvent("writeShell",       executeCommand);
-        this.handleEvent("opBuffer",         (event)       => term.opBufferHandler(event));
+            this.handleEvent("relayCamera",      ({ command }) => cameraCommand(command));
+            this.handleEvent("selfkeepCanvas",   ({ title })   => cameraCommand("snap", { title }));
+            this.handleEvent("writeShell",       executeCommand);
+            this.handleEvent("opBuffer",         (event)       => term.opBufferHandler(event));
+            this.handleEvent("forkBuffer", (forkData) => term.forkBuffer(forkData));
+        }
     },
 
     destroyed() {
         this.cleanup?.forEach(fn => fn());
+        if (this.el.dataset.target !== "outer") coreTurtle = null;
     }
 };
 

@@ -2,7 +2,8 @@
 // Zero imports. Zero side effects. Every function returns a new value.
 //
 // A buffer is a plain value:
-//   { id, name, content, mode, created, lastModified }
+//   { id, name, content, mode, created, lastModified, origin }
+//   origin: null | { id, addr, source, time, name } — fork lineage
 //
 // A collection is a plain value:
 //   { items: Map<id, buffer>, currentId: string | null }
@@ -54,6 +55,7 @@ export const addBuffer = (collection, opts = {}, nameGen, idGen) => {
         name: opts.name || nameGen(),
         content: opts.content ?? '',
         mode: opts.mode ?? DEFAULT_MODE,
+        origin: opts.origin ?? null,
         created: Date.now(),
         lastModified: Date.now(),
     };
@@ -126,6 +128,7 @@ export const bufferList = (collection) =>
         mode: b.mode,
         active: b.id === collection.currentId,
         modified: b.lastModified,
+        hasOrigin: b.origin !== null,
     }));
 
 // --- Serialization ---
@@ -139,6 +142,7 @@ export const serialize = (collection) => {
             active: collection.currentId === id,
             content: buffer.content,
             mode: buffer.mode,
+            origin: buffer.origin ?? null,
             created: buffer.created,
             lastModified: buffer.lastModified,
         };
@@ -153,6 +157,7 @@ const fillDefaults = (raw, nameGen, idGen) => ({
     name: raw.name ?? nameGen(),
     content: raw.content ?? DEFAULT_CONTENT,
     mode: raw.mode ?? DEFAULT_MODE,
+    origin: raw.origin ?? null,
     created: raw.created ?? Date.now(),
     lastModified: raw.lastModified ?? Date.now(),
 });

@@ -77,7 +77,13 @@ export class Turtle {
         this.gridGroup = new THREE.Group();
         this.glyphGroup = new THREE.Group();
         this.glyphGroup.elements = []
-        //this.glyphist = new Render.Glyph(this.glyphGroup);
+
+        // Guest groups — friend's code rendered into the same scene
+        this.guestPathGroup = new THREE.Group();
+        this.guestGridGroup = new THREE.Group();
+        this.guestGlyphGroup = new THREE.Group();
+        this.guestGlyphGroup.elements = [];
+        this.guestPathGroup.visible = false;
 
         this.shapist = new Render.Shape(this.pathGroup, {layerMethod: 'renderOrder', polygonOffset: { factor: -0.1, units: -1 }})
 
@@ -100,6 +106,9 @@ export class Turtle {
         this.scene.add(this.pathGroup);
         this.scene.add(this.gridGroup);
         this.scene.add(this.glyphGroup);
+        this.scene.add(this.guestPathGroup);
+        this.scene.add(this.guestGridGroup);
+        this.scene.add(this.guestGlyphGroup);
 
         this.renderLoop = new Render.Loop(null, {
             onRender: (currentTime) => this.renderIncremental(currentTime),
@@ -953,6 +962,126 @@ export class Turtle {
         }
     }
 
+
+    // --- Guest rendering: friend's code in the same scene via separate groups ---
+
+    drawGuest(code) {
+        this.clearGuest();
+        if (!code) return { success: true, commandCount: 0 };
+        this.guestPathGroup.visible = true;
+        this.guestGridGroup.visible = true;
+        this.guestGlyphGroup.visible = true;
+
+        // Save host state
+        const saved = {
+            pathGroup: this.pathGroup,
+            gridGroup: this.gridGroup,
+            glyphGroup: this.glyphGroup,
+            shapist: this.shapist,
+            x: this.x, y: this.y, z: this.z,
+            rotation: this.rotation,
+            penDown: this.penDown,
+            color: this.color,
+            thickness: this.thickness,
+            showTurtle: this.showTurtle,
+            currentPath: this.currentPath,
+            commandCount: this.commandCount,
+            recurseCount: this.recurseCount,
+            maxRecurseDepth: this.maxRecurseDepth,
+            maxRecurses: this.maxRecurses,
+            maxCommands: this.maxCommands,
+            functions: this.functions,
+            timeline: this.timeline,
+            places: this.places,
+            executionState: this.executionState,
+        };
+
+        // Swap to guest groups
+        this.pathGroup = this.guestPathGroup;
+        this.gridGroup = this.guestGridGroup;
+        this.glyphGroup = this.guestGlyphGroup;
+        this.shapist = new Render.Shape(this.guestPathGroup, {layerMethod: 'renderOrder', polygonOffset: { factor: -0.1, units: -1 }});
+
+        // Reset execution state for guest
+        this.x = 0; this.y = 0; this.z = 0;
+        this.rotation = new Versor(1, 0, 0, 0);
+        this.penDown = true;
+        this.color = '#e77808';
+        this.thickness = 2;
+        this.showTurtle = false; // no guest head
+        this.currentPath = null;
+        this.commandCount = 0;
+        this.recurseCount = 0;
+        this.maxRecurseDepth = 360;
+        this.maxRecurses = 888888;
+        this.maxCommands = 88888888;
+        this.functions = {};
+        this.places = {};
+        this.executionState = { x: 0, y: 0, z: 0, rotation: new Versor(1, 0, 0, 0) };
+        this.timeline = { currentTime: 0, endTime: 0, frames: new Map(), lastRenderTime: 0, lastRenderFrame: 0 };
+        this.math.parser.reset();
+
+        try {
+            const instructions = parseProgram(code);
+            this.executeBody(instructions, {});
+            // Immediately render all guest paths into guest groups
+            const allPaths = Array.from(this.timeline.frames.values()).flat();
+            this.drawPaths(allPaths);
+            this.requestRender();
+            return { success: true, commandCount: this.commandCount };
+        } catch (error) {
+            console.warn('Guest draw failed:', error.message);
+            return { success: false, error: error.message };
+        } finally {
+            // Restore host state
+            this.pathGroup = saved.pathGroup;
+            this.gridGroup = saved.gridGroup;
+            this.glyphGroup = saved.glyphGroup;
+            this.shapist = saved.shapist;
+            this.x = saved.x; this.y = saved.y; this.z = saved.z;
+            this.rotation = saved.rotation;
+            this.penDown = saved.penDown;
+            this.color = saved.color;
+            this.thickness = saved.thickness;
+            this.showTurtle = saved.showTurtle;
+            this.currentPath = saved.currentPath;
+            this.commandCount = saved.commandCount;
+            this.recurseCount = saved.recurseCount;
+            this.maxRecurseDepth = saved.maxRecurseDepth;
+            this.maxRecurses = saved.maxRecurses;
+            this.maxCommands = saved.maxCommands;
+            this.functions = saved.functions;
+            this.timeline = saved.timeline;
+            this.places = saved.places;
+            this.executionState = saved.executionState;
+            this.math.parser.reset();
+        }
+    }
+
+    clearGuest() {
+        this.guestPathGroup.clear();
+        this.guestGridGroup.clear();
+        this.guestGlyphGroup.elements.forEach(t => t.dispose?.());
+        this.guestGlyphGroup.clear();
+        this.guestGlyphGroup.elements = [];
+        this.guestPathGroup.visible = false;
+        this.guestGridGroup.visible = false;
+        this.guestGlyphGroup.visible = false;
+    }
+
+    setGuestOpacity(opacity) {
+        const apply = (group) => {
+            group.traverse(child => {
+                if (child.material) {
+                    child.material.transparent = true;
+                    child.material.opacity = opacity;
+                }
+            });
+        };
+        apply(this.guestPathGroup);
+        apply(this.guestGridGroup);
+        apply(this.guestGlyphGroup);
+    }
 
     hideTurtle() {
         this.showTurtle = false;

@@ -128,12 +128,19 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_async(:follow_code, {:ok, %Dojo.Turtle{} = turtle}, socket) do
-    outershell = socket.assigns.outershell
+    case OuterShell.transition(socket.assigns.outershell, turtle) do
+      {:push, shell} ->
+        {:noreply,
+         socket
+         |> assign(:outershell, shell)
+         |> push_event(
+           "seeOuterShell",
+           turtle |> Map.from_struct()
+         )}
 
-    {:noreply,
-     socket
-     |> assign(:outershell, %{outershell | state: turtle.state, last_active: turtle.time})
-     |> push_event("seeOuterShell", Map.from_struct(turtle))}
+      {:silent, shell} ->
+        {:noreply, assign(socket, :outershell, shell)}
+    end
   end
 
   def handle_async(:follow_code, {:ok, _}, socket), do: {:noreply, socket}
@@ -206,6 +213,56 @@ defmodule DojoWeb.ShellLive do
 
   def handle_info({:setting, key, value}, socket) do
     {:noreply, Session.apply_setting(socket, key, value)}
+  end
+
+  # --- OuterShell LiveComponent messages ---
+
+  def handle_info({:outer_shell, :close}, socket) do
+    {:noreply, assign(socket, :outershell, %OuterShell{})}
+  end
+
+  def handle_info({:outer_shell, :toggle_follow, follow}, socket) do
+    {:noreply, update(socket, :outershell, &%{&1 | follow: follow})}
+  end
+
+  def handle_info({:outer_shell, :preview}, socket) do
+    shell = socket.assigns.outershell
+
+    case OuterShell.preview(shell) do
+      {:push_freeze, new_shell} ->
+        {:noreply,
+         socket
+         |> assign(:outershell, new_shell)
+         |> push_event(
+           "seeOuterShell",
+           new_shell.freeze_turtle |> Map.from_struct()
+         )}
+
+      {:noop, _} ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_info({:outer_shell, :dismiss_preview}, socket) do
+    shell = socket.assigns.outershell
+
+    case OuterShell.dismiss(shell) do
+      {:push_live, new_shell} ->
+        {:noreply,
+         socket
+         |> assign(:outershell, new_shell)
+         |> push_event(
+           "seeOuterShell",
+           new_shell.live_turtle |> Map.from_struct()
+         )}
+
+      {:noop, _} ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_info({:outer_shell, :fork, fork_data}, socket) do
+    {:noreply, push_event(socket, "forkBuffer", fork_data)}
   end
 
   def handle_info(event, socket) do
@@ -283,14 +340,32 @@ defmodule DojoWeb.ShellLive do
       )
       when is_binary(addr) do
     case Dojo.Table.last(dis[addr][:node], :hatch) do
-      %Dojo.Turtle{state: state} = table_state ->
+      %Dojo.Turtle{state: :success} = turtle ->
         {:noreply,
          socket
-         |> push_event("seeOuterShell", Map.from_struct(table_state))
+         |> push_event(
+           "seeOuterShell",
+           turtle |> Map.from_struct()
+         )
          |> assign(
            :outershell,
            %OuterShell{
-             state: state,
+             mode: :live,
+             live_turtle: turtle,
+             addr: addr,
+             active: true,
+             name: "#{dis[addr][:name]}"
+           }
+         )}
+
+      %Dojo.Turtle{state: :error} = turtle ->
+        {:noreply,
+         socket
+         |> assign(
+           :outershell,
+           %OuterShell{
+             mode: :freeze,
+             freeze_turtle: turtle,
              addr: addr,
              active: true,
              name: "#{dis[addr][:name]}"
@@ -311,22 +386,8 @@ defmodule DojoWeb.ShellLive do
      )}
   end
 
-  def handle_event("followTurtle", _, %{assigns: %{outershell: shell}} = socket) do
-    {:noreply,
-     socket
-     |> assign(
-       :outershell,
-       %{shell | follow: !shell.follow}
-     )}
-  end
-
   def handle_event("closeTurtle", _, socket) do
-    {:noreply,
-     socket
-     |> assign(
-       :outershell,
-       %OuterShell{}
-     )}
+    {:noreply, assign(socket, :outershell, %OuterShell{})}
   end
 
   # Handle the viewport update event from the hook (Decision 003, Layer 3 — windowed pull)
@@ -487,7 +548,7 @@ defmodule DojoWeb.ShellLive do
     %{outershell: outershell, disciples: dis} = socket.assigns
 
     if outershell.follow and outershell.addr == reg_key and dis[reg_key][:node] do
-      if (time || 0) > outershell.last_active do
+      if (time || 0) > OuterShell.last_time(outershell) do
         start_async(socket, :follow_code, fn ->
           Dojo.Table.last(dis[reg_key][:node], :hatch)
         end)
@@ -501,93 +562,6 @@ defmodule DojoWeb.ShellLive do
 
   defp bump_path_time(nil, _time), do: nil
   defp bump_path_time(path, time), do: Regex.replace(~r/\?t=\d+/, path, "?t=#{time}")
-
-  def outershell(assigns) do
-    ~H"""
-    <div class="relative outershell  pt-20 right-2 w-full lg:-left-1/2 lg:w-[150%] ">
-      <div class="flex items-start justify-between gap-2 mb-3">
-        <span
-          id="top-head"
-          class="text-lg font-bold text-secondary-content flex-1 leading-tight"
-        >
-          {Session.t(@locale, "@%{addr}'s code", addr: @outershell.name)}
-        </span>
-
-        <span
-          phx-click="followTurtle"
-          class="pointer-events-auto cursor-pointer relative flex h-2 w-2 flex-shrink-0 mt-1 mr-3 transition-colors delay-150"
-        >
-          <span class={[
-            "absolute inline-flex h-full w-full rounded-full  opacity-75",
-            (@outershell.state == :error && "bg-error") ||
-              (@outershell.follow && "bg-accent-content animate-ping") || "bg-primary"
-          ]}>
-          </span>
-          <span class="relative inline-flex rounded-full h-2 w-2 bg-primaryAccent"></span>
-        </span>
-      </div>
-
-      <div
-        id="outerenv"
-        phx-update="ignore"
-        class="overflow-y-scroll relative border pointer-events-auto rounded-lg h-[50vh]  border-amber-600/20 dark-scrollbar backdrop-blur-xs scrollbar-hide cursor-text"
-      >
-        <button
-          phx-click="closeTurtle"
-          class="z-50 absolute flex  items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 group hover:opacity-100 top-2 right-2 border-accent focus-within:border-none"
-        >
-          <!-- Base Crosshair -->
-          <div class="absolute inset-0 flex items-center justify-center">
-            <svg
-              class="w-4 h-4 transition-colors text-error text-shadow-error group-hover:text-primary-content"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </div>
-        </button>
-        <!--
-        <div class="relative z-4 rounded-sm pointer-events-auto cursor-text border-none h-full" >
-        <textarea
-          phx-update="ignore"
-          id="outershell"
-          phx-hook="Shell"
-          data-target="outer"/>
-      </div>
-      -->
-        <div
-          phx-update="ignore"
-          id="outershell"
-          phx-hook="Shell"
-          class="relative z-40 rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full"
-          data-target="outer"
-        />
-      </div>
-      <div
-        class="flex"
-        class="-bottom-1/12  transition-colors delay-150 duration-300 overflow-y-auto pb-1 "
-      >
-        <div
-          phx-update="ignore"
-          id="outer-output"
-          class="w-1/2 left-2 flex-auto opacity-80 font-mono border-none text-primary text-sm"
-        />
-
-        <div
-          phx-update="ignore"
-          id="outermerge-output"
-          class="w-1/2 flex-auto font-mono  opacity-80 border-none text-primary text-sm"
-        />
-      </div>
-    </div>
-    """
-  end
 
   def nerve(assigns) do
     ~H"""
