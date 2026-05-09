@@ -1,10 +1,9 @@
 export class Evaluator {
-    constructor(bind) {
+    constructor() {
         this.constants = {
             'pi': () => Math.PI,
             'e': () => Math.E,
             'random': () => Math.random(),
-            'time': () => bind.time()/1000
         };
 
         this.functions = {

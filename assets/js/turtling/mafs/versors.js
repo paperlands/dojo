@@ -40,6 +40,14 @@ export class Versor {
         return this;
     }
 
+    // Fast constructor — skips normalization for known-unit inputs.
+    // Used by fromAxisAngle (sin²+cos²=1) and multiply (unit×unit=unit).
+    static raw(w, x, y, z) {
+        const v = Object.create(Versor.prototype);
+        v.w = w; v.x = x; v.y = y; v.z = z;
+        return v;
+    }
+
     static fromAxisAngle(axis, angle) {
         // Normalize angle to prevent overflow
         angle = angle % 360;
@@ -47,7 +55,7 @@ export class Versor {
 
         // Handle identity rotation precisely
         if (Math.abs(angle) < Versor.EPSILON) {
-            return new Versor(1, 0, 0, 0);
+            return Versor.raw(1, 0, 0, 0);
         }
 
         const sinHalfAngle = Math.sin(halfAngle);
@@ -56,11 +64,12 @@ export class Versor {
         // Normalize axis
         const length = Math.sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
         if (length < Versor.EPSILON) {
-            return new Versor(1, 0, 0, 0);
+            return Versor.raw(1, 0, 0, 0);
         }
 
         const scale = sinHalfAngle / length;
-        return new Versor(
+        // sin²(θ/2) + cos²(θ/2) = 1 by construction — skip normalize
+        return Versor.raw(
             cosHalfAngle,
             axis.x * scale,
             axis.y * scale,
@@ -73,7 +82,8 @@ export class Versor {
         const x = this.w * q.x + this.x * q.w + this.y * q.z - this.z * q.y;
         const y = this.w * q.y - this.x * q.z + this.y * q.w + this.z * q.x;
         const z = this.w * q.z + this.x * q.y - this.y * q.x + this.z * q.w;
-        return new Versor(w, x, y, z);
+        // unit × unit = unit by quaternion algebra — skip normalize
+        return Versor.raw(w, x, y, z);
     }
 
     rotate(v) {
@@ -117,6 +127,25 @@ export class Versor {
             y: Number(vy + 2 * cy2),
             z: Number(vz + 2 * cz2)
         };
+    }
+
+    // Rotate returning [x,y,z] tuple — zero object allocation.
+    // For hot paths (commands, executor). See allocation discipline A1.
+    rotateVec(vx, vy, vz) {
+        if (this.w === 1 && this.x === 0 && this.y === 0 && this.z === 0) {
+            return [vx, vy, vz];
+        }
+        const qx = this.x, qy = this.y, qz = this.z, qw = this.w;
+        const cx1 = qy * vz - qz * vy;
+        const cy1 = qz * vx - qx * vz;
+        const cz1 = qx * vy - qy * vx;
+        const tx = cx1 + qw * vx;
+        const ty = cy1 + qw * vy;
+        const tz = cz1 + qw * vz;
+        const cx2 = qy * tz - qz * ty;
+        const cy2 = qz * tx - qx * tz;
+        const cz2 = qx * ty - qy * tx;
+        return [vx + 2 * cx2, vy + 2 * cy2, vz + 2 * cz2];
     }
 
     getTransformValues() {
