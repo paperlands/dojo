@@ -32,7 +32,7 @@ const CLOSERS = { '"': '"', "'": "'", '[': ']', '(': ')' };
 const OPENS_BRACKET = { '[': 1, '(': 1 };
 
 // Block keyword lookup (O(1))
-const BLOCK_KW = { for: 1, loop: 1, def: 1, draw: 1, when: 1 };
+const BLOCK_KW = { for: 1, loop: 1, def: 1, draw: 1, when: 1, as: 1 };
 
 
 
@@ -355,7 +355,13 @@ function parseStatement(tokens, state) {
         if (len < 3) throw new Error("'when' requires checking truthiness");
         return new ASTNode('When', tokens[1], parseBlock(state));
     }
-    
+
+    // Ambient: as <name> do ... end
+    if (kw === 'as') {
+        if (len < 3) throw new Error("'as' requires ambient name");
+        return new ASTNode('Ambient', tokens[1], parseBlock(state));
+    }
+
     throw new Error(`Unknown keyword: ${kw}`);
 }
 

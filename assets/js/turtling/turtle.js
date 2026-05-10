@@ -77,6 +77,7 @@ export class Turtle {
         this.rotation = Versor.raw(1, 0, 0, 0);
         this.color = '#e77808';
         this.showTurtle = 10;
+        if (this.compositor) this.compositor.dispose()
         this.compositor = null
         this.renderstate.phase = "start"
         this.renderstate.snapshot = {frame: null, save: false}
@@ -104,7 +105,13 @@ export class Turtle {
             const generator = execute(instructions, deps, { color: this.color })
 
             // Create scheduler + compositor — unified path for batch and temporal
-            const scheduler = createScheduler(generator)
+            const scheduler = createScheduler(generator, {
+                createDeps: () => ({
+                    mathParser: new Parser(),
+                    mathEvaluator: new Evaluator()
+                }),
+                execOpts: { color: this.color }
+            })
 
             const groups = this.stage.groups
             const ctx = {
@@ -120,6 +127,8 @@ export class Turtle {
                 recorder: this.stage.recorder,
                 renderstate: this.renderstate,
                 hatch: () => this.hatch()
+            }, {
+                createHead: (parent) => new Render.Head(parent)
             })
 
             // Eager flush: drain the generator synchronously for batch programs.

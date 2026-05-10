@@ -1,63 +1,205 @@
-// Scheduler — cooperative per-tick generator walker.
-// Wraps an executor generator with time-based scheduling.
-// Single-ambient (Phase 5a). Tree walk deferred to 5b.
+// Scheduler — cooperative tree walker for ambient coroutines.
+// Phase 5b: tree of AmbientCtx nodes, post-order walk per tick.
 //
-// tick(now) advances the generator until a wait event or done,
-// writing all produced events to the channel (RingBuffer).
-// The compositor drains the channel through the materializer.
+// Each AmbientCtx wraps an executor generator with its own channel
+// (RingBuffer) and transform Atom<SE3>. The scheduler walks the tree
+// post-order (children before parents) each tick, advancing each
+// ready generator until it yields a wait or exhausts.
+//
+// Transform atoms are updated from head events — this enables
+// worldTransform composition for inertial frame rendering.
+//
+// Spawn events from the executor create child ambients. Structured
+// concurrency: when a parent completes, children continue naturally.
 
 import { createRingBuffer } from "./ring-buffer.js"
+import { execute } from "./executor.js"
+import { SE3 } from "./se3.js"
+import { createAtom } from "./atom.js"
 
-export function createScheduler(generator, opts = {}) {
-    const channel = createRingBuffer(opts.channelCapacity || 4096)
+// --- AmbientCtx: the unified node ---
 
+function createAmbientCtx(id, generator, transform, channelCapacity, parentId) {
     return {
+        id,
+        parentId: parentId || null,
         generator,
-        channel,
+        channel: createRingBuffer(channelCapacity || 4096),
+        transform: createAtom(transform || SE3.identity()),
         resumeAt: 0,
         done: false,
         commandCount: 0,
+        children: new Map()
+    }
+}
 
-        // Advance the generator until it yields a wait or exhausts.
-        // All non-wait events are written to the channel.
-        // Returns true if new events were produced this tick.
+// --- Tree walk ---
+
+function visitPostOrder(ctx, fn) {
+    for (const child of ctx.children.values()) {
+        visitPostOrder(child, fn)
+    }
+    fn(ctx)
+}
+
+function terminateAmbient(ctx) {
+    for (const child of ctx.children.values()) {
+        if (!child.done) terminateAmbient(child)
+    }
+    ctx.done = true
+    ctx.channel.close()
+}
+
+function allDone(ctx) {
+    if (!ctx.done) return false
+    for (const child of ctx.children.values()) {
+        if (!allDone(child)) return false
+    }
+    return true
+}
+
+function sumCounts(ctx) {
+    let total = ctx.commandCount
+    for (const child of ctx.children.values()) {
+        total += sumCounts(child)
+    }
+    return total
+}
+
+// --- World transform: inertial frame composition ---
+
+// Compute the world origin for an ambient by composing all ancestor transforms.
+// Returns the SE3 that maps this ambient's local (0,0,0) to world coordinates.
+// Root returns identity (root draws in world coords).
+function worldTransform(ctx, registry) {
+    if (!ctx.parentId) return SE3.identity()
+
+    const chain = []
+    let id = ctx.parentId
+    while (id) {
+        const parent = registry.get(id)
+        if (!parent) break
+        chain.unshift(parent.transform.deref())
+        id = parent.parentId
+    }
+    if (chain.length === 0) return SE3.identity()
+    return chain.reduce((a, b) => SE3.compose(a, b))
+}
+
+// --- Scheduler ---
+
+export function createScheduler(generator, opts = {}) {
+    const channelCapacity = opts.channelCapacity || 4096
+    const createDeps = opts.createDeps || null
+    const execOpts = opts.execOpts || {}
+
+    const root = createAmbientCtx('root', generator, SE3.identity(), channelCapacity, null)
+    const registry = new Map([['root', root]])
+
+    return {
+        root,
+        channel: root.channel,   // backward compat — root ambient's channel
+        registry,
+
+        get resumeAt() { return root.resumeAt },
+        set resumeAt(v) { root.resumeAt = v },
+
+        done: false,
+        commandCount: 0,
+
+        // Advance all ready ambients. Post-order: children before parents.
+        // Returns true if any ambient produced events this tick.
         tick(now) {
-            if (this.done || this.resumeAt > now) return false
+            if (this.done) return false
 
             let produced = false
 
-            while (!this.done) {
-                const { value, done } = this.generator.next()
+            visitPostOrder(root, (ctx) => {
+                if (ctx.done || ctx.resumeAt > now) return
 
-                if (done) {
-                    this.done = true
-                    this.commandCount = value || 0
-                    this.channel.close()
-                    break
-                }
+                while (!ctx.done) {
+                    const { value, done } = ctx.generator.next()
 
-                if (value.type === "wait") {
-                    this.resumeAt = now + value.duration
-                    // Emit a head snapshot at the wait boundary so the
-                    // compositor can update head position mid-animation
-                    if (value.position) {
-                        this.channel.put({
-                            type: "head",
-                            position: value.position,
-                            rotation: value.rotation,
-                            color: value.color,
-                            headSize: value.headSize
-                        })
+                    if (done) {
+                        ctx.done = true
+                        ctx.commandCount = value || 0
+                        ctx.channel.close()
+                        // Note: children are NOT terminated here. Parent waits
+                        // for children to complete naturally (structured concurrency).
+                        // terminateAmbient is for crash/abort, not natural completion.
+                        break
                     }
-                    produced = true
-                    break
-                }
 
-                this.channel.put(value)
-                produced = true
+                    if (value.type === "wait") {
+                        ctx.resumeAt = now + value.duration
+                        if (value.position) {
+                            // Update transform atom from wait position
+                            ctx.transform.swap(() => ({
+                                rotation: value.rotation,
+                                position: [...value.position]
+                            }))
+                            ctx.channel.put({
+                                type: "head",
+                                position: value.position,
+                                rotation: value.rotation,
+                                color: value.color,
+                                headSize: value.headSize
+                            })
+                        }
+                        produced = true
+                        break
+                    }
+
+                    if (value.type === "spawn") {
+                        // Update parent transform from spawn snapshot — keeps
+                        // the atom current between head events so child ambients
+                        // spawned later get a valid worldTransform immediately.
+                        ctx.transform.swap(() => value.transform)
+
+                        if (createDeps) {
+                            const childDeps = createDeps()
+                            const childGen = execute(value.ast, childDeps, {
+                                color: value.penState?.color || execOpts.color,
+                                maxRecurseDepth: execOpts.maxRecurseDepth,
+                                maxRecurses: execOpts.maxRecurses,
+                                maxCommands: execOpts.maxCommands
+                            })
+                            const child = createAmbientCtx(
+                                value.name,
+                                childGen,
+                                SE3.identity(),   // child draws in local coords
+                                channelCapacity,
+                                ctx.id            // parentId for worldTransform chain
+                            )
+                            ctx.children.set(value.name, child)
+                            registry.set(value.name, child)
+                        }
+                        // spawn events are consumed by scheduler, not channeled
+                        produced = true
+                        continue
+                    }
+
+                    // Intercept head events to update transform atom
+                    if (value.type === "head") {
+                        ctx.transform.swap(() => ({
+                            rotation: value.rotation,
+                            position: [...value.position]
+                        }))
+                    }
+
+                    ctx.channel.put(value)
+                    produced = true
+                }
+            })
+
+            this.done = allDone(root)
+            if (this.done) {
+                this.commandCount = sumCounts(root)
             }
 
             return produced
         }
     }
 }
+
+export { createAmbientCtx, visitPostOrder, terminateAmbient, allDone, worldTransform }

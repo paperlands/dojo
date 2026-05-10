@@ -125,6 +125,18 @@ function* walkBody(body, scope, state) {
             break
         }
 
+        case 'Ambient': {
+            // Yield spawn event — the scheduler creates and manages the child
+            yield {
+                type: 'spawn',
+                name: node.value,
+                ast: node.children,
+                transform: SE3.clone(state.transform),
+                penState: { ...state.penState }
+            }
+            break
+        }
+
         case 'Empty':
             break
         }
