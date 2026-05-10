@@ -53,6 +53,12 @@ export const SE3 = {
         }
     },
 
+    // Transform a point by an SE3: rotate then translate.
+    apply(t, point) {
+        const [rx, ry, rz] = t.rotation.rotateVec(point[0], point[1], point[2])
+        return [t.position[0] + rx, t.position[1] + ry, t.position[2] + rz]
+    },
+
     isValid(t) {
         const r = t.rotation
         const lenSq = r.w * r.w + r.x * r.x + r.y * r.y + r.z * r.z

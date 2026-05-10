@@ -356,10 +356,12 @@ function parseStatement(tokens, state) {
         return new ASTNode('When', tokens[1], parseBlock(state));
     }
 
-    // Ambient: as <name> do ... end
+    // Ambient: as <name> [<frame>] do ... end
     if (kw === 'as') {
         if (len < 3) throw new Error("'as' requires ambient name");
-        return new ASTNode('Ambient', tokens[1], parseBlock(state));
+        const meta = {}
+        if (len > 3) meta.frame = tokens[2]
+        return new ASTNode('Ambient', tokens[1], parseBlock(state), meta);
     }
 
     throw new Error(`Unknown keyword: ${kw}`);
@@ -414,7 +416,7 @@ export function printAST(ast) {
                 const args = node.meta.args || [];
                 const len = args.length;
                 let argStr = '';
-                
+
                 if (len > 0) {
                     argStr = args[0].value;
                     for (let i = 1; i < len; i++) {
@@ -422,11 +424,19 @@ export function printAST(ast) {
                     }
                     argStr = ' ' + argStr;
                 }
-                
+
                 out.push(`${indent}def ${node.value}${argStr} do`);
                 node.children.forEach(c => visit(c, depth + 1));
                 out.push(indent + END);
                 break;
+            }
+
+            case 'Ambient': {
+                const mod = node.meta?.frame ? ` ${node.meta.frame}` : ''
+                out.push(`${indent}as ${node.value}${mod} do`)
+                node.children.forEach(c => visit(c, depth + 1))
+                out.push(indent + END)
+                break
             }
         }
     }

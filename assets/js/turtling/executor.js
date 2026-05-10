@@ -132,7 +132,8 @@ function* walkBody(body, scope, state) {
                 name: node.value,
                 ast: node.children,
                 transform: SE3.clone(state.transform),
-                penState: { ...state.penState }
+                penState: { ...state.penState },
+                frame: node.meta?.frame || null
             }
             break
         }

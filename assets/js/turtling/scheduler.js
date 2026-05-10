@@ -29,7 +29,8 @@ function createAmbientCtx(id, generator, transform, channelCapacity, parentId) {
         resumeAt: 0,
         done: false,
         commandCount: 0,
-        children: new Map()
+        children: new Map(),
+        frame: null       // target frame name for `in <frame>` — null = own frame
     }
 }
 
@@ -86,6 +87,40 @@ function worldTransform(ctx, registry) {
     return chain.reduce((a, b) => SE3.compose(a, b))
 }
 
+// --- Inertial frame targeting ---
+
+// Compose the transform chain from a child ambient up to (and including)
+// the target frame. Maps child-local coordinates into target-local coords.
+// E.g. for `as stick in cycle do`, composes epicycle.t ∘ cycle.t so that
+// stick-local points land in cycle's coordinate space.
+function relativeTransform(ctx, targetId, registry) {
+    const chain = []
+    let id = ctx.parentId
+    while (id) {
+        const ancestor = registry.get(id)
+        if (!ancestor) break
+        chain.unshift(ancestor.transform.deref())
+        if (id === targetId) break
+        id = ancestor.parentId
+    }
+    if (chain.length === 0) return SE3.identity()
+    return chain.reduce((a, b) => SE3.compose(a, b))
+}
+
+// Rewrite an event's coordinates from child-local to target-local.
+function transformEvent(event, t) {
+    switch (event.type) {
+        case 'path':
+            return { ...event, points: event.points.map(p => SE3.apply(t, p)) }
+        case 'label':
+            return { ...event, position: SE3.apply(t, event.position) }
+        case 'grid':
+            return { ...event, position: SE3.apply(t, event.position), rotation: t.rotation }
+        default:
+            return event
+    }
+}
+
 // --- Scheduler ---
 
 export function createScheduler(generator, opts = {}) {
@@ -123,10 +158,9 @@ export function createScheduler(generator, opts = {}) {
                     if (done) {
                         ctx.done = true
                         ctx.commandCount = value || 0
-                        ctx.channel.close()
-                        // Note: children are NOT terminated here. Parent waits
-                        // for children to complete naturally (structured concurrency).
-                        // terminateAmbient is for crash/abort, not natural completion.
+                        // Channel stays open — frame-targeted descendants may
+                        // still imprint events here after this ambient finishes.
+                        // terminateAmbient closes channels on crash/abort.
                         break
                     }
 
@@ -156,6 +190,15 @@ export function createScheduler(generator, opts = {}) {
                         // spawned later get a valid worldTransform immediately.
                         ctx.transform.swap(() => value.transform)
 
+                        // Idempotent spawn: if child with this name is still
+                        // running, skip. Makes `as name do` inside loops
+                        // spawn-once. Completed children can be re-spawned.
+                        const existing = ctx.children.get(value.name)
+                        if (existing && !existing.done) {
+                            produced = true
+                            continue
+                        }
+
                         if (createDeps) {
                             const childDeps = createDeps()
                             const childGen = execute(value.ast, childDeps, {
@@ -171,6 +214,17 @@ export function createScheduler(generator, opts = {}) {
                                 channelCapacity,
                                 ctx.id            // parentId for worldTransform chain
                             )
+                            child.frame = value.frame || null
+                            // Carry undrained events from completed predecessor —
+                            // without this, ambients that complete without a wait
+                            // lose their channel contents when re-spawned in the
+                            // same tick (drain hasn't run yet).
+                            if (existing && existing.channel.length > 0) {
+                                const orphaned = existing.channel.drain()
+                                for (const event of orphaned) {
+                                    child.channel.put(event)
+                                }
+                            }
                             ctx.children.set(value.name, child)
                             registry.set(value.name, child)
                         }
@@ -187,7 +241,22 @@ export function createScheduler(generator, opts = {}) {
                         }))
                     }
 
-                    ctx.channel.put(value)
+                    // Frame targeting: route events to named ancestor frame
+                    if (ctx.frame) {
+                        if (value.type === "head") {
+                            // Head stays in own channel — compositor renders it
+                            // at this ambient's worldTransform position
+                            ctx.channel.put(value)
+                        } else {
+                            const target = registry.get(ctx.frame)
+                            if (target) {
+                                const rel = relativeTransform(ctx, ctx.frame, registry)
+                                target.channel.put(transformEvent(value, rel))
+                            }
+                        }
+                    } else {
+                        ctx.channel.put(value)
+                    }
                     produced = true
                 }
             })
