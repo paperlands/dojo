@@ -3,7 +3,7 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
-import { execute, drainEvents, toLegacyFrame } from "../../assets/js/turtling/executor.js"
+import { execute, drainEvents } from "../../assets/js/turtling/executor.js"
 import { ASTNode } from "../../assets/js/turtling/ast.js"
 
 const near = (a, b, eps = 1e-8) => Math.abs(a - b) < eps
@@ -439,105 +439,6 @@ describe("integration", () => {
     })
 })
 
-// ---------------------------------------------------------------------------
-// toLegacyFrame adapter
-// ---------------------------------------------------------------------------
-
-describe("toLegacyFrame", () => {
-    test("path points converted to {x,y,z} objects", () => {
-        const events = drainEvents([call("fw", 100)], mockDeps())
-        const { frames } = toLegacyFrame(events)
-
-        const frame0 = frames.get(0)
-        const paths = frame0.filter(e => e.type === "path")
-        assert.equal(paths.length, 1)
-
-        // Points should be {x,y,z} objects
-        for (const point of paths[0].points) {
-            assert.equal(typeof point.x, "number")
-            assert.equal(typeof point.y, "number")
-            assert.equal(typeof point.z, "number")
-        }
-    })
-
-    test("head event uses legacy field names", () => {
-        const events = drainEvents([call("fw", 100)], mockDeps())
-        const { frames } = toLegacyFrame(events)
-
-        const frame0 = frames.get(0)
-        const heads = frame0.filter(e => e.type === "head")
-        assert.equal(heads.length, 1)
-
-        // Legacy uses 'points' (not 'position') and 'headsize' (not 'headSize')
-        assert.ok(Array.isArray(heads[0].points))
-        assert.ok('headsize' in heads[0])
-        assert.ok('rotation' in heads[0])
-    })
-
-    test("label event converted to text type", () => {
-        const events = drainEvents([call("label", "'hi'", 2)], mockDeps())
-        const { frames } = toLegacyFrame(events)
-
-        const frame0 = frames.get(0)
-        const texts = frame0.filter(e => e.type === "text")
-        assert.equal(texts.length, 1)
-        assert.equal(texts[0].text, "hi")
-        assert.equal(texts[0].text_size, 10) // 2 * 5
-    })
-
-    test("grid event uses legacy field names", () => {
-        const events = drainEvents([call("grid", 10, 5)], mockDeps())
-        const { frames } = toLegacyFrame(events)
-
-        const frame0 = frames.get(0)
-        const grids = frame0.filter(e => e.type === "grid")
-        assert.equal(grids.length, 1)
-        assert.equal(grids[0].division, 10) // legacy: division, not divisions
-        assert.ok(Array.isArray(grids[0].point)) // legacy: point, not position
-    })
-
-    test("wait creates new frame at correct time", () => {
-        const events = drainEvents(
-            [call("fw", 50), call("wait", 2), call("fw", 50)],
-            mockDeps()
-        )
-        const { frames, endTime } = toLegacyFrame(events)
-
-        assert.equal(endTime, 2000)
-        assert.ok(frames.has(0))
-        assert.ok(frames.has(2000))
-
-        // Frame 0 should have the first path + head snapshot from wait
-        const frame0 = frames.get(0)
-        assert.ok(frame0.some(e => e.type === "path"))
-        assert.ok(frame0.some(e => e.type === "head"))
-
-        // Frame 2000 should have the second path
-        const frame2 = frames.get(2000)
-        assert.ok(frame2.some(e => e.type === "path") || frame2.some(e => e.type === "head"))
-    })
-
-    test("multiple waits accumulate time", () => {
-        const events = drainEvents(
-            [call("wait", 1), call("wait", 2)],
-            mockDeps()
-        )
-        const { frames, endTime } = toLegacyFrame(events)
-
-        assert.equal(endTime, 3000)
-        assert.ok(frames.has(0))
-        assert.ok(frames.has(1000))
-        assert.ok(frames.has(3000))
-    })
-
-    test("clear event preserved", () => {
-        const events = drainEvents([call("erase")], mockDeps())
-        const { frames } = toLegacyFrame(events)
-
-        const frame0 = frames.get(0)
-        assert.ok(frame0.some(e => e.type === "clear"))
-    })
-})
 
 // --- Runtime state bindings ---
 

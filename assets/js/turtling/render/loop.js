@@ -45,7 +45,11 @@ export default class Loop {
                     this.state.needsClear = false;
                 }
 
-                this.onRender(this.state.currentTime);
+                try {
+                    this.onRender(this.state.currentTime);
+                } catch (e) {
+                    console.error('Render loop error:', e);
+                }
                 this.state.lastTimestamp = this.state.currentTime;
 
             }

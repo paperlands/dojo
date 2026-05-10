@@ -29,13 +29,15 @@ export function* execute(ast, deps, opts = {}) {
         deps
     }
 
+    const roundVec = (v, eps = 1e-10, decimals = 8) => Math.abs(v) < 1e-10 ? 0 : Math.round(v * 1e9) / 1e9
+
     // Bind runtime state into evaluator — thunks are lazy,
     // only invoked when an expression actually references the name
     const ec = deps.mathEvaluator.constants
     ec['time'] = () => state.elapsedTime / 1000
-    ec['x'] = () => state.transform.position[0]
-    ec['y'] = () => state.transform.position[1]
-    ec['z'] = () => state.transform.position[2]
+    ec['x'] = () => roundVec(state.transform.position[0])
+    ec['y'] = () => roundVec(state.transform.position[1])
+    ec['z'] = () => roundVec(state.transform.position[2])
 
     yield* walkBody(ast, {}, state)
 
@@ -52,6 +54,8 @@ export function* execute(ast, deps, opts = {}) {
         headSize: state.penState.showTurtle,
         color: state.penState.color
     }
+
+    return state.commandCount
 }
 
 function* walkBody(body, scope, state) {
@@ -263,83 +267,4 @@ export function drainEvents(ast, deps, opts = {}) {
         events.push(event)
     }
     return events
-}
-
-// Bridge: convert executor events into the format drawPaths/timeline expects.
-// This is a transitional adapter — Phase 3 (materializer) will eliminate it.
-export function toLegacyFrame(events) {
-    const frame0 = []       // immediate frame (time 0)
-    const frames = new Map() // Map<timestamp, entries[]>
-    let currentTime = 0
-
-    frames.set(0, frame0)
-    let currentFrame = frame0
-
-    for (const event of events) {
-        switch (event.type) {
-        case "path":
-            currentFrame.push({
-                type: "path",
-                points: event.points.map(p =>
-                    Array.isArray(p) ? { x: p[0], y: p[1], z: p[2] } : p
-                ),
-                color: event.color,
-                thickness: event.thickness,
-                filled: event.filled || false
-            })
-            break
-
-        case "head":
-            currentFrame.push({
-                type: "head",
-                points: event.position,
-                color: event.color,
-                rotation: event.rotation,
-                headsize: event.headSize
-            })
-            break
-
-        case "label":
-            currentFrame.push({
-                type: "text",
-                points: [event.position],
-                color: event.color,
-                text: event.text,
-                text_size: event.textSize,
-                rotation: event.rotation
-            })
-            break
-
-        case "grid":
-            currentFrame.push({
-                type: "grid",
-                point: event.position,
-                color: event.color,
-                size: event.size,
-                division: event.divisions,
-                rotation: event.rotation
-            })
-            break
-
-        case "clear":
-            currentFrame.push({ type: "clear" })
-            break
-
-        case "wait":
-            // Close current frame with head snapshot
-            currentFrame.push({
-                type: "head",
-                points: event.position,
-                color: event.color,
-                rotation: event.rotation,
-                headsize: event.headSize
-            })
-            currentTime += event.duration
-            currentFrame = []
-            frames.set(currentTime, currentFrame)
-            break
-        }
-    }
-
-    return { frames, endTime: currentTime }
 }

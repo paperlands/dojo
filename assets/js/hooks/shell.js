@@ -371,8 +371,8 @@ const Shell = {
 
             term.bridge.sub(debouncedRender);
 
-            const debouncedPushUp = temporal.throttle(
-                (eventName, eventData) => this.pushEvent(eventName, eventData),
+            const debouncedHatch = temporal.debounce(
+                (payload) => this.pushEvent("hatchTurtle", payload),
                 200
             );
 
@@ -382,8 +382,9 @@ const Shell = {
                     if (payload.type === "video") saveRecording(payload.snapshot);
                     if (payload.type === "image") saveImage(payload.snapshot);
                     break;
-                default:
-                    debouncedPushUp(event, payload);
+                case "hatchTurtle":
+                    debouncedHatch(payload);
+                    break;
                 }
             });
             term.inner();
