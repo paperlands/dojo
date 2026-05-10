@@ -223,7 +223,8 @@ export function createScheduler(generator, opts = {}) {
                                 color: value.penState?.color || execOpts.color,
                                 maxRecurseDepth: execOpts.maxRecurseDepth,
                                 maxRecurses: execOpts.maxRecurses,
-                                maxCommands: execOpts.maxCommands
+                                maxCommands: execOpts.maxCommands,
+                                functions: value.functions
                             })
                             const child = createAmbientCtx(
                                 value.name,

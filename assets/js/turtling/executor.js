@@ -18,7 +18,7 @@ export function* execute(ast, deps, opts = {}) {
             color: opts.color || DEFAULT_PEN_STATE.color
         },
         currentPath: null,
-        functions: {},
+        functions: opts.functions ? { ...opts.functions } : {},
         commandCount: 0,
         recurseCount: 0,
         maxRecurseDepth: opts.maxRecurseDepth || 360,
@@ -149,7 +149,8 @@ function* walkBody(body, scope, state) {
                 ast: node.children,
                 transform: SE3.clone(state.transform),
                 penState: { ...state.penState },
-                frame: node.meta?.frame || null
+                frame: node.meta?.frame || null,
+                functions: { ...state.functions }
             }
             break
         }
