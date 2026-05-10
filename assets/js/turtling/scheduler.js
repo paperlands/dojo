@@ -28,6 +28,7 @@ function createAmbientCtx(id, generator, transform, channelCapacity, parentId) {
         transform: createAtom(transform || SE3.identity()),
         resumeAt: 0,
         done: false,
+        error: null,       // error message if generator crashed
         commandCount: 0,
         children: new Map(),
         frame: null       // target frame name for `in <frame>` — null = own frame
@@ -142,6 +143,14 @@ export function createScheduler(generator, opts = {}) {
         done: false,
         commandCount: 0,
 
+        get errors() {
+            const errs = []
+            for (const [id, ctx] of registry) {
+                if (ctx.error) errs.push({ ambientId: id, message: ctx.error })
+            }
+            return errs
+        },
+
         // Advance all ready ambients. Post-order: children before parents.
         // Returns true if any ambient produced events this tick.
         tick(now) {
@@ -153,7 +162,16 @@ export function createScheduler(generator, opts = {}) {
                 if (ctx.done || ctx.resumeAt > now) return
 
                 while (!ctx.done) {
-                    const { value, done } = ctx.generator.next()
+                    let value, done
+                    try {
+                        ({ value, done } = ctx.generator.next())
+                    } catch (error) {
+                        ctx.done = true
+                        ctx.error = error.message
+                        ctx.channel.put({ type: 'error', message: error.message, ambientId: ctx.id })
+                        produced = true
+                        break
+                    }
 
                     if (done) {
                         ctx.done = true

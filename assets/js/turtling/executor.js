@@ -39,7 +39,23 @@ export function* execute(ast, deps, opts = {}) {
     ec['y'] = () => roundVec(state.transform.position[1])
     ec['z'] = () => roundVec(state.transform.position[2])
 
-    yield* walkBody(ast, {}, state)
+    try {
+        yield* walkBody(ast, {}, state)
+    } catch (error) {
+        // Flush accumulated path before crash propagates — valid geometry survives
+        if (state.currentPath) {
+            yield { type: "path", ...state.currentPath }
+            state.currentPath = null
+        }
+        yield {
+            type: "head",
+            position: [...state.transform.position],
+            rotation: state.transform.rotation,
+            headSize: state.penState.showTurtle,
+            color: state.penState.color
+        }
+        throw error
+    }
 
     // Flush any open path at the end
     if (state.currentPath) {

@@ -48,11 +48,13 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
 
             if (id === 'root') {
                 for (const event of events) {
+                    if (event.type === 'error') continue
                     materialize(event, groups, ctx)
                 }
             } else {
                 const layer = getOrCreateLayer(id)
                 for (const event of events) {
+                    if (event.type === 'error') continue
                     if (event.type === 'head' && layer.head) {
                         // Child head: update the child's own head mesh
                         if (event.headSize) {

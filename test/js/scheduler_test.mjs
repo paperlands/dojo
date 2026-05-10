@@ -29,7 +29,6 @@ describe("scheduler basics", () => {
 
         assert.ok(produced)
         assert.ok(scheduler.done)
-        assert.ok(scheduler.channel.closed)
 
         const drained = scheduler.channel.drain()
         assert.equal(drained.length, 2)
@@ -43,7 +42,6 @@ describe("scheduler basics", () => {
         scheduler.tick(0)
 
         assert.ok(scheduler.done)
-        assert.ok(scheduler.channel.closed)
         assert.equal(scheduler.channel.drain().length, 0)
     })
 
@@ -162,11 +160,12 @@ describe("channel", () => {
         assert.equal(second.length, 0)
     })
 
-    test("channel closes on generator exhaustion", () => {
+    test("channel stays open after generator exhaustion", () => {
+        // Channel stays open — frame-targeted descendants may still write
         const scheduler = createScheduler(genFromEvents([]))
         scheduler.tick(0)
 
-        assert.ok(scheduler.channel.closed)
+        assert.ok(!scheduler.channel.closed)
     })
 })
 
@@ -673,6 +672,140 @@ describe("worldTransform", () => {
         // Child's worldTransform should reflect parent's live position
         wt = worldTransform(child, registry)
         assert.ok(Math.abs(wt.position[0] - 200) < 0.01)
+    })
+})
+
+// ---------------------------------------------------------------------------
+// Phase 7: Fault isolation
+// ---------------------------------------------------------------------------
+
+describe("fault isolation", () => {
+    test("generator error marks ambient done, preserves channel events", () => {
+        function* gen() {
+            yield { type: "path", points: [[0,0,0],[100,0,0]], color: '#f', thickness: 1 }
+            throw new Error("Function mistake not defined")
+        }
+        const scheduler = createScheduler(gen())
+
+        scheduler.tick(0)
+
+        assert.ok(scheduler.done)
+        assert.equal(scheduler.root.error, "Function mistake not defined")
+
+        const drained = scheduler.channel.drain()
+        // path event + error event
+        assert.equal(drained.length, 2)
+        assert.equal(drained[0].type, "path")
+        assert.equal(drained[1].type, "error")
+        assert.equal(drained[1].message, "Function mistake not defined")
+    })
+
+    test("error event includes ambientId", () => {
+        function* gen() {
+            throw new Error("boom")
+        }
+        const scheduler = createScheduler(gen())
+        scheduler.tick(0)
+
+        const drained = scheduler.channel.drain()
+        const errorEvent = drained.find(e => e.type === 'error')
+        assert.equal(errorEvent.ambientId, "root")
+    })
+
+    test("scheduler.errors returns all crashed ambients", () => {
+        function* gen() {
+            yield { type: "path", points: [[0,0,0],[50,0,0]], color: '#f', thickness: 1 }
+            throw new Error("oops")
+        }
+        const scheduler = createScheduler(gen())
+        scheduler.tick(0)
+
+        const errors = scheduler.errors
+        assert.equal(errors.length, 1)
+        assert.equal(errors[0].ambientId, "root")
+        assert.equal(errors[0].message, "oops")
+    })
+
+    test("no errors on successful execution", () => {
+        const scheduler = createScheduler(genFromEvents([
+            { type: "head", position: [0,0,0], rotation: {w:1,x:0,y:0,z:0}, color: '#f', headSize: 10 }
+        ]))
+        scheduler.tick(0)
+
+        assert.equal(scheduler.errors.length, 0)
+    })
+
+    test("child crash does not affect parent or siblings", () => {
+        // Parent spawns two children: one crashes, one succeeds
+        function* parentGen() {
+            yield {
+                type: "spawn", name: "good",
+                ast: [call("fw", 100)],
+                transform: SE3.identity(),
+                penState: { color: '#e77808', thickness: 2, down: true, showTurtle: 10 }
+            }
+            yield {
+                type: "spawn", name: "bad",
+                ast: [call("fw", 50), call("mistake")],
+                transform: SE3.identity(),
+                penState: { color: '#e77808', thickness: 2, down: true, showTurtle: 10 }
+            }
+            yield { type: "head", position: [0,0,0], rotation: {w:1,x:0,y:0,z:0}, color: '#f', headSize: 10 }
+        }
+
+        const scheduler = createScheduler(parentGen(), {
+            createDeps: mockDeps,
+            execOpts: { color: '#e77808' }
+        })
+
+        // Tick until done or max
+        let ticks = 0
+        while (!scheduler.done && ticks < 100) {
+            scheduler.tick(0)
+            for (const ctx of scheduler.registry.values()) ctx.channel.drain()
+            ticks++
+        }
+
+        assert.ok(scheduler.done)
+
+        // Parent completed normally
+        assert.ok(scheduler.root.done)
+        assert.equal(scheduler.root.error, null)
+
+        // Good child completed normally
+        const good = scheduler.registry.get("good")
+        assert.ok(good.done)
+        assert.equal(good.error, null)
+
+        // Bad child crashed
+        const bad = scheduler.registry.get("bad")
+        assert.ok(bad.done)
+        assert.ok(bad.error)
+        assert.ok(bad.error.includes("mistake"))
+    })
+
+    test("valid commands render despite later error (integration)", () => {
+        // "fw 100 rt 90 mistake" — fw and rt should produce events,
+        // mistake should error but not destroy them
+        const ast = parseProgram("fw 100\nrt 90\nmistake")
+        const deps = mockDeps()
+        const generator = execute(ast, deps, { color: '#e77808' })
+
+        const scheduler = createScheduler(generator)
+        scheduler.tick(0)
+
+        assert.ok(scheduler.done)
+        assert.equal(scheduler.errors.length, 1)
+        assert.ok(scheduler.errors[0].message.includes("mistake"))
+
+        // Channel should have: path (from fw 100) + error
+        // rt 90 doesn't produce a path event (no movement, just rotation)
+        const drained = scheduler.channel.drain()
+        const paths = drained.filter(e => e.type === "path")
+        assert.ok(paths.length >= 1, "valid path events survived the crash")
+
+        const errors = drained.filter(e => e.type === "error")
+        assert.equal(errors.length, 1)
     })
 })
 

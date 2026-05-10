@@ -136,12 +136,21 @@ export class Turtle {
             // compositor continues ticking in the render loop.
             this.compositor.flush()
 
+            // Execution errors are captured by the scheduler (fault isolation),
+            // not thrown. Valid commands' output survives in the scene.
+            const errors = this.compositor.scheduler.errors
+            if (errors.length > 0) {
+                this.renderstate.meta = {state: "error", message: errors[0].message, source: code, commands: instructions}
+                return { success: false, error: errors[0].message }
+            }
+
             this.renderstate.meta = {state: "success", commands: instructions}
             endTime = performance.now();
             executionTime = endTime-startTime-executionTime
             console.log(`Drawing Time took ${executionTime} milliseconds.`);
             return { success: true, commandCount: this.compositor.scheduler.commandCount };
         } catch (error) {
+            // Parse errors and infrastructure failures still throw
             console.error(error);
             this.renderstate.meta = {state: "error", message: error.message, source: code}
             return { success: false, error: error.message };
