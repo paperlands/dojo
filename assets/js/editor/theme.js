@@ -81,26 +81,27 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
             color:      '#fbb32f',
             cursor:     'pointer',
         },
+        // Bracket matching (parens, braces, brackets)
         '&.cm-focused .cm-matchingBracket': {
-            backgroundColor: '#24a507',
-            color: '#fef3b4',
+            backgroundColor: 'oklch(0.188 0.0813 315.13 / 0.8)',
+            color: 'oklch(0.992 0.015 100)',
             fontWeight:  'bold',
         },
-        // optional: style when editor is not focused
         '.cm-matchingBracket': {
-            // background:  '',
-     
-            outline: '1px solid #2a9153',
-            
+            outline: '1px solid oklch(0.992 0.015 100 / 0.5)',
         },
         '&.cm-focused .cm-nonmatchingBracket': {
-            
-            color:      '#ff0000 !important',
+            background: '#f80450',
+            color:      '#231c14',
         },
         '.cm-nonmatchingBracket': {
             background: '#f80450',
             color:      '#231c14',
         },
+        '.cm-matched-block .cm-indent-guide': {
+            backgroundImage: 'linear-gradient(to right, oklch(0.992 0.015 100 / 0.6) 1px, transparent 1px)',                                                                                      
+        },                                                                                                                                                                                        
+       
     }, { dark: true }),
 
     syntaxHighlighting(HighlightStyle.define([
@@ -173,23 +174,22 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
             color: '#C89B40',
             cursor: 'pointer',
         },
+        // Bracket matching (parens, braces, brackets)
         '&.cm-focused .cm-matchingBracket': {
-            background: 'rgba(50, 50, 50, 0.7)',
+            backgroundColor: 'oklch(92.43% 0.1151 95.75 / 0.8)',
+            color: 'oklch(0.088 0.0413 315.13)',
+            fontWeight: 'bold',
         },
         '.cm-matchingBracket': {
-            background: '',
-            color: '#a0ea00 !important',
-            fontWeight: 'bold',
-            outline: '1px solid #a0ea00',
+            outline: '1px solid oklch(0.088 0.0413 315.13 / 0.5)',
         },
         '&.cm-focused .cm-nonmatchingBracket': {
-            background: 'rgba(250, 250, 250, 0.8)',
-            color: '#ff0000 !important',
+            background: '#f85552',
+            color: '#ffffff',
         },
         '.cm-nonmatchingBracket': {
             background: '#f85552',
-            color: '#ffffff !important',
-            
+            color: '#ffffff',
         },
     }, { dark: false }),
 

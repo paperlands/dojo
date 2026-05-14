@@ -7,7 +7,9 @@
 export const createDoEndMatchingExtension = (cm6) => {
     const { StateField, Decoration, EditorView, RangeSetBuilder } = cm6;
 
-    const matchMark = Decoration.mark({ class: 'cm-matchingBracket' });
+    const matchMark    = Decoration.mark({ class: 'cm-matchingBracket' });
+    const nonmatchMark = Decoration.mark({ class: 'cm-nonmatchingBracket' });
+    const blockLine    = Decoration.line({ class: 'cm-matched-block' });
 
     // Return the keyword word under or adjacent to `pos`, or null.
     const keywordAt = (state, pos) => {
@@ -46,6 +48,21 @@ export const createDoEndMatchingExtension = (cm6) => {
         // Keywords that open a new block (must end with `end`)
         const OPENER = /\b(do|if|while|loop|def|when)\b/;
 
+        // Helper: build decorations for a matched do/end pair, including
+        // block-line markers on every line between them for indent guide glow.
+        const buildMatch = (doFrom, doTo, endFrom, endTo, doLineNum, endLineNum) => {
+            const b = new RangeSetBuilder();
+            // Decorations must be added in document order.
+            // Line decorations go at line.from; marks span the keyword.
+            for (let ln = doLineNum; ln <= endLineNum; ln++) {
+                const l = state.doc.line(ln);
+                b.add(l.from, l.from, blockLine);
+                if (ln === doLineNum)  b.add(doFrom, doTo, matchMark);
+                if (ln === endLineNum) b.add(endFrom, endTo, matchMark);
+            }
+            return b.finish();
+        };
+
         if (word === 'do') {
             let depth = 1;
             for (let ln = lineNum + 1; ln <= lines; ln++) {
@@ -56,11 +73,7 @@ export const createDoEndMatchingExtension = (cm6) => {
                 if (/^end\b/.test(t)) {
                     if (--depth === 0) {
                         const endIndent = next.text.search(/\S/);
-                        const endFrom = next.from + endIndent;
-                        const b = new RangeSetBuilder();
-                        b.add(from, to, matchMark);
-                        b.add(endFrom, endFrom + 3, matchMark);
-                        return b.finish();
+                        return buildMatch(from, to, next.from + endIndent, next.from + endIndent + 3, lineNum, ln);
                     }
                 }
             }
@@ -73,22 +86,23 @@ export const createDoEndMatchingExtension = (cm6) => {
                 if (/^end\b/.test(t)) depth++;
                 if (OPENER.test(t)) {
                     if (--depth === 0) {
-                        const doPos = lastDoOffset(prev.text); // or adapt for other openers
+                        const doPos = lastDoOffset(prev.text);
                         if (doPos < 0) continue;
-                        const b = new RangeSetBuilder();
-                        b.add(prev.from + doPos, prev.from + doPos + 2, matchMark);
-                        b.add(from, to, matchMark);
-                        return b.finish();
+                        return buildMatch(prev.from + doPos, prev.from + doPos + 2, from, to, ln, lineNum);
                     }
                 }
             }
         }
-        return Decoration.none;
+
+        // No match found — orphan do/end
+        const b = new RangeSetBuilder();
+        b.add(from, to, nonmatchMark);
+        return b.finish();
     };
 
     return StateField.define({
         create: (state) => compute(state),
-        update: (deco, tr) => (tr.docChanged || tr.selectionSet) ? compute(tr.state) : deco,
+        update: (deco, tr) => (tr.docChanged || tr.selection) ? compute(tr.state) : deco,
         provide: (f) => EditorView.decorations.from(f),
     });
 };

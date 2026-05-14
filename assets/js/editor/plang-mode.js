@@ -295,7 +295,10 @@ const plangModeSpec = {
         return state.indented;
     },
 
-    electricInput: /^\s*(?:end|rescue|elsif|else|\})$/,
+    languageData: {
+        indentOnInput: /^\s*(?:end|rescue|elsif|else|\})$/,
+        commentTokens: { line: "#" },
+    },
     lineComment: "#",
 };
 
