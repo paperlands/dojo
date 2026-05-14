@@ -32,6 +32,9 @@ export class Evaluator {
             if (/^\d+\.?\d*$/.test(ast.value)) {
                 return parseFloat(ast.value);
             }
+            else if (context && ast.value in context) {
+                return context[ast.value];
+            }
             else if (ast.value in this.constants) {
                 return this.constants[ast.value]();
             } else {
