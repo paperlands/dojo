@@ -133,10 +133,7 @@ defmodule DojoWeb.ShellLive do
         {:noreply,
          socket
          |> assign(:outershell, shell)
-         |> push_event(
-           "seeOuterShell",
-           turtle |> Map.from_struct()
-         )}
+         |> push_event("seeOuterShell", outer_shell_payload(turtle, shell))}
 
       {:silent, shell} ->
         {:noreply, assign(socket, :outershell, shell)}
@@ -233,10 +230,7 @@ defmodule DojoWeb.ShellLive do
         {:noreply,
          socket
          |> assign(:outershell, new_shell)
-         |> push_event(
-           "seeOuterShell",
-           new_shell.freeze_turtle |> Map.from_struct()
-         )}
+         |> push_event("seeOuterShell", outer_shell_payload(new_shell.freeze_turtle, new_shell))}
 
       {:noop, _} ->
         {:noreply, socket}
@@ -251,10 +245,7 @@ defmodule DojoWeb.ShellLive do
         {:noreply,
          socket
          |> assign(:outershell, new_shell)
-         |> push_event(
-           "seeOuterShell",
-           new_shell.live_turtle |> Map.from_struct()
-         )}
+         |> push_event("seeOuterShell", outer_shell_payload(new_shell.live_turtle, new_shell))}
 
       {:noop, _} ->
         {:noreply, socket}
@@ -341,22 +332,18 @@ defmodule DojoWeb.ShellLive do
       when is_binary(addr) do
     case Dojo.Table.last(dis[addr][:node], :hatch) do
       %Dojo.Turtle{state: :success} = turtle ->
+        outershell = %OuterShell{
+          mode: :live,
+          live_turtle: turtle,
+          addr: addr,
+          active: true,
+          name: "#{dis[addr][:name]}"
+        }
+
         {:noreply,
          socket
-         |> push_event(
-           "seeOuterShell",
-           turtle |> Map.from_struct()
-         )
-         |> assign(
-           :outershell,
-           %OuterShell{
-             mode: :live,
-             live_turtle: turtle,
-             addr: addr,
-             active: true,
-             name: "#{dis[addr][:name]}"
-           }
-         )}
+         |> push_event("seeOuterShell", outer_shell_payload(turtle, outershell))
+         |> assign(:outershell, outershell)}
 
       %Dojo.Turtle{state: :error} = turtle ->
         {:noreply,
@@ -562,6 +549,13 @@ defmodule DojoWeb.ShellLive do
 
   defp bump_path_time(nil, _time), do: nil
   defp bump_path_time(path, time), do: Regex.replace(~r/\?t=\d+/, path, "?t=#{time}")
+
+  defp outer_shell_payload(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
+    turtle
+    |> Map.from_struct()
+    |> Map.put(:addr, shell.addr)
+    |> Map.put(:origin_name, shell.name)
+  end
 
   def nerve(assigns) do
     ~H"""

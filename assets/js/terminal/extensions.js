@@ -34,6 +34,7 @@ export const buildExtensions = (cm6, {
 
     const themeCompartment = new Compartment();
     const langCompartment = new Compartment();
+    const mergeCompartment = new Compartment();
 
     const extensions = [
         // Layout: editor fills container, scroller handles overflow
@@ -100,9 +101,10 @@ export const buildExtensions = (cm6, {
         // Compartment slots — reconfigured live by the coordinator
         themeCompartment.of([]),
         langCompartment.of([]),
+        mergeCompartment.of([]),
     ];
 
-    const compartments = { theme: themeCompartment, lang: langCompartment };
+    const compartments = { theme: themeCompartment, lang: langCompartment, merge: mergeCompartment };
 
     return { extensions, compartments };
 };

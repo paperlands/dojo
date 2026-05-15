@@ -22,6 +22,7 @@ import { worldTransform } from "./scheduler.js"
 // opts    = { createHead }
 export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
     let snapshotPending = false
+    let focused = true   // only focused compositor's head events track camera
     const createHead = opts.createHead || null
 
     // Per-ambient rendering state: { group: THREE.Group, head: Head }
@@ -49,7 +50,11 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
             if (id === 'root') {
                 for (const event of events) {
                     if (event.type === 'error') continue
-                    materialize(event, groups, ctx)
+                    // Unfocused: render head but skip camera tracking
+                    const effectiveCtx = (!focused && event.type === 'head')
+                        ? { ...ctx, camera: null, controls: null }
+                        : ctx
+                    materialize(event, groups, effectiveCtx)
                 }
             } else {
                 const layer = getOrCreateLayer(id)
@@ -116,6 +121,9 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
     return {
         scheduler,
 
+        get focused() { return focused },
+        set focused(v) { focused = v },
+
         // Eagerly drain a batch program (no waits) during draw().
         // Loops until all ambients complete or a wait is encountered.
         // Returns true if the scheduler completed entirely.
@@ -130,32 +138,33 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
             return scheduler.done
         },
 
+        // Per-ambient work: tick generators, materialize, update positions, scale heads.
+        // Does NOT render or handle recording/snapshots — caller coordinates that
+        // when multiple compositors share one renderer.
+        advance(t) {
+            if (!scheduler.done) {
+                scheduler.tick(t)
+                drainAndMaterialize()
+                updateGroupPositions()
+            }
+            const scaleFactor = ctx.camera.position.distanceTo(ctx.head.position()) / 250
+            ctx.head.scale(scaleFactor)
+            scaleChildHeads()
+        },
+
         // Called by the render loop every animation frame.
-        // `t` is milliseconds since the render loop started.
+        // For single-compositor use — delegates to advance() then renders.
         frame(t) {
             try {
-                // 1. Tick the scheduler — advances all ambient generators
-                if (!scheduler.done) {
-                    scheduler.tick(t)
-                    drainAndMaterialize()
-                    updateGroupPositions()
-                }
+                this.advance(t)
 
-                // 2. Head scale (distance-invariant sizing)
-                const scaleFactor = ctx.camera.position.distanceTo(ctx.head.position()) / 250
-                ctx.head.scale(scaleFactor)
-                scaleChildHeads()
-
-                // 3. Render
                 ctx.controls.update()
                 stage.renderer.render(stage.scene, ctx.camera)
 
-                // 4. Recording
                 if (stage.recorder.isRecording) {
                     stage.recorder.captureFrame()
                 }
 
-                // 5. Snapshot — after first meaningful content or when done
                 if (stage.renderstate.snapshot.frame == null && t > 500) {
                     stage.hatch()
                 }

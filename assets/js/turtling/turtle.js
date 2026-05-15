@@ -1,53 +1,129 @@
 import { Parser } from "./mafs/parse.js"
 import { parseProgram } from "./parse.js"
 import { Evaluator } from "./mafs/evaluate.js"
-import { Versor } from "./mafs/versors.js"
 import Render from "./render/index.js"
 import { bridged } from "../bridged.js"
 import { execute } from "./executor.js"
-import { materializeAll } from "./materializer.js"
 import { createStage } from "./stage.js"
 import { createScheduler } from "./scheduler.js"
 import { createCompositor } from "./compositor.js"
+import * as THREE from '../utils/three.core.min.js'
+
+// --- Ambient entry helpers ---
+
+function createAmbientEntry(name, scene) {
+    const pathGroup = new THREE.Group()
+    const gridGroup = new THREE.Group()
+    const glyphGroup = new THREE.Group()
+    glyphGroup.elements = []
+
+    scene.add(pathGroup)
+    scene.add(gridGroup)
+    scene.add(glyphGroup)
+
+    const shapist = new Render.Shape(pathGroup, {
+        layerMethod: 'renderOrder',
+        polygonOffset: { factor: -0.1, units: -1 }
+    })
+
+    const head = new Render.Head(pathGroup)
+
+    return {
+        name,
+        groups: { pathGroup, gridGroup, glyphGroup },
+        shapist,
+        head,
+        compositor: null
+    }
+}
+
+function clearAmbientGroups(groups) {
+    groups.pathGroup.clear()
+    groups.gridGroup.clear()
+    if (groups.glyphGroup.elements) {
+        groups.glyphGroup.elements.forEach(text => text.dispose())
+    }
+    groups.glyphGroup.clear()
+    groups.glyphGroup.elements = []
+}
+
+function disposeAmbientEntry(entry, scene) {
+    entry.head.hide()
+
+    const disposeGroup = (group) => {
+        group.traverse(child => {
+            if (child.geometry) child.geometry.dispose()
+            if (child.material) child.material.dispose()
+        })
+        if (group.elements) {
+            group.elements.forEach(text => text.dispose?.())
+        }
+        scene.remove(group)
+    }
+
+    disposeGroup(entry.groups.pathGroup)
+    disposeGroup(entry.groups.gridGroup)
+    disposeGroup(entry.groups.glyphGroup)
+}
+
+// --- Turtle ---
 
 export class Turtle {
     constructor(canvas) {
-
         this.bridge = bridged("turtle")
 
-        // Stage — all THREE.js infrastructure
         const stage = createStage(canvas, this.bridge)
         this.stage = stage
-
         this.renderstate = stage.renderstate
 
         this.renderLoop = new Render.Loop(null, {
             onRender: (t) => this.onFrame(t),
             stopCondition: () => false
-        });
+        })
         stage.renderLoop = this.renderLoop
 
-        // Math
-        this.math = {
-            parser: new Parser(),
-            evaluator: new Evaluator()
-        }
+        this.color = '#e77808'
 
-        // Active compositor (set by draw(), used by onFrame())
-        this.compositor = null
+        // Multi-ambient state
+        this.ambients = new Map()   // tabId → AmbientEntry
+        this.focusedId = null
+        this._snapshotPending = false
 
-        this.reset();
+        this.renderLoop.requestRestart()
     }
 
     requestRender() {
-        this.renderLoop.start();
+        this.renderLoop.start()
     }
 
     onFrame(t) {
-        if (this.compositor) {
-            this.compositor.frame(t)
+        if (this.ambients.size > 0) {
+            for (const entry of this.ambients.values()) {
+                try {
+                    entry.compositor.advance(t)
+                } catch (error) {
+                    console.error(`Compositor advance error [${entry.name}]:`, error)
+                }
+            }
+
+            this.stage.controls.update()
+            this.stage.renderer.render(this.stage.scene, this.stage.camera)
+
+            if (this.stage.recorder.isRecording) {
+                this.stage.recorder.captureFrame()
+            }
+
+            if (this.renderstate.snapshot.frame == null && t > 500) {
+                this.hatch()
+            }
+
+            const allDone = [...this.ambients.values()].every(e => e.compositor.scheduler.done)
+            if (allDone && !this._snapshotPending) {
+                this._snapshotPending = true
+                this.hatch()
+            }
         } else {
-            // No active program — just render the scene (orbit controls, etc.)
+            // No ambients — idle render (orbit controls, stage head)
             const { head, camera, controls, renderer, scene } = this.stage
             const scaleFactor = camera.position.distanceTo(head.position()) / 250
             head.scale(scaleFactor)
@@ -57,54 +133,49 @@ export class Turtle {
     }
 
     hatch() {
+        this._lastHatchTime = performance.now()
         this.stage.hatch(this.bridge)
     }
 
-    clear() {
-        this.stage.pathGroup.clear()
-        this.stage.gridGroup.clear()
-        this.stage.glyphGroup.clear()
-        this.stage.glyphGroup.elements.forEach(text => text.dispose())
-        this.stage.glyphGroup.elements = []
-        this.requestRender();
+    eagerHatch(cooldown = 8_000) {
+        if (this.ambients.size === 0) return
+        if (performance.now() - this._lastHatchTime < cooldown) return
+        this._snapshotPending = false
+        this.requestRender()
     }
 
-    reset() {
-        this.x = 0; this.y = 0; this.z = 0;
-        this.clear();
-        this.stage.shapist.dispose()
-        this.commandCount = 0
-        this.rotation = Versor.raw(1, 0, 0, 0);
-        this.color = '#e77808';
-        this.showTurtle = 10;
-        if (this.compositor) this.compositor.dispose()
-        this.compositor = null
-        this.renderstate.phase = "start"
-        this.renderstate.snapshot = {frame: null, save: false}
-        this.renderstate.meta = {state: null, message: null, commands: []}
-        this.math.parser.reset()
-        this.renderLoop.requestRestart();
-    }
+    // --- Multi-ambient API ---
 
-
-    draw(code, opts= {}) {
+    upsertAmbient(tabId, name, code) {
         try {
-            const startTime = performance.now();
-            const instructions = parseProgram(code);
-            var endTime = performance.now();
-            var executionTime = endTime - startTime;
-            console.log(`Parser Time took ${executionTime} milliseconds.`);
-            this.reset();
-            this.requestRender();
+            const instructions = parseProgram(code)
+
+            // Reuse or create entry
+            let entry = this.ambients.get(tabId)
+            if (entry) {
+                entry.compositor.dispose()
+                entry.shapist.dispose()
+                clearAmbientGroups(entry.groups)
+                entry.head.reset()
+                entry.shapist = new Render.Shape(entry.groups.pathGroup, {
+                    layerMethod: 'renderOrder',
+                    polygonOffset: { factor: -0.1, units: -1 }
+                })
+            } else {
+                entry = createAmbientEntry(name, this.stage.scene)
+                this.ambients.set(tabId, entry)
+                if (this.ambients.size === 1) this.stage.head.hide()
+            }
+
+            entry.name = name
 
             const deps = {
-                mathParser: this.math.parser,
-                mathEvaluator: this.math.evaluator
+                mathParser: new Parser(),
+                mathEvaluator: new Evaluator()
             }
 
             const generator = execute(instructions, deps, { color: this.color })
 
-            // Create scheduler + compositor — unified path for batch and temporal
             const scheduler = createScheduler(generator, {
                 createDeps: () => ({
                     mathParser: new Parser(),
@@ -113,15 +184,15 @@ export class Turtle {
                 execOpts: { color: this.color }
             })
 
-            const groups = this.stage.groups
+            const isFocused = (tabId === this.focusedId)
             const ctx = {
-                shapist: this.stage.shapist,
-                head: this.stage.head,
+                shapist: entry.shapist,
+                head: entry.head,
                 camera: this.stage.camera,
                 controls: this.stage.controls
             }
 
-            this.compositor = createCompositor(scheduler, groups, ctx, {
+            entry.compositor = createCompositor(scheduler, entry.groups, ctx, {
                 scene: this.stage.scene,
                 renderer: this.stage.renderer,
                 recorder: this.stage.recorder,
@@ -131,114 +202,127 @@ export class Turtle {
                 createHead: (parent) => new Render.Head(parent)
             })
 
-            // Eager flush: drain the generator synchronously for batch programs.
-            // Temporal programs (with waits) partially drain here, then the
-            // compositor continues ticking in the render loop.
-            this.compositor.flush()
+            entry.compositor.focused = isFocused
 
-            // Execution errors are captured by the scheduler (fault isolation),
-            // not thrown. Valid commands' output survives in the scene.
-            const errors = this.compositor.scheduler.errors
+            entry.compositor.flush()
+
+            const errors = entry.compositor.scheduler.errors
             if (errors.length > 0) {
-                this.renderstate.meta = {state: "error", message: errors[0].message, source: code, commands: instructions}
+                this.renderstate.meta = { state: "error", message: errors[0].message, source: code, commands: instructions }
+                this.requestRender()
                 return { success: false, error: errors[0].message }
             }
 
-            this.renderstate.meta = {state: "success", commands: instructions}
-            endTime = performance.now();
-            executionTime = endTime-startTime-executionTime
-            console.log(`Drawing Time took ${executionTime} milliseconds.`);
-            return { success: true, commandCount: this.compositor.scheduler.commandCount };
+            this.renderstate.meta = { state: "success", commands: instructions }
+            this._snapshotPending = false
+            this.requestRender()
+            return { success: true, commandCount: entry.compositor.scheduler.commandCount }
         } catch (error) {
-            // Parse errors and infrastructure failures still throw
-            console.error(error);
-            this.renderstate.meta = {state: "error", message: error.message, source: code}
-            return { success: false, error: error.message };
+            console.error(error)
+            this.renderstate.meta = { state: "error", message: error.message, source: code }
+            return { success: false, error: error.message }
         }
     }
 
+    removeAmbient(tabId) {
+        const entry = this.ambients.get(tabId)
+        if (!entry) return
 
-    // --- Guest rendering: friend's code in the same scene via separate groups ---
+        entry.compositor.dispose()
+        entry.shapist.dispose()
+        disposeAmbientEntry(entry, this.stage.scene)
+        this.ambients.delete(tabId)
 
-    drawGuest(code) {
-        this.clearGuest();
-        if (!code) return { success: true, commandCount: 0 };
-        this.stage.guestPathGroup.visible = true;
-        this.stage.guestGridGroup.visible = true;
-        this.stage.guestGlyphGroup.visible = true;
-
-        try {
-            const instructions = parseProgram(code);
-
-            // Fresh math context for guest (isolated from host)
-            const guestMath = {
-                parser: new Parser(),
-                evaluator: new Evaluator()
-            }
-
-            const deps = {
-                mathParser: guestMath.parser,
-                mathEvaluator: guestMath.evaluator
-            }
-
-            // Execute guest code via executor — no host state mutation
-            const events = []
-            for (const event of execute(instructions, deps, { color: this.color })) {
-                events.push(event)
-            }
-
-            // Materialize directly into guest groups
-            if (this.guestShapist) this.guestShapist.dispose()
-            this.guestShapist = new Render.Shape(this.stage.guestPathGroup, {
-                layerMethod: 'renderOrder',
-                polygonOffset: { factor: -0.1, units: -1 }
-            })
-            const groups = {
-                pathGroup: this.stage.guestPathGroup,
-                gridGroup: this.stage.guestGridGroup,
-                glyphGroup: this.stage.guestGlyphGroup
-            }
-            // No camera/head for guest — skip head events
-            const guestEvents = events.filter(e => e.type !== "head")
-            materializeAll(guestEvents, groups, {
-                shapist: this.guestShapist,
-                head: { show() {}, hide() {}, update() {}, position() { return { x: 0, y: 0, z: 0 } } },
-                camera: null,
-                controls: null
-            })
-
-            this.requestRender();
-            return { success: true, commandCount: guestEvents.length };
-        } catch (error) {
-            console.warn('Guest draw failed:', error.message);
-            return { success: false, error: error.message };
+        if (this.focusedId === tabId) {
+            const next = this.ambients.keys().next().value || null
+            this.focusAmbient(next)
         }
+
+        if (this.ambients.size === 0) {
+            this.stage.head.show()
+            this.stage.head.reset()
+        }
+
+        this.requestRender()
     }
 
-    clearGuest() {
-        if (this.guestShapist) { this.guestShapist.dispose(); this.guestShapist = null }
-        this.stage.guestPathGroup.clear();
-        this.stage.guestGridGroup.clear();
-        this.stage.guestGlyphGroup.elements.forEach(t => t.dispose?.());
-        this.stage.guestGlyphGroup.clear();
-        this.stage.guestGlyphGroup.elements = [];
-        this.stage.guestPathGroup.visible = false;
-        this.stage.guestGridGroup.visible = false;
-        this.stage.guestGlyphGroup.visible = false;
+    focusAmbient(tabId) {
+        if (this.focusedId) {
+            const old = this.ambients.get(this.focusedId)
+            if (old?.compositor) old.compositor.focused = false
+        }
+
+        this.focusedId = tabId
+
+        const entry = this.ambients.get(tabId)
+        if (entry?.compositor) entry.compositor.focused = true
     }
 
-    setGuestOpacity(opacity) {
+    setAmbientOpacity(tabId, opacity) {
+        const entry = this.ambients.get(tabId)
+        if (!entry) return
         const apply = (group) => {
             group.traverse(child => {
                 if (child.material) {
-                    child.material.transparent = true;
-                    child.material.opacity = opacity;
+                    child.material.transparent = true
+                    child.material.opacity = opacity
                 }
-            });
-        };
-        apply(this.stage.guestPathGroup);
-        apply(this.stage.guestGridGroup);
-        apply(this.stage.guestGlyphGroup);
+            })
+        }
+        apply(entry.groups.pathGroup)
+        apply(entry.groups.gridGroup)
+        apply(entry.groups.glyphGroup)
     }
 
+    // --- Backward-compatible API ---
+
+    draw(code, opts = {}) {
+        this.reset()
+        this.focusedId = 'default'
+        return this.upsertAmbient('default', 'default', code)
+    }
+
+    drawGuest(code) {
+        this.removeAmbient('guest')
+        if (!code) return { success: true, commandCount: 0 }
+        const result = this.upsertAmbient('guest', 'guest', code)
+        return result
+    }
+
+    clearGuest() {
+        this.removeAmbient('guest')
+    }
+
+    setGuestOpacity(opacity) {
+        this.setAmbientOpacity('guest', opacity)
+    }
+
+    reset() {
+        for (const [tabId, entry] of this.ambients) {
+            entry.compositor.dispose()
+            entry.shapist.dispose()
+            disposeAmbientEntry(entry, this.stage.scene)
+        }
+        this.ambients.clear()
+        this.focusedId = null
+        this._snapshotPending = false
+
+        this.stage.head.show()
+        this.stage.head.reset()
+
+        // Clear legacy stage groups
+        this.stage.pathGroup.clear()
+        this.stage.gridGroup.clear()
+        if (this.stage.glyphGroup.elements) {
+            this.stage.glyphGroup.elements.forEach(text => text.dispose())
+        }
+        this.stage.glyphGroup.clear()
+        this.stage.glyphGroup.elements = []
+        this.stage.shapist.dispose()
+
+        this.renderstate.phase = "start"
+        this.renderstate.snapshot = { frame: null, save: false }
+        this.renderstate.meta = { state: null, message: null, commands: [] }
+        this.renderLoop.requestRestart()
+    }
 }

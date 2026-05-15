@@ -13,6 +13,10 @@ let cm6 = null;
 // for guest rendering into the same scene via path groups.
 let coreTurtle = null;
 
+// Module-level inner terminal reference — set by inner shell, used by outer shell
+// for forking buffers and updating merge originals.
+let innerTerminal = null;
+
 // ---------------------------------------------------------------------------
 // Numeric token finder — replaces CM5 getTokenAt for the slider feature.
 // Scans the line text for a number at/near the given character position.
@@ -320,22 +324,71 @@ const Shell = {
             const output = document.getElementById('outer-output');
             const display = mutators.display(output);
 
+            // Outershell metadata — captured from seeOuterShell payloads for client-side forking
+            let outerAddr = null;
+            let outerName = null;
+            let outerFocused = true;  // outershell starts focused when first opened
+
             const debouncedGuestRender = temporal.debounce((code) => {
                 if (!coreTurtle) return;
                 const result = coreTurtle.drawGuest(code);
                 if (result.success) {
-                    coreTurtle.setGuestOpacity(0.4);
+                    coreTurtle.setGuestOpacity(outerFocused ? 1.0 : 0.4);
+                    coreTurtle.requestRender();
                     display.success(result.commandCount);
                 } else {
                     display.error(result.error);
                 }
             }, 20);
 
+            term.outer();
+
+            // Fork-on-type: typing into the read-only outershell forks the buffer
+            // into the inner shell. Click gives focus, keystroke confirms intent.
+            const forkOnType = (e) => {
+                if (!innerTerminal) return;
+                if (e.ctrlKey || e.metaKey || e.altKey) return;
+                if (e.key.length > 1 && !['Enter', 'Backspace', 'Delete', 'Tab', ' '].includes(e.key)) return;
+
+                const source = term.getValue();
+                if (!source || !outerAddr) return;
+
+                innerTerminal.forkBuffer({
+                    source,
+                    name: outerName || 'friend',
+                    addr: outerAddr,
+                    time: Date.now(),
+                });
+
+                // Focus inner shell — ambient swap happens via onOuterBlur
+                innerTerminal.shell?.focus();
+
+                // Disarm: fork triggers once per disciple session
+                term.shell.dom.removeEventListener('keydown', forkOnType);
+            };
+
+            term.shell.dom.addEventListener('keydown', forkOnType);
+
             this.handleEvent("seeOuterShell", (payload) => {
+                // Re-arm fork trigger when switching to a different disciple
+                if (payload?.addr && payload.addr !== outerAddr) {
+                    term.shell?.dom.addEventListener('keydown', forkOnType);
+                    // New disciple → outershell takes focus
+                    activateOuter();
+                }
+
+                // Capture outershell metadata for fork provenance
+                if (payload?.addr) outerAddr = payload.addr;
+                if (payload?.origin_name) outerName = payload.origin_name;
+
                 if (payload?.state === "success" && payload?.commands) {
                     const code = printAST(payload.commands);
                     term.changeouter(code);
                     debouncedGuestRender(code);
+                    // Update merge original in inner shell for live diff tracking
+                    if (innerTerminal && outerAddr) {
+                        innerTerminal.updateMergeOriginal(code, outerAddr);
+                    }
                 } else {
                     // Peek: show raw broken source, don't render
                     term.changeouter(payload?.source ?? '');
@@ -343,17 +396,55 @@ const Shell = {
                 }
             });
 
-            term.outer();
+            // Ambient focus: clicking anywhere in the outershell swaps the dominant
+            // visual layer. Guest becomes foreground (opacity 1.0, camera routed),
+            // host fades to trace. Global focusin restores host when focus moves
+            // outside the outershell (click inner shell, tab away, etc).
+            // requestRender() is critical — the render loop may have stopped after
+            // all compositors finished, so opacity changes need an explicit kick.
+            const outerEl = this.el.closest('.outershell') || this.el;
+
+            const activateOuter = () => {
+                outerFocused = true;
+                if (!coreTurtle) return;
+                coreTurtle.focusAmbient('guest');
+                coreTurtle.setAmbientOpacity('guest', 1.0);
+                coreTurtle.setAmbientOpacity('default', 0.3);
+                coreTurtle.requestRender();
+            };
+
+            const restoreInner = () => {
+                outerFocused = false;
+                if (!coreTurtle) return;
+                coreTurtle.focusAmbient('default');
+                coreTurtle.setAmbientOpacity('default', 1.0);
+                coreTurtle.setGuestOpacity(0.4);
+                coreTurtle.requestRender();
+            };
+
+            const onOuterClick = () => activateOuter();
+
+            const onGlobalFocus = (e) => {
+                if (!outerEl.contains(e.target)) restoreInner();
+            };
+
+            outerEl.addEventListener('mousedown', onOuterClick);
+            document.addEventListener('focusin', onGlobalFocus);
 
             this.cleanup = [
                 listeners.theme(theme => term.setOption('theme', theme)).mount(),
                 () => coreTurtle?.clearGuest(),
+                () => term.shell?.dom.removeEventListener('keydown', forkOnType),
+                () => { outerEl.removeEventListener('mousedown', onOuterClick);
+                        document.removeEventListener('focusin', onGlobalFocus); },
+                () => { innerTerminal?.clearMerge(); restoreInner(); },
             ];
         } else {
             const canvas = document.getElementById('core-canvas');
             const output = document.getElementById('core-output');
             const turtle = new Turtle(canvas);
             coreTurtle = turtle;
+            innerTerminal = term;
 
             const renderCommand   = commands.render(turtle);
             const executeCommand  = commands.execute(term);
@@ -389,13 +480,49 @@ const Shell = {
             });
             term.inner();
 
-            
+            // Eager hatch: re-push state on visibility change + jittered heartbeat
+            let heartbeatTimer = null
+            const HEARTBEAT_BASE = 10_000
+            const HEARTBEAT_JITTER = 5_000
+
+            const scheduleHeartbeat = () => {
+                if (heartbeatTimer) return
+                const delay = HEARTBEAT_BASE + Math.random() * HEARTBEAT_JITTER
+                heartbeatTimer = setTimeout(() => {
+                    heartbeatTimer = null
+                    if (document.visibilityState === 'visible') {
+                        turtle.eagerHatch()
+                        scheduleHeartbeat()
+                    }
+                }, delay)
+            }
+
+            const stopHeartbeat = () => {
+                clearTimeout(heartbeatTimer)
+                heartbeatTimer = null
+            }
+
+            const onVisibilityChange = () => {
+                if (document.visibilityState === 'visible') {
+                    turtle.eagerHatch()
+                    scheduleHeartbeat()
+                } else {
+                    stopHeartbeat()
+                }
+            }
+
+            document.addEventListener('visibilitychange', onVisibilityChange)
+            scheduleHeartbeat()
+
             this.cleanup = [
                 listeners.keyboard(term.shell, cm6).mount(),
                 listeners.selection(term.selectionBridge, this.pushEvent.bind(this)).mount(),
                 listeners.theme(theme => term.setOption('theme', theme)).mount(),
                 slider.mount(),
                 listeners.slider(term.shell, slider, cm6).mount(),
+                () => document.removeEventListener('visibilitychange', onVisibilityChange),
+                () => stopHeartbeat(),
+                () => { innerTerminal = null; },
             ];
 
             this.handleEvent("relayCamera",      ({ command }) => cameraCommand(command));
@@ -408,7 +535,10 @@ const Shell = {
 
     destroyed() {
         this.cleanup?.forEach(fn => fn());
-        if (this.el.dataset.target !== "outer") coreTurtle = null;
+        if (this.el.dataset.target !== "outer") {
+            coreTurtle = null;
+            innerTerminal = null;
+        }
     }
 };
 

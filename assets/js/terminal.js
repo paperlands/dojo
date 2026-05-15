@@ -58,8 +58,9 @@ export const createTerminal = (element, cm6, options = {}) => {
         collection: null,     // from buffers.js — plain data
         docs: new Map(),      // Map<id, EditorState> — CM6 state per buffer
         extensions: null,     // shared extension array
-        compartments: null,   // { theme, lang } — Compartment handles
+        compartments: null,   // { theme, lang, merge } — Compartment handles
         autosaveTimer: null,
+        mergeOriginals: new Map(),  // addr → latest outershell content (for lazy merge updates)
     };
 
     let shell = null;         // CM6 EditorView — inherently mutable
@@ -107,11 +108,20 @@ export const createTerminal = (element, cm6, options = {}) => {
         editorView.cursorToEnd(shell, cm6);
         shell.focus();
 
-        // 4. Effects (each independent)
+        // 4. Apply pending merge original (lazy update for background buffers)
+        const selectedBuffer = state.collection.items.get(id);
+        if (selectedBuffer.origin?.addr && state.mergeOriginals.has(selectedBuffer.origin.addr)) {
+            const mergeContent = state.mergeOriginals.get(selectedBuffer.origin.addr);
+            if (cm6.updateOriginalDoc) {
+                shell.dispatch({ effects: cm6.updateOriginalDoc.of(cm6.Text.of(mergeContent.split('\n'))) });
+            }
+        }
+
+        // 5. Effects (each independent)
         triggerBridge();
         tabs?.selectTab(id);
 
-        return state.collection.items.get(id);
+        return selectedBuffer;
     };
 
     // --- Public API ---
@@ -236,16 +246,75 @@ export const createTerminal = (element, cm6, options = {}) => {
             }
         },
 
-        createBuffer(name = '', content = '') {
+        createBuffer(name = '', content = '', origin = null) {
             const bufferName = name || names();
             const { collection, id } = buffers.addBuffer(
-                state.collection, { name: bufferName, content }, names, idGen
+                state.collection, { name: bufferName, content, origin }, names, idGen
             );
             state.collection = collection;
             state.docs.set(id, createDoc(content));
             tabs.addTab(id, bufferName);
             doSelectBuffer(id);
             return id;
+        },
+
+        forkBuffer({ source, name, addr, time }) {
+            if (!source || !addr) return;
+
+            // Duplicate prevention: if a fork from this addr already exists, switch to it
+            for (const [id, buffer] of state.collection.items) {
+                if (buffer.origin?.addr === addr) {
+                    doSelectBuffer(id);
+                    return id;
+                }
+            }
+
+            const bufferName = name ? `${name}'s fork` : 'fork';
+            const origin = { addr, source, time, name };
+            const { collection, id } = buffers.addBuffer(
+                state.collection, { name: bufferName, content: source, origin }, names, idGen
+            );
+            state.collection = collection;
+            state.docs.set(id, createDoc(source));
+            tabs.addTab(id, bufferName);
+            doSelectBuffer(id);
+
+            // Configure merge extension with the original source
+            if (cm6.unifiedMergeView && state.compartments?.merge) {
+                shell.dispatch({
+                    effects: state.compartments.merge.reconfigure(
+                        cm6.unifiedMergeView({
+                            original: cm6.Text.of(source.split('\n')),
+                            highlightChanges: true,
+                            gutter: true,
+                        })
+                    ),
+                });
+            }
+
+            return id;
+        },
+
+        updateMergeOriginal(content, addr) {
+            state.mergeOriginals.set(addr, content);
+
+            // If the active buffer's origin matches, update merge original now
+            const current = buffers.currentBuffer(state.collection);
+            if (current?.origin?.addr === addr && cm6.updateOriginalDoc && shell) {
+                shell.dispatch({
+                    effects: cm6.updateOriginalDoc.of(cm6.Text.of(content.split('\n'))),
+                });
+            }
+        },
+
+        clearMerge() {
+            // Remove merge extension from the active buffer
+            if (state.compartments?.merge && shell) {
+                shell.dispatch({
+                    effects: state.compartments.merge.reconfigure([]),
+                });
+            }
+            state.mergeOriginals.clear();
         },
 
         closeBuffer(id) {
