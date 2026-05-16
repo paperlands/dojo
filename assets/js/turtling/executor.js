@@ -32,6 +32,9 @@ export function* execute(ast, deps, opts = {}) {
 
     const roundVec = (v, eps = 1e-10, decimals = 8) => Math.abs(v) < 1e-10 ? 0 : Math.round(v * 1e9) / 1e9
 
+    // Link evaluator to parser's userspace for call-by-value function dispatch
+    deps.mathEvaluator.userFunctions = deps.mathParser.userspace
+
     // Bind runtime state into evaluator — thunks are lazy,
     // only invoked when an expression actually references the name
     const ec = deps.mathEvaluator.constants
@@ -155,6 +158,7 @@ function* walkBody(body, scope, state) {
                 penState: { ...state.penState },
                 frame: node.meta?.frame || null,
                 functions: { ...state.functions },
+                userspace: new Map(state.deps.mathParser.userspace),
                 loopCounter: state.loopCounter
             }
             break

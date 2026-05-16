@@ -139,14 +139,10 @@ export class Parser {
         }
         this.advance(); // consume ')'
 
-        // Validation and substitution
+        // Validation — substitution deferred to evaluator for call-by-value
         if (!options.skipValidation) {
             if (!this.functionExists(name, args.length)) {
                 throw new Error(`Unknown function: ${name} with ${args.length} arguments`);
-            }
-
-            if (this.isUserDefined(name, args.length)) {
-                return this.substituteUserFunction(name, args);
             }
         }
 

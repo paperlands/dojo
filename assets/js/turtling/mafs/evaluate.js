@@ -18,6 +18,7 @@ export class Evaluator {
             'exp': Math.exp
         };
 
+        this.userFunctions = null;
     }
 
     namespace_check(val) {
@@ -41,8 +42,8 @@ export class Evaluator {
                 return this.resolveContext(ast.value, context);
             }
         } else if (ast.type === 'function') {
-            const arg = this.run(ast.children[0], context);
-            return this.applyFunction(ast.value, arg);
+            const args = ast.children.map(child => this.run(child, context));
+            return this.applyFunction(ast.value, args, context);
         } else if (ast.type === 'operator') {
             const left = this.run(ast.children[0], context);
             const right = this.run(ast.children[1], context);
@@ -62,12 +63,22 @@ export class Evaluator {
         return radians * (180 / Math.PI);
     }
 
-    applyFunction(func, arg) {
+    applyFunction(func, args, context) {
         if (func in this.functions) {
-            const evals = this.functions[func](arg)
+            const evals = this.functions[func](args[0])
             if (Number.isSafeInteger(evals)) return evals
             const precision = 100000000000000;
             return Math.round((evals)*precision)/precision
+        }
+        if (this.userFunctions) {
+            const key = `${func}:${args.length}`;
+            const entry = this.userFunctions.get(key);
+            if (entry) {
+                const [body, params] = entry;
+                const childContext = { ...context };
+                params.forEach((p, i) => { childContext[p] = args[i]; });
+                return this.run(body, childContext);
+            }
         }
         throw new Error(`Undefined function: ${func}`);
     }

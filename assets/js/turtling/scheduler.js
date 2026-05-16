@@ -219,6 +219,11 @@ export function createScheduler(generator, opts = {}) {
 
                         if (createDeps) {
                             const childDeps = createDeps()
+                            if (value.userspace) {
+                                for (const [k, v] of value.userspace) {
+                                    childDeps.mathParser.userspace.set(k, v)
+                                }
+                            }
                             const childGen = execute(value.ast, childDeps, {
                                 color: value.penState?.color || execOpts.color,
                                 maxRecurseDepth: execOpts.maxRecurseDepth,
