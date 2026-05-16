@@ -1,16 +1,14 @@
 // Scheduler — cooperative tree walker for ambient coroutines.
-// Phase 5b: tree of AmbientCtx nodes, post-order walk per tick.
 //
 // Each AmbientCtx wraps an executor generator with its own channel
 // (RingBuffer) and transform Atom<SE3>. The scheduler walks the tree
 // post-order (children before parents) each tick, advancing each
 // ready generator until it yields a wait or exhausts.
 //
-// Transform atoms are updated from head events — this enables
-// worldTransform composition for inertial frame rendering.
-//
-// Spawn events from the executor create child ambients. Structured
-// concurrency: when a parent completes, children continue naturally.
+// Tree relationships are direct references: ctx.parent points to the
+// parent AmbientCtx (null for root), ctx.children maps name → child.
+// The registry is a flat iteration index for the compositor — it plays
+// no role in tree traversal.
 
 import { createRingBuffer } from "./ring-buffer.js"
 import { execute } from "./executor.js"
@@ -19,19 +17,22 @@ import { createAtom } from "./atom.js"
 
 // --- AmbientCtx: the unified node ---
 
-function createAmbientCtx(id, generator, transform, channelCapacity, parentId) {
+let _nextId = 0
+
+function createAmbientCtx(name, generator, transform, channelCapacity, parent) {
     return {
-        id,
-        parentId: parentId || null,
+        id: ++_nextId,        // unique, opaque — for compositor layer keying
+        name,                 // user-facing — for frame targeting and display
+        parent: parent || null,
         generator,
         channel: createRingBuffer(channelCapacity || 4096),
         transform: createAtom(transform || SE3.identity()),
         resumeAt: 0,
         done: false,
-        error: null,       // error message if generator crashed
+        error: null,
         commandCount: 0,
-        children: new Map(),
-        frame: null       // target frame name for `in <frame>` — null = own frame
+        children: new Map(),  // name → AmbientCtx
+        frame: null,          // target frame name for `in <frame>` — null = own frame
     }
 }
 
@@ -68,21 +69,29 @@ function sumCounts(ctx) {
     return total
 }
 
+// --- Ancestor lookup by user-facing name ---
+
+// Walk up the parent chain to find the nearest ancestor with the given name.
+// Used by frame targeting (`as child in parent do`) where `parent` is a name.
+function findAncestorByName(ctx, name) {
+    let ancestor = ctx.parent
+    while (ancestor) {
+        if (ancestor.name === name) return ancestor
+        ancestor = ancestor.parent
+    }
+    return null
+}
+
 // --- World transform: inertial frame composition ---
 
-// Compute the world origin for an ambient by composing all ancestor transforms.
-// Returns the SE3 that maps this ambient's local (0,0,0) to world coordinates.
-// Root returns identity (root draws in world coords).
-function worldTransform(ctx, registry) {
-    if (!ctx.parentId) return SE3.identity()
-
+// Compose all ancestor transforms to map local (0,0,0) to world coordinates.
+// Root returns identity. Walks direct parent refs — no registry, no cycles.
+function worldTransform(ctx) {
     const chain = []
-    let id = ctx.parentId
-    while (id) {
-        const parent = registry.get(id)
-        if (!parent) break
-        chain.unshift(parent.transform.deref())
-        id = parent.parentId
+    let ancestor = ctx.parent
+    while (ancestor) {
+        chain.unshift(ancestor.transform.deref())
+        ancestor = ancestor.parent
     }
     if (chain.length === 0) return SE3.identity()
     return chain.reduce((a, b) => SE3.compose(a, b))
@@ -91,18 +100,14 @@ function worldTransform(ctx, registry) {
 // --- Inertial frame targeting ---
 
 // Compose the transform chain from a child ambient up to (and including)
-// the target frame. Maps child-local coordinates into target-local coords.
-// E.g. for `as stick in cycle do`, composes epicycle.t ∘ cycle.t so that
-// stick-local points land in cycle's coordinate space.
-function relativeTransform(ctx, targetId, registry) {
+// the target ancestor. Maps child-local coordinates into target-local coords.
+function relativeTransform(ctx, target) {
     const chain = []
-    let id = ctx.parentId
-    while (id) {
-        const ancestor = registry.get(id)
-        if (!ancestor) break
+    let ancestor = ctx.parent
+    while (ancestor) {
         chain.unshift(ancestor.transform.deref())
-        if (id === targetId) break
-        id = ancestor.parentId
+        if (ancestor === target) break
+        ancestor = ancestor.parent
     }
     if (chain.length === 0) return SE3.identity()
     return chain.reduce((a, b) => SE3.compose(a, b))
@@ -130,7 +135,7 @@ export function createScheduler(generator, opts = {}) {
     const execOpts = opts.execOpts || {}
 
     const root = createAmbientCtx('root', generator, SE3.identity(), channelCapacity, null)
-    const registry = new Map([['root', root]])
+    const registry = new Map([[root.id, root]])
 
     return {
         root,
@@ -146,7 +151,7 @@ export function createScheduler(generator, opts = {}) {
         get errors() {
             const errs = []
             for (const [id, ctx] of registry) {
-                if (ctx.error) errs.push({ ambientId: id, message: ctx.error })
+                if (ctx.error) errs.push({ ambientId: id, name: ctx.name, message: ctx.error })
             }
             return errs
         },
@@ -178,14 +183,12 @@ export function createScheduler(generator, opts = {}) {
                         ctx.commandCount = value || 0
                         // Channel stays open — frame-targeted descendants may
                         // still imprint events here after this ambient finishes.
-                        // terminateAmbient closes channels on crash/abort.
                         break
                     }
 
                     if (value.type === "wait") {
                         ctx.resumeAt = now + value.duration
                         if (value.position) {
-                            // Update transform atom from wait position
                             ctx.transform.swap(() => ({
                                 rotation: value.rotation,
                                 position: [...value.position]
@@ -203,16 +206,13 @@ export function createScheduler(generator, opts = {}) {
                     }
 
                     if (value.type === "spawn") {
-                        // Update parent transform from spawn snapshot — keeps
-                        // the atom current between head events so child ambients
-                        // spawned later get a valid worldTransform immediately.
+                        // Keep parent transform atom current between head events
                         ctx.transform.swap(() => value.transform)
 
-                        // Idempotent spawn: if child with this name is still
-                        // running, skip. Makes `as name do` inside loops
-                        // spawn-once. Completed children can be re-spawned.
+                        // Idempotent spawn: if a child with this name exists
+                        // (running or completed), skip.
                         const existing = ctx.children.get(value.name)
-                        if (existing && !existing.done) {
+                        if (existing) {
                             produced = true
                             continue
                         }
@@ -224,30 +224,20 @@ export function createScheduler(generator, opts = {}) {
                                 maxRecurseDepth: execOpts.maxRecurseDepth,
                                 maxRecurses: execOpts.maxRecurses,
                                 maxCommands: execOpts.maxCommands,
-                                functions: value.functions
+                                functions: value.functions,
+                                loopCounter: value.loopCounter
                             })
                             const child = createAmbientCtx(
                                 value.name,
                                 childGen,
-                                SE3.identity(),   // child draws in local coords
+                                SE3.identity(),
                                 channelCapacity,
-                                ctx.id            // parentId for worldTransform chain
+                                ctx               // direct parent reference
                             )
                             child.frame = value.frame || null
-                            // Carry undrained events from completed predecessor —
-                            // without this, ambients that complete without a wait
-                            // lose their channel contents when re-spawned in the
-                            // same tick (drain hasn't run yet).
-                            if (existing && existing.channel.length > 0) {
-                                const orphaned = existing.channel.drain()
-                                for (const event of orphaned) {
-                                    child.channel.put(event)
-                                }
-                            }
                             ctx.children.set(value.name, child)
-                            registry.set(value.name, child)
+                            registry.set(child.id, child)
                         }
-                        // spawn events are consumed by scheduler, not channeled
                         produced = true
                         continue
                     }
@@ -263,13 +253,11 @@ export function createScheduler(generator, opts = {}) {
                     // Frame targeting: route events to named ancestor frame
                     if (ctx.frame) {
                         if (value.type === "head") {
-                            // Head stays in own channel — compositor renders it
-                            // at this ambient's worldTransform position
                             ctx.channel.put(value)
                         } else {
-                            const target = registry.get(ctx.frame)
+                            const target = findAncestorByName(ctx, ctx.frame)
                             if (target) {
-                                const rel = relativeTransform(ctx, ctx.frame, registry)
+                                const rel = relativeTransform(ctx, target)
                                 target.channel.put(transformEvent(value, rel))
                             }
                         }
@@ -290,4 +278,4 @@ export function createScheduler(generator, opts = {}) {
     }
 }
 
-export { createAmbientCtx, visitPostOrder, terminateAmbient, allDone, worldTransform }
+export { createAmbientCtx, visitPostOrder, terminateAmbient, allDone, worldTransform, findAncestorByName }

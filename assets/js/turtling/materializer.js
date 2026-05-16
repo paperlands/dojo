@@ -32,7 +32,7 @@ export function materialize(event, groups, ctx) {
         break
 
     case "clear":
-        clearGroups(groups)
+        clearGroups(groups, ctx.head)
         break
 
     case "wait":
@@ -153,12 +153,17 @@ function materializeGrid(event, gridGroup) {
     gridGroup.add(gridHelper)
 }
 
-function clearGroups(groups) {
-    groups.pathGroup.clear()
-    groups.glyphGroup.clear()
+function clearGroups(groups, head) {
+    // Remove drawn content from pathGroup but preserve the head mesh.
+    // hd (hide) is the intentional way to hide the head — erase should not.
+    const headGroup = head?.turtleGroup
+    for (const child of [...groups.pathGroup.children]) {
+        if (child !== headGroup) groups.pathGroup.remove(child)
+    }
     groups.gridGroup.clear()
     if (groups.glyphGroup.elements) {
         groups.glyphGroup.elements.forEach(text => text.dispose())
         groups.glyphGroup.elements = []
     }
+    groups.glyphGroup.clear()
 }

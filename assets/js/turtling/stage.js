@@ -21,18 +21,9 @@ export function createStage(canvas, bridge) {
     const glyphGroup = new THREE.Group()
     glyphGroup.elements = []
 
-    const guestPathGroup = new THREE.Group()
-    const guestGridGroup = new THREE.Group()
-    const guestGlyphGroup = new THREE.Group()
-    guestGlyphGroup.elements = []
-    guestPathGroup.visible = false
-
     scene.add(pathGroup)
     scene.add(gridGroup)
     scene.add(glyphGroup)
-    scene.add(guestPathGroup)
-    scene.add(guestGridGroup)
-    scene.add(guestGlyphGroup)
 
     // Shapist — polygon fill renderer
     const shapist = new Render.Shape(pathGroup, {
@@ -130,25 +121,11 @@ export function createStage(canvas, bridge) {
         recorder,
         shapist,
 
-        // Groups
-        groups: {
-            pathGroup,
-            gridGroup,
-            glyphGroup
-        },
-        guestGroups: {
-            pathGroup: guestPathGroup,
-            gridGroup: guestGridGroup,
-            glyphGroup: guestGlyphGroup
-        },
-
-        // Also expose groups directly for backward compat with turtle.js
+        // Root groups — used only by stage.head idle rendering.
+        // Per-ambient groups are created dynamically by turtle.js.
         pathGroup,
         gridGroup,
         glyphGroup,
-        guestPathGroup,
-        guestGridGroup,
-        guestGlyphGroup,
 
         renderstate: {
             phase: "start",

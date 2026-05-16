@@ -26,6 +26,7 @@ export function* execute(ast, deps, opts = {}) {
         maxCommands: opts.maxCommands || 88888888,
         lastPosition: [0, 0, 0],
         elapsedTime: 0,
+        loopCounter: opts.loopCounter || 0,
         deps
     }
 
@@ -38,6 +39,7 @@ export function* execute(ast, deps, opts = {}) {
     ec['x'] = () => roundVec(state.transform.position[0])
     ec['y'] = () => roundVec(state.transform.position[1])
     ec['z'] = () => roundVec(state.transform.position[2])
+    ec['count'] = () => state.loopCounter
 
     try {
         yield* walkBody(ast, {}, state)
@@ -82,9 +84,12 @@ function* walkBody(body, scope, state) {
 
         case 'Loop': {
             const times = evaluateExpr(node.value, scope, state)
+            const prevCount = state.loopCounter
             for (let i = 0; i < times; i++) {
+                state.loopCounter = i
                 yield* walkBody(node.children, scope, state)
             }
+            state.loopCounter = prevCount
             break
         }
 
@@ -142,15 +147,15 @@ function* walkBody(body, scope, state) {
         }
 
         case 'Ambient': {
-            // Yield spawn event — the scheduler creates and manages the child
             yield {
                 type: 'spawn',
-                name: node.value,
+                name: String(evaluateExpr(node.value, scope, state)),
                 ast: node.children,
                 transform: SE3.clone(state.transform),
                 penState: { ...state.penState },
                 frame: node.meta?.frame || null,
-                functions: { ...state.functions }
+                functions: { ...state.functions },
+                loopCounter: state.loopCounter
             }
             break
         }

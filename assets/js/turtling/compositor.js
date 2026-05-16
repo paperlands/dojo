@@ -25,11 +25,15 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
     let focused = true   // only focused compositor's head events track camera
     const createHead = opts.createHead || null
 
-    // Per-ambient rendering state: { group: THREE.Group, head: Head }
+    // Per-ambient rendering state: { group, head }
+    // Keyed by ambient.id (unique monotonic counter), so each ambient
+    // gets exactly one layer. No generation tracking needed — unique IDs
+    // mean a re-spawned ambient is a new entry, never a collision.
     const ambientLayers = new Map()
 
     function getOrCreateLayer(id) {
-        if (ambientLayers.has(id)) return ambientLayers.get(id)
+        const existing = ambientLayers.get(id)
+        if (existing) return existing
 
         const group = new THREE.Group()
         group.elements = []   // for text disposal (materializeLabel)
@@ -47,7 +51,7 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
             const events = ambient.channel.drain()
             if (events.length === 0) continue
 
-            if (id === 'root') {
+            if (ambient === scheduler.root) {
                 for (const event of events) {
                     if (event.type === 'error') continue
                     // Unfocused: render head but skip camera tracking
@@ -73,6 +77,21 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
                         }
                     } else if (event.type === 'head') {
                         // No head mesh for this child — skip
+                    } else if (event.type === 'clear') {
+                        // Clear child layer but preserve its head mesh
+                        const headGroup = layer.head?.turtleGroup
+                        for (const child of [...layer.group.children]) {
+                            if (child === headGroup) continue
+                            child.traverse(c => {
+                                if (c.geometry) c.geometry.dispose()
+                                if (c.material) c.material.dispose()
+                            })
+                            layer.group.remove(child)
+                        }
+                        if (layer.group.elements) {
+                            layer.group.elements.forEach(text => text.dispose?.())
+                            layer.group.elements = []
+                        }
                     } else {
                         materialize(event,
                             { pathGroup: layer.group, gridGroup: layer.group, glyphGroup: layer.group },
@@ -90,11 +109,11 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
     // Called after ticking and materializing so atoms are current.
     function updateGroupPositions() {
         for (const [id, ambient] of scheduler.registry) {
-            if (id === 'root') continue
+            if (ambient === scheduler.root) continue
             const layer = ambientLayers.get(id)
             if (!layer) continue
 
-            const wt = worldTransform(ambient, scheduler.registry)
+            const wt = worldTransform(ambient)
             layer.group.position.set(wt.position[0], wt.position[1], wt.position[2])
             layer.group.quaternion.set(
                 wt.rotation.x, wt.rotation.y,
@@ -175,6 +194,18 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
                 }
             } catch (error) {
                 console.error('Compositor frame error:', error)
+            }
+        },
+
+        // Propagate opacity to all child ambient layers.
+        setOpacity(opacity) {
+            for (const [id, layer] of ambientLayers) {
+                layer.group.traverse(child => {
+                    if (child.material) {
+                        child.material.transparent = true
+                        child.material.opacity = opacity
+                    }
+                })
             }
         },
 

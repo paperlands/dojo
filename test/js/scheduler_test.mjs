@@ -8,7 +8,11 @@ import { parseProgram } from "../../assets/js/turtling/parse.js"
 import { execute, drainEvents } from "../../assets/js/turtling/executor.js"
 import { ASTNode } from "../../assets/js/turtling/ast.js"
 import { SE3 } from "../../assets/js/turtling/se3.js"
-import { createAtom } from "../../assets/js/turtling/atom.js"
+
+// Helper: find a child ambient by name in the tree (not via registry)
+function findChild(root, name) {
+    return root.children.get(name) || null
+}
 
 // Helper: create a generator from an array of events
 function* genFromEvents(events) {
@@ -370,7 +374,8 @@ describe("tree scheduler: spawn handling", () => {
         // First tick: parent runs, spawns child, parent done
         scheduler.tick(0)
 
-        assert.ok(scheduler.registry.has("child"))
+        const child = findChild(scheduler.root, "child")
+        assert.ok(child)
         assert.ok(!scheduler.done) // child hasn't run yet
     })
 
@@ -396,9 +401,8 @@ describe("tree scheduler: spawn handling", () => {
         scheduler.tick(0) // child executes
         assert.ok(scheduler.done)
 
-        // Child should have produced events on its own channel
-        const childCtx = scheduler.registry.get("child")
-        assert.ok(childCtx.done)
+        const child = findChild(scheduler.root, "child")
+        assert.ok(child.done)
     })
 
     test("allDone checks entire tree", () => {
@@ -447,7 +451,7 @@ describe("tree scheduler: spawn handling", () => {
         scheduler.tick(0)   // parent done, child spawned
         scheduler.tick(0)   // child starts, hits wait(5) → resumeAt = 5000
 
-        const childCtx = scheduler.registry.get("waiter")
+        const childCtx = findChild(scheduler.root, "waiter")
         assert.ok(!childCtx.done) // child is waiting
         assert.ok(!scheduler.done) // scheduler waits for child
 
@@ -496,7 +500,6 @@ describe("integration: as keyword end-to-end", () => {
             execOpts: { color: '#e77808' }
         })
 
-        // Tick until done
         let ticks = 0
         while (!scheduler.done && ticks < 100) {
             scheduler.tick(0)
@@ -504,8 +507,9 @@ describe("integration: as keyword end-to-end", () => {
         }
 
         assert.ok(scheduler.done)
-        assert.ok(scheduler.registry.has("sky"))
-        assert.ok(scheduler.registry.get("sky").done)
+        const sky = findChild(scheduler.root, "sky")
+        assert.ok(sky)
+        assert.ok(sky.done)
     })
 
     test("sibling ambients both execute", () => {
@@ -525,10 +529,10 @@ describe("integration: as keyword end-to-end", () => {
         }
 
         assert.ok(scheduler.done)
-        assert.ok(scheduler.registry.has("a"))
-        assert.ok(scheduler.registry.has("b"))
-        assert.ok(scheduler.registry.get("a").done)
-        assert.ok(scheduler.registry.get("b").done)
+        assert.ok(findChild(scheduler.root, "a"))
+        assert.ok(findChild(scheduler.root, "b"))
+        assert.ok(findChild(scheduler.root, "a").done)
+        assert.ok(findChild(scheduler.root, "b").done)
     })
 
     test("commands before ambient execute in root", () => {
@@ -552,20 +556,17 @@ describe("integration: as keyword end-to-end", () => {
         }
 
         assert.ok(scheduler.done)
-        // Root had fw 50 (path event on root channel)
-        // Sky had fw 100 (path event on sky channel)
-        assert.ok(scheduler.registry.has("sky"))
+        assert.ok(findChild(scheduler.root, "sky"))
     })
 })
 
 // ---------------------------------------------------------------------------
-// Phase 5c: Transform atoms + worldTransform
+// Transform atoms + worldTransform
 // ---------------------------------------------------------------------------
 
 describe("transform atom", () => {
     test("AmbientCtx.transform is an Atom", () => {
         const ctx = createAmbientCtx('test', (function*(){})(), SE3.identity(), 64, null)
-        // Should have deref/swap methods
         assert.equal(typeof ctx.transform.deref, 'function')
         assert.equal(typeof ctx.transform.swap, 'function')
     })
@@ -601,7 +602,7 @@ describe("transform atom", () => {
         assert.deepEqual(rootTransform.position, [50, 0, 0])
     })
 
-    test("child ambient has parentId set", () => {
+    test("child ambient has parent reference set", () => {
         function* gen() {
             yield {
                 type: "spawn", name: "child",
@@ -618,27 +619,25 @@ describe("transform atom", () => {
         })
 
         scheduler.tick(0)
-        const child = scheduler.registry.get("child")
-        assert.equal(child.parentId, "root")
+        const child = findChild(scheduler.root, "child")
+        assert.equal(child.parent, scheduler.root)
     })
 })
 
 describe("worldTransform", () => {
     test("root returns identity", () => {
         const root = createAmbientCtx('root', (function*(){})(), SE3.identity(), 64, null)
-        const registry = new Map([['root', root]])
 
-        const wt = worldTransform(root, registry)
+        const wt = worldTransform(root)
         assert.deepEqual(wt.position, [0, 0, 0])
     })
 
     test("child of root gets root transform as world origin", () => {
         const rootTransform = { rotation: SE3.identity().rotation, position: [100, 0, 0] }
         const root = createAmbientCtx('root', (function*(){})(), rootTransform, 64, null)
-        const child = createAmbientCtx('child', (function*(){})(), SE3.identity(), 64, 'root')
-        const registry = new Map([['root', root], ['child', child]])
+        const child = createAmbientCtx('child', (function*(){})(), SE3.identity(), 64, root)
 
-        const wt = worldTransform(child, registry)
+        const wt = worldTransform(child)
         assert.ok(Math.abs(wt.position[0] - 100) < 0.01)
         assert.ok(Math.abs(wt.position[1]) < 0.01)
     })
@@ -648,35 +647,33 @@ describe("worldTransform", () => {
         const childT = SE3.translateLocal(SE3.identity(), 50, 0, 0)
 
         const root = createAmbientCtx('root', (function*(){})(), rootT, 64, null)
-        const child = createAmbientCtx('child', (function*(){})(), childT, 64, 'root')
-        const grandchild = createAmbientCtx('gc', (function*(){})(), SE3.identity(), 64, 'child')
-        const registry = new Map([['root', root], ['child', child], ['gc', grandchild]])
+        const child = createAmbientCtx('child', (function*(){})(), childT, 64, root)
+        const grandchild = createAmbientCtx('gc', (function*(){})(), SE3.identity(), 64, child)
 
-        const wt = worldTransform(grandchild, registry)
+        const wt = worldTransform(grandchild)
         // grandchild world origin = compose(root(100,0,0), child(50,0,0)) = (150,0,0)
         assert.ok(Math.abs(wt.position[0] - 150) < 0.01)
     })
 
     test("worldTransform reflects live parent movement", () => {
         const root = createAmbientCtx('root', (function*(){})(), SE3.identity(), 64, null)
-        const child = createAmbientCtx('child', (function*(){})(), SE3.identity(), 64, 'root')
-        const registry = new Map([['root', root], ['child', child]])
+        const child = createAmbientCtx('child', (function*(){})(), SE3.identity(), 64, root)
 
         // Initially root at origin
-        let wt = worldTransform(child, registry)
+        let wt = worldTransform(child)
         assert.ok(Math.abs(wt.position[0]) < 0.01)
 
         // Parent moves — update root's transform atom
         root.transform.swap(() => SE3.translateLocal(SE3.identity(), 200, 0, 0))
 
         // Child's worldTransform should reflect parent's live position
-        wt = worldTransform(child, registry)
+        wt = worldTransform(child)
         assert.ok(Math.abs(wt.position[0] - 200) < 0.01)
     })
 })
 
 // ---------------------------------------------------------------------------
-// Phase 7: Fault isolation
+// Fault isolation
 // ---------------------------------------------------------------------------
 
 describe("fault isolation", () => {
@@ -709,7 +706,7 @@ describe("fault isolation", () => {
 
         const drained = scheduler.channel.drain()
         const errorEvent = drained.find(e => e.type === 'error')
-        assert.equal(errorEvent.ambientId, "root")
+        assert.equal(errorEvent.ambientId, scheduler.root.id)
     })
 
     test("scheduler.errors returns all crashed ambients", () => {
@@ -722,7 +719,7 @@ describe("fault isolation", () => {
 
         const errors = scheduler.errors
         assert.equal(errors.length, 1)
-        assert.equal(errors[0].ambientId, "root")
+        assert.equal(errors[0].ambientId, scheduler.root.id)
         assert.equal(errors[0].message, "oops")
     })
 
@@ -773,12 +770,12 @@ describe("fault isolation", () => {
         assert.equal(scheduler.root.error, null)
 
         // Good child completed normally
-        const good = scheduler.registry.get("good")
+        const good = findChild(scheduler.root, "good")
         assert.ok(good.done)
         assert.equal(good.error, null)
 
         // Bad child crashed
-        const bad = scheduler.registry.get("bad")
+        const bad = findChild(scheduler.root, "bad")
         assert.ok(bad.done)
         assert.ok(bad.error)
         assert.ok(bad.error.includes("mistake"))
@@ -809,6 +806,79 @@ describe("fault isolation", () => {
     })
 })
 
+// ---------------------------------------------------------------------------
+// Nested same-name ambients
+// ---------------------------------------------------------------------------
+
+describe("nested same-name ambients", () => {
+    test("nested as turn do ... as turn do ... end end does not crash", () => {
+        const ast = parseProgram("as turn do\n  fw 100\n  as turn do\n    fw 100\n  end\nend")
+        const deps = mockDeps()
+        const generator = execute(ast, deps, { color: '#e77808' })
+
+        const scheduler = createScheduler(generator, {
+            createDeps: mockDeps,
+            execOpts: { color: '#e77808' }
+        })
+
+        let ticks = 0
+        while (!scheduler.done && ticks < 100) {
+            scheduler.tick(0)
+            for (const ctx of scheduler.registry.values()) ctx.channel.drain()
+            ticks++
+        }
+
+        assert.ok(scheduler.done)
+        assert.equal(scheduler.errors.length, 0)
+
+        // Both ambients exist as tree nodes
+        const outer = findChild(scheduler.root, "turn")
+        assert.ok(outer)
+        const inner = findChild(outer, "turn")
+        assert.ok(inner)
+
+        // Inner has outer as parent (direct reference)
+        assert.equal(inner.parent, outer)
+        assert.equal(outer.parent, scheduler.root)
+    })
+
+    test("worldTransform works for deeply nested same-name ambients", () => {
+        const ast = parseProgram("fw 50\nas a do\n  fw 30\n  as a do\n    fw 10\n    as a do\n      fw 5\n    end\n  end\nend")
+        const deps = mockDeps()
+        const generator = execute(ast, deps, { color: '#e77808' })
+
+        const scheduler = createScheduler(generator, {
+            createDeps: mockDeps,
+            execOpts: { color: '#e77808' }
+        })
+
+        let ticks = 0
+        while (!scheduler.done && ticks < 100) {
+            scheduler.tick(0)
+            for (const ctx of scheduler.registry.values()) ctx.channel.drain()
+            ticks++
+        }
+
+        assert.ok(scheduler.done)
+        assert.equal(scheduler.errors.length, 0)
+
+        const a1 = findChild(scheduler.root, "a")
+        const a2 = findChild(a1, "a")
+        const a3 = findChild(a2, "a")
+        assert.ok(a1)
+        assert.ok(a2)
+        assert.ok(a3)
+
+        // Each level composes correctly
+        const wt = worldTransform(a3)
+        assert.ok(wt.position)
+    })
+})
+
+// ---------------------------------------------------------------------------
+// Inertial frame integration
+// ---------------------------------------------------------------------------
+
 describe("inertial frame integration", () => {
     test("child draws at parent position", () => {
         // Parent: fw 100, then spawn child that draws fw 50
@@ -833,12 +903,12 @@ describe("inertial frame integration", () => {
         const rootT = scheduler.root.transform.deref()
         assert.ok(Math.abs(rootT.position[0] - 100) < 1)
 
-        // Child exists and has parentId = 'root'
-        const sky = scheduler.registry.get("sky")
-        assert.equal(sky.parentId, "root")
+        // Child exists with parent = root
+        const sky = findChild(scheduler.root, "sky")
+        assert.equal(sky.parent, scheduler.root)
 
         // worldTransform(sky) = root's transform = (100,0,0)
-        const wt = worldTransform(sky, scheduler.registry)
+        const wt = worldTransform(sky)
         assert.ok(Math.abs(wt.position[0] - 100) < 1)
 
         // Child's own transform reflects its local cursor (fw 50 from local origin)
@@ -867,8 +937,8 @@ describe("inertial frame integration", () => {
         }
 
         // Both children should have root as parent
-        assert.equal(scheduler.registry.get("a").parentId, "root")
-        assert.equal(scheduler.registry.get("b").parentId, "root")
+        assert.equal(findChild(scheduler.root, "a").parent, scheduler.root)
+        assert.equal(findChild(scheduler.root, "b").parent, scheduler.root)
 
         // Root's final transform = fw 50 + fw 50 = ~(100,0,0)
         const rootT = scheduler.root.transform.deref()

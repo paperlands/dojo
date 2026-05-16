@@ -258,15 +258,21 @@ export const createTerminal = (element, cm6, options = {}) => {
             return id;
         },
 
+        findFork(addr) {
+            for (const [id, buffer] of state.collection.items) {
+                if (buffer.origin?.addr === addr) return id;
+            }
+            return null;
+        },
+
         forkBuffer({ source, name, addr, time }) {
             if (!source || !addr) return;
 
-            // Duplicate prevention: if a fork from this addr already exists, switch to it
-            for (const [id, buffer] of state.collection.items) {
-                if (buffer.origin?.addr === addr) {
-                    doSelectBuffer(id);
-                    return id;
-                }
+            // If a fork from this addr already exists, switch to it
+            const existing = this.findFork(addr);
+            if (existing) {
+                doSelectBuffer(existing);
+                return existing;
             }
 
             const bufferName = name ? `${name}'s fork` : 'fork';

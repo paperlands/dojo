@@ -37,7 +37,7 @@ function createAmbientEntry(name, scene) {
     }
 }
 
-function clearAmbientGroups(groups) {
+function clearAmbientGroups(groups, head) {
     groups.pathGroup.clear()
     groups.gridGroup.clear()
     if (groups.glyphGroup.elements) {
@@ -45,6 +45,9 @@ function clearAmbientGroups(groups) {
     }
     groups.glyphGroup.clear()
     groups.glyphGroup.elements = []
+    // pathGroup.clear() removes all children including the head mesh.
+    // Re-attach it so the head survives across re-renders.
+    if (head) groups.pathGroup.add(head.turtleGroup)
 }
 
 function disposeAmbientEntry(entry, scene) {
@@ -89,11 +92,45 @@ export class Turtle {
         this.focusedId = null
         this._snapshotPending = false
 
+        this._heartbeatTimer = null
+        this._onVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                this.eagerHatch()
+                this._scheduleHeartbeat()
+            } else {
+                this._stopHeartbeat()
+            }
+        }
+
+        document.addEventListener('visibilitychange', this._onVisibilityChange)
+        this._scheduleHeartbeat()
         this.renderLoop.requestRestart()
     }
 
     requestRender() {
         this.renderLoop.start()
+    }
+
+    _scheduleHeartbeat() {
+        if (this._heartbeatTimer) return
+        const delay = 10_000 + Math.random() * 5_000
+        this._heartbeatTimer = setTimeout(() => {
+            this._heartbeatTimer = null
+            if (document.visibilityState === 'visible') {
+                this.eagerHatch()
+                this._scheduleHeartbeat()
+            }
+        }, delay)
+    }
+
+    _stopHeartbeat() {
+        clearTimeout(this._heartbeatTimer)
+        this._heartbeatTimer = null
+    }
+
+    dispose() {
+        this._stopHeartbeat()
+        document.removeEventListener('visibilitychange', this._onVisibilityChange)
     }
 
     onFrame(t) {
@@ -155,7 +192,7 @@ export class Turtle {
             if (entry) {
                 entry.compositor.dispose()
                 entry.shapist.dispose()
-                clearAmbientGroups(entry.groups)
+                clearAmbientGroups(entry.groups, entry.head)
                 entry.head.reset()
                 entry.shapist = new Render.Shape(entry.groups.pathGroup, {
                     layerMethod: 'renderOrder',
@@ -204,6 +241,10 @@ export class Turtle {
 
             entry.compositor.focused = isFocused
 
+            // Fresh hatch cycle — clear previous snapshot so onFrame re-hatches
+            this.renderstate.snapshot = { frame: null, save: this.renderstate.snapshot.save }
+            this._snapshotPending = false
+
             entry.compositor.flush()
 
             const errors = entry.compositor.scheduler.errors
@@ -214,7 +255,6 @@ export class Turtle {
             }
 
             this.renderstate.meta = { state: "success", commands: instructions }
-            this._snapshotPending = false
             this.requestRender()
             return { success: true, commandCount: entry.compositor.scheduler.commandCount }
         } catch (error) {
@@ -272,29 +312,14 @@ export class Turtle {
         apply(entry.groups.pathGroup)
         apply(entry.groups.gridGroup)
         apply(entry.groups.glyphGroup)
+        if (entry.compositor) entry.compositor.setOpacity(opacity)
     }
 
     // --- Backward-compatible API ---
 
     draw(code, opts = {}) {
-        this.reset()
-        this.focusedId = 'default'
+        this.focusedId = this.focusedId || 'default'
         return this.upsertAmbient('default', 'default', code)
-    }
-
-    drawGuest(code) {
-        this.removeAmbient('guest')
-        if (!code) return { success: true, commandCount: 0 }
-        const result = this.upsertAmbient('guest', 'guest', code)
-        return result
-    }
-
-    clearGuest() {
-        this.removeAmbient('guest')
-    }
-
-    setGuestOpacity(opacity) {
-        this.setAmbientOpacity('guest', opacity)
     }
 
     reset() {
@@ -309,18 +334,6 @@ export class Turtle {
 
         this.stage.head.show()
         this.stage.head.reset()
-
-        // Clear legacy stage groups
-        this.stage.pathGroup.clear()
-        this.stage.gridGroup.clear()
-        if (this.stage.glyphGroup.elements) {
-            this.stage.glyphGroup.elements.forEach(text => text.dispose())
-        }
-        this.stage.glyphGroup.clear()
-        this.stage.glyphGroup.elements = []
-        this.stage.shapist.dispose()
-
-        this.renderstate.phase = "start"
         this.renderstate.snapshot = { frame: null, save: false }
         this.renderstate.meta = { state: null, message: null, commands: [] }
         this.renderLoop.requestRestart()

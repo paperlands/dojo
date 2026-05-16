@@ -331,9 +331,10 @@ const Shell = {
 
             const debouncedGuestRender = temporal.debounce((code) => {
                 if (!coreTurtle) return;
-                const result = coreTurtle.drawGuest(code);
+                if (!code) { coreTurtle.removeAmbient('guest'); return; }
+                const result = coreTurtle.upsertAmbient('guest', 'guest', code);
                 if (result.success) {
-                    coreTurtle.setGuestOpacity(outerFocused ? 1.0 : 0.4);
+                    coreTurtle.setAmbientOpacity('guest', outerFocused ? 1.0 : 0.4);
                     coreTurtle.requestRender();
                     display.success(result.commandCount);
                 } else {
@@ -418,7 +419,7 @@ const Shell = {
                 if (!coreTurtle) return;
                 coreTurtle.focusAmbient('default');
                 coreTurtle.setAmbientOpacity('default', 1.0);
-                coreTurtle.setGuestOpacity(0.4);
+                coreTurtle.setAmbientOpacity('guest', 0.4);
                 coreTurtle.requestRender();
             };
 
@@ -433,7 +434,7 @@ const Shell = {
 
             this.cleanup = [
                 listeners.theme(theme => term.setOption('theme', theme)).mount(),
-                () => coreTurtle?.clearGuest(),
+                () => coreTurtle?.removeAmbient('guest'),
                 () => term.shell?.dom.removeEventListener('keydown', forkOnType),
                 () => { outerEl.removeEventListener('mousedown', onOuterClick);
                         document.removeEventListener('focusin', onGlobalFocus); },
@@ -480,48 +481,13 @@ const Shell = {
             });
             term.inner();
 
-            // Eager hatch: re-push state on visibility change + jittered heartbeat
-            let heartbeatTimer = null
-            const HEARTBEAT_BASE = 10_000
-            const HEARTBEAT_JITTER = 5_000
-
-            const scheduleHeartbeat = () => {
-                if (heartbeatTimer) return
-                const delay = HEARTBEAT_BASE + Math.random() * HEARTBEAT_JITTER
-                heartbeatTimer = setTimeout(() => {
-                    heartbeatTimer = null
-                    if (document.visibilityState === 'visible') {
-                        turtle.eagerHatch()
-                        scheduleHeartbeat()
-                    }
-                }, delay)
-            }
-
-            const stopHeartbeat = () => {
-                clearTimeout(heartbeatTimer)
-                heartbeatTimer = null
-            }
-
-            const onVisibilityChange = () => {
-                if (document.visibilityState === 'visible') {
-                    turtle.eagerHatch()
-                    scheduleHeartbeat()
-                } else {
-                    stopHeartbeat()
-                }
-            }
-
-            document.addEventListener('visibilitychange', onVisibilityChange)
-            scheduleHeartbeat()
-
             this.cleanup = [
                 listeners.keyboard(term.shell, cm6).mount(),
                 listeners.selection(term.selectionBridge, this.pushEvent.bind(this)).mount(),
                 listeners.theme(theme => term.setOption('theme', theme)).mount(),
                 slider.mount(),
                 listeners.slider(term.shell, slider, cm6).mount(),
-                () => document.removeEventListener('visibilitychange', onVisibilityChange),
-                () => stopHeartbeat(),
+                () => turtle.dispose(),
                 () => { innerTerminal = null; },
             ];
 
