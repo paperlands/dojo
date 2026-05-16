@@ -49,7 +49,7 @@ const commands = {
                 if (typeof arg === 'number') return arg;
                 const el = document.getElementById(`cmdparam-${cmd}-${arg}`);
                 return el?.value || el?.defaulted || arg || "";
-            });
+            }).filter(v => v !== '?');
 
             if (command === "undo") {
                 term.run({ command: "undo" });
