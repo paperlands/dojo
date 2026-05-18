@@ -945,3 +945,160 @@ describe("inertial frame integration", () => {
         assert.ok(Math.abs(rootT.position[0] - 100) < 1)
     })
 })
+
+// ---------------------------------------------------------------------------
+// Frame-targeted sketch re-spawn
+// ---------------------------------------------------------------------------
+
+describe("frame-targeted sketch re-spawn", () => {
+    test("frame-targeted ambient in loop creates multiple instances (no wait)", () => {
+        // loop 3 do rt 120 as star root do fw 100 end end
+        // Each iteration spawns a unique star instance drawing at root's frame
+        const ast = parseProgram("loop 3 do\n  rt 120\n  as star root do\n    fw 100\n  end\nend")
+        const deps = mockDeps()
+        const generator = execute(ast, deps, { color: '#fff' })
+
+        const scheduler = createScheduler(generator, {
+            createDeps: mockDeps,
+            execOpts: { color: '#fff' }
+        })
+
+        let ticks = 0
+        while (!scheduler.done && ticks < 100) {
+            scheduler.tick(0)
+            for (const ctx of scheduler.registry.values()) ctx.channel.drain()
+            ticks++
+        }
+
+        // Should have 3 child instances (star, star#1, star#2)
+        assert.equal(scheduler.root.children.size, 3)
+
+        // All paths should have been routed to root's channel (already drained above)
+        // Verify all children completed
+        for (const child of scheduler.root.children.values()) {
+            assert.ok(child.done)
+            assert.equal(child.frame, "root")
+        }
+    })
+
+    test("each sketch uses spawn-time transform, not live parent atom", () => {
+        // loop 3 do rt 120 as star root do fw 100 end end
+        // Without spawnOrigin fix, all 3 paths would be identical (parent ends at 360°=0°)
+        // With fix, paths are at 120°, 240°, 360° respectively
+        const ast = parseProgram("loop 3 do\n  rt 120\n  as star root do\n    fw 100\n  end\nend")
+        const deps = mockDeps()
+        const generator = execute(ast, deps, { color: '#fff' })
+
+        const scheduler = createScheduler(generator, {
+            createDeps: mockDeps,
+            execOpts: { color: '#fff' }
+        })
+
+        // Tick until root is done (all spawns created in one tick, no waits)
+        scheduler.tick(0)
+
+        // Root should have 3 children with distinct spawnOrigins
+        const origins = [...scheduler.root.children.values()].map(c => c.spawnOrigin)
+        assert.equal(origins.length, 3)
+
+        // Each spawnOrigin should have different rotation (120°, 240°, 360°)
+        // Verify they're not all the same
+        const positions = origins.map(o => {
+            // Apply rotation to [100, 0, 0] to see where each points
+            const [x, y] = o.rotation.rotateVec(100, 0, 0)
+            return [Math.round(x), Math.round(y)]
+        })
+
+        // All three must be distinct directions
+        const unique = new Set(positions.map(p => `${p[0]},${p[1]}`))
+        assert.equal(unique.size, 3, `Expected 3 distinct directions, got: ${JSON.stringify(positions)}`)
+
+        // Now tick children — paths should route to root channel with correct transforms
+        scheduler.tick(0)
+        const rootEvents = scheduler.root.channel.drain()
+        const paths = rootEvents.filter(e => e.type === 'path')
+
+        // 3 distinct paths, each starting at [0,0,0] but ending in different directions
+        assert.equal(paths.length, 3)
+        const endpoints = paths.map(p => [Math.round(p.points[1][0]), Math.round(p.points[1][1])])
+        const uniqueEndpoints = new Set(endpoints.map(p => `${p[0]},${p[1]}`))
+        assert.equal(uniqueEndpoints.size, 3, `Expected 3 distinct endpoints, got: ${JSON.stringify(endpoints)}`)
+    })
+
+    test("frame-targeted ambient in loop with wait re-spawns each iteration", () => {
+        // loop 2 do rt 180 as star root do fw 50 end wait end
+        const ast = parseProgram("loop 2 do\n  rt 180\n  as star root do\n    fw 50\n  end\n  wait\nend")
+        const deps = mockDeps()
+        const generator = execute(ast, deps, { color: '#fff' })
+
+        const scheduler = createScheduler(generator, {
+            createDeps: mockDeps,
+            execOpts: { color: '#fff' }
+        })
+
+        // First tick: root runs iteration 0, spawns star, then waits
+        scheduler.tick(0)
+        for (const ctx of scheduler.registry.values()) ctx.channel.drain()
+        assert.equal(scheduler.root.children.size, 1)
+
+        // Second tick: star child runs and completes
+        scheduler.tick(1000)
+        for (const ctx of scheduler.registry.values()) ctx.channel.drain()
+
+        // Third tick: root resumes, rt 180, spawns star#1, waits
+        scheduler.tick(1000)
+        for (const ctx of scheduler.registry.values()) ctx.channel.drain()
+        assert.equal(scheduler.root.children.size, 2)
+    })
+
+    test("non-frame ambient stays idempotent even after child completes", () => {
+        // loop 3 do as orbit do fw 100 end wait end
+        // orbit completes between wait ticks — should NOT re-spawn
+        const ast = parseProgram("loop 3 do\n  as orbit do\n    fw 100\n  end\n  wait\nend")
+        const deps = mockDeps()
+        const generator = execute(ast, deps, { color: '#fff' })
+
+        const scheduler = createScheduler(generator, {
+            createDeps: mockDeps,
+            execOpts: { color: '#fff' }
+        })
+
+        // Tick until done, advancing time past each wait
+        let ticks = 0
+        let t = 0
+        while (!scheduler.done && ticks < 200) {
+            scheduler.tick(t)
+            for (const ctx of scheduler.registry.values()) ctx.channel.drain()
+            t += 1000
+            ticks++
+        }
+
+        assert.ok(scheduler.done)
+        // Only one orbit — not 3
+        assert.equal(scheduler.root.children.size, 1)
+        assert.ok(findChild(scheduler.root, "orbit"))
+    })
+
+    test("non-frame ambient stays idempotent while running", () => {
+        // loop 3 do as actor do wait end end — only one actor spawned
+        const ast = parseProgram("loop 3 do\n  as actor do\n    wait\n  end\nend")
+        const deps = mockDeps()
+        const generator = execute(ast, deps, { color: '#fff' })
+
+        const scheduler = createScheduler(generator, {
+            createDeps: mockDeps,
+            execOpts: { color: '#fff' }
+        })
+
+        let ticks = 0
+        while (!scheduler.done && ticks < 100) {
+            scheduler.tick(0)
+            for (const ctx of scheduler.registry.values()) ctx.channel.drain()
+            ticks++
+        }
+
+        // Only one actor created — idempotent while running
+        assert.equal(scheduler.root.children.size, 1)
+        assert.ok(findChild(scheduler.root, "actor"))
+    })
+})

@@ -209,12 +209,21 @@ export function createScheduler(generator, opts = {}) {
                         // Keep parent transform atom current between head events
                         ctx.transform.swap(() => value.transform)
 
-                        // Idempotent spawn: if a child with this name exists
-                        // (running or completed), skip.
-                        const existing = ctx.children.get(value.name)
-                        if (existing) {
-                            produced = true
-                            continue
+                        // Frame-targeted spawns are sketches — each invocation
+                        // draws independently at the target frame. No idempotency.
+                        // Non-frame spawns are actors — fully idempotent by name.
+                        // Once created, subsequent spawns are no-ops.
+                        let childName = value.name
+                        if (value.frame) {
+                            let suffix = 0
+                            while (ctx.children.has(childName)) {
+                                childName = `${value.name}#${++suffix}`
+                            }
+                        } else {
+                            if (ctx.children.has(value.name)) {
+                                produced = true
+                                continue
+                            }
                         }
 
                         if (createDeps) {
@@ -233,14 +242,15 @@ export function createScheduler(generator, opts = {}) {
                                 loopCounter: value.loopCounter
                             })
                             const child = createAmbientCtx(
-                                value.name,
+                                childName,
                                 childGen,
                                 SE3.identity(),
                                 channelCapacity,
                                 ctx               // direct parent reference
                             )
                             child.frame = value.frame || null
-                            ctx.children.set(value.name, child)
+                            if (value.frame) child.spawnOrigin = value.transform
+                            ctx.children.set(childName, child)
                             registry.set(child.id, child)
                         }
                         produced = true
@@ -256,14 +266,16 @@ export function createScheduler(generator, opts = {}) {
                     }
 
                     // Frame targeting: route events to named ancestor frame
+                    // Sketches use spawn-time origin (frozen at creation);
+                    // fallback to live relativeTransform for nested actors.
                     if (ctx.frame) {
                         if (value.type === "head") {
                             ctx.channel.put(value)
                         } else {
                             const target = findAncestorByName(ctx, ctx.frame)
                             if (target) {
-                                const rel = relativeTransform(ctx, target)
-                                target.channel.put(transformEvent(value, rel))
+                                const t = ctx.spawnOrigin || relativeTransform(ctx, target)
+                                target.channel.put(transformEvent(value, t))
                             }
                         }
                     } else {

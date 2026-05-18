@@ -135,11 +135,16 @@ const commands = {
         const baseIndent = " ".repeat(indent);
         const innerIndent = " ".repeat(indent + 2);
 
+        const lines = selection && selection.text
+            ? selection.text.split('\n').filter(l => l.trim())
+            : [];
+        const minIndent = lines.length
+            ? Math.min(...lines.map(l => l.match(/^(\s*)/)[1].length))
+            : 0;
+
         const structure = [
             `${baseIndent}${ctrl}${argText} do`,
-            selection && selection.text ?
-                selection.text.split('\n').filter(l => l.trim()).map(l => `${innerIndent}${l}`).join('\n') :
-                '',
+            lines.map(l => `${innerIndent}${l.slice(minIndent)}`).join('\n'),
             `${baseIndent}end\n`,
         ];
 

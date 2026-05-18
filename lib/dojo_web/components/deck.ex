@@ -27,7 +27,7 @@ defmodule DojoWeb.DeckLive do
     control: [
       {"loop", "Repeat Commands", [times: 5]},
       {"def", "Name your Command", [name: "name"]},
-      {"as", "Command a Helper", [name: "name", "?": "?"]}
+      {"as", "Summon a Helper", [name: "name", for: "?"]}
     ]
   }
 
