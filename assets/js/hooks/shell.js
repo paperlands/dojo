@@ -317,6 +317,7 @@ const Shell = {
 
         const shellTarget = this.el.dataset.target;
         const term = new Terminal(this.el, cm6);
+        this.term = term;
 
         if (shellTarget === "outer") {
             // Outer shell: read-only code viewer. Rendering goes through
@@ -501,6 +502,7 @@ const Shell = {
 
     destroyed() {
         this.cleanup?.forEach(fn => fn());
+        this.term?.destroy();
         if (this.el.dataset.target !== "outer") {
             coreTurtle = null;
             innerTerminal = null;

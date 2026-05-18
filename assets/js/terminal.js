@@ -74,6 +74,25 @@ export const createTerminal = (element, cm6, options = {}) => {
         store.save(buffers.serialize(state.collection));
     };
 
+    // Flush storage immediately — called on visibility hidden and beforeunload.
+    // Captures the live EditorState into the collection before saving,
+    // since the debounced autosave may not have fired yet.
+    const flushStorage = () => {
+        if (!store || !state.collection || !shell) return;
+        const currentId = state.collection.currentId;
+        if (currentId) {
+            const liveContent = editorView.getContent(shell);
+            state.collection = buffers.updateContent(state.collection, currentId, liveContent);
+        }
+        saveToStorage();
+    };
+
+    const onVisibilityChange = () => {
+        if (document.visibilityState === 'hidden') flushStorage();
+    };
+
+    const onBeforeUnload = () => flushStorage();
+
     const triggerBridge = () => {
         const content = editorView.getContent(shell);
         bridge.pub(content);
@@ -191,6 +210,10 @@ export const createTerminal = (element, cm6, options = {}) => {
 
             // Select initial buffer
             doSelectBuffer(state.collection.currentId);
+
+            // Persist on tab hide / page unload — timer-based autosave alone is unreliable
+            document.addEventListener('visibilitychange', onVisibilityChange);
+            window.addEventListener('beforeunload', onBeforeUnload);
 
             return terminal;
         },
@@ -354,8 +377,10 @@ export const createTerminal = (element, cm6, options = {}) => {
         triggerBridge,
 
         destroy() {
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+            window.removeEventListener('beforeunload', onBeforeUnload);
             clearTimeout(state.autosaveTimer);
-            saveToStorage();
+            flushStorage();
             editorView.destroy(shell, element);
         },
     };
