@@ -33,6 +33,8 @@ function createAmbientCtx(name, generator, transform, channelCapacity, parent) {
         commandCount: 0,
         children: new Map(),  // name → AmbientCtx
         frame: null,          // target frame name for `in <frame>` — null = own frame
+        actorState: null,     // shared mutable executor state — persists across command batches
+        pendingSpawns: [],    // queued spawn values — generators created against same actorState
     }
 }
 
@@ -127,6 +129,33 @@ function transformEvent(event, t) {
     }
 }
 
+// --- Child generator factory ---
+
+function createChildGenerator(value, createDeps, execOpts, actorState) {
+    const childDeps = createDeps()
+    if (value.userspace) {
+        for (const [k, v] of value.userspace) {
+            childDeps.mathParser.userspace.set(k, v)
+        }
+    }
+    // Continuation: actorState owns all persistent state, only need deps + loopCounter
+    if (actorState) {
+        return execute(value.ast, childDeps, {
+            actorState,
+            loopCounter: value.loopCounter,
+        })
+    }
+    // Initial spawn: create fresh actor state from spawn metadata
+    return execute(value.ast, childDeps, {
+        color: value.penState?.color || execOpts.color,
+        maxRecurseDepth: execOpts.maxRecurseDepth,
+        maxRecurses: execOpts.maxRecurses,
+        maxCommands: execOpts.maxCommands,
+        functions: value.functions,
+        loopCounter: value.loopCounter,
+    })
+}
+
 // --- Scheduler ---
 
 export function createScheduler(generator, opts = {}) {
@@ -172,6 +201,7 @@ export function createScheduler(generator, opts = {}) {
                         ({ value, done } = ctx.generator.next())
                     } catch (error) {
                         ctx.done = true
+                        ctx.generator = null
                         ctx.error = error.message
                         ctx.channel.put({ type: 'error', message: error.message, ambientId: ctx.id })
                         produced = true
@@ -179,8 +209,21 @@ export function createScheduler(generator, opts = {}) {
                     }
 
                     if (done) {
+                        const result = value || {}
+                        // Capture actor state — the shared mutable identity of this ambient
+                        if (result.actorState) {
+                            ctx.actorState = result.actorState
+                            ctx.commandCount = result.actorState.commandCount
+                        } else {
+                            ctx.commandCount += (typeof result === 'number' ? result : (result.commandCount || 0))
+                        }
+                        if (ctx.pendingSpawns.length > 0 && createDeps) {
+                            const nextSpawn = ctx.pendingSpawns.shift()
+                            ctx.generator = createChildGenerator(nextSpawn, createDeps, execOpts, ctx.actorState)
+                            break // yield — pick up next generator on next tick
+                        }
                         ctx.done = true
-                        ctx.commandCount = value || 0
+                        ctx.generator = null // release generator closures
                         // Channel stays open — frame-targeted descendants may
                         // still imprint events here after this ambient finishes.
                         break
@@ -211,36 +254,38 @@ export function createScheduler(generator, opts = {}) {
 
                         // Frame-targeted spawns are sketches — each invocation
                         // draws independently at the target frame. No idempotency.
-                        // Non-frame spawns are actors — fully idempotent by name.
-                        // Once created, subsequent spawns are no-ops.
+                        // Non-frame spawns append: subsequent spawns queue their
+                        // generator on the existing child so loops accumulate.
                         let childName = value.name
                         if (value.frame) {
                             let suffix = 0
                             while (ctx.children.has(childName)) {
                                 childName = `${value.name}#${++suffix}`
                             }
-                        } else {
-                            if (ctx.children.has(value.name)) {
-                                produced = true
-                                continue
+                        } else if (ctx.children.has(value.name)) {
+                            const existing = ctx.children.get(value.name)
+                            // Only retain what continuation needs — drop cloned
+                            // transform, penState, functions (actorState owns those)
+                            existing.pendingSpawns.push({
+                                ast: value.ast,
+                                userspace: value.userspace,
+                                loopCounter: value.loopCounter,
+                            })
+                            if (existing.done && createDeps) {
+                                existing.done = false
+                                existing.error = null
+                                // Generator was released — hydrate from first pending spawn
+                                existing.generator = createChildGenerator(
+                                    existing.pendingSpawns.shift(), createDeps, execOpts,
+                                    existing.actorState // null if first batch errored → fresh state
+                                )
                             }
+                            produced = true
+                            continue
                         }
 
                         if (createDeps) {
-                            const childDeps = createDeps()
-                            if (value.userspace) {
-                                for (const [k, v] of value.userspace) {
-                                    childDeps.mathParser.userspace.set(k, v)
-                                }
-                            }
-                            const childGen = execute(value.ast, childDeps, {
-                                color: value.penState?.color || execOpts.color,
-                                maxRecurseDepth: execOpts.maxRecurseDepth,
-                                maxRecurses: execOpts.maxRecurses,
-                                maxCommands: execOpts.maxCommands,
-                                functions: value.functions,
-                                loopCounter: value.loopCounter
-                            })
+                            const childGen = createChildGenerator(value, createDeps, execOpts)
                             const child = createAmbientCtx(
                                 childName,
                                 childGen,

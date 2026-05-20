@@ -1051,9 +1051,9 @@ describe("frame-targeted sketch re-spawn", () => {
         assert.equal(scheduler.root.children.size, 2)
     })
 
-    test("non-frame ambient stays idempotent even after child completes", () => {
+    test("non-frame ambient appends generators across loop iterations", () => {
         // loop 3 do as orbit do fw 100 end wait end
-        // orbit completes between wait ticks — should NOT re-spawn
+        // orbit completes between wait ticks — subsequent spawns queue new generators
         const ast = parseProgram("loop 3 do\n  as orbit do\n    fw 100\n  end\n  wait\nend")
         const deps = mockDeps()
         const generator = execute(ast, deps, { color: '#fff' })
@@ -1074,13 +1074,18 @@ describe("frame-targeted sketch re-spawn", () => {
         }
 
         assert.ok(scheduler.done)
-        // Only one orbit — not 3
+        // Still one child — append doesn't create siblings
         assert.equal(scheduler.root.children.size, 1)
-        assert.ok(findChild(scheduler.root, "orbit"))
+        const orbit = findChild(scheduler.root, "orbit")
+        assert.ok(orbit)
+        // All 3 generators drained
+        assert.equal(orbit.pendingSpawns.length, 0)
+        // commandCount accumulates across all generators
+        assert.ok(orbit.commandCount > 0)
     })
 
-    test("non-frame ambient stays idempotent while running", () => {
-        // loop 3 do as actor do wait end end — only one actor spawned
+    test("non-frame ambient queues generators while child is running", () => {
+        // loop 3 do as actor do wait end end — one child, generators queued
         const ast = parseProgram("loop 3 do\n  as actor do\n    wait\n  end\nend")
         const deps = mockDeps()
         const generator = execute(ast, deps, { color: '#fff' })
@@ -1097,8 +1102,62 @@ describe("frame-targeted sketch re-spawn", () => {
             ticks++
         }
 
-        // Only one actor created — idempotent while running
+        // One child — subsequent spawns appended, not duplicated
         assert.equal(scheduler.root.children.size, 1)
-        assert.ok(findChild(scheduler.root, "actor"))
+        const actor = findChild(scheduler.root, "actor")
+        assert.ok(actor)
+        // First generator is still running (waiting), so 2 more queued
+        assert.equal(actor.pendingSpawns.length, 2)
+    })
+
+    test("state continuity: loop builds on previous iteration's transform", () => {
+        // repeat 4 [as side do fw 50 rt 90 end]
+        // With state continuity, each iteration starts where the previous ended.
+        // 4× (fw 50 + rt 90) = a square, ending back near origin.
+        const ast = parseProgram("loop 4 do\n  as side do\n    fw 50\n    rt 90\n  end\nend")
+        const deps = mockDeps()
+        const generator = execute(ast, deps, { color: '#fff' })
+
+        const scheduler = createScheduler(generator, {
+            createDeps: mockDeps,
+            execOpts: { color: '#fff' }
+        })
+
+        const allPaths = []
+        let ticks = 0
+        while (!scheduler.done && ticks < 200) {
+            scheduler.tick(0)
+            for (const ctx of scheduler.registry.values()) {
+                for (const event of ctx.channel.drain()) {
+                    if (event.type === 'path') allPaths.push(event)
+                }
+            }
+            ticks++
+        }
+
+        assert.ok(scheduler.done)
+
+        const side = findChild(scheduler.root, "side")
+        assert.ok(side)
+        assert.equal(side.pendingSpawns.length, 0)
+
+        // 4 generators executed, each producing a path segment
+        assert.equal(allPaths.length, 4, `Expected 4 path segments, got ${allPaths.length}`)
+
+        // Each segment should start where the previous ended (state continuity)
+        for (let i = 1; i < allPaths.length; i++) {
+            const prevEnd = allPaths[i - 1].points[allPaths[i - 1].points.length - 1]
+            const currStart = allPaths[i].points[0]
+            assert.ok(
+                Math.abs(prevEnd[0] - currStart[0]) < 1 &&
+                Math.abs(prevEnd[1] - currStart[1]) < 1,
+                `Segment ${i} should start at prev end: [${prevEnd}] vs [${currStart}]`
+            )
+        }
+
+        // Square: final segment should end back near origin
+        const finalEnd = allPaths[3].points[allPaths[3].points.length - 1]
+        assert.ok(Math.abs(finalEnd[0]) < 1, `Square should close: x=${finalEnd[0]}`)
+        assert.ok(Math.abs(finalEnd[1]) < 1, `Square should close: y=${finalEnd[1]}`)
     })
 })

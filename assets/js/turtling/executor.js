@@ -5,18 +5,19 @@
 import { COMMANDS, DEFAULT_PEN_STATE } from "./commands.js"
 import { SE3 } from "./se3.js"
 
+const roundVec = (v) => Math.abs(v) < 1e-10 ? 0 : Math.round(v * 1e9) / 1e9
+
 // Execute a parsed AST, yielding TurtleEvents.
 // Caller drains the generator (synchronously for batch, per-tick for coroutines).
 //
 // deps = { mathParser, mathEvaluator }
-// opts = { maxRecurseDepth, maxRecurses, maxCommands, color }
+// opts = { maxRecurseDepth, maxRecurses, maxCommands, color, actorState }
 export function* execute(ast, deps, opts = {}) {
-    const state = {
+    // Actor state: if provided, this is a continuation — same ambient, new command batch.
+    // The state object is shared and mutated in-place across all batches.
+    const state = opts.actorState || {
         transform: SE3.identity(),
-        penState: {
-            ...DEFAULT_PEN_STATE,
-            color: opts.color || DEFAULT_PEN_STATE.color
-        },
+        penState: { ...DEFAULT_PEN_STATE, color: opts.color || DEFAULT_PEN_STATE.color },
         currentPath: null,
         functions: opts.functions ? { ...opts.functions } : {},
         commandCount: 0,
@@ -27,16 +28,18 @@ export function* execute(ast, deps, opts = {}) {
         lastPosition: [0, 0, 0],
         elapsedTime: 0,
         loopCounter: opts.loopCounter || 0,
-        deps
     }
 
-    const roundVec = (v, eps = 1e-10, decimals = 8) => Math.abs(v) < 1e-10 ? 0 : Math.round(v * 1e9) / 1e9
+    // Rebind deps for this execution pass (fresh math context per batch)
+    state.deps = deps
+    if (opts.actorState) state.loopCounter = opts.loopCounter ?? state.loopCounter
 
     // Link evaluator to parser's userspace for call-by-value function dispatch
     deps.mathEvaluator.userFunctions = deps.mathParser.userspace
 
     // Bind runtime state into evaluator — thunks are lazy,
-    // only invoked when an expression actually references the name
+    // only invoked when an expression actually references the name.
+    // Closures capture `state` (shared actorState), so they read live values.
     const ec = deps.mathEvaluator.constants
     ec['time'] = () => state.elapsedTime / 1000
     ec['x'] = () => roundVec(state.transform.position[0])
@@ -62,9 +65,11 @@ export function* execute(ast, deps, opts = {}) {
         throw error
     }
 
-    // Flush any open path at the end
+    // Flush any open path at the end — must null to prevent cross-batch
+    // corruption (spread shares the points array reference)
     if (state.currentPath) {
         yield { type: "path", ...state.currentPath }
+        state.currentPath = null
     }
 
     // Final head event — tells materializer where the turtle ended up
@@ -76,7 +81,7 @@ export function* execute(ast, deps, opts = {}) {
         color: state.penState.color
     }
 
-    return state.commandCount
+    return { commandCount: state.commandCount, actorState: state }
 }
 
 function* walkBody(body, scope, state) {
@@ -150,9 +155,10 @@ function* walkBody(body, scope, state) {
         }
 
         case 'Ambient': {
+            const ambientName = String(evaluateExpr(node.value, scope, state))
             yield {
                 type: 'spawn',
-                name: String(evaluateExpr(node.value, scope, state)),
+                name: ambientName,
                 ast: node.children,
                 transform: SE3.clone(state.transform),
                 penState: { ...state.penState },
@@ -161,6 +167,14 @@ function* walkBody(body, scope, state) {
                 userspace: new Map(state.deps.mathParser.userspace),
                 loopCounter: state.loopCounter
             }
+            break
+        }
+
+        case 'Record': {
+            const title = node.value ? String(evaluateExpr(node.value, scope, state)) : null
+            yield { type: 'record', action: 'start', title }
+            yield* walkBody(node.children, scope, state)
+            yield { type: 'record', action: 'stop', title }
             break
         }
 
