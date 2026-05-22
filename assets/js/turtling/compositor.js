@@ -24,6 +24,7 @@ import { SE3 } from "./se3.js"
 export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
     let snapshotPending = false
     let focused = true   // only focused compositor's head events track camera
+    let epoch = null      // first real timestamp — rebases advance() to flush()'s 0-based timeline
     const createHead = opts.createHead || null
 
     // Per-ambient rendering state: { group, head }
@@ -163,8 +164,9 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
         // Does NOT render or handle recording/snapshots — caller coordinates that
         // when multiple compositors share one renderer.
         advance(t) {
+            if (epoch === null) epoch = t
             if (!scheduler.done) {
-                scheduler.tick(t)
+                scheduler.tick(t - epoch)
                 drainAndMaterialize()
                 updateGroupPositions()
             }

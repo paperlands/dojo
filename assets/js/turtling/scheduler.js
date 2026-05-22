@@ -19,7 +19,7 @@ import { createAtom } from "./atom.js"
 
 let _nextId = 0
 
-function createAmbientCtx(name, generator, transform, channelCapacity, parent) {
+function createAmbientCtx(name, generator, transform, channelCapacity, parent, origin) {
     return {
         id: ++_nextId,        // unique, opaque — for compositor layer keying
         name,                 // user-facing — for frame targeting and display
@@ -27,6 +27,7 @@ function createAmbientCtx(name, generator, transform, channelCapacity, parent) {
         generator,
         channel: createRingBuffer(channelCapacity || 4096),
         transform: createAtom(transform || SE3.identity()),
+        origin: origin || null, // parent's transform at birth — scoped per-child
         resumeAt: 0,
         done: false,
         error: null,
@@ -89,10 +90,12 @@ function findAncestorByName(ctx, name) {
 // Root returns identity. Walks direct parent refs — no registry, no cycles.
 function worldTransform(ctx) {
     const chain = []
-    let ancestor = ctx.parent
-    while (ancestor) {
-        chain.unshift(ancestor.transform.deref())
-        ancestor = ancestor.parent
+    let current = ctx
+    while (current.parent) {
+        // Use this child's birth origin (parent's transform at spawn time)
+        // so siblings each keep their own inherited position/orientation.
+        chain.unshift(current.origin || current.parent.transform.deref())
+        current = current.parent
     }
     if (chain.length === 0) return SE3.identity()
     return chain.reduce((a, b) => SE3.compose(a, b))
@@ -206,7 +209,8 @@ function stampInline(child, now, createDeps, execOpts, channelCapacity, registry
                 const nestedGen = createChildGenerator(value, createDeps, execOpts)
                 const nested = createAmbientCtx(
                     value.name, nestedGen, SE3.identity(),
-                    channelCapacity, child
+                    channelCapacity, child,
+                    value.transform
                 )
                 nested.frame = value.frame || null
                 child.children.set(value.name, nested)
@@ -351,7 +355,8 @@ export function createScheduler(generator, opts = {}) {
                                 childGen,
                                 SE3.identity(),
                                 channelCapacity,
-                                ctx
+                                ctx,
+                                value.transform
                             )
                             child.frame = value.frame || null
                             ctx.children.set(value.name, child)
