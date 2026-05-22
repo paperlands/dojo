@@ -219,8 +219,16 @@ export function createScheduler(generator, opts = {}) {
                         }
                         if (ctx.pendingSpawns.length > 0 && createDeps) {
                             const nextSpawn = ctx.pendingSpawns.shift()
+                            // Update spawn origin so frame-targeted paths use this
+                            // continuation's inertial position, not the first spawn's
+                            if (nextSpawn.transform && ctx.frame) {
+                                ctx.spawnOrigin = nextSpawn.transform
+                            }
                             ctx.generator = createChildGenerator(nextSpawn, createDeps, execOpts, ctx.actorState)
-                            break // yield — pick up next generator on next tick
+                            // Continue — drain the new generator immediately in this tick.
+                            // If it hits a wait, the wait handler breaks. If not, it completes
+                            // and picks up the next continuation. Batch programs drain in one tick.
+                            continue
                         }
                         ctx.done = true
                         ctx.generator = null // release generator closures
@@ -252,31 +260,32 @@ export function createScheduler(generator, opts = {}) {
                         // Keep parent transform atom current between head events
                         ctx.transform.swap(() => value.transform)
 
-                        // Frame-targeted spawns are sketches — each invocation
-                        // draws independently at the target frame. No idempotency.
-                        // Non-frame spawns append: subsequent spawns queue their
-                        // generator on the existing child so loops accumulate.
+                        // Idempotent: if a child with this name already exists,
+                        // queue the new generator on it (loops accumulate).
+                        // Applies to both frame-targeted and non-frame spawns.
                         let childName = value.name
-                        if (value.frame) {
-                            let suffix = 0
-                            while (ctx.children.has(childName)) {
-                                childName = `${value.name}#${++suffix}`
-                            }
-                        } else if (ctx.children.has(value.name)) {
+                        if (ctx.children.has(value.name)) {
                             const existing = ctx.children.get(value.name)
                             // Only retain what continuation needs — drop cloned
-                            // transform, penState, functions (actorState owns those)
+                            // penState, functions (actorState owns those).
+                            // Keep transform for frame-targeted spawns so each
+                            // continuation knows its spawn-time inertial position.
                             existing.pendingSpawns.push({
                                 ast: value.ast,
                                 userspace: value.userspace,
                                 loopCounter: value.loopCounter,
+                                transform: value.transform,
                             })
                             if (existing.done && createDeps) {
                                 existing.done = false
                                 existing.error = null
                                 // Generator was released — hydrate from first pending spawn
+                                const rehydrate = existing.pendingSpawns.shift()
+                                if (rehydrate.transform && existing.frame) {
+                                    existing.spawnOrigin = rehydrate.transform
+                                }
                                 existing.generator = createChildGenerator(
-                                    existing.pendingSpawns.shift(), createDeps, execOpts,
+                                    rehydrate, createDeps, execOpts,
                                     existing.actorState // null if first batch errored → fresh state
                                 )
                             }
@@ -294,7 +303,9 @@ export function createScheduler(generator, opts = {}) {
                                 ctx               // direct parent reference
                             )
                             child.frame = value.frame || null
-                            if (value.frame) child.spawnOrigin = value.transform
+                            if (value.frame) {
+                                child.spawnOrigin = value.transform
+                            }
                             ctx.children.set(childName, child)
                             registry.set(child.id, child)
                         }
@@ -320,7 +331,8 @@ export function createScheduler(generator, opts = {}) {
                             const target = findAncestorByName(ctx, ctx.frame)
                             if (target) {
                                 const t = ctx.spawnOrigin || relativeTransform(ctx, target)
-                                target.channel.put(transformEvent(value, t))
+                                const transformed = transformEvent(value, t)
+                                target.channel.put(transformed)
                             }
                         }
                     } else {

@@ -13,6 +13,7 @@
 import * as THREE from '../utils/three.core.min.js'
 import { materialize } from "./materializer.js"
 import { worldTransform } from "./scheduler.js"
+import { SE3 } from "./se3.js"
 
 // Create a compositor bound to a scheduler and stage infrastructure.
 //
@@ -50,7 +51,6 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
         for (const [id, ambient] of scheduler.registry) {
             const events = ambient.channel.drain()
             if (events.length === 0) continue
-
             if (ambient === scheduler.root) {
                 for (const event of events) {
                     if (event.type === 'error') continue
@@ -113,7 +113,19 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
             const layer = ambientLayers.get(id)
             if (!layer) continue
 
-            const wt = worldTransform(ambient)
+            // Frame-targeted: compose target's worldTransform with frozen spawnOrigin
+            // so the head layer sits in the same coordinate frame as the paths
+            // (which are routed to the target's channel and positioned by its worldTransform).
+            // Non-frame: use live worldTransform (inertial frame riding)
+            let wt
+            if (ambient.frame && ambient.spawnOrigin) {
+                let target = ambient.parent
+                while (target && target.name !== ambient.frame) target = target.parent
+                const targetWT = target ? worldTransform(target) : worldTransform(ambient)
+                wt = SE3.compose(targetWT, ambient.spawnOrigin)
+            } else {
+                wt = worldTransform(ambient)
+            }
             layer.group.position.set(wt.position[0], wt.position[1], wt.position[2])
             layer.group.quaternion.set(
                 wt.rotation.x, wt.rotation.y,

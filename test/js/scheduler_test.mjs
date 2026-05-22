@@ -951,9 +951,9 @@ describe("inertial frame integration", () => {
 // ---------------------------------------------------------------------------
 
 describe("frame-targeted sketch re-spawn", () => {
-    test("frame-targeted ambient in loop creates multiple instances (no wait)", () => {
+    test("frame-targeted ambient in loop is idempotent (one child, N continuations)", () => {
         // loop 3 do rt 120 as star root do fw 100 end end
-        // Each iteration spawns a unique star instance drawing at root's frame
+        // Idempotent: first iteration spawns, subsequent queue as continuations
         const ast = parseProgram("loop 3 do\n  rt 120\n  as star root do\n    fw 100\n  end\nend")
         const deps = mockDeps()
         const generator = execute(ast, deps, { color: '#fff' })
@@ -970,21 +970,18 @@ describe("frame-targeted sketch re-spawn", () => {
             ticks++
         }
 
-        // Should have 3 child instances (star, star#1, star#2)
-        assert.equal(scheduler.root.children.size, 3)
+        // Idempotent: single child, not 3
+        assert.equal(scheduler.root.children.size, 1)
 
-        // All paths should have been routed to root's channel (already drained above)
-        // Verify all children completed
-        for (const child of scheduler.root.children.values()) {
-            assert.ok(child.done)
-            assert.equal(child.frame, "root")
-        }
+        const child = scheduler.root.children.values().next().value
+        assert.ok(child.done)
+        assert.equal(child.frame, "root")
     })
 
-    test("each sketch uses spawn-time transform, not live parent atom", () => {
+    test("each continuation uses its own spawn-time transform", () => {
         // loop 3 do rt 120 as star root do fw 100 end end
-        // Without spawnOrigin fix, all 3 paths would be identical (parent ends at 360°=0°)
-        // With fix, paths are at 120°, 240°, 360° respectively
+        // Idempotent: 1 child, 3 continuations. Each continuation's spawnOrigin
+        // is updated from pendingSpawns, so paths end up at 120°, 240°, 360°.
         const ast = parseProgram("loop 3 do\n  rt 120\n  as star root do\n    fw 100\n  end\nend")
         const deps = mockDeps()
         const generator = execute(ast, deps, { color: '#fff' })
@@ -994,39 +991,35 @@ describe("frame-targeted sketch re-spawn", () => {
             execOpts: { color: '#fff' }
         })
 
-        // Tick until root is done (all spawns created in one tick, no waits)
+        // Tick 0: root runs all 3 iterations, creates 1 child + 2 pending
         scheduler.tick(0)
+        assert.equal(scheduler.root.children.size, 1)
 
-        // Root should have 3 children with distinct spawnOrigins
-        const origins = [...scheduler.root.children.values()].map(c => c.spawnOrigin)
-        assert.equal(origins.length, 3)
+        // Tick through all continuations, collecting paths from root channel
+        const allPaths = []
+        let ticks = 0
+        while (!scheduler.done && ticks < 100) {
+            scheduler.tick(0)
+            const events = scheduler.root.channel.drain()
+            allPaths.push(...events.filter(e => e.type === 'path'))
+            // Also drain child channels
+            for (const ctx of scheduler.registry.values()) {
+                if (ctx !== scheduler.root) ctx.channel.drain()
+            }
+            ticks++
+        }
 
-        // Each spawnOrigin should have different rotation (120°, 240°, 360°)
-        // Verify they're not all the same
-        const positions = origins.map(o => {
-            // Apply rotation to [100, 0, 0] to see where each points
-            const [x, y] = o.rotation.rotateVec(100, 0, 0)
-            return [Math.round(x), Math.round(y)]
-        })
-
-        // All three must be distinct directions
-        const unique = new Set(positions.map(p => `${p[0]},${p[1]}`))
-        assert.equal(unique.size, 3, `Expected 3 distinct directions, got: ${JSON.stringify(positions)}`)
-
-        // Now tick children — paths should route to root channel with correct transforms
-        scheduler.tick(0)
-        const rootEvents = scheduler.root.channel.drain()
-        const paths = rootEvents.filter(e => e.type === 'path')
-
-        // 3 distinct paths, each starting at [0,0,0] but ending in different directions
-        assert.equal(paths.length, 3)
-        const endpoints = paths.map(p => [Math.round(p.points[1][0]), Math.round(p.points[1][1])])
+        // 3 distinct paths routed to root, each at a different direction
+        assert.equal(allPaths.length, 3, `Expected 3 paths, got ${allPaths.length}`)
+        const endpoints = allPaths.map(p => [Math.round(p.points[1][0]), Math.round(p.points[1][1])])
         const uniqueEndpoints = new Set(endpoints.map(p => `${p[0]},${p[1]}`))
         assert.equal(uniqueEndpoints.size, 3, `Expected 3 distinct endpoints, got: ${JSON.stringify(endpoints)}`)
     })
 
-    test("frame-targeted ambient in loop with wait re-spawns each iteration", () => {
+    test("frame-targeted ambient in loop with wait rehydrates same child", () => {
         // loop 2 do rt 180 as star root do fw 50 end wait end
+        // With wait: iteration 0 spawns star, star completes between waits,
+        // iteration 1 rehydrates the same child (not a new one)
         const ast = parseProgram("loop 2 do\n  rt 180\n  as star root do\n    fw 50\n  end\n  wait\nend")
         const deps = mockDeps()
         const generator = execute(ast, deps, { color: '#fff' })
@@ -1045,10 +1038,11 @@ describe("frame-targeted sketch re-spawn", () => {
         scheduler.tick(1000)
         for (const ctx of scheduler.registry.values()) ctx.channel.drain()
 
-        // Third tick: root resumes, rt 180, spawns star#1, waits
+        // Third tick: root resumes, rt 180, re-encounters star → rehydrates same child
         scheduler.tick(1000)
         for (const ctx of scheduler.registry.values()) ctx.channel.drain()
-        assert.equal(scheduler.root.children.size, 2)
+        // Still 1 child (idempotent), not 2
+        assert.equal(scheduler.root.children.size, 1)
     })
 
     test("non-frame ambient appends generators across loop iterations", () => {
