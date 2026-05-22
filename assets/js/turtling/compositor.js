@@ -113,19 +113,9 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
             const layer = ambientLayers.get(id)
             if (!layer) continue
 
-            // Frame-targeted: compose target's worldTransform with frozen spawnOrigin
-            // so the head layer sits in the same coordinate frame as the paths
-            // (which are routed to the target's channel and positioned by its worldTransform).
-            // Non-frame: use live worldTransform (inertial frame riding)
-            let wt
-            if (ambient.frame && ambient.spawnOrigin) {
-                let target = ambient.parent
-                while (target && target.name !== ambient.frame) target = target.parent
-                const targetWT = target ? worldTransform(target) : worldTransform(ambient)
-                wt = SE3.compose(targetWT, ambient.spawnOrigin)
-            } else {
-                wt = worldTransform(ambient)
-            }
+            // Position child group from live worldTransform — inertial frame riding.
+            // Frame-targeted children follow their parent's evolving position.
+            const wt = worldTransform(ambient)
             layer.group.position.set(wt.position[0], wt.position[1], wt.position[2])
             layer.group.quaternion.set(
                 wt.rotation.x, wt.rotation.y,

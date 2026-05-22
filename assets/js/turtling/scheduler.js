@@ -33,8 +33,7 @@ function createAmbientCtx(name, generator, transform, channelCapacity, parent) {
         commandCount: 0,
         children: new Map(),  // name → AmbientCtx
         frame: null,          // target frame name for `in <frame>` — null = own frame
-        actorState: null,     // shared mutable executor state — persists across command batches
-        pendingSpawns: [],    // queued spawn values — generators created against same actorState
+        actorState: null,     // executor state — captured on completion
     }
 }
 
@@ -131,21 +130,13 @@ function transformEvent(event, t) {
 
 // --- Child generator factory ---
 
-function createChildGenerator(value, createDeps, execOpts, actorState) {
+function createChildGenerator(value, createDeps, execOpts) {
     const childDeps = createDeps()
     if (value.userspace) {
         for (const [k, v] of value.userspace) {
             childDeps.mathParser.userspace.set(k, v)
         }
     }
-    // Continuation: actorState owns all persistent state, only need deps + loopCounter
-    if (actorState) {
-        return execute(value.ast, childDeps, {
-            actorState,
-            loopCounter: value.loopCounter,
-        })
-    }
-    // Initial spawn: create fresh actor state from spawn metadata
     return execute(value.ast, childDeps, {
         color: value.penState?.color || execOpts.color,
         maxRecurseDepth: execOpts.maxRecurseDepth,
@@ -154,6 +145,86 @@ function createChildGenerator(value, createDeps, execOpts, actorState) {
         functions: value.functions,
         loopCounter: value.loopCounter,
     })
+}
+
+// --- Synchronous frame stamp ---
+
+// Drain a frame-targeted child's generator inline within the parent's tick.
+// Events are projected to the target frame at the parent's current position.
+// If a wait is encountered, the child transitions to normal async scheduling.
+function stampInline(child, now, createDeps, execOpts, channelCapacity, registry) {
+    const target = findAncestorByName(child, child.frame)
+    if (!target) return
+    const t = relativeTransform(child, target)
+
+    while (true) {
+        let value, done
+        try {
+            ({ value, done } = child.generator.next())
+        } catch (error) {
+            child.done = true
+            child.generator = null
+            child.error = error.message
+            child.channel.put({ type: 'error', message: error.message, ambientId: child.id })
+            return
+        }
+
+        if (done) {
+            const result = value || {}
+            if (result.actorState) {
+                child.actorState = result.actorState
+                child.commandCount += result.actorState.commandCount
+            } else {
+                child.commandCount += (typeof result === 'number' ? result : (result.commandCount || 0))
+            }
+            child.done = true
+            child.generator = null
+            return
+        }
+
+        if (value.type === "wait") {
+            child.resumeAt = now + value.duration
+            if (value.position) {
+                child.transform.swap(() => ({
+                    rotation: value.rotation,
+                    position: [...value.position]
+                }))
+                child.channel.put({
+                    type: "head",
+                    position: value.position,
+                    rotation: value.rotation,
+                    color: value.color,
+                    headSize: value.headSize
+                })
+            }
+            return
+        }
+
+        if (value.type === "spawn") {
+            child.transform.swap(() => value.transform)
+            if (!child.children.has(value.name) && createDeps) {
+                const nestedGen = createChildGenerator(value, createDeps, execOpts)
+                const nested = createAmbientCtx(
+                    value.name, nestedGen, SE3.identity(),
+                    channelCapacity, child
+                )
+                nested.frame = value.frame || null
+                child.children.set(value.name, nested)
+                registry.set(nested.id, nested)
+            }
+            continue
+        }
+
+        if (value.type === "head") {
+            child.transform.swap(() => ({
+                rotation: value.rotation,
+                position: [...value.position]
+            }))
+            child.channel.put(value)
+        } else {
+            target.channel.put(transformEvent(value, t))
+        }
+    }
 }
 
 // --- Scheduler ---
@@ -195,6 +266,18 @@ export function createScheduler(generator, opts = {}) {
             visitPostOrder(root, (ctx) => {
                 if (ctx.done || ctx.resumeAt > now) return
 
+                // Cache frame projection for synchronous batches —
+                // parent transforms are constant within a tick pass.
+                // Recomputed on re-entry after a wait breaks the loop.
+                let frameTarget = null
+                let frameTransform = null
+                if (ctx.frame) {
+                    frameTarget = findAncestorByName(ctx, ctx.frame)
+                    if (frameTarget) {
+                        frameTransform = relativeTransform(ctx, frameTarget)
+                    }
+                }
+
                 while (!ctx.done) {
                     let value, done
                     try {
@@ -210,30 +293,14 @@ export function createScheduler(generator, opts = {}) {
 
                     if (done) {
                         const result = value || {}
-                        // Capture actor state — the shared mutable identity of this ambient
                         if (result.actorState) {
                             ctx.actorState = result.actorState
                             ctx.commandCount = result.actorState.commandCount
                         } else {
                             ctx.commandCount += (typeof result === 'number' ? result : (result.commandCount || 0))
                         }
-                        if (ctx.pendingSpawns.length > 0 && createDeps) {
-                            const nextSpawn = ctx.pendingSpawns.shift()
-                            // Update spawn origin so frame-targeted paths use this
-                            // continuation's inertial position, not the first spawn's
-                            if (nextSpawn.transform && ctx.frame) {
-                                ctx.spawnOrigin = nextSpawn.transform
-                            }
-                            ctx.generator = createChildGenerator(nextSpawn, createDeps, execOpts, ctx.actorState)
-                            // Continue — drain the new generator immediately in this tick.
-                            // If it hits a wait, the wait handler breaks. If not, it completes
-                            // and picks up the next continuation. Batch programs drain in one tick.
-                            continue
-                        }
                         ctx.done = true
-                        ctx.generator = null // release generator closures
-                        // Channel stays open — frame-targeted descendants may
-                        // still imprint events here after this ambient finishes.
+                        ctx.generator = null
                         break
                     }
 
@@ -260,54 +327,40 @@ export function createScheduler(generator, opts = {}) {
                         // Keep parent transform atom current between head events
                         ctx.transform.swap(() => value.transform)
 
-                        // Idempotent: if a child with this name already exists,
-                        // queue the new generator on it (loops accumulate).
-                        // Applies to both frame-targeted and non-frame spawns.
-                        let childName = value.name
-                        if (ctx.children.has(value.name)) {
-                            const existing = ctx.children.get(value.name)
-                            // Only retain what continuation needs — drop cloned
-                            // penState, functions (actorState owns those).
-                            // Keep transform for frame-targeted spawns so each
-                            // continuation knows its spawn-time inertial position.
-                            existing.pendingSpawns.push({
-                                ast: value.ast,
-                                userspace: value.userspace,
-                                loopCounter: value.loopCounter,
-                                transform: value.transform,
-                            })
-                            if (existing.done && createDeps) {
+                        const existing = ctx.children.get(value.name)
+
+                        if (existing) {
+                            // Frame-targeted stamp: re-project at current parent position.
+                            // Child completed synchronously (batch) → re-execute inline.
+                            if (existing.done && existing.frame && createDeps) {
+                                existing.generator = createChildGenerator(value, createDeps, execOpts)
                                 existing.done = false
                                 existing.error = null
-                                // Generator was released — hydrate from first pending spawn
-                                const rehydrate = existing.pendingSpawns.shift()
-                                if (rehydrate.transform && existing.frame) {
-                                    existing.spawnOrigin = rehydrate.transform
-                                }
-                                existing.generator = createChildGenerator(
-                                    rehydrate, createDeps, execOpts,
-                                    existing.actorState // null if first batch errored → fresh state
-                                )
+                                stampInline(existing, now, createDeps, execOpts, channelCapacity, registry)
+                                produced = true
                             }
-                            produced = true
+                            // Running or non-frame → idempotent no-op
                             continue
                         }
 
+                        // First encounter: create child ambient
                         if (createDeps) {
                             const childGen = createChildGenerator(value, createDeps, execOpts)
                             const child = createAmbientCtx(
-                                childName,
+                                value.name,
                                 childGen,
                                 SE3.identity(),
                                 channelCapacity,
-                                ctx               // direct parent reference
+                                ctx
                             )
                             child.frame = value.frame || null
-                            if (value.frame) {
-                                child.spawnOrigin = value.transform
-                            }
-                            ctx.children.set(childName, child)
+                            ctx.children.set(value.name, child)
                             registry.set(child.id, child)
+
+                            // Frame-targeted: drain inline for synchronous projection
+                            if (child.frame) {
+                                stampInline(child, now, createDeps, execOpts, channelCapacity, registry)
+                            }
                         }
                         produced = true
                         continue
@@ -321,19 +374,14 @@ export function createScheduler(generator, opts = {}) {
                         }))
                     }
 
-                    // Frame targeting: route events to named ancestor frame
-                    // Sketches use spawn-time origin (frozen at creation);
-                    // fallback to live relativeTransform for nested actors.
-                    if (ctx.frame) {
+                    // Frame targeting: route events to ancestor frame
+                    // using cached projection (constant within a tick pass).
+                    if (frameTarget) {
                         if (value.type === "head") {
                             ctx.channel.put(value)
                         } else {
-                            const target = findAncestorByName(ctx, ctx.frame)
-                            if (target) {
-                                const t = ctx.spawnOrigin || relativeTransform(ctx, target)
-                                const transformed = transformEvent(value, t)
-                                target.channel.put(transformed)
-                            }
+                            const transformed = transformEvent(value, frameTransform)
+                            frameTarget.channel.put(transformed)
                         }
                     } else {
                         ctx.channel.put(value)
