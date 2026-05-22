@@ -1,7 +1,12 @@
 // Pure command functions — no side effects, no this-binding.
-// CommandFn = (ctx, ...args) => { transform?, penState?, events?, limits? }
-// ctx = { transform: SE3, penState, currentPath }
-// Each returns a delta: only changed fields present.
+// CommandFn = (ctx, ...args) => Delta
+// ctx   = { transform: SE3, style }
+// Delta = { transform?, style?, stroke?, point?, effects?, limits? }
+//
+// Three orthogonal concerns in the delta:
+//   pose:    transform + style   (how the turtle changed)
+//   stroke:  "extend"|"break"|"fill" + point  (path accumulation action)
+//   output:  effects[]           (events for the renderer/scheduler)
 
 import { Versor } from "./mafs/versors.js"
 import { SE3 } from "./se3.js"
@@ -19,13 +24,10 @@ function fw(ctx, distance = 0) {
     const newPos = [t.position[0] + wx, t.position[1] + wy, t.position[2] + wz]
     const transform = { rotation: t.rotation, position: newPos }
 
-    if (ctx.penState.down) {
-        return {
-            transform,
-            pathAction: { type: "extend", point: newPos }
-        }
+    if (ctx.style.down) {
+        return { transform, stroke: "extend", point: newPos }
     }
-    return { transform, pathAction: { type: "break" } }
+    return { transform, stroke: "break" }
 }
 
 function goTo(ctx, x = 0, y = 0, z = null) {
@@ -33,13 +35,10 @@ function goTo(ctx, x = 0, y = 0, z = null) {
     const newPos = [x, y, z ?? t.position[2]]
     const transform = { rotation: t.rotation, position: newPos }
 
-    if (ctx.penState.down) {
-        return {
-            transform,
-            pathAction: { type: "extend", point: newPos }
-        }
+    if (ctx.style.down) {
+        return { transform, stroke: "extend", point: newPos }
     }
-    return { transform, pathAction: { type: "break" } }
+    return { transform, stroke: "break" }
 }
 
 function jmpto(ctx, x = 0, y = 0, z = null) {
@@ -47,7 +46,7 @@ function jmpto(ctx, x = 0, y = 0, z = null) {
     const newPos = [x, y, z ?? t.position[2]]
     const transform = { rotation: t.rotation, position: newPos }
     // jmpto always breaks the path (pen up, move, pen down)
-    return { transform, pathAction: { type: "break" } }
+    return { transform, stroke: "break" }
 }
 
 function jmp(ctx, distance) {
@@ -56,7 +55,7 @@ function jmp(ctx, distance) {
     const newPos = [t.position[0] + wx, t.position[1] + wy, t.position[2] + wz]
     const transform = { rotation: t.rotation, position: newPos }
     // jmp always breaks the path (pen up, move, pen down)
-    return { transform, pathAction: { type: "break" } }
+    return { transform, stroke: "break" }
 }
 
 // --- Rotation commands ---
@@ -123,10 +122,10 @@ function faceto(ctx, targetX = 0, targetY = 0, targetZ = null) {
 function label(ctx, text = ".", size = 1) {
     const pos = ctx.transform.position
     return {
-        events: [{
+        effects: [{
             type: "label",
             position: [pos[0], pos[1], pos[2]],
-            color: ctx.penState.color,
+            color: ctx.style.color,
             text: String(text),
             textSize: size * 5,
             rotation: ctx.transform.rotation
@@ -140,10 +139,10 @@ function grid(ctx, divisions = 100, unit = 10) {
         Versor.fromAxisAngle(AXIS_X, 90)
     )
     return {
-        events: [{
+        effects: [{
             type: "grid",
             position: [pos[0], pos[1], pos[2]],
-            color: ctx.penState.color,
+            color: ctx.style.color,
             size: unit * divisions,
             divisions: divisions,
             rotation: gridRotation
@@ -153,36 +152,34 @@ function grid(ctx, divisions = 100, unit = 10) {
 
 function erase(ctx) {
     return {
-        events: [{ type: "clear" }],
-        pathAction: { type: "break" }
+        effects: [{ type: "clear" }],
+        stroke: "break"
     }
 }
 
 function fill(ctx) {
-    return {
-        pathAction: { type: "fill" }
-    }
+    return { stroke: "fill" }
 }
 
 function wait(ctx, duration = 1) {
     return {
         // Flush current path before temporal boundary
-        pathAction: { type: "break" },
-        events: [{
+        stroke: "break",
+        effects: [{
             type: "wait",
             duration: duration * 1000,
             position: [ctx.transform.position[0], ctx.transform.position[1], ctx.transform.position[2]],
-            color: ctx.penState.color,
+            color: ctx.style.color,
             rotation: ctx.transform.rotation,
-            headSize: ctx.penState.showTurtle
+            headSize: ctx.style.showTurtle
         }]
     }
 }
 
-// --- Pen state commands ---
+// --- Style commands ---
 
 function bold(ctx, x = 1) {
-    return { penState: { thickness: x * 2 } }
+    return { style: { thickness: x * 2 } }
 }
 
 function beColour(ctx, color = "silver") {
@@ -192,17 +189,17 @@ function beColour(ctx, color = "silver") {
     if (color === "random") resolved = `hsla(${~~(360 * Math.random())}, 70%,  72%)`
     if (/^([0-9a-f]{3}){1,2}$/i.test(color)) resolved = "#" + color
     return {
-        penState: { color: resolved },
-        pathAction: { type: "break" }
+        style: { color: resolved },
+        stroke: "break"
     }
 }
 
 function show(ctx, size = 10) {
-    return { penState: { showTurtle: size } }
+    return { style: { showTurtle: size } }
 }
 
 function hide(ctx) {
-    return { penState: { showTurtle: false } }
+    return { style: { showTurtle: false } }
 }
 
 function home(ctx) {
@@ -248,8 +245,8 @@ export const COMMANDS = new Map([
     ["beColour", beColour]
 ])
 
-// Default pen state — used by executor to initialize context
-export const DEFAULT_PEN_STATE = Object.freeze({
+// Default style — used by executor to initialize context
+export const DEFAULT_STYLE = Object.freeze({
     down: true,
     color: "silver",
     thickness: 2,

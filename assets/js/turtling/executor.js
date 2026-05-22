@@ -2,8 +2,9 @@
 // Walks parsed AST, calls pure command functions, yields TurtleEvents.
 // No side effects beyond yielded events. Math context injected as dependency.
 
-import { COMMANDS, DEFAULT_PEN_STATE } from "./commands.js"
+import { COMMANDS, DEFAULT_STYLE } from "./commands.js"
 import { SE3 } from "./se3.js"
+import { createStroke, extend as strokeExtend, flush as strokeFlush, fill as strokeFill } from "./stroke.js"
 
 const roundVec = (v) => Math.abs(v) < 1e-10 ? 0 : Math.round(v * 1e9) / 1e9
 
@@ -17,18 +18,20 @@ export function* execute(ast, deps, opts = {}) {
     // The state object is shared and mutated in-place across all batches.
     const state = opts.actorState || {
         transform: SE3.identity(),
-        penState: { ...DEFAULT_PEN_STATE, color: opts.color || DEFAULT_PEN_STATE.color },
-        currentPath: null,
+        style: { ...DEFAULT_STYLE, color: opts.color || DEFAULT_STYLE.color },
         functions: opts.functions ? { ...opts.functions } : {},
         commandCount: 0,
         recurseCount: 0,
         maxRecurseDepth: opts.maxRecurseDepth || 360,
         maxRecurses: opts.maxRecurses || 888888,
         maxCommands: opts.maxCommands || 88888888,
-        lastPosition: [0, 0, 0],
         elapsedTime: 0,
         loopCounter: opts.loopCounter || 0,
     }
+
+    // Stroke accumulator — local to this execution pass, not persisted in actorState.
+    // Path is always flushed before execution ends.
+    const stroke = createStroke()
 
     // Rebind deps for this execution pass (fresh math context per batch)
     state.deps = deps
@@ -48,43 +51,38 @@ export function* execute(ast, deps, opts = {}) {
     ec['count'] = () => state.loopCounter
 
     try {
-        yield* walkBody(ast, {}, state)
+        yield* walkBody(ast, {}, state, stroke)
     } catch (error) {
         // Flush accumulated path before crash propagates — valid geometry survives
-        if (state.currentPath) {
-            yield { type: "path", ...state.currentPath }
-            state.currentPath = null
-        }
+        const pathEvent = strokeFlush(stroke)
+        if (pathEvent) yield pathEvent
         yield {
             type: "head",
             position: [...state.transform.position],
             rotation: state.transform.rotation,
-            headSize: state.penState.showTurtle,
-            color: state.penState.color
+            headSize: state.style.showTurtle,
+            color: state.style.color
         }
         throw error
     }
 
-    // Flush any open path at the end — must null to prevent cross-batch
-    // corruption (spread shares the points array reference)
-    if (state.currentPath) {
-        yield { type: "path", ...state.currentPath }
-        state.currentPath = null
-    }
+    // Flush any open path at the end
+    const pathEvent = strokeFlush(stroke)
+    if (pathEvent) yield pathEvent
 
     // Final head event — tells materializer where the turtle ended up
     yield {
         type: "head",
         position: [...state.transform.position],
         rotation: state.transform.rotation,
-        headSize: state.penState.showTurtle,
-        color: state.penState.color
+        headSize: state.style.showTurtle,
+        color: state.style.color
     }
 
     return { commandCount: state.commandCount, actorState: state }
 }
 
-function* walkBody(body, scope, state) {
+function* walkBody(body, scope, state, stroke) {
     let matched = false
 
     for (const node of body) {
@@ -95,7 +93,7 @@ function* walkBody(body, scope, state) {
             const prevCount = state.loopCounter
             for (let i = 0; i < times; i++) {
                 state.loopCounter = i
-                yield* walkBody(node.children, scope, state)
+                yield* walkBody(node.children, scope, state, stroke)
             }
             state.loopCounter = prevCount
             break
@@ -130,9 +128,9 @@ function* walkBody(body, scope, state) {
                 })
                 childScope['__depth__'] = currDepth + 1
 
-                yield* walkBody(userFn.body, childScope, state)
+                yield* walkBody(userFn.body, childScope, state, stroke)
             } else {
-                yield* callCommand(node.value, args, state)
+                yield* callCommand(node.value, args, state, stroke)
             }
             break
         }
@@ -149,7 +147,7 @@ function* walkBody(body, scope, state) {
         case 'When': {
             if (!matched && evaluateExpr(node.value, scope, state) !== 0) {
                 matched = true
-                yield* walkBody(node.children, scope, state)
+                yield* walkBody(node.children, scope, state, stroke)
             }
             break
         }
@@ -159,13 +157,12 @@ function* walkBody(body, scope, state) {
             yield {
                 type: 'spawn',
                 name: ambientName,
-                ast: node.children,
-                transform: SE3.clone(state.transform),
-                penState: { ...state.penState },
                 frame: node.meta?.frame || null,
-                functions: { ...state.functions },
-                userspace: new Map(state.deps.mathParser.userspace),
-                loopCounter: state.loopCounter
+                // Fork spec — three groups: spatial, code, environment
+                origin: SE3.clone(state.transform),
+                style: { ...state.style },
+                code: { ast: node.children, functions: { ...state.functions } },
+                env: { userspace: new Map(state.deps.mathParser.userspace), loopCounter: state.loopCounter }
             }
             break
         }
@@ -173,7 +170,7 @@ function* walkBody(body, scope, state) {
         case 'Record': {
             const title = node.value ? String(evaluateExpr(node.value, scope, state)) : null
             yield { type: 'record', action: 'start', title }
-            yield* walkBody(node.children, scope, state)
+            yield* walkBody(node.children, scope, state, stroke)
             yield { type: 'record', action: 'stop', title }
             break
         }
@@ -184,7 +181,7 @@ function* walkBody(body, scope, state) {
     }
 }
 
-function* callCommand(name, args, state) {
+function* callCommand(name, args, state, stroke) {
     const cmd = COMMANDS.get(name)
     if (!cmd) {
         throw new Error(`Function ${name} not defined`)
@@ -197,11 +194,11 @@ function* callCommand(name, args, state) {
 
     const ctx = {
         transform: state.transform,
-        penState: state.penState
+        style: state.style
     }
 
     // Snapshot position before command mutates transform
-    state.lastPosition = [...state.transform.position]
+    stroke.lastPos = [...state.transform.position]
 
     const result = cmd(ctx, ...args)
 
@@ -210,9 +207,9 @@ function* callCommand(name, args, state) {
         state.transform = result.transform
     }
 
-    // Apply pen state changes (merge)
-    if (result.penState) {
-        state.penState = { ...state.penState, ...result.penState }
+    // Apply style changes (merge)
+    if (result.style) {
+        state.style = { ...state.style, ...result.style }
     }
 
     // Apply limit changes
@@ -225,52 +222,28 @@ function* callCommand(name, args, state) {
         }
     }
 
-    // Handle path actions (extend/break/fill)
-    if (result.pathAction) {
-        yield* handlePathAction(result.pathAction, state)
+    // Apply stroke action (extend/break/fill)
+    if (result.stroke) {
+        if (result.stroke === "extend") {
+            strokeExtend(stroke, result.point, state.style)
+        } else if (result.stroke === "fill") {
+            const event = strokeFill(stroke)
+            if (event) yield event
+        } else {
+            // "break"
+            const event = strokeFlush(stroke)
+            if (event) yield event
+        }
     }
 
-    // Yield any events (label, grid, clear, wait)
-    if (result.events) {
-        for (const event of result.events) {
+    // Yield any effects (label, grid, clear, wait)
+    if (result.effects) {
+        for (const event of result.effects) {
             if (event.type === "wait") {
                 state.elapsedTime += event.duration
             }
             yield event
         }
-    }
-}
-
-function* handlePathAction(action, state) {
-    switch (action.type) {
-    case "extend": {
-        if (!state.currentPath) {
-            // Start new path from where we were before the move
-            state.currentPath = {
-                color: state.penState.color,
-                thickness: state.penState.thickness,
-                points: [state.lastPosition],
-                filled: false
-            }
-        }
-        state.currentPath.points.push(action.point)
-        break
-    }
-    case "break": {
-        if (state.currentPath) {
-            yield { type: "path", ...state.currentPath }
-            state.currentPath = null
-        }
-        break
-    }
-    case "fill": {
-        if (state.currentPath) {
-            state.currentPath.filled = true
-            yield { type: "path", ...state.currentPath }
-            state.currentPath = null
-        }
-        break
-    }
     }
 }
 

@@ -1,42 +1,18 @@
-// Scheduler — cooperative tree walker for ambient coroutines.
+// Scheduler — cooperative tree walker for frame coroutines.
 //
-// Each AmbientCtx wraps an executor generator with its own channel
+// Each Frame wraps an executor generator with its own channel
 // (RingBuffer) and transform Atom<SE3>. The scheduler walks the tree
 // post-order (children before parents) each tick, advancing each
 // ready generator until it yields a wait or exhausts.
 //
-// Tree relationships are direct references: ctx.parent points to the
-// parent AmbientCtx (null for root), ctx.children maps name → child.
+// Tree relationships are direct references: frame.parent points to the
+// parent Frame (null for root), frame.children maps name → child.
 // The registry is a flat iteration index for the compositor — it plays
 // no role in tree traversal.
 
-import { createRingBuffer } from "./ring-buffer.js"
+import { createFrame } from "./frame.js"
 import { execute } from "./executor.js"
 import { SE3 } from "./se3.js"
-import { createAtom } from "./atom.js"
-
-// --- AmbientCtx: the unified node ---
-
-let _nextId = 0
-
-function createAmbientCtx(name, generator, transform, channelCapacity, parent, origin) {
-    return {
-        id: ++_nextId,        // unique, opaque — for compositor layer keying
-        name,                 // user-facing — for frame targeting and display
-        parent: parent || null,
-        generator,
-        channel: createRingBuffer(channelCapacity || 4096),
-        transform: createAtom(transform || SE3.identity()),
-        origin: origin || null, // parent's transform at birth — scoped per-child
-        resumeAt: 0,
-        done: false,
-        error: null,
-        commandCount: 0,
-        children: new Map(),  // name → AmbientCtx
-        frame: null,          // target frame name for `in <frame>` — null = own frame
-        actorState: null,     // executor state — captured on completion
-    }
-}
 
 // --- Tree walk ---
 
@@ -64,7 +40,7 @@ function allDone(ctx) {
 }
 
 function sumCounts(ctx) {
-    let total = ctx.commandCount
+    let total = ctx.commandCount || 0
     for (const child of ctx.children.values()) {
         total += sumCounts(child)
     }
@@ -103,7 +79,7 @@ function worldTransform(ctx) {
 
 // --- Inertial frame targeting ---
 
-// Compose the transform chain from a child ambient up to (and including)
+// Compose the transform chain from a child frame up to (and including)
 // the target ancestor. Maps child-local coordinates into target-local coords.
 function relativeTransform(ctx, target) {
     const chain = []
@@ -133,21 +109,35 @@ function transformEvent(event, t) {
 
 // --- Child generator factory ---
 
+// Creates a child executor from a fork spec (spawn event).
+// Fork spec groups: origin + style (spatial), code (ast + functions), env (userspace + loopCounter).
 function createChildGenerator(value, createDeps, execOpts) {
     const childDeps = createDeps()
-    if (value.userspace) {
-        for (const [k, v] of value.userspace) {
+    if (value.env?.userspace) {
+        for (const [k, v] of value.env.userspace) {
             childDeps.mathParser.userspace.set(k, v)
         }
     }
-    return execute(value.ast, childDeps, {
-        color: value.penState?.color || execOpts.color,
+    return execute(value.code.ast, childDeps, {
+        color: value.style?.color || execOpts.color,
         maxRecurseDepth: execOpts.maxRecurseDepth,
         maxRecurses: execOpts.maxRecurses,
         maxCommands: execOpts.maxCommands,
-        functions: value.functions,
-        loopCounter: value.loopCounter,
+        functions: value.code.functions,
+        loopCounter: value.env?.loopCounter,
     })
+}
+
+// --- Scheduler metadata ---
+
+// Attach lifecycle bookkeeping to a frame. These fields are scheduler concerns,
+// not part of the Frame primitive contract.
+function attachMeta(frame, targetFrame) {
+    frame.targetFrame = targetFrame || null
+    frame.error = null
+    frame.commandCount = 0
+    frame.actorState = null
+    return frame
 }
 
 // --- Synchronous frame stamp ---
@@ -156,7 +146,7 @@ function createChildGenerator(value, createDeps, execOpts) {
 // Events are projected to the target frame at the parent's current position.
 // If a wait is encountered, the child transitions to normal async scheduling.
 function stampInline(child, now, createDeps, execOpts, channelCapacity, registry) {
-    const target = findAncestorByName(child, child.frame)
+    const target = findAncestorByName(child, child.targetFrame)
     if (!target) return
     const t = relativeTransform(child, target)
 
@@ -204,15 +194,27 @@ function stampInline(child, now, createDeps, execOpts, channelCapacity, registry
         }
 
         if (value.type === "spawn") {
-            child.transform.swap(() => value.transform)
-            if (!child.children.has(value.name) && createDeps) {
+            child.transform.swap(() => value.origin)
+            const nestedExisting = child.children.get(value.name)
+            if (nestedExisting) {
+                if (nestedExisting.done && createDeps) {
+                    nestedExisting.origin = value.origin
+                    nestedExisting.generator = createChildGenerator(value, createDeps, execOpts)
+                    nestedExisting.done = false
+                    nestedExisting.error = null
+                    nestedExisting.channel.drain()
+                    nestedExisting.channel.put({ type: 'clear' })
+                }
+            } else if (createDeps) {
                 const nestedGen = createChildGenerator(value, createDeps, execOpts)
-                const nested = createAmbientCtx(
-                    value.name, nestedGen, SE3.identity(),
-                    channelCapacity, child,
-                    value.transform
+                const nested = attachMeta(
+                    createFrame(value.name, nestedGen, {
+                        parent: child,
+                        origin: value.origin,
+                        channelCapacity
+                    }),
+                    value.frame
                 )
-                nested.frame = value.frame || null
                 child.children.set(value.name, nested)
                 registry.set(nested.id, nested)
             }
@@ -238,12 +240,15 @@ export function createScheduler(generator, opts = {}) {
     const createDeps = opts.createDeps || null
     const execOpts = opts.execOpts || {}
 
-    const root = createAmbientCtx('root', generator, SE3.identity(), channelCapacity, null)
+    const root = attachMeta(
+        createFrame('root', generator, { channelCapacity }),
+        null
+    )
     const registry = new Map([[root.id, root]])
 
     return {
         root,
-        channel: root.channel,   // backward compat — root ambient's channel
+        channel: root.channel,   // backward compat — root frame's channel
         registry,
 
         get resumeAt() { return root.resumeAt },
@@ -260,8 +265,8 @@ export function createScheduler(generator, opts = {}) {
             return errs
         },
 
-        // Advance all ready ambients. Post-order: children before parents.
-        // Returns true if any ambient produced events this tick.
+        // Advance all ready frames. Post-order: children before parents.
+        // Returns true if any frame produced events this tick.
         tick(now) {
             if (this.done) return false
 
@@ -275,8 +280,8 @@ export function createScheduler(generator, opts = {}) {
                 // Recomputed on re-entry after a wait breaks the loop.
                 let frameTarget = null
                 let frameTransform = null
-                if (ctx.frame) {
-                    frameTarget = findAncestorByName(ctx, ctx.frame)
+                if (ctx.targetFrame) {
+                    frameTarget = findAncestorByName(ctx, ctx.targetFrame)
                     if (frameTarget) {
                         frameTransform = relativeTransform(ctx, frameTarget)
                     }
@@ -308,6 +313,7 @@ export function createScheduler(generator, opts = {}) {
                         break
                     }
 
+                    // --- Directive: wait ---
                     if (value.type === "wait") {
                         ctx.resumeAt = now + value.duration
                         if (value.position) {
@@ -327,49 +333,61 @@ export function createScheduler(generator, opts = {}) {
                         break
                     }
 
+                    // --- Directive: spawn ---
                     if (value.type === "spawn") {
                         // Keep parent transform atom current between head events
-                        ctx.transform.swap(() => value.transform)
+                        ctx.transform.swap(() => value.origin)
 
                         const existing = ctx.children.get(value.name)
 
                         if (existing) {
-                            // Frame-targeted stamp: re-project at current parent position.
-                            // Child completed synchronously (batch) → re-execute inline.
-                            if (existing.done && existing.frame && createDeps) {
+                            // Always update origin to track parent's evolving position.
+                            // worldTransform reads origin → compositor repositions the group.
+                            existing.origin = value.origin
+
+                            if (existing.done && createDeps) {
+                                // Re-execute completed child with fresh fork spec.
                                 existing.generator = createChildGenerator(value, createDeps, execOpts)
                                 existing.done = false
                                 existing.error = null
-                                stampInline(existing, now, createDeps, execOpts, channelCapacity, registry)
+                                if (existing.targetFrame) {
+                                    // Frame-targeted: re-stamp inline into ancestor
+                                    stampInline(existing, now, createDeps, execOpts, channelCapacity, registry)
+                                } else {
+                                    // Non-frame: clear old output, child advances next tick
+                                    existing.channel.drain()
+                                    existing.channel.put({ type: 'clear' })
+                                }
                                 produced = true
                             }
-                            // Running or non-frame → idempotent no-op
+                            // Running and not done → idempotent no-op
                             continue
                         }
 
-                        // First encounter: create child ambient
+                        // First encounter: create child frame
                         if (createDeps) {
                             const childGen = createChildGenerator(value, createDeps, execOpts)
-                            const child = createAmbientCtx(
-                                value.name,
-                                childGen,
-                                SE3.identity(),
-                                channelCapacity,
-                                ctx,
-                                value.transform
+                            const child = attachMeta(
+                                createFrame(value.name, childGen, {
+                                    parent: ctx,
+                                    origin: value.origin,
+                                    channelCapacity
+                                }),
+                                value.frame
                             )
-                            child.frame = value.frame || null
                             ctx.children.set(value.name, child)
                             registry.set(child.id, child)
 
                             // Frame-targeted: drain inline for synchronous projection
-                            if (child.frame) {
+                            if (child.targetFrame) {
                                 stampInline(child, now, createDeps, execOpts, channelCapacity, registry)
                             }
                         }
                         produced = true
                         continue
                     }
+
+                    // --- Output: all other events pass through to channel ---
 
                     // Intercept head events to update transform atom
                     if (value.type === "head") {
@@ -405,4 +423,4 @@ export function createScheduler(generator, opts = {}) {
     }
 }
 
-export { createAmbientCtx, visitPostOrder, terminateAmbient, allDone, worldTransform, findAncestorByName }
+export { createFrame, visitPostOrder, terminateAmbient, allDone, worldTransform, findAncestorByName }
