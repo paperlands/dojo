@@ -12,7 +12,7 @@
 
 import * as THREE from '../utils/three.core.min.js'
 import { materialize } from "./materializer.js"
-import { worldTransform } from "./scheduler.js"
+import { groupTransform } from "./scheduler.js"
 import { SE3 } from "./se3.js"
 
 // Create a compositor bound to a scheduler and stage infrastructure.
@@ -106,17 +106,16 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
         return produced
     }
 
-    // Position child groups from worldTransform — the inertial frame effect.
-    // Called after ticking and materializing so atoms are current.
+    // Position child groups — inertial frame effect.
+    // Frame-targeted children use relativeTransform (matching path projection).
+    // Normal children use worldTransform (birth origin, sibling isolation).
     function updateGroupPositions() {
         for (const [id, ambient] of scheduler.registry) {
             if (ambient === scheduler.root) continue
             const layer = ambientLayers.get(id)
             if (!layer) continue
 
-            // Position child group from live worldTransform — inertial frame riding.
-            // Frame-targeted children follow their parent's evolving position.
-            const wt = worldTransform(ambient)
+            const wt = groupTransform(ambient)
             layer.group.position.set(wt.position[0], wt.position[1], wt.position[2])
             layer.group.quaternion.set(
                 wt.rotation.x, wt.rotation.y,

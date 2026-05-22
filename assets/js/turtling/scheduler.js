@@ -77,6 +77,18 @@ function worldTransform(ctx) {
     return chain.reduce((a, b) => SE3.compose(a, b))
 }
 
+// Group transform: the correct transform for positioning a child's THREE.Group.
+// Frame-targeted children use relativeTransform (live parent atoms, matching
+// their path projection). Normal children use worldTransform (birth origin,
+// preserving sibling isolation).
+function groupTransform(ctx) {
+    if (ctx.targetFrame) {
+        const target = findAncestorByName(ctx, ctx.targetFrame)
+        if (target) return relativeTransform(ctx, target)
+    }
+    return worldTransform(ctx)
+}
+
 // --- Inertial frame targeting ---
 
 // Compose the transform chain from a child frame up to (and including)
@@ -423,4 +435,4 @@ export function createScheduler(generator, opts = {}) {
     }
 }
 
-export { createFrame, visitPostOrder, terminateAmbient, allDone, worldTransform, findAncestorByName }
+export { createFrame, visitPostOrder, terminateAmbient, allDone, worldTransform, groupTransform, findAncestorByName }
