@@ -19,6 +19,23 @@ const offsetToPos = (state, offset) => {
 };
 
 // ---------------------------------------------------------------------------
+// Structural indent — nesting depth from do/end pairs
+// ---------------------------------------------------------------------------
+
+// Scan lines 1..lineNumber counting do-terminated and end-starting lines.
+// Returns indent in spaces (depth * 2, matching PaperLang convention).
+const structuralIndent = (doc, lineNumber) => {
+    let depth = 0;
+    for (let ln = 1; ln <= lineNumber; ln++) {
+        const text = doc.line(ln).text.trim();
+        if (!text || text.startsWith('#')) continue;
+        if (/\bdo\s*$/.test(text)) depth++;
+        if (/^end\b/.test(text)) depth--;
+    }
+    return Math.max(0, depth) * 2;
+};
+
+// ---------------------------------------------------------------------------
 // Core primitives
 // ---------------------------------------------------------------------------
 
@@ -74,6 +91,7 @@ const getContext = (view) => {
     const lineNum      = lineInfo.number - 1; // 0-indexed
     const ch           = cursorOffset - lineInfo.from;
     const indent       = line.match(/^(\s*)/)[1].length;
+    const structIndent = structuralIndent(state.doc, lineInfo.number);
 
     const selFrom     = state.selection.main.from;
     const selTo       = state.selection.main.to;
@@ -85,6 +103,7 @@ const getContext = (view) => {
         cursor: { line: lineNum, ch },
         line,
         indent,
+        structIndent,
         selection: {
             from: { line: selFromLine.number - 1, ch: selFrom - selFromLine.from },
             to:   { line: selToLine.number   - 1, ch: selTo   - selToLine.from   },
@@ -103,7 +122,7 @@ const commands = {
 
     // Command insertion — replace current line or append a new one.
     cmd: (view, { command: cmd, args = [], batch = true }, cm6) => {
-        const { view: v, cursor, line, indent } = getContext(view);
+        const { view: v, cursor, line, indent, structIndent } = getContext(view);
         const argText    = formatArgs(args || []);
         const currentCmd = line.trim().split(" ")[0];
 
@@ -120,7 +139,7 @@ const commands = {
                 newText);
             flash(v, range, cm6);
         } else {
-            const newText = `\n${"".padEnd(indent)}${cmd}${argText}`;
+            const newText = `\n${"".padEnd(structIndent)}${cmd}${argText}`;
             const range = transform(v, { from: { line: cursor.line, ch: line.length } }, newText);
             flash(v, { from: { line: cursor.line + 1, ch: 0 }, to: range.to }, cm6);
         }
@@ -128,12 +147,12 @@ const commands = {
 
     // Control structure wrapping — wraps selection in do/end block.
     ctrl: (view, { control: ctrl, args = [] }, cm6) => {
-        const { view: v, selection, indent } = getContext(view);
+        const { view: v, selection, structIndent } = getContext(view);
         const { EditorSelection } = cm6;
 
-        const argText    = formatArgs(args) || " 1";
-        const baseIndent = " ".repeat(indent);
-        const innerIndent = " ".repeat(indent + 2);
+        const argText     = formatArgs(args) || " 1";
+        const baseIndent  = " ".repeat(structIndent);
+        const innerIndent = " ".repeat(structIndent + 2);
 
         const lines = selection && selection.text
             ? selection.text.split('\n').filter(l => l.trim())
@@ -142,11 +161,13 @@ const commands = {
             ? Math.min(...lines.map(l => l.match(/^(\s*)/)[1].length))
             : 0;
 
-        const structure = [
-            `${baseIndent}${ctrl}${argText} do`,
-            lines.map(l => `${innerIndent}${l.slice(minIndent)}`).join('\n'),
-            `${baseIndent}end\n`,
-        ];
+        const hasBody = lines.length > 0;
+        const structure = hasBody
+            ? [`${baseIndent}${ctrl}${argText} do`,
+               lines.map(l => `${innerIndent}${l.slice(minIndent)}`).join('\n'),
+               `${baseIndent}end`]
+            : [`${baseIndent}${ctrl}${argText} do`,
+               `${baseIndent}end`];
 
         if (ctrl === "def") {
             structure.push(`${argText}`.trim());
@@ -157,16 +178,23 @@ const commands = {
         if (!selection.text.trim()) wrapped = "\n" + wrapped;
 
         const range = transform(v, selection, wrapped);
-        flash(v, range, cm6);
 
-        // Move cursor to inner body, col 100 (mirrors CM5 behaviour)
-        if (selection.text.trim()) {
-            const targetLine = range.to.line - 2;
+        if (hasBody) {
+            flash(v, range, cm6);
+            // Move cursor to end of wrapped body
+            const targetLine = range.to.line - (ctrl === "def" ? 2 : 1);
             if (targetLine >= 0) {
                 const lineInfo = view.state.doc.line(targetLine + 1);
                 const pos = Math.min(lineInfo.from + 100, lineInfo.to);
                 view.dispatch({ selection: EditorSelection.cursor(pos) });
             }
+        } else {
+            // No selection — cursor on the `do` line so next cmd goes inside the block.
+            // structuralIndent at the do line yields the inner indent level.
+            const doLine = range.from.line + 1; // 0-indexed
+            const lineInfo = view.state.doc.line(doLine + 1); // 1-indexed
+            view.dispatch({ selection: EditorSelection.cursor(lineInfo.to) });
+            flash(v, range, cm6);
         }
         view.focus();
     },
@@ -195,4 +223,4 @@ const execute = (view, instruction, cm6) => {
     }
 };
 
-export { execute, commands, transform, flash, getContext };
+export { execute, commands, transform, flash, getContext, structuralIndent };
