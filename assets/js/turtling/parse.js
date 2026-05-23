@@ -350,10 +350,22 @@ function parseStatement(tokens, state) {
         return new ASTNode('Define', name, parseBlock(state), { args });
     }
     
-    // When: when <pattern> do
+    // When: when <expr> do  OR  when 'eventname' [binding] do
     if (kw === 'when') {
         if (len < 3) throw new Error("'when' requires checking truthiness");
-        return new ASTNode('When', tokens[1], parseBlock(state));
+        const firstToken = tokens[1]
+        const isEvent = /^['"]/.test(firstToken)
+
+        if (isEvent) {
+            // Event mode: when 'name' [binding] do
+            const meta = { event: true }
+            if (len > 3) meta.binding = tokens[2]
+            return new ASTNode('When', firstToken, parseBlock(state), meta)
+        } else {
+            // Conditional mode: join all tokens between 'when' and 'do'
+            const expr = tokens.slice(1, len - 1).join(' ')
+            return new ASTNode('When', expr, parseBlock(state))
+        }
     }
 
     // Ambient: as <name> [<frame>] do ... end

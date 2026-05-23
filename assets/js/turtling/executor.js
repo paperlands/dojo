@@ -8,6 +8,58 @@ import { createStroke, extend as strokeExtend, flush as strokeFlush, fill as str
 
 const roundVec = (v) => Math.abs(v) < 1e-10 ? 0 : Math.round(v * 1e9) / 1e9
 
+// Pattern matching for event names — pure string scanning.
+// Literal characters match literally, [var] captures up to next literal (or end).
+// [_] matches but discards. Numeric captures coerce to number.
+// No brackets → exact match. No special treatment of dots.
+// Returns null (no match) or object of captured bindings.
+function matchPattern(pattern, eventName) {
+    if (!pattern.includes('[')) {
+        return pattern === eventName ? {} : null
+    }
+
+    const captures = {}
+    let pi = 0, ei = 0
+    const plen = pattern.length
+    const elen = eventName.length
+
+    while (pi < plen) {
+        if (pattern[pi] === '[') {
+            const close = pattern.indexOf(']', pi + 1)
+            if (close === -1) return null
+            const name = pattern.slice(pi + 1, close)
+            pi = close + 1
+
+            // Find next literal to bound capture
+            let nextLit = null
+            if (pi < plen && pattern[pi] !== '[') {
+                const nb = pattern.indexOf('[', pi)
+                nextLit = nb === -1 ? pattern.slice(pi) : pattern.slice(pi, nb)
+            }
+
+            const end = nextLit
+                ? eventName.indexOf(nextLit, ei)
+                : elen
+
+            if (end === -1 || end <= ei) return null
+            if (name !== '_') {
+                const raw = eventName.slice(ei, end)
+                const num = Number(raw)
+                captures[name] = isNaN(num) ? raw : num
+            }
+            ei = end
+        } else {
+            const nb = pattern.indexOf('[', pi)
+            const litEnd = nb === -1 ? plen : nb
+            if (!eventName.startsWith(pattern.slice(pi, litEnd), ei)) return null
+            ei += litEnd - pi
+            pi = litEnd
+        }
+    }
+
+    return ei === elen ? captures : null
+}
+
 // Execute a parsed AST, yielding TurtleEvents.
 // Caller drains the generator (synchronously for batch, per-tick for coroutines).
 //
@@ -27,6 +79,7 @@ export function* execute(ast, deps, opts = {}) {
         maxCommands: opts.maxCommands || 88888888,
         elapsedTime: 0,
         loopCounter: opts.loopCounter || 0,
+        mailbox: opts.mailbox || null,
     }
 
     // Stroke accumulator — local to this execution pass, not persisted in actorState.
@@ -107,6 +160,13 @@ function* walkBody(body, scope, state, stroke) {
                 break
             }
 
+            // shout: emit event directive — evaluated args, scheduler intercepts
+            if (node.value === "shout") {
+                const rawArgs = node.children.map(arg => evaluateExpr(arg.value, scope, state))
+                yield { type: 'shout', name: rawArgs[0], payload: rawArgs[1] }
+                break
+            }
+
             const args = node.children.map(arg =>
                 evaluateExpr(arg.value, scope, state)
             )
@@ -145,9 +205,37 @@ function* walkBody(body, scope, state, stroke) {
         }
 
         case 'When': {
-            if (!matched && evaluateExpr(node.value, scope, state) !== 0) {
-                matched = true
-                yield* walkBody(node.children, scope, state, stroke)
+            if (node.meta?.event) {
+                // Event mode: check mailbox, independent of matched flag.
+                // Pattern uses brackets as captures (not interpolation).
+                const mailbox = state.mailbox
+                if (mailbox) {
+                    const pattern = node.value.slice(1, -1) // strip quotes
+                    let matchIdx = -1
+                    let captures = null
+                    for (let i = 0; i < mailbox.length; i++) {
+                        const result = matchPattern(pattern, mailbox[i].name)
+                        if (result !== null) {
+                            matchIdx = i
+                            captures = result
+                            break
+                        }
+                    }
+                    if (matchIdx !== -1) {
+                        const event = mailbox.splice(matchIdx, 1)[0]
+                        const childScope = { ...scope, ...captures }
+                        if (node.meta.binding) {
+                            childScope[node.meta.binding] = event.payload
+                        }
+                        yield* walkBody(node.children, childScope, state, stroke)
+                    }
+                }
+            } else {
+                // Conditional mode: first-match-wins via matched flag
+                if (!matched && evaluateExpr(node.value, scope, state) !== 0) {
+                    matched = true
+                    yield* walkBody(node.children, scope, state, stroke)
+                }
             }
             break
         }

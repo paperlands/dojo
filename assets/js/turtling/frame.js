@@ -34,5 +34,6 @@ export function createFrame(name, generator, opts = {}) {
 
         // Communication
         channel: createRingBuffer(opts.channelCapacity || 4096),
+        mailbox: [],
     }
 }

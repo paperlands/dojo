@@ -26,8 +26,8 @@ function wordSet(words) {
 
 export const keywordList = [
     "draw",  "as", "def", "label", "erase", "goto", "do", "fw", "rt", "dive", "roll",
-    "hd", "hide", "grid", "lt", "show", "wait", "beColour", "jmp", "fill",
-    "jmpto", "faceto", "END", "end", "ensure", "for", "when", "loop", "bold", "fn"
+    "hd", "hide", "grid", "shout",  "lt", "show", "wait", "beColour", "jmp", "fill",
+    "jmpto", "faceto", "end", "ensure", "for", "when", "loop", "bold", "fn"
 ];
 
 const keywords    = wordSet(keywordList);
