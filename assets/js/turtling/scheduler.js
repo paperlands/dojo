@@ -151,7 +151,7 @@ function resolveBinding(frame, name, args) {
         const target = findFrame(frame, targetName)
         if (!target) throw new Error(`Undefined ambient: ${targetName}`)
 
-        return resolveProperty(target, property, args)
+        return resolveProperty(target, property, args, frame)
     } else {
         // Unqualified: walk ancestor chain for fn binding
         const arity = args ? args.length : 0
@@ -165,28 +165,63 @@ function resolveBinding(frame, name, args) {
     }
 }
 
-// Spatial properties on a frame.
+const roundVec = (v) => Math.abs(v) < 1e-10 ? 0 : Math.round(v * 1e9) / 1e9
+
+function headingFromQuaternion(q) {
+    return Math.atan2(
+        2 * (q.w * q.y - q.x * q.z),
+        1 - 2 * (q.y * q.y + q.z * q.z)
+    ) * (180 / Math.PI)
+}
+
+// Spatial properties — absolute projections of a frame's transform atom.
 const SPATIAL = {
-    x: (t) => t.position[0],
-    y: (t) => t.position[1],
-    z: (t) => t.position[2],
-    heading: (t) => {
-        const q = t.rotation
-        return Math.atan2(
-            2 * (q.w * q.y - q.x * q.z),
-            1 - 2 * (q.y * q.y + q.z * q.z)
-        ) * (180 / Math.PI)
+    x: (t) => roundVec(t.position[0]),
+    y: (t) => roundVec(t.position[1]),
+    z: (t) => roundVec(t.position[2]),
+    heading: (t) => roundVec(headingFromQuaternion(t.rotation)),
+}
+
+// Temporal properties — absolute projections of a frame's lifecycle state.
+const TEMPORAL = {
+    time:     (frame) => roundVec(frame.elapsedTime || 0),
+    done:     (frame) => frame.done ? 1 : 0,
+    commands: (frame) => frame.commandCount,
+}
+
+// Relational properties — computed from observer + target.
+const RELATIONAL = {
+    distance: (target, observer) => {
+        const tp = target.transform.deref().position
+        const op = observer.transform.deref().position
+        const dx = tp[0] - op[0], dy = tp[1] - op[1], dz = tp[2] - op[2]
+        return roundVec(Math.sqrt(dx * dx + dy * dy + dz * dz))
+    },
+    bearing: (target, observer) => {
+        const tp = target.transform.deref().position
+        const op = observer.transform.deref().position
+        const ot = observer.transform.deref()
+        const dx = tp[0] - op[0], dy = tp[1] - op[1]
+        const toTarget = Math.atan2(dx, dy) * (180 / Math.PI)
+        const myHeading = headingFromQuaternion(ot.rotation)
+        return roundVec(toTarget - myHeading)
+    },
+    sync: (target, observer) => {
+        const dt = (target.elapsedTime || 0) - (observer.elapsedTime || 0)
+        return roundVec(Math.max(0, dt))
     },
 }
 
-// Resolve a property on a target frame — spatial, 0-arity fn, or n-arity fn.
-function resolveProperty(target, property, args) {
-    // Spatial properties (only for 0-arity / variable access)
+// Resolve a property on a target frame — spatial, temporal, relational, or fn.
+function resolveProperty(target, property, args, observer) {
     if (!args && SPATIAL[property]) {
         return SPATIAL[property](target.transform.deref())
     }
-    if (!args && property === 'done') {
-        return target.done ? 1 : 0
+    if (!args && TEMPORAL[property]) {
+        return TEMPORAL[property](target)
+    }
+    if (!args && observer && RELATIONAL[property]) {
+        return RELATIONAL[property](target, observer)
     }
 
     // fn binding — any arity
@@ -247,6 +282,7 @@ function attachMeta(frame, targetFrame) {
     frame.targetFrame = targetFrame || null
     frame.error = null
     frame.commandCount = 0
+    frame.elapsedTime = 0
     frame.actorState = null
     return frame
 }
@@ -288,6 +324,7 @@ function stampInline(child, now, createDeps, execOpts, channelCapacity, registry
 
         if (value.type === "wait") {
             child.resumeAt = now + value.duration
+            child.elapsedTime += value.duration / 1000
             if (value.position) {
                 child.transform.swap(() => ({
                     rotation: value.rotation,
@@ -447,6 +484,7 @@ export function createScheduler(generator, opts = {}) {
                     // --- Directive: wait ---
                     if (value.type === "wait") {
                         ctx.resumeAt = now + value.duration
+                        ctx.elapsedTime += value.duration / 1000
                         if (value.position) {
                             ctx.transform.swap(() => ({
                                 rotation: value.rotation,
