@@ -80,12 +80,20 @@ export class Evaluator {
                 return this.run(body, childContext);
             }
         }
+        if (this.resolveExternal) {
+            const result = this.resolveExternal(func, args);
+            if (result !== undefined) return result;
+        }
         throw new Error(`Undefined function: ${func}`);
     }
 
     resolveContext(variable, context) {
         if (variable in context) {
             return context[variable];
+        }
+        if (this.resolveExternal) {
+            const resolved = this.resolveExternal(variable);
+            if (resolved !== undefined) return resolved;
         }
         throw new Error(`Undefined variable: ${variable}`);
     }

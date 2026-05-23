@@ -139,8 +139,9 @@ export class Parser {
         }
         this.advance(); // consume ')'
 
-        // Validation — substitution deferred to evaluator for call-by-value
-        if (!options.skipValidation) {
+        // Validation — substitution deferred to evaluator for call-by-value.
+        // Dotted names (sky.sine) skip validation — resolved at runtime via resolveExternal.
+        if (!options.skipValidation && !name.includes('.')) {
             if (!this.functionExists(name, args.length)) {
                 throw new Error(`Unknown function: ${name} with ${args.length} arguments`);
             }

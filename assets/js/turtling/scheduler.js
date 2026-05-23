@@ -119,10 +119,101 @@ function transformEvent(event, t) {
     }
 }
 
+// --- Binding resolution: observation + inheritance ---
+
+// Resolve a variable from the ambient tree. Dispatches dotted paths
+// (sibling observation) vs unqualified names (ancestor fn inheritance).
+// Find a named frame: check siblings first, then walk ancestors.
+function findFrame(frame, name) {
+    // Siblings (parent's children, or own children if root)
+    const parent = frame.parent || frame
+    const sibling = parent.children.get(name)
+    if (sibling) return sibling
+
+    // Walk ancestors by name
+    let ancestor = frame.parent
+    while (ancestor) {
+        if (ancestor.name === name) return ancestor
+        ancestor = ancestor.parent
+    }
+    return null
+}
+
+// Resolve a name against the ambient tree — unified for 0-arity (variables) and n-arity (functions).
+// Called from evaluator's resolveContext (args=undefined) and applyFunction (args=[...]).
+function resolveBinding(frame, name, args) {
+    if (name.includes('.')) {
+        // Dotted: target.property or target.fn[args]
+        const dot = name.indexOf('.')
+        const targetName = name.slice(0, dot)
+        const property = name.slice(dot + 1)
+
+        const target = findFrame(frame, targetName)
+        if (!target) throw new Error(`Undefined ambient: ${targetName}`)
+
+        return resolveProperty(target, property, args)
+    } else {
+        // Unqualified: walk ancestor chain for fn binding
+        const arity = args ? args.length : 0
+        let ancestor = frame.parent
+        while (ancestor) {
+            const result = lookupFn(ancestor, name, arity, args)
+            if (result !== undefined) return result
+            ancestor = ancestor.parent
+        }
+        return undefined
+    }
+}
+
+// Spatial properties on a frame.
+const SPATIAL = {
+    x: (t) => t.position[0],
+    y: (t) => t.position[1],
+    z: (t) => t.position[2],
+    heading: (t) => {
+        const q = t.rotation
+        return Math.atan2(
+            2 * (q.w * q.y - q.x * q.z),
+            1 - 2 * (q.y * q.y + q.z * q.z)
+        ) * (180 / Math.PI)
+    },
+}
+
+// Resolve a property on a target frame — spatial, 0-arity fn, or n-arity fn.
+function resolveProperty(target, property, args) {
+    // Spatial properties (only for 0-arity / variable access)
+    if (!args && SPATIAL[property]) {
+        return SPATIAL[property](target.transform.deref())
+    }
+    if (!args && property === 'done') {
+        return target.done ? 1 : 0
+    }
+
+    // fn binding — any arity
+    const arity = args ? args.length : 0
+    const result = lookupFn(target, property, arity, args)
+    if (result !== undefined) return result
+
+    throw new Error(`Undefined property: ${property} on ambient ${target.name}`)
+}
+
+// Look up a fn binding in a frame's userspace and evaluate it.
+function lookupFn(frame, name, arity, args) {
+    if (!frame.deps?.mathParser?.userspace) return undefined
+    const key = name + ':' + arity
+    if (!frame.deps.mathParser.userspace.has(key)) return undefined
+    const [body, params] = frame.deps.mathParser.userspace.get(key)
+    const ctx = {}
+    if (params) params.forEach((p, i) => { ctx[p] = args[i] })
+    return frame.deps.mathEvaluator.run(body, ctx)
+}
+
 // --- Child generator factory ---
 
 // Creates a child executor from a fork spec (spawn event).
 // Fork spec groups: origin + style (spatial), code (ast + functions), env (userspace + loopCounter).
+// Returns { generator, deps } so the scheduler can store deps on the frame
+// and wire resolveExternal after frame creation.
 function createChildGenerator(value, createDeps, execOpts) {
     const childDeps = createDeps()
     if (value.env?.userspace) {
@@ -130,14 +221,22 @@ function createChildGenerator(value, createDeps, execOpts) {
             childDeps.mathParser.userspace.set(k, v)
         }
     }
-    return execute(value.code.ast, childDeps, {
-        color: value.style?.color || execOpts.color,
-        maxRecurseDepth: execOpts.maxRecurseDepth,
-        maxRecurses: execOpts.maxRecurses,
-        maxCommands: execOpts.maxCommands,
-        functions: value.code.functions,
-        loopCounter: value.env?.loopCounter,
-    })
+    // Shared mailbox — same array passed to executor AND set on the frame.
+    // Scheduler pushes to frame.mailbox; executor reads from state.mailbox.
+    const mailbox = []
+    return {
+        generator: execute(value.code.ast, childDeps, {
+            color: value.style?.color || execOpts.color,
+            maxRecurseDepth: execOpts.maxRecurseDepth,
+            maxRecurses: execOpts.maxRecurses,
+            maxCommands: execOpts.maxCommands,
+            functions: value.code.functions,
+            loopCounter: value.env?.loopCounter,
+            mailbox,
+        }),
+        deps: childDeps,
+        mailbox,
+    }
 }
 
 // --- Scheduler metadata ---
@@ -205,20 +304,32 @@ function stampInline(child, now, createDeps, execOpts, channelCapacity, registry
             return
         }
 
+        if (value.type === "shout") {
+            for (const [id, target] of registry) {
+                if (target === child) continue
+                target.mailbox.push({ name: value.name, payload: value.payload })
+            }
+            continue
+        }
+
         if (value.type === "spawn") {
             child.transform.swap(() => value.origin)
             const nestedExisting = child.children.get(value.name)
             if (nestedExisting) {
                 if (nestedExisting.done && createDeps) {
                     nestedExisting.origin = value.origin
-                    nestedExisting.generator = createChildGenerator(value, createDeps, execOpts)
+                    const re = createChildGenerator(value, createDeps, execOpts)
+                    nestedExisting.generator = re.generator
+                    nestedExisting.deps = re.deps
+                    nestedExisting.mailbox = re.mailbox
+                    re.deps.mathEvaluator.resolveExternal = (v, a) => resolveBinding(nestedExisting, v, a)
                     nestedExisting.done = false
                     nestedExisting.error = null
                     nestedExisting.channel.drain()
                     nestedExisting.channel.put({ type: 'clear' })
                 }
             } else if (createDeps) {
-                const nestedGen = createChildGenerator(value, createDeps, execOpts)
+                const { generator: nestedGen, deps: nestedDeps, mailbox: nestedMailbox } = createChildGenerator(value, createDeps, execOpts)
                 const nested = attachMeta(
                     createFrame(value.name, nestedGen, {
                         parent: child,
@@ -227,6 +338,9 @@ function stampInline(child, now, createDeps, execOpts, channelCapacity, registry
                     }),
                     value.frame
                 )
+                nested.deps = nestedDeps
+                nested.mailbox = nestedMailbox
+                nestedDeps.mathEvaluator.resolveExternal = (v, a) => resolveBinding(nested, v, a)
                 child.children.set(value.name, nested)
                 registry.set(nested.id, nested)
             }
@@ -256,6 +370,11 @@ export function createScheduler(generator, opts = {}) {
         createFrame('root', generator, { channelCapacity }),
         null
     )
+    // Wire root observation — root can read children via dotted access
+    if (opts.rootDeps) {
+        root.deps = opts.rootDeps
+        opts.rootDeps.mathEvaluator.resolveExternal = (v, a) => resolveBinding(root, v, a)
+    }
     const registry = new Map([[root.id, root]])
 
     return {
@@ -345,6 +464,17 @@ export function createScheduler(generator, opts = {}) {
                         break
                     }
 
+                    // --- Directive: shout ---
+                    if (value.type === "shout") {
+                        // Global broadcast: deposit into every other ambient's mailbox
+                        for (const [id, target] of registry) {
+                            if (target === ctx) continue  // don't shout to self
+                            target.mailbox.push({ name: value.name, payload: value.payload })
+                        }
+                        produced = true
+                        continue
+                    }
+
                     // --- Directive: spawn ---
                     if (value.type === "spawn") {
                         // Keep parent transform atom current between head events
@@ -359,7 +489,11 @@ export function createScheduler(generator, opts = {}) {
 
                             if (existing.done && createDeps) {
                                 // Re-execute completed child with fresh fork spec.
-                                existing.generator = createChildGenerator(value, createDeps, execOpts)
+                                const re = createChildGenerator(value, createDeps, execOpts)
+                                existing.generator = re.generator
+                                existing.deps = re.deps
+                                existing.mailbox = re.mailbox
+                                re.deps.mathEvaluator.resolveExternal = (v, a) => resolveBinding(existing, v, a)
                                 existing.done = false
                                 existing.error = null
                                 if (existing.targetFrame) {
@@ -378,7 +512,7 @@ export function createScheduler(generator, opts = {}) {
 
                         // First encounter: create child frame
                         if (createDeps) {
-                            const childGen = createChildGenerator(value, createDeps, execOpts)
+                            const { generator: childGen, deps: childDeps, mailbox: childMailbox } = createChildGenerator(value, createDeps, execOpts)
                             const child = attachMeta(
                                 createFrame(value.name, childGen, {
                                     parent: ctx,
@@ -387,6 +521,9 @@ export function createScheduler(generator, opts = {}) {
                                 }),
                                 value.frame
                             )
+                            child.deps = childDeps
+                            child.mailbox = childMailbox
+                            childDeps.mathEvaluator.resolveExternal = (v, a) => resolveBinding(child, v, a)
                             ctx.children.set(value.name, child)
                             registry.set(child.id, child)
 
@@ -435,4 +572,4 @@ export function createScheduler(generator, opts = {}) {
     }
 }
 
-export { createFrame, visitPostOrder, terminateAmbient, allDone, worldTransform, groupTransform, findAncestorByName }
+export { createFrame, visitPostOrder, terminateAmbient, allDone, worldTransform, groupTransform, findAncestorByName, resolveBinding }

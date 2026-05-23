@@ -218,7 +218,8 @@ export class Turtle {
                     mathParser: new Parser(),
                     mathEvaluator: new Evaluator()
                 }),
-                execOpts: { color: this.color }
+                execOpts: { color: this.color },
+                rootDeps: deps
             })
 
             const isFocused = (tabId === this.focusedId)

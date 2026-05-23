@@ -36,8 +36,8 @@ export class Lexer {
             '\\d+(?:\\.\\d+)?',
             // Multi-character operators (must come before single chars)
             this.operators.map(op => this.escapeRegex(op)).join('|'),
-            // Identifiers (functions/variables)
-            '[a-zA-Z][a-zA-Z0-9_]*',
+            // Identifiers (functions/variables, including dotted paths like leader.x)
+            '[a-zA-Z][a-zA-Z0-9_]*(?:\\.[a-zA-Z][a-zA-Z0-9_]*)*',
             // Single character tokens
             '[\\[\\],\\(\\)]',
             // Skip whitespace

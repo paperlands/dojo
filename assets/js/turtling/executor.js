@@ -280,8 +280,19 @@ function evaluateExpr(expr, scope, state) {
     if (mathParser.isNumeric(expr)) return parseFloat(expr)
     if (scope[expr] != null) return scope[expr]
     const tree = mathParser.parse(expr)
+
+    // Expression or known namespace — always evaluate
     if (tree.children.length > 0 || mathEvaluator.namespace_check(tree.value)) {
         return mathEvaluator.run(tree, scope)
+    }
+
+    // Bare identifier — try evaluator (handles dotted + unqualified via resolveExternal).
+    // Fall back to raw string for labels/colors when identifier is truly unknown.
+    if (typeof tree.value === 'string' && /^[a-zA-Z]/.test(tree.value)) {
+        if (mathEvaluator.resolveExternal) {
+            const resolved = mathEvaluator.resolveExternal(tree.value)
+            if (resolved !== undefined) return resolved
+        }
     }
     return tree.value
 }
