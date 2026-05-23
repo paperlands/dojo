@@ -61,7 +61,7 @@ export const addBuffer = (collection, opts = {}, nameGen, idGen) => {
     };
     const items = new Map(collection.items);
     items.set(id, buffer);
-    return { collection: { items, currentId: id }, id };
+    return { collection: { items, currentId: collection.currentId }, id };
 };
 
 export const removeBuffer = (collection, id) => {
