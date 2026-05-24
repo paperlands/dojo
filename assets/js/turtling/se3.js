@@ -46,6 +46,22 @@ export const SE3 = {
         }
     },
 
+    // Map world point to local — dual of apply.
+    // apply: local → world, unapply: world → local.
+    unapply(t, point) {
+        const dx = point[0] - t.position[0]
+        const dy = point[1] - t.position[1]
+        const dz = point[2] - t.position[2]
+        return Versor.raw(t.rotation.w, -t.rotation.x, -t.rotation.y, -t.rotation.z)
+            .rotateVec(dx, dy, dz)
+    },
+
+    // Strip frame rotation from a world rotation to get local rotation.
+    localRotation(t, worldRotation) {
+        return Versor.raw(t.rotation.w, -t.rotation.x, -t.rotation.y, -t.rotation.z)
+            .multiply(worldRotation)
+    },
+
     clone(t) {
         return {
             rotation: Versor.raw(t.rotation.w, t.rotation.x, t.rotation.y, t.rotation.z),

@@ -31,22 +31,19 @@ function fw(ctx, distance = 0) {
 }
 
 function goTo(ctx, x = 0, y = 0, z = null) {
-    const t = ctx.transform
-    const newPos = [x, y, z ?? t.position[2]]
-    const transform = { rotation: t.rotation, position: newPos }
-
-    if (ctx.style.down) {
-        return { transform, stroke: "extend", point: newPos }
+    const wp = ctx.worldPosition
+    return {
+        world: { position: [x, y, z ?? wp[2]] },
+        stroke: ctx.style.down ? "extend" : "break"
     }
-    return { transform, stroke: "break" }
 }
 
 function jmpto(ctx, x = 0, y = 0, z = null) {
-    const t = ctx.transform
-    const newPos = [x, y, z ?? t.position[2]]
-    const transform = { rotation: t.rotation, position: newPos }
-    // jmpto always breaks the path (pen up, move, pen down)
-    return { transform, stroke: "break" }
+    const wp = ctx.worldPosition
+    return {
+        world: { position: [x, y, z ?? wp[2]] },
+        stroke: "break"
+    }
 }
 
 function jmp(ctx, distance) {
@@ -89,14 +86,14 @@ function left(ctx, angle = 0) {
 // --- Absolute orientation ---
 
 function faceto(ctx, targetX = 0, targetY = 0, targetZ = null) {
-    const pos = ctx.transform.position
+    const wp = ctx.worldPosition
     const tx = targetX
     const ty = targetY
-    const tz = targetZ ?? pos[2]
+    const tz = targetZ ?? wp[2]
 
-    const dx = tx - pos[0]
-    const dy = ty - pos[1]
-    const dz = tz - pos[2]
+    const dx = tx - wp[0]
+    const dy = ty - wp[1]
+    const dz = tz - wp[2]
 
     const distXY = Math.sqrt(dx * dx + dy * dy)
     const distTotal = Math.sqrt(dx * dx + dy * dy + dz * dz)
@@ -113,7 +110,7 @@ function faceto(ctx, targetX = 0, targetY = 0, targetZ = null) {
     const rotation = yawRotation.multiply(pitchRotation)
 
     return {
-        transform: { rotation, position: pos }
+        world: { rotation }
     }
 }
 
@@ -203,7 +200,10 @@ function hide(ctx) {
 }
 
 function home(ctx) {
-    return jmpto(ctx, 0, 0, 0)
+    return {
+        transform: { rotation: ctx.transform.rotation, position: [0, 0, 0] },
+        stroke: "break"
+    }
 }
 
 // --- Limit commands ---

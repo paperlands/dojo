@@ -149,7 +149,15 @@ function resolveBinding(frame, name, args) {
         const property = name.slice(dot + 1)
 
         const target = findFrame(frame, targetName)
-        if (!target) throw new Error(`Undefined ambient: ${targetName}`)
+        if (!target) {
+            if (frame.inlineAdvancing) {
+                // Dataflow suspension: dependency may arrive later
+                const err = new Error(`Blocked on ambient: ${targetName}`)
+                err.blocked = true
+                throw err
+            }
+            throw new Error(`Undefined ambient: ${targetName}`)
+        }
 
         return resolveProperty(target, property, args, frame)
     } else {
@@ -174,7 +182,16 @@ function headingFromQuaternion(q) {
     ) * (180 / Math.PI)
 }
 
-// Spatial properties — absolute projections of a frame's transform atom.
+// World-space transform: compose ancestor origins with local transform.
+// Gives the frame's position/rotation in the global coordinate system.
+function frameWorldTransform(frame) {
+    const world = worldTransform(frame)
+    const local = frame.transform.deref()
+    return SE3.compose(world, local)
+}
+
+// Spatial properties — world-space projections of a frame's transform.
+// Cross-ambient reads see global coordinates, not local ones.
 const SPATIAL = {
     x: (t) => roundVec(t.position[0]),
     y: (t) => roundVec(t.position[1]),
@@ -189,21 +206,21 @@ const TEMPORAL = {
     commands: (frame) => frame.commandCount,
 }
 
-// Relational properties — computed from observer + target.
+// Relational properties — computed from observer + target in world space.
 const RELATIONAL = {
     distance: (target, observer) => {
-        const tp = target.transform.deref().position
-        const op = observer.transform.deref().position
+        const tp = frameWorldTransform(target).position
+        const op = frameWorldTransform(observer).position
         const dx = tp[0] - op[0], dy = tp[1] - op[1], dz = tp[2] - op[2]
         return roundVec(Math.sqrt(dx * dx + dy * dy + dz * dz))
     },
     bearing: (target, observer) => {
-        const tp = target.transform.deref().position
-        const op = observer.transform.deref().position
-        const ot = observer.transform.deref()
+        const tp = frameWorldTransform(target).position
+        const ow = frameWorldTransform(observer)
+        const op = ow.position
         const dx = tp[0] - op[0], dy = tp[1] - op[1]
         const toTarget = Math.atan2(dx, dy) * (180 / Math.PI)
-        const myHeading = headingFromQuaternion(ot.rotation)
+        const myHeading = headingFromQuaternion(ow.rotation)
         return roundVec(toTarget - myHeading)
     },
     sync: (target, observer) => {
@@ -215,7 +232,7 @@ const RELATIONAL = {
 // Resolve a property on a target frame — spatial, temporal, relational, or fn.
 function resolveProperty(target, property, args, observer) {
     if (!args && SPATIAL[property]) {
-        return SPATIAL[property](target.transform.deref())
+        return SPATIAL[property](frameWorldTransform(target))
     }
     if (!args && TEMPORAL[property]) {
         return TEMPORAL[property](target)
@@ -241,6 +258,17 @@ function lookupFn(frame, name, arity, args) {
     const ctx = {}
     if (params) params.forEach((p, i) => { ctx[p] = args[i] })
     return frame.deps.mathEvaluator.run(body, ctx)
+}
+
+// Deliver buffered shouts then clear the buffer.
+function flushDeferredShouts(shouts, registry) {
+    for (const shout of shouts) {
+        for (const [id, target] of registry) {
+            if (target === shout.from) continue
+            target.mailbox.push({ name: shout.name, payload: shout.payload })
+        }
+    }
+    shouts.length = 0
 }
 
 // --- Child generator factory ---
@@ -287,15 +315,26 @@ function attachMeta(frame, targetFrame) {
     return frame
 }
 
-// --- Synchronous frame stamp ---
+// --- Inline child drain ---
 
-// Drain a frame-targeted child's generator inline within the parent's tick.
-// Events are projected to the target frame at the parent's current position.
-// If a wait is encountered, the child transitions to normal async scheduling.
-function stampInline(child, now, createDeps, execOpts, channelCapacity, registry) {
-    const target = findAncestorByName(child, child.targetFrame)
-    if (!target) return
-    const t = relativeTransform(child, target)
+// Advance a child's generator inline until it hits a wait or completes.
+// Called at spawn time so the child's state is observable immediately
+// by subsequent parent code (no wait-before-observe needed).
+//
+// For frame-targeted children, events are projected to the target frame.
+// For normal children, events go to the child's own channel.
+// Returns array of deferred shouts (delivered after all siblings exist).
+function advanceChild(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts) {
+    // Frame-targeted: route non-head events to ancestor frame
+    let frameTarget = null
+    let frameTransform = null
+    if (child.targetFrame) {
+        frameTarget = findAncestorByName(child, child.targetFrame)
+        if (frameTarget) frameTransform = relativeTransform(child, frameTarget)
+    }
+
+    child.inlineAdvancing = true
+    try {
 
     while (true) {
         let value, done
@@ -341,10 +380,21 @@ function stampInline(child, now, createDeps, execOpts, channelCapacity, registry
             return
         }
 
+        // Dataflow suspension: child blocked on unresolvable cross-ambient read.
+        // Generator is paused at yield point — resumes on next tick via visitPostOrder.
+        if (value.type === "blocked") {
+            return
+        }
+
         if (value.type === "shout") {
-            for (const [id, target] of registry) {
-                if (target === child) continue
-                target.mailbox.push({ name: value.name, payload: value.payload })
+            if (deferredShouts) {
+                // Buffer shouts — delivered after all siblings exist
+                deferredShouts.push({ from: child, name: value.name, payload: value.payload })
+            } else {
+                for (const [id, t] of registry) {
+                    if (t === child) continue
+                    t.mailbox.push({ name: value.name, payload: value.payload })
+                }
             }
             continue
         }
@@ -360,6 +410,7 @@ function stampInline(child, now, createDeps, execOpts, channelCapacity, registry
                     nestedExisting.deps = re.deps
                     nestedExisting.mailbox = re.mailbox
                     re.deps.mathEvaluator.resolveExternal = (v, a) => resolveBinding(nestedExisting, v, a)
+                    re.deps.worldOriginFn = () => groupTransform(nestedExisting)
                     nestedExisting.done = false
                     nestedExisting.error = null
                     nestedExisting.channel.drain()
@@ -378,21 +429,31 @@ function stampInline(child, now, createDeps, execOpts, channelCapacity, registry
                 nested.deps = nestedDeps
                 nested.mailbox = nestedMailbox
                 nestedDeps.mathEvaluator.resolveExternal = (v, a) => resolveBinding(nested, v, a)
+                nestedDeps.worldOriginFn = () => groupTransform(nested)
                 child.children.set(value.name, nested)
                 registry.set(nested.id, nested)
+                // Recursively advance nested child inline
+                advanceChild(nested, now, createDeps, execOpts, channelCapacity, registry, deferredShouts)
             }
             continue
         }
 
+        // Output event
         if (value.type === "head") {
             child.transform.swap(() => ({
                 rotation: value.rotation,
                 position: [...value.position]
             }))
             child.channel.put(value)
+        } else if (frameTarget) {
+            frameTarget.channel.put(transformEvent(value, frameTransform))
         } else {
-            target.channel.put(transformEvent(value, t))
+            child.channel.put(value)
         }
+    }
+
+    } finally {
+        child.inlineAdvancing = false
     }
 }
 
@@ -443,6 +504,11 @@ export function createScheduler(generator, opts = {}) {
             visitPostOrder(root, (ctx) => {
                 if (ctx.done || ctx.resumeAt > now) return
 
+                // Shouts from inline-advanced children are deferred until
+                // the parent finishes spawning all siblings, so every
+                // sibling's mailbox exists at delivery time.
+                const deferredShouts = []
+
                 // Cache frame projection for synchronous batches —
                 // parent transforms are constant within a tick pass.
                 // Recomputed on re-entry after a wait breaks the loop.
@@ -478,6 +544,12 @@ export function createScheduler(generator, opts = {}) {
                         }
                         ctx.done = true
                         ctx.generator = null
+                        break
+                    }
+
+                    // --- Directive: blocked (dataflow suspension) ---
+                    if (value.type === "blocked") {
+                        // Generator paused on unresolvable dependency — retry next tick
                         break
                     }
 
@@ -532,16 +604,13 @@ export function createScheduler(generator, opts = {}) {
                                 existing.deps = re.deps
                                 existing.mailbox = re.mailbox
                                 re.deps.mathEvaluator.resolveExternal = (v, a) => resolveBinding(existing, v, a)
+                                re.deps.worldOriginFn = () => groupTransform(existing)
                                 existing.done = false
                                 existing.error = null
-                                if (existing.targetFrame) {
-                                    // Frame-targeted: re-stamp inline into ancestor
-                                    stampInline(existing, now, createDeps, execOpts, channelCapacity, registry)
-                                } else {
-                                    // Non-frame: clear old output, child advances next tick
-                                    existing.channel.drain()
-                                    existing.channel.put({ type: 'clear' })
-                                }
+                                existing.channel.drain()
+                                existing.channel.put({ type: 'clear' })
+                                flushDeferredShouts(deferredShouts, registry)
+                                advanceChild(existing, now, createDeps, execOpts, channelCapacity, registry, deferredShouts)
                                 produced = true
                             }
                             // Running and not done → idempotent no-op
@@ -562,13 +631,16 @@ export function createScheduler(generator, opts = {}) {
                             child.deps = childDeps
                             child.mailbox = childMailbox
                             childDeps.mathEvaluator.resolveExternal = (v, a) => resolveBinding(child, v, a)
+                            childDeps.worldOriginFn = () => groupTransform(child)
                             ctx.children.set(value.name, child)
                             registry.set(child.id, child)
 
-                            // Frame-targeted: drain inline for synchronous projection
-                            if (child.targetFrame) {
-                                stampInline(child, now, createDeps, execOpts, channelCapacity, registry)
-                            }
+                            // Deliver any deferred shouts from earlier siblings
+                            // so this child can receive them during its advance.
+                            flushDeferredShouts(deferredShouts, registry)
+                            // Advance child inline so its state is observable
+                            // immediately by subsequent parent code.
+                            advanceChild(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts)
                         }
                         produced = true
                         continue
@@ -596,6 +668,12 @@ export function createScheduler(generator, opts = {}) {
                     } else {
                         ctx.channel.put(value)
                     }
+                    produced = true
+                }
+
+                // Deliver any remaining deferred shouts
+                if (deferredShouts.length > 0) {
+                    flushDeferredShouts(deferredShouts, registry)
                     produced = true
                 }
             })

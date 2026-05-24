@@ -22,8 +22,10 @@ export class Evaluator {
     }
 
     namespace_check(val) {
-        return val in this.constants
-
+        if (val in this.constants) return true
+        // Dotted paths (ambient.property) resolve through evaluator chain
+        if (typeof val === 'string' && val.includes('.') && this.resolveExternal) return true
+        return false
     }
 
     run(ast, context) {

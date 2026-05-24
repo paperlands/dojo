@@ -232,8 +232,10 @@ function parseArguments(tokens) {
                     bufStart = i;
                 }
             } else {
-                // Quote type - no nesting
-                if (token.length > 1 && lastCh === closer) {
+                // Quote type - check if quote closes within the token
+                // "mice1".x has closing " at index 6 even though lastCh is 'x'
+                const closeIdx = token.indexOf(closer, 1);
+                if (closeIdx !== -1) {
                     args.push(new ASTNode('Argument', token));
                     closer = null;
                 } else {

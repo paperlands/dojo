@@ -198,7 +198,10 @@ export class Parser {
         const substitutions = new Map();
 
         for (const key of Object.keys(ctx)) {
-            substitutions.set(key, new ASTNode('operand', ctx[key]));
+            // Don't substitute parameter names — they stay symbolic
+            if (!params.includes(key)) {
+                substitutions.set(key, new ASTNode('operand', ctx[key]));
+            }
         }
 
         const subexpressionAST = this.substituteParameters(expressionAST, substitutions)

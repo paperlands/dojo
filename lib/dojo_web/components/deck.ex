@@ -15,6 +15,7 @@ defmodule DojoWeb.DeckLive do
       {"label", "Write Something", [text: "'Hello'", size: 10]},
       {"goto", "Go To Start", ["→": 0, "↑": 0]},
       {"jmpto", "Jump To Start", ["→": 0, "↑": 0]},
+      {"shout", "Shout a message", [message: "hello", data: 100]},
       {"grid", "Create a Grid", [size: 100, unit: 10]},
       {"faceto", "Face a Point", ["→": 0, "↑": 0]},
       {"dive", "Dive Into Page", [angle: 45]},

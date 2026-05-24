@@ -60,6 +60,24 @@ function matchPattern(pattern, eventName) {
     return ei === elen ? captures : null
 }
 
+// Dataflow suspension helper — wraps evaluateExpr in a retry loop.
+// When a cross-ambient read fails during inline advance (blocked error),
+// yields { type: 'blocked' } to suspend the generator, then retries on resume.
+// Used with yield* from walkBody so the suspension propagates up the chain.
+function* evalOrBlock(expr, scope, state) {
+    while (true) {
+        try {
+            return evaluateExpr(expr, scope, state)
+        } catch (e) {
+            if (e.blocked) {
+                yield { type: 'blocked' }
+                continue
+            }
+            throw e
+        }
+    }
+}
+
 // Execute a parsed AST, yielding TurtleEvents.
 // Caller drains the generator (synchronously for batch, per-tick for coroutines).
 //
@@ -142,7 +160,7 @@ function* walkBody(body, scope, state, stroke) {
         switch (node.type) {
 
         case 'Loop': {
-            const times = evaluateExpr(node.value, scope, state)
+            const times = yield* evalOrBlock(node.value, scope, state)
             const prevCount = state.loopCounter
             for (let i = 0; i < times; i++) {
                 state.loopCounter = i
@@ -153,23 +171,32 @@ function* walkBody(body, scope, state, stroke) {
         }
 
         case 'Call': {
-            // fn/func: math function definition — delegate to math parser
+            // fn/func: math function definition — delegate to math parser.
+            // Capture evaluator constants (count, x, y, z, time) at definition time
+            // so fn bodies are frozen snapshots, not re-evaluated lazily.
             if (node.value === "fn" || node.value === "func") {
                 const rawArgs = node.children.map(arg => arg.value)
-                state.deps.mathParser.defineFunction(rawArgs[0], rawArgs[1] || 0, scope)
+                const fnScope = { ...scope }
+                const ec = state.deps.mathEvaluator.constants
+                for (const key of Object.keys(ec)) {
+                    if (!(key in fnScope)) fnScope[key] = ec[key]()
+                }
+                state.deps.mathParser.defineFunction(rawArgs[0], rawArgs[1] || 0, fnScope)
                 break
             }
 
             // shout: emit event directive — evaluated args, scheduler intercepts
             if (node.value === "shout") {
-                const rawArgs = node.children.map(arg => evaluateExpr(arg.value, scope, state))
-                yield { type: 'shout', name: rawArgs[0], payload: rawArgs[1] }
+                const name = yield* evalOrBlock(node.children[0]?.value, scope, state)
+                const payload = node.children[1] ? yield* evalOrBlock(node.children[1].value, scope, state) : undefined
+                yield { type: 'shout', name, payload }
                 break
             }
 
-            const args = node.children.map(arg =>
-                evaluateExpr(arg.value, scope, state)
-            )
+            const args = []
+            for (const arg of node.children) {
+                args.push(yield* evalOrBlock(arg.value, scope, state))
+            }
 
             // Check user-defined function first, then built-in command
             const userFn = state.functions[scope[node.value] || node.value]
@@ -232,7 +259,7 @@ function* walkBody(body, scope, state, stroke) {
                 }
             } else {
                 // Conditional mode: first-match-wins via matched flag
-                if (!matched && evaluateExpr(node.value, scope, state) !== 0) {
+                if (!matched && (yield* evalOrBlock(node.value, scope, state)) !== 0) {
                     matched = true
                     yield* walkBody(node.children, scope, state, stroke)
                 }
@@ -241,7 +268,7 @@ function* walkBody(body, scope, state, stroke) {
         }
 
         case 'Ambient': {
-            const ambientName = String(evaluateExpr(node.value, scope, state))
+            const ambientName = String(yield* evalOrBlock(node.value, scope, state))
             yield {
                 type: 'spawn',
                 name: ambientName,
@@ -256,7 +283,7 @@ function* walkBody(body, scope, state, stroke) {
         }
 
         case 'Record': {
-            const title = node.value ? String(evaluateExpr(node.value, scope, state)) : null
+            const title = node.value ? String(yield* evalOrBlock(node.value, scope, state)) : null
             yield { type: 'record', action: 'start', title }
             yield* walkBody(node.children, scope, state, stroke)
             yield { type: 'record', action: 'stop', title }
@@ -280,15 +307,49 @@ function* callCommand(name, args, state, stroke) {
     }
     state.commandCount++
 
+    // World position for global-coordinate commands (goto, faceto, jmpto).
+    // worldOriginFn is wired by the scheduler for child frames;
+    // null for root → worldPosition = local position (identity frame).
+    const worldOrigin = state.deps.worldOriginFn ? state.deps.worldOriginFn() : null
+    const worldPosition = worldOrigin
+        ? SE3.apply(worldOrigin, state.transform.position)
+        : [...state.transform.position]
+
     const ctx = {
         transform: state.transform,
-        style: state.style
+        style: state.style,
+        worldPosition
     }
 
     // Snapshot position before command mutates transform
     stroke.lastPos = [...state.transform.position]
 
     const result = cmd(ctx, ...args)
+
+    // Resolve world-space delta to local transform.
+    // Commands that operate in global coordinates return { world: { position, rotation } }.
+    // This is the single conversion point — commands declare intent, executor resolves.
+    if (result.world) {
+        if (result.world.position) {
+            const localPos = worldOrigin
+                ? SE3.unapply(worldOrigin, result.world.position)
+                : result.world.position
+            result.transform = {
+                rotation: state.transform.rotation,
+                position: localPos
+            }
+            if (result.stroke === "extend") result.point = localPos
+        }
+        if (result.world.rotation) {
+            const localRot = worldOrigin
+                ? SE3.localRotation(worldOrigin, result.world.rotation)
+                : result.world.rotation
+            result.transform = {
+                rotation: localRot,
+                position: result.transform?.position || state.transform.position
+            }
+        }
+    }
 
     // Apply transform changes
     if (result.transform) {
@@ -363,6 +424,14 @@ function evaluateExpr(expr, scope, state) {
             )
         } while (processed !== previous)
         return processed
+    }
+
+    // Computed dotted access: 'interp'.rest — interpolate the quoted name, then access property.
+    // e.g. 'mice[follow]'.x → interpolate → mice1.x → dotted access
+    const computedDot = expr.match(/^(['"])(.*?)\1\.(.+)$/)
+    if (computedDot) {
+        const name = evaluateExpr(computedDot[1] + computedDot[2] + computedDot[1], scope, state)
+        return evaluateExpr(name + '.' + computedDot[3], scope, state)
     }
 
     if (mathParser.isNumeric(expr)) return parseFloat(expr)
