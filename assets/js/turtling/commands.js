@@ -216,6 +216,12 @@ function limitCommand(ctx, limit = 100000) {
     return { limits: { maxCommands: limit } }
 }
 
+function limitMessage(ctx, limit = 8192) {
+    return {
+        effects: [{ type: 'limitMailbox', limit }]
+    }
+}
+
 // --- Command table ---
 
 export const COMMANDS = new Map([
@@ -242,6 +248,7 @@ export const COMMANDS = new Map([
     ["wait", wait],
     ["limitRecurse", limitRecurse],
     ["limitCommand", limitCommand],
+    ["limitMessage", limitMessage],
     ["beColour", beColour]
 ])
 

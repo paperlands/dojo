@@ -3,14 +3,15 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
-import { COMMANDS, DEFAULT_PEN_STATE } from "../../assets/js/turtling/commands.js"
+import { COMMANDS, DEFAULT_STYLE } from "../../assets/js/turtling/commands.js"
 import { SE3 } from "../../assets/js/turtling/se3.js"
 
-// Helper: build command context from transform + optional pen overrides
-function mkCtx(transform, penOverrides = {}) {
+// Helper: build command context from transform + optional style overrides
+function mkCtx(transform, styleOverrides = {}) {
     return {
         transform,
-        penState: { ...DEFAULT_PEN_STATE, ...penOverrides }
+        style: { ...DEFAULT_STYLE, ...styleOverrides },
+        worldPosition: [...transform.position]
     }
 }
 
@@ -43,13 +44,13 @@ describe("fw (forward)", () => {
 
     test("extends path when pen is down", () => {
         const result = fw(mkCtx(identity()), 50)
-        assert.equal(result.pathAction.type, "extend")
-        assert.ok(Array.isArray(result.pathAction.point))
+        assert.equal(result.stroke, "extend")
+        assert.ok(Array.isArray(result.point))
     })
 
     test("breaks path when pen is up", () => {
         const result = fw(mkCtx(identity(), { down: false }), 50)
-        assert.equal(result.pathAction.type, "break")
+        assert.equal(result.stroke, "break")
     })
 
     test("preserves rotation", () => {
@@ -68,42 +69,42 @@ describe("fw (forward)", () => {
 describe("goto", () => {
     const goTo = COMMANDS.get("goto")
 
-    test("sets absolute position", () => {
+    test("sets absolute position (world space)", () => {
         const result = goTo(mkCtx(identity()), 50, 75)
-        assert.ok(near(result.transform.position[0], 50))
-        assert.ok(near(result.transform.position[1], 75))
+        assert.ok(near(result.world.position[0], 50))
+        assert.ok(near(result.world.position[1], 75))
     })
 
     test("preserves z when not specified", () => {
         const t = { ...identity(), position: [0, 0, 42] }
         const result = goTo(mkCtx(t), 10, 20)
-        assert.ok(near(result.transform.position[2], 42))
+        assert.ok(near(result.world.position[2], 42))
     })
 
     test("sets z when specified", () => {
         const result = goTo(mkCtx(identity()), 10, 20, 30)
-        assert.ok(near(result.transform.position[2], 30))
+        assert.ok(near(result.world.position[2], 30))
     })
 
-    test("extends path when pen is down", () => {
+    test("extends stroke when pen is down", () => {
         const result = goTo(mkCtx(identity()), 50, 50)
-        assert.equal(result.pathAction.type, "extend")
+        assert.equal(result.stroke, "extend")
     })
 
-    test("breaks path when pen is up", () => {
+    test("breaks stroke when pen is up", () => {
         const result = goTo(mkCtx(identity(), { down: false }), 50, 50)
-        assert.equal(result.pathAction.type, "break")
+        assert.equal(result.stroke, "break")
     })
 })
 
 describe("jmpto", () => {
     const jmpto = COMMANDS.get("jmpto")
 
-    test("moves to position without drawing", () => {
+    test("moves to position without drawing (world space)", () => {
         const result = jmpto(mkCtx(identity()), 100, 200)
-        assert.ok(near(result.transform.position[0], 100))
-        assert.ok(near(result.transform.position[1], 200))
-        assert.equal(result.pathAction.type, "break")
+        assert.ok(near(result.world.position[0], 100))
+        assert.ok(near(result.world.position[1], 200))
+        assert.equal(result.stroke, "break")
     })
 })
 
@@ -113,7 +114,7 @@ describe("jmp", () => {
     test("jumps forward without drawing", () => {
         const result = jmp(mkCtx(identity()), 100)
         assert.ok(near(result.transform.position[0], 100))
-        assert.equal(result.pathAction.type, "break")
+        assert.equal(result.stroke, "break")
     })
 
     test("respects current heading", () => {
@@ -193,10 +194,10 @@ describe("rotation commands", () => {
         assert.deepEqual(r.transform.position, t.position)
     })
 
-    test("no events from rotation commands", () => {
+    test("no effects or stroke from rotation commands", () => {
         const r = rt(mkCtx(identity()), 90)
-        assert.equal(r.events, undefined)
-        assert.equal(r.pathAction, undefined)
+        assert.equal(r.effects, undefined)
+        assert.equal(r.stroke, undefined)
     })
 })
 
@@ -211,34 +212,39 @@ describe("faceto", () => {
     test("face along +x direction", () => {
         const t = { ...identity(), position: [0, 0, 0] }
         const result = faceto(mkCtx(t), 100, 0)
-        const m = fw(mkCtx(result.transform), 50)
+        // faceto returns { world: { rotation } } — at root, world = local
+        const faceTransform = { rotation: result.world.rotation, position: t.position }
+        const m = fw(mkCtx(faceTransform), 50)
         assert.ok(near(m.transform.position[0], 50))
         assert.ok(near(m.transform.position[1], 0))
     })
 
     test("face along +y direction", () => {
         const result = faceto(mkCtx(identity()), 0, 100)
-        const m = fw(mkCtx(result.transform), 50)
+        const faceTransform = { rotation: result.world.rotation, position: [0, 0, 0] }
+        const m = fw(mkCtx(faceTransform), 50)
         assert.ok(near(m.transform.position[0], 0))
         assert.ok(near(m.transform.position[1], 50))
     })
 
     test("face along -x direction", () => {
         const result = faceto(mkCtx(identity()), -100, 0)
-        const m = fw(mkCtx(result.transform), 50)
+        const faceTransform = { rotation: result.world.rotation, position: [0, 0, 0] }
+        const m = fw(mkCtx(faceTransform), 50)
         assert.ok(near(m.transform.position[0], -50))
         assert.ok(near(m.transform.position[1], 0))
     })
 
     test("no-op when target is at current position", () => {
         const result = faceto(mkCtx(identity()), 0, 0, 0)
-        assert.equal(result.transform, undefined)
+        assert.equal(result.world, undefined)
     })
 
-    test("preserves current z when targetZ is null", () => {
+    test("returns world rotation only (position is executor concern)", () => {
         const t = { ...identity(), position: [0, 0, 42] }
         const result = faceto(mkCtx(t), 100, 0)
-        assert.ok(near(result.transform.position[2], 42))
+        assert.ok(result.world.rotation)
+        assert.equal(result.world.position, undefined)
     })
 })
 
@@ -249,19 +255,19 @@ describe("faceto", () => {
 describe("label", () => {
     const label = COMMANDS.get("label")
 
-    test("produces label event at current position", () => {
+    test("produces label effect at current position", () => {
         const t = SE3.translateLocal(identity(), 10, 20, 30)
         const result = label(mkCtx(t), "hello", 2)
-        assert.equal(result.events.length, 1)
-        assert.equal(result.events[0].type, "label")
-        assert.deepEqual(result.events[0].position, [10, 20, 30])
-        assert.equal(result.events[0].text, "hello")
-        assert.equal(result.events[0].textSize, 10) // 2 * 5
+        assert.equal(result.effects.length, 1)
+        assert.equal(result.effects[0].type, "label")
+        assert.deepEqual(result.effects[0].position, [10, 20, 30])
+        assert.equal(result.effects[0].text, "hello")
+        assert.equal(result.effects[0].textSize, 10) // 2 * 5
     })
 
     test("defaults to dot character", () => {
         const result = label(mkCtx(identity()))
-        assert.equal(result.events[0].text, ".")
+        assert.equal(result.effects[0].text, ".")
     })
 
     test("does not modify transform", () => {
@@ -273,17 +279,17 @@ describe("label", () => {
 describe("grid", () => {
     const grid = COMMANDS.get("grid")
 
-    test("produces grid event", () => {
+    test("produces grid effect", () => {
         const result = grid(mkCtx(identity()), 10, 5)
-        assert.equal(result.events.length, 1)
-        assert.equal(result.events[0].type, "grid")
-        assert.equal(result.events[0].size, 50)    // 10 * 5
-        assert.equal(result.events[0].divisions, 10)
+        assert.equal(result.effects.length, 1)
+        assert.equal(result.effects[0].type, "grid")
+        assert.equal(result.effects[0].size, 50)    // 10 * 5
+        assert.equal(result.effects[0].divisions, 10)
     })
 
     test("applies 90 degree x rotation to grid", () => {
         const result = grid(mkCtx(identity()))
-        const rot = result.events[0].rotation
+        const rot = result.effects[0].rotation
         // Identity * 90x rotation: w ≈ cos(45°), x ≈ sin(45°)
         assert.ok(near(rot.w, Math.cos(Math.PI / 4)))
         assert.ok(near(rot.x, Math.sin(Math.PI / 4)))
@@ -293,43 +299,43 @@ describe("grid", () => {
 describe("erase", () => {
     const erase = COMMANDS.get("erase")
 
-    test("produces clear event and breaks path", () => {
+    test("produces clear effect and breaks stroke", () => {
         const result = erase(mkCtx(identity()))
-        assert.equal(result.events[0].type, "clear")
-        assert.equal(result.pathAction.type, "break")
+        assert.equal(result.effects[0].type, "clear")
+        assert.equal(result.stroke, "break")
     })
 })
 
 describe("fill", () => {
     const fill = COMMANDS.get("fill")
 
-    test("produces fill path action", () => {
+    test("produces fill stroke action", () => {
         const result = fill(mkCtx(identity()))
-        assert.equal(result.pathAction.type, "fill")
+        assert.equal(result.stroke, "fill")
     })
 })
 
 describe("wait", () => {
     const wait = COMMANDS.get("wait")
 
-    test("produces wait event with duration in ms", () => {
+    test("produces wait effect with duration in ms", () => {
         const result = wait(mkCtx(identity()), 2)
-        assert.equal(result.events[0].type, "wait")
-        assert.equal(result.events[0].duration, 2000)
+        assert.equal(result.effects[0].type, "wait")
+        assert.equal(result.effects[0].duration, 2000)
     })
 
     test("captures current position and rotation", () => {
         const t = SE3.translateLocal(identity(), 10, 20, 30)
         const result = wait(mkCtx(t))
-        assert.deepEqual(result.events[0].position, [10, 20, 30])
+        assert.deepEqual(result.effects[0].position, [10, 20, 30])
     })
 })
 
 // ---------------------------------------------------------------------------
-// Pen state commands
+// Style commands
 // ---------------------------------------------------------------------------
 
-describe("pen state commands", () => {
+describe("style commands", () => {
     const bold = COMMANDS.get("bold")
     const beColour = COMMANDS.get("beColour")
     const show = COMMANDS.get("show")
@@ -338,47 +344,47 @@ describe("pen state commands", () => {
 
     test("bold sets thickness * 2", () => {
         const result = bold(mkCtx(identity()), 3)
-        assert.equal(result.penState.thickness, 6)
+        assert.equal(result.style.thickness, 6)
     })
 
     test("beColour resolves named colors", () => {
         const result = beColour(mkCtx(identity()), "red")
-        assert.equal(result.penState.color, "red")
+        assert.equal(result.style.color, "red")
     })
 
     test("beColour resolves invisible", () => {
         const result = beColour(mkCtx(identity()), "invisible")
-        assert.equal(result.penState.color, "#00000000")
+        assert.equal(result.style.color, "#00000000")
     })
 
     test("beColour resolves numeric to hsla", () => {
         const result = beColour(mkCtx(identity()), 0.5)
-        assert.ok(result.penState.color.startsWith("hsla("))
+        assert.ok(result.style.color.startsWith("hsla("))
     })
 
     test("beColour resolves random", () => {
         const result = beColour(mkCtx(identity()), "random")
-        assert.ok(result.penState.color.startsWith("hsla("))
+        assert.ok(result.style.color.startsWith("hsla("))
     })
 
     test("beColour resolves hex shorthand", () => {
         const result = beColour(mkCtx(identity()), "ff0")
-        assert.equal(result.penState.color, "#ff0")
+        assert.equal(result.style.color, "#ff0")
     })
 
-    test("beColour breaks path for color change", () => {
+    test("beColour breaks stroke for color change", () => {
         const result = beColour(mkCtx(identity()), "red")
-        assert.equal(result.pathAction.type, "break")
+        assert.equal(result.stroke, "break")
     })
 
     test("show sets showTurtle to size", () => {
         const result = show(mkCtx(identity()), 15)
-        assert.equal(result.penState.showTurtle, 15)
+        assert.equal(result.style.showTurtle, 15)
     })
 
     test("hide sets showTurtle to false", () => {
         const result = hide(mkCtx(identity()))
-        assert.equal(result.penState.showTurtle, false)
+        assert.equal(result.style.showTurtle, false)
     })
 
     test("hd is alias for hide", () => {
@@ -395,6 +401,7 @@ describe("pen state commands", () => {
 describe("limit commands", () => {
     const limitRecurse = COMMANDS.get("limitRecurse")
     const limitCommand = COMMANDS.get("limitCommand")
+    const limitMessage = COMMANDS.get("limitMessage")
 
     test("limitRecurse sets maxRecurseDepth + 1", () => {
         const result = limitRecurse(mkCtx(identity()), 500)
@@ -404,6 +411,17 @@ describe("limit commands", () => {
     test("limitCommand sets maxCommands", () => {
         const result = limitCommand(mkCtx(identity()), 50000)
         assert.equal(result.limits.maxCommands, 50000)
+    })
+
+    test("limitMessage produces limitMailbox effect", () => {
+        const result = limitMessage(mkCtx(identity()), 128)
+        assert.equal(result.effects[0].type, "limitMailbox")
+        assert.equal(result.effects[0].limit, 128)
+    })
+
+    test("limitMessage defaults to 8192", () => {
+        const result = limitMessage(mkCtx(identity()))
+        assert.equal(result.effects[0].limit, 8192)
     })
 })
 
@@ -416,7 +434,8 @@ describe("COMMANDS map", () => {
         "fw", "rt", "lt", "yaw", "pitch", "dive", "roll",
         "show", "hide", "hd", "jmp", "bold", "grid",
         "goto", "faceto", "jmpto", "label", "erase", "home",
-        "fill", "wait", "limitRecurse", "limitCommand", "beColour"
+        "fill", "wait", "limitRecurse", "limitCommand",
+        "limitMessage", "beColour"
     ]
 
     test("contains all expected commands", () => {
@@ -431,8 +450,8 @@ describe("COMMANDS map", () => {
         }
     })
 
-    test("matches turtle.js command count (24)", () => {
-        assert.equal(COMMANDS.size, 24)
+    test("matches expected command count (25)", () => {
+        assert.equal(COMMANDS.size, 25)
     })
 })
 
@@ -486,13 +505,13 @@ describe("integration", () => {
         assert.ok(Math.abs(t.position[1]) < 2, `y=${t.position[1]}`)
     })
 
-    test("path events track pen state correctly", () => {
+    test("stroke tracks style correctly", () => {
         const ctx = mkCtx(identity())
         const r1 = fw(ctx, 50)
-        assert.equal(r1.pathAction.type, "extend")
+        assert.equal(r1.stroke, "extend")
 
         const ctxUp = mkCtx(r1.transform, { down: false })
         const r2 = fw(ctxUp, 50)
-        assert.equal(r2.pathAction.type, "break")
+        assert.equal(r2.stroke, "break")
     })
 })

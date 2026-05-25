@@ -260,12 +260,20 @@ function lookupFn(frame, name, arity, args) {
     return frame.deps.mathEvaluator.run(body, ctx)
 }
 
+// Bounded mailbox push — drops oldest messages when full.
+function pushMailbox(frame, msg) {
+    frame.mailbox.push(msg)
+    while (frame.mailbox.length > frame.maxMailbox) {
+        frame.mailbox.shift()
+    }
+}
+
 // Deliver buffered shouts then clear the buffer.
 function flushDeferredShouts(shouts, registry) {
     for (const shout of shouts) {
         for (const [id, target] of registry) {
             if (target === shout.from) continue
-            target.mailbox.push({ name: shout.name, payload: shout.payload })
+            pushMailbox(target, { name: shout.name, payload: shout.payload })
         }
     }
     shouts.length = 0
@@ -312,6 +320,7 @@ function attachMeta(frame, targetFrame) {
     frame.commandCount = 0
     frame.elapsedTime = 0
     frame.actorState = null
+    frame.maxMailbox = 8192
     return frame
 }
 
@@ -323,8 +332,27 @@ function attachMeta(frame, targetFrame) {
 //
 // For frame-targeted children, events are projected to the target frame.
 // For normal children, events go to the child's own channel.
-// Returns array of deferred shouts (delivered after all siblings exist).
-function advanceChild(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts) {
+//
+// Uses an explicit stack (trampoline) so deeply nested spawn chains
+// don't overflow the JS call stack.
+function advanceChild(initialChild, now, createDeps, execOpts, channelCapacity, registry, deferredShouts) {
+    const stack = [initialChild]
+
+    while (stack.length > 0) {
+        const child = stack[stack.length - 1]
+        const spawned = drainUntilPause(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts)
+        if (spawned) {
+            stack.push(spawned)
+        } else {
+            child.inlineAdvancing = false
+            stack.pop()
+        }
+    }
+}
+
+// Drain a single child's generator until it pauses (wait/done/blocked/error)
+// or spawns a new child. Returns the spawned child frame, or null if paused.
+function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts) {
     // Frame-targeted: route non-head events to ancestor frame
     let frameTarget = null
     let frameTransform = null
@@ -334,7 +362,6 @@ function advanceChild(child, now, createDeps, execOpts, channelCapacity, registr
     }
 
     child.inlineAdvancing = true
-    try {
 
     while (true) {
         let value, done
@@ -345,7 +372,7 @@ function advanceChild(child, now, createDeps, execOpts, channelCapacity, registr
             child.generator = null
             child.error = error.message
             child.channel.put({ type: 'error', message: error.message, ambientId: child.id })
-            return
+            return null
         }
 
         if (done) {
@@ -358,7 +385,7 @@ function advanceChild(child, now, createDeps, execOpts, channelCapacity, registr
             }
             child.done = true
             child.generator = null
-            return
+            return null
         }
 
         if (value.type === "wait") {
@@ -377,23 +404,27 @@ function advanceChild(child, now, createDeps, execOpts, channelCapacity, registr
                     headSize: value.headSize
                 })
             }
-            return
+            return null
         }
 
         // Dataflow suspension: child blocked on unresolvable cross-ambient read.
         // Generator is paused at yield point — resumes on next tick via visitPostOrder.
         if (value.type === "blocked") {
-            return
+            return null
+        }
+
+        if (value.type === "limitMailbox") {
+            child.maxMailbox = value.limit
+            continue
         }
 
         if (value.type === "shout") {
             if (deferredShouts) {
-                // Buffer shouts — delivered after all siblings exist
                 deferredShouts.push({ from: child, name: value.name, payload: value.payload })
             } else {
                 for (const [id, t] of registry) {
                     if (t === child) continue
-                    t.mailbox.push({ name: value.name, payload: value.payload })
+                    pushMailbox(t, { name: value.name, payload: value.payload })
                 }
             }
             continue
@@ -432,8 +463,8 @@ function advanceChild(child, now, createDeps, execOpts, channelCapacity, registr
                 nestedDeps.worldOriginFn = () => groupTransform(nested)
                 child.children.set(value.name, nested)
                 registry.set(nested.id, nested)
-                // Recursively advance nested child inline
-                advanceChild(nested, now, createDeps, execOpts, channelCapacity, registry, deferredShouts)
+                // Return nested child for trampoline — stack-based, no recursion
+                return nested
             }
             continue
         }
@@ -450,10 +481,6 @@ function advanceChild(child, now, createDeps, execOpts, channelCapacity, registr
         } else {
             child.channel.put(value)
         }
-    }
-
-    } finally {
-        child.inlineAdvancing = false
     }
 }
 
@@ -574,12 +601,18 @@ export function createScheduler(generator, opts = {}) {
                         break
                     }
 
+                    // --- Directive: limitMailbox ---
+                    if (value.type === "limitMailbox") {
+                        ctx.maxMailbox = value.limit
+                        continue
+                    }
+
                     // --- Directive: shout ---
                     if (value.type === "shout") {
                         // Global broadcast: deposit into every other ambient's mailbox
                         for (const [id, target] of registry) {
                             if (target === ctx) continue  // don't shout to self
-                            target.mailbox.push({ name: value.name, payload: value.payload })
+                            pushMailbox(target, { name: value.name, payload: value.payload })
                         }
                         produced = true
                         continue
