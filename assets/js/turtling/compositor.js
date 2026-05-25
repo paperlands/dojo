@@ -164,9 +164,17 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
         // when multiple compositors share one renderer.
         advance(t) {
             if (epoch === null) epoch = t
+            const now = t - epoch
             if (!scheduler.done) {
-                scheduler.tick(t - epoch)
-                drainAndMaterialize()
+                // Multi-tick catch-up: process all expired waits this frame.
+                // Budget-capped to prevent runaway when programs produce
+                // many tiny waits faster than real time.
+                let budget = 64
+                let progress
+                do {
+                    progress = scheduler.tick(now)
+                    if (progress) drainAndMaterialize()
+                } while (progress && !scheduler.done && --budget > 0)
                 updateGroupPositions()
             }
             const scaleFactor = ctx.camera.position.distanceTo(ctx.head.position()) / 250

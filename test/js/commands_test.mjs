@@ -450,8 +450,8 @@ describe("COMMANDS map", () => {
         }
     })
 
-    test("matches expected command count (25)", () => {
-        assert.equal(COMMANDS.size, 25)
+    test("matches expected command count (26)", () => {
+        assert.equal(COMMANDS.size, 26)
     })
 })
 

@@ -1,6 +1,6 @@
 // Materializer — converts TurtleEvents into THREE.js scene objects.
 // Consumes executor events directly (tuple positions, clean field names).
-// No timeline, no intermediate data structures.
+// Material cache (spec A3): one LineMaterial per (color, thickness) key.
 
 import * as THREE from '../utils/three.core.min.js'
 import { ColorConverter } from '../utils/color.js'
@@ -8,6 +8,27 @@ import { Text } from '../utils/threetext'
 import { Line2 } from './render/line/Line2.js'
 import { LineMaterial } from './render/line/LineMaterial.js'
 import { LineGeometry } from './render/line/LineGeometry.js'
+
+// --- Material cache (spec A3) ---
+// Keyed by (color, thickness). Typical program uses 1-5 unique combinations.
+// Reuse eliminates duplicate GPU uniform buffers and reduces WebGL state switches.
+const materialCache = new Map()
+
+function getOrCreateMaterial(color, thickness) {
+    const key = `${color || 0xe77808}:${thickness || 2}`
+    let mat = materialCache.get(key)
+    if (!mat) {
+        mat = new LineMaterial({
+            color: color || 0xe77808,
+            linewidth: thickness || 2,
+            vertexColors: false,
+            dashed: false,
+        })
+        mat.resolution.set(window.innerWidth, window.innerHeight)
+        materialCache.set(key, mat)
+    }
+    return mat
+}
 
 // Materialize a single event into the scene.
 // groups = { pathGroup, gridGroup, glyphGroup }
@@ -56,7 +77,6 @@ function materializePath(event, pathGroup, shapist) {
     try {
         if (!event.points || event.points.length === 0) return
 
-        // Flatten [x,y,z] tuples to position array
         const positions = new Float32Array(event.points.length * 3)
         for (let i = 0; i < event.points.length; i++) {
             const p = event.points[i]
@@ -68,19 +88,12 @@ function materializePath(event, pathGroup, shapist) {
         const geometry = new LineGeometry()
         geometry.setPositions(positions)
 
-        const material = new LineMaterial({
-            color: event.color || 0xe77808,
-            linewidth: event.thickness || 2,
-            vertexColors: false,
-            dashed: false,
-        })
-        material.resolution.set(window.innerWidth, window.innerHeight)
-
+        const material = getOrCreateMaterial(event.color, event.thickness)
         const mesh = new Line2(geometry, material)
+        mesh.computeLineDistances()
         pathGroup.add(mesh)
 
         if (event.filled && shapist) {
-            // shapist expects {x,y,z} objects for polygon triangulation
             const polyPoints = event.points.map(p => ({ x: p[0], y: p[1], z: p[2] }))
             shapist.addPolygon(polyPoints, {
                 color: event.color,

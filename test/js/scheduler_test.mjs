@@ -1120,12 +1120,12 @@ describe("idempotent spawn semantics", () => {
 // ---------------------------------------------------------------------------
 
 describe("mailbox bounds", () => {
-    test("frame has maxMailbox default of 256", () => {
+    test("frame has maxMailbox default of 8192", () => {
         function* gen() {
             yield { type: "head", position: [0,0,0], rotation: {w:1,x:0,y:0,z:0}, color: '#f', headSize: 10 }
         }
         const scheduler = createScheduler(gen())
-        assert.equal(scheduler.root.maxMailbox, 256)
+        assert.equal(scheduler.root.maxMailbox, 8192)
     })
 
     test("limitMailbox directive changes frame maxMailbox", () => {

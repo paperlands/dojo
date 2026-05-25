@@ -27,6 +27,7 @@ function terminateAmbient(ctx) {
     for (const child of ctx.children.values()) {
         if (!child.done) terminateAmbient(child)
     }
+    unwireWorldCache(ctx)
     ctx.done = true
     ctx.channel.close()
 }
@@ -64,17 +65,26 @@ function findAncestorByName(ctx, name) {
 
 // Compose all ancestor transforms to map local (0,0,0) to world coordinates.
 // Root returns identity. Walks direct parent refs — no registry, no cycles.
+// Cached on frame._worldCache, invalidated via Atom.watch on ancestor transforms.
+// Only uses cache when watches are wired (_worldWatched flag set by wireWorldCacheInvalidation).
 function worldTransform(ctx) {
+    if (ctx._worldWatched && !ctx._worldDirty && ctx._worldCache) return ctx._worldCache
     const chain = []
     let current = ctx
     while (current.parent) {
         // Use this child's birth origin (parent's transform at spawn time)
         // so siblings each keep their own inherited position/orientation.
-        chain.unshift(current.origin || current.parent.transform.deref())
+        chain.push(current.origin || current.parent.transform.deref())
         current = current.parent
     }
-    if (chain.length === 0) return SE3.identity()
-    return chain.reduce((a, b) => SE3.compose(a, b))
+    if (chain.length === 0) {
+        ctx._worldCache = SE3.identity()
+    } else {
+        chain.reverse()
+        ctx._worldCache = chain.reduce((a, b) => SE3.compose(a, b))
+    }
+    ctx._worldDirty = false
+    return ctx._worldCache
 }
 
 // Group transform: the correct transform for positioning a child's THREE.Group.
@@ -336,6 +346,29 @@ function attachMeta(frame, targetFrame) {
     return frame
 }
 
+// Wire Atom.watch for worldTransform cache invalidation.
+// When a child's own transform or any ancestor's transform changes,
+// the child's cached worldTransform is invalidated.
+function wireWorldCacheInvalidation(child) {
+    // Invalidate when own transform changes
+    child.transform.watch('worldCache', () => { child._worldDirty = true })
+    // Invalidate when parent moves (affects child's world position)
+    if (child.parent) {
+        child.parent.transform.watch(`child:${child.id}`, () => {
+            child._worldDirty = true
+        })
+    }
+    child._worldWatched = true
+}
+
+// Unwatch when frame is terminated or removed.
+function unwireWorldCache(child) {
+    child.transform.unwatch('worldCache')
+    if (child.parent) {
+        child.parent.transform.unwatch(`child:${child.id}`)
+    }
+}
+
 // --- Inline child drain ---
 
 // Advance a child's generator inline until it hits a wait or completes.
@@ -401,7 +434,7 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
         }
 
         if (value.type === "wait") {
-            child.resumeAt = now + value.duration
+            child.resumeAt = (child.resumeAt > 0 ? child.resumeAt : now) + value.duration
             child.elapsedTime += value.duration / 1000
             if (value.position) {
                 child.transform.swap(() => ({
@@ -457,6 +490,7 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
             child.transform.swap(() => value.origin)
             const nestedExisting = child.children.get(value.name)
             if (nestedExisting) {
+                nestedExisting._worldDirty = true
                 if (nestedExisting.done && createDeps) {
                     nestedExisting.origin = value.origin
                     const re = createChildGenerator(value, createDeps, execOpts)
@@ -484,6 +518,7 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                 nested.mailbox = nestedMailbox
                 bindResolve(nestedDeps, nested)
                 nestedDeps.worldOriginFn = () => groupTransform(nested)
+                wireWorldCacheInvalidation(nested)
                 child.children.set(value.name, nested)
                 registry.set(nested.id, nested)
                 // Return nested child for trampoline — stack-based, no recursion
@@ -571,6 +606,12 @@ export function createScheduler(generator, opts = {}) {
                     }
                 }
 
+                // Cache worldOrigin for this tick — avoids repeated tree walks
+                // in executor's callCommand (goto/faceto/jmpto).
+                if (ctx.deps?.worldOriginFn) {
+                    ctx.deps._cachedWorldOrigin = ctx.deps.worldOriginFn()
+                }
+
                 while (!ctx.done) {
                     let value, done
                     try {
@@ -605,7 +646,7 @@ export function createScheduler(generator, opts = {}) {
 
                     // --- Directive: wait ---
                     if (value.type === "wait") {
-                        ctx.resumeAt = now + value.duration
+                        ctx.resumeAt = (ctx.resumeAt > 0 ? ctx.resumeAt : now) + value.duration
                         ctx.elapsedTime += value.duration / 1000
                         if (value.position) {
                             ctx.transform.swap(() => ({
@@ -664,6 +705,7 @@ export function createScheduler(generator, opts = {}) {
                             // Always update origin to track parent's evolving position.
                             // worldTransform reads origin → compositor repositions the group.
                             existing.origin = value.origin
+                            existing._worldDirty = true
 
                             if (existing.done && createDeps) {
                                 // Re-execute completed child with fresh fork spec.
@@ -700,6 +742,7 @@ export function createScheduler(generator, opts = {}) {
                             child.mailbox = childMailbox
                             bindResolve(childDeps, child)
                             childDeps.worldOriginFn = () => groupTransform(child)
+                            wireWorldCacheInvalidation(child)
                             ctx.children.set(value.name, child)
                             registry.set(child.id, child)
 

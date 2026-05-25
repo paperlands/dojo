@@ -318,9 +318,10 @@ function* callCommand(name, args, state, stroke) {
     state.commandCount++
 
     // World position for global-coordinate commands (goto, faceto, jmpto).
-    // worldOriginFn is wired by the scheduler for child frames;
-    // null for root → worldPosition = local position (identity frame).
-    const worldOrigin = state.deps.worldOriginFn ? state.deps.worldOriginFn() : null
+    // Per-tick cache set by scheduler avoids repeated tree walks.
+    // Falls back to worldOriginFn for inline-advanced frames.
+    const worldOrigin = state.deps._cachedWorldOrigin
+        ?? (state.deps.worldOriginFn ? state.deps.worldOriginFn() : null)
     const worldPosition = worldOrigin
         ? SE3.apply(worldOrigin, state.transform.position)
         : [...state.transform.position]

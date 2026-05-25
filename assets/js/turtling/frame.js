@@ -27,6 +27,10 @@ export function createFrame(name, generator, opts = {}) {
         origin: opts.origin || null,                          // parent's SE3 at birth (immutable)
         transform: createAtom(opts.transform || SE3.identity()),  // local pose (evolving)
 
+        // Spatial cache — invalidated via Atom.watch on ancestor transforms
+        _worldCache: null,
+        _worldDirty: true,
+
         // Execution
         generator,
         resumeAt: 0,
