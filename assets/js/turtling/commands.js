@@ -173,6 +173,16 @@ function wait(ctx, duration = 1) {
     }
 }
 
+function yieldCmd(ctx) {
+    return {
+        effects: [{
+            type: 'yield',
+            position: [ctx.transform.position[0], ctx.transform.position[1], ctx.transform.position[2]],
+            rotation: ctx.transform.rotation
+        }]
+    }
+}
+
 // --- Style commands ---
 
 function bold(ctx, x = 1) {
@@ -246,6 +256,7 @@ export const COMMANDS = new Map([
     ["home", home],
     ["fill", fill],
     ["wait", wait],
+    ["yield", yieldCmd],
     ["limitRecurse", limitRecurse],
     ["limitCommand", limitCommand],
     ["limitMessage", limitMessage],

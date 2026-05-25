@@ -279,6 +279,18 @@ function flushDeferredShouts(shouts, registry) {
     shouts.length = 0
 }
 
+// --- Cross-ambient observation flag ---
+// Wraps resolveBinding so the evaluator records when a dotted (cross-ambient)
+// name is read. The executor checks this flag at loop iteration boundaries
+// to auto-yield, giving sibling ambients a chance to advance.
+function bindResolve(deps, frame) {
+    deps.mathEvaluator.resolveExternal = (v, a) => {
+        const result = resolveBinding(frame, v, a)
+        if (v.includes('.')) deps.mathEvaluator._observedSibling = true
+        return result
+    }
+}
+
 // --- Child generator factory ---
 
 // Creates a child executor from a fork spec (spawn event).
@@ -407,6 +419,17 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
             return null
         }
 
+        // Cooperative yield: give other frames a turn, no temporal effect.
+        if (value.type === "yield") {
+            if (value.position) {
+                child.transform.swap(() => ({
+                    rotation: value.rotation,
+                    position: [...value.position]
+                }))
+            }
+            return null
+        }
+
         // Dataflow suspension: child blocked on unresolvable cross-ambient read.
         // Generator is paused at yield point — resumes on next tick via visitPostOrder.
         if (value.type === "blocked") {
@@ -440,7 +463,7 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                     nestedExisting.generator = re.generator
                     nestedExisting.deps = re.deps
                     nestedExisting.mailbox = re.mailbox
-                    re.deps.mathEvaluator.resolveExternal = (v, a) => resolveBinding(nestedExisting, v, a)
+                    bindResolve(re.deps, nestedExisting)
                     re.deps.worldOriginFn = () => groupTransform(nestedExisting)
                     nestedExisting.done = false
                     nestedExisting.error = null
@@ -459,7 +482,7 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                 )
                 nested.deps = nestedDeps
                 nested.mailbox = nestedMailbox
-                nestedDeps.mathEvaluator.resolveExternal = (v, a) => resolveBinding(nested, v, a)
+                bindResolve(nestedDeps, nested)
                 nestedDeps.worldOriginFn = () => groupTransform(nested)
                 child.children.set(value.name, nested)
                 registry.set(nested.id, nested)
@@ -498,7 +521,7 @@ export function createScheduler(generator, opts = {}) {
     // Wire root observation — root can read children via dotted access
     if (opts.rootDeps) {
         root.deps = opts.rootDeps
-        opts.rootDeps.mathEvaluator.resolveExternal = (v, a) => resolveBinding(root, v, a)
+        bindResolve(opts.rootDeps, root)
     }
     const registry = new Map([[root.id, root]])
 
@@ -601,6 +624,18 @@ export function createScheduler(generator, opts = {}) {
                         break
                     }
 
+                    // --- Directive: yield (cooperative scheduling) ---
+                    if (value.type === "yield") {
+                        if (value.position) {
+                            ctx.transform.swap(() => ({
+                                rotation: value.rotation,
+                                position: [...value.position]
+                            }))
+                        }
+                        produced = true
+                        break
+                    }
+
                     // --- Directive: limitMailbox ---
                     if (value.type === "limitMailbox") {
                         ctx.maxMailbox = value.limit
@@ -636,7 +671,7 @@ export function createScheduler(generator, opts = {}) {
                                 existing.generator = re.generator
                                 existing.deps = re.deps
                                 existing.mailbox = re.mailbox
-                                re.deps.mathEvaluator.resolveExternal = (v, a) => resolveBinding(existing, v, a)
+                                bindResolve(re.deps, existing)
                                 re.deps.worldOriginFn = () => groupTransform(existing)
                                 existing.done = false
                                 existing.error = null
@@ -663,7 +698,7 @@ export function createScheduler(generator, opts = {}) {
                             )
                             child.deps = childDeps
                             child.mailbox = childMailbox
-                            childDeps.mathEvaluator.resolveExternal = (v, a) => resolveBinding(child, v, a)
+                            bindResolve(childDeps, child)
                             childDeps.worldOriginFn = () => groupTransform(child)
                             ctx.children.set(value.name, child)
                             registry.set(child.id, child)

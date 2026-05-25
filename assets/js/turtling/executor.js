@@ -163,6 +163,16 @@ function* walkBody(body, scope, state, stroke) {
             const times = yield* evalOrBlock(node.value, scope, state)
             const prevCount = state.loopCounter
             for (let i = 0; i < times; i++) {
+                // Auto-yield: if previous iteration observed a sibling, yield
+                // before next step so all ambients advance in lockstep.
+                if (i > 0 && state.deps.mathEvaluator._observedSibling) {
+                    state.deps.mathEvaluator._observedSibling = false
+                    yield {
+                        type: 'yield',
+                        position: [...state.transform.position],
+                        rotation: state.transform.rotation
+                    }
+                }
                 state.loopCounter = i
                 yield* walkBody(node.children, scope, state, stroke)
             }
