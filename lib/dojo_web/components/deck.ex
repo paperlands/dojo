@@ -20,7 +20,8 @@ defmodule DojoWeb.DeckLive do
       {"faceto", "Face a Point", ["→": 0, "↑": 0]},
       {"dive", "Dive Into Page", [angle: 45]},
       {"roll", "Tilt Right", [angle: 45]},
-      {"beColour", "Set Colour to", [colour: "'red'"]},
+      {"fn", "Make a Formula", [shape: "avg[x,y]" ,output: "[x+y]/2"]},
+      {"beColour", "Change Colour to", [colour: "'red'"]},
       {"hide", "Hide your Head", nil},
       {"show", "Show your Head", [size: 10]},
       {"erase", "Wipe Everything", nil}
@@ -28,7 +29,8 @@ defmodule DojoWeb.DeckLive do
     control: [
       {"loop", "Repeat Commands", [times: 5]},
       {"def", "Name your Command", [name: "name"]},
-      {"as", "Summon a Helper", [name: "name", for: "?"]}
+      {"as", "Summon Assistant", [name: "name", target: "?"]},
+      {"when", "Do this if", [condition: "2>1", data: "?"]}
     ]
   }
 
