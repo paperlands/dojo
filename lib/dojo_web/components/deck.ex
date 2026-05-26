@@ -20,7 +20,7 @@ defmodule DojoWeb.DeckLive do
       {"faceto", "Face a Point", ["→": 0, "↑": 0]},
       {"dive", "Dive Into Page", [angle: 45]},
       {"roll", "Tilt Right", [angle: 45]},
-      {"fn", "Craft a Function", [shape: "avg[x,y]", output: "[x+y]/2"]},
+      {"fn", "Make a Function", [shape: "avg[x,y]", output: "[x+y]/2"]},
       {"beColour", "Change Colour to", [colour: "'red'"]},
       {"hide", "Hide your Head", nil},
       {"show", "Show your Head", [size: 10]},

@@ -85,7 +85,6 @@ defmodule DojoWeb.OuterShellLive do
         class="overflow-y-scroll relative border pointer-events-auto rounded-lg h-[50vh] border-amber-600/20 dark-scrollbar backdrop-blur-xs scrollbar-hide cursor-text"
       >
         <div class="z-50 absolute flex gap-1 top-2 right-2">
-
           <button
             phx-click="closeTurtle"
             phx-target={@myself}

@@ -558,8 +558,9 @@ defmodule DojoWeb.ShellLive do
   end
 
   def nerve(assigns) do
+    # future global chat/logging with tag like interface
     ~H"""
-    <div class="relative hidden rightthird nerve pt-10 right-2 w-full lg:-left-1/5 lg:w-[120%] ">
+    <div class="relative rightthird nerve pt-10  right-2 w-full lg:-left-1/5 lg:w-[120%] ">
       <div class="h-full w-full max-w-2xl mx-auto">
         <div class="relative h-full overflow-hidden">
           <div class="h-full overflow-y-auto space-y-1 text-sm">

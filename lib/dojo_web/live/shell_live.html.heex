@@ -194,9 +194,12 @@
 
 
             <!-- Command buttons always aligned to right and given prio -->
-  <div dir="rtl" class="grid grid-cols-2 sm:ltr  sm:flex flex-shrink-0 gap-1 ml-auto cursor-pointer pointer-events-auto justify-end">
-  <button
-  class="flex items-center justify-center w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+            <div
+              dir="rtl"
+              class="grid grid-cols-2 sm:ltr  sm:flex flex-shrink-0 gap-1 ml-auto cursor-pointer pointer-events-auto justify-end"
+            >
+              <button
+                class="flex items-center justify-center w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
                 phx-click={
                   JS.toggle(to: ".deck", in: "fade-in-scale", out: "fade-out-scale")
                   |> JS.toggle_class(
@@ -209,21 +212,21 @@
                   id="manualdeckbutton"
                   class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-secondary-content drop-shadow-sm drop-shadow-secondary-content fill-primary hover:rotate-[-40deg]"
                 />
-                </button>
+              </button>
 
               <.live_component
                 :if={Mix.env() !== :prod}
                 module={DojoWeb.HotspotLive}
                 id="hotspot"
                 username={binary_part(@session.name, 0, min(20, byte_size(@session.name)))}
-                />
-                                <.live_component
+              />
+              <.live_component
                 module={DojoWeb.LocalePickerLive}
                 id="locale-picker"
                 current_locale={@locale}
-                />
+              />
 
-                <button
+              <button
                 id="startrecording"
                 class="flex items-center justify-center w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8   rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
                 phx-click={
@@ -323,7 +326,6 @@
                 />
               </button>
 
-              
               <script :type={Phoenix.LiveView.ColocatedHook} name=".rtclick">
                 export default {
                     mounted() {
