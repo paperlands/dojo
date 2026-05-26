@@ -211,9 +211,11 @@ export class Turtle {
                 mathEvaluator: new Evaluator()
             }
 
-            const generator = execute(instructions, deps, { color: this.color })
+            const rootMailbox = []
+            const generator = execute(instructions, deps, { color: this.color, mailbox: rootMailbox })
 
             const scheduler = createScheduler(generator, {
+                rootMailbox,
                 createDeps: () => ({
                     mathParser: new Parser(),
                     mathEvaluator: new Evaluator()

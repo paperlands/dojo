@@ -282,7 +282,7 @@ function pushMailbox(frame, msg) {
 function flushDeferredShouts(shouts, registry) {
     for (const shout of shouts) {
         for (const [id, target] of registry) {
-            if (target === shout.from) continue
+            if (target === shout.from) continue  // already delivered to self
             pushMailbox(target, { name: shout.name, payload: shout.payload })
         }
     }
@@ -475,11 +475,13 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
         }
 
         if (value.type === "shout") {
+            // Deliver to self immediately so own when-handlers see it
+            pushMailbox(child, { name: value.name, payload: value.payload })
             if (deferredShouts) {
                 deferredShouts.push({ from: child, name: value.name, payload: value.payload })
             } else {
                 for (const [id, t] of registry) {
-                    if (t === child) continue
+                    if (t === child) continue  // already delivered to self
                     pushMailbox(t, { name: value.name, payload: value.payload })
                 }
             }
@@ -553,6 +555,8 @@ export function createScheduler(generator, opts = {}) {
         createFrame('root', generator, { channelCapacity }),
         null
     )
+    // Wire shared mailbox — same array the root executor reads from
+    if (opts.rootMailbox) root.mailbox = opts.rootMailbox
     // Wire root observation — root can read children via dotted access
     if (opts.rootDeps) {
         root.deps = opts.rootDeps
@@ -685,11 +689,10 @@ export function createScheduler(generator, opts = {}) {
 
                     // --- Directive: shout ---
                     if (value.type === "shout") {
-                        // Global broadcast: deposit into every other ambient's mailbox
-                        for (const [id, target] of registry) {
-                            if (target === ctx) continue  // don't shout to self
-                            pushMailbox(target, { name: value.name, payload: value.payload })
-                        }
+                        // Deliver to self immediately so own when-handlers see it
+                        pushMailbox(ctx, { name: value.name, payload: value.payload })
+                        // Defer for others — children may not exist yet
+                        deferredShouts.push({ from: ctx, name: value.name, payload: value.payload })
                         produced = true
                         continue
                     }
