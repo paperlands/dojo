@@ -34,11 +34,16 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_params(params, _url, socket) do
-    if connected?(socket), do: Dojo.PubSub.subscribe("dojo:hotspot")
+    clan = params["clan"] || "PaperLand"
+
+    if connected?(socket) do
+      Dojo.PubSub.subscribe("dojo:hotspot")
+      Dojo.Nerve.subscribe(clan)
+    end
 
     {:noreply,
      socket
-     |> join_clan(params["clan"] || "PaperLand")
+     |> join_clan(clan)
      |> sync_session()}
   end
 
@@ -256,6 +261,18 @@ defmodule DojoWeb.ShellLive do
     {:noreply, push_event(socket, "forkBuffer", fork_data)}
   end
 
+  # --- Nerve signal relay ---
+
+  def handle_info({Dojo.PubSub, :nerve, signal}, socket) do
+    ref =
+      case find_reg_key(socket.assigns.disciples, signal.source) do
+        nil -> nil
+        key -> %{key: key}
+      end
+
+    {:noreply, push_event(socket, "nerveIncoming", Map.put(signal, :ref, ref))}
+  end
+
   def handle_info(event, socket) do
     IO.inspect(event, label: "pokemon catch event")
 
@@ -434,6 +451,12 @@ defmodule DojoWeb.ShellLive do
     {:noreply, assign(socket, focused_name: new_name)}
   end
 
+  def handle_event("nerveGlobal", %{"target" => target, "body" => body}, socket) do
+    %{assigns: %{clan: clan, session: %{name: name}}} = socket
+    Dojo.Nerve.chat(clan, name, target, body)
+    {:noreply, socket}
+  end
+
   # pokemon clause
   def handle_event(
         e,
@@ -550,123 +573,17 @@ defmodule DojoWeb.ShellLive do
   defp bump_path_time(nil, _time), do: nil
   defp bump_path_time(path, time), do: Regex.replace(~r/\?t=\d+/, path, "?t=#{time}")
 
+  defp find_reg_key(disciples, name) do
+    Enum.find_value(disciples, fn {key, %{name: n}} ->
+      if n == name, do: key
+    end)
+  end
+
   defp outer_shell_payload(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
     turtle
     |> Map.from_struct()
     |> Map.put(:addr, shell.addr)
     |> Map.put(:origin_name, shell.name)
-  end
-
-  def nerve(assigns) do
-    # future global chat/logging with tag like interface
-    ~H"""
-    <div class="relative rightthird nerve pt-10  right-2 w-full lg:-left-1/5 lg:w-[120%] ">
-      <div class="h-full w-full max-w-2xl mx-auto">
-        <div class="relative h-full overflow-hidden">
-          <div class="h-full overflow-y-auto space-y-1 text-sm">
-            <p class="text-primary-content">远山如黛</p>
-            <p class="text-primary">The mountains fade into mist</p>
-            <p class="text-primary-content">江流天地外</p>
-            <p class="text-primary">Rivers flow beyond heaven and earth</p>
-          </div>
-
-          <div class="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-transparent to-black/100   pointer-events-none">
-          </div>
-        </div>
-      </div>
-    </div>
-    """
-  end
-
-  def memory_well(assigns) do
-    ~H"""
-    <!-- Memory Well Component (memory_well.html.heex) -->
-    <div class="fixed flex flex-col w-64 top-1/4 h-4/5 right-5 bottom-20">
-      <!-- Header -->
-      <div class="flex items-center justify-between p-4 mb-2 border-b border-amber-600/50">
-        <h2 class="text-xl font-bold text-amber-200">Memory Well</h2>
-        
-    <!-- View Toggle -->
-        <div class="flex space-x-2">
-          <button
-            phx-click="store-memory"
-            class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-primary/50 backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0"
-          >
-            <.save class="w-4 h-4 text-amber-400" />
-          </button>
-        </div>
-      </div>
-      
-    <!-- Viewing Pane -->
-      <div class="flex-1 overflow-y-auto p-2 dark-scrollbar">
-        <div class="space-y-3">
-          <%= for mmr <- @memories do %>
-            <div
-              :if={Map.has_key?(mmr, :meta)}
-              class="flex items-center p-3 transition-colors rounded-lg bg-primary-900/70 hover:bg-primary-800/70"
-            >
-              <!-- Thumbnail -->
-              <div class="flex-shrink-0 w-16 h-16 mr-4 overflow-hidden rounded">
-                <img src={mmr.meta.path} class="object-cover w-full h-full" />
-              </div>
-              
-    <!-- Info -->
-              <div class="flex-1 min-w-0">
-                <h3 class="text-sm font-bold text-primary-content truncate">{"title here"}</h3>
-                <p class="text-xs text-amber-400/60">{"date here"}</p>
-              </div>
-              
-    <!-- Actions -->
-              <div class="flex ml-2 space-x-2">
-                <button
-                  phx-click="view-item"
-                  phx-value-id={mmr.phx_ref}
-                  class="p-2 transition-colors rounded-full bg-amber-900/70 hover:bg-amber-800"
-                >
-                  <svg
-                    class="w-4 h-4 text-primary-content"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <circle cx="11" cy="11" r="8" />
-                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                  </svg>
-                </button>
-                <button
-                  phx-click="download-item"
-                  phx-value-id={mmr.phx_ref}
-                  class="p-2 transition-colors rounded-full bg-amber-900/70 hover:bg-amber-800"
-                >
-                  <svg
-                    class="w-4 h-4 text-primary-content"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          <% end %>
-        </div>
-      </div>
-      <!-- Decorative corners -->
-      <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-2 -left-4 border-amber-400"></div>
-      <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-2 right-1 border-amber-400"></div>
-      <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-2 -left-4 border-amber-400"></div>
-      <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-2 right-1 border-amber-400"></div>
-    </div>
-    """
   end
 
   def export(assigns) do

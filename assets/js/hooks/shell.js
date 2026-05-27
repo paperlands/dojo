@@ -4,6 +4,8 @@ import { cameraBridge } from "../bridged.js"
 import { computePosition, offset } from "../../vendor/floating-ui.dom.umd.min";
 import { temporal } from "../utils/temporal.js"
 import {printAST} from "../turtling/parse.js"
+import { nerveInstance } from "./nerve.js"
+import { signals as S } from "../nerve/store.js"
 
 // Module-level CM6 cache — loaded once on first Shell mount, reused thereafter.
 // The browser also caches the ES module natively by URL.
@@ -443,9 +445,16 @@ const Shell = {
             ];
         } else {
             const canvas = document.getElementById('core-canvas');
-            const output = document.getElementById('core-output');
             const turtle = new Turtle(canvas);
+            canvas.__turtle = turtle;
             coreTurtle = turtle;
+
+            // C10: _onShout must precede term.bridge.sub which triggers first render
+            // C4: tabId captured in upsertAmbient closure, arrives as first arg
+            turtle._onShout = (tabId, source, msg, payload) => {
+                nerveInstance?.push(S.shout(source, msg, payload, tabId))
+            }
+
             innerTerminal = term;
 
             const renderCommand   = commands.render(turtle);
@@ -454,12 +463,22 @@ const Shell = {
             const saveImage       = commands.saveImage();
             const saveRecording   = commands.saveRecording();
 
-            const display = mutators.display(output);
             const slider  = mutators.slider('slider');
 
+            function parseErrorLine(message) {
+                const m = message.match(/at line (\d+)/)
+                return m ? parseInt(m[1], 10) : null
+            }
+
             const debouncedRender = temporal.debounce((code) => {
+                nerveInstance?.store.run()
                 const result = renderCommand(code);
-                result.success ? display.success(result.commandCount) : display.error(result.error);
+                if (result.success) {
+                    nerveInstance?.push(S.output("☀︎", result.commandCount))
+                } else {
+                    const line = parseErrorLine(result.error)
+                    nerveInstance?.push(S.error("error", result.error, line ? { line } : null))
+                }
             }, 20);
 
             term.bridge.sub(debouncedRender);
@@ -481,6 +500,8 @@ const Shell = {
                 }
             });
             term.inner();
+            // Expose CM6 view on the textarea so nerve hook can scrollToLine
+            this.el.__cm = term.shell;
 
             this.cleanup = [
                 listeners.keyboard(term.shell, cm6).mount(),

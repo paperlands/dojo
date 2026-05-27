@@ -392,3 +392,98 @@
   }
 
 }
+
+/* === Nerve HUD — typographic marginalia === */
+
+@keyframes hud-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes hud-fade {
+  0%   { opacity: 0.9; }
+  75%  { opacity: 0.6; }
+  100% { opacity: 0; }
+}
+
+/* Container */
+#nerve-hud { overflow: visible; }
+
+/* Shared typographic atoms */
+.nerve-source  { cursor: pointer; opacity: 0.5; flex-shrink: 0; }
+.nerve-source:hover { opacity: 1; text-decoration: underline; }
+.nerve-msg     { opacity: 0.85; word-break: break-word; }
+
+/* --- Chat zone --- */
+
+.nerve-hud-zone {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 0;
+}
+
+.nerve-hud-msg {
+  animation: hud-enter 200ms ease-out, hud-fade var(--hud-fade, 10s) ease-in forwards;
+  animation-delay: 0s, 200ms;
+  padding-left: 1ch;
+  display: flex;
+  gap: 0.5ch;
+  line-height: 1.4;
+}
+
+/* Channel source colors — only per-channel variation */
+.nerve-shout .nerve-source { color: oklch(0.78 0.15 85); }
+.nerve-chat  .nerve-source { color: oklch(0.82 0.08 200); }
+.nerve-eval  .nerve-source { color: oklch(0.80 0.16 160); }
+
+/* --- Status zone --- */
+
+.nerve-hud-status-line {
+  animation: hud-enter 150ms ease-out, hud-fade var(--hud-fade, 60s) ease-in forwards;
+  animation-delay: 0s, 150ms;
+  padding-left: 1ch;
+  display: flex;
+  gap: 0.5ch;
+  line-height: 1.4;
+  font-size: 0.65rem;
+}
+
+/* Status channels — typographic differentiation only */
+.nerve-hud-status-line.nerve-error {
+  color: var(--color-error);
+  text-shadow: 0 0 8px oklch(0.58 0.24 27 / 0.3);
+}
+.nerve-hud-status-line.nerve-error .nerve-msg { opacity: 1; }
+
+.nerve-hud-status-line.nerve-output { color: var(--color-primary); }
+.nerve-hud-status-line.nerve-system { font-style: italic; }
+
+/* --- Log panel — expanded history, click to open, click-outside to close --- */
+
+.nerve-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 50dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 0;
+  background: oklch(0.08 0.01 280 / 0.85);
+  backdrop-filter: blur(6px);
+  border-radius: 3px;
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.3 0 0 / 0.4) transparent;
+}
+
+.nerve-log .nerve-hud-msg {
+  animation: none;
+  opacity: 0.9;
+  border-radius: 0;
+}
+
+.nerve-log .nerve-hud-msg:hover {
+  background: oklch(0.2 0.01 280 / 0.3);
+}
+
+/* No-fade — static slots inside log */
+.nerve-no-fade { animation: none !important; opacity: 0.9; }

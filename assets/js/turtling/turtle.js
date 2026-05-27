@@ -221,7 +221,10 @@ export class Turtle {
                     mathEvaluator: new Evaluator()
                 }),
                 execOpts: { color: this.color },
-                rootDeps: deps
+                rootDeps: deps,
+                onShout: (sourceName, msg, payload) => {
+                    this._onShout?.(tabId, sourceName, msg, payload)
+                }
             })
 
             const isFocused = (tabId === this.focusedId)

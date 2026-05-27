@@ -380,12 +380,12 @@ function unwireWorldCache(child) {
 //
 // Uses an explicit stack (trampoline) so deeply nested spawn chains
 // don't overflow the JS call stack.
-function advanceChild(initialChild, now, createDeps, execOpts, channelCapacity, registry, deferredShouts) {
+function advanceChild(initialChild, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout) {
     const stack = [initialChild]
 
     while (stack.length > 0) {
         const child = stack[stack.length - 1]
-        const spawned = drainUntilPause(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts)
+        const spawned = drainUntilPause(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout)
         if (spawned) {
             stack.push(spawned)
         } else {
@@ -397,7 +397,7 @@ function advanceChild(initialChild, now, createDeps, execOpts, channelCapacity, 
 
 // Drain a single child's generator until it pauses (wait/done/blocked/error)
 // or spawns a new child. Returns the spawned child frame, or null if paused.
-function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts) {
+function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout) {
     // Frame-targeted: route non-head events to ancestor frame
     let frameTarget = null
     let frameTransform = null
@@ -485,6 +485,7 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                     pushMailbox(t, { name: value.name, payload: value.payload })
                 }
             }
+            if (onShout) onShout(child.name, value.name, value.payload)
             continue
         }
 
@@ -550,6 +551,7 @@ export function createScheduler(generator, opts = {}) {
     const channelCapacity = opts.channelCapacity || 4096
     const createDeps = opts.createDeps || null
     const execOpts = opts.execOpts || {}
+    const onShout = opts.onShout || null
 
     const root = attachMeta(
         createFrame('root', generator, { channelCapacity }),
@@ -693,6 +695,7 @@ export function createScheduler(generator, opts = {}) {
                         pushMailbox(ctx, { name: value.name, payload: value.payload })
                         // Defer for others — children may not exist yet
                         deferredShouts.push({ from: ctx, name: value.name, payload: value.payload })
+                        if (onShout) onShout(ctx.name, value.name, value.payload)
                         produced = true
                         continue
                     }
@@ -723,7 +726,7 @@ export function createScheduler(generator, opts = {}) {
                                 existing.channel.drain()
                                 existing.channel.put({ type: 'clear' })
                                 flushDeferredShouts(deferredShouts, registry)
-                                advanceChild(existing, now, createDeps, execOpts, channelCapacity, registry, deferredShouts)
+                                advanceChild(existing, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout)
                                 produced = true
                             }
                             // Running and not done → idempotent no-op
@@ -754,7 +757,7 @@ export function createScheduler(generator, opts = {}) {
                             flushDeferredShouts(deferredShouts, registry)
                             // Advance child inline so its state is observable
                             // immediately by subsequent parent code.
-                            advanceChild(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts)
+                            advanceChild(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout)
                         }
                         produced = true
                         continue

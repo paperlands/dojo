@@ -110,12 +110,6 @@
           phx-hook="Shell"
           data-target="core"
         />
-        <div
-          phx-update="ignore"
-          id="core-output"
-          class="fixed opacity-80 transition-colors delay-150 duration-300 -bottom-[35px] overflow-y-auto pb-1 font-mono border-none text-primary left-2"
-        >
-        </div>
       </div>
       <!-- Code Output -->
 
@@ -338,31 +332,6 @@
                     }
                 }
               </script>
-              
-<!-- <button -->
-              <!--   class="relative w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 mx-2  rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation" -->
-              <!--   phx-click={ -->
-              <!--     (@outershell.active && -->
-              <!--        JS.dispatch("phx:outerkeepCanvas", -->
-              <!--          detail: %{"title" => @outershell.name <> "'s creation"} -->
-              <!--        )) || -->
-              <!--       JS.dispatch("phx:selfkeepCanvas", -->
-              <!--         detail: %{"title" => @session.name <> "'s creation"} -->
-              <!--       ) -->
-              <!--   } -->
-              <!-- > -->
-              <!--   <.save class="w-4 h-4 duration-700  transition-transform duration-700  " /> -->
-                <!-- </button> -->
-              
-
-              
-              <!-- <button -->
-              <!--   class="relative w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation" -->
-              <!--   phx-click={JS.hide(to: ".rightthird", transition: "fade-out-scale") |> JS.toggle(to: ".nerve", in: "fade-in-scale", out: "fade-out-scale")} -->
-              <!-- > -->
-              <!--   <.tyger class="w-7 h-7" /> -->
-                <!-- </button> -->
-
             </div>
           </div>
           <!-- Decorative corners (smaller size for subtlety) -->
@@ -384,7 +353,13 @@
         locale={@locale}
       />
       <.live_component module={DojoWeb.DeckLive} id="command-deck" locale={@locale} />
-      <!-- <.nerve messages={@disciples} /> -->
+      <div
+        id="nerve-hud"
+        phx-hook="NerveHook"
+        phx-update="ignore"
+        class="fixed bottom-4 left-4 z-30 flex flex-col-reverse gap-0.5 pointer-events-none font-mono text-xs w-[min(40ch,calc(100vw-2rem))] lg:w-[50ch] max-h-[33dvh]"
+      >
+      </div>
     </div>
     <!-- <div class="backdrop-blur-sm border border-gray-700/50 rounded-lg p-4"/> -->
     <!-- Bottom Pane - Visual Previews (spans both columns) -->
