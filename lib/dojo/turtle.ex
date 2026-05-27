@@ -1,5 +1,11 @@
 defmodule Dojo.Turtle do
-  defstruct state: :hatch, path: nil, commands: [], source: nil, message: nil, time: nil
+  defstruct state: :hatch,
+            path: nil,
+            commands: [],
+            source: nil,
+            message: nil,
+            time: nil,
+            buffer_id: nil
 
   def reflect(%{"state" => "success"} = body, opts) do
     body

@@ -487,3 +487,81 @@
 
 /* No-fade — static slots inside log */
 .nerve-no-fade { animation: none !important; opacity: 0.9; }
+
+/* === CM6 Merge View — Shanshui CRT glow aesthetic === */
+
+/* Changed lines — bamboo mist */
+.cm-changedLine {
+    background: rgba(100, 150, 30, 0.1);
+    border-left: 2px solid rgba(180, 200, 150, 0.3);
+}
+
+.cm-changedLineGutter {
+    background: rgba(100, 150, 30, 0.08);
+}
+
+/* Changed text — saffron orange for remote iterations */
+.cm-changedText {
+    background: rgba(255, 153, 51, 0.25);
+    border-bottom: 1px solid rgba(255, 153, 51, 0.5);
+    box-shadow: 0 0 8px rgba(255, 153, 51, 0.15);
+}
+
+/* Inserted lines — misty green glow */
+.cm-insertedLine {
+    background: rgba(50, 180, 30, 0.2);
+    border-bottom: 1px solid rgba(100, 180, 30, 0.5);
+    box-shadow: 0 0 15px rgba(100, 250, 30, 0.12);
+}
+
+/* Deleted chunk — faded ink wash */
+.cm-deletedChunk {
+    background: rgba(140, 160, 140, 0.05);
+    border: 1px solid rgba(140, 160, 140, 0.12);
+    opacity: 0.6;
+}
+
+.cm-deletedLine {
+    background: rgba(100, 22, 24, 0.15);
+    opacity: 0.7;
+}
+
+.cm-deletedText {
+    text-decoration: line-through;
+    opacity: 0.5;
+}
+
+/* Change gutter — saffron accent */
+.cm-changeGutter .cm-gutterElement {
+    color: rgba(255, 153, 51, 0.6);
+}
+
+/* Hide merge buttons — non-interactive in outershell comparison mode */
+.cm-merge-revert,
+.cm-chunkButtons {
+    display: none;
+}
+
+/* Structural — transparent to inherit editor theme */
+.cm-mergeView,
+.cm-mergeViewEditor {
+    background: transparent;
+}
+
+/* Light theme overrides — muted, no glow */
+[data-theme="light"] .cm-changedText {
+    background: rgba(245, 125, 38, 0.15);
+    border-bottom: 1px solid rgba(245, 125, 38, 0.3);
+    box-shadow: none;
+}
+
+[data-theme="light"] .cm-insertedLine {
+    background: rgba(141, 161, 1, 0.12);
+    border-bottom: 1px solid rgba(141, 161, 1, 0.25);
+    box-shadow: none;
+}
+
+[data-theme="light"] .cm-deletedLine {
+    background: rgba(248, 85, 82, 0.1);
+}
+

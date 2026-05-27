@@ -45,6 +45,7 @@ defmodule DojoWeb.OuterShellLive do
            source: source_turtle.source,
            name: name,
            addr: addr,
+           buffer_id: source_turtle.buffer_id,
            time: source_turtle.time
          }}
       )

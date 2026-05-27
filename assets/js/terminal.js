@@ -61,6 +61,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         compartments: null,   // { theme, lang, merge } — Compartment handles
         autosaveTimer: null,
         mergeOriginals: new Map(),  // addr → latest outershell content (for lazy merge updates)
+        mergeActive: false,           // true while outershell mode is active
     };
 
     let shell = null;         // CM6 EditorView — inherently mutable
@@ -98,6 +99,9 @@ export const createTerminal = (element, cm6, options = {}) => {
         bridge.pub(content);
     };
 
+    // Composite key for merge originals — addr alone isn't unique when remote user has multiple tabs
+    const mergeKey = (origin) => origin?.buffer_id ? `${origin.addr}:${origin.buffer_id}` : origin?.addr;
+
     // Create an EditorState for a buffer's content, using the shared extension array.
     // Critical: all states share the same Compartment instances for live reconfiguration.
     const createDoc = (content) =>
@@ -111,7 +115,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         }
     };
 
-    const doSelectBuffer = (id) => {
+    const doSelectBuffer = (id, { offset } = {}) => {
         if (!state.collection.items.has(id)) throw new Error(`Buffer '${id}' not found`);
 
         // 1. Save current (CM6 concern)
@@ -124,17 +128,34 @@ export const createTerminal = (element, cm6, options = {}) => {
         // 3. Swap view (CM6 concern)
         editorView.swapState(shell, state.docs.get(id));
         reapplyCompartments(shell, state.compartments, cm6, opts.theme, themes);
-        editorView.cursorToEnd(shell, cm6);
-        shell.focus();
 
-        // 4. Apply pending merge original (lazy update for background buffers)
+        // 3b. Restore merge compartment for fork buffers only while outershell is active
         const selectedBuffer = state.collection.items.get(id);
-        if (selectedBuffer.origin?.addr && state.mergeOriginals.has(selectedBuffer.origin.addr)) {
-            const mergeContent = state.mergeOriginals.get(selectedBuffer.origin.addr);
-            if (cm6.updateOriginalDoc) {
-                shell.dispatch({ effects: cm6.updateOriginalDoc.of(cm6.Text.of(mergeContent.split('\n'))) });
+        if (state.mergeActive && selectedBuffer.origin?.addr && cm6.unifiedMergeView && state.compartments?.merge) {
+            const originalContent = state.mergeOriginals.get(mergeKey(selectedBuffer.origin))
+                                  || selectedBuffer.origin.source;
+            if (originalContent) {
+                shell.dispatch({
+                    effects: state.compartments.merge.reconfigure(
+                        cm6.unifiedMergeView({
+                            original: cm6.Text.of(originalContent.split('\n')),
+                            highlightChanges: true,
+                            gutter: true,
+                        })
+                    ),
+                });
             }
+        } else if (state.compartments?.merge) {
+            shell.dispatch({ effects: state.compartments.merge.reconfigure([]) });
         }
+
+        // 4. Cursor positioning
+        if (offset != null) {
+            editorView.cursorTo(shell, cm6, offset);
+        } else {
+            editorView.cursorToEnd(shell, cm6);
+        }
+        shell.focus();
 
         // 5. Effects (each independent)
         triggerBridge();
@@ -152,6 +173,8 @@ export const createTerminal = (element, cm6, options = {}) => {
 
         // shell getter — shell.js listeners need the EditorView directly
         get shell() { return shell; },
+
+        currentBufferId() { return state.collection?.currentId; },
 
         inner() {
             const { extensions, compartments } = buildExtensions(cm6, {
@@ -281,63 +304,114 @@ export const createTerminal = (element, cm6, options = {}) => {
             return id;
         },
 
-        findFork(addr) {
+        findFork(addr, buffer_id) {
             for (const [id, buffer] of state.collection.items) {
-                if (buffer.origin?.addr === addr) return id;
+                if (buffer.origin?.addr === addr && (!buffer_id || buffer.origin?.buffer_id === buffer_id)) return id;
             }
             return null;
         },
 
-        forkBuffer({ source, name, addr, time }) {
+        forkBuffer({ source, name, addr, buffer_id, time, offset, key }) {
             if (!source || !addr) return;
+            state.mergeActive = true;
 
-            // If a fork from this addr already exists, switch to it
-            const existing = this.findFork(addr);
+            const selectAndReplay = (id) => {
+                doSelectBuffer(id, { offset });
+                // Only replay printable characters — structural keys (Enter, Backspace, etc.)
+                // are editing gestures, not literal inserts. The user presses them again
+                // in the fork with full CM6 support (auto-indent, bracket matching).
+                if (key?.length === 1 && shell) {
+                    shell.dispatch(shell.state.replaceSelection(key));
+                }
+            };
+
+            const existing = this.findFork(addr, buffer_id);
             if (existing) {
-                doSelectBuffer(existing);
+                const existingBuffer = state.collection.items.get(existing);
+
+                // Remote user iterated on the same tab — create new merge tab
+                if (existingBuffer.origin?.source !== source) {
+                    const forkContent = state.docs.has(existing)
+                        ? state.docs.get(existing).doc.toString()
+                        : existingBuffer.content;
+
+                    const bufferName = name ? `${name}'s fork (merge)` : 'fork (merge)';
+                    const origin = { addr, buffer_id, source, time, name };
+                    const { collection, id } = buffers.addBuffer(
+                        state.collection, { name: bufferName, content: forkContent, origin }, names, idGen
+                    );
+                    state.collection = collection;
+                    state.docs.set(id, createDoc(forkContent));
+                    tabs.addTab(id, bufferName);
+                    selectAndReplay(id);
+                    return id;
+                }
+
+                // Same code — switch to existing tab, continue editing
+                selectAndReplay(existing);
                 return existing;
             }
 
             const bufferName = name ? `${name}'s fork` : 'fork';
-            const origin = { addr, source, time, name };
+            const origin = { addr, buffer_id, source, time, name };
             const { collection, id } = buffers.addBuffer(
                 state.collection, { name: bufferName, content: source, origin }, names, idGen
             );
             state.collection = collection;
             state.docs.set(id, createDoc(source));
             tabs.addTab(id, bufferName);
-            doSelectBuffer(id);
-
-            // Configure merge extension with the original source
-            if (cm6.unifiedMergeView && state.compartments?.merge) {
-                shell.dispatch({
-                    effects: state.compartments.merge.reconfigure(
-                        cm6.unifiedMergeView({
-                            original: cm6.Text.of(source.split('\n')),
-                            highlightChanges: true,
-                            gutter: true,
-                        })
-                    ),
-                });
-            }
-
+            selectAndReplay(id);
             return id;
         },
 
-        updateMergeOriginal(content, addr) {
-            state.mergeOriginals.set(addr, content);
+        updateMergeOriginal(content, addr, buffer_id) {
+            const key = buffer_id ? `${addr}:${buffer_id}` : addr;
+            state.mergeOriginals.set(key, content);
 
-            // If the active buffer's origin matches, update merge original now
+            // Only update live diff if the current fork matches this addr:buffer_id
             const current = buffers.currentBuffer(state.collection);
-            if (current?.origin?.addr === addr && cm6.updateOriginalDoc && shell) {
+            if (state.mergeActive && current?.origin?.addr === addr
+                && (!buffer_id || current.origin.buffer_id === buffer_id)
+                && cm6.updateOriginalDoc && shell) {
                 shell.dispatch({
                     effects: cm6.updateOriginalDoc.of(cm6.Text.of(content.split('\n'))),
                 });
             }
         },
 
+        // Outershell activated — show merge diff for current fork buffer
+        resumeMerge() {
+            state.mergeActive = true;
+            const current = buffers.currentBuffer(state.collection);
+            if (current?.origin?.addr && cm6.unifiedMergeView && state.compartments?.merge && shell) {
+                const originalContent = state.mergeOriginals.get(mergeKey(current.origin))
+                                      || current.origin.source;
+                if (originalContent) {
+                    shell.dispatch({
+                        effects: state.compartments.merge.reconfigure(
+                            cm6.unifiedMergeView({
+                                original: cm6.Text.of(originalContent.split('\n')),
+                                highlightChanges: true,
+                                gutter: true,
+                            })
+                        ),
+                    });
+                }
+            }
+        },
+
+        // Outershell deactivated — accept local changes, hide merge
+        suspendMerge() {
+            state.mergeActive = false;
+            if (state.compartments?.merge && shell) {
+                shell.dispatch({
+                    effects: state.compartments.merge.reconfigure([]),
+                });
+            }
+        },
+
         clearMerge() {
-            // Remove merge extension from the active buffer
+            state.mergeActive = false;
             if (state.compartments?.merge && shell) {
                 shell.dispatch({
                     effects: state.compartments.merge.reconfigure([]),

@@ -67,6 +67,15 @@ export const cursorToEnd = (view, cm6) => {
     view.dispatch({ selection: EditorSelection.cursor(endPos) });
 };
 
+export const cursorTo = (view, cm6, offset) => {
+    const { EditorSelection } = cm6;
+    const pos = Math.min(Math.max(0, offset), view.state.doc.length);
+    view.dispatch({
+        selection: EditorSelection.cursor(pos),
+        scrollIntoView: true,
+    });
+};
+
 // Toggle # comments on selected lines — single dispatch for atomic undo.
 export const toggleComment = (view) => {
     const state = view.state;

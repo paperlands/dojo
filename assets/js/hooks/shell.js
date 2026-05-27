@@ -330,6 +330,7 @@ const Shell = {
             // Outershell metadata — captured from seeOuterShell payloads for client-side forking
             let outerAddr = null;
             let outerName = null;
+            let outerBufferId = null;
             let outerFocused = true;  // outershell starts focused when first opened
 
             const debouncedGuestRender = temporal.debounce((code) => {
@@ -357,17 +358,20 @@ const Shell = {
                 const source = term.getValue();
                 if (!source || !outerAddr) return;
 
+                // Exact cursor offset — same content, so offset maps 1:1 to fork
+                const offset = term.shell?.state?.selection?.main?.head ?? 0;
+
                 innerTerminal.forkBuffer({
                     source,
                     name: outerName || 'friend',
                     addr: outerAddr,
+                    buffer_id: outerBufferId,
                     time: Date.now(),
+                    offset,
+                    key: e.key,
                 });
 
-                // Focus inner shell — ambient swap happens via onOuterBlur
                 innerTerminal.shell?.focus();
-
-                // Disarm: fork triggers once per disciple session
                 term.shell.dom.removeEventListener('keydown', forkOnType);
             };
 
@@ -384,14 +388,15 @@ const Shell = {
                 // Capture outershell metadata for fork provenance
                 if (payload?.addr) outerAddr = payload.addr;
                 if (payload?.origin_name) outerName = payload.origin_name;
+                if (payload?.buffer_id) outerBufferId = payload.buffer_id;
 
                 if (payload?.state === "success" && payload?.commands) {
                     const code = printAST(payload.commands);
                     term.changeouter(code);
                     debouncedGuestRender(code);
-                    // Update merge original in inner shell for live diff tracking
-                    if (innerTerminal && outerAddr) {
-                        innerTerminal.updateMergeOriginal(code, outerAddr);
+                    // Update merge original — keyed by addr:buffer_id so tab switches don't trigger false diffs
+                    if (innerTerminal && outerAddr && outerBufferId) {
+                        innerTerminal.updateMergeOriginal(code, outerAddr, outerBufferId);
                     }
                 } else {
                     // Peek: show raw broken source, don't render
@@ -452,6 +457,7 @@ const Shell = {
             // C10: _onShout must precede term.bridge.sub which triggers first render
             // C4: tabId captured in upsertAmbient closure, arrives as first arg
             turtle._onShout = (tabId, source, msg, payload) => {
+                if (tabId !== 'default') return
                 nerveInstance?.push(S.shout(source, msg, payload, tabId))
             }
 
@@ -470,6 +476,7 @@ const Shell = {
                 return m ? parseInt(m[1], 10) : null
             }
 
+            
             const debouncedRender = temporal.debounce((code) => {
                 nerveInstance?.store.run()
                 const result = renderCommand(code);
@@ -481,10 +488,13 @@ const Shell = {
                 }
             }, 20);
 
-            term.bridge.sub(debouncedRender);
+                term.bridge.sub(debouncedRender);
 
             const debouncedHatch = temporal.debounce(
-                (payload) => this.pushEvent("hatchTurtle", payload),
+                (payload) => this.pushEvent("hatchTurtle", {
+                    ...payload,
+                    buffer_id: term.currentBufferId(),
+                }),
                 200
             );
 
