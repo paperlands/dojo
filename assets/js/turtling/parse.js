@@ -372,7 +372,7 @@ function parseStatement(tokens, state) {
 
     // Ambient: as <name> [<frame>] do ... end
     if (kw === 'as') {
-        if (len < 3) throw new Error("'as' requires ambient name");
+        if (len < 3) throw new Error("'as' requires assistant name");
         const meta = {}
         if (len > 3) meta.frame = tokens[2]
         return new ASTNode('Ambient', tokens[1], parseBlock(state), meta);
@@ -420,11 +420,13 @@ export function printAST(ast) {
                 out.push(indent + END);
                 break;
             
-            case 'When':
-                out.push(`${indent}when ${node.value} do`);
+            case 'When': {
+                const binding = node.meta?.binding ? ` ${node.meta.binding}` : ''
+                out.push(`${indent}when ${node.value}${binding} do`);
                 node.children.forEach(c => visit(c, depth + 1));
                 out.push(indent + END);
                 break;
+            }
             
             case 'Define': {
                 const args = node.meta.args || [];

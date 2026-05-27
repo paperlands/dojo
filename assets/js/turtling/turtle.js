@@ -75,6 +75,7 @@ export class Turtle {
     _ensureScheduler() {
         if (this.scheduler) return
         this.scheduler = createScheduler(metaRoot(), {
+            rootName: '__meta__',
             createDeps: () => ({
                 mathParser: new Parser(),
                 mathEvaluator: new Evaluator()
@@ -101,6 +102,7 @@ export class Turtle {
                 })
             }
         )
+        this.compositor.focusedName = 'world'
         this.stage.head.hide()
     }
 
@@ -217,9 +219,9 @@ export class Turtle {
 
     draw(code, opts = {}) {
         if (this.compositor) {
-            this.focusAmbient('default')
+            this.focusAmbient('world')
         }
-        return this.upsertAmbient('default', 'default', code)
+        return this.upsertAmbient('world', 'world', code)
     }
 
     reset() {

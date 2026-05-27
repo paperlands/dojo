@@ -14,7 +14,21 @@
 
 import * as THREE from '../utils/three.core.min.js'
 import { materialize } from "./materializer.js"
-import { groupTransform } from "./scheduler.js"
+import { groupTransform, visitPostOrder } from "./scheduler.js"
+
+// Set opacity on a group, cloning shared materials so the material cache isn't mutated.
+function setGroupOpacity(group, opacity) {
+    group.traverse(child => {
+        if (child.material) {
+            if (!child._ownMaterial) {
+                child.material = child.material.clone()
+                child._ownMaterial = true
+            }
+            child.material.transparent = true
+            child.material.opacity = opacity
+        }
+    })
+}
 
 // Create a compositor bound to a scheduler and stage infrastructure.
 //
@@ -189,19 +203,16 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
             scaleChildHeads()
         },
 
-        // Set opacity on a specific ambient's layer, found by name.
+        // Set opacity on an ambient's layer and all its descendants.
+        // Clones shared materials per-mesh to avoid mutating the material cache.
         setOpacityByName(name, opacity) {
             for (const [id, ambient] of scheduler.registry) {
                 if (ambient.name === name) {
-                    const layer = ambientLayers.get(id)
-                    if (layer) {
-                        layer.group.traverse(child => {
-                            if (child.material) {
-                                child.material.transparent = true
-                                child.material.opacity = opacity
-                            }
-                        })
+                    const applyOpacity = (frame) => {
+                        const layer = ambientLayers.get(frame.id)
+                        if (layer) setGroupOpacity(layer.group, opacity)
                     }
+                    visitPostOrder(ambient, applyOpacity)
                     break
                 }
             }
@@ -210,12 +221,7 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
         // Propagate opacity to all child ambient layers.
         setOpacity(opacity) {
             for (const [id, layer] of ambientLayers) {
-                layer.group.traverse(child => {
-                    if (child.material) {
-                        child.material.transparent = true
-                        child.material.opacity = opacity
-                    }
-                })
+                setGroupOpacity(layer.group, opacity)
             }
         },
 

@@ -162,11 +162,11 @@ function resolveBinding(frame, name, args) {
         if (!target) {
             if (frame.inlineAdvancing) {
                 // Dataflow suspension: dependency may arrive later
-                const err = new Error(`Blocked on ambient: ${targetName}`)
+                const err = new Error(`Blocked on assistant: ${targetName}`)
                 err.blocked = true
                 throw err
             }
-            throw new Error(`Undefined ambient: ${targetName}`)
+            throw new Error(`Undefined assistant: ${targetName}`)
         }
 
         return resolveProperty(target, property, args, frame)
@@ -256,7 +256,7 @@ function resolveProperty(target, property, args, observer) {
     const result = lookupFn(target, property, arity, args)
     if (result !== undefined) return result
 
-    throw new Error(`Undefined property: ${property} on ambient ${target.name}`)
+    throw new Error(`Undefined property: ${property} on assistant ${target.name}`)
 }
 
 // Look up a fn binding in a frame's userspace and evaluate it.
@@ -585,7 +585,7 @@ export function createScheduler(generator, opts = {}) {
     const onShout = opts.onShout || null
 
     const root = attachMeta(
-        createFrame('root', generator, { channelCapacity }),
+        createFrame('__meta__', generator, { channelCapacity }),
         null
     )
     // Wire shared mailbox — same array the root executor reads from

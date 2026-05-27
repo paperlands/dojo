@@ -242,7 +242,7 @@ describe("Phase 2: resolveBinding — sibling observation", () => {
 
         assert.throws(
             () => resolveBinding(child, 'ghost.x'),
-            /Undefined ambient: ghost/
+            /Undefined assistant: ghost/
         )
     })
 
@@ -646,9 +646,9 @@ describe("Phase 3: scheduler shout routing", () => {
             ticks++
         }
 
-        // Child A should NOT have the event in its own mailbox
+        // Child A receives its own shout (self-delivery for own when-handlers)
         const a = findChild(scheduler.root, 'a')
-        assert.equal(a.mailbox.length, 0, "sender should not receive own shout")
+        assert.equal(a.mailbox.length, 1, "sender should receive own shout")
 
         // Root and child B should have it
         assert.ok(scheduler.root.mailbox.length > 0, "root should receive shout")

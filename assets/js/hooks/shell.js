@@ -324,6 +324,7 @@ const Shell = {
             let outerName = null;
             let outerBufferId = null;
             let prevAddr = null;
+            let prevName = null;
 
             term.outer();
 
@@ -356,14 +357,18 @@ const Shell = {
             this.handleEvent("seeOuterShell", (payload) => {
                 // Disciple switch: remove old ambient, re-arm fork
                 if (payload?.addr && payload.addr !== prevAddr) {
-                    if (prevAddr) sceneBridge.pub(['remove', { ambientId: prevAddr }]);
+                    if (prevName) sceneBridge.pub(['remove', { ambientId: prevName }]);
                     term.shell?.dom.addEventListener('keydown', forkOnType);
-                    sceneBridge.pub(['focus', { ambientId: payload.addr }]);
                     prevAddr = payload.addr;
                 }
 
                 if (payload?.addr) outerAddr = payload.addr;
                 if (payload?.origin_name) outerName = payload.origin_name;
+
+                if (outerName && outerName !== prevName) {
+                    sceneBridge.pub(['focus', { ambientId: outerName }]);
+                    prevName = outerName;
+                }
                 if (payload?.buffer_id) outerBufferId = payload.buffer_id;
 
                 if (payload?.state === "success" && payload?.commands) {
@@ -379,11 +384,11 @@ const Shell = {
             const outerEl = this.el.closest('.outershell') || this.el;
 
             const activateOuter = () => {
-                if (outerAddr) sceneBridge.pub(['focus', { ambientId: outerAddr }]);
+                if (outerName) sceneBridge.pub(['focus', { ambientId: outerName }]);
             };
 
             const restoreInner = () => {
-                sceneBridge.pub(['focus', { ambientId: 'default' }]);
+                sceneBridge.pub(['focus', { ambientId: 'world' }]);
             };
 
             const onOuterClick = () => activateOuter();
@@ -396,7 +401,7 @@ const Shell = {
 
             this.cleanup = [
                 listeners.theme(theme => term.setOption('theme', theme)).mount(),
-                () => { if (outerAddr) sceneBridge.pub(['remove', { ambientId: outerAddr }]); },
+                () => { if (outerName) sceneBridge.pub(['remove', { ambientId: outerName }]); },
                 () => term.shell?.dom.removeEventListener('keydown', forkOnType),
                 () => { outerEl.removeEventListener('mousedown', onOuterClick);
                         document.removeEventListener('focusin', onGlobalFocus); },
@@ -410,7 +415,7 @@ const Shell = {
             // C10: _onShout must precede term.bridge.sub which triggers first render
             // C4: tabId captured in upsertAmbient closure, arrives as first arg
             turtle._onShout = (tabId, source, msg, payload) => {
-                if (tabId !== 'default') return
+                if (tabId !== 'world') return
                 nerveInstance?.push(S.shout(source, msg, payload, tabId))
             }
 
@@ -470,20 +475,20 @@ const Shell = {
                 case 'focus': {
                     const prev = turtle.compositor?.focusedName
                     if (prev && prev !== payload.ambientId) {
-                        turtle.setAmbientOpacity(prev, prev === 'default' ? 1.0 : 0.4)
+                        turtle.setAmbientOpacity(prev, prev === 'world' ? 1.0 : 0.4)
                     }
                     turtle.focusAmbient(payload.ambientId)
                     turtle.setAmbientOpacity(payload.ambientId, 1.0)
-                    if (payload.ambientId !== 'default') {
-                        turtle.setAmbientOpacity('default', 0.3)
+                    if (payload.ambientId !== 'world') {
+                        turtle.setAmbientOpacity('world', 0.3)
                     }
                     turtle.requestRender()
                     break
                 }
                 case 'remove':
                     turtle.removeAmbient(payload.ambientId)
-                    turtle.focusAmbient('default')
-                    turtle.setAmbientOpacity('default', 1.0)
+                    turtle.focusAmbient('world')
+                    turtle.setAmbientOpacity('world', 1.0)
                     turtle.requestRender()
                     term.clearMerge()
                     break
@@ -499,7 +504,10 @@ const Shell = {
                 if (!payload?.addr) return
                 if (payload.state === "success" && payload.commands) {
                     const code = printAST(payload.commands)
-                    turtle.upsertAmbient(payload.addr, payload.addr, code)
+                    const name = payload.origin_name || payload.addr
+                    turtle.upsertAmbient(payload.addr, name, code)
+                    const isFocused = turtle.compositor?.focusedName === name
+                    turtle.setAmbientOpacity(name, isFocused ? 1.0 : 0.4)
                     if (payload.buffer_id) {
                         term.updateMergeOriginal(code, payload.addr, payload.buffer_id)
                     }
