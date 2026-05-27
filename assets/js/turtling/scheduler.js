@@ -278,12 +278,27 @@ function pushMailbox(frame, msg) {
     }
 }
 
-// Deliver buffered shouts then clear the buffer.
+// Deliver a single shout to a frame, tracking delivery to prevent duplicates.
+function deliverShout(shout, target) {
+    if (target === shout.from) return
+    if (!shout._delivered) shout._delivered = new Set()
+    if (shout._delivered.has(target.id)) return
+    shout._delivered.add(target.id)
+    pushMailbox(target, { name: shout.name, payload: shout.payload })
+}
+
+// Deliver all deferred shouts to a specific frame (used at spawn time).
+function deliverDeferredToFrame(shouts, frame) {
+    for (const shout of shouts) {
+        deliverShout(shout, frame)
+    }
+}
+
+// Deliver buffered shouts to all registry frames, then clear the buffer.
 function flushDeferredShouts(shouts, registry) {
     for (const shout of shouts) {
         for (const [id, target] of registry) {
-            if (target === shout.from) continue  // already delivered to self
-            pushMailbox(target, { name: shout.name, payload: shout.payload })
+            deliverShout(shout, target)
         }
     }
     shouts.length = 0
@@ -506,6 +521,7 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                     nestedExisting.error = null
                     nestedExisting.channel.drain()
                     nestedExisting.channel.put({ type: 'clear' })
+                    if (deferredShouts) deliverDeferredToFrame(deferredShouts, nestedExisting)
                 }
             } else if (createDeps) {
                 const { generator: nestedGen, deps: nestedDeps, mailbox: nestedMailbox } = createChildGenerator(value, createDeps, execOpts)
@@ -524,6 +540,8 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                 wireWorldCacheInvalidation(nested)
                 child.children.set(value.name, nested)
                 registry.set(nested.id, nested)
+                // Deliver deferred shouts so nested when-handlers fire
+                if (deferredShouts) deliverDeferredToFrame(deferredShouts, nested)
                 // Return nested child for trampoline — stack-based, no recursion
                 return nested
             }
@@ -725,7 +743,7 @@ export function createScheduler(generator, opts = {}) {
                                 existing.error = null
                                 existing.channel.drain()
                                 existing.channel.put({ type: 'clear' })
-                                flushDeferredShouts(deferredShouts, registry)
+                                deliverDeferredToFrame(deferredShouts, existing)
                                 advanceChild(existing, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout)
                                 produced = true
                             }
@@ -752,9 +770,10 @@ export function createScheduler(generator, opts = {}) {
                             ctx.children.set(value.name, child)
                             registry.set(child.id, child)
 
-                            // Deliver any deferred shouts from earlier siblings
-                            // so this child can receive them during its advance.
-                            flushDeferredShouts(deferredShouts, registry)
+                            // Deliver deferred shouts to this child so its
+                            // when-handlers can fire during inline advance.
+                            // Don't flush — later siblings still need these shouts.
+                            deliverDeferredToFrame(deferredShouts, child)
                             // Advance child inline so its state is observable
                             // immediately by subsequent parent code.
                             advanceChild(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout)
