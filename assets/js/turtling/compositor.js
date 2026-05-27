@@ -1,36 +1,34 @@
 // Compositor — drains all ambient channels through materializer per frame.
-// Phase 5c: per-ambient THREE.Groups + Heads, inertial frame positioning.
+// Phase 6: unified tree — all ambients are children of a meta-root.
 //
-// Each child ambient gets its own THREE.Group at scene root and its own
-// Head mesh. Each frame the compositor:
+// Every ambient gets its own THREE.Group, Head, and Shapist.
+// The focused ambient's head tracks the camera; unfocused heads render
+// without camera tracking (materializeHead already gates on ctx.camera).
+//
+// Each frame the compositor:
 // 1. Ticks the scheduler (advance all ambient generators, fill channels)
-// 2. Creates groups/heads for newly spawned ambients
+// 2. Creates layers (group + head + shapist) for newly spawned ambients
 // 3. Drains all ambient channels, materializing into per-ambient groups
 // 4. Updates child group positions from worldTransform (inertial frames)
-// 5. Renders the scene
-// 6. Manages head scale, snapshot, recording lifecycle
+// 5. Cleans up layers for terminated ambients
 
 import * as THREE from '../utils/three.core.min.js'
 import { materialize } from "./materializer.js"
 import { groupTransform } from "./scheduler.js"
-import { SE3 } from "./se3.js"
 
 // Create a compositor bound to a scheduler and stage infrastructure.
 //
+// ctx     = { camera, controls }
 // stage   = { scene, renderer, recorder, renderstate, hatch }
-// groups  = { pathGroup, gridGroup, glyphGroup }
-// ctx     = { shapist, head, camera, controls }
-// opts    = { createHead }
-export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
-    let snapshotPending = false
-    let focused = true   // only focused compositor's head events track camera
+// opts    = { createHead, createShapist }
+export function createCompositor(scheduler, ctx, stage, opts = {}) {
     let epoch = null      // first real timestamp — rebases advance() to flush()'s 0-based timeline
+    let focusedName = null
     const createHead = opts.createHead || null
+    const createShapist = opts.createShapist || null
 
-    // Per-ambient rendering state: { group, head }
-    // Keyed by ambient.id (unique monotonic counter), so each ambient
-    // gets exactly one layer. No generation tracking needed — unique IDs
-    // mean a re-spawned ambient is a new entry, never a collision.
+    // Per-ambient rendering state: { group, head, shapist }
+    // Keyed by ambient.id (unique monotonic counter).
     const ambientLayers = new Map()
 
     function getOrCreateLayer(id) {
@@ -42,63 +40,71 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
         stage.scene.add(group)
 
         const head = createHead ? createHead(group) : null
-        const layer = { group, head }
+        const shapist = createShapist ? createShapist(group) : null
+        const layer = { group, head, shapist }
         ambientLayers.set(id, layer)
         return layer
+    }
+
+    // Clear a child layer's geometry/materials but preserve its head mesh.
+    function clearChildLayer(layer) {
+        const headGroup = layer.head?.turtleGroup
+        for (const child of [...layer.group.children]) {
+            if (child === headGroup) continue
+            child.traverse(c => {
+                if (c.geometry) c.geometry.dispose()
+                if (c.material) c.material.dispose()
+            })
+            layer.group.remove(child)
+        }
+        if (layer.group.elements) {
+            layer.group.elements.forEach(text => text.dispose?.())
+            layer.group.elements = []
+        }
+    }
+
+    // Dispose a layer entirely: hide head, dispose shapist, remove from scene.
+    function disposeLayer(id, layer) {
+        if (layer.head) layer.head.hide()
+        if (layer.shapist) layer.shapist.dispose()
+        layer.group.traverse(c => {
+            if (c.geometry) c.geometry.dispose()
+            if (c.material) c.material.dispose()
+        })
+        if (layer.group.elements) {
+            layer.group.elements.forEach(t => t.dispose?.())
+        }
+        stage.scene.remove(layer.group)
+        ambientLayers.delete(id)
     }
 
     function drainAndMaterialize() {
         let produced = false
         for (const [id, ambient] of scheduler.registry) {
+            if (ambient === scheduler.root) continue
+
             const events = ambient.channel.drain()
             if (events.length === 0) continue
-            if (ambient === scheduler.root) {
-                for (const event of events) {
-                    if (event.type === 'error') continue
-                    // Unfocused: render head but skip camera tracking
-                    const effectiveCtx = (!focused && event.type === 'head')
-                        ? { ...ctx, camera: null, controls: null }
-                        : ctx
-                    materialize(event, groups, effectiveCtx)
-                }
-            } else {
-                const layer = getOrCreateLayer(id)
-                for (const event of events) {
-                    if (event.type === 'error') continue
-                    if (event.type === 'head' && layer.head) {
-                        // Child head: update the child's own head mesh
-                        if (event.headSize) {
-                            layer.head.show()
-                            layer.head.update(
-                                event.position, event.rotation,
-                                event.color, event.headSize
-                            )
-                        } else {
-                            layer.head.hide()
-                        }
-                    } else if (event.type === 'head') {
-                        // No head mesh for this child — skip
-                    } else if (event.type === 'clear') {
-                        // Clear child layer but preserve its head mesh
-                        const headGroup = layer.head?.turtleGroup
-                        for (const child of [...layer.group.children]) {
-                            if (child === headGroup) continue
-                            child.traverse(c => {
-                                if (c.geometry) c.geometry.dispose()
-                                if (c.material) c.material.dispose()
-                            })
-                            layer.group.remove(child)
-                        }
-                        if (layer.group.elements) {
-                            layer.group.elements.forEach(text => text.dispose?.())
-                            layer.group.elements = []
-                        }
-                    } else {
-                        materialize(event,
-                            { pathGroup: layer.group, gridGroup: layer.group, glyphGroup: layer.group },
-                            { shapist: null, head: null, camera: null, controls: null }
-                        )
-                    }
+
+            const layer = getOrCreateLayer(id)
+            const isFocused = (ambient.name === focusedName)
+
+            // Focused child gets full ctx (camera tracking + shapist).
+            // Unfocused gets null camera — materializeHead gates on ctx.camera.
+            const childCtx = {
+                shapist: layer.shapist,
+                head: layer.head,
+                camera: isFocused ? ctx.camera : null,
+                controls: isFocused ? ctx.controls : null
+            }
+            const childGroups = { pathGroup: layer.group, gridGroup: layer.group, glyphGroup: layer.group }
+
+            for (const event of events) {
+                if (event.type === 'error') continue
+                if (event.type === 'clear') {
+                    clearChildLayer(layer)
+                } else {
+                    materialize(event, childGroups, childCtx)
                 }
             }
             produced = true
@@ -107,8 +113,6 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
     }
 
     // Position child groups — inertial frame effect.
-    // Frame-targeted children use relativeTransform (matching path projection).
-    // Normal children use worldTransform (birth origin, sibling isolation).
     function updateGroupPositions() {
         for (const [id, ambient] of scheduler.registry) {
             if (ambient === scheduler.root) continue
@@ -124,12 +128,19 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
         }
     }
 
+    // Remove layers for ambients no longer in the scheduler registry.
+    function cleanupOrphanedLayers() {
+        for (const [id, layer] of ambientLayers) {
+            if (!scheduler.registry.has(id)) {
+                disposeLayer(id, layer)
+            }
+        }
+    }
+
     function scaleChildHeads() {
         for (const [id, layer] of ambientLayers) {
             if (!layer.head) continue
-            // Use same scale logic as root: distance from camera
             const headPos = layer.head.position()
-            // Approximate world position: group offset + local head position
             const gp = layer.group.position
             const wx = gp.x + headPos.x
             const wy = gp.y + headPos.y
@@ -142,16 +153,17 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
     return {
         scheduler,
 
-        get focused() { return focused },
-        set focused(v) { focused = v },
+        get focusedName() { return focusedName },
+        set focusedName(v) { focusedName = v },
 
         // Eagerly drain a batch program (no waits) during draw().
-        // Loops until all ambients complete or a wait is encountered.
-        // Returns true if the scheduler completed entirely.
+        // Uses scheduler.lastTickTime so new children's waits are
+        // relative to the current timeline, not time 0.
         flush() {
+            const flushTime = scheduler.lastTickTime || 0
             let maxTicks = 10000
             while (maxTicks-- > 0) {
-                const progress = scheduler.tick(0)
+                const progress = scheduler.tick(flushTime)
                 drainAndMaterialize()
                 if (scheduler.done || !progress) break
             }
@@ -159,16 +171,12 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
             return scheduler.done
         },
 
-        // Per-ambient work: tick generators, materialize, update positions, scale heads.
-        // Does NOT render or handle recording/snapshots — caller coordinates that
-        // when multiple compositors share one renderer.
+        // Per-frame work: tick generators, materialize, position, scale heads.
+        // Does NOT render — caller coordinates renderer.render().
         advance(t) {
             if (epoch === null) epoch = t
             const now = t - epoch
             if (!scheduler.done) {
-                // Multi-tick catch-up: process all expired waits this frame.
-                // Budget-capped to prevent runaway when programs produce
-                // many tiny waits faster than real time.
                 let budget = 64
                 let progress
                 do {
@@ -177,34 +185,25 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
                 } while (progress && !scheduler.done && --budget > 0)
                 updateGroupPositions()
             }
-            const scaleFactor = ctx.camera.position.distanceTo(ctx.head.position()) / 250
-            ctx.head.scale(scaleFactor)
+            cleanupOrphanedLayers()
             scaleChildHeads()
         },
 
-        // Called by the render loop every animation frame.
-        // For single-compositor use — delegates to advance() then renders.
-        frame(t) {
-            try {
-                this.advance(t)
-
-                ctx.controls.update()
-                stage.renderer.render(stage.scene, ctx.camera)
-
-                if (stage.recorder.isRecording) {
-                    stage.recorder.captureFrame()
+        // Set opacity on a specific ambient's layer, found by name.
+        setOpacityByName(name, opacity) {
+            for (const [id, ambient] of scheduler.registry) {
+                if (ambient.name === name) {
+                    const layer = ambientLayers.get(id)
+                    if (layer) {
+                        layer.group.traverse(child => {
+                            if (child.material) {
+                                child.material.transparent = true
+                                child.material.opacity = opacity
+                            }
+                        })
+                    }
+                    break
                 }
-
-                if (stage.renderstate.snapshot.frame == null && t > 500) {
-                    stage.hatch()
-                }
-
-                if (scheduler.done && !snapshotPending) {
-                    snapshotPending = true
-                    stage.hatch()
-                }
-            } catch (error) {
-                console.error('Compositor frame error:', error)
             }
         },
 
@@ -220,20 +219,10 @@ export function createCompositor(scheduler, groups, ctx, stage, opts = {}) {
             }
         },
 
-        // Clean up child groups and heads. Called on turtle.reset().
+        // Clean up all layers. Called on turtle.reset().
         dispose() {
             for (const [id, layer] of ambientLayers) {
-                if (layer.head) layer.head.hide()
-                // Dispose geometries/materials in group
-                layer.group.traverse(child => {
-                    if (child.geometry) child.geometry.dispose()
-                    if (child.material) child.material.dispose()
-                })
-                // Dispose text elements
-                if (layer.group.elements) {
-                    layer.group.elements.forEach(text => text.dispose?.())
-                }
-                stage.scene.remove(layer.group)
+                disposeLayer(id, layer)
             }
             ambientLayers.clear()
         }

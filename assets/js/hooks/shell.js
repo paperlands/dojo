@@ -1,6 +1,6 @@
 import { Turtle } from "../turtling/turtle.js"
 import { Terminal } from "../terminal.js"
-import { cameraBridge } from "../bridged.js"
+import { cameraBridge, sceneBridge } from "../bridged.js"
 import { computePosition, offset } from "../../vendor/floating-ui.dom.umd.min";
 import { temporal } from "../utils/temporal.js"
 import {printAST} from "../turtling/parse.js"
@@ -10,14 +10,6 @@ import { signals as S } from "../nerve/store.js"
 // Module-level CM6 cache — loaded once on first Shell mount, reused thereafter.
 // The browser also caches the ES module natively by URL.
 let cm6 = null;
-
-// Module-level core turtle reference — set by inner shell, used by outer shell
-// for guest rendering into the same scene via path groups.
-let coreTurtle = null;
-
-// Module-level inner terminal reference — set by inner shell, used by outer shell
-// for forking buffers and updating merge originals.
-let innerTerminal = null;
 
 // ---------------------------------------------------------------------------
 // Numeric token finder — replaces CM5 getTokenAt for the slider feature.
@@ -322,117 +314,79 @@ const Shell = {
         this.term = term;
 
         if (shellTarget === "outer") {
-            // Outer shell: read-only code viewer. Rendering goes through
-            // the core turtle's guest path groups — no second canvas.
+            // Outer shell: read-only code viewer + bridge publisher.
+            // Rendering is handled by the inner shell via seeOuterShell.
+            // Interactive events (focus, remove, fork) go through scene bridge.
             const output = document.getElementById('outer-output');
             const display = mutators.display(output);
 
-            // Outershell metadata — captured from seeOuterShell payloads for client-side forking
             let outerAddr = null;
             let outerName = null;
             let outerBufferId = null;
-            let outerFocused = true;  // outershell starts focused when first opened
-
-            const debouncedGuestRender = temporal.debounce((code) => {
-                if (!coreTurtle) return;
-                if (!code) { coreTurtle.removeAmbient('guest'); return; }
-                const result = coreTurtle.upsertAmbient('guest', 'guest', code);
-                if (result.success) {
-                    coreTurtle.setAmbientOpacity('guest', outerFocused ? 1.0 : 0.4);
-                    coreTurtle.requestRender();
-                    display.success(result.commandCount);
-                } else {
-                    display.error(result.error);
-                }
-            }, 20);
+            let prevAddr = null;
 
             term.outer();
 
-            // Fork-on-type: typing into the read-only outershell forks the buffer
-            // into the inner shell. Click gives focus, keystroke confirms intent.
+            // Fork-on-type: typing in the read-only outershell forks the buffer
+            // into the inner shell via scene bridge.
             const forkOnType = (e) => {
-                if (!innerTerminal) return;
                 if (e.ctrlKey || e.metaKey || e.altKey) return;
                 if (e.key.length > 1 && !['Enter', 'Backspace', 'Delete', 'Tab', ' '].includes(e.key)) return;
 
                 const source = term.getValue();
                 if (!source || !outerAddr) return;
 
-                // Exact cursor offset — same content, so offset maps 1:1 to fork
-                const offset = term.shell?.state?.selection?.main?.head ?? 0;
+                const cursorOffset = term.shell?.state?.selection?.main?.head ?? 0;
 
-                innerTerminal.forkBuffer({
+                sceneBridge.pub(['fork', {
                     source,
                     name: outerName || 'friend',
                     addr: outerAddr,
                     buffer_id: outerBufferId,
                     time: Date.now(),
-                    offset,
+                    offset: cursorOffset,
                     key: e.key,
-                });
+                }]);
 
-                innerTerminal.shell?.focus();
                 term.shell.dom.removeEventListener('keydown', forkOnType);
             };
 
             term.shell.dom.addEventListener('keydown', forkOnType);
 
             this.handleEvent("seeOuterShell", (payload) => {
-                // Re-arm fork trigger when switching to a different disciple
-                if (payload?.addr && payload.addr !== outerAddr) {
+                // Disciple switch: remove old ambient, re-arm fork
+                if (payload?.addr && payload.addr !== prevAddr) {
+                    if (prevAddr) sceneBridge.pub(['remove', { ambientId: prevAddr }]);
                     term.shell?.dom.addEventListener('keydown', forkOnType);
-                    // New disciple → outershell takes focus
-                    activateOuter();
+                    sceneBridge.pub(['focus', { ambientId: payload.addr }]);
+                    prevAddr = payload.addr;
                 }
 
-                // Capture outershell metadata for fork provenance
                 if (payload?.addr) outerAddr = payload.addr;
                 if (payload?.origin_name) outerName = payload.origin_name;
                 if (payload?.buffer_id) outerBufferId = payload.buffer_id;
 
                 if (payload?.state === "success" && payload?.commands) {
-                    const code = printAST(payload.commands);
-                    term.changeouter(code);
-                    debouncedGuestRender(code);
-                    // Update merge original — keyed by addr:buffer_id so tab switches don't trigger false diffs
-                    if (innerTerminal && outerAddr && outerBufferId) {
-                        innerTerminal.updateMergeOriginal(code, outerAddr, outerBufferId);
-                    }
+                    term.changeouter(printAST(payload.commands));
+                    display.success('✓');
                 } else {
-                    // Peek: show raw broken source, don't render
                     term.changeouter(payload?.source ?? '');
                     if (payload?.message) display.error(payload.message);
                 }
             });
 
-            // Ambient focus: clicking anywhere in the outershell swaps the dominant
-            // visual layer. Guest becomes foreground (opacity 1.0, camera routed),
-            // host fades to trace. Global focusin restores host when focus moves
-            // outside the outershell (click inner shell, tab away, etc).
-            // requestRender() is critical — the render loop may have stopped after
-            // all compositors finished, so opacity changes need an explicit kick.
+            // Focus switching via scene bridge
             const outerEl = this.el.closest('.outershell') || this.el;
 
             const activateOuter = () => {
-                outerFocused = true;
-                if (!coreTurtle) return;
-                coreTurtle.focusAmbient('guest');
-                coreTurtle.setAmbientOpacity('guest', 1.0);
-                coreTurtle.setAmbientOpacity('default', 0.3);
-                coreTurtle.requestRender();
+                if (outerAddr) sceneBridge.pub(['focus', { ambientId: outerAddr }]);
             };
 
             const restoreInner = () => {
-                outerFocused = false;
-                if (!coreTurtle) return;
-                coreTurtle.focusAmbient('default');
-                coreTurtle.setAmbientOpacity('default', 1.0);
-                coreTurtle.setAmbientOpacity('guest', 0.4);
-                coreTurtle.requestRender();
+                sceneBridge.pub(['focus', { ambientId: 'default' }]);
             };
 
             const onOuterClick = () => activateOuter();
-
             const onGlobalFocus = (e) => {
                 if (!outerEl.contains(e.target)) restoreInner();
             };
@@ -442,17 +396,16 @@ const Shell = {
 
             this.cleanup = [
                 listeners.theme(theme => term.setOption('theme', theme)).mount(),
-                () => coreTurtle?.removeAmbient('guest'),
+                () => { if (outerAddr) sceneBridge.pub(['remove', { ambientId: outerAddr }]); },
                 () => term.shell?.dom.removeEventListener('keydown', forkOnType),
                 () => { outerEl.removeEventListener('mousedown', onOuterClick);
                         document.removeEventListener('focusin', onGlobalFocus); },
-                () => { innerTerminal?.clearMerge(); restoreInner(); },
             ];
         } else {
+            // Inner shell: canvas, turtle, rendering, scene bridge subscription
             const canvas = document.getElementById('core-canvas');
             const turtle = new Turtle(canvas);
             canvas.__turtle = turtle;
-            coreTurtle = turtle;
 
             // C10: _onShout must precede term.bridge.sub which triggers first render
             // C4: tabId captured in upsertAmbient closure, arrives as first arg
@@ -460,8 +413,6 @@ const Shell = {
                 if (tabId !== 'default') return
                 nerveInstance?.push(S.shout(source, msg, payload, tabId))
             }
-
-            innerTerminal = term;
 
             const renderCommand   = commands.render(turtle);
             const executeCommand  = commands.execute(term);
@@ -476,7 +427,7 @@ const Shell = {
                 return m ? parseInt(m[1], 10) : null
             }
 
-            
+
             const debouncedRender = temporal.debounce((code) => {
                 nerveInstance?.store.run()
                 const result = renderCommand(code);
@@ -513,6 +464,48 @@ const Shell = {
             // Expose CM6 view on the textarea so nerve hook can scrollToLine
             this.el.__cm = term.shell;
 
+            // Scene bridge: handle focus/remove/fork from outer shell
+            const sceneUnsub = sceneBridge.sub(([type, payload]) => {
+                switch (type) {
+                case 'focus': {
+                    const prev = turtle.compositor?.focusedName
+                    if (prev && prev !== payload.ambientId) {
+                        turtle.setAmbientOpacity(prev, prev === 'default' ? 1.0 : 0.4)
+                    }
+                    turtle.focusAmbient(payload.ambientId)
+                    turtle.setAmbientOpacity(payload.ambientId, 1.0)
+                    if (payload.ambientId !== 'default') {
+                        turtle.setAmbientOpacity('default', 0.3)
+                    }
+                    turtle.requestRender()
+                    break
+                }
+                case 'remove':
+                    turtle.removeAmbient(payload.ambientId)
+                    turtle.focusAmbient('default')
+                    turtle.setAmbientOpacity('default', 1.0)
+                    turtle.requestRender()
+                    term.clearMerge()
+                    break
+                case 'fork':
+                    term.forkBuffer(payload)
+                    term.shell?.focus()
+                    break
+                }
+            });
+
+            // Remote code rendering: inner shell handles seeOuterShell directly
+            this.handleEvent("seeOuterShell", (payload) => {
+                if (!payload?.addr) return
+                if (payload.state === "success" && payload.commands) {
+                    const code = printAST(payload.commands)
+                    turtle.upsertAmbient(payload.addr, payload.addr, code)
+                    if (payload.buffer_id) {
+                        term.updateMergeOriginal(code, payload.addr, payload.buffer_id)
+                    }
+                }
+            });
+
             this.cleanup = [
                 listeners.keyboard(term.shell, cm6).mount(),
                 listeners.selection(term.selectionBridge, this.pushEvent.bind(this)).mount(),
@@ -520,7 +513,7 @@ const Shell = {
                 slider.mount(),
                 listeners.slider(term.shell, slider, cm6).mount(),
                 () => turtle.dispose(),
-                () => { innerTerminal = null; },
+                sceneUnsub,
             ];
 
             this.handleEvent("relayCamera",      ({ command }) => cameraCommand(command));
@@ -534,10 +527,6 @@ const Shell = {
     destroyed() {
         this.cleanup?.forEach(fn => fn());
         this.term?.destroy();
-        if (this.el.dataset.target !== "outer") {
-            coreTurtle = null;
-            innerTerminal = null;
-        }
     }
 };
 

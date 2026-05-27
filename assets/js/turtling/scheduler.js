@@ -384,6 +384,35 @@ function unwireWorldCache(child) {
     }
 }
 
+// --- Shared child wiring ---
+
+// Wire a freshly created child frame: attach deps, mailbox, resolve binding,
+// world origin, cache invalidation, and register in the flat index.
+function wireChild(child, deps, mailbox, registry) {
+    child.deps = deps
+    child.mailbox = mailbox
+    bindResolve(deps, child)
+    deps.worldOriginFn = () => groupTransform(child)
+    wireWorldCacheInvalidation(child)
+    registry.set(child.id, child)
+}
+
+// Re-execute a completed child with a fresh fork spec.
+// Reuses the existing frame (preserving id, parent, children, origin)
+// but replaces the generator, deps, and mailbox.
+function rewireChild(child, value, createDeps, execOpts) {
+    const re = createChildGenerator(value, createDeps, execOpts)
+    child.generator = re.generator
+    child.deps = re.deps
+    child.mailbox = re.mailbox
+    bindResolve(re.deps, child)
+    re.deps.worldOriginFn = () => groupTransform(child)
+    child.done = false
+    child.error = null
+    child.channel.drain()
+    child.channel.put({ type: 'clear' })
+}
+
 // --- Inline child drain ---
 
 // Advance a child's generator inline until it hits a wait or completes.
@@ -511,16 +540,7 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                 nestedExisting._worldDirty = true
                 if (nestedExisting.done && createDeps) {
                     nestedExisting.origin = value.origin
-                    const re = createChildGenerator(value, createDeps, execOpts)
-                    nestedExisting.generator = re.generator
-                    nestedExisting.deps = re.deps
-                    nestedExisting.mailbox = re.mailbox
-                    bindResolve(re.deps, nestedExisting)
-                    re.deps.worldOriginFn = () => groupTransform(nestedExisting)
-                    nestedExisting.done = false
-                    nestedExisting.error = null
-                    nestedExisting.channel.drain()
-                    nestedExisting.channel.put({ type: 'clear' })
+                    rewireChild(nestedExisting, value, createDeps, execOpts)
                     if (deferredShouts) deliverDeferredToFrame(deferredShouts, nestedExisting)
                 }
             } else if (createDeps) {
@@ -533,16 +553,9 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                     }),
                     value.frame
                 )
-                nested.deps = nestedDeps
-                nested.mailbox = nestedMailbox
-                bindResolve(nestedDeps, nested)
-                nestedDeps.worldOriginFn = () => groupTransform(nested)
-                wireWorldCacheInvalidation(nested)
+                wireChild(nested, nestedDeps, nestedMailbox, registry)
                 child.children.set(value.name, nested)
-                registry.set(nested.id, nested)
-                // Deliver deferred shouts so nested when-handlers fire
                 if (deferredShouts) deliverDeferredToFrame(deferredShouts, nested)
-                // Return nested child for trampoline — stack-based, no recursion
                 return nested
             }
             continue
@@ -594,6 +607,46 @@ export function createScheduler(generator, opts = {}) {
 
         done: false,
         commandCount: 0,
+        lastTickTime: 0,
+
+        // Hot-swap a named child of root: terminate existing (if any),
+        // create fresh child from fork spec, advance inline.
+        // Uses lastTickTime so the new child's waits are relative to the
+        // current timeline, not time 0 (which would cause fast catch-up).
+        hotSwapChild(name, forkSpec) {
+            const existing = root.children.get(name)
+            if (existing) {
+                terminateAmbient(existing)
+                visitPostOrder(existing, (c) => registry.delete(c.id))
+                root.children.delete(name)
+            }
+
+            const { generator, deps, mailbox } = createChildGenerator(forkSpec, createDeps, execOpts)
+            const child = attachMeta(
+                createFrame(name, generator, {
+                    parent: root,
+                    origin: forkSpec.origin || SE3.identity(),
+                    channelCapacity
+                }),
+                null
+            )
+            wireChild(child, deps, mailbox, registry)
+            root.children.set(name, child)
+
+            advanceChild(child, this.lastTickTime, createDeps, execOpts, channelCapacity, registry, [], onShout)
+            this.done = false
+            return child
+        },
+
+        // Remove a named child of root and clean up its subtree.
+        removeChild(name) {
+            const child = root.children.get(name)
+            if (!child) return
+            terminateAmbient(child)
+            visitPostOrder(child, (c) => registry.delete(c.id))
+            root.children.delete(name)
+            this.done = allDone(root)
+        },
 
         get errors() {
             const errs = []
@@ -606,6 +659,7 @@ export function createScheduler(generator, opts = {}) {
         // Advance all ready frames. Post-order: children before parents.
         // Returns true if any frame produced events this tick.
         tick(now) {
+            this.lastTickTime = now
             if (this.done) return false
 
             let produced = false
@@ -732,17 +786,7 @@ export function createScheduler(generator, opts = {}) {
                             existing._worldDirty = true
 
                             if (existing.done && createDeps) {
-                                // Re-execute completed child with fresh fork spec.
-                                const re = createChildGenerator(value, createDeps, execOpts)
-                                existing.generator = re.generator
-                                existing.deps = re.deps
-                                existing.mailbox = re.mailbox
-                                bindResolve(re.deps, existing)
-                                re.deps.worldOriginFn = () => groupTransform(existing)
-                                existing.done = false
-                                existing.error = null
-                                existing.channel.drain()
-                                existing.channel.put({ type: 'clear' })
+                                rewireChild(existing, value, createDeps, execOpts)
                                 deliverDeferredToFrame(deferredShouts, existing)
                                 advanceChild(existing, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout)
                                 produced = true
@@ -762,20 +806,10 @@ export function createScheduler(generator, opts = {}) {
                                 }),
                                 value.frame
                             )
-                            child.deps = childDeps
-                            child.mailbox = childMailbox
-                            bindResolve(childDeps, child)
-                            childDeps.worldOriginFn = () => groupTransform(child)
-                            wireWorldCacheInvalidation(child)
+                            wireChild(child, childDeps, childMailbox, registry)
                             ctx.children.set(value.name, child)
-                            registry.set(child.id, child)
 
-                            // Deliver deferred shouts to this child so its
-                            // when-handlers can fire during inline advance.
-                            // Don't flush — later siblings still need these shouts.
                             deliverDeferredToFrame(deferredShouts, child)
-                            // Advance child inline so its state is observable
-                            // immediately by subsequent parent code.
                             advanceChild(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout)
                         }
                         produced = true
@@ -823,5 +857,9 @@ export function createScheduler(generator, opts = {}) {
         }
     }
 }
+
+// Synthetic root generator for unified scheduler tree.
+// Completes immediately — visitPostOrder still walks children.
+export function* metaRoot() { return 0 }
 
 export { createFrame, visitPostOrder, terminateAmbient, allDone, worldTransform, groupTransform, findAncestorByName, resolveBinding }

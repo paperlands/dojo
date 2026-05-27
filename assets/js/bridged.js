@@ -82,3 +82,4 @@ export const bridged = (eventName) => { // TODO: consider renaming to registerBr
 
 
 export const cameraBridge = bridged("cam");
+export const sceneBridge = bridged("scene");
