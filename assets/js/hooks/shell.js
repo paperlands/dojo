@@ -327,6 +327,13 @@ const Shell = {
             let prevName = null;
 
             term.outer();
+            this.el.__cm = term.shell;
+            this.el.__scrollToCursor = () => {
+                const shell = term.shell;
+                if (!shell || !shell.hasFocus) return;
+                const pos = shell.state.selection.main.head;
+                shell.dispatch({ effects: cm6.EditorView.scrollIntoView(pos, { y: 'center' }) });
+            };
 
             // Fork-on-type: typing in the read-only outershell forks the buffer
             // into the inner shell via scene bridge.
@@ -472,6 +479,12 @@ const Shell = {
             term.inner();
             // Expose CM6 view on the textarea so nerve hook can scrollToLine
             this.el.__cm = term.shell;
+            this.el.__scrollToCursor = () => {
+                const shell = term.shell;
+                if (!shell || !shell.hasFocus) return;
+                const pos = shell.state.selection.main.head;
+                shell.dispatch({ effects: cm6.EditorView.scrollIntoView(pos, { y: 'center' }) });
+            };
 
             // Scene bridge: handle focus/remove/fork from outer shell
             const sceneUnsub = sceneBridge.sub(([type, payload]) => {

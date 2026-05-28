@@ -2,7 +2,7 @@
   <canvas phx-update="ignore" id="core-canvas" class="fixed inset-0 z-0 bg-inherit select-none">
   </canvas>
   <!-- Desktop Layout (lg and up) -->
-  <div class="fixed inset-0 grid grid-cols-[45dvw_20dvw_35dvw] md:grid-cols-[40dvw_25dvw_30dvw]  grid-rows-[60dvh_40dvh]  lg:grid-cols-[25dvw_50dvw_25dvw]  lg:grid-rows-[1fr_30dvh] gap-1 pointer-events-none">
+  <div class="fixed inset-0 grid grid-cols-[38dvw_12dvw_50dvw] md:grid-cols-[40dvw_25dvw_30dvw]  grid-rows-[60dvh_40dvh]  lg:grid-cols-[25dvw_50dvw_25dvw]  lg:grid-rows-[1fr_30dvh] gap-0.5 lg:gap-1 pointer-events-none">
     
 <!-- Left Pane - Code Editor -->
     <div
@@ -117,7 +117,7 @@
     <!-- Zhong -->
     <div class="bg-transparent pointer-events-none select-none" />
     <!-- Right pane -->
-    <div class="row-span-1 col-span-1 lg:row-span-2 p-4 relative ">
+    <div class="row-span-1 col-span-1 lg:row-span-2 p-1 sm:p-2 lg:p-4 relative ">
       <div id="sessionbox" phx-hook="Box" class="fixed z-50 right-0 ml-4 ">
         <div :if={!@session.name} class="relative right-0 group">
           <!-- Login Link Button -->
@@ -176,21 +176,13 @@
           
 <!-- Command keys row -->
           <div class="flex items-center justify-between">
-            <div
-              :if={@outershell.active}
-              class="max-w-20 bg-gradient-to-r from-background to-transparent overflow-hidden whitespace-nowrap flex-shrink-1 sm:flex-shrink-0 flex items-center text-xs mr-1 sm:mr-2 min-w-0"
-            >
-              <span dir={Session.dir(@locale)} class="text-amber-600 animate-marquee">
-                {Session.t(@locale, "summoning @%{name}'s code", name: @outershell.name)} ☄
-              </span>
-            </div>
             <!-- Empty spacer div with minimum width on small screens -->
 
 
             <!-- Command buttons always aligned to right and given prio -->
             <div
               dir="rtl"
-              class="grid grid-cols-2 sm:ltr  sm:flex flex-shrink-0 gap-1 ml-auto cursor-pointer pointer-events-auto justify-end"
+              class="grid grid-cols-4 sm:ltr  sm:flex flex-shrink-0 gap-1 ml-auto cursor-pointer pointer-events-auto justify-end"
             >
               <button
                 class="flex items-center justify-center w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"

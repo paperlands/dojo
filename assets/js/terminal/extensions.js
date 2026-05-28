@@ -50,6 +50,23 @@ export const buildExtensions = (cm6, {
         indentOnInput(),
         history(),
         EditorView.lineWrapping,
+        // Reserve bottom margin so cursor doesn't sit flush against mobile keyboard edge
+        EditorView.scrollMargins.of(() => ({ bottom: 32 })),
+
+        // Mobile: keyboard opens on focus — nudge a space in/out to trigger
+        // CM6's natural scroll-to-cursor (the only thing that actually works)
+        EditorView.domEventHandlers({
+            focus: (event, view) => {
+                setTimeout(() => {
+                    if (!view.hasFocus) return;
+                    const end = view.state.doc.length;
+                    view.dispatch({ changes: { from: end, insert: ' ' }, scrollIntoView: true });
+                    view.dispatch({ changes: { from: end, to: end + 1, insert: '' } });
+                }, 100);
+                return false;
+            },
+        }),
+
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
 
         // Gutter mousedown → select whole line

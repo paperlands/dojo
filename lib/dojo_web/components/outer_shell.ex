@@ -56,7 +56,7 @@ defmodule DojoWeb.OuterShellLive do
 
   def render(assigns) do
     ~H"""
-    <div class="relative outershell pt-20 right-2 w-full lg:-left-1/2 lg:w-[150%]">
+    <div class="relative outershell pt-20 right-0 lg:pt-20 lg:right-2 w-full lg:-left-1/2 lg:w-[150%]">
       <div class="flex items-start justify-between gap-2 mb-3">
         <span
           id="top-head"
@@ -83,7 +83,7 @@ defmodule DojoWeb.OuterShellLive do
       <div
         id="outerenv"
         phx-update="ignore"
-        class="overflow-y-scroll relative border pointer-events-auto rounded-lg h-[50vh] border-amber-600/20 dark-scrollbar backdrop-blur-xs scrollbar-hide cursor-text"
+        class="overflow-y-scroll relative border pointer-events-auto rounded-lg h-[calc(100dvh-12rem)] lg:h-[50vh] border-amber-600/20 dark-scrollbar backdrop-blur-xs scrollbar-hide cursor-text"
       >
         <div class="z-50 absolute flex gap-1 top-2 right-2">
           <button
