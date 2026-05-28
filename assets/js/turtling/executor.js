@@ -71,7 +71,7 @@ export function* execute(ast, deps, opts = {}) {
     ec['count'] = () => state.loopCounter
 
     try {
-        yield* walkBody(ast, {}, state, stroke)
+        yield* walkBody(ast, opts.scope || {}, state, stroke)
     } catch (error) {
         // Flush accumulated path before crash propagates — valid geometry survives
         const pathEvent = strokeFlush(stroke)
@@ -236,7 +236,7 @@ function* walkBody(body, scope, state, stroke) {
                 origin: SE3.clone(state.transform),
                 style: { ...state.style },
                 code: { ast: node.children, functions: { ...state.functions } },
-                env: { userspace: new Map(state.deps.mathParser.userspace), loopCounter: state.loopCounter }
+                env: { userspace: new Map(state.deps.mathParser.userspace), loopCounter: state.loopCounter, scope: { ...scope } }
             }
             break
         }

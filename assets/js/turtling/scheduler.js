@@ -343,6 +343,7 @@ function createChildGenerator(value, createDeps, execOpts) {
             maxCommands: execOpts.maxCommands,
             functions: value.code.functions,
             loopCounter: value.env?.loopCounter,
+            scope: value.env?.scope,
             mailbox,
         }),
         deps: childDeps,
