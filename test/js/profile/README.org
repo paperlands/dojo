@@ -1,0 +1,189 @@
+#+title: Turtle Memory/CPU Profiler Workflow
+#+FILETAGS: :turtle:profiling:performance:
+#+STARTUP: overview indent
+
+* PURPOSE
+:PROPERTIES:
+:TYPE: reference
+:END:
+
+Two instruments for the turtle runtime, built to diagnose *persistent high CPU*
+and memory growth on low-compute clients (see [[file:../../../specs/turtle-rearchitecture.org]]
+ALLOCATION DISCIPLINE). They split the pipeline at the WebGL boundary:
+
+| Instrument | Covers                                  | Sees                                   |
+|------------+-----------------------------------------+----------------------------------------|
+| Headless   | parse → execute → scheduler (no THREE)  | allocation churn, retained references  |
+| In-browser | render loop + compositor + materializer | RAF idle-spin, GPU object growth       |
+
+The headless harness drains each ambient channel through a *counting stub* in
+place of the materializer, isolating executor/scheduler cost from rendering.
+
+* HEADLESS HARNESS
+:PROPERTIES:
+:TYPE: reference
+:END:
+
+#+BEGIN_SRC sh
+node --expose-gc test/js/profile/run.mjs
+#+END_SRC
+
+- =harness.mjs= — =profileProgram(src, { ticks, frameMs })=: builds a real
+  scheduler exactly as =turtle._ensureScheduler=, runs a batch flush then N
+  animation ticks, brackets heap with =global.gc()=, walks the live frame tree
+  for retained counts (=snapshotRetained=).
+- =run.mjs= — representative suite + threshold asserts (regression guard; exits
+  non-zero on a leak). Without =--expose-gc= it degrades to best-effort and
+  skips heap assertions with a warning.
+
+*The leak signal* is =Δheap/tick= over the steady animation run: flat ≈ no leak.
+=registry= / =frames= staying constant across re-execution ≈ no frame accumulation.
+
+** Baseline captured [2026-05-29]
+
+#+BEGIN_EXAMPLE
+program              flushMs  animTk  ms/p50  ms/p95  ΔheapKB  Δheap/tk(B)  reg  frames  err
+batch-throughput     0.57     1       0.002   0.002   -18.1    —            2    2       0
+steady-animation     0.02     600     0.014   0.039   183.0    312          2    2       0
+spawn-rewire-churn   0.09     600     0.053   0.091   331.6    566          3    3       0
+communication        0.05     600     0.064   0.105   153.3    262          5    5       0
+#+END_EXAMPLE
+
+*Finding*: the scheduler/executor layer is *not* the leak. Retained counts are
+flat, Δheap/tick is small and bounded (100k-command batch flushes in ~0.6ms;
+re-execution reuses frames, registry constant). This *isolates the persistent
+CPU + memory growth to the render layer* — measured by the overlay below.
+
+(Aside surfaced while authoring the suite: =fw leader.x - x= — a spec example —
+fails the turtle arg-parser, which splits on spaces into separate args. Parser
+concern, not perf; noted for follow-up.)
+
+* IN-BROWSER OVERLAY
+:PROPERTIES:
+:TYPE: reference
+:END:
+
+#+BEGIN_SRC sh
+# load the shell with the profiler panel
+/shell?perf=1
+#+END_SRC
+
+Or attach ad-hoc from devtools (=canvas.__turtle= is always exposed):
+
+#+BEGIN_SRC js
+import("/assets/js/turtling/profile/overlay.js")
+  .then(m => m.attachProfilerOverlay(document.getElementById('core-canvas').__turtle))
+// turtle.__profilerDetach() to remove
+#+END_SRC
+
+=overlay.js= wraps =turtle.onFrame= to count frames and samples on its own
+=setInterval= (passive — never calls =requestRender()=, so observing does not
+perturb). It reports:
+
+- *Idle-spin verdict + idle fps* — frames doing a full =renderer.render()= while
+  =scheduler.done= / no ambients and not recording. *This is the direct readout
+  of the persistent-CPU root cause* (=render/loop.js= re-arms RAF unconditionally,
+  =stopCondition: () => false=). A finished static drawing should idle at ~0 fps;
+  today it spins at ~60.
+- =renderer.info=: geometries, textures, draw calls, programs — climbing across
+  redraws = the material-cache / geometry leak (cache is module-level, never
+  pruned, and shared materials get =dispose()=d under it).
+- =performance.memory= heap (Chrome), used/peak.
+- Live counts: ambients (=registry.size - 1=), material-cache size.
+
+** Baseline + fix verification [2026-05-29] — headless Chromium via chrome-devtools-mcp
+
+Caveat: headless SwiftShader rAF is throttled (~10 fps here vs 60 on a real
+foreground tab), so absolute render rates understate a real device ~6×. The
+ratios and monotonic trends are valid.
+
+*Cause #1 — RAF idle-spin.* After a finished batch program (=loop 200 do fw 5 rt 5 end=,
+=scheduler.done=true=, camera untouched):
+
+| Metric (idle window)        | Before          | After (render-on-demand) |
+|-----------------------------+-----------------+--------------------------|
+| renderer.render() calls     | 205 over ~19s   | *0 over 5s*              |
+| overlay frames idle/total   | 758 / 758       | loop stopped             |
+| RAF loop                    | running forever | *stopped*                |
+
+Wake-on-demand verified: =requestRender()= → 1 frame then stop; camera
+interaction → renders through the ~700ms damping settle window then stop;
+animated program (=wait= → never done) → renders continuously, =done=false=.
+
+*Cause #3 — material cache leak.* Redraw same buffer with distinct =bold N=
+(thickness → distinct (color,thickness) key):
+
+| Metric                      | Before     | After                         |
+|-----------------------------+------------+-------------------------------|
+| matCache after 12 redraws   | 12         | 12 (legit cache, 1 live path) |
+| matCache after turtle.reset | 24 (stuck) | *0 (reclaimed)*               |
+| post-reset redraw           | corruptable| clean (cache rebuilds from 0) |
+
+Fixes: =clearMaterialCache()= on =compositor.dispose()=; compositor layer
+teardown no longer disposes =_cached= shared materials (was use-after-dispose);
+=updateMaterialResolution()= on resize. Within-session growth from slider churn
+is still unbounded by design (legitimate cache; spec A3 assumes few combos) —
+reclaimed on reset/navigate.
+
+*Cause #4 — draw-call explosion (the real scaling wall).* =wait= returns
+=stroke:"break"=, so an animated =loop do fw 1 wait end= emits one path event per
+tick. The materializer made one persistent Line2 mesh per event → tens of
+thousands of meshes/draw-calls for long animations. Observed on a pursuit-curve
+program (8 mice × =loop 3600 ... wait=, + spinning parents):
+
+| Metric         | Before   | After (trail consolidation)        |
+|----------------+----------+------------------------------------|
+| geometries     | 28,868   | *27*                               |
+| draw calls     | 28,354   | *26* (≈ one per ambient, not tick) |
+| heap (used)    | 261 MB   | *76 MB*                            |
+| fps            | 6        | settles, then RAF stops            |
+
+Fix: contiguous, same-(color,thickness) path events accumulate into ONE growing
+Line2 per ambient (=accumulateTrail= / =flushTrail= in materializer.js, wired in
+compositor =drainAndMaterialize=). A style change or discontinuity (jmp/pen-up)
+starts a new run; filled polygons stay standalone; the run resets on clear.
+Verified: =loop 400 ... wait= → 1 mesh (was 400); 8 mouse trails → 9 meshes;
+re-spawn-in-loop → 2 meshes; renders identically (screenshot confirmed).
+
+* AUTOMATED CAPTURE — chrome-devtools-mcp
+:PROPERTIES:
+:TYPE: reference
+:END:
+
+The in-browser baseline can be captured by an agent (no manual clicking) via the
+=chrome-devtools= MCP server, registered local-scope for this project:
+
+#+BEGIN_SRC sh
+chrome-devtools-mcp --headless --isolated --executablePath /usr/bin/chromium \
+  --experimentalMemory --chromeArg=--no-sandbox --chromeArg=--enable-unsafe-swiftshader
+#+END_SRC
+
+(=--enable-unsafe-swiftshader= is required for headless WebGL on Chromium 121+,
+else the canvas =getContext('webgl2')= returns null. GPU/CPU absolute numbers are
+software-rendered and not representative of a real device, but the *idle-spin*
+and *renderer.info growth* signals are CPU-side counts and remain valid.)
+
+Tools surface only after a Claude Code restart. Protocol per session:
+
+1. =new_page= → navigate to =http://localhost:4000/shell?perf=1= (Phoenix already
+   serves locally — the =tidewave= MCP server connecting confirms it's up).
+2. =evaluate_script= the probe (=__turtle= is exposed on the canvas):
+   #+BEGIN_SRC js
+   () => { const t = document.getElementById('core-canvas').__turtle; return {
+     raf: t.renderLoop.state.animationFrameId != null,
+     done: t.scheduler ? t.scheduler.done : null,
+     ambients: t.scheduler ? t.scheduler.registry.size - 1 : 0,
+     mem: t.stage.renderer.info.memory, calls: t.stage.renderer.info.render.calls,
+     heapMB: performance.memory && +(performance.memory.usedJSHeapSize/1048576).toFixed(1) }; }
+   #+END_SRC
+3. *Idle-spin (cause #1):* type a batch program (=loop 200 do\n fw 5\n rt 5\nend=)
+   via =evaluate_script= dispatching into the CM6 editor (or the LiveView render
+   path), run =performance_start_trace= → wait 10s idle → =performance_stop_trace=.
+   Verify RAF still firing + frames committed while =done=true= → idle CPU cost.
+4. *Leak (cause #3):* snapshot =mem.geometries= + mat-cache, re-draw a
+   color-varying program (=color [count]=) ~15×, re-snapshot. Growth that never
+   recedes = the unbounded material cache.
+
+* RELATED
+- Diagnosis + follow-up fixes: =~/.claude/plans/observe-deeply-across-the-elegant-mccarthy.md=
+- Spec: [[file:../../../specs/turtle-rearchitecture.org]]
