@@ -7,6 +7,7 @@ import { OrbitControls } from '../utils/threeorbital'
 import { WebGLRenderer } from '../utils/threerender'
 import Render from "./render/index.js"
 import { Recorder } from "./export/recorder.js"
+import { updateMaterialResolution } from "./materializer.js"
 import { cameraBridge } from "../bridged.js"
 
 export function createStage(canvas, bridge) {
@@ -75,6 +76,9 @@ export function createStage(canvas, bridge) {
         camera.aspect = window.innerWidth / window.innerHeight
         camera.updateProjectionMatrix()
         renderer.setSize(window.innerWidth, window.innerHeight)
+        // Line width is screen-space — keep cached materials' resolution current.
+        updateMaterialResolution(window.innerWidth, window.innerHeight)
+        stage.requestRender?.()
     }
     window.addEventListener('resize', onResize)
 
@@ -107,6 +111,8 @@ export function createStage(canvas, bridge) {
             break
         }
         }
+        // Camera/recorder state changed — wake the render loop to reflect it.
+        stage.requestRender?.()
     })
 
     // Assembled stage object

@@ -419,6 +419,14 @@ const Shell = {
             const turtle = new Turtle(canvas);
             canvas.__turtle = turtle;
 
+            // Profiler overlay — opt-in via ?perf=1. Lazy-imported so it adds
+            // zero cost to normal sessions. Reports RAF idle-spin + GPU growth.
+            if (new URLSearchParams(location.search).has('perf')) {
+                import('../turtling/profile/overlay.js')
+                    .then(m => { this._profilerDetach = m.attachProfilerOverlay(turtle); })
+                    .catch(err => console.warn('profiler overlay failed to load:', err));
+            }
+
             // C10: _onShout must precede term.bridge.sub which triggers first render
             // C4: tabId captured in upsertAmbient closure, arrives as first arg
             turtle._onShout = (focusedName, source, msg, payload) => {
@@ -555,6 +563,7 @@ const Shell = {
                 slider.mount(),
                 listeners.slider(term.shell, slider, cm6).mount(),
                 () => turtle.dispose(),
+                () => this._profilerDetach?.(),
                 sceneUnsub,
             ];
 

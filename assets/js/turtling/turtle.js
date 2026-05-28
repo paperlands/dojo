@@ -17,11 +17,32 @@ export class Turtle {
         this.stage = stage
         this.renderstate = stage.renderstate
 
+        // Render-on-demand: the loop stops itself when nothing is changing and
+        // is woken by requestRender(). Without this it rendered at 60fps for the
+        // page's whole life — a finished static drawing burned full WebGL frames
+        // forever (the dominant persistent-CPU cost on low-compute clients).
         this.renderLoop = new Render.Loop(null, {
             onRender: (t) => this.onFrame(t),
-            stopCondition: () => false
+            stopCondition: () => this._shouldStop()
         })
         stage.renderLoop = this.renderLoop
+        // Let the stage (resize, camera bridge) wake the on-demand loop.
+        stage.requestRender = () => this.requestRender()
+
+        this._renderRequested = false    // one-shot: render at least one more frame
+        this._keepRendering = false      // set each frame: is there ongoing work?
+        this._controlsActiveUntil = 0    // ms timestamp: keep rendering until damping settles
+
+        // Wake the loop on camera interaction; extend a settle window so inertial
+        // damping completes after the user releases (controls.update() also keeps
+        // it alive while it reports change, but the window is robust on its own).
+        this._onControlsActive = () => {
+            this._controlsActiveUntil = performance.now() + 700
+            this.requestRender()
+        }
+        for (const ev of ['start', 'change', 'end']) {
+            stage.controls.addEventListener(ev, this._onControlsActive)
+        }
 
         this.color = '#e77808'
 
@@ -47,7 +68,14 @@ export class Turtle {
     }
 
     requestRender() {
-        this.renderLoop.start()
+        this._renderRequested = true
+        this.renderLoop.ensureRunning()
+    }
+
+    // Loop stop predicate (checked at the top of each frame). Stop only when no
+    // render was explicitly requested and the last frame found nothing ongoing.
+    _shouldStop() {
+        return !this._renderRequested && !this._keepRendering
     }
 
     _scheduleHeartbeat() {
@@ -70,6 +98,9 @@ export class Turtle {
     dispose() {
         this._stopHeartbeat()
         document.removeEventListener('visibilitychange', this._onVisibilityChange)
+        for (const ev of ['start', 'change', 'end']) {
+            this.stage.controls.removeEventListener(ev, this._onControlsActive)
+        }
     }
 
     // Lazy init: one scheduler (meta-root) + one compositor for the lifetime.
@@ -108,6 +139,9 @@ export class Turtle {
     }
 
     onFrame(t) {
+        this._renderRequested = false
+        let controlsChanged = false
+
         if (this.compositor) {
             try {
                 this.compositor.advance(t)
@@ -115,7 +149,7 @@ export class Turtle {
                 console.error('Compositor advance error:', error)
             }
 
-            this.stage.controls.update()
+            controlsChanged = this.stage.controls.update()
             this.stage.renderer.render(this.stage.scene, this.stage.camera)
 
             if (this.stage.recorder.isRecording) {
@@ -135,9 +169,19 @@ export class Turtle {
             const { head, camera, controls, renderer, scene } = this.stage
             const scaleFactor = camera.position.distanceTo(head.position()) / 250
             head.scale(scaleFactor)
-            controls.update()
+            controlsChanged = controls.update()
             renderer.render(scene, camera)
         }
+
+        // Decide whether the loop should keep running. Keep going while a program
+        // animates, while recording, while the camera is still moving/damping, or
+        // until the first thumbnail snapshot is captured; otherwise idle out.
+        const animating = !!this.scheduler && !this.scheduler.done
+        const recording = this.stage.recorder.isRecording
+        // Only the compositor branch can hatch — don't pin the idle loop on.
+        const needHatch = !!this.compositor && this.renderstate.snapshot.frame == null
+        const controlsSettling = performance.now() < this._controlsActiveUntil
+        this._keepRendering = animating || recording || controlsChanged || controlsSettling || needHatch
     }
 
     hatch() {

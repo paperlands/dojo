@@ -14,6 +14,27 @@ import { LineGeometry } from './render/line/LineGeometry.js'
 // Reuse eliminates duplicate GPU uniform buffers and reduces WebGL state switches.
 const materialCache = new Map()
 
+// Read-only introspection for the profiler overlay (non-behavioral).
+export function materialCacheSize() {
+    return materialCache.size
+}
+
+// Dispose every cached material and empty the cache. Called on turtle.reset()/
+// compositor.dispose() — the cache is module-global and otherwise lives for the
+// whole page, so without this it leaks one LineMaterial (+ GPU uniform buffers)
+// per unique (color, thickness) for the session's lifetime.
+export function clearMaterialCache() {
+    for (const mat of materialCache.values()) mat.dispose()
+    materialCache.clear()
+}
+
+// Keep cached LineMaterials' resolution uniform in sync with the canvas — line
+// width is screen-space, so a stale resolution renders lines at the wrong width
+// after a window resize.
+export function updateMaterialResolution(width, height) {
+    for (const mat of materialCache.values()) mat.resolution?.set(width, height)
+}
+
 function getOrCreateMaterial(color, thickness) {
     const key = `${color || 0xe77808}:${thickness || 2}`
     let mat = materialCache.get(key)
@@ -25,6 +46,10 @@ function getOrCreateMaterial(color, thickness) {
             dashed: false,
         })
         mat.resolution.set(window.innerWidth, window.innerHeight)
+        // Tag so layer teardown disposes per-mesh geometry but NOT this shared,
+        // cache-owned material (disposing it would corrupt every other mesh that
+        // shares the key). The cache owns disposal via clearMaterialCache().
+        mat._cached = true
         materialCache.set(key, mat)
     }
     return mat
@@ -103,6 +128,76 @@ function materializePath(event, pathGroup, shapist) {
     } catch (error) {
         console.warn('Error drawing path:', error)
     }
+}
+
+// --- Trail consolidation (draw-call collapse) ---
+//
+// `wait` breaks the stroke every temporal boundary, so an animated
+// `loop do fw 1 wait end` emits one path event per tick. Naively that is one
+// Line2 mesh per event → tens of thousands of meshes/draw-calls for a long
+// animation (the dominant cost on complex programs). But consecutive flushes of
+// a continuous pen-down trail share an endpoint, so they form ONE polyline.
+//
+// We accumulate contiguous, same-(color,thickness) path events into a single
+// growing Line2 per layer. A style change or a discontinuity (jmp / pen-up)
+// finalizes the current run (its mesh stays) and starts a new one. Filled
+// polygons remain standalone. Trail state is owned by the caller (compositor),
+// stored on `layer.trail`, and reset on clear.
+
+const _samePoint = (a, b) =>
+    a && b &&
+    Math.abs(a[0] - b[0]) < 1e-6 &&
+    Math.abs(a[1] - b[1]) < 1e-6 &&
+    Math.abs(a[2] - b[2]) < 1e-6
+
+// Append a path event into layer.trail (mutated in place). Returns the layer.
+export function accumulateTrail(event, layer) {
+    if (!event.points || event.points.length === 0) return layer
+
+    // Filled polygons are standalone — finalize any open run, render separately.
+    if (event.filled) {
+        layer.trail = null
+        materializePath(event, layer.group, layer.shapist)
+        return layer
+    }
+
+    const key = `${event.color || 0xe77808}:${event.thickness || 2}`
+    let tr = layer.trail
+    const contiguous = tr && tr.key === key && _samePoint(tr.lastPoint, event.points[0])
+
+    if (!contiguous) {
+        // Start a new run. Any previous run keeps its (already-added) mesh.
+        tr = layer.trail = { key, color: event.color, thickness: event.thickness, pts: [], mesh: null, lastPoint: null, dirty: true }
+        for (const p of event.points) tr.pts.push(p[0], p[1], p[2])
+    } else {
+        // Skip the duplicated shared start point.
+        for (let i = 1; i < event.points.length; i++) {
+            const p = event.points[i]
+            tr.pts.push(p[0], p[1], p[2])
+        }
+    }
+    tr.lastPoint = event.points[event.points.length - 1]
+    tr.dirty = true
+    return layer
+}
+
+// Rebuild the current run's single mesh from accumulated points. Called once
+// per frame per layer (not per event) by the compositor after draining.
+export function flushTrail(layer) {
+    const tr = layer.trail
+    if (!tr || !tr.dirty || tr.pts.length < 6) return
+    const positions = new Float32Array(tr.pts)
+    const geometry = new LineGeometry()
+    geometry.setPositions(positions)
+    if (tr.mesh) {
+        tr.mesh.geometry.dispose()
+        tr.mesh.geometry = geometry
+    } else {
+        tr.mesh = new Line2(geometry, getOrCreateMaterial(tr.color, tr.thickness))
+        layer.group.add(tr.mesh)
+    }
+    tr.mesh.computeLineDistances()
+    tr.dirty = false
 }
 
 function materializeHead(event, ctx) {

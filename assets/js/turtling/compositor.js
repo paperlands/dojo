@@ -13,7 +13,7 @@
 // 5. Cleans up layers for terminated ambients
 
 import * as THREE from '../utils/three.core.min.js'
-import { materialize } from "./materializer.js"
+import { materialize, accumulateTrail, flushTrail, clearMaterialCache } from "./materializer.js"
 import { groupTransform, visitPostOrder } from "./scheduler.js"
 
 // Set opacity on a group, cloning shared materials so the material cache isn't mutated.
@@ -62,9 +62,19 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
 
         const head = createHead ? createHead(group) : null
         const shapist = createShapist ? createShapist(group) : null
-        const layer = { group, head, shapist }
+        // trail: current consolidated polyline run (materializer-owned state)
+        const layer = { group, head, shapist, trail: null }
         ambientLayers.set(id, layer)
         return layer
+    }
+
+    // Dispose a mesh's geometry, and its material ONLY if not cache-owned.
+    // Shared LineMaterials (materializer cache, _cached) are disposed wholesale
+    // by clearMaterialCache(), never per-mesh — disposing one here would free a
+    // GPU material still referenced by every other mesh sharing its key.
+    function disposeMesh(c) {
+        if (c.geometry) c.geometry.dispose()
+        if (c.material && !c.material._cached) c.material.dispose()
     }
 
     // Clear a child layer's geometry/materials but preserve its head mesh.
@@ -72,26 +82,22 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
         const headGroup = layer.head?.turtleGroup
         for (const child of [...layer.group.children]) {
             if (child === headGroup) continue
-            child.traverse(c => {
-                if (c.geometry) c.geometry.dispose()
-                if (c.material) c.material.dispose()
-            })
+            child.traverse(disposeMesh)
             layer.group.remove(child)
         }
         if (layer.group.elements) {
             layer.group.elements.forEach(text => text.dispose?.())
             layer.group.elements = []
         }
+        // The current trail's mesh was just disposed with the group children.
+        layer.trail = null
     }
 
     // Dispose a layer entirely: hide head, dispose shapist, remove from scene.
     function disposeLayer(id, layer) {
         if (layer.head) layer.head.hide()
         if (layer.shapist) layer.shapist.dispose()
-        layer.group.traverse(c => {
-            if (c.geometry) c.geometry.dispose()
-            if (c.material) c.material.dispose()
-        })
+        layer.group.traverse(disposeMesh)
         if (layer.group.elements) {
             layer.group.elements.forEach(t => t.dispose?.())
         }
@@ -124,10 +130,16 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
                 if (event.type === 'error') continue
                 if (event.type === 'clear') {
                     clearChildLayer(layer)
+                } else if (event.type === 'path') {
+                    // Consolidate contiguous segments into one growing mesh
+                    // instead of one mesh per event (draw-call collapse).
+                    accumulateTrail(event, layer)
                 } else {
                     materialize(event, childGroups, childCtx)
                 }
             }
+            // Rebuild the trail mesh once per frame, not per event.
+            flushTrail(layer)
             produced = true
         }
         return produced
@@ -158,15 +170,15 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
         }
     }
 
+    const _scratchHeadPos = new THREE.Vector3()
     function scaleChildHeads() {
         for (const [id, layer] of ambientLayers) {
             if (!layer.head) continue
             const headPos = layer.head.position()
             const gp = layer.group.position
-            const wx = gp.x + headPos.x
-            const wy = gp.y + headPos.y
-            const wz = gp.z + headPos.z
-            const dist = ctx.camera.position.distanceTo(new THREE.Vector3(wx, wy, wz))
+            // Reuse one scratch vector — this runs per head per frame.
+            _scratchHeadPos.set(gp.x + headPos.x, gp.y + headPos.y, gp.z + headPos.z)
+            const dist = ctx.camera.position.distanceTo(_scratchHeadPos)
             layer.head.scale(dist / 250)
         }
     }
@@ -239,6 +251,9 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
                 disposeLayer(id, layer)
             }
             ambientLayers.clear()
+            // Reclaim the module-global material cache — nothing references it
+            // once all layers are gone.
+            clearMaterialCache()
         }
     }
 }
