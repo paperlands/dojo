@@ -146,25 +146,51 @@ const commands = {
     },
 
     // Control structure wrapping — wraps selection in do/end block.
+    // Full-line intelligent: expands selection to line boundaries and reads
+    // lines from the document, so indent handling is pure regardless of
+    // where the user's cursor landed during selection.
     ctrl: (view, { control: ctrl, args = [] }, cm6) => {
         const { view: v, selection, structIndent } = getContext(view);
         const { EditorSelection } = cm6;
+        const state = v.state;
 
-        const argText     = formatArgs(args) || " 1";
-        const baseIndent  = " ".repeat(structIndent);
-        const innerIndent = " ".repeat(structIndent + 2);
+        const argText = formatArgs(args) || " 1";
 
-        const lines = selection && selection.text
-            ? selection.text.split('\n').filter(l => l.trim())
-            : [];
-        const minIndent = lines.length
-            ? Math.min(...lines.map(l => l.match(/^(\s*)/)[1].length))
-            : 0;
+        const hasSelection = selection.text.trim().length > 0;
+        let lines = [];
+        let fullSel = selection;
 
+        if (hasSelection) {
+            const fromLine = selection.from.line;
+            let toLine = selection.to.line;
+            // Selection ending at col 0 means cursor wrapped to next line — exclude it
+            if (selection.to.ch === 0 && toLine > fromLine) toLine--;
+
+            // Read full lines from document — not from selection text
+            for (let ln = fromLine; ln <= toLine; ln++) {
+                const text = state.doc.line(ln + 1).text;
+                if (text.trim()) lines.push(text);
+            }
+            // Expand selection to full line boundaries for clean replacement
+            const lastLineInfo = state.doc.line(toLine + 1);
+            fullSel = {
+                from: { line: fromLine, ch: 0 },
+                to:   { line: toLine, ch: lastLineInfo.text.length },
+                text: state.sliceDoc(state.doc.line(fromLine + 1).from, lastLineInfo.to),
+            };
+        }
+
+        // Derive indent from selection context, not cursor position.
+        // The selected lines know their own depth — wrapper sits at their
+        // outermost level, body nudges in by 2.
         const hasBody = lines.length > 0;
+        const baseIndent = hasBody
+            ? " ".repeat(Math.min(...lines.map(l => l.match(/^(\s*)/)[1].length)))
+            : " ".repeat(structIndent);
+
         const structure = hasBody
             ? [`${baseIndent}${ctrl}${argText} do`,
-               lines.map(l => `${innerIndent}${l.slice(minIndent)}`).join('\n'),
+               lines.map(l => "  " + l).join('\n'),
                `${baseIndent}end`]
             : [`${baseIndent}${ctrl}${argText} do`,
                `${baseIndent}end`];
@@ -173,11 +199,10 @@ const commands = {
             structure.push(`${argText}`.trim());
         }
 
-        // Prepend newline when no selection to avoid concat with current line
         let wrapped = structure.join('\n');
-        if (!selection.text.trim()) wrapped = "\n" + wrapped;
+        if (!hasSelection) wrapped = "\n" + wrapped;
 
-        const range = transform(v, selection, wrapped);
+        const range = transform(v, fullSel, wrapped);
 
         if (hasBody) {
             flash(v, range, cm6);
