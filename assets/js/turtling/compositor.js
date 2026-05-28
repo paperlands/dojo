@@ -197,9 +197,11 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
             let maxTicks = 10000
             while (maxTicks-- > 0) {
                 const progress = scheduler.tick(flushTime)
-                drainAndMaterialize()
                 if (scheduler.done || !progress) break
             }
+            // Drain once after all ticks — channels accumulate across ticks, so
+            // we materialize the batch in a single pass (one trail rebuild, not N).
+            drainAndMaterialize()
             updateGroupPositions()
             return scheduler.done
         },
@@ -211,12 +213,18 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
             const now = t - epoch
             scheduler.lastTickTime = now
             if (!scheduler.done) {
+                // Catch sim time up to the wall clock by ticking until no frame
+                // makes progress (each frame advances one wait-step per tick).
+                // Channels accumulate events across these ticks...
                 let budget = 64
                 let progress
                 do {
                     progress = scheduler.tick(now)
-                    if (progress) drainAndMaterialize()
                 } while (progress && !scheduler.done && --budget > 0)
+                // ...so drain + materialize ONCE per frame. Previously this ran
+                // per tick, rebuilding every trail mesh ~N× per frame (the heavy
+                // catch-up cost). One pass = one trail rebuild per ambient.
+                drainAndMaterialize()
                 updateGroupPositions()
             }
             cleanupOrphanedLayers()

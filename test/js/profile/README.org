@@ -145,6 +145,28 @@ starts a new run; filled polygons stay standalone; the run resets on clear.
 Verified: =loop 400 ... wait= → 1 mesh (was 400); 8 mouse trails → 9 meshes;
 re-spawn-in-loop → 2 meshes; renders identically (screenshot confirmed).
 
+*Cause #5 — 60fps under heavy load (real-hardware, via attached Chrome).* After
+#1–#4, a heavy animation held only ~39fps while the CPU sat 93% idle — so the
+cap was not our work. Per-frame instrumentation (live browser) isolated two
+throttles:
+
+1. =compositor.advance= ran =drainAndMaterialize= INSIDE the catch-up tick loop,
+   so =flushTrail= rebuilt every trail mesh ~34×/frame (32ms). Fix: tick the
+   catch-up loop to fill channels, then drain + materialize ONCE per frame
+   (channels accumulate across ticks). → advance 32ms → 4ms.
+2. =render/loop.js= gated rendering on =deltaTime >= 1000/60=; RAF timestamps
+   jitter just under 16.67ms on a 60Hz display, so frames were dropped (~40fps).
+   Fix: render every RAF (already vsync-locked); render-on-demand still idles out.
+
+| Program (sustained, real GPU) | fps before | fps after | draw calls |
+|-------------------------------+------------+-----------+------------|
+| single long trail             | 39         | *60*      | 1          |
+| 8 mice (long)                 | ~40        | *60*      | 21         |
+| 20 mice (long)                | —          | *60*      | 37         |
+
+Per-frame after: onFrame 5.6ms (was 33ms) — headroom for 60fps. Idle still
+0 renders / RAF stopped.
+
 * AUTOMATED CAPTURE — chrome-devtools-mcp
 :PROPERTIES:
 :TYPE: reference
