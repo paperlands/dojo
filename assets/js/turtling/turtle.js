@@ -29,6 +29,7 @@ export class Turtle {
         this.scheduler = null
         this.compositor = null
         this._snapshotPending = false
+        this._localKeys = new Set()  // buffer IDs of locally-rendered tab ambients
 
         this._heartbeatTimer = null
         this._onVisibilityChange = () => {
@@ -102,7 +103,7 @@ export class Turtle {
                 })
             }
         )
-        this.compositor.focusedName = 'world'
+        // focusedName left null — set by first draw() call
         this.stage.head.hide()
     }
 
@@ -153,12 +154,13 @@ export class Turtle {
 
     // --- Multi-ambient API ---
 
-    upsertAmbient(tabId, name, code) {
+    upsertAmbient(key, displayName, code) {
         try {
             const instructions = parseProgram(code)
             this._ensureScheduler()
 
-            this.scheduler.hotSwapChild(name, {
+            this.scheduler.hotSwapChild(key, {
+                name: displayName,
                 code: { ast: instructions, functions: null },
                 style: { color: this.color },
                 env: null
@@ -187,9 +189,18 @@ export class Turtle {
         }
     }
 
-    removeAmbient(name) {
+    removeAmbient(key) {
         if (!this.scheduler) return
-        this.scheduler.removeChild(name)
+        this._localKeys.delete(key)
+
+        // Try by key (buffer ID) first, fall back to name search (outer shell compat)
+        if (this.scheduler.root.children.has(key)) {
+            this.scheduler.removeChild(key)
+        } else {
+            for (const [id, child] of this.scheduler.root.children) {
+                if (child.name === key) { this.scheduler.removeChild(id); break }
+            }
+        }
 
         // If no children left, tear down scheduler and show idle head
         if (this.scheduler.root.children.size === 0) {
@@ -215,13 +226,35 @@ export class Turtle {
         }
     }
 
+    // Toggle a tab's ambient: shift+click adds if absent, removes if present.
+    // On add, re-upserts ALL local ambients so they restart in sync.
+    // resolveBuffer(key) → { name, content } provides sibling code for restart.
+    toggleAmbient(id, name, code, resolveBuffer) {
+        this._ensureScheduler()
+        if (this.scheduler.root.children.has(id)) {
+            this.removeAmbient(id)
+        } else {
+            this._localKeys.add(id)
+            for (const key of this._localKeys) {
+                const info = key === id ? { name, content: code } : resolveBuffer?.(key)
+                if (info) this.upsertAmbient(key, info.name, info.content)
+            }
+        }
+        this.requestRender()
+    }
+
     // --- Backward-compatible API ---
 
-    draw(code, opts = {}) {
-        if (this.compositor) {
-            this.focusAmbient('world')
+    draw(id, name, code) {
+        this._ensureScheduler()
+        // Exclusive: remove all other local tab ambients
+        for (const key of this._localKeys) {
+            if (key !== id) this.removeAmbient(key)
         }
-        return this.upsertAmbient('world', 'world', code)
+        this._localKeys.clear()
+        this._localKeys.add(id)
+        this.focusAmbient(name)
+        return this.upsertAmbient(id, name, code)
     }
 
     reset() {

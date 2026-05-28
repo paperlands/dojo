@@ -134,11 +134,14 @@ function transformEvent(event, t) {
 // Resolve a variable from the ambient tree. Dispatches dotted paths
 // (sibling observation) vs unqualified names (ancestor fn inheritance).
 // Find a named frame: check siblings first, then walk ancestors.
+// Searches by frame.name (display name), not by children map key,
+// so cross-ambient references use tab names (e.g., spiral.x).
 function findFrame(frame, name) {
     // Siblings (parent's children, or own children if root)
     const parent = frame.parent || frame
-    const sibling = parent.children.get(name)
-    if (sibling) return sibling
+    for (const child of parent.children.values()) {
+        if (child.name === name) return child
+    }
 
     // Walk ancestors by name
     let ancestor = frame.parent
@@ -609,21 +612,23 @@ export function createScheduler(generator, opts = {}) {
         commandCount: 0,
         lastTickTime: 0,
 
-        // Hot-swap a named child of root: terminate existing (if any),
+        // Hot-swap a child of root by key: terminate existing (if any),
         // create fresh child from fork spec, advance inline.
+        // key = stable identity (buffer ID); forkSpec.name = display name (tab name).
         // Uses lastTickTime so the new child's waits are relative to the
         // current timeline, not time 0 (which would cause fast catch-up).
-        hotSwapChild(name, forkSpec) {
-            const existing = root.children.get(name)
+        hotSwapChild(key, forkSpec) {
+            const existing = root.children.get(key)
             if (existing) {
                 terminateAmbient(existing)
                 visitPostOrder(existing, (c) => registry.delete(c.id))
-                root.children.delete(name)
+                root.children.delete(key)
             }
 
+            const displayName = forkSpec.name || key
             const { generator, deps, mailbox } = createChildGenerator(forkSpec, createDeps, execOpts)
             const child = attachMeta(
-                createFrame(name, generator, {
+                createFrame(displayName, generator, {
                     parent: root,
                     origin: forkSpec.origin || SE3.identity(),
                     channelCapacity
@@ -631,20 +636,20 @@ export function createScheduler(generator, opts = {}) {
                 null
             )
             wireChild(child, deps, mailbox, registry)
-            root.children.set(name, child)
+            root.children.set(key, child)
 
             advanceChild(child, this.lastTickTime, createDeps, execOpts, channelCapacity, registry, [], onShout)
             this.done = false
             return child
         },
 
-        // Remove a named child of root and clean up its subtree.
-        removeChild(name) {
-            const child = root.children.get(name)
+        // Remove a child of root by key and clean up its subtree.
+        removeChild(key) {
+            const child = root.children.get(key)
             if (!child) return
             terminateAmbient(child)
             visitPostOrder(child, (c) => registry.delete(c.id))
-            root.children.delete(name)
+            root.children.delete(key)
             this.done = allDone(root)
         },
 

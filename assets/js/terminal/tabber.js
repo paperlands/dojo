@@ -58,14 +58,34 @@ export class Tabber {
 
         // Configure close button
         const close = element.querySelector('.close');
-        close?.addEventListener('click', () =>
+        close?.addEventListener('click', (e) => {
+            e.stopPropagation()
             this.dispatch('phx:opBuffer', { op: 'close', target: id })
-        );
+        });
 
-        // Configure tab click
-        element.addEventListener('click', () =>
-            this.dispatch('phx:opBuffer', { op: 'select', target: id })
-        );
+        // Shift+click activates ambient without switching editor.
+        // Long-press on mobile does the same.
+        let longPressTimer = null;
+        let longPressed = false;
+
+        element.addEventListener('click', (e) => {
+            if (longPressed) { longPressed = false; return; }
+            if (e.shiftKey) {
+                this.dispatch('phx:opBuffer', { op: 'activate', target: id })
+            } else {
+                this.dispatch('phx:opBuffer', { op: 'select', target: id })
+            }
+        });
+
+        element.addEventListener('touchstart', () => {
+            longPressed = false;
+            longPressTimer = setTimeout(() => {
+                longPressed = true;
+                this.dispatch('phx:opBuffer', { op: 'activate', target: id });
+            }, 500);
+        }, { passive: true });
+        element.addEventListener('touchend', () => clearTimeout(longPressTimer));
+        element.addEventListener('touchmove', () => clearTimeout(longPressTimer));
 
         return element;
     }
@@ -131,6 +151,22 @@ export class Tabber {
         if (input) {
             return input.value
         }
+    }
+
+    // Mark a tab as having an active ambient (green indicator).
+    setActive(targetId) {
+        const tab = this.container.querySelector(`[data-tab-id="${targetId}"]`);
+        tab?.setAttribute('data-active', '');
+    }
+
+    clearActive(targetId) {
+        const tab = this.container.querySelector(`[data-tab-id="${targetId}"]`);
+        tab?.removeAttribute('data-active');
+    }
+
+    clearAllActive() {
+        this.container.querySelectorAll('.tab-instance[data-active]')
+            .forEach(t => t.removeAttribute('data-active'));
     }
 
     closeTab(targetId) {

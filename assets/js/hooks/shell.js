@@ -31,7 +31,7 @@ const findNumericTokenAt = (line, ch) => {
 // =============================================================================
 
 const commands = {
-    render: (turtle) => (code) => turtle.draw(code),
+    render: (turtle) => (id, name, code) => turtle.draw(id, name, code),
 
     // Dispatch instructions through Terminal.run() — not via term.shell.run()
     // since EditorView cannot be monkey-patched with custom methods.
@@ -401,7 +401,7 @@ const Shell = {
 
             this.cleanup = [
                 listeners.theme(theme => term.setOption('theme', theme)).mount(),
-                () => { if (outerName) sceneBridge.pub(['remove', { ambientId: outerName }]); },
+                () => { if (outerAddr) sceneBridge.pub(['remove', { ambientId: outerAddr }]); },
                 () => term.shell?.dom.removeEventListener('keydown', forkOnType),
                 () => { outerEl.removeEventListener('mousedown', onOuterClick);
                         document.removeEventListener('focusin', onGlobalFocus); },
@@ -414,9 +414,8 @@ const Shell = {
 
             // C10: _onShout must precede term.bridge.sub which triggers first render
             // C4: tabId captured in upsertAmbient closure, arrives as first arg
-            turtle._onShout = (tabId, source, msg, payload) => {
-                if (tabId !== 'world') return
-                nerveInstance?.push(S.shout(source, msg, payload, tabId))
+            turtle._onShout = (focusedName, source, msg, payload) => {
+                nerveInstance?.push(S.shout(source, msg, payload, focusedName))
             }
 
             const renderCommand   = commands.render(turtle);
@@ -433,14 +432,19 @@ const Shell = {
             }
 
 
-            const debouncedRender = temporal.debounce((code) => {
+            const debouncedRender = temporal.debounce(({ id, name, content }) => {
                 nerveInstance?.store.run()
-                const result = renderCommand(code);
+                const result = renderCommand(id, name, content);
                 if (result.success) {
                     nerveInstance?.push(S.output("☀︎", result.commandCount))
                 } else {
                     const line = parseErrorLine(result.error)
                     nerveInstance?.push(S.error("error", result.error, line ? { line } : null))
+                }
+                // Sync tab indicators: draw is exclusive, only this tab is active
+                term.clearAllTabActive()
+                for (const key of turtle._localKeys) {
+                    term.setTabActive(key)
                 }
             }, 20);
 
@@ -473,25 +477,42 @@ const Shell = {
             const sceneUnsub = sceneBridge.sub(([type, payload]) => {
                 switch (type) {
                 case 'focus': {
+                    // 'world' = sentinel: outer shell releasing focus → restore core tab
+                    const isWorld = payload.ambientId === 'world'
+                    let targetName = payload.ambientId
+                    if (isWorld) targetName = term.currentBufferName()
+                    if (!targetName) break
+
                     const prev = turtle.compositor?.focusedName
-                    if (prev && prev !== payload.ambientId) {
-                        turtle.setAmbientOpacity(prev, prev === 'world' ? 1.0 : 0.4)
+                    // Dim previous single ambient (covers outer→outer transitions)
+                    if (prev && prev !== targetName) {
+                        turtle.setAmbientOpacity(prev, 0.4)
                     }
-                    turtle.focusAmbient(payload.ambientId)
-                    turtle.setAmbientOpacity(payload.ambientId, 1.0)
-                    if (payload.ambientId !== 'world') {
-                        turtle.setAmbientOpacity('world', 0.3)
+
+                    // Core shell group: all active local tabs share focus.
+                    // Dim them when focusing outer, restore when returning to 'world'.
+                    const localOpacity = isWorld ? 1.0 : 0.4
+                    for (const key of turtle._localKeys) {
+                        const info = term.getBufferInfo(key)
+                        if (info) turtle.setAmbientOpacity(info.name, localOpacity)
                     }
+
+                    turtle.focusAmbient(targetName)
+                    turtle.setAmbientOpacity(targetName, 1.0)
                     turtle.requestRender()
                     break
                 }
-                case 'remove':
+                case 'remove': {
                     turtle.removeAmbient(payload.ambientId)
-                    turtle.focusAmbient('world')
-                    turtle.setAmbientOpacity('world', 1.0)
+                    const activeName = term.currentBufferName()
+                    if (activeName) {
+                        turtle.focusAmbient(activeName)
+                        turtle.setAmbientOpacity(activeName, 1.0)
+                    }
                     turtle.requestRender()
                     term.clearMerge()
                     break
+                }
                 case 'fork':
                     term.forkBuffer(payload)
                     term.shell?.focus()
@@ -527,7 +548,50 @@ const Shell = {
             this.handleEvent("relayCamera",      ({ command }) => cameraCommand(command));
             this.handleEvent("selfkeepCanvas",   ({ title })   => cameraCommand("snap", { title }));
             this.handleEvent("writeShell",       executeCommand);
-            this.handleEvent("opBuffer",         (event)       => term.opBufferHandler(event));
+            this.handleEvent("opBuffer", (event) => {
+                if (event.op === 'activate') {
+                    // Shift+click: toggle tab's ambient (add if absent, remove if present)
+                    // On add, all local ambients restart in sync.
+                    const info = term.getBufferInfo(event.target);
+                    if (info) {
+                        turtle.toggleAmbient(event.target, info.name, info.content,
+                            (key) => term.getBufferInfo(key));
+                        term.clearAllTabActive()
+                        for (const key of turtle._localKeys) {
+                            term.setTabActive(key)
+                        }
+                    }
+                    return;
+                }
+                if (event.op === 'close') {
+                    const targetId = event.target || term.currentBufferId();
+                    const hadBuffer = !!term.getBufferInfo(targetId);
+                    term.opBufferHandler(event);
+                    if (hadBuffer && !term.getBufferInfo(targetId)) {
+                        turtle.removeAmbient(targetId);
+                        const activeName = term.currentBufferName();
+                        if (activeName) turtle.focusAmbient(activeName);
+                        term.clearAllTabActive()
+                        for (const key of turtle._localKeys) {
+                            term.setTabActive(key)
+                        }
+                        turtle.requestRender();
+                    }
+                    return;
+                }
+                if (event.op === 'rename') {
+                    const targetId = event.target;
+                    const oldName = term.getBufferInfo(targetId)?.name;
+                    term.opBufferHandler(event);
+                    const newName = term.getBufferInfo(targetId)?.name;
+                    if (oldName && newName && oldName !== newName) {
+                        const child = turtle.scheduler?.root.children.get(targetId);
+                        if (child) child.name = newName;
+                    }
+                    return;
+                }
+                term.opBufferHandler(event);
+            });
             this.handleEvent("forkBuffer", (forkData) => term.forkBuffer(forkData));
         }
     },

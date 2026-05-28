@@ -96,7 +96,9 @@ export const createTerminal = (element, cm6, options = {}) => {
 
     const triggerBridge = () => {
         const content = editorView.getContent(shell);
-        bridge.pub(content);
+        const id = state.collection.currentId;
+        const name = state.collection.items.get(id)?.name;
+        bridge.pub({ id, name, content });
     };
 
     // Composite key for merge originals — addr alone isn't unique when remote user has multiple tabs
@@ -176,6 +178,22 @@ export const createTerminal = (element, cm6, options = {}) => {
 
         currentBufferId() { return state.collection?.currentId; },
 
+        currentBufferName() {
+            const id = state.collection?.currentId;
+            return id ? state.collection.items.get(id)?.name : null;
+        },
+
+        getBufferInfo(id) {
+            const buffer = state.collection?.items.get(id);
+            if (!buffer) return null;
+            const content = state.docs.has(id) ? state.docs.get(id).doc.toString() : buffer.content;
+            return { name: buffer.name, content };
+        },
+
+        setTabActive(id) { tabs?.setActive(id) },
+        clearTabActive(id) { tabs?.clearActive(id) },
+        clearAllTabActive() { tabs?.clearAllActive() },
+
         inner() {
             const { extensions, compartments } = buildExtensions(cm6, {
                 onDocChange: (content) => {
@@ -188,8 +206,10 @@ export const createTerminal = (element, cm6, options = {}) => {
                     // 2. Autosave (scheduled effect)
                     clearTimeout(state.autosaveTimer);
                     state.autosaveTimer = setTimeout(saveToStorage, 500);
-                    // 3. Bridge (event effect)
-                    bridge.pub(content);
+                    // 3. Bridge (event effect) — capture identity at publish time
+                    const id = state.collection.currentId;
+                    const name = state.collection.items.get(id)?.name;
+                    bridge.pub({ id, name, content });
                 },
                 onSelectionChange: (selection) => {
                     selectionBridge.pub(selection);
@@ -444,8 +464,9 @@ export const createTerminal = (element, cm6, options = {}) => {
 
         renameBuffer(id) {
             const newName = tabs.renameTab(id);
-            doSelectBuffer(id);
+            // Update collection BEFORE selecting — triggerBridge reads name from collection
             state.collection = buffers.renameCurrent(state.collection, id, newName);
+            doSelectBuffer(id);
         },
 
         triggerBridge,

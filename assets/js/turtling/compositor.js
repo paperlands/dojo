@@ -17,15 +17,22 @@ import { materialize } from "./materializer.js"
 import { groupTransform, visitPostOrder } from "./scheduler.js"
 
 // Set opacity on a group, cloning shared materials so the material cache isn't mutated.
+// Troika Text meshes own a derived SDF material — cloning it severs the shader, so
+// we set opacity directly on those without cloning.
 function setGroupOpacity(group, opacity) {
     group.traverse(child => {
         if (child.material) {
-            if (!child._ownMaterial) {
-                child.material = child.material.clone()
-                child._ownMaterial = true
+            if (typeof child.text === 'string') {
+                child.material.transparent = true
+                child.material.opacity = opacity
+            } else {
+                if (!child._ownMaterial) {
+                    child.material = child.material.clone()
+                    child._ownMaterial = true
+                }
+                child.material.transparent = true
+                child.material.opacity = opacity
             }
-            child.material.transparent = true
-            child.material.opacity = opacity
         }
     })
 }
@@ -190,6 +197,7 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
         advance(t) {
             if (epoch === null) epoch = t
             const now = t - epoch
+            scheduler.lastTickTime = now
             if (!scheduler.done) {
                 let budget = 64
                 let progress

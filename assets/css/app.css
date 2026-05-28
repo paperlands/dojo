@@ -432,7 +432,7 @@
 }
 
 /* Channel source colors — only per-channel variation */
-.nerve-shout .nerve-source { color: oklch(0.78 0.15 85); }
+.nerve-shout .nerve-source { padding-right: 3px; color: oklch(0.78 0.15 85); }
 .nerve-chat  .nerve-source { color: oklch(0.82 0.08 200); }
 .nerve-eval  .nerve-source { color: oklch(0.80 0.16 160); }
 
