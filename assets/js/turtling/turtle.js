@@ -52,6 +52,12 @@ export class Turtle {
         this._snapshotPending = false
         this._localKeys = new Set()  // buffer IDs of locally-rendered tab ambients
 
+        // Dirty marker: stamped on every draw/edit/removal. hatch() stamps
+        // _lastHatchTime, so a drawing is "dirty" while _lastContentChange is
+        // newer than the last hatch. eagerHatch skips when nothing changed.
+        this._lastHatchTime = 0
+        this._lastContentChange = 0
+
         this._heartbeatTimer = null
         this._onVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
@@ -78,13 +84,14 @@ export class Turtle {
         return !this._renderRequested && !this._keepRendering
     }
 
+    // Keepalive: re-publish the snapshot  within the server's 10-min cache
     _scheduleHeartbeat() {
         if (this._heartbeatTimer) return
-        const delay = 10_000 + Math.random() * 5_000
+        const delay = 5 * 60_000 + Math.random() * 60_000
         this._heartbeatTimer = setTimeout(() => {
             this._heartbeatTimer = null
             if (document.visibilityState === 'visible') {
-                this.eagerHatch()
+                this.eagerHatch(0, { force: true })
                 this._scheduleHeartbeat()
             }
         }, delay)
@@ -124,7 +131,11 @@ export class Turtle {
                 renderer: this.stage.renderer,
                 recorder: this.stage.recorder,
                 renderstate: this.renderstate,
-                hatch: () => this.hatch()
+                hatch: () => this.hatch(),
+                // Let async materializers (troika Text builds glyphs off-thread)
+                // wake the render-on-demand loop once their geometry is ready,
+                // else a label finishing after the loop idles out never draws.
+                requestRender: () => this.requestRender()
             },
             {
                 createHead: (parent) => new Render.Head(parent),
@@ -189,9 +200,12 @@ export class Turtle {
         this.stage.hatch(this.bridge)
     }
 
-    eagerHatch(cooldown = 8_000) {
+    eagerHatch(cooldown = 8_000, { force = false } = {}) {
         if (!this.compositor) return
         if (performance.now() - this._lastHatchTime < cooldown) return
+        // Skip redundant re-publishes of an unchanged drawing. The periodic
+        // keepalive passes force:true to refresh the server-side cache TTL.
+        if (!force && this._lastContentChange <= this._lastHatchTime) return
         this._snapshotPending = false
         this.requestRender()
     }
@@ -215,6 +229,7 @@ export class Turtle {
             this._snapshotPending = false
 
             this.compositor.flush()
+            this._lastContentChange = performance.now()
 
             const errors = this.scheduler.errors
             if (errors.length > 0) {
@@ -236,6 +251,7 @@ export class Turtle {
     removeAmbient(key) {
         if (!this.scheduler) return
         this._localKeys.delete(key)
+        this._lastContentChange = performance.now()
 
         // Try by key (buffer ID) first, fall back to name search (outer shell compat)
         if (this.scheduler.root.children.has(key)) {
@@ -312,6 +328,7 @@ export class Turtle {
             this.scheduler = null
         }
         this._snapshotPending = false
+        this._lastContentChange = performance.now()
 
         this.stage.head.show()
         this.stage.head.reset()

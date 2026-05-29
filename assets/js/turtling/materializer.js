@@ -70,7 +70,7 @@ export function materialize(event, groups, ctx) {
         break
 
     case "label":
-        materializeLabel(event, groups.glyphGroup)
+        materializeLabel(event, groups.glyphGroup, ctx)
         break
 
     case "grid":
@@ -226,7 +226,7 @@ function materializeHead(event, ctx) {
     }
 }
 
-function materializeLabel(event, glyphGroup) {
+function materializeLabel(event, glyphGroup, ctx) {
     try {
         const newText = new Text()
         glyphGroup.add(newText)
@@ -242,7 +242,11 @@ function materializeLabel(event, glyphGroup) {
         newText.position.z = event.position[2]
         newText.quaternion.copy(event.rotation)
         newText.color = event.color
-        newText.sync()
+        // sync() builds glyph geometry off-thread (and fetches the font on first
+        // load). The completion callback wakes the render-on-demand loop, which
+        // has usually idled out by the time the text is ready — without it a
+        // freshly-built label never gets a frame to draw into.
+        newText.sync(() => ctx?.requestRender?.())
         glyphGroup.elements.push(newText)
     } catch (error) {
         console.warn('Error writing text:', error)

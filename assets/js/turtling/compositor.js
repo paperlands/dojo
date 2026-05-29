@@ -122,7 +122,11 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
                 shapist: layer.shapist,
                 head: layer.head,
                 camera: isFocused ? ctx.camera : null,
-                controls: isFocused ? ctx.controls : null
+                controls: isFocused ? ctx.controls : null,
+                // Async materializers (troika Text) call this when their geometry
+                // finishes building, to wake a render-on-demand loop that may have
+                // already idled out.
+                requestRender: stage.requestRender
             }
             const childGroups = { pathGroup: layer.group, gridGroup: layer.group, glyphGroup: layer.group }
 
