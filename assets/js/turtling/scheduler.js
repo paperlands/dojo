@@ -14,6 +14,31 @@ import { createFrame } from "./frame.js"
 import { execute } from "./executor.js"
 import { SE3 } from "./se3.js"
 
+// --- Lens (camera-as-ambient) ---
+//
+// A Lens is an ambient whose Output codomain is the viewport, not the scene.
+// PAPERLANG's Output centre bifurcates: geometry-output (a pen) vs view-output
+// (an eye). A Lens carries the same SE(3) body as a turtle — the only
+// differences are that its pen is forced up (executor) and its head pose is
+// emitted as a `view` event the materializer writes to the camera (here). See
+// specs/eye-ambient.org (id:eye-lens-primitive). v1 reserves the name `eye`.
+const LENS_NAMES = new Set(["eye"])
+export function isLensName(name) {
+    return LENS_NAMES.has(name)
+}
+
+// A Lens frame's head pose lands on the camera, not in the scene: rewrite its
+// `head` events to `view`. Same pose payload (position/rotation), plus the lens
+// param `fov` (added in E2 — undefined until then). Non-lens / non-head events
+// pass through untouched. (id:eye-output-bifurcation)
+function lensOutput(frame, event) {
+    if (frame.isLens && event.type === "head") {
+        const world = frameWorldTransform(frame)
+        return { type: "view", position: world.position, rotation: world.rotation, fov: event.fov }
+    }
+    return event
+}
+
 // --- Tree walk ---
 
 function visitPostOrder(ctx, fn) {
@@ -59,6 +84,30 @@ function findAncestorByName(ctx, name) {
         ancestor = ancestor.parent
     }
     return null
+}
+
+// Stable, unique address of a frame across re-eval. Re-eval (hotSwapChild)
+// RECREATES frames — a frame's identity (id) does NOT survive it, nor does any
+// state stored on the frame. What IS stable is the path from root: the top tab's
+// registration KEY (root.children key, the buffer addr — unique per tab) plus the
+// chain of names down to the frame. Used to key cross-lifetime state (an eye's
+// running view pose) so it persists across re-eval (idempotency) yet never
+// collides across sibling tabs that share a reserved name like `eye`.
+export function frameAddress(root, frame) {
+    const names = []
+    let f = frame
+    while (f && f.parent && f.parent !== root) {
+        names.unshift(f.name)
+        f = f.parent
+    }
+    // f is now the top-level child of root (or root itself). Prefer its stable
+    // registration key over its display name (names can collide across tabs).
+    if (f) {
+        let topKey = f.name
+        for (const [k, v] of root.children) { if (v === f) { topKey = k; break } }
+        names.unshift(topKey)
+    }
+    return names.join('/')
 }
 
 // --- World transform: inertial frame composition ---
@@ -344,6 +393,7 @@ function createChildGenerator(value, createDeps, execOpts) {
             functions: value.code.functions,
             loopCounter: value.env?.loopCounter,
             scope: value.env?.scope,
+            lens: isLensName(value.name),
             mailbox,
         }),
         deps: childDeps,
@@ -357,6 +407,10 @@ function createChildGenerator(value, createDeps, execOpts) {
 // not part of the Frame primitive contract.
 function attachMeta(frame, targetFrame) {
     frame.targetFrame = targetFrame || null
+    frame.isLens = isLensName(frame.name)
+    // A Lens needs no captured baseline: its camera effect is a pure function of
+    // its LIVE world pose, read each frame by the compositor's model-layer reframe
+    // (world ← E⁻¹·world). Idempotency is algebraic, not stored. (id:eye-view-pipeline)
     frame.error = null
     frame.commandCount = 0
     frame.elapsedTime = 0
@@ -489,13 +543,13 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                     rotation: value.rotation,
                     position: [...value.position]
                 }))
-                child.channel.put({
+                child.channel.put(lensOutput(child, {
                     type: "head",
                     position: value.position,
                     rotation: value.rotation,
                     color: value.color,
                     headSize: value.headSize
-                })
+                }))
             }
             return null
         }
@@ -571,7 +625,7 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                 rotation: value.rotation,
                 position: [...value.position]
             }))
-            child.channel.put(value)
+            child.channel.put(lensOutput(child, value))
         } else if (frameTarget) {
             frameTarget.channel.put(transformEvent(value, frameTransform))
         } else {
@@ -737,13 +791,13 @@ export function createScheduler(generator, opts = {}) {
                                 rotation: value.rotation,
                                 position: [...value.position]
                             }))
-                            ctx.channel.put({
+                            ctx.channel.put(lensOutput(ctx, {
                                 type: "head",
                                 position: value.position,
                                 rotation: value.rotation,
                                 color: value.color,
                                 headSize: value.headSize
-                            })
+                            }))
                         }
                         produced = true
                         break
@@ -836,13 +890,13 @@ export function createScheduler(generator, opts = {}) {
                     // using cached projection (constant within a tick pass).
                     if (frameTarget) {
                         if (value.type === "head") {
-                            ctx.channel.put(value)
+                            ctx.channel.put(lensOutput(ctx, value))
                         } else {
                             const transformed = transformEvent(value, frameTransform)
                             frameTarget.channel.put(transformed)
                         }
                     } else {
-                        ctx.channel.put(value)
+                        ctx.channel.put(lensOutput(ctx, value))
                     }
                     produced = true
                 }
@@ -868,4 +922,5 @@ export function createScheduler(generator, opts = {}) {
 // Completes immediately — visitPostOrder still walks children.
 export function* metaRoot() { return 0 }
 
-export { createFrame, visitPostOrder, terminateAmbient, allDone, worldTransform, groupTransform, findAncestorByName, resolveBinding }
+export { createFrame, visitPostOrder, terminateAmbient, allDone, worldTransform, groupTransform, frameWorldTransform, findAncestorByName, resolveBinding }
+// frameAddress is exported at its definition (stable cross-re-eval frame key).

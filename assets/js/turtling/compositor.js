@@ -14,7 +14,9 @@
 
 import * as THREE from '../utils/three.core.min.js'
 import { materialize, accumulateTrail, flushTrail, clearMaterialCache } from "./materializer.js"
-import { groupTransform, visitPostOrder } from "./scheduler.js"
+import { groupTransform, frameWorldTransform, visitPostOrder } from "./scheduler.js"
+import { SE3 } from "./se3.js"
+import { eyeCameraPose } from "./view.js"
 
 // Set opacity on a group, cloning shared materials so the material cache isn't mutated.
 // Troika Text meshes own a derived SDF material — cloning it severs the shader, so
@@ -105,6 +107,20 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
         ambientLayers.delete(id)
     }
 
+    // Is this ambient within the focused subtree? Generalizes the focused-name
+    // match to descendants — a nested `eye` Lens drives the viewport when the
+    // tab that owns it is focused, not only when its own name matches. Used for
+    // view routing; the head/track path keeps the stricter name match below.
+    function inFocusedSubtree(ambient) {
+        if (!focusedName) return false
+        let f = ambient
+        while (f && f !== scheduler.root) {
+            if (f.name === focusedName) return true
+            f = f.parent
+        }
+        return false
+    }
+
     function drainAndMaterialize() {
         let produced = false
         for (const [id, ambient] of scheduler.registry) {
@@ -114,15 +130,21 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
             if (events.length === 0) continue
 
             const layer = getOrCreateLayer(id)
-            const isFocused = (ambient.name === focusedName)
 
-            // Focused child gets full ctx (camera tracking + shapist).
-            // Unfocused gets null camera — materializeHead gates on ctx.camera.
+            // Camera gating: a Lens drives the viewport when it's in the focused
+            // subtree (the focused tab owns it, possibly via a nested eye); a
+            // non-lens head tracks the camera only on a strict focus-name match.
+            // Unfocused either way → null camera → no viewport effect. A focused
+            // eye's view leaf only carries fov / hides the head; the camera POSE is
+            // realized as a model-layer reframe in updateGroupPositions (world ←
+            // E⁻¹·world), read live from the eye's world pose. (id:eye-coordinates)
+            const camOn = ambient.isLens ? inFocusedSubtree(ambient) : (ambient.name === focusedName)
             const childCtx = {
                 shapist: layer.shapist,
                 head: layer.head,
-                camera: isFocused ? ctx.camera : null,
-                controls: isFocused ? ctx.controls : null,
+                camera: camOn ? ctx.camera : null,
+                controls: camOn ? ctx.controls : null,
+                frame: ambient,
                 // Async materializers (troika Text) call this when their geometry
                 // finishes building, to wake a render-on-demand loop that may have
                 // already idled out.
@@ -149,14 +171,62 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
         return produced
     }
 
-    // Position child groups — inertial frame effect.
+    // Depth of a frame from the root (root = 0). Used to pick the innermost lens.
+    function frameDepth(frame) {
+        let d = 0
+        let f = frame
+        while (f && f !== scheduler.root) { d++; f = f.parent }
+        return d
+    }
+
+    // Is this transform the identity (within ε)? An empty/default eye reframes by
+    // identity, so we can skip every per-layer compose and fall through to the
+    // plain inertial path — the common case costs the same as having no eye.
+    function isIdentitySE3(t) {
+        const r = t.rotation, p = t.position
+        return Math.abs(r.w - 1) < 1e-9 &&
+            Math.abs(p[0]) < 1e-9 && Math.abs(p[1]) < 1e-9 && Math.abs(p[2]) < 1e-9
+    }
+
+    // The focused eye's reframe: E⁻¹ where E = eye world pose in camera convention.
+    // The camera IS the eye — rather than move the THREE camera (which would fight
+    // OrbitControls and cannot express roll), we reframe the whole world by E⁻¹ at
+    // the model layer, so the live orbit camera C renders as effective camera E·C.
+    // An empty eye seeds to recenterPose ⇒ E = identity ⇒ E⁻¹ = identity. Returns
+    // null when no focused lens drives OR when the reframe is identity (the default
+    // eye), so callers skip the per-layer composes entirely.
+    //
+    // The camera is the DEEPEST focused lens. A camera tab is itself named `eye`
+    // (a lens container), and the user's `as eye do …` spawns a lens INSIDE it —
+    // two nested lenses. The innermost one is the camera the user actually drives;
+    // the outer container sits empty at identity. (specs/eye-ambient.org id:eye-d5)
+    function focusedEyeReframe() {
+        if (!focusedName) return null
+        let eye = null
+        let deepest = -1
+        for (const [id, ambient] of scheduler.registry) {
+            if (ambient.isLens && inFocusedSubtree(ambient)) {
+                const d = frameDepth(ambient)
+                if (d > deepest) { deepest = d; eye = ambient }
+            }
+        }
+        if (!eye) return null
+        const eyeInv = SE3.invert(eyeCameraPose(frameWorldTransform(eye)))
+        return isIdentitySE3(eyeInv) ? null : eyeInv
+    }
+
+    // Position child groups — inertial frame effect, optionally reframed by the
+    // focused eye (world ← E⁻¹·world). The eye's own layer is skipped (it emits no
+    // mesh; reframing it would place it at the camera origin to no effect).
     function updateGroupPositions() {
+        const eyeInv = focusedEyeReframe()
         for (const [id, ambient] of scheduler.registry) {
             if (ambient === scheduler.root) continue
             const layer = ambientLayers.get(id)
             if (!layer) continue
 
-            const wt = groupTransform(ambient)
+            let wt = groupTransform(ambient)
+            if (eyeInv && !ambient.isLens) wt = SE3.compose(eyeInv, wt)
             layer.group.position.set(wt.position[0], wt.position[1], wt.position[2])
             layer.group.quaternion.set(
                 wt.rotation.x, wt.rotation.y,
@@ -229,8 +299,12 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
                 // per tick, rebuilding every trail mesh ~N× per frame (the heavy
                 // catch-up cost). One pass = one trail rebuild per ambient.
                 drainAndMaterialize()
-                updateGroupPositions()
             }
+            // Reframe every frame, even when the scheduler is done: a focused eye's
+            // model-layer reframe (world ← E⁻¹·world) must persist while the user
+            // orbits a FINISHED batch program, and is recomputed live so a moving
+            // eye (animation/mount) keeps tracking. Cheap: one E⁻¹ + N composes.
+            updateGroupPositions()
             cleanupOrphanedLayers()
             scaleChildHeads()
         },

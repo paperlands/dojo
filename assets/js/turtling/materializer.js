@@ -69,6 +69,10 @@ export function materialize(event, groups, ctx) {
         materializeHead(event, ctx)
         break
 
+    case "view":
+        materializeView(event, ctx)
+        break
+
     case "label":
         materializeLabel(event, groups.glyphGroup, ctx)
         break
@@ -223,6 +227,27 @@ function materializeHead(event, ctx) {
         ctx.head.update(pos, event.rotation, event.color, event.headSize)
     } else {
         ctx.head.hide()
+    }
+}
+
+// Materialize a `view` event — the camera codomain of Output (sibling of
+// materializeHead). A Lens emits no turtle mesh and does NOT drive the camera
+// here: the eye is an ordinary ambient whose pose reframes the world at the model
+// layer (compositor.updateGroupPositions premultiplies non-eye layers by E⁻¹), so
+// the live orbit camera renders as effective camera E·C. All this leaf does is
+// keep the eye invisible and carry the E2 `fov` lens param. The eye's pose is read
+// live in the compositor from frameWorldTransform; nothing is set on the camera
+// pose here (no controls fight). (specs/eye-ambient.org id:eye-lens-primitive, id:eye-coordinates)
+function materializeView(event, ctx) {
+    // An eye is never a visible turtle.
+    ctx.head?.hide?.()
+
+    if (!ctx.camera) return
+
+    // Lens param (E2). Until then `fov` is undefined and the camera keeps its own.
+    if (typeof event.fov === 'number' && event.fov > 0) {
+        ctx.camera.fov = event.fov
+        ctx.camera.updateProjectionMatrix()
     }
 }
 

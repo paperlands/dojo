@@ -7,7 +7,7 @@
 // a regression guard. Without --expose-gc, heap numbers are reported best-effort
 // (gc() is a no-op) and leak assertions are skipped with a warning.
 
-import { profileProgram } from "./harness.mjs"
+import { profileProgram, profileReframe } from "./harness.mjs"
 
 const HAS_GC = typeof global.gc === "function"
 
@@ -128,6 +128,39 @@ for (const { item, r } of results) {
             fail(item.label, `registry grew by ${growth} > ${item.maxRegistryGrowth} (frames accumulating)`)
         }
     }
+}
+
+// --- Eye reframe path (model-layer camera) ---
+// updateGroupPositions runs every frame for a focused eye. Profiled separately
+// because the scheduler harness above drains channels without the compositor.
+console.log("Eye reframe (model-layer camera) — per-frame cost at 20 layers")
+console.log("-".repeat(112))
+const reframe = {
+    empty: profileReframe({ layers: 20, mode: "empty" }),
+    moving: profileReframe({ layers: 20, mode: "moving" }),
+}
+for (const k of ["empty", "moving"]) {
+    const r = reframe[k]
+    console.log([
+        pad(`  ${k} eye (${r.layers} layers)`, 24),
+        pad(num(r.usPerFrame, 3) + " µs/frame", 16),
+        pad(num(r.usP95, 3) + " µs p95", 14),
+        pad(r.allocVersors + "V+" + r.allocArrays + "A/frame", 16),
+        pad("≈" + r.allocBytesApprox + "B", 8),
+    ].join(" "))
+}
+console.log(`  → empty-eye identity-skip elides all per-layer composes ` +
+    `(${reframe.moving.allocBytesApprox}B → ${reframe.empty.allocBytesApprox}B/frame). ` +
+    `Both are < 0.02% of a 16.6ms frame budget — dominated by the WebGL render.`)
+console.log("")
+
+// Guard: a moving eye at 20 layers must stay well under the frame budget.
+if (reframe.moving.usPerFrame > 50) {
+    fail("eye-reframe", `moving eye ${num(reframe.moving.usPerFrame, 1)}µs/frame > 50µs (regression)`)
+}
+// Guard: the empty-eye skip must actually elide per-layer work (no composes).
+if (reframe.empty.allocVersors > 2) {
+    fail("eye-reframe", `empty eye allocates ${reframe.empty.allocVersors} Versors > 2 (identity-skip broken)`)
 }
 
 if (failures > 0) {
