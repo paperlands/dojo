@@ -17,6 +17,7 @@ import { materialize, accumulateTrail, flushTrail, clearMaterialCache } from "./
 import { groupTransform, frameWorldTransform, visitPostOrder } from "./scheduler.js"
 import { SE3 } from "./se3.js"
 import { eyeCameraPose } from "./view.js"
+import { rebaseEpoch, idleFloorMs } from "./timeline.js"
 
 // Set opacity on a group, cloning shared materials so the material cache isn't mutated.
 // Troika Text meshes own a derived SDF material — cloning it severs the shader, so
@@ -46,9 +47,16 @@ function setGroupOpacity(group, opacity) {
 // opts    = { createHead, createShapist }
 export function createCompositor(scheduler, ctx, stage, opts = {}) {
     let epoch = null      // first real timestamp — rebases advance() to flush()'s 0-based timeline
+    let lastWallT = null  // previous advance() wall timestamp, to detect idle-out gaps
     let focusedName = null
     const createHead = opts.createHead || null
     const createShapist = opts.createShapist || null
+
+    // Idle-gap detection (rerun lifecycle) lives in ./timeline.js so it can be
+    // tested without THREE. frameInterval is threaded from the render loop
+    // (Render.Loop, 1000/targetFPS); the idle floor derives from it.
+    const FRAME_MS = opts.frameInterval || (1000 / 60)
+    const IDLE_GAP_MS = idleFloorMs(FRAME_MS)
 
     // Per-ambient rendering state: { group, head, shapist }
     // Keyed by ambient.id (unique monotonic counter).
@@ -283,6 +291,12 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
         // Per-frame work: tick generators, materialize, position, scale heads.
         // Does NOT render — caller coordinates renderer.render().
         advance(t) {
+            // When the render-on-demand loop wakes after idling, the wall clock has
+            // marched on but sim time must not. rebaseEpoch absorbs an idle-out gap
+            // so `now` continues from where it paused instead of fast-forwarding the
+            // animation — the rerun-after-idle "starts halfway" bug. (timeline.js)
+            epoch = rebaseEpoch(epoch, lastWallT, t, FRAME_MS, IDLE_GAP_MS)
+            lastWallT = t
             if (epoch === null) epoch = t
             const now = t - epoch
             scheduler.lastTickTime = now

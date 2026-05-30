@@ -135,7 +135,10 @@ export class Turtle {
                 // Let async materializers (troika Text builds glyphs off-thread)
                 // wake the render-on-demand loop once their geometry is ready,
                 // else a label finishing after the loop idles out never draws.
-                requestRender: () => this.requestRender()
+                requestRender: () => this.requestRender(),
+                // The render loop's vsync cadence — lets the compositor distinguish a
+                // slow/throttled frame from a render-on-demand idle-out (id:eye/rerun).
+                frameInterval: this.renderLoop.frameInterval
             },
             {
                 createHead: (parent) => new Render.Head(parent),
