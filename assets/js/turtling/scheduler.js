@@ -86,26 +86,12 @@ function findAncestorByName(ctx, name) {
     return null
 }
 
-// `world` is the identity frame at the top of every tree — the root made
-// addressable, not a new node. Targeting `world` deposits ink in absolute world
-// coordinates (the root layer renders at identity). (spec id:ft-d4-world-root)
+// `world` is the synthetic root — the identity frame at the top of every tree —
+// NAMED so it is addressable by ordinary ancestor lookup. Targeting `world` thus
+// needs no special case: findAncestorByName walks up to it. Ink deposited there
+// lands in absolute world coordinates (the root layer renders at identity).
+// (spec id:ft-d4-world-root)
 const WORLD_NAME = "world"
-export function isWorldName(name) {
-    return name === WORLD_NAME
-}
-
-// The topmost frame (parent === null) — the synthetic root / world frame.
-function rootOf(ctx) {
-    let f = ctx
-    while (f.parent) f = f.parent
-    return f
-}
-
-// Resolve a target-frame name to a Frame. `world` resolves to the root; any
-// other name walks the ancestor chain. (spec id:ft-d4-world-root)
-function resolveTarget(ctx, name) {
-    return isWorldName(name) ? rootOf(ctx) : findAncestorByName(ctx, name)
-}
 
 // Stable, unique address of a frame across re-eval. Re-eval (hotSwapChild)
 // RECREATES frames — a frame's identity (id) does NOT survive it, nor does any
@@ -155,14 +141,6 @@ function worldTransform(ctx) {
     }
     ctx._worldDirty = false
     return ctx._worldCache
-}
-
-// Group transform: where to position a child's THREE.Group. The head is the live
-// pen, always rendered in the child's OWN frame, so this is worldTransform for
-// every frame — targeting only routes deposited ink (see relativeTransform /
-// transformEvent), it never moves the head. (spec id:ft-d5-head)
-function groupTransform(ctx) {
-    return worldTransform(ctx)
 }
 
 // --- Inertial frame targeting ---
@@ -501,7 +479,7 @@ function wireChild(child, deps, mailbox, registry) {
     child.deps = deps
     child.mailbox = mailbox
     bindResolve(deps, child)
-    deps.worldOriginFn = () => groupTransform(child)
+    deps.worldOriginFn = () => worldTransform(child)
     wireWorldCacheInvalidation(child)
     registry.set(child.id, child)
 }
@@ -515,7 +493,7 @@ function rewireChild(child, value, createDeps, execOpts) {
     child.deps = re.deps
     child.mailbox = re.mailbox
     bindResolve(re.deps, child)
-    re.deps.worldOriginFn = () => groupTransform(child)
+    re.deps.worldOriginFn = () => worldTransform(child)
     child.done = false
     child.error = null
     child._strokeEnd = null   // fresh stroke run on re-exec (spec id:ft-d7-deposit-runid)
@@ -556,7 +534,7 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
     let frameTarget = null
     let frameTransform = null
     if (child.targetFrame) {
-        frameTarget = resolveTarget(child, child.targetFrame)
+        frameTarget = findAncestorByName(child, child.targetFrame)
         if (frameTarget) frameTransform = relativeTransform(child, frameTarget)
     }
 
@@ -685,7 +663,7 @@ export function createScheduler(generator, opts = {}) {
     const onShout = opts.onShout || null
 
     const root = attachMeta(
-        createFrame('__meta__', generator, { channelCapacity }),
+        createFrame(WORLD_NAME, generator, { channelCapacity }),
         null
     )
     // Wire shared mailbox — same array the root executor reads from
@@ -780,7 +758,7 @@ export function createScheduler(generator, opts = {}) {
                 let frameTarget = null
                 let frameTransform = null
                 if (ctx.targetFrame) {
-                    frameTarget = resolveTarget(ctx, ctx.targetFrame)
+                    frameTarget = findAncestorByName(ctx, ctx.targetFrame)
                     if (frameTarget) {
                         frameTransform = relativeTransform(ctx, frameTarget)
                     }
@@ -945,5 +923,5 @@ export function createScheduler(generator, opts = {}) {
 // Completes immediately — visitPostOrder still walks children.
 export function* metaRoot() { return 0 }
 
-export { createFrame, visitPostOrder, terminateAmbient, allDone, worldTransform, groupTransform, frameWorldTransform, findAncestorByName, resolveBinding }
+export { createFrame, visitPostOrder, terminateAmbient, allDone, worldTransform, frameWorldTransform, findAncestorByName, resolveBinding }
 // frameAddress is exported at its definition (stable cross-re-eval frame key).

@@ -14,7 +14,7 @@
 
 import * as THREE from '../utils/three.core.min.js'
 import { materialize, accumulateTrail, flushTrail, clearMaterialCache } from "./materializer.js"
-import { groupTransform, frameWorldTransform, visitPostOrder } from "./scheduler.js"
+import { worldTransform, frameWorldTransform, visitPostOrder } from "./scheduler.js"
 import { SE3 } from "./se3.js"
 import { eyeCameraPose } from "./view.js"
 import { rebaseEpoch, idleFloorMs } from "./timeline.js"
@@ -238,7 +238,7 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
             const layer = ambientLayers.get(id)
             if (!layer) continue
 
-            let wt = groupTransform(ambient)
+            let wt = worldTransform(ambient)
             if (eyeInv && !ambient.isLens) wt = SE3.compose(eyeInv, wt)
             layer.group.position.set(wt.position[0], wt.position[1], wt.position[2])
             layer.group.quaternion.set(
@@ -256,7 +256,7 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
         // Open (still-tracked) runs.
         for (const [src, run] of layer.trails) {
             if (deadIds.has(src)) {
-                if (run.mesh) { disposeMesh(run.mesh); layer.group.remove(run.mesh) }
+                if (run.line) { disposeMesh(run.line.mesh); layer.group.remove(run.line.mesh) }
                 layer.trails.delete(src)
             }
         }

@@ -139,7 +139,7 @@ const heap = () => process.memoryUsage().heapUsed
 // exercised by the program itself via `as`.
 function buildScheduler() {
     return createScheduler(metaRoot(), {
-        rootName: "__meta__",
+        rootName: "world",
         createDeps: () => ({
             mathParser: new Parser(),
             mathEvaluator: new Evaluator(),

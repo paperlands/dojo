@@ -8,6 +8,7 @@ import { Text } from '../utils/threetext'
 import { Line2 } from './render/line/Line2.js'
 import { LineMaterial } from './render/line/LineMaterial.js'
 import { LineGeometry } from './render/line/LineGeometry.js'
+import { GrowLine } from './render/line/GrowLine.js'
 
 // --- Material cache (spec A3) ---
 // Keyed by (color, thickness). Typical program uses 1-5 unique combinations.
@@ -144,44 +145,31 @@ function materializePath(event, pathGroup, shapist, sourceId) {
 // animation (the dominant cost on complex programs). But consecutive flushes of
 // a continuous pen-down trail share an endpoint, so they form ONE polyline.
 //
-// We accumulate contiguous, same-(color,thickness) path events into a single
-// growing Line2 per source. A style change or a discontinuity (jmp / pen-up)
-// finalizes the current run (its mesh stays) and starts a new one. Filled
-// polygons remain standalone.
+// We accumulate contiguous path events into a single GROWING fat-line per source
+// (GrowLine): the new segments are appended to a persistent dynamic buffer rather
+// than rebuilt each frame. A discontinuity (new stroke-run id) closes the current
+// run — its mesh stays in the layer — and starts a new one. Filled polygons remain
+// standalone. (spec id:ft-d8-append-geometry)
 //
-// A layer is multi-tenant: its own pen plus any frame-targeted children that
-// deposit ink into it (`as child target do`). Each depositor's run is keyed by
-// `event.sourceId`, so interleaved sources never clobber each other's unflushed
-// runs and each consolidates independently. Trail state (`layer.trails`, a
-// Map<sourceKey, run>) is owned by the caller (compositor), reset on clear.
+// A layer is multi-tenant: its own pen plus any frame-targeted children that deposit
+// ink into it (`as child target do`). Each depositor's run is keyed by
+// `event.sourceId`, so sources never clobber each other and each grows independently.
+// Trail state (`layer.trails`, a Map<sourceKey, run>) is owned by the caller
+// (compositor), reset on clear. A run = { runId, source, line: GrowLine }.
 // (spec id:ft-d2-per-source-trails)
 
 // The layer's own pen (untagged events) shares one slot; deposited ink is keyed
 // by its source frame id.
 const SELF_SOURCE = 'self'
 
-// Build or update a run's single mesh from its accumulated points. Idempotent
-// while the run is open (per-frame rebuild); also called to "close" a run before
-// a new one replaces it, so no unflushed run is ever orphaned.
-function finalizeRun(layer, run) {
-    if (!run.dirty || run.pts.length < 6) return
-    const positions = new Float32Array(run.pts)
-    const geometry = new LineGeometry()
-    geometry.setPositions(positions)
-    if (run.mesh) {
-        run.mesh.geometry.dispose()
-        run.mesh.geometry = geometry
-    } else {
-        run.mesh = new Line2(geometry, getOrCreateMaterial(run.color, run.thickness))
-        layer.group.add(run.mesh)
-    }
-    // Attribute the mesh to its source frame so a target layer that OUTLIVES the
-    // source (notably the world/root layer) can reclaim this ink when the source
-    // dies on rerun. Finalized runs become anonymous group children otherwise.
-    // (spec id:ft-d2-per-source-trails — GC)
-    run.mesh._sourceId = run.source
-    run.mesh.computeLineDistances()
-    run.dirty = false
+// Start a fresh growable run for `source` and add its mesh to the layer. The mesh
+// is tagged with its source so a target layer that OUTLIVES the source (the
+// world/root layer) can reclaim this ink on rerun. (spec id:ft-d2 — GC)
+function newRun(event, source, layer) {
+    const line = new GrowLine(getOrCreateMaterial(event.color, event.thickness))
+    line.mesh._sourceId = source
+    layer.group.add(line.mesh)
+    return { runId: event.runId, source, line }
 }
 
 // Append a path event into its source's run in layer.trails. Returns the layer.
@@ -193,42 +181,30 @@ export function accumulateTrail(event, layer) {
     // Filled polygons are standalone — close this source's open run, render apart.
     if (event.filled) {
         const open = layer.trails.get(source)
-        if (open) { finalizeRun(layer, open); layer.trails.delete(source) }
+        if (open) { open.line.sync(); layer.trails.delete(source) }
         materializePath(event, layer.group, layer.shapist, source)
         return layer
     }
 
-    let tr = layer.trails.get(source)
     // One contiguity rule for every pen — own and projected alike: a path event
     // continues the source's open run iff it carries the same stroke-run id, which
-    // the scheduler assigned from the source's local geometry + style. No
-    // world-point re-derivation, no targeting branch. (spec id:ft-d7-deposit-runid)
-    const contiguous = tr && tr.runId === event.runId
-
-    if (!contiguous) {
-        // Close the previous run (build its mesh now so it is never orphaned),
-        // then start a fresh run for this source.
-        if (tr) finalizeRun(layer, tr)
-        tr = { runId: event.runId, color: event.color, thickness: event.thickness, pts: [], mesh: null, dirty: true, source }
+    // the scheduler assigned from the source's local geometry + style.
+    // (spec id:ft-d7-deposit-runid). GrowLine.append joins from the run's last
+    // endpoint, so the shared start point is skipped automatically.
+    let tr = layer.trails.get(source)
+    if (!(tr && tr.runId === event.runId)) {
+        if (tr) tr.line.sync()        // close the prior run; its mesh stays in the group
+        tr = newRun(event, source, layer)
         layer.trails.set(source, tr)
-        for (const p of event.points) tr.pts.push(p[0], p[1], p[2])
-    } else {
-        // Skip the duplicated shared start point.
-        for (let i = 1; i < event.points.length; i++) {
-            const p = event.points[i]
-            tr.pts.push(p[0], p[1], p[2])
-        }
     }
-    tr.dirty = true
+    tr.line.append(event.points)
     return layer
 }
 
-// Rebuild every dirty open run's mesh. Called once per frame per layer (not per
-// event) by the compositor after draining.
+// Push each open run's newly-appended segments to the GPU. Once per frame per layer
+// (not per event). O(Δ), not O(N).
 export function flushTrail(layer) {
-    for (const run of layer.trails.values()) {
-        finalizeRun(layer, run)
-    }
+    for (const run of layer.trails.values()) run.line.sync()
 }
 
 function materializeHead(event, ctx) {
