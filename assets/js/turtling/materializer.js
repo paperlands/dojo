@@ -102,7 +102,7 @@ export function materializeAll(events, groups, ctx) {
 
 // --- Internal materializers ---
 
-function materializePath(event, pathGroup, shapist) {
+function materializePath(event, pathGroup, shapist, sourceId) {
     try {
         if (!event.points || event.points.length === 0) return
 
@@ -119,6 +119,8 @@ function materializePath(event, pathGroup, shapist) {
 
         const material = getOrCreateMaterial(event.color, event.thickness)
         const mesh = new Line2(geometry, material)
+        // Source attribution for reclaim when a target layer outlives the depositor.
+        if (sourceId !== undefined) mesh._sourceId = sourceId
         mesh.computeLineDistances()
         pathGroup.add(mesh)
 
@@ -143,35 +145,72 @@ function materializePath(event, pathGroup, shapist) {
 // a continuous pen-down trail share an endpoint, so they form ONE polyline.
 //
 // We accumulate contiguous, same-(color,thickness) path events into a single
-// growing Line2 per layer. A style change or a discontinuity (jmp / pen-up)
+// growing Line2 per source. A style change or a discontinuity (jmp / pen-up)
 // finalizes the current run (its mesh stays) and starts a new one. Filled
-// polygons remain standalone. Trail state is owned by the caller (compositor),
-// stored on `layer.trail`, and reset on clear.
+// polygons remain standalone.
+//
+// A layer is multi-tenant: its own pen plus any frame-targeted children that
+// deposit ink into it (`as child target do`). Each depositor's run is keyed by
+// `event.sourceId`, so interleaved sources never clobber each other's unflushed
+// runs and each consolidates independently. Trail state (`layer.trails`, a
+// Map<sourceKey, run>) is owned by the caller (compositor), reset on clear.
+// (spec id:ft-d2-per-source-trails)
 
-const _samePoint = (a, b) =>
-    a && b &&
-    Math.abs(a[0] - b[0]) < 1e-6 &&
-    Math.abs(a[1] - b[1]) < 1e-6 &&
-    Math.abs(a[2] - b[2]) < 1e-6
+// The layer's own pen (untagged events) shares one slot; deposited ink is keyed
+// by its source frame id.
+const SELF_SOURCE = 'self'
 
-// Append a path event into layer.trail (mutated in place). Returns the layer.
+// Build or update a run's single mesh from its accumulated points. Idempotent
+// while the run is open (per-frame rebuild); also called to "close" a run before
+// a new one replaces it, so no unflushed run is ever orphaned.
+function finalizeRun(layer, run) {
+    if (!run.dirty || run.pts.length < 6) return
+    const positions = new Float32Array(run.pts)
+    const geometry = new LineGeometry()
+    geometry.setPositions(positions)
+    if (run.mesh) {
+        run.mesh.geometry.dispose()
+        run.mesh.geometry = geometry
+    } else {
+        run.mesh = new Line2(geometry, getOrCreateMaterial(run.color, run.thickness))
+        layer.group.add(run.mesh)
+    }
+    // Attribute the mesh to its source frame so a target layer that OUTLIVES the
+    // source (notably the world/root layer) can reclaim this ink when the source
+    // dies on rerun. Finalized runs become anonymous group children otherwise.
+    // (spec id:ft-d2-per-source-trails — GC)
+    run.mesh._sourceId = run.source
+    run.mesh.computeLineDistances()
+    run.dirty = false
+}
+
+// Append a path event into its source's run in layer.trails. Returns the layer.
 export function accumulateTrail(event, layer) {
     if (!event.points || event.points.length === 0) return layer
 
-    // Filled polygons are standalone — finalize any open run, render separately.
+    const source = event.sourceId != null ? event.sourceId : SELF_SOURCE
+
+    // Filled polygons are standalone — close this source's open run, render apart.
     if (event.filled) {
-        layer.trail = null
-        materializePath(event, layer.group, layer.shapist)
+        const open = layer.trails.get(source)
+        if (open) { finalizeRun(layer, open); layer.trails.delete(source) }
+        materializePath(event, layer.group, layer.shapist, source)
         return layer
     }
 
-    const key = `${event.color || 0xe77808}:${event.thickness || 2}`
-    let tr = layer.trail
-    const contiguous = tr && tr.key === key && _samePoint(tr.lastPoint, event.points[0])
+    let tr = layer.trails.get(source)
+    // One contiguity rule for every pen — own and projected alike: a path event
+    // continues the source's open run iff it carries the same stroke-run id, which
+    // the scheduler assigned from the source's local geometry + style. No
+    // world-point re-derivation, no targeting branch. (spec id:ft-d7-deposit-runid)
+    const contiguous = tr && tr.runId === event.runId
 
     if (!contiguous) {
-        // Start a new run. Any previous run keeps its (already-added) mesh.
-        tr = layer.trail = { key, color: event.color, thickness: event.thickness, pts: [], mesh: null, lastPoint: null, dirty: true }
+        // Close the previous run (build its mesh now so it is never orphaned),
+        // then start a fresh run for this source.
+        if (tr) finalizeRun(layer, tr)
+        tr = { runId: event.runId, color: event.color, thickness: event.thickness, pts: [], mesh: null, dirty: true, source }
+        layer.trails.set(source, tr)
         for (const p of event.points) tr.pts.push(p[0], p[1], p[2])
     } else {
         // Skip the duplicated shared start point.
@@ -180,28 +219,16 @@ export function accumulateTrail(event, layer) {
             tr.pts.push(p[0], p[1], p[2])
         }
     }
-    tr.lastPoint = event.points[event.points.length - 1]
     tr.dirty = true
     return layer
 }
 
-// Rebuild the current run's single mesh from accumulated points. Called once
-// per frame per layer (not per event) by the compositor after draining.
+// Rebuild every dirty open run's mesh. Called once per frame per layer (not per
+// event) by the compositor after draining.
 export function flushTrail(layer) {
-    const tr = layer.trail
-    if (!tr || !tr.dirty || tr.pts.length < 6) return
-    const positions = new Float32Array(tr.pts)
-    const geometry = new LineGeometry()
-    geometry.setPositions(positions)
-    if (tr.mesh) {
-        tr.mesh.geometry.dispose()
-        tr.mesh.geometry = geometry
-    } else {
-        tr.mesh = new Line2(geometry, getOrCreateMaterial(tr.color, tr.thickness))
-        layer.group.add(tr.mesh)
+    for (const run of layer.trails.values()) {
+        finalizeRun(layer, run)
     }
-    tr.mesh.computeLineDistances()
-    tr.dirty = false
 }
 
 function materializeHead(event, ctx) {
@@ -223,8 +250,12 @@ function materializeHead(event, ctx) {
     }
 
     if (event.headSize) {
+        // Frame-targeted heads get no heading here — the compositor orients them by
+        // world velocity (Head.orientToWorld), since their local heading cancels the
+        // rotating layer group. Normal heads show their heading. (spec id:ft-d5-head)
+        const rotation = ctx.frame && ctx.frame.targetFrame ? null : event.rotation
         ctx.head.show()
-        ctx.head.update(pos, event.rotation, event.color, event.headSize)
+        ctx.head.update(pos, rotation, event.color, event.headSize)
     } else {
         ctx.head.hide()
     }

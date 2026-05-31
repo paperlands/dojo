@@ -1071,9 +1071,57 @@ describe("idempotent spawn semantics", () => {
         assert.ok(scheduler.done)
         assert.equal(scheduler.root.children.size, 1)
 
-        // Without frame targeting, rewireChild drains between iterations.
-        // Only the last iteration's path survives.
-        assert.equal(allPaths.length, 1, `Expected 1 path (last iteration), got ${allPaths.length}`)
+        // Frame targeting deposits each iteration's stamp into the world frame,
+        // where it PERSISTS (spirograph): re-exec clears the child's channel, not
+        // the world deposit. Four loop iterations → four stamps accumulate.
+        // (spec id:ft-d2-per-source-trails)
+        assert.equal(allPaths.length, 4, `Expected 4 accumulated stamps, got ${allPaths.length}`)
+
+        // Each stamp is world-projected at the parent's rotated heading (rt 90 per
+        // iteration), so the fw-50 endpoints span distinct directions — not all
+        // collapsed onto one local segment. (spec id:ft-d1-world-pivot)
+        const endpoints = allPaths.map(p => p.points[p.points.length - 1])
+        const distinct = new Set(endpoints.map(e => `${Math.round(e[0])},${Math.round(e[1])}`))
+        assert.ok(distinct.size >= 3, `Stamps should project to distinct world directions, got ${[...distinct].join(' ')}`)
+    })
+
+    test("frame targeting projects ink into the target frame via the world pivot", () => {
+        // circling moves (fw 100, rt 90) BEFORE spawning circle, so circle's birth
+        // origin is offset/rotated. circle's local fw must be re-expressed in
+        // circling's frame: projected point[0] == circle's world origin position.
+        // (spec id:ft-d1-world-pivot)
+        const ast = parseProgram("as circling do\n  fw 100\n  rt 90\n  as circle circling do\n    fw 50\n  end\nend")
+        const deps = mockDeps()
+        const generator = execute(ast, deps, { color: '#fff' })
+        const scheduler = createScheduler(generator, { createDeps: mockDeps, execOpts: { color: '#fff' } })
+
+        let ticks = 0
+        while (!scheduler.done && ticks < 200) { scheduler.tick(0); ticks++ }
+        assert.ok(scheduler.done)
+
+        const circling = findChild(scheduler.root, "circling")
+        const circle = circling.children.get("circle")
+        assert.ok(circling && circle)
+
+        // The path is DEPOSITED on the target (circling), not the child's own channel.
+        const targetPaths = circling.channel.drain().filter(e => e.type === 'path')
+        const ownEvents = circle.channel.drain()
+        const ownPaths = ownEvents.filter(e => e.type === 'path')
+        const ownHeads = ownEvents.filter(e => e.type === 'head')
+
+        assert.ok(targetPaths.length >= 1, 'projected path lands on the target frame')
+        assert.equal(ownPaths.length, 0, 'no path on the child\'s own channel')
+        assert.ok(ownHeads.length >= 1, 'head stays in the child\'s own frame (live pen)')
+
+        // Deposited events are tagged with the source frame id so the target layer
+        // consolidates them into their own run. (spec id:ft-d2-per-source-trails)
+        const dep = targetPaths.find(p => p.sourceId === circle.id)
+        assert.ok(dep, 'deposited path carries sourceId = child frame id')
+
+        // World pivot: M ∘ [0,0,0] == circle's birth-origin world position == [100,0,0].
+        const start = dep.points[0]
+        assert.ok(Math.abs(start[0] - 100) < 1e-6 && Math.abs(start[1]) < 1e-6,
+            `projected start should be circle's world origin [100,0,0], got [${start}]`)
     })
 
     test("non-frame batch child is NOT re-stamped (idempotent no-op)", () => {
@@ -1101,6 +1149,67 @@ describe("idempotent spawn semantics", () => {
         assert.ok(scheduler.done)
         // 1 path — no re-stamping for non-frame children
         assert.equal(allPaths.length, 1, `Expected 1 path (no re-stamp), got ${allPaths.length}`)
+    })
+})
+
+describe("deposit run identity (runId unification)", () => {
+    // Drain every frame's channel, collecting path events (each now carries runId).
+    function collectPaths(program, pred = () => true) {
+        const sch = createScheduler(
+            execute(parseProgram(program), mockDeps(), { color: '#fff' }),
+            { createDeps: mockDeps, execOpts: { color: '#fff' } })
+        const paths = []
+        let t = 0
+        while (!sch.done && t < 30000) {
+            sch.tick(t)
+            for (const f of sch.registry.values())
+                for (const e of f.channel.drain())
+                    if (e.type === 'path' && pred(e, f)) paths.push(e)
+            t += 200
+        }
+        return { sch, paths }
+    }
+
+    test("a continuous pen-down stroke is ONE run across wait-split events", () => {
+        // `wait` flushes a per-tick path event; consecutive events share an endpoint.
+        const { paths } = collectPaths("fw 10\nwait 1\nfw 10\nwait 1\nfw 10\nwait 1")
+        assert.ok(paths.length >= 2, `expected per-tick events, got ${paths.length}`)
+        const ids = new Set(paths.map(p => p.runId))
+        assert.equal(ids.size, 1, `continuous stroke = one run, got runIds ${[...ids]}`)
+    })
+
+    test("a jmp (pen break) starts a new run", () => {
+        const { paths } = collectPaths("fw 10\nwait 1\njmp 50\nfw 10\nwait 1")
+        const ids = [...new Set(paths.map(p => p.runId))]
+        assert.equal(ids.length, 2, `jmp should break into 2 runs, got ${ids}`)
+    })
+
+    test("projected ink keeps ONE runId though the projection M moves each tick", () => {
+        // The outer loop re-encounters `as dot world do` each iteration, updating
+        // dot's origin (so M = worldTransform(dot) changes every tick). dot draws a
+        // single continuous stroke; runId is judged in dot's OWN frame, so it stays
+        // constant — the property that makes the deposited curve smooth, not dotted.
+        const prog = [
+            "loop 2 do",
+            "  fw 8",
+            "  rt 30",
+            "  as dot world do",
+            "    fw 3", "    wait 1",
+            "    fw 3", "    wait 1",
+            "    fw 3", "    wait 1",
+            "  end",
+            "  wait 1",
+            "end"
+        ].join("\n")
+        const { paths } = collectPaths(prog, (e) => e.sourceId != null)  // dot's deposits only
+        assert.ok(paths.length >= 2, `expected multiple deposited events, got ${paths.length}`)
+        const ids = new Set(paths.map(p => p.runId))
+        assert.equal(ids.size, 1, `projected continuous stroke = one run despite moving M, got ${[...ids]}`)
+        // The deposited world points are NOT collinear (M genuinely moved) — i.e. the
+        // single run really does carry the curved world trajectory.
+        const pts = paths.flatMap(p => p.points)
+        const collinear = pts.every(q => Math.abs(q[1] - pts[0][1]) < 1e-6)
+        assert.ok(!collinear, 'deposited curve should not be a straight line (M moved)')
     })
 })
 

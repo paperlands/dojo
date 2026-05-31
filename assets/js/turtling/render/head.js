@@ -1,6 +1,11 @@
 import * as THREE from '../../utils/three.core.min.js';
 import {ColorConverter} from '../../utils/color.js'
 
+// Scratch for world-velocity orientation of frame-targeted heads (reused per frame).
+const _hdDir = new THREE.Vector3();
+const _hdWorld = new THREE.Quaternion();
+const _hdFwd = new THREE.Vector3(1, 0, 0);   // head's nose points +x
+
 
 export default class Head {
     constructor(scene) {
@@ -90,7 +95,10 @@ export default class Head {
 
     update(position, rotation, color, size=10) {
         this.turtleGroup.position.set(...position);
-        this.turtleGroup.quaternion.copy(rotation);
+        // A normal head shows its heading directly. A frame-targeted head passes
+        // rotation=null and is oriented by orientToWorld() instead — its local
+        // heading cancels the layer group's rotation and would otherwise freeze.
+        if (rotation) this.turtleGroup.quaternion.copy(rotation);
 
         if(this.colors.headkey !== color) {
             this.setHeadColor(color);
@@ -100,6 +108,27 @@ export default class Head {
             this.turtleGroup.scale.setScalar(this.current.scale * size / this.current.size);
             this.current.size = size;
         }
+    }
+
+    // Orient a frame-targeted head along its WORLD-space velocity — the direction
+    // its rendered position actually moves (the tangent of the projected ink). For
+    // such a head the layer group itself rotates (its origin tracks the target), so
+    // the local heading and group rotation can cancel and freeze the marker; only
+    // world velocity tracks the visible curve. `worldPos` is the head's world
+    // position, `groupQuat` its layer's world rotation; the head lives in the layer
+    // frame, so the world look quaternion maps back via groupQuat⁻¹. Eased per-RAF.
+    // (spec id:ft-d5-head)
+    orientToWorld(worldPos, groupQuat, alpha = 0.35) {
+        if (!this._prevWP) { this._prevWP = new THREE.Vector3().copy(worldPos); return; }
+        const dx = worldPos.x - this._prevWP.x, dy = worldPos.y - this._prevWP.y, dz = worldPos.z - this._prevWP.z;
+        this._prevWP.set(worldPos.x, worldPos.y, worldPos.z);
+        const len = Math.sqrt(dx*dx + dy*dy + dz*dz);
+        if (len < 1e-4) return;
+        _hdDir.set(dx/len, dy/len, dz/len);
+        _hdWorld.setFromUnitVectors(_hdFwd, _hdDir);   // +x → world velocity
+        if (!this._targetQuat) this._targetQuat = new THREE.Quaternion();
+        this._targetQuat.copy(groupQuat).invert().multiply(_hdWorld);   // → layer-local
+        this.turtleGroup.quaternion.slerp(this._targetQuat, alpha);
     }
 
     scale(scaleFactor=2) {
@@ -123,6 +152,7 @@ export default class Head {
     reset() {
         this.turtleGroup.position.set(...this.defaultPosition);
         this.turtleGroup.quaternion.copy(this.defaultRotation);
+        this._prevWP = null;   // restart world-velocity tracking (frame-targeted heads)
     }
 }
 

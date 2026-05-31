@@ -86,6 +86,27 @@ function findAncestorByName(ctx, name) {
     return null
 }
 
+// `world` is the identity frame at the top of every tree — the root made
+// addressable, not a new node. Targeting `world` deposits ink in absolute world
+// coordinates (the root layer renders at identity). (spec id:ft-d4-world-root)
+const WORLD_NAME = "world"
+export function isWorldName(name) {
+    return name === WORLD_NAME
+}
+
+// The topmost frame (parent === null) — the synthetic root / world frame.
+function rootOf(ctx) {
+    let f = ctx
+    while (f.parent) f = f.parent
+    return f
+}
+
+// Resolve a target-frame name to a Frame. `world` resolves to the root; any
+// other name walks the ancestor chain. (spec id:ft-d4-world-root)
+function resolveTarget(ctx, name) {
+    return isWorldName(name) ? rootOf(ctx) : findAncestorByName(ctx, name)
+}
+
 // Stable, unique address of a frame across re-eval. Re-eval (hotSwapChild)
 // RECREATES frames — a frame's identity (id) does NOT survive it, nor does any
 // state stored on the frame. What IS stable is the path from root: the top tab's
@@ -136,45 +157,75 @@ function worldTransform(ctx) {
     return ctx._worldCache
 }
 
-// Group transform: the correct transform for positioning a child's THREE.Group.
-// Frame-targeted children use relativeTransform (live parent atoms, matching
-// their path projection). Normal children use worldTransform (birth origin,
-// preserving sibling isolation).
+// Group transform: where to position a child's THREE.Group. The head is the live
+// pen, always rendered in the child's OWN frame, so this is worldTransform for
+// every frame — targeting only routes deposited ink (see relativeTransform /
+// transformEvent), it never moves the head. (spec id:ft-d5-head)
 function groupTransform(ctx) {
-    if (ctx.targetFrame) {
-        const target = findAncestorByName(ctx, ctx.targetFrame)
-        if (target) return relativeTransform(ctx, target)
-    }
     return worldTransform(ctx)
 }
 
 // --- Inertial frame targeting ---
 
-// Compose the transform chain from a child frame up to (and including)
-// the target ancestor. Maps child-local coordinates into target-local coords.
+// Child-local → target-local change of basis, pivoting through world space:
+// M = worldTransform(target)⁻¹ ∘ worldTransform(ctx)  ( = unapply_target ∘ apply_ctx ).
+// The one shared coordinate mechanism — same pivot as observation/goto. Provably
+// a no-op when target = parent; the projection only manifests once the target
+// moves independently. (spec id:ft-d1-world-pivot)
 function relativeTransform(ctx, target) {
-    const chain = []
-    let ancestor = ctx.parent
-    while (ancestor) {
-        chain.unshift(ancestor.transform.deref())
-        if (ancestor === target) break
-        ancestor = ancestor.parent
-    }
-    if (chain.length === 0) return SE3.identity()
-    return chain.reduce((a, b) => SE3.compose(a, b))
+    return SE3.compose(SE3.invert(worldTransform(target)), worldTransform(ctx))
 }
 
-// Rewrite an event's coordinates from child-local to target-local.
-function transformEvent(event, t) {
+// Rewrite an event's coordinates from child-local to target-local, tagging the
+// source frame so the target layer can consolidate each depositor's ink into its
+// own trail run without corrupting the target's own pen. (spec id:ft-d2-per-source-trails)
+function transformEvent(event, t, sourceId) {
     switch (event.type) {
         case 'path':
-            return { ...event, points: event.points.map(p => SE3.apply(t, p)) }
+            return { ...event, sourceId, points: event.points.map(p => SE3.apply(t, p)) }
         case 'label':
-            return { ...event, position: SE3.apply(t, event.position) }
+            return { ...event, sourceId, position: SE3.apply(t, event.position) }
         case 'grid':
-            return { ...event, position: SE3.apply(t, event.position), rotation: t.rotation }
+            return { ...event, sourceId, position: SE3.apply(t, event.position), rotation: t.rotation.multiply(event.rotation) }
         default:
             return event
+    }
+}
+
+const _samePt = (a, b) =>
+    a && b && Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6 && Math.abs(a[2] - b[2]) < 1e-6
+
+// Assign a stroke-run id to a path event from the SOURCE frame's own (pre-projection)
+// geometry + style. Stable across one continuous pen-down stroke (even when `wait`
+// splits it into per-tick events), bumped on a geometric break (jmp / pen-up) or a
+// style change; reset on re-exec (via `_strokeEnd = null`). The renderer groups runs
+// by this id alone — identical for the source's own pen and for projected ink whose
+// re-baked world points would otherwise look discontinuous. (spec id:ft-d7-deposit-runid)
+function tagRun(ctx, value) {
+    if (value.type !== 'path' || !value.points || !value.points.length) return
+    const style = `${value.color}:${value.thickness}`
+    const continues = style === ctx._strokeStyle && _samePt(value.points[0], ctx._strokeEnd)
+    if (!continues) ctx._strokeRun = (ctx._strokeRun || 0) + 1
+    value.runId = ctx._strokeRun
+    ctx._strokeEnd = value.points[value.points.length - 1]
+    ctx._strokeStyle = style
+}
+
+// The single output path for both the tick loop and the inline drain. Head events
+// update the pose and stay on the frame's own channel. Geometry is tagged with its
+// stroke-run id, then either baked into the target frame (frame targeting) or
+// emitted on the frame's own channel. (spec id:ft-d7-deposit-runid)
+function routeOutput(ctx, value, frameTarget, frameTransform) {
+    if (value.type === "head") {
+        ctx.transform.swap(() => ({ rotation: value.rotation, position: [...value.position] }))
+        ctx.channel.put(lensOutput(ctx, value))
+        return
+    }
+    tagRun(ctx, value)
+    if (frameTarget) {
+        frameTarget.channel.put(transformEvent(value, frameTransform, ctx.id))
+    } else {
+        ctx.channel.put(lensOutput(ctx, value))
     }
 }
 
@@ -467,6 +518,7 @@ function rewireChild(child, value, createDeps, execOpts) {
     re.deps.worldOriginFn = () => groupTransform(child)
     child.done = false
     child.error = null
+    child._strokeEnd = null   // fresh stroke run on re-exec (spec id:ft-d7-deposit-runid)
     child.channel.drain()
     child.channel.put({ type: 'clear' })
 }
@@ -504,7 +556,7 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
     let frameTarget = null
     let frameTransform = null
     if (child.targetFrame) {
-        frameTarget = findAncestorByName(child, child.targetFrame)
+        frameTarget = resolveTarget(child, child.targetFrame)
         if (frameTarget) frameTransform = relativeTransform(child, frameTarget)
     }
 
@@ -619,18 +671,8 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
             continue
         }
 
-        // Output event
-        if (value.type === "head") {
-            child.transform.swap(() => ({
-                rotation: value.rotation,
-                position: [...value.position]
-            }))
-            child.channel.put(lensOutput(child, value))
-        } else if (frameTarget) {
-            frameTarget.channel.put(transformEvent(value, frameTransform))
-        } else {
-            child.channel.put(value)
-        }
+        // Output event — single routed path (head pose-swap + run tagging inside).
+        routeOutput(child, value, frameTarget, frameTransform)
     }
 }
 
@@ -738,7 +780,7 @@ export function createScheduler(generator, opts = {}) {
                 let frameTarget = null
                 let frameTransform = null
                 if (ctx.targetFrame) {
-                    frameTarget = findAncestorByName(ctx, ctx.targetFrame)
+                    frameTarget = resolveTarget(ctx, ctx.targetFrame)
                     if (frameTarget) {
                         frameTransform = relativeTransform(ctx, frameTarget)
                     }
@@ -876,28 +918,9 @@ export function createScheduler(generator, opts = {}) {
                         continue
                     }
 
-                    // --- Output: all other events pass through to channel ---
-
-                    // Intercept head events to update transform atom
-                    if (value.type === "head") {
-                        ctx.transform.swap(() => ({
-                            rotation: value.rotation,
-                            position: [...value.position]
-                        }))
-                    }
-
-                    // Frame targeting: route events to ancestor frame
-                    // using cached projection (constant within a tick pass).
-                    if (frameTarget) {
-                        if (value.type === "head") {
-                            ctx.channel.put(lensOutput(ctx, value))
-                        } else {
-                            const transformed = transformEvent(value, frameTransform)
-                            frameTarget.channel.put(transformed)
-                        }
-                    } else {
-                        ctx.channel.put(lensOutput(ctx, value))
-                    }
+                    // --- Output: single routed path (head pose-swap + run tagging,
+                    // projection / own-channel routing). (spec id:ft-d7-deposit-runid)
+                    routeOutput(ctx, value, frameTarget, frameTransform)
                     produced = true
                 }
 

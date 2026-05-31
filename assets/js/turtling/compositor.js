@@ -62,7 +62,7 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
     // Keyed by ambient.id (unique monotonic counter).
     const ambientLayers = new Map()
 
-    function getOrCreateLayer(id) {
+    function getOrCreateLayer(id, makeHead = true) {
         const existing = ambientLayers.get(id)
         if (existing) return existing
 
@@ -70,10 +70,12 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
         group.elements = []   // for text disposal (materializeLabel)
         stage.scene.add(group)
 
-        const head = createHead ? createHead(group) : null
+        // The world/root layer is a render surface for deposited ink only — no pen,
+        // no turtle head. (spec id:ft-d4-world-root)
+        const head = (createHead && makeHead) ? createHead(group) : null
         const shapist = createShapist ? createShapist(group) : null
-        // trail: current consolidated polyline run (materializer-owned state)
-        const layer = { group, head, shapist, trail: null }
+        // trails: per-source consolidated polyline runs (materializer-owned state)
+        const layer = { group, head, shapist, trails: new Map() }
         ambientLayers.set(id, layer)
         return layer
     }
@@ -99,8 +101,8 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
             layer.group.elements.forEach(text => text.dispose?.())
             layer.group.elements = []
         }
-        // The current trail's mesh was just disposed with the group children.
-        layer.trail = null
+        // The runs' meshes were just disposed with the group children.
+        layer.trails.clear()
     }
 
     // Dispose a layer entirely: hide head, dispose shapist, remove from scene.
@@ -132,12 +134,14 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
     function drainAndMaterialize() {
         let produced = false
         for (const [id, ambient] of scheduler.registry) {
-            if (ambient === scheduler.root) continue
-
             const events = ambient.channel.drain()
             if (events.length === 0) continue
 
-            const layer = getOrCreateLayer(id)
+            // The root IS the world frame: a render surface for ink deposited by
+            // `as … world do`, drawn at identity with no turtle head.
+            // (spec id:ft-d4-world-root)
+            const isRoot = ambient === scheduler.root
+            const layer = getOrCreateLayer(id, !isRoot)
 
             // Camera gating: a Lens drives the viewport when it's in the focused
             // subtree (the focused tab owns it, possibly via a nested eye); a
@@ -229,7 +233,8 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
     function updateGroupPositions() {
         const eyeInv = focusedEyeReframe()
         for (const [id, ambient] of scheduler.registry) {
-            if (ambient === scheduler.root) continue
+            // The root/world layer (if any) positions at identity like any other
+            // non-lens group; it only exists once something deposits into it.
             const layer = ambientLayers.get(id)
             if (!layer) continue
 
@@ -243,21 +248,61 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
         }
     }
 
-    // Remove layers for ambients no longer in the scheduler registry.
-    function cleanupOrphanedLayers() {
-        for (const [id, layer] of ambientLayers) {
-            if (!scheduler.registry.has(id)) {
-                disposeLayer(id, layer)
+    // Reclaim ink a dead source frame deposited into THIS layer. Frame-targeted
+    // children deposit into a target layer keyed by their source id; when the
+    // source dies (rerun/re-eval) but the target OUTLIVES it — the world/root
+    // layer never disposes — those runs would hang forever. (spec id:ft-d2 — GC)
+    function reclaimDeposits(layer, deadIds) {
+        // Open (still-tracked) runs.
+        for (const [src, run] of layer.trails) {
+            if (deadIds.has(src)) {
+                if (run.mesh) { disposeMesh(run.mesh); layer.group.remove(run.mesh) }
+                layer.trails.delete(src)
+            }
+        }
+        // Finalized runs / filled deposits — anonymous group children tagged by source.
+        for (const child of [...layer.group.children]) {
+            if (child._sourceId !== undefined && deadIds.has(child._sourceId)) {
+                child.traverse(disposeMesh)
+                layer.group.remove(child)
             }
         }
     }
 
+    // Remove layers for ambients no longer in the scheduler registry, then reclaim
+    // any ink those dead frames deposited into layers that survive them.
+    function cleanupOrphanedLayers() {
+        let deadIds = null
+        for (const [id, layer] of ambientLayers) {
+            if (!scheduler.registry.has(id)) {
+                (deadIds ||= new Set()).add(id)
+                disposeLayer(id, layer)
+            }
+        }
+        if (!deadIds) return
+        for (const [, layer] of ambientLayers) {
+            reclaimDeposits(layer, deadIds)
+        }
+    }
+
     const _scratchHeadPos = new THREE.Vector3()
+    const _headWorldPos = new THREE.Vector3()
     function scaleChildHeads() {
         for (const [id, layer] of ambientLayers) {
             if (!layer.head) continue
             const headPos = layer.head.position()
             const gp = layer.group.position
+
+            // Frame-targeted heads orient by world velocity (the visible ink's
+            // tangent); normal heads already show their heading. Runs after
+            // updateGroupPositions, so the layer pose is current. (spec id:ft-d5-head)
+            const ambient = scheduler.registry.get(id)
+            if (ambient && ambient.targetFrame) {
+                _headWorldPos.set(headPos.x, headPos.y, headPos.z)
+                    .applyQuaternion(layer.group.quaternion).add(gp)
+                layer.head.orientToWorld(_headWorldPos, layer.group.quaternion)
+            }
+
             // Reuse one scratch vector — this runs per head per frame.
             _scratchHeadPos.set(gp.x + headPos.x, gp.y + headPos.y, gp.z + headPos.z)
             const dist = ctx.camera.position.distanceTo(_scratchHeadPos)
