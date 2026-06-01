@@ -3,7 +3,7 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
-import { createScheduler, createFrame, allDone, worldTransform } from "../../assets/js/turtling/scheduler.js"
+import { createScheduler, createFrame, allDone, worldTransform, resolveBinding } from "../../assets/js/turtling/scheduler.js"
 import { parseProgram } from "../../assets/js/turtling/parse.js"
 import { execute, drainEvents } from "../../assets/js/turtling/executor.js"
 import { ASTNode } from "../../assets/js/turtling/ast.js"
@@ -953,7 +953,7 @@ describe("idempotent spawn semantics", () => {
     })
 
     test("ambient with internal loop draws at multiple orientations", () => {
-        const ast = parseProgram("as star world do\n  loop 3 do\n    fw 100\n    jmpto 0 0\n    rt 120\n  end\nend")
+        const ast = parseProgram("as star origin do\n  loop 3 do\n    fw 100\n    jmpto 0 0\n    rt 120\n  end\nend")
         const deps = mockDeps()
         const generator = execute(ast, deps, { color: '#fff' })
 
@@ -1048,7 +1048,7 @@ describe("idempotent spawn semantics", () => {
     })
 
     test("frame-targeted batch child stamps at each parent loop position", () => {
-        const ast = parseProgram("loop 4 do\n  rt 90\n  as stamp world do\n    fw 50\n    jmpto 0 0\n  end\nend")
+        const ast = parseProgram("loop 4 do\n  rt 90\n  as stamp origin do\n    fw 50\n    jmpto 0 0\n  end\nend")
         const deps = mockDeps()
         const generator = execute(ast, deps, { color: '#fff' })
 
@@ -1185,7 +1185,7 @@ describe("deposit run identity (runId unification)", () => {
     })
 
     test("projected ink keeps ONE runId though the projection M moves each tick", () => {
-        // The outer loop re-encounters `as dot world do` each iteration, updating
+        // The outer loop re-encounters `as dot origin do` each iteration, updating
         // dot's origin (so M = worldTransform(dot) changes every tick). dot draws a
         // single continuous stroke; runId is judged in dot's OWN frame, so it stays
         // constant — the property that makes the deposited curve smooth, not dotted.
@@ -1193,7 +1193,7 @@ describe("deposit run identity (runId unification)", () => {
             "loop 2 do",
             "  fw 8",
             "  rt 30",
-            "  as dot world do",
+            "  as dot origin do",
             "    fw 3", "    wait 1",
             "    fw 3", "    wait 1",
             "    fw 3", "    wait 1",
@@ -1277,5 +1277,57 @@ describe("mailbox bounds", () => {
         assert.equal(listener.mailbox.length, 3)
         assert.equal(listener.mailbox[0].name, "msg2") // oldest surviving
         assert.equal(listener.mailbox[2].name, "msg4") // newest
+    })
+})
+
+// ---------------------------------------------------------------------------
+// Universe names: `world` (tab-local program) vs `origin` (synthetic datum)
+// ---------------------------------------------------------------------------
+
+describe("universe names: world vs origin", () => {
+    // Build a production-shaped tree: synthetic root (plumbing) → program (tab) →
+    // timer (nested ambient). In production the root runs metaRoot() and never
+    // ticks; the program is the frame that accrues elapsedTime and moves.
+    const noop = () => (function* () {})()
+    function universe() {
+        const root = createFrame('origin', noop(), {})                 // synthetic root, parentless
+        const program = createFrame('sketch', noop(), {
+            parent: root,
+            transform: { ...SE3.identity(), position: [100, 0, 0] },    // top-level turtle moved
+        })
+        const timer = createFrame('timer', noop(), { parent: program })
+        // Lifecycle fields the scheduler's attachMeta() would set in production:
+        for (const f of [root, program, timer]) { f.elapsedTime = 0; f.commandCount = 0 }
+        program.elapsedTime = 5                                         // program clock has advanced
+        return { root, program, timer }
+    }
+
+    test("world.time reads the observer's top-level program clock (the bug fix)", () => {
+        const { timer } = universe()
+        // Previously resolved to the synthetic root → always 0. Now → the program.
+        assert.equal(resolveBinding(timer, 'world.time'), 5)
+    })
+
+    test("world.x tracks the top-level program's transform", () => {
+        const { timer } = universe()
+        assert.equal(resolveBinding(timer, 'world.x'), 100)
+    })
+
+    test("origin is the fixed datum: timeless and at absolute (0,0,0)", () => {
+        const { timer } = universe()
+        assert.equal(resolveBinding(timer, 'origin.time'), 0)
+        assert.equal(resolveBinding(timer, 'origin.x'), 0)
+    })
+
+    test("world is tab-local: resolved per observer, not the shared root", () => {
+        const { root, program, timer } = universe()
+        // From any depth in this tab, `world` is the same top-level program frame.
+        const w1 = resolveBinding(timer, 'world.commands')
+        program.commandCount = 7
+        assert.equal(resolveBinding(timer, 'world.commands'), 7)
+        // And `origin` is the synthetic root, distinct from the program.
+        root.commandCount = 99
+        assert.equal(resolveBinding(timer, 'origin.commands'), 99)
+        assert.equal(w1, 0)
     })
 })

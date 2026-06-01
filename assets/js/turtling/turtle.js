@@ -114,7 +114,6 @@ export class Turtle {
     _ensureScheduler() {
         if (this.scheduler) return
         this.scheduler = createScheduler(metaRoot(), {
-            rootName: 'world',
             createDeps: () => ({
                 mathParser: new Parser(),
                 mathEvaluator: new Evaluator()

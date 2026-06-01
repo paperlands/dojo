@@ -78,6 +78,9 @@ function sumCounts(ctx) {
 // Walk up the parent chain to find the nearest ancestor with the given name.
 // Used by frame targeting (`as child in parent do`) where `parent` is a name.
 function findAncestorByName(ctx, name) {
+    const reserved = resolveReserved(ctx, name)
+    if (reserved) return reserved
+
     let ancestor = ctx.parent
     while (ancestor) {
         if (ancestor.name === name) return ancestor
@@ -86,12 +89,16 @@ function findAncestorByName(ctx, name) {
     return null
 }
 
-// `world` is the synthetic root — the identity frame at the top of every tree —
-// NAMED so it is addressable by ordinary ancestor lookup. Targeting `world` thus
-// needs no special case: findAncestorByName walks up to it. Ink deposited there
-// lands in absolute world coordinates (the root layer renders at identity).
-// (spec id:ft-d4-world-root)
-const WORLD_NAME = "world"
+// `origin` is the synthetic root — the fixed identity datum at the top of every
+// tree. It never moves and never ticks (it runs no commands), so it is the stable
+// absolute frame: ink targeted at `origin` lands in absolute world coordinates
+// (the root layer renders at identity).
+//
+// `world`, by contrast, is the observer's OWN top-level program (see resolveReserved):
+// a live ambient with a moving transform and a running clock, resolved per-observer
+// and tab-local, so sibling tabs never couple through it.
+// (spec id:ft-d4-world-root — absolute-frame targeting moved from `world` to `origin`)
+const ROOT_NAME = "origin"
 
 // Stable, unique address of a frame across re-eval. Re-eval (hotSwapChild)
 // RECREATES frames — a frame's identity (id) does NOT survive it, nor does any
@@ -214,7 +221,39 @@ function routeOutput(ctx, value, frameTarget, frameTransform) {
 // Find a named frame: check siblings first, then walk ancestors.
 // Searches by frame.name (display name), not by children map key,
 // so cross-ambient references use tab names (e.g., spiral.x).
+// The synthetic root: walk to the parentless top of the tree. This is `origin` —
+// the fixed identity datum (absolute coordinates, timeless).
+function metaRootFrame(frame) {
+    let node = frame
+    while (node.parent) node = node.parent
+    return node
+}
+
+// The observer's top-level program: the direct child of the synthetic root on the
+// observer's own ancestor chain. This is `world` — a real ambient with a live clock
+// and moving transform, scoped to the observer's tab (sibling tabs never couple).
+// In production the root is synthetic plumbing, so this lands on the program; if the
+// observer IS the root (test harness runs a program as root), it resolves to itself.
+function topLevelFrame(frame) {
+    const root = metaRootFrame(frame)
+    if (frame === root) return root
+    let node = frame
+    while (node.parent !== root) node = node.parent
+    return node
+}
+
+// Reserved universe names resolve relative to the observer, not by frame.name.
+// `world` → own top-level program; `origin` → synthetic root datum.
+function resolveReserved(frame, name) {
+    if (name === 'world') return topLevelFrame(frame)
+    if (name === 'origin') return metaRootFrame(frame)
+    return null
+}
+
 function findFrame(frame, name) {
+    const reserved = resolveReserved(frame, name)
+    if (reserved) return reserved
+
     // Siblings (parent's children, or own children if root)
     const parent = frame.parent || frame
     for (const child of parent.children.values()) {
@@ -663,7 +702,7 @@ export function createScheduler(generator, opts = {}) {
     const onShout = opts.onShout || null
 
     const root = attachMeta(
-        createFrame(WORLD_NAME, generator, { channelCapacity }),
+        createFrame(ROOT_NAME, generator, { channelCapacity }),
         null
     )
     // Wire shared mailbox — same array the root executor reads from
