@@ -138,13 +138,16 @@ function* walkBody(body, scope, state, stroke) {
 
         case 'Call': {
             // fn/func: math function definition — delegate to math parser.
-            // Capture evaluator constants (count, x, y, z, time) at definition time
-            // so fn bodies are frozen snapshots, not re-evaluated lazily.
+            // Capture foldable evaluator constants (count, x, y, z, time) at definition
+            // time so fn bodies are frozen snapshots. Deferred constants (random) stay
+            // symbolic so they re-evaluate lazily at each point of use.
             if (node.value === "fn" || node.value === "func") {
                 const rawArgs = node.children.map(arg => arg.value)
                 const fnScope = { ...scope }
                 const ec = state.deps.mathEvaluator.constants
+                const deferred = state.deps.mathEvaluator.deferred
                 for (const key of Object.keys(ec)) {
+                    if (deferred?.has(key)) continue   // late-evaluated: keep symbolic
                     if (!(key in fnScope)) fnScope[key] = ec[key]()
                 }
                 state.deps.mathParser.defineFunction(rawArgs[0], rawArgs[1] || 0, fnScope)
