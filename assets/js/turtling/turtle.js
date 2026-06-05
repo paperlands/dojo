@@ -50,6 +50,12 @@ export class Turtle {
         this.scheduler = null
         this.compositor = null
         this._snapshotPending = false
+        // Hatch gate: when the canvas is driven by passive outershell content
+        // (watching a friend, or reverting to their code) this is true and the
+        // onFrame hatch is suppressed — a friend's drawing must never be
+        // hatched/reflected as the user's own. Only own edits and live drafts
+        // refresh the snapshot. See upsertAmbient({ hatch }).
+        this._hatchSuppressed = false
         this._localKeys = new Set()  // buffer IDs of locally-rendered tab ambients
 
         // Dirty marker: stamped on every draw/edit/removal. hatch() stamps
@@ -108,6 +114,14 @@ export class Turtle {
         for (const ev of ['start', 'change', 'end']) {
             this.stage.controls.removeEventListener(ev, this._onControlsActive)
         }
+        // Free the render stack. The canvas is phx-update="ignore" and outlives
+        // the hook, so a fresh Turtle is built on it each remount — without this
+        // the old compositor's GPU layers and the stage (renderer/loop/controls/
+        // cameraBridge) leak per remount, exhausting WebGL contexts over reconnects.
+        this.compositor?.dispose()
+        this.compositor = null
+        this.scheduler = null
+        this.stage.dispose()
     }
 
     // Lazy init: one scheduler (meta-root) + one compositor for the lifetime.
@@ -119,8 +133,11 @@ export class Turtle {
                 mathEvaluator: new Evaluator()
             }),
             execOpts: { color: this.color },
+            // Pass the EMITTER's own name — its signal address. (Was the globally
+            // focused ambient, which mis-addressed every shout to whatever panel
+            // had focus.) Routing to a panel is a read-side concern, by source.
             onShout: (sourceName, msg, payload) => {
-                this._onShout?.(this.compositor?.focusedName, sourceName, msg, payload)
+                this._onShout?.(sourceName, msg, payload)
             }
         })
         this.compositor = createCompositor(this.scheduler,
@@ -169,11 +186,11 @@ export class Turtle {
                 this.stage.recorder.captureFrame()
             }
 
-            if (this.renderstate.snapshot.frame == null && t > 500) {
+            if (this.renderstate.snapshot.frame == null && t > 500 && !this._hatchSuppressed) {
                 this.hatch()
             }
 
-            if (this.scheduler.done && !this._snapshotPending) {
+            if (this.scheduler.done && !this._snapshotPending && !this._hatchSuppressed) {
                 this._snapshotPending = true
                 this.hatch()
             }
@@ -192,7 +209,9 @@ export class Turtle {
         const animating = !!this.scheduler && !this.scheduler.done
         const recording = this.stage.recorder.isRecording
         // Only the compositor branch can hatch — don't pin the idle loop on.
-        const needHatch = !!this.compositor && this.renderstate.snapshot.frame == null
+        // A suppressed hatch must not pin the on-demand loop: with snapshot.frame
+        // left null (we never capture for foreign content) this would spin forever.
+        const needHatch = !!this.compositor && this.renderstate.snapshot.frame == null && !this._hatchSuppressed
         const controlsSettling = performance.now() < this._controlsActiveUntil
         this._keepRendering = animating || recording || controlsChanged || controlsSettling || needHatch
     }
@@ -214,7 +233,10 @@ export class Turtle {
 
     // --- Multi-ambient API ---
 
-    upsertAmbient(key, displayName, code) {
+    // hatch:false renders without refreshing the snapshot/thumbnail or reflecting
+    // to the server — for passive outershell content (a watched friend, or a
+    // reverted draft). Own edits and live drafts leave it default (true).
+    upsertAmbient(key, displayName, code, { hatch = true } = {}) {
         try {
             const instructions = parseProgram(code)
             this._ensureScheduler()
@@ -226,9 +248,12 @@ export class Turtle {
                 env: null
             })
 
-            // Fresh hatch cycle — clear previous snapshot so onFrame re-hatches
-            this.renderstate.snapshot = { frame: null, save: this.renderstate.snapshot.save }
-            this._snapshotPending = false
+            this._hatchSuppressed = !hatch
+            if (hatch) {
+                // Fresh hatch cycle — clear previous snapshot so onFrame re-hatches
+                this.renderstate.snapshot = { frame: null, save: this.renderstate.snapshot.save }
+                this._snapshotPending = false
+            }
 
             this.compositor.flush()
             this._lastContentChange = performance.now()
@@ -286,6 +311,24 @@ export class Turtle {
         if (this.compositor) {
             this.compositor.setOpacityByName(name, opacity)
         }
+    }
+
+    // The tab (root-child key === buffer id) whose subtree defines an ambient by
+    // display name: a top-level tab named `name`, or the tab whose code spawned
+    // `as name do …`. Returns null if not found (e.g. a remote peer's addr key).
+    tabKeyForAmbient(name) {
+        if (!this.scheduler?.root) return null
+        const defines = (frame) => {
+            if (frame.name === name) return true
+            for (const child of frame.children?.values() ?? []) {
+                if (defines(child)) return true
+            }
+            return false
+        }
+        for (const [key, tab] of this.scheduler.root.children) {
+            if (defines(tab)) return key
+        }
+        return null
     }
 
     // Toggle a tab's ambient: shift+click adds if absent, removes if present.

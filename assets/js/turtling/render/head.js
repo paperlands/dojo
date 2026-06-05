@@ -154,6 +154,19 @@ export default class Head {
         this.turtleGroup.quaternion.copy(this.defaultRotation);
         this._prevWP = null;   // restart world-velocity tracking (frame-targeted heads)
     }
+
+    // Free GPU geometry/materials and detach from the scene. The scene is
+    // dropped on stage teardown, but WebGL buffers need explicit disposal —
+    // GC won't reclaim them. Idempotent: safe to call once per Head lifetime.
+    dispose() {
+        this.turtleGroup.remove(this.turtleMesh);
+        this.turtleGroup.remove(this.wireframeMesh);
+        this.turtleMesh.geometry.dispose();
+        this.turtleMesh.material.dispose();
+        this.wireframeMesh.geometry.dispose();
+        this.wireframeMesh.material.dispose();
+        this.scene.remove(this.turtleGroup);
+    }
 }
 
 class HeadGeometry extends THREE.BufferGeometry {

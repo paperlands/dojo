@@ -62,6 +62,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         autosaveTimer: null,
         mergeOriginals: new Map(),  // addr → latest outershell content (for lazy merge updates)
         mergeActive: false,           // true while outershell mode is active
+        drafting: false,              // outer review surface: editing a draft in place
     };
 
     let shell = null;         // CM6 EditorView — inherently mutable
@@ -262,12 +263,20 @@ export const createTerminal = (element, cm6, options = {}) => {
         },
 
         outer(_code = '') {
-            const { extensions, compartments } = buildExtensions(cm6, {});
+            // Publish draft edits so the hook can run them live as an ambient.
+            const { extensions, compartments } = buildExtensions(cm6, {
+                onDocChange: (content) => bridge.pub({ content }),
+            });
+
+            // Read-only lives in its own compartment so the review surface can
+            // toggle into an editable draft.
+            const readOnly = new cm6.Compartment();
+            compartments.readOnly = readOnly;
 
             state.extensions = extensions;
             state.compartments = compartments;
 
-            const result = editorView.createOuterView(element, cm6, extensions);
+            const result = editorView.createOuterView(element, cm6, extensions, readOnly);
             shell = result.view;
 
             reapplyCompartments(shell, compartments, cm6, opts.theme, themes);
@@ -276,7 +285,85 @@ export const createTerminal = (element, cm6, options = {}) => {
         },
 
         changeouter(code) {
+            // Don't clobber the user's in-place draft with incoming friend code.
+            if (state.drafting) return;
             editorView.updateOuter(shell, code);
+        },
+
+        // --- Outer review surface: edit a draft as a live merge ----------------
+        //
+        // The OuterShell is one living diff: `original` = the friend's code,
+        // `mine` = your draft (seeded from your existing coreshell fork if one
+        // exists along this lineage, else from their code).
+
+        beginDraft({ addr, buffer_id } = {}) {
+            if (!shell || state.drafting) return;
+            const friendSource = editorView.getContent(shell);
+
+            // Lineage-aware seed: read your existing fork of this code from the
+            // inner terminal (owner of the buffer collection). Falls back to the
+            // friend's code when you have no fork yet.
+            const inner = document.getElementById('your-buffer')?.__terminal;
+            const forkContent = inner?.forkContent?.(addr, buffer_id) ?? null;
+            const draft = forkContent ?? friendSource;
+
+            state.drafting = true;
+
+            const effects = [
+                state.compartments.readOnly.reconfigure(cm6.EditorState.readOnly.of(false)),
+            ];
+            if (state.compartments.merge && cm6.unifiedMergeView) {
+                effects.push(state.compartments.merge.reconfigure(
+                    cm6.unifiedMergeView({
+                        original: cm6.Text.of(friendSource.split('\n')),
+                        highlightChanges: true,
+                        gutter: true,
+                    })
+                ));
+            }
+            shell.dispatch({ effects });
+
+            if (draft !== friendSource) editorView.setContent(shell, draft);
+
+            // Keep focus on the review surface — drafting must not jump away.
+            // Re-grab on the next frame too: the merge view inserts its diff DOM
+            // asynchronously, which can blur the contenteditable mid-keystroke.
+            shell.focus();
+            requestAnimationFrame(() => shell?.focus());
+        },
+
+        // Live baseline: set the friend's current code as the merge ORIGINAL
+        // (a rebase preview) while you keep your draft. We reconfigure the merge
+        // compartment rather than use updateOriginalDoc — that effect needs a
+        // {doc, changes} payload; reconfiguring reliably resets the baseline and
+        // recomputes the diff against your draft.
+        streamOrigin(content) {
+            if (!state.drafting || !shell || !state.compartments?.merge || !cm6.unifiedMergeView) return;
+            shell.dispatch({
+                effects: state.compartments.merge.reconfigure(
+                    cm6.unifiedMergeView({
+                        original: cm6.Text.of((content ?? '').split('\n')),
+                        highlightChanges: true,
+                        gutter: true,
+                    })
+                ),
+            });
+        },
+
+        endDraft() {
+            if (!shell || !state.drafting) return;
+            state.drafting = false;
+            const effects = [
+                state.compartments.readOnly.reconfigure(cm6.EditorState.readOnly.of(true)),
+            ];
+            if (state.compartments.merge) {
+                effects.push(state.compartments.merge.reconfigure([]));
+            }
+            shell.dispatch({ effects });
+        },
+
+        drafting() {
+            return state.drafting;
         },
 
         run(instructions) {
@@ -331,19 +418,22 @@ export const createTerminal = (element, cm6, options = {}) => {
             return null;
         },
 
-        forkBuffer({ source, name, addr, buffer_id, time, offset, key }) {
+        // Current content of your fork along a lineage, if you have one.
+        // Read by the outer review surface to seed a draft (cross-terminal).
+        forkContent(addr, buffer_id) {
+            if (!state.collection) return null;
+            const id = this.findFork(addr, buffer_id);
+            if (!id) return null;
+            return state.docs.has(id)
+                ? state.docs.get(id).doc.toString()
+                : state.collection.items.get(id)?.content ?? null;
+        },
+
+        forkBuffer({ source, name, addr, buffer_id, time, offset }) {
             if (!source || !addr) return;
             state.mergeActive = true;
 
-            const selectAndReplay = (id) => {
-                doSelectBuffer(id, { offset });
-                // Only replay printable characters — structural keys (Enter, Backspace, etc.)
-                // are editing gestures, not literal inserts. The user presses them again
-                // in the fork with full CM6 support (auto-indent, bracket matching).
-                if (key?.length === 1 && shell) {
-                    shell.dispatch(shell.state.replaceSelection(key));
-                }
-            };
+            const selectFork = (id) => doSelectBuffer(id, { offset });
 
             const existing = this.findFork(addr, buffer_id);
             if (existing) {
@@ -363,12 +453,12 @@ export const createTerminal = (element, cm6, options = {}) => {
                     state.collection = collection;
                     state.docs.set(id, createDoc(forkContent));
                     tabs.addTab(id, bufferName);
-                    selectAndReplay(id);
+                    selectFork(id);
                     return id;
                 }
 
                 // Same code — switch to existing tab, continue editing
-                selectAndReplay(existing);
+                selectFork(existing);
                 return existing;
             }
 
@@ -380,7 +470,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             state.collection = collection;
             state.docs.set(id, createDoc(source));
             tabs.addTab(id, bufferName);
-            selectAndReplay(id);
+            selectFork(id);
             return id;
         },
 
@@ -388,13 +478,21 @@ export const createTerminal = (element, cm6, options = {}) => {
             const key = buffer_id ? `${addr}:${buffer_id}` : addr;
             state.mergeOriginals.set(key, content);
 
-            // Only update live diff if the current fork matches this addr:buffer_id
+            // Only update live diff if the current fork matches this addr:buffer_id.
+            // Reconfigure the merge (not updateOriginalDoc, which needs {doc, changes})
+            // so the new baseline actually lands and the diff recomputes.
             const current = buffers.currentBuffer(state.collection);
             if (state.mergeActive && current?.origin?.addr === addr
                 && (!buffer_id || current.origin.buffer_id === buffer_id)
-                && cm6.updateOriginalDoc && shell) {
+                && state.compartments?.merge && cm6.unifiedMergeView && shell) {
                 shell.dispatch({
-                    effects: cm6.updateOriginalDoc.of(cm6.Text.of(content.split('\n'))),
+                    effects: state.compartments.merge.reconfigure(
+                        cm6.unifiedMergeView({
+                            original: cm6.Text.of(content.split('\n')),
+                            highlightChanges: true,
+                            gutter: true,
+                        })
+                    ),
                 });
             }
         },

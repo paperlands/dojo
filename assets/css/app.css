@@ -295,8 +295,8 @@
 }
 
 @keyframes fullmarquee {
-  0% { transform: translateX(50%); }
-  100% { transform: translateX(-100%); }
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
 
 @keyframes gradient-anim {
@@ -355,7 +355,7 @@
     animation: popIn 300ms ease-out forwards;
   }
   .animate-marquee {
-    animation: fullmarquee 15s linear infinite;
+    animation: fullmarquee 25s linear infinite;
   }
   .animate-gradient {
     animation: gradient-anim 30s ease infinite;
@@ -457,6 +457,40 @@
 
 .nerve-hud-status-line.nerve-output { color: var(--color-primary); }
 .nerve-hud-status-line.nerve-system { font-style: italic; }
+
+/* --- Remote nerve (a watched friend's signals, below the outershell) --- */
+/* These render as .nerve-hud-msg slots, so they need their own channel colors. */
+#outer-nerve .nerve-error {
+  color: var(--color-error);
+  text-shadow: 0 0 8px oklch(0.58 0.24 27 / 0.3);
+}
+#outer-nerve .nerve-error .nerve-msg { opacity: 1; }
+#outer-nerve .nerve-output { color: var(--color-primary); }
+
+/* --- Command deck: one toggle, one truth ----------------------------------
+   The deck's open/closed state lives in a single flag — `#deck-state.deck-open`
+   — held in a phx-update="ignore" node so server re-renders can't clobber it.
+   Panel visibility, the button's glow, and yielding the pane to an active
+   outershell are all DERIVED here, so no two DOM nodes can fall out of sync.
+   It's pure CSS + a client-side class toggle: no socket, works offline.
+   Specificity (.rightpane …) beats Tailwind's single-class display utilities,
+   so the deck panel carries no display utility of its own. */
+.rightpane .deck { display: none; }
+
+.rightpane:has(#deck-state.deck-open):not(:has(.outershell)) .deck {
+  display: flex;
+}
+
+@media (min-width: 40rem) {
+  .rightpane:has(#deck-state.deck-open):not(:has(.outershell)) .deck {
+    display: block;
+  }
+}
+
+.rightpane:has(#deck-state.deck-open):not(:has(.outershell)) #manualdeckbutton {
+  fill: var(--color-secondary-content);
+  filter: drop-shadow(0 1px 1px var(--color-secondary-content));
+}
 
 /* --- Log panel — expanded history, click to open, click-outside to close --- */
 
@@ -563,5 +597,43 @@
 
 [data-theme="light"] .cm-deletedLine {
     background: rgba(248, 85, 82, 0.1);
+}
+
+/* === OuterShell break transition — code glitches into a bug, settles errored,
+      transitions back to clean when it works. Driven by #outerenv[data-outer-state]. === */
+
+@keyframes outer-glitch {
+    0%   { transform: translate(0, 0) skewX(0deg);    filter: none; }
+    18%  { transform: translate(-2px, 0) skewX(-1deg); filter: hue-rotate(-25deg) saturate(1.5); }
+    36%  { transform: translate(2px, 1px) skewX(1deg);  filter: hue-rotate(15deg); }
+    54%  { transform: translate(-1px, 0) skewX(-0.5deg); }
+    72%  { transform: translate(1px, -1px) skewX(0.5deg); }
+    100% { transform: translate(0, 0) skewX(0deg);    filter: none; }
+}
+
+#outerenv {
+    transition: background-color 300ms ease, box-shadow 300ms ease;
+}
+
+#outerenv .cm-content {
+    transition: color 300ms ease;
+}
+
+/* Errored — live break shown in place (not the last-good freeze). */
+#outerenv[data-outer-state="error"] {
+    background-color: rgba(100, 22, 24, 0.12);
+    box-shadow: inset 0 0 24px rgba(180, 30, 30, 0.18);
+}
+
+#outerenv[data-outer-state="error"] .cm-content {
+    animation: outer-glitch 320ms ease-out;
+    color: rgba(255, 140, 120, 0.95);
+}
+
+/* Draft — a distinct secondary-content (yellow) wash, never confused with the
+   error red. Your modification in progress, not their break. */
+#outerenv[data-outer-state="draft"] {
+    background-color: color-mix(in oklch, var(--color-secondary-content) 9%, transparent);
+    box-shadow: inset 0 0 24px color-mix(in oklch, var(--color-secondary-content) 16%, transparent);
 }
 

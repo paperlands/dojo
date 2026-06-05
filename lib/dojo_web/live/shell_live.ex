@@ -133,15 +133,29 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_async(:follow_code, {:ok, %Dojo.Turtle{} = turtle}, socket) do
-    case OuterShell.transition(socket.assigns.outershell, turtle) do
-      {:push, shell} ->
-        {:noreply,
-         socket
-         |> assign(:outershell, shell)
-         |> push_event("seeOuterShell", outer_shell_payload(turtle, shell))}
+    prev = socket.assigns.outershell.origin
+    shell = OuterShell.observe(socket.assigns.outershell, turtle)
+    socket = assign(socket, :outershell, shell)
 
-      {:silent, shell} ->
-        {:noreply, assign(socket, :outershell, shell)}
+    # A hatch with unchanged code is just a preview/path bump — advance time
+    # (via observe above) but don't react: no re-render, re-stream, or re-run.
+    if OuterShell.code_changed?(prev, turtle) do
+      # The friend's status always flows to the nerve — even in a frozen draft,
+      # where the editor push is held back so it won't disturb your draft.
+      socket = push_event(socket, "outerSignal", outer_signal(turtle, shell))
+
+      socket =
+        case OuterShell.render_intent(shell) do
+          {:push, source} ->
+            push_event(socket, "seeOuterShell", outer_shell_payload(source, shell))
+
+          :hold ->
+            socket
+        end
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
     end
   end
 
@@ -220,45 +234,35 @@ defmodule DojoWeb.ShellLive do
   # --- OuterShell LiveComponent messages ---
 
   def handle_info({:outer_shell, :close}, socket) do
-    {:noreply, assign(socket, :outershell, %OuterShell{})}
+    {:noreply, reset_outershell(socket)}
   end
 
-  def handle_info({:outer_shell, :toggle_follow, follow}, socket) do
-    {:noreply, update(socket, :outershell, &%{&1 | follow: follow})}
+  def handle_info({:outer_shell, :toggle_follow}, socket) do
+    # The LiveView owns the authoritative follow flag; the component emits a bare
+    # intent and we flip our own value — no stale read round-trips through the UI.
+    {:noreply, update(socket, :outershell, &%{&1 | follow: !&1.follow})}
   end
 
-  def handle_info({:outer_shell, :preview}, socket) do
-    shell = socket.assigns.outershell
-
-    case OuterShell.preview(shell) do
-      {:push_freeze, new_shell} ->
-        {:noreply,
-         socket
-         |> assign(:outershell, new_shell)
-         |> push_event("seeOuterShell", outer_shell_payload(new_shell.freeze_turtle, new_shell))}
-
-      {:noop, _} ->
-        {:noreply, socket}
-    end
+  def handle_info({:outer_shell, :recall}, socket) do
+    {:noreply, apply_outer_view(socket, OuterShell.recall(socket.assigns.outershell))}
   end
 
-  def handle_info({:outer_shell, :dismiss_preview}, socket) do
-    shell = socket.assigns.outershell
-
-    case OuterShell.dismiss(shell) do
-      {:push_live, new_shell} ->
-        {:noreply,
-         socket
-         |> assign(:outershell, new_shell)
-         |> push_event("seeOuterShell", outer_shell_payload(new_shell.live_turtle, new_shell))}
-
-      {:noop, _} ->
-        {:noreply, socket}
-    end
+  def handle_info({:outer_shell, :watch}, socket) do
+    {:noreply, apply_outer_view(socket, OuterShell.watch(socket.assigns.outershell))}
   end
 
-  def handle_info({:outer_shell, :fork, fork_data}, socket) do
-    {:noreply, push_event(socket, "forkBuffer", fork_data)}
+  def handle_info({:outer_shell, :toggle_stream}, socket) do
+    shell = OuterShell.toggle_stream(socket.assigns.outershell)
+    live = shell.view == :draft and shell.stream
+
+    socket =
+      socket
+      |> apply_outer_view(shell)
+      |> push_event("outerLive", %{live: live})
+
+    # Going live: pull their freshest code so the diff baseline (and your running
+    # draft's reference) is current right away, not at the next hatch.
+    {:noreply, if(live, do: fetch_latest(socket), else: socket)}
   end
 
   # --- Nerve signal relay ---
@@ -348,33 +352,18 @@ defmodule DojoWeb.ShellLive do
       )
       when is_binary(addr) do
     case Dojo.Table.last(dis[addr][:node], :hatch) do
-      %Dojo.Turtle{state: :success} = turtle ->
-        outershell = %OuterShell{
-          mode: :live,
-          live_turtle: turtle,
-          addr: addr,
-          active: true,
-          name: "#{dis[addr][:name]}"
-        }
+      %Dojo.Turtle{} = turtle ->
+        outershell =
+          OuterShell.observe(
+            %OuterShell{addr: addr, active: true, name: "#{dis[addr][:name]}"},
+            turtle
+          )
 
         {:noreply,
          socket
          |> push_event("seeOuterShell", outer_shell_payload(turtle, outershell))
+         |> push_event("outerSignal", outer_signal(turtle, outershell))
          |> assign(:outershell, outershell)}
-
-      %Dojo.Turtle{state: :error} = turtle ->
-        {:noreply,
-         socket
-         |> assign(
-           :outershell,
-           %OuterShell{
-             mode: :freeze,
-             freeze_turtle: turtle,
-             addr: addr,
-             active: true,
-             name: "#{dis[addr][:name]}"
-           }
-         )}
 
       _ ->
         {:noreply, socket}
@@ -382,16 +371,26 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_event("seeTurtle", _, socket) do
-    {:noreply,
-     socket
-     |> assign(
-       :outershell,
-       %OuterShell{}
-     )}
+    {:noreply, reset_outershell(socket)}
   end
 
   def handle_event("closeTurtle", _, socket) do
-    {:noreply, assign(socket, :outershell, %OuterShell{})}
+    {:noreply, reset_outershell(socket)}
+  end
+
+  # The Shell JS hook reports the user started editing in the outer viewer.
+  # The editable merge is already configured client-side (beginDraft); here we
+  # only record the view so the server-rendered indicator reflects draft state.
+  # We do NOT push back — that would overwrite the draft the user is typing.
+  def handle_event("outerDraft", _, socket) do
+    # Draft auto-runs over working code, but waits for the toggle over an error.
+    # OuterShell.draft/1 sets `stream` from the friend's state; JS runs on live.
+    shell = OuterShell.draft(socket.assigns.outershell)
+
+    {:noreply,
+     socket
+     |> assign(:outershell, shell)
+     |> push_event("outerLive", %{live: shell.view == :draft and shell.stream})}
   end
 
   # Handle the viewport update event from the hook (Decision 003, Layer 3 — windowed pull)
@@ -557,7 +556,8 @@ defmodule DojoWeb.ShellLive do
   defp maybe_follow_code(socket, reg_key, time) do
     %{outershell: outershell, disciples: dis} = socket.assigns
 
-    if outershell.follow and outershell.addr == reg_key and dis[reg_key][:node] do
+    if OuterShell.wants_updates?(outershell) and outershell.addr == reg_key and
+         dis[reg_key][:node] do
       if (time || 0) > OuterShell.last_time(outershell) do
         start_async(socket, :follow_code, fn ->
           Dojo.Table.last(dis[reg_key][:node], :hatch)
@@ -565,6 +565,18 @@ defmodule DojoWeb.ShellLive do
       else
         socket
       end
+    else
+      socket
+    end
+  end
+
+  # Fetch the friend's latest now, bypassing the time gate — used on go-live so
+  # the merge baseline jumps to their current code immediately.
+  defp fetch_latest(socket) do
+    %{outershell: o, disciples: dis} = socket.assigns
+
+    if o.addr && dis[o.addr][:node] do
+      start_async(socket, :follow_code, fn -> Dojo.Table.last(dis[o.addr][:node], :hatch) end)
     else
       socket
     end
@@ -579,11 +591,35 @@ defmodule DojoWeb.ShellLive do
     end)
   end
 
+  # Apply a view/stream change: persist it, then push the source if one is due.
+  # The view/stream ride the seeOuterShell payload, so JS configures the editor
+  # (read-only watch vs editable merge) from that alone.
+  # The single definition of "close/reset the outershell" — reached by the
+  # component's :close intent, the close button, and switching away (seeTurtle).
+  defp reset_outershell(socket), do: assign(socket, :outershell, %OuterShell{})
+
+  defp apply_outer_view(socket, %OuterShell{} = shell) do
+    socket = assign(socket, :outershell, shell)
+
+    case OuterShell.render_intent(shell) do
+      {:push, source} -> push_event(socket, "seeOuterShell", outer_shell_payload(source, shell))
+      :hold -> socket
+    end
+  end
+
+  # The friend's execution status for the remote nerve — independent of whether
+  # the editor content is pushed (held back during a frozen draft).
+  defp outer_signal(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
+    %{state: turtle.state, message: turtle.message, name: shell.name}
+  end
+
   defp outer_shell_payload(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
     turtle
     |> Map.from_struct()
     |> Map.put(:addr, shell.addr)
     |> Map.put(:origin_name, shell.name)
+    |> Map.put(:view, shell.view)
+    |> Map.put(:stream, shell.stream)
   end
 
   def export(assigns) do

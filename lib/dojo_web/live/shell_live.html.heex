@@ -2,7 +2,7 @@
   <canvas phx-update="ignore" id="core-canvas" class="fixed inset-0 z-0 bg-inherit select-none">
   </canvas>
   <!-- Desktop Layout (lg and up) -->
-  <div class="fixed inset-0 grid grid-cols-[38dvw_12dvw_50dvw] md:grid-cols-[40dvw_25dvw_30dvw]  grid-rows-[60dvh_40dvh]  lg:grid-cols-[25dvw_50dvw_25dvw]  lg:grid-rows-[1fr_30dvh] gap-0.5 lg:gap-1 pointer-events-none">
+  <div class="fixed inset-0 grid grid-cols-[40dvw_20dvw_40dvw] md:grid-cols-[40dvw_25dvw_30dvw]  grid-rows-[60dvh_40dvh]  lg:grid-cols-[25dvw_50dvw_25dvw]  lg:grid-rows-[1fr_30dvh] gap-0.5 lg:gap-1 pointer-events-none">
     
 <!-- Left Pane - Code Editor -->
     <div
@@ -117,7 +117,12 @@
     <!-- Zhong -->
     <div class="bg-transparent pointer-events-none select-none" />
     <!-- Right pane -->
-    <div class="row-span-1 col-span-1 lg:row-span-2 p-1 sm:p-2 lg:p-4 relative ">
+    <div class="rightpane row-span-1 col-span-1 lg:row-span-2 p-1 sm:p-2 lg:p-4 relative ">
+      <%!-- Single source of truth for the command deck's open/closed state.
+            phx-update="ignore" keeps the client-toggled `deck-open` class alive
+            across server re-renders; CSS derives panel + button + outershell
+            yield from it. Pure client-side, so it works offline. --%>
+      <div id="deck-state" phx-update="ignore" class="deck-open hidden"></div>
       <div id="sessionbox" phx-hook="Box" class="fixed z-50 right-0 ml-4 ">
         <div :if={!@session.name} class="relative right-0 group">
           <!-- Login Link Button -->
@@ -186,17 +191,11 @@
             >
               <button
                 class="flex items-center justify-center w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
-                phx-click={
-                  JS.toggle(to: ".deck", in: "fade-in-scale", out: "fade-out-scale")
-                  |> JS.toggle_class(
-                    "fill-secondary-content drop-shadow-sm drop-shadow-secondary-content ",
-                    to: "#manualdeckbutton"
-                  )
-                }
+                phx-click={JS.toggle_class("deck-open", to: "#deck-state")}
               >
                 <.manual
                   id="manualdeckbutton"
-                  class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-secondary-content drop-shadow-sm drop-shadow-secondary-content fill-primary hover:rotate-[-40deg]"
+                  class="w-6 h-6 transition-transform duration-700 rotate-[-60deg] cursor-help fill-primary hover:rotate-[-40deg]"
                 />
               </button>
 
@@ -246,6 +245,22 @@
                   class="w-6 h-6 transition-transform duration-700  fill-primary text-amber-400/50 hover:rotate-[-40deg]"
                 />
               </button>
+
+              <button
+                id="endrecording"
+                class="flex items-center justify-center hidden w-9 h-9 border-2 border-primary/50  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8   rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+                phx-click={
+                  JS.dispatch("phx:relayCamera", detail: %{command: "endrecord"})
+                  |> JS.hide(to: "#endrecording")
+                  |> JS.show(to: "#startrecording")
+                }
+              >
+                <.record
+                  id="apertureopen"
+                  class="w-7 h-7 animate-rotate transition-transform duration-700  fill-error drop-shadow-xs drop-shadow-error text-amber-400/50 hover:rotate-[-40deg]"
+                />
+              </button>
+
               <button
                 id="centering"
                 class=" flex items-center justify-center  w-9 h-9 border border-accent backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0   rounded-sm  lg:w-8 lg:h-8   fill-primary hover:fill-primary active:border-primary touch-manipulation"
@@ -295,21 +310,6 @@
                 }
               >
                 <.centered class="w-7 h-7 fill-secondary-content drop-shadow-md drop-shadow-secondary-content" />
-              </button>
-
-              <button
-                id="endrecording"
-                class="flex items-center justify-center hidden w-9 h-9 border-2 border-primary/50  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8   rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
-                phx-click={
-                  JS.dispatch("phx:relayCamera", detail: %{command: "endrecord"})
-                  |> JS.hide(to: "#endrecording")
-                  |> JS.show(to: "#startrecording")
-                }
-              >
-                <.record
-                  id="apertureopen"
-                  class="w-7 h-7 animate-rotate transition-transform duration-700  fill-error drop-shadow-xs drop-shadow-error text-amber-400/50 hover:rotate-[-40deg]"
-                />
               </button>
 
               <script :type={Phoenix.LiveView.ColocatedHook} name=".rtclick">
@@ -396,7 +396,7 @@
               phx-click={
                 (@outershell && @outershell.addr == reg_key &&
                    JS.push("closeTurtle")) ||
-                  JS.push("seeTurtle") |> JS.hide(to: ".rightthird") |> JS.show(to: ".outershell")
+                  JS.push("seeTurtle")
               }
               phx-throttle="500"
               phx-value-addr={reg_key}

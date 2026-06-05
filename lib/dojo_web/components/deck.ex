@@ -61,7 +61,7 @@ defmodule DojoWeb.DeckLive do
     ~H"""
     <div
       id="commanddeck"
-      class="rightthird  fixed right-0 flex deck mt-[15dvh] h-3/5 lg:h-4/5 select-none animate-fade sm:block"
+      class="rightthird fixed right-0 deck mt-[15dvh] h-3/5 lg:h-4/5 select-none animate-fade"
     >
       <!-- Command Deck Panel -->
       <div class="h-5/6 md:h-full transition-all duration-100 ease-in-out transform scrollbar-hide dark-scrollbar">

@@ -133,8 +133,11 @@ export function createStage(canvas, bridge) {
     }
     window.addEventListener('resize', onResize)
 
-    // Camera bridge — responds to external camera commands
-    cameraBridge.sub(async (payload) => {
+    // Camera bridge — responds to external camera commands.
+    // cameraBridge is a module-global EventTarget; the unsub MUST run on
+    // dispose, else this closure pins the whole stage (renderer/scene/camera)
+    // forever and ghost handlers render stale scenes after a hook remount.
+    const cameraUnsub = cameraBridge.sub(async (payload) => {
         switch (payload[0]) {
         case 'recenter':
             camera.position.set(0, 0, 500)
@@ -229,7 +232,10 @@ export function createStage(canvas, bridge) {
         dispose() {
             window.removeEventListener('resize', onResize)
             canvas.removeEventListener('wheel', onWheel)
+            cameraUnsub()
+            controls.dispose()   // OrbitControls' own pointer/touch listeners
             if (stage.renderLoop) stage.renderLoop.stop()
+            head.dispose()
             renderer.dispose()
             shapist.dispose()
         }

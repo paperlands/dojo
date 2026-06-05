@@ -83,3 +83,21 @@ export const bridged = (eventName) => { // TODO: consider renaming to registerBr
 
 export const cameraBridge = bridged("cam");
 export const sceneBridge = bridged("scene");
+
+/**
+ * scene — the vocabulary of the scene bridge. Callers speak named moves;
+ * these constructors enforce the [type, payload] wire shape (mirrors the
+ * `signals` constructors in nerve/store.js). A typo becomes a missing method,
+ * not a silently-ignored event. Subscribers still switch on the tuple's
+ * first element.
+ */
+export const scene = {
+    focus:       (ambientId)        => sceneBridge.pub(['focus', { ambientId }]),
+    remove:      (ambientId)        => sceneBridge.pub(['remove', { ambientId }]),
+    fork:        (payload)          => sceneBridge.pub(['fork', payload]),
+    ambient:     (addr, name, code) => sceneBridge.pub(['ambient', { addr, name, code }]),
+    ambientStop: (addr)             => sceneBridge.pub(['ambientStop', { addr }]),
+    // Note: a watched friend's shouts are NOT relayed over a scene channel —
+    // they arrive through the core turtle's _onShout and route by source via
+    // the nerve's claim model (see nerve.js project()).
+};
