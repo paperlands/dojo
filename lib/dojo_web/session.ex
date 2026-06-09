@@ -19,6 +19,17 @@ defmodule DojoWeb.Session do
   def rtl?(locale), do: locale in @rtl_locales
   def dir(locale), do: if(rtl?(locale), do: "rtl", else: "ltr")
 
+  @doc """
+  The one derivation of a user's stable identity: name + first-login time,
+  alphanumeric only. Every backend register (Disciple.user_id, the Table
+  reg_key, hatch attribution) derives through this — never mint inline.
+  (specs/decisions/007 — one address, backend half.)
+  """
+  def user_id(%__MODULE__{name: name, last_opened: time}) when is_binary(name) do
+    (name <> Base.encode64(to_string(time)))
+    |> String.replace(~r/[^a-zA-Z0-9]/, "")
+  end
+
   def on_mount(:anon, params, _sessions, socket) do
     connect_params = get_connect_params(socket)
     session = connect_params["session"] |> mutate_session(params)

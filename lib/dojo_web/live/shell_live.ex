@@ -53,17 +53,12 @@ defmodule DojoWeb.ShellLive do
     |> start_async(:list_disciples, fn -> Dojo.Class.list_disciples("shell:" <> clan) end)
   end
 
-  defp sync_session(
-         %{assigns: %{session: %Session{name: name, last_opened: time}, clan: clan}} = socket
-       )
+  defp sync_session(%{assigns: %{session: %Session{name: name} = session, clan: clan}} = socket)
        when is_binary(name) do
     parent = self()
 
-    # Compute user_id: combine name + first login time for unique session identity
-    # Same logic as hatchTurtle to ensure consistency
-    user_id =
-      (name <> Base.encode64(to_string(time)))
-      |> String.replace(~r/[^a-zA-Z0-9]/, "")
+    # The one identity derivation — Session.user_id/1 (decision 007).
+    user_id = Session.user_id(session)
 
     socket
     |> start_async(:join_disciples, fn ->
@@ -162,19 +157,21 @@ defmodule DojoWeb.ShellLive do
   def handle_async(:follow_code, {:ok, _}, socket), do: {:noreply, socket}
   def handle_async(:follow_code, {:exit, _reason}, socket), do: {:noreply, socket}
 
-  # presence handlers — keyed by reg_key from node tuple (stable unique identity)
+  # presence handlers — keyed by reg_key (a meta field; Disciple.reg_key/1
+  # stays tolerant of legacy metas where it rode inside the node tuple)
 
   def handle_info(
-        {:join, "class:shell" <> _, %{node: {reg_key, _}} = disciple},
+        {:join, "class:shell" <> _, disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
-    {:noreply, assign(socket, :disciples, Map.put(d, reg_key, disciple))}
+    {:noreply, assign(socket, :disciples, Map.put(d, Dojo.Disciple.reg_key(disciple), disciple))}
   end
 
   def handle_info(
-        {:leave, "class:shell" <> _, %{node: {reg_key, _}, phx_ref: ref}},
+        {:leave, "class:shell" <> _, %{phx_ref: ref} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
+    reg_key = Dojo.Disciple.reg_key(disciple)
     # only delete if the leaving ref matches the current ref for this reg_key
     # prevents stale-leave race when Gate.change regenerates phx_ref
     if d[reg_key][:phx_ref] == ref do
@@ -323,14 +320,12 @@ defmodule DojoWeb.ShellLive do
   def handle_event(
         "hatchTurtle",
         %{"state" => _state} = payload,
-        %{assigns: %{class: class, clan: clan, session: %{name: name, last_opened: time}}} =
+        %{assigns: %{class: class, clan: clan, session: %Session{name: name} = session}} =
           socket
       )
       when is_binary(name) do
-    # this is user sesion first logintime
-    id =
-      (name <> Base.encode64(to_string(time)))
-      |> String.replace(~r/[^a-zA-Z0-9]/, "")
+    # The one identity derivation — Session.user_id/1 (decision 007).
+    id = Session.user_id(session)
 
     Dojo.Turtle.reflect(payload, %{topic: :hatch, class: class, node: node(), id: id, clan: clan})
 
@@ -351,7 +346,7 @@ defmodule DojoWeb.ShellLive do
         %{assigns: %{disciples: dis, class: _class}} = socket
       )
       when is_binary(addr) do
-    case Dojo.Table.last(dis[addr][:node], :hatch) do
+    case Dojo.Table.last(Dojo.Disciple.table_address(dis[addr]), :hatch) do
       %Dojo.Turtle{} = turtle ->
         outershell =
           OuterShell.observe(
@@ -494,8 +489,9 @@ defmodule DojoWeb.ShellLive do
   # Single-key pull: returns %{path, state, time} or nil. Never crashes.
   # Used both by batch pull_metadata and by apply_hatch_version for path hydration.
   defp pull_one_meta(disciples, reg_key) do
-    with %{node: node} <- disciples[reg_key],
-         %{path: _, state: _, time: _} = meta <- Dojo.Table.last_meta(node, :hatch) do
+    with %{node: _} = disciple <- disciples[reg_key],
+         %{path: _, state: _, time: _} = meta <-
+           Dojo.Table.last_meta(Dojo.Disciple.table_address(disciple), :hatch) do
       meta
     else
       _ -> nil
@@ -560,7 +556,7 @@ defmodule DojoWeb.ShellLive do
          dis[reg_key][:node] do
       if (time || 0) > OuterShell.last_time(outershell) do
         start_async(socket, :follow_code, fn ->
-          Dojo.Table.last(dis[reg_key][:node], :hatch)
+          Dojo.Table.last(Dojo.Disciple.table_address(dis[reg_key]), :hatch)
         end)
       else
         socket
@@ -576,7 +572,9 @@ defmodule DojoWeb.ShellLive do
     %{outershell: o, disciples: dis} = socket.assigns
 
     if o.addr && dis[o.addr][:node] do
-      start_async(socket, :follow_code, fn -> Dojo.Table.last(dis[o.addr][:node], :hatch) end)
+      start_async(socket, :follow_code, fn ->
+        Dojo.Table.last(Dojo.Disciple.table_address(dis[o.addr]), :hatch)
+      end)
     else
       socket
     end

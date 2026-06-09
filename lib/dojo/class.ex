@@ -13,11 +13,12 @@ defmodule Dojo.Class do
     DynamicSupervisor.init(strategy: :one_for_one)
   end
 
-  def join(pid, book, disciple) do
+  def join(pid, book, %Dojo.Disciple{user_id: user_id} = disciple) when is_binary(user_id) do
     topic_str = topic(book)
-    # Compute reg_key from user identity (name + optional user_id)
-    # user_id should be computed in ShellLive from (name + last_opened)
-    reg_key = "#{topic_str}:#{disciple.user_id || disciple.name}"
+    # One derivation: user_id comes from DojoWeb.Session.user_id/1 — the
+    # name fallback fork is gone (a join without identity should crash here,
+    # not register under a colliding display name).
+    reg_key = "#{topic_str}:#{user_id}"
 
     # Try to find existing Table singleton
     case Registry.lookup(Dojo.TableRegistry, reg_key) do
@@ -76,7 +77,7 @@ defmodule Dojo.Class do
 
   def list_disciples(book) do
     Dojo.Gate.list_users(topic(book))
-    |> Enum.into(%{}, fn %{node: {reg_key, _}} = dis -> {reg_key, dis} end)
+    |> Enum.into(%{}, fn dis -> {Dojo.Disciple.reg_key(dis), dis} end)
   end
 
   def listen(book) do

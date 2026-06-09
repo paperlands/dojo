@@ -78,8 +78,11 @@ defmodule Dojo.Table do
     Process.monitor(lv_pid)
 
     # Track presence with Table's own PID (self), not the LiveView PID
-    # This allows presence to survive as long as ANY tab is connected
-    {:ok, ref} = Dojo.Gate.track(self(), topic, %{disciple | node: {reg_key, :partisan.node()}})
+    # This allows presence to survive as long as ANY tab is connected.
+    # reg_key and node ride as SEPARATE meta fields (no embedded tuple);
+    # readers compose the RPC address via Dojo.Disciple.table_address/1.
+    {:ok, ref} =
+      Dojo.Gate.track(self(), topic, %{disciple | node: :partisan.node(), reg_key: reg_key})
 
     # Subscribe to network roam events so we can refresh stale addr in presence
     if Application.get_env(:dojo, :routing_strategy) == Dojo.Cluster.Routing.Local do
