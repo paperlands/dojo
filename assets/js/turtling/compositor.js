@@ -18,6 +18,7 @@ import { worldTransform, frameWorldTransform, visitPostOrder } from "./scheduler
 import { SE3 } from "./se3.js"
 import { eyeCameraPose } from "./view.js"
 import { rebaseEpoch, idleFloorMs } from "./timeline.js"
+import { createFocus } from "./focus.js"
 
 // Set opacity on a group, cloning shared materials so the material cache isn't mutated.
 // Troika Text meshes own a derived SDF material — cloning it severs the shader, so
@@ -48,7 +49,10 @@ function setGroupOpacity(group, opacity) {
 export function createCompositor(scheduler, ctx, stage, opts = {}) {
     let epoch = null      // first real timestamp — rebases advance() to flush()'s 0-based timeline
     let lastWallT = null  // previous advance() wall timestamp, to detect idle-out gaps
-    let focusedName = null
+    // Focus holds the frame's stable ADDRESS (frameAddress), never the display
+    // name — focus survives re-eval and rename, and same-named sibling tabs
+    // cannot steal it. Pure logic lives in focus.js (THREE-free, tested there).
+    const focus = createFocus(scheduler)
     const createHead = opts.createHead || null
     const createShapist = opts.createShapist || null
 
@@ -121,15 +125,7 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
     // match to descendants — a nested `eye` Lens drives the viewport when the
     // tab that owns it is focused, not only when its own name matches. Used for
     // view routing; the head/track path keeps the stricter name match below.
-    function inFocusedSubtree(ambient) {
-        if (!focusedName) return false
-        let f = ambient
-        while (f && f !== scheduler.root) {
-            if (f.name === focusedName) return true
-            f = f.parent
-        }
-        return false
-    }
+    const inFocusedSubtree = (ambient) => focus.inFocusedSubtree(ambient)
 
     function drainAndMaterialize() {
         let produced = false
@@ -150,7 +146,7 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
             // eye's view leaf only carries fov / hides the head; the camera POSE is
             // realized as a model-layer reframe in updateGroupPositions (world ←
             // E⁻¹·world), read live from the eye's world pose. (id:eye-coordinates)
-            const camOn = ambient.isLens ? inFocusedSubtree(ambient) : (ambient.name === focusedName)
+            const camOn = ambient.isLens ? inFocusedSubtree(ambient) : focus.isFocused(ambient)
             const childCtx = {
                 shapist: layer.shapist,
                 head: layer.head,
@@ -213,7 +209,7 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
     // two nested lenses. The innermost one is the camera the user actually drives;
     // the outer container sits empty at identity. (specs/eye-ambient.org id:eye-d5)
     function focusedEyeReframe() {
-        if (!focusedName) return null
+        if (!focus.address) return null
         let eye = null
         let deepest = -1
         for (const [id, ambient] of scheduler.registry) {
@@ -313,8 +309,12 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
     return {
         scheduler,
 
-        get focusedName() { return focusedName },
-        set focusedName(v) { focusedName = v },
+        get focusedAddress() { return focus.address },
+        set focusedAddress(v) { focus.address = v },
+
+        // The name view — display projection of the focused address. Read-only:
+        // writers go through focusedAddress (one register, one write path).
+        get focusedName() { return focus.name },
 
         // Eagerly drain a batch program (no waits) during draw().
         // Uses scheduler.lastTickTime so new children's waits are

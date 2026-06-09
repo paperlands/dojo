@@ -4,7 +4,7 @@
 
 import * as THREE from '../utils/three.core.min.js'
 import { ColorConverter } from '../utils/color.js'
-import { Text } from '../utils/threetext'
+import { Text } from '../utils/threetext.js'
 import { Line2 } from './render/line/Line2.js'
 import { LineMaterial } from './render/line/LineMaterial.js'
 import { LineGeometry } from './render/line/LineGeometry.js'

@@ -110,12 +110,29 @@ export const createTerminal = (element, cm6, options = {}) => {
     const createDoc = (content) =>
         editorView.createState(cm6, content, state.extensions);
 
-    // Save current EditorState before leaving a buffer (preserves doc + cursor).
+    // Save current EditorState before leaving a buffer (preserves doc + cursor),
+    // and bring the collection — the content OWNER — in step at the same moment.
+    // onDocChange normally keeps it current per keystroke; this covers any edit
+    // that slipped past the update listener so a left buffer is never stale.
     const captureCurrentState = () => {
         const currentId = state.collection?.currentId;
         if (currentId && shell) {
             state.docs.set(currentId, shell.state);
+            state.collection = buffers.updateContent(
+                state.collection, currentId, editorView.getContent(shell)
+            );
         }
+    };
+
+    // The one content read — freshest state by owner. The CURRENT buffer's
+    // truth is the live editor doc (edits land there before any capture);
+    // every other buffer's truth is the collection, which onDocChange keeps
+    // current per keystroke. state.docs is a VIEW cache (cursor/undo for
+    // swapState), captured only on switch-away — never a content authority.
+    const freshContent = (id) => {
+        if (!state.collection?.items.has(id)) return null;
+        if (id === state.collection.currentId && shell) return editorView.getContent(shell);
+        return state.collection.items.get(id)?.content ?? null;
     };
 
     const doSelectBuffer = (id, { offset } = {}) => {
@@ -187,8 +204,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         getBufferInfo(id) {
             const buffer = state.collection?.items.get(id);
             if (!buffer) return null;
-            const content = state.docs.has(id) ? state.docs.get(id).doc.toString() : buffer.content;
-            return { name: buffer.name, content };
+            return { name: buffer.name, content: freshContent(id) };
         },
 
         setTabActive(id) { tabs?.setActive(id) },
@@ -424,9 +440,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             if (!state.collection) return null;
             const id = this.findFork(addr, buffer_id);
             if (!id) return null;
-            return state.docs.has(id)
-                ? state.docs.get(id).doc.toString()
-                : state.collection.items.get(id)?.content ?? null;
+            return freshContent(id);
         },
 
         forkBuffer({ source, name, addr, buffer_id, time, offset }) {
@@ -441,9 +455,7 @@ export const createTerminal = (element, cm6, options = {}) => {
 
                 // Remote user iterated on the same tab — create new merge tab
                 if (existingBuffer.origin?.source !== source) {
-                    const forkContent = state.docs.has(existing)
-                        ? state.docs.get(existing).doc.toString()
-                        : existingBuffer.content;
+                    const forkContent = freshContent(existing) ?? existingBuffer.content;
 
                     const bufferName = name ? `${name}'s fork (merge)` : 'fork (merge)';
                     const origin = { addr, buffer_id, source, time, name };

@@ -442,6 +442,7 @@
   animation: hud-enter 150ms ease-out, hud-fade var(--hud-fade, 60s) ease-in forwards;
   animation-delay: 0s, 150ms;
   padding-left: 1ch;
+  padding-bottom: 2ch;
   display: flex;
   gap: 0.5ch;
   line-height: 1.4;

@@ -408,9 +408,13 @@ const Shell = {
             });
 
             this.handleEvent("seeOuterShell", (payload) => {
-                // Disciple switch: drop stale draft + ambient.
+                // Disciple switch: drop stale draft + ambient. Remove by the addr
+                // the ambient was REGISTERED under (upsertAmbient keys on addr) —
+                // passing the display name relied on a deleted name-scan fallback
+                // and silently skipped the draft bookkeeping cleanup (which is
+                // keyed by addr) in the inner shell's remove handler.
                 if (payload?.addr && payload.addr !== prevAddr) {
-                    if (prevName) scene.remove(prevName);
+                    if (prevAddr) scene.remove(prevAddr);
                     if (term.drafting()) leaveDraft();
                     prevAddr = payload.addr;
                 }
@@ -550,7 +554,9 @@ const Shell = {
                     const line = parseErrorLine(result.error)
                     nerveInstance?.push(S.error("error", result.error, line ? { line } : null))
                 }
-                // Sync tab indicators: draw is exclusive, only this tab is active
+                // Sync tab indicators: draw is exclusive for a tab outside the
+                // active group, but a shift+click sister group survives edits
+                // and re-selection of its members — mirror whatever stands.
                 term.clearAllTabActive()
                 for (const key of turtle._localKeys) {
                     term.setTabActive(key)

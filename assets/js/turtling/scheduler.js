@@ -399,11 +399,17 @@ function pushMailbox(frame, msg) {
 }
 
 // Deliver a single shout to a frame, tracking delivery to prevent duplicates.
-function deliverShout(shout, target) {
-    if (target === shout.from) return
+// De-dup keys on the frame's ADDRESS (stable across re-eval), not its id —
+// a re-eval'd receiver (new frame, same address) is never re-delivered, and a
+// shout never returns to its emitter's address even if the emitter was reborn.
+// (specs/groundwork.org Phase 1; id fallback for bare createFrame harnesses.)
+export function deliverShout(shout, target) {
+    const addr = target.address ?? target.id
+    const fromAddr = shout.from ? (shout.from.address ?? shout.from.id) : null
+    if (target === shout.from || addr === fromAddr) return
     if (!shout._delivered) shout._delivered = new Set()
-    if (shout._delivered.has(target.id)) return
-    shout._delivered.add(target.id)
+    if (shout._delivered.has(addr)) return
+    shout._delivered.add(addr)
     pushMailbox(target, { name: shout.name, payload: shout.payload })
 }
 
@@ -514,7 +520,13 @@ function unwireWorldCache(child) {
 
 // Wire a freshly created child frame: attach deps, mailbox, resolve binding,
 // world origin, cache invalidation, and register in the flat index.
+// Stamps the frame's stable ADDRESS — the one cross-eval identity register
+// (shout de-dup, focus, navigation). Requires top-level frames to already sit
+// in root.children so frameAddress finds their registration key. The id stays
+// per-LIFETIME plumbing: registry/layers/deposit-GC key on it so a re-eval
+// (new id) clears the old life's ink while the address keeps its identity.
 function wireChild(child, deps, mailbox, registry) {
+    child.address = frameAddress(metaRootFrame(child), child)
     child.deps = deps
     child.mailbox = mailbox
     bindResolve(deps, child)
@@ -705,6 +717,7 @@ export function createScheduler(generator, opts = {}) {
         createFrame(ROOT_NAME, generator, { channelCapacity }),
         null
     )
+    root.address = ROOT_NAME
     // Wire shared mailbox — same array the root executor reads from
     if (opts.rootMailbox) root.mailbox = opts.rootMailbox
     // Wire root observation — root can read children via dotted access
@@ -749,8 +762,10 @@ export function createScheduler(generator, opts = {}) {
                 }),
                 null
             )
-            wireChild(child, deps, mailbox, registry)
+            // Register under the key BEFORE wiring: wireChild stamps the frame's
+            // address, whose top segment is this registration key.
             root.children.set(key, child)
+            wireChild(child, deps, mailbox, registry)
 
             advanceChild(child, this.lastTickTime, createDeps, execOpts, channelCapacity, registry, [], onShout)
             this.done = false

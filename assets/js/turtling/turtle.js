@@ -6,6 +6,7 @@ import { bridged } from "../bridged.js"
 import { createStage } from "./stage.js"
 import { createScheduler, metaRoot } from "./scheduler.js"
 import { createCompositor } from "./compositor.js"
+import { resolveAddress } from "./focus.js"
 
 // --- Turtle ---
 
@@ -164,7 +165,7 @@ export class Turtle {
                 })
             }
         )
-        // focusedName left null — set by first draw() call
+        // focusedAddress left null — set by first draw() call
         this.stage.head.hide()
     }
 
@@ -280,14 +281,9 @@ export class Turtle {
         this._localKeys.delete(key)
         this._lastContentChange = performance.now()
 
-        // Try by key (buffer ID) first, fall back to name search (outer shell compat)
-        if (this.scheduler.root.children.has(key)) {
-            this.scheduler.removeChild(key)
-        } else {
-            for (const [id, child] of this.scheduler.root.children) {
-                if (child.name === key) { this.scheduler.removeChild(id); break }
-            }
-        }
+        // Address only — callers pass the key they registered with. (The old
+        // name-scan fallback is gone: one register, no second lookup space.)
+        this.scheduler.removeChild(key)
 
         // If no children left, tear down scheduler and show idle head
         if (this.scheduler.root.children.size === 0) {
@@ -301,9 +297,12 @@ export class Turtle {
         this.requestRender()
     }
 
-    focusAmbient(name) {
+    // Focus by address (registration key / nested path) or by display name —
+    // a name resolves THROUGH the address (one register + a name view), so
+    // focus survives re-eval and rename and never collides across tabs.
+    focusAmbient(ref) {
         if (this.compositor) {
-            this.compositor.focusedName = name
+            this.compositor.focusedAddress = resolveAddress(this.scheduler, ref)
         }
     }
 
@@ -352,14 +351,22 @@ export class Turtle {
 
     draw(id, name, code) {
         this._ensureScheduler()
-        // Exclusive: remove all other local tab ambients
-        for (const key of this._localKeys) {
-            if (key !== id) this.removeAmbient(key)
+        // Exclusive only when entering a tab OUTSIDE the active group: switching
+        // to a fresh tab replaces the previous drawing. A tab already in
+        // _localKeys (sisters brought alive via shift+click → toggleAmbient)
+        // keeps its sisters running — editing or re-selecting one member must
+        // not collapse the group; only that member's ambient is re-upserted.
+        if (!this._localKeys.has(id)) {
+            for (const key of this._localKeys) {
+                if (key !== id) this.removeAmbient(key)
+            }
+            this._localKeys.clear()
+            this._localKeys.add(id)
         }
-        this._localKeys.clear()
-        this._localKeys.add(id)
-        this.focusAmbient(name)
-        return this.upsertAmbient(id, name, code)
+        // Upsert first so the frame exists, then focus by its key directly.
+        const result = this.upsertAmbient(id, name, code)
+        this.focusAmbient(id)
+        return result
     }
 
     reset() {
