@@ -105,6 +105,13 @@ export const createTerminal = (element, cm6, options = {}) => {
     // Composite key for merge originals — addr alone isn't unique when remote user has multiple tabs
     const mergeKey = (origin) => origin?.buffer_id ? `${origin.addr}:${origin.buffer_id}` : origin?.addr;
 
+    // The merge diff's ORIGINAL, by precedence: the live streamed baseline
+    // (mergeOriginals — the friend's code as it runs now) over the birth
+    // snapshot (origin.source — the code as it was when forked). One rule,
+    // every merge surface reads through it.
+    const mergeBaseline = (origin) =>
+        state.mergeOriginals.get(mergeKey(origin)) || origin?.source || null;
+
     // Create an EditorState for a buffer's content, using the shared extension array.
     // Critical: all states share the same Compartment instances for live reconfiguration.
     const createDoc = (content) =>
@@ -152,8 +159,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         // 3b. Restore merge compartment for fork buffers only while outershell is active
         const selectedBuffer = state.collection.items.get(id);
         if (state.mergeActive && selectedBuffer.origin?.addr && cm6.unifiedMergeView && state.compartments?.merge) {
-            const originalContent = state.mergeOriginals.get(mergeKey(selectedBuffer.origin))
-                                  || selectedBuffer.origin.source;
+            const originalContent = mergeBaseline(selectedBuffer.origin);
             if (originalContent) {
                 shell.dispatch({
                     effects: state.compartments.merge.reconfigure(
@@ -514,8 +520,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             state.mergeActive = true;
             const current = buffers.currentBuffer(state.collection);
             if (current?.origin?.addr && cm6.unifiedMergeView && state.compartments?.merge && shell) {
-                const originalContent = state.mergeOriginals.get(mergeKey(current.origin))
-                                      || current.origin.source;
+                const originalContent = mergeBaseline(current.origin);
                 if (originalContent) {
                     shell.dispatch({
                         effects: state.compartments.merge.reconfigure(
@@ -573,7 +578,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         },
 
         renameBuffer(id) {
-            const newName = tabs.renameTab(id);
+            const newName = tabs.readTabName(id);
             // Update collection BEFORE selecting — triggerBridge reads name from collection
             state.collection = buffers.renameCurrent(state.collection, id, newName);
             doSelectBuffer(id);

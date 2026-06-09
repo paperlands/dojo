@@ -5,17 +5,6 @@ export class Tabber {
         this.template = this.scaffold.cloneNode(true);
     }
 
-    handleOperation({ op, target }) {
-        const operations = {
-            add: () => this.addTab(),
-            select: () => this.selectTab(target),
-            rename: () => this.renameTab(target),
-            close: () => this.closeTab(target)
-        };
-
-        operations[op]?.();
-    }
-
     addTab(id, name) {
         const clone = this.template.cloneNode(true);
         const tab = this.configureTab(clone, id, name);
@@ -144,7 +133,10 @@ export class Tabber {
         if (target) this.activateTab(target);
     }
 
-    renameTab(targetId) {
+    // Read the tab input's current value — the input is the live editing
+    // surface for the name during a rename; the collection commits it on blur
+    // (terminal.renameBuffer). This reads; it does not rename.
+    readTabName(targetId) {
         const tab = this.container.querySelector(`[data-tab-id="${targetId}"]`);
         if (!tab) return;
         const input = tab.querySelector('input');
@@ -182,11 +174,5 @@ export class Tabber {
 
     dispatch(eventName, detail) {
         window.dispatchEvent(new CustomEvent(eventName, { detail }));
-    }
-
-    pushEvent(eventName, data) {
-        // Assuming this method exists in the context
-        // Implementation depends on your Phoenix LiveView setup
-        console.log('pushEvent:', eventName, data);
     }
 }
