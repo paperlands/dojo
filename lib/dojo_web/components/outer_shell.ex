@@ -138,7 +138,7 @@ defmodule DojoWeb.OuterShellLive do
           id="outerenv"
           phx-update="ignore"
           data-outer-state="ok"
-          class="overflow-y-scroll relative border pointer-events-auto rounded-lg h-[calc(100dvh-12rem)] lg:h-[50vh] border-amber-600/20 dark-scrollbar backdrop-blur-xs scrollbar-hide cursor-text"
+          class="overflow-y-scroll relative border pointer-events-auto rounded-lg h-[calc(100dvh-18rem)] lg:h-[60vh] border-amber-600/20 dark-scrollbar backdrop-blur-xs scrollbar-hide cursor-text"
         >
           <div
             phx-update="ignore"
