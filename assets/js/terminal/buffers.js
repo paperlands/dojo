@@ -86,7 +86,7 @@ export const selectCurrent = (collection, id) => {
     return { items: collection.items, currentId: id };
 };
 
-export const renameCurrent = (collection, id, name) => {
+export const renameBuffer = (collection, id, name) => {
     if (!collection.items.has(id)) return collection;
     const items = new Map(collection.items);
     const buffer = { ...items.get(id), name, lastModified: Date.now() };

@@ -171,8 +171,13 @@ function makeMockCm6() {
         range:  (from, to)  => ({ ranges: [{ from, to }],            main: { from, to,             head: to,  anchor: from } }),
     };
 
+    // Update listeners registered via EditorView.updateListener.of — mock
+    // dispatch notifies them like real CM6 does (every transaction produces
+    // a ViewUpdate; setState does not).
+    const updateListeners = [];
+
     class MockEditorView {
-        static updateListener  = { of: (_fn) => [] };
+        static updateListener  = { of: (fn) => { updateListeners.push(fn); return []; } };
         static contentAttributes = { of: (_attrs) => [] };
         static lineWrapping    = [];
         static scrollIntoView  = (_pos, _opts) => [];
@@ -187,14 +192,18 @@ function makeMockCm6() {
 
         get state() { return this._state; }
 
-        dispatch({ changes, selection: _sel, effects: _fx } = {}) {
-            if (!changes) return;
-            const ch  = Array.isArray(changes) ? changes[0] : changes;
-            const old = this._state.doc.toString();
-            const from = ch.from ?? 0;
-            const to   = ch.to   ?? old.length;
-            const insert = ch.insert ?? '';
-            this._state = EditorState.create({ doc: old.slice(0, from) + insert + old.slice(to) });
+        dispatch({ changes, selection, effects: _fx } = {}) {
+            if (changes) {
+                const ch  = Array.isArray(changes) ? changes[0] : changes;
+                const old = this._state.doc.toString();
+                const from = ch.from ?? 0;
+                const to   = ch.to   ?? old.length;
+                const insert = ch.insert ?? '';
+                this._state = EditorState.create({ doc: old.slice(0, from) + insert + old.slice(to) });
+            }
+            if (selection) this._state = { ...this._state, selection };
+            const update = { docChanged: !!changes, selectionSet: !!selection, state: this._state };
+            for (const fn of updateListeners) fn(update);
         }
 
         setState(state) { this._state = state; }
@@ -384,9 +393,9 @@ describe("Terminal (CM6)", () => {
         const received = [];
         term.bridge.sub((payload) => received.push(payload));
 
-        // setValue dispatches → updateListener → bridge.pub
-        // With mock: updateListener.of is a no-op, so bridge doesn't fire automatically.
-        // Verify triggerBridge() fires it explicitly, with the {id,name,content} envelope.
+        // setValue dispatches → updateListener → write-through → bridge.pub.
+        // triggerBridge() then re-publishes from the collection (the authority)
+        // with the same {id,name,content} envelope.
         term.setValue("fw 50");
         term.triggerBridge();
         assert.ok(received.length >= 1, "bridge received at least one event");
@@ -397,9 +406,10 @@ describe("Terminal (CM6)", () => {
 
     // Regression — the activate/fork paths must read the FRESHEST buffer state.
     // state.docs (the cursor/undo view cache, captured only on switch-away) was
-    // consulted as a content source, serving stale code to toggleAmbient when
-    // the current buffer had unsaved edits. The live editor doc is the owner.
-    test("getBufferInfo returns live editor content for the current buffer", () => {
+    // once consulted as a content source, serving stale code to toggleAmbient.
+    // Write-through makes the collection the authority: every dispatch lands
+    // there before any read.
+    test("getBufferInfo sees unsaved edits via the collection", () => {
         const cm6  = makeMockCm6();
         const term = new Terminal(makeEditorStub(), cm6);
         term.inner();
@@ -407,13 +417,55 @@ describe("Terminal (CM6)", () => {
 
         term.setValue("fw 100");
         // Edit the live doc directly — like typing, before any buffer switch.
-        // (The mock's updateListener is a no-op, so nothing syncs the collection
-        // or the docs cache: only the live EditorView knows this content.)
         term.shell.dispatch({ changes: { from: 0, to: term.getValue().length, insert: "fw 999" } })
 
         assert.equal(term.getBufferInfo(id).content, "fw 999",
             "activate must see the unsaved edit, not the switch-away snapshot")
         assert.equal(term.getValue(), "fw 999")
+    })
+
+    // Regression — re-selecting the CURRENT buffer (click on the active tab,
+    // rename commit, single-buffer next/prev) must not project the view-state
+    // cache over the live document. doSelectBuffer used to swapState
+    // unconditionally, reverting the editor to the switch-away snapshot and
+    // silently discarding everything typed since.
+    test("re-selecting the current buffer preserves live edits", () => {
+        const cm6  = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+
+        term.setValue("fw 100");
+        term.shell.dispatch({ changes: { from: 0, to: term.getValue().length, insert: "fw 999" } });
+
+        term.opBufferHandler({ op: 'select', target: id });
+        assert.equal(term.getValue(), "fw 999",
+            "select-current must not revert the live doc");
+    })
+
+    test("renaming the active buffer preserves live edits", () => {
+        const cm6  = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+
+        term.setValue("fw 100");
+        term.shell.dispatch({ changes: { from: 0, to: term.getValue().length, insert: "fw 7" } });
+
+        term.opBufferHandler({ op: 'rename', target: id });
+        assert.equal(term.getValue(), "fw 7",
+            "rename is a metadata transition — content untouched");
+        assert.equal(term.getBufferInfo(id).content, "fw 7");
+    })
+
+    // buffers.js pure transition backing the rename path
+    test("buffers.renameBuffer renames by id, leaves content and selection", async () => {
+        const buffers = await import("../../assets/js/terminal/buffers.js");
+        const made = buffers.createCollection(() => 'gen', () => 'b1');
+        const renamed = buffers.renameBuffer(made, 'b1', 'turtle');
+        assert.equal(renamed.items.get('b1').name, 'turtle');
+        assert.equal(renamed.items.get('b1').content, made.items.get('b1').content);
+        assert.equal(renamed.currentId, made.currentId);
     });
 
     test("getBufferInfo serves background buffers from the collection", () => {

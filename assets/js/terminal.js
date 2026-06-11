@@ -53,10 +53,15 @@ export const createTerminal = (element, cm6, options = {}) => {
 
     // --- State atom ---
     // Single mutable reference. Transitions via pure functions from buffers.js.
-    // EditorState docs kept separate — they're CM6 values, not buffer data.
+    //
+    // Content authority: state.collection, written by exactly one writer — the
+    // CM6 update listener (onDocChange), on every transaction. state.docs is a
+    // VIEW cache (cursor/undo history for buffer switching); its doc content
+    // counts only while it agrees with the collection — never a content source.
     const state = {
-        collection: null,     // from buffers.js — plain data
-        docs: new Map(),      // Map<id, EditorState> — CM6 state per buffer
+        collection: null,     // from buffers.js — plain data, content authority
+        docs: new Map(),      // Map<id, EditorState> — view-state cache per buffer
+        projectedId: null,    // id the editor currently displays (view concern, not model selection)
         extensions: null,     // shared extension array
         compartments: null,   // { theme, lang, merge } — Compartment handles
         autosaveTimer: null,
@@ -76,30 +81,18 @@ export const createTerminal = (element, cm6, options = {}) => {
         store.save(buffers.serialize(state.collection));
     };
 
-    // Flush storage immediately — called on visibility hidden and beforeunload.
-    // Captures the live EditorState into the collection before saving,
-    // since the debounced autosave may not have fired yet.
-    const flushStorage = () => {
-        if (!store || !state.collection || !shell) return;
-        const currentId = state.collection.currentId;
-        if (currentId) {
-            const liveContent = editorView.getContent(shell);
-            state.collection = buffers.updateContent(state.collection, currentId, liveContent);
-        }
-        saveToStorage();
-    };
-
+    // Write-through keeps the collection current on every transaction, so
+    // persisting on tab hide / page unload needs no live capture.
     const onVisibilityChange = () => {
-        if (document.visibilityState === 'hidden') flushStorage();
+        if (document.visibilityState === 'hidden') saveToStorage();
     };
 
-    const onBeforeUnload = () => flushStorage();
+    const onBeforeUnload = () => saveToStorage();
 
     const triggerBridge = () => {
-        const content = editorView.getContent(shell);
-        const id = state.collection.currentId;
-        const name = state.collection.items.get(id)?.name;
-        bridge.pub({ id, name, content });
+        const buffer = buffers.currentBuffer(state.collection);
+        if (!buffer) return;
+        bridge.pub({ id: buffer.id, name: buffer.name, content: buffer.content });
     };
 
     // Composite key for merge originals — addr alone isn't unique when remote user has multiple tabs
@@ -117,46 +110,47 @@ export const createTerminal = (element, cm6, options = {}) => {
     const createDoc = (content) =>
         editorView.createState(cm6, content, state.extensions);
 
-    // Save current EditorState before leaving a buffer (preserves doc + cursor),
-    // and bring the collection — the content OWNER — in step at the same moment.
-    // onDocChange normally keeps it current per keystroke; this covers any edit
-    // that slipped past the update listener so a left buffer is never stale.
-    const captureCurrentState = () => {
-        const currentId = state.collection?.currentId;
-        if (currentId && shell) {
-            state.docs.set(currentId, shell.state);
-            state.collection = buffers.updateContent(
-                state.collection, currentId, editorView.getContent(shell)
-            );
-        }
+    // Capture the leaving buffer's view state (cursor, undo history) before a
+    // switch — lazy mirror of the cache, evaluated only when needed. Content
+    // is NOT captured: the update listener is the single content writer.
+    const captureViewState = () => {
+        if (state.projectedId && shell) state.docs.set(state.projectedId, shell.state);
     };
 
-    // The one content read — freshest state by owner. The CURRENT buffer's
-    // truth is the live editor doc (edits land there before any capture);
-    // every other buffer's truth is the collection, which onDocChange keeps
-    // current per keystroke. state.docs is a VIEW cache (cursor/undo for
-    // swapState), captured only on switch-away — never a content authority.
-    const freshContent = (id) => {
-        if (!state.collection?.items.has(id)) return null;
-        if (id === state.collection.currentId && shell) return editorView.getContent(shell);
-        return state.collection.items.get(id)?.content ?? null;
+    // The one projection read — the EditorState the editor should show for a
+    // buffer. Content comes from the collection (the authority); the cached
+    // state contributes cursor/undo only while its doc agrees. A disagreeing
+    // entry is stale by definition — rebuild from the authority.
+    const docFor = (id) => {
+        const content = state.collection.items.get(id)?.content ?? '';
+        const cached = state.docs.get(id);
+        if (cached && cached.doc.toString() === content) return cached;
+        const doc = createDoc(content);
+        state.docs.set(id, doc);
+        return doc;
     };
 
     const doSelectBuffer = (id, { offset } = {}) => {
         if (!state.collection.items.has(id)) throw new Error(`Buffer '${id}' not found`);
 
-        // 1. Save current (CM6 concern)
-        const oldId = state.collection.currentId;
-        if (oldId && oldId !== id) captureCurrentState();
+        // Projection happens only when the displayed buffer changes.
+        // Re-selecting the current buffer must never touch the live document —
+        // the editor IS that buffer; projecting the cache over it would
+        // discard the user's latest edits and reset cursor + undo history.
+        const switching = state.projectedId !== id;
 
-        // 2. Transition collection (pure data)
+        if (switching) captureViewState();
+
         state.collection = buffers.selectCurrent(state.collection, id);
 
-        // 3. Swap view (CM6 concern)
-        editorView.swapState(shell, state.docs.get(id));
-        reapplyCompartments(shell, state.compartments, cm6, opts.theme, themes);
+        if (switching) {
+            editorView.swapState(shell, docFor(id));
+            state.projectedId = id;
+            reapplyCompartments(shell, state.compartments, cm6, opts.theme, themes);
+        }
 
-        // 3b. Restore merge compartment for fork buffers only while outershell is active
+        // Restore merge compartment for fork buffers only while outershell is
+        // active — dispatch-only (non-destructive), so it runs on every select.
         const selectedBuffer = state.collection.items.get(id);
         if (state.mergeActive && selectedBuffer.origin?.addr && cm6.unifiedMergeView && state.compartments?.merge) {
             const originalContent = mergeBaseline(selectedBuffer.origin);
@@ -175,10 +169,11 @@ export const createTerminal = (element, cm6, options = {}) => {
             shell.dispatch({ effects: state.compartments.merge.reconfigure([]) });
         }
 
-        // 4. Cursor positioning
+        // 4. Cursor: explicit offset always wins; entering a buffer starts at
+        // the end; re-selecting the current buffer leaves the cursor alone.
         if (offset != null) {
             editorView.cursorTo(shell, cm6, offset);
-        } else {
+        } else if (switching) {
             editorView.cursorToEnd(shell, cm6);
         }
         shell.focus();
@@ -210,7 +205,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         getBufferInfo(id) {
             const buffer = state.collection?.items.get(id);
             if (!buffer) return null;
-            return { name: buffer.name, content: freshContent(id) };
+            return { name: buffer.name, content: buffer.content };
         },
 
         setTabActive(id) { tabs?.setActive(id) },
@@ -220,18 +215,18 @@ export const createTerminal = (element, cm6, options = {}) => {
         inner() {
             const { extensions, compartments } = buildExtensions(cm6, {
                 onDocChange: (content) => {
-                    // 1. Buffer content sync (pure data transition)
-                    if (state.collection?.currentId) {
-                        state.collection = buffers.updateContent(
-                            state.collection, state.collection.currentId, content
-                        );
+                    // 1. Write-through: the displayed buffer's content lands in
+                    // the collection on every change — the single content
+                    // writer, keyed by the surface the edit landed on.
+                    const id = state.projectedId;
+                    if (id) {
+                        state.collection = buffers.updateContent(state.collection, id, content);
                     }
                     // 2. Autosave (scheduled effect)
                     clearTimeout(state.autosaveTimer);
                     state.autosaveTimer = setTimeout(saveToStorage, 500);
                     // 3. Bridge (event effect) — capture identity at publish time
-                    const id = state.collection.currentId;
-                    const name = state.collection.items.get(id)?.name;
+                    const name = id ? state.collection.items.get(id)?.name : null;
                     bridge.pub({ id, name, content });
                 },
                 onSelectionChange: (selection) => {
@@ -445,8 +440,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         forkContent(addr, buffer_id) {
             if (!state.collection) return null;
             const id = this.findFork(addr, buffer_id);
-            if (!id) return null;
-            return freshContent(id);
+            return id ? state.collection.items.get(id).content : null;
         },
 
         forkBuffer({ source, name, addr, buffer_id, time, offset }) {
@@ -461,7 +455,7 @@ export const createTerminal = (element, cm6, options = {}) => {
 
                 // Remote user iterated on the same tab — create new merge tab
                 if (existingBuffer.origin?.source !== source) {
-                    const forkContent = freshContent(existing) ?? existingBuffer.content;
+                    const forkContent = existingBuffer.content;
 
                     const bufferName = name ? `${name}'s fork (merge)` : 'fork (merge)';
                     const origin = { addr, buffer_id, source, time, name };
@@ -579,9 +573,12 @@ export const createTerminal = (element, cm6, options = {}) => {
 
         renameBuffer(id) {
             const newName = tabs.readTabName(id);
-            // Update collection BEFORE selecting — triggerBridge reads name from collection
-            state.collection = buffers.renameCurrent(state.collection, id, newName);
-            doSelectBuffer(id);
+            if (newName == null || !state.collection.items.has(id)) return;
+            // A rename is a metadata transition — no projection, no cursor or
+            // focus movement. Publish so render/ambient subscribers track the name.
+            state.collection = buffers.renameBuffer(state.collection, id, newName);
+            saveToStorage();
+            if (id === state.collection.currentId) triggerBridge();
         },
 
         triggerBridge,
@@ -590,7 +587,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             document.removeEventListener('visibilitychange', onVisibilityChange);
             window.removeEventListener('beforeunload', onBeforeUnload);
             clearTimeout(state.autosaveTimer);
-            flushStorage();
+            saveToStorage();
             editorView.destroy(shell, element);
         },
     };
