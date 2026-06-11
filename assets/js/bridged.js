@@ -85,11 +85,13 @@ export const cameraBridge = bridged("cam");
 export const sceneBridge = bridged("scene");
 
 /**
- * scene — the vocabulary of the scene bridge. Callers speak named moves;
- * these constructors enforce the [type, payload] wire shape (mirrors the
- * `signals` constructors in nerve/store.js). A typo becomes a missing method,
- * not a silently-ignored event. Subscribers still switch on the tuple's
- * first element.
+ * scene — the vocabulary of the scene bridge, and the DECLARED ADAPTER
+ * between the signal envelope and the bridge's [type, payload] tuple wire
+ * shape (groundwork.org Phase 3: every seam one named adapter, never a
+ * reconstruction). Callers speak named moves; these constructors enforce the
+ * tuple (mirrors the `signals` constructors in nerve/store.js). A typo
+ * becomes a missing method, not a silently-ignored event. Subscribers still
+ * switch on the tuple's first element.
  */
 export const scene = {
     focus:       (ambientId)        => sceneBridge.pub(['focus', { ambientId }]),

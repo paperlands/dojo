@@ -124,3 +124,18 @@ describe("nerve store: address claims route by source (read-side routing)", () =
         assert.ok(!toResidual(friendStatus))
     })
 })
+
+describe("nerve store: the clock law (gw-t-clock)", () => {
+    test("a boundary-crossing signal keeps its source's ts", () => {
+        const store = createSignalStore()
+        store.push({ msg: "hello", source: "kai", kind: "chat", ts: 12345 })
+        assert.equal(store.signals[0].ts, 12345, "ts belongs to the source — never replaced")
+    })
+
+    test("a locally-born signal (no ts) is stamped here", () => {
+        const store = createSignalStore()
+        const before = performance.now()
+        store.push(S.shout("sky", "tick", 1))
+        assert.ok(store.signals[0].ts >= before, "local signals get the local clock")
+    })
+})

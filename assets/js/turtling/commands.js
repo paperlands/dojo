@@ -46,7 +46,7 @@ function jmpto(ctx, x = 0, y = 0, z = null) {
     }
 }
 
-function jmp(ctx, distance) {
+function jmp(ctx, distance = 0) {
     const t = ctx.transform
     const [wx, wy, wz] = t.rotation.rotateVec(distance, 0, 0)
     const newPos = [t.position[0] + wx, t.position[1] + wy, t.position[2] + wz]

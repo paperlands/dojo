@@ -158,7 +158,10 @@ defmodule DojoWeb.ShellLive do
   def handle_async(:follow_code, {:exit, _reason}, socket), do: {:noreply, socket}
 
   # presence handlers — keyed by reg_key (a meta field; Disciple.reg_key/1
-  # stays tolerant of legacy metas where it rode inside the node tuple)
+  # stays tolerant of legacy metas where it rode inside the node tuple).
+  # The `disciples` assign is a DECLARED READ-ONLY PROJECTION of Tracker
+  # state + Table meta (Phase 4): written only here and by the pull/hatch
+  # meta refreshers — never written back to any owner.
 
   def handle_info(
         {:join, "class:shell" <> _, disciple},
@@ -445,9 +448,11 @@ defmodule DojoWeb.ShellLive do
     {:noreply, assign(socket, focused_name: new_name)}
   end
 
-  def handle_event("nerveGlobal", %{"target" => target, "body" => body}, socket) do
+  # pushEvent ↔ envelope adapter (Phase 3): the client's `ts` rides through
+  # untouched — Dojo.Nerve annotates received_at, never replaces (gw-t-clock).
+  def handle_event("nerveGlobal", %{"target" => target, "body" => body} = params, socket) do
     %{assigns: %{clan: clan, session: %{name: name}}} = socket
-    Dojo.Nerve.chat(clan, name, target, body)
+    Dojo.Nerve.chat(clan, name, target, body, params["ts"])
     {:noreply, socket}
   end
 

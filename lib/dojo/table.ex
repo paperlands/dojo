@@ -104,33 +104,34 @@ defmodule Dojo.Table do
 
   def handle_cast(
         {:publish, {_source, _msg, %{state: :error} = store}, :hatch},
-        %{
-          last: %{hatch: %{commands: [_ | _] = cmds}} = last,
-          reg_key: reg_key
-        } = state
+        %{last: %{hatch: %{commands: [_ | _] = cmds}}} = state
       ) do
     # check if previously active turtle — hydrate error with previous commands
     hydrated_store = %{store | commands: cmds}
 
-    async_cache_put(reg_key, :hatch, hydrated_store)
-    new_last = Map.put(last, :hatch, hydrated_store)
-    {:noreply, state |> Map.put(:last, new_last) |> schedule_hatch_broadcast(hydrated_store)}
+    {:noreply,
+     state |> record(:hatch, hydrated_store) |> schedule_hatch_broadcast(hydrated_store)}
   end
 
-  def handle_cast(
-        {:publish, {_source, _msg, store}, event},
-        %{last: last, reg_key: reg_key} = state
-      ) do
-    async_cache_put(reg_key, event, store)
-    new_last = Map.put(last, event, store)
-
-    state = %{state | last: new_last}
+  def handle_cast({:publish, {_source, _msg, store}, event}, state) do
+    state = record(state, event, store)
 
     if event == :hatch do
       {:noreply, schedule_hatch_broadcast(state, store)}
     else
       {:noreply, state}
     end
+  end
+
+  # ── The one write path (Phase 4 / decision 008) ─────────────────────────
+  # `state.last` is the OWNER of a disciple's latest stores. The Cache is its
+  # single DECLARED read-only projection — written here and nowhere else
+  # (async: locality is the projection's reason to exist; `Table.last/2`
+  # reads through it before falling back to the owner via RPC). No other
+  # module may put a `{Table, :last, …}` key.
+  defp record(%{last: last, reg_key: reg_key} = state, event, store) do
+    async_cache_put(reg_key, event, store)
+    %{state | last: Map.put(last, event, store)}
   end
 
   def handle_call({:last, event}, _from, %{last: last} = state) do
@@ -228,6 +229,9 @@ defmodule Dojo.Table do
   defp broadcast_hatch(topic, reg_key, store) do
     meta = Map.take(store, [:path, :state, :time])
 
+    # The hatch dual layer is the ESSENTIAL divergence kept and named
+    # (rad-message Pole B / groundwork Phase 3): 2b is a DECLARED lightweight
+    # view of the envelope — never a parallel invention.
     # Layer 2a: full payload to local subscribers (instant render, no Plumtree)
     Phoenix.PubSub.local_broadcast(
       Dojo.PubSub,

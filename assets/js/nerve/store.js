@@ -63,7 +63,11 @@ export function createSignalStore(opts = {}) {
             target:  raw.target ?? null,
             source:  raw.source ?? '?',
             kind:    raw.kind ?? 'shout',
-            ts:      performance.now(),
+            // THE CLOCK LAW (gw-t-clock): ts belongs to the SOURCE. A signal
+            // that crossed a boundary keeps the clock it arrived with; only a
+            // locally-born signal (no ts) is stamped here. Ordering across
+            // peers is per-source (source, id) — honestly partial globally.
+            ts:      raw.ts ?? performance.now(),
             ref:     raw.ref ?? null,
             tabId:   raw.tabId ?? null,
         }
