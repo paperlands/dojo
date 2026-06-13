@@ -15,18 +15,22 @@ defmodule DojoWeb.DeckLive do
       {"label", "Write Something", [text: "'Hello'", size: 10]},
       {"goto", "Go To Start", ["→": 0, "↑": 0]},
       {"jmpto", "Jump To Start", ["→": 0, "↑": 0]},
+      {"shout", "Shout a Message", [message: "hello", data: 100]},
       {"grid", "Create a Grid", [size: 100, unit: 10]},
       {"faceto", "Face a Point", ["→": 0, "↑": 0]},
       {"dive", "Dive Into Page", [angle: 45]},
       {"roll", "Tilt Right", [angle: 45]},
-      {"beColour", "Set Colour to", [colour: "'red'"]},
+      {"fn", "Make a Function", [shape: "avg[x,y]", output: "[x+y]/2"]},
+      {"beColour", "Change Colour to", [colour: "'red'"]},
       {"hide", "Hide your Head", nil},
       {"show", "Show your Head", [size: 10]},
       {"erase", "Wipe Everything", nil}
     ],
     control: [
       {"loop", "Repeat Commands", [times: 5]},
-      {"def", "Name your Command", [name: "name"]}
+      {"def", "Name your Command", [name: "name"]},
+      {"as", "Summon Assistant", [name: "name", target: "?"]},
+      {"when", "Do this if", [condition: "2>1", data: "?"]}
     ]
   }
 
@@ -57,7 +61,7 @@ defmodule DojoWeb.DeckLive do
     ~H"""
     <div
       id="commanddeck"
-      class="rightthird fixed right-0 flex deck mt-[15dvh] h-3/5 lg:h-4/5 select-none animate-fade sm:block"
+      class="rightthird fixed right-0 deck mt-[15dvh] h-3/5 lg:h-4/5 select-none animate-fade"
     >
       <!-- Command Deck Panel -->
       <div class="h-5/6 md:h-full transition-all duration-100 ease-in-out transform scrollbar-hide dark-scrollbar">
@@ -151,7 +155,7 @@ defmodule DojoWeb.DeckLive do
                 <div
                   phx-click={
                     JS.dispatch("phx:writeShell",
-                      detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
+                      detail: %{key => cmd, "args" => Keyword.keys(vals || [])}
                     )
                     |> JS.add_class(
                       "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",
@@ -188,7 +192,7 @@ defmodule DojoWeb.DeckLive do
                           phx-update="ignore"
                           phx-keydown={
                             JS.dispatch("phx:writeShell",
-                              detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
+                              detail: %{key => cmd, "args" => Keyword.keys(vals)}
                             )
                             |> JS.add_class(
                               "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",

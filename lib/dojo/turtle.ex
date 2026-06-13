@@ -1,5 +1,11 @@
 defmodule Dojo.Turtle do
-  defstruct state: :hatch, path: nil, commands: [], source: nil, message: nil, time: nil
+  defstruct state: :hatch,
+            path: nil,
+            commands: [],
+            source: nil,
+            message: nil,
+            time: nil,
+            buffer_id: nil
 
   def reflect(%{"state" => "success"} = body, opts) do
     body
@@ -106,8 +112,12 @@ defmodule Dojo.Turtle do
     end)
   end
 
-  def print(ast) when is_map(ast) do
+  def print(ast) when is_list(ast) do
     ast |> Enum.map(&visit/1) |> Enum.join("\n")
+  end
+
+  def print(ast) when is_map(ast) do
+    visit(ast)
   end
 
   def print(_) do

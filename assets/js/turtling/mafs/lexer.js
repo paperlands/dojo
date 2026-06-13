@@ -32,15 +32,16 @@ export class Lexer {
 
         //tokenization pattern
         const pattern = new RegExp([
-            // Numbers (including decimals)
+            // Numbers first — claims the dot in `1.5` before operators can
             '\\d+(?:\\.\\d+)?',
-            // Multi-character operators (must come before single chars)
-            this.operators.map(op => this.escapeRegex(op)).join('|'),
-            // Identifiers (functions/variables)
-            '[a-zA-Z][a-zA-Z0-9_]*',
-            // Single character tokens
+            // Dotted identifiers before operators — atomically consumes `mice1.x` as one token
+            // This is the guarantee that prevents implicit mult from ever seeing it split
+            '[a-zA-Z][a-zA-Z0-9_]*(?:\\.[a-zA-Z][a-zA-Z0-9_]*)*',
+            // Operators grouped — inner | doesn't bleed into outer alternation
+            `(?:${this.operators.map(op => this.escapeRegex(op)).join('|')})`,
+            // Brackets, parens, comma
             '[\\[\\],\\(\\)]',
-            // Skip whitespace
+            // Whitespace
             '\\s+'
         ].join('|'), 'g');
 

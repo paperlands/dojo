@@ -1,1089 +1,391 @@
 import { Parser } from "./mafs/parse.js"
-import {parseProgram} from "./parse.js"
+import { parseProgram } from "./parse.js"
 import { Evaluator } from "./mafs/evaluate.js"
-import { Typesetter } from "./mafs/typist.js"
-import { Versor } from "./mafs/versors.js"
-import * as THREE from '../utils/three.core.min.js';
-import {ColorConverter} from '../utils/color.js'
-import  {OrbitControls}  from '../utils/threeorbital';
-import  {WebGLRenderer}  from '../utils/threerender';
-import {Text} from '../utils/threetext'
 import Render from "./render/index.js"
-import { Line2 } from './render/line/Line2.js';
-import { LineMaterial } from './render/line/LineMaterial.js';
-import { LineGeometry } from './render/line/LineGeometry.js';
-import { Recorder } from "./export/recorder.js"
-import {cameraBridge, bridged } from "../bridged.js"
+import { bridged } from "../bridged.js"
+import { createStage } from "./stage.js"
+import { createScheduler, metaRoot } from "./scheduler.js"
+import { createCompositor } from "./compositor.js"
+import { resolveAddress } from "./focus.js"
+
+// --- Turtle ---
 
 export class Turtle {
     constructor(canvas) {
-
-        this.canvas = canvas;
-
-        this.ctx = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
-        this.commands = {
-            // Add other command references here
-            fw: this.forward.bind(this),
-            rt: this.right.bind(this),
-            lt: this.left.bind(this),
-            yaw: this.yaw.bind(this),
-            pitch: this.pitch.bind(this),
-            dive: this.pitch.bind(this),
-            roll: this.roll.bind(this),
-            show: this.unhideTurtle.bind(this),
-            hide: this.hideTurtle.bind(this),
-            hd: this.hideTurtle.bind(this),
-            jmp: this.jump.bind(this),
-            mv: this.move.bind(this),
-            bold: this.thickness.bind(this),
-            grid: this.grid.bind(this),
-            goto: this.goto.bind(this),
-            //iamat: this.iamat.bind(this),
-            faceto: this.faceto.bind(this),
-            jmpto: this.jmpto.bind(this),
-            label: this.label.bind(this),
-            erase: this.erase.bind(this),
-            home: this.jmpto.bind(this,...[0,0,0]),
-            fill: this.fill.bind(this),
-            wait: this.wait.bind(this),
-            limitRecurse: this.setRecurseLimit.bind(this),
-            limitCommand: this.setCommandLimit.bind(this),
-            beColour: this.setColor.bind(this)
-        };
-
-        this.places = {};
         this.bridge = bridged("turtle")
-        this.functions = {};
 
-        this.executionState = {
-            x: 0,
-            y: 0,
-            z: 0,
-            rotation: new Versor(1, 0, 0, 0)
-        };
+        const stage = createStage(canvas, this.bridge)
+        this.stage = stage
+        this.renderstate = stage.renderstate
 
-
-        this.pathTemplate = {
-            type: "path",
-            points: [],
-            thickness: null,
-            color: null,
-            filled: false,
-        };
-
-        this.currentPath=null
-        //https://threejs.org/docs/#api/en/core/Object3D
-        this.pathGroup = new THREE.Group();
-        this.gridGroup = new THREE.Group();
-        this.glyphGroup = new THREE.Group();
-        this.glyphGroup.elements = []
-        //this.glyphist = new Render.Glyph(this.glyphGroup);
-
-        this.shapist = new Render.Shape(this.pathGroup, {layerMethod: 'renderOrder', polygonOffset: { factor: -0.1, units: -1 }})
-
-        
-        // Temporal state
-        this.timeline = {
-            currentTime: 0, // Global wait temporal cursor
-            endTime: 0,
-            frames: new Map(), // Map<timestamp, [PathSegment[]]>
-            lastRenderTime: 0,
-            lastRenderFrame: 0
-        };
-
-        // Set up animation frame for continuous rendering
-        // THREEJS
-        this.setupScene();
-        this.setupCamera();
-        this.setupRenderer(canvas)
-
-        this.scene.add(this.pathGroup);
-        this.scene.add(this.gridGroup);
-        this.scene.add(this.glyphGroup);
-
+        // Render-on-demand: the loop stops itself when nothing is changing and
+        // is woken by requestRender(). Without this it rendered at 60fps for the
+        // page's whole life — a finished static drawing burned full WebGL frames
+        // forever (the dominant persistent-CPU cost on low-compute clients).
         this.renderLoop = new Render.Loop(null, {
-            onRender: (currentTime) => this.renderIncremental(currentTime),
-            // camera used to be seperate now tied with rendering
-            stopCondition: () => false
-        });
-
-
-        this.head = new Render.Head(this.scene)
-        //mafs
-        this.math = {
-            parser: new Parser(),
-            evaluator: new Evaluator({time: this.getTime})
-        }
-
-        this.reset();
-    }
-
-    spawn() {
-        this.x = 0;
-        this.y = 0;
-        this.z = 0
-    }
-
-    setupScene() {
-        this.scene = new THREE.Scene();
-    }
-
-    getTime() {
-        return this.timeline.currentTime;
-    }
-
-    setupCamera() {
-        const aspect = window.innerWidth / window.innerHeight;
-        this.camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 10000000);
-        this.camera.lookAt(0, 0, 0);
-        this.camera.position.set(0, 0, 500);
-
-        this.camera.updateProjectionMatrix();
-        this.controls = new OrbitControls( this.camera, this.canvas );
-        this.controls.target.set(0, 0, 0)
-        this.controls.mouseButtons = {
-	        RIGHT: THREE.MOUSE.ROTATE,
-	        MIDDLE: THREE.MOUSE.DOLLY,
-	        LEFT: THREE.MOUSE.PAN
-        }
-        this.controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE}
-        this.controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
-		this.controls.dampingFactor = 0.2;
-        this.controls.zoomToCursor = true
-        this.controls.update()
-
-        cameraBridge.sub(async (payload) => {
-            switch (payload[0]) {
-            case 'recenter':
-                // this.controls.target.set(0, 0, 0)
-                //this.controls.update()
-                // gotta slerp this
-                this.camera.position.set(0, 0, 500);
-                this.controls.target.set(0, 0, 0)
-                this.controls.update();
-
-                //this.controls.reset();
-                break;
-            case 'snap':
-                this.renderstate.snapshot = {frame: null, save: true, title: payload[1].title}
-                break;
-
-            case 'pan':
-                (this.camera.desire != "pan") ? this.camera.desire = "pan" : this.camera.desire = "track"
-                break;
-
-            case 'track':
-                (this.camera.desire != "track") ? this.camera.desire = "track" : this.camera.desire = "pan"
-                break;
-
-            case 'endtrack':
-                this.camera.desire = null
-
-                break;
-                
-            case 'record':
-                this.recorder.startRecording()
-
-                break;
-            case 'endrecord':
-                const video = await this.recorder.stopRecording()
-                this.bridge.pub(["saveRecord", {snapshot: video.blob, type: "video"}])
-                break;
-            default:
-            }
+            onRender: (t) => this.onFrame(t),
+            stopCondition: () => this._shouldStop()
         })
+        stage.renderLoop = this.renderLoop
+        // Let the stage (resize, camera bridge) wake the on-demand loop.
+        stage.requestRender = () => this.requestRender()
 
-        //ensure camera rerenders when window resizes
-        window.addEventListener('resize', () => {
-            this.camera.aspect = window.innerWidth / window.innerHeight;
-            this.camera.updateProjectionMatrix();
-            this.renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-    }
+        this._renderRequested = false    // one-shot: render at least one more frame
+        this._keepRendering = false      // set each frame: is there ongoing work?
+        this._controlsActiveUntil = 0    // ms timestamp: keep rendering until damping settles
 
-    setupRenderer(canvas) {
-        this.renderer = new WebGLRenderer({canvas ,
-            antialias: true,
-            alpha: true
-        });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.outputEncoding = THREE.sRGBEncoding;
-        this.renderer.capabilities.logarithmicDepthBuffer = true;
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-        this.renderer.sortObjects = false;
-
-        this.recorder = new Recorder(canvas, {
-            // useMp4Muxing: true,
-            // fragmentDuration: 500
-        })
-    }
-
-    thickness(x=1) {
-        this.thickness = x*2;
-    }
-
-    // turtle interface for renderer
-    requestRender() {
-        this.renderLoop.start();
-    }
-
-    requestRerender() {
-        this.timeline.lastRenderTime = 0;
-        this.renderLoop.requestClear();
-    }
-
-    requestRestart() {
-        this.renderLoop.requestRestart();
-    }
-
-    renderIncremental(t) {
-        const newPaths = Array.from(this.timeline.frames.entries())
-              .filter(([time]) => time >= this.timeline.lastRenderTime && time < t)
-              .flatMap(([_, frame]) => frame);
-
-        if (newPaths.length > 0) {
-            this.drawPaths(newPaths)
+        // Wake the loop on camera interaction; extend a settle window so inertial
+        // damping completes after the user releases (controls.update() also keeps
+        // it alive while it reports change, but the window is robust on its own).
+        this._onControlsActive = () => {
+            this._controlsActiveUntil = performance.now() + 700
+            this.requestRender()
+        }
+        for (const ev of ['start', 'change', 'end']) {
+            stage.controls.addEventListener(ev, this._onControlsActive)
         }
 
-        // scale invariant head
-        const scaleFactor = this.camera.position.distanceTo(this.head.position())/250 // Adjust multiplier as needed Math.tan((60 * Math.PI / 180) / 2)
-        this.head.scale(scaleFactor)
-        // Ensure matrix is current
-        this.controls.update();
-        this.renderer.render(this.scene, this.camera);
+        this.color = '#e77808'
 
-        if(this.renderstate.phase=="start" && t>=this.timeline.endTime){
-            if (this.showTurtle) {
-                this.head.show()
-                this.head.update([this.x, this.y,this.z], this.rotation, this.color, this.showTurtle)
+        // Unified scheduler + compositor (lazy — created on first upsertAmbient)
+        this.scheduler = null
+        this.compositor = null
+        this._snapshotPending = false
+        // Hatch gate: when the canvas is driven by passive outershell content
+        // (watching a friend, or reverting to their code) this is true and the
+        // onFrame hatch is suppressed — a friend's drawing must never be
+        // hatched/reflected as the user's own. Only own edits and live drafts
+        // refresh the snapshot. See upsertAmbient({ hatch }).
+        this._hatchSuppressed = false
+        this._localKeys = new Set()  // buffer IDs of locally-rendered tab ambients
+
+        // Dirty marker: stamped on every draw/edit/removal. hatch() stamps
+        // _lastHatchTime, so a drawing is "dirty" while _lastContentChange is
+        // newer than the last hatch. eagerHatch skips when nothing changed.
+        this._lastHatchTime = 0
+        this._lastContentChange = 0
+
+        this._heartbeatTimer = null
+        this._onVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                this.eagerHatch()
+                this._scheduleHeartbeat()
             } else {
-                this.head.hide()
+                this._stopHeartbeat()
             }
-
-            switch (this.camera.desire) {
-                case 'track':
-                    const deltaMovement = new THREE.Vector3(...[this.x, this.y,this.z]);
-                    deltaMovement.sub(this.head.position());
-                    this.camera.position.add(deltaMovement)
-                    this.controls.target.set(...[this.x, this.y,this.z])
-                    break;
-
-                case 'pan':
-                    this.controls.target.set(...[this.x, this.y,this.z])
-                    break;
-                }
-            
-            this.renderstate.phase="reaching"
         }
 
-        if(this.renderstate.phase=="reaching") {
-            //for some reason needs to be next frame after head render
-            if (t>=(1000+this.timeline.endTime)) {
+        document.addEventListener('visibilitychange', this._onVisibilityChange)
+        this._scheduleHeartbeat()
+        this.renderLoop.requestRestart()
+    }
+
+    requestRender() {
+        this._renderRequested = true
+        this.renderLoop.ensureRunning()
+    }
+
+    // Loop stop predicate (checked at the top of each frame). Stop only when no
+    // render was explicitly requested and the last frame found nothing ongoing.
+    _shouldStop() {
+        return !this._renderRequested && !this._keepRendering
+    }
+
+    // Keepalive: re-publish the snapshot  within the server's 10-min cache
+    _scheduleHeartbeat() {
+        if (this._heartbeatTimer) return
+        const delay = 5 * 60_000 + Math.random() * 60_000
+        this._heartbeatTimer = setTimeout(() => {
+            this._heartbeatTimer = null
+            if (document.visibilityState === 'visible') {
+                this.eagerHatch(0, { force: true })
+                this._scheduleHeartbeat()
+            }
+        }, delay)
+    }
+
+    _stopHeartbeat() {
+        clearTimeout(this._heartbeatTimer)
+        this._heartbeatTimer = null
+    }
+
+    dispose() {
+        this._stopHeartbeat()
+        document.removeEventListener('visibilitychange', this._onVisibilityChange)
+        for (const ev of ['start', 'change', 'end']) {
+            this.stage.controls.removeEventListener(ev, this._onControlsActive)
+        }
+        // Free the render stack. The canvas is phx-update="ignore" and outlives
+        // the hook, so a fresh Turtle is built on it each remount — without this
+        // the old compositor's GPU layers and the stage (renderer/loop/controls/
+        // cameraBridge) leak per remount, exhausting WebGL contexts over reconnects.
+        this.compositor?.dispose()
+        this.compositor = null
+        this.scheduler = null
+        this.stage.dispose()
+    }
+
+    // Lazy init: one scheduler (meta-root) + one compositor for the lifetime.
+    _ensureScheduler() {
+        if (this.scheduler) return
+        this.scheduler = createScheduler(metaRoot(), {
+            createDeps: () => ({
+                mathParser: new Parser(),
+                mathEvaluator: new Evaluator()
+            }),
+            execOpts: { color: this.color },
+            // Pass the EMITTER's own name — its signal address. (Was the globally
+            // focused ambient, which mis-addressed every shout to whatever panel
+            // had focus.) Routing to a panel is a read-side concern, by source.
+            onShout: (sourceName, msg, payload) => {
+                this._onShout?.(sourceName, msg, payload)
+            }
+        })
+        this.compositor = createCompositor(this.scheduler,
+            { camera: this.stage.camera, controls: this.stage.controls },
+            {
+                scene: this.stage.scene,
+                renderer: this.stage.renderer,
+                recorder: this.stage.recorder,
+                renderstate: this.renderstate,
+                hatch: () => this.hatch(),
+                // Let async materializers (troika Text builds glyphs off-thread)
+                // wake the render-on-demand loop once their geometry is ready,
+                // else a label finishing after the loop idles out never draws.
+                requestRender: () => this.requestRender(),
+                // The render loop's vsync cadence — lets the compositor distinguish a
+                // slow/throttled frame from a render-on-demand idle-out (id:eye/rerun).
+                frameInterval: this.renderLoop.frameInterval
+            },
+            {
+                createHead: (parent) => new Render.Head(parent),
+                createShapist: (parent) => new Render.Shape(parent, {
+                    layerMethod: 'renderOrder',
+                    polygonOffset: { factor: -0.1, units: -1 }
+                })
+            }
+        )
+        // focusedAddress left null — set by first draw() call
+        this.stage.head.hide()
+    }
+
+    onFrame(t) {
+        this._renderRequested = false
+        let controlsChanged = false
+
+        if (this.compositor) {
+            try {
+                this.compositor.advance(t)
+            } catch (error) {
+                console.error('Compositor advance error:', error)
+            }
+
+            controlsChanged = this.stage.controls.update()
+            this.stage.renderer.render(this.stage.scene, this.stage.camera)
+
+            if (this.stage.recorder.isRecording) {
+                this.stage.recorder.captureFrame()
+            }
+
+            if (this.renderstate.snapshot.frame == null && t > 500 && !this._hatchSuppressed) {
                 this.hatch()
-                this.renderstate.phase="reached"
-            }
-        }
-
-        if (this.recorder.isRecording) {
-            this.recorder.captureFrame()
-        }
-
-        if(this.renderstate.snapshot.frame==null && t>500) {
-            // needs to snapshot and send immediately after render because no drawing buffer
-            this.hatch()
-        }
-
-        this.timeline.lastRenderTime = t;
-
-    }
-
-    drawPaths(paths) {
-        paths.forEach(path => {
-            switch(path.type) {
-            case "clear":
-                this.pathGroup.clear()
-                this.glyphGroup.clear()
-                this.gridGroup.clear()
-                this.glyphGroup.elements.map(text => text.dispose())
-                break;
-
-            case "head":
-                switch (this.camera.desire) {
-                case 'track':
-                    const deltaMovement = new THREE.Vector3(...path.points);
-                    deltaMovement.sub(this.head.position());
-                    this.camera.position.add(deltaMovement)
-                    this.controls.target.set(...path.points)
-                    break;
-
-                case 'pan':
-                    this.controls.target.set(...path.points)
-                    break;
-                }
-
-                if (path.headsize){
-                    this.head.show()
-                    this.head.update(path.points, path.rotation, path.color, path.headsize)
-                } else {
-                    this.head.hide()
-                }
-                
-                break;
-
-            case "path" :
-                try {
-                    if (!path.points || path.points.length === 0) return;
-                    // Start drawing a new path
-                    //flattne position
-                    const positions = [];
-                    path.points.forEach(point => {
-                        positions.push(point.x, point.y, point.z);
-                    });
-
-                    // Create LineGeometry and set positions
-                    const geometry = new LineGeometry();
-
-                    geometry.setPositions(positions);
-
-                    const material = new LineMaterial({
-                        color: path.color || 0xe77808, //0xff4500, // DarkOrange as hex
-                        linewidth: path.thickness || 2,
-                        vertexColors: false,
-                        dashed: false,
-                    });
-
-                    material.resolution.set(window.innerWidth, window.innerHeight);
-
-                    // Create Line2 mesh
-                    const mesh = new Line2(geometry, material);
-                    this.pathGroup.add(mesh);
-                    
-
-                    if(path.filled) {
-
-
-                        this.shapist.addPolygon(path.points,  {color: path.color,
-                                                               //wireframe: true,
-                                                               forceTriangulation: true});
-
-                    }
-
-
-                } catch (error) {
-                    console.warn('Error drawing path:', error);
-                }
-                break;
-            case "text":
-                try {
-                    const newText = new Text()
-                    this.glyphGroup.add(newText)
-
-                    // Set properties to configure:
-                    newText.text = path.text
-                    newText.fontSize = path.text_size
-                    newText.textAlign = 'center'
-                    newText.anchorX = 'center'
-                    newText.anchorY = '45%'
-                    newText.font= '/fonts/paperLang.ttf'
-                    newText.position.x= path.points[0][0]
-                    newText.position.y= path.points[0][1]
-                    newText.position.z= path.points[0][2]
-                    newText.quaternion.copy(path.rotation)
-
-                    newText.color = path.color
-                    newText.sync()
-                    this.glyphGroup.elements.push(newText);
-
-
-                     } catch (error) {
-                    console.warn('Error writing text:', error);
-                }
-                break;
-
-            case "grid":
-                const gridHelper = new THREE.GridHelper( path.size, path.division, path.color,  ColorConverter.toHex(ColorConverter.adjust(path.color, 0.25)));
-                gridHelper.position.set(...path.point)
-                gridHelper.quaternion.copy(path.rotation)
-                this.gridGroup.add( gridHelper );
-                break;
             }
 
-        });
-    }
-
-    hatch(){
-        const width = this.canvas.width;
-        const height = this.canvas.height;
-        
-        // Get buffer from recorder's pool instead of allocating new one
-        const pixels = new Uint8Array(width * height * 4);
-    
-        
-        this.ctx.readPixels(0, 0, width, height, this.ctx.RGBA, this.ctx.UNSIGNED_BYTE, pixels);
-        this.renderstate.snapshot.frame = pixels;
-        
-        // Process asynchronously
-        queueMicrotask(async () => {
-            const result = await this.recorder.takeSnapshot({ pixels, width, height });
-            
-            if (result) {
-                
-                if (this.renderstate.snapshot.save) {
-                    this.bridge.pub(["saveRecord", {
-                        snapshot: result.full,
-                        type: "image",
-                        title: this.renderstate.snapshot.title
-                    }]);
-                    this.renderstate.snapshot.save = false;
-                }
-                
-                this.renderstate.meta.path = result.trimmed;
-                this.bridge.pub(["hatchTurtle", this.renderstate.meta]);
+            if (this.scheduler.done && !this._snapshotPending && !this._hatchSuppressed) {
+                this._snapshotPending = true
+                this.hatch()
             }
-        });
-
-    }
-
-    wait(duration=1) {
-        // record a head entry for rendering head at end of timeframe
-        this.currentPath = {
-            ...this.pathTemplate,
-            type: "head",
-            points: [this.x, this.y, this.z],
-            color: this.color,
-            rotation: this.rotation,
-            headsize: this.showTurtle
-        };
-
-        const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
-        currentFrame.push(this.currentPath);
-        this.timeline.frames.set(this.timeline.currentTime, currentFrame);
-
-        this.timeline.currentTime += duration*1000;
-        this.timeline.endTime = Math.max(this.timeline.endTime, this.timeline.currentTime);
-
-
-
-        // Create new frame entry if it doesn't exist
-        if (!this.timeline.frames.has(this.timeline.currentTime)) {
-            this.timeline.frames.set(this.timeline.currentTime, []);
-        }
-        this.currentPath= null
-    }
-
-    goto(x=0, y=0, z=null) {
-
-        const newX = x;
-        const newY = y;
-        const newZ = z ?? this.z
-
-        if (this.penDown) {
-                // Create new path segment
-                if (!this.currentPath) {
-                    this.currentPath = {
-                        ...this.pathTemplate,
-                        color: this.color,
-                        thickness: this.thickness,
-                        points: [{x: this.x, y: this.y, z: this.z}]
-                    };
-
-                    const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
-                    currentFrame.push(this.currentPath);
-                    this.timeline.frames.set(this.timeline.currentTime, currentFrame);
-                }
-                //color transition
-                this.currentPath.points.push({x: newX, y: newY, z: newZ});
-            }
-        else {
-            this.currentPath= null
-        }
-
-            this.x = newX;
-            this.y = newY;
-            this.z = newZ;
-
-            // Store current state for recovery if needed
-            this.executionState = {
-                x: this.x,
-                y: this.y,
-                z: this.z,
-                rotation: new Versor(
-                    this.rotation.w,
-                    this.rotation.x,
-                    this.rotation.y,
-                    this.rotation.z
-                )
-            };
-
-    }
-
-    jmpto(x=0, y=0, z=null) {
-        this.noPen();
-        this.goto(x, y, z)
-        this.oPen()
-    }
-
-    faceto(targetX=0, targetY=0, targetZ=null) {
-        // Convert target coordinates to the same scale as internal coordinates
-        const tx = targetX;
-        const ty = targetY;
-        const tz = targetZ ?? this.z;
-        
-        // Calculate direction vector from current position to target
-        const dx = tx - this.x;
-        const dy = ty - this.y;
-        const dz = tz - this.z;
-        
-        // Calculate distance in XY plane and total distance
-        const distXY = Math.sqrt(dx * dx + dy * dy);
-        const distTotal = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        
-        // Handle edge case: target is at current position
-        if (distTotal < Versor.EPSILON) {
-            return;
-        }
-        
-        // Normalize direction vector
-        const ndx = dx / distTotal;
-        const ndy = dy / distTotal;
-        const ndz = dz / distTotal;
-        
-        // Calculate yaw (rotation around Z axis)
-        const yaw = Math.atan2(dy, dx) * (180 / Math.PI);
-        
-        // Calculate pitch (rotation around perpendicular axis)
-        // Pitch is the angle from XY plane to target
-        const pitch = -Math.atan2(dz, distXY) * (180 / Math.PI);
-        
-        // Create rotation: first yaw, then pitch
-        // Yaw rotation around Z axis
-        const yawRotation = Versor.fromAxisAngle({ x: 0, y: 0, z: 1 }, yaw);
-        
-        // Pitch rotation around Y axis (perpendicular to forward direction)
-        const pitchRotation = Versor.fromAxisAngle({ x: 0, y: 1, z: 0 }, pitch);
-        
-        // Combine rotations: apply yaw first, then pitch
-        this.rotation = yawRotation.multiply(pitchRotation);
-        
-        // Update execution state
-        this.executionState.rotation = new Versor(
-            this.rotation.w,
-            this.rotation.x,
-            this.rotation.y,
-            this.rotation.z
-        );
-    }
-
-    // faceto(targetX=0, targetY=0, targetZ=null) {
-    //     // Convert target coordinates to the same scale as internal coordinates
-    //     const tx = targetX;
-    //     const ty = targetY;
-    //     const tz = targetZ ?? this.z;
-
-    //     // Calculate direction vector from current position to target
-    //     const dx = tx - this.x;
-    //     const dy = ty - this.y;
-    //     const dz = tz - this.z;
-
-    //     // Calculate angle in the XY plane (yaw)
-    //     let angle = Math.atan2(dy, dx) * (180 / Math.PI);
-
-    //     // Create rotation versor for this angle
-    //     const rotation = Versor.fromAxisAngle({ x: 0, y: 0, z: 1 }, angle);
-
-    //     // Reset current rotation and apply new rotation
-    //     this.rotation = rotation;
-
-    //     // Update execution state
-    //     this.executionState.rotation = new Versor(
-    //         this.rotation.w,
-    //         this.rotation.x,
-    //         this.rotation.y,
-    //         this.rotation.z
-    //     );
-    // }
-
-
-    erase(){
-        this.currentPath = {
-            ...this.pathTemplate,
-            type: "clear"
-        };
-
-        const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
-        currentFrame.push(this.currentPath);
-        this.timeline.frames.set(this.timeline.currentTime, currentFrame);
-        this.currentPath = null;
-    }
-
-
-    label(text="·", size=1){
-        this.currentPath = {
-            ...this.pathTemplate,
-            type: "text",
-            points: [[this.x, this.y, this.z]],
-            color: this.color,
-            text: text,
-            // html canvas cant space numbers accurately below this
-            text_size: size*5,
-            rotation: this.rotation
-            //id: crypto.getRandomValues(new Uint32Array(1))[0]
-        };
-
-        //should outsource to seperate canvas
-        const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
-        currentFrame.push(this.currentPath);
-        this.timeline.frames.set(this.timeline.currentTime, currentFrame);
-        this.currentPath = null;
-    }
-
-    forward(distance=0) {
-            const direction = { x: 1, y: 0, z: 0 };
-            const rotatedDirection = this.rotation.rotate(direction);
-            const newX = this.x + rotatedDirection.x * distance;
-            const newY = this.y + rotatedDirection.y * distance;
-            const newZ = this.z + rotatedDirection.z * distance;
-
-        if (this.penDown) {
-            // Create new path segment
-            if (!this.currentPath) {
-                this.currentPath = {
-                    ...this.pathTemplate,
-                    color: this.color,
-                    thickness: this.thickness,
-                    points: [{x: this.x, y: this.y, z: this.z}]
-                };
-
-
-                const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
-                currentFrame.push(this.currentPath);
-                this.timeline.frames.set(this.timeline.currentTime, currentFrame);
-            }
-            //color transition
-            this.currentPath.points.push({x: newX, y: newY, z: newZ});
-        }
-        else {
-            this.currentPath= null
-        }
-
-            this.x = newX;
-            this.y = newY;
-            this.z = newZ;
-
-            // Store current state for recovery if needed
-            this.executionState = {
-                x: this.x,
-                y: this.y,
-                z: this.z,
-                rotation: new Versor(
-                    this.rotation.w,
-                    this.rotation.x,
-                    this.rotation.y,
-                    this.rotation.z
-                )
-            };
-
-    }
-
-    fill() {
-        if (this.currentPath) {
-            this.currentPath.filled = true;
-            this.currentPath = null;
-        }
-    }
-
-    clear() {
-
-        this.currentPath = null;
-        this.pathGroup.clear()
-        this.gridGroup.clear()
-        this.glyphGroup.clear()
-        this.glyphGroup.elements.map(text => text.dispose())
-        this.glyphGroup.elements = []
-        this.timeline.lastRenderTime = 0;
-        this.requestRender();
-    }
-
-    defineFunction(name, parameters, body) {
-        this.functions[name] = {
-            parameters, body
-        }
-    }
-
-    callFunction(name, args, ctx, depth=0) {
-        if (depth > this.maxRecurseDepth) return;
-        // get from local scope first
-        name = ctx[name] || name
-        const func = this.functions[name];
-        if (!func)
-        {this.callCommand(name, ...args)}
-        else
-        {
-            const context = {};
-            func.parameters.forEach((param, index) => {
-                context[param] = args[index] || 0;
-            });
-            context['__depth__'] = depth;
-            return this.executeBody(func.body, context);
-        }
-    }
-
-    callCommand(commandName, ...args) {
-        const com = this.commands[commandName];
-        if (com) {
-            if (this.commandCount >= this.maxCommands) {
-                throw new Error(`Maximum command limit of ${this.maxCommands} reached`);
-            }
-            this.commandCount++;
-            com(...args); // Call the command with its arguments
         } else {
-            throw new Error(`Function ${commandName} not defined`);
+            // No ambients — idle render (orbit controls, stage head)
+            const { head, camera, controls, renderer, scene } = this.stage
+            const scaleFactor = camera.position.distanceTo(head.position()) / 250
+            head.scale(scaleFactor)
+            controlsChanged = controls.update()
+            renderer.render(scene, camera)
+        }
+
+        // Decide whether the loop should keep running. Keep going while a program
+        // animates, while recording, while the camera is still moving/damping, or
+        // until the first thumbnail snapshot is captured; otherwise idle out.
+        const animating = !!this.scheduler && !this.scheduler.done
+        const recording = this.stage.recorder.isRecording
+        // Only the compositor branch can hatch — don't pin the idle loop on.
+        // A suppressed hatch must not pin the on-demand loop: with snapshot.frame
+        // left null (we never capture for foreign content) this would spin forever.
+        const needHatch = !!this.compositor && this.renderstate.snapshot.frame == null && !this._hatchSuppressed
+        const controlsSettling = performance.now() < this._controlsActiveUntil
+        this._keepRendering = animating || recording || controlsChanged || controlsSettling || needHatch
+    }
+
+    hatch() {
+        this._lastHatchTime = performance.now()
+        this.stage.hatch(this.bridge)
+    }
+
+    eagerHatch(cooldown = 8_000, { force = false } = {}) {
+        if (!this.compositor) return
+        if (performance.now() - this._lastHatchTime < cooldown) return
+        // Skip redundant re-publishes of an unchanged drawing. The periodic
+        // keepalive passes force:true to refresh the server-side cache TTL.
+        if (!force && this._lastContentChange <= this._lastHatchTime) return
+        this._snapshotPending = false
+        this.requestRender()
+    }
+
+    // --- Multi-ambient API ---
+
+    // hatch:false renders without refreshing the snapshot/thumbnail or reflecting
+    // to the server — for passive outershell content (a watched friend, or a
+    // reverted draft). Own edits and live drafts leave it default (true).
+    upsertAmbient(key, displayName, code, { hatch = true } = {}) {
+        try {
+            const instructions = parseProgram(code)
+            this._ensureScheduler()
+
+            this.scheduler.hotSwapChild(key, {
+                name: displayName,
+                code: { ast: instructions, functions: null },
+                style: { color: this.color },
+                env: null
+            })
+
+            this._hatchSuppressed = !hatch
+            if (hatch) {
+                // Fresh hatch cycle — clear previous snapshot so onFrame re-hatches
+                this.renderstate.snapshot = { frame: null, save: this.renderstate.snapshot.save }
+                this._snapshotPending = false
+            }
+
+            this.compositor.flush()
+            this._lastContentChange = performance.now()
+
+            const errors = this.scheduler.errors
+            if (errors.length > 0) {
+                this.renderstate.meta = { state: "error", message: errors[0].message, source: code, commands: instructions }
+                this.requestRender()
+                return { success: false, error: errors[0].message }
+            }
+
+            this.renderstate.meta = { state: "success", commands: instructions }
+            this.requestRender()
+            return { success: true, commandCount: this.scheduler.commandCount }
+        } catch (error) {
+            console.error(error)
+            this.renderstate.meta = { state: "error", message: error.message, source: code }
+            return { success: false, error: error.message }
         }
     }
 
-    executeBody(body, context) {
-        let matched = false;
-        body.forEach(node => {
-            switch (node.type) {
-            case 'Loop':
-                const times = this.evaluateExpression(node.value, context); // is context getting dereferenced fi needed
-                for (let i = 0; i < times; i++) {
-                    this.executeBody(node.children, context);
-                }
-                break;
-            case 'Call':
-                if(node.value == "fn" || node.value == "func") {
-                    //escape evaluation
-                    this.func(context, ...node.children.map(arg => arg.value))
+    removeAmbient(key) {
+        if (!this.scheduler) return
+        this._localKeys.delete(key)
+        this._lastContentChange = performance.now()
 
-                    break
-                }
-                const args = node.children.map(arg => this.evaluateExpression(arg.value, context));
-                const currDepth = context['__depth__'] || 0;
-                if(currDepth > 1) this.recurseCount++ ;
-                if (this.recurseCount >= this.maxRecurses) {
-                    throw new Error(`Maximum recurse limit of ${this.maxRecurses} reached`);
-                }
-                this.callFunction(node.value, args, context, currDepth + 1); // ...args
-                break;
+        // Address only — callers pass the key they registered with. (The old
+        // name-scan fallback is gone: one register, no second lookup space.)
+        this.scheduler.removeChild(key)
 
-            case 'Define':
-                const params = node.meta?.args?.map(n => n.value) || []
-                this.defineFunction(node.value,  params, node.children)
-                break;
-
-            case 'When':
-                const pattern = node.value;
-                if (!matched && this.evaluateExpression(pattern, context) !== 0 ) {
-                    matched = true;
-                    this.executeBody(node.children, context);
-                }
-                break;
-
-                }
-
-
-        });
-    }
-
-    evaluateExpression(expr, context) {
-        //string support
-        const quoteRegex = /^(['"])(.*?)\1$/;
-        const quoteMatch = expr.match(quoteRegex);
-        if (quoteMatch) {
-            const [_, quote, stringContent] = quoteMatch;
-
-            // process nested interpolations from inside out "sine is [sin[theta]]"
-            let processed = stringContent;
-            let previous;
-            do {
-                previous = processed;
-                processed = processed.replace(
-                    /\[([^[\]](?:[^[\]]|\[(?:\\.|[^[\]])*\])*)\]/g,
-                    (match, innerExpr) => {
-                        // Skip evaluation if inner expression is wrapped in curly braces
-                        if (innerExpr.trim().match(/^\`.*\`$/)) {
-                            return match;
-                        }
-                        const value = this.evaluateExpression(innerExpr.trim(), context);
-                        return value !== undefined ? String(value) : match;
-                    }
-                );
-            } while (processed !== previous);
-
-            return processed;
+        // If no children left, tear down scheduler and show idle head
+        if (this.scheduler.root.children.size === 0) {
+            this.compositor.dispose()
+            this.compositor = null
+            this.scheduler = null
+            this.stage.head.show()
+            this.stage.head.reset()
         }
 
-        if (this.math.parser.isNumeric(expr)) return parseFloat(expr);
-        if (context[expr] != null) return context[expr];
-        const tree = this.math.parser.parse(expr)
-        if (tree.children.length > 0 || this.math.evaluator.namespace_check(tree.value)) return this.math.evaluator.run(tree, context);
-        return tree.value // probably a string
+        this.requestRender()
     }
 
-    func(ctx,signature, expression=0){
-        this.math.parser.defineFunction(signature, expression, ctx)
+    // Focus by address (registration key / nested path) or by display name —
+    // a name resolves THROUGH the address (one register + a name view), so
+    // focus survives re-eval and rename and never collides across tabs.
+    focusAmbient(ref) {
+        if (this.compositor) {
+            this.compositor.focusedAddress = resolveAddress(this.scheduler, ref)
+        }
+    }
+
+    setAmbientOpacity(name, opacity) {
+        if (this.compositor) {
+            this.compositor.setOpacityByName(name, opacity)
+        }
+    }
+
+    // The tab (root-child key === buffer id) whose subtree defines an ambient by
+    // display name: a top-level tab named `name`, or the tab whose code spawned
+    // `as name do …`. Returns null if not found (e.g. a remote peer's addr key).
+    tabKeyForAmbient(name) {
+        if (!this.scheduler?.root) return null
+        const defines = (frame) => {
+            if (frame.name === name) return true
+            for (const child of frame.children?.values() ?? []) {
+                if (defines(child)) return true
+            }
+            return false
+        }
+        for (const [key, tab] of this.scheduler.root.children) {
+            if (defines(tab)) return key
+        }
+        return null
+    }
+
+    // Toggle a tab's ambient: shift+click adds if absent, removes if present.
+    // On add, re-upserts ALL local ambients so they restart in sync.
+    // resolveBuffer(key) → { name, content } provides sibling code for restart.
+    toggleAmbient(id, name, code, resolveBuffer) {
+        this._ensureScheduler()
+        if (this.scheduler.root.children.has(id)) {
+            this.removeAmbient(id)
+        } else {
+            this._localKeys.add(id)
+            for (const key of this._localKeys) {
+                const info = key === id ? { name, content: code } : resolveBuffer?.(key)
+                if (info) this.upsertAmbient(key, info.name, info.content)
+            }
+        }
+        this.requestRender()
+    }
+
+    // --- Backward-compatible API ---
+
+    draw(id, name, code) {
+        this._ensureScheduler()
+        // Exclusive only when entering a tab OUTSIDE the active group: switching
+        // to a fresh tab replaces the previous drawing. A tab already in
+        // _localKeys (sisters brought alive via shift+click → toggleAmbient)
+        // keeps its sisters running — editing or re-selecting one member must
+        // not collapse the group; only that member's ambient is re-upserted.
+        if (!this._localKeys.has(id)) {
+            for (const key of this._localKeys) {
+                if (key !== id) this.removeAmbient(key)
+            }
+            this._localKeys.clear()
+            this._localKeys.add(id)
+        }
+        // Upsert first so the frame exists, then focus by its key directly.
+        const result = this.upsertAmbient(id, name, code)
+        this.focusAmbient(id)
+        return result
     }
 
     reset() {
-        this.spawn()
-        this.clear();
-        this.renderdepth = 0
-        //this.glyphist.clear()
-        this.shapist.dispose()
-        this.timeline = {
-            currentTime: 0,
-            endTime: 0,
-            frames: new Map(),
-            lastRenderTime: 0,
-            lastRenderFrame: 0
-        };
-        // Command execution tracking
-        this.commandCount = 0
-        this.recurseCount = 0
-        this.maxRecurseDepth = 360
-        this.maxRecurses = 888888;
-        this.maxCommands = 88888888;
-
-        this.rotation = new Versor(1, 0, 0, 0);
-        this.penDown = true;
-        this.color = '#e77808';
-        this.thickness = 2;
-        this.showTurtle = 10;
-        this.currentPath = null;
-        //initialise render state
-        this.renderstate = {
-            phase: "start",
-            snapshot: {frame: null, save: false},
-            meta: {state: null, message: null, commands: []}
-        }
-        this.math.parser.reset()
-        this.renderLoop.requestRestart();
-    }
-
-
-    grid(divisions=100, unit=10){
-        const rotation = Versor.fromAxisAngle({ x: 1, y: 0, z: 0 }, 90);
-
-        this.currentPath = {
-            ...this.pathTemplate,
-            type: "grid",
-            point: [this.x, this.y, this.z],
-            color: this.color,
-            // html canvas cant space numbers accurately below this
-            size: unit*divisions,
-            division: divisions,
-            rotation: this.rotation.multiply(rotation)
-            //id: crypto.getRandomValues(new Uint32Array(1))[0]
-        };
-
-        const currentFrame = this.timeline.frames.get(this.timeline.currentTime) || [];
-        currentFrame.push(this.currentPath);
-        this.timeline.frames.set(this.timeline.currentTime, currentFrame);
-        this.currentPath = null;
-        //const gridHelper = new THREE.GridHelper( unit*divisions, divisions, this.color );
-        //gridHelper.material.color.set(this.color);
-        //gridHelper.material.vertexColors = false;
-        
-    }
-
-    roll(angle = 0) {
-        const rotation = Versor.fromAxisAngle({ x: 1, y: 0, z: 0 }, angle);
-        this.rotation = this.rotation.multiply(rotation);
-    }
-
-    pitch(angle = 0) {
-        const rotation = Versor.fromAxisAngle({ x: 0, y: 1, z: 0 }, angle);
-        this.rotation = this.rotation.multiply(rotation);
-    }
-
-    yaw(angle = 0) {
-        const rotation = Versor.fromAxisAngle({ x: 0, y: 0, z: 1 }, angle);
-        this.rotation = this.rotation.multiply(rotation);
-    }
-
-    left(angle=0) {
-        this.yaw(angle);
-    }
-
-    right(angle=0) {
-        this.yaw(-angle);
-    }
-
-    jump(distance){
-
-        this.noPen();
-        this.forward(distance);
-        this.oPen();
-    }
-
-    move(speed){
-        this.speed = speed
-    }
-
-    noPen() {
-        this.penDown = false;
-    }
-
-    oPen() {
-        this.penDown = true;
-    }
-
-
-    draw(code, opts= {}) {
-        try {
-            const startTime = performance.now();
-            const instructions = parseProgram(code);
-            var endTime = performance.now();
-            var executionTime = endTime - startTime;
-            console.log(`Parser Time took ${executionTime} milliseconds.`);            
-            this.reset();
-            this.requestRender();
-            this.executeBody(instructions, {});
-            this.renderstate.meta = {state: "success", commands: instructions}
-            endTime = performance.now();
-            executionTime = endTime-startTime-executionTime
-            console.log(`Drawing Time took ${executionTime} milliseconds.`);
-            return { success: true, commandCount: this.commandCount };
-        } catch (error) {
-            console.error(error);
-            this.renderstate.meta = {state: "error", message: error.message, source: code}
-            return { success: false, error: error.message };
-        }
-    }
-
-
-    hideTurtle() {
-        this.showTurtle = false;
-    }
-
-    unhideTurtle(size=10) {
-        this.showTurtle = size;
-    }
-
-    setRecurseLimit(limit = 361) {
-        this.maxRecurseDepth = limit+1
-    }
-
-    setCommandLimit(limit = 100000) {
-        this.maxCommands = limit
-    }
-
-    setColor(color = "silver") {
-        this.color = color;
-        if (color == "invisible") this.color = "#00000000"
-        if (Number.isFinite(color)) this.color = `hsla(${~~(360 * color)}, 70%,  72%)`
-        if (color == "random") this.color = `hsla(${~~(360 * Math.random())}, 70%,  72%)`
-        if(/^([0-9a-f]{3}){1,2}$/i.test(color)) this.color = "#" + color
-        //break path for new path
-        this.currentPath = null;
-    }
-}
-
-
-enableLazyBinding(Turtle, ['getTime']);
-/**
- * Converts specified methods into lazy-bound getters.
- * On first access, it binds the method to the instance and overwrites the property.
- */
-function enableLazyBinding(ClassRef, methodNames) {
-  methodNames.forEach((methodName) => {
-    // Capture BEFORE defineProperty replaces it
-    const originalMethod = ClassRef.prototype[methodName];
-
-    if (typeof originalMethod !== 'function') {
-      console.warn(`Method ${methodName} not found on class.`);
-      return;
-    }
-
-    Object.defineProperty(ClassRef.prototype, methodName, {
-      configurable: true,
-      get() {
-        console.log(`Lazy binding triggered for: ${methodName} on ${this.constructor.name}`);
-
-        const boundMethod = originalMethod.bind(this);
-
-        Object.defineProperty(this, methodName, {
-          value: boundMethod,
-          configurable: true,
-          writable: true,
-        });
-
-        return boundMethod;
-      },
-    });
-  });
-}
-
-function processImage(pixels, width, height) {
-    const halfHeight = Math.floor(height / 2);
-    const bytesPerRow = width * 4;
-    const temp = new Uint8Array(bytesPerRow);
-    //flipPixelsVertically
-    for (let y = 0; y < halfHeight; y++) {
-        const topOffset = y * bytesPerRow;
-        const bottomOffset = (height - y - 1) * bytesPerRow;
-        temp.set(pixels.subarray(topOffset, topOffset + bytesPerRow));
-        pixels.copyWithin(topOffset, bottomOffset, bottomOffset + bytesPerRow);
-        pixels.set(temp, bottomOffset);
-    }
-    const imagedata = new ImageData(new Uint8ClampedArray(pixels), width, height)
-    return trimImage(imagedata, width, height)
-}
-
-
-function trimImage(imageData, width, height) {
-    const data = imageData.data;
-
-    let xMin = width, xMax = -1, yMin = height, yMax = -1;
-
-    // Loop through pixels to find the bounding box of non-transparent pixels
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            const index = (y * width + x) * 4;
-            if (data[index + 3] > 0) { // Check alpha channel
-                if (x < xMin) xMin = x;
-                if (x > xMax) xMax = x;
-                if (y < yMin) yMin = y;
-                if (y > yMax) yMax = y;
+        if (this.scheduler) {
+            // Remove all children
+            for (const name of [...this.scheduler.root.children.keys()]) {
+                this.scheduler.removeChild(name)
             }
+            this.compositor.dispose()
+            this.compositor = null
+            this.scheduler = null
         }
+        this._snapshotPending = false
+        this._lastContentChange = performance.now()
+
+        this.stage.head.show()
+        this.stage.head.reset()
+        this.renderstate.snapshot = { frame: null, save: false }
+        this.renderstate.meta = { state: null, message: null, commands: [] }
+        this.renderLoop.requestRestart()
     }
-
-    // If no pixels found, return early
-    if (xMax < xMin || yMax < yMin) return null;
-
-    const newWidth = xMax - xMin + 1;
-    const newHeight = yMax - yMin + 1;
-
-    // Create an offscreen canvas
-    const offscreenCanvas = document.createElement('canvas');
-    offscreenCanvas.width = newWidth;
-    offscreenCanvas.height = newHeight;
-    const offscreenCtx = offscreenCanvas.getContext('2d');
-
-    // Create new ImageData for the cropped region
-    const croppedImageData = offscreenCtx.createImageData(newWidth, newHeight);
-    const croppedData = croppedImageData.data;
-
-    // Copy pixels from original to cropped image data
-    for (let y = 0; y < newHeight; y++) {
-        for (let x = 0; x < newWidth; x++) {
-            const srcIndex = ((yMin + y) * width + (xMin + x)) * 4;
-            const dstIndex = (y * newWidth + x) * 4;
-
-            croppedData[dstIndex] = data[srcIndex];         // R
-            croppedData[dstIndex + 1] = data[srcIndex + 1]; // G
-            croppedData[dstIndex + 2] = data[srcIndex + 2]; // B
-            croppedData[dstIndex + 3] = data[srcIndex + 3]; // A
-        }
-    }
-
-    // Put the cropped image data into the offscreen canvas
-    offscreenCtx.putImageData(croppedImageData, 0, 0);
-
-    // Return the cropped image as a data URL
-    return offscreenCanvas.toDataURL();
 }
-

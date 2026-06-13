@@ -217,6 +217,9 @@ defmodule Dojo.Hotspot.Server do
   defp format_error(:no_wifi),
     do: %{message: "No WiFi adapter found", hint: nil, kind: :error}
 
+  defp format_error(:no_wifi_adapter),
+    do: %{message: "No WiFi adapter found", hint: nil, kind: :error}
+
   defp format_error(:nmcli_not_found),
     do: %{message: "nmcli not found", hint: "sudo pacman -S networkmanager", kind: :needs_install}
 

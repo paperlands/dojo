@@ -139,14 +139,11 @@ export class Parser {
         }
         this.advance(); // consume ')'
 
-        // Validation and substitution
-        if (!options.skipValidation) {
+        // Validation — substitution deferred to evaluator for call-by-value.
+        // Dotted names (sky.sine) skip validation — resolved at runtime via resolveExternal.
+        if (!options.skipValidation && !name.includes('.')) {
             if (!this.functionExists(name, args.length)) {
                 throw new Error(`Unknown function: ${name} with ${args.length} arguments`);
-            }
-
-            if (this.isUserDefined(name, args.length)) {
-                return this.substituteUserFunction(name, args);
             }
         }
 
@@ -201,7 +198,10 @@ export class Parser {
         const substitutions = new Map();
 
         for (const key of Object.keys(ctx)) {
-            substitutions.set(key, new ASTNode('operand', ctx[key]));
+            // Don't substitute parameter names — they stay symbolic
+            if (!params.includes(key)) {
+                substitutions.set(key, new ASTNode('operand', ctx[key]));
+            }
         }
 
         const subexpressionAST = this.substituteParameters(expressionAST, substitutions)

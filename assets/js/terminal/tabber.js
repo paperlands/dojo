@@ -5,17 +5,6 @@ export class Tabber {
         this.template = this.scaffold.cloneNode(true);
     }
 
-    handleOperation({ op, target }) {
-        const operations = {
-            add: () => this.addTab(),
-            select: () => this.selectTab(target),
-            rename: () => this.renameTab(target),
-            close: () => this.closeTab(target)
-        };
-
-        operations[op]?.();
-    }
-
     addTab(id, name) {
         const clone = this.template.cloneNode(true);
         const tab = this.configureTab(clone, id, name);
@@ -58,14 +47,34 @@ export class Tabber {
 
         // Configure close button
         const close = element.querySelector('.close');
-        close?.addEventListener('click', () =>
+        close?.addEventListener('click', (e) => {
+            e.stopPropagation()
             this.dispatch('phx:opBuffer', { op: 'close', target: id })
-        );
+        });
 
-        // Configure tab click
-        element.addEventListener('click', () =>
-            this.dispatch('phx:opBuffer', { op: 'select', target: id })
-        );
+        // Shift+click activates ambient without switching editor.
+        // Long-press on mobile does the same.
+        let longPressTimer = null;
+        let longPressed = false;
+
+        element.addEventListener('click', (e) => {
+            if (longPressed) { longPressed = false; return; }
+            if (e.shiftKey) {
+                this.dispatch('phx:opBuffer', { op: 'activate', target: id })
+            } else {
+                this.dispatch('phx:opBuffer', { op: 'select', target: id })
+            }
+        });
+
+        element.addEventListener('touchstart', () => {
+            longPressed = false;
+            longPressTimer = setTimeout(() => {
+                longPressed = true;
+                this.dispatch('phx:opBuffer', { op: 'activate', target: id });
+            }, 500);
+        }, { passive: true });
+        element.addEventListener('touchend', () => clearTimeout(longPressTimer));
+        element.addEventListener('touchmove', () => clearTimeout(longPressTimer));
 
         return element;
     }
@@ -124,13 +133,32 @@ export class Tabber {
         if (target) this.activateTab(target);
     }
 
-    renameTab(targetId) {
+    // Read the tab input's current value — the input is the live editing
+    // surface for the name during a rename; the collection commits it on blur
+    // (terminal.renameBuffer). This reads; it does not rename.
+    readTabName(targetId) {
         const tab = this.container.querySelector(`[data-tab-id="${targetId}"]`);
         if (!tab) return;
         const input = tab.querySelector('input');
         if (input) {
             return input.value
         }
+    }
+
+    // Mark a tab as having an active ambient (green indicator).
+    setActive(targetId) {
+        const tab = this.container.querySelector(`[data-tab-id="${targetId}"]`);
+        tab?.setAttribute('data-active', '');
+    }
+
+    clearActive(targetId) {
+        const tab = this.container.querySelector(`[data-tab-id="${targetId}"]`);
+        tab?.removeAttribute('data-active');
+    }
+
+    clearAllActive() {
+        this.container.querySelectorAll('.tab-instance[data-active]')
+            .forEach(t => t.removeAttribute('data-active'));
     }
 
     closeTab(targetId) {
@@ -146,11 +174,5 @@ export class Tabber {
 
     dispatch(eventName, detail) {
         window.dispatchEvent(new CustomEvent(eventName, { detail }));
-    }
-
-    pushEvent(eventName, data) {
-        // Assuming this method exists in the context
-        // Implementation depends on your Phoenix LiveView setup
-        console.log('pushEvent:', eventName, data);
     }
 }

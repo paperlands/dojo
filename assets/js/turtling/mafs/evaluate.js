@@ -1,10 +1,9 @@
 export class Evaluator {
-    constructor(bind) {
+    constructor() {
         this.constants = {
             'pi': () => Math.PI,
             'e': () => Math.E,
             'random': () => Math.random(),
-            'time': () => bind.time()/1000
         };
 
         this.functions = {
@@ -19,11 +18,27 @@ export class Evaluator {
             'exp': Math.exp
         };
 
+        // Deferred (late-evaluated) constants: stochastic / streaming primitives that
+        // must re-evaluate at each point of use and must never be folded into an fn body
+        // at definition time. Foldable literals (pi, e) and contextual snapshots
+        // (x, y, z, count, time) are NOT here — they may be captured eagerly. Seed of the
+        // scmutils numerical tower: values-now vs generators-per-access.
+        this.deferred = new Set(['random']);
+
+        // TODO: Numerical Tower extensible hierarchy of generic mathematical operations that
+        // transparently handles type promotion and combinations
+        // The hierarchy might follow this standard nesting:
+        // Integers Rationals Reals Complex Numbers (deal w up/down tuples, vectors, and differential forms)
+
+        
+        this.userFunctions = null;
     }
 
     namespace_check(val) {
-        return val in this.constants
-
+        if (val in this.constants) return true
+        // Dotted paths (ambient.property) resolve through evaluator chain
+        if (typeof val === 'string' && val.includes('.') && this.resolveExternal) return true
+        return false
     }
 
     run(ast, context) {
@@ -33,14 +48,17 @@ export class Evaluator {
             if (/^\d+\.?\d*$/.test(ast.value)) {
                 return parseFloat(ast.value);
             }
+            else if (context && ast.value in context) {
+                return context[ast.value];
+            }
             else if (ast.value in this.constants) {
                 return this.constants[ast.value]();
             } else {
                 return this.resolveContext(ast.value, context);
             }
         } else if (ast.type === 'function') {
-            const arg = this.run(ast.children[0], context);
-            return this.applyFunction(ast.value, arg);
+            const args = ast.children.map(child => this.run(child, context));
+            return this.applyFunction(ast.value, args, context);
         } else if (ast.type === 'operator') {
             const left = this.run(ast.children[0], context);
             const right = this.run(ast.children[1], context);
@@ -60,12 +78,26 @@ export class Evaluator {
         return radians * (180 / Math.PI);
     }
 
-    applyFunction(func, arg) {
+    applyFunction(func, args, context) {
         if (func in this.functions) {
-            const evals = this.functions[func](arg)
+            const evals = this.functions[func](args[0])
             if (Number.isSafeInteger(evals)) return evals
             const precision = 100000000000000;
             return Math.round((evals)*precision)/precision
+        }
+        if (this.userFunctions) {
+            const key = `${func}:${args.length}`;
+            const entry = this.userFunctions.get(key);
+            if (entry) {
+                const [body, params] = entry;
+                const childContext = { ...context };
+                params.forEach((p, i) => { childContext[p] = args[i]; });
+                return this.run(body, childContext);
+            }
+        }
+        if (this.resolveExternal) {
+            const result = this.resolveExternal(func, args);
+            if (result !== undefined) return result;
         }
         throw new Error(`Undefined function: ${func}`);
     }
@@ -73,6 +105,10 @@ export class Evaluator {
     resolveContext(variable, context) {
         if (variable in context) {
             return context[variable];
+        }
+        if (this.resolveExternal) {
+            const resolved = this.resolveExternal(variable);
+            if (resolved !== undefined) return resolved;
         }
         throw new Error(`Undefined variable: ${variable}`);
     }

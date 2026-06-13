@@ -4,8 +4,8 @@ defmodule Dojo.MixProject do
   def project do
     [
       app: :dojo,
-      version: "0.3.5",
-      elixir: "~> 1.18",
+      version: "0.4.0",
+      elixir: "~> 1.20",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() in [:prod, :local],
       aliases: aliases(),
@@ -79,7 +79,7 @@ defmodule Dojo.MixProject do
       {:html_sanitize_ex, "~> 1.4"},
       {:makeup, "~> 1.1"},
       {:makeup_elixir, "~> 0.16"},
-      {:burrito, "~> 1.5"},
+      {:burrito, [github: "paperlands/burrito", commit: "latest"]},
       {:partisan, partisan_dep()},
       # Protocol Buffers for safe, non-atom signaling
       {:recon, "~> 2.5"},
@@ -91,7 +91,7 @@ defmodule Dojo.MixProject do
   defp usage_rules do
     [
       file: "CLAUDE.md",
-      usage_rules: ["usage_rules:all"],
+      usage_rules: [],
       skills: [
         location: ".claude/skills",
         build: [
@@ -109,7 +109,7 @@ defmodule Dojo.MixProject do
     if path = System.get_env("PARTISAN_PATH") do
       [path: path]
     else
-      [github: "paperlands/partisan", commit: "c5309d4"]
+      [github: "paperlands/partisan", commit: "latest"]
     end
   end
 
@@ -152,7 +152,8 @@ defmodule Dojo.MixProject do
             macos: [os: :darwin, cpu: :x86_64],
             macos_silicon: [os: :darwin, cpu: :aarch64],
             linux: [os: :linux, cpu: :x86_64],
-            windows: [os: :windows, cpu: :x86_64]
+            windows: [os: :windows, cpu: :x86_64],
+            windows_x86: [os: :windows, cpu: :x86]
           ]
         ]
       ]
@@ -182,12 +183,40 @@ defmodule Dojo.MixProject do
     end
   end
 
+  # Each Windows arch gets its own installer, rendered from the shared EEx
+  # template. `:source` is the Burrito-emitted binary (target name keyed),
+  # installed under the stable name dojo_windows.exe so the firewall/shortcut
+  # logic is arch-agnostic. `:label` is the artifact arch in filenames
+  # (matches the x86_64/x86 convention used by release.yml).
+  defp windows_installer_variants do
+    [
+      %{
+        label: "x86_64",
+        arch: "x64",
+        source: "dojo_windows.exe",
+        program_files: "$PROGRAMFILES64",
+        reg_view: "64",
+        vc_redist: "VC_redist.x64.exe",
+        vcredist_key: "SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64",
+        guard_running_x64: true
+      },
+      %{
+        label: "x86",
+        arch: "x86",
+        source: "dojo_windows_x86.exe",
+        program_files: "$PROGRAMFILES",
+        reg_view: "32",
+        vc_redist: "VC_redist.x86.exe",
+        vcredist_key: "SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x86",
+        guard_running_x64: false
+      }
+    ]
+  end
+
   defp build_windows_installer(%Mix.Release{version: version}) do
     template = "rel/packaging/installer.nsi.eex"
 
     if File.exists?(template) do
-      IO.puts("==> Building Windows installer with NSIS")
-
       # Stage resources into burrito_out/ where NSIS expects them
       File.mkdir_p!("burrito_out/resources")
 
@@ -197,24 +226,53 @@ defmodule Dojo.MixProject do
 
       File.copy!("rel/packaging/resources/app-icon.ico", "burrito_out/app-icon.ico")
 
-      # Render the templated .nsi with version info
       erts_version = :erlang.system_info(:version) |> to_string()
+      template_src = File.read!(template)
 
-      rendered =
-        template
-        |> File.read!()
-        |> EEx.eval_string(assigns: [app_version: version, erts_version: erts_version])
-
-      nsi = "burrito_out/installer.nsi"
-      File.write!(nsi, rendered)
-      IO.puts("    Rendered #{template} → #{nsi} (v#{version}, ERTS #{erts_version})")
-
-      case System.cmd("makensis", [nsi], stderr_to_stdout: true) do
-        {_, 0} -> IO.puts("    NSIS build successful")
-        {output, code} -> Mix.raise("makensis failed (exit #{code}): #{output}")
-      end
+      Enum.each(windows_installer_variants(), fn variant ->
+        build_windows_installer_variant(template_src, version, erts_version, variant)
+      end)
     else
       IO.puts("==> Skipping NSIS — #{template} not found")
+    end
+  end
+
+  defp build_windows_installer_variant(template_src, version, erts_version, variant) do
+    binary = "burrito_out/#{variant.source}"
+
+    if File.exists?(binary) do
+      IO.puts("==> Building Windows #{variant.label} installer with NSIS")
+
+      rendered =
+        EEx.eval_string(template_src,
+          assigns: [
+            app_version: version,
+            erts_version: erts_version,
+            label: variant.label,
+            arch: variant.arch,
+            source_binary: variant.source,
+            program_files: variant.program_files,
+            reg_view: variant.reg_view,
+            vc_redist: variant.vc_redist,
+            vcredist_key: variant.vcredist_key,
+            guard_running_x64: variant.guard_running_x64
+          ]
+        )
+
+      nsi = "burrito_out/installer_#{variant.arch}.nsi"
+      File.write!(nsi, rendered)
+
+      IO.puts("    Rendered → #{nsi} (#{variant.label}, v#{version}, ERTS #{erts_version})")
+
+      case System.cmd("makensis", [nsi], stderr_to_stdout: true) do
+        {_, 0} ->
+          IO.puts("    NSIS #{variant.label} build successful")
+
+        {output, code} ->
+          Mix.raise("makensis (#{variant.label}) failed (exit #{code}): #{output}")
+      end
+    else
+      IO.puts("==> Skipping NSIS #{variant.label} — #{binary} not found")
     end
   end
 

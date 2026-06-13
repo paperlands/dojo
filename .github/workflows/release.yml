@@ -13,8 +13,8 @@ permissions:
 
 env:
   MIX_ENV: local
-  ELIXIR_VERSION: "1.19.5"
-  OTP_VERSION: "28.4.2"
+  ELIXIR_VERSION: "1.20.1"
+  OTP_VERSION: "29.0.1"
   ZIG_VERSION: "0.15.2"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -90,11 +90,13 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -yq nsis genisoimage xz-utils
 
-      - name: Download VC++ Redistributable
+      - name: Download VC++ Redistributables
         run: |
           curl -fSL -o rel/packaging/resources/VC_redist.x64.exe \
             "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-          ls -lh rel/packaging/resources/VC_redist.x64.exe
+          curl -fSL -o rel/packaging/resources/VC_redist.x86.exe \
+            "https://aka.ms/vs/17/release/vc_redist.x86.exe"
+          ls -lh rel/packaging/resources/VC_redist.x*.exe
 
       - name: Install Elixir dependencies
         run: |
@@ -125,7 +127,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           test -f "burrito_out/dojo-${VERSION}-linux-x86_64" || { echo "::error::Missing Linux binary"; exit 1; }
-          test -f "burrito_out/PaperLandDojo-${VERSION}-windows-x86_64-setup.exe" || { echo "::error::Missing Windows installer"; exit 1; }
+          test -f "burrito_out/PaperLandDojo-${VERSION}-windows-x86_64-setup.exe" || { echo "::error::Missing Windows x86_64 installer"; exit 1; }
+          test -f "burrito_out/PaperLandDojo-${VERSION}-windows-x86-setup.exe" || { echo "::error::Missing Windows x86 (32-bit) installer"; exit 1; }
           test -f "burrito_out/PaperLandDojo-${VERSION}-macos-x86_64.dmg" || { echo "::error::Missing macOS x86_64 DMG"; exit 1; }
           test -f "burrito_out/PaperLandDojo-${VERSION}-macos-arm64.dmg" || { echo "::error::Missing macOS ARM64 DMG"; exit 1; }
           echo "All artifacts verified."
@@ -140,11 +143,14 @@ jobs:
           sudo apt-get install -yq osslsigncode
           echo "$CODE_SIGN_CERT" | base64 -d > /tmp/cert.pem
           echo "$CODE_SIGN_KEY" | base64 -d > /tmp/key.pem
-          INSTALLER="burrito_out/PaperLandDojo-${VERSION}-windows-x86_64-setup.exe"
-          osslsigncode sign -certs /tmp/cert.pem -key /tmp/key.pem \
-            -n "PaperLand Dojo" -t http://timestamp.digicert.com \
-            -in "$INSTALLER" -out "${INSTALLER}.signed"
-          mv "${INSTALLER}.signed" "$INSTALLER"
+          for LABEL in x86_64 x86; do
+            INSTALLER="burrito_out/PaperLandDojo-${VERSION}-windows-${LABEL}-setup.exe"
+            [ -f "$INSTALLER" ] || { echo "Skipping sign — $INSTALLER not found"; continue; }
+            osslsigncode sign -certs /tmp/cert.pem -key /tmp/key.pem \
+              -n "PaperLand Dojo" -t http://timestamp.digicert.com \
+              -in "$INSTALLER" -out "${INSTALLER}.signed"
+            mv "${INSTALLER}.signed" "$INSTALLER"
+          done
           rm -f /tmp/cert.pem /tmp/key.pem
 
       - name: Create git tag
@@ -163,6 +169,7 @@ jobs:
             --generate-notes \
             "burrito_out/dojo-${VERSION}-linux-x86_64" \
             "burrito_out/PaperLandDojo-${VERSION}-windows-x86_64-setup.exe" \
+            "burrito_out/PaperLandDojo-${VERSION}-windows-x86-setup.exe" \
             "burrito_out/PaperLandDojo-${VERSION}-macos-x86_64.dmg" \
             "burrito_out/PaperLandDojo-${VERSION}-macos-arm64.dmg"
 

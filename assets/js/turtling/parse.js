@@ -32,7 +32,7 @@ const CLOSERS = { '"': '"', "'": "'", '[': ']', '(': ')' };
 const OPENS_BRACKET = { '[': 1, '(': 1 };
 
 // Block keyword lookup (O(1))
-const BLOCK_KW = { for: 1, loop: 1, def: 1, draw: 1, when: 1 };
+const BLOCK_KW = { for: 1, loop: 1, def: 1, draw: 1, when: 1, as: 1 };
 
 
 
@@ -232,8 +232,10 @@ function parseArguments(tokens) {
                     bufStart = i;
                 }
             } else {
-                // Quote type - no nesting
-                if (token.length > 1 && lastCh === closer) {
+                // Quote type - check if quote closes within the token
+                // "mice1".x has closing " at index 6 even though lastCh is 'x'
+                const closeIdx = token.indexOf(closer, 1);
+                if (closeIdx !== -1) {
                     args.push(new ASTNode('Argument', token));
                     closer = null;
                 } else {
@@ -350,12 +352,32 @@ function parseStatement(tokens, state) {
         return new ASTNode('Define', name, parseBlock(state), { args });
     }
     
-    // When: when <pattern> do
+    // When: when <expr> do  OR  when 'eventname' [binding] do
     if (kw === 'when') {
         if (len < 3) throw new Error("'when' requires checking truthiness");
-        return new ASTNode('When', tokens[1], parseBlock(state));
+        const firstToken = tokens[1]
+        const isEvent = /^['"]/.test(firstToken)
+
+        if (isEvent) {
+            // Event mode: when 'name' [binding] do
+            const meta = { event: true }
+            if (len > 3) meta.binding = tokens[2]
+            return new ASTNode('When', firstToken, parseBlock(state), meta)
+        } else {
+            // Conditional mode: join all tokens between 'when' and 'do'
+            const expr = tokens.slice(1, len - 1).join(' ')
+            return new ASTNode('When', expr, parseBlock(state))
+        }
     }
-    
+
+    // Ambient: as <name> [<frame>] do ... end
+    if (kw === 'as') {
+        if (len < 3) throw new Error("'as' requires assistant name");
+        const meta = {}
+        if (len > 3) meta.frame = tokens[2]
+        return new ASTNode('Ambient', tokens[1], parseBlock(state), meta);
+    }
+
     throw new Error(`Unknown keyword: ${kw}`);
 }
 
@@ -398,17 +420,19 @@ export function printAST(ast) {
                 out.push(indent + END);
                 break;
             
-            case 'When':
-                out.push(`${indent}when ${node.value} do`);
+            case 'When': {
+                const binding = node.meta?.binding ? ` ${node.meta.binding}` : ''
+                out.push(`${indent}when ${node.value}${binding} do`);
                 node.children.forEach(c => visit(c, depth + 1));
                 out.push(indent + END);
                 break;
+            }
             
             case 'Define': {
                 const args = node.meta.args || [];
                 const len = args.length;
                 let argStr = '';
-                
+
                 if (len > 0) {
                     argStr = args[0].value;
                     for (let i = 1; i < len; i++) {
@@ -416,11 +440,19 @@ export function printAST(ast) {
                     }
                     argStr = ' ' + argStr;
                 }
-                
+
                 out.push(`${indent}def ${node.value}${argStr} do`);
                 node.children.forEach(c => visit(c, depth + 1));
                 out.push(indent + END);
                 break;
+            }
+
+            case 'Ambient': {
+                const mod = node.meta?.frame ? ` ${node.meta.frame}` : ''
+                out.push(`${indent}as ${node.value}${mod} do`)
+                node.children.forEach(c => visit(c, depth + 1))
+                out.push(indent + END)
+                break
             }
         }
     }

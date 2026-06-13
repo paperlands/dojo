@@ -34,11 +34,16 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_params(params, _url, socket) do
-    if connected?(socket), do: Dojo.PubSub.subscribe("dojo:hotspot")
+    clan = params["clan"] || "PaperLand"
+
+    if connected?(socket) do
+      Dojo.PubSub.subscribe("dojo:hotspot")
+      Dojo.Nerve.subscribe(clan)
+    end
 
     {:noreply,
      socket
-     |> join_clan(params["clan"] || "PaperLand")
+     |> join_clan(clan)
      |> sync_session()}
   end
 
@@ -48,17 +53,12 @@ defmodule DojoWeb.ShellLive do
     |> start_async(:list_disciples, fn -> Dojo.Class.list_disciples("shell:" <> clan) end)
   end
 
-  defp sync_session(
-         %{assigns: %{session: %Session{name: name, last_opened: time}, clan: clan}} = socket
-       )
+  defp sync_session(%{assigns: %{session: %Session{name: name} = session, clan: clan}} = socket)
        when is_binary(name) do
     parent = self()
 
-    # Compute user_id: combine name + first login time for unique session identity
-    # Same logic as hatchTurtle to ensure consistency
-    user_id =
-      (name <> Base.encode64(to_string(time)))
-      |> String.replace(~r/[^a-zA-Z0-9]/, "")
+    # The one identity derivation — Session.user_id/1 (decision 007).
+    user_id = Session.user_id(session)
 
     socket
     |> start_async(:join_disciples, fn ->
@@ -128,30 +128,53 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_async(:follow_code, {:ok, %Dojo.Turtle{} = turtle}, socket) do
-    outershell = socket.assigns.outershell
+    prev = socket.assigns.outershell.origin
+    shell = OuterShell.observe(socket.assigns.outershell, turtle)
+    socket = assign(socket, :outershell, shell)
 
-    {:noreply,
-     socket
-     |> assign(:outershell, %{outershell | state: turtle.state, last_active: turtle.time})
-     |> push_event("seeOuterShell", Map.from_struct(turtle))}
+    # A hatch with unchanged code is just a preview/path bump — advance time
+    # (via observe above) but don't react: no re-render, re-stream, or re-run.
+    if OuterShell.code_changed?(prev, turtle) do
+      # The friend's status always flows to the nerve — even in a frozen draft,
+      # where the editor push is held back so it won't disturb your draft.
+      socket = push_event(socket, "outerSignal", outer_signal(turtle, shell))
+
+      socket =
+        case OuterShell.render_intent(shell) do
+          {:push, source} ->
+            push_event(socket, "seeOuterShell", outer_shell_payload(source, shell))
+
+          :hold ->
+            socket
+        end
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_async(:follow_code, {:ok, _}, socket), do: {:noreply, socket}
   def handle_async(:follow_code, {:exit, _reason}, socket), do: {:noreply, socket}
 
-  # presence handlers — keyed by reg_key from node tuple (stable unique identity)
+  # presence handlers — keyed by reg_key (a meta field; Disciple.reg_key/1
+  # stays tolerant of legacy metas where it rode inside the node tuple).
+  # The `disciples` assign is a DECLARED READ-ONLY PROJECTION of Tracker
+  # state + Table meta (Phase 4): written only here and by the pull/hatch
+  # meta refreshers — never written back to any owner.
 
   def handle_info(
-        {:join, "class:shell" <> _, %{node: {reg_key, _}} = disciple},
+        {:join, "class:shell" <> _, disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
-    {:noreply, assign(socket, :disciples, Map.put(d, reg_key, disciple))}
+    {:noreply, assign(socket, :disciples, Map.put(d, Dojo.Disciple.reg_key(disciple), disciple))}
   end
 
   def handle_info(
-        {:leave, "class:shell" <> _, %{node: {reg_key, _}, phx_ref: ref}},
+        {:leave, "class:shell" <> _, %{phx_ref: ref} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
+    reg_key = Dojo.Disciple.reg_key(disciple)
     # only delete if the leaving ref matches the current ref for this reg_key
     # prevents stale-leave race when Gate.change regenerates phx_ref
     if d[reg_key][:phx_ref] == ref do
@@ -208,6 +231,52 @@ defmodule DojoWeb.ShellLive do
     {:noreply, Session.apply_setting(socket, key, value)}
   end
 
+  # --- OuterShell LiveComponent messages ---
+
+  def handle_info({:outer_shell, :close}, socket) do
+    {:noreply, reset_outershell(socket)}
+  end
+
+  def handle_info({:outer_shell, :toggle_follow}, socket) do
+    # The LiveView owns the authoritative follow flag; the component emits a bare
+    # intent and we flip our own value — no stale read round-trips through the UI.
+    {:noreply, update(socket, :outershell, &%{&1 | follow: !&1.follow})}
+  end
+
+  def handle_info({:outer_shell, :recall}, socket) do
+    {:noreply, apply_outer_view(socket, OuterShell.recall(socket.assigns.outershell))}
+  end
+
+  def handle_info({:outer_shell, :watch}, socket) do
+    {:noreply, apply_outer_view(socket, OuterShell.watch(socket.assigns.outershell))}
+  end
+
+  def handle_info({:outer_shell, :toggle_stream}, socket) do
+    shell = OuterShell.toggle_stream(socket.assigns.outershell)
+    live = shell.view == :draft and shell.stream
+
+    socket =
+      socket
+      |> apply_outer_view(shell)
+      |> push_event("outerLive", %{live: live})
+
+    # Going live: pull their freshest code so the diff baseline (and your running
+    # draft's reference) is current right away, not at the next hatch.
+    {:noreply, if(live, do: fetch_latest(socket), else: socket)}
+  end
+
+  # --- Nerve signal relay ---
+
+  def handle_info({Dojo.PubSub, :nerve, signal}, socket) do
+    ref =
+      case find_reg_key(socket.assigns.disciples, signal.source) do
+        nil -> nil
+        key -> %{key: key}
+      end
+
+    {:noreply, push_event(socket, "nerveIncoming", Map.put(signal, :ref, ref))}
+  end
+
   def handle_info(event, socket) do
     IO.inspect(event, label: "pokemon catch event")
 
@@ -254,14 +323,12 @@ defmodule DojoWeb.ShellLive do
   def handle_event(
         "hatchTurtle",
         %{"state" => _state} = payload,
-        %{assigns: %{class: class, clan: clan, session: %{name: name, last_opened: time}}} =
+        %{assigns: %{class: class, clan: clan, session: %Session{name: name} = session}} =
           socket
       )
       when is_binary(name) do
-    # this is user sesion first logintime
-    id =
-      (name <> Base.encode64(to_string(time)))
-      |> String.replace(~r/[^a-zA-Z0-9]/, "")
+    # The one identity derivation — Session.user_id/1 (decision 007).
+    id = Session.user_id(session)
 
     Dojo.Turtle.reflect(payload, %{topic: :hatch, class: class, node: node(), id: id, clan: clan})
 
@@ -282,20 +349,19 @@ defmodule DojoWeb.ShellLive do
         %{assigns: %{disciples: dis, class: _class}} = socket
       )
       when is_binary(addr) do
-    case Dojo.Table.last(dis[addr][:node], :hatch) do
-      %Dojo.Turtle{state: state} = table_state ->
+    case Dojo.Table.last(Dojo.Disciple.table_address(dis[addr]), :hatch) do
+      %Dojo.Turtle{} = turtle ->
+        outershell =
+          OuterShell.observe(
+            %OuterShell{addr: addr, active: true, name: "#{dis[addr][:name]}"},
+            turtle
+          )
+
         {:noreply,
          socket
-         |> push_event("seeOuterShell", Map.from_struct(table_state))
-         |> assign(
-           :outershell,
-           %OuterShell{
-             state: state,
-             addr: addr,
-             active: true,
-             name: "#{dis[addr][:name]}"
-           }
-         )}
+         |> push_event("seeOuterShell", outer_shell_payload(turtle, outershell))
+         |> push_event("outerSignal", outer_signal(turtle, outershell))
+         |> assign(:outershell, outershell)}
 
       _ ->
         {:noreply, socket}
@@ -303,30 +369,26 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_event("seeTurtle", _, socket) do
-    {:noreply,
-     socket
-     |> assign(
-       :outershell,
-       %OuterShell{}
-     )}
-  end
-
-  def handle_event("followTurtle", _, %{assigns: %{outershell: shell}} = socket) do
-    {:noreply,
-     socket
-     |> assign(
-       :outershell,
-       %{shell | follow: !shell.follow}
-     )}
+    {:noreply, reset_outershell(socket)}
   end
 
   def handle_event("closeTurtle", _, socket) do
+    {:noreply, reset_outershell(socket)}
+  end
+
+  # The Shell JS hook reports the user started editing in the outer viewer.
+  # The editable merge is already configured client-side (beginDraft); here we
+  # only record the view so the server-rendered indicator reflects draft state.
+  # We do NOT push back — that would overwrite the draft the user is typing.
+  def handle_event("outerDraft", _, socket) do
+    # Draft auto-runs over working code, but waits for the toggle over an error.
+    # OuterShell.draft/1 sets `stream` from the friend's state; JS runs on live.
+    shell = OuterShell.draft(socket.assigns.outershell)
+
     {:noreply,
      socket
-     |> assign(
-       :outershell,
-       %OuterShell{}
-     )}
+     |> assign(:outershell, shell)
+     |> push_event("outerLive", %{live: shell.view == :draft and shell.stream})}
   end
 
   # Handle the viewport update event from the hook (Decision 003, Layer 3 — windowed pull)
@@ -386,6 +448,14 @@ defmodule DojoWeb.ShellLive do
     {:noreply, assign(socket, focused_name: new_name)}
   end
 
+  # pushEvent ↔ envelope adapter (Phase 3): the client's `ts` rides through
+  # untouched — Dojo.Nerve annotates received_at, never replaces (gw-t-clock).
+  def handle_event("nerveGlobal", %{"target" => target, "body" => body} = params, socket) do
+    %{assigns: %{clan: clan, session: %{name: name}}} = socket
+    Dojo.Nerve.chat(clan, name, target, body, params["ts"])
+    {:noreply, socket}
+  end
+
   # pokemon clause
   def handle_event(
         e,
@@ -424,8 +494,9 @@ defmodule DojoWeb.ShellLive do
   # Single-key pull: returns %{path, state, time} or nil. Never crashes.
   # Used both by batch pull_metadata and by apply_hatch_version for path hydration.
   defp pull_one_meta(disciples, reg_key) do
-    with %{node: node} <- disciples[reg_key],
-         %{path: _, state: _, time: _} = meta <- Dojo.Table.last_meta(node, :hatch) do
+    with %{node: _} = disciple <- disciples[reg_key],
+         %{path: _, state: _, time: _} = meta <-
+           Dojo.Table.last_meta(Dojo.Disciple.table_address(disciple), :hatch) do
       meta
     else
       _ -> nil
@@ -486,10 +557,11 @@ defmodule DojoWeb.ShellLive do
   defp maybe_follow_code(socket, reg_key, time) do
     %{outershell: outershell, disciples: dis} = socket.assigns
 
-    if outershell.follow and outershell.addr == reg_key and dis[reg_key][:node] do
-      if (time || 0) > outershell.last_active do
+    if OuterShell.wants_updates?(outershell) and outershell.addr == reg_key and
+         dis[reg_key][:node] do
+      if (time || 0) > OuterShell.last_time(outershell) do
         start_async(socket, :follow_code, fn ->
-          Dojo.Table.last(dis[reg_key][:node], :hatch)
+          Dojo.Table.last(Dojo.Disciple.table_address(dis[reg_key]), :hatch)
         end)
       else
         socket
@@ -499,205 +571,58 @@ defmodule DojoWeb.ShellLive do
     end
   end
 
+  # Fetch the friend's latest now, bypassing the time gate — used on go-live so
+  # the merge baseline jumps to their current code immediately.
+  defp fetch_latest(socket) do
+    %{outershell: o, disciples: dis} = socket.assigns
+
+    if o.addr && dis[o.addr][:node] do
+      start_async(socket, :follow_code, fn ->
+        Dojo.Table.last(Dojo.Disciple.table_address(dis[o.addr]), :hatch)
+      end)
+    else
+      socket
+    end
+  end
+
   defp bump_path_time(nil, _time), do: nil
   defp bump_path_time(path, time), do: Regex.replace(~r/\?t=\d+/, path, "?t=#{time}")
 
-  def outershell(assigns) do
-    ~H"""
-    <div class="relative outershell  pt-20 right-2 w-full lg:-left-1/2 lg:w-[150%] ">
-      <div class="flex items-start justify-between gap-2 mb-3">
-        <span
-          id="top-head"
-          class="text-lg font-bold text-secondary-content flex-1 leading-tight"
-        >
-          {Session.t(@locale, "@%{addr}'s code", addr: @outershell.name)}
-        </span>
-
-        <span
-          phx-click="followTurtle"
-          class="pointer-events-auto cursor-pointer relative flex h-2 w-2 flex-shrink-0 mt-1 mr-3 transition-colors delay-150"
-        >
-          <span class={[
-            "absolute inline-flex h-full w-full rounded-full  opacity-75",
-            (@outershell.state == :error && "bg-error") ||
-              (@outershell.follow && "bg-accent-content animate-ping") || "bg-primary"
-          ]}>
-          </span>
-          <span class="relative inline-flex rounded-full h-2 w-2 bg-primaryAccent"></span>
-        </span>
-      </div>
-
-      <div
-        id="outerenv"
-        phx-update="ignore"
-        class="overflow-y-scroll relative border pointer-events-auto rounded-lg h-[50vh]  border-amber-600/20 dark-scrollbar backdrop-blur-xs scrollbar-hide cursor-text"
-      >
-        <button
-          phx-click="closeTurtle"
-          class="z-50 absolute flex  items-center justify-center w-8 h-8 transition-all duration-300 transform border-2 rounded-full opacity-50 pointer-events-auto backdrop-blur-sm hover:scale-110 group hover:opacity-100 top-2 right-2 border-accent focus-within:border-none"
-        >
-          <!-- Base Crosshair -->
-          <div class="absolute inset-0 flex items-center justify-center">
-            <svg
-              class="w-4 h-4 transition-colors text-error text-shadow-error group-hover:text-primary-content"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </div>
-        </button>
-        <!--
-        <div class="relative z-4 rounded-sm pointer-events-auto cursor-text border-none h-full" >
-        <textarea
-          phx-update="ignore"
-          id="outershell"
-          phx-hook="Shell"
-          data-target="outer"/>
-      </div>
-      -->
-        <div
-          phx-update="ignore"
-          id="outershell"
-          phx-hook="Shell"
-          class="relative z-40 rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full"
-          data-target="outer"
-        />
-      </div>
-      <div
-        class="flex"
-        class="-bottom-1/12  transition-colors delay-150 duration-300 overflow-y-auto pb-1 "
-      >
-        <div
-          phx-update="ignore"
-          id="outer-output"
-          class="w-1/2 left-2 flex-auto opacity-80 font-mono border-none text-primary text-sm"
-        />
-
-        <div
-          phx-update="ignore"
-          id="outermerge-output"
-          class="w-1/2 flex-auto font-mono  opacity-80 border-none text-primary text-sm"
-        />
-      </div>
-    </div>
-    """
+  defp find_reg_key(disciples, name) do
+    Enum.find_value(disciples, fn {key, %{name: n}} ->
+      if n == name, do: key
+    end)
   end
 
-  def nerve(assigns) do
-    ~H"""
-    <div class="relative hidden rightthird nerve pt-10 right-2 w-full lg:-left-1/5 lg:w-[120%] ">
-      <div class="h-full w-full max-w-2xl mx-auto">
-        <div class="relative h-full overflow-hidden">
-          <div class="h-full overflow-y-auto space-y-1 text-sm">
-            <p class="text-primary-content">远山如黛</p>
-            <p class="text-primary">The mountains fade into mist</p>
-            <p class="text-primary-content">江流天地外</p>
-            <p class="text-primary">Rivers flow beyond heaven and earth</p>
-          </div>
+  # Apply a view/stream change: persist it, then push the source if one is due.
+  # The view/stream ride the seeOuterShell payload, so JS configures the editor
+  # (read-only watch vs editable merge) from that alone.
+  # The single definition of "close/reset the outershell" — reached by the
+  # component's :close intent, the close button, and switching away (seeTurtle).
+  defp reset_outershell(socket), do: assign(socket, :outershell, %OuterShell{})
 
-          <div class="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-transparent to-black/100   pointer-events-none">
-          </div>
-        </div>
-      </div>
-    </div>
-    """
+  defp apply_outer_view(socket, %OuterShell{} = shell) do
+    socket = assign(socket, :outershell, shell)
+
+    case OuterShell.render_intent(shell) do
+      {:push, source} -> push_event(socket, "seeOuterShell", outer_shell_payload(source, shell))
+      :hold -> socket
+    end
   end
 
-  def memory_well(assigns) do
-    ~H"""
-    <!-- Memory Well Component (memory_well.html.heex) -->
-    <div class="fixed flex flex-col w-64 top-1/4 h-4/5 right-5 bottom-20">
-      <!-- Header -->
-      <div class="flex items-center justify-between p-4 mb-2 border-b border-amber-600/50">
-        <h2 class="text-xl font-bold text-amber-200">Memory Well</h2>
-        
-    <!-- View Toggle -->
-        <div class="flex space-x-2">
-          <button
-            phx-click="store-memory"
-            class="flex items-center justify-center w-8 h-8 rounded-full border-2 border-primary/50 backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[-45deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0"
-          >
-            <.save class="w-4 h-4 text-amber-400" />
-          </button>
-        </div>
-      </div>
-      
-    <!-- Viewing Pane -->
-      <div class="flex-1 overflow-y-auto p-2 dark-scrollbar">
-        <div class="space-y-3">
-          <%= for mmr <- @memories do %>
-            <div
-              :if={Map.has_key?(mmr, :meta)}
-              class="flex items-center p-3 transition-colors rounded-lg bg-primary-900/70 hover:bg-primary-800/70"
-            >
-              <!-- Thumbnail -->
-              <div class="flex-shrink-0 w-16 h-16 mr-4 overflow-hidden rounded">
-                <img src={mmr.meta.path} class="object-cover w-full h-full" />
-              </div>
-              
-    <!-- Info -->
-              <div class="flex-1 min-w-0">
-                <h3 class="text-sm font-bold text-primary-content truncate">{"title here"}</h3>
-                <p class="text-xs text-amber-400/60">{"date here"}</p>
-              </div>
-              
-    <!-- Actions -->
-              <div class="flex ml-2 space-x-2">
-                <button
-                  phx-click="view-item"
-                  phx-value-id={mmr.phx_ref}
-                  class="p-2 transition-colors rounded-full bg-amber-900/70 hover:bg-amber-800"
-                >
-                  <svg
-                    class="w-4 h-4 text-primary-content"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <circle cx="11" cy="11" r="8" />
-                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                  </svg>
-                </button>
-                <button
-                  phx-click="download-item"
-                  phx-value-id={mmr.phx_ref}
-                  class="p-2 transition-colors rounded-full bg-amber-900/70 hover:bg-amber-800"
-                >
-                  <svg
-                    class="w-4 h-4 text-primary-content"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          <% end %>
-        </div>
-      </div>
-      <!-- Decorative corners -->
-      <div class="absolute w-3 h-3 border-t-2 border-l-2 -top-2 -left-4 border-amber-400"></div>
-      <div class="absolute w-3 h-3 border-t-2 border-r-2 -top-2 right-1 border-amber-400"></div>
-      <div class="absolute w-3 h-3 border-b-2 border-l-2 -bottom-2 -left-4 border-amber-400"></div>
-      <div class="absolute w-3 h-3 border-b-2 border-r-2 -bottom-2 right-1 border-amber-400"></div>
-    </div>
-    """
+  # The friend's execution status for the remote nerve — independent of whether
+  # the editor content is pushed (held back during a frozen draft).
+  defp outer_signal(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
+    %{state: turtle.state, message: turtle.message, name: shell.name}
+  end
+
+  defp outer_shell_payload(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
+    turtle
+    |> Map.from_struct()
+    |> Map.put(:addr, shell.addr)
+    |> Map.put(:origin_name, shell.name)
+    |> Map.put(:view, shell.view)
+    |> Map.put(:stream, shell.stream)
   end
 
   def export(assigns) do

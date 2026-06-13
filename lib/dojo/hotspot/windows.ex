@@ -91,17 +91,16 @@ defmodule Dojo.Hotspot.Windows do
 
       exe ->
         case System.cmd(exe, ["-NoProfile", "-Command", script], stderr_to_stdout: true) do
-          {"NoWifiAdapter" <> _, _} ->
-            {:error, :no_wifi_adapter}
-
           {output, 0} ->
             case output |> String.trim() |> String.split("|") do
               ["On" <> _, ssid] -> {:ok, %{active: true, ssid: ssid, interface: nil, ip: nil}}
               _ -> {:ok, %{active: false, ssid: nil, interface: nil, ip: nil}}
             end
 
-          _ ->
-            {:ok, %{active: false, ssid: nil, interface: nil, ip: nil}}
+          {output, _code} ->
+            if no_wifi_adapter?(output),
+              do: {:error, :no_wifi_adapter},
+              else: {:ok, %{active: false, ssid: nil, interface: nil, ip: nil}}
         end
     end
   end
@@ -117,8 +116,12 @@ defmodule Dojo.Hotspot.Windows do
 
       exe ->
         case System.cmd(exe, ["-NoProfile", "-Command", script], stderr_to_stdout: true) do
-          {name, 0} when name != "" -> {:ok, String.trim(name)}
-          _ -> {:error, :no_wifi}
+          {name, 0} ->
+            trimmed = String.trim(name)
+            if trimmed != "", do: {:ok, trimmed}, else: {:error, :no_wifi}
+
+          _ ->
+            {:error, :no_wifi}
         end
     end
   end
@@ -135,10 +138,6 @@ defmodule Dojo.Hotspot.Windows do
 
       exe ->
         case System.cmd(exe, ["-NoProfile", "-Command", script], stderr_to_stdout: true) do
-          {"NoWifiAdapter" <> _, _} ->
-            Logger.warning("[Hotspot] #{action} failed: no Wi-Fi adapter found")
-            {:error, :no_wifi_adapter}
-
           {output, 0} ->
             if String.contains?(output, "Success") do
               Logger.info("[Hotspot] #{action} succeeded (Windows)")
@@ -149,9 +148,16 @@ defmodule Dojo.Hotspot.Windows do
             end
 
           {output, code} ->
-            Logger.warning("[Hotspot] PowerShell #{action} failed (#{code}): #{output}")
-            {:error, {:hotspot_failed, String.trim(output)}}
+            if no_wifi_adapter?(output) do
+              Logger.warning("[Hotspot] #{action} failed: no Wi-Fi adapter found")
+              {:error, :no_wifi_adapter}
+            else
+              Logger.warning("[Hotspot] PowerShell #{action} failed (#{code}): #{output}")
+              {:error, {:hotspot_failed, String.trim(output)}}
+            end
         end
     end
   end
+
+  defp no_wifi_adapter?(output), do: String.contains?(output, "NoWifiAdapter")
 end

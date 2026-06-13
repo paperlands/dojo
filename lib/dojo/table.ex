@@ -5,6 +5,25 @@ defmodule Dojo.Table do
   @ttl 10 * 60 * 1000
   @debounce_ms 100
 
+  @typedoc """
+  A table's GenServer state — a tuplespace per learner.
+
+  `last` OWNS each disciple's latest stores keyed by event (`:hatch`, …); the
+  Cache is its single read-only projection (decision 008). The `%{state | …}`
+  update path throughout this module is now checked against this shape by the
+  1.20 type system, so a typo'd key is a compile-time bug.
+  """
+  @type t :: %{
+          watchers: MapSet.t(pid()),
+          topic: String.t(),
+          reg_key: String.t(),
+          disciple: Dojo.Disciple.t(),
+          animate_msg: term() | nil,
+          last: %{optional(atom()) => map()},
+          broadcast_timer: reference() | nil,
+          pending_broadcast: map() | nil
+        }
+
   def publish(pid, msg, event) do
     GenServer.cast(pid, {:publish, msg, event})
   end
@@ -55,12 +74,15 @@ defmodule Dojo.Table do
 
   @doc false
   def local_fetch(topic, event, call_type \\ :last) do
-    try do
-      GenServer.call({:via, Registry, {Dojo.TableRegistry, topic}}, {call_type, event}, 5000)
-    catch
-      :exit, {:noproc, _} ->
-        {:error, :table_not_found_on_node}
-    end
+    GenServer.call({:via, Registry, {Dojo.TableRegistry, topic}}, {call_type, event}, 5000)
+  catch
+    # Table absent or tearing down mid-call (self-stops with :normal when its
+    # last watcher leaves) — same gone-from-under-us family as Class.attach.
+    :exit, {reason, _} when reason in [:noproc, :normal, :shutdown] ->
+      {:error, :table_not_found_on_node}
+
+    :exit, {{:shutdown, _}, _} ->
+      {:error, :table_not_found_on_node}
   end
 
   def via_tuple(reg_key) do
@@ -73,13 +95,17 @@ defmodule Dojo.Table do
     GenServer.start_link(__MODULE__, args, name: via_tuple(args.reg_key))
   end
 
+  @spec init(map()) :: {:ok, t()}
   def init(%{track_pid: lv_pid, topic: topic, disciple: disciple, reg_key: reg_key}) do
     # Monitor the initial LiveView PID as a watcher
     Process.monitor(lv_pid)
 
     # Track presence with Table's own PID (self), not the LiveView PID
-    # This allows presence to survive as long as ANY tab is connected
-    {:ok, ref} = Dojo.Gate.track(self(), topic, %{disciple | node: {reg_key, :partisan.node()}})
+    # This allows presence to survive as long as ANY tab is connected.
+    # reg_key and node ride as SEPARATE meta fields (no embedded tuple);
+    # readers compose the RPC address via Dojo.Disciple.table_address/1.
+    {:ok, ref} =
+      Dojo.Gate.track(self(), topic, %{disciple | node: :partisan.node(), reg_key: reg_key})
 
     # Subscribe to network roam events so we can refresh stale addr in presence
     if Application.get_env(:dojo, :routing_strategy) == Dojo.Cluster.Routing.Local do
@@ -101,33 +127,34 @@ defmodule Dojo.Table do
 
   def handle_cast(
         {:publish, {_source, _msg, %{state: :error} = store}, :hatch},
-        %{
-          last: %{hatch: %{commands: [_ | _] = cmds}} = last,
-          reg_key: reg_key
-        } = state
+        %{last: %{hatch: %{commands: [_ | _] = cmds}}} = state
       ) do
     # check if previously active turtle — hydrate error with previous commands
     hydrated_store = %{store | commands: cmds}
 
-    async_cache_put(reg_key, :hatch, hydrated_store)
-    new_last = Map.put(last, :hatch, hydrated_store)
-    {:noreply, state |> Map.put(:last, new_last) |> schedule_hatch_broadcast(hydrated_store)}
+    {:noreply,
+     state |> record(:hatch, hydrated_store) |> schedule_hatch_broadcast(hydrated_store)}
   end
 
-  def handle_cast(
-        {:publish, {_source, _msg, store}, event},
-        %{last: last, reg_key: reg_key} = state
-      ) do
-    async_cache_put(reg_key, event, store)
-    new_last = Map.put(last, event, store)
-
-    state = %{state | last: new_last}
+  def handle_cast({:publish, {_source, _msg, store}, event}, state) do
+    state = record(state, event, store)
 
     if event == :hatch do
       {:noreply, schedule_hatch_broadcast(state, store)}
     else
       {:noreply, state}
     end
+  end
+
+  # ── The one write path (Phase 4 / decision 008) ─────────────────────────
+  # `state.last` is the OWNER of a disciple's latest stores. The Cache is its
+  # single DECLARED read-only projection — written here and nowhere else
+  # (async: locality is the projection's reason to exist; `Table.last/2`
+  # reads through it before falling back to the owner via RPC). No other
+  # module may put a `{Table, :last, …}` key.
+  defp record(%{last: last, reg_key: reg_key} = state, event, store) do
+    async_cache_put(reg_key, event, store)
+    %{state | last: Map.put(last, event, store)}
   end
 
   def handle_call({:last, event}, _from, %{last: last} = state) do
@@ -225,6 +252,9 @@ defmodule Dojo.Table do
   defp broadcast_hatch(topic, reg_key, store) do
     meta = Map.take(store, [:path, :state, :time])
 
+    # The hatch dual layer is the ESSENTIAL divergence kept and named
+    # (rad-message Pole B / groundwork Phase 3): 2b is a DECLARED lightweight
+    # view of the envelope — never a parallel invention.
     # Layer 2a: full payload to local subscribers (instant render, no Plumtree)
     Phoenix.PubSub.local_broadcast(
       Dojo.PubSub,

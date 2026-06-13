@@ -13,28 +13,19 @@ defmodule Dojo.Class do
     DynamicSupervisor.init(strategy: :one_for_one)
   end
 
-  def join(pid, book, disciple) do
+  # Bounds the teardown-race retry loop (lookup → dying table → start fresh →
+  # someone else's table already dying → …). In practice resolves in one hop;
+  # the cap only fires under pathological churn.
+  @max_join_retries 3
+
+  def join(pid, book, %Dojo.Disciple{user_id: user_id} = disciple) when is_binary(user_id) do
     topic_str = topic(book)
-    # Compute reg_key from user identity (name + optional user_id)
-    # user_id should be computed in ShellLive from (name + last_opened)
-    reg_key = "#{topic_str}:#{disciple.user_id || disciple.name}"
+    # One derivation: user_id comes from DojoWeb.Session.user_id/1 — the
+    # name fallback fork is gone (a join without identity should crash here,
+    # not register under a colliding display name).
+    reg_key = "#{topic_str}:#{user_id}"
 
-    # Try to find existing Table singleton
-    case Registry.lookup(Dojo.TableRegistry, reg_key) do
-      [{table_pid, _}] ->
-        # Table exists — add this LiveView as a watcher
-        try do
-          Table.add_watcher(table_pid, pid)
-          {:ok, table_pid}
-        catch
-          :exit, {:noproc, _} ->
-            # Table died between Registry lookup and our call — start fresh
-            start_table(pid, topic_str, disciple, reg_key)
-        end
-
-      [] ->
-        start_table(pid, topic_str, disciple, reg_key)
-    end
+    attach(pid, topic_str, disciple, reg_key, @max_join_retries)
   end
 
   def join!(pid, book, disciple) do
@@ -42,7 +33,41 @@ defmodule Dojo.Class do
     class
   end
 
-  defp start_table(pid, topic_str, disciple, reg_key) do
+  # Resolve the singleton Table for reg_key and attach pid as a watcher.
+  # A Table self-stops when its last watcher leaves (Table.handle_info :DOWN →
+  # {:stop, :normal, ...}); Registry can still hand back that dying pid, so any
+  # attach may land mid-teardown. We treat "table gone" uniformly — whether it
+  # was already dead or died during our call — and start fresh.
+  defp attach(_pid, _topic_str, _disciple, reg_key, 0) do
+    {:error, {:join_retries_exhausted, reg_key}}
+  end
+
+  defp attach(pid, topic_str, disciple, reg_key, retries) do
+    case Registry.lookup(Dojo.TableRegistry, reg_key) do
+      [{table_pid, _}] ->
+        case try_add_watcher(table_pid, pid) do
+          :ok -> {:ok, table_pid}
+          :gone -> start_table(pid, topic_str, disciple, reg_key, retries)
+        end
+
+      [] ->
+        start_table(pid, topic_str, disciple, reg_key, retries)
+    end
+  end
+
+  # Attempt to attach as a watcher, tolerating the teardown race. Returns :ok,
+  # or :gone if the Table terminated out from under us — already dead (:noproc)
+  # or dying mid-call with a graceful reason (:normal / :shutdown). Genuine
+  # failures (timeout, :killed) propagate; they are not the race.
+  defp try_add_watcher(table_pid, pid) do
+    Table.add_watcher(table_pid, pid)
+    :ok
+  catch
+    :exit, {reason, _} when reason in [:noproc, :normal, :shutdown] -> :gone
+    :exit, {{:shutdown, _}, _} -> :gone
+  end
+
+  defp start_table(pid, topic_str, disciple, reg_key, retries) do
     spec = %{
       id: Table,
       restart: :temporary,
@@ -58,10 +83,14 @@ defmodule Dojo.Class do
       {:ok, table_pid} ->
         {:ok, table_pid}
 
-      # Race condition: another tab started it between our lookup and start
+      # Race: another tab won the Registry name between our lookup and start.
+      # Attach to the winner — but that one can also be tearing down, so route
+      # a teardown exit back through a fresh lookup with one fewer retry.
       {:error, {:already_started, table_pid}} ->
-        Table.add_watcher(table_pid, pid)
-        {:ok, table_pid}
+        case try_add_watcher(table_pid, pid) do
+          :ok -> {:ok, table_pid}
+          :gone -> attach(pid, topic_str, disciple, reg_key, retries - 1)
+        end
 
       other ->
         other
@@ -76,7 +105,7 @@ defmodule Dojo.Class do
 
   def list_disciples(book) do
     Dojo.Gate.list_users(topic(book))
-    |> Enum.into(%{}, fn %{node: {reg_key, _}} = dis -> {reg_key, dis} end)
+    |> Enum.into(%{}, fn dis -> {Dojo.Disciple.reg_key(dis), dis} end)
   end
 
   def listen(book) do
