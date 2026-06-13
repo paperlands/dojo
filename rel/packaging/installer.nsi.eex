@@ -45,8 +45,8 @@
 
 ; Installer Configuration
 Name "PaperLand Dojo"
-OutFile "PaperLandDojo-<%= @app_version %>-windows-x86_64-setup.exe"
-InstallDir "$PROGRAMFILES64\PaperLand Dojo"
+OutFile "PaperLandDojo-<%= @app_version %>-windows-<%= @label %>-setup.exe"
+InstallDir "<%= @program_files %>\PaperLand Dojo"
 InstallDirRegKey HKLM "Software\PaperLand Dojo" "InstallDir"
 RequestExecutionLevel admin
 
@@ -95,8 +95,8 @@ FunctionEnd
 
 !insertmacro MUI_LANGUAGE "English"
 
-; VC++ Registry Keys for Detection
-!define VCREDIST_X64_KEY "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+; VC++ Registry Keys for Detection (arch-specific, set via EEx template)
+!define VCREDIST_KEY "<%= @vcredist_key %>"
 !define MIN_VCREDIST_VERSION_MAJOR 14
 !define MIN_VCREDIST_VERSION_MINOR 0
 
@@ -122,42 +122,46 @@ FunctionEnd
 ; Function: CheckVCRedist
 ;--------------------------------
 Function CheckVCRedist
-    SetRegView 64
+    SetRegView <%= @reg_view %>
     StrCpy $VCRedistNeeded "0"
     StrCpy $VCRedistArch ""
-
+<%= if @guard_running_x64 do %>
+    ; x64 redist is only meaningful on 64-bit Windows
     ${If} ${RunningX64}
-        DetailPrint "Checking for VC++ Redistributable (x64)..."
+<% end %>
+        DetailPrint "Checking for VC++ Redistributable (<%= @arch %>)..."
 
-        ReadRegDWORD $0 HKLM "${VCREDIST_X64_KEY}" "Installed"
+        ReadRegDWORD $0 HKLM "${VCREDIST_KEY}" "Installed"
         ${If} $0 == 1
-            ReadRegDWORD $1 HKLM "${VCREDIST_X64_KEY}" "Major"
-            ReadRegDWORD $2 HKLM "${VCREDIST_X64_KEY}" "Minor"
-            ReadRegDWORD $3 HKLM "${VCREDIST_X64_KEY}" "Bld"
+            ReadRegDWORD $1 HKLM "${VCREDIST_KEY}" "Major"
+            ReadRegDWORD $2 HKLM "${VCREDIST_KEY}" "Minor"
+            ReadRegDWORD $3 HKLM "${VCREDIST_KEY}" "Bld"
 
-            DetailPrint "Found VC++ x64: $1.$2.$3"
+            DetailPrint "Found VC++ <%= @arch %>: $1.$2.$3"
 
             ${If} $1 < ${MIN_VCREDIST_VERSION_MAJOR}
                 StrCpy $VCRedistNeeded "1"
-                StrCpy $VCRedistArch "x64"
-                DetailPrint "VC++ x64 version too old, installation required"
+                StrCpy $VCRedistArch "<%= @arch %>"
+                DetailPrint "VC++ <%= @arch %> version too old, installation required"
             ${ElseIf} $1 == ${MIN_VCREDIST_VERSION_MAJOR}
                 ${If} $2 < ${MIN_VCREDIST_VERSION_MINOR}
                     StrCpy $VCRedistNeeded "1"
-                    StrCpy $VCRedistArch "x64"
-                    DetailPrint "VC++ x64 version too old, installation required"
+                    StrCpy $VCRedistArch "<%= @arch %>"
+                    DetailPrint "VC++ <%= @arch %> version too old, installation required"
                 ${Else}
-                    DetailPrint "VC++ x64 is up to date"
+                    DetailPrint "VC++ <%= @arch %> is up to date"
                 ${EndIf}
             ${Else}
-                DetailPrint "VC++ x64 is up to date"
+                DetailPrint "VC++ <%= @arch %> is up to date"
             ${EndIf}
         ${Else}
             StrCpy $VCRedistNeeded "1"
-            StrCpy $VCRedistArch "x64"
-            DetailPrint "VC++ x64 not found, installation required"
+            StrCpy $VCRedistArch "<%= @arch %>"
+            DetailPrint "VC++ <%= @arch %> not found, installation required"
         ${EndIf}
+<%= if @guard_running_x64 do %>
     ${EndIf}
+<% end %>
 FunctionEnd
 
 ;--------------------------------
@@ -168,12 +172,12 @@ Function InstallVCRedist
         DetailPrint "Installing Visual C++ 2015-2022 Redistributable ($VCRedistArch)..."
 
         SetOutPath "$TEMP"
-        File "resources/vc_redist.x64.exe"
+        File "resources/<%= @vc_redist %>"
 
-        DetailPrint "Executing: $TEMP\vc_redist.x64.exe /install /quiet /norestart"
-        ExecWait '"$TEMP\vc_redist.x64.exe" /install /quiet /norestart' $0
+        DetailPrint "Executing: $TEMP\<%= @vc_redist %> /install /quiet /norestart"
+        ExecWait '"$TEMP\<%= @vc_redist %>" /install /quiet /norestart' $0
 
-        Delete "$TEMP\vc_redist.x64.exe"
+        Delete "$TEMP\<%= @vc_redist %>"
 
         ${If} $0 == 0
             DetailPrint "VC++ Redistributable installed successfully"
@@ -242,7 +246,9 @@ Section "MainSection" SEC01
 
     SetOutPath "$INSTDIR"
 
-    File "dojo_windows.exe"
+    ; Burrito emits <%= @source_binary %>; install it under the stable name
+    ; dojo_windows.exe so firewall rules and shortcuts are arch-agnostic.
+    File "/oname=dojo_windows.exe" "<%= @source_binary %>"
     File "app-icon.ico"
 
     ; Create uninstaller
