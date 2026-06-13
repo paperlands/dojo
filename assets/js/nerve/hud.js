@@ -9,29 +9,52 @@ const MAX_CHAT_SLOTS = 5
 const SHOUT_THROTTLE_MS = 500
 
 // ---------------------------------------------------------------------------
-// Navigation — what happens when you click a slot.
+// Navigation — what happens when you click a slot. Targets resolve which
+// editor/canvas a click acts on, so each nerve instance (core, outer panel)
+// navigates its own surfaces. Defaults to the core shell's editor + canvas.
 // ---------------------------------------------------------------------------
 
-function navigate(signal, pushEvent) {
+function resolveTargets(targets) {
+    return {
+        editorView: targets?.editorView || (() => document.getElementById('your-buffer')?.__cm),
+        // Reveal an ambient by name: switch the editor to the tab that DEFINES it
+        // (top-level tab, or the tab whose code spawned `as name do …`), then
+        // focus it on the canvas. If the owning key isn't a local buffer (a remote
+        // peer's addr), the tab switch is skipped and we just focus.
+        revealAmbient: targets?.revealAmbient || ((name) => {
+            const turtle = document.getElementById('core-canvas')?.__turtle
+            if (!turtle) return
+            const term = document.getElementById('your-buffer')?.__terminal
+            const tabKey = turtle.tabKeyForAmbient?.(name)
+            if (tabKey != null && term?.getBufferInfo?.(tabKey)) {
+                term.opBufferHandler({ op: 'select', target: tabKey })
+            }
+            turtle.focusAmbient(name)
+            turtle.requestRender?.()
+        }),
+    }
+}
+
+function navigate(signal, pushEvent, t) {
     const { ref, kind } = signal
 
     if (ref) {
         if ('key' in ref)  return pushEvent("seeTurtle", { addr: ref.key })
-        if ('line' in ref) return scrollToLine(ref.line)
+        if ('line' in ref) return scrollToLine(ref.line, t.editorView())
         if ('code' in ref) return pushEvent("forkBuffer", {
             source: ref.code, name: signal.source,
             addr: ref.key || null, time: Date.now()
         })
     }
 
-    if ((kind === 'shout' || kind === 'output') && signal.tabId) {
-        const canvas = document.getElementById('core-canvas')
-        if (canvas?.__turtle) canvas.__turtle.focusAmbient(signal.tabId)
+    // A shout's source IS the ambient's address (display name) — reveal it:
+    // jump to the tab that defines it and focus it on the canvas.
+    if (kind === 'shout' && signal.source && signal.source !== 'system') {
+        t.revealAmbient(signal.source)
     }
 }
 
-function scrollToLine(n) {
-    const view = document.getElementById('your-buffer')?.__cm
+function scrollToLine(n, view) {
     if (!view) return
     const line = view.state.doc.line(Math.min(n, view.state.doc.lines))
     view.dispatch({ selection: { anchor: line.from }, scrollIntoView: true })
@@ -78,12 +101,12 @@ function buildSlot(signal, ch, { showSource, fade, onSourceClick }) {
 function statusMutator(zone) {
     let slot = null
 
-    function set(signal, ch, pushEvent) {
+    function set(signal, ch, nav) {
         clear()
         const el = buildSlot(signal, ch, { showSource: false, fade: true })
 
         if (signal.ref) {
-            el.addEventListener('click', () => navigate(signal, pushEvent))
+            el.addEventListener('click', () => nav(signal))
         }
 
         const timer = setTimeout(() => {
@@ -133,7 +156,7 @@ function chatMutator(zone) {
         removeSlot(victim)
     }
 
-    function add(signal, ch, pushEvent, onExpand) {
+    function add(signal, ch, nav, onExpand) {
         if (signal.kind === 'shout') {
             const now = performance.now()
             const lastTs = shoutTimestamps.get(signal.source) || 0
@@ -143,7 +166,6 @@ function chatMutator(zone) {
 
         evict()
 
-        const nav = (s) => navigate(s, pushEvent)
         const el = buildSlot(signal, ch, { showSource: true, fade: true, onSourceClick: nav })
 
         el.addEventListener('click', (e) => {
@@ -178,12 +200,10 @@ function chatMutator(zone) {
 // Log mutator — scrollable run history. Toggle on click, dismiss on blur.
 // ---------------------------------------------------------------------------
 
-function logMutator(container, store, pushEvent) {
+function logMutator(container, store, nav, select) {
     let panel = null
     let unsub = null
     let dismissHandler = null
-
-    const nav = (s) => navigate(s, pushEvent)
 
     function logSlot(signal) {
         const ch = CHANNELS[signal.kind]
@@ -197,7 +217,7 @@ function logMutator(container, store, pushEvent) {
 
         const currentEpoch = store.epoch
         const chatSignals = store.signals.filter(
-            s => s.epoch === currentEpoch && CHANNELS[s.kind]?.zone === 'chat'
+            s => s.epoch === currentEpoch && CHANNELS[s.kind]?.zone === 'chat' && select(s)
         )
         for (let i = chatSignals.length - 1; i >= 0; i--) {
             panel.appendChild(logSlot(chatSignals[i]))
@@ -210,6 +230,7 @@ function logMutator(container, store, pushEvent) {
             if (signal.epoch !== currentEpoch) { close(); return }
             const ch = CHANNELS[signal.kind]
             if (!ch || ch.zone !== 'chat') return
+            if (!select(signal)) return
             const atBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 24
             panel.appendChild(logSlot(signal))
             if (atBottom) panel.scrollTop = panel.scrollHeight
@@ -243,7 +264,12 @@ function logMutator(container, store, pushEvent) {
 // HUD — composes status + chat + log. Subscribes to store.
 // ---------------------------------------------------------------------------
 
-export function createHUD(container, store, pushEvent) {
+// A HUD is one read-model (projection) over the store. `opts.select(signal) →
+// bool` is its routing predicate — the residual HUD takes what no panel claimed,
+// a peer panel takes its claimed address. `opts.targets` scopes navigation.
+export function createHUD(container, store, pushEvent, opts = {}) {
+    const { targets, select = () => true } = opts
+
     const statusZone = document.createElement('div')
     statusZone.className = 'nerve-hud-status'
     const chatZone = document.createElement('div')
@@ -252,21 +278,25 @@ export function createHUD(container, store, pushEvent) {
     container.appendChild(chatZone)
     container.appendChild(statusZone)
 
+    const t = resolveTargets(targets)
+    const nav = (signal) => navigate(signal, pushEvent, t)
+
     const status = statusMutator(statusZone)
     const chat = chatMutator(chatZone)
-    const log = logMutator(container, store, pushEvent)
+    const log = logMutator(container, store, nav, select)
 
     let hidden = false
 
     const unsub = store.subscribe((signal) => {
         if (hidden) return
         if (store.muted.has(signal.kind)) return
+        if (!select(signal)) return
 
         const ch = CHANNELS[signal.kind]
         if (!ch || !ch.fadeMs) return
 
-        if (ch.zone === 'status') status.set(signal, ch, pushEvent)
-        else                      chat.add(signal, ch, pushEvent, log.toggle)
+        if (ch.zone === 'status') status.set(signal, ch, nav)
+        else                      chat.add(signal, ch, nav, log.toggle)
     })
 
     function show() { hidden = false; container.style.display = '' }

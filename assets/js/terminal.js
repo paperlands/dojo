@@ -53,15 +53,21 @@ export const createTerminal = (element, cm6, options = {}) => {
 
     // --- State atom ---
     // Single mutable reference. Transitions via pure functions from buffers.js.
-    // EditorState docs kept separate — they're CM6 values, not buffer data.
+    //
+    // Content authority: state.collection, written by exactly one writer — the
+    // CM6 update listener (onDocChange), on every transaction. state.docs is a
+    // VIEW cache (cursor/undo history for buffer switching); its doc content
+    // counts only while it agrees with the collection — never a content source.
     const state = {
-        collection: null,     // from buffers.js — plain data
-        docs: new Map(),      // Map<id, EditorState> — CM6 state per buffer
+        collection: null,     // from buffers.js — plain data, content authority
+        docs: new Map(),      // Map<id, EditorState> — view-state cache per buffer
+        projectedId: null,    // id the editor currently displays (view concern, not model selection)
         extensions: null,     // shared extension array
         compartments: null,   // { theme, lang, merge } — Compartment handles
         autosaveTimer: null,
         mergeOriginals: new Map(),  // addr → latest outershell content (for lazy merge updates)
         mergeActive: false,           // true while outershell mode is active
+        drafting: false,              // outer review surface: editing a draft in place
     };
 
     let shell = null;         // CM6 EditorView — inherently mutable
@@ -75,67 +81,79 @@ export const createTerminal = (element, cm6, options = {}) => {
         store.save(buffers.serialize(state.collection));
     };
 
-    // Flush storage immediately — called on visibility hidden and beforeunload.
-    // Captures the live EditorState into the collection before saving,
-    // since the debounced autosave may not have fired yet.
-    const flushStorage = () => {
-        if (!store || !state.collection || !shell) return;
-        const currentId = state.collection.currentId;
-        if (currentId) {
-            const liveContent = editorView.getContent(shell);
-            state.collection = buffers.updateContent(state.collection, currentId, liveContent);
-        }
-        saveToStorage();
-    };
-
+    // Write-through keeps the collection current on every transaction, so
+    // persisting on tab hide / page unload needs no live capture.
     const onVisibilityChange = () => {
-        if (document.visibilityState === 'hidden') flushStorage();
+        if (document.visibilityState === 'hidden') saveToStorage();
     };
 
-    const onBeforeUnload = () => flushStorage();
+    const onBeforeUnload = () => saveToStorage();
 
     const triggerBridge = () => {
-        const content = editorView.getContent(shell);
-        const id = state.collection.currentId;
-        const name = state.collection.items.get(id)?.name;
-        bridge.pub({ id, name, content });
+        const buffer = buffers.currentBuffer(state.collection);
+        if (!buffer) return;
+        bridge.pub({ id: buffer.id, name: buffer.name, content: buffer.content });
     };
 
     // Composite key for merge originals — addr alone isn't unique when remote user has multiple tabs
     const mergeKey = (origin) => origin?.buffer_id ? `${origin.addr}:${origin.buffer_id}` : origin?.addr;
+
+    // The merge diff's ORIGINAL, by precedence: the live streamed baseline
+    // (mergeOriginals — the friend's code as it runs now) over the birth
+    // snapshot (origin.source — the code as it was when forked). One rule,
+    // every merge surface reads through it.
+    const mergeBaseline = (origin) =>
+        state.mergeOriginals.get(mergeKey(origin)) || origin?.source || null;
 
     // Create an EditorState for a buffer's content, using the shared extension array.
     // Critical: all states share the same Compartment instances for live reconfiguration.
     const createDoc = (content) =>
         editorView.createState(cm6, content, state.extensions);
 
-    // Save current EditorState before leaving a buffer (preserves doc + cursor).
-    const captureCurrentState = () => {
-        const currentId = state.collection?.currentId;
-        if (currentId && shell) {
-            state.docs.set(currentId, shell.state);
-        }
+    // Capture the leaving buffer's view state (cursor, undo history) before a
+    // switch — lazy mirror of the cache, evaluated only when needed. Content
+    // is NOT captured: the update listener is the single content writer.
+    const captureViewState = () => {
+        if (state.projectedId && shell) state.docs.set(state.projectedId, shell.state);
+    };
+
+    // The one projection read — the EditorState the editor should show for a
+    // buffer. Content comes from the collection (the authority); the cached
+    // state contributes cursor/undo only while its doc agrees. A disagreeing
+    // entry is stale by definition — rebuild from the authority.
+    const docFor = (id) => {
+        const content = state.collection.items.get(id)?.content ?? '';
+        const cached = state.docs.get(id);
+        if (cached && cached.doc.toString() === content) return cached;
+        const doc = createDoc(content);
+        state.docs.set(id, doc);
+        return doc;
     };
 
     const doSelectBuffer = (id, { offset } = {}) => {
         if (!state.collection.items.has(id)) throw new Error(`Buffer '${id}' not found`);
 
-        // 1. Save current (CM6 concern)
-        const oldId = state.collection.currentId;
-        if (oldId && oldId !== id) captureCurrentState();
+        // Projection happens only when the displayed buffer changes.
+        // Re-selecting the current buffer must never touch the live document —
+        // the editor IS that buffer; projecting the cache over it would
+        // discard the user's latest edits and reset cursor + undo history.
+        const switching = state.projectedId !== id;
 
-        // 2. Transition collection (pure data)
+        if (switching) captureViewState();
+
         state.collection = buffers.selectCurrent(state.collection, id);
 
-        // 3. Swap view (CM6 concern)
-        editorView.swapState(shell, state.docs.get(id));
-        reapplyCompartments(shell, state.compartments, cm6, opts.theme, themes);
+        if (switching) {
+            editorView.swapState(shell, docFor(id));
+            state.projectedId = id;
+            reapplyCompartments(shell, state.compartments, cm6, opts.theme, themes);
+        }
 
-        // 3b. Restore merge compartment for fork buffers only while outershell is active
+        // Restore merge compartment for fork buffers only while outershell is
+        // active — dispatch-only (non-destructive), so it runs on every select.
         const selectedBuffer = state.collection.items.get(id);
         if (state.mergeActive && selectedBuffer.origin?.addr && cm6.unifiedMergeView && state.compartments?.merge) {
-            const originalContent = state.mergeOriginals.get(mergeKey(selectedBuffer.origin))
-                                  || selectedBuffer.origin.source;
+            const originalContent = mergeBaseline(selectedBuffer.origin);
             if (originalContent) {
                 shell.dispatch({
                     effects: state.compartments.merge.reconfigure(
@@ -151,10 +169,11 @@ export const createTerminal = (element, cm6, options = {}) => {
             shell.dispatch({ effects: state.compartments.merge.reconfigure([]) });
         }
 
-        // 4. Cursor positioning
+        // 4. Cursor: explicit offset always wins; entering a buffer starts at
+        // the end; re-selecting the current buffer leaves the cursor alone.
         if (offset != null) {
             editorView.cursorTo(shell, cm6, offset);
-        } else {
+        } else if (switching) {
             editorView.cursorToEnd(shell, cm6);
         }
         shell.focus();
@@ -186,8 +205,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         getBufferInfo(id) {
             const buffer = state.collection?.items.get(id);
             if (!buffer) return null;
-            const content = state.docs.has(id) ? state.docs.get(id).doc.toString() : buffer.content;
-            return { name: buffer.name, content };
+            return { name: buffer.name, content: buffer.content };
         },
 
         setTabActive(id) { tabs?.setActive(id) },
@@ -197,18 +215,18 @@ export const createTerminal = (element, cm6, options = {}) => {
         inner() {
             const { extensions, compartments } = buildExtensions(cm6, {
                 onDocChange: (content) => {
-                    // 1. Buffer content sync (pure data transition)
-                    if (state.collection?.currentId) {
-                        state.collection = buffers.updateContent(
-                            state.collection, state.collection.currentId, content
-                        );
+                    // 1. Write-through: the displayed buffer's content lands in
+                    // the collection on every change — the single content
+                    // writer, keyed by the surface the edit landed on.
+                    const id = state.projectedId;
+                    if (id) {
+                        state.collection = buffers.updateContent(state.collection, id, content);
                     }
                     // 2. Autosave (scheduled effect)
                     clearTimeout(state.autosaveTimer);
                     state.autosaveTimer = setTimeout(saveToStorage, 500);
                     // 3. Bridge (event effect) — capture identity at publish time
-                    const id = state.collection.currentId;
-                    const name = state.collection.items.get(id)?.name;
+                    const name = id ? state.collection.items.get(id)?.name : null;
                     bridge.pub({ id, name, content });
                 },
                 onSelectionChange: (selection) => {
@@ -262,12 +280,20 @@ export const createTerminal = (element, cm6, options = {}) => {
         },
 
         outer(_code = '') {
-            const { extensions, compartments } = buildExtensions(cm6, {});
+            // Publish draft edits so the hook can run them live as an ambient.
+            const { extensions, compartments } = buildExtensions(cm6, {
+                onDocChange: (content) => bridge.pub({ content }),
+            });
+
+            // Read-only lives in its own compartment so the review surface can
+            // toggle into an editable draft.
+            const readOnly = new cm6.Compartment();
+            compartments.readOnly = readOnly;
 
             state.extensions = extensions;
             state.compartments = compartments;
 
-            const result = editorView.createOuterView(element, cm6, extensions);
+            const result = editorView.createOuterView(element, cm6, extensions, readOnly);
             shell = result.view;
 
             reapplyCompartments(shell, compartments, cm6, opts.theme, themes);
@@ -276,7 +302,85 @@ export const createTerminal = (element, cm6, options = {}) => {
         },
 
         changeouter(code) {
+            // Don't clobber the user's in-place draft with incoming friend code.
+            if (state.drafting) return;
             editorView.updateOuter(shell, code);
+        },
+
+        // --- Outer review surface: edit a draft as a live merge ----------------
+        //
+        // The OuterShell is one living diff: `original` = the friend's code,
+        // `mine` = your draft (seeded from your existing coreshell fork if one
+        // exists along this lineage, else from their code).
+
+        beginDraft({ addr, buffer_id } = {}) {
+            if (!shell || state.drafting) return;
+            const friendSource = editorView.getContent(shell);
+
+            // Lineage-aware seed: read your existing fork of this code from the
+            // inner terminal (owner of the buffer collection). Falls back to the
+            // friend's code when you have no fork yet.
+            const inner = document.getElementById('your-buffer')?.__terminal;
+            const forkContent = inner?.forkContent?.(addr, buffer_id) ?? null;
+            const draft = forkContent ?? friendSource;
+
+            state.drafting = true;
+
+            const effects = [
+                state.compartments.readOnly.reconfigure(cm6.EditorState.readOnly.of(false)),
+            ];
+            if (state.compartments.merge && cm6.unifiedMergeView) {
+                effects.push(state.compartments.merge.reconfigure(
+                    cm6.unifiedMergeView({
+                        original: cm6.Text.of(friendSource.split('\n')),
+                        highlightChanges: true,
+                        gutter: true,
+                    })
+                ));
+            }
+            shell.dispatch({ effects });
+
+            if (draft !== friendSource) editorView.setContent(shell, draft);
+
+            // Keep focus on the review surface — drafting must not jump away.
+            // Re-grab on the next frame too: the merge view inserts its diff DOM
+            // asynchronously, which can blur the contenteditable mid-keystroke.
+            shell.focus();
+            requestAnimationFrame(() => shell?.focus());
+        },
+
+        // Live baseline: set the friend's current code as the merge ORIGINAL
+        // (a rebase preview) while you keep your draft. We reconfigure the merge
+        // compartment rather than use updateOriginalDoc — that effect needs a
+        // {doc, changes} payload; reconfiguring reliably resets the baseline and
+        // recomputes the diff against your draft.
+        streamOrigin(content) {
+            if (!state.drafting || !shell || !state.compartments?.merge || !cm6.unifiedMergeView) return;
+            shell.dispatch({
+                effects: state.compartments.merge.reconfigure(
+                    cm6.unifiedMergeView({
+                        original: cm6.Text.of((content ?? '').split('\n')),
+                        highlightChanges: true,
+                        gutter: true,
+                    })
+                ),
+            });
+        },
+
+        endDraft() {
+            if (!shell || !state.drafting) return;
+            state.drafting = false;
+            const effects = [
+                state.compartments.readOnly.reconfigure(cm6.EditorState.readOnly.of(true)),
+            ];
+            if (state.compartments.merge) {
+                effects.push(state.compartments.merge.reconfigure([]));
+            }
+            shell.dispatch({ effects });
+        },
+
+        drafting() {
+            return state.drafting;
         },
 
         run(instructions) {
@@ -331,19 +435,19 @@ export const createTerminal = (element, cm6, options = {}) => {
             return null;
         },
 
-        forkBuffer({ source, name, addr, buffer_id, time, offset, key }) {
+        // Current content of your fork along a lineage, if you have one.
+        // Read by the outer review surface to seed a draft (cross-terminal).
+        forkContent(addr, buffer_id) {
+            if (!state.collection) return null;
+            const id = this.findFork(addr, buffer_id);
+            return id ? state.collection.items.get(id).content : null;
+        },
+
+        forkBuffer({ source, name, addr, buffer_id, time, offset }) {
             if (!source || !addr) return;
             state.mergeActive = true;
 
-            const selectAndReplay = (id) => {
-                doSelectBuffer(id, { offset });
-                // Only replay printable characters — structural keys (Enter, Backspace, etc.)
-                // are editing gestures, not literal inserts. The user presses them again
-                // in the fork with full CM6 support (auto-indent, bracket matching).
-                if (key?.length === 1 && shell) {
-                    shell.dispatch(shell.state.replaceSelection(key));
-                }
-            };
+            const selectFork = (id) => doSelectBuffer(id, { offset });
 
             const existing = this.findFork(addr, buffer_id);
             if (existing) {
@@ -351,9 +455,7 @@ export const createTerminal = (element, cm6, options = {}) => {
 
                 // Remote user iterated on the same tab — create new merge tab
                 if (existingBuffer.origin?.source !== source) {
-                    const forkContent = state.docs.has(existing)
-                        ? state.docs.get(existing).doc.toString()
-                        : existingBuffer.content;
+                    const forkContent = existingBuffer.content;
 
                     const bufferName = name ? `${name}'s fork (merge)` : 'fork (merge)';
                     const origin = { addr, buffer_id, source, time, name };
@@ -363,12 +465,12 @@ export const createTerminal = (element, cm6, options = {}) => {
                     state.collection = collection;
                     state.docs.set(id, createDoc(forkContent));
                     tabs.addTab(id, bufferName);
-                    selectAndReplay(id);
+                    selectFork(id);
                     return id;
                 }
 
                 // Same code — switch to existing tab, continue editing
-                selectAndReplay(existing);
+                selectFork(existing);
                 return existing;
             }
 
@@ -380,7 +482,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             state.collection = collection;
             state.docs.set(id, createDoc(source));
             tabs.addTab(id, bufferName);
-            selectAndReplay(id);
+            selectFork(id);
             return id;
         },
 
@@ -388,13 +490,21 @@ export const createTerminal = (element, cm6, options = {}) => {
             const key = buffer_id ? `${addr}:${buffer_id}` : addr;
             state.mergeOriginals.set(key, content);
 
-            // Only update live diff if the current fork matches this addr:buffer_id
+            // Only update live diff if the current fork matches this addr:buffer_id.
+            // Reconfigure the merge (not updateOriginalDoc, which needs {doc, changes})
+            // so the new baseline actually lands and the diff recomputes.
             const current = buffers.currentBuffer(state.collection);
             if (state.mergeActive && current?.origin?.addr === addr
                 && (!buffer_id || current.origin.buffer_id === buffer_id)
-                && cm6.updateOriginalDoc && shell) {
+                && state.compartments?.merge && cm6.unifiedMergeView && shell) {
                 shell.dispatch({
-                    effects: cm6.updateOriginalDoc.of(cm6.Text.of(content.split('\n'))),
+                    effects: state.compartments.merge.reconfigure(
+                        cm6.unifiedMergeView({
+                            original: cm6.Text.of(content.split('\n')),
+                            highlightChanges: true,
+                            gutter: true,
+                        })
+                    ),
                 });
             }
         },
@@ -404,8 +514,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             state.mergeActive = true;
             const current = buffers.currentBuffer(state.collection);
             if (current?.origin?.addr && cm6.unifiedMergeView && state.compartments?.merge && shell) {
-                const originalContent = state.mergeOriginals.get(mergeKey(current.origin))
-                                      || current.origin.source;
+                const originalContent = mergeBaseline(current.origin);
                 if (originalContent) {
                     shell.dispatch({
                         effects: state.compartments.merge.reconfigure(
@@ -463,10 +572,13 @@ export const createTerminal = (element, cm6, options = {}) => {
         },
 
         renameBuffer(id) {
-            const newName = tabs.renameTab(id);
-            // Update collection BEFORE selecting — triggerBridge reads name from collection
-            state.collection = buffers.renameCurrent(state.collection, id, newName);
-            doSelectBuffer(id);
+            const newName = tabs.readTabName(id);
+            if (newName == null || !state.collection.items.has(id)) return;
+            // A rename is a metadata transition — no projection, no cursor or
+            // focus movement. Publish so render/ambient subscribers track the name.
+            state.collection = buffers.renameBuffer(state.collection, id, newName);
+            saveToStorage();
+            if (id === state.collection.currentId) triggerBridge();
         },
 
         triggerBridge,
@@ -475,7 +587,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             document.removeEventListener('visibilitychange', onVisibilityChange);
             window.removeEventListener('beforeunload', onBeforeUnload);
             clearTimeout(state.autosaveTimer);
-            flushStorage();
+            saveToStorage();
             editorView.destroy(shell, element);
         },
     };

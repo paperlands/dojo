@@ -14,6 +14,31 @@ import { createFrame } from "./frame.js"
 import { execute } from "./executor.js"
 import { SE3 } from "./se3.js"
 
+// --- Lens (camera-as-ambient) ---
+//
+// A Lens is an ambient whose Output codomain is the viewport, not the scene.
+// PAPERLANG's Output centre bifurcates: geometry-output (a pen) vs view-output
+// (an eye). A Lens carries the same SE(3) body as a turtle — the only
+// differences are that its pen is forced up (executor) and its head pose is
+// emitted as a `view` event the materializer writes to the camera (here). See
+// specs/eye-ambient.org (id:eye-lens-primitive). v1 reserves the name `eye`.
+const LENS_NAMES = new Set(["eye"])
+export function isLensName(name) {
+    return LENS_NAMES.has(name)
+}
+
+// A Lens frame's head pose lands on the camera, not in the scene: rewrite its
+// `head` events to `view`. Same pose payload (position/rotation), plus the lens
+// param `fov` (added in E2 — undefined until then). Non-lens / non-head events
+// pass through untouched. (id:eye-output-bifurcation)
+function lensOutput(frame, event) {
+    if (frame.isLens && event.type === "head") {
+        const world = frameWorldTransform(frame)
+        return { type: "view", position: world.position, rotation: world.rotation, fov: event.fov }
+    }
+    return event
+}
+
 // --- Tree walk ---
 
 function visitPostOrder(ctx, fn) {
@@ -53,12 +78,50 @@ function sumCounts(ctx) {
 // Walk up the parent chain to find the nearest ancestor with the given name.
 // Used by frame targeting (`as child in parent do`) where `parent` is a name.
 function findAncestorByName(ctx, name) {
+    const reserved = resolveReserved(ctx, name)
+    if (reserved) return reserved
+
     let ancestor = ctx.parent
     while (ancestor) {
         if (ancestor.name === name) return ancestor
         ancestor = ancestor.parent
     }
     return null
+}
+
+// `origin` is the synthetic root — the fixed identity datum at the top of every
+// tree. It never moves and never ticks (it runs no commands), so it is the stable
+// absolute frame: ink targeted at `origin` lands in absolute world coordinates
+// (the root layer renders at identity).
+//
+// `world`, by contrast, is the observer's OWN top-level program (see resolveReserved):
+// a live ambient with a moving transform and a running clock, resolved per-observer
+// and tab-local, so sibling tabs never couple through it.
+// (spec id:ft-d4-world-root — absolute-frame targeting moved from `world` to `origin`)
+const ROOT_NAME = "origin"
+
+// Stable, unique address of a frame across re-eval. Re-eval (hotSwapChild)
+// RECREATES frames — a frame's identity (id) does NOT survive it, nor does any
+// state stored on the frame. What IS stable is the path from root: the top tab's
+// registration KEY (root.children key, the buffer addr — unique per tab) plus the
+// chain of names down to the frame. Used to key cross-lifetime state (an eye's
+// running view pose) so it persists across re-eval (idempotency) yet never
+// collides across sibling tabs that share a reserved name like `eye`.
+export function frameAddress(root, frame) {
+    const names = []
+    let f = frame
+    while (f && f.parent && f.parent !== root) {
+        names.unshift(f.name)
+        f = f.parent
+    }
+    // f is now the top-level child of root (or root itself). Prefer its stable
+    // registration key over its display name (names can collide across tabs).
+    if (f) {
+        let topKey = f.name
+        for (const [k, v] of root.children) { if (v === f) { topKey = k; break } }
+        names.unshift(topKey)
+    }
+    return names.join('/')
 }
 
 // --- World transform: inertial frame composition ---
@@ -87,45 +150,67 @@ function worldTransform(ctx) {
     return ctx._worldCache
 }
 
-// Group transform: the correct transform for positioning a child's THREE.Group.
-// Frame-targeted children use relativeTransform (live parent atoms, matching
-// their path projection). Normal children use worldTransform (birth origin,
-// preserving sibling isolation).
-function groupTransform(ctx) {
-    if (ctx.targetFrame) {
-        const target = findAncestorByName(ctx, ctx.targetFrame)
-        if (target) return relativeTransform(ctx, target)
-    }
-    return worldTransform(ctx)
-}
-
 // --- Inertial frame targeting ---
 
-// Compose the transform chain from a child frame up to (and including)
-// the target ancestor. Maps child-local coordinates into target-local coords.
+// Child-local → target-local change of basis, pivoting through world space:
+// M = worldTransform(target)⁻¹ ∘ worldTransform(ctx)  ( = unapply_target ∘ apply_ctx ).
+// The one shared coordinate mechanism — same pivot as observation/goto. Provably
+// a no-op when target = parent; the projection only manifests once the target
+// moves independently. (spec id:ft-d1-world-pivot)
 function relativeTransform(ctx, target) {
-    const chain = []
-    let ancestor = ctx.parent
-    while (ancestor) {
-        chain.unshift(ancestor.transform.deref())
-        if (ancestor === target) break
-        ancestor = ancestor.parent
-    }
-    if (chain.length === 0) return SE3.identity()
-    return chain.reduce((a, b) => SE3.compose(a, b))
+    return SE3.compose(SE3.invert(worldTransform(target)), worldTransform(ctx))
 }
 
-// Rewrite an event's coordinates from child-local to target-local.
-function transformEvent(event, t) {
+// Rewrite an event's coordinates from child-local to target-local, tagging the
+// source frame so the target layer can consolidate each depositor's ink into its
+// own trail run without corrupting the target's own pen. (spec id:ft-d2-per-source-trails)
+function transformEvent(event, t, sourceId) {
     switch (event.type) {
         case 'path':
-            return { ...event, points: event.points.map(p => SE3.apply(t, p)) }
+            return { ...event, sourceId, points: event.points.map(p => SE3.apply(t, p)) }
         case 'label':
-            return { ...event, position: SE3.apply(t, event.position) }
+            return { ...event, sourceId, position: SE3.apply(t, event.position) }
         case 'grid':
-            return { ...event, position: SE3.apply(t, event.position), rotation: t.rotation }
+            return { ...event, sourceId, position: SE3.apply(t, event.position), rotation: t.rotation.multiply(event.rotation) }
         default:
             return event
+    }
+}
+
+const _samePt = (a, b) =>
+    a && b && Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6 && Math.abs(a[2] - b[2]) < 1e-6
+
+// Assign a stroke-run id to a path event from the SOURCE frame's own (pre-projection)
+// geometry + style. Stable across one continuous pen-down stroke (even when `wait`
+// splits it into per-tick events), bumped on a geometric break (jmp / pen-up) or a
+// style change; reset on re-exec (via `_strokeEnd = null`). The renderer groups runs
+// by this id alone — identical for the source's own pen and for projected ink whose
+// re-baked world points would otherwise look discontinuous. (spec id:ft-d7-deposit-runid)
+function tagRun(ctx, value) {
+    if (value.type !== 'path' || !value.points || !value.points.length) return
+    const style = `${value.color}:${value.thickness}`
+    const continues = style === ctx._strokeStyle && _samePt(value.points[0], ctx._strokeEnd)
+    if (!continues) ctx._strokeRun = (ctx._strokeRun || 0) + 1
+    value.runId = ctx._strokeRun
+    ctx._strokeEnd = value.points[value.points.length - 1]
+    ctx._strokeStyle = style
+}
+
+// The single output path for both the tick loop and the inline drain. Head events
+// update the pose and stay on the frame's own channel. Geometry is tagged with its
+// stroke-run id, then either baked into the target frame (frame targeting) or
+// emitted on the frame's own channel. (spec id:ft-d7-deposit-runid)
+function routeOutput(ctx, value, frameTarget, frameTransform) {
+    if (value.type === "head") {
+        ctx.transform.swap(() => ({ rotation: value.rotation, position: [...value.position] }))
+        ctx.channel.put(lensOutput(ctx, value))
+        return
+    }
+    tagRun(ctx, value)
+    if (frameTarget) {
+        frameTarget.channel.put(transformEvent(value, frameTransform, ctx.id))
+    } else {
+        ctx.channel.put(lensOutput(ctx, value))
     }
 }
 
@@ -136,7 +221,39 @@ function transformEvent(event, t) {
 // Find a named frame: check siblings first, then walk ancestors.
 // Searches by frame.name (display name), not by children map key,
 // so cross-ambient references use tab names (e.g., spiral.x).
+// The synthetic root: walk to the parentless top of the tree. This is `origin` —
+// the fixed identity datum (absolute coordinates, timeless).
+function metaRootFrame(frame) {
+    let node = frame
+    while (node.parent) node = node.parent
+    return node
+}
+
+// The observer's top-level program: the direct child of the synthetic root on the
+// observer's own ancestor chain. This is `world` — a real ambient with a live clock
+// and moving transform, scoped to the observer's tab (sibling tabs never couple).
+// In production the root is synthetic plumbing, so this lands on the program; if the
+// observer IS the root (test harness runs a program as root), it resolves to itself.
+function topLevelFrame(frame) {
+    const root = metaRootFrame(frame)
+    if (frame === root) return root
+    let node = frame
+    while (node.parent !== root) node = node.parent
+    return node
+}
+
+// Reserved universe names resolve relative to the observer, not by frame.name.
+// `world` → own top-level program; `origin` → synthetic root datum.
+function resolveReserved(frame, name) {
+    if (name === 'world') return topLevelFrame(frame)
+    if (name === 'origin') return metaRootFrame(frame)
+    return null
+}
+
 function findFrame(frame, name) {
+    const reserved = resolveReserved(frame, name)
+    if (reserved) return reserved
+
     // Siblings (parent's children, or own children if root)
     const parent = frame.parent || frame
     for (const child of parent.children.values()) {
@@ -282,11 +399,17 @@ function pushMailbox(frame, msg) {
 }
 
 // Deliver a single shout to a frame, tracking delivery to prevent duplicates.
-function deliverShout(shout, target) {
-    if (target === shout.from) return
+// De-dup keys on the frame's ADDRESS (stable across re-eval), not its id —
+// a re-eval'd receiver (new frame, same address) is never re-delivered, and a
+// shout never returns to its emitter's address even if the emitter was reborn.
+// (specs/groundwork.org Phase 1; id fallback for bare createFrame harnesses.)
+export function deliverShout(shout, target) {
+    const addr = target.address ?? target.id
+    const fromAddr = shout.from ? (shout.from.address ?? shout.from.id) : null
+    if (target === shout.from || addr === fromAddr) return
     if (!shout._delivered) shout._delivered = new Set()
-    if (shout._delivered.has(target.id)) return
-    shout._delivered.add(target.id)
+    if (shout._delivered.has(addr)) return
+    shout._delivered.add(addr)
     pushMailbox(target, { name: shout.name, payload: shout.payload })
 }
 
@@ -344,6 +467,7 @@ function createChildGenerator(value, createDeps, execOpts) {
             functions: value.code.functions,
             loopCounter: value.env?.loopCounter,
             scope: value.env?.scope,
+            lens: isLensName(value.name),
             mailbox,
         }),
         deps: childDeps,
@@ -357,6 +481,10 @@ function createChildGenerator(value, createDeps, execOpts) {
 // not part of the Frame primitive contract.
 function attachMeta(frame, targetFrame) {
     frame.targetFrame = targetFrame || null
+    frame.isLens = isLensName(frame.name)
+    // A Lens needs no captured baseline: its camera effect is a pure function of
+    // its LIVE world pose, read each frame by the compositor's model-layer reframe
+    // (world ← E⁻¹·world). Idempotency is algebraic, not stored. (id:eye-view-pipeline)
     frame.error = null
     frame.commandCount = 0
     frame.elapsedTime = 0
@@ -392,11 +520,17 @@ function unwireWorldCache(child) {
 
 // Wire a freshly created child frame: attach deps, mailbox, resolve binding,
 // world origin, cache invalidation, and register in the flat index.
+// Stamps the frame's stable ADDRESS — the one cross-eval identity register
+// (shout de-dup, focus, navigation). Requires top-level frames to already sit
+// in root.children so frameAddress finds their registration key. The id stays
+// per-LIFETIME plumbing: registry/layers/deposit-GC key on it so a re-eval
+// (new id) clears the old life's ink while the address keeps its identity.
 function wireChild(child, deps, mailbox, registry) {
+    child.address = frameAddress(metaRootFrame(child), child)
     child.deps = deps
     child.mailbox = mailbox
     bindResolve(deps, child)
-    deps.worldOriginFn = () => groupTransform(child)
+    deps.worldOriginFn = () => worldTransform(child)
     wireWorldCacheInvalidation(child)
     registry.set(child.id, child)
 }
@@ -410,9 +544,10 @@ function rewireChild(child, value, createDeps, execOpts) {
     child.deps = re.deps
     child.mailbox = re.mailbox
     bindResolve(re.deps, child)
-    re.deps.worldOriginFn = () => groupTransform(child)
+    re.deps.worldOriginFn = () => worldTransform(child)
     child.done = false
     child.error = null
+    child._strokeEnd = null   // fresh stroke run on re-exec (spec id:ft-d7-deposit-runid)
     child.channel.drain()
     child.channel.put({ type: 'clear' })
 }
@@ -489,13 +624,13 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                     rotation: value.rotation,
                     position: [...value.position]
                 }))
-                child.channel.put({
+                child.channel.put(lensOutput(child, {
                     type: "head",
                     position: value.position,
                     rotation: value.rotation,
                     color: value.color,
                     headSize: value.headSize
-                })
+                }))
             }
             return null
         }
@@ -565,18 +700,8 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
             continue
         }
 
-        // Output event
-        if (value.type === "head") {
-            child.transform.swap(() => ({
-                rotation: value.rotation,
-                position: [...value.position]
-            }))
-            child.channel.put(value)
-        } else if (frameTarget) {
-            frameTarget.channel.put(transformEvent(value, frameTransform))
-        } else {
-            child.channel.put(value)
-        }
+        // Output event — single routed path (head pose-swap + run tagging inside).
+        routeOutput(child, value, frameTarget, frameTransform)
     }
 }
 
@@ -589,9 +714,10 @@ export function createScheduler(generator, opts = {}) {
     const onShout = opts.onShout || null
 
     const root = attachMeta(
-        createFrame('__meta__', generator, { channelCapacity }),
+        createFrame(ROOT_NAME, generator, { channelCapacity }),
         null
     )
+    root.address = ROOT_NAME
     // Wire shared mailbox — same array the root executor reads from
     if (opts.rootMailbox) root.mailbox = opts.rootMailbox
     // Wire root observation — root can read children via dotted access
@@ -636,8 +762,10 @@ export function createScheduler(generator, opts = {}) {
                 }),
                 null
             )
-            wireChild(child, deps, mailbox, registry)
+            // Register under the key BEFORE wiring: wireChild stamps the frame's
+            // address, whose top segment is this registration key.
             root.children.set(key, child)
+            wireChild(child, deps, mailbox, registry)
 
             advanceChild(child, this.lastTickTime, createDeps, execOpts, channelCapacity, registry, [], onShout)
             this.done = false
@@ -737,13 +865,13 @@ export function createScheduler(generator, opts = {}) {
                                 rotation: value.rotation,
                                 position: [...value.position]
                             }))
-                            ctx.channel.put({
+                            ctx.channel.put(lensOutput(ctx, {
                                 type: "head",
                                 position: value.position,
                                 rotation: value.rotation,
                                 color: value.color,
                                 headSize: value.headSize
-                            })
+                            }))
                         }
                         produced = true
                         break
@@ -822,28 +950,9 @@ export function createScheduler(generator, opts = {}) {
                         continue
                     }
 
-                    // --- Output: all other events pass through to channel ---
-
-                    // Intercept head events to update transform atom
-                    if (value.type === "head") {
-                        ctx.transform.swap(() => ({
-                            rotation: value.rotation,
-                            position: [...value.position]
-                        }))
-                    }
-
-                    // Frame targeting: route events to ancestor frame
-                    // using cached projection (constant within a tick pass).
-                    if (frameTarget) {
-                        if (value.type === "head") {
-                            ctx.channel.put(value)
-                        } else {
-                            const transformed = transformEvent(value, frameTransform)
-                            frameTarget.channel.put(transformed)
-                        }
-                    } else {
-                        ctx.channel.put(value)
-                    }
+                    // --- Output: single routed path (head pose-swap + run tagging,
+                    // projection / own-channel routing). (spec id:ft-d7-deposit-runid)
+                    routeOutput(ctx, value, frameTarget, frameTransform)
                     produced = true
                 }
 
@@ -868,4 +977,5 @@ export function createScheduler(generator, opts = {}) {
 // Completes immediately — visitPostOrder still walks children.
 export function* metaRoot() { return 0 }
 
-export { createFrame, visitPostOrder, terminateAmbient, allDone, worldTransform, groupTransform, findAncestorByName, resolveBinding }
+export { createFrame, visitPostOrder, terminateAmbient, allDone, worldTransform, frameWorldTransform, findAncestorByName, resolveBinding }
+// frameAddress is exported at its definition (stable cross-re-eval frame key).

@@ -19,13 +19,15 @@ export const createInnerView = (element, cm6, extensions) => {
     return { view, wrapper };
 };
 
-export const createOuterView = (element, cm6, extensions) => {
+// Outer view starts read-only, but read-only lives in a Compartment so the
+// review surface can become editable when the user drafts a change in place.
+export const createOuterView = (element, cm6, extensions, readOnlyCompartment) => {
     const { EditorView, EditorState } = cm6;
 
     const view = new EditorView({
         state: EditorState.create({
             doc: '',
-            extensions: [...extensions, EditorState.readOnly.of(true)],
+            extensions: [...extensions, readOnlyCompartment.of(EditorState.readOnly.of(true))],
         }),
         parent: element,
     });

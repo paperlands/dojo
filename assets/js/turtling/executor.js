@@ -4,6 +4,7 @@
 
 import { COMMANDS, DEFAULT_STYLE } from "./commands.js"
 import { SE3 } from "./se3.js"
+import { recenterPose } from "./view.js"
 import { createStroke, extend as strokeExtend, flush as strokeFlush, fill as strokeFill } from "./stroke.js"
 import { matchPattern } from "./match.js"
 
@@ -36,8 +37,14 @@ export function* execute(ast, deps, opts = {}) {
     // Actor state: if provided, this is a continuation — same ambient, new command batch.
     // The state object is shared and mutated in-place across all batches.
     const state = opts.actorState || {
-        transform: SE3.identity(),
-        style: { ...DEFAULT_STYLE, color: opts.color || DEFAULT_STYLE.color },
+        // A Lens (`eye`) seeds its spawn frame to recenterPose() so an empty eye
+        // reframes the world to identity ⇒ the live orbit camera renders today's
+        // default view; fw/rt/dive/roll then compose from there. (id:eye-view-pipeline)
+        transform: opts.lens ? recenterPose() : SE3.identity(),
+        // A Lens (`eye`) is pen-up by construction: its Output codomain is the
+        // viewport, not the scene, so it never lays down geometry. (Phase E0,
+        // specs/eye-ambient.org id:eye-lens-primitive.)
+        style: { ...DEFAULT_STYLE, color: opts.color || DEFAULT_STYLE.color, ...(opts.lens ? { down: false } : {}) },
         functions: opts.functions ? { ...opts.functions } : {},
         commandCount: 0,
         recurseCount: 0,
@@ -131,13 +138,16 @@ function* walkBody(body, scope, state, stroke) {
 
         case 'Call': {
             // fn/func: math function definition — delegate to math parser.
-            // Capture evaluator constants (count, x, y, z, time) at definition time
-            // so fn bodies are frozen snapshots, not re-evaluated lazily.
+            // Capture foldable evaluator constants (count, x, y, z, time) at definition
+            // time so fn bodies are frozen snapshots. Deferred constants (random) stay
+            // symbolic so they re-evaluate lazily at each point of use.
             if (node.value === "fn" || node.value === "func") {
                 const rawArgs = node.children.map(arg => arg.value)
                 const fnScope = { ...scope }
                 const ec = state.deps.mathEvaluator.constants
+                const deferred = state.deps.mathEvaluator.deferred
                 for (const key of Object.keys(ec)) {
+                    if (deferred?.has(key)) continue   // late-evaluated: keep symbolic
                     if (!(key in fnScope)) fnScope[key] = ec[key]()
                 }
                 state.deps.mathParser.defineFunction(rawArgs[0], rawArgs[1] || 0, fnScope)

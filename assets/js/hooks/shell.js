@@ -1,6 +1,6 @@
 import { Turtle } from "../turtling/turtle.js"
 import { Terminal } from "../terminal.js"
-import { cameraBridge, sceneBridge } from "../bridged.js"
+import { cameraBridge, sceneBridge, scene } from "../bridged.js"
 import { computePosition, offset } from "../../vendor/floating-ui.dom.umd.min";
 import { temporal } from "../utils/temporal.js"
 import {printAST} from "../turtling/parse.js"
@@ -105,8 +105,17 @@ const listeners = {
             !e.ctrlKey && !e.metaKey &&
             (e.key.length === 1 || ['Enter', 'Backspace', 'Delete'].includes(e.key)) &&
             !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(document.activeElement?.tagName) &&
+            // Don't steal focus when ANY CM6 editor is focused — the outer review
+            // surface is a contenteditable DIV, so the tagName check misses it.
+            // Typing in the editable outershell must stay there, not jump to core.
+            !document.activeElement?.closest?.('.cm-editor') &&
+            // Hard stop while the outershell is being drafted: even if a re-render
+            // momentarily blurs the outer editor to <body>, the next keystroke
+            // must not jump to the core editor. The outer Terminal owns this fact
+            // (state.drafting) — query it directly, no shadow global flag.
+            !document.getElementById('outershell')?.__terminal?.drafting() &&
             !shell.hasFocus &&
-            !shell.state.readOnly; // outer shell is read-only — don't capture
+            !shell.state.readOnly;
 
         return {
             mount: () => {
@@ -224,17 +233,6 @@ const listeners = {
 // =============================================================================
 
 const mutators = {
-    display: (element) => ({
-        success: (count) => {
-            element.style.color = "#FF9933";
-            element.innerHTML = `${count}`;
-        },
-        error: (message) => {
-            element.style.color = "#FF0000";
-            element.innerHTML = `Error: ${message}`;
-        }
-    }),
-
     slider: (sliderId) => {
         const element = document.getElementById(sliderId);
         let hideTimer, observer;
@@ -317,9 +315,6 @@ const Shell = {
             // Outer shell: read-only code viewer + bridge publisher.
             // Rendering is handled by the inner shell via seeOuterShell.
             // Interactive events (focus, remove, fork) go through scene bridge.
-            const output = document.getElementById('outer-output');
-            const display = mutators.display(output);
-
             let outerAddr = null;
             let outerName = null;
             let outerBufferId = null;
@@ -328,6 +323,23 @@ const Shell = {
 
             term.outer();
             this.el.__cm = term.shell;
+            this.el.__terminal = term;   // owner of `drafting()` — see the core focus guard
+            const envEl = this.el.closest('#outerenv');
+
+            // A claimant projection over the ONE shared nerve: while open, this
+            // panel claims the watched friend's address (their name), so their
+            // signals — ambient shouts AND server status — route here instead of
+            // the local corner. Navigation targets the outer editor. The friend's
+            // ambient shouts arrive via the core turtle's _onShout (source = their
+            // name); no separate relay channel. retarget() follows disciple swaps.
+            const remoteNerveEl = document.getElementById('outer-nerve');
+            const outerProj = remoteNerveEl && nerveInstance
+                ? nerveInstance.project(remoteNerveEl, {
+                    pushEvent: (e, p) => this.pushEvent(e, p),
+                    targets: { editorView: () => this.el.__cm },
+                })
+                : null;
+
             this.el.__scrollToCursor = () => {
                 const shell = term.shell;
                 if (!shell || !shell.hasFocus) return;
@@ -335,37 +347,75 @@ const Shell = {
                 shell.dispatch({ effects: cm6.EditorView.scrollIntoView(pos, { y: 'center' }) });
             };
 
-            // Fork-on-type: typing in the read-only outershell forks the buffer
-            // into the inner shell via scene bridge.
-            const forkOnType = (e) => {
-                if (e.ctrlKey || e.metaKey || e.altKey) return;
-                if (e.key.length > 1 && !['Enter', 'Backspace', 'Delete', 'Tab', ' '].includes(e.key)) return;
+            // While drafting, a body flag tells the core shell's global
+            // "type-anywhere-to-focus" capture to stand down — so typing here
+            // can never jump focus to the core editor, even if a re-render or
+            // the merge view's async DOM briefly blurs us.
+            // Live = your draft is running on the canvas (you've intervened);
+            // frozen = you're only editing text against a snapshot.
+            let draftLive = false;
 
-                const source = term.getValue();
-                if (!source || !outerAddr) return;
-
-                const cursorOffset = term.shell?.state?.selection?.main?.head ?? 0;
-
-                sceneBridge.pub(['fork', {
-                    source,
-                    name: outerName || 'friend',
-                    addr: outerAddr,
-                    buffer_id: outerBufferId,
-                    time: Date.now(),
-                    offset: cursorOffset,
-                    key: e.key,
-                }]);
-
-                term.shell.dom.removeEventListener('keydown', forkOnType);
+            // Run the current draft as the friend's ambient on the canvas, so an
+            // intervention on broken code actually executes. Their code keeps
+            // streaming into the merge baseline (the diff reference) separately.
+            const runDraft = () => {
+                if (!outerAddr) return;
+                scene.ambient(outerAddr, outerName || 'friend', term.getValue());
+            };
+            const stopDraftRun = () => {
+                if (outerAddr) scene.ambientStop(outerAddr);
             };
 
-            term.shell.dom.addEventListener('keydown', forkOnType);
+            const enterDraft = () => {
+                term.beginDraft({ addr: outerAddr, buffer_id: outerBufferId });
+                if (envEl) envEl.dataset.outerState = 'draft';   // yellow wash (terminal-owned transition)
+            };
+            const leaveDraft = () => {
+                stopDraftRun();
+                draftLive = false;
+                term.endDraft();
+                if (envEl) envEl.dataset.outerState = 'ok';      // next seeOuterShell re-colors
+            };
+
+            // Type-to-draft: the first edit-intent keystroke turns the read-only
+            // review surface editable. CAPTURE phase is essential — we flip
+            // read-only off *before* CM6's own keydown/input handlers run, so
+            // CM6 then applies this very keystroke natively (char, newline, tab,
+            // delete — all of it). No preventDefault, no lossy manual replay.
+            // Self-guards via term.drafting(): once drafting, CM6 owns the keys.
+            const onDraftKey = (e) => {
+                if (term.drafting()) return;
+                if (e.ctrlKey || e.metaKey || e.altKey) return;
+                if (!(e.key.length === 1 || ['Enter', 'Backspace', 'Delete', 'Tab'].includes(e.key))) return;
+                if (!outerAddr) return;
+
+                enterDraft();
+                this.pushEvent("outerDraft", {});
+            };
+            term.shell.dom.addEventListener('keydown', onDraftKey, true);
+
+            // Go live → run the draft; go frozen → stop running (revert to their code).
+            this.handleEvent("outerLive", ({ live }) => {
+                draftLive = !!live;
+                if (draftLive) runDraft();
+                else stopDraftRun();
+            });
+
+            // Re-run the draft as you edit it, but only while live.
+            const runDraftDebounced = temporal.debounce(runDraft, 60);
+            const draftEditUnsub = term.bridge.sub(() => {
+                if (term.drafting() && draftLive) runDraftDebounced();
+            });
 
             this.handleEvent("seeOuterShell", (payload) => {
-                // Disciple switch: remove old ambient, re-arm fork
+                // Disciple switch: drop stale draft + ambient. Remove by the addr
+                // the ambient was REGISTERED under (upsertAmbient keys on addr) —
+                // passing the display name relied on a deleted name-scan fallback
+                // and silently skipped the draft bookkeeping cleanup (which is
+                // keyed by addr) in the inner shell's remove handler.
                 if (payload?.addr && payload.addr !== prevAddr) {
-                    if (prevName) sceneBridge.pub(['remove', { ambientId: prevName }]);
-                    term.shell?.dom.addEventListener('keydown', forkOnType);
+                    if (prevAddr) scene.remove(prevAddr);
+                    if (term.drafting()) leaveDraft();
                     prevAddr = payload.addr;
                 }
 
@@ -373,29 +423,67 @@ const Shell = {
                 if (payload?.origin_name) outerName = payload.origin_name;
 
                 if (outerName && outerName !== prevName) {
-                    sceneBridge.pub(['focus', { ambientId: outerName }]);
+                    scene.focus(outerName);
+                    outerProj?.retarget(outerName);   // claim this friend's signals
                     prevName = outerName;
                 }
                 if (payload?.buffer_id) outerBufferId = payload.buffer_id;
 
-                if (payload?.state === "success" && payload?.commands) {
-                    term.changeouter(printAST(payload.commands));
-                    display.success('✓');
+                const view = payload?.view ?? 'watch';
+                const errored = payload?.state === 'error';
+                const source = (payload?.state === 'success' && payload?.commands)
+                    ? printAST(payload.commands)
+                    : (payload?.source ?? '');
+
+                if (view === 'draft') {
+                    // Live baseline: stream the friend's code into the merge original.
+                    if (payload?.stream) term.streamOrigin(source);
                 } else {
-                    term.changeouter(payload?.source ?? '');
-                    if (payload?.message) display.error(payload.message);
+                    term.changeouter(source);
+                }
+
+                if (envEl) {
+                    envEl.dataset.outerState = view === 'draft' ? 'draft' : (errored ? 'error' : 'ok');
                 }
             });
 
-            // Focus switching via scene bridge
-            const outerEl = this.el.closest('.outershell') || this.el;
+            // Friend's execution status → the remote nerve below their code.
+            // A separate event from seeOuterShell so it flows even in a frozen
+            // draft, where the editor push is withheld.
+            this.handleEvent("outerSignal", ({ state, message, name }) => {
+                const who = name || 'friend';
+                if (state === 'success') {
+                    nerveInstance?.push(S.remote(who, '☀︎', null, 'output'));
+                } else if (state === 'error' && message) {
+                    nerveInstance?.push(S.remote(who, 'error', message, 'error'));
+                }
+            });
 
+            // Keep-as-fork: deliberate promotion of the draft into a coreshell
+            // tab (delegated — #outer-fork mounts/unmounts with the draft view).
+            const outerEl = this.el.closest('.outershell') || this.el;
+            const onDelegatedClick = (e) => {
+                if (!e.target.closest('#outer-fork')) return;
+                const source = term.getValue();
+                if (!source || !outerAddr) return;
+                scene.fork({
+                    source,
+                    name: outerName || 'friend',
+                    addr: outerAddr,
+                    buffer_id: outerBufferId,
+                    time: Date.now(),
+                    offset: term.shell?.state?.selection?.main?.head ?? 0,
+                });
+            };
+            outerEl.addEventListener('click', onDelegatedClick);
+
+            // Focus switching via scene bridge
             const activateOuter = () => {
-                if (outerName) sceneBridge.pub(['focus', { ambientId: outerName }]);
+                if (outerName) scene.focus(outerName);
             };
 
             const restoreInner = () => {
-                sceneBridge.pub(['focus', { ambientId: 'world' }]);
+                scene.focus('world');
             };
 
             const onOuterClick = () => activateOuter();
@@ -408,8 +496,15 @@ const Shell = {
 
             this.cleanup = [
                 listeners.theme(theme => term.setOption('theme', theme)).mount(),
-                () => { if (outerAddr) sceneBridge.pub(['remove', { ambientId: outerAddr }]); },
-                () => term.shell?.dom.removeEventListener('keydown', forkOnType),
+                // Authoritative teardown: drop this addr from the canvas entirely.
+                // NOT stopDraftRun() — ambientStop *reverts* to the friend's code
+                // (panel stays open); on close we want the slot gone. Firing it
+                // here re-added the ambient milliseconds after removing it.
+                () => { if (outerAddr) scene.remove(outerAddr); },
+                () => term.shell?.dom.removeEventListener('keydown', onDraftKey, true),
+                draftEditUnsub,
+                () => outerProj?.destroy(),
+                () => outerEl.removeEventListener('click', onDelegatedClick),
                 () => { outerEl.removeEventListener('mousedown', onOuterClick);
                         document.removeEventListener('focusin', onGlobalFocus); },
             ];
@@ -419,10 +514,21 @@ const Shell = {
             const turtle = new Turtle(canvas);
             canvas.__turtle = turtle;
 
-            // C10: _onShout must precede term.bridge.sub which triggers first render
-            // C4: tabId captured in upsertAmbient closure, arrives as first arg
-            turtle._onShout = (focusedName, source, msg, payload) => {
-                nerveInstance?.push(S.shout(source, msg, payload, focusedName))
+            // Profiler overlay — opt-in via ?perf=1. Lazy-imported so it adds
+            // zero cost to normal sessions. Reports RAF idle-spin + GPU growth.
+            if (new URLSearchParams(location.search).has('perf')) {
+                import('../turtling/profile/overlay.js')
+                    .then(m => { this._profilerDetach = m.attachProfilerOverlay(turtle); })
+                    .catch(err => console.warn('profiler overlay failed to load:', err));
+            }
+
+            // _onShout must precede term.bridge.sub which triggers first render.
+            // Push every shout into the one store, addressed by its source. The
+            // friend's ambient shouts (source = their name) route to the claiming
+            // outershell panel; your own ambients fall to the local residual —
+            // routing is a read-side concern, not decided here.
+            turtle._onShout = (source, msg, payload) => {
+                nerveInstance?.push(S.shout(source, msg, payload))
             }
 
             const renderCommand   = commands.render(turtle);
@@ -440,7 +546,7 @@ const Shell = {
 
 
             const debouncedRender = temporal.debounce(({ id, name, content }) => {
-                nerveInstance?.store.run()
+                nerveInstance?.run()
                 const result = renderCommand(id, name, content);
                 if (result.success) {
                     nerveInstance?.push(S.output("☀︎", result.commandCount))
@@ -448,7 +554,9 @@ const Shell = {
                     const line = parseErrorLine(result.error)
                     nerveInstance?.push(S.error("error", result.error, line ? { line } : null))
                 }
-                // Sync tab indicators: draw is exclusive, only this tab is active
+                // Sync tab indicators: draw is exclusive for a tab outside the
+                // active group, but a shift+click sister group survives edits
+                // and re-selection of its members — mirror whatever stands.
                 term.clearAllTabActive()
                 for (const key of turtle._localKeys) {
                     term.setTabActive(key)
@@ -477,14 +585,24 @@ const Shell = {
                 }
             });
             term.inner();
-            // Expose CM6 view on the textarea so nerve hook can scrollToLine
+            // Expose CM6 view on the textarea so nerve hook can scrollToLine.
+            // Expose the terminal so the outer review surface can read your
+            // fork content along a lineage (forkContent) to seed a draft.
             this.el.__cm = term.shell;
+            this.el.__terminal = term;
             this.el.__scrollToCursor = () => {
                 const shell = term.shell;
                 if (!shell || !shell.hasFocus) return;
                 const pos = shell.state.selection.main.head;
                 shell.dispatch({ effects: cm6.EditorView.scrollIntoView(pos, { y: 'center' }) });
             };
+
+            // Draft execution state: addrs whose canvas slot is currently owned
+            // by a reviewer's live draft, plus the friend's last code/name per
+            // addr (to revert the slot when the draft stops).
+            const draftControlled = new Set()
+            const lastFriendCode = new Map()
+            const friendNames = new Map()
 
             // Scene bridge: handle focus/remove/fork from outer shell
             const sceneUnsub = sceneBridge.sub(([type, payload]) => {
@@ -517,6 +635,13 @@ const Shell = {
                 }
                 case 'remove': {
                     turtle.removeAmbient(payload.ambientId)
+                    // Forget this addr's draft bookkeeping — otherwise a later
+                    // re-watch of the same friend is blocked by a stale
+                    // draftControlled entry (seeOuterShell early-returns on it),
+                    // or silently revived by a lingering lastFriendCode.
+                    draftControlled.delete(payload.ambientId)
+                    lastFriendCode.delete(payload.ambientId)
+                    friendNames.delete(payload.ambientId)
                     const activeName = term.currentBufferName()
                     if (activeName) {
                         turtle.focusAmbient(activeName)
@@ -530,16 +655,43 @@ const Shell = {
                     term.forkBuffer(payload)
                     term.shell?.focus()
                     break
+                case 'ambient': {
+                    // A live draft from the outer review surface — run the
+                    // reviewer's intervention as this addr's ambient. Mark it
+                    // controlled so the friend's own updates don't clobber it.
+                    draftControlled.add(payload.addr)
+                    turtle.upsertAmbient(payload.addr, payload.name, payload.code)
+                    turtle.setAmbientOpacity(payload.name, 1.0)
+                    turtle.requestRender()
+                    break
+                }
+                case 'ambientStop': {
+                    // Draft frozen/ended — hand the slot back to the friend's code.
+                    draftControlled.delete(payload.addr)
+                    const code = lastFriendCode.get(payload.addr)
+                    // Reverting to the friend's code is passive — no hatch.
+                    if (code != null) turtle.upsertAmbient(payload.addr, friendNames.get(payload.addr) || payload.addr, code, { hatch: false })
+                    turtle.requestRender()
+                    break
+                }
                 }
             });
 
-            // Remote code rendering: inner shell handles seeOuterShell directly
+            // Remote code rendering: inner shell handles seeOuterShell directly.
+            // While an addr is draft-controlled, the running draft owns the
+            // canvas slot — record the friend's code (for revert) but don't
+            // overwrite the intervention with it.
             this.handleEvent("seeOuterShell", (payload) => {
                 if (!payload?.addr) return
                 if (payload.state === "success" && payload.commands) {
                     const code = printAST(payload.commands)
                     const name = payload.origin_name || payload.addr
-                    turtle.upsertAmbient(payload.addr, name, code)
+                    lastFriendCode.set(payload.addr, code)
+                    friendNames.set(payload.addr, name)
+                    if (draftControlled.has(payload.addr)) return
+                    // Passive watch: render the friend but never hatch — their
+                    // drawing must not be reflected to the server as the user's.
+                    turtle.upsertAmbient(payload.addr, name, code, { hatch: false })
                     const isFocused = turtle.compositor?.focusedName === name
                     turtle.setAmbientOpacity(name, isFocused ? 1.0 : 0.4)
                     if (payload.buffer_id) {
@@ -555,6 +707,7 @@ const Shell = {
                 slider.mount(),
                 listeners.slider(term.shell, slider, cm6).mount(),
                 () => turtle.dispose(),
+                () => this._profilerDetach?.(),
                 sceneUnsub,
             ];
 

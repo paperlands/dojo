@@ -53,17 +53,12 @@ defmodule DojoWeb.ShellLive do
     |> start_async(:list_disciples, fn -> Dojo.Class.list_disciples("shell:" <> clan) end)
   end
 
-  defp sync_session(
-         %{assigns: %{session: %Session{name: name, last_opened: time}, clan: clan}} = socket
-       )
+  defp sync_session(%{assigns: %{session: %Session{name: name} = session, clan: clan}} = socket)
        when is_binary(name) do
     parent = self()
 
-    # Compute user_id: combine name + first login time for unique session identity
-    # Same logic as hatchTurtle to ensure consistency
-    user_id =
-      (name <> Base.encode64(to_string(time)))
-      |> String.replace(~r/[^a-zA-Z0-9]/, "")
+    # The one identity derivation — Session.user_id/1 (decision 007).
+    user_id = Session.user_id(session)
 
     socket
     |> start_async(:join_disciples, fn ->
@@ -133,34 +128,53 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_async(:follow_code, {:ok, %Dojo.Turtle{} = turtle}, socket) do
-    case OuterShell.transition(socket.assigns.outershell, turtle) do
-      {:push, shell} ->
-        {:noreply,
-         socket
-         |> assign(:outershell, shell)
-         |> push_event("seeOuterShell", outer_shell_payload(turtle, shell))}
+    prev = socket.assigns.outershell.origin
+    shell = OuterShell.observe(socket.assigns.outershell, turtle)
+    socket = assign(socket, :outershell, shell)
 
-      {:silent, shell} ->
-        {:noreply, assign(socket, :outershell, shell)}
+    # A hatch with unchanged code is just a preview/path bump — advance time
+    # (via observe above) but don't react: no re-render, re-stream, or re-run.
+    if OuterShell.code_changed?(prev, turtle) do
+      # The friend's status always flows to the nerve — even in a frozen draft,
+      # where the editor push is held back so it won't disturb your draft.
+      socket = push_event(socket, "outerSignal", outer_signal(turtle, shell))
+
+      socket =
+        case OuterShell.render_intent(shell) do
+          {:push, source} ->
+            push_event(socket, "seeOuterShell", outer_shell_payload(source, shell))
+
+          :hold ->
+            socket
+        end
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
     end
   end
 
   def handle_async(:follow_code, {:ok, _}, socket), do: {:noreply, socket}
   def handle_async(:follow_code, {:exit, _reason}, socket), do: {:noreply, socket}
 
-  # presence handlers — keyed by reg_key from node tuple (stable unique identity)
+  # presence handlers — keyed by reg_key (a meta field; Disciple.reg_key/1
+  # stays tolerant of legacy metas where it rode inside the node tuple).
+  # The `disciples` assign is a DECLARED READ-ONLY PROJECTION of Tracker
+  # state + Table meta (Phase 4): written only here and by the pull/hatch
+  # meta refreshers — never written back to any owner.
 
   def handle_info(
-        {:join, "class:shell" <> _, %{node: {reg_key, _}} = disciple},
+        {:join, "class:shell" <> _, disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
-    {:noreply, assign(socket, :disciples, Map.put(d, reg_key, disciple))}
+    {:noreply, assign(socket, :disciples, Map.put(d, Dojo.Disciple.reg_key(disciple), disciple))}
   end
 
   def handle_info(
-        {:leave, "class:shell" <> _, %{node: {reg_key, _}, phx_ref: ref}},
+        {:leave, "class:shell" <> _, %{phx_ref: ref} = disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
+    reg_key = Dojo.Disciple.reg_key(disciple)
     # only delete if the leaving ref matches the current ref for this reg_key
     # prevents stale-leave race when Gate.change regenerates phx_ref
     if d[reg_key][:phx_ref] == ref do
@@ -220,45 +234,35 @@ defmodule DojoWeb.ShellLive do
   # --- OuterShell LiveComponent messages ---
 
   def handle_info({:outer_shell, :close}, socket) do
-    {:noreply, assign(socket, :outershell, %OuterShell{})}
+    {:noreply, reset_outershell(socket)}
   end
 
-  def handle_info({:outer_shell, :toggle_follow, follow}, socket) do
-    {:noreply, update(socket, :outershell, &%{&1 | follow: follow})}
+  def handle_info({:outer_shell, :toggle_follow}, socket) do
+    # The LiveView owns the authoritative follow flag; the component emits a bare
+    # intent and we flip our own value — no stale read round-trips through the UI.
+    {:noreply, update(socket, :outershell, &%{&1 | follow: !&1.follow})}
   end
 
-  def handle_info({:outer_shell, :preview}, socket) do
-    shell = socket.assigns.outershell
-
-    case OuterShell.preview(shell) do
-      {:push_freeze, new_shell} ->
-        {:noreply,
-         socket
-         |> assign(:outershell, new_shell)
-         |> push_event("seeOuterShell", outer_shell_payload(new_shell.freeze_turtle, new_shell))}
-
-      {:noop, _} ->
-        {:noreply, socket}
-    end
+  def handle_info({:outer_shell, :recall}, socket) do
+    {:noreply, apply_outer_view(socket, OuterShell.recall(socket.assigns.outershell))}
   end
 
-  def handle_info({:outer_shell, :dismiss_preview}, socket) do
-    shell = socket.assigns.outershell
-
-    case OuterShell.dismiss(shell) do
-      {:push_live, new_shell} ->
-        {:noreply,
-         socket
-         |> assign(:outershell, new_shell)
-         |> push_event("seeOuterShell", outer_shell_payload(new_shell.live_turtle, new_shell))}
-
-      {:noop, _} ->
-        {:noreply, socket}
-    end
+  def handle_info({:outer_shell, :watch}, socket) do
+    {:noreply, apply_outer_view(socket, OuterShell.watch(socket.assigns.outershell))}
   end
 
-  def handle_info({:outer_shell, :fork, fork_data}, socket) do
-    {:noreply, push_event(socket, "forkBuffer", fork_data)}
+  def handle_info({:outer_shell, :toggle_stream}, socket) do
+    shell = OuterShell.toggle_stream(socket.assigns.outershell)
+    live = shell.view == :draft and shell.stream
+
+    socket =
+      socket
+      |> apply_outer_view(shell)
+      |> push_event("outerLive", %{live: live})
+
+    # Going live: pull their freshest code so the diff baseline (and your running
+    # draft's reference) is current right away, not at the next hatch.
+    {:noreply, if(live, do: fetch_latest(socket), else: socket)}
   end
 
   # --- Nerve signal relay ---
@@ -319,14 +323,12 @@ defmodule DojoWeb.ShellLive do
   def handle_event(
         "hatchTurtle",
         %{"state" => _state} = payload,
-        %{assigns: %{class: class, clan: clan, session: %{name: name, last_opened: time}}} =
+        %{assigns: %{class: class, clan: clan, session: %Session{name: name} = session}} =
           socket
       )
       when is_binary(name) do
-    # this is user sesion first logintime
-    id =
-      (name <> Base.encode64(to_string(time)))
-      |> String.replace(~r/[^a-zA-Z0-9]/, "")
+    # The one identity derivation — Session.user_id/1 (decision 007).
+    id = Session.user_id(session)
 
     Dojo.Turtle.reflect(payload, %{topic: :hatch, class: class, node: node(), id: id, clan: clan})
 
@@ -347,34 +349,19 @@ defmodule DojoWeb.ShellLive do
         %{assigns: %{disciples: dis, class: _class}} = socket
       )
       when is_binary(addr) do
-    case Dojo.Table.last(dis[addr][:node], :hatch) do
-      %Dojo.Turtle{state: :success} = turtle ->
-        outershell = %OuterShell{
-          mode: :live,
-          live_turtle: turtle,
-          addr: addr,
-          active: true,
-          name: "#{dis[addr][:name]}"
-        }
+    case Dojo.Table.last(Dojo.Disciple.table_address(dis[addr]), :hatch) do
+      %Dojo.Turtle{} = turtle ->
+        outershell =
+          OuterShell.observe(
+            %OuterShell{addr: addr, active: true, name: "#{dis[addr][:name]}"},
+            turtle
+          )
 
         {:noreply,
          socket
          |> push_event("seeOuterShell", outer_shell_payload(turtle, outershell))
+         |> push_event("outerSignal", outer_signal(turtle, outershell))
          |> assign(:outershell, outershell)}
-
-      %Dojo.Turtle{state: :error} = turtle ->
-        {:noreply,
-         socket
-         |> assign(
-           :outershell,
-           %OuterShell{
-             mode: :freeze,
-             freeze_turtle: turtle,
-             addr: addr,
-             active: true,
-             name: "#{dis[addr][:name]}"
-           }
-         )}
 
       _ ->
         {:noreply, socket}
@@ -382,16 +369,26 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_event("seeTurtle", _, socket) do
-    {:noreply,
-     socket
-     |> assign(
-       :outershell,
-       %OuterShell{}
-     )}
+    {:noreply, reset_outershell(socket)}
   end
 
   def handle_event("closeTurtle", _, socket) do
-    {:noreply, assign(socket, :outershell, %OuterShell{})}
+    {:noreply, reset_outershell(socket)}
+  end
+
+  # The Shell JS hook reports the user started editing in the outer viewer.
+  # The editable merge is already configured client-side (beginDraft); here we
+  # only record the view so the server-rendered indicator reflects draft state.
+  # We do NOT push back — that would overwrite the draft the user is typing.
+  def handle_event("outerDraft", _, socket) do
+    # Draft auto-runs over working code, but waits for the toggle over an error.
+    # OuterShell.draft/1 sets `stream` from the friend's state; JS runs on live.
+    shell = OuterShell.draft(socket.assigns.outershell)
+
+    {:noreply,
+     socket
+     |> assign(:outershell, shell)
+     |> push_event("outerLive", %{live: shell.view == :draft and shell.stream})}
   end
 
   # Handle the viewport update event from the hook (Decision 003, Layer 3 — windowed pull)
@@ -451,9 +448,11 @@ defmodule DojoWeb.ShellLive do
     {:noreply, assign(socket, focused_name: new_name)}
   end
 
-  def handle_event("nerveGlobal", %{"target" => target, "body" => body}, socket) do
+  # pushEvent ↔ envelope adapter (Phase 3): the client's `ts` rides through
+  # untouched — Dojo.Nerve annotates received_at, never replaces (gw-t-clock).
+  def handle_event("nerveGlobal", %{"target" => target, "body" => body} = params, socket) do
     %{assigns: %{clan: clan, session: %{name: name}}} = socket
-    Dojo.Nerve.chat(clan, name, target, body)
+    Dojo.Nerve.chat(clan, name, target, body, params["ts"])
     {:noreply, socket}
   end
 
@@ -495,8 +494,9 @@ defmodule DojoWeb.ShellLive do
   # Single-key pull: returns %{path, state, time} or nil. Never crashes.
   # Used both by batch pull_metadata and by apply_hatch_version for path hydration.
   defp pull_one_meta(disciples, reg_key) do
-    with %{node: node} <- disciples[reg_key],
-         %{path: _, state: _, time: _} = meta <- Dojo.Table.last_meta(node, :hatch) do
+    with %{node: _} = disciple <- disciples[reg_key],
+         %{path: _, state: _, time: _} = meta <-
+           Dojo.Table.last_meta(Dojo.Disciple.table_address(disciple), :hatch) do
       meta
     else
       _ -> nil
@@ -557,14 +557,29 @@ defmodule DojoWeb.ShellLive do
   defp maybe_follow_code(socket, reg_key, time) do
     %{outershell: outershell, disciples: dis} = socket.assigns
 
-    if outershell.follow and outershell.addr == reg_key and dis[reg_key][:node] do
+    if OuterShell.wants_updates?(outershell) and outershell.addr == reg_key and
+         dis[reg_key][:node] do
       if (time || 0) > OuterShell.last_time(outershell) do
         start_async(socket, :follow_code, fn ->
-          Dojo.Table.last(dis[reg_key][:node], :hatch)
+          Dojo.Table.last(Dojo.Disciple.table_address(dis[reg_key]), :hatch)
         end)
       else
         socket
       end
+    else
+      socket
+    end
+  end
+
+  # Fetch the friend's latest now, bypassing the time gate — used on go-live so
+  # the merge baseline jumps to their current code immediately.
+  defp fetch_latest(socket) do
+    %{outershell: o, disciples: dis} = socket.assigns
+
+    if o.addr && dis[o.addr][:node] do
+      start_async(socket, :follow_code, fn ->
+        Dojo.Table.last(Dojo.Disciple.table_address(dis[o.addr]), :hatch)
+      end)
     else
       socket
     end
@@ -579,11 +594,35 @@ defmodule DojoWeb.ShellLive do
     end)
   end
 
+  # Apply a view/stream change: persist it, then push the source if one is due.
+  # The view/stream ride the seeOuterShell payload, so JS configures the editor
+  # (read-only watch vs editable merge) from that alone.
+  # The single definition of "close/reset the outershell" — reached by the
+  # component's :close intent, the close button, and switching away (seeTurtle).
+  defp reset_outershell(socket), do: assign(socket, :outershell, %OuterShell{})
+
+  defp apply_outer_view(socket, %OuterShell{} = shell) do
+    socket = assign(socket, :outershell, shell)
+
+    case OuterShell.render_intent(shell) do
+      {:push, source} -> push_event(socket, "seeOuterShell", outer_shell_payload(source, shell))
+      :hold -> socket
+    end
+  end
+
+  # The friend's execution status for the remote nerve — independent of whether
+  # the editor content is pushed (held back during a frozen draft).
+  defp outer_signal(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
+    %{state: turtle.state, message: turtle.message, name: shell.name}
+  end
+
   defp outer_shell_payload(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
     turtle
     |> Map.from_struct()
     |> Map.put(:addr, shell.addr)
     |> Map.put(:origin_name, shell.name)
+    |> Map.put(:view, shell.view)
+    |> Map.put(:stream, shell.stream)
   end
 
   def export(assigns) do

@@ -62,6 +62,15 @@ export const SE3 = {
             .multiply(worldRotation)
     },
 
+    // Inverse rigid transform: the SE3 that undoes t. R⁻¹ = (q*, -q*·p).
+    // compose(t, invert(t)) = compose(invert(t), t) = identity. Used by the eye's
+    // model-layer reframe (world ← E⁻¹·world). (specs/eye-ambient.org)
+    invert(t) {
+        const qi = Versor.raw(t.rotation.w, -t.rotation.x, -t.rotation.y, -t.rotation.z)
+        const [px, py, pz] = qi.rotateVec(t.position[0], t.position[1], t.position[2])
+        return { rotation: qi, position: [-px, -py, -pz] }
+    },
+
     clone(t) {
         return {
             rotation: Versor.raw(t.rotation.w, t.rotation.x, t.rotation.y, t.rotation.z),

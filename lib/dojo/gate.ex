@@ -40,27 +40,29 @@ defmodule Dojo.Gate do
     {:ok, state}
   end
 
-  def track(pid, topic, %Dojo.Disciple{name: username, action: state, node: node}) do
+  def track(pid, topic, %Dojo.Disciple{
+        name: username,
+        action: state,
+        node: node,
+        reg_key: reg_key
+      }) do
     addr = routable_addr()
 
-    case Phoenix.Tracker.track(__MODULE__, pid, topic, username, %{
-           action: state,
-           name: username,
-           node: node,
-           addr: addr,
-           online_at: System.os_time(:second)
-         }) do
+    meta = %{
+      action: state,
+      name: username,
+      node: node,
+      reg_key: reg_key,
+      addr: addr,
+      online_at: System.os_time(:second)
+    }
+
+    case Phoenix.Tracker.track(__MODULE__, pid, topic, username, meta) do
       {:ok, _ref} = resp ->
         resp
 
       {:error, {:already_tracked, _, _, _}} ->
-        Phoenix.Tracker.update(__MODULE__, pid, topic, username, %{
-          action: state,
-          name: username,
-          node: node,
-          addr: addr,
-          online_at: System.os_time(:second)
-        })
+        Phoenix.Tracker.update(__MODULE__, pid, topic, username, meta)
     end
   end
 

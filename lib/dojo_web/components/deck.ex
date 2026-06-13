@@ -61,7 +61,7 @@ defmodule DojoWeb.DeckLive do
     ~H"""
     <div
       id="commanddeck"
-      class="rightthird fixed right-0 flex deck mt-[15dvh] h-3/5 lg:h-4/5 select-none animate-fade sm:block"
+      class="rightthird fixed right-0 deck mt-[15dvh] h-3/5 lg:h-4/5 select-none animate-fade"
     >
       <!-- Command Deck Panel -->
       <div class="h-5/6 md:h-full transition-all duration-100 ease-in-out transform scrollbar-hide dark-scrollbar">
@@ -155,7 +155,7 @@ defmodule DojoWeb.DeckLive do
                 <div
                   phx-click={
                     JS.dispatch("phx:writeShell",
-                      detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
+                      detail: %{key => cmd, "args" => Keyword.keys(vals || [])}
                     )
                     |> JS.add_class(
                       "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",
@@ -192,7 +192,7 @@ defmodule DojoWeb.DeckLive do
                           phx-update="ignore"
                           phx-keydown={
                             JS.dispatch("phx:writeShell",
-                              detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
+                              detail: %{key => cmd, "args" => Keyword.keys(vals)}
                             )
                             |> JS.add_class(
                               "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",

@@ -11,6 +11,6 @@
     "allowJs": true,
     "noEmit": true
   },
-  "include": ["js/**/*.js"],
-  "exclude": ["../priv/static", "../deps", "../_peer_build"]
+  "include": ["js/**/*.js", "../test/js/**/*.mjs"],
+  "exclude": ["../priv/static", "../deps", "../_peer_build", "../node_modules"]
 }
