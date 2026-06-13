@@ -148,16 +148,32 @@ defmodule Dojo.MixProject do
       dojo: [
         steps: steps,
         burrito: [
-          targets: [
-            macos: [os: :darwin, cpu: :x86_64],
-            macos_silicon: [os: :darwin, cpu: :aarch64],
-            linux: [os: :linux, cpu: :x86_64],
-            windows: [os: :windows, cpu: :x86_64],
-            windows_x86: [os: :windows, cpu: :x86]
-          ]
+          targets: burrito_targets()
         ]
       ]
     ]
+  end
+
+  # Burrito build targets.
+  #
+  # The 32-bit Windows target is isolated behind BURRITO_WIN32=1 because
+  # Erlang/OTP discontinued 32-bit Windows builds at OTP 29 — there is no
+  # otp_win32 ERTS for OTP 29–32. The x86 installer must therefore be built
+  # on a host running OTP 28.5.0.2 (the last line with a win32 release), so
+  # BOTH the compiled BEAM and the bundled ERTS are OTP 28 (forward-loading
+  # OTP-29 bytecode on an OTP-28 VM would fail). CI runs that target in a
+  # dedicated OTP-28 job; everything else builds on the current OTP 29.
+  defp burrito_targets do
+    if System.get_env("BURRITO_WIN32") == "1" do
+      [windows_x86: [os: :windows, cpu: :x86]]
+    else
+      [
+        macos: [os: :darwin, cpu: :x86_64],
+        macos_silicon: [os: :darwin, cpu: :aarch64],
+        linux: [os: :linux, cpu: :x86_64],
+        windows: [os: :windows, cpu: :x86_64]
+      ]
+    end
   end
 
   defp post_wrap(%Mix.Release{} = release) do
