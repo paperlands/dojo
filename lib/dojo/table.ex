@@ -55,12 +55,15 @@ defmodule Dojo.Table do
 
   @doc false
   def local_fetch(topic, event, call_type \\ :last) do
-    try do
-      GenServer.call({:via, Registry, {Dojo.TableRegistry, topic}}, {call_type, event}, 5000)
-    catch
-      :exit, {:noproc, _} ->
-        {:error, :table_not_found_on_node}
-    end
+    GenServer.call({:via, Registry, {Dojo.TableRegistry, topic}}, {call_type, event}, 5000)
+  catch
+    # Table absent or tearing down mid-call (self-stops with :normal when its
+    # last watcher leaves) — same gone-from-under-us family as Class.attach.
+    :exit, {reason, _} when reason in [:noproc, :normal, :shutdown] ->
+      {:error, :table_not_found_on_node}
+
+    :exit, {{:shutdown, _}, _} ->
+      {:error, :table_not_found_on_node}
   end
 
   def via_tuple(reg_key) do
