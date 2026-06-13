@@ -15,14 +15,119 @@ env:
   MIX_ENV: local
   ELIXIR_VERSION: "1.20.1"
   OTP_VERSION: "29.0.1"
+  # OTP 29+ dropped 32-bit Windows ERTS; 28.5.0.2 is the last line with a
+  # win32 build. The x86 installer is compiled AND bundled on this OTP.
+  OTP_VERSION_WIN32: "28.5.0.2"
   ZIG_VERSION: "0.15.2"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  # ── 32-bit Windows ──────────────────────────────────────────────────────
+  # Built in isolation on OTP 28.5.0.2 (see OTP_VERSION_WIN32). Burrito's
+  # default ERTS resolver fetches otp_win32_<host-OTP>.exe, so running this
+  # job on OTP 28 yields a consistent win32 ERTS + OTP-28 bytecode. The
+  # resulting installer is handed to the release job as an artifact.
+  build_win32:
+    name: Build Windows 32-bit installer
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache Zig
+        id: zig-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/zig
+          key: zig-linux-x86_64-${{ env.ZIG_VERSION }}
+
+      - name: Install Zig
+        if: steps.zig-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.local/zig
+          ZIG_URL=$(curl -fsSL https://ziglang.org/download/index.json \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['${{ env.ZIG_VERSION }}']['x86_64-linux']['tarball'])")
+          echo "Downloading Zig from: $ZIG_URL"
+          curl -fSL "$ZIG_URL" | tar -xJ --strip-components=1 -C ~/.local/zig
+          ~/.local/zig/zig version
+
+      - name: Add Zig to PATH
+        run: echo "$HOME/.local/zig" >> "$GITHUB_PATH"
+
+      - name: Setup Erlang & Elixir (OTP 28 for win32)
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION_WIN32 }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+          restore-keys: deps-${{ runner.os }}-
+
+      - name: Cache build
+        uses: actions/cache@v4
+        with:
+          path: _build/local
+          key: build-local-win32-${{ runner.os }}-otp${{ env.OTP_VERSION_WIN32 }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('mix.lock') }}-${{ hashFiles('lib/**/*.ex', 'config/*.exs') }}
+          restore-keys: |
+            build-local-win32-${{ runner.os }}-otp${{ env.OTP_VERSION_WIN32 }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('mix.lock') }}-
+            build-local-win32-${{ runner.os }}-otp${{ env.OTP_VERSION_WIN32 }}-elixir${{ env.ELIXIR_VERSION }}-
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq nsis xz-utils
+
+      - name: Download VC++ Redistributable (x86)
+        run: |
+          curl -fSL -o rel/packaging/resources/VC_redist.x86.exe \
+            "https://aka.ms/vs/17/release/vc_redist.x86.exe"
+          ls -lh rel/packaging/resources/VC_redist.x86.exe
+
+      - name: Install Elixir dependencies
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+
+      - name: Compile
+        run: mix compile --warnings-as-errors
+
+      - name: Build assets
+        run: mix assets.deploy
+
+      - name: Build 32-bit Windows release
+        env:
+          BURRITO_WIN32: "1"
+        run: mix release
+
+      - name: Verify 32-bit installer
+        run: |
+          ls -lh burrito_out
+          INSTALLER=$(ls burrito_out/PaperLandDojo-*-windows-x86-setup.exe 2>/dev/null | head -1)
+          test -n "$INSTALLER" || { echo "::error::Missing Windows x86 (32-bit) installer"; exit 1; }
+          echo "Built: $INSTALLER"
+
+      - name: Upload 32-bit installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86-installer
+          path: burrito_out/PaperLandDojo-*-windows-x86-setup.exe
+          if-no-files-found: error
+          retention-days: 1
+
   release:
     name: Build & Release
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    needs: build_win32
 
     steps:
       - name: Checkout
@@ -90,13 +195,11 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -yq nsis genisoimage xz-utils
 
-      - name: Download VC++ Redistributables
+      - name: Download VC++ Redistributable (x64)
         run: |
           curl -fSL -o rel/packaging/resources/VC_redist.x64.exe \
             "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-          curl -fSL -o rel/packaging/resources/VC_redist.x86.exe \
-            "https://aka.ms/vs/17/release/vc_redist.x86.exe"
-          ls -lh rel/packaging/resources/VC_redist.x*.exe
+          ls -lh rel/packaging/resources/VC_redist.x64.exe
 
       - name: Install Elixir dependencies
         run: |
@@ -112,6 +215,12 @@ jobs:
 
       - name: Build release
         run: mix release
+
+      - name: Download 32-bit Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-x86-installer
+          path: burrito_out
 
       - name: Rename artifacts to conventional names
         env:
