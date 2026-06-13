@@ -9,8 +9,6 @@ defmodule DojoWeb.OuterShellLive do
   alias DojoWeb.Session
   alias DojoWeb.ShellLive.OuterShell
 
-  require Logger
-
   def update(assigns, socket) do
     {:ok, assign(socket, assigns)}
   end
@@ -37,29 +35,32 @@ defmodule DojoWeb.OuterShellLive do
     send(self(), {:outer_shell, :recall})
     {:noreply, socket}
   end
-  
+
   def handle_event("watchLive", _, socket) do
     send(self(), {:outer_shell, :watch})
     {:noreply, socket}
   end
-  
+
   def render(assigns) do
     ~H"""
     <div class="relative outershell pt-30 right-0 lg:pt-20 lg:right-2 w-full lg:-left-1/2 lg:w-[150%]">
-        <div class="flex items-start justify-between gap-4 mb-1 pr-2 w-full">
-            <!-- overflow-hidden clips the scroll; whitespace-nowrap prevents wrapping -->
-            <div class="overflow-hidden w-full whitespace-nowrap">
-                <!-- ONE wrapper moves as a unit — not two separate spans -->
-                <div class="flex w-max animate-marquee">
-                    <span class="inline-block pr-32 mt-1 text-sm lg:text-lg font-bold text-secondary-content leading-tight">
-                        {head_title(@locale, @outershell)}
-                    </span>
-                    <span aria-hidden="true" class="inline-block pr-32 mt-1 text-sm lg:text-lg font-bold text-secondary-content leading-tight">
-                        {head_title(@locale, @outershell)}
-                    </span>
-                </div>
-            </div>
-        
+      <div class="flex items-start justify-between gap-4 mb-1 pr-2 w-full">
+        <!-- overflow-hidden clips the scroll; whitespace-nowrap prevents wrapping -->
+        <div class="overflow-hidden w-full whitespace-nowrap">
+          <!-- ONE wrapper moves as a unit — not two separate spans -->
+          <div class="flex w-max animate-marquee">
+            <span class="inline-block pr-32 mt-1 text-sm lg:text-lg font-bold text-secondary-content leading-tight">
+              {head_title(@locale, @outershell)}
+            </span>
+            <span
+              aria-hidden="true"
+              class="inline-block pr-32 mt-1 text-sm lg:text-lg font-bold text-secondary-content leading-tight"
+            >
+              {head_title(@locale, @outershell)}
+            </span>
+          </div>
+        </div>
+
         <div class="flex items-center gap-1 flex-shrink-0">
           <%!-- Fork lives beside the cross — always present, since whatever you
                 are viewing can always be kept as a fork (JS-driven: it forks the

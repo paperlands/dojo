@@ -4,8 +4,8 @@ defmodule Dojo.MixProject do
   def project do
     [
       app: :dojo,
-      version: "0.3.5",
-      elixir: "~> 1.18",
+      version: "0.4.0",
+      elixir: "~> 1.20",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() in [:prod, :local],
       aliases: aliases(),
@@ -91,7 +91,7 @@ defmodule Dojo.MixProject do
   defp usage_rules do
     [
       file: "CLAUDE.md",
-      usage_rules: ["usage_rules:all"],
+      usage_rules: [],
       skills: [
         location: ".claude/skills",
         build: [

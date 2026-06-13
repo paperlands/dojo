@@ -155,7 +155,7 @@ defmodule DojoWeb.DeckLive do
                 <div
                   phx-click={
                     JS.dispatch("phx:writeShell",
-                      detail: %{key => cmd, "args" => vals && Keyword.keys(vals)}
+                      detail: %{key => cmd, "args" => vals && Keyword.keys(vals) || []}
                     )
                     |> JS.add_class(
                       "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",

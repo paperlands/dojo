@@ -13,8 +13,8 @@ permissions:
 
 env:
   MIX_ENV: local
-  ELIXIR_VERSION: "1.19.5"
-  OTP_VERSION: "28.4.2"
+  ELIXIR_VERSION: "1.20.1"
+  OTP_VERSION: "29.0.1"
   ZIG_VERSION: "0.15.2"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 

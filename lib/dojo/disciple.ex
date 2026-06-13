@@ -7,6 +7,21 @@ defmodule Dojo.Disciple do
             user_id: nil,
             reg_key: nil
 
+  @type t :: %__MODULE__{
+          name: String.t(),
+          action: String.t(),
+          # `node`, `meta`, `user_id` cross the presence / rolling-deploy seam:
+          # `node` is a display string, a partisan node atom, OR the legacy
+          # `{reg_key, node}` tuple older peers embedded (see table_address/1).
+          # Left wide on purpose — these are dynamic-boundary values the checker
+          # cannot see across the network, and contorting them would be noise.
+          node: term(),
+          meta: term(),
+          phx_ref: binary() | nil,
+          user_id: term(),
+          reg_key: String.t() | nil
+        }
+
   @doc """
   The disciple's registry key from presence meta. Tolerant of legacy metas
   from older nodes where it rode embedded inside the node tuple (rolling

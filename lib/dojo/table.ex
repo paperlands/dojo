@@ -5,6 +5,25 @@ defmodule Dojo.Table do
   @ttl 10 * 60 * 1000
   @debounce_ms 100
 
+  @typedoc """
+  A table's GenServer state — a tuplespace per learner.
+
+  `last` OWNS each disciple's latest stores keyed by event (`:hatch`, …); the
+  Cache is its single read-only projection (decision 008). The `%{state | …}`
+  update path throughout this module is now checked against this shape by the
+  1.20 type system, so a typo'd key is a compile-time bug.
+  """
+  @type t :: %{
+          watchers: MapSet.t(pid()),
+          topic: String.t(),
+          reg_key: String.t(),
+          disciple: Dojo.Disciple.t(),
+          animate_msg: term() | nil,
+          last: %{optional(atom()) => map()},
+          broadcast_timer: reference() | nil,
+          pending_broadcast: map() | nil
+        }
+
   def publish(pid, msg, event) do
     GenServer.cast(pid, {:publish, msg, event})
   end
@@ -76,6 +95,7 @@ defmodule Dojo.Table do
     GenServer.start_link(__MODULE__, args, name: via_tuple(args.reg_key))
   end
 
+  @spec init(map()) :: {:ok, t()}
   def init(%{track_pid: lv_pid, topic: topic, disciple: disciple, reg_key: reg_key}) do
     # Monitor the initial LiveView PID as a watcher
     Process.monitor(lv_pid)
