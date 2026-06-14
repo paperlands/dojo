@@ -1,5 +1,5 @@
 {
-  "name": "Paperland",
+  "name": "PaperLand",
   "short_name": "paperland",
   "icons": [
     {
@@ -15,7 +15,7 @@
       "purpose": "maskable"
     }
   ],
-  "theme_color": "#ffffff",
-  "background_color": "#ffffff",
+  "theme_color": "#ff9933",
+  "background_color": "#050009",
   "display": "standalone"
 }
