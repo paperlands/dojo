@@ -79,7 +79,7 @@ defmodule Dojo.MixProject do
       {:html_sanitize_ex, "~> 1.4"},
       {:makeup, "~> 1.1"},
       {:makeup_elixir, "~> 0.16"},
-      {:burrito, [github: "paperlands/burrito", commit: "latest"]},
+      {:burrito, burrito_dep()},
       {:partisan, partisan_dep()},
       # Protocol Buffers for safe, non-atom signaling
       {:recon, "~> 2.5"},
@@ -110,6 +110,16 @@ defmodule Dojo.MixProject do
       [path: path]
     else
       [github: "paperlands/partisan", commit: "latest"]
+    end
+  end
+
+  # Like PARTISAN_PATH: point at a local Burrito fork for development
+  # (e.g. testing 32-bit Windows wrapper changes) without a push/lock cycle.
+  defp burrito_dep() do
+    if path = System.get_env("BURRITO_PATH") do
+      [path: path]
+    else
+      [github: "paperlands/burrito", commit: "latest"]
     end
   end
 
@@ -232,25 +242,34 @@ defmodule Dojo.MixProject do
   defp build_windows_installer(%Mix.Release{version: version}) do
     template = "rel/packaging/installer.nsi.eex"
 
-    if File.exists?(template) do
-      # Stage resources into burrito_out/ where NSIS expects them
-      File.mkdir_p!("burrito_out/resources")
+    cond do
+      System.find_executable("makensis") == nil ->
+        IO.puts("==> Skipping NSIS — makensis not found (Burrito binaries still built)")
 
-      for file <- File.ls!("rel/packaging/resources") do
-        File.copy!("rel/packaging/resources/#{file}", "burrito_out/resources/#{file}")
-      end
+      !File.exists?(template) ->
+        IO.puts("==> Skipping NSIS — #{template} not found")
 
-      File.copy!("rel/packaging/resources/app-icon.ico", "burrito_out/app-icon.ico")
-
-      erts_version = :erlang.system_info(:version) |> to_string()
-      template_src = File.read!(template)
-
-      Enum.each(windows_installer_variants(), fn variant ->
-        build_windows_installer_variant(template_src, version, erts_version, variant)
-      end)
-    else
-      IO.puts("==> Skipping NSIS — #{template} not found")
+      true ->
+        build_windows_installers(template, version)
     end
+  end
+
+  defp build_windows_installers(template, version) do
+    # Stage resources into burrito_out/ where NSIS expects them
+    File.mkdir_p!("burrito_out/resources")
+
+    for file <- File.ls!("rel/packaging/resources") do
+      File.copy!("rel/packaging/resources/#{file}", "burrito_out/resources/#{file}")
+    end
+
+    File.copy!("rel/packaging/resources/app-icon.ico", "burrito_out/app-icon.ico")
+
+    erts_version = :erlang.system_info(:version) |> to_string()
+    template_src = File.read!(template)
+
+    Enum.each(windows_installer_variants(), fn variant ->
+      build_windows_installer_variant(template_src, version, erts_version, variant)
+    end)
   end
 
   defp build_windows_installer_variant(template_src, version, erts_version, variant) do
@@ -334,18 +353,22 @@ defmodule Dojo.MixProject do
   end
 
   defp build_macos_dmg(%Mix.Release{version: version}) do
-    Enum.each([{"macos", "x86_64"}, {"macos_silicon", "arm64"}], fn {target, arch} ->
-      app_name = "PaperLandDojo_#{target}.app"
-      app_path = "burrito_out/#{app_name}"
-      dmg_out = "burrito_out/PaperLandDojo-#{version}-macos-#{arch}.dmg"
+    if System.find_executable("genisoimage") == nil do
+      IO.puts("==> Skipping macOS DMG — genisoimage not found (.app bundles still built)")
+    else
+      Enum.each([{"macos", "x86_64"}, {"macos_silicon", "arm64"}], fn {target, arch} ->
+        app_name = "PaperLandDojo_#{target}.app"
+        app_path = "burrito_out/#{app_name}"
+        dmg_out = "burrito_out/PaperLandDojo-#{version}-macos-#{arch}.dmg"
 
-      if File.exists?(app_path) do
-        IO.puts("==> Building macOS DMG for #{target} (#{arch})")
-        build_dmg(app_path, app_name, dmg_out, version)
-      else
-        IO.puts("==> Skipping DMG for #{target} — #{app_path} not found")
-      end
-    end)
+        if File.exists?(app_path) do
+          IO.puts("==> Building macOS DMG for #{target} (#{arch})")
+          build_dmg(app_path, app_name, dmg_out, version)
+        else
+          IO.puts("==> Skipping DMG for #{target} — #{app_path} not found")
+        end
+      end)
+    end
   end
 
   defp build_dmg(app_path, app_name, dmg_out, _version) do
