@@ -16,8 +16,8 @@ We built this on Elixir and OTP.
 
 | Tool   | Version |
 |--------|---------|
-| Elixir | ~> 1.18 |
-| OTP    | 27+     |
+| Elixir | ~> 1.20 |
+| OTP    | 28+     |
 
 ## Getting it running from source
 You can install the latest version locally [here](https://github.com/paperlands/dojo/releases/latest)! But if you wish to contribute or run it yourself.
