@@ -34,6 +34,11 @@ export function createFrame(name, generator, opts = {}) {
         // Execution
         generator,
         resumeAt: 0,
+        // Logical birth time: the parent's LOGICAL clock at spawn. A frame's first
+        // wait anchors here, not to wall-clock `now`, so a spawned child shares its
+        // parent's logical grid (coincident events stay coincident). Decision 011:
+        // logical time is causal, wall-clock only reveals. (default 0 = batch start)
+        logicalBirth: opts.logicalBirth || 0,
         done: false,
 
         // Communication

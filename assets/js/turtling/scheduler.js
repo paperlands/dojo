@@ -617,7 +617,8 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
         }
 
         if (value.type === "wait") {
-            child.resumeAt = (child.resumeAt > 0 ? child.resumeAt : now) + value.duration
+            // Anchor to the child's LOGICAL birth, not wall-clock `now`. (Fix A)
+            child.resumeAt = (child.resumeAt > 0 ? child.resumeAt : child.logicalBirth) + value.duration
             child.elapsedTime += value.duration / 1000
             if (value.position) {
                 child.transform.swap(() => ({
@@ -688,7 +689,9 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                     createFrame(value.name, nestedGen, {
                         parent: child,
                         origin: value.origin,
-                        channelCapacity
+                        channelCapacity,
+                        // Nested child born on its parent's logical clock. (Fix A)
+                        logicalBirth: child.resumeAt,
                     }),
                     value.frame
                 )
@@ -758,7 +761,10 @@ export function createScheduler(generator, opts = {}) {
                 createFrame(displayName, generator, {
                     parent: root,
                     origin: forkSpec.origin || SE3.identity(),
-                    channelCapacity
+                    channelCapacity,
+                    // Rerun anchor: a re-eval'd program continues from the current
+                    // timeline (lastTickTime), not time 0 — no fast catch-up.
+                    logicalBirth: this.lastTickTime,
                 }),
                 null
             )
@@ -858,7 +864,10 @@ export function createScheduler(generator, opts = {}) {
 
                     // --- Directive: wait ---
                     if (value.type === "wait") {
-                        ctx.resumeAt = (ctx.resumeAt > 0 ? ctx.resumeAt : now) + value.duration
+                        // Anchor the first wait to the frame's LOGICAL birth, not
+                        // wall-clock `now` — keeps a child on its parent's logical
+                        // grid regardless of frame timing. (Decision 011, Fix A)
+                        ctx.resumeAt = (ctx.resumeAt > 0 ? ctx.resumeAt : ctx.logicalBirth) + value.duration
                         ctx.elapsedTime += value.duration / 1000
                         if (value.position) {
                             ctx.transform.swap(() => ({
@@ -936,7 +945,10 @@ export function createScheduler(generator, opts = {}) {
                                 createFrame(value.name, childGen, {
                                     parent: ctx,
                                     origin: value.origin,
-                                    channelCapacity
+                                    channelCapacity,
+                                    // Child born on the parent's LOGICAL clock (its
+                                    // resumeAt at spawn), not wall-clock now. (Fix A)
+                                    logicalBirth: ctx.resumeAt,
                                 }),
                                 value.frame
                             )
