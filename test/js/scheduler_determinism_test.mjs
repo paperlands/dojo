@@ -151,6 +151,36 @@ describe("causal logical time — wall-clock invariance (Decision 011)", () => {
     test("as-world: same geometry under janky frames", () => {
         assert.equal(fingerprint(asWorld, SMOOTH_FAST), fingerprint(asWorld, JANKY))
     })
+
+    // INCOMMENSURATE rates (parent 0.01 : child 0.05 = 1:5) with renewal coupling:
+    // the parent re-encounters the `as name world` spawn and rebirths the child on
+    // `existing.done`. Pre-bullet-3 (round-robin) the `done` test was sampled at
+    // wall-clock-jittery instants, so a janky frame let the child complete inside one
+    // catch-up burst and the parent then rebirthed it — JANKY drew extra squares
+    // (clears 0 → 4, fingerprint 403 → 635). With the logical-resumeAt-ordered drain
+    // the rebirth falls at a deterministic logical instant, so all schedules agree.
+    // (Decision 011 bullet 3 — the case the commensurate programs above never exposed.)
+    const asWorldIncommensurate = [
+        "loop 20 do",
+        "  fw 10",
+        "  wait 0.01",
+        "  as name world do",
+        "    loop 4 do",
+        "      fw 10",
+        "      rt 90",
+        "      wait 0.05",
+        "    end",
+        "  end",
+        "end",
+    ].join("\n")
+
+    test("as-world incommensurate: same geometry across frame rates", () => {
+        assert.equal(fingerprint(asWorldIncommensurate, SMOOTH_FAST), fingerprint(asWorldIncommensurate, SMOOTH_SLOW))
+    })
+
+    test("as-world incommensurate: same geometry under janky frames", () => {
+        assert.equal(fingerprint(asWorldIncommensurate, SMOOTH_FAST), fingerprint(asWorldIncommensurate, JANKY))
+    })
 })
 
 // Fix A — a spawned child's first wait anchors to the PARENT's LOGICAL time, not
