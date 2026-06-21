@@ -14,7 +14,7 @@ permissions:
 env:
   MIX_ENV: local
   ELIXIR_VERSION: "1.20.1"
-  OTP_VERSION: "29.0.1"
+  OTP_VERSION: "29.0.2"
   # OTP 29+ dropped 32-bit Windows ERTS; 28.5.0.2 is the last line with a
   # win32 build. The x86 installer is compiled AND bundled on this OTP.
   OTP_VERSION_WIN32: "28.5.0.2"
