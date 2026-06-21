@@ -14,7 +14,7 @@
 
 import * as THREE from '../utils/three.core.min.js'
 import { materialize, accumulateTrail, flushTrail, clearMaterialCache } from "./materializer.js"
-import { worldTransform, frameWorldTransform, visitPostOrder } from "./scheduler.js"
+import { worldTransform, frameWorldTransform, visitPostOrder, findAncestorByName } from "./scheduler.js"
 import { SE3 } from "./se3.js"
 import { eyeCameraPose } from "./view.js"
 import { rebaseEpoch, idleFloorMs } from "./timeline.js"
@@ -234,7 +234,16 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
             const layer = ambientLayers.get(id)
             if (!layer) continue
 
+            // A frame-targeted child's only layer content is its head, and its head
+            // pose is baked into the TARGET frame (projectHead) to ride the deposited
+            // ink. So seat that layer at the target's worldTransform, not the child's
+            // own — otherwise the head drifts off its (target-projected) path while the
+            // parent marches. (spec id:ft-d5-head)
             let wt = worldTransform(ambient)
+            if (ambient.targetFrame) {
+                const target = findAncestorByName(ambient, ambient.targetFrame)
+                if (target) wt = worldTransform(target)
+            }
             if (eyeInv && !ambient.isLens) wt = SE3.compose(eyeInv, wt)
             layer.group.position.set(wt.position[0], wt.position[1], wt.position[2])
             layer.group.quaternion.set(

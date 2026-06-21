@@ -196,14 +196,28 @@ function tagRun(ctx, value) {
     ctx._strokeStyle = style
 }
 
+// A frame-targeted child deposits its ink into the target frame, where the moving
+// projection continuously re-bakes it (the path keeps deforming as the target moves).
+// Its head must ride that SAME projection or it detaches — drifting on its own layer
+// while the ink it's "drawing" lives in the target frame. Bake the head's position
+// into the target frame (the compositor seats a frame-targeted head's group at the
+// target's worldTransform, mirroring where the path is deposited); rotation is left
+// alone — materializeHead orients frame-targeted heads by world velocity. Identity
+// when not frame-targeted. (spec id:ft-d5-head)
+function projectHead(headEvent, frameTarget, frameTransform) {
+    if (!frameTarget) return headEvent
+    return { ...headEvent, position: SE3.apply(frameTransform, headEvent.position) }
+}
+
 // The single output path for both the tick loop and the inline drain. Head events
-// update the pose and stay on the frame's own channel. Geometry is tagged with its
-// stroke-run id, then either baked into the target frame (frame targeting) or
-// emitted on the frame's own channel. (spec id:ft-d7-deposit-runid)
+// update the pose and (for frame-targeted children) ride the deposit projection.
+// Geometry is tagged with its stroke-run id, then either baked into the target frame
+// (frame targeting) or emitted on the frame's own channel. (spec id:ft-d7-deposit-runid)
 function routeOutput(ctx, value, frameTarget, frameTransform) {
     if (value.type === "head") {
+        // Local pose drives the executor's own coordinate continuity — keep it local.
         ctx.transform.swap(() => ({ rotation: value.rotation, position: [...value.position] }))
-        ctx.channel.put(lensOutput(ctx, value))
+        ctx.channel.put(lensOutput(ctx, projectHead(value, frameTarget, frameTransform)))
         return
     }
     tagRun(ctx, value)
@@ -617,20 +631,23 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
         }
 
         if (value.type === "wait") {
-            child.resumeAt = (child.resumeAt > 0 ? child.resumeAt : now) + value.duration
+            // Anchor to the child's LOGICAL birth (shares parent's grid); a null
+            // birth (top-level) falls back to the live `now` — self-correcting
+            // across resets/reruns. (Fix A)
+            child.resumeAt = (child.resumeAt > 0 ? child.resumeAt : (child.logicalBirth ?? now)) + value.duration
             child.elapsedTime += value.duration / 1000
             if (value.position) {
                 child.transform.swap(() => ({
                     rotation: value.rotation,
                     position: [...value.position]
                 }))
-                child.channel.put(lensOutput(child, {
+                child.channel.put(lensOutput(child, projectHead({
                     type: "head",
                     position: value.position,
                     rotation: value.rotation,
                     color: value.color,
                     headSize: value.headSize
-                }))
+                }, frameTarget, frameTransform)))
             }
             return null
         }
@@ -688,7 +705,10 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                     createFrame(value.name, nestedGen, {
                         parent: child,
                         origin: value.origin,
-                        channelCapacity
+                        channelCapacity,
+                        // Nested child born on its parent's logical clock. (Fix A)
+                        // 0 (parent hasn't waited) → null → live now.
+                        logicalBirth: child.resumeAt || null,
                     }),
                     value.frame
                 )
@@ -758,7 +778,10 @@ export function createScheduler(generator, opts = {}) {
                 createFrame(displayName, generator, {
                     parent: root,
                     origin: forkSpec.origin || SE3.identity(),
-                    channelCapacity
+                    channelCapacity,
+                    // Top-level: logicalBirth stays NULL so the first wait anchors to
+                    // the live `now` (= lastTickTime, passed to the inline advanceChild
+                    // below). Self-correcting across resets/reruns — no stale freeze.
                 }),
                 null
             )
@@ -790,16 +813,41 @@ export function createScheduler(generator, opts = {}) {
             return errs
         },
 
-        // Advance all ready frames. Post-order: children before parents.
+        // Advance the earliest logical instant. Post-order: children before parents.
         // Returns true if any frame produced events this tick.
+        //
+        // Decision 011 bullet 3 — logical-`resumeAt`-ordered drain. Rather than
+        // advancing EVERY ready frame each tick (round-robin by tree position, which
+        // lets a wall-clock `now` jump collapse many logical instants into one pass so
+        // a frame reads a logically-LATER frame's state), advance only the frames at
+        // the smallest ready `resumeAt` — the earliest logical instant — one step.
+        // The compositor's catch-up loop then walks instants in increasing order up to
+        // the reveal frontier `now`. A frame never advances ahead of a logically-earlier
+        // one, so cross-ambient reads (`leader.heading`) and re-encounter (`existing.done`)
+        // tests always observe logically-prior state, regardless of how `now` was sampled.
+        // Within one instant, post-order tree position is the deterministic tiebreak and
+        // `yield` interleaves same-instant siblings across successive ticks (unchanged).
         tick(now) {
             this.lastTickTime = now
             if (this.done) return false
 
             let produced = false
 
+            // The earliest logical instant with a ready frame (resumeAt ≤ now).
+            let frontier = Infinity
             visitPostOrder(root, (ctx) => {
-                if (ctx.done || ctx.resumeAt > now) return
+                if (!ctx.done && ctx.resumeAt <= now && ctx.resumeAt < frontier) {
+                    frontier = ctx.resumeAt
+                }
+            })
+            if (frontier === Infinity) {        // nothing ready at this `now`
+                this.done = allDone(root)
+                if (this.done) this.commandCount = sumCounts(root)
+                return false
+            }
+
+            visitPostOrder(root, (ctx) => {
+                if (ctx.done || ctx.resumeAt > frontier) return
 
                 // Shouts from inline-advanced children are deferred until
                 // the parent finishes spawning all siblings, so every
@@ -858,20 +906,23 @@ export function createScheduler(generator, opts = {}) {
 
                     // --- Directive: wait ---
                     if (value.type === "wait") {
-                        ctx.resumeAt = (ctx.resumeAt > 0 ? ctx.resumeAt : now) + value.duration
+                        // Anchor the first wait to the frame's LOGICAL birth (shares
+                        // the parent's grid); a null birth (top-level) falls back to
+                        // the live `now`, self-correcting across resets. (Fix A)
+                        ctx.resumeAt = (ctx.resumeAt > 0 ? ctx.resumeAt : (ctx.logicalBirth ?? now)) + value.duration
                         ctx.elapsedTime += value.duration / 1000
                         if (value.position) {
                             ctx.transform.swap(() => ({
                                 rotation: value.rotation,
                                 position: [...value.position]
                             }))
-                            ctx.channel.put(lensOutput(ctx, {
+                            ctx.channel.put(lensOutput(ctx, projectHead({
                                 type: "head",
                                 position: value.position,
                                 rotation: value.rotation,
                                 color: value.color,
                                 headSize: value.headSize
-                            }))
+                            }, frameTarget, frameTransform)))
                         }
                         produced = true
                         break
@@ -936,7 +987,11 @@ export function createScheduler(generator, opts = {}) {
                                 createFrame(value.name, childGen, {
                                     parent: ctx,
                                     origin: value.origin,
-                                    channelCapacity
+                                    channelCapacity,
+                                    // Child born on the parent's LOGICAL clock (its
+                                    // resumeAt at spawn), not wall-clock now. (Fix A)
+                                    // 0 (parent hasn't waited) → null → live now.
+                                    logicalBirth: ctx.resumeAt || null,
                                 }),
                                 value.frame
                             )

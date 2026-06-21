@@ -34,6 +34,13 @@ export function createFrame(name, generator, opts = {}) {
         // Execution
         generator,
         resumeAt: 0,
+        // Logical birth time: the parent's LOGICAL clock at spawn. A spawned child's
+        // first wait anchors here (not wall-clock `now`) so it shares its parent's
+        // logical grid — coincident events stay coincident (Decision 011, Fix A).
+        // NULL means "unset": the frame anchors to the live `now` instead, which
+        // self-corrects across resets/reruns. Top-level frames stay null (root has
+        // no logical clock to inherit); only spawned children get a real birth.
+        logicalBirth: opts.logicalBirth ?? null,
         done: false,
 
         // Communication
