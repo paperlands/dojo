@@ -1,227 +1,214 @@
-## This file is a PO Template file.
-##
-## "msgid"s here are often extracted from source code.
-## Add new messages manually only if they're dynamic
-## messages that can't be statically extracted.
-##
-## The Deck primitives flow through Session.t/2 with dynamic
-## msgids (see lib/dojo_web/components/deck.ex), so they are
-## maintained here by hand rather than via mix gettext.extract.
-##
-## Leave "msgstr"s empty as changing them here has no
-## effect: edit them in PO (.po) files instead.
-#
+## "msgid"s in this file come from POT (.pot) files.
+###
+### Do not add, change, or remove "msgid"s manually here as
+### they're tied to the ones in the corresponding POT file
+### (with the same domain).
+###
+### Use "mix gettext.extract --merge" or "mix gettext.merge"
+### to merge POT files into PO files.
 msgid ""
 msgstr ""
-
-## ── Deck · Command primitives (lib/dojo_web/components/deck.ex) ──
+"Language: ms\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #: lib/dojo_web/components/deck.ex:10
 #, elixir-autogen, elixir-format
 msgid "Move Forward"
-msgstr ""
+msgstr "Melangkah ke Hadapan"
 
 #: lib/dojo_web/components/deck.ex:11
 #, elixir-autogen, elixir-format
 msgid "Face Right"
-msgstr ""
+msgstr "Pandang ke Kanan"
 
 #: lib/dojo_web/components/deck.ex:12
 #, elixir-autogen, elixir-format
 msgid "Face Left"
-msgstr ""
+msgstr "Pandang ke Kiri"
 
 #: lib/dojo_web/components/deck.ex:13
 #, elixir-autogen, elixir-format
 msgid "Jump Forward"
-msgstr ""
+msgstr "Lompat ke Hadapan"
 
 #: lib/dojo_web/components/deck.ex:14
 #, elixir-autogen, elixir-format
 msgid "Wait a While"
-msgstr ""
+msgstr "Tunggu Sekejap"
 
 #: lib/dojo_web/components/deck.ex:15
 #, elixir-autogen, elixir-format
 msgid "Write Something"
-msgstr ""
+msgstr "Tulis Sesuatu"
 
 #: lib/dojo_web/components/deck.ex:16
 #, elixir-autogen, elixir-format
 msgid "Move to a Point"
-msgstr ""
+msgstr "Melangkah ke Titik"
 
 #: lib/dojo_web/components/deck.ex:17
 #, elixir-autogen, elixir-format
 msgid "Jump to a Point"
-msgstr ""
+msgstr "Lompat ke Titik"
 
 #: lib/dojo_web/components/deck.ex:18
 #, elixir-autogen, elixir-format
 msgid "Shout a Message"
-msgstr ""
+msgstr "Laungkan Pesan"
 
 #: lib/dojo_web/components/deck.ex:19
 #, elixir-autogen, elixir-format
 msgid "Create a Grid"
-msgstr ""
+msgstr "Buat Petak-petak"
 
 #: lib/dojo_web/components/deck.ex:20
 #, elixir-autogen, elixir-format
 msgid "Face Point"
-msgstr ""
+msgstr "Pandang ke Titik"
 
 #: lib/dojo_web/components/deck.ex:21
 #, elixir-autogen, elixir-format
 msgid "Dive Into Page"
-msgstr ""
+msgstr "Terjun ke Dalam Halaman"
 
 #: lib/dojo_web/components/deck.ex:22
 #, elixir-autogen, elixir-format
 msgid "Tilt Right"
-msgstr ""
+msgstr "Senget ke Kanan"
 
 #: lib/dojo_web/components/deck.ex:23
 #, elixir-autogen, elixir-format
 msgid "Make a Function"
-msgstr ""
+msgstr "Cipta Petua"
 
 #: lib/dojo_web/components/deck.ex:24
 #, elixir-autogen, elixir-format
 msgid "Change Colour to"
-msgstr ""
+msgstr "Celup Warna jadi"
 
 #: lib/dojo_web/components/deck.ex:25
 #, elixir-autogen, elixir-format
 msgid "Hide your Head"
-msgstr ""
+msgstr "Sorok Kepalamu"
 
 #: lib/dojo_web/components/deck.ex:26
 #, elixir-autogen, elixir-format
 msgid "Show your Head"
-msgstr ""
+msgstr "Julurkan Kepalamu"
 
 #: lib/dojo_web/components/deck.ex:27
 #, elixir-autogen, elixir-format
 msgid "Wipe Everything"
-msgstr ""
-
-## ── Deck · Control primitives (lib/dojo_web/components/deck.ex) ──
+msgstr "Sapu Semua Bersih"
 
 #: lib/dojo_web/components/deck.ex:30
 #, elixir-autogen, elixir-format
 msgid "Repeat Commands"
-msgstr ""
+msgstr "Ulang-ulang Mantera"
 
 #: lib/dojo_web/components/deck.ex:31
 #, elixir-autogen, elixir-format
 msgid "Name your Command"
-msgstr ""
+msgstr "Beri Nama Manteramu"
 
 #: lib/dojo_web/components/deck.ex:32
 #, elixir-autogen, elixir-format
 msgid "Summon Assistant"
-msgstr ""
+msgstr "Panggil Pembantu"
 
 #: lib/dojo_web/components/deck.ex:33
 #, elixir-autogen, elixir-format
 msgid "Do this if"
-msgstr ""
-
-## ── Deck · labels & keys ──
+msgstr "Buat Ini Kalau"
 
 #: lib/dojo_web/components/deck.ex:15
 #: lib/dojo_web/components/deck.ex:46
 #, elixir-autogen, elixir-format
 msgid "'Hello'"
-msgstr ""
+msgstr "'Apa Khabar'"
 
 #: lib/dojo_web/components/deck.ex:84
 #, elixir-autogen, elixir-format
 msgid "Command"
-msgstr ""
+msgstr "Mantera"
 
 #: lib/dojo_web/components/deck.ex:84
 #, elixir-autogen, elixir-format
 msgid "Control"
-msgstr ""
+msgstr "Kemudi"
 
 #: lib/dojo_web/components/deck.ex:109
 #, elixir-autogen, elixir-format
 msgid "Deck"
-msgstr ""
-
-## ── Shell · welcome & peer presence ──
+msgstr "Daun Mantera"
 
 #: lib/dojo_web/live/shell_live.html.heex:150
 #, elixir-autogen, elixir-format
 msgid "welcome"
-msgstr ""
+msgstr "selamat datang"
 
 #: lib/dojo_web/live/shell_live.html.heex:173
 #, elixir-autogen, elixir-format
 msgid "to %{clan}'s shell"
-msgstr ""
+msgstr "ke tempurung %{clan}"
 
 #: lib/dojo_web/components/outer_shell.ex:166
 #, elixir-autogen, elixir-format
 msgid "@%{addr}'s code"
-msgstr ""
+msgstr "mantera si @%{addr}"
 
 #: lib/dojo_web/components/outer_shell.ex:169
 #, elixir-autogen, elixir-format
 msgid "mod for @%{addr}"
-msgstr ""
+msgstr "ubah suai mantera @%{addr}"
 
 #: lib/dojo_web/components/outer_shell.ex:172
 #, elixir-autogen, elixir-format
 msgid "@%{addr}'s old code"
-msgstr ""
+msgstr "mantera lama si @%{addr}"
 
 #: lib/dojo_web/components/outer_shell.ex:176
 #, elixir-autogen, elixir-format
 msgid "@%{addr}'s bug"
-msgstr ""
-
-## ── Core components · flashes & status ──
+msgstr "silap mantera si @%{addr}"
 
 #: lib/dojo_web/components/core_components.ex:484
 #, elixir-autogen, elixir-format
 msgid "Actions"
-msgstr ""
+msgstr "Perbuatan"
 
 #: lib/dojo_web/components/core_components.ex:160
 #, elixir-autogen, elixir-format
 msgid "Attempting to reconnect"
-msgstr ""
+msgstr "Mencari jalan pulang"
 
 #: lib/dojo_web/components/core_components.ex:151
 #, elixir-autogen, elixir-format
 msgid "Error!"
-msgstr ""
+msgstr "Alamak!"
 
 #: lib/dojo_web/components/core_components.ex:172
 #, elixir-autogen, elixir-format
 msgid "Hang in there while we get back on track"
-msgstr ""
+msgstr "Sabar ya, kami sedang cari jalan balik"
 
 #: lib/dojo_web/components/core_components.ex:167
 #, elixir-autogen, elixir-format
 msgid "Something went wrong!"
-msgstr ""
+msgstr "Ada yang tak kena!"
 
 #: lib/dojo_web/components/core_components.ex:150
 #, elixir-autogen, elixir-format
 msgid "Success!"
-msgstr ""
+msgstr "Syabas!"
 
 #: lib/dojo_web/components/core_components.ex:155
 #, elixir-autogen, elixir-format
 msgid "We can't find the internet"
-msgstr ""
+msgstr "Kami tersesat dari talian"
 
 #: lib/dojo_web/components/core_components.ex:76
 #: lib/dojo_web/components/core_components.ex:130
 #, elixir-autogen, elixir-format
 msgid "close"
-msgstr ""
+msgstr "tutup"

@@ -1,0 +1,102 @@
+## "msgid"s in this file come from POT (.pot) files.
+###
+### Do not add, change, or remove "msgid"s manually here as
+### they're tied to the ones in the corresponding POT file
+### (with the same domain).
+###
+### Use "mix gettext.extract --merge" or "mix gettext.merge"
+### to merge POT files into PO files.
+msgid ""
+msgstr ""
+"Language: ms\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "can't be blank"
+msgstr "tak boleh kosong"
+
+msgid "has already been taken"
+msgstr "sudah diambil orang"
+
+msgid "is invalid"
+msgstr "tak betul"
+
+msgid "must be accepted"
+msgstr "kena terima dulu"
+
+msgid "has invalid format"
+msgstr "bentuknya tak kena"
+
+msgid "has an invalid entry"
+msgstr "ada isi yang tak kena"
+
+msgid "is reserved"
+msgstr "sudah ditempah"
+
+msgid "does not match confirmation"
+msgstr "tak sama dengan pengesahan"
+
+msgid "is still associated with this entry"
+msgstr "masih terikat dengan isi ini"
+
+msgid "are still associated with this entry"
+msgstr "masih terikat dengan isi ini"
+
+msgid "should have %{count} item(s)"
+msgid_plural "should have %{count} item(s)"
+msgstr[0] "patut ada %{count} benda"
+msgstr[1] "patut ada %{count} benda"
+
+msgid "should be %{count} character(s)"
+msgid_plural "should be %{count} character(s)"
+msgstr[0] "patut ada %{count} huruf"
+msgstr[1] "patut ada %{count} huruf"
+
+msgid "should be %{count} byte(s)"
+msgid_plural "should be %{count} byte(s)"
+msgstr[0] "patut ada %{count} bait"
+msgstr[1] "patut ada %{count} bait"
+
+msgid "should have at least %{count} item(s)"
+msgid_plural "should have at least %{count} item(s)"
+msgstr[0] "patut ada paling sikit %{count} benda"
+msgstr[1] "patut ada paling sikit %{count} benda"
+
+msgid "should be at least %{count} character(s)"
+msgid_plural "should be at least %{count} character(s)"
+msgstr[0] "patut ada paling sikit %{count} huruf"
+msgstr[1] "patut ada paling sikit %{count} huruf"
+
+msgid "should be at least %{count} byte(s)"
+msgid_plural "should be at least %{count} byte(s)"
+msgstr[0] "patut ada paling sikit %{count} bait"
+msgstr[1] "patut ada paling sikit %{count} bait"
+
+msgid "should have at most %{count} item(s)"
+msgid_plural "should have at most %{count} item(s)"
+msgstr[0] "patut ada paling banyak %{count} benda"
+msgstr[1] "patut ada paling banyak %{count} benda"
+
+msgid "should be at most %{count} character(s)"
+msgid_plural "should be at most %{count} character(s)"
+msgstr[0] "patut ada paling banyak %{count} huruf"
+msgstr[1] "patut ada paling banyak %{count} huruf"
+
+msgid "should be at most %{count} byte(s)"
+msgid_plural "should be at most %{count} byte(s)"
+msgstr[0] "patut ada paling banyak %{count} bait"
+msgstr[1] "patut ada paling banyak %{count} bait"
+
+msgid "must be less than %{number}"
+msgstr "kena kurang daripada %{number}"
+
+msgid "must be greater than %{number}"
+msgstr "kena lebih daripada %{number}"
+
+msgid "must be less than or equal to %{number}"
+msgstr "kena kurang atau sama dengan %{number}"
+
+msgid "must be greater than or equal to %{number}"
+msgstr "kena lebih atau sama dengan %{number}"
+
+msgid "must be equal to %{number}"
+msgstr "kena sama dengan %{number}"

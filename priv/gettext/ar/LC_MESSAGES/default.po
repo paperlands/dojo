@@ -11,10 +11,166 @@ msgstr ""
 "Language: ar\n"
 "Plural-Forms: nplurals=6; plural=(n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 && n%100<=10 ? 3 : n%100>=11 ? 4 : 5);\n"
 
-#: lib/dojo_web/live/shell_live.ex:508
+#: lib/dojo_web/components/deck.ex:10
+#, elixir-autogen, elixir-format
+msgid "Move Forward"
+msgstr "اِمشِ إلى الأمام"
+
+#: lib/dojo_web/components/deck.ex:11
+#, elixir-autogen, elixir-format
+msgid "Face Right"
+msgstr "اِلتَفِت يَمينًا"
+
+#: lib/dojo_web/components/deck.ex:12
+#, elixir-autogen, elixir-format
+msgid "Face Left"
+msgstr "اِلتَفِت يَسارًا"
+
+#: lib/dojo_web/components/deck.ex:13
+#, elixir-autogen, elixir-format
+msgid "Jump Forward"
+msgstr "اِقفِز إلى الأمام"
+
+#: lib/dojo_web/components/deck.ex:14
+#, elixir-autogen, elixir-format
+msgid "Wait a While"
+msgstr "اِنتَظِر قَليلًا"
+
+#: lib/dojo_web/components/deck.ex:15
+#, elixir-autogen, elixir-format
+msgid "Write Something"
+msgstr "اُكتُب شَيئًا"
+
+#: lib/dojo_web/components/deck.ex:16
+#, elixir-autogen, elixir-format
+msgid "Move to a Point"
+msgstr "اِمشِ إلى نُقطة"
+
+#: lib/dojo_web/components/deck.ex:17
+#, elixir-autogen, elixir-format
+msgid "Jump to a Point"
+msgstr "اِقفِز إلى نُقطة"
+
+#: lib/dojo_web/components/deck.ex:18
+#, elixir-autogen, elixir-format
+msgid "Shout a Message"
+msgstr "نادِ بِرِسالة"
+
+#: lib/dojo_web/components/deck.ex:19
+#, elixir-autogen, elixir-format
+msgid "Create a Grid"
+msgstr "اِرسُم شَبَكَة"
+
+#: lib/dojo_web/components/deck.ex:20
+#, elixir-autogen, elixir-format
+msgid "Face Point"
+msgstr "اِستَدِر نَحوَ نُقطة"
+
+#: lib/dojo_web/components/deck.ex:21
+#, elixir-autogen, elixir-format
+msgid "Dive Into Page"
+msgstr "اِغطِس في الصَّفحة"
+
+#: lib/dojo_web/components/deck.ex:22
+#, elixir-autogen, elixir-format
+msgid "Tilt Right"
+msgstr "مِل يَمينًا"
+
+#: lib/dojo_web/components/deck.ex:23
+#, elixir-autogen, elixir-format
+msgid "Make a Function"
+msgstr "اِصنَع آلة صَغيرة"
+
+#: lib/dojo_web/components/deck.ex:24
+#, elixir-autogen, elixir-format
+msgid "Change Colour to"
+msgstr "بَدِّل اللَّونَ إلى"
+
+#: lib/dojo_web/components/deck.ex:25
+#, elixir-autogen, elixir-format
+msgid "Hide your Head"
+msgstr "أَخفِ رَأسَك"
+
+#: lib/dojo_web/components/deck.ex:26
+#, elixir-autogen, elixir-format
+msgid "Show your Head"
+msgstr "أَظهِر رَأسَك"
+
+#: lib/dojo_web/components/deck.ex:27
+#, elixir-autogen, elixir-format
+msgid "Wipe Everything"
+msgstr "اِمسَح كُلَّ شَيء"
+
+#: lib/dojo_web/components/deck.ex:30
+#, elixir-autogen, elixir-format
+msgid "Repeat Commands"
+msgstr "كَرِّر الأَوامِر"
+
+#: lib/dojo_web/components/deck.ex:31
+#, elixir-autogen, elixir-format
+msgid "Name your Command"
+msgstr "سَمِّ أَمرَك"
+
+#: lib/dojo_web/components/deck.ex:32
+#, elixir-autogen, elixir-format
+msgid "Summon Assistant"
+msgstr "نادِ صَديقًا يُساعِد"
+
+#: lib/dojo_web/components/deck.ex:33
+#, elixir-autogen, elixir-format
+msgid "Do this if"
+msgstr "اِفعَل هٰذا إذا"
+
+#: lib/dojo_web/components/deck.ex:15
+#: lib/dojo_web/components/deck.ex:46
+#, elixir-autogen, elixir-format
+msgid "'Hello'"
+msgstr "'مَرحَبًا'"
+
+#: lib/dojo_web/components/deck.ex:84
+#, elixir-autogen, elixir-format
+msgid "Command"
+msgstr "أوامِر"
+
+#: lib/dojo_web/components/deck.ex:84
+#, elixir-autogen, elixir-format
+msgid "Control"
+msgstr "تَحَكُّم"
+
+#: lib/dojo_web/components/deck.ex:109
+#, elixir-autogen, elixir-format
+msgid "Deck"
+msgstr "الورق"
+
+#: lib/dojo_web/live/shell_live.html.heex:150
+#, elixir-autogen, elixir-format
+msgid "welcome"
+msgstr "مرحبا"
+
+#: lib/dojo_web/live/shell_live.html.heex:173
+#, elixir-autogen, elixir-format
+msgid "to %{clan}'s shell"
+msgstr "إلى صَدَفةِ %{clan}"
+
+#: lib/dojo_web/components/outer_shell.ex:166
 #, elixir-autogen, elixir-format
 msgid "@%{addr}'s code"
 msgstr "شِفرةُ @%{addr}"
+
+#: lib/dojo_web/components/outer_shell.ex:169
+#, elixir-autogen, elixir-format
+msgid "mod for @%{addr}"
+msgstr "تَعديلٌ لِـ @%{addr}"
+
+#: lib/dojo_web/components/outer_shell.ex:172
+#, elixir-autogen, elixir-format
+msgid "@%{addr}'s old code"
+msgstr "شِفرةُ @%{addr} القَديمة"
+
+#: lib/dojo_web/components/outer_shell.ex:176
+#, elixir-autogen, elixir-format
+msgid "@%{addr}'s bug"
+msgstr "حَشَرةُ @%{addr}"
 
 #: lib/dojo_web/components/core_components.ex:484
 #, elixir-autogen, elixir-format
@@ -26,85 +182,15 @@ msgstr "الأفعال"
 msgid "Attempting to reconnect"
 msgstr "أُحاوِلُ العَودة"
 
-#: lib/dojo_web/live/shell_live.ex:659
-#, elixir-autogen, elixir-format
-msgid "Command"
-msgstr "أوامِر"
-
-#: lib/dojo_web/live/shell_live.ex:659
-#, elixir-autogen, elixir-format
-msgid "Control"
-msgstr "تَحَكُّم"
-
-#: lib/dojo_web/live/shell_live.ex:684
-#, elixir-autogen, elixir-format
-msgid "Deck"
-msgstr "الورق"
-
 #: lib/dojo_web/components/core_components.ex:151
 #, elixir-autogen, elixir-format
 msgid "Error!"
 msgstr "أُوه!"
 
-#: lib/dojo_web/live/shell_live.ex:613
-#, elixir-autogen, elixir-format
-msgid "Face Left"
-msgstr "اِلتَفِت يَسارًا"
-
-#: lib/dojo_web/live/shell_live.ex:612
-#, elixir-autogen, elixir-format
-msgid "Face Right"
-msgstr "اِلتَفِت يَمينًا"
-
-#: lib/dojo_web/live/shell_live.ex:620
-#, elixir-autogen, elixir-format
-msgid "Face Towards Start"
-msgstr "اِلتَفِت نَحوَ البِداية"
-
-#: lib/dojo_web/live/shell_live.ex:617
-#, elixir-autogen, elixir-format
-msgid "Go To Start"
-msgstr "عُد إلى البِداية"
-
 #: lib/dojo_web/components/core_components.ex:172
 #, elixir-autogen, elixir-format
 msgid "Hang in there while we get back on track"
 msgstr "اِصبِر قَليلًا، سَنَعودُ إلى الطَّريق"
-
-#: lib/dojo_web/live/shell_live.ex:624
-#, elixir-autogen, elixir-format
-msgid "Hide your Head"
-msgstr "أَخفِ رَأسَك"
-
-#: lib/dojo_web/live/shell_live.ex:614
-#, elixir-autogen, elixir-format
-msgid "Jump Forward"
-msgstr "اِقفِز إلى الأمام"
-
-#: lib/dojo_web/live/shell_live.ex:611
-#, elixir-autogen, elixir-format
-msgid "Move Forward"
-msgstr "اِمشِ إلى الأمام"
-
-#: lib/dojo_web/live/shell_live.ex:630
-#, elixir-autogen, elixir-format
-msgid "Name your Command"
-msgstr "سَمِّ أَمرَك"
-
-#: lib/dojo_web/live/shell_live.ex:629
-#, elixir-autogen, elixir-format
-msgid "Repeat Commands"
-msgstr "كَرِّر الأَوامِر"
-
-#: lib/dojo_web/live/shell_live.ex:623
-#, elixir-autogen, elixir-format
-msgid "Set Colour to"
-msgstr "تَلَوَّن بِـ"
-
-#: lib/dojo_web/live/shell_live.ex:625
-#, elixir-autogen, elixir-format
-msgid "Show your Head"
-msgstr "أَظهِر رَأسَك"
 
 #: lib/dojo_web/components/core_components.ex:167
 #, elixir-autogen, elixir-format
@@ -116,73 +202,13 @@ msgstr "حَدَثَ شَيءٌ غَريب!"
 msgid "Success!"
 msgstr "أَحسَنت!"
 
-#: lib/dojo_web/live/shell_live.ex:615
-#, elixir-autogen, elixir-format
-msgid "Wait a While"
-msgstr "اِنتَظِر قَليلًا"
-
 #: lib/dojo_web/components/core_components.ex:155
 #, elixir-autogen, elixir-format
 msgid "We can't find the internet"
 msgstr "لا نَجِدُ الإنترنت"
-
-#: lib/dojo_web/live/shell_live.ex:626
-#, elixir-autogen, elixir-format
-msgid "Wipe Everything"
-msgstr "اِمسَح كُلَّ شَيء"
-
-#: lib/dojo_web/live/shell_live.ex:616
-#, elixir-autogen, elixir-format
-msgid "Write Something"
-msgstr "اُكتُب شَيئًا"
 
 #: lib/dojo_web/components/core_components.ex:76
 #: lib/dojo_web/components/core_components.ex:130
 #, elixir-autogen, elixir-format
 msgid "close"
 msgstr "أَغلِق"
-
-#: lib/dojo_web/live/shell_live.html.heex:206
-#, elixir-autogen, elixir-format
-msgid "summoning @%{name}'s code"
-msgstr "أَستَحضِرُ شِفرةَ @%{name}"
-
-#: lib/dojo_web/live/shell_live.html.heex:190
-#, elixir-autogen, elixir-format
-msgid "welcome"
-msgstr "مرحبا"
-
-#: lib/dojo_web/live/shell_live.html.heex:192
-#, elixir-autogen, elixir-format
-msgid "to %{clan}'s shell"
-msgstr "إلى صَدَفةِ %{clan}"
-
-#: lib/dojo_web/live/shell_live.ex:616
-#, elixir-autogen, elixir-format
-msgid "'Hello'"
-msgstr "'مَرحَبًا'"
-
-#: lib/dojo_web/live/shell_live.ex:618
-#, elixir-autogen, elixir-format
-msgid "Jump To Start"
-msgstr "اِقفِز إلى البِداية"
-
-#: lib/dojo_web/live/shell_live.ex:619
-#, elixir-autogen, elixir-format
-msgid "Create a Grid"
-msgstr "اِرسُم شَبَكَة"
-
-#: lib/dojo_web/live/shell_live.ex:620
-#, elixir-autogen, elixir-format
-msgid "Face a Point"
-msgstr "اِلتَفِت إلى نُقطة"
-
-#: lib/dojo_web/live/shell_live.ex:621
-#, elixir-autogen, elixir-format
-msgid "Dive Into Page"
-msgstr "اِغطِس في الصَّفحة"
-
-#: lib/dojo_web/live/shell_live.ex:622
-#, elixir-autogen, elixir-format
-msgid "Tilt Right"
-msgstr "مِل يَمينًا"

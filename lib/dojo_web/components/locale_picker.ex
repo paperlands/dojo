@@ -5,10 +5,12 @@ defmodule DojoWeb.LocalePickerLive do
 
   @locales [
     {"en", "en"},
+    {"zh", "中"},
     {"ar", "عر"},
+    {"ms", "bm"},
     {"es", "ñ"},
     {"ko", "한"},
-    {"zh", "中"}
+    
   ]
 
   def mount(socket) do
