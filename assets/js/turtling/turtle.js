@@ -277,8 +277,8 @@ export class Turtle {
     }
 
     removeAmbient(key) {
-        if (!this.scheduler) return
         this._localKeys.delete(key)
+        if (!this.scheduler) return
         this._lastContentChange = performance.now()
 
         // Address only — callers pass the key they registered with. (The old
