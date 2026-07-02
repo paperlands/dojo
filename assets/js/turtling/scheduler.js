@@ -412,14 +412,17 @@ function pushMailbox(frame, msg) {
     }
 }
 
+// Frame's dedup key: the ADDRESS (stable across re-eval), falling back to id
+// only for bare createFrame test harnesses that skip wireChild entirely.
+const addrOf = (frame) => frame.address ?? frame.id
+
 // Deliver a single shout to a frame, tracking delivery to prevent duplicates.
-// De-dup keys on the frame's ADDRESS (stable across re-eval), not its id —
-// a re-eval'd receiver (new frame, same address) is never re-delivered, and a
-// shout never returns to its emitter's address even if the emitter was reborn.
-// (specs/groundwork.org Phase 1; id fallback for bare createFrame harnesses.)
+// De-dup keys on the frame's ADDRESS — a re-eval'd receiver (new frame, same
+// address) is never re-delivered, and a shout never returns to its emitter's
+// address even if the emitter was reborn. (specs/groundwork.org Phase 1.)
 export function deliverShout(shout, target) {
-    const addr = target.address ?? target.id
-    const fromAddr = shout.from ? (shout.from.address ?? shout.from.id) : null
+    const addr = addrOf(target)
+    const fromAddr = shout.from ? addrOf(shout.from) : null
     if (target === shout.from || addr === fromAddr) return
     if (!shout._delivered) shout._delivered = new Set()
     if (shout._delivered.has(addr)) return
@@ -442,6 +445,25 @@ function flushDeferredShouts(shouts, registry) {
         }
     }
     shouts.length = 0
+}
+
+// Intercept a `shout` event at its push site (the only place emission fires —
+// never at flushDeferredShouts, which just delivers what's already queued).
+// Self always sees it immediately; the rest of the tree gets it deferred
+// (siblings may not exist yet — tick's post-order pass, spawn-time inline
+// drains) or immediately via the registry when no deferral buffer is given
+// (bare-frame test harnesses calling the drain path directly).
+function interceptShout(frame, value, registry, deferredShouts, onShout) {
+    pushMailbox(frame, { name: value.name, payload: value.payload })
+    if (deferredShouts) {
+        deferredShouts.push({ from: frame, name: value.name, payload: value.payload })
+    } else {
+        for (const [id, t] of registry) {
+            if (t === frame) continue  // already delivered to self
+            pushMailbox(t, { name: value.name, payload: value.payload })
+        }
+    }
+    if (onShout) onShout(frame.name, value.name, value.payload)
 }
 
 // --- Cross-ambient observation flag ---
@@ -675,17 +697,7 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
         }
 
         if (value.type === "shout") {
-            // Deliver to self immediately so own when-handlers see it
-            pushMailbox(child, { name: value.name, payload: value.payload })
-            if (deferredShouts) {
-                deferredShouts.push({ from: child, name: value.name, payload: value.payload })
-            } else {
-                for (const [id, t] of registry) {
-                    if (t === child) continue  // already delivered to self
-                    pushMailbox(t, { name: value.name, payload: value.payload })
-                }
-            }
-            if (onShout) onShout(child.name, value.name, value.payload)
+            interceptShout(child, value, registry, deferredShouts, onShout)
             continue
         }
 
@@ -948,11 +960,7 @@ export function createScheduler(generator, opts = {}) {
 
                     // --- Directive: shout ---
                     if (value.type === "shout") {
-                        // Deliver to self immediately so own when-handlers see it
-                        pushMailbox(ctx, { name: value.name, payload: value.payload })
-                        // Defer for others — children may not exist yet
-                        deferredShouts.push({ from: ctx, name: value.name, payload: value.payload })
-                        if (onShout) onShout(ctx.name, value.name, value.payload)
+                        interceptShout(ctx, value, registry, deferredShouts, onShout)
                         produced = true
                         continue
                     }
