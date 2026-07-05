@@ -4,6 +4,7 @@
 // Log: click chat → full run history; click outside → collapse.
 
 import { CHANNELS } from './store.js'
+import { revealAmbient } from './reveal.js'
 
 const MAX_CHAT_SLOTS = 5
 const SHOUT_THROTTLE_MS = 500
@@ -17,21 +18,9 @@ const SHOUT_THROTTLE_MS = 500
 function resolveTargets(targets) {
     return {
         editorView: targets?.editorView || (() => document.getElementById('your-buffer')?.__cm),
-        // Reveal an ambient by name: switch the editor to the tab that DEFINES it
-        // (top-level tab, or the tab whose code spawned `as name do …`), then
-        // focus it on the canvas. If the owning key isn't a local buffer (a remote
-        // peer's addr), the tab switch is skipped and we just focus.
-        revealAmbient: targets?.revealAmbient || ((name) => {
-            const turtle = document.getElementById('core-canvas')?.__turtle
-            if (!turtle) return
-            const term = document.getElementById('your-buffer')?.__terminal
-            const tabKey = turtle.tabKeyForAmbient?.(name)
-            if (tabKey != null && term?.getBufferInfo?.(tabKey)) {
-                term.opBufferHandler({ op: 'select', target: tabKey })
-            }
-            turtle.focusAmbient(name)
-            turtle.requestRender?.()
-        }),
+        // Reveal an ambient by name — the shared gesture (see reveal.js); the
+        // editor's [[portal]] clicks land on the same path.
+        revealAmbient: targets?.revealAmbient || revealAmbient,
     }
 }
 

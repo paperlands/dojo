@@ -26,6 +26,7 @@ class ParserState {
 const END = 'end';
 const DO = 'do';
 const COMMENT = '#';
+const FENCE = '###';   // the meadow door — prose AROUND code (id:gw-grammar)
 
 // Bracket/quote matching (O(1) lookup)
 const CLOSERS = { '"': '"', "'": "'", '[': ']', '(': ')' };
@@ -36,80 +37,82 @@ const BLOCK_KW = { for: 1, loop: 1, def: 1, draw: 1, when: 1, as: 1 };
 
 
 
+// A meadow (`###` … `###`) is carried through the line array as an object so the
+// statement loop can turn it into one prose node — the same store as the margin,
+// only multiline. Everything else is a trimmed string line.
+function meadowNode(line) {
+    return new ASTNode('Empty', '')
+        .assign_meta('lit', line.meadow)
+        .assign_meta('meadow', true);
+}
+
 // main parser
 export function parseProgram(program) {
     const lines = tokenize(program);
     const state = new ParserState(lines);
     const ast = [];
-    
+
     while (state.hasMore()) {
         const line = state.next();
+
+        if (line.meadow !== undefined) { ast.push(meadowNode(line)); continue; }
+
         const [tokens, comment] = tokenizeLine(line);
-        
+
         if (tokens.length === 0) {
             const node = new ASTNode('Empty', '');
             if (comment) node.assign_meta('lit', comment);
             ast.push(node);
             continue;
         }
-        
+
         const node = parseStatement(tokens, state);
         if (comment) node.assign_meta('lit', comment);
         ast.push(node);
     }
-    
+
     return ast;
 }
 
 
 //tokenizer
+// Fence-aware line pass. A `###` line opens the meadow: everything up to the
+// next `###` (or end-of-file — the fence auto-closes) is captured VERBATIM as a
+// single prose unit `{ meadow }`. Code/comment lines are trimmed, blanks dropped,
+// and a glued `end` (`fw 10 end draw`) is split onto its own line — preserving the
+// prior tokenizer's law, but never reaching inside prose.
 function tokenize(program) {
-    const len = program.length;
+    const rawLines = program.split(/\r\n|\r|\n/);
+    const n = rawLines.length;
     const lines = [];
-    let start = 0;
     let i = 0;
-    let needsEndNewline = false;
-    
-    // Single pass through string
-    while (i < len) {
-        const ch = program[i];
-        
-        // Check for 'end' keyword that needs newline injection
-        if (ch === 'e' && i + 3 <= len && program.substr(i, 3) === END) {
-            const after = i + 3;
-            if (after < len && program[after] !== '\n' && program[after] !== '\r') {
-                needsEndNewline = true;
+
+    while (i < n) {
+        const trimmed = rawLines[i].trim();
+
+        if (trimmed === FENCE) {
+            const body = [];
+            i++;
+            while (i < n && rawLines[i].trim() !== FENCE) body.push(rawLines[i++]);
+            i++; // consume the closing fence (or step past EOF — auto-close)
+            lines.push({ meadow: body.join('\n') });
+            continue;
+        }
+
+        if (trimmed) {
+            if (trimmed.indexOf(END) !== -1) {
+                // split any mid-line `end` (word-bounded) onto its own line
+                for (const part of trimmed.replace(/\bend\b(?!$)/g, 'end\n').split('\n')) {
+                    const p = part.trim();
+                    if (p) lines.push(p);
+                }
+            } else {
+                lines.push(trimmed);
             }
         }
-        
-        // Line break
-        if (ch === '\n' || ch === '\r') {
-            const line = program.slice(start, i).trim();
-            if (line) lines.push(line);
-            
-            // Handle \r\n
-            if (ch === '\r' && i + 1 < len && program[i + 1] === '\n') {
-                i++;
-            }
-            
-            start = i + 1;
-        }
-        
         i++;
     }
-    
-    // Final line
-    const line = program.slice(start).trim();
-    if (line) lines.push(line);
-    
-    // Handle end newline injection if needed (rare case)
-    if (needsEndNewline) {
-        return program.replace(/\bend\b(?!\n)/g, 'end\n')
-            .split(/\r?\n/)
-            .map(l => l.trim())
-            .filter(l => l);
-    }
-    
+
     return lines;
 }
 
@@ -298,11 +301,13 @@ function parseBlock(state) {
     
     while (state.hasMore()) {
         const line = state.next();
-        
+
+        if (line.meadow !== undefined) { block.push(meadowNode(line)); continue; }
+
         if (line === END) return block;
-        
+
         const [tokens, comment] = tokenizeLine(line);
-        
+
         if (tokens.length === 0) {
             const node = new ASTNode('Empty', '');
             if (comment) node.assign_meta('lit', comment);
@@ -411,7 +416,15 @@ export function printAST(ast) {
                 return node.value;
             
             case 'Empty':
-                out.push(indent + comment);
+                if (node.meta.meadow) {
+                    // Re-emit the clearing: fences around the verbatim prose. Every
+                    // lit line — headlines, portals, blanks — rides through intact.
+                    out.push(indent + FENCE);
+                    if (node.meta.lit) out.push(node.meta.lit);
+                    out.push(indent + FENCE);
+                } else {
+                    out.push(indent + comment);
+                }
                 break;
             
             case 'Loop':

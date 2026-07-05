@@ -26,6 +26,32 @@
 //   "meta"       → tags.meta
 //   "link"       → tags.link
 //   "error"      → tags.invalid
+//
+// The literate faces (id:gw-grammar) — meta.lit rendered, never a second store:
+//   "comment"    → tags.comment          (inked prose — the margin & the meadow)
+//   "lineComment"→ tags.lineComment      (the `#` / `###` markers, dissolving)
+//   "heading1..6"→ tags.heading1..6      (`* name` — a chapter, deeper = smaller)
+//   "link"       → tags.link             ([[portal]] — a glowing word)
+//   "strong"     → tags.strong           (*strong*)
+//   "emphasis"   → tags.emphasis         (/lean/)
+//   "quote"      → tags.quote            (`| …` — a quotation in another's voice)
+//   "monospace"  → tags.monospace        (=code= inline & `> …` snippet — mono +
+//                                         faded; rides atop the inner's own
+//                                         linting via a compound tag)
+//   (no new tag) — a ``` … ``` fenced block is a full code CELL: its lines carry
+//                  the ordinary code tags at FULL strength (no monospace fade), so
+//                  they render exactly like buffer code. Groundwork for evaluable,
+//                  scrollable notebook cells.
+
+// The reading font for inked prose. Code stays mono; prose rides in a book face,
+// so a lit line reads as woven — writing beside making — not commented-out code.
+const PROSE_FONT = 'ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", serif';
+const CODE_FONT  = '"FiraCode", ui-monospace, monospace';
+
+// Heading type scale — one ~1.2 (minor-third) modular scale over the code base,
+// shared by both themes so chapter hierarchy reads consistently: each level ≈1.2×
+// the next, moderate enough not to break the editor's line rhythm.
+const H1 = '1.58em', H2 = '1.32em', H3 = '1.1em';
 
 // ---------------------------------------------------------------------------
 // Abbott — warm dark theme (ported from abbott.vim)
@@ -99,28 +125,41 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
             color:      '#231c14',
         },
         '.cm-matched-block .cm-indent-guide': {
-            backgroundImage: 'linear-gradient(to right, oklch(0.992 0.015 100 / 0.6) 1px, transparent 1px)',                                                                                      
-        },                                                                                                                                                                                        
-       
+            backgroundImage: 'linear-gradient(to right, oklch(0.992 0.015 100 / 0.6) 1px, transparent 1px)',
+        },
+        // Code cells (id:gw-grammar): the cursor's cell is live; the rest recede.
+        '.cm-cell-inactive': { opacity: '0.38' },                          // inert — dimmed, not evaluated
+        '.cm-cell-active':   { backgroundColor: 'rgba(160, 234, 0, 0.05)' }, // the live cell — faint chartreuse
+
     }, { dark: true }),
 
     syntaxHighlighting(HighlightStyle.define([
-        { tag: tags.keyword,                                        color: '#d80450', fontWeight: 'bold' }, // crimson
-        { tag: tags.number,                                         color: '#D42A04' },                    // cinnabar
+        { tag: tags.keyword,                                        color: '#d80450', fontWeight: 'bold', fontFamily: CODE_FONT }, // crimson
+        { tag: tags.number,                                         color: '#D42A04', fontFamily: CODE_FONT },                    // cinnabar
         { tag: [tags.variableName,
                 tags.special(tags.variableName),
                 tags.definition(tags.variableName),
-                tags.standard(tags.name)],                          color: '#D3D05B' },                    // periwinkle
-        { tag: tags.comment,                                        color: '#fbb32f', fontStyle: 'italic' }, // marigold
-        { tag: [tags.string, tags.regexp],                          color: '#e6a2f3' },                    // lavender
-        { tag: tags.atom,                                           color: '#fef3b4' },                    // vanilla_cream
-        { tag: [tags.bracket, tags.propertyName],                   color: '#fef3b4' },
-        { tag: tags.operator,                                       fontWeight: 'bold' },
-        { tag: tags.tagName,                                        color: '#d80450', fontWeight: 'bold' }, // crimson
-        { tag: tags.typeName,                                       color: '#24a507' },                    // forest_green
-        { tag: tags.meta,                                           color: '#ec6c99' },                    // french_pink
-        { tag: tags.link,                                           color: '#e6a2f3' },                    // lavender
-        { tag: tags.invalid,                                        color: '#00ff7f' },                    // seafoam_green
+                tags.standard(tags.name)],                          color: '#D3D05B', fontFamily: CODE_FONT },                    // periwinkle
+        { tag: tags.comment,                                        color: '#fbb32f', fontStyle: 'italic', fontFamily: PROSE_FONT }, // inked prose
+        { tag: [tags.string, tags.regexp],                          color: '#e6a2f3', fontFamily: CODE_FONT },                    // lavender
+        { tag: tags.atom,                                           color: '#fef3b4', fontFamily: CODE_FONT },                    // vanilla_cream
+        { tag: [tags.bracket, tags.propertyName],                   color: '#fef3b4', fontFamily: CODE_FONT },
+        { tag: tags.operator,                                       fontWeight: 'bold', fontFamily: CODE_FONT },
+        { tag: tags.tagName,                                        color: '#d80450', fontWeight: 'bold', fontFamily: CODE_FONT }, // crimson
+        { tag: tags.typeName,                                       color: '#24a507', fontFamily: CODE_FONT },                    // forest_green
+        { tag: tags.meta,                                           color: '#ec6c99', fontFamily: CODE_FONT },                    // french_pink
+        { tag: tags.invalid,                                        color: '#00ff7f', fontFamily: CODE_FONT },                    // seafoam_green
+        // The literate faces — the margin dissolves, the chapter rises, the word glows.
+        { tag: tags.lineComment,                                    color: 'rgba(251,179,47,0.3)' },       // the `#`/`###` marker
+        { tag: tags.heading1,                                       color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H1 }, // a chapter
+        { tag: tags.heading2,                                       color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H2 }, // a section
+        { tag: tags.heading3,                                       color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H3 }, // a passage
+        { tag: tags.heading,                                        color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT }, // deeper (h4+)
+        { tag: tags.strong,                                         color: '#fbb32f', fontWeight: 'bold', fontFamily: PROSE_FONT },
+        { tag: tags.emphasis,                                       color: '#fbb32f', fontStyle: 'italic', fontFamily: PROSE_FONT },
+        { tag: tags.quote,                                          color: '#c2b280', fontStyle: 'italic', fontFamily: PROSE_FONT }, // another's voice — set-off, recessive flax
+        { tag: tags.monospace,                                      fontFamily: CODE_FONT, opacity: '0.6' }, // faded — rides atop the inner's linting
+        { tag: tags.link,                                           color: '#e6a2f3', textDecoration: 'underline', textShadow: '0 0 6px rgba(230,162,243,0.7)' }, // a glowing word
     ])),
 ];
 
@@ -191,6 +230,9 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
             background: '#f85552',
             color: '#ffffff',
         },
+        // Code cells (id:gw-grammar): the cursor's cell is live; the rest recede.
+        '.cm-cell-inactive': { opacity: '0.42' },                          // inert — dimmed, not evaluated
+        '.cm-cell-active':   { backgroundColor: 'rgba(141, 161, 1, 0.07)' }, // the live cell — faint green
     }, { dark: false }),
 
     syntaxHighlighting(HighlightStyle.define([
@@ -199,7 +241,7 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
         { tag: [tags.variableName,
                 tags.special(tags.variableName),
                 tags.definition(tags.variableName)],                color: '#8da101' },
-        { tag: tags.comment,                                        color: '#C89B40', fontStyle: 'italic' },
+        { tag: tags.comment,                                        color: '#C89B40', fontStyle: 'italic', fontFamily: PROSE_FONT }, // inked prose
         { tag: [tags.string, tags.regexp],                          color: '#dfa000' },
         { tag: tags.atom,                                           color: '#df69ba' },
         { tag: [tags.bracket, tags.propertyName],                   color: '#5c6a72' },
@@ -207,8 +249,18 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
         { tag: tags.tagName,                                        color: '#f57d26' },
         { tag: tags.typeName,                                       color: '#3a94c5' },
         { tag: tags.meta,                                           color: '#35a77c' },
-        { tag: tags.link,                                           color: '#3a94c5', textDecoration: 'underline' },
         { tag: tags.invalid,                                        color: '#f85552' },
+        // The literate faces — the margin dissolves, the chapter rises, the word glows.
+        { tag: tags.lineComment,                                    color: 'rgba(200,155,64,0.35)' },      // the `#`/`###` marker
+        { tag: tags.heading1,                                       color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H1 }, // a chapter
+        { tag: tags.heading2,                                       color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H2 }, // a section
+        { tag: tags.heading3,                                       color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H3 }, // a passage
+        { tag: tags.heading,                                        color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT }, // deeper (h4+)
+        { tag: tags.strong,                                         color: '#C89B40', fontWeight: 'bold', fontFamily: PROSE_FONT },
+        { tag: tags.emphasis,                                       color: '#C89B40', fontStyle: 'italic', fontFamily: PROSE_FONT },
+        { tag: tags.quote,                                          color: '#829181', fontStyle: 'italic', fontFamily: PROSE_FONT }, // another's voice — set-off, recessive sage
+        { tag: tags.monospace,                                      fontFamily: CODE_FONT, opacity: '0.6' }, // faded — rides atop the inner's linting
+        { tag: tags.link,                                           color: '#3a94c5', textDecoration: 'underline', textShadow: '0 0 5px rgba(58,148,197,0.5)' }, // a glowing word
     ])),
 ];
 

@@ -5,6 +5,7 @@
 import { createPlangExtensions } from "../editor/plang-mode.js"
 import { createIndentGuidesExtension } from "../editor/indent-guides.js"
 import { createDoEndMatchingExtension } from "../editor/do-end-matching.js"
+import { createCodeCellActivationExtension } from "../editor/code-cell-activation.js"
 
 export const buildExtensions = (cm6, {
     onDocChange,
@@ -12,6 +13,7 @@ export const buildExtensions = (cm6, {
     onSwitchNext,
     onSwitchPrev,
     onToggleComment,
+    onLitLink,
 } = {}) => {
     const {
         EditorView,
@@ -67,6 +69,29 @@ export const buildExtensions = (cm6, {
             },
         }),
 
+        // Lit-link navigation — touch a [[portal]] in the prose, be elsewhere
+        // (id:gw-grammar). Only fires on a primary click that lands inside a
+        // `[[…]]` span; every other click falls through to normal editing.
+        EditorView.domEventHandlers({
+            mousedown: (event, view) => {
+                if (!onLitLink || event.button !== 0) return false;
+                const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+                if (pos == null) return false;
+                const line = view.state.doc.lineAt(pos);
+                const col = pos - line.from;
+                const re = /\[\[([^\]\[]+)\]\]/g;
+                let m;
+                while ((m = re.exec(line.text))) {
+                    if (col >= m.index && col <= m.index + m[0].length) {
+                        event.preventDefault();
+                        onLitLink(m[1].trim());
+                        return true;
+                    }
+                }
+                return false;
+            },
+        }),
+
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
 
         // Gutter mousedown → select whole line
@@ -114,6 +139,7 @@ export const buildExtensions = (cm6, {
         // Visual aids
         createIndentGuidesExtension(cm6),
         createDoEndMatchingExtension(cm6),
+        createCodeCellActivationExtension(cm6),
 
         // Compartment slots — reconfigured live by the coordinator
         themeCompartment.of([]),

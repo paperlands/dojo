@@ -15,6 +15,7 @@ import { createStorage } from "./terminal/storage.js"
 import * as buffers from "./terminal/buffers.js"
 import * as editorView from "./terminal/view.js"
 import { buildExtensions, reapplyCompartments } from "./terminal/extensions.js"
+import { revealAmbient } from "./nerve/reveal.js"
 
 const DEFAULT_OPTIONS = { theme: 'abbott', mode: 'plang' };
 
@@ -243,6 +244,7 @@ export const createTerminal = (element, cm6, options = {}) => {
                 onToggleComment: (view) => {
                     editorView.toggleComment(view);
                 },
+                onLitLink: (name) => revealAmbient(name),
             });
 
             state.extensions = extensions;
@@ -283,6 +285,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             // Publish draft edits so the hook can run them live as an ambient.
             const { extensions, compartments } = buildExtensions(cm6, {
                 onDocChange: (content) => bridge.pub({ content }),
+                onLitLink: (name) => revealAmbient(name),
             });
 
             // Read-only lives in its own compartment so the review surface can
