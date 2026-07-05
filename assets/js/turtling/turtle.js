@@ -8,6 +8,9 @@ import { createScheduler, metaRoot } from "./scheduler.js"
 import { createCompositor } from "./compositor.js"
 import { resolveAddress } from "./focus.js"
 
+// Signature of a program's EXECUTABLE shape — the AST minus prose for now
+const codeSignature = (ast) =>
+    JSON.stringify(ast, (k, v) => (k === 'lit' || k === 'meadow') ? undefined : v)
 // --- Turtle ---
 
 export class Turtle {
@@ -58,6 +61,7 @@ export class Turtle {
         // refresh the snapshot. See upsertAmbient({ hatch }).
         this._hatchSuppressed = false
         this._localKeys = new Set()  // buffer IDs of locally-rendered tab ambients
+        this._codeSigs = new Map()   // key → last successfully-rendered code signature (prose-edit guard)
 
         // Dirty marker: stamped on every draw/edit/removal. hatch() stamps
         // _lastHatchTime, so a drawing is "dirty" while _lastContentChange is
@@ -240,6 +244,16 @@ export class Turtle {
     upsertAmbient(key, displayName, code, { hatch = true } = {}) {
         try {
             const instructions = parseProgram(code)
+
+            // Prose-only edit (a comment or `###`-fence body) — the executable
+            // program is unchanged, so the running ambient already draws it.
+            // Skip the teardown/rebuild (and the re-hatch) that would otherwise
+            // restart the animation for nothing.
+            const sig = codeSignature(instructions)
+            if (this._codeSigs.get(key) === sig && this.scheduler?.root.children.has(key)) {
+                return { success: true, commandCount: this.scheduler.commandCount }
+            }
+
             this._ensureScheduler()
 
             this.scheduler.hotSwapChild(key, {
@@ -261,16 +275,21 @@ export class Turtle {
 
             const errors = this.scheduler.errors
             if (errors.length > 0) {
+                // Drop the cached signature: a later revert to working code must
+                // rebuild, not skip against the last-good drawing that isn't here.
+                this._codeSigs.delete(key)
                 this.renderstate.meta = { state: "error", message: errors[0].message, source: code, commands: instructions }
                 this.requestRender()
                 return { success: false, error: errors[0].message }
             }
 
+            this._codeSigs.set(key, sig)
             this.renderstate.meta = { state: "success", commands: instructions }
             this.requestRender()
             return { success: true, commandCount: this.scheduler.commandCount }
         } catch (error) {
             console.error(error)
+            this._codeSigs.delete(key)
             this.renderstate.meta = { state: "error", message: error.message, source: code }
             return { success: false, error: error.message }
         }
@@ -278,6 +297,7 @@ export class Turtle {
 
     removeAmbient(key) {
         this._localKeys.delete(key)
+        this._codeSigs.delete(key)
         if (!this.scheduler) return
         this._lastContentChange = performance.now()
 
@@ -379,6 +399,7 @@ export class Turtle {
             this.compositor = null
             this.scheduler = null
         }
+        this._codeSigs.clear()
         this._snapshotPending = false
         this._lastContentChange = performance.now()
 
