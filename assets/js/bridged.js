@@ -99,7 +99,17 @@ export const scene = {
     fork:        (payload)          => sceneBridge.pub(['fork', payload]),
     ambient:     (addr, name, code) => sceneBridge.pub(['ambient', { addr, name, code }]),
     ambientStop: (addr)             => sceneBridge.pub(['ambientStop', { addr }]),
+    // The cursor-gate crossing the seam (gw-play Shoot 1): the outer viewer's
+    // active ``` cell, spoken as (page addr, cell index) — the inner shell owns
+    // the sibling ambients and resolves the index to the one that runs.
+    cell:        (addr, index)      => sceneBridge.pub(['cell', { addr, index }]),
     // Note: a watched friend's shouts are NOT relayed over a scene channel —
     // they arrive through the core turtle's _onShout and route by source via
     // the nerve's claim model (see nerve.js project()).
+
+    // The consumer-side dual of the constructors: subscribe with the SAME
+    // vocabulary the producers speak — one handler per named move, payload
+    // unwrapped. The tuple stays the wire shape; the shape, not a switch,
+    // is the seam. Returns the unsub fn, as sub always has.
+    sub: (handlers) => sceneBridge.sub(([type, payload]) => handlers[type]?.(payload)),
 };

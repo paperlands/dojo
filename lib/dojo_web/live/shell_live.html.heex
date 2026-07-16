@@ -345,6 +345,18 @@
         locale={@locale}
       />
       <.live_component module={DojoWeb.DeckLive} id="command-deck" locale={@locale} />
+      <%!-- The hearth (Shoot 0): the walk trail — the weave's only chrome.
+           Pages open in the outershell (seeWeave invokes it); this path is
+           the residue of the walking, amber shanshui over theme pigments. --%>
+      <nav
+        id="weave-hearth"
+        phx-hook="Shell"
+        phx-update="ignore"
+        data-target="weave"
+        aria-label="walk trail"
+        class="weave weave-path fixed bottom-24 right-3 z-40 pointer-events-auto max-w-[min(38ch,calc(100vw-1.5rem))]"
+      >
+      </nav>
       <div
         id="nerve-hud"
         phx-hook="NerveHook"

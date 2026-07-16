@@ -6,12 +6,19 @@
 // key-is-address stays loud: every canvas mount keys on the addr through
 // turtle.upsertAmbient(addr, …) (gw-t-node-address). Built over the shared
 // core: bootShell hands it { term, cm6 }; wireRegistry writes the registry once.
+//
+// The page relation — which cells stand, warm, leave; who owns an addr's
+// canvas slot — is the PAGE LAW (weave/page.js): pure decisions spoken in
+// the turtle's own transition alphabet. This surface only performs them
+// (perform() below); it holds no page or slot state of its own.
 // =============================================================================
 
 import { Turtle } from "../../turtling/turtle.js"
-import { cameraBridge, sceneBridge } from "../../bridged.js"
+import { registerStage } from "../../turtling/stage-cell.js"
+import { cameraBridge, scene } from "../../bridged.js"
 import { temporal } from "../../utils/temporal.js"
-import { printAST } from "../../turtling/parse.js"
+import { pageLaw } from "../../weave/page.js"
+import { mountReach } from "../../editor/reach.js"
 import { nerveInstance } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
 import { commands, listeners, mutators, wireRegistry } from "./core.js"
@@ -29,6 +36,10 @@ function mountInner(hook, { term, cm6 }) {
     // Inner shell: canvas, turtle, rendering, scene bridge subscription
     const canvas = document.getElementById('core-canvas');
     const turtle = new Turtle(canvas);
+    // Stage cell — the one address for the live turtle (gw-t-dom-registry).
+    // Weave boot + revealAmbient read getStage(); the dunder remains for
+    // legacy sites until they migrate (write count held, new reads don't grow).
+    const unregisterStage = registerStage(turtle);
     canvas.__turtle = turtle;
 
     // Profiler overlay — opt-in via ?perf=1. Lazy-imported so it adds
@@ -61,22 +72,82 @@ function mountInner(hook, { term, cm6 }) {
         return m ? parseInt(m[1], 10) : null
     }
 
+    // The page law — every weave decision (pages, slots, ladder steps)
+    // lives there; this surface performs. The two degrees the law speaks
+    // (gw-appearance) map to canvas opacity here, once.
+    const law = pageLaw()
+    const DEGREE = { kindled: 1.0, warm: 0.4 }
+
+    // Perform a transition's consequences, in order, in the turtle's own
+    // verbs. A seat is a run — the law already guarantees it never re-runs
+    // what burns. Returns the result of the effect marked main (the draw
+    // the nerve reports on).
+    const perform = (effects) => {
+        let main
+        for (const e of effects) {
+            switch (e.op) {
+            case 'seat': {
+                const result = turtle.upsertAmbient(e.key, e.name, e.code,
+                    { hatch: e.hatch ?? true, vocab: e.vocab ?? null })
+                if (e.main) main = result
+                break
+            }
+            case 'draw': {
+                const result = renderCommand(e.addr, e.name, e.code)
+                if (e.main) main = result
+                break
+            }
+            case 'remove':
+                turtle.removeAmbient(e.key)
+                break
+            case 'clearLocal':
+                for (const key of [...turtle._localKeys]) turtle.removeAmbient(key)
+                break
+            case 'kindle':
+                turtle.focusAmbient(e.key)
+                break
+            case 'focus': {
+                // world = release: the light returns to her current tab.
+                const name = e.world ? term.currentBufferName() : e.name
+                if (name) focusOuter(name, !!e.world)
+                break
+            }
+            case 'degree': {
+                const focused = e.unlessFocused && turtle.compositor?.focusedName === e.name
+                turtle.setAmbientOpacity(e.name, focused ? DEGREE.kindled : DEGREE[e.degree])
+                break
+            }
+            case 'reach':
+                innerReach.reset(e.index)
+                break
+            }
+        }
+        if (effects.length) turtle.requestRender()
+        return main
+    }
+
+    // Tab indicators mirror whatever stands: the shift+click sister group
+    // (draw is exclusive outside it, the group survives edits) and any
+    // local page's tab — library ~/ pages have no tab to light.
+    const syncTabs = () => {
+        term.clearAllTabActive()
+        for (const key of turtle._localKeys) term.setTabActive(key)
+        for (const addr of law.localPages()) term.setTabActive(addr)
+    }
+
     const debouncedRender = temporal.debounce(({ id, name, content }) => {
         nerveInstance?.run()
-        const result = renderCommand(id, name, content);
-        if (result.success) {
+        // A literate tab (``` cells in a meadow) walks as a PAGE — the same
+        // reach law the outershell drives, shared organ and shared ladder;
+        // anything else draws whole, as ever, exclusive across kinds.
+        const result = perform(law.edit(id, name, content))
+        if (result?.success) {
             nerveInstance?.push(S.output("☀︎", result.commandCount))
-        } else {
+        } else if (result) {
             const line = parseErrorLine(result.error)
             nerveInstance?.push(S.error("error", result.error, line ? { line } : null))
         }
-        // Sync tab indicators: draw is exclusive for a tab outside the
-        // active group, but a shift+click sister group survives edits
-        // and re-selection of its members — mirror whatever stands.
-        term.clearAllTabActive()
-        for (const key of turtle._localKeys) {
-            term.setTabActive(key)
-        }
+        syncTabs()
     }, 20);
 
     term.bridge.sub(debouncedRender);
@@ -106,121 +177,102 @@ function mountInner(hook, { term, cm6 }) {
     // fork content along a lineage (forkContent) to seed a draft.
     wireRegistry(hook.el, term, cm6);
 
-    // Draft execution state: addrs whose canvas slot is currently owned
-    // by a reviewer's live draft, plus the friend's last code/name per
-    // addr (to revert the slot when the draft stops).
-    const draftControlled = new Set()
-    const lastFriendCode = new Map()
-    const friendNames = new Map()
+    // The reach on HER editor — the same organ the outershell mounts
+    // (editor/reach.js), publishing through the same scene.cell seam into
+    // the same page law: one behaviour, both shells.
+    const innerReach = mountReach(term.shell, {
+        gate: () => law.hasPage(term.currentBufferId()),
+        publish: (idx) => scene.cell(term.currentBufferId(), idx),
+    })
 
-    // Scene bridge: handle focus/remove/fork from outer shell
-    const sceneUnsub = sceneBridge.sub(([type, payload]) => {
-        switch (type) {
-        case 'focus': {
-            // 'world' = sentinel: outer shell releasing focus → restore core tab
-            const isWorld = payload.ambientId === 'world'
-            let targetName = payload.ambientId
-            if (isWorld) targetName = term.currentBufferName()
-            if (!targetName) break
-
-            const prev = turtle.compositor?.focusedName
-            // Dim previous single ambient (covers outer→outer transitions)
-            if (prev && prev !== targetName) {
-                turtle.setAmbientOpacity(prev, 0.4)
-            }
-
-            // Core shell group: all active local tabs share focus.
-            // Dim them when focusing outer, restore when returning to 'world'.
-            const localOpacity = isWorld ? 1.0 : 0.4
-            for (const key of turtle._localKeys) {
-                const info = term.getBufferInfo(key)
-                if (info) turtle.setAmbientOpacity(info.name, localOpacity)
-            }
-
-            turtle.focusAmbient(targetName)
-            turtle.setAmbientOpacity(targetName, 1.0)
-            turtle.requestRender()
-            break
+    // The one focus move both surfaces read (gw-appearance law 1): dim the
+    // previously bright ambient and the local tabs, light the target.
+    const focusOuter = (targetName, isWorld = false) => {
+        const prev = turtle.compositor?.focusedName
+        // Dim previous single ambient (covers outer→outer transitions)
+        if (prev && prev !== targetName) {
+            turtle.setAmbientOpacity(prev, DEGREE.warm)
         }
-        case 'remove': {
-            turtle.removeAmbient(payload.ambientId)
-            // Forget this addr's draft bookkeeping — otherwise a later
-            // re-watch of the same friend is blocked by a stale
-            // draftControlled entry (seeOuterShell early-returns on it),
-            // or silently revived by a lingering lastFriendCode.
-            draftControlled.delete(payload.ambientId)
-            lastFriendCode.delete(payload.ambientId)
-            friendNames.delete(payload.ambientId)
+
+        // Core shell group: all active local tabs share focus.
+        // Dim them when focusing outer, restore when returning to 'world'.
+        const localOpacity = isWorld ? DEGREE.kindled : DEGREE.warm
+        for (const key of turtle._localKeys) {
+            const info = term.getBufferInfo(key)
+            if (info) turtle.setAmbientOpacity(info.name, localOpacity)
+        }
+
+        turtle.focusAmbient(targetName)
+        turtle.setAmbientOpacity(targetName, DEGREE.kindled)
+        turtle.requestRender()
+    }
+
+    // Scene moves from the outer surface — the consumer-side dual of the
+    // scene constructors (bridged.js): the same vocabulary, one handler per
+    // named move; the law decides, perform() executes.
+    const sceneUnsub = scene.sub({
+        focus: ({ ambientId }) => {
+            // 'world' = sentinel: outer shell releasing focus → restore core tab
+            const isWorld = ambientId === 'world'
+            const targetName = isWorld ? term.currentBufferName() : ambientId
+            if (targetName) focusOuter(targetName, isWorld)
+        },
+        // Shoot 1 on the canvas: one ladder step — the reached cell mounts
+        // and RUNS (lazy); the law says what warms and what leaves.
+        cell: ({ addr, index }) => perform(law.reach(addr, index)),
+        remove: ({ ambientId }) => {
+            // The law forgets the addr whole — cells, ambient, slot ledger —
+            // so a later re-watch of the same friend starts clean.
+            perform(law.forget(ambientId))
             const activeName = term.currentBufferName()
             if (activeName) {
                 turtle.focusAmbient(activeName)
-                turtle.setAmbientOpacity(activeName, 1.0)
+                turtle.setAmbientOpacity(activeName, DEGREE.kindled)
             }
             turtle.requestRender()
             term.clearMerge()
-            break
-        }
-        case 'fork':
+        },
+        fork: (payload) => {
             term.forkBuffer(payload)
             term.shell?.focus()
-            break
-        case 'ambient': {
-            // A live draft from the outer review surface — run the
-            // reviewer's intervention as this addr's ambient. Mark it
-            // controlled so the friend's own updates don't clobber it.
-            draftControlled.add(payload.addr)
-            turtle.upsertAmbient(payload.addr, payload.name, payload.code)
-            turtle.setAmbientOpacity(payload.name, 1.0)
-            turtle.requestRender()
-            break
-        }
-        case 'ambientStop': {
-            // Draft frozen/ended — hand the slot back to the friend's code.
-            draftControlled.delete(payload.addr)
-            const code = lastFriendCode.get(payload.addr)
-            // Reverting to the friend's code is passive — no hatch.
-            if (code != null) turtle.upsertAmbient(payload.addr, friendNames.get(payload.addr) || payload.addr, code, { hatch: false })
-            turtle.requestRender()
-            break
-        }
-        }
+        },
+        // A live draft from the outer review surface — the reviewer's
+        // intervention owns this addr's slot while it runs.
+        ambient: ({ addr, name, code }) => perform(law.draftSeat(addr, name, code)),
+        // Draft frozen/ended — the slot reverts to the friend's code.
+        ambientStop: ({ addr }) => perform(law.draftStop(addr)),
     });
 
     // Remote code rendering: inner shell handles seeOuterShell directly.
-    // While an addr is draft-controlled, the running draft owns the
-    // canvas slot — record the friend's code (for revert) but don't
-    // overwrite the intervention with it.
+    // The friend's stream records into the slot ledger always; the law
+    // decides whether the canvas changes (a running draft owns the slot;
+    // a ~/ addr mounts as a page, first cell showing, siblings lazy).
     const onSeeOuterShell = (payload) => {
         if (!payload?.addr) return
-        if (payload.state === "success" && payload.commands) {
-            const code = printAST(payload.commands)
-            const name = payload.origin_name || payload.addr
-            lastFriendCode.set(payload.addr, code)
-            friendNames.set(payload.addr, name)
-            if (draftControlled.has(payload.addr)) return
-            // Passive watch: render the friend but never hatch — their
-            // drawing must not be reflected to the server as the user's.
-            turtle.upsertAmbient(payload.addr, name, code, { hatch: false })
-            const isFocused = turtle.compositor?.focusedName === name
-            turtle.setAmbientOpacity(name, isFocused ? 1.0 : 0.4)
-            if (payload.buffer_id) {
-                term.updateMergeOriginal(code, payload.addr, payload.buffer_id)
-            }
+        if (payload.state !== "success" || !payload.commands) return
+        const name = payload.origin_name || payload.addr
+        const { effects, code, merge } = law.friendPush(payload.addr, name, payload.commands)
+        perform(effects)
+        if (merge && payload.buffer_id) {
+            term.updateMergeOriginal(code, payload.addr, payload.buffer_id)
         }
     };
 
     const onOpBuffer = (event) => {
         if (event.op === 'activate') {
-            // Shift+click: toggle tab's ambient (add if absent, remove if present)
-            // On add, all local ambients restart in sync.
+            // Shift+click: toggle tab's ambient (add if absent, remove if
+            // present). A literate tab toggles its PAGE (the reach law) —
+            // never a whole-buffer ambient beside its own cells; a plain tab
+            // keeps the turtle's own toggle (sisters restart in sync).
             const info = term.getBufferInfo(event.target);
             if (info) {
-                turtle.toggleAmbient(event.target, info.name, info.content,
-                    (key) => term.getBufferInfo(key));
-                term.clearAllTabActive()
-                for (const key of turtle._localKeys) {
-                    term.setTabActive(key)
+                const { effects, paged } = law.toggle(event.target, info.name, info.content)
+                perform(effects)
+                if (!paged) {
+                    turtle.toggleAmbient(event.target, info.name, info.content,
+                        (key) => term.getBufferInfo(key));
                 }
+                syncTabs()
             }
             return;
         }
@@ -229,13 +281,10 @@ function mountInner(hook, { term, cm6 }) {
             const hadBuffer = !!term.getBufferInfo(targetId);
             term.opBufferHandler(event);
             if (hadBuffer && !term.getBufferInfo(targetId)) {
-                turtle.removeAmbient(targetId);
+                perform(law.forget(targetId))
                 const activeName = term.currentBufferName();
                 if (activeName) turtle.focusAmbient(activeName);
-                term.clearAllTabActive()
-                for (const key of turtle._localKeys) {
-                    term.setTabActive(key)
-                }
+                syncTabs()
                 turtle.requestRender();
             }
             return;
@@ -270,6 +319,8 @@ function mountInner(hook, { term, cm6 }) {
             slider.mount(),
             listeners.slider(term.shell, slider, cm6).mount(),
             () => turtle.dispose(),
+            innerReach.cleanup,
+            unregisterStage,
             () => hook._profilerDetach?.(),
             sceneUnsub,
         ],

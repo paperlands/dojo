@@ -30,9 +30,16 @@ export function makeShellHook({ boot, surfaces }) {
             this.dead = false;
             this.surface = null;
             const pending = [];
-            const program = this.el.dataset.target === "outer"
-                ? surfaces.outer
+            // data-target selects the surface program: "outer" | "weave" |
+            // anything else (incl. "core") is the inner canvas.
+            const target = this.el.dataset.target;
+            const program = target === "outer" ? surfaces.outer
+                : target === "weave" ? surfaces.weave
                 : surfaces.inner;
+            if (!program) {
+                console.error(`Shell: no surface for data-target="${target}"`);
+                return;
+            }
 
             // Synchronous registration — nothing may be awaited above this
             // loop, or the mount-patch events are lost.

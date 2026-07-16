@@ -1,0 +1,487 @@
+#+title: Navigation — Code Lookup Hotpaths
+#+FILETAGS: :navigation:
+#+STARTUP: overview indent hidestars
+
+#+BEGIN_QUOTE
+I despise everything which merely instructs me without increasing or
+immediately enlivening my activity. — Goethe
+#+END_QUOTE
+
+* PROTOCOL — how this file enlivens
+:PROPERTIES:
+:ID: nav-protocol
+:END:
+
+Every entry below is a *hotpath*: an intent, its keywords, and the exact place
+in code where the action is. This file does not instruct — it dispatches.
+
+- *Search it*: =emacsclient --eval '(dojo/nav "epoch")'= matches headings and
+  =:KEYWORDS:=, returns =(heading path keywords)=. Or plain =Grep= this file —
+  keywords are chosen as the words you'd guess.
+- *Fire in parallel*: lookups are independent — batch =dojo/nav= + =LSP= +
+  =Grep= calls in one volley, never serially.
+- *Jump*: =:PATH:= is =file= or =file::symbol=. Feed the symbol to LSP
+  (documentSymbol/findReferences) once you land.
+- *Vitality, not staleness*: every =:PATH:= is machine-checked by
+  =scripts/nav_verify.sh= and =(dojo/nav-verify)=. A *Stop hook* runs the
+  check when a session tries to end: changes are what break hotpaths, and the
+  session that made the change has the context to mend the map most
+  succinctly — it is blocked from stopping until the entries are true again.
+  An entry that rots gets fixed or culled, never trusted. When you add code
+  worth finding, add its hotpath in the same change.
+
+** tool decision tree — locate vs. harvest vs. symbol-work
+:PROPERTIES:
+:ID: nav-tool-decision-tree
+:KEYWORDS: grep read lsp dojo-nav bridge decision tree when which tool locate harvest
+:END:
+Learned by REFLECT: the three lookup tools are not interchangeable. Choose by
+the *shape of the question*, not by habit.
+
+- *Locate code* — "where does X live", "which files use X", "where's the boot
+  tree": *Grep + Read first*. Fastest, no cold-boot risk. This is the default
+  and wins on nearly every discovery count.
+- *Harvest links* — only when *authoring* a constellation-anchored doc and you
+  need a canonical =[[id:...]]= or a reusable =:ID:=: =dojo/nav= /
+  =dojo/section-for-module=. The bridge earns its keep for writing, not finding.
+- *Symbol-precise work* — rename, find-references, type/hover, exact
+  definition: *LSP*. Not for file-level "where does X live".
+
+In short: Grep/Read to find, the bridge to cite, LSP to operate on a symbol.
+
+* STATE — tuplespace, presence, cache
+:PROPERTIES:
+:ID: nav-state
+:END:
+
+** the one write path for a disciple's state
+:PROPERTIES:
+:ID: nav-table-write
+:KEYWORDS: buffer writethrough last store record cache projection debounce broadcast publish
+:PATH: lib/dojo/table.ex::defp record
+:END:
+Decision 009: =record/3= is the only writer of =state.last= and its cache
+projection (=async_cache_put=). Briefly diverged as WIP; reconciled by =1d19ad4=.
+
+** table lifecycle — singleton per disciple, TTL, registry
+:PROPERTIES:
+:ID: nav-table-lifecycle
+:KEYWORDS: via_tuple TableRegistry TTL timeout singleton GenServer watcher
+:PATH: lib/dojo/table.ex::def via_tuple
+:END:
+
+** spawning tables — sharded dynamic supervision
+:PROPERTIES:
+:ID: nav-class-spawn
+:KEYWORDS: start_table DynamicSupervisor PartitionSupervisor shard spawn class
+:PATH: lib/dojo/class.ex::defp start_table
+:END:
+
+** who is present — tracker, join/leave
+:PROPERTIES:
+:ID: nav-gate
+:KEYWORDS: presence tracker gate join leave online disciples metadata transport
+:PATH: lib/dojo/gate.ex
+:END:
+Decision 002: presence doubles as metadata transport.
+
+** persistence — nebulex cache as primary store
+:PROPERTIES:
+:ID: nav-cache
+:KEYWORDS: cache nebulex shards persistence put get ttl
+:PATH: lib/dojo/cache.ex
+:END:
+
+** identity — disciple, address, reg key
+:PROPERTIES:
+:ID: nav-disciple
+:KEYWORDS: identity disciple table_address reg_key session name addr
+:PATH: lib/dojo/disciple.ex::def table_address
+:END:
+Decisions 006/007: one ambient address, one user identity.
+
+** room state — shared class space
+:PROPERTIES:
+:ID: nav-room
+:KEYWORDS: room leaderboard book class shared
+:PATH: lib/dojo/room.ex
+:END:
+
+** nerve server side — signal envelope
+:PROPERTIES:
+:ID: nav-nerve-ex
+:KEYWORDS: nerve envelope signal clock server broadcast shout
+:PATH: lib/dojo/nerve.ex
+:END:
+Decision 008: envelope clock law.
+
+* CLUSTERING — discovery, transport, roaming
+:PROPERTIES:
+:ID: nav-clustering
+:END:
+
+** peer discovery — mDNS, TXT records
+:PROPERTIES:
+:ID: nav-mdns
+:KEYWORDS: mdns discovery peer TXT record multicast _erlang._tcp routable ipv4
+:PATH: lib/dojo/cluster/mdns.ex
+:END:
+
+** peer liveness — tracking seen peers
+:PROPERTIES:
+:ID: nav-peer-track
+:KEYWORDS: peer track stale liveness expiry seen
+:PATH: lib/dojo/cluster/mdns/peer_track.ex
+:END:
+
+** wifi roaming — interface polling, listener hot-swap
+:PROPERTIES:
+:ID: nav-monitor
+:KEYWORDS: network change interface ip roaming hot-swap listener debounce monitor
+:PATH: lib/dojo/cluster/monitor.ex
+:END:
+
+** broadcast over partisan — dedup, storm control
+:PROPERTIES:
+:ID: nav-partisan-pubsub
+:KEYWORDS: pubsub broadcast partisan seen_table dedup storm fanout
+:PATH: lib/dojo/partisan_pubsub.ex
+:END:
+Decision 005: antifragile broadcast storm. Partisan internals: grep
+=/home/putra/Repos/partisan/src/= (fork; LSP won't index).
+
+** which address routes — fly vs local
+:PROPERTIES:
+:ID: nav-routing
+:KEYWORDS: routable_addr routing fly local address resolution
+:PATH: lib/dojo/cluster/routing.ex::def routable_addr
+:END:
+
+* WEB — the shell seam
+:PROPERTIES:
+:ID: nav-web
+:END:
+
+** the shell — every user event lands here
+:PROPERTIES:
+:ID: nav-shell-live
+:KEYWORDS: shell_live handle_event mount liveview hatch eval publish run
+:PATH: lib/dojo_web/live/shell_live.ex
+:END:
+From a JS =pushEvent= name, jump with =C-c d e= or grep =handle_event("name"=.
+
+** outer shell layout — zones around the editor
+:PROPERTIES:
+:ID: nav-outershell
+:KEYWORDS: outershell outer shell layout zones rightthird vh chrome
+:PATH: lib/dojo_web/components/outer_shell.ex
+:END:
+
+** deck — card components
+:PROPERTIES:
+:ID: nav-deck
+:KEYWORDS: deck cards command control flip
+:PATH: lib/dojo_web/components/deck.ex
+:END:
+
+** play rig — drive the live shell headlessly (CDP)
+:PROPERTIES:
+:ID: nav-play-cdp
+:KEYWORDS: play cdp devtools websocket screenshot inject drive rig headless bare
+:PATH: scripts/play_cdp.mjs
+:END:
+One call per played night: =run <prog> [waitMs] [out.png] --bare= · =shot= · =eval=;
+the protocol lives in =codex/play.org=.
+
+** session — mutation, not replacement
+:PROPERTIES:
+:ID: nav-session
+:KEYWORDS: session mutateSession reg_key sname connect_params
+:PATH: lib/dojo_web/session.ex
+:END:
+
+** routes
+:PROPERTIES:
+:ID: nav-router
+:KEYWORDS: router route path scope pipeline live
+:PATH: lib/dojo_web/router.ex
+:END:
+
+* WORLD — the mathematics
+:PROPERTIES:
+:ID: nav-world
+:END:
+
+** 1D cellular automaton — 256 universes in one function
+:PROPERTIES:
+:ID: nav-world-ca
+:KEYWORDS: cellular automaton rule_pattern wolfram rule world 1d
+:PATH: lib/dojo/world.ex::def rule_pattern
+:END:
+
+** 2D game of life
+:PROPERTIES:
+:ID: nav-conway
+:KEYWORDS: conway game of life 2d grid neighbors
+:PATH: lib/dojo/conway.ex
+:END:
+
+** server-side turtle — AST over the wire
+:PROPERTIES:
+:ID: nav-turtle-ex
+:KEYWORDS: turtle elixir ast hatch commands server
+:PATH: lib/dojo/turtle.ex
+:END:
+
+* TURTLING (JS) — the living canvas
+:PROPERTIES:
+:ID: nav-turtling
+:END:
+
+** PaperLang builtins — what words the turtle knows
+:PROPERTIES:
+:ID: nav-commands
+:KEYWORDS: commands builtins primitives forward wait yield def fn paperlang
+:PATH: assets/js/turtling/commands.js
+:END:
+Verified syntax lives in =PAPERLANG.org= + =codex/refs/Library=.
+
+** evaluation — run, re-eval, frame swap
+:PROPERTIES:
+:ID: nav-executor
+:KEYWORDS: executor eval run interpret step walk
+:PATH: assets/js/turtling/executor.js
+:END:
+
+** re-eval recreates frames — persistent state keys by frameAddress
+:PROPERTIES:
+:ID: nav-hotswap
+:KEYWORDS: hotSwapChild frame id frameAddress re-eval persistent state remount
+:PATH: assets/js/turtling/turtle.js::hotSwapChild
+:END:
+
+** render clock — epoch rebase, idle fast-forward
+:PROPERTIES:
+:ID: nav-timeline
+:KEYWORDS: timeline epoch rebase idle clock now animation fast-forward
+:PATH: assets/js/turtling/timeline.js
+:END:
+Compositor consumes =now = t - epoch=: =assets/js/turtling/compositor.js=.
+
+** scheduling — ticks, yields, work slicing
+:PROPERTIES:
+:ID: nav-scheduler
+:KEYWORDS: scheduler tick yield slice budget requestAnimationFrame frontier resumeAt logical-time drain causal
+:PATH: assets/js/turtling/scheduler.js
+:END:
+
+=tick(now)= drains the earliest logical instant only: a pre-pass computes the
+=frontier= (smallest ready =resumeAt=), then advances just the frames at that instant
+(post-order tiebreak), so a wall-clock jump can't let a frame read a logically-later
+one. Decision 011 bullet 3. Head events for frame-targeted children are projected via
+=projectHead= so the cursor rides its deposited (re-projected) ink (spec ft-d5-head).
+
+** the eye — model-layer camera reframe (E⁻¹), orbit, roll
+:PROPERTIES:
+:ID: nav-eye
+:KEYWORDS: eye camera ambient reframe orbit roll lens view E inverse
+:PATH: assets/js/turtling/view.js
+:END:
+SE(3) math in =assets/js/turtling/se3.js=.
+
+** GL lifecycle — dispose or leak per remount
+:PROPERTIES:
+:ID: nav-stage
+:KEYWORDS: stage dispose teardown GL leak controls cameraBridge remount canvas
+:PATH: assets/js/turtling/stage.js
+:END:
+The canvas outlives the hook; teardown must free GL + controls + subscriptions.
+
+** math expressions — lex, parse, evaluate, typeset
+:PROPERTIES:
+:ID: nav-mafs
+:KEYWORDS: mafs math expression lexer parse evaluate typeset versor
+:PATH: assets/js/turtling/mafs/evaluate.js
+:END:
+
+* NERVE & TERMINAL (JS) — signals and surfaces
+:PROPERTIES:
+:ID: nav-nerve-js
+:END:
+
+** signal store — push is the only way in
+:PROPERTIES:
+:ID: nav-nerve-store
+:KEYWORDS: createSignalStore signals push epoch claims subscribe channels mute remote
+:PATH: assets/js/nerve/store.js::createSignalStore
+:END:
+A watched friend's signals flow through =push()= like every other kind.
+
+** nerve hook — store to DOM zones
+:PROPERTIES:
+:ID: nav-nerve-hook
+:KEYWORDS: nerve hook zone fade DOM render hud
+:PATH: assets/js/hooks/nerve.js
+:END:
+
+** shell hook — dispatch point, two surfaces
+:PROPERTIES:
+:ID: nav-shell-hook
+:KEYWORDS: shell hook dispatch surfaces data-target mounted destroyed
+:PATH: assets/js/hooks/shell.js
+:END:
+Live play protocol: read =codex/play.org= FIRST. The hook is a dispatch point:
+lifecycle machine × { outer, inner } surface over the shared core.
+
+** shell lifecycle — the boot seam law
+:PROPERTIES:
+:ID: nav-shell-lifecycle
+:KEYWORDS: lifecycle boot seam queue booting live dead handleEvent dropped event zombie mount
+:PATH: assets/js/hooks/shell/lifecycle.js
+:END:
+booting → live → dead. Events register before the first await (the mount
+patch's own push_events are otherwise lost); the queue drains at live; a
+mid-boot destroy stands the mount down. Pure — =test/js/shell_lifecycle_test.mjs=.
+
+** shell core — CM6 boot, execCommand seam, listener kit
+:PROPERTIES:
+:ID: nav-shell-core
+:KEYWORDS: shell core editor execCommand cm-content codemirror keymap bootShell wireRegistry keyboard capture slider
+:PATH: assets/js/hooks/shell/core.js
+:END:
+
+** outer surface — review, draft, fork
+:PROPERTIES:
+:ID: nav-shell-outer
+:KEYWORDS: outershell outer surface seeOuterShell outerSignal draft fork watch claimant projection
+:PATH: assets/js/hooks/shell/outer.js
+:END:
+
+** inner surface — canvas, turtle, scene bridge
+:PROPERTIES:
+:ID: nav-shell-inner
+:KEYWORDS: inner surface canvas turtle sceneBridge opBuffer writeShell forkBuffer ambient opacity focus
+:PATH: assets/js/hooks/shell/inner.js
+:END:
+
+** terminal buffers — tabs, writethrough
+:PROPERTIES:
+:ID: nav-terminal-buffers
+:KEYWORDS: terminal buffer tab writethrough storage swap
+:PATH: assets/js/terminal/buffers.js
+:END:
+
+** literate editor — meadow grammar, code cells, cursor gate
+:PROPERTIES:
+:ID: nav-literate-editor
+:KEYWORDS: plang-mode tokenizer meadow margin literate quote snippet code cell fence findCells cellAt activation dim active fold theme ink face lit heading portal notebook PROSE_BLOCKS proseBlockAt shared grammar outline outshine marginOutlineFoldService
+:PATH: assets/js/editor/plang-mode.js
+:END:
+The lit tokenizer (margin =#=, meadow =###=, =|= quote, => = snippet, =``` ```=
+cell) plus =findCells=/=cellAt=/=codeCellFoldService=. ONE prose-line grammar
+behind both doors: =PROSE_BLOCKS= + =proseBlockAt= is a shared, extensible table
+of per-line marks (=* | >=) consumed by BOTH =readMargin= and =readMeadow=; a
+=spansLines= flag keeps the =``` ```= cell meadow-only. So =# * Title= is an
+outline heading riding code (=marginOutlineFoldService= folds it outshine-style).
+Ink faces in =editor/theme.js=; cursor-driven active/inert dimming (a memoised
+StateField, ~560× on the move path) in =editor/code-cell-activation.js=.
+Reasoning: [[id:gw-cell]], [[id:gw-grammar]]; perf in [[id:gw-reflect-6]].
+
+** liveview bridge — JS ↔ server seam
+:PROPERTIES:
+:ID: nav-bridged
+:KEYWORDS: bridged liveview hooks socket pushEvent handleEvent uploaders
+:PATH: assets/js/bridged.js
+:END:
+From a HEEx =phx-hook= name, jump with =C-c d h=.
+
+** weave fragments — woven content
+:PROPERTIES:
+:ID: nav-weave
+:KEYWORDS: weave fragments trail loom press transpile splitCells sectionCells vocab vocabulary outline heading scope rehearsal rehearseVocab drainNamespace sibling ambient scene.cell cursor gate stretch ladder visit page law pageLaw slot ledger perform effects degree
+:PATH: assets/js/weave/fragments.js
+:END:
+The press (=weave/parse.js= =transpile=) emits =```= cells inside the meadow —
+ONE representation; the sibling split DERIVES from the AST
+(=turtling/parse.js= =sectionCells=; =splitCells= is its flat view), keyed
+=addr#cellN=, mounted lazily by the PAGE LAW (=weave/page.js= =pageLaw=:
+pure decisions — pages ⊗ the slot ledger of draft/friend slot ownership —
+returned as effect lists in the turtle's own transition alphabet; the =~/=
+addr is the page-ness, read via =resolve.js= =parseAddress=). The inner
+surface only performs (=hooks/shell/inner.js= =perform=/=focusOuter=; the
+two degrees map to opacity there, once). The OUTLINE IS THE AMBIENT TREE
+(D019): a meadow headline scopes
+— each cell carries =vocab=, its ancestor headings' cells' code (down, never
+sideways; siblings sovereign), REHEARSED at seat time: =upsertAmbient({
+vocab })= → =turtle.rehearseVocab= (content-keyed cache) → =executor.js=
+=drainNamespace= (headless from-zero run by the one executor, waits
+fast-forward, no sibling negotiation, loud budget) → the pure-function
+namespace (=functions= + =fn= userspace) forks as a COPY through the same
+spec =as name do= uses. On a PROGRAM, previews fork from the program's
+rehearsal; the outline is ignored. The reach is ONE organ, =editor/reach.js= =mountReach=, mounted
+by BOTH shells — the outer viewer publishes =scene.cell(outerAddr, index)=,
+the inner shell publishes =scene.cell(bufferId, index)= for her own literate
+tab (both land in =pageLaw().reach=). The PRIORITY LAW decides by document shape:
+all-cells = a PAGE (kindled runs + warm window, whole buffer never runs);
+bare code outside fences = a PROGRAM (=stripCells= runs as the ambient,
+cells are cursor-only PREVIEWS, =index null= stands them down). Cursor's
+cell when present; on a page when absent, a passive scroll listener +
+=posAtCoords= resolves the LAST SEEN cell (=plang-mode.js= =lastSeenCell=)
+and plants the caret at its door so the editor light follows the one cursor
+law
+(=code-cell-activation.js= =stepActivation=: sticky inside the meadow, dark
+on bare code outside the fence — =findProse=, the one meadow⊗cell walk —
+first cell on first light). The degree ladder is one pure transition
+(=weave/ladder.js= =visit=, capacity 2): reached is kindled, last-left warms
+(dimmed) for before/after, past-the-window evicts ([[id:gw-play]] Shoot 1,
+[[id:gw-appearance]]).
+
+** PaperLang editor mode — syntax, indents, do/end
+:PROPERTIES:
+:ID: nav-editor
+:KEYWORDS: plang-mode editor syntax highlight indent do-end matching theme lit tokenizer margin meadow heading portal fold ink face litFoldService readMeadow readMargin PROSE_BLOCKS proseBlockAt marginOutlineFoldService outline
+:PATH: assets/js/editor/plang-mode.js
+:END:
+The literate faces (id:gw-grammar): =readMargin=/=readMeadow=/=litInline= tokenize
+the =#= margin and =###= meadow, sharing ONE per-line block grammar
+(=PROSE_BLOCKS= / =proseBlockAt=); =litFoldService= folds a =* name= meadow
+chapter, =marginOutlineFoldService= folds a =# * name= code-side outline node; the
+ink face (serif prose, dim marker, glowing portal) is in =editor/theme.js=.
+
+** literate atom store — meta.lit, the one prose store
+:PROPERTIES:
+:ID: nav-literate
+:KEYWORDS: literate meta.lit meadow fence prose store printAST round-trip headline portal margin comment tokenize parseProgram
+:PATH: assets/js/turtling/parse.js::function tokenize
+:END:
+=###= meadow → one =Empty= node, verbatim multiline =meta.lit=, =meta.meadow=;
+=printAST= re-emits the fences; auto-closes at EOF. The lit-link click reveal is
+shared with the shout-source path in =assets/js/nerve/reveal.js=. See
+=specs/decisions/013-literate-atom-rendered.decision.md=.
+
+* RIGS — proving ground
+:PROPERTIES:
+:ID: nav-rigs
+:END:
+
+** JS tests — zero-npm, node:test
+:PROPERTIES:
+:ID: nav-js-tests
+:KEYWORDS: node test mjs assert describe vitest-free
+:PATH: test/js/nerve_test.mjs
+:END:
+=node --test test/js/<file>.mjs= — each test file names its contract up top.
+
+** turtle profiler — headless + in-browser
+:PROPERTIES:
+:ID: nav-profile
+:KEYWORDS: profile perf harness headless overlay measure benchmark
+:PATH: test/js/profile/harness.mjs
+:END:
+
+** live shell play — drive the real app
+:PROPERTIES:
+:ID: nav-play
+:KEYWORDS: play shell chrome-devtools execCommand silent deaths friend
+:PATH: codex/play.org
+:END:

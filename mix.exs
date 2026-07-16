@@ -137,8 +137,11 @@ defmodule Dojo.MixProject do
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["tailwind dojo", "esbuild dojo"],
+      # press.codex: id→{name,title} index for the weave resolver (Shoot 0 / Q2).
+      "press.codex": ["cmd node scripts/press_codex_index.mjs"],
+      "assets.build": ["press.codex", "tailwind dojo", "esbuild dojo"],
       "assets.deploy": [
+        "press.codex",
         "tailwind dojo --minify",
         "esbuild dojo --minify",
         "phx.digest"

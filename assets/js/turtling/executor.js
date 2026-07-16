@@ -265,6 +265,32 @@ function* walkBody(body, scope, state, stroke) {
     }
 }
 
+// The rehearsal (Decision 019) — run an AST headless from t=0 and return the
+// pure-function namespace it registered: `functions` (def/draw) and the math
+// parser's `userspace` (fn/func). The weave seats a cell's section vocabulary
+// through this: ancestors' code runs lazily by the ONE executor semantics —
+// defs born under loop/when/wait flow exactly as a live walk would register
+// them, waits fast-forward (logical time costs nothing in a drain), and all
+// events are discarded (no drawing, no shout, no spawn mounts). No sibling
+// negotiation: deps carry no blocking resolver, so a cross-ambient read
+// resolves to nothing instead of suspending — sibling-dependent structure
+// belongs to `as … do` inside the cell, not to vocabulary. A crash or the
+// command budget ends the rehearsal loudly: no namespace, error surfaced.
+export function drainNamespace(ast, deps, opts = {}) {
+    try {
+        const gen = execute(ast, deps, { maxCommands: 200_000, ...opts })
+        let r
+        while (!(r = gen.next()).done) { /* events discarded */ }
+        return {
+            functions: r.value.actorState.functions,
+            userspace: deps.mathParser.userspace,
+            error: null
+        }
+    } catch (error) {
+        return { functions: null, userspace: null, error }
+    }
+}
+
 function* callCommand(name, args, state, stroke) {
     const cmd = COMMANDS.get(name)
     if (!cmd) {

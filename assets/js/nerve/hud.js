@@ -284,8 +284,11 @@ export function createHUD(container, store, pushEvent, opts = {}) {
         const ch = CHANNELS[signal.kind]
         if (!ch || !ch.fadeMs) return
 
+        // Zone is the routing key: status and chat are HUD; trail belongs to
+        // the weave card (and any later keep projection) — never re-rendered
+        // here, or the walk channel would double as chat.
         if (ch.zone === 'status') status.set(signal, ch, nav)
-        else                      chat.add(signal, ch, nav, log.toggle)
+        else if (ch.zone === 'chat') chat.add(signal, ch, nav, log.toggle)
     })
 
     function show() { hidden = false; container.style.display = '' }

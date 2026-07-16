@@ -8,7 +8,7 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
-import { plangModeSpec, isCellOpener, codeCellFoldService, findCells, cellAt, marginOutlineFoldService } from "../../assets/js/editor/plang-mode.js"
+import { plangModeSpec, isCellOpener, codeCellFoldService, findCells, cellAt, lastSeenCell, marginOutlineFoldService } from "../../assets/js/editor/plang-mode.js"
 import { stepActivation } from "../../assets/js/editor/code-cell-activation.js"
 
 // A faithful-enough StringStream + per-line loop, mirroring CM6's StreamLanguage:
@@ -361,15 +361,59 @@ describe("activation memo — cursor movement stays free of linter churn", () =>
         assert.equal(v1.cells, v0.cells)                     // still the cached index — no re-walk
     })
 
-    test("moving into prose (no active cell) rebuilds once, then further prose moves are memo hits", () => {
+    test("moving into prose keeps the light — sticky, and a memo hit", () => {
         let builds = 0
         const build = () => ({ deco: ++builds })
-        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 3 }, build, NONE)  // in a cell
+        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 8 }, build, NONE)  // cell #2
         const v1 = stepActivation(v0, { selectionChanged: true, doc, headLine: 6 }, build, NONE) // prose "between"
-        assert.equal(builds, 2)                              // active → null: one rebuild
-        const v2 = stepActivation(v1, { selectionChanged: true, doc, headLine: 1 }, build, NONE) // meadow fence: still no cell
-        assert.equal(v2, v1)                                 // still no active cell → memo hit
-        assert.equal(builds, 2)
+        assert.equal(v1, v0)                                 // leaving to prose never moves focus
+        assert.equal(v1.key, 7)                              // cell #2 stays lit
+        const v2 = stepActivation(v1, { selectionChanged: true, doc, headLine: 1 }, build, NONE) // meadow fence
+        assert.equal(v2, v1)
+        assert.equal(builds, 1)
+    })
+
+    test("first light: cursor in prose lights the FIRST cell (init parity with the canvas)", () => {
+        const build = (d, cells, active) => ({ active })
+        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 1 }, build, NONE)
+        assert.equal(v0.key, 2)                              // the first cell wears the light
+    })
+
+    test("out of the fence, on bare code, no cell is active — she is making", () => {
+        // fw 5 | ### | ``` | fw 100 | ``` | ### | rt 90
+        const mixed = mkDoc("fw 5\n###\n```\nfw 100\n```\n###\nrt 90")
+        let builds = 0
+        const build = () => ({ deco: ++builds })
+        const v0 = stepActivation(null, { docChanged: true, doc: mixed, headLine: 1 }, build, NONE)
+        assert.equal(v0.key, null)                           // first light on bare code lights nothing
+        const v1 = stepActivation(v0, { selectionChanged: true, doc: mixed, headLine: 4 }, build, NONE)
+        assert.equal(v1.key, 3)                              // into the cell — it wakes
+        const v2 = stepActivation(v1, { selectionChanged: true, doc: mixed, headLine: 7 }, build, NONE)
+        assert.equal(v2.key, null)                           // out past the fence — all cells rest
+        const v3 = stepActivation(v2, { selectionChanged: true, doc: mixed, headLine: 4 }, build, NONE)
+        assert.equal(v3.key, 3)                              // reaching back into the cell relights it
+    })
+
+    test("prose keeps the light only INSIDE the meadow", () => {
+        const mixed = mkDoc("fw 5\n###\nprose\n```\nfw 100\n```\nmore\n###\nrt 90")
+        const build = () => ({ deco: 1 })
+        const v0 = stepActivation(null, { docChanged: true, doc: mixed, headLine: 5 }, build, NONE) // in the cell
+        assert.equal(v0.key, 4)
+        const v1 = stepActivation(v0, { selectionChanged: true, doc: mixed, headLine: 7 }, build, NONE) // prose "more"
+        assert.equal(v1, v0)                                 // inside the meadow: sticky, memo hit
+        const v2 = stepActivation(v1, { selectionChanged: true, doc: mixed, headLine: 9 }, build, NONE) // bare rt 90
+        assert.equal(v2.key, null)                           // outside: the light goes out
+        const v3 = stepActivation(v2, { selectionChanged: true, doc: mixed, headLine: 3 }, build, NONE) // prose again
+        assert.equal(v3.key, null)                           // nothing held to restore — prose alone lights nothing
+    })
+
+    test("the scroll gesture resolves by LAST SEEN cell — the newest fence in view", () => {
+        const cells = findCells(doc)                         // opens at lines 2 and 7
+        assert.equal(lastSeenCell(cells, 1), cells[0])       // nothing seen yet → first light
+        assert.equal(lastSeenCell(cells, 4), cells[0])       // cell #1 in view, #2 not yet
+        assert.equal(lastSeenCell(cells, 7), cells[1])       // cell #2's fence arrives → it is the reach
+        assert.equal(lastSeenCell(cells, 10), cells[1])      // past everything: the last seen holds
+        assert.equal(lastSeenCell([], 5), null)              // a cell-less page has no reach
     })
 
     test("an edit (docChanged) re-walks the index", () => {

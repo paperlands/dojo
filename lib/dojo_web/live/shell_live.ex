@@ -368,6 +368,40 @@ defmodule DojoWeb.ShellLive do
     end
   end
 
+  # The weave invokes the outershell (Shoot 0): a fragment page is a document,
+  # handled as documents are — a non-live friend named the library. The client
+  # fetched, PRESSED, and parsed the org (the server never parses org —
+  # the dojo_web.ex fence); this handler only ferries the pressed buffer into
+  # the one review surface. ts rides the source's clock (decision 008).
+  def handle_event(
+        "seeWeave",
+        %{"addr" => addr, "name" => name, "source" => source} = payload,
+        socket
+      )
+      when is_binary(addr) and is_binary(source) do
+    turtle = %Dojo.Turtle{
+      state: :success,
+      source: source,
+      commands: payload["commands"] || [],
+      time: payload["ts"]
+    }
+
+    outershell =
+      OuterShell.observe(
+        %OuterShell{addr: addr, active: true, name: name, follow: false},
+        turtle
+      )
+
+    # The sibling-cell split is DERIVED client-side from the commands
+    # (splitCells over the one AST; the ~/ addr is the page-ness) — nothing
+    # rides beside the pressed buffer. Ferried, not parsed.
+    {:noreply,
+     socket
+     |> push_event("seeOuterShell", outer_shell_payload(turtle, outershell))
+     |> push_event("outerSignal", outer_signal(turtle, outershell))
+     |> assign(:outershell, outershell)}
+  end
+
   def handle_event("seeTurtle", _, socket) do
     {:noreply, reset_outershell(socket)}
   end

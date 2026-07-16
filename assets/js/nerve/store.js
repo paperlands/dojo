@@ -12,6 +12,10 @@ export const CHANNELS = {
     chat:   { priority: 3, fadeMs: 12000, zone: 'chat',   css: 'nerve-chat' },
     eval:   { priority: 2, fadeMs: 8000,  zone: 'chat',   css: 'nerve-eval' },
     shout:  { priority: 1, fadeMs: 6000,  zone: 'chat',   css: 'nerve-shout' },
+    // Walk — a portal followed. Zone 'trail': the weave card draws the tail;
+    // the HUD never renders it (local store only — no socket adapter is the
+    // privacy fence until Shoot 5 chooses a crossing deliberately).
+    walk:   { priority: 2, fadeMs: 20000, zone: 'trail',  css: 'nerve-walk' },
 }
 
 // ---------------------------------------------------------------------------
@@ -29,6 +33,19 @@ export const signals = {
     eval:    (source, msg, payload)  => ({ msg, payload: payload ?? null, source, kind: 'eval' }),
     // A watched friend's signal — rendered in the outershell's own remote zone.
     remote:  (source, msg, payload, kind) => ({ msg, payload: payload ?? null, source, kind }),
+    // A portal followed (Shoot 0). source: WHO walked (the walker's address
+    // — never the kind; per-source FIFO and the keep's prefix law key on it).
+    // target: spoken destination (~/spirals); payload: where she stood;
+    // ref: durable id when known (survives renames). Local store only —
+    // no adapter carries walk to the socket (the privacy fence).
+    walk:    (source, from, to, ref) => ({
+        msg: to,
+        payload: from ?? null,
+        source: source ?? '?',
+        kind: 'walk',
+        target: to,
+        ref: ref ?? null,
+    }),
 }
 
 // ---------------------------------------------------------------------------

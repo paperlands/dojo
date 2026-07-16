@@ -1,46 +1,62 @@
 // Cursor-driven code-cell activation (id:gw-grammar).
 //
 // The cell the cursor rests in is ACTIVE — full strength, and the only cell a
-// notebook would evaluate. Every other ``` … ``` cell is inert: dimmed, and not
-// evaluated. As the cursor moves, activation follows, so the buffer reads as one
-// live cell among quiet neighbours — the first move toward a scrollable, adaptive
-// notebook. The active cell computed here is the same one a future evaluator gates
-// on: cellAt(findCells(doc), cursorLine).
+// notebook would evaluate; every other ``` … ``` cell is inert: dimmed, not
+// evaluated. The law (id:gw-cell, Shoot 1):
+//
+//   1. the cursor's cell, when the cursor rests in one — the cursor is the gate;
+//   2. else, inside the meadow, the cell already active stays — moving through
+//      prose never drops the light (she is reading);
+//   3. out of the fence, on bare code, NO cell is active and none would be
+//      evaluated (she is making — the cells rest);
+//   4. on first light in prose space, the FIRST cell — a fresh page opens with
+//      its first figure lit, matching the sibling ambient the canvas mounts.
+//
+// Scroll-focus needs no second gate: the outer viewer's IntersectionObserver
+// plants the caret at the reached cell's door (outer.js), so this one cursor
+// law lights the editor for scrolling too — one attention center, N surfaces
+// (gw-appearance law 1).
 //
 // PERFORMANCE (why the field value is { deco, cells, key }, not just deco):
 // activation recomputes on every cursor move, and a naive findCells + RangeSet
 // rebuild is ~191µs/move on a 5k-line buffer (see test/js/profile/linter_bench.mjs)
 // — enough to make arrow keys grind. So we cache the cell index across selection
 // changes (it only changes on edits) and rebuild decorations ONLY when the active
-// cell actually changes; an unchanged cursor cell returns the SAME value object —
+// cell actually changes; an unchanged active cell returns the SAME value object —
 // zero allocation, no RangeSet churn. Measured ~443× faster on the move path.
 //
 // Zero static imports of CM6 — received at call time (same pattern as theme.js);
 // the cell walk lives in plang-mode.js so fold, dim, and eval share one source.
 
-import { findCells, cellAt } from "./plang-mode.js";
+import { findProse, cellAt, inMeadowRange } from "./plang-mode.js";
 
 const keyOf = (cell) => (cell ? cell.open : null);   // open-line uniquely ids a cell within one doc snapshot
 
 // Pure state transition for the activation field. `build(doc, cells, active)` makes
 // the decoration set; `none` is the empty-decoration sentinel.
-//   - first parse / doc edit → re-walk the cell index and rebuild decorations.
-//   - cursor move only       → reuse the cached index; rebuild ONLY when the active
+//   - first parse / doc edit → re-walk the cell + meadow indexes, rebuild decorations.
+//   - cursor move only       → reuse the cached indexes; rebuild ONLY when the active
 //                              cell changed, else return `prev` unchanged (memo hit).
 export function stepActivation(prev, facts, build, none) {
     const { docChanged, selectionChanged, doc, headLine } = facts;
 
     if (!prev || docChanged) {
-        const cells  = findCells(doc);
-        const active = cells.length ? cellAt(cells, headLine) : null;
-        return { deco: cells.length ? build(doc, cells, active) : none, cells, key: keyOf(active) };
+        const { cells, meadows } = findProse(doc);           // the one walk, both indexes
+        const active = cellAt(cells, headLine)
+            ?? (inMeadowRange(meadows, headLine) ? cells[0] : null)  // first light — prose only
+            ?? null;
+        return { deco: cells.length ? build(doc, cells, active) : none, cells, meadows, key: keyOf(active) };
     }
 
     if (selectionChanged) {
-        const active = cellAt(prev.cells, headLine);            // cached index — no re-walk
-        const key    = keyOf(active);
-        if (key === prev.key) return prev;                      // memo hit — no rebuild, no allocation
-        return { deco: build(doc, prev.cells, active), cells: prev.cells, key };
+        const active = cellAt(prev.cells, headLine)          // cached indexes — no re-walk
+            ?? (inMeadowRange(prev.meadows, headLine)
+                ? prev.cells.find((c) => c.open === prev.key) // sticky: prose moves keep the light
+                : null)                                       // out of the fence, on code: all cells rest
+            ?? null;
+        const key = keyOf(active);
+        if (key === prev.key) return prev;                   // memo hit — no rebuild, no allocation
+        return { deco: build(doc, prev.cells, active), cells: prev.cells, meadows: prev.meadows, key };
     }
 
     return prev;
@@ -72,7 +88,7 @@ export const createCodeCellActivationExtension = (cm6) => {
 
     return StateField.define({
         create:  (state)    => stepActivation(null, facts(state, true, false), build, Decoration.none),
-        update:  (prev, tr) => stepActivation(prev, facts(tr.state, tr.docChanged, tr.selection), build, Decoration.none),
+        update:  (prev, tr) => stepActivation(prev, facts(tr.state, tr.docChanged, !!tr.selection), build, Decoration.none),
         provide: (f)        => EditorView.decorations.from(f, (v) => v.deco),
     });
 };

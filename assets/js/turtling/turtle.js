@@ -1,5 +1,6 @@
 import { Parser } from "./mafs/parse.js"
 import { parseProgram } from "./parse.js"
+import { drainNamespace } from "./executor.js"
 import { Evaluator } from "./mafs/evaluate.js"
 import Render from "./render/index.js"
 import { bridged } from "../bridged.js"
@@ -234,19 +235,47 @@ export class Turtle {
 
     // --- Multi-ambient API ---
 
+    // The rehearsal (Decision 019): a cell's section vocabulary is its
+    // ancestors' code, run lazily from t=0 by the one executor semantics
+    // (drainNamespace — headless, waits fast-forward, no sibling
+    // negotiation, loud budget). Content-keyed cache: same vocabulary, one
+    // rehearsal; an edit is new content and rehearses fresh.
+    rehearseVocab(vocab) {
+        this._vocabCache ??= new Map()
+        if (this._vocabCache.has(vocab)) return this._vocabCache.get(vocab)
+        let ns = null
+        try {
+            const deps = { mathParser: new Parser(), mathEvaluator: new Evaluator() }
+            const drained = drainNamespace(parseProgram(vocab), deps)
+            if (drained.error) console.warn('vocab rehearsal failed:', drained.error.message)
+            else ns = drained
+        } catch (error) {
+            console.warn('vocab rehearsal failed:', error.message)
+        }
+        if (this._vocabCache.size >= 32) this._vocabCache.clear()
+        this._vocabCache.set(vocab, ns)
+        return ns
+    }
+
     // hatch:false renders without refreshing the snapshot/thumbnail or reflecting
     // to the server — for passive outershell content (a watched friend, or a
     // reverted draft). Own edits and live drafts leave it default (true).
-    upsertAmbient(key, displayName, code, { hatch = true } = {}) {
+    //
+    // vocab: a weave cell's section vocabulary (Decision 019) — the
+    // ancestors' code (sectionCells derives it from the one AST), rehearsed
+    // here and seeded into the fork spec the same way `as name do` inherits:
+    // a COPY per seat, never shared.
+    upsertAmbient(key, displayName, code, { hatch = true, vocab = null } = {}) {
         try {
             const instructions = parseProgram(code)
             this._ensureScheduler()
 
+            const ns = vocab ? this.rehearseVocab(vocab) : null
             this.scheduler.hotSwapChild(key, {
                 name: displayName,
-                code: { ast: instructions, functions: null },
+                code: { ast: instructions, functions: ns?.functions ?? null },
                 style: { color: this.color },
-                env: null
+                env: ns?.userspace?.size ? { userspace: ns.userspace } : null
             })
 
             this._hatchSuppressed = !hatch

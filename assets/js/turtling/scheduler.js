@@ -710,7 +710,15 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                     nestedExisting.origin = value.origin
                     rewireChild(nestedExisting, value, createDeps, execOpts)
                     if (deferredShouts) deliverDeferredToFrame(deferredShouts, nestedExisting)
+                    // Re-run the re-encountered ambient by pushing it back onto the
+                    // trampoline (the drain returns it, advanceChild's stack drains it,
+                    // then resumes us). Mirrors the tick path's spawn re-encounter, which
+                    // calls advanceChild. Without this, a re-spawn inside a wait-free loop
+                    // rewires the child but never advances it — so it executes only on the
+                    // first iteration, leaving every later `as name … do` behind.
+                    return nestedExisting
                 }
+                // Running & not done → idempotent no-op
             } else if (createDeps) {
                 const { generator: nestedGen, deps: nestedDeps, mailbox: nestedMailbox } = createChildGenerator(value, createDeps, execOpts)
                 const nested = attachMeta(

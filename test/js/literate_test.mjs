@@ -11,7 +11,7 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
-import { parseProgram, printAST } from "../../assets/js/turtling/parse.js"
+import { parseProgram, printAST, splitCells, stripCells } from "../../assets/js/turtling/parse.js"
 
 // The round-trip is idempotent: once normalised, parse→print→parse→print is fixed.
 const roundtrip = (src) => printAST(parseProgram(src))
@@ -99,6 +99,68 @@ describe("interleaving — code rests while you speak", () => {
         const meadow = ast[0].children.find((c) => c.meta.meadow)
         assert.ok(meadow, "the clearing should survive inside the loop body")
         assert.equal(meadow.meta.lit, "repeat, gently")
+    })
+})
+
+describe("the cell — code re-entering code-space inside the meadow (id:gw-cell)", () => {
+    const PAGE = "###\n* Title\n```\nfw 50\nrt 90\nfw 50 #follow where each step leaves you\n```\n###"
+
+    test("cell code is code being code: the executor walks it", () => {
+        const ast = parseProgram(PAGE)
+        const calls = ast.filter((n) => n.type === "Call")
+        assert.equal(calls.length, 3)
+        assert.equal(calls[0].value, "fw")
+        assert.equal(calls[2].meta.lit, "follow where each step leaves you")
+    })
+
+    test("the meadow around the cell stays prose, split at the fences", () => {
+        const ast = parseProgram(PAGE)
+        const meadows = ast.filter((n) => n.meta.meadow)
+        assert.equal(meadows.length, 1)
+        assert.equal(meadows[0].meta.lit, "* Title")
+    })
+
+    test("printAST re-emits the whole group exactly — one clearing, cell inside", () => {
+        assert.equal(roundtrip(PAGE), PAGE)
+        assert.equal(stable(PAGE), roundtrip(PAGE))
+    })
+
+    test("a def inside a cell registers and its walk survives the round-trip", () => {
+        const src = "###\nthe spiral\n```\ndef coil x do\n  fw x\n  rt 90\n  coil x+1\nend\ncoil 0\n```\n###"
+        const ast = parseProgram(src)
+        assert.ok(ast.some((n) => n.type === "Define" && n.value === "coil"))
+        const out = roundtrip(src)
+        assert.match(out, /^```$/m)
+        assert.match(out, /def coil x do/)
+    })
+
+    test("prose on both sides of the cell keeps the group's edges", () => {
+        const src = "###\nbefore\n```\nfw 10\n```\nafter\n###"
+        assert.equal(roundtrip(src), src)
+    })
+
+    test("an unterminated cell auto-closes at the meadow's edge without throwing", () => {
+        const src = "###\nprose\n```\nfw 10\n###"
+        let ast
+        assert.doesNotThrow(() => { ast = parseProgram(src) })
+        assert.ok(ast.some((n) => n.type === "Call" && n.value === "fw"))
+    })
+
+    test("the priority law: stripCells keeps the program, splitCells the previews", () => {
+        // Bare code outside the fences takes priority — it is the program;
+        // the cell is a preview that runs only on reach, never twice.
+        const src = "fw 5\n###\nprose\n```\nfw 100\n```\n###\nrt 90"
+        const ast = parseProgram(src)
+        assert.deepEqual(splitCells(ast), ["fw 100"])
+        const program = printAST(stripCells(ast))
+        assert.ok(!program.includes("fw 100"), "a preview never rides the program")
+        assert.match(program, /fw 5/)
+        assert.match(program, /rt 90/)
+        // the fences stay balanced: the stripped program re-parses clean,
+        // its cell now empty — prose never swallowed, nothing double-run
+        let reparsed
+        assert.doesNotThrow(() => { reparsed = parseProgram(program) })
+        assert.deepEqual(splitCells(reparsed), [""])
     })
 })
 

@@ -10,6 +10,7 @@
 import { scene } from "../../bridged.js"
 import { temporal } from "../../utils/temporal.js"
 import { printAST } from "../../turtling/parse.js"
+import { mountReach } from "../../editor/reach.js"
 import { nerveInstance } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
 import { listeners, wireRegistry } from "./core.js"
@@ -99,6 +100,15 @@ function mountOuter(hook, { term, cm6 }) {
     };
     term.shell.dom.addEventListener('keydown', onDraftKey, true);
 
+    // The reach, published to the canvas (id:gw-cell, Shoot 1) — the shared
+    // organ (editor/reach.js): cursor when it rests in a cell, scroll when it
+    // is absent, the caret planted so the editor light follows the one cursor
+    // law. While drafting, the draft owns the canvas and the gate stands down.
+    const reach = mountReach(term.shell, {
+        gate: () => !!outerAddr && !term.drafting(),
+        publish: (idx) => scene.cell(outerAddr, idx),
+    });
+
     // Go live → run the draft; go frozen → stop running (revert to their code).
     const onOuterLive = ({ live }) => {
         draftLive = !!live;
@@ -122,6 +132,7 @@ function mountOuter(hook, { term, cm6 }) {
             if (prevAddr) scene.remove(prevAddr);
             if (term.drafting()) leaveDraft();
             prevAddr = payload.addr;
+            reach.reset();   // a fresh page opens at its first cell, already lit
         }
 
         if (payload?.addr) outerAddr = payload.addr;
@@ -213,6 +224,7 @@ function mountOuter(hook, { term, cm6 }) {
             // here re-added the ambient milliseconds after removing it.
             () => { if (outerAddr) scene.remove(outerAddr); },
             () => term.shell?.dom.removeEventListener('keydown', onDraftKey, true),
+            reach.cleanup,
             draftEditUnsub,
             () => outerProj?.destroy(),
             () => outerEl.removeEventListener('click', onDelegatedClick),

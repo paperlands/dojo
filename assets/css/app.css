@@ -638,3 +638,81 @@
     box-shadow: inset 0 0 24px color-mix(in oklch, var(--color-secondary-content) 16%, transparent);
 }
 
+/* === The hearth — amber shanshui (shell/weave, Shoot 0) ===================
+   Only the path lives here: pages open in the outershell; the trail is the
+   weave's one chrome. The hearth owns NO pigment — every color is a
+   color-mix over the theme's own variables, the pigments there all summer:
+
+     chlorophyll  --color-accent   (hue 125) — the living green: where she IS
+     xanthophyll  --color-warning  (hue  84) — the gold as the green drains
+     carotene     --color-primary  (hue  60) — the amber underneath
+     paper        --color-base-*              — the mist steps dissolve into
+
+   The signature is THE TURNING: the kindled (newest) step is green — alive.
+   Walk on, it loses .weave-trail-kindled, and its green drains over ~2s into
+   amber-by-heat; older steps yellow toward gold and dissolve upward into
+   mist (the mask). No box, no border, no dark glass: ink on the app's own
+   paper. */
+
+.weave {
+    --chlorophyll: var(--color-accent);
+    --xanthophyll: var(--color-warning);
+    --carotene: var(--color-primary);
+    --mist: var(--color-base-200);
+    --ink: var(--color-secondary-content);
+}
+
+.weave-path {
+    display: flex;
+    flex-direction: column-reverse; /* newest-first DOM ⇒ newest at her hand */
+    align-items: flex-end;
+    gap: 0.1rem;
+    max-height: 8rem;
+    overflow: hidden;
+    /* older steps dissolve upward into the paper behind — the mist */
+    mask-image: linear-gradient(to top, black 55%, transparent 96%);
+}
+
+.weave-trail-step {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    line-height: 1.5;
+    cursor: pointer;
+    /* heat = pigment concentration: amber→gold with age, diluting to paper */
+    --step-pigment: color-mix(
+        in oklch,
+        color-mix(in oklch, var(--carotene) calc(var(--trail-heat, 0.5) * 100%), var(--xanthophyll))
+            calc(22% + var(--trail-heat, 0.5) * 70%),
+        var(--mist)
+    );
+    color: color-mix(in oklch, var(--step-pigment) 78%, var(--ink));
+    transition: color 2s ease, text-shadow 2s ease;
+}
+.weave-trail-step::before {
+    content: "· ";
+    color: var(--step-pigment);
+}
+.weave-trail-step:hover {
+    color: color-mix(in oklch, var(--carotene) 60%, var(--ink));
+}
+
+/* the kindled step: green, alive — where she stands. Losing this class IS
+   the turning: chlorophyll drains, the amber beneath leaks through. */
+.weave-trail-kindled {
+    color: color-mix(in oklch, var(--chlorophyll) 55%, var(--ink));
+    text-shadow: 0 0 14px color-mix(in oklch, var(--chlorophyll) 45%, transparent);
+}
+.weave-trail-kindled::before {
+    color: color-mix(in oklch, var(--chlorophyll) 80%, var(--ink));
+}
+
+/* unborn: a word waiting to be born — gold, the invitation kept mortal */
+.weave-unborn,
+.weave-unborn.weave-trail-kindled {
+    color: color-mix(in oklch, var(--xanthophyll) 45%, var(--ink));
+    text-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .weave-trail-step { transition: none; }
+}

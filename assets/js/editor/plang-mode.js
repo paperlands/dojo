@@ -599,29 +599,66 @@ export function marginOutlineFoldService(state, lineStart, lineEnd) {
 // later, evaluation, which runs only the active cell.
 // ---------------------------------------------------------------------------
 
-// Every code cell in document order: { open, end, terminated } line numbers, where
-// `end` is the closing-fence line (terminated) or the last body line (a cell left
-// open when the meadow closes or the buffer ends — still linted, never swallowed).
-export function findCells(doc) {
-    const cells = [];
-    let inMeadow = false, open = 0;
+// THE one walk over prose space — the meadow⊗cell state machine, walked once
+// (id:gw-cell's count). Cells: { open, end, terminated } line numbers, where
+// `end` is the closing-fence line (terminated) or the last body line (a cell
+// left open when the meadow closes or the buffer ends — still linted, never
+// swallowed). Meadows: { open, end } spans, fence lines included (the ###
+// doors belong to the meadow); an unclosed meadow runs to EOF. findCells and
+// findMeadows below are views over this walk, never second walkers.
+export function findProse(doc) {
+    const cells = [], meadows = [];
+    let inMeadow = false, mOpen = 0, open = 0;
     for (let n = 1; n <= doc.lines; n++) {
         const text = doc.line(n).text;
         if (open) {                                          // inside a cell (open = its fence line)
             if (CELL_CLOSE_RE.test(text))      { cells.push({ open, end: n,     terminated: true  }); open = 0; }
-            else if (FENCE_RE.test(text))      { cells.push({ open, end: n - 1, terminated: false }); open = 0; inMeadow = false; }
+            else if (FENCE_RE.test(text))      { cells.push({ open, end: n - 1, terminated: false }); open = 0;
+                                                 meadows.push({ open: mOpen, end: n }); inMeadow = false; }
             continue;
         }
-        if (FENCE_RE.test(text)) { inMeadow = !inMeadow; continue; }   // meadow opens/closes
-        if (inMeadow && CELL_OPEN_RE.test(text)) open = n;             // a ``` fence in prose opens a cell
+        if (FENCE_RE.test(text)) {                           // meadow opens/closes
+            if (inMeadow) meadows.push({ open: mOpen, end: n });
+            else mOpen = n;
+            inMeadow = !inMeadow;
+            continue;
+        }
+        if (inMeadow && CELL_OPEN_RE.test(text)) open = n;   // a ``` fence in prose opens a cell
     }
-    if (open) cells.push({ open, end: doc.lines, terminated: false }); // unterminated at EOF
-    return cells;
+    if (open) cells.push({ open, end: doc.lines, terminated: false });      // unterminated at EOF
+    if (open || inMeadow) meadows.push({ open: mOpen, end: doc.lines });    // auto-close at EOF
+    return { cells, meadows };
 }
+
+// Every code cell in document order — a view over the one walk.
+export const findCells = (doc) => findProse(doc).cells;
 
 // The cell containing line `lineNo`, or null — the gate: the cursor's cell is the
 // active one (evaluated), every other cell is inert (dimmed, not evaluated).
 export const cellAt = (cells, lineNo) => cells.find(c => lineNo >= c.open && lineNo <= c.end) || null;
+
+// The LAST SEEN cell while scrolling (Shoot 1's page gesture): the newest cell
+// whose opening fence has come into view — `bottomLine` is the lowest visible
+// line. Reading flows downward, so the cell just reached is the last one seen;
+// scrolling back up hands the light to an earlier cell the same way. Before
+// any cell is seen, the first cell holds the light (first-light parity).
+export const lastSeenCell = (cells, bottomLine) => {
+    let seen = null;
+    for (const c of cells) {
+        if (c.open <= bottomLine) seen = c;
+        else break;
+    }
+    return seen ?? cells[0] ?? null;
+};
+
+// Every meadow's span in document order — the other view over the one walk.
+export const findMeadows = (doc) => findProse(doc).meadows;
+
+// Is this line in prose space? Out here — on bare code, outside every fence —
+// no cell is active and none would be evaluated (the reader is making, not
+// reading); the meadow is where the cells' light lives.
+export const inMeadowRange = (meadows, lineNo) =>
+    meadows.some((m) => lineNo >= m.open && lineNo <= m.end);
 
 // Is line `lineNo` a cell's opening fence? (Only the opener folds.)
 export const isCellOpener = (doc, lineNo) => findCells(doc).some(c => c.open === lineNo);

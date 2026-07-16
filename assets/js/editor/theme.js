@@ -48,9 +48,20 @@
 const PROSE_FONT = 'ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", serif';
 const CODE_FONT  = '"FiraCode", ui-monospace, monospace';
 
+// The editor's base type size and line rhythm — pinned, not inherited. Without
+// this, `.cm-content` falls back to whatever font-size cascades in and a `normal`
+// line-height, so the caret height rides FiraCode's compact intrinsic metrics and
+// reads short while typing — only heading lines (which set an explicit `em` size)
+// looked right. Pinning the floor makes the caret deterministic and lets headings
+// scale up from a known base; prose and portals ride it. 1.6 gives the typing
+// caret a comfortable reading height.
+const BASE_FONT_SIZE   = '16px';
+const BASE_LINE_HEIGHT = '1.6';
+
 // Heading type scale — one ~1.2 (minor-third) modular scale over the code base,
 // shared by both themes so chapter hierarchy reads consistently: each level ≈1.2×
-// the next, moderate enough not to break the editor's line rhythm.
+// the next, moderate enough not to break the editor's line rhythm. `em` here is
+// relative to BASE_FONT_SIZE, so the whole scale rises with the pinned floor.
 const H1 = '1.58em', H2 = '1.32em', H3 = '1.1em';
 
 // ---------------------------------------------------------------------------
@@ -63,6 +74,7 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
             backgroundColor: 'rgba(35, 28, 20, .1)',  // bistre
             color:           '#48c0a3',                // pastel_chartreuse
             fontFamily:      '"FiraCode", ui-monospace,  monospace',
+            fontSize:        BASE_FONT_SIZE,           // pin the floor — caret & prose no longer inherit small
         },
         // Indent guide marks — drawn by createIndentGuidesExtension on leading whitespace
         '.cm-indent-guide': {
@@ -75,7 +87,8 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
         '.cm-lineNumbers .cm-gutterElement': { color: '#FF9933' },     // brand saffron
         '.cm-cursor':        { color: '#a0ea00' }, // chartreuse
         '.cm-editor .cm-content':  {
-            'caret-color': "#a0ea00"
+            'caret-color': "#a0ea00",
+            lineHeight:    BASE_LINE_HEIGHT,           // the line box the caret rides — a comfortable typing height
         },
         '&.cm-focused .cm-selectionBackground': { background: 'rgba(0, 197, 90, 0.4)' },
         '.cm-selectionBackground':              { background: 'rgba(0, 197, 90, 0.4)' },
@@ -150,7 +163,7 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
         { tag: tags.meta,                                           color: '#ec6c99', fontFamily: CODE_FONT },                    // french_pink
         { tag: tags.invalid,                                        color: '#00ff7f', fontFamily: CODE_FONT },                    // seafoam_green
         // The literate faces — the margin dissolves, the chapter rises, the word glows.
-        { tag: tags.lineComment,                                    color: 'rgba(251,179,47,0.3)' },       // the `#`/`###` marker
+        { tag: tags.lineComment,                                    color: 'rgba(251,179,47,0.3)', fontSize: '0.8em' }, // the `#`/`###`/`|`/`>`/`=` markers — dim AND smaller, dissolving
         { tag: tags.heading1,                                       color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H1 }, // a chapter
         { tag: tags.heading2,                                       color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H2 }, // a section
         { tag: tags.heading3,                                       color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H3 }, // a passage
@@ -159,7 +172,7 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
         { tag: tags.emphasis,                                       color: '#fbb32f', fontStyle: 'italic', fontFamily: PROSE_FONT },
         { tag: tags.quote,                                          color: '#c2b280', fontStyle: 'italic', fontFamily: PROSE_FONT }, // another's voice — set-off, recessive flax
         { tag: tags.monospace,                                      fontFamily: CODE_FONT, opacity: '0.6' }, // faded — rides atop the inner's linting
-        { tag: tags.link,                                           color: '#e6a2f3', textDecoration: 'underline', textShadow: '0 0 6px rgba(230,162,243,0.7)' }, // a glowing word
+        { tag: tags.link,                                           color: '#e6a2f3', textDecoration: 'underline', textShadow: '0 0 6px rgba(230,162,243,0.7)', fontSize: 'inherit' }, // a glowing word — rides the local text size, never shrinks
     ])),
 ];
 
@@ -173,6 +186,10 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
             backgroundColor: 'rgba(253, 246, 227, .1)',
             color: '#5c6a72',
             fontFamily: '"FiraCode", monospace',
+            fontSize: BASE_FONT_SIZE,                  // pin the floor — caret & prose no longer inherit small
+        },
+        '.cm-content': {
+            lineHeight: BASE_LINE_HEIGHT,              // the line box the caret rides — a comfortable typing height
         },
         // Indent guide marks — drawn by createIndentGuidesExtension on leading whitespace
         '.cm-indent-guide': {
@@ -251,7 +268,7 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
         { tag: tags.meta,                                           color: '#35a77c' },
         { tag: tags.invalid,                                        color: '#f85552' },
         // The literate faces — the margin dissolves, the chapter rises, the word glows.
-        { tag: tags.lineComment,                                    color: 'rgba(200,155,64,0.35)' },      // the `#`/`###` marker
+        { tag: tags.lineComment,                                    color: 'rgba(200,155,64,0.35)', fontSize: '0.8em' }, // the `#`/`###`/`|`/`>`/`=` markers — dim AND smaller, dissolving
         { tag: tags.heading1,                                       color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H1 }, // a chapter
         { tag: tags.heading2,                                       color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H2 }, // a section
         { tag: tags.heading3,                                       color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H3 }, // a passage
@@ -260,7 +277,7 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
         { tag: tags.emphasis,                                       color: '#C89B40', fontStyle: 'italic', fontFamily: PROSE_FONT },
         { tag: tags.quote,                                          color: '#829181', fontStyle: 'italic', fontFamily: PROSE_FONT }, // another's voice — set-off, recessive sage
         { tag: tags.monospace,                                      fontFamily: CODE_FONT, opacity: '0.6' }, // faded — rides atop the inner's linting
-        { tag: tags.link,                                           color: '#3a94c5', textDecoration: 'underline', textShadow: '0 0 5px rgba(58,148,197,0.5)' }, // a glowing word
+        { tag: tags.link,                                           color: '#3a94c5', textDecoration: 'underline', textShadow: '0 0 5px rgba(58,148,197,0.5)', fontSize: 'inherit' }, // a glowing word — rides the local text size, never shrinks
     ])),
 ];
 
