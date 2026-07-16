@@ -416,6 +416,16 @@ function pushMailbox(frame, msg) {
 // only for bare createFrame test harnesses that skip wireChild entirely.
 const addrOf = (frame) => frame.address ?? frame.id
 
+// Runtime provenance (specs/compiler.org id:cmp-runtime-provenance): a walk
+// error is stored and channeled STRUCTURED — the innermost spanned statement
+// already stamped span/phase in the executor. One shape, both catch sites;
+// frame.error is a record, never again a bare string.
+const errorRecord = (error) => ({
+    message: error.message,
+    span: error.span ?? null,
+    phase: error.phase ?? 'walk',
+})
+
 // Deliver a single shout to a frame, tracking delivery to prevent duplicates.
 // De-dup keys on the frame's ADDRESS — a re-eval'd receiver (new frame, same
 // address) is never re-delivered, and a shout never returns to its emitter's
@@ -634,8 +644,8 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
         } catch (error) {
             child.done = true
             child.generator = null
-            child.error = error.message
-            child.channel.put({ type: 'error', message: error.message, ambientId: child.id })
+            child.error = errorRecord(error)
+            child.channel.put({ type: 'error', ...child.error, ambientId: child.id })
             return null
         }
 
@@ -828,7 +838,7 @@ export function createScheduler(generator, opts = {}) {
         get errors() {
             const errs = []
             for (const [id, ctx] of registry) {
-                if (ctx.error) errs.push({ ambientId: id, name: ctx.name, message: ctx.error })
+                if (ctx.error) errs.push({ ambientId: id, name: ctx.name, ...ctx.error })
             }
             return errs
         },
@@ -899,8 +909,8 @@ export function createScheduler(generator, opts = {}) {
                     } catch (error) {
                         ctx.done = true
                         ctx.generator = null
-                        ctx.error = error.message
-                        ctx.channel.put({ type: 'error', message: error.message, ambientId: ctx.id })
+                        ctx.error = errorRecord(error)
+                        ctx.channel.put({ type: 'error', ...ctx.error, ambientId: ctx.id })
                         produced = true
                         break
                     }

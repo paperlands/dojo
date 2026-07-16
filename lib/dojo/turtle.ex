@@ -173,6 +173,14 @@ defmodule Dojo.Turtle do
     """
   end
 
+  # An error node holds her raw line VERBATIM in value (D020, the round-trip
+  # law: the compiler annotates her work, never rewrites it) — its parsed
+  # children (an unterminated block's body) follow, contained.
+  defp visit(%{"type" => "Error", "value" => value, "children" => children}) do
+    child_output = children |> Enum.map(&visit/1) |> Enum.join("\n")
+    Enum.join([value, child_output], "\n") |> String.trim_trailing()
+  end
+
   defp visit(_), do: ""
 
   defp indent_lines(input) do

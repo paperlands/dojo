@@ -113,6 +113,7 @@ function* walkBody(body, scope, state, stroke) {
     let matched = false
 
     for (const node of body) {
+        try {
         switch (node.type) {
 
         case 'Loop': {
@@ -261,6 +262,26 @@ function* walkBody(body, scope, state, stroke) {
 
         case 'Empty':
             break
+
+        // The healthy parts live (D020, specs/compiler.org id:cmp-resilient):
+        // a parse-time error node is INERT at walk — its children (an
+        // unterminated block's parsed body) rest inside it, contained. The
+        // ink is where it speaks. The fault path (a throw during a walk) is
+        // untouched: workers still die per let-it-crash.
+        case 'Error':
+            break
+        }
+        } catch (error) {
+            // Runtime provenance (specs/compiler.org id:cmp-runtime-provenance):
+            // the INNERMOST spanned statement stamps a walk error with its birth
+            // line — recursion unwinds through outer nodes without overwriting.
+            // Let-it-crash untouched: the error still propagates and the frame
+            // still dies; it just dies knowing where.
+            if (error instanceof Error && !error.span && node.span) {
+                error.span = node.span
+                error.phase = 'walk'
+            }
+            throw error
         }
     }
 }
@@ -394,7 +415,7 @@ function* callCommand(name, args, state, stroke) {
 
 // --- Expression evaluation ---
 // Delegates to the injected math parser/evaluator.
-// Mirrors turtle.js evaluateExpression exactly.
+// The one owner of PaperLang expression evaluation.
 
 function evaluateExpr(expr, scope, state) {
     const { mathParser, mathEvaluator } = state.deps

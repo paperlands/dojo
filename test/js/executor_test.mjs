@@ -495,3 +495,46 @@ describe("runtime state", () => {
         assert.ok(near(deps.mathEvaluator.constants['x'](), head.position[0]))
     })
 })
+
+// ---------------------------------------------------------------------------
+// Runtime provenance (specs/compiler.org id:cmp-runtime-provenance) —
+// a walk error is stamped with the INNERMOST spanned statement's birth line.
+// ---------------------------------------------------------------------------
+
+describe("runtime provenance — walk errors carry node spans", () => {
+    const drainAll = (ast) => {
+        const gen = execute(ast, mockDeps(), {})
+        while (!gen.next().done) { /* events discarded */ }
+    }
+
+    test("a top-level throw wears its statement's span", async () => {
+        const { parseProgram } = await import("../../assets/js/turtling/parse.js")
+        const ast = parseProgram("fw 10\nmistake 5")
+        try {
+            drainAll(ast)
+            assert.fail("expected the walk to crash")
+        } catch (error) {
+            assert.equal(error.span?.line, 2)
+            assert.equal(error.phase, "walk")
+        }
+    })
+
+    test("the innermost law: a throw inside a def wears the def-body line, not the call site", async () => {
+        const { parseProgram } = await import("../../assets/js/turtling/parse.js")
+        const ast = parseProgram("def boom do\n  mistake\nend\nboom")
+        try {
+            drainAll(ast)
+            assert.fail("expected the walk to crash")
+        } catch (error) {
+            assert.equal(error.span?.line, 2,
+                "recursion unwinds without overwriting the innermost stamp")
+            assert.equal(error.phase, "walk")
+        }
+    })
+
+    test("let-it-crash untouched: the decorated error still propagates whole", async () => {
+        const { parseProgram } = await import("../../assets/js/turtling/parse.js")
+        const ast = parseProgram("mistake")
+        assert.throws(() => drainAll(ast), /mistake/)
+    })
+})

@@ -1,5 +1,5 @@
 import { Parser } from "./mafs/parse.js"
-import { parseProgram } from "./parse.js"
+import { parseProgram, reparseProgram, collectErrors } from "./parse.js"
 import { drainNamespace } from "./executor.js"
 import { Evaluator } from "./mafs/evaluate.js"
 import Render from "./render/index.js"
@@ -241,14 +241,17 @@ export class Turtle {
     // ancestors' code, run lazily from t=0 by the one executor semantics
     // (drainNamespace — headless, waits fast-forward, no sibling
     // negotiation, loud budget). Content-keyed cache: same vocabulary, one
-    // rehearsal; an edit is new content and rehearses fresh.
-    rehearseVocab(vocab) {
+    // rehearsal; an edit is new content and rehearses fresh. The KEY stays
+    // the printed vocab (identity law: content hash is the cross-eval
+    // predicate); the DRAIN runs the live node slices when the seam ships
+    // them — no re-parse (id:cmp-vet wound 1).
+    rehearseVocab(vocab, vocabNodes = null) {
         this._vocabCache ??= new Map()
         if (this._vocabCache.has(vocab)) return this._vocabCache.get(vocab)
         let ns = null
         try {
             const deps = { mathParser: new Parser(), mathEvaluator: new Evaluator() }
-            const drained = drainNamespace(parseProgram(vocab), deps)
+            const drained = drainNamespace(vocabNodes ?? parseProgram(vocab), deps)
             if (drained.error) console.warn('vocab rehearsal failed:', drained.error.message)
             else ns = drained
         } catch (error) {
@@ -267,12 +270,24 @@ export class Turtle {
     // ancestors' code (sectionCells derives it from the one AST), rehearsed
     // here and seeded into the fork spec the same way `as name do` inherits:
     // a COPY per seat, never shared.
-    upsertAmbient(key, displayName, code, { hatch = true, vocab = null } = {}) {
+    upsertAmbient(key, displayName, code, { hatch = true, vocab = null, nodes = null, vocabNodes = null } = {}) {
         try {
-            const instructions = parseProgram(code)
+            // The seam ships live node slices when it has them (a page's
+            // cells are slices of the ONE buffer tree); the code string
+            // remains the content key and the socket projection. When
+            // structure didn't travel, the green tree reuses the key's
+            // previous parse (id:cmp-green-tree) — an edit to one block
+            // keeps every other block's node objects.
+            let instructions = nodes
+            if (!instructions) {
+                this._parseMemo ??= new Map()
+                const held = this._parseMemo.get(key)
+                instructions = reparseProgram(code, held?.text ?? null, held?.ast ?? null)
+                this._parseMemo.set(key, { text: code, ast: instructions })
+            }
             this._ensureScheduler()
 
-            const ns = vocab ? this.rehearseVocab(vocab) : null
+            const ns = vocab ? this.rehearseVocab(vocab, vocabNodes) : null
             this.scheduler.hotSwapChild(key, {
                 name: displayName,
                 code: { ast: instructions, functions: ns?.functions ?? null },
@@ -282,8 +297,10 @@ export class Turtle {
 
             this._hatchSuppressed = !hatch
             if (hatch) {
-                // Fresh hatch cycle — clear previous snapshot so onFrame re-hatches
-                this.renderstate.snapshot = { frame: null, save: this.renderstate.snapshot.save }
+                // Fresh run: re-arm the done-capture. The snapshot is NOT
+                // cleared — nulling it re-armed a full-canvas readback on the
+                // very next frame, i.e. once per keystroke under the live
+                // re-eval (the typing-lag root cause).
                 this._snapshotPending = false
             }
 
@@ -294,12 +311,20 @@ export class Turtle {
             if (errors.length > 0) {
                 this.renderstate.meta = { state: "error", message: errors[0].message, source: code, commands: instructions }
                 this.requestRender()
-                return { success: false, error: errors[0].message }
+                // Walk errors ride structured (id:cmp-runtime-provenance):
+                // span-true, born on the erring node — no message archaeology.
+                return { success: false, error: errors[0].message, errorSpan: errors[0].span ?? null }
             }
 
             this.renderstate.meta = { state: "success", commands: instructions }
             this.requestRender()
-            return { success: true, commandCount: this.scheduler.commandCount }
+            // The healthy parts live (D020): a parse-error node never fails
+            // the run — the world drew. The structured errors ride the result
+            // (span-true lines, no message archaeology) for any surface to speak.
+            const parseErrors = collectErrors(instructions)
+            const result = { success: true, commandCount: this.scheduler.commandCount }
+            if (parseErrors.length) result.parseErrors = parseErrors
+            return result
         } catch (error) {
             console.error(error)
             this.renderstate.meta = { state: "error", message: error.message, source: code }
@@ -309,6 +334,7 @@ export class Turtle {
 
     removeAmbient(key) {
         this._localKeys.delete(key)
+        this._parseMemo?.delete(key)
         if (!this.scheduler) return
         this._lastContentChange = performance.now()
 

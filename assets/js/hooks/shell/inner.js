@@ -67,11 +67,6 @@ function mountInner(hook, { term, cm6 }) {
 
     const slider  = mutators.slider('slider');
 
-    function parseErrorLine(message) {
-        const m = message.match(/at line (\d+)/)
-        return m ? parseInt(m[1], 10) : null
-    }
-
     // The page law — every weave decision (pages, slots, ladder steps)
     // lives there; this surface performs. The two degrees the law speaks
     // (gw-appearance) map to canvas opacity here, once.
@@ -88,7 +83,8 @@ function mountInner(hook, { term, cm6 }) {
             switch (e.op) {
             case 'seat': {
                 const result = turtle.upsertAmbient(e.key, e.name, e.code,
-                    { hatch: e.hatch ?? true, vocab: e.vocab ?? null })
+                    { hatch: e.hatch ?? true, vocab: e.vocab ?? null,
+                      nodes: e.nodes ?? null, vocabNodes: e.vocabNodes ?? null })
                 if (e.main) main = result
                 break
             }
@@ -141,10 +137,18 @@ function mountInner(hook, { term, cm6 }) {
         // reach law the outershell drives, shared organ and shared ladder;
         // anything else draws whole, as ever, exclusive across kinds.
         const result = perform(law.edit(id, name, content))
-        if (result?.success) {
+        if (result?.success && result.parseErrors?.length) {
+            // The healthy parts drew (D020); the broken line speaks with its
+            // TRUE span — born structured, never regexed out of a message.
+            const e = result.parseErrors[0]
+            nerveInstance?.push(S.error("error", e.message, e.span ? { line: e.span.line } : null))
+        } else if (result?.success) {
             nerveInstance?.push(S.output("☀︎", result.commandCount))
         } else if (result) {
-            const line = parseErrorLine(result.error)
+            // Walk errors arrive span-true from the frame's catch
+            // (id:cmp-runtime-provenance). Skip-law: no span, no line —
+            // never regexed back out of a message.
+            const line = result.errorSpan?.line ?? null
             nerveInstance?.push(S.error("error", result.error, line ? { line } : null))
         }
         syncTabs()

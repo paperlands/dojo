@@ -46,7 +46,7 @@
 
 import { visit } from "./ladder.js"
 import { parseAddress } from "./resolve.js"
-import { parseProgram, printAST, sectionCells, stripCells } from "../turtling/parse.js"
+import { reparseProgram, printAST, sectionCells, stripCells } from "../turtling/parse.js"
 
 // Fast fence probe — the full parse only for buffers that hold a cell.
 const CELL_PROBE = /^[ \t]*```/m
@@ -56,16 +56,22 @@ const isLibrary = (addr) => parseAddress(addr).owner === "~"
 // Sibling entries derive from the one AST: the key is the cell address; the
 // first cell wears the page's name, so the outer focus flow lights it.
 function cellEntries(addr, name, cells) {
-    return cells.map(({ code, vocab }, i) => ({
+    return cells.map(({ code, vocab, nodes, vocabNodes }, i) => ({
         key: `${addr}#cell${i + 1}`,
         name: i === 0 ? name : `${name}·${i + 1}`,
         code,
         vocab,
+        // Live node slices of the one tree — the seat runs THESE; the code/
+        // vocab strings stay as content keys and socket projections (the
+        // partition never severs identity, specs/compiler.org id:cmp-vet).
+        nodes,
+        vocabNodes,
     }))
 }
 
 const seat = (entry, extra = {}) => ({
-    op: "seat", key: entry.key, name: entry.name, code: entry.code, vocab: entry.vocab, ...extra,
+    op: "seat", key: entry.key, name: entry.name, code: entry.code, vocab: entry.vocab,
+    nodes: entry.nodes, vocabNodes: entry.vocabNodes, ...extra,
 })
 
 export function pageLaw() {
@@ -96,7 +102,12 @@ export function pageLaw() {
         let ast = null
         if (CELL_PROBE.test(content)) {
             try {
-                ast = parseProgram(content)
+                // The green tree (id:cmp-green-tree): the page's previous
+                // tree is the reuse ground — an edit to one cell leaves the
+                // sibling cells' nodes ===-identical, so their content keys,
+                // memos, and (Phase 3) frames survive the keystroke.
+                const held = pages.get(addr)
+                ast = reparseProgram(content, held?.source ?? null, held?.program ?? null)
                 cells = sectionCells(ast)
             } catch { cells = [] }
         }
@@ -124,8 +135,8 @@ export function pageLaw() {
             // program is their vocabulary; the outline is ignored under the
             // priority law).
             const vocab = printAST(program)
-            for (const e of entries) e.vocab = vocab
-            pages.set(addr, { entries, order, mode: "preview", hatch: false })
+            for (const e of entries) { e.vocab = vocab; e.vocabNodes = program }
+            pages.set(addr, { entries, order, mode: "preview", hatch: false, source: content, program: ast })
             effects.push({ op: "reach", index: order[0] ?? null })
             for (const i of order) effects.push(seat(entries[i], { hatch: false }))
             effects.push({ op: "draw", addr, name, code: vocab, main: true })
@@ -135,7 +146,7 @@ export function pageLaw() {
         // wait dimmed; the whole buffer never runs beside them.
         if (!order.length) order.push(0)
         if (!prev) effects.push({ op: "clearLocal" })
-        pages.set(addr, { entries, order, mode: "page", hatch: true })
+        pages.set(addr, { entries, order, mode: "page", hatch: true, source: content, program: ast })
         effects.push({ op: "remove", key: addr })
         effects.push({ op: "reach", index: order[0] })
         const kindled = entries[order[0]]

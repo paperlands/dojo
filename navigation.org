@@ -436,6 +436,27 @@ first cell on first light). The degree ladder is one pure transition
 (dimmed) for before/after, past-the-window evicts ([[id:gw-play]] Shoot 1,
 [[id:gw-appearance]]).
 
+** papertiger companion — the mood law and the body
+:PROPERTIES:
+:ID: nav-tiger
+:KEYWORDS: papertiger tiger companion mood stance mascot clippy pounce coil slink prowl halo intent resting question gaze leap undraw draw ink gesture playground meadow atelier carve seed grok imagine potrace normalize archetype
+:PATH: assets/js/tiger/mood.js
+:END:
+The companion for wandering the weave (canon: =specs/papertiger.org=). Split
+at the law⊗performer joint like the page law: =tiger/mood.js= =createMood= is
+the pure stance automaton (grounded ⊗ flight ⊗ away regimes; signals in,
+moves out; node-tested =test/js/tiger_mood_test.mjs=), =tiger/tiger.js=
+=mountTiger= is the body (fetches =priv/static/papertiger/resting.svg=,
+dash-draws the ONE path for draw/undraw, WAAPI breathing, rAF spring slink +
+bezier-arc leap, reports airborne/landed back — the body is the single clock
+of its flight). =hooks/tiger.js= is the senses (hover/portal/scroll/typing →
+signals; reads, never writes — no pushEvent). Sovereign playground at
+=/tiger= (=lib/dojo_web/live/tiger_live.ex=) before any /shell integration.
+New bodies are grown in the ATELIER (=specs/papertiger-atelier.org=:
+archetype prompt deck + strike arc for Grok Imagine; =scripts/tiger_atelier.sh=
+=seed=/=carve= → =scripts/tiger_normalize.mjs= emits house SVGs into
+=priv/static/papertiger/<stance>.svg= — dash-draw covers every path).
+
 ** PaperLang editor mode — syntax, indents, do/end
 :PROPERTIES:
 :ID: nav-editor
@@ -458,6 +479,42 @@ ink face (serif prose, dim marker, glowing portal) is in =editor/theme.js=.
 =printAST= re-emits the fences; auto-closes at EOF. The lit-link click reveal is
 shared with the shout-source path in =assets/js/nerve/reveal.js=. See
 =specs/decisions/013-literate-atom-rendered.decision.md=.
+
+** resilient parse — total parser, error nodes, spans
+:PROPERTIES:
+:ID: nav-resilient-parse
+:KEYWORDS: resilient total parse error node span line number containment unterminated missing end diagnostics collectErrors errorNode stamp healthy parts live D020 compiler
+:PATH: assets/js/turtling/parse.js::function errorNode
+:END:
+Phase 1 of the intelligent compiler (=specs/compiler.org= [[id:cmp-resilient]],
+D020): =parseProgram= is TOTAL — malformed input becomes ='Error'= nodes
+under the containment law (one line for a head error; head-to-EOF for an
+unterminated block, parsed children riding inside, inert). Every statement
+node carries =span: {line, endLine}= in TRUE original buffer lines (the
+=tokenize= line pass carries birth lines through blank-drops, glued-=end=
+splits, and meadow folds). =collectErrors(ast)= is the diagnostics seed
+(Phase 2's first query); =turtle.run= rides it as =result.parseErrors= and
+the executor rests ='Error'= nodes (=executor.js= case). Elixir side
+tolerant: map patterns ignore =span=, =visit(_)= swallows unknown types.
+Pinned by =test/js/resilient_parse_test.mjs=.
+
+** green tree — node identity across reparses
+:PROPERTIES:
+:ID: nav-green-tree
+:KEYWORDS: green tree reparse reuse node identity adopt content key early cutoff memo swap predicate incremental parse span overlay reparseProgram
+:PATH: assets/js/turtling/parse.js::export function reparseProgram
+:END:
+Phase 1's second half (=specs/compiler.org= [[id:cmp-green-tree]]):
+=reparseProgram(text, prevText, prevAst)= parses WHOLE (the total parse is
+ground truth — reuse can never lie), then adopts identity by content
+equality at the top-level grain: a statement, a block, a meadow chunk, a
+cell fence. Unchanged units keep their node OBJECTS ===-identical across
+edits; spans (absolute buffer lines, the position overlay) copy in place.
+Wired at both parse seams: =weave/page.js attempt= (page records hold
+=source=/=program=) and =turtle.upsertAmbient= (=_parseMemo= per key,
+evicted in =removeAmbient=). Pinned by =test/js/green_tree_test.mjs=
+(adversarial equivalence sweep + identity properties) and the law-level
+pin in =weave_page_test.mjs=.
 
 * RIGS — proving ground
 :PROPERTIES:

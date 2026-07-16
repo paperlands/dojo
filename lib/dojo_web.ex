@@ -20,7 +20,8 @@ defmodule DojoWeb do
   # `codex` is the fragment press served raw (priv/static/codex → codex/fragments):
   # the weave parses org IN THE BROWSER — no server-side fragment engine, ever
   # (specs/groundwork.org Phase 2, the locality fence).
-  def static_paths, do: ~w(assets fonts images codemirror codex favicon robots.txt vendor)
+  def static_paths,
+    do: ~w(assets fonts images codemirror codex papertiger favicon robots.txt vendor)
 
   def router do
     quote do

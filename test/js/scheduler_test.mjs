@@ -295,8 +295,11 @@ describe("parser: as keyword", () => {
         assert.equal(ast[2].type, "Call")
     })
 
-    test("as without name throws", () => {
-        assert.throws(() => parseProgram("as do\n  fw 100\nend"), /requires assistant name/)
+    test("as without name becomes an error node — the parse is total (D020)", () => {
+        const ast = parseProgram("as do\n  fw 100\nend")
+        assert.equal(ast[0].type, "Error")
+        assert.match(ast[0].meta.expected, /assistant name/)
+        assert.deepEqual(ast[0].span, { line: 1, endLine: 1 })
     })
 })
 
@@ -664,7 +667,10 @@ describe("fault isolation", () => {
         scheduler.tick(0)
 
         assert.ok(scheduler.done)
-        assert.equal(scheduler.root.error, "Function mistake not defined")
+        // frame.error is a structured record (id:cmp-runtime-provenance);
+        // a bare generator throw has no spanned node — skip-law: span null.
+        assert.equal(scheduler.root.error.message, "Function mistake not defined")
+        assert.equal(scheduler.root.error.span, null)
 
         const drained = scheduler.channel.drain()
         // path event + error event
@@ -744,7 +750,8 @@ describe("fault isolation", () => {
         const bad = findChild(scheduler.root, "bad")
         assert.ok(bad.done)
         assert.ok(bad.error)
-        assert.ok(bad.error.includes("mistake"))
+        assert.ok(bad.error.message.includes("mistake"),
+            "frame.error is a structured record (id:cmp-runtime-provenance)")
     })
 
     test("valid commands render despite later error (integration)", () => {
@@ -758,6 +765,10 @@ describe("fault isolation", () => {
         assert.ok(scheduler.done)
         assert.equal(scheduler.errors.length, 1)
         assert.ok(scheduler.errors[0].message.includes("mistake"))
+        // Runtime provenance: the walk error carries the erring node's span
+        // (mistake stands on line 3) — born structured, never regexed.
+        assert.equal(scheduler.errors[0].span?.line, 3)
+        assert.equal(scheduler.errors[0].phase, "walk")
 
         const drained = scheduler.channel.drain()
         const paths = drained.filter(e => e.type === "path")
@@ -765,6 +776,7 @@ describe("fault isolation", () => {
 
         const errors = drained.filter(e => e.type === "error")
         assert.equal(errors.length, 1)
+        assert.equal(errors[0].span?.line, 3, "the channel's error event rides span-true")
     })
 })
 

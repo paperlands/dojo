@@ -305,3 +305,26 @@ describe("toggle — the page flips whole, a plain tab falls through", () => {
         assert.deepEqual(t.effects, [], "the turtle's own toggle takes it whole")
     })
 })
+
+describe("the green tree through the law — identity across edits", () => {
+    test("an edit to one cell keeps the sibling cells' node objects (id:cmp-green-tree)", () => {
+        const law = pageLaw()
+        const seats = (effects) => effects.filter((e) => e.op === "seat")
+
+        const first = law.edit("b1", "one", PAGE_SRC)
+        const before = seats(first)[0]
+        assert.ok(before.nodes?.length, "seats carry live node slices")
+
+        // Edit the LAST cell (fw 5 → fw 7): the kindled first cell's nodes
+        // must ride through ===-identical — its content key, its memos, and
+        // (Phase 3) its frame never notice the keystroke.
+        const edited = PAGE_SRC.replace("fw 5", "fw 7")
+        const second = law.edit("b1", "one", edited)
+        const after = seats(second)[0]
+        assert.equal(after.key, before.key)
+        for (let i = 0; i < before.nodes.length; i++) {
+            assert.equal(after.nodes[i], before.nodes[i],
+                "the sibling cell's nodes are the same objects, not re-parses")
+        }
+    })
+})

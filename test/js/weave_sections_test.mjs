@@ -127,7 +127,29 @@ fw 2
     test("the sectioning survives the wire: JSON-thawed nodes section the same", () => {
         const ast = parseProgram(PAGE)
         const thawed = JSON.parse(JSON.stringify(ast))
-        assert.deepEqual(sectionCells(thawed), sectionCells(ast))
+        // Printed projections match across the socket; the node slices are
+        // each tree's own (identity is per-tree — content is the wire truth).
+        const projection = (cells) => cells.map(({ code, vocab }) => ({ code, vocab }))
+        assert.deepEqual(projection(sectionCells(thawed)), projection(sectionCells(ast)))
+    })
+
+    test("the partition never severs identity: cells carry live slices of the one tree", () => {
+        const ast = parseProgram(PAGE)
+        const cells = sectionCells(ast)
+        // Every cell node IS a node of the buffer tree — the same object,
+        // not a re-parse (specs/compiler.org id:cmp-vet wound 1).
+        for (const cell of cells) {
+            for (const node of cell.nodes) {
+                assert.ok(ast.includes(node), "cell node is === a buffer tree node")
+            }
+        }
+        // A descendant's vocabulary nodes ARE its ancestors' cell nodes —
+        // the same objects the ancestor cells carry, never copies.
+        const [root, chapterDef, , member] = cells
+        assert.ok(member.vocabNodes.some((n) => root.nodes.includes(n)),
+            "the root's nodes flow down as themselves")
+        assert.ok(member.vocabNodes.some((n) => chapterDef.nodes.includes(n)),
+            "the chapter's nodes flow down as themselves")
     })
 })
 
