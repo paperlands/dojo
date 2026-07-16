@@ -207,11 +207,22 @@ function tokenBase(stream, state) {
 //                  scrollable notebook cells. Persists across lines like the meadow.
 // ---------------------------------------------------------------------------
 
+// The portal word grammar — ONE regex, two faces (id:gw-grammar): the bare
+// portal `[[roundness]]` and the pressed description portal
+// `[[frag-spiral][Spiralling to the End]]` (weave/parse.js rewritePortals
+// emits both). Group 1 is the target word, group 2 the display word (absent
+// on the bare face). PORTAL_RE is the global scanner the portal organ
+// (editor/portals.js) walks; PORTAL_INLINE_RE the anchored probe litInline
+// consumes — the same grammar, never a second one.
+export const PORTAL_RE = /\[\[([^\][]+)\](?:\[([^\]]*)\])?\]/g
+// The anchored probe litInline consumes — DERIVED, so the two can never drift.
+const PORTAL_INLINE_RE = new RegExp(`^(?:${PORTAL_RE.source})`)
+
 // One chunk of inline prose. Advances the stream by at least one char and
 // returns a sub-style; `base` is the plain-run face (inked prose, or a quoted
 // voice). Unclosed sugar is just prose — never an error.
 function litInline(stream, state, base = "comment") {
-    if (stream.match(/^\[\[[^\][]+\]\]/)) return "link";       // [[portal]] — a glowing word
+    if (stream.match(PORTAL_INLINE_RE)) return "link";         // [[portal]] / [[portal][word]] — a glowing word
     if (stream.match(/^=[^=\s][^=]*=/, false)) {              // =code= — same linting, faded
         stream.next();                                        // the opening delimiter, dimmed
         state.inProseCode = true;
@@ -659,6 +670,20 @@ export const findMeadows = (doc) => findProse(doc).meadows;
 // reading); the meadow is where the cells' light lives.
 export const inMeadowRange = (meadows, lineNo) =>
     meadows.some((m) => lineNo >= m.open && lineNo <= m.end);
+
+// PAGE-shaped: every non-blank line lives inside a meadow — the shape the
+// press emits. Bare code outside the fences makes the doc a PROGRAM. The
+// priority law (the reach, the portal step) decides by this shape, never a
+// mode flag — a view over the one walk, beside its siblings above.
+export function isPageDoc(doc, meadows) {
+    let m = 0
+    for (let n = 1; n <= doc.lines; n++) {
+        while (m < meadows.length && meadows[m].end < n) m++
+        const inMeadow = m < meadows.length && n >= meadows[m].open && n <= meadows[m].end
+        if (!inMeadow && /\S/.test(doc.line(n).text)) return false
+    }
+    return true
+}
 
 // Is line `lineNo` a cell's opening fence? (Only the opener folds.)
 export const isCellOpener = (doc, lineNo) => findCells(doc).some(c => c.open === lineNo);

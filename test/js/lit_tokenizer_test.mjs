@@ -69,6 +69,11 @@ describe("the margin door", () => {
         assert.deepEqual(stylesOf(toks, "[[a step]]"), ["link"])
     })
 
+    test("a description portal glows whole — [[frag-x][word]] is one link", () => {
+        const toks = lex("fw 50 # see [[frag-spiral][Spiralling to the End]]")
+        assert.deepEqual(stylesOf(toks, "[[frag-spiral][Spiralling to the End]]"), ["link"])
+    })
+
     test("the margin does not leak — the next line is code again", () => {
         const toks = lex("fw 50 # a note\nrt 90")
         // `rt` on line 2 must tokenize as a keyword, not prose

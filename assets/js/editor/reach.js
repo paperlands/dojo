@@ -24,20 +24,8 @@
 // literate tab. Same organ, shared behaviour.
 // =============================================================================
 
-import { findProse, cellAt, lastSeenCell, inMeadowRange } from "./plang-mode.js"
+import { findProse, cellAt, lastSeenCell, inMeadowRange, isPageDoc } from "./plang-mode.js"
 import { temporal } from "../utils/temporal.js"
-
-// Page-shaped: every non-blank line lives inside a meadow — the shape the
-// press emits. Bare code outside the fences makes the doc a PROGRAM.
-function isPageDoc(doc, meadows) {
-    let m = 0
-    for (let n = 1; n <= doc.lines; n++) {
-        while (m < meadows.length && meadows[m].end < n) m++
-        const inMeadow = m < meadows.length && n >= meadows[m].open && n <= meadows[m].end
-        if (!inMeadow && /\S/.test(doc.line(n).text)) return false
-    }
-    return true
-}
 
 // mountReach(view, { gate, publish }) → { reset, cleanup }
 //   view    — the CM6 EditorView the gesture reads (cursor, scroll, doc)
