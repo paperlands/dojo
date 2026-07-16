@@ -169,6 +169,13 @@ export function createStage(canvas, bridge) {
         stage.requestRender?.()
     })
 
+    // One capture at a time — hatch() swallows re-entry while the async
+    // readback is in flight (the first-light retry calls it every frame).
+    // dispose() flips `disposed` so a pending fence poll stands down instead
+    // of touching freed GL or publishing to a dead surface.
+    let hatchInFlight = false
+    let disposed = false
+
     // Assembled stage object
     const stage = {
         canvas,
@@ -203,33 +210,76 @@ export function createStage(canvas, bridge) {
             renderer.render(scene, camera)
         },
 
-        // Snapshot for thumbnail/recording
+        // Snapshot for thumbnail/recording. The readback is ASYNC on WebGL2:
+        // readPixels targets a PIXEL_PACK_BUFFER (returns without draining the
+        // GPU) and a fence signals when the pixels are ready — a synchronous
+        // readPixels here stalled the main thread ~40ms per capture. Returns
+        // false when a capture is already in flight, so callers don't count
+        // the call as a completed hatch.
         hatch(bridge) {
+            if (hatchInFlight) return false
             const width = canvas.width
             const height = canvas.height
-            const pixels = new Uint8Array(width * height * 4)
-            ctx.readPixels(0, 0, width, height, ctx.RGBA, ctx.UNSIGNED_BYTE, pixels)
-            stage.renderstate.snapshot.frame = pixels
 
-            queueMicrotask(async () => {
-                const result = await recorder.takeSnapshot({ pixels, width, height })
-                if (result) {
-                    if (stage.renderstate.snapshot.save) {
-                        bridge.pub(["saveRecord", {
-                            snapshot: result.full,
-                            type: "image",
-                            title: stage.renderstate.snapshot.title
-                        }])
-                        stage.renderstate.snapshot.save = false
+            const finish = (pixels) => {
+                stage.renderstate.snapshot.frame = pixels
+                queueMicrotask(async () => {
+                    const result = await recorder.takeSnapshot({ pixels, width, height })
+                    if (result) {
+                        if (stage.renderstate.snapshot.save) {
+                            bridge.pub(["saveRecord", {
+                                snapshot: result.full,
+                                type: "image",
+                                title: stage.renderstate.snapshot.title
+                            }])
+                            stage.renderstate.snapshot.save = false
+                        }
+                        stage.renderstate.meta.path = result.trimmed
+                        bridge.pub(["hatchTurtle", stage.renderstate.meta])
                     }
-                    stage.renderstate.meta.path = result.trimmed
-                    bridge.pub(["hatchTurtle", stage.renderstate.meta])
-                }
-            })
+                })
+            }
+
+            if (typeof ctx.fenceSync !== 'function') {
+                // WebGL1 — no fences; the synchronous readback is the only way.
+                const pixels = new Uint8Array(width * height * 4)
+                ctx.readPixels(0, 0, width, height, ctx.RGBA, ctx.UNSIGNED_BYTE, pixels)
+                finish(pixels)
+                return
+            }
+
+            // Enqueue the GPU-side copy now (reads this frame's drawing buffer,
+            // same as the old sync path), collect the bytes once the fence says
+            // the copy landed — no pipeline stall on this thread.
+            hatchInFlight = true
+            const buf = ctx.createBuffer()
+            ctx.bindBuffer(ctx.PIXEL_PACK_BUFFER, buf)
+            ctx.bufferData(ctx.PIXEL_PACK_BUFFER, width * height * 4, ctx.STREAM_READ)
+            ctx.readPixels(0, 0, width, height, ctx.RGBA, ctx.UNSIGNED_BYTE, 0)
+            ctx.bindBuffer(ctx.PIXEL_PACK_BUFFER, null)
+            const sync = ctx.fenceSync(ctx.SYNC_GPU_COMMANDS_COMPLETE, 0)
+            ctx.flush()
+
+            const poll = () => {
+                if (disposed || ctx.isContextLost()) { hatchInFlight = false; return }
+                const status = ctx.clientWaitSync(sync, 0, 0)
+                if (status === ctx.TIMEOUT_EXPIRED) { setTimeout(poll, 8); return }
+                ctx.deleteSync(sync)
+                hatchInFlight = false
+                if (status === ctx.WAIT_FAILED) { ctx.deleteBuffer(buf); return }
+                const pixels = new Uint8Array(width * height * 4)
+                ctx.bindBuffer(ctx.PIXEL_PACK_BUFFER, buf)
+                ctx.getBufferSubData(ctx.PIXEL_PACK_BUFFER, 0, pixels)
+                ctx.bindBuffer(ctx.PIXEL_PACK_BUFFER, null)
+                ctx.deleteBuffer(buf)
+                finish(pixels)
+            }
+            setTimeout(poll, 0)
         },
 
         // Cleanup
         dispose() {
+            disposed = true
             window.removeEventListener('resize', onResize)
             canvas.removeEventListener('wheel', onWheel)
             cameraUnsub()

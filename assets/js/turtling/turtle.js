@@ -190,11 +190,10 @@ export class Turtle {
 
             if (this.renderstate.snapshot.frame == null && t > 500 && !this._hatchSuppressed) {
                 this.hatch()
-            }
-
-            if (this.scheduler.done && !this._snapshotPending && !this._hatchSuppressed) {
-                this._snapshotPending = true
-                this.hatch()
+            } else if (this.scheduler.done && !this._snapshotPending && !this._hatchSuppressed) {
+                // Re-captures ride the done transition: a run's final state is
+                // captured once; eagerHatch (visibility/heartbeat) re-arms it.
+                if (this.hatch()) this._snapshotPending = true
             }
         } else {
             // No ambients — idle render (orbit controls, stage head)
@@ -218,9 +217,12 @@ export class Turtle {
         this._keepRendering = animating || recording || controlsChanged || controlsSettling || needHatch
     }
 
+    // Returns false when the stage swallowed the capture (one already in
+    // flight) — callers re-arm rather than count it as a hatch.
     hatch() {
+        if (this.stage.hatch(this.bridge) === false) return false
         this._lastHatchTime = performance.now()
-        this.stage.hatch(this.bridge)
+        return true
     }
 
     eagerHatch(cooldown = 8_000, { force = false } = {}) {
