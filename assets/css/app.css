@@ -450,9 +450,11 @@
 }
 
 /* Status channels — typographic differentiation only */
+/* Errors speak RED (the creator's law) with a warm phosphor glow,
+   matching the editor's diagnostics ink. */
 .nerve-hud-status-line.nerve-error {
-  color: var(--color-error);
-  text-shadow: 0 0 8px oklch(0.58 0.24 27 / 0.3);
+  color: oklch(0.63 0.21 25);
+  text-shadow: 0 0 8px rgb(240 168 61 / 0.35);
 }
 .nerve-hud-status-line.nerve-error .nerve-msg { opacity: 1; }
 
@@ -462,8 +464,8 @@
 /* --- Remote nerve (a watched friend's signals, below the outershell) --- */
 /* These render as .nerve-hud-msg slots, so they need their own channel colors. */
 #outer-nerve .nerve-error {
-  color: var(--color-error);
-  text-shadow: 0 0 8px oklch(0.58 0.24 27 / 0.3);
+  color: oklch(0.63 0.21 25);
+  text-shadow: 0 0 8px rgb(240 168 61 / 0.35);
 }
 #outer-nerve .nerve-error .nerve-msg { opacity: 1; }
 #outer-nerve .nerve-output { color: var(--color-primary); }

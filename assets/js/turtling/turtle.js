@@ -332,6 +332,14 @@ export class Turtle {
         }
     }
 
+    // The standing { text, ast } pair's tree for a plain-tab key — the
+    // intra-session identity carrier (id:cmp-standing-primitives). The
+    // diagnostics face reads it; a page's tree lives on the page record
+    // (weave/page.js program(addr)), not here.
+    programFor(key) {
+        return this._parseMemo?.get(key)?.ast ?? null
+    }
+
     removeAmbient(key) {
         this._localKeys.delete(key)
         this._parseMemo?.delete(key)

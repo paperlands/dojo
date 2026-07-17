@@ -18,7 +18,11 @@ import { registerStage } from "../../turtling/stage-cell.js"
 import { cameraBridge, scene } from "../../bridged.js"
 import { temporal } from "../../utils/temporal.js"
 import { pageLaw } from "../../weave/page.js"
+import { registerWorld, worldChanged } from "../../weave/world.js"
+import { diagnostics, ailmentsFor } from "../../weave/queries.js"
+import { frameVitals, livingFamily } from "../../turtling/vitals.js"
 import { mountReach } from "../../editor/reach.js"
+import { mountDiagnosticsInk } from "../../editor/diagnostics.js"
 import { nerveInstance } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
 import { commands, listeners, mutators, wireRegistry } from "./core.js"
@@ -72,6 +76,22 @@ function mountInner(hook, { term, cm6 }) {
     // (gw-appearance) map to canvas opacity here, once.
     const law = pageLaw()
     const DEGREE = { kindled: 1.0, warm: 0.4 }
+
+    // The world cell's registrant (id:cmp-query-cell) — this surface owns the
+    // turtle, the page law, and the scheduler reach, so its faces are the
+    // contract. Every face reads the owner's CURRENT bodies at ask time —
+    // the scheduler dies and is reborn; capture the owner, ask for the body.
+    const unregisterWorld = registerWorld({
+        // A buffer's whole truth: parse errors off its standing tree (a page's
+        // tree on the page record, a plain tab's in the parse memo — the two
+        // lifecycles the { text, ast } pair rides) ⊕ its frames' standing
+        // walk ailments, filtered by address so a sibling tab never leaks ink.
+        diagnostics: (key) => diagnostics(
+            law.program(key) ?? turtle.programFor(key) ?? [],
+            ailmentsFor(turtle.scheduler?.errors, key)),
+        vitals: (name) => frameVitals(turtle.scheduler, name),
+        family: (pattern) => livingFamily(turtle.scheduler, pattern),
+    })
 
     // Perform a transition's consequences, in order, in the turtle's own
     // verbs. A seat is a run — the law already guarantees it never re-runs
@@ -152,6 +172,10 @@ function mountInner(hook, { term, cm6 }) {
             nerveInstance?.push(S.error("error", result.error, line ? { line } : null))
         }
         syncTabs()
+        // The breath — once per eval, after perform(): surfaces ask again.
+        // It carries nothing; the S.* pushes above are the OTHER flow (the
+        // HUD's projection of the same born fact), not a duplicate.
+        worldChanged()
     }, 20);
 
     term.bridge.sub(debouncedRender);
@@ -187,6 +211,14 @@ function mountInner(hook, { term, cm6 }) {
     const innerReach = mountReach(term.shell, {
         gate: () => law.hasPage(term.currentBufferId()),
         publish: (idx) => scene.cell(term.currentBufferId(), idx),
+    })
+
+    // The lint ink asks; nothing is pushed into the editor but the breath
+    // (id:cmp-first-surface). Thunks, not bodies: the current view, the
+    // current buffer's key, each ask.
+    const unmountInk = mountDiagnosticsInk(cm6, {
+        view: () => term.shell,
+        key: () => term.currentBufferId(),
     })
 
     // The one focus move both surfaces read (gw-appearance law 1): dim the
@@ -324,6 +356,8 @@ function mountInner(hook, { term, cm6 }) {
             listeners.slider(term.shell, slider, cm6).mount(),
             () => turtle.dispose(),
             innerReach.cleanup,
+            unmountInk,
+            unregisterWorld,
             unregisterStage,
             () => hook._profilerDetach?.(),
             sceneUnsub,

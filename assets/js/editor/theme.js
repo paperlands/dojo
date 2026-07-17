@@ -66,13 +66,26 @@ const H1 = '1.58em', H2 = '1.32em', H3 = '1.1em';
 
 // ---------------------------------------------------------------------------
 // Abbott — warm dark theme (ported from abbott.vim)
+//
+// Melded with the twilight harmony (paperlands.github.io tailwind.config.js)
+// along one warm arc — leaf (145°) → chartreuse → gold → cinnabar → crimson —
+// so blood-crimson keywords and leaf-sage text read as two ends of one
+// turning leaf, never as complements (teal is banished; crimson's true
+// complement). The bistre ground is the arc's desaturated midpoint — soil.
+// Creator's laws: keywords keep blood crimson; errors are RED; portals are
+// VIOLET (mystery, kin to the hyperlink) — the one deliberate off-arc voice.
 // ---------------------------------------------------------------------------
+
+const PHOSPHOR  = 'rgb(240 168 61)';    // glowing amber — error-marker glow
+const ERROR_RED = 'oklch(0.63 0.21 25)'; // the error voice — red, the creator's law
+const GOLD      = 'rgb(241 219 164)';   // pale gold — tooltip text
+const DIM       = 'rgb(93 83 102)';     // violet-grey — tooltip source label
 
 const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) => [
     EditorView.theme({
         '&': {
-            backgroundColor: 'rgba(35, 28, 20, .1)',  // bistre
-            color:           '#48c0a3',                // pastel_chartreuse
+            backgroundColor: 'rgba(35, 28, 20, .1)',  // bistre — the soil
+            color:           'oklch(0.76 0.10 145)',   // leaf sage — warmed off teal, crimson's complement no more
             fontFamily:      '"FiraCode", ui-monospace,  monospace',
             fontSize:        BASE_FONT_SIZE,           // pin the floor — caret & prose no longer inherit small
         },
@@ -85,13 +98,15 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
             border:          'none',
         },
         '.cm-lineNumbers .cm-gutterElement': { color: '#FF9933' },     // brand saffron
-        '.cm-cursor':        { color: '#a0ea00' }, // chartreuse
-        '.cm-editor .cm-content':  {
-            'caret-color': "#a0ea00",
-            lineHeight:    BASE_LINE_HEIGHT,           // the line box the caret rides — a comfortable typing height
+        // The everforest selector shape — `.cm-editor .cm-content` never
+        // matches inside theme scoping (the scope class IS the editor).
+        '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#a0ea00' }, // chartreuse
+        '.cm-content':  {
+            caretColor: '#a0ea00',
+            lineHeight: BASE_LINE_HEIGHT,              // the line box the caret rides — a comfortable typing height
         },
-        '&.cm-focused .cm-selectionBackground': { background: 'rgba(0, 197, 90, 0.4)' },
-        '.cm-selectionBackground':              { background: 'rgba(0, 197, 90, 0.4)' },
+        '&.cm-focused .cm-selectionBackground': { background: 'rgba(160, 234, 0, 0.22)' }, // her touch is chartreuse — caret's kin, de-tealed
+        '.cm-selectionBackground':              { background: 'rgba(160, 234, 0, 0.22)' },
         '.cm-activeLine':      { backgroundColor: 'rgba(60, 48, 34, 0.3)' }, // chocolate, semi-transparent so guides show
         '.cm-activeLineGutter':{ backgroundColor: '#3c3022' },
         '.cm-widgetBuffer': { color: '#fbb32f' },                   // marigold
@@ -144,6 +159,41 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
         '.cm-cell-inactive': { opacity: '0.38' },                          // inert — dimmed, not evaluated
         '.cm-cell-active':   { backgroundColor: 'rgba(160, 234, 0, 0.05)' }, // the live cell — faint chartreuse
 
+        // Diagnostics ink (id:cmp-first-surface) — an error is a play
+        // surface (D020): loud in the ink, spoken in the theme's own ember,
+        // never stock lint red. The spark ✶ marks the gutter; the tooltip
+        // stands on twilight ground.
+        '.cm-lintRange-error': {
+            backgroundImage: 'none',
+            textDecoration: 'underline wavy oklch(0.63 0.21 25 / 0.85)',
+            textUnderlineOffset: '3px',
+            backgroundColor: 'oklch(0.63 0.21 25 / 0.08)',
+        },
+        '.cm-lint-marker-error': {
+            content: '"✶"',
+            color: ERROR_RED,
+            textShadow: '0 0 8px rgb(240 168 61 / 0.6)',
+            fontSize: '11px',
+            lineHeight: '1.6',
+        },
+        '.cm-tooltip': {
+            backgroundColor: 'rgb(22 15 27 / 0.96)',
+            border: '1px solid rgb(240 168 61 / 0.25)',
+            color: GOLD,
+        },
+        '.cm-diagnostic': {
+            padding: '3px 8px',
+            fontFamily: CODE_FONT,
+            fontSize: '12px',
+        },
+        '.cm-diagnostic-error': { borderLeft: `2px solid ${ERROR_RED}` },
+        '.cm-diagnosticSource': {
+            color: DIM,
+            fontSize: '10px',
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+        },
+
     }, { dark: true }),
 
     syntaxHighlighting(HighlightStyle.define([
@@ -159,9 +209,9 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
         { tag: [tags.bracket, tags.propertyName],                   color: '#fef3b4', fontFamily: CODE_FONT },
         { tag: tags.operator,                                       fontWeight: 'bold', fontFamily: CODE_FONT },
         { tag: tags.tagName,                                        color: '#d80450', fontWeight: 'bold', fontFamily: CODE_FONT }, // crimson
-        { tag: tags.typeName,                                       color: '#24a507', fontFamily: CODE_FONT },                    // forest_green
-        { tag: tags.meta,                                           color: '#ec6c99', fontFamily: CODE_FONT },                    // french_pink
-        { tag: tags.invalid,                                        color: '#00ff7f', fontFamily: CODE_FONT },                    // seafoam_green
+        { tag: tags.typeName,                                       color: 'oklch(0.68 0.14 140)', fontFamily: CODE_FONT },       // forest green, lifted into the band
+        { tag: tags.meta,                                           color: '#ec6c99', fontFamily: CODE_FONT },                    // french_pink — the arc's rose end
+        { tag: tags.invalid,                                        color: ERROR_RED, fontFamily: CODE_FONT },                    // the error voice — red, the creator's law
         // The literate faces — the margin dissolves, the chapter rises, the word glows.
         { tag: tags.lineComment,                                    color: 'rgba(251,179,47,0.3)', fontSize: '0.8em' }, // the `#`/`###`/`|`/`>`/`=` markers — dim AND smaller, dissolving
         { tag: tags.heading1,                                       color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H1 }, // a chapter
@@ -172,7 +222,7 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
         { tag: tags.emphasis,                                       color: '#fbb32f', fontStyle: 'italic', fontFamily: PROSE_FONT },
         { tag: tags.quote,                                          color: '#c2b280', fontStyle: 'italic', fontFamily: PROSE_FONT }, // another's voice — set-off, recessive flax
         { tag: tags.monospace,                                      fontFamily: CODE_FONT, opacity: '0.6' }, // faded — rides atop the inner's linting
-        { tag: tags.link,                                           color: '#e6a2f3', textDecoration: 'underline', textShadow: '0 0 6px rgba(230,162,243,0.7)', fontSize: 'inherit' }, // a glowing word — rides the local text size, never shrinks
+        { tag: tags.link,                                           color: '#e6a2f3', textDecoration: 'underline', textShadow: '0 0 6px rgba(230,162,243,0.7)', fontSize: 'inherit' }, // the portal glows violet — mystery, kin to the hyperlink
     ])),
 ];
 
@@ -250,6 +300,38 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
         // Code cells (id:gw-grammar): the cursor's cell is live; the rest recede.
         '.cm-cell-inactive': { opacity: '0.42' },                          // inert — dimmed, not evaluated
         '.cm-cell-active':   { backgroundColor: 'rgba(141, 161, 1, 0.07)' }, // the live cell — faint green
+
+        // Diagnostics ink (id:cmp-first-surface) — errors are RED (the
+        // creator's law), in everforest's own red on the light ground.
+        '.cm-lintRange-error': {
+            backgroundImage: 'none',
+            textDecoration: 'underline wavy rgba(248, 85, 82, 0.75)',
+            textUnderlineOffset: '3px',
+            backgroundColor: 'rgba(248, 85, 82, 0.07)',
+        },
+        '.cm-lint-marker-error': {
+            content: '"✶"',
+            color: '#f85552',
+            fontSize: '11px',
+            lineHeight: '1.6',
+        },
+        '.cm-tooltip': {
+            backgroundColor: '#fdf6e3',
+            border: '1px solid rgb(217 111 55 / 0.35)',
+            color: '#5c6a72',
+        },
+        '.cm-diagnostic': {
+            padding: '3px 8px',
+            fontFamily: CODE_FONT,
+            fontSize: '12px',
+        },
+        '.cm-diagnostic-error': { borderLeft: '2px solid rgba(248, 85, 82, 0.9)' },
+        '.cm-diagnosticSource': {
+            color: '#829181',
+            fontSize: '10px',
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+        },
     }, { dark: false }),
 
     syntaxHighlighting(HighlightStyle.define([
@@ -277,7 +359,7 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
         { tag: tags.emphasis,                                       color: '#C89B40', fontStyle: 'italic', fontFamily: PROSE_FONT },
         { tag: tags.quote,                                          color: '#829181', fontStyle: 'italic', fontFamily: PROSE_FONT }, // another's voice — set-off, recessive sage
         { tag: tags.monospace,                                      fontFamily: CODE_FONT, opacity: '0.6' }, // faded — rides atop the inner's linting
-        { tag: tags.link,                                           color: '#3a94c5', textDecoration: 'underline', textShadow: '0 0 5px rgba(58,148,197,0.5)', fontSize: 'inherit' }, // a glowing word — rides the local text size, never shrinks
+        { tag: tags.link,                                           color: '#df69ba', textDecoration: 'underline', textShadow: '0 0 5px rgba(223,105,186,0.5)', fontSize: 'inherit' }, // the portal glows violet — mystery, kin to the hyperlink (everforest purple)
     ])),
 ];
 

@@ -6,6 +6,7 @@ import { createPlangExtensions } from "../editor/plang-mode.js"
 import { createIndentGuidesExtension } from "../editor/indent-guides.js"
 import { createDoEndMatchingExtension } from "../editor/do-end-matching.js"
 import { createCodeCellActivationExtension } from "../editor/code-cell-activation.js"
+import { createDiagnosticsExtension } from "../editor/diagnostics.js"
 
 export const buildExtensions = (cm6, {
     onDocChange,
@@ -93,6 +94,10 @@ export const buildExtensions = (cm6, {
         }),
 
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+
+        // Diagnostics ink infrastructure (editor/diagnostics.js): the gutter
+        // marker; the underline rides setDiagnostics per ask.
+        ...createDiagnosticsExtension(cm6),
 
         // Gutter mousedown → select whole line
         gutter({

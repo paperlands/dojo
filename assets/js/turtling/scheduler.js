@@ -838,7 +838,7 @@ export function createScheduler(generator, opts = {}) {
         get errors() {
             const errs = []
             for (const [id, ctx] of registry) {
-                if (ctx.error) errs.push({ ambientId: id, name: ctx.name, ...ctx.error })
+                if (ctx.error) errs.push({ ambientId: id, name: ctx.name, address: addrOf(ctx), ...ctx.error })
             }
             return errs
         },

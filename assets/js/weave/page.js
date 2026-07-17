@@ -301,6 +301,12 @@ export function pageLaw() {
         hasPage(addr) {
             return pages.has(addr)
         },
+        // The standing { text, ast } pair's tree — the intra-session
+        // identity carrier (id:cmp-standing-primitives). The diagnostics
+        // face reads it; queries memoize on its reuse units.
+        program(addr) {
+            return pages.get(addr)?.program ?? null
+        },
         localPages() {
             return [...pages.keys()].filter((a) => !isLibrary(a))
         },
