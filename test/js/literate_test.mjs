@@ -1,12 +1,14 @@
 // The Literate Atom — Phase 6 of the tilling (specs/groundwork.org id:gw-development,
 // id:gw-grammar). Run with: node --test test/js/literate_test.mjs
 //
-// meta.lit is the ONE prose store, holding raw text only — structure is derived
-// at render, never stored. Two doors open into that store:
-//   - the MARGIN:  `fw 50 # the step`  — prose OF a line, rides its code node
-//   - the MEADOW:  `###` … `###`       — prose AROUND code, one node, multiline lit
-// Headlines (`* name`) and portals (`[[name]]`) live as raw text inside the lit;
-// printAST must re-emit every lit line verbatim, fences included.
+// Prose lives in the tree as raw text, structure derived at render (never
+// stored). Two doors, now cleanly split (the "collapse trivia" pass):
+//   - the MARGIN:  `fw 50 # the step`  — a COMMENT, trivia riding meta.comment
+//                  (its `end`-line twin is meta.endComment); see trivia_test.mjs
+//   - the MEADOW:  `###` … `###`       — prose AROUND code, CONTENT in meta.lit,
+//                  one node, multiline. Headlines (`* name`) and portals
+//                  (`[[name]]`) ride raw inside it; printAST re-emits verbatim.
+// meta.lit is now ONLY meadow content — trivia (comments) never conflates with it.
 
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
@@ -18,11 +20,18 @@ const roundtrip = (src) => printAST(parseProgram(src))
 const stable    = (src) => roundtrip(roundtrip(src))
 
 describe("the margin — prose riding a code line", () => {
-    test("a margin comment survives on its node", () => {
+    test("a margin comment survives on its node, whitespace verbatim", () => {
         const [node] = parseProgram("fw 50 # the step")
         assert.equal(node.type, "Call")
         assert.equal(node.value, "fw")
-        assert.equal(node.meta.lit, "the step")
+        // The text after `#` rides raw on meta.comment — the author's space is
+        // theirs to keep, and printAST re-emits `#` + this run exactly.
+        assert.equal(node.meta.comment, " the step")
+    })
+
+    test("a margin comment round-trips its inner whitespace unstripped", () => {
+        assert.equal(roundtrip("fw 10 #   spaced note"), "fw 10 #   spaced note")
+        assert.equal(roundtrip("# a top comment"), "# a top comment")
     })
 
     test("a portal in the margin round-trips as raw text", () => {
@@ -84,7 +93,7 @@ describe("interleaving — code rests while you speak", () => {
         const ast = parseProgram(src)
         assert.equal(ast.length, 3)
         assert.equal(ast[0].type, "Call")
-        assert.equal(ast[0].meta.lit, "a bold step")
+        assert.equal(ast[0].meta.comment, " a bold step")
         assert.equal(ast[1].meta.meadow, true)
         assert.equal(ast[1].meta.lit, "* Interlude\nnow we turn")
         assert.equal(ast[2].value, "rt")
@@ -102,6 +111,33 @@ describe("interleaving — code rests while you speak", () => {
     })
 })
 
+describe("the margin on a control clause — do/end lines carry prose too", () => {
+    test("a comment on the `do` line survives instead of being swallowed", () => {
+        const [loop] = parseProgram("loop 3 do # around we go\n  fw 10\nend")
+        assert.equal(loop.type, "Loop")
+        assert.equal(loop.meta.comment, " around we go")   // head comment, verbatim
+        assert.equal(roundtrip("loop 3 do # around we go\n  fw 10\nend"),
+                     "loop 3 do # around we go\n  fw 10\nend")
+    })
+
+    test("a comment after `end` rides the end line, never wraps below it", () => {
+        const [loop] = parseProgram("loop 3 do\n  fw 10\nend # and done")
+        assert.equal(loop.type, "Loop")
+        assert.equal(loop.meta.endComment, " and done")
+        // The whole tree is the one block — the comment did NOT spawn a
+        // trailing Empty node (the wrap bug).
+        assert.equal(parseProgram("loop 3 do\n  fw 10\nend # and done").length, 1)
+        assert.equal(roundtrip("loop 3 do\n  fw 10\nend # and done"),
+                     "loop 3 do\n  fw 10\nend # and done")
+    })
+
+    test("both ends of an ambient carry their prose across the round-trip", () => {
+        const src = "as sky do # the lens opens\n  rt 90\nend # and closes"
+        assert.equal(roundtrip(src), src)
+        assert.equal(stable(src), roundtrip(src))
+    })
+})
+
 describe("the cell — code re-entering code-space inside the meadow (id:gw-cell)", () => {
     const PAGE = "###\n* Title\n```\nfw 50\nrt 90\nfw 50 #follow where each step leaves you\n```\n###"
 
@@ -110,7 +146,7 @@ describe("the cell — code re-entering code-space inside the meadow (id:gw-cell
         const calls = ast.filter((n) => n.type === "Call")
         assert.equal(calls.length, 3)
         assert.equal(calls[0].value, "fw")
-        assert.equal(calls[2].meta.lit, "follow where each step leaves you")
+        assert.equal(calls[2].meta.comment, "follow where each step leaves you")
     })
 
     test("the meadow around the cell stays prose, split at the fences", () => {

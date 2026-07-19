@@ -477,15 +477,21 @@ the =#= margin and =###= meadow, sharing ONE per-line block grammar
 chapter, =marginOutlineFoldService= folds a =# * name= code-side outline node; the
 ink face (serif prose, dim marker, glowing portal) is in =editor/theme.js=.
 
-** literate atom store — meta.lit, the one prose store
+** literate atom store — meta.lit prose, meta.comment trivia
 :PROPERTIES:
 :ID: nav-literate
-:KEYWORDS: literate meta.lit meadow fence prose store printAST round-trip headline portal margin comment tokenize parseProgram
+:KEYWORDS: literate meta.lit meta.comment meta.endComment trivia meadow fence prose store printAST round-trip headline portal margin comment endComment tokenize parseProgram attachComment
 :PATH: assets/js/turtling/parse.js::function tokenize
 :END:
-=###= meadow → one =Empty= node, verbatim multiline =meta.lit=, =meta.meadow=;
-=printAST= re-emits the fences; auto-closes at EOF. The lit-link click reveal is
-shared with the shout-source path in =assets/js/nerve/reveal.js=. See
+Two kinds of prose, cleanly split (collapse-trivia pass):
+- =###= meadow → one =Empty= node, verbatim multiline =meta.lit= (CONTENT),
+  =meta.meadow=; =printAST= re-emits the fences; auto-closes at EOF.
+- a =#= comment is TRIVIA — the uniform =meta.comment= (a node's own/opening
+  line) or =meta.endComment= (a block's =end=), attached by =attachComment=,
+  re-emitted by =printAST= as =#= + the verbatim run (author whitespace kept).
+  =meta.lit= is never a comment. Instrument: =test/js/trivia_test.mjs=.
+The lit-link click reveal is shared with the shout-source path in
+=assets/js/nerve/reveal.js=. See
 =specs/decisions/013-literate-atom-rendered.decision.md=.
 
 ** resilient parse — total parser, error nodes, spans

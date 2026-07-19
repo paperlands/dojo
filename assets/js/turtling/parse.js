@@ -30,6 +30,16 @@ const DO = 'do';
 const COMMENT = '#';
 const FENCE = '###';   // the meadow door — prose AROUND code (id:gw-grammar)
 
+// The ONE place code and comment part. A `#` opens trivia; everything before it
+// is code (trailing space trimmed), everything after rides VERBATIM (the
+// author's whitespace is theirs). Returns [code, comment]; comment is undefined
+// only when there is no `#` — a bare `#` still yields an empty-string comment.
+// Nothing downstream re-finds the `#`: the comment travels as a field.
+const splitComment = (raw) => {
+    const i = raw.indexOf(COMMENT);
+    return i === -1 ? [raw, undefined] : [raw.slice(0, i).trimEnd(), raw.slice(i + 1)];
+};
+
 // Bracket/quote matching (O(1) lookup)
 const CLOSERS = { '"': '"', "'": "'", '[': ']', '(': ')' };
 const OPENS_BRACKET = { '[': 1, '(': 1 };
@@ -89,6 +99,20 @@ function errorNode(rec, expected, found, children = []) {
     }), rec);
 }
 
+// ============================================================================
+// Trivia — the one uniform concept for a `#` comment (id:pa-ghc-exactprint)
+// ============================================================================
+// A comment is non-semantic text that RIDES a line — trivia, not structure.
+// It attaches to the node whose line it trails, in ONE of two slots:
+//   meta.comment    — the node's OWN / opening line (a call's margin, a block's
+//                     `do` head, a comment standing on its own empty line)
+//   meta.endComment — a block's `end` line (the twin site a `do … end` spans)
+// One concept, one attach here, one emit in printAST (`#` + the verbatim run,
+// its author-owned whitespace intact). Prose (meadow meta.lit) is CONTENT, a
+// different thing — trivia never conflates with it, and neither is stored twice.
+const attachComment = (node, comment) =>
+    comment != null ? node.assign_meta('comment', comment) : node;
+
 // main parser
 export function parseProgram(program) {
     const lines = tokenize(program);
@@ -101,24 +125,26 @@ export function parseProgram(program) {
         if (line.meadow !== undefined) { ast.push(meadowNode(line)); continue; }
         if (line.cellFence) { ast.push(cellFenceNode(line)); continue; }
 
+        const tokens = tokenizeLine(line.text);
+        const comment = line.comment;
+
         // A stray `end` with no block open — an error node, never a phantom
         // Call (reachable now that a broken head consumes no block, D020).
-        if (line.text === END) {
-            ast.push(errorNode(line, 'an open block to close', `'${END}'`));
+        // Its comment rides the error as trivia (attachComment), like any node.
+        if (tokens.length === 1 && tokens[0] === END) {
+            ast.push(attachComment(errorNode(line, 'an open block to close', `'${END}'`), comment));
             continue;
         }
 
-        const [tokens, comment] = tokenizeLine(line.text);
-
         if (tokens.length === 0) {
             const node = stamp(new ASTNode('Empty', ''), line);
-            if (comment) node.assign_meta('lit', comment);
+            attachComment(node, comment);
             ast.push(node);
             continue;
         }
 
         const node = parseStatement(tokens, state, line);
-        if (comment) node.assign_meta('lit', comment);
+        attachComment(node, comment);
         ast.push(node);
     }
 
@@ -217,20 +243,19 @@ function tokenize(program) {
     const lines = [];
     let i = 0;
 
-    // The code-line law, shared by bare code and cell bodies: trim, drop
-    // blanks upstream, split any mid-line `end` (word-bounded) onto its own
-    // record. Every record remembers its BIRTH line (1-based, the original
-    // buffer) — split parts share it; the reshaping never forgets the source
-    // (id:cmp-resilient — spans ride every record).
-    const pushCode = (trimmed, out, line) => {
-        if (trimmed.indexOf(END) !== -1) {
-            for (const part of trimmed.replace(/\bend\b(?!$)/g, 'end\n').split('\n')) {
-                const p = part.trim();
-                if (p) out.push({ text: p, line });
-            }
-        } else {
-            out.push({ text: trimmed, line });
-        }
+    // The code-line law, shared by bare code and cell bodies: split off the
+    // comment FIRST (it is trivia, not code — carried as a field, never text),
+    // then split any mid-line `end` (word-bounded) onto its own record so the
+    // line-oriented block parser sees it alone. The comment rides the LAST
+    // record — the line it trails. Every record remembers its BIRTH line
+    // (1-based, the original buffer); split parts share it (id:cmp-resilient).
+    const pushCode = (raw, out, line) => {
+        const [code, comment] = splitComment(raw);
+        const parts = code.replace(/\bend\b(?!$)/g, 'end\n')
+            .split('\n').map((p) => p.trim()).filter(Boolean);
+        const recs = (parts.length ? parts : ['']).map((text) => ({ text, line }));
+        if (comment !== undefined) recs[recs.length - 1].comment = comment;
+        for (const rec of recs) out.push(rec);
     };
 
     while (i < n) {
@@ -298,15 +323,12 @@ function tokenize(program) {
 // Line Tokenizer - Context-Aware preserving groups [  ] and " "
 // ============================================================================
 
-function tokenizeLine(line) {
-    const commentIdx = line.indexOf(COMMENT);
-    
-    // Extract comment if present
-    const code = commentIdx === -1 ? line : line.slice(0, commentIdx).trim();
-    const comment = commentIdx === -1 ? undefined : line.slice(commentIdx + 1).trim() || undefined;
-    
-    if (!code) return [[], comment];
-    
+function tokenizeLine(code) {
+    // The comment is already split off at line birth (splitComment) and rides
+    // the record's .comment field — here we only tokenize pure code, honouring
+    // [ ] and " " groups.
+    if (!code) return [];
+
     const tokens = [];
     const len = code.length;
     let start = 0;
@@ -359,8 +381,8 @@ function tokenizeLine(line) {
     
     // Flush final token
     if (i > start) tokens.push(code.slice(start, i));
-    
-    return [tokens, comment];
+
+    return tokens;
 }
 
 // ============================================================================
@@ -488,19 +510,24 @@ function parseBlock(state) {
         if (line.meadow !== undefined) { block.push(meadowNode(line)); continue; }
         if (line.cellFence) { block.push(cellFenceNode(line)); continue; }
 
-        if (line.text === END) return { block, terminated: true };
+        const tokens = tokenizeLine(line.text);
+        const comment = line.comment;
 
-        const [tokens, comment] = tokenizeLine(line.text);
+        // The closing `end` — its trailing comment (`end # done`) rides home ON
+        // the block as endComment, never wrapping onto a phantom line below it.
+        if (tokens.length === 1 && tokens[0] === END) {
+            return { block, terminated: true, endComment: comment };
+        }
 
         if (tokens.length === 0) {
             const node = stamp(new ASTNode('Empty', ''), line);
-            if (comment) node.assign_meta('lit', comment);
+            attachComment(node, comment);
             block.push(node);
             continue;
         }
 
         const node = parseStatement(tokens, state, line);
-        if (comment) node.assign_meta('lit', comment);
+        attachComment(node, comment);
         block.push(node);
     }
 
@@ -529,7 +556,7 @@ function parseStatement(tokens, state, rec) {
 
     // The head is sound — walk the body, then close or contain.
     const blockNode = (make) => {
-        const { block, terminated } = parseBlock(state);
+        const { block, terminated, endComment } = parseBlock(state);
         // The last record's FAR edge: a folded meadow spans several birth
         // lines; containment reaches its endLine, not its opening line.
         const endLine = state.last?.endLine ?? state.last?.line ?? rec.line;
@@ -538,7 +565,12 @@ function parseStatement(tokens, state, rec) {
             err.span.endLine = endLine;
             return err;
         }
-        return stamp(make(block), rec, endLine);
+        const node = stamp(make(block), rec, endLine);
+        // The comment on the `end` line (meta.endComment) — the twin site a
+        // `do … end` spans; the head/`do`-line comment (meta.comment) is
+        // attached by the caller. printAST re-emits both.
+        if (endComment != null) node.assign_meta('endComment', endComment);
+        return node;
     };
 
     // Loop: for/loop <n> do
@@ -596,21 +628,27 @@ export function printAST(ast) {
     
     function visit(node, depth) {
         const indent = depth ? '  '.repeat(depth) : '';
-        const comment = node.meta.lit ? ` #${node.meta.lit}` : '';
-        
+        // Trivia emit — the one path (id:pa-ghc-exactprint). A comment rides
+        // ` #` + its verbatim run (author whitespace included); `!= null` so an
+        // empty `#` survives. `margin` sits on the node's own/opening line,
+        // `endMargin` on a block's `end`.
+        const trail = (c) => (c != null ? ` #${c}` : '');
+        const margin = trail(node.meta.comment);
+        const endMargin = trail(node.meta.endComment);
+
         switch (node.type) {
             case 'Call': {
                 const children = node.children;
                 const len = children.length;
-                
+
                 if (len === 0) {
-                    out.push(indent + node.value + comment);
+                    out.push(indent + node.value + margin);
                 } else {
                     let args = children[0].value;
                     for (let i = 1; i < len; i++) {
                         args += ' ' + children[i].value;
                     }
-                    out.push(indent + node.value + ' ' + args + comment);
+                    out.push(indent + node.value + ' ' + args + margin);
                 }
                 break;
             }
@@ -633,22 +671,27 @@ export function printAST(ast) {
                     if (node.meta.meadowOpen !== false) out.push(indent + FENCE);
                     if (node.meta.lit) out.push(node.meta.lit);
                     if (node.meta.meadowClose !== false) out.push(indent + FENCE);
+                } else if (node.meta.comment != null) {
+                    // A comment-only line: `#` + the verbatim text, with no code
+                    // before it — so no leading ` ` (that prefix rides a margin
+                    // trailing code, never a standalone comment).
+                    out.push(indent + '#' + node.meta.comment);
                 } else {
-                    out.push(indent + comment);
+                    out.push(indent);
                 }
                 break;
             
             case 'Loop':
-                out.push(`${indent}loop ${node.value} do`);
+                out.push(`${indent}loop ${node.value} do${margin}`);
                 node.children.forEach(c => visit(c, depth + 1));
-                out.push(indent + END);
+                out.push(indent + END + endMargin);
                 break;
-            
+
             case 'When': {
                 const binding = node.meta?.binding ? ` ${node.meta.binding}` : ''
-                out.push(`${indent}when ${node.value}${binding} do`);
+                out.push(`${indent}when ${node.value}${binding} do${margin}`);
                 node.children.forEach(c => visit(c, depth + 1));
-                out.push(indent + END);
+                out.push(indent + END + endMargin);
                 break;
             }
             
@@ -665,26 +708,26 @@ export function printAST(ast) {
                     argStr = ' ' + argStr;
                 }
 
-                out.push(`${indent}def ${node.value}${argStr} do`);
+                out.push(`${indent}def ${node.value}${argStr} do${margin}`);
                 node.children.forEach(c => visit(c, depth + 1));
-                out.push(indent + END);
+                out.push(indent + END + endMargin);
                 break;
             }
 
             case 'Ambient': {
                 const mod = node.meta?.frame ? ` ${node.meta.frame}` : ''
-                out.push(`${indent}as ${node.value}${mod} do`)
+                out.push(`${indent}as ${node.value}${mod} do${margin}`)
                 node.children.forEach(c => visit(c, depth + 1))
-                out.push(indent + END)
+                out.push(indent + END + endMargin)
                 break
             }
 
             case 'Error': {
-                // Her text, verbatim (D020) — the raw line rides in `value`,
-                // comment included, so the round-trip never invents an `end`
-                // or loses the brokenness. An unterminated block's parsed
-                // children follow; a one-line error has none.
-                out.push(indent + node.value)
+                // Her code, verbatim (D020) — the raw line rides in `value` so
+                // the round-trip never invents an `end` or loses the brokenness;
+                // its comment rides `margin` like any node's trivia. An
+                // unterminated block's parsed children follow; a one-liner none.
+                out.push(indent + node.value + margin)
                 node.children.forEach(c => visit(c, depth + 1))
                 break
             }

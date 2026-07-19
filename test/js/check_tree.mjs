@@ -18,6 +18,10 @@
 // skip). Sanctioned span adoption passes; any node mutation fails.
 
 export const META_LEDGER = new Set([
+    // Trivia — the uniform `#` comment (collapse-trivia pass): meta.comment on
+    // a node's own/opening line, meta.endComment on a block's `end`.
+    'comment', 'endComment',
+    // meta.lit is now ONLY meadow prose (content), never a comment.
     'lit', 'meadow', 'meadowOpen', 'meadowClose', 'cellFence', 'args',
     'event', 'binding', 'frame', 'expected', 'found', 'phase',
 ])
