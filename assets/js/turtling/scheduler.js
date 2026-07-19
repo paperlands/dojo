@@ -536,7 +536,39 @@ function attachMeta(frame, targetFrame) {
     frame.elapsedTime = 0
     frame.actorState = null
     frame.maxMailbox = 8192
+    frame.seed = null
     return frame
+}
+
+// --- The seed — become, stage 1 (specs/compiler.org id:cmp-become-seed) ---
+
+// The code organ a root child was seated with, held and compared BY
+// IDENTITY: the green tree adopts unchanged units to ===-same node objects,
+// and the vocab rehearsal cache answers ===-same functions/userspace for an
+// unchanged vocabulary — so "same seed" is a handful of pointer compares
+// and can never claim a sameness that isn't (nodes are never mutated at
+// walk). The ast array is copied (callers rebuild slices per edit); its
+// ELEMENTS are the identity. A missed reuse (coarse key, cleared vocab
+// cache) costs a rebuild, never a wrong world.
+function seedOf(spec) {
+    return {
+        ast: [...(spec.code?.ast ?? [])],
+        functions: spec.code?.functions ?? null,
+        userspace: spec.env?.userspace ?? null,
+        color: spec.style?.color ?? null,
+    }
+}
+
+function sameSeed(seed, spec) {
+    if (!seed) return false
+    const next = spec.code?.ast ?? []
+    if (seed.ast.length !== next.length) return false
+    for (let i = 0; i < next.length; i++) {
+        if (seed.ast[i] !== next[i]) return false
+    }
+    return seed.functions === (spec.code?.functions ?? null)
+        && seed.userspace === (spec.env?.userspace ?? null)
+        && seed.color === (spec.style?.color ?? null)
 }
 
 // Wire Atom.watch for worldTransform cache invalidation.
@@ -794,8 +826,21 @@ export function createScheduler(generator, opts = {}) {
         // key = stable identity (buffer ID); forkSpec.name = display name (tab name).
         // Uses lastTickTime so the new child's waits are relative to the
         // current timeline, not time 0 (which would cause fast catch-up).
-        hotSwapChild(key, forkSpec) {
+        //
+        // Become, stage 1 — the seed law (id:cmp-become-seed): a seat whose
+        // seed is identical is SKIPPED WHOLE — the standing frame keeps
+        // running (clocks, transforms, mailbox, children, ink, standing
+        // error); a name difference updates in place (display is a view,
+        // the address holds). Continuity by refusal is total continuity.
+        // fresh:true is the OTHER door — an explicit restart gesture (the
+        // toggle group's restart-in-sync), never the edit path.
+        hotSwapChild(key, forkSpec, { fresh = false } = {}) {
             const existing = root.children.get(key)
+            if (existing && !fresh && sameSeed(existing.seed, forkSpec)) {
+                const heldName = forkSpec.name || key
+                if (existing.name !== heldName) existing.name = heldName
+                return existing
+            }
             if (existing) {
                 terminateAmbient(existing)
                 visitPostOrder(existing, (c) => registry.delete(c.id))
@@ -819,6 +864,7 @@ export function createScheduler(generator, opts = {}) {
             // address, whose top segment is this registration key.
             root.children.set(key, child)
             wireChild(child, deps, mailbox, registry)
+            child.seed = seedOf(forkSpec)
 
             advanceChild(child, this.lastTickTime, createDeps, execOpts, channelCapacity, registry, [], onShout)
             this.done = false

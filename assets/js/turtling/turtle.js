@@ -270,7 +270,11 @@ export class Turtle {
     // ancestors' code (sectionCells derives it from the one AST), rehearsed
     // here and seeded into the fork spec the same way `as name do` inherits:
     // a COPY per seat, never shared.
-    upsertAmbient(key, displayName, code, { hatch = true, vocab = null, nodes = null, vocabNodes = null } = {}) {
+    // fresh:true forces a rebirth even when nothing changed — the explicit
+    // restart gesture (toggle's group restart). The default seat is
+    // idempotent: an unchanged seed leaves the standing frame running
+    // (become stage 1, specs/compiler.org id:cmp-become-seed).
+    upsertAmbient(key, displayName, code, { hatch = true, vocab = null, nodes = null, vocabNodes = null, fresh = false } = {}) {
         try {
             // The seam ships live node slices when it has them (a page's
             // cells are slices of the ONE buffer tree); the code string
@@ -293,7 +297,7 @@ export class Turtle {
                 code: { ast: instructions, functions: ns?.functions ?? null },
                 style: { color: this.color },
                 env: ns?.userspace?.size ? { userspace: ns.userspace } : null
-            })
+            }, { fresh })
 
             this._hatchSuppressed = !hatch
             if (hatch) {
@@ -406,7 +410,9 @@ export class Turtle {
             this._localKeys.add(id)
             for (const key of this._localKeys) {
                 const info = key === id ? { name, content: code } : resolveBuffer?.(key)
-                if (info) this.upsertAmbient(key, info.name, info.content)
+                // fresh: the group restart is a deliberate gesture — sisters
+                // re-run in sync even when their code didn't change.
+                if (info) this.upsertAmbient(key, info.name, info.content, { fresh: true })
             }
         }
         this.requestRender()

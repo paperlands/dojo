@@ -260,6 +260,19 @@ Verified syntax lives in =PAPERLANG.org= + =codex/refs/Library=.
 :PATH: assets/js/turtling/turtle.js::hotSwapChild
 :END:
 
+** become — the seed law: an unchanged seat is skipped whole
+:PROPERTIES:
+:ID: nav-become-seed
+:KEYWORDS: become seed sameSeed skip idempotent seat fresh restart continuity hotSwapChild
+:PATH: assets/js/turtling/scheduler.js::sameSeed
+:END:
+Stage 1 (specs/compiler/compiler.org id:cmp-become-seed): =hotSwapChild=
+compares the frame's =seed= (ast element identity, functions/userspace
+identity, color) and refuses the rebuild when nothing changed — sibling
+cells stop blinking. =fresh:true= is the explicit restart door
+(=turtle.toggleAmbient= group restart). Pins: =test/js/become_test.mjs=;
+seam lint: =test/js/check_tree.mjs=.
+
 ** render clock — epoch rebase, idle fast-forward
 :PROPERTIES:
 :ID: nav-timeline
@@ -436,26 +449,21 @@ first cell on first light). The degree ladder is one pure transition
 (dimmed) for before/after, past-the-window evicts ([[id:gw-play]] Shoot 1,
 [[id:gw-appearance]]).
 
-** papertiger companion — the mood law and the body
+** papertiger — the bestiary ground (runtime body left the tree)
 :PROPERTIES:
 :ID: nav-tiger
-:KEYWORDS: papertiger tiger companion mood stance mascot clippy pounce coil slink prowl halo intent resting question gaze leap undraw draw ink gesture playground meadow atelier carve seed grok imagine potrace normalize archetype
-:PATH: assets/js/tiger/mood.js
+:KEYWORDS: papertiger tiger companion mood stance mascot clippy pounce coil slink prowl halo intent resting question gaze leap undraw draw ink gesture playground meadow atelier carve seed grok imagine potrace normalize archetype bestiary ladder skeleton anima
+:PATH: scripts/bestiary/papertiger
 :END:
-The companion for wandering the weave (canon: =specs/papertiger.org=). Split
-at the law⊗performer joint like the page law: =tiger/mood.js= =createMood= is
-the pure stance automaton (grounded ⊗ flight ⊗ away regimes; signals in,
-moves out; node-tested =test/js/tiger_mood_test.mjs=), =tiger/tiger.js=
-=mountTiger= is the body (fetches =priv/static/papertiger/resting.svg=,
-dash-draws the ONE path for draw/undraw, WAAPI breathing, rAF spring slink +
-bezier-arc leap, reports airborne/landed back — the body is the single clock
-of its flight). =hooks/tiger.js= is the senses (hover/portal/scroll/typing →
-signals; reads, never writes — no pushEvent). Sovereign playground at
-=/tiger= (=lib/dojo_web/live/tiger_live.ex=) before any /shell integration.
-New bodies are grown in the ATELIER (=specs/papertiger-atelier.org=:
-archetype prompt deck + strike arc for Grok Imagine; =scripts/tiger_atelier.sh=
-=seed=/=carve= → =scripts/tiger_normalize.mjs= emits house SVGs into
-=priv/static/papertiger/<stance>.svg= — dash-draw covers every path).
+Canon lives in =specs/papertiger/= (=papertiger.org= + anima, atelier,
+evolve, moodboards, skeleton-alphabet). The living ground is the bestiary:
+=scripts/bestiary/papertiger/= (=core/=, =_carve/=, =_skeleton/=,
+=_ladder/= — the unfolding-ladder morphs, =dreams/=), fed by
+=scripts/tiger_atelier.sh= =seed=/=carve= → =scripts/tiger_normalize.mjs=.
+The browser runtime (=tiger/mood.js= stance automaton, =tiger/tiger.js=
+body, =hooks/tiger.js= senses, the =/tiger= playground) left the working
+tree with the tyger-meadows reshape <2026-07-19>; its design stands in the
+specs canon — re-anchor this hotpath at the code when a body returns.
 
 ** PaperLang editor mode — syntax, indents, do/end
 :PROPERTIES:

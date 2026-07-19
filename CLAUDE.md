@@ -43,7 +43,7 @@ Look up by intent; don't re-read whole files.
 
 - Partisan changes go to the fork at `/home/putra/Repos/partisan/`, never `deps/`. Dev workflow: `PARTISAN_PATH=/home/putra/Repos/partisan mix ...`
 - `mix format` before committing; `mix credo --strict` for static analysis.
-- Design/architecture work follows Kumite — invoke the **kumite** skill; commit reasoning as `kumite(<phase>): <what happened>`.
+- Design/architecture work follows Kumite — invoke the **kumite** skill. `specs/` is its own git repo; commit reasoning there.
 - Plans, strategy, and architecture docs are org-mode in the constellation, anchored for the bridge: `:ID:` on major sections, `:MODULE:` on code sections, `:LENS:` on perspectives, `[[id:...]]` links between nodes.
 
 ## Spawning Agents
@@ -56,7 +56,7 @@ Subagents do **not** inherit this file. Spawn project work as the `kohai` agent
 
 - `navigation.org` — code lookup hotpaths (`:KEYWORDS:` + `:PATH:`); when you add code worth finding, add its hotpath in the same change; `scripts/nav_verify.sh` / `(dojo/nav-verify)` keep it vital
 - `ARCHITECTURE_NEUE.org` — what Dojo is, how we think, module anatomy (`:MODULE:`-anchored)
-- `specs/` — Kumite reasoning: `decisions/` (check before designing), `tensions/` (active forces), `_meta/` (framework + lenses)
+- `specs/` — Kumite reasoning; its own git repo, enter via `specs/ATLAS.org` (map + live census). Domains `turtle/` `compiler/` `weave/` `papertiger/`; `decisions/` (check before designing), `tensions/` (active forces), `_meta/` (framework + lenses)
 - `codex/` — PaperLang pattern language; `codex/play.org` is the live-shell play protocol
 
 Env vars: `PORT` (4000), `PARTISAN_NAME`, `PARTISAN_PORT` (9090).
