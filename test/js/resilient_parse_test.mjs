@@ -77,6 +77,17 @@ describe("spans — true birth lines survive the reshaping", () => {
         assert.deepEqual(calls[1].span, { line: 4, endLine: 4 })
     })
 
+    test("a blank line rides through as an Empty on its own birth line", () => {
+        // Line-number parity: every source line has a node, so printAST
+        // re-emits the buffer byte-for-byte and a bare Enter is a real edit.
+        const src = "fw 10\n\n\nrt 90"
+        const ast = parseProgram(src)
+        assert.deepEqual(ast.map(n => n.type), ["Call", "Empty", "Empty", "Call"])
+        assert.deepEqual(ast[1].span, { line: 2, endLine: 2 })
+        assert.deepEqual(ast[2].span, { line: 3, endLine: 3 })
+        assert.equal(printAST(ast), src)
+    })
+
     test("a glued `end rt 90` splits into records sharing the birth line", () => {
         const ast = parseProgram("for 2 do\nfw 10\nend rt 90")
         assert.equal(ast[0].type, "Loop")

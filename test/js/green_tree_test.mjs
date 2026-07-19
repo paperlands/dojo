@@ -115,12 +115,18 @@ describe("identity — untouched blocks keep their node objects", () => {
         assert.deepEqual(ambient.children[0].span, { line: 7, endLine: 7 })
     })
 
-    test("a whitespace-only edit reuses every block", () => {
+    test("a blank-line edit inserts one Empty, keeps every block's object", () => {
         const prev = parseProgram(PAGE)
+        // A bare Enter between `end` and `square 10`. The blank registers as a
+        // fresh Empty node (line-number parity; the seed changes so the frame
+        // reruns) — but every real block keeps its identity, adopted at its
+        // shifted index.
         const got = reparseProgram("def square s do\n  fw s\nend\n\nsquare 10\nas sky do\n  rt 90\nend", PAGE, prev)
-        assert.equal(got[0], prev[0])
-        assert.equal(got[1], prev[1])
-        assert.equal(got[2], prev[2])
+        const blocks = got.filter(n => n.type !== "Empty")
+        assert.equal(blocks[0], prev[0])
+        assert.equal(blocks[1], prev[1])
+        assert.equal(blocks[2], prev[2])
+        assert.equal(got.filter(n => n.type === "Empty").length, 1, "just the newline")
     })
 
     test("the pressed page reuses at the cell grain — a sibling group never reparses", () => {

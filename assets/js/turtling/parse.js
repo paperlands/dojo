@@ -283,7 +283,11 @@ function tokenize(program) {
             continue;
         }
 
+        // A blank line rides through as an empty record so its birth line
+        // stays in the tree — line-number parity across parse → print, and the
+        // green tree sees the edit (a bare Enter changes the seed → reruns).
         if (trimmed) pushCode(trimmed, lines, i + 1);
+        else lines.push({ text: '', line: i + 1, blank: true });
         i++;
     }
 
