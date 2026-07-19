@@ -516,6 +516,51 @@ evicted in =removeAmbient=). Pinned by =test/js/green_tree_test.mjs=
 (adversarial equivalence sweep + identity properties) and the law-level
 pin in =weave_page_test.mjs=.
 
+** world cell — the one query seam
+:PROPERTIES:
+:ID: nav-world-cell
+:KEYWORDS: world cell query seam registerWorld watchWorld worldChanged breath ask again faces registrant demand pull empty center
+:PATH: assets/js/weave/world.js::export function registerWorld
+:END:
+Phase 2's empty center (=specs/compiler.org= [[id:cmp-query-cell]]): every
+surface asks about the world through this ONE seam. The cell holds the
+registrant's faces opaque and enumerates nothing — an unspoken face
+degrades by optional chain. =worldChanged()= is the breath: it says only
+"ask again", never carries the world. The inner shell is the registrant
+(=hooks/shell/inner.js=): faces =diagnostics(key) / vitals(name) /
+family(pattern)= read the owner's current bodies at ask time; the breath
+rides =debouncedRender= once per eval. Pinned by
+=test/js/world_cell_test.mjs=.
+
+** diagnostics query — memo at the reuse grain
+:PROPERTIES:
+:ID: nav-diagnostics-query
+:KEYWORDS: diagnostics query memo WeakMap reuse unit grain nodeDiagnostics ailments ailmentsFor address filter walk error standing
+:PATH: assets/js/weave/queries.js::export function nodeDiagnostics
+:END:
+The first query face (=specs/compiler.org= [[id:cmp-memo-grain]]):
+=nodeDiagnostics(node)= memoizes per reuse unit in a =WeakMap= — green-tree
+adoption makes invalidation free (a reused node answers its old array, the
+===-same object). =diagnostics(ast, ailments)= joins live walk ailments,
+never memoized; =ailmentsFor(scheduler.errors, key)= filters the one
+error scan by address top segment (the tab or its =#cellN= seats). Editor
+ink asks through =mountDiagnosticsInk= (=editor/diagnostics.js=) and
+renders via =@codemirror/lint= under the skip-law: no true span, no ink.
+Pinned by =test/js/queries_test.mjs= and =test/js/diagnostics_test.mjs=.
+
+** vitals — the stage's pulse, read-only
+:PROPERTIES:
+:ID: nav-vitals
+:KEYWORDS: vitals pulse peek frameVitals livingFamily family pattern holes mailbox letters kin elapsed reader
+:PATH: assets/js/turtling/vitals.js::export function frameVitals
+:END:
+Pure readers over an injected scheduler (=specs/compiler.org=
+[[id:cmp-queries-ground]]): =frameVitals= answers a live frame's observable
+pulse or null (nobody home degrades to the word); =livingFamily= scans the
+registry with the ONE pattern law (=match.js=, the same scan =when= uses).
+Registered as world faces by the inner shell. Pinned by
+=test/js/vitals_test.mjs=.
+
 * RIGS — proving ground
 :PROPERTIES:
 :ID: nav-rigs
