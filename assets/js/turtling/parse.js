@@ -165,35 +165,52 @@ export function parseProgram(program) {
 // Phase 2 memo key, the Phase 3 swap predicate.
 //
 // Adoption is early cutoff (id:pa-ghc-earlycutoff): the content key is the
-// node's whole structure MINUS position, so a rebuilt-but-identical unit
-// re-keys to its old object and every memo hanging off it survives. Value
-// equality, not source dirtiness, decides propagation — a moved block keeps
-// its identity too.
+// node's structure MINUS the OVERLAY, so a unit that changed only where it
+// sits or what it says without meaning re-keys to its old object and every
+// memo hanging off it survives. Meaning-equality, not source dirtiness,
+// decides propagation.
 //
-// Spans stay ABSOLUTE buffer lines — the contract every fence already pins
-// (executor stamps, channel events, ink) — and are the red overlay, copied
-// in place onto adopted nodes: the node is the identity, its span the
-// current position. A standing record that captured a span object
-// (frame.error) moves with it — the ink follows the text, by construction.
+// The overlay rides a reused node without being its identity:
+//   · span — ABSOLUTE buffer lines (executor stamps, channel events, ink);
+//     mutated IN the existing object so a standing capture (frame.error)
+//     moves with it.
+//   · trivia — a `#` comment (meta.comment / meta.endComment) and meadow
+//     prose (meta.lit); non-semantic, so editing it must NOT restart the
+//     running frame. The fresh text is still copied in, so the shared tree
+//     carries the new comment/prose — propagation for sharing, no rerun.
 //
 // Extension point (Phase 3 stage 3, subtree become): on a key miss, recurse
 // the same adoption into the fresh node's children.
 
-// Everything but position: two nodes with one key are the same structure
-// born from the same text. The key is allowed to be COARSE — any drift
-// (a reordered meta write, a new node field) costs a missed reuse, never
-// a wrong tree: the fresh parse is always the answer's structure.
-const contentKey = (node) => JSON.stringify(node, (k, v) => (k === 'span' ? undefined : v));
+// The key is everything but the OVERLAY: same key ⇒ same meaning. It stays
+// COARSE — any drift costs a missed reuse, never a wrong tree, since the
+// fresh parse is always the answer.
+const OVERLAY = new Set(['span', 'comment', 'endComment', 'lit']);
+const contentKey = (node) => JSON.stringify(node, (k, v) => (OVERLAY.has(k) ? undefined : v));
 
-// Copy the position overlay from the fresh twin onto the adopted node —
-// into the EXISTING span objects, so standing captures stay live.
-function adoptSpans(prev, next) {
+// Copy the fresh twin's overlay onto the reused node. Span mutates the
+// EXISTING object (standing captures like frame.error stay live); trivia is
+// rebuilt in a fresh parse's key ORDER so the adopted meta serializes
+// byte-identically.
+function adoptOverlay(prev, next) {
     if (next.span) {
         if (prev.span) { prev.span.line = next.span.line; prev.span.endLine = next.span.endLine; }
         else prev.span = { line: next.span.line, endLine: next.span.endLine };
     }
+    const pm = prev.meta, nm = next.meta;
+    if (pm && nm) {
+        // meadow prose rides `lit` (first, always present) — update in place.
+        if ('lit' in nm) pm.lit = nm.lit;
+        // comment / endComment ride LAST, endComment first (blockNode attaches
+        // endComment, the caller attaches comment). Clear then re-add in that
+        // order so the adopted meta matches a fresh twin — and a deleted
+        // comment never lingers.
+        delete pm.endComment; delete pm.comment;
+        if (nm.endComment !== undefined) pm.endComment = nm.endComment;
+        if (nm.comment !== undefined) pm.comment = nm.comment;
+    }
     const pc = prev.children ?? [], nc = next.children ?? [];
-    for (let i = 0; i < pc.length; i++) adoptSpans(pc[i], nc[i]);
+    for (let i = 0; i < pc.length; i++) adoptOverlay(pc[i], nc[i]);
 }
 
 // Total, like parseProgram — the answer is ALWAYS the forest the text
@@ -225,7 +242,7 @@ export function reparseProgram(text, prevText, prevAst) {
         const bucket = pool.get(contentKey(node));
         const prev = bucket?.shift();
         if (!prev) return node;
-        adoptSpans(prev, node);
+        adoptOverlay(prev, node);
         return prev;
     });
 }

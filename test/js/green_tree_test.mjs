@@ -106,6 +106,43 @@ describe("identity — untouched blocks keep their node objects", () => {
         assert.deepEqual(got[0].span, { line: 1, endLine: 3 })
     })
 
+    // Trivia is OVERLAY, not identity: a comment / meadow-prose edit keeps the
+    // node object (its running frame never restarts) yet copies the fresh text
+    // IN, so the shared tree carries the new comment/prose. Only a change to
+    // MEANING mints a fresh node.
+    test("a comment edit keeps the node object, refreshes its text", () => {
+        const src = "fw 10 # a step\nrt 90"
+        const prev = parseProgram(src)
+        const got = reparseProgram("fw 10 # a BOLD step\nrt 90", src, prev)
+        assert.equal(got[0], prev[0], "same object — no rerun")
+        assert.equal(got[0].meta.comment, " a BOLD step", "…carrying the fresh comment for sharing")
+        assert.equal(printAST(got), "fw 10 # a BOLD step\nrt 90")
+    })
+
+    test("a meadow-prose edit keeps the node object, refreshes its prose", () => {
+        const src = "###\nold prose\n###\nfw 10"
+        const prev = parseProgram(src)
+        const got = reparseProgram("###\nnew prose\n###\nfw 10", src, prev)
+        assert.equal(got[0], prev[0], "same meadow object — no rerun")
+        assert.equal(got[0].meta.lit, "new prose", "…carrying the fresh prose")
+    })
+
+    test("an end-comment edit keeps the block object", () => {
+        const src = "loop 3 do\n  fw 1\nend # done"
+        const prev = parseProgram(src)
+        const got = reparseProgram("loop 3 do\n  fw 1\nend # DONE!", src, prev)
+        assert.equal(got[0], prev[0], "same loop object — no rerun")
+        assert.equal(got[0].meta.endComment, " DONE!")
+    })
+
+    test("a code edit under an unchanged comment still mints a fresh node", () => {
+        const src = "fw 10 # a step\nrt 90"
+        const prev = parseProgram(src)
+        const got = reparseProgram("fw 99 # a step\nrt 90", src, prev)
+        assert.notEqual(got[0], prev[0], "meaning changed → fresh node → rerun")
+        assert.equal(got[1], prev[1], "the untouched sibling holds")
+    })
+
     test("an edit above a block shifts the reused block's span in place", () => {
         const prev = parseProgram(PAGE)
         const ambient = prev[2]
