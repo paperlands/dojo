@@ -16,6 +16,7 @@ import * as buffers from "./terminal/buffers.js"
 import * as editorView from "./terminal/view.js"
 import { buildExtensions, reapplyCompartments } from "./terminal/extensions.js"
 import { revealAmbient } from "./nerve/reveal.js"
+import { defaultAttend } from "./editor/plang-mode.js"
 
 const DEFAULT_OPTIONS = { theme: 'abbott', mode: 'plang' };
 
@@ -170,12 +171,14 @@ export const createTerminal = (element, cm6, options = {}) => {
             shell.dispatch({ effects: state.compartments.merge.reconfigure([]) });
         }
 
-        // 4. Cursor: explicit offset always wins; entering a buffer starts at
-        // the end; re-selecting the current buffer leaves the cursor alone.
+        // 4. Cursor: explicit offset always wins; entering a buffer lands on
+        // its last attended point, or — never attended — the shape default;
+        // re-selecting the current buffer leaves the cursor alone.
         if (offset != null) {
             editorView.cursorTo(shell, cm6, offset);
         } else if (switching) {
-            editorView.cursorToEnd(shell, cm6);
+            const target = selectedBuffer.attend ?? defaultAttend(shell.state.doc);
+            if (target != null) editorView.cursorTo(shell, cm6, target);
         }
         shell.focus();
 
@@ -232,6 +235,9 @@ export const createTerminal = (element, cm6, options = {}) => {
                 },
                 onSelectionChange: (selection) => {
                     selectionBridge.pub(selection);
+                    if (state.projectedId) {
+                        state.collection = buffers.updateAttend(state.collection, state.projectedId, selection.main.head);
+                    }
                 },
                 onSwitchNext: () => {
                     const id = buffers.nextId(state.collection);

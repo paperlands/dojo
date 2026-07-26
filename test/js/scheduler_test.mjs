@@ -768,7 +768,7 @@ describe("fault isolation", () => {
         // Runtime provenance: the walk error carries the erring node's span
         // (mistake stands on line 3) — born structured, never regexed.
         assert.equal(scheduler.errors[0].span?.line, 3)
-        assert.equal(scheduler.errors[0].phase, "walk")
+        assert.equal(scheduler.errors[0].kind, "walk")
 
         const drained = scheduler.channel.drain()
         const paths = drained.filter(e => e.type === "path")

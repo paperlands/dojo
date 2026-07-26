@@ -145,7 +145,7 @@ export function createStage(canvas, bridge) {
             controls.update()
             break
         case 'snap':
-            stage.renderstate.snapshot = { frame: null, save: true, title: payload[1].title }
+            stage.renderstate.snapshot = { hatched: false, save: true, title: payload[1].title }
             break
         case 'pan':
             camera.desire = (camera.desire !== "pan") ? "pan" : "track"
@@ -195,8 +195,7 @@ export function createStage(canvas, bridge) {
         glyphGroup,
 
         renderstate: {
-            phase: "start",
-            snapshot: { frame: null, save: false },
+            snapshot: { hatched: false, save: false },
             meta: { state: null, message: null, commands: [] }
         },
 
@@ -222,7 +221,12 @@ export function createStage(canvas, bridge) {
             const height = canvas.height
 
             const finish = (pixels) => {
-                stage.renderstate.snapshot.frame = pixels
+                // A SENTINEL, not the pixels. Readers only ever ask "has this
+                // canvas hatched yet?" (turtle.js onFrame), and takeSnapshot
+                // consumes the buffer below. Retain `pixels` here instead and
+                // a full-canvas Uint8Array (1920×993×4 ≈ 7.6MB) is pinned for
+                // the life of the page, per tab, to store a boolean.
+                stage.renderstate.snapshot.hatched = true
                 queueMicrotask(async () => {
                     const result = await recorder.takeSnapshot({ pixels, width, height })
                     if (result) {
@@ -261,7 +265,13 @@ export function createStage(canvas, bridge) {
             ctx.flush()
 
             const poll = () => {
-                if (disposed || ctx.isContextLost()) { hatchInFlight = false; return }
+                if (disposed || ctx.isContextLost()) {
+                    // Stand down, but hand the GL objects back first: bailing
+                    // straight out leaks the fence and the pack buffer.
+                    hatchInFlight = false
+                    if (!ctx.isContextLost()) { ctx.deleteSync(sync); ctx.deleteBuffer(buf) }
+                    return
+                }
                 const status = ctx.clientWaitSync(sync, 0, 0)
                 if (status === ctx.TIMEOUT_EXPIRED) { setTimeout(poll, 8); return }
                 ctx.deleteSync(sync)

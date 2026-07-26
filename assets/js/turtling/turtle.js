@@ -1,5 +1,11 @@
 import { Parser } from "./mafs/parse.js"
 import { parseProgram, reparseProgram, collectErrors } from "./parse.js"
+// The ONE address-ownership rule — reflect the document (D022): which standing
+// walk ailments belong to a buffer's own subtree. It lives with the query it
+// serves; the import points DOWN-stream only (weave/queries.js reads
+// turtling/parse.js and nothing else), so spelling the rule twice is what would
+// cost us, not this.
+import { ailmentsFor } from "../weave/queries.js"
 import { drainNamespace } from "./executor.js"
 import { Evaluator } from "./mafs/evaluate.js"
 import Render from "./render/index.js"
@@ -56,7 +62,8 @@ export class Turtle {
         // (watching a friend, or reverting to their code) this is true and the
         // onFrame hatch is suppressed — a friend's drawing must never be
         // hatched/reflected as the user's own. Only own edits and live drafts
-        // refresh the snapshot. See upsertAmbient({ hatch }).
+        // refresh the snapshot. A seat may only OPEN this gate; closing it is
+        // the batch's word (reflectGate) — see D022.
         this._hatchSuppressed = false
         this._localKeys = new Set()  // buffer IDs of locally-rendered tab ambients
 
@@ -188,7 +195,7 @@ export class Turtle {
                 this.stage.recorder.captureFrame()
             }
 
-            if (this.renderstate.snapshot.frame == null && t > 500 && !this._hatchSuppressed) {
+            if (!this.renderstate.snapshot.hatched && t > 500 && !this._hatchSuppressed) {
                 this.hatch()
             } else if (this.scheduler.done && !this._snapshotPending && !this._hatchSuppressed) {
                 // Re-captures ride the done transition: a run's final state is
@@ -210,9 +217,9 @@ export class Turtle {
         const animating = !!this.scheduler && !this.scheduler.done
         const recording = this.stage.recorder.isRecording
         // Only the compositor branch can hatch — don't pin the idle loop on.
-        // A suppressed hatch must not pin the on-demand loop: with snapshot.frame
-        // left null (we never capture for foreign content) this would spin forever.
-        const needHatch = !!this.compositor && this.renderstate.snapshot.frame == null && !this._hatchSuppressed
+        // A suppressed hatch must not pin the on-demand loop: with snapshot.hatched
+        // left false (we never capture for foreign content) this would spin forever.
+        const needHatch = !!this.compositor && !this.renderstate.snapshot.hatched && !this._hatchSuppressed
         const controlsSettling = performance.now() < this._controlsActiveUntil
         this._keepRendering = animating || recording || controlsChanged || controlsSettling || needHatch
     }
@@ -237,37 +244,70 @@ export class Turtle {
 
     // --- Multi-ambient API ---
 
-    // The rehearsal (Decision 019): a cell's section vocabulary is its
+    // The rehearsal (Decision 019): a cell's phase vocabulary is its
     // ancestors' code, run lazily from t=0 by the one executor semantics
     // (drainNamespace — headless, waits fast-forward, no sibling
     // negotiation, loud budget). Content-keyed cache: same vocabulary, one
     // rehearsal; an edit is new content and rehearses fresh. The KEY stays
     // the printed vocab (identity law: content hash is the cross-eval
     // predicate); the DRAIN runs the live node slices when the seam ships
-    // them — no re-parse (id:cmp-vet wound 1).
+    // them — no re-parse (id:cmp-vet diagnostic 1).
+    // A wounded rehearsal is KEPT, not discarded: the definitions that
+    // registered before the fault still stand (drainNamespace), so a broken
+    // line in a phase no longer strips its whole vocabulary from every cell
+    // beneath it. The error rides back on the answer — span-true on the
+    // ANCESTOR's own line — instead of vanishing into a console warning; the
+    // caller records it so the ink lands where the diagnostic was born, never on the
+    // descendant that merely inherited the silence.
     rehearseVocab(vocab, vocabNodes = null) {
         this._vocabCache ??= new Map()
         if (this._vocabCache.has(vocab)) return this._vocabCache.get(vocab)
         let ns = null
         try {
             const deps = { mathParser: new Parser(), mathEvaluator: new Evaluator() }
-            const drained = drainNamespace(vocabNodes ?? parseProgram(vocab), deps)
-            if (drained.error) console.warn('vocab rehearsal failed:', drained.error.message)
-            else ns = drained
+            ns = drainNamespace(vocabNodes ?? parseProgram(vocab), deps)
+            // THE SKIP-LAW, upheld at its source: only the live node slices carry
+            // absolute buffer lines. Re-parsing the vocab STRING yields spans
+            // relative to that slice — a number that looks true and points at
+            // the wrong line. Drop it rather than ink a lie; the diagnostic still
+            // speaks, it just declines to name a place it does not know.
+            if (!vocabNodes && ns?.error?.span) ns.error = { ...ns.error, span: null }
         } catch (error) {
-            console.warn('vocab rehearsal failed:', error.message)
+            // The drain is total; this is the impossible path (a broken dep).
+            ns = { functions: null, userspace: null, error }
         }
         if (this._vocabCache.size >= 32) this._vocabCache.clear()
         this._vocabCache.set(vocab, ns)
         return ns
     }
 
+    // EVERY standing diagnostic the canvas holds, in ONE shape and one list: the
+    // frames' walk faults and the phases' rehearsal diagnostics. They are the same
+    // fact — an addressed hurt with a true line — so they must not arrive as two
+    // lists a reader has to know about and concatenate. The one address rule
+    // (ailmentsFor) filters this; nothing downstream learns a second source.
+    //
+    // Deduped by where the diagnostic actually lives: many cells of a phase share
+    // one vocabulary, and one broken line is one diagnostic, not one per reader.
+    get ailments() {
+        const out = this.scheduler?.errors ? [...this.scheduler.errors] : []
+        if (!this._rehearsalDiagnostics?.size) return out
+        const seen = new Set()
+        for (const w of this._rehearsalDiagnostics.values()) {
+            const at = `${w.message}@${w.span?.line ?? "?"}`
+            if (seen.has(at)) continue
+            seen.add(at)
+            out.push(w)
+        }
+        return out
+    }
+
     // hatch:false renders without refreshing the snapshot/thumbnail or reflecting
     // to the server — for passive outershell content (a watched friend, or a
     // reverted draft). Own edits and live drafts leave it default (true).
     //
-    // vocab: a weave cell's section vocabulary (Decision 019) — the
-    // ancestors' code (sectionCells derives it from the one AST), rehearsed
+    // vocab: a weave cell's phase vocabulary (Decision 019) — the
+    // ancestors' code (phaseCells derives it from the one AST), rehearsed
     // here and seeded into the fork spec the same way `as name do` inherits:
     // a COPY per seat, never shared.
     // fresh:true forces a rebirth even when nothing changed — the explicit
@@ -292,6 +332,19 @@ export class Turtle {
             this._ensureScheduler()
 
             const ns = vocab ? this.rehearseVocab(vocab, vocabNodes) : null
+            // The phase's diagnostic belongs to the phase, not to this seat: the
+            // record is filed under the seat's key (so the address rule finds
+            // it for this buffer) but carries the ancestor's own span, so the
+            // ink lands on the line that actually broke.
+            this._rehearsalDiagnostics ??= new Map()
+            if (ns?.error) {
+                this._rehearsalDiagnostics.set(key, {
+                    address: key, name: displayName, message: ns.error.message,
+                    span: ns.error.span ?? null, kind: 'rehearsal',
+                })
+            } else {
+                this._rehearsalDiagnostics.delete(key)
+            }
             this.scheduler.hotSwapChild(key, {
                 name: displayName,
                 code: { ast: instructions, functions: ns?.functions ?? null },
@@ -299,28 +352,42 @@ export class Turtle {
                 env: ns?.userspace?.size ? { userspace: ns.userspace } : null
             }, { fresh })
 
-            this._hatchSuppressed = !hatch
+            // The gate is the BATCH's, not this seat's (D022): a page seats
+            // many times per transition, and the last seat is a warm sibling
+            // (hatch:false). Let a seat close the gate here and that sibling
+            // silently stops the page reflecting at all. A seat only ever
+            // OPENS it; closing is the batch's word, through reflectGate().
             if (hatch) {
+                this._hatchSuppressed = false
                 // Fresh run: re-arm the done-capture. The snapshot is NOT
-                // cleared — nulling it re-armed a full-canvas readback on the
-                // very next frame, i.e. once per keystroke under the live
-                // re-eval (the typing-lag root cause).
+                // cleared — nulling it re-arms a full-canvas readback on the
+                // very next frame, which under live re-eval means once per
+                // keystroke. That is the typing-lag trap; leave it alone.
                 this._snapshotPending = false
             }
 
             this.compositor.flush()
             this._lastContentChange = performance.now()
 
-            const errors = this.scheduler.errors
+            // The child's OWN fault only (D022): scheduler.errors spans every
+            // frame on the canvas, a watched friend's included. Read it whole
+            // and the child's edit fails, his reflect reddened for a friend's
+            // broken code. The address rule owns the filter; a page's cells
+            // ride `key#cellN`.
+            const errors = ailmentsFor(this.scheduler.errors, key)
             if (errors.length > 0) {
-                this.renderstate.meta = { state: "error", message: errors[0].message, source: code, commands: instructions }
+                this.renderstate.meta = { state: "error", message: errors[0].message }
                 this.requestRender()
                 // Walk errors ride structured (id:cmp-runtime-provenance):
                 // span-true, born on the erring node — no message archaeology.
                 return { success: false, error: errors[0].message, errorSpan: errors[0].span ?? null }
             }
 
-            this.renderstate.meta = { state: "success", commands: instructions }
+            // The turtle publishes the FAULT — what it owns. The DOCUMENT
+            // (commands/source/diagnostics) is asked for at the reflect seam by
+            // the surface that holds the authored buffer (D022); a seat's
+            // instruction slice is never the page.
+            this.renderstate.meta = { state: "success" }
             this.requestRender()
             // The healthy parts live (D020): a parse-error node never fails
             // the run — the world drew. The structured errors ride the result
@@ -331,9 +398,18 @@ export class Turtle {
             return result
         } catch (error) {
             console.error(error)
-            this.renderstate.meta = { state: "error", message: error.message, source: code }
+            this.renderstate.meta = { state: "error", message: error.message }
             return { success: false, error: error.message }
         }
+    }
+
+    // The reflect gate, spoken once per transition (D022). `open` means the
+    // canvas is the CHILD'S this batch — his edit, or his live draft — so the
+    // snapshot may hatch and reflect. A batch of only passive seats (a watched
+    // friend's push, a reverted draft) closes it; a batch with no seat at all
+    // leaves it where it stands. One writer per transition, never N.
+    reflectGate(open) {
+        this._hatchSuppressed = !open
     }
 
     // The standing { text, ast } pair's tree for a plain-tab key — the
@@ -347,6 +423,7 @@ export class Turtle {
     removeAmbient(key) {
         this._localKeys.delete(key)
         this._parseMemo?.delete(key)
+        this._rehearsalDiagnostics?.delete(key)
         if (!this.scheduler) return
         this._lastContentChange = performance.now()
 
@@ -375,10 +452,26 @@ export class Turtle {
         }
     }
 
-    setAmbientOpacity(name, opacity) {
+    // Appearance rides the same register as focus (D006), so a `degree` can
+    // name a program's first cell apart from the bare code that shares its
+    // display name. `ref` is a registration key, a nested address, or a display
+    // name — all resolve THROUGH the address, and an unknown ref dims nothing.
+    setAmbientOpacity(ref, opacity) {
         if (this.compositor) {
-            this.compositor.setOpacityByName(name, opacity)
+            this.compositor.setOpacityByAddress(resolveAddress(this.scheduler, ref), opacity)
         }
+    }
+
+    // The address a caller's reference names, or null — the one resolution
+    // every appearance/focus caller shares (so "is this the focused one?" is
+    // asked address-true, never by a name two ambients can wear).
+    addressOf(ref) {
+        return resolveAddress(this.scheduler, ref)
+    }
+
+    isAmbientFocused(ref) {
+        const address = this.addressOf(ref)
+        return address != null && this.compositor?.focusedAddress === address
     }
 
     // The tab (root-child key === buffer id) whose subtree defines an ambient by
@@ -420,7 +513,7 @@ export class Turtle {
 
     // --- Backward-compatible API ---
 
-    draw(id, name, code) {
+    draw(id, name, code, nodes = null) {
         this._ensureScheduler()
         // Exclusive only when entering a tab OUTSIDE the active group: switching
         // to a fresh tab replaces the previous drawing. A tab already in
@@ -435,7 +528,9 @@ export class Turtle {
             this._localKeys.add(id)
         }
         // Upsert first so the frame exists, then focus by its key directly.
-        const result = this.upsertAmbient(id, name, code)
+        // nodes: the caller's live parse, when it has one — the live-nodes
+        // law (weave/page.js seatFrom). null is exactly today's behavior.
+        const result = this.upsertAmbient(id, name, code, { nodes })
         this.focusAmbient(id)
         return result
     }
@@ -455,7 +550,7 @@ export class Turtle {
 
         this.stage.head.show()
         this.stage.head.reset()
-        this.renderstate.snapshot = { frame: null, save: false }
+        this.renderstate.snapshot = { hatched: false, save: false }
         this.renderstate.meta = { state: null, message: null, commands: [] }
         this.renderLoop.requestRestart()
     }

@@ -1,71 +1,64 @@
-// =============================================================================
-// weave/page.js — THE PAGE LAW (the extraction law applied to the page
-// relation; stands beside ladder.js the way the ladder stands beside the
-// surfaces: pure decision, effects out — no DOM, no turtle; node-tested in
-// test/js/weave_page_test.mjs).
+// weave/page.js — THE SEATING LAW. Pure decision, no DOM and no turtle;
+// tested in test/js/weave_page_test.mjs. Why it is one law and not three:
+// one seating law (D023).
 //
-// One addr wears one of three shapes, decided by its document (id:gw-cell,
-// the priority law):
-//   PLAIN    — no ``` cells: the whole buffer draws, exclusive across kinds.
-//   PROGRAM  — cells AND bare code: the bare code is the tab's ambient; the
-//              cells are previews, dormant until reached (cursor-only —
-//              ladder capacity 1). Previews fork from the PROGRAM (D019):
-//              its code is their vocabulary, rehearsed lazily at seat time.
-//   PAGE     — every executable line lives in cells: the kindled cell runs,
-//              a warm window of two (ladder capacity 2); siblings DERIVE
-//              from the one AST (sectionCells), never ferried beside it.
+//   observe(addr, { name, doc, own, attention }) → answer
 //
-// Every transition returns consequences in the turtle's OWN transition
-// alphabet, performed in order by the inner surface (inner.js perform()):
+// One verb for every surface. `own` and `attention` are the ONLY difference
+// between the child's own shell, the child's live draft on a friend's page,
+// and a watched friend's push — so all three evaluate identically.
 //
-//   { op:'seat',   key, name, code, hatch?, vocab?, main? } — upsertAmbient (a seat RUNS)
-//   { op:'draw',   addr, name, code, main:true }            — exclusive whole-buffer draw
-//   { op:'remove', key }                                    — removeAmbient
-//   { op:'clearLocal' }                                     — every _localKeys ambient leaves
-//   { op:'kindle', key }                                    — focusAmbient by address
-//   { op:'focus',  name } | { op:'focus', world:true }      — the one attention move
-//   { op:'degree', name, degree, unlessFocused? }           — appearance only, never a run
-//   { op:'reach',  index }                                  — reset the editor reach
+//   doc        string or AST. A friend's tree crosses the wire whole — reflect
+//              the document (D022); the child's text parses here against the
+//              held tree (green tree).
+//   own        is this canvas the child's this transition? Sets the hatch and
+//              the local-group exclusivity. Nothing else.
+//   attention  { line } | null — where the reader is; attention is the address
+//              (D021). null holds the standing order.
 //
-// The two degrees are gw-appearance's axis: KINDLED (bright, running) and
-// WARM (dimmed, waiting); EVICTED is a remove. A seat is a run, not a paint —
-// so the law is idempotent where the canvas already burns: re-reaching the
-// kindled cell emits nothing. That resolves the consequence-purity ⊗
-// turtle-statefulness tension: speak transitions the turtle understands,
-// never a naive desired-state diff.
+// THE ANSWER — two channels, two jobs:
+//   { effects, landed, source, merge, paged }
 //
-// The slot ledger: who owns an addr's canvas slot — the friend's stream, a
-// reviewer's live draft, or her page. ONE record with a lifecycle field
-// (draft), not parallel registries; forget() drops the record whole, so no
-// stale entry can block a re-watch or silently revive a dead draft.
+//   effects    five canvas ops, each naming a target:
+//                seat   key name code hatch? vocab? nodes? vocabNodes? main?
+//                                                          — a seat RUNS
+//                draw   addr name code nodes? main?        — exclusive whole buffer
+//                remove key
+//                focus  key name  |  world:true            — the one attention move
+//                degree key degree unlessFocused?          — appearance, never a run
+//   landed     where the ladder actually put the light, when that is not where
+//              `attention` pointed. For the input organ, not the canvas — the
+//              surface that owns that cursor applies it.
 //
-// Addresses are the grammar's (key-is-address, decision 006): parseAddress
-// owns ~/-ness (the resolver's shelf law), `${addr}#cellN` is the sibling
-// cell's address. No prefix folklore.
-// =============================================================================
+// THREE SHAPES, decided by the document alone (the cell shape rule,
+// id:gw-cell):
+//   plain    no ``` cells — the whole buffer is the unit.
+//   program  cells AND bare code — the bare code runs; cells are dormant
+//            until the cursor rests in one (ladder capacity 1). The bare
+//            code is their vocabulary (outline-scoped vocabulary, D019).
+//   page     all code in cells — the kindled cell runs, warm window of two.
+//
+// TWO ADDRESSINGS (D021): a LINE addresses an intention and crosses seams;
+// an ORDINAL (`#cellN`) names a body for one evaluation and is the frame key,
+// which must stay stable across edits.
 
 import { visit } from "./ladder.js"
-import { parseAddress } from "./resolve.js"
-import { reparseProgram, printAST, sectionCells, stripCells } from "../turtling/parse.js"
+import { reparseProgram, printAST, phaseCells, stripCells, cellAtLine } from "../turtling/parse.js"
 
-// Fast fence probe — the full parse only for buffers that hold a cell.
-const CELL_PROBE = /^[ \t]*```/m
+const CELL_PROBE = /^[ \t]*```/m        // cheap gate — no fence, no parse
 
-const isLibrary = (addr) => parseAddress(addr).owner === "~"
-
-// Sibling entries derive from the one AST: the key is the cell address; the
-// first cell wears the page's name, so the outer focus flow lights it.
+// The first cell wears the page's name, so a surface holding only a tab NAME
+// (the outer shell, the tab restore) lights the page by naming it. Nothing on
+// the canvas is keyed by that name — seat, focus and degree all ride the key,
+// because in a `program` the bare code wears this same name beside cell 1.
 function cellEntries(addr, name, cells) {
-    return cells.map(({ code, vocab, nodes, vocabNodes }, i) => ({
+    return cells.map(({ code, vocab, nodes, vocabNodes, open, end, path }, i) => ({
         key: `${addr}#cell${i + 1}`,
         name: i === 0 ? name : `${name}·${i + 1}`,
         code,
         vocab,
-        // Live node slices of the one tree — the seat runs THESE; the code/
-        // vocab strings stay as content keys and socket projections (the
-        // partition never severs identity, specs/compiler.org id:cmp-vet).
-        nodes,
-        vocabNodes,
+        open, end, path,        // the law resolves an incoming line through these
+        nodes, vocabNodes,      // live slices of the one tree — the seat runs THESE
     }))
 }
 
@@ -74,9 +67,26 @@ const seat = (entry, extra = {}) => ({
     nodes: entry.nodes, vocabNodes: entry.vocabNodes, ...extra,
 })
 
-export function pageLaw() {
-    const pages = new Map() // addr → { entries, order, mode: 'preview'|'page', hatch }
-    const slots = new Map() // addr → { draft, name, code } — the slot ledger
+const sameOrder = (a, b) => a.length === b.length && a.every((v, i) => v === b[i])
+
+// Every verb answers in this shape, so no caller can pass the wrong half.
+const answer = (effects, extra = {}) =>
+    ({ effects, landed: null, source: null, merge: false, paged: false, ...extra })
+
+// localKeys — () => [keys]: the whole-buffer ambients the canvas holds. The
+// child's page claims the canvas alone and must NAME what it displaces; the
+// law cannot see the group, so the surface injects the read.
+export function pageLaw({ localKeys = () => [] } = {}) {
+    // addr → { entries, order, mode, own, source, tree, name }
+    const pages = new Map()
+    // addr → { name, ast, source } — a friend's last push. Revert ground and
+    // merge baseline; recorded on every push, displaced by none.
+    const streams = new Map()
+
+    const isPaged = (addr) => {
+        const page = pages.get(addr)
+        return !!page && page.mode !== "plain"
+    }
 
     function standDown(addr, effects) {
         const page = pages.get(addr)
@@ -85,230 +95,233 @@ export function pageLaw() {
         pages.delete(addr)
     }
 
-    // Exclusive law across kinds: local pages stand down together; library
-    // (~/) pages persist — they belong to the outershell, closed via forget.
+    // Exclusive across kinds: the child's pages stand down together. A
+    // friend's persists — it belongs to the outershell, closed via forget.
     function standDownLocal(effects) {
-        for (const addr of [...pages.keys()]) {
-            if (!isLibrary(addr)) standDown(addr, effects)
+        for (const [addr, page] of [...pages]) {
+            if (page.own && page.mode !== "plain") standDown(addr, effects)
         }
     }
 
-    // The page attempt: paged:false for a cell-less/unparsable buffer — the
-    // caller takes the plain path (parse errors surface there, as ever); a
-    // de-fenced buffer's stale cells still stand down in the effects.
-    function attempt(addr, name, content) {
-        const effects = []
-        let cells = []
-        let ast = null
-        if (CELL_PROBE.test(content)) {
-            try {
-                // The green tree (id:cmp-green-tree): the page's previous
-                // tree is the reuse ground — an edit to one cell leaves the
-                // sibling cells' nodes ===-identical, so their content keys,
-                // memos, and (Phase 3) frames survive the keystroke.
-                const held = pages.get(addr)
-                ast = reparseProgram(content, held?.source ?? null, held?.program ?? null)
-                cells = sectionCells(ast)
-            } catch { cells = [] }
+    // A document becomes a tree exactly once, whichever door it came through.
+    // Unparsable degrades to plain: the parse errors surface at the draw.
+    function asTree(addr, doc) {
+        if (Array.isArray(doc)) return { ast: doc, source: printAST(doc) }
+        if (!CELL_PROBE.test(doc)) return { ast: null, source: doc }
+        const held = pages.get(addr)
+        try {
+            // Green tree (id:cmp-green-tree): the held tree is the reuse
+            // ground, so an edit to one cell leaves its sisters' nodes
+            // ===-identical and their frames survive the keystroke.
+            return { ast: reparseProgram(doc, held?.source ?? null, held?.tree ?? null), source: doc }
+        } catch {
+            return { ast: null, source: doc }
         }
-        if (!cells.length) {
-            standDown(addr, effects) // fences gone — the page stands down
-            return { effects, paged: false }
-        }
-        const prev = pages.get(addr)
-        // Entering a cell-bearing tab stands other local pages down.
-        if (!prev) standDownLocal(effects)
+    }
+
+    // `order` is the record's whole runtime state: which cells stand, kindled first.
+    function ladder(prevOrder, entries, index, mode, attended) {
+        const order = prevOrder.filter((i) => i < entries.length)
+        if (index != null) return visit(order, index, mode === "program" ? 1 : 2)
+        // The cursor law, third clause: out on bare code a program's cells
+        // rest and the bare code regains the light. A page ignores it — prose
+        // keeps the last reach.
+        if (attended && mode === "program") return { order: [], evicted: null }
+        // A page opens at its first cell; a program opens with none.
+        if (!order.length && mode === "page") return { order: [0], evicted: null }
+        return { order, evicted: null }
+    }
+
+    // The addr's own slot: the whole buffer, or a program's bare code. The
+    // child's draws (exclusive — it replaces the local group); a friend's
+    // seats passively.
+    const slot = (addr, name, code, own, extra = {}) => own
+        ? [{ op: "draw", addr, name, code, ...extra }]
+        : [{ op: "seat", key: addr, name, code, hatch: false, ...extra },
+           { op: "degree", key: addr, degree: "warm", unlessFocused: true }]
+
+    function observe(addr, { name, doc, own = false, attention = null }) {
+        const held = pages.get(addr)
+        // No document means "the one that stands" — `attend`'s door.
+        // Re-normalizing would round-trip the text and look like an edit.
+        const { ast, source } = doc === undefined && held
+            ? { ast: held.tree, source: held.source }
+            : asTree(addr, doc)
+
+        if (!own) streams.set(addr, { name, ast, source })
+
+        // An owned canvas is not displaced by an unowned REPORT: while the
+        // child drafts on a friend's addr, the friend's push records and does
+        // not seat. Handing the canvas back is not a report — see restore.
+        if (held?.own && !own) return answer([], { source, paged: isPaged(addr) })
+
+        return seatFrom(addr, held, { name, ast, source, own, attention })
+    }
+
+    // THE LIVE-NODES RULE: every effect below carries `nodes` (or
+    // `vocabNodes`) beside its `code` string whenever this function already
+    // holds a live parse of that exact code. `code` still rides — for display
+    // and the green-tree text key — but it is never the SOLE source of a span.
+    //
+    // The hazard it stands against: printAST(bare) below reprints a program's
+    // bare code with its cells' lines dropped and no placeholder for the gap.
+    // Re-parse that string on its own and every node after a cell is stamped a
+    // line short of its true buffer line. Hand over the tree and spans stay true.
+    function seatFrom(addr, held, { name, ast, source, own, attention }) {
+        const cells = ast ? phaseCells(ast) : []
         const entries = cellEntries(addr, name, cells)
-        // Keep her place across edits; indexes past a shorter split clamp
-        // away, and siblings from the longer previous split leave the canvas.
-        const order = (prev?.order ?? []).filter((i) => i < entries.length)
-        if (prev) {
-            for (const i of prev.order) {
-                if (i >= entries.length) effects.push({ op: "remove", key: prev.entries[i].key })
-            }
+        const bare = cells.length ? stripCells(ast) : null
+        const mode = !cells.length
+            ? "plain"
+            : bare.some((n) => n.type !== "Empty") ? "program" : "page"
+        const index = attention?.line == null || !cells.length
+            ? null
+            : cellAtLine(entries, attention.line)
+        const { order, evicted } = ladder(held?.order ?? [], entries, index, mode, attention != null)
+
+        // A seat is a RUN, so the law emits nothing when the record it would
+        // write is the record that already stands.
+        if (held && held.source === source && held.own === own &&
+            held.mode === mode && sameOrder(held.order, order)) {
+            return answer([], { source, paged: mode !== "plain" })
         }
-        const program = stripCells(ast)
-        if (program.some((n) => n.type !== "Empty")) {
-            // A PROGRAM: the bare code runs as the tab's ambient (cells
-            // stripped, so a preview never runs twice); previews re-seat in
-            // place, dormant until the cursor reaches them (D019: the
-            // program is their vocabulary; the outline is ignored under the
-            // priority law).
-            const vocab = printAST(program)
-            for (const e of entries) { e.vocab = vocab; e.vocabNodes = program }
-            pages.set(addr, { entries, order, mode: "preview", hatch: false, source: content, program: ast })
-            effects.push({ op: "reach", index: order[0] ?? null })
-            for (const i of order) effects.push(seat(entries[i], { hatch: false }))
-            effects.push({ op: "draw", addr, name, code: vocab, main: true })
-            return { effects, paged: true }
+
+        const effects = []
+
+        if (own && mode !== "plain" && !isPaged(addr)) standDownLocal(effects)
+        if (own && mode === "page" && !isPaged(addr)) {
+            for (const key of localKeys()) effects.push({ op: "remove", key })
         }
-        // A PAGE: the kindled cell runs — hers, so it hatches; warm siblings
-        // wait dimmed; the whole buffer never runs beside them.
-        if (!order.length) order.push(0)
-        if (!prev) effects.push({ op: "clearLocal" })
-        pages.set(addr, { entries, order, mode: "page", hatch: true, source: content, program: ast })
-        effects.push({ op: "remove", key: addr })
-        effects.push({ op: "reach", index: order[0] })
-        const kindled = entries[order[0]]
-        effects.push(seat(kindled, { main: true }))
-        effects.push({ op: "kindle", key: kindled.key })
+        // Cells the new split no longer has, and the one the ladder evicted.
+        for (const i of held?.order ?? []) {
+            if (i >= entries.length) effects.push({ op: "remove", key: held.entries[i].key })
+            else if (!order.includes(i)) effects.push({ op: "remove", key: entries[i].key })
+        }
+        if (evicted != null && entries[evicted] && !effects.some((e) => e.key === entries[evicted].key)) {
+            effects.push({ op: "remove", key: entries[evicted].key })
+        }
+
+        pages.set(addr, { entries, order, mode, own, source, tree: ast, name })
+
+        if (mode === "plain") {
+            if (own) standDownLocal(effects)
+            // ast is null unless the ``` probe already paid for a parse that
+            // found no real cell — nodes rides it either way (the live-nodes law).
+            effects.push(...slot(addr, name, source, own, { main: own || undefined, nodes: ast }))
+            return answer(effects, { source, merge: true })
+        }
+
+        // A whole-buffer ambient never burns beside its own cells. A program
+        // keeps that slot — it is where the bare code lives.
+        if (mode === "page" && (!held || held.mode !== "page")) {
+            effects.push({ op: "remove", key: addr })
+        }
+
+        if (mode === "program") {
+            const vocab = printAST(bare)      // D019: the bare code is their vocabulary
+            for (const e of entries) { e.vocab = vocab; e.vocabNodes = bare }
+        }
+
+        // Spoken only when the ladder landed somewhere other than where
+        // attention pointed; echoing the organ's own line back is a loop.
+        const kindled = order.length ? entries[order[0]] : null
+        const landed = !kindled
+            ? (held ? null : { line: null })
+            : (kindled.open === attention?.line ? null : { line: kindled.open })
+
+        // A program's cells stay passive: the bare code is what is being made.
+        const hatch = own && mode === "page"
+        if (kindled) {
+            effects.push(seat(kindled, { hatch, main: mode === "page" && own ? true : undefined }))
+            // The light moves by KEY (D006) — as `degree` does. The name rides
+            // along as the display label, never as the target: in a program the
+            // bare code and the first cell wear the same one.
+            effects.push({ op: "focus", key: kindled.key, name: kindled.name })
+        }
         for (const i of order.slice(1)) {
             effects.push(seat(entries[i], { hatch: false }))
-            effects.push({ op: "degree", name: entries[i].name, degree: "warm" })
+            effects.push({ op: "degree", key: entries[i].key, degree: "warm" })
         }
-        return { effects, paged: true }
+        // Bare code re-runs only when it CHANGED: a draw is exclusive and ends
+        // by focusing its own key, so a ladder step must not echo it.
+        if (mode === "program" && (!held || held.source !== source || held.mode !== mode)) {
+            // nodes: bare, per the live-nodes rule above — printAST(bare) is
+            // display/memo only, never re-derived from.
+            effects.push(...slot(addr, name, printAST(bare), own, { main: own || undefined, nodes: bare }))
+        }
+        if (mode === "program" && !order.length && held?.order?.length) {
+            effects.push({ op: "focus", world: true })
+        }
+        return answer(effects, { landed, source, merge: true, paged: true })
     }
 
     return {
-        // Her edit: a weave buffer walks as its page; anything else draws
-        // whole — and the plain draw is exclusive across kinds too.
-        edit(addr, name, content) {
-            const a = attempt(addr, name, content)
-            if (a.paged) return a.effects
-            standDownLocal(a.effects)
-            a.effects.push({ op: "draw", addr, name, code: content, main: true })
-            return a.effects
-        },
+        observe,
 
-        // One ladder step (scene 'cell'): the reached cell mounts and RUNS
-        // (lazy — first parse/run happens at the seat); the ladder says what
-        // warms and what leaves. Explicit, never inferred from focus history
-        // — wandering focus elsewhere must not strand a bright sibling.
-        reach(addr, index) {
+        // One ladder step: the same law with a new attention and the document
+        // unchanged. Sugar, not a second path — and the door a followed peer's
+        // line will come through.
+        attend(addr, line) {
             const page = pages.get(addr)
-            if (!page) return []
-            if (index == null) {
-                // The cursor law's third clause: on bare code the cells rest
-                // and the program regains the light; a pure page ignores —
-                // prose keeps the last reach.
-                if (page.mode !== "preview" || !page.order.length) return []
-                const effects = page.order.map((i) => ({ op: "remove", key: page.entries[i].key }))
-                page.order = []
-                effects.push({ op: "focus", world: true })
-                return effects
-            }
-            const entry = page.entries[index]
-            if (!entry) return []
-            // Re-reaching the kindled cell is a no-op — a seat re-runs, and
-            // the law never re-runs what already burns.
-            if (page.order[0] === index) return []
-            const effects = [seat(entry, { hatch: page.hatch })]
-            // A preview holds one cell (cursor-only); a page reads with a
-            // warm window of two (the before/after).
-            const { order, evicted } = visit(page.order, index, page.mode === "preview" ? 1 : 2)
-            page.order = order
-            if (evicted != null) effects.push({ op: "remove", key: page.entries[evicted].key })
-            effects.push({ op: "focus", name: entry.name })
-            for (const i of order.slice(1)) {
-                effects.push({ op: "degree", name: page.entries[i].name, degree: "warm" })
-            }
-            return effects
+            if (!page || page.mode === "plain") return answer([])
+            return observe(addr, { name: page.name, own: page.own, attention: { line } })
         },
 
-        // Shift+click: a weave buffer toggles its PAGE — never a whole-buffer
-        // ambient standing beside its own cells. paged:false hands a plain
-        // tab back to the turtle's own toggle (the sister-group restart).
+        // The draft ends: back to the friend's last push. Enters at seatFrom
+        // because handing the canvas back is not a report about it — and
+        // because `own` changes, the hatch gate is re-spoken even when
+        // nothing was typed.
+        restore(addr) {
+            const stream = streams.get(addr)
+            if (!stream) return answer([])
+            return seatFrom(addr, pages.get(addr), {
+                name: stream.name, ast: stream.ast, source: stream.source,
+                own: false, attention: null,
+            })
+        },
+
+        // Shift+click. paged:false hands a plain tab back to the turtle's own
+        // toggle (the sister-group restart).
         toggle(addr, name, content) {
-            if (pages.has(addr)) {
-                // Toggle OFF: previews/siblings down, and a preview tab's
-                // program ambient with them.
+            if (isPaged(addr)) {
                 const effects = []
                 standDown(addr, effects)
                 effects.push({ op: "remove", key: addr })
-                return { effects, paged: true }
+                return answer(effects, { paged: true })
             }
-            return attempt(addr, name, content)
-        },
-
-        // A live draft from the review surface owns the addr's slot: the
-        // page stands down while the intervention runs; the friend's stream
-        // keeps recording underneath (friendPush), for the revert.
-        draftSeat(addr, name, code) {
-            const effects = []
-            standDown(addr, effects)
-            const slot = slots.get(addr) ?? {}
-            slot.draft = true
-            slots.set(addr, slot)
-            effects.push({ op: "seat", key: addr, name, code })
-            effects.push({ op: "degree", name, degree: "kindled" })
-            return effects
-        },
-
-        // Draft frozen/ended — the slot reverts to the friend's code,
-        // passively (no hatch). Nothing recorded, nothing to revert to.
-        draftStop(addr) {
-            const slot = slots.get(addr)
-            if (slot) slot.draft = false
-            if (slot?.code == null) return []
-            return [{ op: "seat", key: addr, name: slot.name || addr, code: slot.code, hatch: false }]
-        },
-
-        // A friend's push (seeOuterShell success). The slot records always;
-        // while drafted the running draft owns the canvas — record only.
-        // A ~/ addr IS page-ness (the resolver's shelf law): the first cell
-        // mounts and shows, the rest wait unevaluated until reached; a
-        // re-push of a standing page (a view toggle) changes nothing.
-        // merge: whether the caller streams the merge baseline this push.
-        friendPush(addr, name, ast) {
-            const code = printAST(ast)
-            const slot = slots.get(addr) ?? {}
-            slot.name = name
-            slot.code = code
-            slots.set(addr, slot)
-            if (slot.draft) return { effects: [], code, merge: false }
-            if (isLibrary(addr)) {
-                if (pages.has(addr)) return { effects: [], code, merge: false }
-                const cells = sectionCells(ast)
-                if (cells.length) {
-                    const entries = cellEntries(addr, name, cells)
-                    pages.set(addr, { entries, order: [0], mode: "page", hatch: false })
-                    return {
-                        effects: [
-                            seat(entries[0], { hatch: false }),
-                            { op: "focus", name: entries[0].name },
-                        ],
-                        code,
-                        merge: true,
-                    }
-                }
-                // A cell-less page (pure prose) falls through: the meadow is
-                // a no-op for the executor — the passive mount is right.
+            const probe = asTree(addr, content)
+            if (!probe.ast || !phaseCells(probe.ast).length) {
+                const effects = []
+                standDown(addr, effects)      // stale cells, if it just lost its fences
+                return answer(effects)
             }
-            // Passive watch: render the friend but never hatch — their
-            // drawing must not be reflected to the server as the user's.
-            return {
-                effects: [
-                    { op: "seat", key: addr, name, code, hatch: false },
-                    { op: "degree", name, degree: "warm", unlessFocused: true },
-                ],
-                code,
-                merge: true,
-            }
+            return observe(addr, { name, doc: content, own: true, attention: null })
         },
 
-        // Close/remove an addr entirely: cells down, ambient gone, the slot
-        // ledger forgets — a later re-watch of the same friend starts clean.
+        // Both ledgers forget, so a later re-watch starts clean.
         forget(addr) {
             const effects = []
             standDown(addr, effects)
             effects.push({ op: "remove", key: addr })
-            slots.delete(addr)
-            return effects
+            streams.delete(addr)
+            return answer(effects)
         },
 
-        // Reads for the surface: is this addr a standing page; her local
-        // pages (tab indicators mirror them — ~/ pages have no tab).
+        // Is this a standing page of the child's own — the inner reach's gate.
+        // A friend's page is walked from the outer surface, which holds its
+        // own reach.
         hasPage(addr) {
-            return pages.has(addr)
+            const page = pages.get(addr)
+            return !!page?.own && page.mode !== "plain"
         },
-        // The standing { text, ast } pair's tree — the intra-session
-        // identity carrier (id:cmp-standing-primitives). The diagnostics
-        // face reads it; queries memoize on its reuse units.
-        program(addr) {
-            return pages.get(addr)?.program ?? null
+        // The standing tree — the intra-session identity carrier
+        // (id:cmp-standing-primitives). Diagnostics read it; queries memoize
+        // on its reuse units.
+        tree(addr) {
+            return pages.get(addr)?.tree ?? null
         },
         localPages() {
-            return [...pages.keys()].filter((a) => !isLibrary(a))
+            return [...pages].filter(([, p]) => p.own && p.mode !== "plain").map(([addr]) => addr)
         },
     }
 }

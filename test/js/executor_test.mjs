@@ -515,7 +515,7 @@ describe("runtime provenance — walk errors carry node spans", () => {
             assert.fail("expected the walk to crash")
         } catch (error) {
             assert.equal(error.span?.line, 2)
-            assert.equal(error.phase, "walk")
+            assert.equal(error.kind, "walk")
         }
     })
 
@@ -528,7 +528,7 @@ describe("runtime provenance — walk errors carry node spans", () => {
         } catch (error) {
             assert.equal(error.span?.line, 2,
                 "recursion unwinds without overwriting the innermost stamp")
-            assert.equal(error.phase, "walk")
+            assert.equal(error.kind, "walk")
         }
     })
 

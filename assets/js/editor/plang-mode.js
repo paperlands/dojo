@@ -16,6 +16,8 @@
 // Vocabulary
 // ---------------------------------------------------------------------------
 
+import { outline, HEADLINE } from "../turtling/parse.js";
+
 const INDENT_UNIT = 2; // spaces per indent level (PaperLang convention)
 
 function wordSet(words) {
@@ -193,7 +195,7 @@ function tokenBase(stream, state) {
 // The literate faces — one prose space, two doors (id:gw-grammar).
 // meta.lit is the store; these are renderings. There is ONE markup grammar
 // inside prose space, whichever door you entered by: portals glow, headlines
-// name chapters, and emphasis is render sugar — discovered, never load-bearing.
+// name phases, and emphasis is render sugar — discovered, never load-bearing.
 //
 // Three code/prose marks live in the meadow beside the headline (all sol-detected,
 // the marker dissolving like `#`):
@@ -257,12 +259,12 @@ function readProseCode(stream, state) {
 // The prose-line grammar — ONE table, both doors (id:gw-grammar). A prose line may
 // open with a block mark; the SAME marks live behind the margin `#` and inside the
 // meadow `###`, so `# * Title` names an outline node riding the code exactly as
-// `* Title` names a chapter in the clearing. Each entry renders one line; a
+// `* Title` names a phase in the clearing. Each entry renders one line; a
 // `spansLines` mark (the ``` cell) needs many lines, so it opens only in the meadow —
 // a one-line margin has no room to hold it. A new prose mark is one row here, alive in
 // BOTH doors at once: the shared, extensible parse the grammar always promised.
 const PROSE_BLOCKS = [
-    // `* name` — a headline: a chapter in the meadow, an outline node in the margin
+    // `* name` — a headline: a phase in the meadow, an outline node in the margin
     // (more `*`s, deeper). The trailing space disambiguates from inline `*strong*`.
     { spansLines: false, re: /^[ \t]*(\*+)[ \t]/,
       enter(stream)        { const m = stream.match(this.re); stream.skipToEnd();
@@ -530,43 +532,36 @@ function indentFoldService(state, lineStart, lineEnd) {
 }
 
 // ---------------------------------------------------------------------------
-// Chapter fold service — stretchtext in the editor itself (id:gw-grammar).
+// Phase fold service — stretchtext in the editor itself (id:gw-grammar).
 // Fold a `* name` headline (inside a meadow) down to its headline line: the
-// chapter runs to the next sibling/ancestor headline, the closing `###`, or EOF.
+// phase runs to the next sibling/ancestor headline, the closing `###`, or EOF.
 // ---------------------------------------------------------------------------
 
-const FENCE_RE    = /^[ \t]*###[ \t]*$/;
-const HEADLINE_RE = /^\s*(\*+)\s+\S/;
-const CELL_OPEN_RE  = /^[ \t]*```[^`]*$/;   // ``` (info word optional) — matches either fence
-const CELL_CLOSE_RE = /^[ \t]*```[ \t]*$/;  // a bare ``` — only ever a closer
-
-// A headline only names a chapter inside prose space — count fences before it.
-function lineInMeadow(doc, targetLineNo) {
-    let inMeadow = false;
-    for (let n = 1; n < targetLineNo; n++) {
-        if (FENCE_RE.test(doc.line(n).text)) inMeadow = !inMeadow;
-    }
-    return inMeadow;
-}
-
+// Fold a phase to its headline. The SHAPE comes from the one prose walk
+// (`turtling/parse.js` outline): which lines are headlines, at what depth, and
+// where the clearing ends. This service only turns that into a CM6 range.
 function litFoldService(state, lineStart, lineEnd) {
     const doc  = state.doc;
     const line = doc.lineAt(lineStart);
-    const m    = HEADLINE_RE.exec(line.text);
-    if (!m) return null;
-    if (!lineInMeadow(doc, line.number)) return null;
+    if (!HEADLINE.test(line.text)) return null;              // cheap reject before the walk
 
-    const depth = m[1].length;
-    let foldTo  = -1;
+    const { phases, meadows } = findProse(doc);
+    const i = phases.findIndex((s) => s.line === line.number);
+    if (i === -1) return null;                               // not a headline in prose space
+    const self = phases[i];
 
-    for (let n = line.number + 1; n <= doc.lines; n++) {
-        const t = doc.line(n);
-        if (FENCE_RE.test(t.text)) break;                    // meadow closed
-        const hm = HEADLINE_RE.exec(t.text);
-        if (hm && hm[1].length <= depth) break;              // next sibling/ancestor chapter
-        foldTo = t.to;
+    // The phase runs to the next sibling/ancestor headline, else to the last
+    // line inside its clearing.
+    let end = null;
+    for (let j = i + 1; j < phases.length; j++) {
+        if (phases[j].depth <= self.depth) { end = phases[j].line - 1; break; }
+    }
+    if (end == null) {
+        const m = meadows.find((mm) => self.line >= mm.open && self.line <= mm.end);
+        end = m ? m.end - 1 : doc.lines;
     }
 
+    const foldTo = end > line.number ? doc.line(end).to : -1;
     return foldTo > lineEnd ? { from: lineEnd, to: foldTo } : null;
 }
 
@@ -574,7 +569,7 @@ function litFoldService(state, lineStart, lineEnd) {
 // Margin-outline fold — the `# * name` heading riding a code line folds the code
 // beneath it (id:gw-grammar). Outshine in the buffer: a code-side outline, level by
 // level, before any weave page exists. The meadow's litFoldService owns headings
-// inside `###`; this owns them out in code space. The section runs to the next
+// inside `###`; this owns them out in code space. The phase runs to the next
 // same-or-shallower margin heading, a meadow opening (`###`), or end-of-file.
 // ---------------------------------------------------------------------------
 
@@ -589,12 +584,18 @@ export function marginOutlineFoldService(state, lineStart, lineEnd) {
     const line  = doc.lineAt(lineStart);
     const depth = marginHeadDepth(line.text);
     if (!depth) return null;
-    if (lineInMeadow(doc, line.number)) return null;           // inside `###` the meadow chapter owns headings
 
+    // Prose space belongs to the meadow's phase fold; out here is code space.
+    // The meadows come from the one walk — never counted again here, since a
+    // second fence counter would only restate what `inMeadowRange` knows.
+    const meadows = findMeadows(doc);
+    if (inMeadowRange(meadows, line.number)) return null;
+
+    const nextMeadow = meadows.find((m) => m.open > line.number)?.open ?? Infinity;
     let foldTo = -1;
     for (let n = line.number + 1; n <= doc.lines; n++) {
+        if (n >= nextMeadow) break;                            // a clearing opens — the section ends
         const t = doc.line(n);
-        if (FENCE_RE.test(t.text)) break;                      // a meadow opens — the outline section ends
         const d = marginHeadDepth(t.text);
         if (d && d <= depth) break;                            // next sibling/ancestor heading
         foldTo = t.to;
@@ -605,40 +606,25 @@ export function marginOutlineFoldService(state, lineStart, lineEnd) {
 // ---------------------------------------------------------------------------
 // Code cells — the ``` … ``` regions a notebook treats as units (id:gw-grammar).
 // ``` fences pair up inside a meadow, so we walk from the top tracking meadow +
-// cell state. ONE walk feeds everything downstream: the chapter-style fold below,
+// cell state. ONE walk feeds everything downstream: the phase-style fold below,
 // and (in code-cell-activation.js) the cursor-driven active/inactive gate — and,
 // later, evaluation, which runs only the active cell.
 // ---------------------------------------------------------------------------
 
-// THE one walk over prose space — the meadow⊗cell state machine, walked once
-// (id:gw-cell's count). Cells: { open, end, terminated } line numbers, where
-// `end` is the closing-fence line (terminated) or the last body line (a cell
-// left open when the meadow closes or the buffer ends — still linted, never
-// swallowed). Meadows: { open, end } spans, fence lines included (the ###
-// doors belong to the meadow); an unclosed meadow runs to EOF. findCells and
-// findMeadows below are views over this walk, never second walkers.
+// THE one walk over prose space — and it does not live here. `outline(lines)`
+// in turtling/parse.js is the single meadow⊗cell⊗headline state machine, shared
+// by the parser, the phase (attention is the address, D021) and this editor
+// face; this is only the CM6 adapter that hands it lines. Do not grow a second
+// walker here — see that file for why the first three agreed only by luck.
+//   cells    { open, end, terminated, path } — `end` is the closing-fence line,
+//            or the last body line when the clearing / EOF closed the cell
+//   meadows  { open, end } — fence lines included; unclosed runs to EOF
+//   phases { line, depth, title, path } — the headlines, in document order
+// findCells / findMeadows below are views over it, never second walkers.
 export function findProse(doc) {
-    const cells = [], meadows = [];
-    let inMeadow = false, mOpen = 0, open = 0;
-    for (let n = 1; n <= doc.lines; n++) {
-        const text = doc.line(n).text;
-        if (open) {                                          // inside a cell (open = its fence line)
-            if (CELL_CLOSE_RE.test(text))      { cells.push({ open, end: n,     terminated: true  }); open = 0; }
-            else if (FENCE_RE.test(text))      { cells.push({ open, end: n - 1, terminated: false }); open = 0;
-                                                 meadows.push({ open: mOpen, end: n }); inMeadow = false; }
-            continue;
-        }
-        if (FENCE_RE.test(text)) {                           // meadow opens/closes
-            if (inMeadow) meadows.push({ open: mOpen, end: n });
-            else mOpen = n;
-            inMeadow = !inMeadow;
-            continue;
-        }
-        if (inMeadow && CELL_OPEN_RE.test(text)) open = n;   // a ``` fence in prose opens a cell
-    }
-    if (open) cells.push({ open, end: doc.lines, terminated: false });      // unterminated at EOF
-    if (open || inMeadow) meadows.push({ open: mOpen, end: doc.lines });    // auto-close at EOF
-    return { cells, meadows };
+    const lines = [];
+    for (let n = 1; n <= doc.lines; n++) lines.push(doc.line(n).text);
+    return outline(lines);
 }
 
 // Every code cell in document order — a view over the one walk.
@@ -648,19 +634,56 @@ export const findCells = (doc) => findProse(doc).cells;
 // active one (evaluated), every other cell is inert (dimmed, not evaluated).
 export const cellAt = (cells, lineNo) => cells.find(c => lineNo >= c.open && lineNo <= c.end) || null;
 
-// The LAST SEEN cell while scrolling (Shoot 1's page gesture): the newest cell
-// whose opening fence has come into view — `bottomLine` is the lowest visible
-// line. Reading flows downward, so the cell just reached is the last one seen;
-// scrolling back up hands the light to an earlier cell the same way. Before
-// any cell is seen, the first cell holds the light (first-light parity).
-export const lastSeenCell = (cells, bottomLine) => {
-    let seen = null;
+// The cell under the EYELINE while scrolling: the topmost cell still on screen
+// that is ENOUGH on screen to be what the child is looking at — touching the
+// viewport is not the same as being read.
+//
+// The eyeline leans to the top because only the top is reachable. Every cell can
+// be scrolled to the top edge — and below the last line you can always press
+// Enter for more room — but the bottom edge is fixed by the doc's own end, so a
+// rule reading the LOWEST visible cell gives cells packed close together no
+// window of their own: three cells in one viewport and only the third would ever
+// light, the first two skipped over forever.
+//
+// But topmost alone lets a two-line tail hanging at the top edge outrank a whole
+// cell open below it — the light sits in a sliver while the child's eye is on
+// the figure. So a cell must ALSO fill the eye, and there are two ways to, because
+// cells and viewports each come in both sizes: it shows at least half of ITSELF,
+// or it covers at least half the VIEWPORT (how a cell taller than the screen
+// qualifies — it is all there is to see). Measured in doc lines, the reader's
+// own unit, which only drifts from the pixels where lines wrap.
+//
+// Failing every cell, the nearest one begun above holds (prose stickiness, the
+// cursor law's rule); before any cell, the first (first-light parity).
+export const eyelineCell = (cells, topLine, bottomLine) => {
+    const viewLines = bottomLine - topLine + 1;
+    let above = null;
     for (const c of cells) {
-        if (c.open <= bottomLine) seen = c;
-        else break;
+        if (c.open < topLine) above = c;                     // begun above the eyeline — the sticky one
+        if (c.open > bottomLine) break;                      // opens below the fold
+        const seen = Math.min(c.end, bottomLine) - Math.max(c.open, topLine) + 1;
+        if (seen * 2 >= c.end - c.open + 1) return c;        // half of itself
+        if (seen * 2 >= viewLines) return c;                 // …or half the screen
     }
-    return seen ?? cells[0] ?? null;
+    return above ?? cells[0] ?? null;
 };
+
+// The last line INSIDE a cell — where a reader would write. Never a fence line,
+// because a keystroke on a fence breaks the cell and un-pages the document.
+// (`end` is the closing fence when terminated, and a closer always sits below
+// its opener, so that line exists. An empty cell answers its opener, which is
+// safe: CELL_OPEN takes an info word, so writing there does not break it.)
+export const cellBodyEnd = (cell) => (cell.terminated ? cell.end - 1 : cell.end);
+
+// The default attend for a buffer that has never been attended: a page opens
+// on its first cell — at the opener's end, the same safe landing reach.js
+// already uses for an empty cell (never on a ``` fence). A program has no
+// such law; null and the caller's own zero default stands.
+export function defaultAttend(doc) {
+    const { cells, meadows } = findProse(doc)
+    if (!cells.length || !isPageDoc(doc, meadows)) return null
+    return doc.line(cells[0].open).to
+}
 
 // Every meadow's span in document order — the other view over the one walk.
 export const findMeadows = (doc) => findProse(doc).meadows;
@@ -688,7 +711,7 @@ export function isPageDoc(doc, meadows) {
 // Is line `lineNo` a cell's opening fence? (Only the opener folds.)
 export const isCellOpener = (doc, lineNo) => findCells(doc).some(c => c.open === lineNo);
 
-// Fold a ``` cell to its opening fence — chapter-style stretchtext for a cell.
+// Fold a ``` cell to its opening fence — phase-style stretchtext for a cell.
 export function codeCellFoldService(state, lineStart, lineEnd) {
     const doc  = state.doc;
     const cell = findCells(doc).find(c => c.open === doc.lineAt(lineStart).number);
@@ -704,7 +727,7 @@ export function codeCellFoldService(state, lineStart, lineEnd) {
 // Returns an extension array ready for langCompartment.reconfigure().
 // All CM6 APIs are injected to avoid static imports of the dynamic vendor bundle.
 // Fold services are tried in order, first non-null wins: a meadow headline folds as a
-// chapter, a ``` opener folds as a code cell, a `# * ` margin heading folds as a
+// phase, a ``` opener folds as a code cell, a `# * ` margin heading folds as a
 // code-side outline node, and everything else folds by indentation.
 export const createPlangExtensions = ({ StreamLanguage, foldService }) => [
     StreamLanguage.define(plangModeSpec),

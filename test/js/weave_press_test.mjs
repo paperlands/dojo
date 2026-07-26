@@ -9,7 +9,7 @@ import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
 import { transpile } from "../../assets/js/weave/parse.js"
-import { parseProgram, printAST, splitCells } from "../../assets/js/turtling/parse.js"
+import { parseProgram, printAST, phaseCells } from "../../assets/js/turtling/parse.js"
 
 // spirals.org in miniature — every press-table row present at least once.
 const FRAGMENT = `* SPIRALS *
@@ -69,14 +69,14 @@ describe("the press table", () => {
         // press → parse → split: the cell split has exactly one source of
         // truth, the cellFence markers the parser already carries.
         const { source } = transpile(FRAGMENT)
-        const cells = splitCells(parseProgram(source))
+        const cells = phaseCells(parseProgram(source)).map((c) => c.code)
         assert.equal(cells.length, 1)
         assert.ok(cells[0].includes("def coil x do"))
         assert.ok(cells[0].includes("coil 0"))
         assert.ok(!cells[0].includes("```"), "a cell holds code only, never its fences")
         // and the split survives the wire: JSON-thawed nodes split the same
         const thawed = JSON.parse(JSON.stringify(parseProgram(source)))
-        assert.deepEqual(splitCells(thawed), cells)
+        assert.deepEqual(phaseCells(thawed).map((c) => c.code), cells)
     })
 
     test("portals keep the id-face; only the id: scheme is stripped", () => {
@@ -96,7 +96,7 @@ describe("the press table", () => {
 
     test("headlines survive verbatim — prose names are phrases", () => {
         // Q3 settled <2026-07-12>: verbatim, spaces and caps intact — the
-        // chapter's name IS its address; forgiveness lives in the resolver's
+        // phase's name IS its address; forgiveness lives in the resolver's
         // comparison, never in what is stored or shown.
         const { source } = transpile(FRAGMENT)
         assert.match(source, /^\*\* The wonder$/m)

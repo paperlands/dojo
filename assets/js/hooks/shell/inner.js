@@ -19,7 +19,7 @@ import { cameraBridge, scene } from "../../bridged.js"
 import { temporal } from "../../utils/temporal.js"
 import { pageLaw } from "../../weave/page.js"
 import { registerWorld, worldChanged } from "../../weave/world.js"
-import { diagnostics, ailmentsFor } from "../../weave/queries.js"
+import { diagnostics, ailmentsFor, verdict } from "../../weave/queries.js"
 import { frameVitals, livingFamily } from "../../turtling/vitals.js"
 import { mountReach } from "../../editor/reach.js"
 import { mountDiagnosticsInk } from "../../editor/diagnostics.js"
@@ -63,7 +63,6 @@ function mountInner(hook, { term, cm6 }) {
         nerveInstance?.push(S.shout(source, msg, payload))
     }
 
-    const renderCommand   = commands.render(turtle);
     const executeCommand  = commands.execute(term);
     const cameraCommand   = commands.camera(cameraBridge);
     const saveImage       = commands.saveImage();
@@ -74,8 +73,50 @@ function mountInner(hook, { term, cm6 }) {
     // The page law — every weave decision (pages, slots, ladder steps)
     // lives there; this surface performs. The two degrees the law speaks
     // (gw-appearance) map to canvas opacity here, once.
-    const law = pageLaw()
+    // The law's one injected read: the child's page must NAME the whole-buffer
+    // ambients it displaces, and only this surface holds them.
+    const law = pageLaw({ localKeys: () => [...turtle._localKeys] })
     const DEGREE = { kindled: 1.0, warm: 0.4 }
+
+    // The reflect subject — reflect the document (D022): exactly one buffer is
+    // AUTHORED at a time, the one the child is writing. Moves on the child's
+    // edit, entering/leaving a draft, forgetting an addr; never per seat,
+    // never on a friend's push.
+    let authored = null
+    const disown = (addr) => { if (authored?.addr === addr) authored = null }
+
+    // Where the reader is, per addr — attention is the address (D021). Both
+    // reach organs publish through scene.attend, so one ledger serves every
+    // observe, and a followed friend's line arrives through the same door.
+    const reached = new Map()
+    const attentionOn = (addr) => (reached.has(addr) ? { line: reached.get(addr) } : null)
+
+    // The buffer's STANDING TREE — a page's on the page record, a plain tab's in
+    // the parse memo: the two lifecycles the { text, ast } pair rides.
+    const treeFor = (key) => law.tree(key) ?? turtle.programFor(key) ?? null
+
+    // The one diagnostics answer, asked not computed: the query joins the
+    // tree's parse errors with the canvas's standing ailments and locates each
+    // diagnostic by line. One call, two readers — the editor's ink and the reflect.
+    const askDiagnostics = (key) =>
+        diagnostics(treeFor(key) ?? [], ailmentsFor(turtle.ailments, key), key)
+
+    // What crosses the peer seam (D022): the authored buffer's WHOLE standing
+    // tree, its diagnostics, and the verdict over them. Never a seat's instruction
+    // slice — a page seats per cell, and the slice is not the page.
+    // Asked at reflect time, so there is no writer to race; every part of the
+    // answer comes from the query, so this surface only names its subject.
+    const reflection = () => {
+        if (!authored) return null
+        const ast = treeFor(authored.addr)
+        const found = ast ? askDiagnostics(authored.addr) : []
+        return {
+            source: authored.text,
+            commands: ast ?? [],
+            diagnostics: found,
+            ...verdict(found, authored.addr),
+        }
+    }
 
     // The world cell's registrant (id:cmp-query-cell) — this surface owns the
     // turtle, the page law, and the scheduler reach, so its faces are the
@@ -86,17 +127,22 @@ function mountInner(hook, { term, cm6 }) {
         // tree on the page record, a plain tab's in the parse memo — the two
         // lifecycles the { text, ast } pair rides) ⊕ its frames' standing
         // walk ailments, filtered by address so a sibling tab never leaks ink.
-        diagnostics: (key) => diagnostics(
-            law.program(key) ?? turtle.programFor(key) ?? [],
-            ailmentsFor(turtle.scheduler?.errors, key)),
+        diagnostics: askDiagnostics,
         vitals: (name) => frameVitals(turtle.scheduler, name),
         family: (pattern) => livingFamily(turtle.scheduler, pattern),
     })
 
-    // Perform a transition's consequences, in order, in the turtle's own
-    // verbs. A seat is a run — the law already guarantees it never re-runs
-    // what burns. Returns the result of the effect marked main (the draw
-    // the nerve reports on).
+    // The current tab, as the register knows it: the buffer's own ambient when
+    // one stands (a plain tab, or a program's bare code), else the tab's NAME —
+    // a page has no whole-buffer ambient, and its first cell wears that name.
+    const currentTabRef = () => {
+        const key = term.currentBufferId()
+        return key && turtle.addressOf(key) ? key : term.currentBufferName()
+    }
+
+    // A transition's CANVAS consequences, in the turtle's own verbs. No policy
+    // here: what this loop cannot do from the effect alone, the law was not
+    // entitled to ask. Returns the result of the effect marked main.
     const perform = (effects) => {
         let main
         for (const e of effects) {
@@ -109,36 +155,53 @@ function mountInner(hook, { term, cm6 }) {
                 break
             }
             case 'draw': {
-                const result = renderCommand(e.addr, e.name, e.code)
+                const result = turtle.draw(e.addr, e.name, e.code, e.nodes ?? null)
                 if (e.main) main = result
                 break
             }
             case 'remove':
                 turtle.removeAmbient(e.key)
                 break
-            case 'clearLocal':
-                for (const key of [...turtle._localKeys]) turtle.removeAmbient(key)
-                break
-            case 'kindle':
-                turtle.focusAmbient(e.key)
-                break
             case 'focus': {
-                // world = release: the light returns to her current tab.
-                const name = e.world ? term.currentBufferName() : e.name
-                if (name) focusOuter(name, !!e.world)
+                // world = release: only this surface can name the current tab.
+                if (e.world) {
+                    const ref = currentTabRef()
+                    if (ref) focusOuter({ ref, world: true })
+                } else {
+                    focusOuter({ ref: e.key })
+                }
                 break
             }
             case 'degree': {
-                const focused = e.unlessFocused && turtle.compositor?.focusedName === e.name
-                turtle.setAmbientOpacity(e.name, focused ? DEGREE.kindled : DEGREE[e.degree])
+                const focused = e.unlessFocused && turtle.isAmbientFocused(e.key)
+                turtle.setAmbientOpacity(e.key, focused ? DEGREE.kindled : DEGREE[e.degree])
                 break
             }
-            case 'reach':
-                innerReach.reset(e.index)
-                break
             }
         }
+        // The gate is the batch's, spoken once (D022): any ACTIVE seat/draw in
+        // this transition means the canvas is the child's, so the page still
+        // reflects even when a passive warm sibling seats last. A batch that
+        // runs nothing leaves the gate where it stands.
+        const runs = effects.filter((e) => e.op === 'seat' || e.op === 'draw')
+        if (runs.length) turtle.reflectGate(runs.some((e) => e.hatch !== false))
         if (effects.length) turtle.requestRender()
+        return main
+    }
+
+    // The law's other channel: where the ladder landed, for the input organ
+    // that addressed it. This surface's organ is here; another surface's rides
+    // the bridge back, because only that surface holds it.
+    const settle = (addr, landed) => {
+        if (!landed) return
+        if (addr === term.currentBufferId()) innerReach.reset(landed.line)
+        else scene.landed(addr, landed.line)
+    }
+
+    // A transition, whole: the canvas performs, the organ settles.
+    const enact = (addr, ans) => {
+        const main = perform(ans.effects)
+        settle(addr, ans.landed)
         return main
     }
 
@@ -151,12 +214,15 @@ function mountInner(hook, { term, cm6 }) {
         for (const addr of law.localPages()) term.setTabActive(addr)
     }
 
-    const debouncedRender = temporal.debounce(({ id, name, content }) => {
+    const pacedRender = temporal.pace(({ id, name, content }) => {
         nerveInstance?.run()
-        // A literate tab (``` cells in a meadow) walks as a PAGE — the same
-        // reach law the outershell drives, shared organ and shared ladder;
-        // anything else draws whole, as ever, exclusive across kinds.
-        const result = perform(law.edit(id, name, content))
+        // The child's edit — this buffer is now the authored one (D022).
+        authored = { addr: id, name, text: content }
+        // The attention is the cursor THIS keystroke landed on, not a
+        // debounced echo: the reach publishes at 80 ms, this at 20.
+        const result = enact(id, law.observe(id, {
+            name, doc: content, own: true, attention: attentionOn(id),
+        }))
         if (result?.success && result.parseErrors?.length) {
             // The healthy parts drew (D020); the broken line speaks with its
             // TRUE span — born structured, never regexed out of a message.
@@ -178,9 +244,9 @@ function mountInner(hook, { term, cm6 }) {
         worldChanged()
     }, 20);
 
-    term.bridge.sub(debouncedRender);
+    term.bridge.sub(pacedRender);
 
-    const debouncedHatch = temporal.debounce(
+    const pacedHatch = temporal.pace(
         (payload) => hook.pushEvent("hatchTurtle", {
             ...payload,
             buffer_id: term.currentBufferId(),
@@ -195,7 +261,11 @@ function mountInner(hook, { term, cm6 }) {
             if (payload.type === "image") saveImage(payload.snapshot);
             break;
         case "hatchTurtle":
-            debouncedHatch(payload);
+            // The reflect seam (D022): the turtle contributes what it owns —
+            // the fault and the snapshot path; the DOCUMENT is asked for here,
+            // where the authored buffer lives. Order matters: the reflection
+            // is authoritative over any stale document field.
+            pacedHatch({ ...payload, ...(reflection() ?? {}) });
             break;
         }
     });
@@ -205,12 +275,12 @@ function mountInner(hook, { term, cm6 }) {
     // fork content along a lineage (forkContent) to seed a draft.
     wireRegistry(hook.el, term, cm6);
 
-    // The reach on HER editor — the same organ the outershell mounts
-    // (editor/reach.js), publishing through the same scene.cell seam into
-    // the same page law: one behaviour, both shells.
+    // The reach on the child's own editor — the same organ the outershell
+    // mounts (editor/reach.js), publishing through the same scene.attend seam
+    // into the same page law: one behaviour, both shells.
     const innerReach = mountReach(term.shell, {
         gate: () => law.hasPage(term.currentBufferId()),
-        publish: (idx) => scene.cell(term.currentBufferId(), idx),
+        publish: (line) => scene.attend(term.currentBufferId(), line),
     })
 
     // The lint ink asks; nothing is pushed into the editor but the breath
@@ -221,25 +291,28 @@ function mountInner(hook, { term, cm6 }) {
         key: () => term.currentBufferId(),
     })
 
-    // The one focus move both surfaces read (gw-appearance law 1): dim the
-    // previously bright ambient and the local tabs, light the target.
-    const focusOuter = (targetName, isWorld = false) => {
-        const prev = turtle.compositor?.focusedName
+    // The one focus move both surfaces read: dim the previously bright ambient
+    // and the local tabs, light the target. Focus and degree ride the ONE
+    // register — one ambient address (D006) — keyed by address. `ref` is
+    // whatever the caller holds (a key from the law, a friend's display name
+    // from the outer shell) and resolves to an address before anything is lit
+    // or dimmed.
+    const focusOuter = ({ ref, world = false }) => {
+        const target = turtle.addressOf(ref)
+        const prev = turtle.compositor?.focusedAddress
         // Dim previous single ambient (covers outer→outer transitions)
-        if (prev && prev !== targetName) {
+        if (prev && prev !== target) {
             turtle.setAmbientOpacity(prev, DEGREE.warm)
         }
 
-        // Core shell group: all active local tabs share focus.
-        // Dim them when focusing outer, restore when returning to 'world'.
-        const localOpacity = isWorld ? DEGREE.kindled : DEGREE.warm
-        for (const key of turtle._localKeys) {
-            const info = term.getBufferInfo(key)
-            if (info) turtle.setAmbientOpacity(info.name, localOpacity)
-        }
+        // Core shell group: all active local tabs share focus. Dim them when
+        // focusing outer, restore when returning to 'world' — by KEY, so a
+        // program's bare code dims for its own cell instead of shadowing it.
+        const localOpacity = world ? DEGREE.kindled : DEGREE.warm
+        for (const k of turtle._localKeys) turtle.setAmbientOpacity(k, localOpacity)
 
-        turtle.focusAmbient(targetName)
-        turtle.setAmbientOpacity(targetName, DEGREE.kindled)
+        turtle.focusAmbient(ref)
+        turtle.setAmbientOpacity(ref, DEGREE.kindled)
         turtle.requestRender()
     }
 
@@ -249,21 +322,27 @@ function mountInner(hook, { term, cm6 }) {
     const sceneUnsub = scene.sub({
         focus: ({ ambientId }) => {
             // 'world' = sentinel: outer shell releasing focus → restore core tab
+            // (A friend arrives as a display NAME — the outer surface holds no
+            // other handle; it resolves through the register like a key.)
             const isWorld = ambientId === 'world'
-            const targetName = isWorld ? term.currentBufferName() : ambientId
-            if (targetName) focusOuter(targetName, isWorld)
+            const ref = isWorld ? currentTabRef() : ambientId
+            if (ref) focusOuter({ ref, world: isWorld })
         },
-        // Shoot 1 on the canvas: one ladder step — the reached cell mounts
-        // and RUNS (lazy); the law says what warms and what leaves.
-        cell: ({ addr, index }) => perform(law.reach(addr, index)),
+        // One ladder step: the reached cell mounts and RUNS (lazy). The line
+        // is held so the next edit on this addr carries it (D021).
+        attend: ({ addr, line }) => {
+            reached.set(addr, line)
+            enact(addr, law.attend(addr, line))
+        },
         remove: ({ ambientId }) => {
-            // The law forgets the addr whole — cells, ambient, slot ledger —
-            // so a later re-watch of the same friend starts clean.
-            perform(law.forget(ambientId))
-            const activeName = term.currentBufferName()
-            if (activeName) {
-                turtle.focusAmbient(activeName)
-                turtle.setAmbientOpacity(activeName, DEGREE.kindled)
+            // Forgotten whole, so a later re-watch starts clean.
+            disown(ambientId)
+            reached.delete(ambientId)
+            enact(ambientId, law.forget(ambientId))
+            const active = currentTabRef()
+            if (active) {
+                turtle.focusAmbient(active)
+                turtle.setAmbientOpacity(active, DEGREE.kindled)
             }
             turtle.requestRender()
             term.clearMerge()
@@ -272,11 +351,20 @@ function mountInner(hook, { term, cm6 }) {
             term.forkBuffer(payload)
             term.shell?.focus()
         },
-        // A live draft from the outer review surface — the reviewer's
-        // intervention owns this addr's slot while it runs.
-        ambient: ({ addr, name, code }) => perform(law.draftSeat(addr, name, code)),
-        // Draft frozen/ended — the slot reverts to the friend's code.
-        ambientStop: ({ addr }) => perform(law.draftStop(addr)),
+        // A live draft: the SAME call the core shell makes on the child's own
+        // tab, so drafting on a friend's cell means what editing his own cell
+        // means. The child's while it runs, so the child's to reflect (D022).
+        ambient: ({ addr, name, code }) => {
+            authored = { addr, name, text: code }
+            enact(addr, law.observe(addr, {
+                name, doc: code, own: true, attention: attentionOn(addr),
+            }))
+        },
+        // Draft frozen: the addr returns to the friend's last push, as a page.
+        ambientStop: ({ addr }) => {
+            disown(addr)
+            enact(addr, law.restore(addr))
+        },
     });
 
     // Remote code rendering: inner shell handles seeOuterShell directly.
@@ -287,10 +375,16 @@ function mountInner(hook, { term, cm6 }) {
         if (!payload?.addr) return
         if (payload.state !== "success" || !payload.commands) return
         const name = payload.origin_name || payload.addr
-        const { effects, code, merge } = law.friendPush(payload.addr, name, payload.commands)
-        perform(effects)
+        // The friend's tree crosses whole (D022); not the child's, so it never
+        // hatches. attention stays null until the friend's line rides the
+        // reflect.
+        const ans = law.observe(payload.addr, {
+            name, doc: payload.commands, own: false, attention: null,
+        })
+        enact(payload.addr, ans)
+        const { source, merge } = ans
         if (merge && payload.buffer_id) {
-            term.updateMergeOriginal(code, payload.addr, payload.buffer_id)
+            term.updateMergeOriginal(source, payload.addr, payload.buffer_id)
         }
     };
 
@@ -302,8 +396,8 @@ function mountInner(hook, { term, cm6 }) {
             // keeps the turtle's own toggle (sisters restart in sync).
             const info = term.getBufferInfo(event.target);
             if (info) {
-                const { effects, paged } = law.toggle(event.target, info.name, info.content)
-                perform(effects)
+                const { paged, ...ans } = law.toggle(event.target, info.name, info.content)
+                enact(event.target, ans)
                 if (!paged) {
                     turtle.toggleAmbient(event.target, info.name, info.content,
                         (key) => term.getBufferInfo(key));
@@ -317,9 +411,11 @@ function mountInner(hook, { term, cm6 }) {
             const hadBuffer = !!term.getBufferInfo(targetId);
             term.opBufferHandler(event);
             if (hadBuffer && !term.getBufferInfo(targetId)) {
-                perform(law.forget(targetId))
-                const activeName = term.currentBufferName();
-                if (activeName) turtle.focusAmbient(activeName);
+                disown(targetId)
+                reached.delete(targetId)
+                enact(targetId, law.forget(targetId))
+                const active = currentTabRef();
+                if (active) turtle.focusAmbient(active);
                 syncTabs()
                 turtle.requestRender();
             }
@@ -355,6 +451,10 @@ function mountInner(hook, { term, cm6 }) {
             slider.mount(),
             listeners.slider(term.shell, slider, cm6).mount(),
             () => turtle.dispose(),
+            // Drop pending trailing calls: a paced timer that fires after the
+            // surface is gone would seat into a disposed turtle / push into a
+            // dead hook.
+            () => { pacedRender.cancel(); pacedHatch.cancel(); },
             innerReach.cleanup,
             unmountInk,
             unregisterWorld,

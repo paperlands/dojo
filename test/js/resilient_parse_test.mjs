@@ -131,7 +131,7 @@ describe("collectErrors — the diagnostics seed (Phase 2's first query)", () =>
         assert.equal(errs.length, 2)
         assert.equal(errs[0].span.line, 1)
         assert.equal(errs[1].span.line, 3)
-        assert.equal(errs[1].phase, "parse")
+        assert.equal(errs[1].kind, "parse")
         assert.match(errs[1].message, /'end' to close 'as'/)
     })
 

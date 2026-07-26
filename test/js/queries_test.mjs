@@ -47,20 +47,44 @@ describe("the memo law — identity at the reuse grain", () => {
         const ailment = {
             message: "Undefined property: x",
             span: { line: 1, endLine: 1 },
-            phase: "walk",
+            kind: "walk",
             name: "coil",
         }
         const answer = diagnostics(ast, [ailment])
         assert.equal(answer.length, 2)
-        assert.equal(answer[0].phase, "parse")
+        assert.equal(answer[0].kind, "parse")
         assert.deepEqual(answer[1], {
             message: "Undefined property: x",
             span: { line: 1, endLine: 1 },
-            phase: "walk",
+            kind: "walk",
             source: "coil",
+            // A diagnostic is ADDRESSED: an ailment without an address of its own
+            // falls back to the buffer's key (null when unasked). This is what
+            // lets a surface break at the CELL that died, not across the page.
+            address: null,
+            // …and LOCATED: the answer is whole, so no surface has to derive
+            // where a diagnostic lives. Bare code has no outline and no cells, so
+            // the phase is empty and the slot is null — the honest answer.
+            phase: [],
+            cell: null,
         })
         assert.notEqual(diagnostics(ast, [ailment])[1], answer[1],
             "ailments are read live each ask, never memoized")
+    })
+
+    test("a diagnostic names the frame that died — the cell, not the page", () => {
+        const ast = parseProgram("fw 10\nfor do")
+        const answer = diagnostics(ast, [
+            { message: "Function nosuchthing not defined", span: { line: 12 },
+              kind: "walk", name: "wounded", address: "buf1#cell2" },
+        ], "buf1")
+        assert.equal(answer.length, 2)
+        // The walk fault keeps its OWN address: the surface can say "cell 2
+        // died" instead of reddening the whole page (the cascade).
+        assert.equal(answer[1].address, "buf1#cell2")
+        // A parse error has no frame; its address is the document's key and
+        // its true place is the span.
+        assert.equal(answer[0].address, "buf1")
     })
 })
 

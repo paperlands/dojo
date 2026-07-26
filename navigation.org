@@ -366,9 +366,77 @@ mid-boot destroy stands the mount down. Pure — =test/js/shell_lifecycle_test.m
 ** outer surface — review, draft, fork
 :PROPERTIES:
 :ID: nav-shell-outer
-:KEYWORDS: outershell outer surface seeOuterShell outerSignal draft fork watch claimant projection
+:KEYWORDS: outershell outer surface seeOuterShell outerSignal draft fork watch claimant projection cells stripped empty fences lint ink another's diagnostics
 :PATH: assets/js/hooks/shell/outer.js
 :END:
+The viewer renders =printAST(payload.commands)= in EVERY state (D022) — the
+tree always builds and holds a broken line verbatim (D020), so the string
+=source= is only the honest degrade for a peer that sent no tree. Their
+=diagnostics= ink through =publishDiagnostics= (=editor/diagnostics.js=),
+withheld while drafting — the visible doc is then the CHILD'S draft, and the
+friend's line 12 is not his line 12.
+
+** the prose walk — ONE geometry, every reader a view
+:PROPERTIES:
+:ID: nav-outline
+:KEYWORDS: outline prose walk meadow cell fence headline phase path findProse findCells findMeadows inMeadowRange fold state machine one grammar
+:PATH: assets/js/turtling/parse.js::export function outline
+:END:
+=outline(lines)= → ={ meadows, cells, phases }= is THE walk over prose space
+(=cmp-vet-4=). It takes LINES, because a line is the one thing both a tree and
+a CM6 doc already have — text in, shape out, pure. Every reader is a view:
+=phaseCells= (nodes + vocabulary), =phaseAt= / =cellAtLine= (the phase,
+D021), and the editor's =findProse= / =findCells= / =findMeadows= /
+=inMeadowRange= / the fold services (=plang-mode.js= is now only the CM6
+adapter). Three hand-rolled copies of this machine used to agree by luck;
+=lit_tokenizer_test.mjs= pins the two sides as one answer. The healing marks
+(=implicit=, =meadowCloseImplicit=, =info=) keep =printAST= round-tripping
+exactly, which is what the line arithmetic rests on.
+
+** the phase — a line names a phase (D021)
+:PROPERTIES:
+:ID: nav-phase
+:KEYWORDS: phase attention line address phaseAt cellAtLine reflectPhase attend scene.attend phase sister sibling subheading ordinal aliasing dormant empty cell path kind diagnostic
+:PATH: assets/js/turtling/parse.js::export function phaseAt
+:END:
+ONE datum names where a peer is — a LINE — and the rest is DERIVED, never
+stored (D021). =phaseAt(ast, line)= reads the headline path off the
+PRINTED document (the one printer is the one grammar, so it answers alike for
+a tree and for a projection of it); =cellAtLine(cells, line)= finds a cell by
+its FENCES, so a cell just opened and still empty is addressable (dormant ≢
+empty); =reflectPhase(ast, attend)= keeps all prose and only the inhabited
+phase's SISTER cells, every other cell dormant behind its fences, and
+translates =attend= into the projection's coordinates. =phaseCells= carries
+each cell's =open=/=close= lines and its =path=. Why not a cell ordinal: it
+aliases under insertion and cannot name a phase that owns no cell yet.
+Pinned by =test/js/weave_phase_test.mjs=.
+
+*** two addressings, one seam (=cmp-vet-4=)
+A LINE addresses an INTENTION — where the reader is; total (prose has one) and
+local, so it crosses surfaces (=scene.attend(addr, line)=) and the wire, and the
+page law resolves it once (=law.attend= → =cellAtLine=). An ORDINAL (=#cellN=)
+names a BODY for one evaluation — the frame key; re-derived each parse, crossing
+nothing. A line would be worse there: any edit above a cell would move its key
+and restart a running figure. Pinned by =weave_page_test.mjs= ⊗
+=scene_seam_test.mjs=.
+
+** the reflect seam — what crosses to a peer
+:PROPERTIES:
+:ID: nav-reflect-seam
+:KEYWORDS: reflect hatchTurtle renderstate meta commands document authored buffer stripped cells peer seam hatch gate hatchSuppressed reflectGate diagnostics propagate
+:PATH: assets/js/hooks/shell/inner.js::const reflection
+:END:
+D022 — *the reflect is the document, not the residue of the walk.* The turtle
+publishes only what it OWNS (=renderstate.meta= = the fault: =state= /
+=message=, address-filtered by =ailmentsFor= so a watched friend's error
+never reddens the child's); the surface supplies the DOCUMENT at the hatch seam:
+=reflection()= answers the AUTHORED buffer's whole standing tree
+(=law.program(addr) ?? turtle.programFor(addr)=) ⊕ its span-true diagnostics.
+=authored= is a lifecycle — the child's edit, a live draft — never a per-seat
+residue and never a friend's push. The hatch gate is the BATCH's word
+(=turtle.reflectGate=, spoken once in =perform()=): a seat may only OPEN it,
+so a page's warm sibling can no longer close it last and mute the page.
+Pinned by =test/js/weave_reflect_test.mjs=.
 
 ** inner surface — canvas, turtle, scene bridge
 :PROPERTIES:
@@ -411,16 +479,37 @@ From a HEEx =phx-hook= name, jump with =C-c d h=.
 ** weave fragments — woven content
 :PROPERTIES:
 :ID: nav-weave
-:KEYWORDS: weave fragments trail loom press transpile splitCells sectionCells vocab vocabulary outline heading scope rehearsal rehearseVocab drainNamespace sibling ambient scene.cell cursor gate stretch ladder visit page law pageLaw slot ledger perform effects degree
+:KEYWORDS: weave fragments trail loom press transpile splitCells phaseCells vocab vocabulary outline heading scope rehearsal rehearseVocab drainNamespace sibling ambient scene.attend attend observe restore own attention draft follow cursor gate stretch ladder visit page law seating law pageLaw stream ledger perform effects degree
 :PATH: assets/js/weave/fragments.js
 :END:
 The press (=weave/parse.js= =transpile=) emits =```= cells inside the meadow —
 ONE representation; the sibling split DERIVES from the AST
-(=turtling/parse.js= =sectionCells=; =splitCells= is its flat view), keyed
-=addr#cellN=, mounted lazily by the PAGE LAW (=weave/page.js= =pageLaw=:
-pure decisions — pages ⊗ the slot ledger of draft/friend slot ownership —
-returned as effect lists in the turtle's own transition alphabet; the =~/=
-addr is the page-ness, read via =resolve.js= =parseAddress=). The inner
+(=turtling/parse.js= =phaseCells=; =splitCells= is its flat view), keyed
+=addr#cellN=, mounted lazily by the SEATING LAW (=weave/page.js= =pageLaw=:
+pure decisions returned as effect lists in the turtle's own transition
+alphabet). Every verb answers in ONE shape — ={ effects, reach, source,
+merge, paged }= — and the two channels are different jobs: =effects= are
+CANVAS consequences (five words: =seat= =draw= =remove= =focus= =degree=,
+each naming a concrete target, performed by =inner.js= =perform=); =landed= is
+where the ladder actually put the light, for the INPUT ORGAN that addressed
+the law, applied by whichever surface owns that cursor (=inner.js= =settle=,
+and =scene.landed= back across the seam for the outer one). The law's one
+injected READ is
+=pageLaw({ localKeys })= — it NAMES what its page displaces rather than
+emitting a wildcard. ONE RECORD, ONE VERB (D023): =observe(addr, { name, doc, own,
+attention })= is the only door — the child's core shell, his live draft on a
+friend's page, and a watched friend's push are the SAME call, differing in exactly
+=own= (whose canvas: the reflect gate and local-group exclusivity) and
+=attention= (a LINE — where the reader is). Unit of execution, green-tree
+identity, and the ladder are therefore shared: drafting on a friend's cell
+means what editing your own cell means. =attend(addr, line)= is sugar over
+=observe= with the document unchanged; =restore(addr)= hands an addr back to
+the friend's last push (the =streams= ledger — revert ground ⊗ merge
+baseline). Idempotence is the RECORD's — the law emits nothing when what it
+would write already stands, over every addr, where a =~/= prefix used to
+stand in for it. PAGE-NESS FOLLOWS THE DOCUMENT (D022): any cell-bearing
+push mounts as a page — first cell shown, the rest lazy — so a watched
+peer's page is never run all at once. The inner
 surface only performs (=hooks/shell/inner.js= =perform=/=focusOuter=; the
 two degrees map to opacity there, once). The OUTLINE IS THE AMBIENT TREE
 (D019): a meadow headline scopes
@@ -432,16 +521,49 @@ fast-forward, no sibling negotiation, loud budget) → the pure-function
 namespace (=functions= + =fn= userspace) forks as a COPY through the same
 spec =as name do= uses. On a PROGRAM, previews fork from the program's
 rehearsal; the outline is ignored. The reach is ONE organ, =editor/reach.js= =mountReach=, mounted
-by BOTH shells — the outer viewer publishes =scene.cell(outerAddr, index)=,
-the inner shell publishes =scene.cell(bufferId, index)= for her own literate
-tab (both land in =pageLaw().reach=). The PRIORITY LAW decides by document shape:
+by BOTH shells — each publishes =scene.attend(addr, line)= (a LINE, D021: the
+organ says where the reader is, the law decides which cell that is), the outer
+one for the watched page AND for the child's live draft on it (the gate no longer
+stands down while drafting — that is what made a draft run the whole buffer).
+Both land in =pageLaw().attend=. The PRIORITY LAW decides by document shape:
 all-cells = a PAGE (kindled runs + warm window, whole buffer never runs);
 bare code outside fences = a PROGRAM (=stripCells= runs as the ambient,
 cells are cursor-only PREVIEWS, =index null= stands them down). Cursor's
 cell when present; on a page when absent, a passive scroll listener +
-=posAtCoords= resolves the LAST SEEN cell (=plang-mode.js= =lastSeenCell=)
-and plants the caret at its door so the editor light follows the one cursor
-law
+=posAtCoords= resolves the EYELINE cell — the TOPMOST cell still on screen
+(=plang-mode.js= =eyelineCell=; off the bottom of every cell the nearest one
+ABOVE holds, before any cell the first) — and plants the caret at its door so the editor light follows the one cursor
+law — landing on the cell's LAST INSIDE LINE, at its end (=plang-mode.js=
+=cellBodyEnd=), the writing position and not the door: reading a cell hands it
+over to be continued, and a caret parked on a =```= fence turns the next
+keystroke into a broken cell, which un-pages the document and collapses every
+sibling with it. THE EYELINE LEANS TOP because only the top edge is reachable:
+any cell can be scrolled to it, and below the last line you can always press
+Enter for more room, whereas the bottom edge is pinned by the doc's own end — so
+the older LOWEST-visible reading gave cells packed close together no window of
+their own (three in one viewport and only the third ever lit, the first two
+skipped forever). SCROLL NEVER DETERMINES THE CURSOR: the whole scroll gesture —
+publish and plant both — stands down unless the shell is UNFOCUSED with NOTHING
+SELECTED (=reach.js= =reading()=, asked at the top of the gesture and again
+where the deferred plant lands, so a click arriving mid-flight drops it). A
+focused shell is being written in and its scrolling is a byproduct of the
+writing — typing at a cell's foot scrolls the doc — so a caret is only ever
+moved for a reader; where there is a cursor, the cursor law owns it alone. That
+replaces the visibility horizon (=cellInSpan=, now gone), which handed the light
+on when a cell scrolled out of sight and so could steal a caret mid-edit.
+The visible span comes off the HEIGHT MAP in the scroller's own coordinates
+(=scrollTop= ⊗ =lineBlockAtHeight=, the =peer-attention.js= reading) — always
+answered, so an unmeasurable viewport is not a case to carry. That READ rides
+CM6's =requestMeasure= (out of the scroll callback it forces a layout per
+event); the plant does NOT — a transaction dispatched from =read=/=write=
+throws "not allowed while an update is in progress" and CM6 swallows it, so
+the cell would seat and RUN unlit. It lands one =queueMicrotask= later
+(=reach.js= =enter=, all of it pinned by =test/js/reach_test.mjs=). ONE WORD PER
+ROLE in that organ: =reach= the module, =attend= the verb, a LINE the datum,
+=attending= what it last published, =reading()= the one test that lets scroll
+speak. The lexicon for this whole cluster —
+and the Feynman test turned on our own metaphors — is
+=specs/weave/lexicon.org=
 (=code-cell-activation.js= =stepActivation=: sticky inside the meadow, dark
 on bare code outside the fence — =findProse=, the one meadow⊗cell walk —
 first cell on first light). The degree ladder is one pure transition
@@ -474,7 +596,7 @@ specs canon — re-anchor this hotpath at the code when a body returns.
 The literate faces (id:gw-grammar): =readMargin=/=readMeadow=/=litInline= tokenize
 the =#= margin and =###= meadow, sharing ONE per-line block grammar
 (=PROSE_BLOCKS= / =proseBlockAt=); =litFoldService= folds a =* name= meadow
-chapter, =marginOutlineFoldService= folds a =# * name= code-side outline node; the
+phase, =marginOutlineFoldService= folds a =# * name= code-side outline node; the
 ink face (serif prose, dim marker, glowing portal) is in =editor/theme.js=.
 
 ** literate atom store — meta.lit prose, meta.comment trivia
@@ -524,8 +646,10 @@ ground truth — reuse can never lie), then adopts identity by content
 equality at the top-level grain: a statement, a block, a meadow chunk, a
 cell fence. Unchanged units keep their node OBJECTS ===-identical across
 edits; spans (absolute buffer lines, the position overlay) copy in place.
-Wired at both parse seams: =weave/page.js attempt= (page records hold
-=source=/=program=) and =turtle.upsertAmbient= (=_parseMemo= per key,
+Wired at both parse seams: =weave/page.js asTree= (records hold
+=source=/=program=; every surface enters through it, so a live draft reuses
+the held tree instead of handing the turtle a bare string — D023) and
+=turtle.upsertAmbient= (=_parseMemo= per key,
 evicted in =removeAmbient=). Pinned by =test/js/green_tree_test.mjs=
 (adversarial equivalence sweep + identity properties) and the law-level
 pin in =weave_page_test.mjs=.
@@ -549,7 +673,7 @@ rides =debouncedRender= once per eval. Pinned by
 ** diagnostics query — memo at the reuse grain
 :PROPERTIES:
 :ID: nav-diagnostics-query
-:KEYWORDS: diagnostics query memo WeakMap reuse unit grain nodeDiagnostics ailments ailmentsFor address filter walk error standing
+:KEYWORDS: diagnostics query memo WeakMap reuse unit grain nodeDiagnostics ailments ailmentsFor address filter walk error standing kind parse rehearsal verdict record shape phase cell
 :PATH: assets/js/weave/queries.js::export function nodeDiagnostics
 :END:
 The first query face (=specs/compiler.org= [[id:cmp-memo-grain]]):
@@ -557,7 +681,14 @@ The first query face (=specs/compiler.org= [[id:cmp-memo-grain]]):
 adoption makes invalidation free (a reused node answers its old array, the
 ===-same object). =diagnostics(ast, ailments)= joins live walk ailments,
 never memoized; =ailmentsFor(scheduler.errors, key)= filters the one
-error scan by address top segment (the tab or its =#cellN= seats). Editor
+error scan by address top segment (the tab or its =#cellN= seats).
+
+ONE record, one meaning per key: ={ message, span, kind, source, address,
+phase, cell }=. =kind= is where it was born — =parse= (tree would not build),
+=walk= (ran and died), =rehearsal= (a vocabulary ancestor broke); =phase= and
+=cell= are where it LIVES, derived from its line by the one prose walk.
+=verdict()= reddens on =kind: "walk"= at the subject's OWN address and nothing
+else, so a broken sister never darkens the page. Editor
 ink asks through =mountDiagnosticsInk= (=editor/diagnostics.js=) and
 renders via =@codemirror/lint= under the skip-law: no true span, no ink.
 Pinned by =test/js/queries_test.mjs= and =test/js/diagnostics_test.mjs=.

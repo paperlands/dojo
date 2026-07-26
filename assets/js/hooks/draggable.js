@@ -1,8 +1,26 @@
-Draggables = {
+// The slider thumb. Dragging is tracked on the DOCUMENT, not the thumb — the
+// pointer routinely leaves the 24px handle mid-drag — which makes teardown the
+// whole story. LiveView remounts this hook, so each mount that leaves a
+// document-level mousemove/mouseup behind stacks another one forever. Hence
+// handlers held on `this`, taken back by destroyed(): an inline `.bind(this)`
+// would be unremovable even in principle, the bound wrapper discarded at the
+// call site with no handle left to pass removeEventListener.
+const Draggables = {
   mounted() {
-    this.el.addEventListener('mousedown', this.startDrag.bind(this));
-    document.addEventListener('mousemove', this.drag.bind(this));
-    document.addEventListener('mouseup', this.stopDrag.bind(this));
+    this.onDown = this.startDrag.bind(this);
+    this.onMove = this.drag.bind(this);
+    this.onUp = this.stopDrag.bind(this);
+
+    this.el.addEventListener('mousedown', this.onDown);
+    document.addEventListener('mousemove', this.onMove);
+    document.addEventListener('mouseup', this.onUp);
+  },
+
+  destroyed() {
+    this.el.removeEventListener('mousedown', this.onDown);
+    document.removeEventListener('mousemove', this.onMove);
+    document.removeEventListener('mouseup', this.onUp);
+    this.isDragging = false;
   },
 
   startDrag(e) {

@@ -9,9 +9,9 @@
 //   - every non-Argument node carries span { line, endLine } in true
 //     buffer lines (Arguments ride their statement's line — the one
 //     spanless citizen, ast.js)
-//   - every meta key is in the LEDGER (id:cmp-vet wound 4: an unlisted
+//   - every meta key is in the LEDGER (id:cmp-vet diagnostic 4: an unlisted
 //     meta key is the new unnamed primitive)
-//   - an Error node holds her text verbatim in value (the round-trip law)
+//   - an Error node holds the child's text verbatim in value (the round-trip law)
 //
 // treeKey is the walk-immutability probe: content minus position, taken
 // before and after an operation that must not rewrite the tree (a walk, a
@@ -23,7 +23,7 @@ export const META_LEDGER = new Set([
     'comment', 'endComment',
     // meta.lit is now ONLY meadow prose (content), never a comment.
     'lit', 'meadow', 'meadowOpen', 'meadowClose', 'cellFence', 'args',
-    'event', 'binding', 'frame', 'expected', 'found', 'phase',
+    'event', 'binding', 'frame', 'expected', 'found', 'kind',
 ])
 
 function checkNode(node, path) {

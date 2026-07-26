@@ -10,7 +10,7 @@
 // No dirty flags, no cache protocol; a missed reuse costs recomputing one
 // unit, never a wrong answer.
 
-import { collectErrors } from "../turtling/parse.js"
+import { collectErrors, phaseCells, phaseAt, cellAtLine } from "../turtling/parse.js"
 
 const unitMemo = new WeakMap()
 
@@ -41,17 +41,50 @@ export function ailmentsFor(errors, key) {
 // The whole answer: parse errors across the tree's units ⊕ standing walk
 // ailments. Ailments are never memoized — the frame is the truth's owner
 // and a live read cannot go stale; they arrive span-true from the
-// scheduler's errorRecord ({ message, span, phase: 'walk' }).
-export function diagnostics(ast, ailments = []) {
+// scheduler's errorRecord ({ message, span, kind: 'walk' }).
+// A diagnostic is ADDRESSED — reflect the document (D022): a walk fault carries the
+// address of the frame that died — for a page, the CELL (`addr#cellN`) — so a
+// reader can break with awareness at the cell instead of smearing one death
+// across the whole page. A parse error has no frame; its true place is its
+// span, and the document's own key is its address.
+//
+// The answer is WHOLE: every diagnostic also names WHERE it lives — the phase
+// whose sisters it stands among, and the cell slot — both derived from its LINE
+// through the one prose walk (attention is the address, D021). Locating is a
+// pure function of the tree we already hold, so it belongs here beside the
+// gathering, not in a surface: a surface asks and paints, it does not compute
+// the world.
+export function diagnostics(ast, ailments = [], key = null) {
     const out = []
-    for (const node of ast ?? []) out.push(...nodeDiagnostics(node))
+    for (const node of ast ?? []) {
+        for (const d of nodeDiagnostics(node)) out.push({ ...d, address: key })
+    }
     for (const a of ailments) {
         out.push({
             message: a.message,
             span: a.span ?? null,
-            phase: a.phase ?? "walk",
+            kind: a.kind ?? "walk",
             source: a.name ?? null,
+            address: a.address ?? key,
         })
     }
-    return out
+    if (!out.length) return out
+    const cells = phaseCells(ast ?? [])
+    return out.map((w) => (w.span?.line == null ? w : {
+        ...w,
+        phase: phaseAt(ast ?? [], w.span.line),
+        cell: cellAtLine(cells, w.span.line),
+    }))
+}
+
+// The verdict — one binary, one home. It is the SUBJECT's own fault and nothing
+// else: a page is a container, and a tenant cell dying is that cell's diagnostic, not
+// the page's death. A plain tab, a PROGRAM's bare code and a live draft ARE
+// their own frame, so for them the verdict speaks. Everything else a reader
+// needs is in the diagnostics, addressed.
+export function verdict(found, key) {
+    const own = (found ?? []).find((w) => w.kind === "walk" && w.address === key)
+    return own
+        ? { state: "error", message: own.message }
+        : { state: "success", message: null }
 }

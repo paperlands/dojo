@@ -418,12 +418,12 @@ const addrOf = (frame) => frame.address ?? frame.id
 
 // Runtime provenance (specs/compiler.org id:cmp-runtime-provenance): a walk
 // error is stored and channeled STRUCTURED — the innermost spanned statement
-// already stamped span/phase in the executor. One shape, both catch sites;
+// already stamped span/kind in the executor. One shape, both catch sites;
 // frame.error is a record, never again a bare string.
 const errorRecord = (error) => ({
     message: error.message,
     span: error.span ?? null,
-    phase: error.phase ?? 'walk',
+    kind: error.kind ?? 'walk',
 })
 
 // Deliver a single shout to a frame, tracking delivery to prevent duplicates.

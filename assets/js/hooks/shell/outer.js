@@ -11,6 +11,7 @@ import { scene } from "../../bridged.js"
 import { temporal } from "../../utils/temporal.js"
 import { printAST } from "../../turtling/parse.js"
 import { mountReach } from "../../editor/reach.js"
+import { publishDiagnostics } from "../../editor/diagnostics.js"
 import { nerveInstance } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
 import { listeners, wireRegistry } from "./core.js"
@@ -73,6 +74,9 @@ function mountOuter(hook, { term, cm6 }) {
     };
 
     const enterDraft = () => {
+        // The friend's diagnostics are not the child's — the ink clears as the
+        // draft opens, and returns on the next watch push.
+        publishDiagnostics(cm6, term.shell, []);
         term.beginDraft({ addr: outerAddr, buffer_id: outerBufferId });
         if (envEl) envEl.dataset.outerState = 'draft';   // yellow wash (terminal-owned transition)
     };
@@ -100,13 +104,19 @@ function mountOuter(hook, { term, cm6 }) {
     };
     term.shell.dom.addEventListener('keydown', onDraftKey, true);
 
-    // The reach, published to the canvas (id:gw-cell, Shoot 1) — the shared
-    // organ (editor/reach.js): cursor when it rests in a cell, scroll when it
-    // is absent, the caret planted so the editor light follows the one cursor
-    // law. While drafting, the draft owns the canvas and the gate stands down.
+    // The shared reach organ (editor/reach.js, the cell shape rule
+    // id:gw-cell). It publishes while DRAFTING too: a draft is the child's own
+    // page under the same law, so the ladder must walk under his cursor here
+    // exactly as on his own tab.
     const reach = mountReach(term.shell, {
-        gate: () => !!outerAddr && !term.drafting(),
-        publish: (idx) => scene.cell(outerAddr, idx),
+        gate: () => !!outerAddr,
+        publish: (line) => scene.attend(outerAddr, line),
+    });
+
+    // Where the ladder landed, back to THIS organ — spoken only when that is
+    // not where it pointed (a fresh page; a shorter split clamped the place).
+    const reachUnsub = scene.sub({
+        landed: ({ addr, line }) => { if (addr === outerAddr) reach.reset(line) },
     });
 
     // Go live → run the draft; go frozen → stop running (revert to their code).
@@ -117,10 +127,40 @@ function mountOuter(hook, { term, cm6 }) {
     };
 
     // Re-run the draft as you edit it, but only while live.
-    const runDraftDebounced = temporal.debounce(runDraft, 60);
+    const runDraftPaced = temporal.pace(runDraft, 60);
     const draftEditUnsub = term.bridge.sub(() => {
-        if (term.drafting() && draftLive) runDraftDebounced();
+        if (term.drafting() && draftLive) runDraftPaced();
     });
+
+    // A RUNTIME diagnostic breaks at its CELL, not across the page. `state` no
+    // longer reddens the whole panel when one cell of their page dies (that
+    // would be the cascade, and it would falsely offer "recall last good"); the
+    // death arrives addressed, so the nerve names the cell that died and the
+    // healthy siblings keep their light. Spoken once per diagnostic: a friend hatches
+    // on every keystroke, and a standing diagnostic is one fact, not a drumbeat.
+    let spoken = new Set();
+    // Where a diagnostic lives, in the author's own outline: the phase whose sisters
+    // it stands among, then its line. The breadcrumb is derived from the diagnostic's
+    // LINE — attention is the address (D021) — so it names a phase truly,
+    // including one that owns no cell yet, where a `#cellN` ordinal could only
+    // ever count fences.
+    const placeOf = (w) => [
+        (w.phase ?? []).join(" › ") || null,
+        w.span?.line ? `line ${w.span.line}` : null,
+    ].filter(Boolean).join(" · ");
+    const speakDiagnostics = (found) => {
+        const live = new Set();
+        for (const w of found ?? []) {
+            if (w.kind !== "walk" && w.kind !== "rehearsal") continue;   // parse wounds are ink, not shouts
+            const at = `${w.kind}:${w.address ?? "?"}:${w.message}:${w.span?.line ?? "?"}`;
+            live.add(at);
+            if (spoken.has(at)) continue;
+            const place = placeOf(w);
+            nerveInstance?.push(S.remote(outerName || "friend",
+                place ? `${place} — ${w.message}` : w.message, null, "error"));
+        }
+        spoken = live;   // a healed wound may speak again if it returns
+    };
 
     const onSeeOuterShell = (payload) => {
         // Disciple switch: drop stale draft + ambient. Remove by the addr
@@ -132,6 +172,7 @@ function mountOuter(hook, { term, cm6 }) {
             if (prevAddr) scene.remove(prevAddr);
             if (term.drafting()) leaveDraft();
             prevAddr = payload.addr;
+            spoken.clear();  // another's wounds are not this one's
             reach.reset();   // a fresh page opens at its first cell, already lit
         }
 
@@ -147,7 +188,11 @@ function mountOuter(hook, { term, cm6 }) {
 
         const view = payload?.view ?? 'watch';
         const errored = payload?.state === 'error';
-        const source = (payload?.state === 'success' && payload?.commands)
+        // The tree is the source, in EVERY state (D022): it always builds and
+        // holds the friend's broken line verbatim (D020), so an errored
+        // friend's page still reads as a page. The string is the honest
+        // degrade for a peer that sent no tree, never the error path's default.
+        const source = payload?.commands?.length
             ? printAST(payload.commands)
             : (payload?.source ?? '');
 
@@ -157,6 +202,16 @@ function mountOuter(hook, { term, cm6 }) {
         } else {
             term.changeouter(source);
         }
+
+        // The diagnostics, span-true, wherever they nest — a parse error inside the
+        // third cell of the friend's page inks the third cell's line here.
+        // Republished whole each push, LSP-style: an empty answer clears the
+        // ink. The outer surface's truth arrives on the wire, not from the
+        // local world cell. Withheld while drafting: the visible doc is then
+        // the CHILD'S draft, and the friend's line 12 is not his line 12 — no
+        // true place, no ink.
+        if (!term.drafting()) publishDiagnostics(cm6, term.shell, payload?.diagnostics ?? []);
+        speakDiagnostics(payload?.diagnostics);
 
         if (envEl) {
             envEl.dataset.outerState = view === 'draft' ? 'draft' : (errored ? 'error' : 'ok');
@@ -225,6 +280,7 @@ function mountOuter(hook, { term, cm6 }) {
             () => { if (outerAddr) scene.remove(outerAddr); },
             () => term.shell?.dom.removeEventListener('keydown', onDraftKey, true),
             reach.cleanup,
+            reachUnsub,
             draftEditUnsub,
             () => outerProj?.destroy(),
             () => outerEl.removeEventListener('click', onDelegatedClick),

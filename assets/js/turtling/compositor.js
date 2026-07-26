@@ -339,6 +339,14 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
             // we materialize the batch in a single pass (one trail rebuild, not N).
             drainAndMaterialize()
             updateGroupPositions()
+            // Reclaim HERE, not only in advance(). Every edit mints a new frame,
+            // so each flush() adds a fresh Group to the scene; leaving the sweep
+            // to the next rendered frame means a surface with no frames coming
+            // never sweeps. A backgrounded tab gets no rAF, so a watched friend's
+            // pushes piled up one orphan Group per push — measured at 200 groups
+            // and +8MB after 200 pushes, reclaimed only on foreground. flush()
+            // and advance() are one pipeline; both must collect their garbage.
+            cleanupOrphanedLayers()
             return scheduler.done
         },
 
@@ -379,9 +387,16 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
 
         // Set opacity on an ambient's layer and all its descendants.
         // Clones shared materials per-mesh to avoid mutating the material cache.
-        setOpacityByName(name, opacity) {
-            for (const [id, ambient] of scheduler.registry) {
-                if (ambient.name === name) {
+        //
+        // Keyed by ADDRESS, like focus — the same register, both faces (D006).
+        // Never by display name: a program's bare code and its FIRST cell wear
+        // the same name (weave/page.js cellEntries), so a name-keyed dim could
+        // not tell them apart — it lit whichever the registry happened to hold
+        // first and left the other bright.
+        setOpacityByAddress(address, opacity) {
+            if (address == null) return
+            for (const ambient of scheduler.registry.values()) {
+                if (ambient.address === address) {
                     const applyOpacity = (frame) => {
                         const layer = ambientLayers.get(frame.id)
                         if (layer) setGroupOpacity(layer.group, opacity)

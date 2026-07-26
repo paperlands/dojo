@@ -36,7 +36,12 @@ const DiscipleWindow = {
       childList: false,
       subtree: true,
       attributes: true,
-      attributeFilter: ['data-name', 'phx-value-disciple-name', 'phx-value-addr']
+      // 'data-name' is deliberately NOT watched: ensureNameAttribute WRITES
+      // it, so watching it feeds this observer its own initializeObservation
+      // and the whole reset runs twice for every disciple that appears. The
+      // phx-value-* attributes are the true identity source; data-name is only
+      // our cache of them.
+      attributeFilter: ['phx-value-disciple-name', 'phx-value-addr']
     });
 
     // init observation
@@ -46,13 +51,20 @@ const DiscipleWindow = {
     this.scrollThrottleTimer = null;
     this.handleScroll = this.handleScroll.bind(this);
     this.el.addEventListener('scroll', this.handleScroll, { passive: true });
-    var el = document.getElementById('disciple_panels');
-    el.addEventListener('wheel', function(e) {
-        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-          e.preventDefault();
-          el.scrollLeft += e.deltaY;
-        }
-      }, { passive: false })
+
+    // Vertical wheel scrolls the panel strip horizontally. Held on `this` and
+    // paired with its element: it lives on #disciple_panels, NOT on this.el, so
+    // cleanup() must reach back for it. An anonymous listener here would
+    // survive every teardown — and being non-passive with preventDefault, it
+    // would go on taking the wheel for a hook that is gone.
+    this.panelsEl = document.getElementById('disciple_panels');
+    this.handleWheel = (e) => {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault();
+        this.panelsEl.scrollLeft += e.deltaY;
+      }
+    };
+    this.panelsEl?.addEventListener('wheel', this.handleWheel, { passive: false });
   },
 
   updated() {
@@ -76,8 +88,13 @@ const DiscipleWindow = {
     }
   },
 
-  disconnected() {
-    // Clean up all resources
+  // destroyed(), not disconnected(). disconnected() fires when the SOCKET
+  // drops — the element is still on the page and comes back — so tearing down
+  // there does both harms at once: observers outlive every genuinely removed
+  // element, and the panel goes permanently blind after a reconnect, since
+  // nothing rebuilds them. destroyed() is the one teardown; a socket blip
+  // changes nothing here, which is right, because the DOM survives it too.
+  destroyed() {
     this.cleanup();
   },
 
@@ -247,6 +264,8 @@ const DiscipleWindow = {
     this.mutationObserver.disconnect();
 
     this.el.removeEventListener('scroll', this.handleScroll);
+    this.panelsEl?.removeEventListener('wheel', this.handleWheel);
+    this.panelsEl = null;
 
     // Clear data structures
     this.visibleDisciples.clear();

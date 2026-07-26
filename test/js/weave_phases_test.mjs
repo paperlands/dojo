@@ -5,16 +5,16 @@
 // A heading (`* name` in the meadow) is a named ambient; cells directly under
 // it are sibling processes inside it. Vocabulary flows DOWN the outline,
 // never sideways — the Jupyter refusal held by construction. The vocabulary
-// is the chapter's REHEARSAL: the ancestors' code runs lazily from t=0 by the
+// is the phase's REHEARSAL: the ancestors' code runs lazily from t=0 by the
 // one executor semantics (drainNamespace — headless, waits fast-forward, no
 // sibling negotiation, loud budget) and the pure-function namespace it
-// registered forks to the member. sectionCells only says WHOSE code is
-// vocabulary; splitCells stays its flat view.
+// registered forks to the member. phaseCells only says WHOSE code is
+// vocabulary; the flat view is just `.map(c => c.code)`.
 
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
-import { parseProgram, printAST, splitCells, sectionCells } from "../../assets/js/turtling/parse.js"
+import { parseProgram, printAST, phaseCells } from "../../assets/js/turtling/parse.js"
 import { execute, drainNamespace } from "../../assets/js/turtling/executor.js"
 import { Parser } from "../../assets/js/turtling/mafs/parse.js"
 import { Evaluator } from "../../assets/js/turtling/mafs/evaluate.js"
@@ -22,9 +22,9 @@ import { Evaluator } from "../../assets/js/turtling/mafs/evaluate.js"
 const freshDeps = () => ({ mathParser: new Parser(), mathEvaluator: new Evaluator() })
 const rehearse = (vocab, opts = {}) => drainNamespace(parseProgram(vocab), freshDeps(), opts)
 
-// One page, every sectioning law present: a root preamble cell, a chapter
+// One page, every sectioning law present: a root preamble cell, a phase
 // whose direct cells define and (refused) use, a subsection member, and a
-// second chapter that starts fresh.
+// second phase that starts fresh.
 const PAGE = `###
 Before any chapter — the page's own ground.
 
@@ -62,21 +62,16 @@ base
 \`\`\`
 ###`
 
-const sections = () => sectionCells(parseProgram(PAGE))
+const sections = () => phaseCells(parseProgram(PAGE))
 
-describe("the outline is the ambient tree (D019) — sectioning", () => {
-    test("splitCells stays the flat view of sectionCells", () => {
-        const ast = parseProgram(PAGE)
-        assert.deepEqual(splitCells(ast), sectionCells(ast).map((c) => c.code))
-    })
-
+describe("the outline is the ambient tree (D019) — phasing", () => {
     test("a root cell has no ancestors — its vocabulary is empty", () => {
         const [root] = sections()
         assert.ok(root.code.includes("def base do"))
         assert.equal(root.vocab, null)
     })
 
-    test("vocabulary flows down: the root's cells reach a chapter's cells", () => {
+    test("vocabulary flows down: the root's cells reach a phase's cells", () => {
         const [, chapterDef] = sections()
         assert.ok(chapterDef.code.includes("def petal do"))
         assert.match(chapterDef.vocab, /def base do/)
@@ -99,7 +94,7 @@ describe("the outline is the ambient tree (D019) — sectioning", () => {
             "shallower ancestors speak first; deeper defs shadow on collision")
     })
 
-    test("a new chapter starts fresh: the previous chapter's cells are gone, the root's remain", () => {
+    test("a new phase starts fresh: the previous phase's cells are gone, the root's remain", () => {
         const cells = sections()
         const chapterTwo = cells[cells.length - 1]
         assert.equal(chapterTwo.code.trim(), "base")
@@ -119,25 +114,25 @@ end
 fw 2
 \`\`\`
 ###`
-        for (const cell of sectionCells(parseProgram(src))) {
+        for (const cell of phaseCells(parseProgram(src))) {
             assert.equal(cell.vocab, null)
         }
     })
 
-    test("the sectioning survives the wire: JSON-thawed nodes section the same", () => {
+    test("the phasing survives the wire: JSON-thawed nodes phase the same", () => {
         const ast = parseProgram(PAGE)
         const thawed = JSON.parse(JSON.stringify(ast))
         // Printed projections match across the socket; the node slices are
         // each tree's own (identity is per-tree — content is the wire truth).
         const projection = (cells) => cells.map(({ code, vocab }) => ({ code, vocab }))
-        assert.deepEqual(projection(sectionCells(thawed)), projection(sectionCells(ast)))
+        assert.deepEqual(projection(phaseCells(thawed)), projection(phaseCells(ast)))
     })
 
     test("the partition never severs identity: cells carry live slices of the one tree", () => {
         const ast = parseProgram(PAGE)
-        const cells = sectionCells(ast)
+        const cells = phaseCells(ast)
         // Every cell node IS a node of the buffer tree — the same object,
-        // not a re-parse (specs/compiler.org id:cmp-vet wound 1).
+        // not a re-parse (specs/compiler.org id:cmp-vet diagnostic 1).
         for (const cell of cells) {
             for (const node of cell.nodes) {
                 assert.ok(ast.includes(node), "cell node is === a buffer tree node")
@@ -172,7 +167,7 @@ end
 mark
 \`\`\`
 ###`
-        const cells = sectionCells(parseProgram(src))
+        const cells = phaseCells(parseProgram(src))
         const { functions, error } = rehearse(cells[cells.length - 1].vocab)
         assert.equal(error, null)
         assert.equal(printAST(functions.mark.body).trim(), "fw 2",
@@ -224,16 +219,36 @@ end`)
         assert.ok(functions.after, "words past the read still register")
     })
 
-    test("the budget ends a runaway rehearsal loudly — no namespace, error surfaced", () => {
+    test("the budget ends a runaway rehearsal loudly — error surfaced", () => {
         const { functions, error } = rehearse(`loop 999999 do
   fw 1
 end`, { maxCommands: 500 })
         assert.ok(error, "author discretion has a loud floor")
         assert.match(error.message, /Maximum command limit/)
-        assert.equal(functions, null)
+        assert.deepEqual(functions, {}, "nothing was defined before the floor — but the shelf still exists")
     })
 
-    test("end to end: a member walks its chapter's word through the fork spec", () => {
+    // The containment law, applied ACROSS cells. This used to discard the whole
+    // namespace on any fault, so one broken line in a phase stripped its
+    // vocabulary from every cell beneath it — and each descendant then died
+    // with "Function square not defined" pointing at ITS OWN line, the child
+    // blamed for the parent's diagnostic. That was the cascade.
+    test("a broken rehearsal keeps the words it registered (D020 across cells)", () => {
+        const { functions, error } = rehearse(`def square do
+  fw 1
+end
+nosuchthing 1
+def after do
+  fw 2
+end`)
+        assert.ok(error, "the wound is not swallowed")
+        assert.match(error.message, /nosuchthing/)
+        assert.equal(error.span.line, 4, "span-true on the ANCESTOR's own line")
+        assert.ok(functions.square, "words registered before the fault still stand")
+        assert.ok(!functions.after, "the walk stopped there — containment, not resurrection")
+    })
+
+    test("end to end: a member walks its phase's word through the fork spec", () => {
         const src = `###
 * Chapter
 \`\`\`
@@ -250,7 +265,7 @@ petal 10
         for (const seam of ["live", "thawed"]) {
             let ast = parseProgram(src)
             if (seam === "thawed") ast = JSON.parse(JSON.stringify(ast))
-            const cells = sectionCells(ast)
+            const cells = phaseCells(ast)
             const member = cells[cells.length - 1]
             const { functions, error } = rehearse(member.vocab)
             assert.equal(error, null)

@@ -12,7 +12,7 @@ import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
 import { createScheduler, metaRoot } from "../../assets/js/turtling/scheduler.js"
-import { parseProgram, reparseProgram, sectionCells } from "../../assets/js/turtling/parse.js"
+import { parseProgram, reparseProgram, phaseCells } from "../../assets/js/turtling/parse.js"
 import { Parser } from "../../assets/js/turtling/mafs/parse.js"
 import { Evaluator } from "../../assets/js/turtling/mafs/evaluate.js"
 import { checkTree, treeKey } from "./check_tree.mjs"
@@ -146,15 +146,15 @@ describe("the felt win — sibling cells survive the edit", () => {
         const text1 = page("rt 90")
         const ast1 = parseProgram(text1)
         checkTree(ast1)
-        const cells1 = sectionCells(ast1)
+        const cells1 = phaseCells(ast1)
         const c1 = s.hotSwapChild("addr#cell1", fork("page", cells1[0].nodes))
         const c2 = s.hotSwapChild("addr#cell2", fork("page·2", cells1[1].nodes))
 
-        // Her edit to cell 2 — the page record's held pair is the reuse ground.
+        // The child's edit to cell 2 — the page record's held pair is the reuse ground.
         const text2 = page("rt 45")
         const ast2 = reparseProgram(text2, text1, ast1)
         checkTree(ast2)
-        const cells2 = sectionCells(ast2)
+        const cells2 = phaseCells(ast2)
         const c1again = s.hotSwapChild("addr#cell1", fork("page", cells2[0].nodes))
         const c2again = s.hotSwapChild("addr#cell2", fork("page·2", cells2[1].nodes))
 
@@ -181,7 +181,7 @@ describe("two doors — become is the edit path, never fault handling", () => {
         const frame = s.hotSwapChild("buf", fork("spiral", ast))
         assert.ok(frame.done, "the frame died at the walk")
         assert.ok(frame.error, "and wears its structured wound")
-        assert.equal(frame.error.phase, "walk")
+        assert.equal(frame.error.kind, "walk")
     })
 
     test("an unchanged seat leaves a standing error standing — same record", () => {
@@ -194,7 +194,7 @@ describe("two doors — become is the edit path, never fault handling", () => {
         assert.equal(again.error, record, "the born fact was not re-minted")
     })
 
-    test("the healing edit is a rebirth that clears the wound", () => {
+    test("the healing edit is a rebirth that clears the diagnostic", () => {
         const s = makeScheduler()
         const broken = s.hotSwapChild("buf", fork("spiral", parseProgram("wiggle 5")))
         assert.ok(broken.error)

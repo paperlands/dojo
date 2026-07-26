@@ -30,7 +30,7 @@
 // The literate faces (id:gw-grammar) — meta.lit rendered, never a second store:
 //   "comment"    → tags.comment          (inked prose — the margin & the meadow)
 //   "lineComment"→ tags.lineComment      (the `#` / `###` markers, dissolving)
-//   "heading1..6"→ tags.heading1..6      (`* name` — a chapter, deeper = smaller)
+//   "heading1..6"→ tags.heading1..6      (`* name` — a phase, deeper = smaller)
 //   "link"       → tags.link             ([[portal]] — a glowing word)
 //   "strong"     → tags.strong           (*strong*)
 //   "emphasis"   → tags.emphasis         (/lean/)
@@ -59,7 +59,7 @@ const BASE_FONT_SIZE   = '16px';
 const BASE_LINE_HEIGHT = '1.6';
 
 // Heading type scale — one ~1.2 (minor-third) modular scale over the code base,
-// shared by both themes so chapter hierarchy reads consistently: each level ≈1.2×
+// shared by both themes so phase hierarchy reads consistently: each level ≈1.2×
 // the next, moderate enough not to break the editor's line rhythm. `em` here is
 // relative to BASE_FONT_SIZE, so the whole scale rises with the pinned floor.
 const H1 = '1.58em', H2 = '1.32em', H3 = '1.1em';
@@ -105,7 +105,7 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
             caretColor: '#a0ea00',
             lineHeight: BASE_LINE_HEIGHT,              // the line box the caret rides — a comfortable typing height
         },
-        '&.cm-focused .cm-selectionBackground': { background: 'rgba(160, 234, 0, 0.22)' }, // her touch is chartreuse — caret's kin, de-tealed
+        '&.cm-focused .cm-selectionBackground': { background: 'rgba(160, 234, 0, 0.22)' }, // his touch is chartreuse — caret's kin, de-tealed
         '.cm-selectionBackground':              { background: 'rgba(160, 234, 0, 0.22)' },
         '.cm-activeLine':      { backgroundColor: 'rgba(60, 48, 34, 0.3)' }, // chocolate, semi-transparent so guides show
         '.cm-activeLineGutter':{ backgroundColor: '#3c3022' },
@@ -212,9 +212,9 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
         { tag: tags.typeName,                                       color: 'oklch(0.68 0.14 140)', fontFamily: CODE_FONT },       // forest green, lifted into the band
         { tag: tags.meta,                                           color: '#ec6c99', fontFamily: CODE_FONT },                    // french_pink — the arc's rose end
         { tag: tags.invalid,                                        color: ERROR_RED, fontFamily: CODE_FONT },                    // the error voice — red, the creator's law
-        // The literate faces — the margin dissolves, the chapter rises, the word glows.
+        // The literate faces — the margin dissolves, the phase rises, the word glows.
         { tag: tags.lineComment,                                    color: 'rgba(251,179,47,0.3)', fontSize: '0.8em' }, // the `#`/`###`/`|`/`>`/`=` markers — dim AND smaller, dissolving
-        { tag: tags.heading1,                                       color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H1 }, // a chapter
+        { tag: tags.heading1,                                       color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H1 }, // a section
         { tag: tags.heading2,                                       color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H2 }, // a section
         { tag: tags.heading3,                                       color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H3 }, // a passage
         { tag: tags.heading,                                        color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT }, // deeper (h4+)
@@ -349,9 +349,9 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
         { tag: tags.typeName,                                       color: '#3a94c5' },
         { tag: tags.meta,                                           color: '#35a77c' },
         { tag: tags.invalid,                                        color: '#f85552' },
-        // The literate faces — the margin dissolves, the chapter rises, the word glows.
+        // The literate faces — the margin dissolves, the phase rises, the word glows.
         { tag: tags.lineComment,                                    color: 'rgba(200,155,64,0.35)', fontSize: '0.8em' }, // the `#`/`###`/`|`/`>`/`=` markers — dim AND smaller, dissolving
-        { tag: tags.heading1,                                       color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H1 }, // a chapter
+        { tag: tags.heading1,                                       color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H1 }, // a section
         { tag: tags.heading2,                                       color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H2 }, // a section
         { tag: tags.heading3,                                       color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H3 }, // a passage
         { tag: tags.heading,                                        color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT }, // deeper (h4+)

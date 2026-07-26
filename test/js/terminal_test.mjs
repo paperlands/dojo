@@ -488,4 +488,81 @@ describe("Terminal (CM6)", () => {
         assert.equal(term.getBufferInfo(secondId).content, "rt 90",
             "current buffer reads the live doc")
     });
+
+    // --- Cursor attend: a per-buffer, persisted address (not doc-end) -----
+
+    test("switching away and back restores the exact cursor offset, not doc end", () => {
+        const cm6  = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const firstId = term.currentBufferId();
+        term.setValue("fw 100");
+        term.shell.dispatch({ selection: cm6.EditorSelection.cursor(3) });
+
+        term.createBuffer("second", "rt 90");
+        term.opBufferHandler({ op: 'select', target: firstId });
+
+        assert.equal(term.shell.state.selection.main.head, 3,
+            "cursor landed back where attention left it");
+    });
+
+    test("attend stays correctly separated across repeated switching", () => {
+        const cm6  = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const aId = term.currentBufferId();
+        term.setValue("fw 100");
+        term.shell.dispatch({ selection: cm6.EditorSelection.cursor(2) });
+
+        const bId = term.createBuffer("b", "rt 90");
+        term.shell.dispatch({ selection: cm6.EditorSelection.cursor(4) });
+
+        const cId = term.createBuffer("c", "lt 45");
+        term.shell.dispatch({ selection: cm6.EditorSelection.cursor(1) });
+
+        term.opBufferHandler({ op: 'select', target: aId });
+        assert.equal(term.shell.state.selection.main.head, 2, "a kept its own attend");
+
+        term.opBufferHandler({ op: 'select', target: bId });
+        assert.equal(term.shell.state.selection.main.head, 4, "b kept its own attend");
+
+        term.opBufferHandler({ op: 'select', target: cId });
+        assert.equal(term.shell.state.selection.main.head, 1, "c kept its own attend");
+    });
+
+    test("a fresh buffer, never attended, opens at offset 0 — not doc end", () => {
+        const cm6  = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        term.createBuffer("fresh", "fw 100\nrt 90\nfw 50");
+        assert.equal(term.shell.state.selection.main.head, 0);
+    });
+
+    test("a buffer loaded from storage with a persisted attend restores to it on cold boot", () => {
+        const cm6 = makeMockCm6();
+        localStorage.clear();
+        localStorage.setItem('@paperlands.buffers@inner', JSON.stringify({
+            b1: {
+                id: 'b1', name: 'Restored', active: true, mode: 'plang',
+                content: 'fw 100\nrt 90', attend: 4, created: 1, lastModified: 1,
+            },
+        }));
+
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        assert.equal(term.shell.state.selection.main.head, 4,
+            "restored from the persisted attend — this session never touched the buffer");
+        localStorage.clear();
+    });
+
+    // buffers.js pure transition backing the attend path
+    test("buffers: attend persists through serialize/loadCollection round-trip", async () => {
+        const buffers = await import("../../assets/js/terminal/buffers.js");
+        const made = buffers.createCollection(() => 'gen', () => 'b1');
+        const withAttend = buffers.updateAttend(made, 'b1', 7);
+        assert.equal(buffers.serialize(withAttend).b1.attend, 7);
+
+        const loaded = buffers.loadCollection(buffers.serialize(withAttend), () => 'gen2', () => 'b2');
+        assert.equal(loaded.items.get('b1').attend, 7, "attend survives the round-trip");
+    });
 })

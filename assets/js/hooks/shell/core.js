@@ -77,8 +77,6 @@ const findNumericTokenAt = (line, ch) => {
 // =============================================================================
 
 export const commands = {
-    render: (turtle) => (id, name, code) => turtle.draw(id, name, code),
-
     // Dispatch instructions through Terminal.run() — not via term.shell.run()
     // since EditorView cannot be monkey-patched with custom methods.
     // DOM parameter resolution lives here — operations.js stays pure.
@@ -145,7 +143,7 @@ export const listeners = {
     // Keyboard capture: redirect stray keystrokes into the editor.
     // shell is an EditorView; hasFocus is a getter not a method in CM6.
     keyboard: (shell, cm6) => {
-        const { EditorView, EditorSelection } = cm6;
+        const { EditorView } = cm6;
 
         const shouldCapture = (e) =>
             !e.ctrlKey && !e.metaKey &&
@@ -168,12 +166,12 @@ export const listeners = {
                 const handler = (e) => {
                     if (shouldCapture(e)) {
                         shell.focus();
-                        const doc = shell.state.doc;
-                        const lastLine = doc.line(doc.lines);
-                        shell.dispatch({
-                            selection: EditorSelection.cursor(lastLine.to),
-                            effects: EditorView.scrollIntoView(lastLine.to, { y: 'end' }),
-                        });
+                        // The cursor is already attention's last word — CM6
+                        // selection doesn't move on blur, and every move writes
+                        // through to the buffer's attend (terminal.js). Redirect
+                        // focus back to it, not to the document's end.
+                        const head = shell.state.selection.main.head;
+                        shell.dispatch({ effects: EditorView.scrollIntoView(head, { y: 'nearest' }) });
                     }
                 };
                 document.addEventListener('keydown', handler);
@@ -187,7 +185,7 @@ export const listeners = {
     // updateListener extension in terminal.js#buildExtensions().
     // selectionBridge.sub() returns the unsub function directly.
     selection: (selectionBridge, pushEvent) => {
-        const debouncedPush = temporal.debounce(
+        const pacedPush = temporal.pace(
             (eventName, eventData) => pushEvent(eventName, eventData),
             180
         );

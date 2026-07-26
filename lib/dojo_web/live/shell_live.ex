@@ -383,6 +383,7 @@ defmodule DojoWeb.ShellLive do
       state: :success,
       source: source,
       commands: payload["commands"] || [],
+      diagnostics: payload["diagnostics"] || [],
       time: payload["ts"]
     }
 
@@ -393,7 +394,7 @@ defmodule DojoWeb.ShellLive do
       )
 
     # The sibling-cell split is DERIVED client-side from the commands
-    # (splitCells over the one AST; the ~/ addr is the page-ness) — nothing
+    # (phaseCells over the one AST; page-ness follows the document) — nothing
     # rides beside the pressed buffer. Ferried, not parsed.
     {:noreply,
      socket

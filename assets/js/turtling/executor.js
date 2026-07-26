@@ -33,10 +33,13 @@ function* evalOrBlock(expr, scope, state) {
 //
 // deps = { mathParser, mathEvaluator }
 // opts = { maxRecurseDepth, maxRecurses, maxCommands, color, actorState }
-export function* execute(ast, deps, opts = {}) {
-    // Actor state: if provided, this is a continuation — same ambient, new command batch.
-    // The state object is shared and mutated in-place across all batches.
-    const state = opts.actorState || {
+// The actor state, born from opts. Extracted so a caller may OWN the object it
+// will read back: `execute` mutates the state in place, so a run that throws
+// still leaves behind everything it registered before the fault. That is what
+// lets the rehearsal keep its healthy definitions — healthy parts live (D020),
+// applied to the vocabulary (id:cmp-t-healthy-parts); see drainNamespace.
+export function createActorState(opts = {}) {
+    return {
         // A Lens (`eye`) seeds its spawn frame to recenterPose() so an empty eye
         // reframes the world to identity ⇒ the live orbit camera renders today's
         // default view; fw/rt/dive/roll then compose from there. (id:eye-view-pipeline)
@@ -55,6 +58,12 @@ export function* execute(ast, deps, opts = {}) {
         loopCounter: opts.loopCounter || 0,
         mailbox: opts.mailbox || null,
     }
+}
+
+export function* execute(ast, deps, opts = {}) {
+    // Actor state: if provided, this is a continuation — same ambient, new command batch.
+    // The state object is shared and mutated in-place across all batches.
+    const state = opts.actorState || createActorState(opts)
 
     // Stroke accumulator — local to this execution pass, not persisted in actorState.
     // Path is always flushed before execution ends.
@@ -279,7 +288,7 @@ function* walkBody(body, scope, state, stroke) {
             // still dies; it just dies knowing where.
             if (error instanceof Error && !error.span && node.span) {
                 error.span = node.span
-                error.phase = 'walk'
+                error.kind = 'walk'
             }
             throw error
         }
@@ -288,7 +297,7 @@ function* walkBody(body, scope, state, stroke) {
 
 // The rehearsal (Decision 019) — run an AST headless from t=0 and return the
 // pure-function namespace it registered: `functions` (def/draw) and the math
-// parser's `userspace` (fn/func). The weave seats a cell's section vocabulary
+// parser's `userspace` (fn/func). The weave seats a cell's phase vocabulary
 // through this: ancestors' code runs lazily by the ONE executor semantics —
 // defs born under loop/when/wait flow exactly as a live walk would register
 // them, waits fast-forward (logical time costs nothing in a drain), and all
@@ -298,17 +307,22 @@ function* walkBody(body, scope, state, stroke) {
 // belongs to `as … do` inside the cell, not to vocabulary. A crash or the
 // command budget ends the rehearsal loudly: no namespace, error surfaced.
 export function drainNamespace(ast, deps, opts = {}) {
+    // THE HEALTHY PARTS OF A REHEARSAL LIVE — the containment law (D020),
+    // applied across cells. The state object is OURS, so a fault on line 10 of
+    // a phase leaves the `def`s registered on lines 1–9 standing.
+    //
+    // Discard them instead and the diagnostic cascades sideways: one broken line
+    // strips the whole phase's vocabulary from every descendant cell, and
+    // each descendant dies with "Function square not defined" pointing at ITS
+    // OWN line — blamed for an ancestor's diagnostic. The error rides back span-true
+    // on the ancestor's line instead, so a diagnostic is named where it was born.
+    const actorState = opts.actorState ?? createActorState({ maxCommands: 200_000, ...opts })
     try {
-        const gen = execute(ast, deps, { maxCommands: 200_000, ...opts })
-        let r
-        while (!(r = gen.next()).done) { /* events discarded */ }
-        return {
-            functions: r.value.actorState.functions,
-            userspace: deps.mathParser.userspace,
-            error: null
-        }
+        const gen = execute(ast, deps, { maxCommands: 200_000, ...opts, actorState })
+        while (!gen.next().done) { /* events discarded */ }
+        return { functions: actorState.functions, userspace: deps.mathParser.userspace, error: null }
     } catch (error) {
-        return { functions: null, userspace: null, error }
+        return { functions: actorState.functions, userspace: deps.mathParser.userspace, error }
     }
 }
 

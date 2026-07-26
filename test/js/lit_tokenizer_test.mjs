@@ -8,8 +8,9 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
-import { plangModeSpec, isCellOpener, codeCellFoldService, findCells, cellAt, lastSeenCell, marginOutlineFoldService } from "../../assets/js/editor/plang-mode.js"
+import { plangModeSpec, isCellOpener, codeCellFoldService, findCells, cellAt, eyelineCell, marginOutlineFoldService, findProse, defaultAttend} from "../../assets/js/editor/plang-mode.js"
 import { stepActivation } from "../../assets/js/editor/code-cell-activation.js"
+import { outline } from "../../assets/js/turtling/parse.js"
 
 // A faithful-enough StringStream + per-line loop, mirroring CM6's StreamLanguage:
 // state is created once and carried across lines; token() is called until EOL.
@@ -280,7 +281,7 @@ function mkDoc(src) {
     }
 }
 
-describe("the code cell — folds like a chapter (scrollable groundwork)", () => {
+describe("the code cell — folds like a phase (scrollable groundwork)", () => {
     test("only the opening ``` folds; the closer does not", () => {
         const doc = mkDoc("###\n```\nfw 100\nrt 90\n```\n###")
         assert.equal(isCellOpener(doc, 2), true)             // the opening fence
@@ -313,15 +314,18 @@ describe("the code cell — folds like a chapter (scrollable groundwork)", () =>
 describe("cursor-driven activation — which cell is live (the eval gate)", () => {
     test("findCells returns each cell's line span and termination", () => {
         const doc = mkDoc("###\n```\nfw 100\n```\nbetween\n```\nrt 90\n```\n###")
+        // `path` rides every cell now: the editor and the parser read ONE
+        // prose walk (turtling/parse.js outline), so a cell knows the phase
+        // whose sisters it stands among, here as at the seam.
         assert.deepEqual(findCells(doc), [
-            { open: 2, end: 4, terminated: true },
-            { open: 6, end: 8, terminated: true },
+            { open: 2, end: 4, terminated: true, path: [] },
+            { open: 6, end: 8, terminated: true, path: [] },
         ])
     })
 
     test("an unterminated cell (meadow closes) still reports its span", () => {
         const doc = mkDoc("###\n```\nfw 100\n###\nrt 90")   // ### closes the meadow, ending the cell
-        assert.deepEqual(findCells(doc), [{ open: 2, end: 3, terminated: false }])
+        assert.deepEqual(findCells(doc), [{ open: 2, end: 3, terminated: false, path: [] }])
     })
 
     test("``` outside a meadow is not a cell", () => {
@@ -331,9 +335,9 @@ describe("cursor-driven activation — which cell is live (the eval gate)", () =
     test("cellAt: the cursor's line picks the active cell; outside every cell is null", () => {
         const doc   = mkDoc("###\n```\nfw 100\n```\nbetween\n```\nrt 90\n```\n###")
         const cells = findCells(doc)
-        assert.deepEqual(cellAt(cells, 3), { open: 2, end: 4, terminated: true }) // inside first cell body
-        assert.deepEqual(cellAt(cells, 2), { open: 2, end: 4, terminated: true }) // on its opening fence
-        assert.deepEqual(cellAt(cells, 7), { open: 6, end: 8, terminated: true }) // inside second cell
+        assert.deepEqual(cellAt(cells, 3), { open: 2, end: 4, terminated: true, path: [] }) // inside first cell body
+        assert.deepEqual(cellAt(cells, 2), { open: 2, end: 4, terminated: true, path: [] }) // on its opening fence
+        assert.deepEqual(cellAt(cells, 7), { open: 6, end: 8, terminated: true, path: [] }) // inside second cell
         assert.equal(cellAt(cells, 5), null)                                      // prose between cells — inert
         assert.equal(cellAt(cells, 1), null)                                      // the meadow fence — inert
     })
@@ -412,13 +416,25 @@ describe("activation memo — cursor movement stays free of linter churn", () =>
         assert.equal(v3.key, null)                           // nothing held to restore — prose alone lights nothing
     })
 
-    test("the scroll gesture resolves by LAST SEEN cell — the newest fence in view", () => {
-        const cells = findCells(doc)                         // opens at lines 2 and 7
-        assert.equal(lastSeenCell(cells, 1), cells[0])       // nothing seen yet → first light
-        assert.equal(lastSeenCell(cells, 4), cells[0])       // cell #1 in view, #2 not yet
-        assert.equal(lastSeenCell(cells, 7), cells[1])       // cell #2's fence arrives → it is the reach
-        assert.equal(lastSeenCell(cells, 10), cells[1])      // past everything: the last seen holds
-        assert.equal(lastSeenCell([], 5), null)              // a cell-less page has no reach
+    test("the scroll gesture resolves by EYELINE — the topmost cell still on screen", () => {
+        const cells = findCells(doc)                         // #1 spans 2…5, #2 spans 7…9
+        assert.equal(eyelineCell(cells, 1, 4), cells[0])     // #1 under the eyeline
+        assert.equal(eyelineCell(cells, 1, 9), cells[0])     // BOTH in view → the top one, not the last
+        assert.equal(eyelineCell(cells, 3, 8), cells[0])     // #1 half off the top still holds it
+        assert.equal(eyelineCell(cells, 6, 9), cells[1])     // #1 clean off the top → #2 takes it
+        assert.equal(eyelineCell(cells, 6, 6), cells[0])     // only prose on screen: the one above holds
+        assert.equal(eyelineCell(cells, 10, 10), cells[1])   // past everything: the last one above
+        assert.equal(eyelineCell(cells, 1, 1), cells[0])     // before any cell → first light
+        assert.equal(eyelineCell([], 1, 5), null)            // a cell-less page has no reach
+    })
+
+    test("a sliver does not hold the eyeline — the cell must fill the eye", () => {
+        const cells = findCells(doc)                         // #1 spans 2…5, #2 spans 7…9
+        assert.equal(eyelineCell(cells, 5, 9), cells[1])     // #1 down to its last line → #2, whole, takes it
+        assert.equal(eyelineCell(cells, 4, 9), cells[0])     // #1 still half itself → it keeps it
+        assert.equal(eyelineCell(cells, 5, 7), cells[0])     // slivers both ends: neither fills, the one above holds
+        const tall = [{ open: 1, end: 100, terminated: true }]
+        assert.equal(eyelineCell(tall, 40, 50), tall[0])     // a cell taller than the screen IS the screen
     })
 
     test("an edit (docChanged) re-walks the index", () => {
@@ -430,7 +446,7 @@ describe("activation memo — cursor movement stays free of linter churn", () =>
 })
 
 // The margin outline — a `# * name` heading riding code folds the code beneath it,
-// outshine-style, level by level (id:gw-grammar). The section runs to the next
+// outshine-style, level by level (id:gw-grammar). The phase runs to the next
 // same-or-shallower margin heading, a meadow opening, or EOF.
 describe("the margin outline — `# * name` folds code like an outline node", () => {
     const foldAt = (doc, n) => marginOutlineFoldService({ doc }, doc.line(n).from, doc.line(n).to)
@@ -462,5 +478,56 @@ describe("the margin outline — `# * name` folds code like an outline node", ()
         const doc = mkDoc("fw 0 # * One\n  rt 90\n###\n* a chapter\n###")
         assert.deepEqual(foldAt(doc, 1), { from: doc.line(1).to, to: doc.line(2).to }) // stops at the ### fence
         assert.equal(foldAt(doc, 4), null)                                             // meadow headline — litFold owns it
+    })
+})
+
+// The collapse this pins (2026-07-26): the editor's prose walk and the
+// parser's are ONE function. Three hand-rolled state machines used to compute
+// the same meadow⊗cell⊗headline shape and agreed only by luck. If these two
+// ever disagree, the fence has been reopened.
+describe("one prose walk — the editor and the parser see the same shape", () => {
+    const CASES = [
+        "###\n```\nfw 1\n```\n\n```\nfw 2\n```\n###",
+        "###\n* chapter\n\n```\nfw 1\n###",                 // the clearing closes an open cell
+        "###\n* chapter\n\n```\nfw 1",                      // unterminated at EOF
+        "###\n```paperlang\nfw 1\n```\n###",                // an info word rides the opener
+        "###\n* one\n```\na\n```\n** two\n```\nb\n```\n###", // nested phases
+        "fw 1\n###\nprose\n```\nfw 2\n```\n###",            // a PROGRAM: bare code outside
+    ]
+    for (const src of CASES) {
+        test(`agree on ${JSON.stringify(src.slice(0, 28))}…`, () => {
+            const fromDoc = findProse(mkDoc(src))
+            const fromLines = outline(src.split("\n"))
+            assert.deepEqual(fromDoc, fromLines)
+        })
+    }
+
+    test("a headline inside a cell is code, not a phase", () => {
+        const { phases } = outline("###\n```\n* not a heading\n```\n* a heading\n###".split("\n"))
+        assert.deepEqual(phases.map((s) => s.title), ["a heading"])
+    })
+})
+
+describe("defaultAttend — where a never-attended buffer opens", () => {
+    test("a page opens at its first cell's opener, never at the fence itself", () => {
+        const doc = mkDoc("###\n```\nfw 1\n```\n\n```\nfw 2\n```\n###")
+        const offset = defaultAttend(doc)
+        const at = doc.lineAt(offset)
+        assert.equal(at.number, 2, "the first cell's opener line")
+        assert.equal(offset, at.to, "at its END — never landing ON the ``` fence")
+    })
+
+    test("a program — bare code outside any fence — has no page law; null stands", () => {
+        assert.equal(defaultAttend(mkDoc("fw 1\njmp 50")), null)
+    })
+
+    test("bare code beside a fenced cell is still a program, not a page", () => {
+        // isPageDoc requires EVERY non-blank line inside a meadow — one bare
+        // line outside disqualifies the whole doc, same gate reach.js uses.
+        assert.equal(defaultAttend(mkDoc("fw 1\n###\nprose\n```\nfw 2\n```\n###")), null)
+    })
+
+    test("an empty page — no cells yet — has nothing to open on", () => {
+        assert.equal(defaultAttend(mkDoc("###\nprose only\n###")), null)
     })
 })

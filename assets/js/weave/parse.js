@@ -15,8 +15,8 @@
 //   * / ** / … Headline              * / ** name — inside the meadow   [⊗ Q3 naming law]
 //                                    D019: the outline is the ambient tree —
 //                                    a headline also SCOPES: cells under it
-//                                    inherit the chapter's rehearsed
-//                                    namespace (sectionCells ⊗ drainNamespace),
+//                                    inherit the phase's rehearsed
+//                                    namespace (phaseCells ⊗ drainNamespace),
 //                                    down the outline, never sideways
 //   prose paragraph                  meadow text (### … ###)
 //   #+BEGIN_QUOTE … #+END_QUOTE      | line — the bar (id:gw-cell), one per line
@@ -24,7 +24,7 @@
 //                                    code re-entering code-space: full-strength
 //                                    linting, cursor-gated, foldable. The
 //                                    sibling-ambient split (Shoot 1) is derived
-//                                    from the AST downstream (splitCells) —
+//                                    from the AST downstream (phaseCells) —
 //                                    the press emits ONE representation
 //   [[id:frag-x]] / [[id:frag-x][w]] [[frag-x]] — the id: scheme stripped,
 //                                    NOTHING more: the press knows one file and
@@ -70,7 +70,7 @@ function foldHeadline(line) {
 //     source — literate PaperLang, ready for parseProgram or a forked tab.
 //              The ``` cells ride INSIDE it; the sibling-ambient split is
 //              DERIVED downstream from the one AST (turtling/parse.js
-//              splitCells), never emitted as a second representation here.
+//              phaseCells), never emitted as a second representation here.
 export function transpile(orgText) {
     const lines = String(orgText ?? '').split(/\r\n|\r|\n/)
     let id = null

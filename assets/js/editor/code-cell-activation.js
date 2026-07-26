@@ -2,20 +2,21 @@
 //
 // The cell the cursor rests in is ACTIVE — full strength, and the only cell a
 // notebook would evaluate; every other ``` … ``` cell is inert: dimmed, not
-// evaluated. The law (id:gw-cell, Shoot 1):
+// evaluated. THE CURSOR LAW (the cell shape rule, id:gw-cell):
 //
 //   1. the cursor's cell, when the cursor rests in one — the cursor is the gate;
 //   2. else, inside the meadow, the cell already active stays — moving through
-//      prose never drops the light (she is reading);
+//      prose never drops the light (the child is reading);
 //   3. out of the fence, on bare code, NO cell is active and none would be
-//      evaluated (she is making — the cells rest);
+//      evaluated (the child is making — the cells rest);
 //   4. on first light in prose space, the FIRST cell — a fresh page opens with
 //      its first figure lit, matching the sibling ambient the canvas mounts.
 //
-// Scroll-focus needs no second gate: the outer viewer's IntersectionObserver
-// plants the caret at the reached cell's door (outer.js), so this one cursor
-// law lights the editor for scrolling too — one attention center, N surfaces
-// (gw-appearance law 1).
+// Scroll-focus needs no second gate: the reach organ (editor/reach.js, mounted
+// by both shells) plants the caret in the cell the reader scrolled to, so this
+// one cursor law lights the editor for scrolling too — one attention center, N
+// surfaces (gw-appearance law 1). And it plants only for a READER (an unfocused
+// shell, nothing selected): where there is a cursor, the cursor decides alone.
 //
 // PERFORMANCE (why the field value is { deco, cells, key }, not just deco):
 // activation recomputes on every cursor move, and a naive findCells + RangeSet

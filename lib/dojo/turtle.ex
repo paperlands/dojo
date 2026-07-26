@@ -1,7 +1,23 @@
 defmodule Dojo.Turtle do
+  # The reflect envelope. `commands` is the buffer's WHOLE standing tree — the
+  # document, not the instructions some seat happened to run; reflect the
+  # document (D022).
+  #
+  # The tree is CARRIED here, never interpreted: the server has no printer and
+  # no AST walker of its own, and must not grow one. It had one — `print/1`,
+  # `find_title/1`, `filter_fns/1`, `find_fn/2` — with zero callers, and it
+  # drifted unnoticed until it emitted `for N do` for a Loop and still matched
+  # a `Lit` node type retired with D013. A second grammar for the one alphabet
+  # is worse than none; `turtling/parse.js` printAST is the one printer.
+  #
+  # `diagnostics` rides beside it: the span-true diagnostics (parse errors at any
+  # nesting, standing walk ailments). They are a LIST, not a state — healthy
+  # parts live (D020), so the figure still drew, and a diagnostic must be loud
+  # without darkening it.
   defstruct state: :hatch,
             path: nil,
             commands: [],
+            diagnostics: [],
             source: nil,
             message: nil,
             time: nil,
@@ -65,127 +81,5 @@ defmodule Dojo.Turtle do
       # Keep as string if atom doesn't exist
       ArgumentError -> key
     end
-  end
-
-  def find_title(ast) when is_list(ast) do
-    Enum.reduce_while(ast, "", fn
-      %{"meta" => %{"lit" => title}}, _acc when is_binary(title) ->
-        {:halt, title}
-
-      _, _ ->
-        {:cont, ""}
-    end)
-  end
-
-  def find_title(_) do
-    ""
-  end
-
-  def filter_fns(ast) when is_map(ast) do
-    ast
-    |> Enum.reject(fn
-      %{
-        "type" => "Define",
-        "value" => _value,
-        "meta" => %{"args" => _args},
-        "children" => _children
-      } ->
-        false
-
-      _ ->
-        true
-    end)
-  end
-
-  def filter_fns(_) do
-    []
-  end
-
-  def find_fn(ast, name) do
-    ast
-    |> Enum.reject(fn
-      %{"type" => "Define", "value" => ^name} ->
-        false
-
-      _ ->
-        true
-    end)
-  end
-
-  def print(ast) when is_list(ast) do
-    ast |> Enum.map(&visit/1) |> Enum.join("\n")
-  end
-
-  def print(ast) when is_map(ast) do
-    visit(ast)
-  end
-
-  def print(_) do
-    ""
-  end
-
-  defp visit(%{"type" => "Call", "value" => value, "children" => children}) do
-    child_output = children |> Enum.map(&visit/1) |> Enum.join(" ")
-    "#{value} #{child_output}"
-  end
-
-  defp visit(%{"type" => "Argument", "value" => value}) do
-    value
-  end
-
-  defp visit(%{"type" => "Lit", "value" => value}) do
-    "# #{String.trim(value)}"
-  end
-
-  defp visit(%{"type" => "Loop", "value" => value, "children" => children}) do
-    child_output = children |> Enum.map(&visit/1) |> Enum.join("\n")
-
-    """
-    for #{value} do
-    #{indent_lines(child_output)}
-    end
-    """
-  end
-
-  defp visit(%{"type" => "When", "value" => value, "children" => children}) do
-    child_output = children |> Enum.map(&visit/1) |> Enum.join("\n")
-
-    """
-    when #{value} do
-    #{indent_lines(child_output)}
-    end
-    """
-  end
-
-  defp visit(%{
-         "type" => "Define",
-         "value" => value,
-         "meta" => %{"args" => args},
-         "children" => children
-       }) do
-    arg_output = args |> Enum.map(&visit/1) |> Enum.join(" ")
-    child_output = children |> Enum.map(&visit/1) |> Enum.join("\n")
-
-    """
-    draw #{value} #{arg_output} do
-    #{indent_lines(child_output)}
-    end
-    """
-  end
-
-  # An error node holds her raw line VERBATIM in value (D020, the round-trip
-  # law: the compiler annotates her work, never rewrites it) — its parsed
-  # children (an unterminated block's body) follow, contained.
-  defp visit(%{"type" => "Error", "value" => value, "children" => children}) do
-    child_output = children |> Enum.map(&visit/1) |> Enum.join("\n")
-    Enum.join([value, child_output], "\n") |> String.trim_trailing()
-  end
-
-  defp visit(_), do: ""
-
-  defp indent_lines(input) do
-    input
-    |> String.split("\n")
-    |> Enum.map_join("\n", fn line -> "  #{line}" end)
   end
 end

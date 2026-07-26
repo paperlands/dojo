@@ -42,7 +42,7 @@ describe("the stage's pulse — vitals and the living family", () => {
 
     test("a standing ailment speaks through the pulse, message only", () => {
         const sick = mkFrame("coil", {
-            error: { message: "Undefined property: x", span: { line: 3 }, phase: "walk" },
+            error: { message: "Undefined property: x", span: { line: 3 }, kind: "walk" },
         })
         assert.equal(frameVitals(mkScheduler(sick), "coil").error,
             "Undefined property: x")

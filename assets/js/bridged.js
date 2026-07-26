@@ -99,10 +99,17 @@ export const scene = {
     fork:        (payload)          => sceneBridge.pub(['fork', payload]),
     ambient:     (addr, name, code) => sceneBridge.pub(['ambient', { addr, name, code }]),
     ambientStop: (addr)             => sceneBridge.pub(['ambientStop', { addr }]),
-    // The cursor-gate crossing the seam (gw-play Shoot 1): the outer viewer's
-    // active ``` cell, spoken as (page addr, cell index) — the inner shell owns
-    // the sibling ambients and resolves the index to the one that runs.
-    cell:        (addr, index)      => sceneBridge.pub(['cell', { addr, index }]),
+    // The cursor-gate crossing the seam: where the reader IS, spoken as
+    // (page addr, LINE) — one datum, because attention is the address (D021).
+    // Never an ordinal: that would make the reach organ resolve "which cell"
+    // for itself, and a cell inserted above would silently re-aim the answer.
+    // The line is the address; the page law owns the resolution, once.
+    // `null` = out on bare code, where every cell rests.
+    attend:      (addr, line)       => sceneBridge.pub(['attend', { addr, line }]),
+    // attend's dual: where the ladder LANDED, when that is not where the organ
+    // pointed. It rides back rather than travelling as a canvas effect — an
+    // input organ belongs to the surface that owns the cursor.
+    landed:      (addr, line)       => sceneBridge.pub(['landed', { addr, line }]),
     // Note: a watched friend's shouts are NOT relayed over a scene channel —
     // they arrive through the core turtle's _onShout and route by source via
     // the nerve's claim model (see nerve.js project()).

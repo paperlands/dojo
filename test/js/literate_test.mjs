@@ -13,7 +13,7 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
-import { parseProgram, printAST, splitCells, stripCells } from "../../assets/js/turtling/parse.js"
+import { parseProgram, printAST, phaseCells, stripCells } from "../../assets/js/turtling/parse.js"
 
 // The round-trip is idempotent: once normalised, parse→print→parse→print is fixed.
 const roundtrip = (src) => printAST(parseProgram(src))
@@ -182,12 +182,12 @@ describe("the cell — code re-entering code-space inside the meadow (id:gw-cell
         assert.ok(ast.some((n) => n.type === "Call" && n.value === "fw"))
     })
 
-    test("the priority law: stripCells keeps the program, splitCells the previews", () => {
+    test("the priority law: stripCells keeps the program, phaseCells the previews", () => {
         // Bare code outside the fences takes priority — it is the program;
         // the cell is a preview that runs only on reach, never twice.
         const src = "fw 5\n###\nprose\n```\nfw 100\n```\n###\nrt 90"
         const ast = parseProgram(src)
-        assert.deepEqual(splitCells(ast), ["fw 100"])
+        assert.deepEqual(phaseCells(ast).map((c) => c.code), ["fw 100"])
         const program = printAST(stripCells(ast))
         assert.ok(!program.includes("fw 100"), "a preview never rides the program")
         assert.match(program, /fw 5/)
@@ -196,7 +196,7 @@ describe("the cell — code re-entering code-space inside the meadow (id:gw-cell
         // its cell now empty — prose never swallowed, nothing double-run
         let reparsed
         assert.doesNotThrow(() => { reparsed = parseProgram(program) })
-        assert.deepEqual(splitCells(reparsed), [""])
+        assert.deepEqual(phaseCells(reparsed).map((c) => c.code), [""])
     })
 })
 

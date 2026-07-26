@@ -19,7 +19,7 @@
 import { fetchFragment, fragmentIndex } from "../../weave/fragments.js"
 import { transpile } from "../../weave/parse.js"
 import { resolve, parseAddress } from "../../weave/resolve.js"
-import { parseProgram } from "../../turtling/parse.js"
+import { parseProgram, collectErrors } from "../../turtling/parse.js"
 import { signals as S } from "../../nerve/store.js"
 import { revealAmbient, registerNavigator } from "../../nerve/reveal.js"
 import { getStage } from "../../turtling/stage-cell.js"
@@ -42,15 +42,15 @@ function mountWeave(hook, boot = {}) {
     // is the walker: keep's prefix law, per-source FIFO).
     const walker = () => boot.walker ?? "?"
 
-    // The address she stands at — the newest fragment step's target.
+    // The address the child stands at — the newest fragment step's target.
     let hereAddr = null
     let openEpoch = 0
 
     // Hearth projection of walk signals — derived at emit time, capped.
     const trail = []
 
-    // HER making only — library figures mount under ~/ and are not in the
-    // ambient shadow tier (decision 006: the key is the identity).
+    // The child's own making only — library figures mount under ~/ and are not
+    // in the ambient shadow tier (one ambient address, D006: key is identity).
     function ambientNames() {
         const children = stage()?.scheduler?.root?.children
         if (!children) return []
@@ -177,13 +177,18 @@ function mountWeave(hook, boot = {}) {
         // Invoke the outershell: the one review surface shows the page,
         // mounts the figure, offers fork and close — all inherited.
         // The AST is the one representation crossing the seam: the inner
-        // shell derives the sibling-cell split from it (splitCells), and the
+        // shell derives the sibling-cell split from it (phaseCells), and the
         // ~/ addr prefix is the page-ness — nothing rides beside the source.
         hook.pushEvent("seeWeave", {
             addr,
             name: (meta.title ?? title ?? name),
             source,
             commands: ast,
+            // A shelved page can be wounded too — a fragment whose cell was
+            // mis-pressed inks its own line in the viewer, addressed like any
+            // other diagnostic (D022). The library is a non-live friend, and it
+            // speaks the same fields.
+            diagnostics: collectErrors(ast),
             ts: performance.now(),
         })
     }
