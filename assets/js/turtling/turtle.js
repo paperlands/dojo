@@ -67,11 +67,20 @@ export class Turtle {
         this._hatchSuppressed = false
         this._localKeys = new Set()  // buffer IDs of locally-rendered tab ambients
 
-        // Dirty marker: stamped on every draw/edit/removal. hatch() stamps
-        // _lastHatchTime, so a drawing is "dirty" while _lastContentChange is
-        // newer than the last hatch. eagerHatch skips when nothing changed.
+        // Dirty marker: stamped on every draw/edit/removal AND on every
+        // attention move. Its subject is the REFLECT, not the drawing — the
+        // watcher's document is a function of attention (reflectPhase), so a
+        // reader who moves and types nothing still has news to send. hatch()
+        // stamps _lastHatchTime, so a reflect is "dirty" while
+        // _lastReflectChange is newer than the last hatch; eagerHatch skips
+        // when nothing changed.
+        //
+        // ONE QUESTION, TWO ENDS (D025 R3): this bit and the server's
+        // `reflect_changed?` ask the same thing — would the watcher learn
+        // something new? Naming it for the canvas while stamping it for
+        // attention was the lie the rename bought out.
         this._lastHatchTime = 0
-        this._lastContentChange = 0
+        this._lastReflectChange = 0
 
         this._heartbeatTimer = null
         this._onVisibilityChange = () => {
@@ -235,11 +244,30 @@ export class Turtle {
     eagerHatch(cooldown = 8_000, { force = false } = {}) {
         if (!this.compositor) return
         if (performance.now() - this._lastHatchTime < cooldown) return
-        // Skip redundant re-publishes of an unchanged drawing. The periodic
+        // Skip redundant re-publishes of an unchanged reflect. The periodic
         // keepalive passes force:true to refresh the server-side cache TTL.
-        if (!force && this._lastContentChange <= this._lastHatchTime) return
+        if (!force && this._lastReflectChange <= this._lastHatchTime) return
         this._snapshotPending = false
         this.requestRender()
+    }
+
+    // The reflect's COORDINATE moved while its canvas stands still — a reader
+    // who scrolls or steps between cells and types nothing (D025 R4). Re-arms
+    // the hatch that already exists rather than opening a second wire path:
+    // the attention rides the reflect it belongs to, or it does not ride.
+    //
+    // Everything here is already built and already bounded. eagerHatch owns the
+    // cooldown and the dirty check; it routes through the one render loop, so
+    // _hatchSuppressed still holds — a followed PROGRAM does not hatch its
+    // previews through this door (D023), and this is not a back door to it.
+    //
+    // The redundant capture is the accepted cost: an attention-only reflect
+    // photographs an identical canvas. That is the price of no second wire,
+    // bounded by the 200ms floor. Do not decouple the message from the hatch
+    // to save it — that decoupling IS the second wire.
+    attentionMoved() {
+        this._lastReflectChange = performance.now()
+        this.eagerHatch(200)
     }
 
     // --- Multi-ambient API ---
@@ -367,7 +395,7 @@ export class Turtle {
             }
 
             this.compositor.flush()
-            this._lastContentChange = performance.now()
+            this._lastReflectChange = performance.now()
 
             // The child's OWN fault only (D022): scheduler.errors spans every
             // frame on the canvas, a watched friend's included. Read it whole
@@ -425,7 +453,7 @@ export class Turtle {
         this._parseMemo?.delete(key)
         this._rehearsalDiagnostics?.delete(key)
         if (!this.scheduler) return
-        this._lastContentChange = performance.now()
+        this._lastReflectChange = performance.now()
 
         // Address only — callers pass the key they registered with. (The old
         // name-scan fallback is gone: one register, no second lookup space.)
@@ -546,7 +574,7 @@ export class Turtle {
             this.scheduler = null
         }
         this._snapshotPending = false
-        this._lastContentChange = performance.now()
+        this._lastReflectChange = performance.now()
 
         this.stage.head.show()
         this.stage.head.reset()

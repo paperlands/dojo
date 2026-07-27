@@ -975,6 +975,23 @@ export function cellAtLine(cells, line) {
 // never drift from what the reader will see.
 const printedHeight = (node) => printAST([node]).split('\n').length;
 
+// NOT WIRED, AND MUST NOT BE WIRED AS IT STANDS. It was called from
+// `reflection()` for one day [2026-07-27] and reverted the same day, because
+// "dormant, not missing" is a claim this function cannot keep: it drops each
+// distant cell's BODY and keeps its fences, so downstream every one of them
+// seats with EMPTY CODE and its figure is wiped. On a code-review surface the
+// gutted text also becomes the merge baseline. A cursor move must not rewrite
+// the friend's document — the attention crosses as a coordinate beside the
+// whole tree instead (D025 R1 as amended), which needs no shift arithmetic at
+// all, since printAST round-trips exactly.
+//
+// What it is waiting for, if bandwidth ever asks for it: `dormant` must mean
+// NOT SEATED at the page law, not seated-with-nothing. Until the seating law
+// can be told "this cell exists and is not to be run", this projection cannot
+// ship. Keep the tests — the line arithmetic in here is correct and pinned
+// (weave_phase_test.mjs, 21 tests); it is the DOWNSTREAM meaning of an empty
+// cell that is missing.
+//
 // The projection a friend receives: ALL prose (every headline — the outline is
 // the map), and the bodies of only the phase the attention inhabits. Sister
 // cells of that phase ride together; every other cell keeps its fences and

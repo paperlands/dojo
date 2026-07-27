@@ -405,8 +405,10 @@ PRINTED document (the one printer is the one grammar, so it answers alike for
 a tree and for a projection of it); =cellAtLine(cells, line)= finds a cell by
 its FENCES, so a cell just opened and still empty is addressable (dormant ≢
 empty); =reflectPhase(ast, attend)= keeps all prose and only the inhabited
-phase's SISTER cells, every other cell dormant behind its fences, and
-translates =attend= into the projection's coordinates. =phaseCells= carries
+phase's SISTER cells, every other cell behind its fences, and translates
+=attend= into the projection's coordinates — *NOT WIRED, and must not be:
+"dormant" downstream means seated with EMPTY CODE, which wipes the figure. See
+its docstring.* =phaseCells= carries
 each cell's =open=/=close= lines and its =path=. Why not a cell ordinal: it
 aliases under insertion and cannot name a phase that owns no cell yet.
 Pinned by =test/js/weave_phase_test.mjs=.
@@ -423,20 +425,88 @@ and restart a running figure. Pinned by =weave_page_test.mjs= ⊗
 ** the reflect seam — what crosses to a peer
 :PROPERTIES:
 :ID: nav-reflect-seam
-:KEYWORDS: reflect hatchTurtle renderstate meta commands document authored buffer stripped cells peer seam hatch gate hatchSuppressed reflectGate diagnostics propagate
+:KEYWORDS: reflect hatchTurtle renderstate meta commands attend document authored buffer stripped cells peer seam hatch gate hatchSuppressed reflectGate diagnostics propagate projection inhabited
 :PATH: assets/js/hooks/shell/inner.js::const reflection
 :END:
 D022 — *the reflect is the document, not the residue of the walk.* The turtle
 publishes only what it OWNS (=renderstate.meta= = the fault: =state= /
 =message=, address-filtered by =ailmentsFor= so a watched friend's error
 never reddens the child's); the surface supplies the DOCUMENT at the hatch seam:
-=reflection()= answers the AUTHORED buffer's whole standing tree
-(=law.program(addr) ?? turtle.programFor(addr)=) ⊕ its span-true diagnostics.
-=authored= is a lifecycle — the child's edit, a live draft — never a per-seat
-residue and never a friend's push. The hatch gate is the BATCH's word
-(=turtle.reflectGate=, spoken once in =perform()=): a seat may only OPEN it,
-so a page's warm sibling can no longer close it last and mute the page.
-Pinned by =test/js/weave_reflect_test.mjs=.
+=reflection()= answers the AUTHORED buffer's standing tree AS INHABITED ⊕ its
+span-true diagnostics. =authored= is a lifecycle — the child's edit, a live
+draft — never a per-seat residue and never a friend's push. The hatch gate is
+the BATCH's word (=turtle.reflectGate=, spoken once in =perform()=): a seat may
+only OPEN it, so a page's warm sibling can no longer close it last and mute the
+page. Pinned by =test/js/weave_reflect_test.mjs=.
+
+*** the attention rides, the document does not move (D025 R1 amended)
+=attend= is a coordinate INTO the whole tree that crosses beside it — the
+author's own line, UNTRANSLATED, because the watcher holds the same document and
+=printAST= round-trips exactly. No projection, no shift, no second coordinate
+space. =Dojo.Turtle= carries it as luggage: the server has no AST walker and may
+not grow one, so it must not rate-limit by line or fan out by phase.
+
+=reflection()= must NOT call =reflectPhase=. Wired [2026-07-27] and reverted the
+same day: projecting by phase drops each distant cell's BODY and keeps its
+fences, so downstream every one seats with empty code, its figure is wiped, and
+the gutted text becomes the merge baseline of a code-review surface. A cursor
+move must not rewrite the friend's document. See the warning on the function.
+
+** peer attention — the friend's cell, and following it
+:PROPERTIES:
+:ID: nav-peer-attention
+:KEYWORDS: peer attention following follow chase firefly cm-peer-line cm-peer-cell setPeerCell followTo chaseDirection visibleLines watcher consent intervention scroll focus anchor minimalChange updateOuter
+:PATH: assets/js/editor/peer-attention.js
+:END:
+The watcher's side of a friend's line (D025 R5/R6). THE DATUM IS A LINE and only
+a line is stored — a line is TOTAL, so it means the same in prose, on bare code,
+between cells and inside them. Two marks derive from it in ONE walk over the
+EXISTING activation field: =.cm-peer-line= (him, exactly) and =.cm-peer-cell=
+(his FOCUS — the cell that line kindles, when it falls in one; absent otherwise,
+which is itself true and says he is making). =setPeerCell(view, line)= is a
+=StateEffect=; the surface dispatches it where it sets the DOCUMENT, so a draft
+(whose text is the CHILD'S) clears it by saying what is true rather than by
+guarding. THE VIEWPORT is =followTo(view, line, cm6)= — hands the scroll to CM6's
+own =scrollIntoView=, which knows the gutter, the real scrolling box, and what to
+do about an unrendered line; the butter comes from =.cm-follows-smoothly=
+(=scroll-behavior= applies to PROGRAMMATIC scrolling only, so her wheel stays
+native). The viewport ONLY, never the selection and never the focus (sight, not
+power).
+
+*Following is whose attention drives the view* — one =let following=, read in
+ONE place (the receive); its writes are its whole lifecycle (a friend's page
+opens it, her input ends it, the firefly gives it back).
+
+*Intervention is read off INPUT, never off scroll* — =wheel=, =touchmove=,
+=mousedown=, =keydown= on the scroller. NOT the reach's publish: reach's scroll
+listener fires for programmatic scrolling exactly as for a wheel, so ending
+following there means =followTo= kills following on the first line it follows.
+A "was this ours" flag is no better — it races the dispatch that caused it. An
+event's KIND is unambiguous, and this organ only ever WRITES scroll.
+
+=chaseDirection(line, first, last)= is pure and answers =null= for any line the
+viewport was just moved onto, so the firefly needs no knowledge of following and
+carries no suppression clause. Pinned by =test/js/peer_attention_test.mjs=.
+
+** the reflect's breath — one question, two ends (D025)
+:PROPERTIES:
+:ID: nav-reflect-breath
+:KEYWORDS: reflect_changed code_changed gate bump attentionMoved lastReflectChange eagerHatch dirty predicate outerSignal suppress push watcher learn
+:PATH: lib/dojo_web/live/layout/outer_shell.ex::def reflect_changed?
+:END:
+*Would the watcher learn something new?* — asked at both ends, one sentence.
+SERVER: =reflect_changed?/2= compares two turtles with the BUMP blanked
+(=@bump= = =time=, =path= — the fields a mere image re-publish moves). Naming
+the bump, never a union of the fields that matter, is the design: a field added
+to the reflect is covered the day it is added and can never mint a second gate.
+Replaced =code_changed?=, which read =source= alone and so dropped changed
+=diagnostics= (which carry RUNTIME walk ailments), =state=, and =message=
+whenever the source repeated — =outerSignal= included. CLIENT:
+=turtle._lastReflectChange= is that same bit; =attentionMoved()= stamps it and
+calls =eagerHatch(200)=, re-arming the hatch that exists rather than opening a
+second wire path. One call site — the =scene.attend= handler, guarded to the
+authored addr. Routes through the one render loop, so =_hatchSuppressed= still
+holds (a followed PROGRAM does not hatch its previews, D023).
 
 ** inner surface — canvas, turtle, scene bridge
 :PROPERTIES:

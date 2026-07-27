@@ -9,8 +9,7 @@ defmodule DojoWeb.LocalePickerLive do
     {"ar", "عر"},
     {"ms", "bm"},
     {"es", "ñ"},
-    {"ko", "한"},
-    
+    {"ko", "한"}
   ]
 
   def mount(socket) do

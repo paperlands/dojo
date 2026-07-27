@@ -98,18 +98,47 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
     end
   end
 
-  describe "code_changed?/2 — ignore preview/path bumps" do
-    test "false when both sources are present and equal (a preview bump)" do
-      refute OuterShell.code_changed?(ok("fw 100"), %Turtle{ok("fw 100") | time: 99})
+  describe "reflect_changed?/2 — would the watcher learn something new?" do
+    test "false for a bump alone: only time and path moved" do
+      refute OuterShell.reflect_changed?(ok("fw 100"), %Turtle{ok("fw 100") | time: 99})
+      refute OuterShell.reflect_changed?(ok("fw 100"), %Turtle{ok("fw 100") | path: "a.png"})
     end
 
     test "true when the source text differs" do
-      assert OuterShell.code_changed?(ok("fw 100"), ok("fw 200"))
+      assert OuterShell.reflect_changed?(ok("fw 100"), ok("fw 200"))
     end
 
-    test "true when we can't tell (nil source, or no prior turtle)" do
-      assert OuterShell.code_changed?(nil, ok())
-      assert OuterShell.code_changed?(%Turtle{state: :success}, %Turtle{state: :success})
+    test "true when there is no prior turtle to compare against" do
+      assert OuterShell.reflect_changed?(nil, ok())
+    end
+
+    test "false when two envelopes are identical — no source is not no news" do
+      # Was asserted true under `code_changed?` ("we can't tell"). We can tell:
+      # nothing moved, so there is nothing to send. The predicate reads the
+      # whole envelope, not one field.
+      refute OuterShell.reflect_changed?(%Turtle{state: :success}, %Turtle{state: :success})
+    end
+
+    # The defect `code_changed?` shipped: each of these repeats the source, so
+    # each was dropped at the server — along with `outerSignal`, which
+    # `wants_updates?/1` documents as flowing even in a frozen draft.
+    test "true when only the diagnostics moved (a runtime ailment on identical code)" do
+      assert OuterShell.reflect_changed?(
+               ok("fw 100"),
+               %Turtle{ok("fw 100") | diagnostics: [%{"line" => 1, "message" => "budget"}]}
+             )
+    end
+
+    test "true when only the state or message moved" do
+      assert OuterShell.reflect_changed?(ok("fw 100"), %Turtle{ok("fw 100") | state: :error})
+      assert OuterShell.reflect_changed?(ok("fw 100"), %Turtle{ok("fw 100") | message: "boom"})
+    end
+
+    test "true when only the projected commands moved" do
+      assert OuterShell.reflect_changed?(
+               %Turtle{ok("fw 100") | commands: [%{"type" => "Call"}]},
+               %Turtle{ok("fw 100") | commands: []}
+             )
     end
   end
 

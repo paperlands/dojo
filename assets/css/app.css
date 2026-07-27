@@ -718,3 +718,84 @@
 @media (prefers-reduced-motion: reduce) {
     .weave-trail-step { transition: none; }
 }
+
+/* Programmatic movement in the review panel is SMOOTH — following a friend's
+   line, and the reach planting a caret in a cell it scrolled to. `scroll-behavior`
+   applies to programmatic scrolling only: her own wheel, touch and scrollbar stay
+   native and instant, so this never puts a hand near her input. Doing it here
+   rather than in geometry is what lets followTo hand the whole scroll to CM6,
+   which already knows the gutter height, the real scrolling box, and what to do
+   about a line it has not rendered. */
+.cm-follows-smoothly { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+    .cm-follows-smoothly { scroll-behavior: auto; }
+}
+
+/* ---------------------------------------------------------------------------
+   THE FIREFLY — a watched friend, past the edge you lost them at (D025 R6).
+
+   D021 asked for a gutter marker. A gutter says "someone is on this line" to a
+   reader who cannot see the line. This says DIRECTION and DISTANCE as a living
+   thing: it drifts at the edge she left them past, and throbs once when they
+   move, so a still glyph means a still friend. Click it and following resumes.
+
+   Sight, not power: it is drawn on the WATCHER'S canvas and reports nothing
+   back. The author never learns they are watched.
+   --------------------------------------------------------------------------- */
+.cm-peer-firefly {
+    position: absolute;
+    right: 0.75rem;
+    z-index: 5;
+    display: grid;
+    place-items: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border: 0;
+    border-radius: 9999px;
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: lowercase;
+    cursor: pointer;
+    color: oklch(0.98 0 0);
+    background: oklch(0.62 0.13 225 / 0.92);
+    box-shadow:
+        0 0 0 1px oklch(0.72 0.13 220 / 0.5),
+        0 0 12px oklch(0.72 0.13 220 / 0.55);
+    animation: peer-firefly-drift 3.4s ease-in-out infinite;
+}
+.cm-peer-firefly[hidden] { display: none; }
+.cm-peer-firefly[data-dir="above"] { top: 0.6rem; }
+.cm-peer-firefly[data-dir="below"] { bottom: 0.6rem; }
+
+/* a direction, said quietly — the glyph leans the way they went */
+.cm-peer-firefly[data-dir="above"]::after,
+.cm-peer-firefly[data-dir="below"]::after {
+    position: absolute;
+    font-size: 0.55rem;
+    line-height: 1;
+    opacity: 0.85;
+}
+.cm-peer-firefly[data-dir="above"]::after { content: "▲"; top: -0.62rem; }
+.cm-peer-firefly[data-dir="below"]::after { content: "▼"; bottom: -0.62rem; }
+
+/* they just moved */
+.cm-peer-firefly.is-fresh { animation: peer-firefly-throb 0.7s ease-out 1, peer-firefly-drift 3.4s ease-in-out infinite; }
+
+/* off screen: a throb nobody can see is a compositor layer nobody asked for */
+.cm-peer-firefly.is-still { animation: none; }
+
+@keyframes peer-firefly-drift {
+    0%, 100% { transform: translateY(0);      opacity: 0.78; }
+    50%      { transform: translateY(-3px);   opacity: 1; }
+}
+@keyframes peer-firefly-throb {
+    0%   { transform: scale(1);    box-shadow: 0 0 0 1px oklch(0.72 0.13 220 / 0.5), 0 0 12px oklch(0.72 0.13 220 / 0.55); }
+    40%  { transform: scale(1.35); box-shadow: 0 0 0 1px oklch(0.82 0.15 220 / 0.9), 0 0 26px oklch(0.82 0.15 220 / 0.9); }
+    100% { transform: scale(1);    box-shadow: 0 0 0 1px oklch(0.72 0.13 220 / 0.5), 0 0 12px oklch(0.72 0.13 220 / 0.55); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cm-peer-firefly,
+    .cm-peer-firefly.is-fresh { animation: none; }
+}

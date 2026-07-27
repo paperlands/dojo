@@ -159,6 +159,27 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
         '.cm-cell-inactive': { opacity: '0.38' },                          // inert — dimmed, not evaluated
         '.cm-cell-active':   { backgroundColor: 'rgba(160, 234, 0, 0.05)' }, // the live cell — faint chartreuse
 
+        // THE FRIEND (D025 R6). Cool against the warm chartreuse of your own
+        // light, because the one thing it must say at a glance is "someone
+        // else". Two marks, two meanings:
+        //   .cm-peer-line — HIM, on his line. Total: it means the same in
+        //                   prose, on bare code, and inside a body.
+        //   .cm-peer-cell — his FOCUS: the cell that line kindles, when it
+        //                   falls in one. A left rule, so it can sit under
+        //                   your own active wash without fighting it — and
+        //                   while you follow him, it is the same cell.
+        '.cm-peer-line': {
+            backgroundColor: 'oklch(0.72 0.13 220 / 0.16)',
+            boxShadow: 'inset 0 -1px 0 oklch(0.72 0.13 220 / 0.5)',
+        },
+        '.cm-peer-cell': {
+            boxShadow: 'inset 2px 0 0 oklch(0.72 0.13 220 / 0.75)',
+            backgroundColor: 'oklch(0.72 0.13 220 / 0.04)',
+        },
+        // His line is never dimmed away, even when the cell it sits in rests.
+        '.cm-peer-cell.cm-cell-inactive': { opacity: '0.62' },
+        '.cm-peer-line.cm-cell-inactive':  { opacity: '0.85' },
+
         // Diagnostics ink (id:cmp-first-surface) — an error is a play
         // surface (D020): loud in the ink, spoken in the theme's own ember,
         // never stock lint red. The spark ✶ marks the gutter; the tooltip
@@ -300,6 +321,20 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
         // Code cells (id:gw-grammar): the cursor's cell is live; the rest recede.
         '.cm-cell-inactive': { opacity: '0.42' },                          // inert — dimmed, not evaluated
         '.cm-cell-active':   { backgroundColor: 'rgba(141, 161, 1, 0.07)' }, // the live cell — faint green
+
+        // The friend (D025 R6) — his line, and the cell it kindles. The same
+        // two marks, carried into the light ground at the weight everforest
+        // wants.
+        '.cm-peer-line': {
+            backgroundColor: 'oklch(0.55 0.12 235 / 0.14)',
+            boxShadow: 'inset 0 -1px 0 oklch(0.55 0.12 235 / 0.45)',
+        },
+        '.cm-peer-cell': {
+            boxShadow: 'inset 2px 0 0 oklch(0.55 0.12 235 / 0.7)',
+            backgroundColor: 'oklch(0.55 0.12 235 / 0.04)',
+        },
+        '.cm-peer-cell.cm-cell-inactive': { opacity: '0.66' },
+        '.cm-peer-line.cm-cell-inactive':  { opacity: '0.88' },
 
         // Diagnostics ink (id:cmp-first-surface) — errors are RED (the
         // creator's law), in everforest's own red on the light ground.

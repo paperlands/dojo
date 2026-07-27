@@ -132,9 +132,11 @@ defmodule DojoWeb.ShellLive do
     shell = OuterShell.observe(socket.assigns.outershell, turtle)
     socket = assign(socket, :outershell, shell)
 
-    # A hatch with unchanged code is just a preview/path bump — advance time
-    # (via observe above) but don't react: no re-render, re-stream, or re-run.
-    if OuterShell.code_changed?(prev, turtle) do
+    # A hatch that moved nothing but the preview/path is just a bump — advance
+    # time (via observe above) but don't react: no re-render, re-stream, re-run.
+    # Everything else the reflect carries — including an attention move with the
+    # source untouched — is news, and crosses (D025 R3).
+    if OuterShell.reflect_changed?(prev, turtle) do
       # The friend's status always flows to the nerve — even in a frozen draft,
       # where the editor push is held back so it won't disturb your draft.
       socket = push_event(socket, "outerSignal", outer_signal(turtle, shell))

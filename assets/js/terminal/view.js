@@ -54,13 +54,36 @@ export const setContent = (view, content) => {
     });
 };
 
+// The smallest true edit between two texts: skip the shared head, skip the
+// shared tail, replace what is left. Pure, and the whole of the anchoring.
+//
+// WHY IT MATTERS MORE THAN IT LOOKS. CM6 anchors the viewport and maps the
+// selection THROUGH the changes it is given. `{ from: 0, to: length }` says
+// "every character died and was reborn", so there is no position left to
+// anchor to: the scroll snaps, the cursor collapses to the top, and every
+// decoration is rebuilt from scratch. The watched friend types one letter and
+// the watcher's page jumps under her — which reads exactly as the shake it is.
+// Hand CM6 the real edit and it does the anchoring for free.
+//
+// Character codes, not slices: this runs on every push of a whole buffer.
+export const minimalChange = (from, to) => {
+    if (from === to) return null;
+    const max = Math.min(from.length, to.length);
+    let head = 0;
+    while (head < max && from.charCodeAt(head) === to.charCodeAt(head)) head++;
+    let tail = 0;
+    while (tail < max - head &&
+           from.charCodeAt(from.length - 1 - tail) === to.charCodeAt(to.length - 1 - tail)) tail++;
+    return { from: head, to: from.length - tail, insert: to.slice(head, to.length - tail) };
+};
+
+// The friend's code arrives. Replace only what actually changed, so the
+// watcher keeps her place while he works (pres-p1 milestone 8).
 export const updateOuter = (view, code) => {
     if (!view) return;
-    const current = view.state.doc.toString();
-    if (code === current) return;
-    view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: code },
-    });
+    const change = minimalChange(view.state.doc.toString(), code);
+    if (!change) return;
+    view.dispatch({ changes: change, scrollIntoView: false });
 };
 
 export const cursorToEnd = (view, cm6) => {

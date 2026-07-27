@@ -91,6 +91,32 @@ function mountInner(hook, { term, cm6 }) {
     const reached = new Map()
     const attentionOn = (addr) => (reached.has(addr) ? { line: reached.get(addr) } : null)
 
+    // WHERE THE AUTHOR IS, for the wire — his cursor's LINE, read live.
+    //
+    // Two readers of one cursor (D021's "two outputs, different laws, one
+    // read"), not two attentions. The SEATING ladder wants a cell and reads
+    // `reached`, which the reach publishes as a cell's opening fence and only
+    // while the buffer is a page. The WIRE wants the line, and wants it in
+    // every context: a line is TOTAL — every position in the document has one —
+    // so it says where he is in prose, on bare code, between cells and inside
+    // them alike. Reading `reached` here would have made a friend invisible in
+    // every buffer that is not a page, and quantized him to a fence in the ones
+    // that are.
+    //
+    // A live draft lives in the OUTER editor, which this surface does not hold;
+    // there the ladder's own address is the best answer available.
+    const authoredAttention = () => {
+        if (!authored) return null
+        if (authored.addr === term.currentBufferId()) {
+            const v = term.shell
+            if (v && !v.destroyed) {
+                try { return { line: v.state.doc.lineAt(v.state.selection.main.head).number } }
+                catch { /* mid-teardown — fall through to the ladder's address */ }
+            }
+        }
+        return attentionOn(authored.addr)
+    }
+
     // The buffer's STANDING TREE — a page's on the page record, a plain tab's in
     // the parse memo: the two lifecycles the { text, ast } pair rides.
     const treeFor = (key) => law.tree(key) ?? turtle.programFor(key) ?? null
@@ -102,10 +128,38 @@ function mountInner(hook, { term, cm6 }) {
         diagnostics(treeFor(key) ?? [], ailmentsFor(turtle.ailments, key), key)
 
     // What crosses the peer seam (D022): the authored buffer's WHOLE standing
-    // tree, its diagnostics, and the verdict over them. Never a seat's instruction
-    // slice — a page seats per cell, and the slice is not the page.
+    // tree, its diagnostics, and the verdict over them. Never a seat's
+    // instruction slice — a page seats per cell, and the slice is not the page.
     // Asked at reflect time, so there is no writer to race; every part of the
     // answer comes from the query, so this surface only names its subject.
+    //
+    // THE ATTENTION RIDES, THE DOCUMENT DOES NOT MOVE (D025 R1, amended).
+    // `attend` is a coordinate INTO the tree that crosses beside it — the
+    // author's own line, untranslated, because the watcher holds the very same
+    // document. No projection, no shift, no second coordinate space, and so
+    // nothing that can land on the wrong text.
+    //
+    // What makes untranslated legal: `printAST` preserves LINE COUNT (the
+    // healing marks `implicit`/`meadowCloseImplicit`/`info` exist for exactly
+    // this), so the watcher's rendered text has the author's line numbering
+    // even where it re-indents a body. Measured across empty meadows, blank
+    // runs, unterminated cells, bare code beside cells, and comments. The one
+    // known drift is D021's: `###\n\n###` prints as `###\n###`, so a document
+    // with an EMPTY meadow holding blank lines shifts everything below it by
+    // one. Named, not guessed at, and not repaired here.
+    //
+    // NOT `reflectPhase` here, and the reason is a bug that shipped: projecting
+    // the tree by the inhabited phase drops every distant cell's BODY while
+    // keeping its fences, so on the watcher each one seats with empty code and
+    // its figure is wiped — and the gutted text becomes the merge baseline of a
+    // CODE-REVIEW surface. A cursor move must not rewrite the friend's
+    // document. The projection also saves nothing today: `source` rides whole
+    // beside `commands` for the merge either way. It is a bandwidth question
+    // for a later phase, and it cannot ship until "dormant" means NOT SEATED
+    // rather than seated-with-nothing.
+    //
+    // attend:null is the identity — the document pointing nowhere — and it is
+    // what `attentionOn` already returns off a buffer with no reach.
     const reflection = () => {
         if (!authored) return null
         const ast = treeFor(authored.addr)
@@ -113,6 +167,7 @@ function mountInner(hook, { term, cm6 }) {
         return {
             source: authored.text,
             commands: ast ?? [],
+            attend: authoredAttention(),
             diagnostics: found,
             ...verdict(found, authored.addr),
         }
@@ -330,9 +385,15 @@ function mountInner(hook, { term, cm6 }) {
         },
         // One ladder step: the reached cell mounts and RUNS (lazy). The line
         // is held so the next edit on this addr carries it (D021).
+        //
+        // And the reflect's coordinate just moved, so the watcher has news even
+        // though nothing was typed (D025 R4) — re-arm the existing hatch. Only
+        // for the buffer being reflected: another addr's reach changes nothing
+        // a friend can see, and asking would cost a photograph to learn so.
         attend: ({ addr, line }) => {
             reached.set(addr, line)
             enact(addr, law.attend(addr, line))
+            if (authored?.addr === addr) turtle.attentionMoved()
         },
         remove: ({ ambientId }) => {
             // Forgotten whole, so a later re-watch starts clean.

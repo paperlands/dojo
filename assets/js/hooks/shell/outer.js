@@ -11,6 +11,8 @@ import { scene } from "../../bridged.js"
 import { temporal } from "../../utils/temporal.js"
 import { printAST } from "../../turtling/parse.js"
 import { mountReach } from "../../editor/reach.js"
+import { setPeerCell } from "../../editor/code-cell-activation.js"
+import { followTo, mountChase, scrollsSmoothly } from "../../editor/peer-attention.js"
 import { publishDiagnostics } from "../../editor/diagnostics.js"
 import { nerveInstance } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
@@ -35,6 +37,15 @@ function mountOuter(hook, { term, cm6 }) {
     let outerBufferId = null;
     let prevAddr = null;
     let prevName = null;
+    // WATCHER-LOCAL CONSENT (D023, D025 R7) — not a presence primitive, not a
+    // room protocol, and not a second address. It selects WHOSE attention drives
+    // this view: the friend's while it is true, her own the moment she moves.
+    // Read in exactly one place; its writes are its whole lifecycle — a friend's
+    // page opens it, her own input ends it, the firefly gives it back.
+    let following = true;
+    // The friend's last known line, so a push that only carries his typing is
+    // not mistaken for him moving.
+    let peerAt = null;
 
     term.outer();
     wireRegistry(hook.el, term, cm6);
@@ -113,6 +124,35 @@ function mountOuter(hook, { term, cm6 }) {
         publish: (line) => scene.attend(outerAddr, line),
     });
 
+    // HER FIRST GESTURE ENDS IT (D023, D025 R5) — read off INPUT, never off
+    // scroll, and this is not a preference.
+    //
+    // The reach cannot carry this. Its scroll listener fires for programmatic
+    // scrolling exactly as it does for a wheel, so ending following inside its
+    // publish means `followTo` kills following on the very first line it
+    // follows — the feature disabling itself as it works. A "was this scroll
+    // ours" flag is no better: it races the dispatch that caused it.
+    //
+    // An event's KIND is not ambiguous. These four are hers and cannot be
+    // anything else; this organ only ever WRITES scroll, and writing it emits
+    // none of them.
+    const endFollowing = () => { following = false; };
+    const HER_INPUT = ['wheel', 'touchmove', 'mousedown', 'keydown'];
+    for (const kind of HER_INPUT) {
+        term.shell.scrollDOM.addEventListener(kind, endFollowing, { passive: true });
+    }
+
+    // The chase: the edge she lost them past, and the way back. Resuming is the
+    // same move following makes — there is one way to arrive at a friend's line.
+    scrollsSmoothly(term.shell);
+    const chase = mountChase(term.shell, {
+        initials: () => outerName,
+        onResume: (line) => {
+            following = true;
+            followTo(term.shell, line, cm6);
+        },
+    });
+
     // Where the ladder landed, back to THIS organ — spoken only when that is
     // not where it pointed (a fresh page; a shorter split clamped the place).
     const reachUnsub = scene.sub({
@@ -174,6 +214,8 @@ function mountOuter(hook, { term, cm6 }) {
             prevAddr = payload.addr;
             spoken.clear();  // another's wounds are not this one's
             reach.reset();   // a fresh page opens at its first cell, already lit
+            following = true; // and opening a friend's page IS asking to be shown
+            peerAt = null;    // another's place is not this one's
         }
 
         if (payload?.addr) outerAddr = payload.addr;
@@ -196,11 +238,42 @@ function mountOuter(hook, { term, cm6 }) {
             ? printAST(payload.commands)
             : (payload?.source ?? '');
 
+        // THE PEER'S CELL IS A PROPERTY OF THE DISPLAYED DOCUMENT (D025 R6), so
+        // it is set exactly where the document is set — in both branches, never
+        // as a separate condition afterwards. A draft shows the CHILD'S text,
+        // and the friend's line 12 is not her line 12 (D021's bound), so that
+        // branch clears it by saying what is true rather than by guarding.
+        //
+        // The mark is UNCONDITIONAL. While following, the peer's cell is the
+        // cell the view is sitting on, so the two coincide and there is nothing
+        // extra to see — "spotlight only when not following" is a coincidence
+        // of the geometry, not an `if` anyone writes.
+        const attendLine = payload?.attend?.line ?? null;
+
         if (view === 'draft') {
             // Live baseline: stream the friend's code into the merge original.
             if (payload?.stream) term.streamOrigin(source);
+            peerAt = null;
+            setPeerCell(term.shell, null);
+            chase.update(null);
         } else {
             term.changeouter(source);
+            // ONLY WHEN HE ACTUALLY MOVED. A push arrives for every hatch —
+            // most of them are him typing, with his line unchanged. Following
+            // on the push rather than on the MOVE re-centres the watcher's
+            // viewport on every keystroke he makes, which is a shake, not a
+            // follow. The document changing is his news; his line changing is
+            // this organ's.
+            if (attendLine !== peerAt) {
+                peerAt = attendLine;
+                setPeerCell(term.shell, attendLine);
+                chase.update(attendLine);
+                // THE ONE SITE THAT READS `following` (D025 R5). Following is
+                // whose attention drives the view; it is not a plugin, a latch,
+                // or a listener. Her own gesture ends it through the reach
+                // callback that already exists, and the firefly gives it back.
+                if (following) followTo(term.shell, attendLine, cm6);
+            }
         }
 
         // The diagnostics, span-true, wherever they nest — a parse error inside the
@@ -280,6 +353,8 @@ function mountOuter(hook, { term, cm6 }) {
             () => { if (outerAddr) scene.remove(outerAddr); },
             () => term.shell?.dom.removeEventListener('keydown', onDraftKey, true),
             reach.cleanup,
+            chase.cleanup,
+            () => HER_INPUT.forEach((k) => term.shell?.scrollDOM.removeEventListener(k, endFollowing)),
             reachUnsub,
             draftEditUnsub,
             () => outerProj?.destroy(),
