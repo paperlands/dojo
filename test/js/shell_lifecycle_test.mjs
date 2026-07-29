@@ -26,7 +26,7 @@ function deferred() {
 
 // A hook context the way LiveView provides it: el.dataset picks the surface,
 // handleEvent registers a listener we can fire by hand.
-function makeHook(hookDef, target = "outer") {
+function makeHook(hookDef, target = "outershell") {
     const registered = {}
     return Object.assign(Object.create(hookDef), {
         el: { dataset: { target } },
@@ -61,7 +61,7 @@ describe("boot seam: events riding the mount patch are never lost", () => {
         const { surface } = makeSurface(["seeOuterShell", "outerSignal"])
         const boot = deferred()
         const hook = makeHook(
-            makeShellHook({ boot: () => boot.promise, surfaces: { outer: surface, inner: surface } })
+            makeShellHook({ boot: () => boot.promise, surfaces: { outershell: surface, coreshell: surface } })
         )
 
         hook.mounted()
@@ -76,7 +76,7 @@ describe("boot seam: events riding the mount patch are never lost", () => {
         const { surface, record } = makeSurface(["seeOuterShell", "outerSignal"])
         const boot = deferred()
         const hook = makeHook(
-            makeShellHook({ boot: () => boot.promise, surfaces: { outer: surface, inner: surface } })
+            makeShellHook({ boot: () => boot.promise, surfaces: { outershell: surface, coreshell: surface } })
         )
 
         hook.mounted()
@@ -97,7 +97,7 @@ describe("boot seam: events riding the mount patch are never lost", () => {
     test("after live, events flow straight through", async () => {
         const { surface, record } = makeSurface(["seeOuterShell"])
         const hook = makeHook(
-            makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outer: surface, inner: surface } })
+            makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outershell: surface, coreshell: surface } })
         )
 
         hook.mounted()
@@ -107,16 +107,16 @@ describe("boot seam: events riding the mount patch are never lost", () => {
         assert.deepEqual(record.seen, [["seeOuterShell", { addr: "a2" }]])
     })
 
-    test("data-target picks the surface: outer vs inner", async () => {
+    test("data-target names the surface: outershell vs coreshell", async () => {
         const outer = makeSurface(["seeOuterShell"])
         const inner = makeSurface(["writeShell"])
         const def = makeShellHook({
             boot: () => Promise.resolve({}),
-            surfaces: { outer: outer.surface, inner: inner.surface },
+            surfaces: { outershell: outer.surface, coreshell: inner.surface },
         })
 
-        const outerHook = makeHook(def, "outer")
-        const innerHook = makeHook(def, "core")
+        const outerHook = makeHook(def, "outershell")
+        const innerHook = makeHook(def, "coreshell")
         outerHook.mounted()
         innerHook.mounted()
         await tick()
@@ -127,6 +127,24 @@ describe("boot seam: events riding the mount patch are never lost", () => {
         assert.equal(outerHook.registered.writeShell, undefined)
         assert.equal(typeof innerHook.registered.writeShell, "function")
     })
+
+    // An unknown name is a fault, not a default. While the machine branched,
+    // any unrecognised target silently mounted the heaviest surface and this
+    // guard could never fire.
+    test("an unknown data-target mounts nothing", async () => {
+        const { surface, record } = makeSurface(["writeShell"])
+        const def = makeShellHook({
+            boot: () => Promise.resolve({}),
+            surfaces: { coreshell: surface },
+        })
+
+        const hook = makeHook(def, "corshell") // typo
+        hook.mounted()
+        await tick()
+
+        assert.equal(record.mounts, 0)
+        assert.equal(hook.registered.writeShell, undefined)
+    })
 })
 
 describe("dead state: a mid-boot destroy stands the mount down", () => {
@@ -134,7 +152,7 @@ describe("dead state: a mid-boot destroy stands the mount down", () => {
         const { surface, record } = makeSurface(["seeOuterShell"])
         const boot = deferred()
         const hook = makeHook(
-            makeShellHook({ boot: () => boot.promise, surfaces: { outer: surface, inner: surface } })
+            makeShellHook({ boot: () => boot.promise, surfaces: { outershell: surface, coreshell: surface } })
         )
 
         hook.mounted()
@@ -151,7 +169,7 @@ describe("dead state: a mid-boot destroy stands the mount down", () => {
     test("boot standing down (null, per bootShell's dead check) → no mount", async () => {
         const { surface, record } = makeSurface(["seeOuterShell"])
         const hook = makeHook(
-            makeShellHook({ boot: () => Promise.resolve(null), surfaces: { outer: surface, inner: surface } })
+            makeShellHook({ boot: () => Promise.resolve(null), surfaces: { outershell: surface, coreshell: surface } })
         )
 
         hook.mounted()
@@ -163,7 +181,7 @@ describe("dead state: a mid-boot destroy stands the mount down", () => {
     test("events arriving after destroyed are ignored", async () => {
         const { surface, record } = makeSurface(["seeOuterShell"])
         const hook = makeHook(
-            makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outer: surface, inner: surface } })
+            makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outershell: surface, coreshell: surface } })
         )
 
         hook.mounted()
@@ -178,7 +196,7 @@ describe("dead state: a mid-boot destroy stands the mount down", () => {
         const { surface, record } = makeSurface(["seeOuterShell"])
         let termDestroyed = 0
         const hook = makeHook(
-            makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outer: surface, inner: surface } })
+            makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outershell: surface, coreshell: surface } })
         )
         hook.term = { destroy: () => termDestroyed++ }
 
@@ -203,7 +221,7 @@ describe("dead state: a mid-boot destroy stands the mount down", () => {
             },
         }
         const hook = makeHook(
-            makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outer: surface, inner: surface } })
+            makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outershell: surface, coreshell: surface } })
         )
         hook.mounted()
         await tick()

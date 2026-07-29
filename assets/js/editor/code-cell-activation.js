@@ -115,21 +115,21 @@ export const createCodeCellActivationExtension = (cm6) => {
 
     const LINE = {
         inactive:  Decoration.line({ class: 'cm-cell-inactive' }),   // inert — dimmed
-        active:    Decoration.line({ class: 'cm-cell-active' }),     // the live cell
-        peerCell:  Decoration.line({ class: 'cm-peer-cell' }),       // his focus — the cell he is kindling
-        peerLine:  Decoration.line({ class: 'cm-peer-line' }),       // HIM — exactly where he is
+        active:    Decoration.line({ class: 'cm-cell-kindled' }),    // the live cell
+        peerCell:  Decoration.line({ class: 'cm-peer-cell' }),       // the peer's focus — the cell they are kindling
+        peerLine:  Decoration.line({ class: 'cm-peer-line' }),       // THE PEER — exactly where they are
     };
 
     // TWO MARKS, ONE WALK, and they say different things.
     //
-    //   .cm-peer-line — the friend, on his LINE. Total: it lands in prose,
+    //   .cm-peer-line — the peer, on their line. Total: it lands in prose,
     //                   between cells, on bare code, or inside a body, and
     //                   means the same thing everywhere. This is the datum.
     //   .cm-peer-cell — the cell that line falls in, when it falls in one:
-    //                   his FOCUS, spoken in the same language the canvas
+    //                   their focus, spoken in the same language the canvas
     //                   already speaks for a kindled cell. Derived, never
-    //                   stored, and simply absent when he stands outside a
-    //                   fence — which is itself true, and says he is making.
+    //                   stored, and simply absent outside a fence — which is
+    //                   itself true, and says the peer is making.
     //
     // Ranges collected and sorted rather than pushed through a builder,
     // because the friend's line may sit anywhere — including outside every

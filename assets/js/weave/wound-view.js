@@ -1,20 +1,14 @@
-// WOUND VIEW — the sentence a diagnostic says, and nothing else.
+// WOUND VIEW — the sentence a diagnostic says, and nothing else (D022:
+// diagnostics are the wounds). queries.js answers the facts; this is the one
+// place they become words, so the HUD, a friend's panel, the gutter and a
+// crossed-wire reflect all say the SAME sentence about the same wound.
 //
-// The query layer (weave/queries.js) answers FACTS: what hurt, where it lives,
-// which fault the document speaks of. It authors no prose. This module is the
-// one place those facts become words, so every surface that shows a wound —
-// the core HUD, a friend's panel, the editor's gutter, the reflect that crosses
-// the wire — says the SAME sentence about the same wound.
+// Why a file: `message` used to answer for the parser, the canvas, AND this
+// module's own prose, with no way to tell which apart — a reader couldn't,
+// and a second surface wanting different wording had nowhere to stand. Facts
+// on one side (the query), words on the other (here); the seam is `describe`.
 //
-// Why the split is worth a file. The two lived together and the query grew a
-// duty it could not name: a `message` field that was sometimes the parser's own
-// words, sometimes the canvas's, and sometimes a sentence the query had written
-// itself. A reader could not tell which, and a second surface wanting a
-// different rendering had nowhere to stand. Facts on one side, words on the
-// other, and the seam is `describe`.
-//
-// Nothing here decides anything. If a function in this file has to choose which
-// wound matters or whether the document is well, it belongs in the query.
+// Decides nothing: a choice about which wound matters belongs in the query.
 
 // WHERE IT HURTS, in the author's own outline — the phase whose sisters it
 // stands among, her name for the cell when she gave one (D024), then the line.
@@ -32,9 +26,9 @@ export const placeOf = (w) => [
 export const sourceOf = (w) =>
     w?.source ?? w?.cellName ?? w?.phase?.[w.phase.length - 1] ?? null
 
-// WHAT HURT, in words. A wound either carries a message it was GIVEN — the
-// parser's, or the canvas's, quoted verbatim and never rewritten — or it carries
-// the facts for one and this says it. The `kind` is what tells them apart.
+// WHAT HURT, in words. A wound with its own `message` speaks it verbatim
+// (the parser's or the canvas's own words, never rewritten); otherwise this
+// composes the sentence from the facts, keyed by `kind`.
 export const describe = (w) => {
     if (w?.message != null) return w.message
     switch (w?.kind) {

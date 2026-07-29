@@ -154,8 +154,8 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
             backgroundImage: 'linear-gradient(to right, oklch(0.992 0.015 100 / 0.6) 1px, transparent 1px)',
         },
         // Code cells (id:gw-grammar): the cursor's cell is live; the rest recede.
-        '.cm-cell-inactive': { opacity: '0.38' },                          // inert — dimmed, not evaluated
-        '.cm-cell-active':   { backgroundColor: 'rgba(160, 234, 0, 0.05)' }, // the live cell — faint chartreuse
+        '.cm-cell-inactive': { opacity: '0.38' },                            // inert — dimmed, not evaluated
+        '.cm-cell-kindled':  { backgroundColor: 'rgba(160, 234, 0, 0.05)' }, // the live cell — faint chartreuse
 
         // THE FRIEND (D025 R6) — violet, from the one `--peer-ink` token that
         // also lights the firefly, so his line and his glyph cannot drift apart.
@@ -318,8 +318,8 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
             color: '#ffffff',
         },
         // Code cells (id:gw-grammar): the cursor's cell is live; the rest recede.
-        '.cm-cell-inactive': { opacity: '0.42' },                          // inert — dimmed, not evaluated
-        '.cm-cell-active':   { backgroundColor: 'rgba(141, 161, 1, 0.07)' }, // the live cell — faint green
+        '.cm-cell-inactive': { opacity: '0.42' },                            // inert — dimmed, not evaluated
+        '.cm-cell-kindled':  { backgroundColor: 'rgba(141, 161, 1, 0.07)' }, // the live cell — faint green
 
         // The friend (D025 R6) — the same `--peer-ink` violet, which the token
         // already deepens for paper, carried in at the weight everforest wants.

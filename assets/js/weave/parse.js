@@ -154,7 +154,7 @@ export function transpile(orgText) {
             // All other #+keywords are the machine's share — dropped.
             continue
         }
-        // Org comment lines (# …) — not the margin; drop.
+        // Org comment lines (# …) carry no signal here; drop.
         if (/^#(?:\s|$)/.test(trimmed)) continue
 
         if (trimmed === '') {

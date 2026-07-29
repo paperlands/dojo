@@ -5,12 +5,9 @@
 // registrant's contract, and an unspoken face degrades by optional chain
 // (`world()?.vitals?.(name) ?? null`) — the cell enumerates nothing.
 //
-// Rebuilt on kernel/cell — the stage-cell idiom, with breath. The public
-// names (registerWorld / world / watchWorld / worldChanged) are the seam;
-// the generic is the law. Contract pinned by test/js/world_cell_test.mjs.
-//
-// Pure and import-light on purpose: headless surfaces and tests import
-// this cell without dragging in the stage.
+// Rebuilt on kernel/cell — the stage-cell idiom, with breath. createCell is
+// canonical; registerWorld / world / watchWorld / worldChanged are its named
+// view (D006). Contract pinned by test/js/world_cell_test.mjs.
 
 import { createCell } from "../kernel/cell.js"
 

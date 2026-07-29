@@ -1,32 +1,27 @@
 // The terminals cell — Terminals by role, not by dunder (id:gw-t-dom-registry).
-//
-// Two roles, same idiom as stage-cell: the inner buffer (your code) and the
-// outer review surface (a friend's). wireRegistry is the one write door;
-// readers import getInner / getOuter / outerDrafting — never document.getElementById
-// for a terminal. Count of __-props only ever decreases.
+// Role is data (id:lex-unmarked): one createCell() per surface name already in the DOM.
 
 import { createCell } from "../../kernel/cell.js"
 
-const inner = createCell()
-const outer = createCell()
+const cells = { coreshell: createCell(), outershell: createCell() }
 
-export function registerInner(term) {
-    return inner.register(term)
+// An unmarked role is a fault, and it says so — reaching cells[role] blind
+// dies with "cannot read properties of undefined", which names nothing.
+function cellFor(role) {
+    const cell = cells[role]
+    if (!cell) throw new Error(`term-cell: no role "${role}" — expected coreshell or outershell`)
+    return cell
 }
 
-export function getInner() {
-    return inner.get()
+export function register(role, term) {
+    return cellFor(role).register(term)
 }
 
-export function registerOuter(term) {
-    return outer.register(term)
+export function get(role) {
+    return cellFor(role).get()
 }
 
-export function getOuter() {
-    return outer.get()
-}
-
-// Keystroke path — is the outer drafting? No DOM walk.
+// Keystroke path — is the outershell drafting? No DOM walk.
 export function outerDrafting() {
-    return !!outer.get()?.drafting?.()
+    return !!get("outershell")?.drafting?.()
 }

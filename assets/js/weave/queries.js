@@ -11,7 +11,7 @@
 // (`why`, `word`, `answersTo`, `standsOn`); a wound passed through keeps the
 // words it was GIVEN, quoted. `weave/wound-view.js` is where facts become words.
 //
-// The memo law: memoize at the REUSE-UNIT grain. reparseProgram answers a
+// The memo rule: memoize at the REUSE-UNIT grain. reparseProgram answers a
 // new root array every edit — adoption reuses top-level units, never the
 // root — so the WeakMap keys on the unit nodes, where green-tree identity
 // actually survives. A reused node answers its old array (literally the

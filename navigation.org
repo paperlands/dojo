@@ -340,11 +340,13 @@ A watched friend's signals flow through =push()= like every other kind.
 ** shell hook — dispatch point, two surfaces
 :PROPERTIES:
 :ID: nav-shell-hook
-:KEYWORDS: shell hook dispatch surfaces data-target mounted destroyed
+:KEYWORDS: shell hook dispatch surfaces data-target coreshell outershell weave mounted destroyed
 :PATH: assets/js/hooks/shell.js
 :END:
 Live play protocol: read =codex/play.org= FIRST. The hook is a dispatch point:
-lifecycle machine × { outer, inner } surface over the shared core.
+lifecycle machine × { coreshell, outershell, weave } over the shared core.
+=data-target= IS the surface's name — the map key, not a value to branch on; an
+unknown name mounts nothing. Peers, not nesting ([[id:lex-unmarked]]).
 
 ** shell lifecycle — the boot seam law
 :PROPERTIES:
@@ -359,7 +361,7 @@ mid-boot destroy stands the mount down. Pure — =test/js/shell_lifecycle_test.m
 ** shell core — CM6 boot, execCommand seam, listener kit
 :PROPERTIES:
 :ID: nav-shell-core
-:KEYWORDS: shell core editor execCommand cm-content codemirror keymap bootShell wireRegistry keyboard capture slider
+:KEYWORDS: shell core editor execCommand cm-content codemirror keymap bootShell keyboard capture slider
 :PATH: assets/js/hooks/shell/core.js
 :END:
 
@@ -392,11 +394,12 @@ throws. =test/js/kernel_test.mjs=.
 ** term cell — Terminals by role, not dunder
 :PROPERTIES:
 :ID: nav-term-cell
-:KEYWORDS: term-cell getInner getOuter outerDrafting registerInner registerOuter wireRegistry gw-t-dom-registry
+:KEYWORDS: term-cell register get outerDrafting role coreshell outershell gw-t-dom-registry
 :PATH: assets/js/hooks/shell/term-cell.js
 :END:
-Inner buffer and outer review surface. Replaces =__cm= / =__terminal= walks
-(id:gw-t-dom-registry).
+=register(role, term)= / =get(role)= over one =createCell()= per surface name —
+role is data, an unknown one throws by name ([[id:lex-unmarked]]). Replaces
+=__cm= / =__terminal= walks (id:gw-t-dom-registry).
 
 ** outer surface — review, draft, fork
 :PROPERTIES:

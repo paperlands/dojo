@@ -27,7 +27,7 @@
 //                focus  key name  |  world:true            — the one attention move
 //                degree key degree unlessFocused?          — appearance, never a run
 //   landed     where the ladder actually put the light, when that is not where
-//              `attention` pointed. For the input organ, not the canvas — the
+//              `attention` pointed. For the editor, not the canvas — the
 //              surface that owns that cursor applies it.
 //
 // THREE SHAPES, decided by the document alone (the cell shape rule,
@@ -63,7 +63,7 @@ function cellEntries(addr, name, cells) {
         name: ids[i].name ?? (i === 0 ? name : `${name}·${i + 1}`),
         code,
         vocab,
-        open, end, path,        // the law resolves an incoming line through these
+        open, end, path,        // an incoming attention line resolves against these, below
         nodes, vocabNodes,      // live slices of the one tree — the seat runs THESE
     }))
 }
@@ -80,8 +80,8 @@ const answer = (effects, extra = {}) =>
     ({ effects, landed: null, source: null, merge: false, paged: false, ...extra })
 
 // localKeys — () => [keys]: the whole-buffer ambients the canvas holds. The
-// child's page claims the canvas alone and must NAME what it displaces; the
-// law cannot see the group, so the surface injects the read.
+// child's page claims the canvas alone and must NAME what it displaces;
+// pageLaw cannot see the group, so the surface injects the read.
 export function pageLaw({ localKeys = () => [] } = {}) {
     // addr → { entries, order, mode, own, source, tree, name }
     const pages = new Map()
@@ -112,7 +112,7 @@ export function pageLaw({ localKeys = () => [] } = {}) {
         }
     }
 
-    // A document becomes a tree exactly once, whichever door it came through.
+    // A document becomes a tree exactly once, no matter which caller asks.
     // Unparsable degrades to plain: the parse errors surface at the draw.
     function asTree(addr, doc) {
         if (Array.isArray(doc)) return { ast: doc, source: printAST(doc) }
@@ -133,7 +133,7 @@ export function pageLaw({ localKeys = () => [] } = {}) {
         const order = prevOrder.filter((i) => i < entries.length)
         if (index != null) return visit(order, index, mode === "program" ? 1 : 2)
         // The cursor law, third clause: out on bare code a program's cells
-        // rest and the bare code regains the light. A page ignores it — prose
+        // rest and the bare code kindles again. A page ignores it — prose
         // keeps the last reach.
         if (attended && mode === "program") return { order: [], evicted: null }
         // A page opens at its first cell; a program opens with none.
@@ -151,7 +151,7 @@ export function pageLaw({ localKeys = () => [] } = {}) {
 
     function observe(addr, { name, doc, own = false, attention = null }) {
         const held = pages.get(addr)
-        // No document means "the one that stands" — `attend`'s door.
+        // No document means "the one that stands" — how `attend` calls in.
         // Re-normalizing would round-trip the text and look like an edit.
         const { ast, source } = doc === undefined && held
             ? { ast: held.tree, source: held.source }
@@ -188,8 +188,8 @@ export function pageLaw({ localKeys = () => [] } = {}) {
             : cellAtLine(entries, attention.line)
         const { order, evicted } = ladder(held?.order ?? [], entries, index, mode, attention != null)
 
-        // A seat is a RUN, so the law emits nothing when the record it would
-        // write is the record that already stands.
+        // A seat is a RUN, so nothing is emitted when the record about to be
+        // written is the record that already stands.
         if (held && held.source === source && held.own === own &&
             held.mode === mode && sameOrder(held.order, order)) {
             return answer([], { source, paged: mode !== "plain" })
@@ -214,7 +214,7 @@ export function pageLaw({ localKeys = () => [] } = {}) {
 
         if (mode === "plain") {
             // ast is null unless the ``` probe already paid for a parse that
-            // found no real cell — nodes rides it either way (the live-nodes law).
+            // found no real cell — nodes rides it either way (the live-nodes rule).
             effects.push(...slot(addr, name, source, own, { main: own || undefined, nodes: ast }))
             return answer(effects, { source, merge: true })
         }
@@ -231,7 +231,7 @@ export function pageLaw({ localKeys = () => [] } = {}) {
         }
 
         // Spoken only when the ladder landed somewhere other than where
-        // attention pointed; echoing the organ's own line back is a loop.
+        // attention pointed; echoing the caller's own line back is a loop.
         const kindled = order.length ? entries[order[0]] : null
         const landed = !kindled
             ? (held ? null : { line: null })
@@ -241,7 +241,7 @@ export function pageLaw({ localKeys = () => [] } = {}) {
         const hatch = own && mode === "page"
         if (kindled) {
             effects.push(seat(kindled, { hatch, main: mode === "page" && own ? true : undefined }))
-            // The light moves by KEY (D006) — as `degree` does. The name rides
+            // Focus moves by KEY (D006) — as `degree` does. The name rides
             // along as the display label, never as the target: in a program the
             // bare code and the first cell wear the same one.
             effects.push({ op: "focus", key: kindled.key, name: kindled.name })
@@ -267,8 +267,8 @@ export function pageLaw({ localKeys = () => [] } = {}) {
         observe,
 
         // THE PAGE'S OWN HANDLE (D024). A page seats no frame under its addr —
-        // only its cells — so a surface holding just the addr asks the law which
-        // key stands for the page, and gets its first cell.
+        // only its cells — so a surface holding just the addr asks pageLaw
+        // which key stands for the page, and gets its first cell.
         //
         // This replaces "the first cell wears the page's name", which let such a
         // surface resolve by DISPLAY NAME. That could not survive an author
@@ -280,8 +280,8 @@ export function pageLaw({ localKeys = () => [] } = {}) {
             return page.entries[0]?.key ?? null
         },
 
-        // One ladder step: the same law with a new attention and the document
-        // unchanged. Sugar, not a second path — and the door a followed peer's
+        // One ladder step: the same observe, a new attention, and the document
+        // unchanged. Sugar, not a second path — and the seam a followed peer's
         // line will come through.
         attend(addr, line) {
             const page = pages.get(addr)

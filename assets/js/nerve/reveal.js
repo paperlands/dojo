@@ -11,7 +11,7 @@
 import { getStage } from '../turtling/stage-cell.js'
 import { resolveAddress } from '../turtling/focus.js'
 import { createCell } from '../kernel/cell.js'
-import { getInner } from '../hooks/shell/term-cell.js'
+import { get } from '../hooks/shell/term-cell.js'
 
 // The navigator cell — the document boundary's fourth residual (ref:{node},
 // id:weave-navigate). When no ambient answers a name, the registered
@@ -33,7 +33,7 @@ export function revealAmbient(name) {
         navigator.get()?.(name)
         return
     }
-    const term = getInner()
+    const term = get("coreshell")
     const tabKey = turtle.tabKeyForAmbient?.(name)
     if (tabKey != null && term?.getBufferInfo?.(tabKey)) {
         term.opBufferHandler({ op: 'select', target: tabKey })

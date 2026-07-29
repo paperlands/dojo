@@ -1,9 +1,10 @@
 // =============================================================================
-// OUTER SHELL — the read-only code-review surface (data-target="outer").
+// OUTERSHELL — a friend's: the read-only review surface over their lineage
+// (data-target="outershell"). Peer to the coreshell, not a container of it.
 // A claimant projection over the ONE shared nerve + a draft/fork surface.
 // Interactive moves (focus, remove, fork, live ambient) travel WHOLE as named
 // scene adapters (bridged.js) — this surface never reconstructs a payload shape.
-// Built over the shared core: bootShell hands it { term, cm6 }; wireRegistry
+// Built over the shared core: bootShell hands it { term, cm6 }; term-cell.register
 // writes the DOM registry once.
 // =============================================================================
 
@@ -20,7 +21,8 @@ import { announcements } from "../../weave/queries.js"
 import { world, watchWorld } from "../../weave/world.js"
 import { nerveInstance } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
-import { listeners, wireRegistry } from "./core.js"
+import { listeners } from "./core.js"
+import { register } from "./term-cell.js"
 import { createArena } from "../../kernel/arena.js"
 
 // The surface as data: the lifecycle machine registers these event names
@@ -59,7 +61,7 @@ function mountOuter(hook, { term, cm6 }) {
     let ownCaret = null;
 
     term.outer();
-    arena.add(wireRegistry(hook.el, term, cm6, "outer"));
+    arena.add(register("outershell", term));
     const envEl = hook.el.closest('#outerenv');
 
     // A claimant projection over the ONE shared nerve: while open, this

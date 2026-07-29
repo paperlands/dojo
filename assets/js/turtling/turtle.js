@@ -204,12 +204,23 @@ export class Turtle {
                 this.stage.recorder.captureFrame()
             }
 
-            if (!this.renderstate.snapshot.hatched && t > 500 && !this._hatchSuppressed) {
-                this.hatch()
-            } else if (this.scheduler.done && !this._snapshotPending && !this._hatchSuppressed) {
-                // Re-captures ride the done transition: a run's final state is
-                // captured once; eagerHatch (visibility/heartbeat) re-arms it.
-                if (this.hatch()) this._snapshotPending = true
+            // TWO SNAPS only (not one per keystroke):
+            //   1. First light — once the canvas has drawn for ~0.5s.
+            //   2. Done — the run's final figure; re-armed by edit / attention
+            //      / heartbeat via _snapshotPending=false.
+            // First light does NOT set _snapshotPending: that flag guards the
+            // done snap alone. Setting it here would swallow the final snap
+            // for a wait-loop that finishes seconds later (size/dive/wait).
+            if (!this._hatchSuppressed) {
+                if (!this.renderstate.snapshot.hatched && t > 500) {
+                    this.hatch()
+                } else if (
+                    this.renderstate.snapshot.hatched &&
+                    this.scheduler.done &&
+                    !this._snapshotPending
+                ) {
+                    if (this.hatch()) this._snapshotPending = true
+                }
             }
         } else {
             // No ambients — idle render (orbit controls, stage head)
@@ -222,13 +233,19 @@ export class Turtle {
 
         // Decide whether the loop should keep running. Keep going while a program
         // animates, while recording, while the camera is still moving/damping, or
-        // until the first thumbnail snapshot is captured; otherwise idle out.
+        // until a due hatch lands; otherwise idle out.
         const animating = !!this.scheduler && !this.scheduler.done
         const recording = this.stage.recorder.isRecording
         // Only the compositor branch can hatch — don't pin the idle loop on.
-        // A suppressed hatch must not pin the on-demand loop: with snapshot.hatched
-        // left false (we never capture for foreign content) this would spin forever.
-        const needHatch = !!this.compositor && !this.renderstate.snapshot.hatched && !this._hatchSuppressed
+        // A suppressed hatch must not pin forever (foreign content leaves
+        // hatched false). Keepalive covers BOTH snaps: first light, and the
+        // done snap when armed — so a PBO still in flight at the done edge
+        // cannot drop the final figure (hatch() returns false, loop would
+        // otherwise stop with animating=false).
+        const needFirstHatch = !!this.compositor && !this.renderstate.snapshot.hatched && !this._hatchSuppressed
+        const needDoneHatch = !!this.compositor && !!this.scheduler?.done &&
+            this.renderstate.snapshot.hatched && !this._snapshotPending && !this._hatchSuppressed
+        const needHatch = needFirstHatch || needDoneHatch
         const controlsSettling = performance.now() < this._controlsActiveUntil
         this._keepRendering = animating || recording || controlsChanged || controlsSettling || needHatch
     }
@@ -387,10 +404,9 @@ export class Turtle {
             // OPENS it; closing is the batch's word, through reflectGate().
             if (hatch) {
                 this._hatchSuppressed = false
-                // Fresh run: re-arm the done-capture. The snapshot is NOT
-                // cleared — nulling it re-arms a full-canvas readback on the
-                // very next frame, which under live re-eval means once per
-                // keystroke. That is the typing-lag trap; leave it alone.
+                // Fresh run: re-arm the DONE snap. The hatched sentinel stays —
+                // nulling it re-opens first-light every frame (typing-lag trap).
+                // Pending false means "when this run finishes, photograph it."
                 this._snapshotPending = false
             }
 

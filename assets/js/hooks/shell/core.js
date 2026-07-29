@@ -1,11 +1,11 @@
 // =============================================================================
-// SHELL CORE — the one shared, parameterized substrate the two shell surfaces
-// (outer review, inner canvas) are both built over. It owns three things:
+// SHELL CORE — the substrate the two shell surfaces (coreshell, outershell)
+// are both built over. It owns:
 //   1. the CM6 module loader + Terminal construction (bootShell),
-//   2. the terminal cell wiring (wireRegistry) — the single door into
-//      term-cell by role (id:gw-t-dom-registry: no __-props; count only falls),
-//   3. the shell's behavioral kit (commands / listeners / mutators) — the
-//      shared vocabulary each surface uses the subset of it needs.
+//   2. the shell's behavioral kit (commands / listeners / mutators) — the
+//      shared vocabulary each surface uses the subset it needs.
+// Terminal identity registers directly against term-cell.js by role
+// (id:gw-t-dom-registry) — no wiring door here.
 // Named adapters (scene, signals, cameraBridge) do NOT live here — they travel
 // whole from their canonical modules into whichever surface calls them.
 // =============================================================================
@@ -13,7 +13,7 @@
 import { Terminal } from "../../terminal.js"
 import { computePosition, offset } from "../../../vendor/floating-ui.dom.umd.min";
 import { temporal } from "../../utils/temporal.js"
-import { registerInner, registerOuter, outerDrafting } from "./term-cell.js"
+import { outerDrafting } from "./term-cell.js"
 
 // Module-level CM6 cache — loaded once on first Shell mount, reused thereafter.
 // The browser also caches the ES module natively by URL.
@@ -34,15 +34,6 @@ export async function bootShell(hook) {
     const term = new Terminal(hook.el, cm6);
     hook.term = term;
     return { term, cm6 };
-}
-
-// ---------------------------------------------------------------------------
-// wireRegistry — the ONE write door for terminal identity (id:gw-t-dom-registry).
-// Registers the Terminal into term-cell by role. No __-props: readers use
-// getInner / getOuter / outerDrafting. Returns owner-guarded unregister.
-// ---------------------------------------------------------------------------
-export function wireRegistry(_el, term, _cm6, role = "inner") {
-    return role === "outer" ? registerOuter(term) : registerInner(term);
 }
 
 // ---------------------------------------------------------------------------

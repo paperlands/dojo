@@ -1,11 +1,13 @@
 // =============================================================================
-// INNER SHELL — the canvas surface (data-target="core"): turtle, rendering,
+// CORESHELL — mine: the canvas surface (data-target="coreshell") where I
+// write and it runs. Turtle, rendering,
 // scene-bridge subscription, buffer/tab wiring. The rich program.
 // Named adapters travel WHOLE: signals (S) from nerve/store.js, the scene/
 // camera bridges from bridged.js — subscribed and pushed, never reconstructed.
 // key-is-address stays loud: every canvas mount keys on the addr through
 // turtle.upsertAmbient(addr, …) (gw-t-node-address). Built over the shared
-// core: bootShell hands it { term, cm6 }; wireRegistry writes the registry once.
+// core: bootShell hands it { term, cm6 }; term-cell.register writes the
+// registry once.
 //
 // The page relation — which cells stand, warm, leave; who owns an addr's
 // canvas slot — is the PAGE LAW (weave/page.js): pure decisions spoken in
@@ -27,7 +29,8 @@ import { mountReach } from "../../editor/reach.js"
 import { mountDiagnosticsInk } from "../../editor/diagnostics.js"
 import { nerveInstance } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
-import { commands, listeners, mutators, wireRegistry } from "./core.js"
+import { commands, listeners, mutators } from "./core.js"
+import { register } from "./term-cell.js"
 import { createArena } from "../../kernel/arena.js"
 
 // The surface as data: the lifecycle machine registers these event names
@@ -349,9 +352,8 @@ function mountInner(hook, { term, cm6 }) {
         }
     }));
     term.inner();
-    // Term cell — the one address for the inner Terminal (gw-t-dom-registry).
-    // Outer draft seeding and the HUD default editor read getInner().
-    arena.add(wireRegistry(hook.el, term, cm6, "inner"));
+    // Term cell — the one address for the coreshell Terminal (gw-t-dom-registry).
+    arena.add(register("coreshell", term));
 
     // The reach on the child's own editor — the same organ the outershell
     // mounts (editor/reach.js), publishing through the same scene.attend seam

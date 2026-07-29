@@ -146,7 +146,7 @@ defmodule DojoWeb.OuterShellLive do
             id="outershell"
             phx-hook="Shell"
             class="relative z-40 rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full"
-            data-target="outer"
+            data-target="outershell"
           />
         </div>
 

@@ -33,12 +33,10 @@ export function makeShellHook({ boot, surfaces }) {
             this.dead = false;
             this.surface = null;
             const pending = [];
-            // data-target selects the surface program: "outer" | "weave" |
-            // anything else (incl. "core") is the inner canvas.
+            // data-target IS the surface's name — the key, not a value to
+            // branch on. An unknown target is a fault, never a default.
             const target = this.el.dataset.target;
-            const program = target === "outer" ? surfaces.outer
-                : target === "weave" ? surfaces.weave
-                : surfaces.inner;
+            const program = surfaces[target];
             if (!program) {
                 console.error(`Shell: no surface for data-target="${target}"`);
                 return;

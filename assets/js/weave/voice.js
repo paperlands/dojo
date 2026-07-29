@@ -1,14 +1,11 @@
-// VOICE — the RHYTHM of a wound, and nothing else.
-//
-// Three layers, three duties. `weave/queries.js` answers the FACTS (what hurt,
-// where, which one the document speaks of). `weave/wound-view.js` says them in
-// WORDS. This says them ONCE.
+// VOICE — the RHYTHM of a wound, and nothing else. queries.js answers the
+// facts, wound-view.js says the words; this says them ONCE.
 //
 // Why it is a file. A standing wound is one fact, but every surface learns it
 // again on every breath — a friend hatches on each keystroke, and the child's
 // own page re-evaluates at 20 ms. Without a rhythm, one broken line becomes a
 // drumbeat; with one hand-rolled per surface, the child's HUD and a friend's
-// panel disagree about how loud the same wound is. One organ, both surfaces.
+// panel disagree about how loud the same wound is. One clock, both surfaces.
 //
 // The law: a wound speaks when it ARRIVES and stays quiet while it STANDS. A
 // wound that heals and returns is news again, so the ledger is rebuilt from the

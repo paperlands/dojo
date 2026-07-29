@@ -1,8 +1,8 @@
 // =============================================================================
 // SHELL HOOK — one hook, N surfaces, three lifecycle states. bootShell
 // brings up the shared substrate (CM6 + Terminal) for editor surfaces;
-// data-target chooses which surface program stands over it — the outer
-// review surface, the inner canvas, or the weave reading card. Each surface
+// data-target NAMES which surface program stands over it — coreshell (mine),
+// outershell (a friend's lineage), or the weave reading card. Each surface
 // declares its server events as data and returns its handlers + cleanup from
 // mount(); the lifecycle machine (./shell/lifecycle.js) registers events
 // synchronously so nothing riding the mount patch is lost, queues through
@@ -12,8 +12,8 @@
 
 import { makeShellHook } from "./shell/lifecycle.js";
 import { bootShell } from "./shell/core.js";
-import { outer } from "./shell/outer.js";
-import { inner } from "./shell/inner.js";
+import { outer as outershell } from "./shell/outer.js";
+import { inner as coreshell } from "./shell/inner.js";
 import { weave } from "./shell/weave.js";
 import { nerveInstance } from "./nerve.js";
 import { getStage } from "../turtling/stage-cell.js";
@@ -43,9 +43,12 @@ async function bootFor(hook) {
     return bootShell(hook);
 }
 
+// The surface names ARE the data-target values — this map is the whole
+// contract between the DOM and the programs. Mine and the friend's are peers:
+// coreshell (I write, it runs) and outershell (I watch a friend's lineage).
 const Shell = makeShellHook({
     boot: bootFor,
-    surfaces: { outer, inner, weave },
+    surfaces: { coreshell, outershell, weave },
 });
 
 export default Shell;
