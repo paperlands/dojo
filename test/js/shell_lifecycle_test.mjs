@@ -186,4 +186,26 @@ describe("dead state: a mid-boot destroy stands the mount down", () => {
         assert.equal(record.cleaned, 1)
         assert.equal(termDestroyed, 1)
     })
+
+    test("cleanup runs LIFO — reverse registration order", async () => {
+        const order = []
+        const surface = {
+            events: ["seeOuterShell"],
+            mount: () => ({
+                events: { seeOuterShell: () => {} },
+                cleanup: [
+                    () => order.push(1),
+                    () => order.push(2),
+                    () => order.push(3),
+                ],
+            }),
+        }
+        const hook = makeHook(
+            makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outer: surface, inner: surface } })
+        )
+        hook.mounted()
+        await tick()
+        hook.destroyed()
+        assert.deepEqual(order, [3, 2, 1])
+    })
 })

@@ -5,24 +5,22 @@
 // `as name do …`), then focus it on the canvas. If the owning key isn't a local
 // buffer (a remote peer's addr), the tab switch is skipped and we just focus.
 //
-// Stage turtle reads the one cell (turtling/stage-cell.js) — not canvas.__turtle.
-// The terminal still resolves via DOM id until that register migrates too
-// (gw-t-dom-registry: count only ever decreases; this read already left).
+// Stage turtle and inner terminal both read cells (stage-cell, term-cell) —
+// never dunders (id:gw-t-dom-registry).
 
 import { getStage } from '../turtling/stage-cell.js'
 import { resolveAddress } from '../turtling/focus.js'
+import { createCell } from '../kernel/cell.js'
+import { getInner } from '../hooks/shell/term-cell.js'
 
 // The navigator cell — the document boundary's fourth residual (ref:{node},
 // id:weave-navigate). When no ambient answers a name, the registered
 // navigator (the weave's scope law) takes the word: fragment page, or a
 // glowing word waiting to be born. One cell, same shape as the stage's.
-let navigator = null
+const navigator = createCell()
 
 export function registerNavigator(fn) {
-    navigator = fn
-    return () => {
-        if (navigator === fn) navigator = null
-    }
+    return navigator.register(fn)
 }
 
 export function revealAmbient(name) {
@@ -32,10 +30,10 @@ export function revealAmbient(name) {
     // name→address reading — no second predicate beside it.
     if (resolveAddress(turtle.scheduler, name) == null) {
         // Not an ambient — the document boundary: the navigator resolves.
-        navigator?.(name)
+        navigator.get()?.(name)
         return
     }
-    const term = document.getElementById('your-buffer')?.__terminal
+    const term = getInner()
     const tabKey = turtle.tabKeyForAmbient?.(name)
     if (tabKey != null && term?.getBufferInfo?.(tabKey)) {
         term.opBufferHandler({ op: 'select', target: tabKey })

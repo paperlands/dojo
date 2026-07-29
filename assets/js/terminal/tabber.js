@@ -1,8 +1,12 @@
+import { createArena } from "../kernel/arena.js"
+
 export class Tabber {
     constructor(containerId = 'tabs', scaffoldId = 'tab-scaffold-root') {
         this.container = document.getElementById(containerId);
         this.scaffold = document.getElementById(scaffoldId);
         this.template = this.scaffold.cloneNode(true);
+        // One arena per tab — closed with the tab, never left behind.
+        this._arenas = new Map();
     }
 
     addTab(id, name) {
@@ -15,6 +19,9 @@ export class Tabber {
 
 
     configureTab(element, id, name) {
+        const arena = createArena();
+        this._arenas.set(id, arena);
+
         // Configure main element
         Object.assign(element, {
             id: `tab-scaffold-${id}`,
@@ -32,11 +39,11 @@ export class Tabber {
             input.value = name;
             this.resizeInput(input);
 
-            input.addEventListener('blur', e => {
+            arena.on(input, 'blur', () => {
                     this.dispatch('phx:opBuffer', { op: 'rename', target: id });
             });
 
-            input.addEventListener('keydown', e => {
+            arena.on(input, 'keydown', e => {
                 if (e.key === 'Enter') {
                     input.blur();
                 }
@@ -47,17 +54,19 @@ export class Tabber {
 
         // Configure close button
         const close = element.querySelector('.close');
-        close?.addEventListener('click', (e) => {
-            e.stopPropagation()
-            this.dispatch('phx:opBuffer', { op: 'close', target: id })
-        });
+        if (close) {
+            arena.on(close, 'click', (e) => {
+                e.stopPropagation()
+                this.dispatch('phx:opBuffer', { op: 'close', target: id })
+            });
+        }
 
         // Shift+click activates ambient without switching editor.
         // Long-press on mobile does the same.
         let longPressTimer = null;
         let longPressed = false;
 
-        element.addEventListener('click', (e) => {
+        arena.on(element, 'click', (e) => {
             if (longPressed) { longPressed = false; return; }
             if (e.shiftKey) {
                 this.dispatch('phx:opBuffer', { op: 'activate', target: id })
@@ -66,15 +75,17 @@ export class Tabber {
             }
         });
 
-        element.addEventListener('touchstart', () => {
+        // Long-press timer is cancelled by touchend/move — not surface lifetime,
+        // so it stays a local clearTimeout pair, not arena.timer.
+        arena.on(element, 'touchstart', () => {
             longPressed = false;
             longPressTimer = setTimeout(() => {
                 longPressed = true;
                 this.dispatch('phx:opBuffer', { op: 'activate', target: id });
             }, 500);
         }, { passive: true });
-        element.addEventListener('touchend', () => clearTimeout(longPressTimer));
-        element.addEventListener('touchmove', () => clearTimeout(longPressTimer));
+        arena.on(element, 'touchend', () => clearTimeout(longPressTimer));
+        arena.on(element, 'touchmove', () => clearTimeout(longPressTimer));
 
         return element;
     }
@@ -164,6 +175,8 @@ export class Tabber {
     closeTab(targetId) {
         const tab = this.container.querySelector(`[data-tab-id="${targetId}"]`);
         if (!tab) return;
+        this._arenas.get(targetId)?.destroy();
+        this._arenas.delete(targetId);
         tab.remove();
     }
 

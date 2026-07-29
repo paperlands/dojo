@@ -21,6 +21,7 @@ import { world, watchWorld } from "../../weave/world.js"
 import { nerveInstance } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
 import { listeners, wireRegistry } from "./core.js"
+import { createArena } from "../../kernel/arena.js"
 
 // The surface as data: the lifecycle machine registers these event names
 // synchronously at mounted() — the initial seeOuterShell/outerSignal ride the
@@ -36,6 +37,8 @@ function mountOuter(hook, { term, cm6 }) {
     // Outer shell: read-only code viewer + bridge publisher.
     // Rendering is handled by the inner shell via seeOuterShell.
     // Interactive events (focus, remove, fork) go through scene bridge.
+    // One arena owns every long-lived listener on this surface.
+    const arena = createArena();
     let outerAddr = null;
     let outerName = null;
     let outerBufferId = null;
@@ -56,7 +59,7 @@ function mountOuter(hook, { term, cm6 }) {
     let ownCaret = null;
 
     term.outer();
-    wireRegistry(hook.el, term, cm6);
+    const unregisterTerm = wireRegistry(hook.el, term, cm6, "outer");
     const envEl = hook.el.closest('#outerenv');
 
     // A claimant projection over the ONE shared nerve: while open, this
@@ -69,7 +72,7 @@ function mountOuter(hook, { term, cm6 }) {
     const outerProj = remoteNerveEl && nerveInstance
         ? nerveInstance.project(remoteNerveEl, {
             pushEvent: (e, p) => hook.pushEvent(e, p),
-            targets: { editorView: () => hook.el.__cm },
+            targets: { editorView: () => term.shell },
         })
         : null;
 
@@ -179,7 +182,7 @@ function mountOuter(hook, { term, cm6 }) {
         enterDraft();
         hook.pushEvent("outerDraft", {});
     };
-    term.shell.dom.addEventListener('keydown', onDraftKey, true);
+    arena.on(term.shell.dom, 'keydown', onDraftKey, true);
 
     // The shared reach organ (editor/reach.js, the cell shape rule
     // id:gw-cell). It publishes while DRAFTING too: a draft is the child's own
@@ -210,7 +213,7 @@ function mountOuter(hook, { term, cm6 }) {
     const OWN_INPUT = ['wheel', 'touchmove', 'mousedown', 'keydown'];
     const inputEl = envEl ?? term.shell.scrollDOM;
     for (const kind of OWN_INPUT) {
-        inputEl.addEventListener(kind, endFollowing, { passive: true });
+        arena.on(inputEl, kind, endFollowing, { passive: true });
     }
 
     // The chase: the edge the friend was lost past, and the way back.
@@ -383,7 +386,7 @@ function mountOuter(hook, { term, cm6 }) {
             offset: term.shell?.state?.selection?.main?.head ?? 0,
         });
     };
-    outerEl.addEventListener('click', onDelegatedClick);
+    arena.on(outerEl, 'click', onDelegatedClick);
 
     // Focus switching via scene bridge
     const activateOuter = () => {
@@ -399,8 +402,8 @@ function mountOuter(hook, { term, cm6 }) {
         if (!outerEl.contains(e.target)) restoreInner();
     };
 
-    outerEl.addEventListener('mousedown', onOuterClick);
-    document.addEventListener('focusin', onGlobalFocus);
+    arena.on(outerEl, 'mousedown', onOuterClick);
+    arena.on(document, 'focusin', onGlobalFocus);
 
     return {
         events: {
@@ -416,18 +419,16 @@ function mountOuter(hook, { term, cm6 }) {
             // (panel stays open); on close we want the slot gone. Firing it
             // here re-added the ambient milliseconds after removing it.
             () => { if (outerAddr) scene.remove(outerAddr); },
-            () => term.shell?.dom.removeEventListener('keydown', onDraftKey, true),
             reach.cleanup,
             chase.cleanup,
             ink,
             unwatchWorld,
-            () => OWN_INPUT.forEach((k) => inputEl.removeEventListener(k, endFollowing)),
             reachUnsub,
             draftEditUnsub,
             () => outerProj?.destroy(),
-            () => outerEl.removeEventListener('click', onDelegatedClick),
-            () => { outerEl.removeEventListener('mousedown', onOuterClick);
-                    document.removeEventListener('focusin', onGlobalFocus); },
+            unregisterTerm,
+            // All long-lived listeners — draft key, own-input, click, focusin.
+            () => arena.destroy(),
         ],
     };
 }

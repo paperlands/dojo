@@ -363,6 +363,41 @@ mid-boot destroy stands the mount down. Pure — =test/js/shell_lifecycle_test.m
 :PATH: assets/js/hooks/shell/core.js
 :END:
 
+** kernel cell — registry-of-one
+:PROPERTIES:
+:ID: nav-kernel-cell
+:KEYWORDS: kernel cell createCell register get watch changed breathes stage-cell idiom later mount wins
+:PATH: assets/js/kernel/cell.js::export function createCell
+:END:
+One occupant, owner-guarded release. Optional breath. Stage, world, navigator,
+terminals all sit on this.
+
+** kernel observable — one watch/notify
+:PROPERTIES:
+:ID: nav-kernel-observable
+:KEYWORDS: kernel observable createObservable createAtom watch notify swap deref
+:PATH: assets/js/kernel/observable.js::export function createObservable
+:END:
+The breath every half-adopted list reimplemented. Atom is a value over it.
+
+** kernel arena — one lifetime, no individual free
+:PROPERTIES:
+:ID: nav-kernel-arena
+:KEYWORDS: kernel arena createArena LIFO child destroy clear on timer zombie mount
+:PATH: assets/js/kernel/arena.js::export function createArena
+:END:
+APR/region law: LIFO cleanups, nested children die first, register-after-destroy
+throws. =test/js/kernel_test.mjs=.
+
+** term cell — Terminals by role, not dunder
+:PROPERTIES:
+:ID: nav-term-cell
+:KEYWORDS: term-cell getInner getOuter outerDrafting registerInner registerOuter wireRegistry gw-t-dom-registry
+:PATH: assets/js/hooks/shell/term-cell.js
+:END:
+Inner buffer and outer review surface. Replaces =__cm= / =__terminal= walks
+(id:gw-t-dom-registry).
+
 ** outer surface — review, draft, fork
 :PROPERTIES:
 :ID: nav-shell-outer

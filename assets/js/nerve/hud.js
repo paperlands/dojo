@@ -5,6 +5,7 @@
 
 import { CHANNELS } from './store.js'
 import { revealAmbient } from './reveal.js'
+import { getInner } from '../hooks/shell/term-cell.js'
 
 const MAX_CHAT_SLOTS = 5
 const SHOUT_THROTTLE_MS = 500
@@ -17,7 +18,7 @@ const SHOUT_THROTTLE_MS = 500
 
 function resolveTargets(targets) {
     return {
-        editorView: targets?.editorView || (() => document.getElementById('your-buffer')?.__cm),
+        editorView: targets?.editorView || (() => getInner()?.shell),
         // Reveal an ambient by name — the shared gesture (see reveal.js); the
         // editor's [[portal]] clicks land on the same path.
         revealAmbient: targets?.revealAmbient || revealAmbient,

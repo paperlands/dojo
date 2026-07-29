@@ -8,7 +8,7 @@
 // targetFrame) as needed — bookkeeping, not part of the primitive contract.
 
 import { SE3 } from "./se3.js"
-import { createAtom } from "./atom.js"
+import { createAtom } from "../kernel/observable.js"
 import { createRingBuffer } from "./ring-buffer.js"
 
 let _nextId = 0

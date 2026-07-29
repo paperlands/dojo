@@ -43,10 +43,8 @@ function mountInner(hook, { term, cm6 }) {
     const canvas = document.getElementById('core-canvas');
     const turtle = new Turtle(canvas);
     // Stage cell — the one address for the live turtle (gw-t-dom-registry).
-    // Weave boot + revealAmbient read getStage(); the dunder remains for
-    // legacy sites until they migrate (write count held, new reads don't grow).
+    // Weave boot + revealAmbient read getStage(); no canvas.__turtle.
     const unregisterStage = registerStage(turtle);
-    canvas.__turtle = turtle;
 
     // Profiler overlay — opt-in via ?perf=1. Lazy-imported so it adds
     // zero cost to normal sessions. Reports RAF idle-spin + GPU growth.
@@ -343,10 +341,9 @@ function mountInner(hook, { term, cm6 }) {
         }
     });
     term.inner();
-    // Expose CM6 view on the textarea so nerve hook can scrollToLine.
-    // Expose the terminal so the outer review surface can read your
-    // fork content along a lineage (forkContent) to seed a draft.
-    wireRegistry(hook.el, term, cm6);
+    // Term cell — the one address for the inner Terminal (gw-t-dom-registry).
+    // Outer draft seeding and the HUD default editor read getInner().
+    const unregisterTerm = wireRegistry(hook.el, term, cm6, "inner");
 
     // The reach on the child's own editor — the same organ the outershell
     // mounts (editor/reach.js), publishing through the same scene.attend seam
@@ -541,6 +538,7 @@ function mountInner(hook, { term, cm6 }) {
             unmountInk,
             unregisterWorld,
             unregisterStage,
+            unregisterTerm,
             () => hook._profilerDetach?.(),
             sceneUnsub,
         ],

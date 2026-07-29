@@ -17,6 +17,7 @@ import * as editorView from "./terminal/view.js"
 import { buildExtensions, reapplyCompartments } from "./terminal/extensions.js"
 import { revealAmbient } from "./nerve/reveal.js"
 import { defaultAttend } from "./editor/plang-mode.js"
+import { getInner } from "./hooks/shell/term-cell.js"
 
 const DEFAULT_OPTIONS = { theme: 'abbott', mode: 'plang' };
 
@@ -329,8 +330,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             // Lineage-aware seed: read your existing fork of this code from the
             // inner terminal (owner of the buffer collection). Falls back to the
             // friend's code when you have no fork yet.
-            const inner = document.getElementById('your-buffer')?.__terminal;
-            const forkContent = inner?.forkContent?.(addr, buffer_id) ?? null;
+            const forkContent = getInner()?.forkContent?.(addr, buffer_id) ?? null;
             const draft = forkContent ?? friendSource;
 
             state.drafting = true;

@@ -8,7 +8,7 @@
 //     the material cache size climbing across redraws = leak.
 //
 // Attach by loading /shell?perf=1, or from devtools:
-//   import("/assets/js/turtling/profile/overlay.js").then(m => m.attachProfilerOverlay(document.getElementById('core-canvas').__turtle))
+//   import("/assets/js/turtling/profile/overlay.js").then(m => m.attachProfilerOverlay(getStage()))
 //
 // Passive: it wraps turtle.onFrame to count frames and samples state on its own
 // setInterval, so it keeps reporting even while the render loop is idle. It does

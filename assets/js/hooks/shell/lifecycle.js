@@ -63,7 +63,14 @@ export function makeShellHook({ boot, surfaces }) {
 
         destroyed() {
             this.dead = true;
-            this.surface?.cleanup.forEach(fn => fn());
+            // LIFO — reverse registration order (kernel/arena invariant 3).
+            // A later organ may hold a listener on an element an earlier organ
+            // made; tearing down forward releases the element while the
+            // listener still points at it.
+            const clean = this.surface?.cleanup;
+            if (clean) {
+                for (let i = clean.length - 1; i >= 0; i--) clean[i]();
+            }
             this.term?.destroy();
         }
     };

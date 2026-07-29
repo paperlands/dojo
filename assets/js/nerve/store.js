@@ -5,6 +5,8 @@
 // (zone, priority, fade duration, CSS class) and its signal constructor.
 // Callers use signal constructors — never raw objects.
 
+import { createObservable } from "../kernel/observable.js"
+
 export const CHANNELS = {
     error:  { priority: 5, fadeMs: 60000, zone: 'status', css: 'nerve-error' },
     system: { priority: 4, fadeMs: 15000, zone: 'status', css: 'nerve-system' },
@@ -55,7 +57,7 @@ export const signals = {
 export function createSignalStore(opts = {}) {
     const MAX = opts.maxSignals || 200
     const signals = []
-    const subscribers = []
+    const subscribers = createObservable()
     const sources = new Set()
     const targets = new Set()
     const muted = new Set()
@@ -94,17 +96,11 @@ export function createSignalStore(opts = {}) {
         if (signal.source && signal.source !== '?') sources.add(signal.source)
         if (signal.target) targets.add(signal.target)
 
-        for (let i = 0; i < subscribers.length; i++) {
-            subscribers[i](signal)
-        }
+        subscribers.notify(signal)
     }
 
     function subscribe(fn) {
-        subscribers.push(fn)
-        return () => {
-            const idx = subscribers.indexOf(fn)
-            if (idx !== -1) subscribers.splice(idx, 1)
-        }
+        return subscribers.watch(fn)
     }
 
     function mute(kind) { muted.add(kind) }
