@@ -22,13 +22,32 @@ class ParserState {
 
 
 // ============================================================================
-//  Keyword Lookup Tables
+// THE GRAMMAR — one table (id:gw-grammar)
 // ============================================================================
+// Meadow fences, cell fences, headlines, block openers. Every site that asks
+// "what does this line open or close?" reads here — tokenizer, outline,
+// editor mode, press, page probe. A second spelling is a second answer.
+// The predicates are the marks; `classify` below is the one walk that APPLIES
+// them, and every reader downstream is a fold over its roles.
 
-const END = 'end';
-const DO = 'do';
+export const END = 'end';
+export const DO = 'do';
 const COMMENT = '#';
-const FENCE = '###';   // the meadow door — prose AROUND code (id:gw-grammar)
+
+// The marks as they are typed.
+export const MEADOW_MARK = '###';   // prose AROUND code
+export const CELL_MARK = '```';     // a code CELL inside a meadow
+
+// Line predicates (full-line). Leading/trailing space is allowed; nothing else.
+export const HEADLINE = /^[ \t]*(\*+)\s+(\S.*)$/;   // `* name` — trailing space disambiguates *bold*
+export const MEADOW_FENCE = /^[ \t]*###[ \t]*$/;
+export const CELL_OPEN = /^[ \t]*```/;              // an info word may ride the opener
+export const CELL_CLOSE = /^[ \t]*```[ \t]*$/;      // a bare ``` is only ever a closer
+export const CELL_PROBE = /^[ \t]*```/m;            // cheap multi-line gate (page.js)
+
+export const isMeadowFence = (s) => MEADOW_FENCE.test(s ?? '');
+export const isCellOpen = (s) => CELL_OPEN.test(s ?? '');
+export const isCellClose = (s) => CELL_CLOSE.test(s ?? '');
 
 // The one place code and comment part. Everything after `#` rides verbatim —
 // the author's whitespace is theirs. A bare `#` still yields a comment, not undefined.
@@ -41,9 +60,105 @@ const splitComment = (raw) => {
 const CLOSERS = { '"': '"', "'": "'", '[': ']', '(': ')' };
 const OPENS_BRACKET = { '[': 1, '(': 1 };
 
-// Block keyword lookup (O(1))
-const BLOCK_KW = { for: 1, loop: 1, def: 1, draw: 1, when: 1, as: 1 };
+// Block statement heads — the only keywords that open a `… do … end` body.
+// Editor indent tracks `do`/`end` themselves; depth scanners use blockDelta.
+export const BLOCK_KW = { for: 1, loop: 1, def: 1, draw: 1, when: 1, as: 1 };
 
+// Depth delta for one source line. +1 opens (code half ends in `do`), -1
+// closes (`end` at the start of the code half), else 0. The margin `# …` is
+// stripped first, so a comment never opens a block. A mid-line `do` in a
+// string no longer increments depth (unlike a bare /\bdo\b/ scan).
+export function blockDelta(lineText) {
+    if (lineText == null || lineText === '') return 0;
+    const [code] = splitComment(lineText);
+    const t = code.trim();
+    if (!t) return 0;
+    if (/^end\b/.test(t)) return -1;
+    if (/\bdo\s*$/.test(t)) return 1;
+    return 0;
+}
+
+
+// ============================================================================
+// THE SCAN — one walk, roles only (id:gw-grammar)
+// ============================================================================
+// Every line gets ONE name for its place in the clearing. No spans, no records,
+// no tree: readers FOLD these into what they need. The fence truth lives here,
+// so a reader that disagrees is a reader with a bug, never a second grammar.
+//
+// Stays roles-only on purpose. The moment the scan reshapes, counts, or spans,
+// it has become a second mind wearing the name of the first.
+
+export const ROLE = {
+    meadowOpen:  'meadowOpen',    // `###` — the clearing opens
+    meadowClose: 'meadowClose',   // `###` — the clearing closes (and shuts any open cell)
+    cellOpen:    'cellOpen',      // ``` — code re-entering code-space (id:gw-cell)
+    cellClose:   'cellClose',     // a bare ``` — only ever a closer
+    headline:    'headline',      // `* name` in prose space — a phase mark AND prose
+    prose:       'prose',         // meadow text
+    code:        'code',          // cell body, or bare code outside every clearing
+};
+
+// The ONE split. Line endings are the tape's, never the child's content.
+export const splitLines = (text) => String(text ?? '').split(/\r\n|\r|\n/);
+
+// Callers that split elsewhere (CM6 hands us its own lines) may still carry a
+// stray `\r` — and `###\r` is not a fence to any predicate here.
+const lineText = (s) => {
+    const t = s ?? '';
+    return t.charCodeAt(t.length - 1) === 13 ? t.slice(0, -1) : t;
+};
+
+// lines → rows, 1:1 and in document order.
+//   { line, text, role } always; `info` on cellOpen (the word on the fence, or
+//   null), `depth`/`title` on headline, `closesCell` on a meadowClose that cut a
+//   cell short. A headline is prose too — a reader that gathers prose takes it.
+// What ran off the end is the FOLD's to close: the tape ending is not a fence.
+export function classify(lines) {
+    const rows = [];
+    const n = lines?.length ?? 0;
+    let inMeadow = false, inCell = false;
+
+    for (let i = 0; i < n; i++) {
+        const text = lineText(lines[i]);
+        const line = i + 1;
+
+        if (inCell) {
+            if (CELL_CLOSE.test(text)) {
+                inCell = false;
+                rows.push({ line, text, role: ROLE.cellClose });
+            } else if (MEADOW_FENCE.test(text)) {
+                // ``` closes a cell; ### closes it AND the clearing.
+                inCell = false; inMeadow = false;
+                rows.push({ line, text, role: ROLE.meadowClose, closesCell: true });
+            } else {
+                rows.push({ line, text, role: ROLE.code });
+            }
+            continue;
+        }
+
+        if (MEADOW_FENCE.test(text)) {
+            rows.push({ line, text, role: inMeadow ? ROLE.meadowClose : ROLE.meadowOpen });
+            inMeadow = !inMeadow;
+            continue;
+        }
+
+        if (!inMeadow) { rows.push({ line, text, role: ROLE.code }); continue; }
+
+        if (CELL_OPEN.test(text)) {
+            inCell = true;
+            rows.push({ line, text, role: ROLE.cellOpen,
+                        info: text.replace(CELL_OPEN, '').trim() || null });
+            continue;
+        }
+
+        const m = HEADLINE.exec(text);
+        if (m) rows.push({ line, text, role: ROLE.headline, depth: m[1].length, title: m[2].trim() });
+        else rows.push({ line, text, role: ROLE.prose });
+    }
+
+    return rows;
+}
 
 
 // One prose node. A meadow holding ``` cells (id:gw-cell) becomes a SEQUENCE
@@ -212,9 +327,7 @@ function tokenize(program) {
     };
 
     while (i < n) {
-        const trimmed = rawLines[i].trim();
-
-        if (trimmed === FENCE) {
+        if (isMeadowFence(rawLines[i])) {
             // Prose chunks stay verbatim; a ``` fence re-enters code-space
             // (id:gw-cell), so the cell's lines go through the code law.
             const fenceLine = i + 1;
@@ -229,17 +342,16 @@ function tokenize(program) {
                     chunk = [];
                 }
             };
-            while (i < n && rawLines[i].trim() !== FENCE) {
-                const t = rawLines[i].trim();
-                if (t.startsWith('```')) {
+            while (i < n && !isMeadowFence(rawLines[i])) {
+                if (isCellOpen(rawLines[i])) {
                     flushChunk();
                     // The info word (```paperlang) is the child's, so it rides
                     // in the tree — fidelity lives there, never beside it.
-                    const info = t.slice(3);
+                    const info = rawLines[i].replace(CELL_OPEN, '').trim();
                     units.push({ cellFence: true, meadowOpen: false, meadowClose: false,
                                  line: i + 1, info: info || undefined });
                     i++;
-                    while (i < n && rawLines[i].trim() !== '```' && rawLines[i].trim() !== FENCE) {
+                    while (i < n && !isCellClose(rawLines[i]) && !isMeadowFence(rawLines[i])) {
                         // Blanks included: a blank is a line the child typed,
                         // and dropping it shifts every line address below (D021).
                         pushCode(rawLines[i], units, i + 1);
@@ -247,7 +359,7 @@ function tokenize(program) {
                     }
                     // An auto-close is marked IMPLICIT and the printer stays
                     // silent: never put a word in the child's mouth (id:pa-ghc-exactprint).
-                    const closed = i < n && rawLines[i].trim() === '```';
+                    const closed = i < n && isCellClose(rawLines[i]);
                     if (closed) i++;
                     units.push({ cellFence: true, meadowOpen: false, meadowClose: false,
                                  line: Math.min(i, n), implicit: !closed || undefined });
@@ -272,6 +384,7 @@ function tokenize(program) {
 
         // A blank rides through as an empty record: line parity across
         // parse → print, and a bare Enter still changes the seed.
+        const trimmed = rawLines[i].trim();
         if (trimmed) pushCode(trimmed, lines, i + 1);
         else lines.push({ text: '', line: i + 1, blank: true });
         i++;
@@ -613,16 +726,16 @@ export function printAST(ast) {
                 if (node.meta.cellFence) {
                     // An implicit closer was never typed, so it is not emitted.
                     // Its ### edge still rides — that the child did type.
-                    if (node.meta.meadowOpen) out.push(indent + FENCE);
-                    if (!node.meta.implicit) out.push(indent + '```' + (node.meta.info ?? ''));
-                    if (node.meta.meadowClose && !node.meta.meadowCloseImplicit) out.push(indent + FENCE);
+                    if (node.meta.meadowOpen) out.push(indent + MEADOW_MARK);
+                    if (!node.meta.implicit) out.push(indent + CELL_MARK + (node.meta.info ?? ''));
+                    if (node.meta.meadowClose && !node.meta.meadowCloseImplicit) out.push(indent + MEADOW_MARK);
                 } else if (node.meta.meadow) {
                     // An interior chunk with `lit === ""` is one blank line, not
                     // nothing — hence the null check, not truthiness.
                     const interior = node.meta.meadowOpen === false && node.meta.meadowClose === false;
-                    if (node.meta.meadowOpen !== false) out.push(indent + FENCE);
+                    if (node.meta.meadowOpen !== false) out.push(indent + MEADOW_MARK);
                     if (node.meta.lit || (interior && node.meta.lit != null)) out.push(node.meta.lit);
-                    if (node.meta.meadowClose !== false && !node.meta.meadowCloseImplicit) out.push(indent + FENCE);
+                    if (node.meta.meadowClose !== false && !node.meta.meadowCloseImplicit) out.push(indent + MEADOW_MARK);
                 } else if (node.meta.comment != null) {
                     // No code before it, so no leading space — that prefix
                     // belongs to a margin trailing code.
@@ -692,12 +805,8 @@ export function printAST(ast) {
 // ============================================================================
 // Prose geometry has ONE walk; every reader below is a view over it. A second
 // walker means two answers to "does ### close a cell". It takes lines, not a
-// tree — a line is the one thing both sides already have.
-
-export const HEADLINE = /^[ \t]*(\*+)\s+(\S.*)$/;   // `* name` — the trailing space disambiguates *bold*
-const MEADOW_FENCE = /^[ \t]*###[ \t]*$/;
-const CELL_OPEN = /^[ \t]*```/;              // an info word may ride the opener
-const CELL_CLOSE = /^[ \t]*```[ \t]*$/;      // a bare ``` is only ever a closer
+// tree — a line is the one thing both sides already have. Fence predicates
+// come from THE GRAMMAR above — never re-spelled here.
 
 // A headline of depth d closes every phase at that depth or deeper. `idx` is its
 // ORDER among its siblings, kept on the parent so a pop cannot lose the count:
@@ -712,8 +821,9 @@ function openPhase(stack, depth, title, root) {
     return stack.map((s) => s.title);
 }
 
-// → { meadows, cells, phases }, all fence-inclusive spans in document order.
-// Same law as the tokenizer: ``` closes a cell, ### closes it AND the clearing.
+// GEOMETRY — a fold over the scan (id:gw-grammar). → { meadows, cells, phases },
+// all fence-inclusive spans in document order. Reads roles, never the text: the
+// fences were already named once, in `classify`.
 export function outline(lines) {
     const meadows = [], cells = [], phases = [];
     const stack = [];
@@ -721,43 +831,46 @@ export function outline(lines) {
     // their coordinate is one segment long.
     const root = { kids: 0, cells: 0 };
     let inMeadow = false, mOpen = 0, open = 0, path = [], name = null, coord = [];
-    const n = lines?.length ?? 0;
     const shut = (end, terminated) => cells.push({ open, end, terminated, path, name, coord });
-    for (let i = 1; i <= n; i++) {
-        const text = lines[i - 1] ?? '';
-        if (open) {                                       // inside a cell
-            if (CELL_CLOSE.test(text)) { shut(i, true); open = 0; }
-            else if (MEADOW_FENCE.test(text)) {
-                shut(i - 1, false); open = 0;
-                meadows.push({ open: mOpen, end: i }); inMeadow = false;
+
+    const rows = classify(lines);
+    for (const row of rows) {
+        switch (row.role) {
+            case ROLE.meadowOpen:
+                mOpen = row.line; inMeadow = true;
+                break;
+            case ROLE.meadowClose:
+                // The clearing took the cell with it — the body's last line stands.
+                if (row.closesCell) { shut(row.line - 1, false); open = 0; }
+                meadows.push({ open: mOpen, end: row.line }); inMeadow = false;
+                break;
+            case ROLE.cellOpen: {
+                open = row.line;
+                path = stack.map((s) => s.title);
+                // THE CELL WEARS ITS NAME (D024). The word on the fence is the
+                // author's and is the cell's identity. Unnamed, it is named by WHERE
+                // IT SITS: the section chain, then its order among its own section's
+                // cells — which every cell takes, so naming a sister never re-keys
+                // the others.
+                name = row.info;
+                const section = stack[stack.length - 1] ?? root;
+                section.cells += 1;
+                coord = [...stack.map((s) => s.idx), section.cells];
+                break;
             }
-            continue;
+            case ROLE.cellClose:
+                shut(row.line, true); open = 0;
+                break;
+            case ROLE.headline:
+                phases.push({ line: row.line, depth: row.depth, title: row.title,
+                              path: openPhase(stack, row.depth, row.title, root) });
+                break;
+            // prose and code carry no geometry.
         }
-        if (MEADOW_FENCE.test(text)) {
-            if (inMeadow) meadows.push({ open: mOpen, end: i });
-            else mOpen = i;
-            inMeadow = !inMeadow;
-            continue;
-        }
-        if (!inMeadow) continue;                          // bare code carries no outline
-        if (CELL_OPEN.test(text)) {
-            open = i;
-            path = stack.map((s) => s.title);
-            // THE CELL WEARS ITS NAME (D024). The word on the fence is the
-            // author's and is the cell's identity. Unnamed, it is named by WHERE
-            // IT SITS: the section chain, then its order among its own section's
-            // cells — which every cell takes, so naming a sister never re-keys
-            // the others.
-            name = text.replace(CELL_OPEN, '').trim() || null;
-            const section = stack[stack.length - 1] ?? root;
-            section.cells += 1;
-            coord = [...stack.map((s) => s.idx), section.cells];
-            continue;
-        }
-        const m = HEADLINE.exec(text);
-        if (m) phases.push({ line: i, depth: m[1].length, title: m[2].trim(),
-                               path: openPhase(stack, m[1].length, m[2].trim(), root) });
     }
+
+    // Whatever ran to EOF was closed by the parse, not the child.
+    const n = rows.length;
     if (open) shut(n, false);
     if (open || inMeadow) meadows.push({ open: mOpen, end: n });
     return { meadows, cells, phases };
@@ -789,18 +902,26 @@ export const dependentsOf = (cells, i) => {
 // either changed.
 export const cellKey = (addr, id) => `${addr}#${id}`;
 
+// The one print→outline of an AST. phaseCells and phaseAt share it so a
+// diagnostics pass never reprints the tree per wound.
+export function outlineFromAst(ast) {
+    return outline(splitLines(printAST(ast ?? [])));
+}
+
 // A weave page's cells, DERIVED from the one AST — never ferried, never stored
 // twice; works on JSON-thawed nodes because this seam may cross a socket.
 // → [{ code, vocab, nodes, vocabNodes, open, end, path, name, coord }]; nodes are
 // LIVE slices, so identity flows through the partition instead of crossing as text.
-export function phaseCells(ast) {
+// Optional `marks` reuses a prior outlineFromAst (or outline of printed lines).
+export function phaseCells(ast, marks) {
     const nodes = ast ?? [];
-    // The one walk, over this tree's own printed form.
-    const marks = outline(printAST(nodes).split('\n')).cells;
+    // The one walk, over this tree's own printed form — unless the caller
+    // already paid for it.
+    const cellMarks = (marks ?? outlineFromAst(nodes)).cells;
     const cells = [];
     let cur = null;
     const closeCell = (body) => {
-        const mark = marks[cells.length] ?? {};
+        const mark = cellMarks[cells.length] ?? {};
         const path = mark.path ?? [];
         // The edge, walked forward. `cells` holds only the cells already closed,
         // so "earlier in document order" is the loop's own shape.
@@ -879,8 +1000,9 @@ export function cellIdentities(cells) {
 
 // The headline path enclosing `line`, root first; `[]` in a preamble.
 // Inclusive — standing ON `** phase B` is standing IN phase B.
-export function phaseAt(ast, line) {
-    const { phases } = outline(printAST(ast ?? []).split('\n'));
+// Optional `marks` reuses a prior outlineFromAst so N wounds cost one print.
+export function phaseAt(ast, line, marks) {
+    const { phases } = marks ?? outlineFromAst(ast);
     let here = [];
     for (const s of phases) {
         if (s.line > (line ?? 0)) break;

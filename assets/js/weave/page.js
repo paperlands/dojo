@@ -45,9 +45,7 @@
 // a flat count re-aimed a running figure whenever any cell opened above it).
 
 import { visit } from "./ladder.js"
-import { reparseProgram, printAST, phaseCells, stripCells, cellAtLine, cellIdentities, cellKey } from "../turtling/parse.js"
-
-const CELL_PROBE = /^[ \t]*```/m        // cheap gate — no fence, no parse
+import { reparseProgram, printAST, phaseCells, stripCells, cellAtLine, cellIdentities, cellKey, CELL_PROBE } from "../turtling/parse.js"
 
 // THE CELL WEARS ITS NAME (D024) — but the name is the LABEL and the id is the
 // identity. The key is the section chain plus her word (or, unnamed, this cell's
@@ -103,11 +101,14 @@ export function pageLaw({ localKeys = () => [] } = {}) {
         pages.delete(addr)
     }
 
-    // Exclusive across kinds: the child's pages stand down together. A
-    // friend's persists — it belongs to the outershell, closed via forget.
-    function standDownLocal(effects) {
+    // The child's canvas holds ONE figure, so every other owned record stands
+    // down — plain ones too: a plain buffer names no cell to remove, but its
+    // record still claims to STAND, and a record that outlives its figure makes
+    // the next observe say "already standing" and draw nothing. A friend's
+    // persists — it belongs to the outershell, closed via forget.
+    function standDownOthers(self, effects) {
         for (const [addr, page] of [...pages]) {
-            if (page.own && page.mode !== "plain") standDown(addr, effects)
+            if (page.own && addr !== self) standDown(addr, effects)
         }
     }
 
@@ -196,7 +197,7 @@ export function pageLaw({ localKeys = () => [] } = {}) {
 
         const effects = []
 
-        if (own && mode !== "plain" && !isPaged(addr)) standDownLocal(effects)
+        if (own) standDownOthers(addr, effects)
         if (own && mode === "page" && !isPaged(addr)) {
             for (const key of localKeys()) effects.push({ op: "remove", key })
         }
@@ -212,7 +213,6 @@ export function pageLaw({ localKeys = () => [] } = {}) {
         pages.set(addr, { entries, order, mode, own, source, tree: ast, name })
 
         if (mode === "plain") {
-            if (own) standDownLocal(effects)
             // ast is null unless the ``` probe already paid for a parse that
             // found no real cell — nodes rides it either way (the live-nodes law).
             effects.push(...slot(addr, name, source, own, { main: own || undefined, nodes: ast }))

@@ -181,6 +181,15 @@ describe("the exclusive law across kinds", () => {
         assert.deepEqual(law.localPages(), [], "another's page is not hers to tab")
     })
 
+    test("a revisited plain tab draws again — its figure left with the last draw", () => {
+        const law = pageLaw()
+        mine(law, "b1", "one", PLAIN_SRC)
+        mine(law, "b2", "two", PLAIN_SRC)             // exclusive: b1's figure leaves
+        const fx = mine(law, "b1", "one", PLAIN_SRC)  // back to b1, unedited
+        assert.equal(main(fx).op, "draw",
+            "idempotence is about the RECORD, and b1's record left with its figure")
+    })
+
     test("fences gone — the page stands down and the plain path takes over", () => {
         const law = pageLaw()
         mine(law, "b1", "one", PAGE_SRC)

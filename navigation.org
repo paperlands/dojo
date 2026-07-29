@@ -411,12 +411,40 @@ tree always builds and holds a broken line verbatim (D020), so the string
 withheld while drafting — the visible doc is then the CHILD'S draft, and the
 friend's line 12 is not his line 12.
 
+** the grammar table — one fence / one blockDelta
+:PROPERTIES:
+:ID: nav-grammar
+:KEYWORDS: grammar MEADOW_FENCE CELL_OPEN CELL_CLOSE CELL_PROBE blockDelta BLOCK_KW isMeadowFence isCellOpen isCellClose MEADOW_MARK CELL_MARK outlineFromAst
+:PATH: assets/js/turtling/parse.js::export const MEADOW_FENCE
+:END:
+The fence and block-open law (id:gw-grammar). Tokenizer, outline, editor,
+press, page probe, do-end matching all read here — never re-spell.
+
+** the scan — one walk, roles only
+:PROPERTIES:
+:ID: nav-classify
+:KEYWORDS: classify scan roles ROLE splitLines lineText naming meadowOpen meadowClose cellOpen cellClose headline prose code closesCell info one walk shared mind CRLF
+:PATH: assets/js/turtling/parse.js::export function classify
+:END:
+The predicates at [[id:nav-grammar]] are the marks; this is the ONE walk that
+applies them. Every line gets one name for its place in the clearing — no spans,
+no records, no tree — and every reader downstream is a FOLD over those roles
+([[id:nav-outline]] into geometry; the tokenizer into records, next).
+
+Roles-only on purpose: the moment the scan reshapes, counts, or spans, it has
+become a second mind wearing the name of the first. Fan-out (a glued =end=
+splitting into two records) belongs to the fold, so the scan stays 1:1 with the
+tape. =splitLines= is the one split — line endings are the tape's, never content.
+
 ** the prose walk — ONE geometry, every reader a view
 :PROPERTIES:
 :ID: nav-outline
 :KEYWORDS: outline prose walk meadow cell fence headline phase path findProse findCells findMeadows inMeadowRange fold state machine one grammar name coord cellIdentities identity frame key duplicate collision
 :PATH: assets/js/turtling/parse.js::export function outline
 :END:
+A FOLD over [[id:nav-classify]], never a walk of its own — it reads roles, not
+text, because the fences were already named once.
+
 *A CELL'S IDENTITY RIDES THIS WALK* (D024). Each cell carries =name= — the word
 on its opening fence, the author's own — and =coord=, its place in the tree: the
 section-index chain, then its order among its own section's cells.
@@ -583,7 +611,7 @@ move must not rewrite the friend's document. See the warning on the function.
 ** peer attention — the friend's cell, and following it
 :PROPERTIES:
 :ID: nav-peer-attention
-:KEYWORDS: peer attention following follow followTo haltFollow scrollBoxOf chase firefly sigil stir fly-wake is-awake peer-ink violet cm-peer-line cm-peer-cell setPeerCell chaseDirection visibleLines watcher consent intervention scroll focus anchor caret herCaret minimalChange updateOuter
+:KEYWORDS: peer attention following follow followTo haltFollow scrollBoxOf chase firefly sigil stir fly-wake is-awake peer-ink violet cm-peer-line cm-peer-cell setPeerCell chaseDirection visibleLines watcher consent intervention scroll focus anchor caret herCaret minimalChange updateOuter heldBy
 :PATH: assets/js/editor/peer-attention.js
 :END:
 The watcher's side of a friend's line (D025 R5/R6). THE DATUM IS A LINE and only
@@ -600,28 +628,26 @@ cell in her editor, and the surface hands the same line to =scene.attend=, where
 the page law KINDLES that cell on her canvas. Two readers of one line, the same
 two her own reach feeds when she walks a page herself.
 
-*ASK WHICH BOX SCROLLS; NEVER ASSUME.* Measured [2026-07-27]: =.cm-scroller= is
-the scrolling box here, and =#outerenv= does not scroll at all. The chain is
-=#outerenv= (fixed =h-[calc(100dvh-18rem)] lg:h-[60vh]=) → =#outershell=
-(=h-full=) → =.cm-editor= (=&: {height:'100%'}=, terminal/extensions.js), so the
-scroller is height-constrained and CM6 scrolls inside it, while =#outerenv='s own
-child exactly fills it and never overflows. (=.cm-scroller= scrolls vertically
-because CM6's baseTheme sets =overflow-x: auto=, and CSS promotes the axis
-specified =visible= to =auto= when the other is not.)
+*ONE LAW AT THE SURFACE.* Only a line the document holds is news. The meta
+(=outerAttend=) can name a line a breath before the body arrives; refusing that
+name leaves =peerAt= behind so the push that brings the body is still a move and
+following completes. Committing early made every later same-line push a no-op and
+froze the view at its first paint (firefly stuck "below"). Same line already held:
+re-measure the firefly, do not re-arrive — that is typing. =followTo= is already a
+no-op when centred; the gate is identity of the line, not geometry.
 
-The layout permits either answer, so =scrollBoxOf(view)= ASKS — walking out from
-=view.scrollDOM= to the first ancestor that really scrolls, resolved FRESHLY
-every call (at mount nothing overflows yet, so a cached answer hardens into the
-wrong element). =followTo= and =visibleLines= work in screen space via
-=documentTop=. The firefly LISTENS to that box but does not live in it: it hangs
-in =anchorOf(box)=, the first positioned ancestor that does not scroll. Inside
-the scroller a =top= chased by hand can only ever be one frame behind the text
-(the compositor scrolls, the =scroll= event lands after) — that lag WAS the
-jitter. Out in the still frame it does not move at all, and the box's edges
-within that frame are a LAYOUT fact, remeasured by =ResizeObserver=, never on
-the scroll path. On a fast scroll it thins to nothing (=.is-flitting=, a
-=filter: opacity()= so it does not fight the drift's animated opacity) and
-settles back — which also covers =dir= flipping above↔below mid-rush.
+*THE SCROLLER IS ONE.* Measured [2026-07-27]: =.cm-scroller= (=view.scrollDOM=)
+is the scrolling box; =#outerenv= does not overflow. The chain is =#outerenv=
+(fixed height) → =#outershell= (=h-full=) → =.cm-editor= (height 100%), so CM6
+scrolls inside. =scrollBoxOf= names that one element. =followTo= and
+=visibleLines= work in height-map space (=scrollTop= and =lineBlockAtHeight=
+share one basis — the same read reach.js makes). The firefly LISTENS to that box
+but does not live in it: it hangs in =anchorOf(box)=, the first positioned
+ancestor that does not scroll. Inside the scroller a =top= chased by hand can
+only ever be one frame behind the text — that lag WAS the jitter. Out in the
+still frame it does not move, and the box's edges within that frame are a LAYOUT
+fact, remeasured by =ResizeObserver=, never on the scroll path. On a fast scroll
+it thins to nothing (=.is-flitting=) and settles back.
 
 *Following is whose attention drives the view* — one =let following=, read in
 ONE place (the receive); its writes are its whole lifecycle (a friend's page

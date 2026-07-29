@@ -6,7 +6,7 @@ const stillness = () =>
     typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Above the window, below it, or here. null for a visible line, so the firefly
-// needs no knowledge of following.
+// needs no knowledge of following: a centred line answers null on its own.
 export function chaseDirection(line, first, last) {
     if (line == null || first == null || last == null) return null;
     if (line < first) return 'above';
@@ -14,44 +14,41 @@ export function chaseDirection(line, first, last) {
     return null;
 }
 
-// The box that actually scrolls — `.cm-scroller` today, but the layout permits
-// `#outerenv` too. Ask freshly every call: at mount nothing overflows yet, so a
-// cached answer hardens into the wrong element.
-const canScroll = (el) => {
-    if (el.scrollHeight <= el.clientHeight + 1) return false;
-    return /auto|scroll|overlay/.test(getComputedStyle(el).overflowY);
-};
-
+// The scroller is CM6's own (measured: #outerenv does not overflow; the chain
+// is height-constrained and .cm-scroller takes the scroll). One name so callers
+// do not hard-code the DOM class.
 export function scrollBoxOf(view) {
-    for (let el = view?.scrollDOM; el instanceof HTMLElement; el = el.parentElement) {
-        if (canScroll(el)) return el;
-    }
     return view?.scrollDOM ?? null;
 }
 
-// What the watcher can SEE — not CM6's rendered viewport, which runs past both
-// edges. Screen space: `lineBlockAtHeight` measures from `documentTop`.
+// What the watcher can SEE. Height-map space: scrollTop and lineBlockAtHeight
+// share one basis (reach.js, CM6). Past the last line, the map answers the last
+// line — so a short page that does not fill the window still reports the whole
+// document, and the firefly stays dark.
 export function visibleLines(view) {
     const box = scrollBoxOf(view);
     if (!view || view.destroyed || !box) return { first: null, last: null };
     const { doc } = view.state;
-    const rect = box.getBoundingClientRect();
-    const at = (screenY) => {
-        try { return doc.lineAt(view.lineBlockAtHeight(screenY - view.documentTop).from).number; }
+    const at = (h) => {
+        try { return doc.lineAt(view.lineBlockAtHeight(h).from).number; }
         catch { return null; }
     };
-    return { first: at(rect.top), last: at(rect.bottom - 1) };
+    const top = box.scrollTop;
+    return { first: at(top), last: at(top + box.clientHeight - 1) };
 }
 
 // FOLLOW — arrive at the friend's line. Landing the caret is the act: the cursor
 // law lights their cell, the surface hands the same line to the page law. Caret
 // first, then the glide — one motion, not a jump and a slide.
+// Returns whether the line is real in this document (so the surface can refuse
+// to commit a name that arrived before its body).
 export function follow(view, line, opts) {
-    if (!view || view.destroyed || line == null) return;
+    if (!view || view.destroyed || line == null) return false;
     const { doc } = view.state;
-    if (line < 1 || line > doc.lines) return;
+    if (line < 1 || line > doc.lines) return false;
     view.dispatch({ selection: { anchor: doc.line(line).from } });
     followTo(view, line, opts);
+    return true;
 }
 
 // Our own animation: the browser abandons `behavior:'smooth'` on any other
@@ -93,7 +90,8 @@ export function haltFollow(view) {
 
 // The viewport half, alone — a place arriving, not a jump cut. Geometry off the
 // height map (`lineBlockAt`), never `coordsAtPos`: a friend twenty screens away
-// is not rendered, which is exactly when following matters.
+// is not rendered, which is exactly when following matters. scrollTop and
+// block.top share one basis; already-there is a no-op so re-arrival is free.
 export function followTo(view, line, { quiet } = {}) {
     if (!view || view.destroyed || line == null) return;
     const { doc } = view.state;
@@ -106,13 +104,11 @@ export function followTo(view, line, { quiet } = {}) {
     try { block = view.lineBlockAt(doc.line(line).from); } catch { return; }
     if (!block) return;
 
-    const rect = box.getBoundingClientRect();
-    const lineTop = view.documentTop + block.top;        // their line, on screen
-    const delta = (lineTop - rect.top) - (box.clientHeight - block.height) / 2;
-    const target = Math.max(0, Math.min(box.scrollTop + delta,
-                                        box.scrollHeight - box.clientHeight));
+    const target = Math.max(0, Math.min(
+        block.top - (box.clientHeight - block.height) / 2,
+        Math.max(0, box.scrollHeight - box.clientHeight),
+    ));
 
-    // Already there — a glide restarted on every push never arrives.
     if (Math.abs(target - box.scrollTop) < 2) return;
 
     glide(box, target, quiet);
@@ -137,7 +133,7 @@ export function anchorOf(box) {
 export function mountChase(view, { initials = () => null, onResume } = {}) {
     let line = null;
     let dead = false;
-    let host = null;              // whichever box currently owns the scrolling
+    let host = null;              // the scroller we listen to
     let frame = null;             // the still ancestor the glyph is hung in
     let inset = null;             // the box's edges within that frame — layout, not scroll
 
@@ -184,13 +180,11 @@ export function mountChase(view, { initials = () => null, onResume } = {}) {
         el.style.bottom = above ? '' : `${at.bottom + EDGE}px`;
     };
 
-    // Which box scrolls is unknowable until there is content; re-home on change.
-    const rehome = () => {
+    // Attach once: the scroller is always scrollDOM.
+    const ensure = () => {
+        if (host || dead || view.destroyed) return host;
         const box = scrollBoxOf(view);
-        if (!box || box === host) return host;
-        observer?.disconnect();
-        sizer?.disconnect();
-        if (host) host.removeEventListener('scroll', onScroll);
+        if (!box) return null;
         host = box;
         frame = anchorOf(box);
         inset = null;
@@ -204,8 +198,7 @@ export function mountChase(view, { initials = () => null, onResume } = {}) {
 
     const render = () => {
         if (dead || view.destroyed) return;
-        const box = rehome();
-        if (!box) return;
+        if (!ensure()) return;
         const { first, last } = visibleLines(view);
         const dir = chaseDirection(line, first, last);
         el.hidden = dir == null;

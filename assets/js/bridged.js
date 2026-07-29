@@ -33,8 +33,10 @@ export const bridged = (eventName) => { // TODO: consider renaming to registerBr
      * In order to stop listening to events published by this custom event target, one may
      * call this nullary function.
      * */
+    // No console.log on the hot path: every keystroke pubs terminal content
+    // (and often selection + turtle). Logging full payloads cost ~4ms/key and
+    // ~2.8× longtask total under DevTools (specs/weave/typing-path.org).
     const sub = (callback) => {
-        console.log(`${eventName} event sub`)
         const EventHandler = (event) => {
             const data = event.detail ;
 
@@ -53,7 +55,6 @@ export const bridged = (eventName) => { // TODO: consider renaming to registerBr
      * a custom event, using the custom event target as a proxy.
      * */
     const pub = (payload)  => {
-        console.log(`${eventName} event pub`, {payload})
         const event = new CustomEvent(eventName, { detail: payload })
         customEventTarget.dispatchEvent(event);
     };
@@ -66,7 +67,6 @@ export const bridged = (eventName) => { // TODO: consider renaming to registerBr
      * - if selector has been provided, then it's assumed to be a valid dom selector that can be queried.
      * */
     const dispatch = (el, payload, selector=null) => {
-        console.log(`${eventName} event dispatch`, {el, payload, selector})
         pub(payload)
         // customEventTarget.dispatchEvent(new CustomEvent(eventName, { detail: data }));
         const isTargettedDispatch = !!selector

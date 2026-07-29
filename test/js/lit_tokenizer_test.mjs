@@ -10,7 +10,7 @@ import assert from "node:assert/strict"
 
 import { plangModeSpec, isCellOpener, codeCellFoldService, findCells, cellAt, eyelineCell, marginOutlineFoldService, findProse, defaultAttend} from "../../assets/js/editor/plang-mode.js"
 import { stepActivation } from "../../assets/js/editor/code-cell-activation.js"
-import { outline } from "../../assets/js/turtling/parse.js"
+import { outline, classify, splitLines } from "../../assets/js/turtling/parse.js"
 
 // A faithful-enough StringStream + per-line loop, mirroring CM6's StreamLanguage:
 // state is created once and carried across lines; token() is called until EOL.
@@ -456,8 +456,15 @@ describe("activation memo — cursor movement stays free of linter churn", () =>
     test("an edit (docChanged) re-walks the index", () => {
         const build = () => ({ deco: 1 })
         const v0 = stepActivation(null, { docChanged: true, doc, headLine: 3 }, build, NONE)
-        const v1 = stepActivation(v0, { docChanged: true, doc, headLine: 3 }, build, NONE)
+        // CM6 replaces the Text object on every edit — the findProse WeakMap
+        // keys on that identity. Same content, new doc → fresh walk.
+        const edited = mkDoc("###\n```\nfw 100\nrt 90\n```\nbetween\n```\nrt 45\n```\n###")
+        const v1 = stepActivation(v0, { docChanged: true, doc: edited, headLine: 3 }, build, NONE)
         assert.notEqual(v1.cells, v0.cells)                  // fresh index after an edit
+        // Same doc identity + docChanged still hits the memo (content cannot
+        // have changed without a new Text) — real edits always bring a new doc.
+        const v2 = stepActivation(v1, { docChanged: true, doc: edited, headLine: 3 }, build, NONE)
+        assert.equal(v2.cells, v1.cells)
     })
 })
 
@@ -521,6 +528,79 @@ describe("one prose walk — the editor and the parser see the same shape", () =
     test("a headline inside a cell is code, not a phase", () => {
         const { phases } = outline("###\n```\n* not a heading\n```\n* a heading\n###".split("\n"))
         assert.deepEqual(phases.map((s) => s.title), ["a heading"])
+    })
+})
+
+// The scan is the shared mind (2026-07-29). `classify` names each line's place
+// ONCE; outline is a fold over that naming, and the tokenizer becomes one next.
+// These tests are on the NAMING, because both readers inherit what it gets wrong.
+describe("classify — one name per line", () => {
+    const roles = (src) => classify(splitLines(src)).map((r) => r.role)
+
+    test("a clearing, a phase, a cell", () => {
+        assert.deepEqual(
+            roles("###\n* one\nprose\n```\nfw 1\n```\n###"),
+            ["meadowOpen", "headline", "prose", "cellOpen", "code", "cellClose", "meadowClose"])
+    })
+
+    test("bare code outside every clearing is code, never prose", () => {
+        assert.deepEqual(roles("fw 1\n* not a phase\n\n###\nprose\n###"),
+            ["code", "code", "code", "meadowOpen", "prose", "meadowClose"])
+    })
+
+    test("inside a cell everything is code — a headline included", () => {
+        assert.deepEqual(roles("###\n```\n* not a heading\n### not a fence either\n```\n###"),
+            ["meadowOpen", "cellOpen", "code", "code", "cellClose", "meadowClose"])
+    })
+
+    test("the clearing closes an open cell, and says so", () => {
+        const rows = classify(splitLines("###\n```\nfw 1\n###"))
+        assert.deepEqual(rows.map((r) => r.role),
+            ["meadowOpen", "cellOpen", "code", "meadowClose"])
+        assert.equal(rows[3].closesCell, true, "the fence took the cell with it")
+    })
+
+    test("what runs off the end gets no closing role — the fold closes it", () => {
+        assert.deepEqual(roles("###\n```\nfw 1"), ["meadowOpen", "cellOpen", "code"])
+    })
+
+    test("the word on the fence rides the opener; unnamed is null", () => {
+        const [, named] = classify(splitLines("###\n```paperlang\n```\n###"))
+        assert.equal(named.info, "paperlang")
+        const [, bare] = classify(splitLines("###\n```\n```\n###"))
+        assert.equal(bare.info, null)
+    })
+
+    test("a bare ``` opens outside a cell and closes inside one", () => {
+        assert.deepEqual(roles("###\n```\na\n```\n```\nb\n```\n###"),
+            ["meadowOpen", "cellOpen", "code", "cellClose",
+             "cellOpen", "code", "cellClose", "meadowClose"])
+    })
+
+    test("a headline carries its depth and title, stars folded off", () => {
+        const [, h] = classify(splitLines("###\n** deeper name\n###"))
+        assert.deepEqual([h.depth, h.title], [2, "deeper name"])
+    })
+
+    // A tape split elsewhere (CM6 hands us its own lines) may carry a stray \r,
+    // and `###\r` matches no predicate in the grammar table.
+    test("a CRLF tape still has fences", () => {
+        assert.deepEqual(classify("###\r\n```\r\nfw 1\r\n```\r\n###\r".split("\n")).map((r) => r.role),
+            ["meadowOpen", "cellOpen", "code", "cellClose", "meadowClose"])
+    })
+
+    test("the scan is 1:1 with the tape — it never adds or drops a line", () => {
+        const CORPUS = [
+            "", "\n\n", "fw 1", "###", "```", "###\n```",
+            "###\n```\nfw 1\n```\n\n```\nfw 2\n```\n###",
+            "###\n* chapter\n\n```\nfw 1\n###",
+            "###\n* one\n```\na\n```\n** two\n```\nb\n```\n###",
+            "fw 1\n###\nprose\n```\nfw 2\n```\n###",
+        ]
+        for (const src of CORPUS) {
+            const lines = splitLines(src)
+            assert.equal(classify(lines).length, lines.length, JSON.stringify(src))
+        }
     })
 })
 

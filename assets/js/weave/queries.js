@@ -19,7 +19,7 @@
 // No dirty flags, no cache protocol; a missed reuse costs recomputing one
 // unit, never a wrong answer.
 
-import { collectErrors, phaseCells, phaseAt, cellAtLine, cellIdentities, dependentsOf, cellKey } from "../turtling/parse.js"
+import { collectErrors, phaseCells, phaseAt, cellAtLine, cellIdentities, dependentsOf, cellKey, outlineFromAst } from "../turtling/parse.js"
 
 const unitMemo = new WeakMap()
 
@@ -121,12 +121,14 @@ const dependentWounds = (cells, ids, wounds, key) => {
 // Every wound names WHERE it lives — the phase whose sisters it stands among,
 // its cell slot, and the author's own word for that cell (D024). Derived from
 // the LINE (attention is the address, D021), never stored, so nothing goes stale.
-const locate = (w, nodes, cells, ids) => {
+const locate = (w, nodes, cells, ids, marks) => {
     if (w.span?.line == null) return w
     const at = cellAtLine(cells, w.span.line)
     return {
         ...w,
-        phase: phaseAt(nodes, w.span.line),
+        // marks is the one outlineFromAst for this diagnostics pass — N wounds
+        // share one print, never one print each.
+        phase: phaseAt(nodes, w.span.line, marks),
         cell: at,
         // Kept BESIDE the index, never instead of it: a display string and a
         // machine handle are two things.
@@ -150,14 +152,16 @@ export function diagnostics(ast, ailments = [], key = null) {
     const gathered = [...parseWounds(nodes, key), ...ailmentWounds(ailments, key)]
     if (!gathered.length && !anyNamed(nodes)) return gathered
 
-    const cells = phaseCells(nodes)
+    // One print→outline for the whole pass: phaseCells and every locate share it.
+    const marks = outlineFromAst(nodes)
+    const cells = phaseCells(nodes, marks)
     const ids = cellIdentities(cells)
     const all = [
         ...gathered,
         ...nameWounds(cells, ids, key),
         ...dependentWounds(cells, ids, gathered, key),
     ]
-    return all.length ? all.map((w) => locate(w, nodes, cells, ids)) : all
+    return all.length ? all.map((w) => locate(w, nodes, cells, ids, marks)) : all
 }
 
 // WHAT COUNTS AS A FAULT. A frame that died and a vocabulary that never

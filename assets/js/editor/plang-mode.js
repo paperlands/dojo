@@ -16,7 +16,7 @@
 // Vocabulary
 // ---------------------------------------------------------------------------
 
-import { outline, HEADLINE } from "../turtling/parse.js";
+import { outline, HEADLINE, MEADOW_FENCE, CELL_OPEN, CELL_CLOSE, DO, END } from "../turtling/parse.js";
 
 const INDENT_UNIT = 2; // spaces per indent level (PaperLang convention)
 
@@ -33,8 +33,9 @@ export const keywordList = [
 ];
 
 const keywords    = wordSet(keywordList);
-const indentWords = wordSet(["do"]);
-const dedentWords = wordSet(["end"]);
+// Indent open/close track the grammar's own do/end — never a second list.
+const indentWords = wordSet([DO]);
+const dedentWords = wordSet([END]);
 const closing     = wordSet([")", "]", "}"]);
 
 // ---------------------------------------------------------------------------
@@ -69,7 +70,7 @@ function readQuoted(quote, style) {
 function tokenBase(stream, state) {
     // The meadow door — a lone `###` line opens prose space AROUND the code
     // (id:gw-grammar). The clearing runs until the next `###`; the marker dims.
-    if (stream.sol() && stream.match(/^[ \t]*###[ \t]*$/)) {
+    if (stream.sol() && stream.match(MEADOW_FENCE)) {
         state.tokenize.push(readMeadow);
         return "lineComment";
     }
@@ -200,8 +201,9 @@ const PROSE_BLOCKS = [
                              return "lineComment"; } },
     // ``` … — a full code CELL, linted at full strength until the closing ```. Spans
     // many lines, so it opens in the meadow only (an info word on the opener is optional).
-    { spansLines: true,  re: /^[ \t]*```[^`]*$/,
-      enter(stream, state) { stream.match(/^[ \t]*```/); state.tokenize.push(readCodeBlock);
+    // CELL_OPEN is the one grammar; the probe and the consume cannot drift.
+    { spansLines: true,  re: CELL_OPEN,
+      enter(stream, state) { stream.match(CELL_OPEN); state.tokenize.push(readCodeBlock);
                              // The marker dissolves; the word after it does NOT.
                              // It is the cell's NAME — the author's own (D024) —
                              // so it takes a face instead of dimming with the fence.
@@ -272,7 +274,7 @@ function readSnippet(stream, state) {
 // groundwork for evaluable, scrollable notebook cells. Persists across lines like
 // the meadow itself; the opening/closing ``` fences dim, everything between is code.
 function readCodeBlock(stream, state) {
-    if (stream.sol() && stream.match(/^[ \t]*```[ \t]*$/)) {    // closing fence releases the cell
+    if (stream.sol() && stream.match(CELL_CLOSE)) {             // closing fence releases the cell
         state.tokenize.pop();
         return "lineComment";
     }
@@ -293,7 +295,7 @@ function readCellName(stream, state) {
 // lines until the closing `###` (or stays open to end-of-file — auto-close).
 function readMeadow(stream, state) {
     state.inProseCode = false;                                 // back in prose — any snippet fade is over
-    if (stream.sol() && stream.match(/^[ \t]*###[ \t]*$/)) {   // closing fence
+    if (stream.sol() && stream.match(MEADOW_FENCE)) {          // closing fence
         state.tokenize.pop();
         return "lineComment";
     }
@@ -546,20 +548,31 @@ export function marginOutlineFoldService(state, lineStart, lineEnd) {
 // later, evaluation, which runs only the active cell.
 // ---------------------------------------------------------------------------
 
-// THE one walk over prose space — and it does not live here. `outline(lines)`
-// in turtling/parse.js is the single meadow⊗cell⊗headline state machine, shared
-// by the parser, the phase (attention is the address, D021) and this editor
-// face; this is only the CM6 adapter that hands it lines. Do not grow a second
-// walker here — see that file for why the first three agreed only by luck.
+// THE one walk over prose space — and it does not live here. `classify(lines)`
+// in turtling/parse.js is the single meadow⊗cell⊗headline state machine; every
+// reader is a FOLD over its roles, and `outline` is the fold into geometry that
+// the phase (attention is the address, D021) and this editor face both read.
+// This is only the CM6 adapter that hands it lines. Do not grow a second walker
+// here — see that file for why the first three agreed only by luck.
 //   cells    { open, end, terminated, path } — `end` is the closing-fence line,
 //            or the last body line when the clearing / EOF closed the cell
 //   meadows  { open, end } — fence lines included; unclosed runs to EOF
 //   phases { line, depth, title, path } — the headlines, in document order
 // findCells / findMeadows below are views over it, never second walkers.
+//
+// Memoized on doc identity: CM6 replaces the Text object on every edit, so a
+// hit means the content is unchanged. Fold services call this per gutter line;
+// without the memo that is O(lines²).
+const proseMemo = new WeakMap();
+
 export function findProse(doc) {
+    let hit = proseMemo.get(doc);
+    if (hit) return hit;
     const lines = [];
     for (let n = 1; n <= doc.lines; n++) lines.push(doc.line(n).text);
-    return outline(lines);
+    hit = outline(lines);
+    proseMemo.set(doc, hit);
+    return hit;
 }
 
 // Every code cell in document order — a view over the one walk.

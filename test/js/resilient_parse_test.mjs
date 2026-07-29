@@ -14,7 +14,7 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
-import { parseProgram, printAST, collectErrors } from "../../assets/js/turtling/parse.js"
+import { parseProgram, printAST, collectErrors, blockDelta, isMeadowFence, isCellOpen, isCellClose } from "../../assets/js/turtling/parse.js"
 
 describe("the parse is total — error nodes, never throws", () => {
     test("a broken head is one line; siblings live", () => {
@@ -143,5 +143,28 @@ describe("collectErrors — the diagnostics seed (Phase 2's first query)", () =>
         const errs = collectErrors(parseProgram("as sky do\nfor do\nend"))
         assert.equal(errs.length, 1)
         assert.equal(errs[0].span.line, 2)
+    })
+})
+
+describe("the one grammar — fence predicates and blockDelta", () => {
+    test("meadow and cell fences agree with outline's law", () => {
+        assert.equal(isMeadowFence("###"), true)
+        assert.equal(isMeadowFence("  ###  "), true)
+        assert.equal(isMeadowFence("### more"), false)
+        assert.equal(isCellOpen("```"), true)
+        assert.equal(isCellOpen("```paperlang"), true)
+        assert.equal(isCellOpen("  ``` name"), true)
+        assert.equal(isCellClose("```"), true)
+        assert.equal(isCellClose("```name"), false)
+    })
+
+    test("blockDelta: do opens, end closes; a mid-line do is not an opener", () => {
+        assert.equal(blockDelta("for 4 do"), 1)
+        assert.equal(blockDelta("  end"), -1)
+        assert.equal(blockDelta("end # trailing margin"), -1)
+        assert.equal(blockDelta("fw 10"), 0)
+        // The bug do-end-matching used to have: /\bdo\b/ matches inside a string.
+        assert.equal(blockDelta("label 'do it' 10"), 0)
+        assert.equal(blockDelta("# for 4 do"), 0)   // whole line is margin — no code
     })
 })

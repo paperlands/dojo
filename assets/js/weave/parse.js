@@ -39,6 +39,8 @@
 // the cell rides INSIDE the meadow as ``` … ``` — the pressed page is one
 // clearing with figures standing in it, never a fence per line.
 
+import { MEADOW_MARK, CELL_MARK } from "../turtling/parse.js"
+
 // Strip the id: scheme from portal targets; description half, if any, rides.
 //   [[id:frag-x]]       → [[frag-x]]
 //   [[id:frag-x][word]] → [[frag-x][word]]
@@ -87,9 +89,9 @@ export function transpile(orgText) {
         while (prose.length && prose[0] === '') prose.shift()
         while (prose.length && prose[prose.length - 1] === '') prose.pop()
         if (!prose.length) return
-        out.push('###')
+        out.push(MEADOW_MARK)
         for (const p of prose) out.push(p)
-        out.push('###')
+        out.push(MEADOW_MARK)
         prose.length = 0
     }
 
@@ -120,7 +122,7 @@ export function transpile(orgText) {
 
         if (mode === 'src') {
             if (/^#\+END_SRC/i.test(trimmed)) {
-                prose.push('```')
+                prose.push(CELL_MARK)
                 mode = 'body'
                 continue
             }
@@ -142,7 +144,7 @@ export function transpile(orgText) {
         if (/^#\+BEGIN_SRC\b/i.test(trimmed)) {
             // The cell opens INSIDE the meadow — the fence flips back locally
             // (id:gw-cell); the meadow does not close around it.
-            prose.push('```')
+            prose.push(CELL_MARK)
             mode = 'src'
             continue
         }
@@ -175,7 +177,7 @@ export function transpile(orgText) {
     }
 
     // Auto-close any open fence-like mode at EOF (src/quote without END).
-    if (mode === 'src') prose.push('```')
+    if (mode === 'src') prose.push(CELL_MARK)
     flushProse()
 
     return {

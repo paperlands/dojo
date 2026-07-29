@@ -54,6 +54,29 @@ describe("chaseDirection — direction, and the honest silence", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The surface law (applyAttend): only a line the document holds is news.
+// Pure form of the meta-before-doc gate — no geometry, no follow, one predicate.
+// ---------------------------------------------------------------------------
+
+const heldBy = (line, lines) => line == null || (line >= 1 && line <= lines);
+
+describe("heldBy — a name is news only when the body is here", () => {
+    it("accepts a line the document holds", () => {
+        assert.equal(heldBy(1, 10), true);
+        assert.equal(heldBy(10, 10), true);
+        assert.equal(heldBy(null, 10), true);   // leaving is always real
+    });
+
+    // outerAttend can name N before seeOuterShell grows the doc to N. Refusing
+    // the name leaves peerAt behind, so the push that brings the body is still
+    // a move — following completes instead of freezing on the first paint.
+    it("refuses a name ahead of its body", () => {
+        assert.equal(heldBy(11, 10), false);
+        assert.equal(heldBy(0, 10), false);
+    });
+});
+
+// ---------------------------------------------------------------------------
 // stepActivation with a peer key — one walk, two keys, and the memo intact.
 // ---------------------------------------------------------------------------
 
