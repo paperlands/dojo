@@ -1,13 +1,15 @@
 // Registry-of-one — the stage-cell idiom named once.
 //
 // One occupant. Register returns an unregister only its owner may exercise
-// (a later mount wins). Optional breath: register and release say "ask again"
-// and carry nothing — the signal law (id:cmp-query-cell).
+// (a later mount wins). Register and release breathe: the signal says "ask
+// again" and carries nothing — the signal law (id:cmp-query-cell). A cell
+// nobody watches breathes into an empty room, which costs nothing, so there
+// is no quiet variant to choose between.
 
 import { createObservable } from "./observable.js"
 
-// createCell({ breathes }) → { register, get, watch, changed }
-export function createCell({ breathes = false } = {}) {
+// createCell() → { register, get, watch, changed }
+export function createCell() {
     let current = null
     const breath = createObservable()
 
@@ -16,15 +18,16 @@ export function createCell({ breathes = false } = {}) {
     }
 
     function register(occupant) {
-        current = occupant ?? null
-        if (breathes) changed()
+        // Normalize ONCE, then guard against the normalized value: registering
+        // nothing must still hand back an unregister that can fire (comparing
+        // against the raw argument left `undefined` seated forever).
+        const seated = occupant ?? null
+        current = seated
+        changed()
         return () => {
-            // Owner guard compares to the argument as given — same as the
-            // three hand-rolls this lifts (a later mount wins).
-            if (current === occupant) {
-                current = null
-                if (breathes) changed()
-            }
+            if (current !== seated) return // a later mount won
+            current = null
+            changed()
         }
     }
 

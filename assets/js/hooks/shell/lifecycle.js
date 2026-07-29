@@ -20,8 +20,11 @@
 //             listeners, nerve claims, and Terminals on detached elements.
 //
 // Surfaces are data to this machine: { events: [names], mount(hook, boot) →
-// { events: {name: handler}, cleanup: [fns] } }. Registration timing is this
-// file's one job; what the events mean belongs to the surfaces.
+// { events: {name: handler}, arena } }. Registration timing is this file's one
+// job; what the events mean belongs to the surfaces, and WHEN each organ is
+// released belongs to the arena it registered on — an organ registers its own
+// release where it is made, so teardown is reverse-of-creation structurally,
+// with no ordered list for a later hand to get wrong.
 // =============================================================================
 
 export function makeShellHook({ boot, surfaces }) {
@@ -63,14 +66,7 @@ export function makeShellHook({ boot, surfaces }) {
 
         destroyed() {
             this.dead = true;
-            // LIFO — reverse registration order (kernel/arena invariant 3).
-            // A later organ may hold a listener on an element an earlier organ
-            // made; tearing down forward releases the element while the
-            // listener still points at it.
-            const clean = this.surface?.cleanup;
-            if (clean) {
-                for (let i = clean.length - 1; i >= 0; i--) clean[i]();
-            }
+            this.surface?.arena.destroy();
             this.term?.destroy();
         }
     };

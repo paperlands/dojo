@@ -26,6 +26,8 @@ place of the materializer, isolating executor/scheduler cost from rendering.
 
 #+BEGIN_SRC sh
 node --expose-gc test/js/profile/run.mjs
+node --expose-gc test/js/profile/typing_path_bench.mjs   # coreshell/CM keystroke spine
+node --expose-gc test/js/profile/linter_bench.mjs        # CM decoration / tokenize
 #+END_SRC
 
 - =harness.mjs= — =profileProgram(src, { ticks, frameMs })=: builds a real
@@ -35,6 +37,8 @@ node --expose-gc test/js/profile/run.mjs
 - =run.mjs= — representative suite + threshold asserts (regression guard; exits
   non-zero on a leak). Without =--expose-gc= it degrades to best-effort and
   skips heap assertions with a warning.
+- =typing_path_bench.mjs= — reparse / contentKey / pageLaw.observe / findProse
+  (spec memory: [[file:../../../specs/weave/typing-path.org][typing-path]]).
 
 *The leak signal* is =Δheap/tick= over the steady animation run: flat ≈ no leak.
 =registry= / =frames= staying constant across re-execution ≈ no frame accumulation.

@@ -1,8 +1,11 @@
 // One watch/notify — the breath every half-adopted list reimplements.
 //
-// Snapshot on notify so a watcher may unwatch mid-fan without skipping a
-// sibling. Carries whatever notify is handed: the cell's breath carries
-// nothing; an atom carries (old, value); a store carries the new signal.
+// Anonymous watchers, so the Set IS the registry. Snapshot on notify for the
+// one thing Set iteration does not give: a watcher registered mid-fan must not
+// hear the breath it was born into. (Unwatching mid-fan needs no snapshot —
+// deleting from a Set under iteration skips the deleted and no sibling.)
+// Carries whatever notify is handed: the cell's breath carries nothing; a
+// store carries the new signal.
 
 export function createObservable() {
     const watchers = new Set()
@@ -19,15 +22,18 @@ export function createObservable() {
     }
 }
 
-// Atom — observable immutable reference.
-// Closure over mutable binding. Swap is atomic in single-threaded JS.
-// Keyed watch is a thin facade over the one observable (scheduler pins
-// world-cache invalidation by child id).
+// Atom — observable immutable reference. Closure over mutable binding; swap is
+// atomic in single-threaded JS.
+//
+// A KEYED registry, not a facade over the anonymous one: the key IS the
+// identity (the scheduler pins world-cache invalidation by child id), so
+// re-watching a key must REPLACE in place — Map.set keeps its position, where
+// an unwatch-then-rewatch would move that watcher to the back of the fan.
+// Its own Map also keeps swap allocation-free: this is the per-frame path.
 
 export function createAtom(initial) {
     let value = initial
-    const obs = createObservable()
-    const byKey = new Map() // key → unwatch
+    const watchers = new Map() // key → fn
 
     return {
         deref() {
@@ -37,22 +43,16 @@ export function createAtom(initial) {
         swap(fn) {
             const old = value
             value = fn(old)
-            obs.notify(old, value)
+            for (const watcher of watchers.values()) watcher(old, value)
             return value
         },
 
         watch(key, fn) {
-            const prev = byKey.get(key)
-            if (prev) prev()
-            byKey.set(key, obs.watch(fn))
+            watchers.set(key, fn)
         },
 
         unwatch(key) {
-            const un = byKey.get(key)
-            if (un) {
-                un()
-                byKey.delete(key)
-            }
+            watchers.delete(key)
         },
     }
 }

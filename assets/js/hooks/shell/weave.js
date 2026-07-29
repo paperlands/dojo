@@ -24,6 +24,7 @@ import { signals as S } from "../../nerve/store.js"
 import { revealAmbient, registerNavigator } from "../../nerve/reveal.js"
 import { getStage } from "../../turtling/stage-cell.js"
 import { nerveInstance } from "../nerve.js"
+import { createArena } from "../../kernel/arena.js"
 
 export const weave = {
     events: [],
@@ -32,9 +33,12 @@ export const weave = {
 
 const TRAIL_MAX = 12
 // The corpus doorway (codex/child.org) — the seed step on an empty path.
-const DOORWAY = "getting_started"
+const DOORWAY = "the-chase"
 
 function mountWeave(hook, boot = {}) {
+    // One lifetime for this surface — every organ registers its release here,
+    // where it is made.
+    const arena = createArena()
     const trailEl = hook.el
     const stage = () => boot.turtle ?? getStage()
     const nerve = () => boot.nerve ?? nerveInstance
@@ -45,6 +49,7 @@ function mountWeave(hook, boot = {}) {
     // The address the child stands at — the newest fragment step's target.
     let hereAddr = null
     let openEpoch = 0
+    arena.add(() => { openEpoch++ })   // cancels any in-flight open
 
     // Hearth projection of walk signals — derived at emit time, capped.
     const trail = []
@@ -195,22 +200,15 @@ function mountWeave(hook, boot = {}) {
 
     // Portals anywhere (editor ink, outer viewer) fall through to the scope
     // law when no ambient answers.
-    const unregisterNavigator = registerNavigator((word) => followPortal(word))
+    arena.add(registerNavigator((word) => followPortal(word)))
 
     // The path shows from the first breath — seeded with the doorway.
     renderTrail()
+    arena.add(() => trailEl.replaceChildren())
 
     // Deep-link: ?weave=spirals opens the page.
     const seed = new URLSearchParams(location.search).get("weave")
     if (seed) openPage(seed)
 
-    return {
-        events: {},
-        cleanup: [
-            () => { openEpoch++ }, // cancel any in-flight open
-            unregisterNavigator,
-            () => trailEl.replaceChildren(),
-        ],
-        openPage,
-    }
+    return { events: {}, arena, openPage }
 }

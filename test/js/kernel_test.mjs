@@ -22,7 +22,7 @@ describe("createObservable — one watch/notify", () => {
         assert.deepEqual(seen, ["a"])
     })
 
-    test("notify snapshots — unwatch mid-fan does not skip a sibling", () => {
+    test("unwatch mid-fan does not skip a sibling", () => {
         const obs = createObservable()
         const order = []
         let unB
@@ -33,6 +33,19 @@ describe("createObservable — one watch/notify", () => {
         unB = obs.watch(() => order.push("b"))
         obs.notify()
         assert.deepEqual(order, ["a", "b"], "b was already on the snapshot")
+    })
+
+    test("a watcher born mid-fan does not hear the breath it was born into", () => {
+        const obs = createObservable()
+        const heard = []
+        obs.watch(() => {
+            heard.push("a")
+            obs.watch(() => heard.push("late"))
+        })
+        obs.notify()
+        assert.deepEqual(heard, ["a"], "the snapshot is what this buys")
+        obs.notify()
+        assert.deepEqual(heard, ["a", "a", "late"])
     })
 
     test("notify carries args; cell-style breath may carry none", () => {
@@ -69,6 +82,17 @@ describe("createAtom — value over the one observable", () => {
         assert.equal(a, 0)
         assert.equal(b, 1)
     })
+
+    test("re-watch REPLACES IN PLACE — the key keeps its turn in the fan", () => {
+        const atom = createAtom(0)
+        const order = []
+        atom.watch("first", () => order.push("first"))
+        atom.watch("second", () => order.push("second"))
+        atom.watch("first", () => order.push("first again"))
+        atom.swap((n) => n + 1)
+        assert.deepEqual(order, ["first again", "second"],
+            "the key is the identity; re-watching must not move it to the back")
+    })
 })
 
 describe("createCell — registry-of-one", () => {
@@ -90,24 +114,24 @@ describe("createCell — registry-of-one", () => {
         assert.equal(cell.get(), null)
     })
 
-    test("without breathes, register/release are silent", () => {
+    test("register and release each breathe once; payload none", () => {
         const cell = createCell()
-        let heard = 0
-        cell.watch(() => heard++)
-        const un = cell.register({})
-        un()
-        assert.equal(heard, 0)
-        cell.changed()
-        assert.equal(heard, 1)
-    })
-
-    test("with breathes, register and release each breathe once; payload none", () => {
-        const cell = createCell({ breathes: true })
         const breaths = []
         cell.watch((...args) => breaths.push(args))
         const un = cell.register({})
         un()
         assert.deepEqual(breaths, [[], []], "no payload, ever — the signal law")
+    })
+
+    test("registering nothing still hands back an unregister that fires", () => {
+        const cell = createCell()
+        cell.register({ n: 1 })
+        const un = cell.register(undefined)
+        assert.equal(cell.get(), null, "nothing displaces the occupant")
+        let heard = 0
+        cell.watch(() => heard++)
+        un()
+        assert.equal(heard, 1, "the release breathes — it is not a dead closure")
     })
 
     test("owner guard: only the live registrant clears the cell", () => {

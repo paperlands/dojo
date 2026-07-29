@@ -14,7 +14,7 @@
 
 import { createCell } from "../kernel/cell.js"
 
-const cell = createCell({ breathes: true })
+const cell = createCell()
 
 // Register the one world. Faces are whatever the registrant contracts —
 // the cell holds them opaque. Returns an owner-guarded unregister.

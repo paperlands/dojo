@@ -59,7 +59,7 @@ function mountOuter(hook, { term, cm6 }) {
     let ownCaret = null;
 
     term.outer();
-    const unregisterTerm = wireRegistry(hook.el, term, cm6, "outer");
+    arena.add(wireRegistry(hook.el, term, cm6, "outer"));
     const envEl = hook.el.closest('#outerenv');
 
     // A claimant projection over the ONE shared nerve: while open, this
@@ -75,6 +75,7 @@ function mountOuter(hook, { term, cm6 }) {
             targets: { editorView: () => term.shell },
         })
         : null;
+    arena.add(() => outerProj?.destroy());
 
     // While drafting, a body flag tells the core shell's global
     // "type-anywhere-to-focus" capture to stand down — so typing here
@@ -110,6 +111,7 @@ function mountOuter(hook, { term, cm6 }) {
 
     // The ink: one writer for this editor, asking the fence each breath.
     const ink = mountDiagnosticsInk(cm6, { view: () => term.shell, ask: shownWounds });
+    arena.add(ink);
 
     // The voice (weave/voice.js): said once while it stands. A friend hatches on
     // every keystroke, and a live draft re-runs as fast as it is typed.
@@ -128,7 +130,7 @@ function mountOuter(hook, { term, cm6 }) {
     // The runtime changed under us — a live draft ran, or the child's own page
     // did. Ask again, both readers.
     const reask = () => { ink.refresh(); speak(); };
-    const unwatchWorld = watchWorld(reask);
+    arena.add(watchWorld(reask));
     // ========================================================================
 
     // Run the current draft as the friend's ambient on the canvas, so an
@@ -192,6 +194,7 @@ function mountOuter(hook, { term, cm6 }) {
         gate: () => !!outerAddr,
         publish: (line) => scene.attend(outerAddr, line),
     });
+    arena.add(reach.cleanup);
 
     // THE WATCHER'S FIRST INPUT ENDS IT (D023, D025 R5) — read off INPUT, never
     // off scroll or off a dispatch. Following writes the caret and the scroll,
@@ -227,12 +230,13 @@ function mountOuter(hook, { term, cm6 }) {
             if (outerAddr && line != null) scene.attend(outerAddr, line);
         },
     });
+    arena.add(chase.cleanup);
 
     // Where the ladder landed, back to THIS organ — spoken only when that is
     // not where it pointed (a fresh page; a shorter split clamped the place).
-    const reachUnsub = scene.sub({
+    arena.add(scene.sub({
         landed: ({ addr, line }) => { if (addr === outerAddr) reach.reset(line) },
-    });
+    }));
 
     // Go live → run the draft; go frozen → stop running (revert to their code).
     // Live is the other half of the fence: frozen, nothing of ours has run, so
@@ -246,34 +250,46 @@ function mountOuter(hook, { term, cm6 }) {
 
     // Re-run the draft as you edit it, but only while live.
     const runDraftPaced = temporal.pace(runDraft, 60);
-    const draftEditUnsub = term.bridge.sub(() => {
+    arena.add(term.bridge.sub(() => {
         if (term.drafting() && draftLive) runDraftPaced();
-    });
+    }));
 
-    // WHERE THE FRIEND IS — the one act, however the line reached us. Idempotent
-    // on the line: most pushes are typing with the line unchanged, and arriving
-    // again on every keystroke is a shake, not a follow.
+    // WHERE THE FRIEND IS — the one act, however the line reached us.
+    //
+    // ONE LAW: only a line the document holds is news. The meta can name a line
+    // a breath before the body arrives; refusing that name leaves peerAt behind
+    // so the push that brings the body is still a move, and following completes.
+    // Committing early made every later same-line push a no-op and froze the view.
+    //
+    // Same line, already held: re-measure the firefly (doc may have reshaped),
+    // do not re-arrive — that is typing, and followTo is already a no-op when
+    // centred, but the caret dispatch is not free on every keystroke.
     const applyAttend = (line) => {
-        // Life, before the idempotence: a push with the line unchanged is the
-        // friend TYPING. The viewport must not move for it, but the firefly
-        // must burn for it — that is the difference it is there to show.
+        // Life first: a push with the line unchanged is the friend TYPING.
+        // The viewport stays; the firefly burns.
         chase.stir();
-        if (line === peerAt) return;
+
+        if (line != null) {
+            const n = term.shell.state.doc.lines;
+            if (line < 1 || line > n) return;   // name without body — wait
+        }
+
+        if (line === peerAt) {
+            chase.update(line);                 // re-measure; no re-arrival
+            return;
+        }
+
         peerAt = line;
         setPeerCell(term.shell, line);
         chase.update(line);
-        // THE ONE SITE THAT READS `following` (D025 R5) — a selector over the one
-        // address, not a plugin and not a mode. Arriving is spoken as ordinary
-        // reading is: `follow` lands the caret, which lights the cell by the
-        // cursor law; `scene.attend` hands the same line to the page law, which
-        // kindles it on the canvas. The two readers the reach already feeds.
+
+        // THE ONE SITE THAT READS `following` (D025 R5). Arriving is ordinary
+        // reading: `follow` lands the caret (cursor law); `scene.attend` hands
+        // the same line to the page law. The two readers the reach already feeds.
         if (following && line != null) {
-            // Kept before we move the caret off it — the FIRST follow of a run
-            // only, since after that the caret we would read is our own.
+            // Kept before we move the caret — the FIRST follow of a run only.
             if (ownCaret == null) ownCaret = term.shell.state.selection.main.head;
-            // `quiet` hushes the reach for the flight: it reads scroll, and a
-            // glide across the page would otherwise look to it like the child
-            // scrolling through every cell on the way.
+            // `quiet` hushes the reach for the flight: it reads scroll.
             follow(term.shell, line, { quiet: reach.pause });
             if (outerAddr) scene.attend(outerAddr, line);
         }
@@ -404,6 +420,13 @@ function mountOuter(hook, { term, cm6 }) {
 
     arena.on(outerEl, 'mousedown', onOuterClick);
     arena.on(document, 'focusin', onGlobalFocus);
+    arena.add(listeners.theme(theme => term.setOption('theme', theme)).mount());
+
+    // Authoritative teardown: drop this addr from the canvas entirely. NOT
+    // stopDraftRun() — ambientStop *reverts* to the friend's code (panel stays
+    // open); on close we want the slot gone. Registered last so it releases
+    // FIRST: the canvas learns the panel is gone before the panel comes apart.
+    arena.add(() => { if (outerAddr) scene.remove(outerAddr); });
 
     return {
         events: {
@@ -412,23 +435,6 @@ function mountOuter(hook, { term, cm6 }) {
             outerSignal: onOuterSignal,
             outerLive: onOuterLive,
         },
-        cleanup: [
-            listeners.theme(theme => term.setOption('theme', theme)).mount(),
-            // Authoritative teardown: drop this addr from the canvas entirely.
-            // NOT stopDraftRun() — ambientStop *reverts* to the friend's code
-            // (panel stays open); on close we want the slot gone. Firing it
-            // here re-added the ambient milliseconds after removing it.
-            () => { if (outerAddr) scene.remove(outerAddr); },
-            reach.cleanup,
-            chase.cleanup,
-            ink,
-            unwatchWorld,
-            reachUnsub,
-            draftEditUnsub,
-            () => outerProj?.destroy(),
-            unregisterTerm,
-            // All long-lived listeners — draft key, own-input, click, focusin.
-            () => arena.destroy(),
-        ],
+        arena,
     };
 }

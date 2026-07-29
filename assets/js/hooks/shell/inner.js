@@ -28,6 +28,7 @@ import { mountDiagnosticsInk } from "../../editor/diagnostics.js"
 import { nerveInstance } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
 import { commands, listeners, mutators, wireRegistry } from "./core.js"
+import { createArena } from "../../kernel/arena.js"
 
 // The surface as data: the lifecycle machine registers these event names
 // synchronously at mounted(), queues payloads through the boot seam, and
@@ -40,17 +41,21 @@ export const inner = {
 
 function mountInner(hook, { term, cm6 }) {
     // Inner shell: canvas, turtle, rendering, scene bridge subscription
+    // One lifetime for this surface — every organ registers its release here,
+    // where it is made, so teardown is reverse-of-creation with no ordered list.
+    const arena = createArena();
     const canvas = document.getElementById('core-canvas');
     const turtle = new Turtle(canvas);
+    arena.add(() => turtle.dispose());
     // Stage cell — the one address for the live turtle (gw-t-dom-registry).
     // Weave boot + revealAmbient read getStage(); no canvas.__turtle.
-    const unregisterStage = registerStage(turtle);
+    arena.add(registerStage(turtle));
 
     // Profiler overlay — opt-in via ?perf=1. Lazy-imported so it adds
     // zero cost to normal sessions. Reports RAF idle-spin + GPU growth.
     if (new URLSearchParams(location.search).has('perf')) {
         import('../../turtling/profile/overlay.js')
-            .then(m => { hook._profilerDetach = m.attachProfilerOverlay(turtle); })
+            .then(m => { if (arena.alive) arena.add(m.attachProfilerOverlay(turtle)); })
             .catch(err => console.warn('profiler overlay failed to load:', err));
     }
 
@@ -179,7 +184,7 @@ function mountInner(hook, { term, cm6 }) {
     // turtle, the page law, and the scheduler reach, so its faces are the
     // contract. Every face reads the owner's CURRENT bodies at ask time —
     // the scheduler dies and is reborn; capture the owner, ask for the body.
-    const unregisterWorld = registerWorld({
+    arena.add(registerWorld({
         // A buffer's whole truth: parse errors off its standing tree (a page's
         // tree on the page record, a plain tab's in the parse memo — the two
         // lifecycles the { text, ast } pair rides) ⊕ its frames' standing
@@ -187,7 +192,7 @@ function mountInner(hook, { term, cm6 }) {
         diagnostics: askDiagnostics,
         vitals: (name) => frameVitals(turtle.scheduler, name),
         family: (pattern) => livingFamily(turtle.scheduler, pattern),
-    })
+    }))
 
     // The handle for the current tab: its own frame if it has one (a plain tab,
     // a program's bare code), else the page's first cell — asked of the law,
@@ -314,8 +319,10 @@ function mountInner(hook, { term, cm6 }) {
         }))
         syncTabs()
     }, 20);
-
-    term.bridge.sub(pacedRender);
+    // Drop pending trailing calls: a paced timer that fires after the surface
+    // is gone would seat into a disposed turtle / push into a dead hook.
+    arena.add(pacedRender.cancel);
+    arena.add(term.bridge.sub(pacedRender));
 
     const pacedHatch = temporal.pace(
         (payload) => hook.pushEvent("hatchTurtle", {
@@ -324,8 +331,9 @@ function mountInner(hook, { term, cm6 }) {
         }),
         200
     );
+    arena.add(pacedHatch.cancel);
 
-    turtle.bridge.sub(([event, payload]) => {
+    arena.add(turtle.bridge.sub(([event, payload]) => {
         switch (event) {
         case "saveRecord":
             if (payload.type === "video") saveRecording(payload.snapshot);
@@ -339,11 +347,11 @@ function mountInner(hook, { term, cm6 }) {
             pacedHatch({ ...payload, ...(reflection() ?? {}) });
             break;
         }
-    });
+    }));
     term.inner();
     // Term cell — the one address for the inner Terminal (gw-t-dom-registry).
     // Outer draft seeding and the HUD default editor read getInner().
-    const unregisterTerm = wireRegistry(hook.el, term, cm6, "inner");
+    arena.add(wireRegistry(hook.el, term, cm6, "inner"));
 
     // The reach on the child's own editor — the same organ the outershell
     // mounts (editor/reach.js), publishing through the same scene.attend seam
@@ -352,17 +360,18 @@ function mountInner(hook, { term, cm6 }) {
         gate: () => law.hasPage(term.currentBufferId()),
         publish: (line) => scene.attend(term.currentBufferId(), line),
     })
+    arena.add(innerReach.cleanup)
 
     // The lint ink asks; nothing is pushed into the editor but the breath
     // (id:cmp-first-surface). Thunks, not bodies: the current view and the
     // current buffer's wounds, each ask. This editor shows the child's own
     // document, so the runtime it inks is the local one — the world cell's.
-    const unmountInk = mountDiagnosticsInk(cm6, {
+    arena.add(mountDiagnosticsInk(cm6, {
         view: () => term.shell,
         // Asked of the face directly, not through the cell: this surface IS the
         // registrant, and a room is for asking what you did not put there.
         ask: () => askDiagnostics(term.currentBufferId()),
-    })
+    }))
 
     // The one focus move both surfaces read: dim the previously bright ambient
     // and the local tabs, light the target. Focus and degree ride the ONE
@@ -392,7 +401,7 @@ function mountInner(hook, { term, cm6 }) {
     // Scene moves from the outer surface — the consumer-side dual of the
     // scene constructors (bridged.js): the same vocabulary, one handler per
     // named move; the law decides, perform() executes.
-    const sceneUnsub = scene.sub({
+    arena.add(scene.sub({
         focus: ({ ambientId }) => {
             // 'world' = sentinel: outer shell releasing focus → restore core tab
             // (A friend arrives as a display NAME — the outer surface holds no
@@ -444,7 +453,7 @@ function mountInner(hook, { term, cm6 }) {
             disown(addr)
             enact(addr, law.restore(addr))
         },
-    });
+    }));
 
     // Remote code rendering: inner shell handles seeOuterShell directly.
     // The friend's stream records into the slot ledger always; the law
@@ -514,6 +523,14 @@ function mountInner(hook, { term, cm6 }) {
         term.opBufferHandler(event);
     };
 
+    // Editor listeners last, so they release FIRST: a keystroke or selection
+    // landing mid-teardown must not reach organs already let go.
+    arena.add(listeners.keyboard(term.shell, cm6).mount());
+    arena.add(listeners.selection(term.selectionBridge, hook.pushEvent.bind(hook)).mount());
+    arena.add(listeners.theme(theme => term.setOption('theme', theme)).mount());
+    arena.add(slider.mount());
+    arena.add(listeners.slider(term.shell, slider, cm6).mount());
+
     return {
         events: {
             seeOuterShell:  onSeeOuterShell,
@@ -523,24 +540,6 @@ function mountInner(hook, { term, cm6 }) {
             opBuffer:       onOpBuffer,
             forkBuffer:     (forkData) => term.forkBuffer(forkData),
         },
-        cleanup: [
-            listeners.keyboard(term.shell, cm6).mount(),
-            listeners.selection(term.selectionBridge, hook.pushEvent.bind(hook)).mount(),
-            listeners.theme(theme => term.setOption('theme', theme)).mount(),
-            slider.mount(),
-            listeners.slider(term.shell, slider, cm6).mount(),
-            () => turtle.dispose(),
-            // Drop pending trailing calls: a paced timer that fires after the
-            // surface is gone would seat into a disposed turtle / push into a
-            // dead hook.
-            () => { pacedRender.cancel(); pacedHatch.cancel(); },
-            innerReach.cleanup,
-            unmountInk,
-            unregisterWorld,
-            unregisterStage,
-            unregisterTerm,
-            () => hook._profilerDetach?.(),
-            sceneUnsub,
-        ],
+        arena,
     };
 }

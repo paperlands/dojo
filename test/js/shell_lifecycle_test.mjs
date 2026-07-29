@@ -14,6 +14,7 @@ import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
 import { makeShellHook } from "../../assets/js/hooks/shell/lifecycle.js"
+import { createArena } from "../../assets/js/kernel/arena.js"
 
 const tick = () => new Promise((resolve) => setImmediate(resolve))
 
@@ -42,11 +43,13 @@ function makeSurface(events) {
         events,
         mount: () => {
             record.mounts++
+            const arena = createArena()
+            arena.add(() => record.cleaned++)
             return {
                 events: Object.fromEntries(
                     events.map((name) => [name, (p) => record.seen.push([name, p])])
                 ),
-                cleanup: [() => record.cleaned++],
+                arena,
             }
         },
     }
@@ -187,18 +190,17 @@ describe("dead state: a mid-boot destroy stands the mount down", () => {
         assert.equal(termDestroyed, 1)
     })
 
-    test("cleanup runs LIFO — reverse registration order", async () => {
+    test("release runs LIFO — the surface's arena owns the order, not this file", async () => {
         const order = []
         const surface = {
             events: ["seeOuterShell"],
-            mount: () => ({
-                events: { seeOuterShell: () => {} },
-                cleanup: [
-                    () => order.push(1),
-                    () => order.push(2),
-                    () => order.push(3),
-                ],
-            }),
+            mount: () => {
+                const arena = createArena()
+                arena.add(() => order.push(1))
+                arena.add(() => order.push(2))
+                arena.add(() => order.push(3))
+                return { events: { seeOuterShell: () => {} }, arena }
+            },
         }
         const hook = makeHook(
             makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outer: surface, inner: surface } })
