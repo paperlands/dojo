@@ -398,24 +398,29 @@ export class Turtle {
             this._lastReflectChange = performance.now()
 
             // The child's OWN fault only (D022): scheduler.errors spans every
-            // frame on the canvas, a watched friend's included. Read it whole
-            // and the child's edit fails, his reflect reddened for a friend's
-            // broken code. The address rule owns the filter; a page's cells
-            // ride `key#cellN`.
-            const errors = ailmentsFor(this.scheduler.errors, key)
-            if (errors.length > 0) {
-                this.renderstate.meta = { state: "error", message: errors[0].message }
+            // frame on the canvas, a watched friend's included, so reading it
+            // whole reddens the child's reflect for a friend's broken code. The
+            // address rule owns the filter; a page's cells ride `key#cellN`.
+            const wounds = ailmentsFor(this.scheduler.errors, key)
+            if (wounds.length > 0) {
+                // THE TURTLE CARRIES WOUNDS, NEVER A SENTENCE. Each wound keeps
+                // the key of the frame that died, so a watcher can isolate the
+                // cells that hurt without running anything — a flattened
+                // `message` leaves a receiver only a string to reprint.
+                //
+                // They ride `diagnostics`, the field the reflect already uses, so
+                // there is ONE wound channel. The reflect's are these same wounds
+                // LOCATED — an enrichment, never a second type.
+                this.renderstate.meta = { state: "error", message: null, diagnostics: wounds }
                 this.requestRender()
-                // Walk errors ride structured (id:cmp-runtime-provenance):
-                // span-true, born on the erring node — no message archaeology.
-                return { success: false, error: errors[0].message, errorSpan: errors[0].span ?? null }
+                return { success: false, wounds }
             }
 
             // The turtle publishes the FAULT — what it owns. The DOCUMENT
             // (commands/source/diagnostics) is asked for at the reflect seam by
             // the surface that holds the authored buffer (D022); a seat's
             // instruction slice is never the page.
-            this.renderstate.meta = { state: "success" }
+            this.renderstate.meta = { state: "success", message: null, diagnostics: [] }
             this.requestRender()
             // The healthy parts live (D020): a parse-error node never fails
             // the run — the world drew. The structured errors ride the result
@@ -426,13 +431,22 @@ export class Turtle {
             return result
         } catch (error) {
             console.error(error)
-            this.renderstate.meta = { state: "error", message: error.message }
-            return { success: false, error: error.message }
+            // A THROW IS A WOUND TOO, in the one shape. The message is one the
+            // turtle was GIVEN, so it is quoted and rides the wound; the surface
+            // says it through the view like any other.
+            const wound = {
+                message: error.message,
+                span: error.span ?? null,
+                kind: error.kind ?? "walk",
+                address: key,
+            }
+            this.renderstate.meta = { state: "error", message: null, diagnostics: [wound] }
+            return { success: false, wounds: [wound] }
         }
     }
 
     // The reflect gate, spoken once per transition (D022). `open` means the
-    // canvas is the CHILD'S this batch — his edit, or his live draft — so the
+    // canvas is the CHILD'S this batch — their edit or live draft — so the
     // snapshot may hatch and reflect. A batch of only passive seats (a watched
     // friend's push, a reverted draft) closes it; a batch with no seat at all
     // leaves it where it stands. One writer per transition, never N.
@@ -579,7 +593,7 @@ export class Turtle {
         this.stage.head.show()
         this.stage.head.reset()
         this.renderstate.snapshot = { hatched: false, save: false }
-        this.renderstate.meta = { state: null, message: null, commands: [] }
+        this.renderstate.meta = { state: null, message: null, commands: [], diagnostics: [] }
         this.renderLoop.requestRestart()
     }
 }

@@ -79,11 +79,10 @@ defmodule DojoWeb.ShellLive.OuterShell do
 
   # --- UI actions: just set the selector ---
 
-  # Intervening on a *working* friend runs your draft right away (auto-live).
-  # Intervening on an *error* is deliberate — start frozen; you toggle to run.
-  def draft(%__MODULE__{origin: %Turtle{state: :error}} = shell),
-    do: %{shell | view: :draft, stream: false}
-
+  # A DRAFT RUNS. You intervene *because* their code is broken, so the state that
+  # used to start frozen is the one that most needs a runtime — and since a dead
+  # cell makes the whole document `:error`, freezing there froze nearly every
+  # draft. Toggle to hold; holding is the deliberate act now.
   def draft(%__MODULE__{} = shell), do: %{shell | view: :draft, stream: true}
 
   def toggle_stream(%__MODULE__{stream: stream} = shell), do: %{shell | stream: !stream}
@@ -113,30 +112,18 @@ defmodule DojoWeb.ShellLive.OuterShell do
   def wants_updates?(%__MODULE__{view: :draft}), do: true
   def wants_updates?(_), do: false
 
-  # THE BUMP — the closed set of fields a mere image/preview re-publish moves.
-  # Naming the bump is the whole design (D025 R3): every OTHER field is compared
-  # without being listed, so a field added to the reflect — `attend` today, a
-  # caret's column tomorrow — is covered the day it is added and can never mint
-  # a second gate. Enumerating what *matters* drifts on its first successor.
+  # Name the BUMP, never the fields that matter: a field added to the reflect is
+  # covered the day it is added and can never mint a second gate (D025 R3).
   @bump %{time: nil, path: nil}
 
   @doc """
-  Would the watcher learn something new from this turtle?
+  Would the watcher learn something new? The one question, asked at both ends —
+  the client's `_lastReflectChange` speaks the same sentence. Only a
+  preview/path bump is suppressed.
 
-  The one question, asked at both ends of the wire — the client's dirty bit
-  (`_lastReflectChange`) speaks the same sentence. A hatch can fire for a mere
-  image/preview/path bump with everything else identical; only that is
-  suppressed. Anything else the envelope carries — source, the projected
-  `commands`, the attention riding with it, diagnostics, state, message —
-  reaches the watcher.
-
-  Replaces `code_changed?`, which compared `source` alone and so suppressed the
-  whole reaction (including `outerSignal`) whenever the source repeated. That
-  silently dropped a changed `diagnostics` list — which joins parse errors with
-  *runtime* walk ailments, and so can move while the source does not — along
-  with `state` and `message`, while this module's own `wants_updates?/1`
-  documents status as flowing even in a frozen draft. The docstring only ever
-  claimed to suppress the bump; now the code agrees with it.
+  Replaced `code_changed?`, which read `source` alone and so also dropped a
+  changed `diagnostics` (runtime ailments move while source does not), `state`
+  and `message` — `outerSignal` included.
   """
   def reflect_changed?(%Turtle{} = prev, %Turtle{} = new),
     do: struct(prev, @bump) != struct(new, @bump)

@@ -38,23 +38,31 @@
 //            code is their vocabulary (outline-scoped vocabulary, D019).
 //   page     all code in cells — the kindled cell runs, warm window of two.
 //
-// TWO ADDRESSINGS (D021): a LINE addresses an intention and crosses seams;
-// an ORDINAL (`#cellN`) names a body for one evaluation and is the frame key,
-// which must stay stable across edits.
+// TWO ADDRESSINGS (D021): a LINE addresses an intention and crosses seams; a
+// KEY names a body for one evaluation and is the frame key, which must stay
+// stable across edits. That key is the cell's NAME where the author wrote one,
+// and its place in the tree where she did not (D024 — `#cellN` is superseded:
+// a flat count re-aimed a running figure whenever any cell opened above it).
 
 import { visit } from "./ladder.js"
-import { reparseProgram, printAST, phaseCells, stripCells, cellAtLine } from "../turtling/parse.js"
+import { reparseProgram, printAST, phaseCells, stripCells, cellAtLine, cellIdentities, cellKey } from "../turtling/parse.js"
 
 const CELL_PROBE = /^[ \t]*```/m        // cheap gate — no fence, no parse
 
-// The first cell wears the page's name, so a surface holding only a tab NAME
-// (the outer shell, the tab restore) lights the page by naming it. Nothing on
-// the canvas is keyed by that name — seat, focus and degree all ride the key,
-// because in a `program` the bare code wears this same name beside cell 1.
+// THE CELL WEARS ITS NAME (D024) — but the name is the LABEL and the id is the
+// identity. The key is the section chain plus her word (or, unnamed, this cell's
+// order among its sisters) — never a flat count, which made every cell in the
+// buffer a neighbour of every other: a cell opened in chapter one re-aimed a
+// figure in chapter nine.
+//
+// The DISPLAY name says her word alone — `myname`, not `1.2.myname`: the phase
+// is already how a reader knows which one. Unnamed, it stays as it was
+// (`name`, `name·2`).
 function cellEntries(addr, name, cells) {
+    const ids = cellIdentities(cells)
     return cells.map(({ code, vocab, nodes, vocabNodes, open, end, path }, i) => ({
-        key: `${addr}#cell${i + 1}`,
-        name: i === 0 ? name : `${name}·${i + 1}`,
+        key: cellKey(addr, ids[i].id),
+        name: ids[i].name ?? (i === 0 ? name : `${name}·${i + 1}`),
         code,
         vocab,
         open, end, path,        // the law resolves an incoming line through these
@@ -257,6 +265,20 @@ export function pageLaw({ localKeys = () => [] } = {}) {
 
     return {
         observe,
+
+        // THE PAGE'S OWN HANDLE (D024). A page seats no frame under its addr —
+        // only its cells — so a surface holding just the addr asks the law which
+        // key stands for the page, and gets its first cell.
+        //
+        // This replaces "the first cell wears the page's name", which let such a
+        // surface resolve by DISPLAY NAME. That could not survive an author
+        // naming cell 1 herself, and it made a program's bare code and its cell 1
+        // share a name. Nothing on the canvas is name-keyed now.
+        pageKey(addr) {
+            const page = pages.get(addr)
+            if (!page || page.mode === "plain") return null
+            return page.entries[0]?.key ?? null
+        },
 
         // One ladder step: the same law with a new attention and the document
         // unchanged. Sugar, not a second path — and the door a followed peer's

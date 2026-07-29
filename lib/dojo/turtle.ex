@@ -1,23 +1,13 @@
 defmodule Dojo.Turtle do
-  # The reflect envelope. `commands` is the buffer's standing tree AS INHABITED
-  # — the document, not the instructions some seat happened to run; reflect the
-  # document (D022). `attend` is that document's own coordinate: the two are
-  # made together by `reflectPhase` in one walk from one input (D025 R1), so
-  # they can never disagree about which text a line indexes.
+  # The reflect envelope. `commands` is the buffer's WHOLE standing tree (D022);
+  # `attend` is where the author is looking in it (D025 R1).
   #
-  # The tree is CARRIED here, never interpreted — AND SO IS `attend`. The server
-  # has no printer and no AST walker of its own, and must not grow one. It had
-  # one — `print/1`, `find_title/1`, `filter_fns/1`, `find_fn/2` — with zero
-  # callers, and it drifted unnoticed until it emitted `for N do` for a Loop and
-  # still matched a `Lit` node type retired with D013. A second grammar for the
-  # one alphabet is worse than none; `turtling/parse.js` printAST is the one
-  # printer. The same prohibition answers the question this field invites: no,
-  # the server may not rate-limit by line or fan out by phase. It is luggage.
+  # CARRIED, NEVER INTERPRETED — the tree and the line alike. The server has no
+  # printer and no AST walker and must not grow one: it had one, with zero
+  # callers, and it drifted until it emitted a node type retired by D013. So no
+  # rate-limiting by line, no fan-out by phase.
   #
-  # `diagnostics` rides beside it: the span-true diagnostics (parse errors at any
-  # nesting, standing walk ailments). They are a LIST, not a state — healthy
-  # parts live (D020), so the figure still drew, and a diagnostic must be loud
-  # without darkening it.
+  # `diagnostics` is a LIST, not a state — healthy parts live (D020).
   defstruct state: :hatch,
             path: nil,
             commands: [],
@@ -25,6 +15,8 @@ defmodule Dojo.Turtle do
             diagnostics: [],
             source: nil,
             message: nil,
+            # MILLISECONDS: a version stamp readers compare with `>`. At second
+            # resolution the watcher's gate dropped all but one hatch a second.
             time: nil,
             buffer_id: nil
 
@@ -32,7 +24,7 @@ defmodule Dojo.Turtle do
     body
     |> Map.new(fn {k, v} -> {to_atom(k), v} end)
     |> (&struct(__MODULE__, &1)).()
-    |> Map.merge(%{state: :success, time: System.os_time(:second)})
+    |> Map.merge(%{state: :success, time: System.os_time(:millisecond)})
     |> Map.update(:path, nil, &store(&1, opts))
     |> Map.update(:commands, [], &Enum.take(&1, 1008))
     |> reflect(opts)
@@ -42,7 +34,7 @@ defmodule Dojo.Turtle do
     body
     |> Map.new(fn {k, v} -> {to_atom(k), v} end)
     |> (&struct(__MODULE__, &1)).()
-    |> Map.merge(%{state: :error, time: System.os_time(:second)})
+    |> Map.merge(%{state: :error, time: System.os_time(:millisecond)})
     |> Map.update(:path, nil, &store(&1, opts))
     |> reflect(opts)
   end

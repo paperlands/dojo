@@ -379,9 +379,35 @@ friend's line 12 is not his line 12.
 ** the prose walk — ONE geometry, every reader a view
 :PROPERTIES:
 :ID: nav-outline
-:KEYWORDS: outline prose walk meadow cell fence headline phase path findProse findCells findMeadows inMeadowRange fold state machine one grammar
+:KEYWORDS: outline prose walk meadow cell fence headline phase path findProse findCells findMeadows inMeadowRange fold state machine one grammar name coord cellIdentities identity frame key duplicate collision
 :PATH: assets/js/turtling/parse.js::export function outline
 :END:
+*A CELL'S IDENTITY RIDES THIS WALK* (D024). Each cell carries =name= — the word
+on its opening fence, the author's own — and =coord=, its place in the tree: the
+section-index chain, then its order among its own section's cells.
+
+*A NAME IS NOT THE IDENTITY; THE ID IS* (rule 4′). Two things, two jobs: =name=
+is a LABEL, free to repeat under different phases and displayed as she wrote it;
+=id= is the frame key — the section chain, then her word or this cell's ordinal
+(=1.2.myname=, =1.2.3=). So the same word under two subheadings is two cells and
+no wound; twice in ONE section is one place claimed twice, and that is a real
+collision. Titles never enter the key (prose changes freely; the tree's SHAPE is
+the structure), and every cell takes an ordinal slot whether named or not, so
+naming one never re-keys her sisters.
+
+=cellIdentities(cells)= spells the rule ONCE — =id=, =name=, =named=, =collides=,
+=why= — because two readers want it: the seating law keys frames on =id=, the
+diagnostics query turns =collides= into a wound (=why= picks the sentence). A
+name may not be spelled as a PLACE (=/^\d+(\.\d+)*$/=): =1.2= as a word would key
+the frame that SITS at 1.2, and a duplicate check watching names alone could
+never see it — the grammar is refused so the class dies, not the instance.
+
+*Bounded, not immortal.* A SECTION opened above re-keys everything beneath it,
+named or not: nothing survives a restructuring, and rule 4′ chose reusable names
+over immortal ones. What this replaced (=#cellN=) was worse in kind — it made
+every cell a neighbour of every other, so opening one in chapter one re-aimed a
+running figure in chapter nine.
+
 =outline(lines)= → ={ meadows, cells, phases }= is THE walk over prose space
 (=cmp-vet-4=). It takes LINES, because a line is the one thing both a tree and
 a CM6 doc already have — text in, shape out, pure. Every reader is a view:
@@ -416,16 +442,17 @@ Pinned by =test/js/weave_phase_test.mjs=.
 *** two addressings, one seam (=cmp-vet-4=)
 A LINE addresses an INTENTION — where the reader is; total (prose has one) and
 local, so it crosses surfaces (=scene.attend(addr, line)=) and the wire, and the
-page law resolves it once (=law.attend= → =cellAtLine=). An ORDINAL (=#cellN=)
-names a BODY for one evaluation — the frame key; re-derived each parse, crossing
-nothing. A line would be worse there: any edit above a cell would move its key
-and restart a running figure. Pinned by =weave_page_test.mjs= ⊗
-=scene_seam_test.mjs=.
+page law resolves it once (=law.attend= → =cellAtLine=). A KEY names a BODY for
+one evaluation — the frame key; re-derived each parse, crossing nothing. A line
+would be worse there: any edit above a cell would move its key and restart a
+running figure. That key is the cell's NAME, or its tree coordinate when unnamed
+(D024, [[id:nav-outline]]) — never a flat ordinal, which had the same disease a
+line has, only quieter. Pinned by =weave_page_test.mjs= ⊗ =scene_seam_test.mjs=.
 
 ** the reflect seam — what crosses to a peer
 :PROPERTIES:
 :ID: nav-reflect-seam
-:KEYWORDS: reflect hatchTurtle renderstate meta commands attend document authored buffer stripped cells peer seam hatch gate hatchSuppressed reflectGate diagnostics propagate projection inhabited
+:KEYWORDS: reflect hatchTurtle renderstate meta commands attend document authored buffer stripped cells peer seam hatch gate hatchSuppressed reflectGate diagnostics propagate projection inhabited verdict primaryWound sayWound describe placeOf wound-view view layer facts words prose dependent dependentsOf feedsVocabulary cellKey parseWounds ailmentWounds nameWounds dependentWounds locate isolate severity warning outerSignal located fault runtime
 :PATH: assets/js/hooks/shell/inner.js::const reflection
 :END:
 D022 — *the reflect is the document, not the residue of the walk.* The turtle
@@ -438,6 +465,72 @@ draft — never a per-seat residue and never a friend's push. The hatch gate is
 the BATCH's word (=turtle.reflectGate=, spoken once in =perform()=): a seat may
 only OPEN it, so a page's warm sibling can no longer close it last and mute the
 page. Pinned by =test/js/weave_reflect_test.mjs=.
+
+*** the hatch carries the fault — no runtime on the watcher (D020 amended)
+*=state= is the DOCUMENT's health; =diagnostics= are the addressed wounds.* Any
+standing WALK wound makes =verdict= answer =error=, with a LOCATED message
+(=Arrowhead › wow › wow · line 7 — …=, via =spokenWound=). It used to answer
+=error= only for the buffer's OWN key, so a page whose CELL died reflected
+=success= with a null message — and =outerSignal= carries exactly ={state,
+message}=, so a FOLLOWING watcher was told nothing. Only a DRAFT showed it,
+because a draft RE-RUNS the friend's code on her own canvas: runtime standing in
+for a fact the author already knew and had already sent. Appearance still rides
+the diagnostic's ADDRESS, never this binary, so healthy cells keep their light.
+A parse error is still not a death (=kind: "walk"= only).
+
+*FACTS AND WORDS ARE TWO LAYERS.* =weave/queries.js= is the QUERY — gather,
+locate, judge — and it authors no prose: a wound it makes carries the facts for
+a sentence (=why=, =word=, =answersTo=, =standsOn=), never the sentence, while a
+wound it passes through keeps the words it was GIVEN (the parser's, the
+canvas's), quoted and never rewritten. =weave/wound-view.js= is the VIEW, and
+the only place facts become words: =placeOf= (where it hurts), =describe= (what
+hurt — quoted where given, composed where not), =sayWound= (the whole sentence).
+Every surface renders through it — the core HUD, a friend's panel, the editor's
+gutter (=toDiagnostics= → =describe=), and the reflect's =message=, which the
+authoring surface says BEFORE the wire so the server carries words it never has
+to interpret (D022). =verdict= answers ={ state, wound }= — WHETHER and WHICH,
+never how it reads. They were one module and the query grew a =message= field
+that was sometimes quoted and sometimes its own composition, with nothing
+telling a reader which. Pinned by =test/js/wound_view_test.mjs=.
+
+*The turtle's fault channel is a LIST, never a sentence.* =renderstate.meta=
+carries =diagnostics= — abstract wounds (address ⊕ span ⊕ message ⊕ kind) — and
+=upsertAmbient= answers ={ success, wounds }=. It published
+={ state, message: errors[0].message }=: an arbitrary pick (a second selector
+beside =primaryWound=), the other wounds discarded, and a receiver handed a
+STRING it could only reprint. A sentence has no address, so nothing could be
+isolated. The wounds ride the SAME field the reflect uses, so there is one
+channel: the turtle's are abstract, the reflect's are the same wounds LOCATED,
+and locating is an ENRICHMENT, never a second type. A throw is a wound too.
+
+*The wound is isolated to its CELL, and to the cells that stand on it.*
+=weave/queries.js= gathers FOUR kinds in one shape — =parseWounds= (the tree's
+broken statements), =ailmentWounds= (the canvas's walk faults, each keeping the
+address of the frame that died), =nameWounds= (D024 collisions), and
+=dependentWounds= — then =locate= names every one's phase, cell and line in a
+single prose walk. Breaking them apart is what let the fourth exist without
+growing the function.
+
+*Dependents are D019's edge, walked BACKWARD.* =feedsVocabulary(sourcePath,
+targetPath)= is the one predicate: =phaseCells= walks it forward to build a
+cell's vocabulary, =dependentsOf(cells, i)= walks it backward to find who a dead
+cell leaves standing on a definition that never ran. They are compromised
+WHETHER OR NOT THEY HAVE RUN — a page seats lazily, so otherwise the child
+learns it only by reaching each one and watching it die. Marked
+=kind: "dependent"=, =severity: "warning"= (the existing =toDiagnostics=
+severity does the rest — no new machinery), addressed to the DEPENDENT's own
+cell key via =cellKey=, and skipped where a cell already carries its own fault.
+=verdict= never sees them (=kind: "walk"= alone), so a warning is never a death.
+Vocabulary flows down the outline, never sideways: a sister phase inherits
+nothing and is not compromised.
+
+*One selector, two readers.* =primaryWound(found, key)= says WHICH fault the
+document speaks of — the buffer's own if it has one, else the first tenant's —
+and =verdict= and the core HUD both read it. They used to choose independently
+(the HUD took the first, the verdict preferred the buffer's), so a page could
+say two different things about itself depending on who asked. =verdict= answers
+={ state, wound }= — WHETHER and WHICH — and the surface renders the sentence
+through [[id:nav-wound-view]]. Pinned by =test/js/queries_test.mjs=.
 
 *** the attention rides, the document does not move (D025 R1 amended)
 =attend= is a coordinate INTO the whole tree that crosses beside it — the
@@ -455,7 +548,7 @@ move must not rewrite the friend's document. See the warning on the function.
 ** peer attention — the friend's cell, and following it
 :PROPERTIES:
 :ID: nav-peer-attention
-:KEYWORDS: peer attention following follow chase firefly cm-peer-line cm-peer-cell setPeerCell followTo chaseDirection visibleLines watcher consent intervention scroll focus anchor minimalChange updateOuter
+:KEYWORDS: peer attention following follow followTo haltFollow scrollBoxOf chase firefly sigil stir fly-wake is-awake peer-ink violet cm-peer-line cm-peer-cell setPeerCell chaseDirection visibleLines watcher consent intervention scroll focus anchor caret herCaret minimalChange updateOuter
 :PATH: assets/js/editor/peer-attention.js
 :END:
 The watcher's side of a friend's line (D025 R5/R6). THE DATUM IS A LINE and only
@@ -466,19 +559,42 @@ EXISTING activation field: =.cm-peer-line= (him, exactly) and =.cm-peer-cell=
 which is itself true and says he is making). =setPeerCell(view, line)= is a
 =StateEffect=; the surface dispatches it where it sets the DOCUMENT, so a draft
 (whose text is the CHILD'S) clears it by saying what is true rather than by
-guarding. THE VIEWPORT is =followTo(view, line, cm6)= — hands the scroll to CM6's
-own =scrollIntoView=, which knows the gutter, the real scrolling box, and what to
-do about an unrendered line; the butter comes from =.cm-follows-smoothly=
-(=scroll-behavior= applies to PROGRAMMATIC scrolling only, so her wheel stays
-native). The viewport ONLY, never the selection and never the focus (sight, not
-power).
+guarding. FOLLOWING IS ARRIVING, not scrolling: =follow(view, line)= lands her CARET on
+his line, and the laws that already exist do the rest — the cursor law lights his
+cell in her editor, and the surface hands the same line to =scene.attend=, where
+the page law KINDLES that cell on her canvas. Two readers of one line, the same
+two her own reach feeds when she walks a page herself.
+
+*ASK WHICH BOX SCROLLS; NEVER ASSUME.* Measured [2026-07-27]: =.cm-scroller= is
+the scrolling box here, and =#outerenv= does not scroll at all. The chain is
+=#outerenv= (fixed =h-[calc(100dvh-18rem)] lg:h-[60vh]=) → =#outershell=
+(=h-full=) → =.cm-editor= (=&: {height:'100%'}=, terminal/extensions.js), so the
+scroller is height-constrained and CM6 scrolls inside it, while =#outerenv='s own
+child exactly fills it and never overflows. (=.cm-scroller= scrolls vertically
+because CM6's baseTheme sets =overflow-x: auto=, and CSS promotes the axis
+specified =visible= to =auto= when the other is not.)
+
+The layout permits either answer, so =scrollBoxOf(view)= ASKS — walking out from
+=view.scrollDOM= to the first ancestor that really scrolls, resolved FRESHLY
+every call (at mount nothing overflows yet, so a cached answer hardens into the
+wrong element). =followTo= and =visibleLines= work in screen space via
+=documentTop=. The firefly LISTENS to that box but does not live in it: it hangs
+in =anchorOf(box)=, the first positioned ancestor that does not scroll. Inside
+the scroller a =top= chased by hand can only ever be one frame behind the text
+(the compositor scrolls, the =scroll= event lands after) — that lag WAS the
+jitter. Out in the still frame it does not move at all, and the box's edges
+within that frame are a LAYOUT fact, remeasured by =ResizeObserver=, never on
+the scroll path. On a fast scroll it thins to nothing (=.is-flitting=, a
+=filter: opacity()= so it does not fight the drift's animated opacity) and
+settles back — which also covers =dir= flipping above↔below mid-rush.
 
 *Following is whose attention drives the view* — one =let following=, read in
 ONE place (the receive); its writes are its whole lifecycle (a friend's page
 opens it, her input ends it, the firefly gives it back).
 
 *Intervention is read off INPUT, never off scroll* — =wheel=, =touchmove=,
-=mousedown=, =keydown= on the scroller. NOT the reach's publish: reach's scroll
+=mousedown=, =keydown= bound on =#outerenv=, the widest surface her input can
+land on (the editor's own events bubble up to it). NOT the reach's publish: reach's scroll
 listener fires for programmatic scrolling exactly as for a wheel, so ending
 following there means =followTo= kills following on the first line it follows.
 A "was this ours" flag is no better — it races the dispatch that caused it. An
@@ -487,6 +603,29 @@ event's KIND is unambiguous, and this organ only ever WRITES scroll.
 =chaseDirection(line, first, last)= is pure and answers =null= for any line the
 viewport was just moved onto, so the firefly needs no knowledge of following and
 carries no suppression clause. Pinned by =test/js/peer_attention_test.mjs=.
+
+*The firefly is a sigil, and arousal is a VALUE* — no fill, no plate: their
+initials as ink, a hairline rim, light falling off. =chase.stir()= adds
+=.is-awake=, which pins one registered custom property (=--fly-wake=, 0→1 in
+=assets/css/app.css=); pigment, glow, rim, halo and swell are all =calc= over it,
+so nothing can be awake in one property and asleep in another. It kindles in a
+breath and cools over three seconds. =stir= is called ABOVE =applyAttend='s
+idempotence gate: a push with the line unchanged is the friend TYPING — the
+viewport must not move for it, the firefly must burn for it.
+
+*The friend has ONE pigment* — =--peer-ink=, a violet declared once in
+=assets/css/app.css=, read by the firefly AND by =.cm-peer-line= /
+=.cm-peer-cell= in =assets/js/editor/theme.js= (via =color-mix= for their
+alphas, both themes). His line and his glyph are one mark at three distances, so
+they cannot drift. Violet because the pigment's whole job is to say SOMEONE
+ELSE and your own live cell is chartreuse — and because violet is the theme's
+own hue on both grounds (dark base is violet-black, the paper's ink is violet).
+Wake is never a hue change: one hue, brightening in chroma and glow.
+
+*And ONE margin* — =.cm-peer-cell= rules the RIGHT edge (=inset -2px 0 0=), not
+the left: the left margin is spoken for (line numbers, folds, the lint spark ✶),
+and the firefly hangs on the right too. The cell's rule and the glyph past the
+edge fall on one vertical line, so the friend owns a margin rather than a badge.
 
 ** the reflect's breath — one question, two ends (D025)
 :PROPERTIES:
@@ -507,6 +646,33 @@ calls =eagerHatch(200)=, re-arming the hatch that exists rather than opening a
 second wire path. One call site — the =scene.attend= handler, guarded to the
 authored addr. Routes through the one render loop, so =_hatchSuppressed= still
 holds (a followed PROGRAM does not hatch its previews, D023).
+
+** attention's two carriers — arrival and movement (D025 R9)
+:PROPERTIES:
+:ID: nav-attend-carriers
+:KEYWORDS: outerAttend attend push_attend broadcast_hatch meta presence-class carrier applyAttend self-watch fetch task follow caret herCaret enterDraft
+:PATH: lib/dojo_web/live/shell_live.ex::defp push_attend
+:END:
+His line crosses on TWO carriers, and they say different things. THE REFLECT
+(=seeOuterShell=, =Turtle.attend=) carries where he is *as the document arrives*
+— the coordinate a watcher needs on her first paint. THE HATCH META
+(=outerAttend=, =push_attend/3=, fed by =broadcast_hatch='s =Map.take(..., :attend)=)
+carries where he *moved*: ~40 bytes, no =Dojo.Table= fetch, no spawned task, no
+time gate. The meta path is why a reader who MOVES and does not type crosses at
+all, and why SELF-WATCH works — =maybe_follow_code= requires =dis[reg_key][:node]=
+and silently excluded it.
+
+Attention is PRESENCE-CLASS in both directions (R9 extends R8). This is not a
+second wire path — R4 governs the TRIGGER (still one =eagerHatch=) — and not a
+fifth name: both carriers call ONE act, =applyAttend= (hooks/shell/outer.js),
+idempotent on his line. Two doors, one room; nothing may branch on which door.
+
+*The follow caret is a display artifact* (R10). =follow()= lands her CARET so the
+existing cursor law lights his cell — but =onDraftKey= does not =preventDefault=,
+so CM6 would apply her keystroke at HIS line. =herCaret= stashes her place before
+the first follow of a run and =enterDraft()= spends it — the ONE door every draft
+entry passes. A pointer-down releases the stash (a click places a caret); a wheel
+does not.
 
 ** inner surface — canvas, turtle, scene bridge
 :PROPERTIES:
@@ -752,6 +918,25 @@ adoption makes invalidation free (a reused node answers its old array, the
 ===-same object). =diagnostics(ast, ailments)= joins live walk ailments,
 never memoized; =ailmentsFor(scheduler.errors, key)= filters the one
 error scan by address top segment (the tab or its =#cellN= seats).
+
+** wound view — facts become words, once
+:PROPERTIES:
+:ID: nav-wound-view
+:KEYWORDS: wound view sayWound describe placeOf sentence message prose facts words presentation layer render breadcrumb tooltip severity dependent name collision
+:PATH: assets/js/weave/wound-view.js
+:END:
+The VIEW half of the diagnostics seam, split out from the query so neither has
+a duty it cannot name. =placeOf(w)= — where it hurts, in the author's own
+outline (phase chain › her word for the cell · line). =describe(w)= — what
+hurt: a message the wound was GIVEN (the parser's, the canvas's) is quoted
+verbatim, while a wound carrying only FACTS (=kind: "name"= with
+=why/word/answersTo=, =kind: "dependent"= with =standsOn=) is composed here.
+=sayWound(w)= is the whole sentence, and every surface renders through it — the
+core HUD, a friend's panel, the editor gutter (=toDiagnostics= → =describe=),
+and the reflect's =message=, said BEFORE the wire so the server carries words it
+never interprets (D022). Nothing here DECIDES: choosing which wound matters is
+=primaryWound='s, and whether the document is well is =verdict='s. Pinned by
+=test/js/wound_view_test.mjs=.
 
 ONE record, one meaning per key: ={ message, span, kind, source, address,
 phase, cell }=. =kind= is where it was born — =parse= (tree would not build),

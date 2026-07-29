@@ -15,7 +15,7 @@ import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
 import { pageLaw } from "../../assets/js/weave/page.js"
-import { parseProgram, phaseCells } from "../../assets/js/turtling/parse.js"
+import { parseProgram, phaseCells, cellIdentities } from "../../assets/js/turtling/parse.js"
 
 const PAGE_SRC = `###
 a meadow of prose
@@ -113,11 +113,11 @@ describe("the priority law — what a buffer's shape runs", () => {
             "no wildcard: every word of the alphabet names its target")
         const kindled = main(fx)
         assert.equal(kindled.op, "seat")
-        assert.equal(kindled.key, "b1#cell1")
+        assert.equal(kindled.key, "b1#1")
         assert.equal(kindled.name, "one", "the first cell wears the page's name")
         // ONE attention move, carrying both faces of the register (D006).
         const focused = fx.find((e) => e.op === "focus")
-        assert.equal(focused.key, "b1#cell1", "the key is the identity the light moves by")
+        assert.equal(focused.key, "b1#1", "the key is the identity the light moves by")
         assert.equal(focused.name, "one", "the name is its display view")
         assert.ok(fx.every((e) => e.op !== "kindle"), "kindle collapsed into focus")
         assert.deepEqual(ans.landed, { line: at(PAGE_SRC, 0) })
@@ -141,7 +141,7 @@ describe("the priority law — what a buffer's shape runs", () => {
         const fx = step(law, "b1", at(PROGRAM_SRC, 0))
         const lit = fx.find((e) => e.op === "focus")
         assert.equal(lit.name, "one", "so does cell 1 — the collision is real")
-        assert.equal(lit.key, "b1#cell1",
+        assert.equal(lit.key, "b1#1",
             "so nothing the canvas does may key on that name: appearance moves by key")
     })
 
@@ -159,7 +159,7 @@ describe("the exclusive law across kinds", () => {
         const law = pageLaw()
         mine(law, "b1", "one", PAGE_SRC)
         const fx = mine(law, "b2", "two", PLAIN_SRC)
-        assert.ok(removes(fx).some((e) => e.key === "b1#cell1"), "the page's cells leave")
+        assert.ok(removes(fx).some((e) => e.key === "b1#1"), "the page's cells leave")
         assert.equal(main(fx).op, "draw")
         assert.deepEqual(law.localPages(), [])
     })
@@ -168,7 +168,7 @@ describe("the exclusive law across kinds", () => {
         const law = pageLaw()
         mine(law, "b1", "one", PAGE_SRC)
         const fx = mine(law, "b2", "two", PAGE_SRC)
-        assert.ok(removes(fx).some((e) => e.key === "b1#cell1"))
+        assert.ok(removes(fx).some((e) => e.key === "b1#1"))
         assert.deepEqual(law.localPages(), ["b2"])
     })
 
@@ -185,7 +185,7 @@ describe("the exclusive law across kinds", () => {
         const law = pageLaw()
         mine(law, "b1", "one", PAGE_SRC)
         const fx = mine(law, "b1", "one", PLAIN_SRC)
-        assert.ok(removes(fx).some((e) => e.key === "b1#cell1"))
+        assert.ok(removes(fx).some((e) => e.key === "b1#1"))
         assert.equal(main(fx).op, "draw")
         assert.equal(law.hasPage("b1"), false)
     })
@@ -201,13 +201,13 @@ describe("the ladder on the canvas", () => {
         const law = pageLaw()
         mine(law, "b1", "one", PAGE_SRC)
         const fx1 = step(law, "b1", at(PAGE_SRC, 1))
-        assert.equal(seats(fx1)[0].key, "b1#cell2")
+        assert.equal(seats(fx1)[0].key, "b1#1.1")
         assert.ok(fx1.some((e) => e.op === "focus" && e.name === "one·2"))
-        assert.ok(fx1.some((e) => e.op === "degree" && e.degree === "warm" && e.key === "b1#cell1"),
+        assert.ok(fx1.some((e) => e.op === "degree" && e.degree === "warm" && e.key === "b1#1"),
             "the cell she left stays warm beside the kindled one — named by KEY, as focus is")
         assert.equal(removes(fx1).length, 0)
         const fx2 = step(law, "b1", at(PAGE_SRC, 2))
-        assert.ok(removes(fx2).some((e) => e.key === "b1#cell1"),
+        assert.ok(removes(fx2).some((e) => e.key === "b1#1"),
             "past the window of two, the oldest is evicted")
     })
 
@@ -225,8 +225,8 @@ describe("the ladder on the canvas", () => {
         mine(law, "b1", "one", PROGRAM_SRC)
         step(law, "b1", at(PROGRAM_SRC, 0))
         const fx = step(law, "b1", at(PROGRAM_SRC, 1))
-        assert.equal(seats(fx)[0].key, "b1#cell2")
-        assert.ok(removes(fx).some((e) => e.key === "b1#cell1"),
+        assert.equal(seats(fx)[0].key, "b1#2")
+        assert.ok(removes(fx).some((e) => e.key === "b1#1"),
             "the previous preview leaves — a preview is cursor-only")
     })
 
@@ -235,7 +235,7 @@ describe("the ladder on the canvas", () => {
         mine(law, "p", "prog", PROGRAM_SRC)
         step(law, "p", at(PROGRAM_SRC, 0))
         const fx = step(law, "p", null)
-        assert.ok(removes(fx).some((e) => e.key === "p#cell1"))
+        assert.ok(removes(fx).some((e) => e.key === "p#1"))
         assert.ok(fx.some((e) => e.op === "focus" && e.world === true),
             "the program regains the light")
         assert.deepEqual(step(law, "p", null), [], "already at rest — nothing more")
@@ -253,13 +253,13 @@ describe("the ladder on the canvas", () => {
         // unchanged, so his place must ride through it.
         const ans = ask(law, "b1", "one", PAGE_SRC.replace("fw 10", "fw 11"))
         const fx = ans.effects
-        assert.equal(main(fx).key, "b1#cell3", "the kindled cell is where she was")
+        assert.equal(main(fx).key, "b1#1.2", "the kindled cell is where she was")
         assert.deepEqual(ans.landed, { line: at(PAGE_SRC, 2) })
 
         const shorter = mine(law, "b1", "one", `###\n\`\`\`\nfw 1\n\`\`\`\n###`)
-        assert.ok(removes(shorter).some((e) => e.key === "b1#cell3"),
+        assert.ok(removes(shorter).some((e) => e.key === "b1#1.2"),
             "siblings from the longer previous split leave the canvas")
-        assert.equal(main(shorter).key, "b1#cell1", "indexes past the split clamp away")
+        assert.equal(main(shorter).key, "b1#1", "indexes past the split clamp away")
     })
 })
 
@@ -307,7 +307,7 @@ describe("ownership — who owns an addr's canvas", () => {
         const law = pageLaw()
         const first = theirs(law, "~/spirals", "spirals", PAGE_SRC)
         const [s] = seats(first.effects)
-        assert.equal(s.key, "~/spirals#cell1")
+        assert.equal(s.key, "~/spirals#1")
         assert.equal(s.hatch, false, "another's page never hatches as hers")
         assert.ok(first.effects.some((e) => e.op === "focus" && e.name === "spirals"))
     })
@@ -345,7 +345,7 @@ describe("ownership — who owns an addr's canvas", () => {
         const fx = mine(law, "~/spirals", "spirals", PAGE_SRC.replace("fw 5", "fw 7"))
         const seated = seats(fx)
         assert.ok(seated.length, "the draft seats cells")
-        assert.ok(seated.every((s) => s.key.includes("#cell")),
+        assert.ok(seated.every((s) => s.key.startsWith("~/spirals#")),
             "every seat is a CELL — the whole buffer never runs beside its own cells")
         assert.ok(!seated.some((s) => s.key === "~/spirals"),
             "no whole-buffer blob: this is what made a draft restart the page per keystroke")
@@ -356,7 +356,7 @@ describe("ownership — who owns an addr's canvas", () => {
         theirs(law, "kai", "kai", PAGE_SRC)
         mine(law, "kai", "kai", PAGE_SRC)                 // she intervenes
         const fx = step(law, "kai", at(PAGE_SRC, 1))     // her cursor moves
-        assert.equal(seats(fx)[0].key, "kai#cell2", "the reached cell runs, and only it")
+        assert.equal(seats(fx)[0].key, "kai#1.1", "the reached cell runs, and only it")
         assert.equal(seats(fx)[0].hatch, true, "her draft is hers — it hatches")
         assert.ok(fx.some((e) => e.op === "degree" && e.degree === "warm"),
             "the cell she left stays warm — the window of two, as on her own tab")
@@ -383,7 +383,7 @@ describe("ownership — who owns an addr's canvas", () => {
         mine(law, "kai", "kai", PAGE_SRC.replace("fw 5", "fw 7"))
         const back = seats(revert(law, "kai"))
         assert.ok(back.length, "their page returns")
-        assert.ok(back.every((s) => s.key.includes("#cell")),
+        assert.ok(back.every((s) => s.key.startsWith("kai#")),
             "as cells — not the one whole-buffer seat the old revert dropped it to")
         assert.ok(back.every((s) => s.hatch === false), "and passively: it is theirs again")
     })
@@ -414,10 +414,10 @@ describe("toggle — the page flips whole, a plain tab falls through", () => {
         const law = pageLaw()
         const on = law.toggle("b1", "one", PAGE_SRC)
         assert.equal(on.paged, true)
-        assert.equal(main(on.effects).key, "b1#cell1")
+        assert.equal(main(on.effects).key, "b1#1")
         const off = law.toggle("b1", "one", PAGE_SRC)
         assert.equal(off.paged, true)
-        assert.ok(removes(off.effects).some((e) => e.key === "b1#cell1"))
+        assert.ok(removes(off.effects).some((e) => e.key === "b1#1"))
         assert.ok(removes(off.effects).some((e) => e.key === "b1"),
             "a preview tab's program ambient goes with its cells")
         assert.equal(law.hasPage("b1"), false)
@@ -455,10 +455,11 @@ describe("the green tree through the law — identity across edits", () => {
 })
 
 // ── The line door (D021) ────────────────────────────────────────────────────
-// The ordinal is culled from every SEAM. What remains ordinal is the frame KEY
-// (`#cellN`), deliberately: a key names a body for one evaluation and must be
-// stable across edits, and a line is strictly worse there — any edit above a
-// cell would move it and restart a running figure. These pin both halves.
+// The ordinal is culled from every SEAM. What remains as the frame KEY is the
+// cell's NAME, or — unnamed — its place in the tree (D024). A key names a body
+// for one evaluation and must be stable across edits, and a line is strictly
+// worse there: any edit above a cell would move it and restart a running
+// figure. These pin both halves.
 describe("the reach is addressed by line, not by ordinal", () => {
     test("any line INSIDE a cell reaches it — not just its fence", () => {
         const cells = phaseCells(parseProgram(PAGE_SRC))
@@ -467,7 +468,7 @@ describe("the reach is addressed by line, not by ordinal", () => {
             const law = pageLaw()
             mine(law, "b1", "one", PAGE_SRC)
             const fx = step(law, "b1", line)
-            assert.equal(seats(fx)[0]?.key, "b1#cell2",
+            assert.equal(seats(fx)[0]?.key, "b1#1.1",
                 `line ${line} stands in the second cell`)
         }
     })
@@ -509,11 +510,101 @@ describe("the reach is addressed by line, not by ordinal", () => {
         assert.deepEqual(step(law, "b1", 9999), [])
     })
 
-    test("the frame KEY stays ordinal — an edit must not rename a running body", () => {
+    test("the frame KEY survives a text edit — never rename a running body", () => {
         const law = pageLaw()
         mine(law, "b1", "one", PAGE_SRC)
         const first = main(mine(law, "b1", "one", PAGE_SRC.replace("fw 10", "fw 11"))).key
-        assert.equal(first, "b1#cell1",
+        assert.equal(first, "b1#1",
             "editing inside cell 1 keeps its key — the frame is not reborn")
+    })
+})
+
+// ── THE CELL WEARS ITS NAME (D024) ──────────────────────────────────────────
+// The ground D024 stands on: a page of two cells, a third inserted ABOVE,
+// touching neither body. Under `#cellN` the frame that was running `rt 90` was
+// re-seated with `fw 10` — two running figures body-swapped by an edit that
+// touched neither. These pin the fix and its honest residue.
+describe("the cell wears its name — identity, not position", () => {
+    const cells = (src) => phaseCells(parseProgram(src))
+    const ids = (src) => cellIdentities(cells(src)).map((i) => i.id)
+
+    const NAMED = "###\n```spiral\nfw 10\n```\n\n```petal\nrt 90\n```\n###"
+    const NAMED_ABOVE = "###\n```bud\nfw 999\n```\n\n```spiral\nfw 10\n```\n\n```petal\nrt 90\n```\n###"
+
+    test("a named cell keeps its key when a cell opens above it", () => {
+        assert.deepEqual(ids(NAMED), ["spiral", "petal"])
+        assert.deepEqual(ids(NAMED_ABOVE), ["bud", "spiral", "petal"],
+            "the newcomer takes its own name; neither sister is re-keyed")
+    })
+
+    test("the running figure is not body-swapped — the probe D024 was written for", () => {
+        const law = pageLaw()
+        const before = main(mine(law, "b1", "one", NAMED)).key
+        assert.equal(before, "b1#spiral", "the kindled cell answers to the author's word")
+        const fx = mine(law, "b1", "one", NAMED_ABOVE)
+        assert.ok(!removes(fx).some((e) => e.key === "b1#spiral"),
+            "spiral is not torn down by an edit that never touched it")
+        assert.ok(!seats(fx).some((e) => e.key === "b1#spiral" && e.code.includes("999")),
+            "and nothing else's code is poured into its frame")
+    })
+
+    test("an unnamed cell is bounded to its SECTION, not the buffer", () => {
+        const two = "###\n* one\n```\nfw 1\n```\n** deep\n```\nfw 2\n```\n* nine\n```\nfw 9\n```\n###"
+        assert.deepEqual(ids(two), ["1.1", "1.1.1", "2.1"])
+        // A cell opened in chapter one. Chapter nine's key must not move.
+        const opened = "###\n* one\n```\nfw 0\n```\n```\nfw 1\n```\n** deep\n```\nfw 2\n```\n* nine\n```\nfw 9\n```\n###"
+        assert.equal(ids(opened).at(-1), "2.1", "chapter nine is untouched")
+        assert.ok(ids(opened).includes("1.2"), "its own sister DID shift — the honest residue")
+    })
+
+    test("a headline's TITLE never enters the key — renaming rebirths nothing", () => {
+        const a = "###\n* chapter one\n```\nfw 1\n```\n###"
+        const b = "###\n* a different name entirely\n```\nfw 1\n```\n###"
+        assert.deepEqual(ids(a), ids(b))
+    })
+
+    test("a cell above every headline is named by its place in the preamble", () => {
+        assert.deepEqual(ids("###\n```\nfw 1\n```\n```\nfw 2\n```\n* later\n```\nfw 3\n```\n###"),
+            ["1", "2", "1.1"])
+    })
+
+    test("the SAME word under two phases is two cells, not a collision", () => {
+        const both = "###\n* T\n** S1\n```myname\nfw 1\n```\n** S2\n```myname\nfw 2\n```\n###"
+        const marks = cellIdentities(cells(both))
+        assert.deepEqual(marks.map((m) => m.id), ["1.1.myname", "1.2.myname"],
+            "the section is what makes her word mean a different place")
+        assert.deepEqual(marks.map((m) => m.collides), [false, false])
+        assert.deepEqual(marks.map((m) => m.name), ["myname", "myname"],
+            "and she is told her own word back, not the key")
+    })
+
+    test("the same word TWICE IN ONE phase is one place claimed twice — MARKED", () => {
+        const dup = "###\n* one\n```spiral\nfw 1\n```\n```spiral\nfw 2\n```\n###"
+        const marks = cellIdentities(cells(dup))
+        assert.deepEqual(marks.map((m) => m.id), ["1.spiral", "1.2"],
+            "the first keeps the word; the later answers to its ordinal")
+        assert.deepEqual(marks.map((m) => m.collides), [false, true])
+        assert.deepEqual(marks.map((m) => m.why), [null, "duplicate"])
+    })
+
+    test("a name may not be spelled as a PLACE — the silent alias, refused", () => {
+        // `1.2` as a word keys the same frame as the cell that SITS at 1.2, and
+        // a duplicate check watching names alone cannot see it.
+        const clash = "###\n```1.2\nfw 0\n```\n* ch\n```\nfw 1\n```\n```\nfw 2\n```\n###"
+        const marks = cellIdentities(cells(clash))
+        assert.deepEqual(marks.map((m) => m.id), ["1", "1.1", "1.2"],
+            "the word is refused, so the named cell takes its own place instead")
+        assert.deepEqual(marks.map((m) => m.why), ["place", null, null])
+        assert.equal(new Set(marks.map((m) => m.id)).size, 3, "and no two cells share a key")
+    })
+
+    test("rename is rebirth — a name IS the identity", () => {
+        assert.deepEqual(ids("###\n```spiral\nfw 1\n```\n###"), ["spiral"])
+        assert.deepEqual(ids("###\n```coil\nfw 1\n```\n###"), ["coil"])
+    })
+
+    test("an unnamed page is unchanged apart from the key spelling", () => {
+        assert.deepEqual(ids(PAGE_SRC), ["1", "1.1", "1.2"],
+            "no name anywhere, so every cell is named by where it sits")
     })
 })

@@ -196,7 +196,9 @@ export function createStage(canvas, bridge) {
 
         renderstate: {
             snapshot: { hatched: false, save: false },
-            meta: { state: null, message: null, commands: [] }
+            // The fault channel is a LIST of wounds, never a sentence — a receiver
+            // interprets them (isolating the cells that hurt) without running anything.
+            meta: { state: null, message: null, commands: [], diagnostics: [] }
         },
 
         renderLoop: null,

@@ -30,11 +30,8 @@ const DO = 'do';
 const COMMENT = '#';
 const FENCE = '###';   // the meadow door — prose AROUND code (id:gw-grammar)
 
-// The ONE place code and comment part. A `#` opens trivia; everything before it
-// is code (trailing space trimmed), everything after rides VERBATIM (the
-// author's whitespace is theirs). Returns [code, comment]; comment is undefined
-// only when there is no `#` — a bare `#` still yields an empty-string comment.
-// Nothing downstream re-finds the `#`: the comment travels as a field.
+// The one place code and comment part. Everything after `#` rides verbatim —
+// the author's whitespace is theirs. A bare `#` still yields a comment, not undefined.
 const splitComment = (raw) => {
     const i = raw.indexOf(COMMENT);
     return i === -1 ? [raw, undefined] : [raw.slice(0, i).trimEnd(), raw.slice(i + 1)];
@@ -49,12 +46,8 @@ const BLOCK_KW = { for: 1, loop: 1, def: 1, draw: 1, when: 1, as: 1 };
 
 
 
-// A meadow (`###` … `###`) is carried through the line array as an object so the
-// statement loop can turn it into one prose node — the same store as the margin,
-// only multiline. A meadow holding ``` cells (id:gw-cell) tokenizes into a
-// SEQUENCE of units — prose chunks, cell-fence markers, and the cell's own code
-// lines — with the group's ### fences riding the edge units, so printAST can
-// re-emit the group exactly and the executor still walks the cell's code.
+// One prose node. A meadow holding ``` cells (id:gw-cell) becomes a SEQUENCE
+// instead — its ### fences ride the edge units, so printAST re-emits exactly.
 function meadowNode(line) {
     const node = stamp(new ASTNode('Empty', '')
         .assign_meta('lit', line.meadow)
@@ -81,21 +74,15 @@ function cellFenceNode(line) {
 // Spans + error nodes — the resilient parse (specs/compiler.org id:cmp-resilient)
 // ============================================================================
 
-// Stamp a node with its source span. Line numbers are 1-based ORIGINAL buffer
-// lines, carried through the line pass on every record — the tokenizer
-// reshapes lines (splits glued `end`, drops blanks, folds meadows) but never
-// forgets where a record was born. Statement-grain: Argument sub-nodes ride
-// their statement's line.
+// 1-based ORIGINAL buffer lines. The tokenizer reshapes lines but every record
+// remembers where it was born. Statement-grain: Arguments ride their statement.
 function stamp(node, rec, endLine = null) {
     node.span = { line: rec.line ?? 0, endLine: endLine ?? rec.endLine ?? rec.line ?? 0 };
     return node;
 }
 
-// A structure-preserving error node — the containment law, healthy parts live
-// (D020, id:cmp-error-node). `value` holds the child's raw source line VERBATIM
-// so printAST round-trips it; `children` hold whatever parsed inside an
-// unterminated block — structure preserved, inert at walk, loud in the ink.
-// Never thrown: parseProgram is total.
+// Containment: the broken part is held, the healthy parts still run (D020).
+// `value` keeps the raw line verbatim so printAST round-trips it. Never thrown.
 function errorNode(rec, expected, found, children = []) {
     return stamp(new ASTNode('Error', rec.text, children, {
         expected,
@@ -104,17 +91,8 @@ function errorNode(rec, expected, found, children = []) {
     }), rec);
 }
 
-// ============================================================================
-// Trivia — the one uniform concept for a `#` comment (id:pa-ghc-exactprint)
-// ============================================================================
-// A comment is non-semantic text that RIDES a line — trivia, not structure.
-// It attaches to the node whose line it trails, in ONE of two slots:
-//   meta.comment    — the node's OWN / opening line (a call's margin, a block's
-//                     `do` head, a comment standing on its own empty line)
-//   meta.endComment — a block's `end` line (the twin site a `do … end` spans)
-// One concept, one attach here, one emit in printAST (`#` + the verbatim run,
-// its author-owned whitespace intact). Prose (meadow meta.lit) is CONTENT, a
-// different thing — trivia never conflates with it, and neither is stored twice.
+// Trivia rides a line, never structure (id:pa-ghc-exactprint). Two slots only:
+// meta.comment (own/opening line), meta.endComment (a block's `end`).
 const attachComment = (node, comment) =>
     comment != null ? node.assign_meta('comment', comment) : node;
 
@@ -133,9 +111,7 @@ export function parseProgram(program) {
         const tokens = tokenizeLine(line.text);
         const comment = line.comment;
 
-        // A stray `end` with no block open — an error node, never a phantom
-        // Call (reachable now that a broken head consumes no block, D020).
-        // Its comment rides the error as trivia (attachComment), like any node.
+        // A stray `end` is an error node, never a phantom Call (D020).
         if (tokens.length === 1 && tokens[0] === END) {
             ast.push(attachComment(errorNode(line, 'an open block to close', `'${END}'`), comment));
             continue;
@@ -159,44 +135,16 @@ export function parseProgram(program) {
 // ============================================================================
 // The green tree — identity across reparses (specs/compiler.org id:cmp-green-tree)
 // ============================================================================
-// The fast structure is not a new tree: it is the SAME plain-object tree
-// with one added law — unchanged structure keeps its object identity across
-// reparses. The shape is Zig's (id:pa-zig-incremental): reparse WHOLE — the
-// total parse is ground truth, so reuse can never lie — then recover
-// identity by diffing at the natural grain. Here that grain is the
-// top-level unit: a statement, a block, a meadow chunk, a cell fence — so
-// an edit to one cell of a pressed page leaves every sibling unit's nodes
-// ===-identical. Identity is the product every later phase consumes: the
-// Phase 2 memo key, the Phase 3 swap predicate.
-//
-// Adoption is early cutoff (id:pa-ghc-earlycutoff): the content key is the
-// node's structure MINUS the OVERLAY, so a unit that changed only where it
-// sits or what it says without meaning re-keys to its old object and every
-// memo hanging off it survives. Meaning-equality, not source dirtiness,
-// decides propagation.
-//
-// The overlay rides a reused node without being its identity:
-//   · span — ABSOLUTE buffer lines (executor stamps, channel events, ink);
-//     mutated IN the existing object so a standing capture (frame.error)
-//     moves with it.
-//   · trivia — a `#` comment (meta.comment / meta.endComment) and meadow
-//     prose (meta.lit); non-semantic, so editing it must NOT restart the
-//     running frame. The fresh text is still copied in, so the shared tree
-//     carries the new comment/prose — propagation for sharing, no rerun.
-//
-// Extension point (Phase 3 stage 3, subtree become): on a key miss, recurse
-// the same adoption into the fresh node's children.
+// Reparse whole, then recover identity by diffing at the top-level unit, so
+// unchanged structure stays ===-identical across reparses (id:pa-zig-incremental).
 
-// The key is everything but the OVERLAY: same key ⇒ same meaning. It stays
-// COARSE — any drift costs a missed reuse, never a wrong tree, since the
-// fresh parse is always the answer.
+// Same key ⇒ same meaning. Stays COARSE on purpose: drift costs a missed reuse,
+// never a wrong tree, because the fresh parse is always the answer.
 const OVERLAY = new Set(['span', 'comment', 'endComment', 'lit']);
 const contentKey = (node) => JSON.stringify(node, (k, v) => (OVERLAY.has(k) ? undefined : v));
 
-// Copy the fresh twin's overlay onto the reused node. Span mutates the
-// EXISTING object (standing captures like frame.error stay live); trivia is
-// rebuilt in a fresh parse's key ORDER so the adopted meta serializes
-// byte-identically.
+// Span mutates the EXISTING object, so standing captures (frame.error) stay live.
+// Trivia is rebuilt in a fresh parse's key ORDER so adopted meta serializes alike.
 function adoptOverlay(prev, next) {
     if (next.span) {
         if (prev.span) { prev.span.line = next.span.line; prev.span.endLine = next.span.endLine; }
@@ -206,10 +154,8 @@ function adoptOverlay(prev, next) {
     if (pm && nm) {
         // meadow prose rides `lit` (first, always present) — update in place.
         if ('lit' in nm) pm.lit = nm.lit;
-        // comment / endComment ride LAST, endComment first (blockNode attaches
-        // endComment, the caller attaches comment). Clear then re-add in that
-        // order so the adopted meta matches a fresh twin — and a deleted
-        // comment never lingers.
+        // endComment before comment, cleared then re-added: that is a fresh
+        // twin's key order, and a deleted comment must not linger.
         delete pm.endComment; delete pm.comment;
         if (nm.endComment !== undefined) pm.endComment = nm.endComment;
         if (nm.comment !== undefined) pm.comment = nm.comment;
@@ -218,17 +164,9 @@ function adoptOverlay(prev, next) {
     for (let i = 0; i < pc.length; i++) adoptOverlay(pc[i], nc[i]);
 }
 
-// Total, like parseProgram — the answer is ALWAYS the forest the text
-// means; adoption only decides which node objects carry it. Each old node
-// is adopted at most once (two frames can never share one identity);
-// duplicates pair in document order.
-//
-// The (prevText, prevAst) pair is the identity primitive's intra-session
-// carrier: it must be CONSISTENT (that tree for that text — a stale pair
-// is fine, reuse degrades gracefully) and it belongs to the buffer's
-// OWNER (the page record, the ambient's parse memo) — handing another
-// owner's tree here would move THEIR position overlay. No stateful parser
-// object exists on purpose: the pair rides lifecycles that already exist.
+// Total: the answer is always the forest the text means; adoption only picks
+// which objects carry it, each old node once. (prevText, prevAst) must belong to
+// the buffer's OWNER — another's tree would move THEIR span overlay.
 export function reparseProgram(text, prevText, prevAst) {
     if (prevText == null || prevAst == null) return parseProgram(text);
     if (prevText === text) return prevAst;
@@ -254,23 +192,16 @@ export function reparseProgram(text, prevText, prevAst) {
 
 
 //tokenizer
-// Fence-aware line pass. A `###` line opens the meadow: everything up to the
-// next `###` (or end-of-file — the fence auto-closes) is captured VERBATIM as a
-// single prose unit `{ meadow }`. Code/comment lines are trimmed, blanks dropped,
-// and a glued `end` (`fw 10 end draw`) is split onto its own line — preserving the
-// prior tokenizer's law, but never reaching inside prose.
+// Fence-aware line pass. Between `###` fences everything is captured VERBATIM;
+// outside them lines are trimmed and a glued `end` is split onto its own line.
 function tokenize(program) {
     const rawLines = program.split(/\r\n|\r|\n/);
     const n = rawLines.length;
     const lines = [];
     let i = 0;
 
-    // The code-line law, shared by bare code and cell bodies: split off the
-    // comment FIRST (it is trivia, not code — carried as a field, never text),
-    // then split any mid-line `end` (word-bounded) onto its own record so the
-    // line-oriented block parser sees it alone. The comment rides the LAST
-    // record — the line it trails. Every record remembers its BIRTH line
-    // (1-based, the original buffer); split parts share it (id:cmp-resilient).
+    // Comment off FIRST (trivia is a field, never text), then split a mid-line
+    // `end`. The comment rides the LAST record; split parts share a birth line.
     const pushCode = (raw, out, line) => {
         const [code, comment] = splitComment(raw);
         const parts = code.replace(/\bend\b(?!$)/g, 'end\n')
@@ -284,10 +215,8 @@ function tokenize(program) {
         const trimmed = rawLines[i].trim();
 
         if (trimmed === FENCE) {
-            // Walk the meadow group: prose chunks stay verbatim units; a ```
-            // fence re-enters code-space (id:gw-cell) — the cell's lines go
-            // through the code law so the executor walks them. The group's
-            // ### fences ride the edge units as meadowOpen/meadowClose.
+            // Prose chunks stay verbatim; a ``` fence re-enters code-space
+            // (id:gw-cell), so the cell's lines go through the code law.
             const fenceLine = i + 1;
             i++;
             const units = [];
@@ -304,26 +233,20 @@ function tokenize(program) {
                 const t = rawLines[i].trim();
                 if (t.startsWith('```')) {
                     flushChunk();
-                    // The opening fence's info word (```paperlang) is the
-                    // child's, so it rides in the tree — fidelity lives there,
-                    // never beside it. Drop it and the document stops
-                    // round-tripping, which every line-addressed reader
-                    // inherits as drift (attention is the address, D021).
+                    // The info word (```paperlang) is the child's, so it rides
+                    // in the tree — fidelity lives there, never beside it.
                     const info = t.slice(3);
                     units.push({ cellFence: true, meadowOpen: false, meadowClose: false,
                                  line: i + 1, info: info || undefined });
                     i++;
                     while (i < n && rawLines[i].trim() !== '```' && rawLines[i].trim() !== FENCE) {
-                        const ct = rawLines[i].trim();
-                        if (ct) pushCode(ct, units, i + 1);
+                        // Blanks included: a blank is a line the child typed,
+                        // and dropping it shifts every line address below (D021).
+                        pushCode(rawLines[i], units, i + 1);
                         i++;
                     }
-                    // A cell ends at its closing fence, or is auto-closed by the
-                    // meadow's edge / EOF. An auto-close is marked IMPLICIT so
-                    // the printer stays silent about it — the exact-print rule
-                    // (id:pa-ghc-exactprint): the parse may heal the walk, but
-                    // it never puts a word in the child's mouth. The error node
-                    // keeps the same rule for `end` (D020).
+                    // An auto-close is marked IMPLICIT and the printer stays
+                    // silent: never put a word in the child's mouth (id:pa-ghc-exactprint).
                     const closed = i < n && rawLines[i].trim() === '```';
                     if (closed) i++;
                     units.push({ cellFence: true, meadowOpen: false, meadowClose: false,
@@ -336,9 +259,8 @@ function tokenize(program) {
             }
             flushChunk();
             if (units.length === 0) units.push({ meadow: '', meadowOpen: false, meadowClose: false, line: fenceLine });
-            // Exact-print again: a clearing that ran to EOF was closed by the
-            // parse, not by the child, so the printer stays silent about that
-            // fence too — the document round-trips, the line arithmetic holds.
+            // A clearing that ran to EOF was closed by the parse, not the
+            // child — so the printer stays silent about that fence too.
             const meadowClosed = i < n;
             i++; // consume the closing fence (or step past EOF — auto-close)
             units[0].meadowOpen = true;
@@ -348,9 +270,8 @@ function tokenize(program) {
             continue;
         }
 
-        // A blank line rides through as an empty record so its birth line
-        // stays in the tree — line-number parity across parse → print, and the
-        // green tree sees the edit (a bare Enter changes the seed → reruns).
+        // A blank rides through as an empty record: line parity across
+        // parse → print, and a bare Enter still changes the seed.
         if (trimmed) pushCode(trimmed, lines, i + 1);
         else lines.push({ text: '', line: i + 1, blank: true });
         i++;
@@ -364,9 +285,7 @@ function tokenize(program) {
 // ============================================================================
 
 function tokenizeLine(code) {
-    // The comment is already split off at line birth (splitComment) and rides
-    // the record's .comment field — here we only tokenize pure code, honouring
-    // [ ] and " " groups.
+    // The comment was already split off at line birth — this sees pure code.
     if (!code) return [];
 
     const tokens = [];
@@ -536,11 +455,8 @@ function parseArguments(tokens) {
     return args;
 }
 
-// A block's body, up to its `end`. TOTAL: reaching EOF without the `end`
-// answers { terminated: false } and the CALLER wraps the whole block in an
-// error node — the containment law (id:cmp-error-node): an unterminated
-// block swallows to EOF, its parsed children riding INSIDE the error (inert,
-// never silently reparented to run outside their intended scope).
+// A block's body, up to its `end`. On EOF without one the caller wraps the
+// block in an error node — children ride INSIDE it, never reparented to run (D020).
 function parseBlock(state) {
     const block = [];
 
@@ -553,8 +469,8 @@ function parseBlock(state) {
         const tokens = tokenizeLine(line.text);
         const comment = line.comment;
 
-        // The closing `end` — its trailing comment (`end # done`) rides home ON
-        // the block as endComment, never wrapping onto a phantom line below it.
+        // `end # done` rides home ON the block as endComment, never onto a
+        // phantom line below it.
         if (tokens.length === 1 && tokens[0] === END) {
             return { block, terminated: true, endComment: comment };
         }
@@ -575,9 +491,8 @@ function parseBlock(state) {
 }
 
 
-// parse all actions — TOTAL (id:cmp-resilient): a malformed statement becomes
-// an error node in place, one line for a head error, head-to-EOF for an
-// unterminated block. The healthy statements around it parse and run (D020).
+// Total (id:cmp-resilient): a malformed statement becomes an error node in
+// place, and the healthy statements around it still parse and run (D020).
 function parseStatement(tokens, state, rec) {
     const kw = tokens[0];
     const len = tokens.length;
@@ -606,9 +521,7 @@ function parseStatement(tokens, state, rec) {
             return err;
         }
         const node = stamp(make(block), rec, endLine);
-        // The comment on the `end` line (meta.endComment) — the twin site a
-        // `do … end` spans; the head/`do`-line comment (meta.comment) is
-        // attached by the caller. printAST re-emits both.
+        // The `end`-line comment; the head's is attached by the caller.
         if (endComment != null) node.assign_meta('endComment', endComment);
         return node;
     };
@@ -698,35 +611,21 @@ export function printAST(ast) {
             
             case 'Empty':
                 if (node.meta.cellFence) {
-                    // A cell fence inside the meadow group; it may carry the
-                    // group's own ### edge when the cell abuts it. Exact-print:
-                    // an implicit closer was never typed, so it is not emitted —
-                    // but its ### edge still rides, because that the child did
-                    // type.
+                    // An implicit closer was never typed, so it is not emitted.
+                    // Its ### edge still rides — that the child did type.
                     if (node.meta.meadowOpen) out.push(indent + FENCE);
                     if (!node.meta.implicit) out.push(indent + '```' + (node.meta.info ?? ''));
                     if (node.meta.meadowClose && !node.meta.meadowCloseImplicit) out.push(indent + FENCE);
                 } else if (node.meta.meadow) {
-                    // Re-emit the clearing: fences around the verbatim prose. Every
-                    // lit line — headlines, portals, blanks — rides through intact.
-                    // Edge flags default open — a meadow node built elsewhere
-                    // (no flags) is a whole clearing of its own.
-                    //
-                    // An INTERIOR chunk (both edges suppressed) with `lit === ""`
-                    // is one blank line, not nothing: the blank between two
-                    // adjacent cells. Test it for truthiness and that line is
-                    // swallowed, breaking round-trip — hence the explicit
-                    // null check. An EDGE chunk is genuinely ambiguous
-                    // (`###\n###` and `###\n\n###` parse alike) and is left
-                    // standing rather than fixed by guesswork.
+                    // An interior chunk with `lit === ""` is one blank line, not
+                    // nothing — hence the null check, not truthiness.
                     const interior = node.meta.meadowOpen === false && node.meta.meadowClose === false;
                     if (node.meta.meadowOpen !== false) out.push(indent + FENCE);
                     if (node.meta.lit || (interior && node.meta.lit != null)) out.push(node.meta.lit);
                     if (node.meta.meadowClose !== false && !node.meta.meadowCloseImplicit) out.push(indent + FENCE);
                 } else if (node.meta.comment != null) {
-                    // A comment-only line: `#` + the verbatim text, with no code
-                    // before it — so no leading ` ` (that prefix rides a margin
-                    // trailing code, never a standalone comment).
+                    // No code before it, so no leading space — that prefix
+                    // belongs to a margin trailing code.
                     out.push(indent + '#' + node.meta.comment);
                 } else {
                     out.push(indent);
@@ -775,11 +674,8 @@ export function printAST(ast) {
             }
 
             case 'Error': {
-                // The child's code, verbatim (D020) — the raw line rides in
-                // `value` so the round-trip never invents an `end` nor loses
-                // the brokenness; its comment rides `margin` like any node's
-                // trivia. An unterminated block's parsed children follow; a
-                // one-liner none.
+                // The child's line verbatim (D020): the round-trip never
+                // invents an `end`, and never loses the brokenness.
                 out.push(indent + node.value + margin)
                 node.children.forEach(c => visit(c, depth + 1))
                 break
@@ -794,48 +690,45 @@ export function printAST(ast) {
 // ============================================================================
 // THE OUTLINE — one walk over lines, the whole shape of a page
 // ============================================================================
-// Prose space has exactly one geometry: meadows, the cells inside them, and the
-// headlines that branch those cells into phases. Three hand-rolled state
-// machines used to walk it — here, in `phaseAt`, and in the editor's
-// `findProse` — each with its own copy of the three regexes and its own answer
-// to "does ### close an open cell". They agreed by luck; nothing made them
-// agree. This is the one walk, and every reader below is a view over it. Add a
-// fourth walker and the luck comes back.
-//
-// It takes LINES, not a tree and not a CM6 doc, because a line is the one thing
-// both sides already have. That is the seam: text in → shape out, pure.
+// Prose geometry has ONE walk; every reader below is a view over it. A second
+// walker means two answers to "does ### close a cell". It takes lines, not a
+// tree — a line is the one thing both sides already have.
 
 export const HEADLINE = /^[ \t]*(\*+)\s+(\S.*)$/;   // `* name` — the trailing space disambiguates *bold*
 const MEADOW_FENCE = /^[ \t]*###[ \t]*$/;
 const CELL_OPEN = /^[ \t]*```/;              // an info word may ride the opener
 const CELL_CLOSE = /^[ \t]*```[ \t]*$/;      // a bare ``` is only ever a closer
 
-// The one stack rule, so "a headline of depth d closes every phase at that
-// depth or deeper" is spelled once. Returns the path (root first) after opening.
-function openPhase(stack, depth, title) {
+// A headline of depth d closes every phase at that depth or deeper. `idx` is its
+// ORDER among its siblings, kept on the parent so a pop cannot lose the count:
+// titles are prose and change freely, so only order enters a coordinate (D024).
+function openPhase(stack, depth, title, root) {
     while (stack.length && stack[stack.length - 1].depth >= depth) stack.pop();
-    stack.push({ depth, title });
+    const parent = stack[stack.length - 1] ?? root;
+    parent.kids += 1;
+    // `kids` and `cells` start at zero: a section parents the headlines below it
+    // and homes its own cells, both counted from one.
+    stack.push({ depth, title, idx: parent.kids, kids: 0, cells: 0 });
     return stack.map((s) => s.title);
 }
 
-// outline(lines) → { meadows, cells, phases }
-//   meadows  — { open, end }, fence lines included; an unclosed meadow runs to EOF
-//   cells    — { open, end, terminated, path }, `end` the closing fence line (or
-//              the last body line when the meadow's edge / EOF closed it)
-//   phases — { line, depth, title, path } per headline, in document order
-// The cell/meadow law is the tokenizer's, exactly: inside a cell a bare ```
-// closes it, and a ### closes BOTH it and the clearing.
+// → { meadows, cells, phases }, all fence-inclusive spans in document order.
+// Same law as the tokenizer: ``` closes a cell, ### closes it AND the clearing.
 export function outline(lines) {
     const meadows = [], cells = [], phases = [];
     const stack = [];
-    let inMeadow = false, mOpen = 0, open = 0, path = [];
+    // The preamble is a section too — cells above every headline live here, and
+    // their coordinate is one segment long.
+    const root = { kids: 0, cells: 0 };
+    let inMeadow = false, mOpen = 0, open = 0, path = [], name = null, coord = [];
     const n = lines?.length ?? 0;
+    const shut = (end, terminated) => cells.push({ open, end, terminated, path, name, coord });
     for (let i = 1; i <= n; i++) {
         const text = lines[i - 1] ?? '';
         if (open) {                                       // inside a cell
-            if (CELL_CLOSE.test(text)) { cells.push({ open, end: i, terminated: true, path }); open = 0; }
+            if (CELL_CLOSE.test(text)) { shut(i, true); open = 0; }
             else if (MEADOW_FENCE.test(text)) {
-                cells.push({ open, end: i - 1, terminated: false, path }); open = 0;
+                shut(i - 1, false); open = 0;
                 meadows.push({ open: mOpen, end: i }); inMeadow = false;
             }
             continue;
@@ -847,67 +740,87 @@ export function outline(lines) {
             continue;
         }
         if (!inMeadow) continue;                          // bare code carries no outline
-        if (CELL_OPEN.test(text)) { open = i; path = stack.map((s) => s.title); continue; }
+        if (CELL_OPEN.test(text)) {
+            open = i;
+            path = stack.map((s) => s.title);
+            // THE CELL WEARS ITS NAME (D024). The word on the fence is the
+            // author's and is the cell's identity. Unnamed, it is named by WHERE
+            // IT SITS: the section chain, then its order among its own section's
+            // cells — which every cell takes, so naming a sister never re-keys
+            // the others.
+            name = text.replace(CELL_OPEN, '').trim() || null;
+            const section = stack[stack.length - 1] ?? root;
+            section.cells += 1;
+            coord = [...stack.map((s) => s.idx), section.cells];
+            continue;
+        }
         const m = HEADLINE.exec(text);
         if (m) phases.push({ line: i, depth: m[1].length, title: m[2].trim(),
-                               path: openPhase(stack, m[1].length, m[2].trim()) });
+                               path: openPhase(stack, m[1].length, m[2].trim(), root) });
     }
-    if (open) cells.push({ open, end: n, terminated: false, path });
+    if (open) shut(n, false);
     if (open || inMeadow) meadows.push({ open: mOpen, end: n });
     return { meadows, cells, phases };
 }
 
-// A path is an ANCESTOR of another when it is a strict prefix — outline-scoped
-// vocabulary (D019) reads exactly this: down the outline, never sideways, so
-// sister phases stay sovereign and sister cells share without inheriting.
-const isAncestorPath = (a, b) => a.length < b.length && a.every((t, i) => t === b[i]);
+// D019'S ONE EDGE, and it is read BOTH ways. An EARLIER cell of an ANCESTOR
+// phase is vocabulary for a later one — vocabulary flows down the outline, never
+// sideways. `phaseCells` walks it FORWARD to build a cell's vocabulary; the
+// diagnostics query walks it BACKWARD to name who a dead cell takes with it.
+// One predicate, so the two can never disagree about who depends on whom.
+export const feedsVocabulary = (sourcePath, targetPath) =>
+    sourcePath.length < targetPath.length && sourcePath.every((t, i) => t === targetPath[i]);
 
-// The sibling ambients of a weave page, DERIVED from the one AST — never
-// ferried, never stored twice. Works on JSON-thawed nodes too (plain objects),
-// like printAST, because the seam may cross a socket between parse and split.
-//
-// Each cell carries its VOCABULARY: the code of every earlier cell under an
-// ancestor headline, folded in document order (the page root is every
-// phase's ancestor). The seat rehearses that lazily from t=0, headless, and
-// forks the pure functions it registered (turtle.rehearseVocab ⊗
-// executor.drainNamespace) — this splitter only says whose code is vocabulary,
-// never reads inside it.
-//
-//   → [{ code, vocab, nodes, vocabNodes, open, end, path }]
-//     nodes/vocabNodes — LIVE slices of the one tree; identity flows through
-//       the partition, so structure never crosses this seam as text
-//       (id:cmp-vet diagnostic 1)
-//     code/vocab — their printed projections, for content keys and sockets;
-//       null when the outline offers no vocabulary
+// WHO A CELL TAKES WITH IT — every LATER cell that inherits its vocabulary. A
+// cell that died leaves them standing on a definition that never ran, and they
+// are compromised WHETHER OR NOT THEY HAVE RUN: the page seats lazily, so the
+// child would otherwise learn it only by reaching each one. Indices, because
+// the caller already holds the cells.
+export const dependentsOf = (cells, i) => {
+    const out = [];
+    for (let k = i + 1; k < (cells?.length ?? 0); k++) {
+        if (feedsVocabulary(cells[i].path, cells[k].path)) out.push(k);
+    }
+    return out;
+};
+
+// A cell's frame key, spelled ONCE (D024). The seating law mints it and the
+// diagnostics query addresses wounds to it; two spellings would drift the day
+// either changed.
+export const cellKey = (addr, id) => `${addr}#${id}`;
+
+// A weave page's cells, DERIVED from the one AST — never ferried, never stored
+// twice; works on JSON-thawed nodes because this seam may cross a socket.
+// → [{ code, vocab, nodes, vocabNodes, open, end, path, name, coord }]; nodes are
+// LIVE slices, so identity flows through the partition instead of crossing as text.
 export function phaseCells(ast) {
     const nodes = ast ?? [];
-    // The shape comes from the ONE walk, over this tree's own printed form —
-    // so cell spans, sister paths and the editor's fold all read one geometry.
+    // The one walk, over this tree's own printed form.
     const marks = outline(printAST(nodes).split('\n')).cells;
     const cells = [];
     let cur = null;
     const closeCell = (body) => {
         const mark = marks[cells.length] ?? {};
         const path = mark.path ?? [];
-        // The vocabulary: every EARLIER cell of an ancestor phase, folded in
-        // document order. Read off the paths the outline already assigned.
-        const vocabNodes = cells.filter((c) => isAncestorPath(c.path, path))
+        // The edge, walked forward. `cells` holds only the cells already closed,
+        // so "earlier in document order" is the loop's own shape.
+        const vocabNodes = cells.filter((c) => feedsVocabulary(c.path, path))
                                 .flatMap((c) => c.nodes);
         cells.push({
             code: printAST(body),
             vocab: vocabNodes.length ? printAST(vocabNodes) : null,
             nodes: body,
             vocabNodes: vocabNodes.length ? vocabNodes : null,
-            // The cell's own SPAN — its fences (D021). A line is total: every
-            // position has one, so a cell the child has only just opened, with
-            // no body yet, is addressable exactly like a full one (dormant is
-            // not empty). Node spans cannot answer this — an empty cell has no
-            // nodes at all.
+            // Fence lines, not node spans (D021): an empty cell has no nodes,
+            // but a child who just opened one must still be addressable.
             open: mark.open ?? null,
             end: mark.end ?? null,
-            // The PHASE this cell is a sister in — the headline path, root
-            // first. Sisters share it; a deeper subheading forks its own.
+            // The headline path, root first. Sisters share it.
             path,
+            // Identity (D024): the author's word, or the place standing in for
+            // one. Carried, never joined — the key is the law's to spell.
+            name: mark.name ?? null,
+            coord: mark.coord ?? [],
         });
     };
     for (const node of nodes) {
@@ -922,32 +835,50 @@ export function phaseCells(ast) {
     return cells;
 }
 
+// WHAT A CELL IS CALLED (D024) — spelled ONCE: the seating law keys frames on
+// `id`, the diagnostics query turns `collides` into a wound, and a second
+// spelling would be a second identity.
+//
+//   name  the author's word — a LABEL, free to repeat under different phases.
+//   id    the identity and the frame key: the section chain, then the name if
+//         one was written, else the cell's order among its sisters.
+//         → `1.2.myname`, `1.2.3`
+//
+// So `myname` under two subheadings is two ids. Two `myname` in ONE section is
+// one id and a collision: the first keeps the word, the later falls back to its
+// ordinal and is marked — silence would put two figures in one frame invisibly.
+//
+// The trade: a section opened ABOVE re-keys a named cell, so its figure is
+// reborn. Naming buys meaning and a blast radius bounded to true sisters.
+// A NAME MAY NOT BE SPELLED AS A PLACE: `1.2` as a word keys the same frame as
+// the cell that actually sits at 1.2, and a name-only duplicate check cannot see
+// it. Refusing the grammar kills the class.
+const PLACE_LIKE = /^\d+(\.\d+)*$/;
+
+export function cellIdentities(cells) {
+    const taken = new Set();
+    return (cells ?? []).map(({ name, coord }) => {
+        const chain = (coord ?? []).slice(0, -1);        // the section it sits in
+        const place = (coord ?? []).join('.');           // …and her order in it
+        const refuse = (why) => ({ id: place, name: null, named: false, collides: true, why });
+        if (!name) return { id: place, name: null, named: false, collides: false, why: null };
+        if (PLACE_LIKE.test(name)) return refuse('place');
+        const id = [...chain, name].join('.');
+        if (taken.has(id)) return refuse('duplicate');
+        taken.add(id);
+        return { id, name, named: true, collides: false, why: null };
+    });
+}
+
 // ============================================================================
 // THE PHASE — attention is the address (D021)
 // ============================================================================
-// One datum names where a peer is: a LINE. Everything else is DERIVED by pure
-// function at the moment it is needed — there is no stored phase, so none can
-// go stale.
-//
-// Why a line and not a cell ordinal. An ordinal is positional: it aliases the
-// moment a cell is inserted above it, and it cannot name a phase that owns no
-// cell — which is the whole formative moment of authoring, when a heading and
-// its paragraphs exist before any fence. A line is TOTAL (every position in the
-// document has one, prose included), LOCAL (an edit shifts only lines below it),
-// and EXACT across the wire, because printAST round-trips and reflection drops
-// only whole nodes.
-//
-// The outline is read off the PRINTED document, never off node spans: the one
-// printer is the one grammar, so the same walk answers for an original tree and
-// for a projection of it, whose kept nodes still carry their original spans.
+// One datum names where a peer is: a LINE. Everything else is derived on
+// demand, so no stored phase can go stale. A line is total (prose has one too)
+// and local (an edit shifts only what is below); a cell ordinal is neither.
 
-// The headline path enclosing `line`, root first — `[]` in a root preamble,
-// where there is no headline above. A line past the end inhabits the last open
-// phase rather than lying about it. Inclusive: standing ON `** phase B` is
-// standing IN phase B, whether or not a caret ever enters a figure.
-//
-// A view over the one walk: the last headline at or above the line already
-// carries the path it opened, so this is a lookup, not a second machine.
+// The headline path enclosing `line`, root first; `[]` in a preamble.
+// Inclusive — standing ON `** phase B` is standing IN phase B.
 export function phaseAt(ast, line) {
     const { phases } = outline(printAST(ast ?? []).split('\n'));
     let here = [];
@@ -958,10 +889,8 @@ export function phaseAt(ast, line) {
     return here;
 }
 
-// The index of the cell whose FENCES enclose `line`, or null. Span-addressed,
-// so a cell just opened and not yet written in is found like any other.
-// Takes either shape the one walk produces — `phaseCells` entries or
-// `outline().cells` — since both carry the same { open, end }.
+// The index of the cell whose FENCES enclose `line`, or null — so a cell just
+// opened and not yet written in is found like any other.
 export function cellAtLine(cells, line) {
     for (let i = 0; i < (cells?.length ?? 0); i++) {
         const c = cells[i];
@@ -971,41 +900,15 @@ export function cellAtLine(cells, line) {
     return null;
 }
 
-// How many printed lines a node occupies — by the one printer, so the count can
-// never drift from what the reader will see.
+// Printed lines per node, by the one printer, so the count cannot drift.
 const printedHeight = (node) => printAST([node]).split('\n').length;
 
-// NOT WIRED, AND MUST NOT BE WIRED AS IT STANDS. It was called from
-// `reflection()` for one day [2026-07-27] and reverted the same day, because
-// "dormant, not missing" is a claim this function cannot keep: it drops each
-// distant cell's BODY and keeps its fences, so downstream every one of them
-// seats with EMPTY CODE and its figure is wiped. On a code-review surface the
-// gutted text also becomes the merge baseline. A cursor move must not rewrite
-// the friend's document — the attention crosses as a coordinate beside the
-// whole tree instead (D025 R1 as amended), which needs no shift arithmetic at
-// all, since printAST round-trips exactly.
-//
-// What it is waiting for, if bandwidth ever asks for it: `dormant` must mean
-// NOT SEATED at the page law, not seated-with-nothing. Until the seating law
-// can be told "this cell exists and is not to be run", this projection cannot
-// ship. Keep the tests — the line arithmetic in here is correct and pinned
-// (weave_phase_test.mjs, 21 tests); it is the DOWNSTREAM meaning of an empty
-// cell that is missing.
-//
-// The projection a friend receives: ALL prose (every headline — the outline is
-// the map), and the bodies of only the phase the attention inhabits. Sister
-// cells of that phase ride together; every other cell keeps its fences and
-// drops its body, so the document's shape stays whole and its slots are all
-// still there — dormant, not missing.
-//
-// Returns { commands, attend }: the projected forest (kept nodes are the SAME
-// objects — identity flows through the partition, never a re-parse) and the
-// attention translated into the projection's own coordinates. The child's side
-// holds both trees and owns the translation, so the friend's side stays dumb
-// and cannot mis-map.
-//
-// attend:null is legal and is the identity — the whole tree, pointing nowhere.
-// Reached by the null path rather than by a branch, so there is one code path.
+// NOT WIRED. A distant cell keeps its fences but loses its body, so downstream
+// it seats with EMPTY CODE and its figure is wiped — "dormant" has to mean NOT
+// SEATED before this can ship. Attention crosses as a coordinate instead (D025 R1).
+// Tests stay: the line arithmetic is correct (weave_phase_test.mjs).
+// → { commands, attend }: kept nodes are the SAME objects; attend:null is the
+// identity, reached by the null path so there is one code path.
 export function reflectPhase(ast, attend) {
     if (!ast || !attend || attend.line == null) return { commands: ast, attend: null };
 

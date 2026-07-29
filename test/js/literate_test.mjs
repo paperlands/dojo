@@ -212,3 +212,55 @@ describe("the auto-close — the rest of the buffer is prose, never a swallowed 
         assert.match(meadow.meta.lit, /fw 20 rt 90 end/)
     })
 })
+
+describe("the blank line inside a cell — a line the child typed", () => {
+    // WHY THIS IS LOAD-BEARING, not cosmetic. Every line-addressed reader rests
+    // on printAST preserving the author's line NUMBERING: the outline, the
+    // reach's cell spans, the diagnostics' ink, and a watched friend's
+    // attention (attention is the address, D021). The tokenizer dropped blank
+    // lines inside cells — `if (ct) pushCode(...)` — so a watcher's document
+    // came up one line short per blank and every line beneath it pointed at
+    // the wrong text. Following a friend down a page drifted further with each
+    // blank, which reads as the follow going stuck.
+    const lineCount = (s) => s.split("\n").length
+
+    test("a blank line between two commands survives the round-trip", () => {
+        const src = "###\n* h\n```\nfw 1\n\nrt 90\n```\n###"
+        assert.equal(roundtrip(src), src)
+    })
+
+    test("runs of blanks, and blanks at either edge of the body, all survive", () => {
+        for (const src of [
+            "###\n* h\n```\nfw 1\n\n\nrt 90\n```\n###",   // a run
+            "###\n* h\n```\n\nfw 1\n```\n###",             // leading
+            "###\n* h\n```\nfw 1\n\n```\n###",             // trailing
+            "###\n* h\n```\n\n\n```\n###",                 // a cell of nothing but blanks
+        ]) {
+            assert.equal(roundtrip(src), src, JSON.stringify(src))
+        }
+    })
+
+    test("LINE COUNT is preserved — the property the addressing actually needs", () => {
+        for (const src of [
+            "###\n* h\n```\nfw 1\n\nrt 90\n```\n###",
+            "###\n* h\n```\nrepeat 4 do\n\n  fw 10\nend\n```\n###",
+            "###\n* h\n```\nfw 1\n# note\n\nrt 9\n```\n###",
+            "###\n* a\n```\nfw 1\n\n```\n\n** b\n\n```\n\nrt 9\n```\n###",
+        ]) {
+            assert.equal(lineCount(roundtrip(src)), lineCount(src), JSON.stringify(src))
+        }
+    })
+
+    test("a blank inside a cell is an Empty node — a no-op for the walk", () => {
+        const ast = parseProgram("###\n* h\n```\nfw 1\n\nrt 90\n```\n###")
+        const [cell] = phaseCells(ast)
+        assert.equal(cell.code, "fw 1\n\nrt 90", "the cell's own code keeps the child's shape")
+        const blanks = cell.nodes.filter((n) => n.type === "Empty" && !n.meta.cellFence)
+        assert.equal(blanks.length, 1)
+    })
+
+    test("normalisation is still idempotent with blanks in play", () => {
+        const src = "###\n* h\n```\nfw 1\n\nrt 90\n```\n###"
+        assert.equal(stable(src), roundtrip(src))
+    })
+})

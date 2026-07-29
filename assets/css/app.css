@@ -525,6 +525,22 @@
 /* No-fade — static slots inside log */
 .nerve-no-fade { animation: none !important; opacity: 0.9; }
 
+/* === THE FRIEND'S PIGMENT — one violet, everywhere he appears ==============
+   His line, the cell that line kindles, and the firefly at the edge are ONE
+   mark seen from three distances. They read one token so they cannot drift.
+
+   Why violet, and not the chartreuse the firefly first wore: the one thing this
+   pigment must say at a glance is SOMEONE ELSE, and your own live cell is
+   chartreuse. A green friend and a green you is no distinction at all. Violet
+   is the far side of that wheel — and it is the theme's own hue on both grounds
+   (the dark base is violet-black, the paper's ink is violet), so it arrives
+   native rather than as a highlighter laid on top.
+
+   Wake is never a hue change: one hue throughout, brightening in chroma and
+   glow. A mark that changes colour to mean "awake" is two marks. */
+:root                  { --peer-ink: oklch(0.74 0.15 312); }
+[data-theme="light"]   { --peer-ink: oklch(0.50 0.17 302); }
+
 /* === CM6 Merge View — Shanshui CRT glow aesthetic === */
 
 /* Changed lines — bamboo mist */
@@ -719,83 +735,166 @@
     .weave-trail-step { transition: none; }
 }
 
-/* Programmatic movement in the review panel is SMOOTH — following a friend's
-   line, and the reach planting a caret in a cell it scrolled to. `scroll-behavior`
-   applies to programmatic scrolling only: her own wheel, touch and scrollbar stay
-   native and instant, so this never puts a hand near her input. Doing it here
-   rather than in geometry is what lets followTo hand the whole scroll to CM6,
-   which already knows the gutter height, the real scrolling box, and what to do
-   about a line it has not rendered. */
-.cm-follows-smoothly { scroll-behavior: smooth; }
-@media (prefers-reduced-motion: reduce) {
-    .cm-follows-smoothly { scroll-behavior: auto; }
-}
-
 /* ---------------------------------------------------------------------------
    THE FIREFLY — a watched friend, past the edge you lost them at (D025 R6).
 
    D021 asked for a gutter marker. A gutter says "someone is on this line" to a
    reader who cannot see the line. This says DIRECTION and DISTANCE as a living
-   thing: it drifts at the edge she left them past, and throbs once when they
-   move, so a still glyph means a still friend. Click it and following resumes.
+   thing: it drifts at the edge she left them past, and burns brighter while
+   they type, so a dim glyph means a still friend. Click it, following resumes.
 
    Sight, not power: it is drawn on the WATCHER'S canvas and reports nothing
    back. The author never learns they are watched.
+
+   A SIGIL, NOT A CHIP. No fill, no plate — their initials as ink, a lantern's
+   hairline rim, and light falling off it into the page. It wears `--peer-ink`,
+   the SAME violet as the friend's line and the cell he kindles: one mark at
+   three distances, never three marks.
+
+   ONE SCALAR IS THE WHOLE STATE. --fly-wake 0→1 kindles in a breath and cools
+   over three seconds; color, glow, rim, bloom and swell are all calc over it.
+   Arousal is a value here, not a branch — so there is one thing to tune, and
+   nothing can be half-awake in one property and asleep in another.
    --------------------------------------------------------------------------- */
+@property --fly-wake {
+    syntax: "<number>";
+    inherits: true;
+    initial-value: 0;
+}
+
 .cm-peer-firefly {
+    /* asleep is the same violet sunk into the ground — one hue, two depths */
+    --fly-live: var(--peer-ink);
+    --fly-rest: color-mix(in oklab, var(--peer-ink) 66%, var(--color-base-300));
+    --fly-halo: var(--peer-ink);
+    --fly-bloom: 1;   /* glow gain: light blooms on a dark ground, ink does not */
+
     position: absolute;
-    right: 0.75rem;
+    /* clear of the liveness chip (top-2 right-2 in outer_shell.ex): a 0.5rem dot
+       whose animate-ping halo doubles it, so it owns out to ~1.25rem. That chip
+       is the follow toggle — the one control here — and the firefly must not
+       land on the thing you reach for. Held for BOTH directions: a glyph that
+       slides sideways depending on which way it points says nothing by moving. */
+    right: 1.75rem;
     z-index: 5;
     display: grid;
     place-items: center;
-    width: 1.6rem;
-    height: 1.6rem;
+    width: 1.55rem;
+    height: 1.55rem;
+    padding: 0;
     border: 0;
     border-radius: 9999px;
-    font-size: 0.6rem;
+    background: none;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
     font-weight: 600;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.05em;
+    text-indent: 0.05em;   /* tracking pushes centred text left by its own gap */
     text-transform: lowercase;
     cursor: pointer;
-    color: oklch(0.98 0 0);
-    background: oklch(0.62 0.13 225 / 0.92);
-    box-shadow:
-        0 0 0 1px oklch(0.72 0.13 220 / 0.5),
-        0 0 12px oklch(0.72 0.13 220 / 0.55);
+    -webkit-tap-highlight-color: transparent;
+
+    color: color-mix(in oklab, var(--fly-live) calc(var(--fly-wake) * 100%), var(--fly-rest));
+    /* the INK is what burns — the bloom is only the air around it */
+    text-shadow: 0 0 calc(0.35rem + var(--fly-wake) * 0.85rem)
+        color-mix(in oklab, var(--fly-live)
+            calc((24% + var(--fly-wake) * 66%) * var(--fly-bloom)), transparent);
+    box-shadow: inset 0 0 0 1px
+        color-mix(in oklab, var(--fly-halo)
+            calc((7% + var(--fly-wake) * 18%) * var(--fly-bloom)), transparent);
+    /* wake is carried by pigment and glow, never by fading out: a sleeping
+       firefly still has to be READ — it is holding a name and a direction. */
+    opacity: calc(0.84 + var(--fly-wake) * 0.16);
+    scale: calc(1 + var(--fly-wake) * 0.1);
     animation: peer-firefly-drift 3.4s ease-in-out infinite;
+    /* only the scalar eases; everything above recomputes from it, so the whole
+       glyph cools as one thing. The slow way down is the point. */
+    transition: --fly-wake 3.2s ease-in, filter 420ms ease-out;
 }
+
+/* THE RUSH — while the page tears past, the glyph thins almost to nothing and
+   settles back after. `filter` and not `opacity`, because the drift is already
+   animating opacity and an animation always wins the property it holds; these
+   two multiply instead of fighting. Out in 90ms, back over 420ms: the leaving
+   should be quicker than the eye, the returning slow enough to watch. */
+.cm-peer-firefly.is-flitting {
+    filter: opacity(0.12);
+    transition: --fly-wake 3.2s ease-in, filter 90ms ease-out;
+}
+
+/* paper: ink does not glow, it DEEPENS. Same violet, dilute at rest, and the
+   halo damped — a bloom on cream reads as a smudge, not as light. */
+[data-theme="light"] .cm-peer-firefly {
+    --fly-rest: color-mix(in oklab, var(--peer-ink) 72%, var(--color-base-300));
+    --fly-bloom: 0.6;
+}
+
+/* awake: the friend is moving. Up in a breath (0.22s), down over three seconds. */
+.cm-peer-firefly.is-awake {
+    --fly-wake: 1;
+    transition: --fly-wake 0.22s ease-out;
+}
+
 .cm-peer-firefly[hidden] { display: none; }
-.cm-peer-firefly[data-dir="above"] { top: 0.6rem; }
-.cm-peer-firefly[data-dir="below"] { bottom: 0.6rem; }
+/* `top` is set in JS against the box's scrollTop — sticky by hand, because the
+   glyph is a child of the SCROLLING element and an absolute top would scroll
+   away with the text. */
 
-/* a direction, said quietly — the glyph leans the way they went */
-.cm-peer-firefly[data-dir="above"]::after,
-.cm-peer-firefly[data-dir="below"]::after {
+/* THE LIGHT ITSELF — a HALO, hollow at the middle. A gradient that is opaque at
+   its centre is a plate with soft edges; the light has to leave the ink alone
+   for the mark to float in it. */
+.cm-peer-firefly::before {
+    content: "";
     position: absolute;
-    font-size: 0.55rem;
-    line-height: 1;
-    opacity: 0.85;
+    inset: -0.6rem;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(circle at 50% 50%,
+        color-mix(in oklab, var(--fly-halo) calc(24% * var(--fly-bloom)), transparent) 0%,
+        color-mix(in oklab, var(--fly-halo) calc(15% * var(--fly-bloom)), transparent) 42%,
+        transparent 74%);
+    opacity: calc((0.25 + var(--fly-wake) * 0.6) * var(--fly-bloom));
+    scale: calc(0.92 + var(--fly-wake) * 0.2);
+    animation: peer-firefly-breath 2.6s ease-in-out infinite;
 }
-.cm-peer-firefly[data-dir="above"]::after { content: "▲"; top: -0.62rem; }
-.cm-peer-firefly[data-dir="below"]::after { content: "▼"; bottom: -0.62rem; }
 
-/* they just moved */
-.cm-peer-firefly.is-fresh { animation: peer-firefly-throb 0.7s ease-out 1, peer-firefly-drift 3.4s ease-in-out infinite; }
+/* a direction, said quietly — a hairline chevron leaning the way they went */
+.cm-peer-firefly[data-dir]::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    width: 0.34rem;
+    height: 0.34rem;
+    border-top: 1px solid currentColor;
+    border-right: 1px solid currentColor;
+    opacity: calc(0.55 + var(--fly-wake) * 0.45);
+    pointer-events: none;
+}
+.cm-peer-firefly[data-dir="above"]::after { top: -0.4rem;    translate: -50% 0; rotate: -45deg; }
+.cm-peer-firefly[data-dir="below"]::after { bottom: -0.4rem; translate: -50% 0; rotate: 135deg; }
 
-/* off screen: a throb nobody can see is a compositor layer nobody asked for */
-.cm-peer-firefly.is-still { animation: none; }
+/* the hand firms the rim — it must not claim the friend moved */
+.cm-peer-firefly:hover,
+.cm-peer-firefly:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--fly-live) 58%, transparent);
+}
+
+/* off screen: a light nobody can see is a compositor layer nobody asked for */
+.cm-peer-firefly.is-still,
+.cm-peer-firefly.is-still::before { animation: none; }
 
 @keyframes peer-firefly-drift {
-    0%, 100% { transform: translateY(0);      opacity: 0.78; }
-    50%      { transform: translateY(-3px);   opacity: 1; }
+    0%, 100% { translate: 0 0;    opacity: calc(0.78 + var(--fly-wake) * 0.2); }
+    50%      { translate: 0 -3px; opacity: calc(0.92 + var(--fly-wake) * 0.08); }
 }
-@keyframes peer-firefly-throb {
-    0%   { transform: scale(1);    box-shadow: 0 0 0 1px oklch(0.72 0.13 220 / 0.5), 0 0 12px oklch(0.72 0.13 220 / 0.55); }
-    40%  { transform: scale(1.35); box-shadow: 0 0 0 1px oklch(0.82 0.15 220 / 0.9), 0 0 26px oklch(0.82 0.15 220 / 0.9); }
-    100% { transform: scale(1);    box-shadow: 0 0 0 1px oklch(0.72 0.13 220 / 0.5), 0 0 12px oklch(0.72 0.13 220 / 0.55); }
+/* the breath is always breathing; wake is only its depth */
+@keyframes peer-firefly-breath {
+    0%, 100% { scale: calc(0.90 + var(--fly-wake) * 0.16); }
+    50%      { scale: calc(1.04 + var(--fly-wake) * 0.34); }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .cm-peer-firefly,
-    .cm-peer-firefly.is-fresh { animation: none; }
+    .cm-peer-firefly::before { animation: none; }
 }

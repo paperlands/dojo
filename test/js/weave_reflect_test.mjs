@@ -245,7 +245,7 @@ describe("a watched friend's page mounts as a page (D022 consequence)", () => {
         assert.equal(code, PAGE_SRC)
         const seats = effects.filter((e) => e.op === "seat")
         assert.equal(seats.length, 1, "only the first cell mounts")
-        assert.equal(seats[0].key, "@ada#cell1")
+        assert.equal(seats[0].key, "@ada#1.1")
         assert.equal(seats[0].code, "loop 4 do\n  fw 100\n  rt 90\nend")
         assert.ok(seats.every((e) => e.hatch === false), "a friend's page never hatches")
     })

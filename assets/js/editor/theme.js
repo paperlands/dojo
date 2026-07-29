@@ -105,7 +105,7 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
             caretColor: '#a0ea00',
             lineHeight: BASE_LINE_HEIGHT,              // the line box the caret rides — a comfortable typing height
         },
-        '&.cm-focused .cm-selectionBackground': { background: 'rgba(160, 234, 0, 0.22)' }, // his touch is chartreuse — caret's kin, de-tealed
+        '&.cm-focused .cm-selectionBackground': { background: 'rgba(160, 234, 0, 0.22)' }, // your touch is chartreuse — caret's kin, de-tealed
         '.cm-selectionBackground':              { background: 'rgba(160, 234, 0, 0.22)' },
         '.cm-activeLine':      { backgroundColor: 'rgba(60, 48, 34, 0.3)' }, // chocolate, semi-transparent so guides show
         '.cm-activeLineGutter':{ backgroundColor: '#3c3022' },
@@ -159,24 +159,26 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
         '.cm-cell-inactive': { opacity: '0.38' },                          // inert — dimmed, not evaluated
         '.cm-cell-active':   { backgroundColor: 'rgba(160, 234, 0, 0.05)' }, // the live cell — faint chartreuse
 
-        // THE FRIEND (D025 R6). Cool against the warm chartreuse of your own
-        // light, because the one thing it must say at a glance is "someone
-        // else". Two marks, two meanings:
-        //   .cm-peer-line — HIM, on his line. Total: it means the same in
-        //                   prose, on bare code, and inside a body.
-        //   .cm-peer-cell — his FOCUS: the cell that line kindles, when it
-        //                   falls in one. A left rule, so it can sit under
-        //                   your own active wash without fighting it — and
-        //                   while you follow him, it is the same cell.
+        // THE FRIEND (D025 R6) — violet, from the one `--peer-ink` token that
+        // also lights the firefly, so his line and his glyph cannot drift apart.
+        // Far from the warm chartreuse of your own light: the one thing it must
+        // say at a glance is "someone else".
+        //   .cm-peer-line — the friend, on their line. Total: it means the
+        //                   same in prose, on bare code, and inside a body.
+        //   .cm-peer-cell — their FOCUS: the cell that line kindles. A RIGHT
+        //                   rule: the left margin is already spoken for (line
+        //                   numbers, folds, the lint spark), and the right is
+        //                   where the friend lives — the firefly hangs on that
+        //                   same edge, so his marks share one margin.
         '.cm-peer-line': {
-            backgroundColor: 'oklch(0.72 0.13 220 / 0.16)',
-            boxShadow: 'inset 0 -1px 0 oklch(0.72 0.13 220 / 0.5)',
+            backgroundColor: 'color-mix(in oklab, var(--peer-ink) 16%, transparent)',
+            boxShadow: 'inset -1px 0 0 color-mix(in oklab, var(--peer-ink) 50%, transparent)',
         },
         '.cm-peer-cell': {
-            boxShadow: 'inset 2px 0 0 oklch(0.72 0.13 220 / 0.75)',
-            backgroundColor: 'oklch(0.72 0.13 220 / 0.04)',
+            boxShadow: 'inset -2px 0 0 color-mix(in oklab, var(--peer-ink) 75%, transparent)',
+            backgroundColor: 'color-mix(in oklab, var(--peer-ink) 4%, transparent)',
         },
-        // His line is never dimmed away, even when the cell it sits in rests.
+        // The friend's line is never dimmed away, even when its cell rests.
         '.cm-peer-cell.cm-cell-inactive': { opacity: '0.62' },
         '.cm-peer-line.cm-cell-inactive':  { opacity: '0.85' },
 
@@ -235,6 +237,7 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
         { tag: tags.invalid,                                        color: ERROR_RED, fontFamily: CODE_FONT },                    // the error voice — red, the creator's law
         // The literate faces — the margin dissolves, the phase rises, the word glows.
         { tag: tags.lineComment,                                    color: 'rgba(251,179,47,0.3)', fontSize: '0.8em' }, // the `#`/`###`/`|`/`>`/`=` markers — dim AND smaller, dissolving
+        { tag: tags.labelName,                                      color: '#fbb32f', fontStyle: 'italic', fontFamily: PROSE_FONT, fontSize: '0.85em', letterSpacing: '0.06em' }, // a cell's NAME on its fence (D024) — the author's word, lit while the ``` dissolves
         { tag: tags.heading1,                                       color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H1 }, // a section
         { tag: tags.heading2,                                       color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H2 }, // a section
         { tag: tags.heading3,                                       color: '#ffd479', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H3 }, // a passage
@@ -322,16 +325,15 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
         '.cm-cell-inactive': { opacity: '0.42' },                          // inert — dimmed, not evaluated
         '.cm-cell-active':   { backgroundColor: 'rgba(141, 161, 1, 0.07)' }, // the live cell — faint green
 
-        // The friend (D025 R6) — his line, and the cell it kindles. The same
-        // two marks, carried into the light ground at the weight everforest
-        // wants.
+        // The friend (D025 R6) — the same `--peer-ink` violet, which the token
+        // already deepens for paper, carried in at the weight everforest wants.
         '.cm-peer-line': {
-            backgroundColor: 'oklch(0.55 0.12 235 / 0.14)',
-            boxShadow: 'inset 0 -1px 0 oklch(0.55 0.12 235 / 0.45)',
+            backgroundColor: 'color-mix(in oklab, var(--peer-ink) 14%, transparent)',
+            boxShadow: 'inset 0 -1px 0 color-mix(in oklab, var(--peer-ink) 45%, transparent)',
         },
         '.cm-peer-cell': {
-            boxShadow: 'inset 2px 0 0 oklch(0.55 0.12 235 / 0.7)',
-            backgroundColor: 'oklch(0.55 0.12 235 / 0.04)',
+            boxShadow: 'inset -2px 0 0 color-mix(in oklab, var(--peer-ink) 70%, transparent)',
+            backgroundColor: 'color-mix(in oklab, var(--peer-ink) 4%, transparent)',
         },
         '.cm-peer-cell.cm-cell-inactive': { opacity: '0.66' },
         '.cm-peer-line.cm-cell-inactive':  { opacity: '0.88' },
@@ -386,6 +388,7 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
         { tag: tags.invalid,                                        color: '#f85552' },
         // The literate faces — the margin dissolves, the phase rises, the word glows.
         { tag: tags.lineComment,                                    color: 'rgba(200,155,64,0.35)', fontSize: '0.8em' }, // the `#`/`###`/`|`/`>`/`=` markers — dim AND smaller, dissolving
+        { tag: tags.labelName,                                      color: '#C89B40', fontStyle: 'italic', fontFamily: PROSE_FONT, fontSize: '0.85em', letterSpacing: '0.06em' }, // a cell's NAME on its fence (D024) — the author's word, lit while the ``` dissolves
         { tag: tags.heading1,                                       color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H1 }, // a section
         { tag: tags.heading2,                                       color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H2 }, // a section
         { tag: tags.heading3,                                       color: '#8da101', fontWeight: 'bold', fontFamily: PROSE_FONT, fontSize: H3 }, // a passage

@@ -4,11 +4,11 @@
 //
 //   cursor in a cell        → that cell
 //   cursor in prose         → the last one holds
-//   cursor on bare code     → none (null): he is making, not reading
+//   cursor on bare code     → none (null): the child is making, not reading
 //   scrolling, on a page    → the cell under the eyeline (the topmost that is
 //                              enough on screen to be read), and the cursor moves
-//                              into it — but only while the shell holds no cursor
-//                              of his own
+//                              into it — but only while the shell holds no
+//                              cursor of the child's own
 //
 // SCROLL NEVER DETERMINES THE CURSOR. A shell with the cursor in it is being
 // written in, and its scrolling is a byproduct of the writing — typing at a
@@ -24,12 +24,18 @@ import {
 } from "./plang-mode.js"
 import { temporal } from "../utils/temporal.js"
 
-// mountReach(view, { gate, publish }) → { reset, cleanup }
+// mountReach(view, { gate, publish }) → { reset, pause, cleanup }
 //   gate    — () => boolean: may this publish now?
 //   publish — (line | null) => void: fires only when the cell changes.
+//   pause   — (ms) => void: stand down while someone ELSE drives the viewport.
 export function mountReach(view, { gate, publish }) {
     let attending = null   // the line we last published
     let dead = false
+    let hushedUntil = 0
+
+    // A scroll someone ELSE is driving is not the child's. A deadline, not a
+    // flag, so a lost release cannot mute the eyeline for the session.
+    const hushed = () => performance.now() < hushedUntil
 
     const attend = (line) => {
         if (line === attending) return
@@ -37,10 +43,9 @@ export function mountReach(view, { gate, publish }) {
         publish(line)
     }
 
-    // The child is READING, not making: no cursor of his in the shell (an
-    // unfocused editor) and no selection to steal — a range is an edit in
-    // flight, a drag or a pending cut, and it outlives the focus that made it.
-    // Asked at the top of a gesture and again where it lands: the plant is
+    // READING, not making: no cursor in the shell (an unfocused editor) and no
+    // selection to steal — a range is an edit in flight, and it outlives the
+    // focus that made it. Asked again where a gesture lands: the plant is
     // deferred a microtask, and a click can arrive in between.
     const reading = () => !view.hasFocus && view.state.selection.main.empty
 
@@ -49,7 +54,7 @@ export function mountReach(view, { gate, publish }) {
     // One precondition covers every line we touch — a cell whose closing line
     // the doc has lost is a cell that no longer exists.
     const enter = (cell) => {
-        if (dead || view.destroyed || !reading()) return
+        if (dead || view.destroyed || hushed() || !reading()) return
         const doc = view.state.doc
         if (cell.end > doc.lines) return
         attend(cell.open)
@@ -67,7 +72,7 @@ export function mountReach(view, { gate, publish }) {
     }
 
     const onScroll = () => {
-        if (!gate() || !view.state || !reading()) return
+        if (!gate() || !view.state || hushed() || !reading()) return
         const state = view.state
         const { cells, meadows } = findProse(state.doc)
         if (!cells.length) return
@@ -102,6 +107,10 @@ export function mountReach(view, { gate, publish }) {
         // A page reopens with nothing attended, so the first gesture speaks; a
         // caller may seed the line it already knows.
         reset(line = null) { attending = line },
+        // Someone else is driving the viewport — hold still until they land.
+        // `pause(0)` releases at once, so a driver hands back the moment its own
+        // scroll settles rather than waiting out the deadline.
+        pause(ms = 0) { hushedUntil = ms > 0 ? performance.now() + ms : 0 },
         cleanup() {
             dead = true
             view.dom.removeEventListener('mouseup', onCursorPaced)

@@ -132,10 +132,7 @@ defmodule DojoWeb.ShellLive do
     shell = OuterShell.observe(socket.assigns.outershell, turtle)
     socket = assign(socket, :outershell, shell)
 
-    # A hatch that moved nothing but the preview/path is just a bump — advance
-    # time (via observe above) but don't react: no re-render, re-stream, re-run.
-    # Everything else the reflect carries — including an attention move with the
-    # source untouched — is news, and crosses (D025 R3).
+    # Only a preview/path bump is silence; everything else is news (D025 R3).
     if OuterShell.reflect_changed?(prev, turtle) do
       # The friend's status always flows to the nerve — even in a frozen draft,
       # where the editor push is held back so it won't disturb your draft.
@@ -195,6 +192,7 @@ defmodule DojoWeb.ShellLive do
     {:noreply,
      socket
      |> update_visible_meta(reg_key, meta)
+     |> push_attend(reg_key, meta)
      |> maybe_follow_code(reg_key, meta[:time])}
   end
 
@@ -590,6 +588,22 @@ defmodule DojoWeb.ShellLive do
 
     maybe_follow_code(socket, reg_key, time)
   end
+
+  # The attention rides the META already in hand — no fetch, no task, ~40 bytes.
+  # No time gate: `maybe_follow_code`'s is second-resolution and dropped moves
+  # inside one second. No `:node` either, which is why self-watch got nothing.
+  # The client already ignores a line equal to the one it holds.
+  defp push_attend(socket, reg_key, %{attend: attend}) when not is_nil(attend) do
+    outershell = socket.assigns.outershell
+
+    if outershell.addr == reg_key and OuterShell.wants_updates?(outershell) do
+      push_event(socket, "outerAttend", %{addr: reg_key, attend: attend})
+    else
+      socket
+    end
+  end
+
+  defp push_attend(socket, _reg_key, _meta), do: socket
 
   defp maybe_follow_code(socket, reg_key, time) do
     %{outershell: outershell, disciples: dis} = socket.assigns

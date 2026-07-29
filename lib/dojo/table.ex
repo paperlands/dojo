@@ -253,7 +253,9 @@ defmodule Dojo.Table do
   end
 
   defp broadcast_hatch(topic, reg_key, store) do
-    meta = Map.take(store, [:path, :state, :time])
+    # `attend` rides the meta: a reader who moves and does not type must not
+    # cost a document — the watcher reads it here, with no fetch (D025 R3).
+    meta = Map.take(store, [:path, :state, :time, :attend])
 
     # The hatch dual layer is the ESSENTIAL divergence kept and named
     # (rad-message Pole B / groundwork Phase 3): 2b is a DECLARED lightweight

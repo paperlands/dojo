@@ -74,10 +74,14 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
       assert shell.stream == true
     end
 
-    test "draft/1 starts frozen when intervening on an error (toggle to run)" do
+    # A draft over an error used to start frozen, so there was no runtime and no
+    # error signal — and since a dead cell makes the whole document :error, that
+    # was nearly every draft. Intervening on broken code is the case that most
+    # needs to run.
+    test "draft/1 runs over an error too — that is what you drafted for" do
       shell = OuterShell.draft(%OuterShell{origin: err()})
       assert shell.view == :draft
-      assert shell.stream == false
+      assert shell.stream == true
     end
 
     test "toggle_stream/1 flips the liveness switch" do

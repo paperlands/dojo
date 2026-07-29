@@ -19,7 +19,9 @@ import { cameraBridge, scene } from "../../bridged.js"
 import { temporal } from "../../utils/temporal.js"
 import { pageLaw } from "../../weave/page.js"
 import { registerWorld, worldChanged } from "../../weave/world.js"
-import { diagnostics, ailmentsFor, verdict } from "../../weave/queries.js"
+import { diagnostics, ailmentsFor, verdict, primaryWound } from "../../weave/queries.js"
+import { sayWound } from "../../weave/wound-view.js"
+import { sayOnce } from "../../weave/voice.js"
 import { frameVitals, livingFamily } from "../../turtling/vitals.js"
 import { mountReach } from "../../editor/reach.js"
 import { mountDiagnosticsInk } from "../../editor/diagnostics.js"
@@ -85,23 +87,20 @@ function mountInner(hook, { term, cm6 }) {
     let authored = null
     const disown = (addr) => { if (authored?.addr === addr) authored = null }
 
+    // The HUD's rhythm (weave/voice.js): the wound this document is standing
+    // with, said when it arrives and again only if it heals and returns.
+    const hurt = sayOnce()
+
     // Where the reader is, per addr — attention is the address (D021). Both
     // reach organs publish through scene.attend, so one ledger serves every
     // observe, and a followed friend's line arrives through the same door.
     const reached = new Map()
     const attentionOn = (addr) => (reached.has(addr) ? { line: reached.get(addr) } : null)
 
-    // WHERE THE AUTHOR IS, for the wire — his cursor's LINE, read live.
-    //
-    // Two readers of one cursor (D021's "two outputs, different laws, one
-    // read"), not two attentions. The SEATING ladder wants a cell and reads
-    // `reached`, which the reach publishes as a cell's opening fence and only
-    // while the buffer is a page. The WIRE wants the line, and wants it in
-    // every context: a line is TOTAL — every position in the document has one —
-    // so it says where he is in prose, on bare code, between cells and inside
-    // them alike. Reading `reached` here would have made a friend invisible in
-    // every buffer that is not a page, and quantized him to a fence in the ones
-    // that are.
+    // WHERE THE AUTHOR IS, for the wire — the cursor's LINE, read live. Two
+    // readers of one cursor (D021), not two attentions: the seating ladder wants
+    // a cell and reads `reached`; the wire wants the line, which is TOTAL — so a
+    // friend stays visible in buffers that are not pages, unquantized to a fence.
     //
     // A live draft lives in the OUTER editor, which this surface does not hold;
     // there the ladder's own address is the best answer available.
@@ -164,12 +163,17 @@ function mountInner(hook, { term, cm6 }) {
         if (!authored) return null
         const ast = treeFor(authored.addr)
         const found = ast ? askDiagnostics(authored.addr) : []
+        // The verdict answers WHETHER and WHICH; the sentence is said HERE, at
+        // the surface that ships it — so the server carries words it never has
+        // to interpret (D022).
+        const { state, wound } = verdict(found, authored.addr)
         return {
             source: authored.text,
             commands: ast ?? [],
             attend: authoredAttention(),
             diagnostics: found,
-            ...verdict(found, authored.addr),
+            state,
+            message: wound ? sayWound(wound) : null,
         }
     }
 
@@ -187,12 +191,14 @@ function mountInner(hook, { term, cm6 }) {
         family: (pattern) => livingFamily(turtle.scheduler, pattern),
     })
 
-    // The current tab, as the register knows it: the buffer's own ambient when
-    // one stands (a plain tab, or a program's bare code), else the tab's NAME —
-    // a page has no whole-buffer ambient, and its first cell wears that name.
+    // The handle for the current tab: its own frame if it has one (a plain tab,
+    // a program's bare code), else the page's first cell — asked of the law,
+    // never of a display name (D024: once cell 1 can be named, a name cannot
+    // find the page).
     const currentTabRef = () => {
         const key = term.currentBufferId()
-        return key && turtle.addressOf(key) ? key : term.currentBufferName()
+        if (!key) return null
+        return turtle.addressOf(key) ? key : law.pageKey(key)
     }
 
     // A transition's CANVAS consequences, in the turtle's own verbs. No policy
@@ -253,10 +259,39 @@ function mountInner(hook, { term, cm6 }) {
         else scene.landed(addr, landed.line)
     }
 
-    // A transition, whole: the canvas performs, the organ settles.
+    // WHAT A RUN SAYS. `main` is set only where the law marked the child's own
+    // run (page.js seatFrom), so a watched friend's passive seat reports nothing
+    // — their state is derived on the wire, never judged from a local run.
+    //
+    // And only for the document THIS editor shows: a live draft runs on a
+    // friend's addr but lives in the outer panel, which asks the world for the
+    // very same wound and says it there, in its own nerve.
+    const report = (addr, result) => {
+        if (addr !== term.currentBufferId()) return
+        // THE ONE COMPLAINT this run has. A fault outranks a broken line: the
+        // healthy parts drew (D020), so a parse error alone still ran. The fault
+        // is the SAME wound the reflect speaks of (`primaryWound`) — a page must
+        // not name one fault while the friend watching it is told another; the
+        // turtle hands up WOUNDS, never a sentence (id:cmp-runtime-provenance).
+        const wound = result.success
+            ? (result.parseErrors?.[0] ?? null)
+            : (primaryWound(askDiagnostics(addr), addr) ?? result.wounds?.[0] ?? null)
+        // Said once while it stands, and a healing run re-arms it: an edit
+        // re-evaluates at 20 ms, and a standing wound is one fact, not a drumbeat.
+        hurt.say(wound ? [wound] : [], (w) => nerveInstance?.push(
+            S.error("error", sayWound(w), w.span?.line ? { line: w.span.line } : null)))
+        if (result.success && !wound) nerveInstance?.push(S.output("☀︎", result.commandCount))
+    }
+
+    // A transition, whole: the canvas performs, the organ settles, the run
+    // speaks, the world breathes. EVERY door — the child's own edit, a live
+    // draft on a friend's page, one ladder step — passes here, so none of them
+    // can be the one that forgets.
     const enact = (addr, ans) => {
         const main = perform(ans.effects)
         settle(addr, ans.landed)
+        if (main) report(addr, main)
+        if (ans.effects.length) worldChanged()
         return main
     }
 
@@ -275,28 +310,11 @@ function mountInner(hook, { term, cm6 }) {
         authored = { addr: id, name, text: content }
         // The attention is the cursor THIS keystroke landed on, not a
         // debounced echo: the reach publishes at 80 ms, this at 20.
-        const result = enact(id, law.observe(id, {
+        // Speaking and breathing ride enact, with every other door.
+        enact(id, law.observe(id, {
             name, doc: content, own: true, attention: attentionOn(id),
         }))
-        if (result?.success && result.parseErrors?.length) {
-            // The healthy parts drew (D020); the broken line speaks with its
-            // TRUE span — born structured, never regexed out of a message.
-            const e = result.parseErrors[0]
-            nerveInstance?.push(S.error("error", e.message, e.span ? { line: e.span.line } : null))
-        } else if (result?.success) {
-            nerveInstance?.push(S.output("☀︎", result.commandCount))
-        } else if (result) {
-            // Walk errors arrive span-true from the frame's catch
-            // (id:cmp-runtime-provenance). Skip-law: no span, no line —
-            // never regexed back out of a message.
-            const line = result.errorSpan?.line ?? null
-            nerveInstance?.push(S.error("error", result.error, line ? { line } : null))
-        }
         syncTabs()
-        // The breath — once per eval, after perform(): surfaces ask again.
-        // It carries nothing; the S.* pushes above are the OTHER flow (the
-        // HUD's projection of the same born fact), not a duplicate.
-        worldChanged()
     }, 20);
 
     term.bridge.sub(pacedRender);
@@ -339,11 +357,14 @@ function mountInner(hook, { term, cm6 }) {
     })
 
     // The lint ink asks; nothing is pushed into the editor but the breath
-    // (id:cmp-first-surface). Thunks, not bodies: the current view, the
-    // current buffer's key, each ask.
+    // (id:cmp-first-surface). Thunks, not bodies: the current view and the
+    // current buffer's wounds, each ask. This editor shows the child's own
+    // document, so the runtime it inks is the local one — the world cell's.
     const unmountInk = mountDiagnosticsInk(cm6, {
         view: () => term.shell,
-        key: () => term.currentBufferId(),
+        // Asked of the face directly, not through the cell: this surface IS the
+        // registrant, and a room is for asking what you did not put there.
+        ask: () => askDiagnostics(term.currentBufferId()),
     })
 
     // The one focus move both surfaces read: dim the previously bright ambient
@@ -413,7 +434,7 @@ function mountInner(hook, { term, cm6 }) {
             term.shell?.focus()
         },
         // A live draft: the SAME call the core shell makes on the child's own
-        // tab, so drafting on a friend's cell means what editing his own cell
+        // tab, so drafting on a friend's cell means what editing one's own cell
         // means. The child's while it runs, so the child's to reflect (D022).
         ambient: ({ addr, name, code }) => {
             authored = { addr, name, text: code }

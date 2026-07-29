@@ -250,9 +250,21 @@ describe("the code cell — ``` … ``` fenced blocks, linted at full strength",
         assert.ok(toks.some(t => t.text.startsWith("rt 90") && t.style === "comment"))
     })
 
-    test("an opening fence may carry an info word; the closing fence is bare", () => {
-        const toks = lex("###\n```paperlang\nfw 100\n```\n###")
-        assert.ok(toks.some(t => t.text.includes("```paperlang") && t.style === "lineComment"))
+    // THE MARKER DISSOLVES, THE NAME DOES NOT (D024). The word on an opening
+    // fence is the cell's identity and the author wrote it, so it takes a face
+    // of its own rather than dimming away with the ```.
+    test("an opening fence may carry a name; the marker and the name part", () => {
+        const toks = lex("###\n```spiral\nfw 100\n```\n###")
+        assert.ok(toks.some(t => t.text.includes("```") && !t.text.includes("spiral")
+                              && t.style === "lineComment"), "the fence still dissolves")
+        assert.ok(toks.some(t => t.text.includes("spiral") && t.style === "labelName"),
+                  "the author's word is lit")
+        assert.deepEqual(stylesOf(toks, "fw"), ["keyword"])
+    })
+
+    test("a bare opening fence names nothing — no stray name token", () => {
+        const toks = lex("###\n```\nfw 100\n```\n###")
+        assert.ok(!toks.some(t => t.style === "labelName"))
         assert.deepEqual(stylesOf(toks, "fw"), ["keyword"])
     })
 
@@ -316,16 +328,19 @@ describe("cursor-driven activation — which cell is live (the eval gate)", () =
         const doc = mkDoc("###\n```\nfw 100\n```\nbetween\n```\nrt 90\n```\n###")
         // `path` rides every cell now: the editor and the parser read ONE
         // prose walk (turtling/parse.js outline), so a cell knows the phase
-        // whose sisters it stands among, here as at the seam.
+        // whose sisters it stands among, here as at the seam. `name` and
+        // `coord` ride the same walk — the cell's identity (D024): unnamed
+        // here, so each is named by its place among the preamble's cells.
         assert.deepEqual(findCells(doc), [
-            { open: 2, end: 4, terminated: true, path: [] },
-            { open: 6, end: 8, terminated: true, path: [] },
+            { open: 2, end: 4, terminated: true, path: [], name: null, coord: [1] },
+            { open: 6, end: 8, terminated: true, path: [], name: null, coord: [2] },
         ])
     })
 
     test("an unterminated cell (meadow closes) still reports its span", () => {
         const doc = mkDoc("###\n```\nfw 100\n###\nrt 90")   // ### closes the meadow, ending the cell
-        assert.deepEqual(findCells(doc), [{ open: 2, end: 3, terminated: false, path: [] }])
+        assert.deepEqual(findCells(doc),
+            [{ open: 2, end: 3, terminated: false, path: [], name: null, coord: [1] }])
     })
 
     test("``` outside a meadow is not a cell", () => {
@@ -335,9 +350,10 @@ describe("cursor-driven activation — which cell is live (the eval gate)", () =
     test("cellAt: the cursor's line picks the active cell; outside every cell is null", () => {
         const doc   = mkDoc("###\n```\nfw 100\n```\nbetween\n```\nrt 90\n```\n###")
         const cells = findCells(doc)
-        assert.deepEqual(cellAt(cells, 3), { open: 2, end: 4, terminated: true, path: [] }) // inside first cell body
-        assert.deepEqual(cellAt(cells, 2), { open: 2, end: 4, terminated: true, path: [] }) // on its opening fence
-        assert.deepEqual(cellAt(cells, 7), { open: 6, end: 8, terminated: true, path: [] }) // inside second cell
+        const cell = (open, end, coord) => ({ open, end, terminated: true, path: [], name: null, coord })
+        assert.deepEqual(cellAt(cells, 3), cell(2, 4, [1]))   // inside first cell body
+        assert.deepEqual(cellAt(cells, 2), cell(2, 4, [1]))   // on its opening fence
+        assert.deepEqual(cellAt(cells, 7), cell(6, 8, [2]))   // inside second cell
         assert.equal(cellAt(cells, 5), null)                                      // prose between cells — inert
         assert.equal(cellAt(cells, 1), null)                                      // the meadow fence — inert
     })

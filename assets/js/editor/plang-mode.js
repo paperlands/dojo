@@ -282,7 +282,11 @@ const PROSE_BLOCKS = [
     // ``` … — a full code CELL, linted at full strength until the closing ```. Spans
     // many lines, so it opens in the meadow only (an info word on the opener is optional).
     { spansLines: true,  re: /^[ \t]*```[^`]*$/,
-      enter(stream, state) { stream.match(this.re); state.tokenize.push(readCodeBlock);
+      enter(stream, state) { stream.match(/^[ \t]*```/); state.tokenize.push(readCodeBlock);
+                             // The marker dissolves; the word after it does NOT.
+                             // It is the cell's NAME — the author's own (D024) —
+                             // so it takes a face instead of dimming with the fence.
+                             if (!stream.eol()) state.tokenize.push(readCellName);
                              return "lineComment"; } },
 ];
 
@@ -354,6 +358,16 @@ function readCodeBlock(stream, state) {
         return "lineComment";
     }
     return tokenBase(stream, state);                            // full linting — the interpretable cell
+}
+
+// THE CELL'S NAME (D024) — the rest of an opening fence, in one bite. One shot:
+// it pops itself, and the cell's own linting takes the lines below.
+function readCellName(stream, state) {
+    state.tokenize.pop();
+    stream.eatSpace();
+    if (stream.eol()) return null;      // a fence with only trailing space names nothing
+    stream.skipToEnd();
+    return "labelName";
 }
 
 // The meadow — prose AROUND code. Pushed after an opening `###`; persists across

@@ -1,8 +1,8 @@
 // =============================================================================
-// THE DIAGNOSTICS ADAPTER — the query's answer projected into editor ink
+// THE DIAGNOSTICS ADAPTER — a wound answer projected into editor ink
 // (specs/compiler.org id:cmp-first-surface). Demand-driven: the surface
-// ASKS the world cell's diagnostics face on each breath (watchWorld) and
-// once at mount, then renders the whole answer through @codemirror/lint's
+// ASKS on each breath (watchWorld) and once at mount, then renders the
+// whole answer through @codemirror/lint's
 // setDiagnostics — positions map through edits, the gutter and underline
 // come standing, severity is ready for the day we speak more than `error`.
 // Nothing is ever pushed INTO the editor except the breath that says "ask
@@ -14,7 +14,10 @@
 // HUD carries it whole; guessing a position would be a second grammar.
 // =============================================================================
 
-import { world, watchWorld } from "../weave/world.js"
+// The breath only — "ask again". WHAT to ask is the surface's, never this
+// organ's, so the world's faces are not imported here.
+import { watchWorld } from "../weave/world.js"
+import { describe, sourceOf } from "../weave/wound-view.js"
 
 // Pure mapping: query answers → CM6 Diagnostic spans, against a doc.
 //   errors — [{ span: { line }, message, source?, severity? }]; entries
@@ -30,8 +33,14 @@ export function toDiagnostics(doc, errors) {
             from: docLine.from,
             to: docLine.to,
             severity: e.severity ?? "error",
-            source: e.source ?? "the stage",
-            message: String(e.message ?? ""),
+            // Through the view again: a reader knows where they are by their own
+            // outline, so the attribution is the cell's name or its phase. "the
+            // stage" is the last resort, not the default — bare code has no outline.
+            source: sourceOf(e) ?? "the stage",
+            // Through the view: a name collision and a dependent carry FACTS,
+            // not a sentence — the query authors no prose. `describe` quotes a
+            // message the wound was given and composes one where it was not.
+            message: describe(e),
         })
     }
     return out
@@ -50,16 +59,31 @@ export function createDiagnosticsExtension(cm6) {
     return [cm6.lintGutter()]
 }
 
-// The ask surface: subscribe the breath, ask the diagnostics face, publish
-// the whole answer — and ask once at mount, so a remounted editor is whole.
-// `view` and `key` are thunks: the surface holds no body, it asks its owner
-// each breath (the address law at the query seam). An empty cell answers
-// through the optional chain — ink clears on the next ask. Returns unmount.
-export function mountDiagnosticsInk(cm6, { view, key }) {
-    const ask = () => {
-        publishDiagnostics(cm6, view(), world()?.diagnostics?.(key()) ?? [])
+// THE ONE INK WRITER FOR AN EDITOR. Subscribe the breath, ask, publish the whole
+// answer — and ask once at mount, so a remounted editor is whole.
+//
+// `ask` is the entire contract: WHOSE WOUNDS ARE THESE? The organ never decides.
+// The child's own editor asks the world cell for its buffer; the review surface
+// asks the wire while watching and the world cell while drafting — one surface,
+// two runtimes, and the choice belongs to the surface that knows which it shows.
+//
+// `view` is a thunk for the same reason: the surface holds no body, it asks its
+// owner each breath. Returns unmount, with .refresh() for a surface whose answer
+// can change without a breath (a push arriving, a mode flipping).
+export function mountDiagnosticsInk(cm6, { view, ask }) {
+    // Identity, not depth: an answer built fresh each ask is always new and
+    // always repaints, while a held array (the wire's) repaints only when the
+    // surface swaps it. Cheap where it helps, harmless where it does not.
+    let last
+    const paint = () => {
+        const v = view()
+        if (!v?.state) return          // nothing painted, so nothing remembered
+        const answer = ask() ?? []
+        if (answer === last) return
+        last = answer
+        publishDiagnostics(cm6, v, answer)
     }
-    const unwatch = watchWorld(ask)
-    ask()
-    return unwatch
+    const unwatch = watchWorld(paint)
+    paint()
+    return Object.assign(() => unwatch(), { refresh: paint })
 }
