@@ -58,8 +58,10 @@ defmodule Dojo.Turtle do
     with file when is_binary(file) <-
            DojoWeb.Utils.Base64.to_file(path, Path.join([dest_dir, id])),
          ext when byte_size(ext) > 0 <- Path.extname(file) do
+      # Same unit as `time` (ms) so bump_path_time in shell_live does not
+      # rewrite the cache-buster from seconds into milliseconds mid-life.
       Path.join(["frames", clan, id]) <>
-        ext <> "?t=#{System.os_time(:second)}" <> Dojo.Cluster.Routing.asset_path_params()
+        ext <> "?t=#{System.os_time(:millisecond)}" <> Dojo.Cluster.Routing.asset_path_params()
     else
       _ -> nil
     end
