@@ -11,13 +11,10 @@
 //   "keyword"    → tags.keyword          (plang commands: fw, rt, lt, draw, def…)
 //   "number"     → tags.number
 //   "variable"   → tags.variableName
-//   "variable-2" → tags.special(tags.variableName)
-//   "def"        → tags.definition(tags.variableName)
+//   "def"        → tags.definition(tags.variableName)  (the name a `def` opens)
 //   "builtin"    → tags.standard(tags.name)
 //   "comment"    → tags.comment
 //   "string"     → tags.string
-//   "string-2"   → tags.regexp
-//   "atom"       → tags.atom
 //   "bracket"    → tags.bracket
 //   "property"   → tags.propertyName
 //   "operator"   → tags.operator
@@ -26,6 +23,7 @@
 //   "meta"       → tags.meta
 //   "link"       → tags.link
 //   "error"      → tags.invalid
+// Ruby leftovers (variable-2 / string-2 / atom) never emit from plang — dropped.
 //
 // The literate faces (id:gw-grammar) — meta.lit rendered, never a second store:
 //   "comment"    → tags.comment          (inked prose — the margin & the meadow)
@@ -223,12 +221,10 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
         { tag: tags.keyword,                                        color: '#d80450', fontWeight: 'bold', fontFamily: CODE_FONT }, // crimson
         { tag: tags.number,                                         color: '#D42A04', fontFamily: CODE_FONT },                    // cinnabar
         { tag: [tags.variableName,
-                tags.special(tags.variableName),
                 tags.definition(tags.variableName),
                 tags.standard(tags.name)],                          color: '#D3D05B', fontFamily: CODE_FONT },                    // periwinkle
         { tag: tags.comment,                                        color: '#fbb32f', fontStyle: 'italic', fontFamily: PROSE_FONT }, // inked prose
-        { tag: [tags.string, tags.regexp],                          color: '#e6a2f3', fontFamily: CODE_FONT },                    // lavender
-        { tag: tags.atom,                                           color: '#fef3b4', fontFamily: CODE_FONT },                    // vanilla_cream
+        { tag: tags.string,                                         color: '#e6a2f3', fontFamily: CODE_FONT },                    // lavender
         { tag: [tags.bracket, tags.propertyName],                   color: '#fef3b4', fontFamily: CODE_FONT },
         { tag: tags.operator,                                       fontWeight: 'bold', fontFamily: CODE_FONT },
         { tag: tags.tagName,                                        color: '#d80450', fontWeight: 'bold', fontFamily: CODE_FONT }, // crimson
@@ -375,11 +371,9 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
         { tag: tags.keyword,                                        color: '#E34234' },
         { tag: tags.number,                                         color: '#5c6a72' },
         { tag: [tags.variableName,
-                tags.special(tags.variableName),
                 tags.definition(tags.variableName)],                color: '#8da101' },
         { tag: tags.comment,                                        color: '#C89B40', fontStyle: 'italic', fontFamily: PROSE_FONT }, // inked prose
-        { tag: [tags.string, tags.regexp],                          color: '#dfa000' },
-        { tag: tags.atom,                                           color: '#df69ba' },
+        { tag: tags.string,                                         color: '#dfa000' },
         { tag: [tags.bracket, tags.propertyName],                   color: '#5c6a72' },
         { tag: tags.operator,                                       color: '#f57d26' },
         { tag: tags.tagName,                                        color: '#f57d26' },

@@ -50,84 +50,20 @@ function chain(newtok, stream, state) {
     return newtok(stream, state);
 }
 
-function readQuoted(quote, style, embed) {
+// A quoted run, closed by its own quote. No interpolation: the language's own
+// tokenizer (parse.js CLOSERS) knows only " ' [ ( — a quote is opaque inside.
+function readQuoted(quote, style) {
     return function(stream, state) {
         let escaped = false, ch;
-
-        if (state.context.type === 'read-quoted-paused') {
-            state.context = state.context.prev;
-            stream.eat("}");
-        }
-
         while ((ch = stream.next()) != null) {
             if (ch === quote && !escaped) {
                 state.tokenize.pop();
                 break;
             }
-            if (embed && ch === "#" && !escaped) {
-                if (stream.eat("{")) {
-                    if (quote === "}") {
-                        state.context = { prev: state.context, type: 'read-quoted-paused' };
-                    }
-                    state.tokenize.push(tokenBaseUntilBrace());
-                    break;
-                } else if (/[@$]/.test(stream.peek())) {
-                    state.tokenize.push(tokenBaseOnce());
-                    break;
-                }
-            }
             escaped = !escaped && ch === "\\";
         }
         return style;
     };
-}
-
-function tokenBaseUntilBrace() {
-    let depth = 1;
-    return function(stream, state) {
-        if (stream.peek() === "}") {
-            depth--;
-            if (depth === 0) {
-                state.tokenize.pop();
-                return null;
-            }
-        } else if (stream.peek() === "{") {
-            depth++;
-        }
-        return tokenBase(stream, state);
-    };
-}
-
-function tokenBaseOnce() {
-    let done = false;
-    return function(stream, state) {
-        if (done) { state.tokenize.pop(); return null; }
-        done = true;
-        return tokenBase(stream, state);
-    };
-}
-
-function regexpAhead(stream) {
-    const start = stream.pos;
-    let depth = 0, next, found = false, escaped = false;
-    while ((next = stream.next()) != null) {
-        if (!escaped) {
-            if ("[{(".indexOf(next) > -1) {
-                depth++;
-            } else if ("]})".indexOf(next) > -1) {
-                depth--;
-                if (depth < 0) break;
-            } else if (next === "/" && depth === 0) {
-                found = true;
-                break;
-            }
-            escaped = next === "\\";
-        } else {
-            escaped = false;
-        }
-    }
-    stream.backUp(stream.pos - start);
-    return found;
 }
 
 function tokenBase(stream, state) {
@@ -141,11 +77,7 @@ function tokenBase(stream, state) {
 
     const ch = stream.next();
     if (ch === "`" || ch === "'" || ch === '"') {
-        return chain(readQuoted(ch, "string", ch === '"' || ch === "`"), stream, state);
-    } else if (ch === "/") {
-        return regexpAhead(stream)
-            ? chain(readQuoted(ch, "string-2", true), stream, state)
-            : "operator";
+        return chain(readQuoted(ch, "string"), stream, state);
     } else if (ch === "#") {
         // The margin door — prose OF this line, riding beside the making
         // (id:weave-author). The `#` marker dims; the rest is inked prose.
@@ -161,23 +93,10 @@ function tokenBase(stream, state) {
     } else if (/\d/.test(ch)) {
         stream.match(/^[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?[\d_]+)?/);
         return "number";
-    } else if (ch === "@" && stream.match(/^@?[a-zA-Z_\xa1-\uffff]/)) {
-        stream.eat("@");
-        stream.eatWhile(/[\w\xa1-\uffff]/);
-        return "variable-2";
-    } else if (ch === "$") {
-        if (stream.eat(/[a-zA-Z_]/))      stream.eatWhile(/\w/);
-        else if (stream.eat(/\d/))        stream.eat(/\d/);
-        else                              stream.next();
-        return "variable-3";
     } else if (/[a-zA-Z_\xa1-\uffff]/.test(ch)) {
         stream.eatWhile(/[\w\xa1-\uffff]/);
         stream.eat(/[?!]/);
-        if (stream.eat(":")) return "atom";
         return "ident";
-    } else if (ch === "|" && (state.varList || state.lastTok === "{" || state.lastTok === "do")) {
-        curPunc = "|";
-        return null;
     } else if (/[()[\]{}\\;]/.test(ch)) {
         curPunc = ch;
         return null;
@@ -401,7 +320,6 @@ export const plangModeSpec = {
             context:         { type: "top", indented: 0, blockIndent: false },
             continuedLine:   false,
             lastTok:         null,
-            varList:         false,
             indentStack:     [],
             dedentPending:   false,
             lastIndent:      0,
@@ -424,10 +342,13 @@ export const plangModeSpec = {
 
         if (style === "ident") {
             const word = stream.current();
+            // The name a `def` opens is a definition; PascalCase is a tag;
+            // after `.` a property. Everything else is a plain variable —
+            // no Ruby `class`/`do |x|` residue (class is not a keyword).
             kwtype = state.lastTok === "." ? "property"
-                : keywords.propertyIsEnumerable(word)   ? "keyword"
-                : /^[A-Z]/.test(word)                   ? "tag"
-                : (state.lastTok === "do" || state.lastTok === "class" || state.varList) ? "def"
+                : keywords.propertyIsEnumerable(word) ? "keyword"
+                : /^[A-Z]/.test(word)                 ? "tag"
+                : state.lastTok === "def"             ? "def"
                 : "variable";
 
             if (kwtype === "keyword") {
@@ -453,7 +374,6 @@ export const plangModeSpec = {
         }
 
         if (curPunc || (style && style !== "comment")) state.lastTok = thisTok;
-        if (curPunc === "|") state.varList = !state.varList;
 
         if (/[([{]/.test(curPunc)) {
             state.context = {
@@ -500,7 +420,8 @@ export const plangModeSpec = {
     },
 
     languageData: {
-        indentOnInput: /^\s*(?:end|rescue|elsif|else|\})$/,
+        // PaperLang closes with `end` (and `}`); Ruby's rescue/elsif/else never lived here.
+        indentOnInput: /^\s*(?:end|\})$/,
         commentTokens: { line: "#" },
     },
     lineComment: "#",
