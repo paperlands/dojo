@@ -14,6 +14,7 @@ import { createStage } from "./stage.js"
 import { createScheduler, metaRoot } from "./scheduler.js"
 import { createCompositor } from "./compositor.js"
 import { resolveAddress } from "./focus.js"
+import { hatchVerdict } from "./hatch.js"
 
 // --- Turtle ---
 
@@ -34,8 +35,10 @@ export class Turtle {
             stopCondition: () => this._shouldStop()
         })
         stage.renderLoop = this.renderLoop
-        // Let the stage (resize, camera bridge) wake the on-demand loop.
+        // Let the stage (resize, camera bridge) wake the on-demand loop, and say
+        // the reflect changed when a camera command asks for a fresh capture.
         stage.requestRender = () => this.requestRender()
+        stage.reflectChanged = () => this.reflectChanged()
 
         this._renderRequested = false    // one-shot: render at least one more frame
         this._keepRendering = false      // set each frame: is there ongoing work?
@@ -57,35 +60,34 @@ export class Turtle {
         // Unified scheduler + compositor (lazy — created on first upsertAmbient)
         this.scheduler = null
         this.compositor = null
-        this._snapshotPending = false
         // Hatch gate: when the canvas is driven by passive outershell content
         // (watching a friend, or reverting to their code) this is true and the
-        // onFrame hatch is suppressed — a friend's drawing must never be
-        // hatched/reflected as the user's own. Only own edits and live drafts
-        // refresh the snapshot. A seat may only OPEN this gate; closing it is
-        // the batch's word (reflectGate) — see D022.
+        // hatch is suppressed — a friend's drawing must never be hatched/
+        // reflected as the user's own. Only own edits and live drafts refresh
+        // the snapshot. A seat may only OPEN this gate; closing it is the
+        // batch's word (reflectGate) — see D022.
         this._hatchSuppressed = false
         this._localKeys = new Set()  // buffer IDs of locally-rendered tab ambients
 
-        // Dirty marker: stamped on every draw/edit/removal AND on every
-        // attention move. Its subject is the REFLECT, not the drawing — the
-        // watcher's document is a function of attention (reflectPhase), so a
-        // reader who moves and types nothing still has news to send. hatch()
-        // stamps _lastHatchTime, so a reflect is "dirty" while
-        // _lastReflectChange is newer than the last hatch; eagerHatch skips
-        // when nothing changed.
+        // THE THREE STAMPS THE VERDICT READS (hatch.js). Nothing else in this
+        // class decides when to hatch; these say what the world did, and
+        // hatchVerdict alone says what follows.
         //
-        // ONE QUESTION, TWO ENDS (D025 R3): this bit and the server's
-        // `reflect_changed?` ask the same thing — would the watcher learn
-        // something new? Naming it for the canvas while stamping it for
-        // attention was the lie the rename bought out.
-        this._lastHatchTime = 0
+        // _lastReflectChange — when the reflect last changed: a draw, an edit, a
+        // removal, a walking frame, a moved cursor, the keepalive. ONE QUESTION,
+        // TWO ENDS (D025 R3): this stamp and the server's `reflect_changed?` are
+        // the same sentence — would the watcher learn something new?
         this._lastReflectChange = 0
+        this._lastHatchAt = 0
+        this._firstDrawAt = 0
+        this._walking = false   // last frame's phase, to catch the run's end
 
         this._heartbeatTimer = null
         this._onVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
-                this.eagerHatch()
+                // Nothing changed while hidden — just wake the loop and let the
+                // verdict find whatever change went unhatched.
+                this.requestRender()
                 this._scheduleHeartbeat()
             } else {
                 this._stopHeartbeat()
@@ -108,14 +110,15 @@ export class Turtle {
         return !this._renderRequested && !this._keepRendering
     }
 
-    // Keepalive: re-publish the snapshot  within the server's 10-min cache
+    // Keepalive: re-publish the reflect within the server's 10-min cache. Saying
+    // it changed IS the force — a cache about to forget would learn something.
     _scheduleHeartbeat() {
         if (this._heartbeatTimer) return
         const delay = 5 * 60_000 + Math.random() * 60_000
         this._heartbeatTimer = setTimeout(() => {
             this._heartbeatTimer = null
             if (document.visibilityState === 'visible') {
-                this.eagerHatch(0, { force: true })
+                this.reflectChanged()
                 this._scheduleHeartbeat()
             }
         }, delay)
@@ -189,6 +192,8 @@ export class Turtle {
     onFrame(t) {
         this._renderRequested = false
         let controlsChanged = false
+        const now = performance.now()
+        const walking = !!this.scheduler && !this.scheduler.done
 
         if (this.compositor) {
             try {
@@ -204,24 +209,13 @@ export class Turtle {
                 this.stage.recorder.captureFrame()
             }
 
-            // TWO SNAPS only (not one per keystroke):
-            //   1. First light — once the canvas has drawn for ~0.5s.
-            //   2. Done — the run's final figure; re-armed by edit / attention
-            //      / heartbeat via _snapshotPending=false.
-            // First light does NOT set _snapshotPending: that flag guards the
-            // done snap alone. Setting it here would swallow the final snap
-            // for a wait-loop that finishes seconds later (size/dive/wait).
-            if (!this._hatchSuppressed) {
-                if (!this.renderstate.snapshot.hatched && t > 500) {
-                    this.hatch()
-                } else if (
-                    this.renderstate.snapshot.hatched &&
-                    this.scheduler.done &&
-                    !this._snapshotPending
-                ) {
-                    if (this.hatch()) this._snapshotPending = true
-                }
-            }
+            this._firstDrawAt ||= now
+            // THE RUN'S LAST WORD. A figure that has stopped moving is a change
+            // no glimpse taken mid-walk can carry — and it is the only thing a
+            // walking program says after it starts, which is why a loop that
+            // never reaches `done` hatches once and then holds its peace.
+            if (this._walking && !walking) this._lastReflectChange = now
+            this._walking = walking
         } else {
             // No ambients — idle render (orbit controls, stage head)
             const { head, camera, controls, renderer, scene } = this.stage
@@ -231,60 +225,58 @@ export class Turtle {
             renderer.render(scene, camera)
         }
 
-        // Decide whether the loop should keep running. Keep going while a program
-        // animates, while recording, while the camera is still moving/damping, or
-        // until a due hatch lands; otherwise idle out.
-        const animating = !!this.scheduler && !this.scheduler.done
+        // THE ONE QUESTION (hatch.js) — no other place in this class decides to
+        // hatch. `reason` says hatch now; `owed` says one is still coming, so the
+        // loop may not idle out while a floor runs or the stage is still reading back.
+        const verdict = hatchVerdict({
+            now,
+            present: !!this.compositor,
+            mine: !this._hatchSuppressed,
+            walking,
+            changedAt: this._lastReflectChange,
+            lastHatchAt: this._lastHatchAt,
+            firstDrawAt: this._firstDrawAt,
+        })
+        if (verdict.reason) this.hatch()
+
+        // Keep the loop running while a program animates, while recording, while
+        // the camera is still moving/damping, or until the owed hatch lands.
         const recording = this.stage.recorder.isRecording
-        // Only the compositor branch can hatch — don't pin the idle loop on.
-        // A suppressed hatch must not pin forever (foreign content leaves
-        // hatched false). Keepalive covers BOTH snaps: first light, and the
-        // done snap when armed — so a PBO still in flight at the done edge
-        // cannot drop the final figure (hatch() returns false, loop would
-        // otherwise stop with animating=false).
-        const needFirstHatch = !!this.compositor && !this.renderstate.snapshot.hatched && !this._hatchSuppressed
-        const needDoneHatch = !!this.compositor && !!this.scheduler?.done &&
-            this.renderstate.snapshot.hatched && !this._snapshotPending && !this._hatchSuppressed
-        const needHatch = needFirstHatch || needDoneHatch
-        const controlsSettling = performance.now() < this._controlsActiveUntil
-        this._keepRendering = animating || recording || controlsChanged || controlsSettling || needHatch
+        const controlsSettling = now < this._controlsActiveUntil
+        this._keepRendering = walking || recording || controlsChanged || controlsSettling || verdict.owed
     }
 
-    // Returns false when the stage swallowed the capture (one already in
-    // flight) — callers re-arm rather than count it as a hatch.
+    // Hatch. The stage swallows it (false) while a readback is still in flight;
+    // nothing is stamped then, so the reflect stays changed and the verdict says
+    // hatch again next frame — the retry needs no flag of its own.
     hatch() {
         if (this.stage.hatch(this.bridge) === false) return false
-        this._lastHatchTime = performance.now()
+        this._lastHatchAt = performance.now()
         return true
     }
 
-    eagerHatch(cooldown = 8_000, { force = false } = {}) {
-        if (!this.compositor) return
-        if (performance.now() - this._lastHatchTime < cooldown) return
-        // Skip redundant re-publishes of an unchanged reflect. The periodic
-        // keepalive passes force:true to refresh the server-side cache TTL.
-        if (!force && this._lastReflectChange <= this._lastHatchTime) return
-        this._snapshotPending = false
+    // THE ONE VERB — the client's half of `reflect_changed?` (D025 R3). Say the
+    // reflect changed; the verdict alone decides whether that becomes a hatch.
+    // Everything that used to reach for the shutter — the done edge, a moved
+    // cursor, the keepalive, a save request — says this instead.
+    //
+    // A caller may say what changed; a caller may not hatch. That is the whole
+    // discipline: no second wire path (D025 R4), no back door past the gate (a
+    // followed PROGRAM still never hatches its previews, D023), and no second
+    // rate limiter — the beat lives in hatch.js and nowhere else.
+    reflectChanged() {
+        this._lastReflectChange = performance.now()
         this.requestRender()
     }
 
     // The reflect's COORDINATE moved while its canvas stands still — a reader
-    // who scrolls or steps between cells and types nothing (D025 R4). Re-arms
-    // the hatch that already exists rather than opening a second wire path:
-    // the attention rides the reflect it belongs to, or it does not ride.
-    //
-    // Everything here is already built and already bounded. eagerHatch owns the
-    // cooldown and the dirty check; it routes through the one render loop, so
-    // _hatchSuppressed still holds — a followed PROGRAM does not hatch its
-    // previews through this door (D023), and this is not a back door to it.
-    //
-    // The redundant capture is the accepted cost: an attention-only reflect
-    // photographs an identical canvas. That is the price of no second wire,
-    // bounded by the 200ms floor. Do not decouple the message from the hatch
+    // who scrolls or steps between cells and types nothing (D025 R4). The
+    // attention rides the reflect it belongs to, or it does not ride: the
+    // redundant capture of an identical canvas is the price of no second wire,
+    // bounded by the settled floor. Do not decouple the message from the hatch
     // to save it — that decoupling IS the second wire.
     attentionMoved() {
-        this._lastReflectChange = performance.now()
-        this.eagerHatch(200)
+        this.reflectChanged()
     }
 
     // --- Multi-ambient API ---
@@ -402,15 +394,12 @@ export class Turtle {
             // (hatch:false). Let a seat close the gate here and that sibling
             // silently stops the page reflecting at all. A seat only ever
             // OPENS it; closing is the batch's word, through reflectGate().
-            if (hatch) {
-                this._hatchSuppressed = false
-                // Fresh run: re-arm the DONE snap. The hatched sentinel stays —
-                // nulling it re-opens first-light every frame (typing-lag trap).
-                // Pending false means "when this run finishes, photograph it."
-                this._snapshotPending = false
-            }
+            if (hatch) this._hatchSuppressed = false
 
             this.compositor.flush()
+            // A seat changes the reflect whether or not the gate opened for it:
+            // while the gate is shut the verdict says nothing, and when it opens
+            // the canvas is the child's, whatever stands on it.
             this._lastReflectChange = performance.now()
 
             // The child's OWN fault only (D022): scheduler.errors spans every
@@ -603,12 +592,15 @@ export class Turtle {
             this.compositor = null
             this.scheduler = null
         }
-        this._snapshotPending = false
+        // A blank canvas is a new life: it has never drawn, so first light is
+        // owed again — measured from the next draw, not from this moment.
         this._lastReflectChange = performance.now()
+        this._lastHatchAt = 0
+        this._firstDrawAt = 0
 
         this.stage.head.show()
         this.stage.head.reset()
-        this.renderstate.snapshot = { hatched: false, save: false }
+        this.renderstate.snapshot = { save: false }
         this.renderstate.meta = { state: null, message: null, commands: [], diagnostics: [] }
         this.renderLoop.requestRestart()
     }

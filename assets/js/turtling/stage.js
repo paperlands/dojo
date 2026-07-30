@@ -145,7 +145,11 @@ export function createStage(canvas, bridge) {
             controls.update()
             break
         case 'snap':
-            stage.renderstate.snapshot = { hatched: false, save: true, title: payload[1].title }
+            // Ask for the next hatch to be kept, then say the reflect changed.
+            // (This used to clear the `hatched` sentinel to trick the first-light
+            // rule into firing — a doorbell wired to a phase flag.)
+            stage.renderstate.snapshot = { save: true, title: payload[1].title }
+            stage.reflectChanged?.()
             break
         case 'pan':
             camera.desire = (camera.desire !== "pan") ? "pan" : "track"
@@ -195,7 +199,9 @@ export function createStage(canvas, bridge) {
         glyphGroup,
 
         renderstate: {
-            snapshot: { hatched: false, save: false },
+            // `save` alone: whether the next hatch is also kept to disk. WHEN to
+            // hatch is not the stage's business (hatch.js owns it).
+            snapshot: { save: false },
             // The fault channel is a LIST of wounds, never a sentence — a receiver
             // interprets them (isolating the cells that hurt) without running anything.
             meta: { state: null, message: null, commands: [], diagnostics: [] }
@@ -223,12 +229,9 @@ export function createStage(canvas, bridge) {
             const height = canvas.height
 
             const finish = (pixels) => {
-                // A SENTINEL, not the pixels. Readers only ever ask "has this
-                // canvas hatched yet?" (turtle.js onFrame), and takeSnapshot
-                // consumes the buffer below. Retain `pixels` here instead and
-                // a full-canvas Uint8Array (1920×993×4 ≈ 7.6MB) is pinned for
-                // the life of the page, per tab, to store a boolean.
-                stage.renderstate.snapshot.hatched = true
+                // NEVER RETAIN THE PIXELS: takeSnapshot consumes the buffer
+                // below, and holding it would pin a full-canvas Uint8Array
+                // (1920×993×4 ≈ 7.6MB) per tab for the life of the page.
                 queueMicrotask(async () => {
                     const result = await recorder.takeSnapshot({ pixels, width, height })
                     if (result) {

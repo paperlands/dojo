@@ -58,9 +58,9 @@ export function attachProfilerOverlay(turtle, opts = {}) {
     // --- DOM panel ---
     const el = document.createElement("div")
 el.style.cssText = [
-    "position:fixed", "top:8px", "left:8px", "z-index:2147483647",
+    "position:fixed", "bottom:8px", "right:8px", "z-index:2147483647",
     "font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace",
-    "color:#cde", "background:rgba(12,16,22,0.86)", "border:1px solid #2a3340",
+    "color:#cde", "background:rgba(12,16,22,0.46)", "border:1px solid #2a3340",
     "border-radius:6px", "padding:8px 10px", "white-space:pre", "pointer-events:auto",
     "min-width:230px", "box-shadow:0 2px 8px rgba(0,0,0,0.4)",
     "cursor:pointer", "user-select:none",

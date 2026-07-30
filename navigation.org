@@ -694,7 +694,7 @@ edge fall on one vertical line, so the friend owns a margin rather than a badge.
 ** the reflect's breath — one question, two ends (D025)
 :PROPERTIES:
 :ID: nav-reflect-breath
-:KEYWORDS: reflect_changed code_changed gate bump attentionMoved lastReflectChange eagerHatch dirty predicate outerSignal suppress push watcher learn
+:KEYWORDS: reflect_changed code_changed gate bump attentionMoved lastReflectChange reflectChanged dirty predicate outerSignal suppress push watcher learn
 :PATH: lib/dojo_web/live/layout/outer_shell.ex::def reflect_changed?
 :END:
 *Would the watcher learn something new?* — asked at both ends, one sentence.
@@ -705,11 +705,39 @@ to the reflect is covered the day it is added and can never mint a second gate.
 Replaced =code_changed?=, which read =source= alone and so dropped changed
 =diagnostics= (which carry RUNTIME walk ailments), =state=, and =message=
 whenever the source repeated — =outerSignal= included. CLIENT:
-=turtle._lastReflectChange= is that same bit; =attentionMoved()= stamps it and
-calls =eagerHatch(200)=, re-arming the hatch that exists rather than opening a
-second wire path. One call site — the =scene.attend= handler, guarded to the
+=turtle.reflectChanged()= is that same sentence spoken forward — it stamps
+=_lastReflectChange= and wakes the loop; the verdict ([[id:nav-hatch-verdict]])
+alone decides whether that becomes a hatch. =attentionMoved()= says it and
+nothing more. One call site — the =scene.attend= handler, guarded to the
 authored addr. Routes through the one render loop, so =_hatchSuppressed= still
 holds (a followed PROGRAM does not hatch its previews, D023).
+
+** when the reflect is hatched — the one verdict
+:PROPERTIES:
+:ID: nav-hatch-verdict
+:KEYWORDS: hatch verdict hatchVerdict BEAT first-light alive settled owed reason floor cadence animation loop snapshot onFrame keepRendering firstDrawAt lastHatchAt reflectChanged stage hatchInFlight
+:PATH: assets/js/turtling/hatch.js::export function hatchVerdict
+:END:
+*One question a frame: would the watcher learn something new?* The policy is
+PURE and THREE-free (the =timeline.js= law) — =hatchVerdict(world)= in, ={owed,
+reason}= out, pinned by =test/js/hatch_test.mjs=. =reason= says hatch now;
+=owed= keeps the render loop alive while a floor runs or the stage is mid-
+readback, so no hatch is ever dropped by an idle-out.
+
+*ONE HATCH PER RUN* — a run passes its code and ONE snapshot; the reflect is not
+a video feed. The floors are a TABLE, not a branch: =first-light= 500 (from the
+canvas's first draw, never the page's epoch clock), =alive= 500 (a walking run's
+single glimpse, measured from the SEAT so it lands half a second into the walk
+and not on an empty first frame — the case a list of causes could not name, so a
+=loop 9400 … wait 1/24= hatched never and its reflect froze), =settled= 200 (the
+floor that keeps typing from a drumbeat). Nothing re-arms while a figure walks;
+the run's END is the one change it speaks after starting (=onFrame= stamps the
+=_walking= edge), so a run that finishes still sends its final figure.
+
+Callers say =reflectChanged()= and nothing else — no second wire (D025 R4), no
+back door past =_hatchSuppressed= (D022/D023), no second rate limiter. The
+=snap= camera command says it too (it used to clear the =hatched= sentinel to
+trick first light into firing).
 
 ** attention's two carriers — arrival and movement (D025 R9)
 :PROPERTIES:
