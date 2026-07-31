@@ -19,7 +19,8 @@
 import { fetchFragment, fragmentIndex } from "../../weave/fragments.js"
 import { transpile } from "../../weave/parse.js"
 import { resolve, parseAddress } from "../../weave/resolve.js"
-import { parseProgram, collectErrors } from "../../turtling/parse.js"
+import { parseProgram } from "../../turtling/parse.js"
+import { diagnostics } from "../../weave/queries.js"
 import { signals as S } from "../../nerve/store.js"
 import { revealAmbient, registerNavigator } from "../../nerve/reveal.js"
 import { getStage } from "../../turtling/stage-cell.js"
@@ -192,8 +193,9 @@ function mountWeave(hook, boot = {}) {
             // A shelved page can be wounded too — a fragment whose cell was
             // mis-pressed inks its own line in the viewer, addressed like any
             // other diagnostic (D022). The library is a non-live friend, and it
-            // speaks the same fields.
-            diagnostics: collectErrors(ast),
+            // speaks the same fields — through the one diagnostics query, not
+            // a raw collectErrors bag beside it.
+            diagnostics: diagnostics(ast, [], addr),
             ts: performance.now(),
         })
     }

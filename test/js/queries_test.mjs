@@ -180,12 +180,16 @@ describe("the verdict — a document with a dead cell is not well", () => {
         assert.equal(verdict(found, "b1").wound.message, "mine died")
     })
 
-    test("no walk wound is still success — a parse error is ink, not death (D020)", () => {
-        const ast = parseProgram("for do")
+    test("a parse wound reddens the document — a watcher must not be told ☀︎", () => {
+        const ast = parseProgram("for do\n  fw 100\nend")
         const found = diagnostics(ast, [], "b1")
-        assert.ok(found.some((w) => w.kind === "parse"), "the parse wound stands")
-        assert.deepEqual(verdict(found, "b1"), { state: "success", wound: null },
-            "the healthy parts drew, so the document lives")
+        const parse = found.find((w) => w.kind === "parse")
+        assert.ok(parse, "the parse wound stands")
+        const v = verdict(found, "b1")
+        assert.equal(v.state, "error", "the peer seam names the broken line")
+        assert.equal(v.wound, primaryWound(found, "b1"))
+        assert.equal(v.wound.kind, "parse")
+        assert.match(v.wound.message, /number of loops after 'for'/)
     })
 })
 
@@ -210,14 +214,20 @@ describe("primaryWound — the document names one fault", () => {
             "one selector feeds both, so the two readers cannot diverge")
     })
 
-    test("no walk wound, no fault", () => {
-        assert.equal(primaryWound([{ kind: "parse", message: "x" }], "b1"), null)
+    test("a parse wound is a fault the document names", () => {
+        const parse = { kind: "parse", message: "x", address: "b1" }
+        assert.equal(primaryWound([parse], "b1"), parse)
+    })
+
+    test("a dependent alone is not a fault", () => {
+        assert.equal(primaryWound([{ kind: "dependent", message: "x" }], "b1"), null)
     })
 })
 
 // WHAT COUNTS AS A FAULT — one list, so no two surfaces disagree about what is
 // worth a sentence. A vocabulary that never rehearsed is not a lesser kind of
-// silence than a frame that died: in both, the code did not happen. The panel
+// silence than a frame that died: in both, the code did not happen. A parse
+// wound is the same news for a watcher (the peer used to be told ☀︎). The panel
 // used to shout a rehearsal wound while the wash stayed green and the wire said
 // `success`, because the verdict read `walk` alone.
 describe("announcements — the wounds a surface says out loud", () => {
@@ -230,8 +240,8 @@ describe("announcements — the wounds a surface says out loud", () => {
         assert.deepEqual(announcements([walk, rehearsal]), [walk, rehearsal])
     })
 
-    test("a parse wound is ink, never a shout — the healthy parts drew (D020)", () => {
-        assert.deepEqual(announcements([parse]), [])
+    test("a parse wound is a shout too — the watcher must not be told ☀︎", () => {
+        assert.deepEqual(announcements([parse]), [parse])
     })
 
     test("a dependent is a warning, not news to say out loud", () => {

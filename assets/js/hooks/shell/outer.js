@@ -17,7 +17,7 @@ import { follow, haltFollow, mountChase } from "../../editor/peer-attention.js"
 import { mountDiagnosticsInk } from "../../editor/diagnostics.js"
 import { sayWound } from "../../weave/wound-view.js"
 import { sayOnce } from "../../weave/voice.js"
-import { announcements } from "../../weave/queries.js"
+import { announcements, verdict, primaryWound } from "../../weave/queries.js"
 import { world, watchWorld } from "../../weave/world.js"
 import { nerveInstance } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
@@ -87,16 +87,19 @@ function mountOuter(hook, { term, cm6 }) {
     // frozen = you're only editing text against a snapshot.
     let draftLive = false;
 
-    // WHAT THE WIRE LAST SAID — the author's runtime, derived, never run here.
-    // Held by reference so the ink can tell a repeat from news.
+    // WHAT THE WIRE LAST SAID — the author's diagnostics answer, carried whole
+    // (the same list their `diagnostics` face produced at hatch). Held by
+    // reference so the ink can tell a repeat from news. Never re-parsed here.
     let wireWounds = [];
-    let wireErrored = false;
 
     // ==== THE ONE FENCE ======================================================
     // A surface speaks and inks whoever's runtime it is SHOWING, and this is the
-    // only place that question is answered.
+    // only place that question is answered. The answer is always a WOUND LIST
+    // from the query surface (id:cmp-query-cell) — either held from the wire or
+    // asked live of the world cell. Ink, nerve, and wash all re-ask it; none
+    // keeps a parallel "errored" bit.
     //
-    //   watching       theirs — derived from the author's state on the wire.
+    //   watching       theirs — the hatch carried their diagnostics answer.
     //   drafting live  ours — this very text is what stands at `outerAddr`, so
     //                  the world cell is telling us about our own code.
     //   drafting frozen nothing ran. Their spans point into a document we are no
@@ -117,21 +120,30 @@ function mountOuter(hook, { term, cm6 }) {
 
     // The voice (weave/voice.js): said once while it stands. A friend hatches on
     // every keystroke, and a live draft re-runs as fast as it is typed.
+    // Same signal shape as coreshell's S.error — payload + optional { line } ref
+    // so the outer-nerve HUD can scroll the outer editor to the wound.
+    const lineRef = (w) => (w?.span?.line ? { line: w.span.line } : null)
     const hurt = sayOnce();
     const speak = () => hurt.say(announcements(shownWounds()), (w) =>
-        nerveInstance?.push(S.remote(outerName || "friend", sayWound(w), null, "error")));
+        nerveInstance?.push(S.remote(
+            outerName || "friend", "error", sayWound(w), "error", lineRef(w))));
 
-    // The wash, one writer. Drafting says DRAFTING — that is a fact about who
-    // owns the text, orthogonal to its health; the wound speaks through the ink
-    // and the nerve in either state.
+    // The wash, one writer — health from the SAME wound list as ink and nerve
+    // (`verdict`), never a separate state flag that can disagree with them.
+    // Drafting says DRAFTING (who owns the text); health still rides the wounds.
     const paint = () => {
-        if (envEl) envEl.dataset.outerState =
-            term.drafting() ? 'draft' : (wireErrored ? 'error' : 'ok');
+        if (!envEl) return
+        if (term.drafting()) {
+            envEl.dataset.outerState = 'draft'
+            return
+        }
+        const { state } = verdict(shownWounds(), outerAddr)
+        envEl.dataset.outerState = state === 'error' ? 'error' : 'ok'
     };
 
     // The runtime changed under us — a live draft ran, or the child's own page
-    // did. Ask again, both readers.
-    const reask = () => { ink.refresh(); speak(); };
+    // did. Ask again: ink, nerve, wash — every reader of the fence.
+    const reask = () => { ink.refresh(); speak(); paint(); };
     arena.add(watchWorld(reask));
     // ========================================================================
 
@@ -317,8 +329,7 @@ function mountOuter(hook, { term, cm6 }) {
             if (term.drafting()) leaveDraft();
             prevAddr = payload.addr;
             hurt.forget();   // another's wounds are not this one's
-            wireWounds = NONE; // nor is another's runtime
-            wireErrored = false;
+            wireWounds = NONE; // nor is another's diagnostics answer
             reach.reset();   // a fresh page opens at its first cell, already lit
             following = true; // and opening a friend's page IS asking to be shown
             peerAt = null;    // another's place is not this one's
@@ -336,7 +347,6 @@ function mountOuter(hook, { term, cm6 }) {
         if (payload?.buffer_id) outerBufferId = payload.buffer_id;
 
         const view = payload?.view ?? 'watch';
-        const errored = payload?.state === 'error';
         // The tree is the source, in EVERY state (D022): it always builds and
         // holds the friend's broken line verbatim (D020), so an errored
         // friend's page still reads as a page. The string is the honest
@@ -367,24 +377,26 @@ function mountOuter(hook, { term, cm6 }) {
             applyAttend(attendLine);
         }
 
-        // The author's runtime, arriving whole each push (LSP-style: an empty
-        // answer clears), span-true wherever it nests. HELD, not applied — the
-        // fence alone decides whether this surface is showing theirs or ours.
+        // The author's diagnostics answer, arriving whole each push (LSP-style:
+        // an empty answer clears). HELD, not re-derived — the fence alone
+        // decides whether this surface is showing theirs or ours. reask() is
+        // the breath: ink, nerve, and wash all re-read shownWounds().
         wireWounds = payload?.diagnostics ?? NONE;
-        wireErrored = errored;
         reask();
-        paint();
     };
 
     // Friend's execution status → the remote nerve below their code.
     // A separate event from seeOuterShell so it flows even in a frozen
-    // draft, where the editor push is withheld.
+    // draft, where the editor push is withheld. The line ref is the same
+    // shape coreshell passes — taken from the held diagnostics when the
+    // wire only carried a sentence.
     const onOuterSignal = ({ state, message, name }) => {
         const who = name || 'friend';
         if (state === 'success') {
             nerveInstance?.push(S.remote(who, '☀︎', null, 'output'));
         } else if (state === 'error' && message) {
-            nerveInstance?.push(S.remote(who, 'error', message, 'error'));
+            const wound = primaryWound(wireWounds, outerAddr) ?? wireWounds[0] ?? null
+            nerveInstance?.push(S.remote(who, 'error', message, 'error', lineRef(wound)));
         }
     };
 

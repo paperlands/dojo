@@ -1,5 +1,5 @@
 import { Parser } from "./mafs/parse.js"
-import { parseProgram, reparseProgram, collectErrors } from "./parse.js"
+import { parseProgram, reparseProgram } from "./parse.js"
 // The ONE address-ownership rule — reflect the document (D022): which standing
 // walk ailments belong to a buffer's own subtree. It lives with the query it
 // serves; the import points DOWN-stream only (weave/queries.js reads
@@ -421,19 +421,14 @@ export class Turtle {
                 return { success: false, wounds }
             }
 
-            // The turtle publishes the FAULT — what it owns. The DOCUMENT
-            // (commands/source/diagnostics) is asked for at the reflect seam by
-            // the surface that holds the authored buffer (D022); a seat's
-            // instruction slice is never the page.
+            // The turtle publishes the FAULT it owns (walk). The DOCUMENT
+            // (commands/source/diagnostics, including parse wounds) is asked for
+            // at the query surface by the shell that holds the authored buffer
+            // (D022 / id:cmp-query-cell) — never collected here as a second bag.
+            // A parse-error node never fails the run (D020): the world drew.
             this.renderstate.meta = { state: "success", message: null, diagnostics: [] }
             this.requestRender()
-            // The healthy parts live (D020): a parse-error node never fails
-            // the run — the world drew. The structured errors ride the result
-            // (span-true lines, no message archaeology) for any surface to speak.
-            const parseErrors = collectErrors(instructions)
-            const result = { success: true, commandCount: this.scheduler.commandCount }
-            if (parseErrors.length) result.parseErrors = parseErrors
-            return result
+            return { success: true, commandCount: this.scheduler.commandCount }
         } catch (error) {
             console.error(error)
             // A THROW IS A WOUND TOO, in the one shape. The message is one the

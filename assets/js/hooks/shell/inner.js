@@ -274,14 +274,15 @@ function mountInner(hook, { term, cm6 }) {
     // very same wound and says it there, in its own nerve.
     const report = (addr, result) => {
         if (addr !== term.currentBufferId()) return
-        // THE ONE COMPLAINT this run has. A fault outranks a broken line: the
-        // healthy parts drew (D020), so a parse error alone still ran. The fault
-        // is the SAME wound the reflect speaks of (`primaryWound`) — a page must
-        // not name one fault while the friend watching it is told another; the
-        // turtle hands up WOUNDS, never a sentence (id:cmp-runtime-provenance).
-        const wound = result.success
-            ? (result.parseErrors?.[0] ?? null)
-            : (primaryWound(askDiagnostics(addr), addr) ?? result.wounds?.[0] ?? null)
+        // ONE ASK, THREE READERS. Ink, reflect, and this nerve all take the
+        // wound from `diagnostics` (id:cmp-query-cell) — never a turtle-side
+        // `parseErrors` bag. `primaryWound` is the same selector the reflect
+        // ships, so a page cannot name one fault while the friend watching it
+        // is told another. A throw that has not yet landed in scheduler.errors
+        // still rides `result.wounds` as the last resort.
+        const wound = primaryWound(askDiagnostics(addr), addr)
+            ?? result.wounds?.[0]
+            ?? null
         // Said once while it stands, and a healing run re-arms it: an edit
         // re-evaluates at 20 ms, and a standing wound is one fact, not a drumbeat.
         hurt.say(wound ? [wound] : [], (w) => nerveInstance?.push(

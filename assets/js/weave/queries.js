@@ -164,10 +164,16 @@ export function diagnostics(ast, ailments = [], key = null) {
     return all.length ? all.map((w) => locate(w, nodes, cells, ids, marks)) : all
 }
 
-// WHAT COUNTS AS A FAULT. A frame that died and a vocabulary that never
-// rehearsed are one piece of news: the code did not happen. Parse wounds are not
-// here — the healthy parts drew (D020), so they are ink, never a verdict.
-const FAULT = new Set(["walk", "rehearsal"])
+// WHAT COUNTS AS A FAULT — the document is not well. A frame that died, a
+// vocabulary that never rehearsed, and a parse wound the tree still holds are
+// the same news for a watcher: something in this code did not happen cleanly.
+//
+// D020 is about the WALK, not the verdict. Error nodes stay inert at walk and
+// healthy statements still draw; the binary here is whether a friend may be
+// told ☀︎. A parse-broken buffer that reflected `success` painted sunshine on
+// the outershell while the author saw "looking for …" — the peer seam was
+// lying. Name collisions and dependents stay warnings (not FAULT).
+const FAULT = new Set(["walk", "rehearsal", "parse"])
 
 // THE WOUNDS A SURFACE SAYS OUT LOUD — one list, so the HUD, a friend's panel
 // and a draft cannot disagree about what is worth a sentence.
@@ -182,14 +188,16 @@ export const primaryWound = (found, key) => {
     return faults.find((w) => w.address === key) ?? faults[0] ?? null
 }
 
-// The verdict — one binary, one home. A DOCUMENT WITH A DEAD CELL IS NOT WELL:
-// a watcher must never have to RUN the code to learn there is an error in it.
+// The verdict — one binary, one home. A DOCUMENT WITH A STANDING FAULT IS NOT
+// WELL: a watcher must never have to RUN the code (or squint at underlines) to
+// learn there is an error in it.
 //
-// This amends D020 for the VERDICT only. `state` is the document's health,
-// `diagnostics` are the wounds, and only the wounds are addressed — healthy
-// cells keep their light, because appearance rides a diagnostic's address, not
-// this binary. The old rule bought silence: a page whose tenant died reflected
-// `success`, so only a draft re-running the code could surface it.
+// This amends D020 for the VERDICT only. Execution still lets healthy parts
+// live; `state` is the document's health, `diagnostics` are the wounds, and
+// only the wounds are addressed — healthy cells keep their light, because
+// appearance rides a diagnostic's address, not this binary. The old rule bought
+// silence: a page whose tenant died (or whose parse still held a wound)
+// reflected `success`, so only a draft re-running the code could surface it.
 //
 // It answers WHETHER and WHICH, never how it reads — the surface says the wound
 // through wound-view.js.

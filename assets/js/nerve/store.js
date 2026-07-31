@@ -34,7 +34,11 @@ export const signals = {
     chat:    (source, msg, target)   => ({ msg, payload: null, source, kind: 'chat', target: target ?? null }),
     eval:    (source, msg, payload)  => ({ msg, payload: payload ?? null, source, kind: 'eval' }),
     // A watched friend's signal — rendered in the outershell's own remote zone.
-    remote:  (source, msg, payload, kind) => ({ msg, payload: payload ?? null, source, kind }),
+    // Same optional `ref` shape as `error` (`{ line }`, `{ key }`, …) so a
+    // click navigates the outer editor the way the core nerve does.
+    remote:  (source, msg, payload, kind, ref) => ({
+        msg, payload: payload ?? null, source, kind, ref: ref ?? null,
+    }),
     // A portal followed (Shoot 0). source: WHO walked (the walker's address
     // — never the kind; per-source FIFO and the keep's prefix law key on it).
     // target: spoken destination (~/spirals); payload: where she stood;
