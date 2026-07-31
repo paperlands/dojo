@@ -122,8 +122,8 @@ defmodule DojoWeb.ShellLive.OuterShell do
   preview/path bump is suppressed.
 
   Replaced `code_changed?`, which read `source` alone and so also dropped a
-  changed `diagnostics` (runtime ailments move while source does not), `state`
-  and `message` — `outerSignal` included.
+  changed `diagnostics` (runtime ailments move while source does not) and
+  `state`.
   """
   def reflect_changed?(%Turtle{} = prev, %Turtle{} = new),
     do: struct(prev, @bump) != struct(new, @bump)

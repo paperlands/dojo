@@ -220,13 +220,35 @@ describe("the ladder on the canvas", () => {
             "past the window of two, the oldest is evicted")
     })
 
-    test("the idempotence pin: re-reaching the kindled cell emits nothing", () => {
+    test("the idempotence pin: re-reaching the kindled cell seats nothing", () => {
         const law = pageLaw()
         mine(law, "b1", "one", PAGE_SRC)
-        assert.deepEqual(step(law, "b1", at(PAGE_SRC, 0)), [],
-            "a seat re-runs — the law never re-runs what already burns")
+        // A seat is a RUN — never re-run what already burns. Focus may still
+        // reaffirm the light (a name-collision can steal it without reseating).
+        const again = step(law, "b1", at(PAGE_SRC, 0))
+        assert.equal(seats(again).length, 0, "no re-seat")
+        assert.ok(again.every((e) => e.op === "focus"), "focus only, if anything")
+        assert.ok(again.some((e) => e.op === "focus" && e.key === "b1#1"),
+            "re-attend reclaims the kindled cell's light")
         step(law, "b1", at(PAGE_SRC, 1))
-        assert.deepEqual(step(law, "b1", at(PAGE_SRC, 1)), [])
+        const stay = step(law, "b1", at(PAGE_SRC, 1))
+        assert.equal(seats(stay).length, 0)
+        assert.ok(stay.some((e) => e.op === "focus" && e.key === "b1#1.1"))
+    })
+
+    test("pageKey answers the kindled cell — not always cell 1", () => {
+        // World-focus and currentTabRef ask pageKey for the page's handle.
+        // Answering entries[0] while the ladder sits on cell 2 dimmed the
+        // figure the child was looking at and lit cell 1 again.
+        const law = pageLaw()
+        mine(law, "b1", "one", PAGE_SRC)
+        assert.equal(law.pageKey("b1"), "b1#1", "first light is cell 1")
+        step(law, "b1", at(PAGE_SRC, 1))
+        assert.equal(law.pageKey("b1"), "b1#1.1",
+            "after a reach, the page's handle is the kindled cell")
+        step(law, "b1", at(PAGE_SRC, 2))
+        assert.equal(law.pageKey("b1"), "b1#1.2")
+        assert.equal(law.pageKey("ghost"), null)
     })
 
     test("a preview holds one cell — cursor-only, capacity one", () => {

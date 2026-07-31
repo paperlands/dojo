@@ -330,12 +330,29 @@ The canvas outlives the hook; teardown must free GL + controls + subscriptions.
 :END:
 A watched friend's signals flow through =push()= like every other kind.
 
-** nerve hook — store to DOM zones
+** nerve hook — the nerve's seat, one occupant
 :PROPERTIES:
 :ID: nav-nerve-hook
-:KEYWORDS: nerve hook zone fade DOM render hud
-:PATH: assets/js/hooks/nerve.js
+:KEYWORDS: nerve hook seat cell registry one occupant remount destroyed mounted order guard zone fade DOM render hud
+:PATH: assets/js/hooks/nerve.js::export const nerve
 :END:
+=nerve()= asks the seat; =watchNerve(fn)= hears it fill or empty. A kernel cell
+(=kernel/cell.js=), like the world, the stage and the term — never a module-level
+=let=, and the reason is LiveView's patch order, not taste.
+
+In =performPatch= (=deps/phoenix_live_view/assets/js/phoenix_live_view/view.js:664-709=)
+an ADDED element's hook is mounted DURING =patch.perform=, while a DISCARDED one
+is only pushed onto =removedEls= — =destroyHook= runs afterwards in
+=afterElementsRemoved=. So when an element carrying a hook is REPLACED,
+=mounted()= lands before =destroyed()=, deterministically. =addHook='s guard
+does not save you: it keys on =ViewHook.elementID=, a private per-element id
+(=view_hook.ts:285=), and a replacement element is a fresh node with none.
+
+The old shape (=let nerveInstance=, nulled in =destroyed()=) therefore let the
+departing hook null the LIVE instance, after which every push was a silent
+no-op for the rest of the page's life. The cell's unregister is owner-guarded —
+a later mount wins, the earlier release is a no-op — pinned by
+=test/js/world_cell_test.mjs= ("a later mount wins").
 
 ** shell hook — dispatch point, two surfaces
 :PROPERTIES:
@@ -1036,9 +1053,49 @@ phase, cell }=. =kind= is where it was born — =parse= (tree would not build),
 =cell= are where it LIVES, derived from its line by the one prose walk.
 =verdict()= reddens on =kind: "walk"= at the subject's OWN address and nothing
 else, so a broken sister never darkens the page. Editor
-ink asks through =mountDiagnosticsInk= (=editor/diagnostics.js=) and
+ink reads through =mountDiagnosticsInk= (=editor/diagnostics.js=) and
 renders via =@codemirror/lint= under the skip-law: no true span, no ink.
 Pinned by =test/js/queries_test.mjs= and =test/js/diagnostics_test.mjs=.
+
+** surface wounds — one ask, one breath, N readers
+:PROPERTIES:
+:ID: nav-wounds
+:KEYWORDS: readWounds wounds surface breath clock ask subject reader ink voice wash watch changed release double paint fan out
+:PATH: assets/js/weave/wounds.js::export function readWounds
+:END:
+Each reader keeps its OWN early cutoff, keyed on what that reader emits — the
+ink digests the CM6 diagnostics it is about to publish (=digestOf=,
+=editor/diagnostics.js=), the wash latches its one word. Keying on the answer
+instead never hit: the query builds a fresh list every read, so a clean document
+dispatched =setDiagnostics= on every breath forever. Same move LSP made when
+pull diagnostics grew =previousResultId= and an =unchanged= reply.
+
+=readWounds({ ask })= is a surface's ONE clock over its own diagnostics answer.
+It owns the single =watchWorld= for that surface and fans it to every reader —
+the ink at the line, the voice in the nerve, the wash on the frame, and the
+canvas figure when it comes. Before it, the ink carried its own =watchWorld=, so
+a surface that also beat time (the outershell's =reask=) painted TWICE per
+breath, both dispatching a full =setDiagnostics= while a draft ran live.
+=ask= moved up here from the ink, so WHOSE WOUNDS ARE THESE is answered once per
+surface instead of once per reader. Holds no last answer on purpose: early
+cutoff belongs to each reader, keyed on what that reader emits — the voice
+compares its sentence, the ink its span list. =changed()= is for news the world
+cell never hears (a friend's push, a draft going live) and reaches EVERY reader,
+where the old =ink.refresh()= reached one. Pinned by =test/js/wounds_test.mjs=;
+reasoned in =specs/compiler/diagnostics-review.org= (=dg-move-cell=).
+
+** diagnostics review — subsystem analysis, generics, findings
+:PROPERTIES:
+:ID: nav-diagnostics-review
+:KEYWORDS: diagnostics review wound cell fence breath tally voice rhythm kind code severity fault probe teach codex lookup findings leak D022 amendment
+:PATH: specs/compiler/diagnostics-review.org
+:END:
+Walks the diagnostics path twice (fact → query → words → rhythm → surfaces → wire → back).
+Names six load-bearing generics, fourteen findings (A–I first walk, J–N second), the five
+prior-art modes the subsystem stands in, and nine ranked moves. Eight rulings: one sentence
+plus a tally, dependents as children, =kind= closed / =code= open, teaching by lookup, the
+wire summary as a probe. Decisions to record land in D022 (=specs/decisions/=, cited by path
+— the bridge indexes =.org= only).
 
 ** vitals — the stage's pulse, read-only
 :PROPERTIES:

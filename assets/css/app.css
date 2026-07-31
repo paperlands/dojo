@@ -461,6 +461,16 @@
 .nerve-hud-status-line.nerve-output { color: var(--color-primary); }
 .nerve-hud-status-line.nerve-system { font-style: italic; }
 
+/* The tally — what is STILL OPEN, beside the next thing to fix. Muted on
+   purpose: a count of remaining work must not read as a count of alarms, so it
+   never inherits .nerve-error's red. */
+.nerve-tally {
+    margin-left: 0.6em;
+    opacity: 0.55;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-warning);
+}
+
 /* --- Remote nerve (a watched friend's signals, below the outershell) --- */
 /* These render as .nerve-hud-msg slots, so they need their own channel colors. */
 #outer-nerve .nerve-error {

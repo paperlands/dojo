@@ -11,6 +11,7 @@ import { test, describe as suite } from "node:test"
 import assert from "node:assert/strict"
 
 import { placeOf, describe, sayWound, sourceOf } from "../../assets/js/weave/wound-view.js"
+import { KINDS } from "../../assets/js/weave/queries.js"
 
 suite("placeOf — where it hurts, in the author's own outline", () => {
     test("phase chain, her word for the cell, then the line", () => {
@@ -86,8 +87,17 @@ suite("describe — quoted where given, composed where not", () => {
                      "depends on base, which did not run")
     })
 
-    test("an unknown kind with no message says nothing rather than inventing", () => {
-        assert.equal(describe({ kind: "something-new" }), "")
+    // THIS TEST USED TO PIN THE DEFECT: it asserted "" — an empty gutter, which
+    // reads exactly like health. A kind nobody taught to speak must say so.
+    test("an unknown kind with no message says so, and is never empty", () => {
+        const said = describe({ kind: "something-new" })
+        assert.notEqual(said, "", "an empty sentence looks like no wound at all")
+        assert.match(said, /something-new/, "and it names the kind, so it can be fixed")
+    })
+
+    test("a wound with no kind at all still says something", () => {
+        assert.notEqual(describe({}), "")
+        assert.notEqual(describe(null), "")
     })
 })
 
@@ -108,5 +118,25 @@ suite("sayWound — the one sentence every surface pushes", () => {
             sayWound({ kind: "dependent", standsOn: "base", phase: ["top", "under"],
                        cellName: "child", span: { line: 7 } }),
             "top › under › child · line 7 — depends on base, which did not run")
+    })
+})
+
+// THE VOCABULARY IS TOTAL — the enforcement the scattered tables never had.
+// A kind added to the query and forgotten here used to render "" in the gutter,
+// which reads exactly like health. Two families and no third: quoted, or
+// composed, or SAID to be unknown — never empty.
+suite("every kind in the vocabulary can speak", () => {
+    test("no kind renders as an empty sentence", () => {
+        for (const kind of Object.keys(KINDS)) {
+            const quoted = describe({ kind, message: "the machine's own words" })
+            assert.equal(quoted, "the machine's own words", `${kind} must quote what it was given`)
+            assert.notEqual(describe({ kind }), "", `${kind} says nothing when given no words`)
+        }
+    })
+
+    test("a kind whose words are OURS composes them from its facts", () => {
+        assert.match(describe({ kind: "name", why: "duplicate", word: "pond", answersTo: "1.2" }),
+                     /two cells are named "pond"/)
+        assert.match(describe({ kind: "dependent", standsOn: "base" }), /depends on base/)
     })
 })

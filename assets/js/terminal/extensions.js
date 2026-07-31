@@ -57,11 +57,18 @@ export const buildExtensions = (cm6, {
         EditorView.scrollMargins.of(() => ({ bottom: 32 })),
 
         // Mobile: keyboard opens on focus — nudge a space in/out to trigger
-        // CM6's natural scroll-to-cursor (the only thing that actually works)
+        // CM6's natural scroll-to-cursor (the only thing that actually works).
+        // NEVER on a read-only surface: the outershell is a review of another's
+        // page, and this mutation races double-click select (focus at T0, word
+        // select at T~50–150, nudge at T+100) — caret/kindling can jump or
+        // the kindled cell goes dim while the selection lands. Editable only.
         EditorView.domEventHandlers({
             focus: (event, view) => {
                 setTimeout(() => {
-                    if (!view.hasFocus) return;
+                    if (!view.hasFocus || view.state.readOnly) return;
+                    // Mid-select: do not rewrite the doc under a range the
+                    // user is still painting.
+                    if (!view.state.selection.main.empty) return;
                     const end = view.state.doc.length;
                     view.dispatch({ changes: { from: end, insert: ' ' }, scrollIntoView: true });
                     view.dispatch({ changes: { from: end, to: end + 1, insert: '' } });

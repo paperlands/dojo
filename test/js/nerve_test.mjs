@@ -139,3 +139,24 @@ describe("nerve store: the clock law (gw-t-clock)", () => {
         assert.ok(store.signals[0].ts >= before, "local signals get the local clock")
     })
 })
+
+// THE TALLY — the next thing to fix, then what is still open (R1). One sentence
+// for a learner (Elm narrows on purpose; twelve messages make a beginner quit),
+// and a count so narrowing loses nothing.
+describe("the tally rides beside the sentence", () => {
+    test("error carries it, and defaults to none", () => {
+        assert.equal(S.error("error", "line 4 — boom", null, 3).tally, 3)
+        assert.equal(S.error("error", "line 4 — boom").tally, 0)
+    })
+
+    test("a friend's sentence carries it too — both surfaces say the same shape", () => {
+        assert.equal(S.remote("kai", "error", "boom", "error", null, 2).tally, 2)
+        assert.equal(S.remote("kai", "☀︎", null, "output").tally, 0)
+    })
+
+    test("the store keeps it whole", () => {
+        const store = createSignalStore()
+        store.push(S.error("error", "boom", null, 4))
+        assert.equal(store.signals.at(-1).tally, 4)
+    })
+})

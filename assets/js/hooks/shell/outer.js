@@ -16,22 +16,22 @@ import { setPeerCell } from "../../editor/code-cell-activation.js"
 import { follow, haltFollow, mountChase } from "../../editor/peer-attention.js"
 import { mountDiagnosticsInk } from "../../editor/diagnostics.js"
 import { sayWound } from "../../weave/wound-view.js"
-import { sayOnce } from "../../weave/voice.js"
 import { announcements, verdict, primaryWound } from "../../weave/queries.js"
-import { world, watchWorld } from "../../weave/world.js"
-import { nerveInstance } from "../nerve.js"
+import { readWounds } from "../../weave/wounds.js"
+import { world } from "../../weave/world.js"
+import { nerve, watchNerve } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
 import { listeners } from "./core.js"
 import { register } from "./term-cell.js"
 import { createArena } from "../../kernel/arena.js"
 
 // The surface as data: the lifecycle machine registers these event names
-// synchronously at mounted() — the initial seeOuterShell/outerSignal ride the
+// synchronously at mounted() — the initial seeOuterShell rides the
 // SAME reply that mounts this panel (shell_live.ex "seeTurtle") and would be
 // lost to any listener added after the first await. mount() returns the
 // matching handlers once the substrate stands.
 export const outer = {
-    events: ["seeOuterShell", "outerAttend", "outerSignal", "outerLive"],
+    events: ["seeOuterShell", "outerAttend", "outerLive"],
     mount: mountOuter,
 };
 
@@ -70,13 +70,27 @@ function mountOuter(hook, { term, cm6 }) {
     // the local corner. Navigation targets the outer editor. The friend's
     // ambient shouts arrive via the core turtle's _onShout (source = their
     // name); no separate relay channel. retarget() follows disciple swaps.
+    // CLAIMED WHEN THE NERVE ARRIVES, not once at mount. This panel renders
+    // BEFORE #nerve-hud (shell_live.html.heex: 340 vs 361), so on a rejoin with
+    // the panel already open the hooks remount in document order and the seat is
+    // still empty here — asking once answered null, the claim never happened,
+    // and the friend's signals fell to the residual HUD for the rest of the
+    // session. Idempotent: the first nerve to seat wins.
     const remoteNerveEl = document.getElementById('outer-nerve');
-    const outerProj = remoteNerveEl && nerveInstance
-        ? nerveInstance.project(remoteNerveEl, {
+    let outerProj = null;
+    const claimNerve = () => {
+        if (outerProj || !remoteNerveEl) return;
+        const seated = nerve();
+        if (!seated) return;
+        outerProj = seated.project(remoteNerveEl, {
             pushEvent: (e, p) => hook.pushEvent(e, p),
             targets: { editorView: () => term.shell },
-        })
-        : null;
+        });
+        // A friend may already be chosen — the claim must not arrive unaimed.
+        if (outerName) outerProj.retarget(outerName);
+    };
+    claimNerve();
+    arena.add(watchNerve(claimNerve));
     arena.add(() => outerProj?.destroy());
 
     // While drafting, a body flag tells the core shell's global
@@ -92,12 +106,12 @@ function mountOuter(hook, { term, cm6 }) {
     // reference so the ink can tell a repeat from news. Never re-parsed here.
     let wireWounds = [];
 
-    // ==== THE ONE FENCE ======================================================
-    // A surface speaks and inks whoever's runtime it is SHOWING, and this is the
-    // only place that question is answered. The answer is always a WOUND LIST
-    // from the query surface (id:cmp-query-cell) — either held from the wire or
-    // asked live of the world cell. Ink, nerve, and wash all re-ask it; none
-    // keeps a parallel "errored" bit.
+    // ==== THE SUBJECT ========================================================
+    // WHOSE RUNTIME IS THIS SURFACE SHOWING? Asked once, here, and handed to
+    // weave/wounds.js as its ask — so ink, voice and wash cannot answer it
+    // differently. The answer is always a WOUND LIST from the query surface
+    // (id:cmp-query-cell): held from the wire, or asked live of the world cell.
+    // None of the readers keeps a parallel "errored" bit.
     //
     //   watching       theirs — the hatch carried their diagnostics answer.
     //   drafting live  ours — this very text is what stands at `outerAddr`, so
@@ -114,44 +128,81 @@ function mountOuter(hook, { term, cm6 }) {
         : draftLive ? (world()?.diagnostics?.(outerAddr) ?? NONE)
         : NONE;
 
-    // The ink: one writer for this editor, asking the fence each breath.
-    const ink = mountDiagnosticsInk(cm6, { view: () => term.shell, ask: shownWounds });
-    arena.add(ink);
+    // THIS SURFACE'S WOUNDS — one ask, one breath, every reader (weave/wounds.js).
+    // The subject above is the ask, so no two readers can show different runtimes.
+    const wounds = readWounds({ ask: shownWounds });
+    arena.add(wounds.release);
 
-    // The voice (weave/voice.js): said once while it stands. A friend hatches on
-    // every keystroke, and a live draft re-runs as fast as it is typed.
-    // Same signal shape as coreshell's S.error — payload + optional { line } ref
-    // so the outer-nerve HUD can scroll the outer editor to the wound.
+    // The ink: one writer for this editor, reading the wounds each breath.
+    arena.add(mountDiagnosticsInk(cm6, { view: () => term.shell, wounds }));
+
+    // THE VOICE — one sentence and a tally, the same as the child's own shell
+    // (R1). The next thing to fix, then how much is still open; a learner facing
+    // twelve messages quits, and the count loses nothing.
+    //
+    // The KEY is the whole utterance INCLUDING who it is about, so a disciple
+    // switch to a friend whose code breaks identically is still news — the
+    // ledger that used to re-arm by hand is the key itself now.
     const lineRef = (w) => (w?.span?.line ? { line: w.span.line } : null)
-    const hurt = sayOnce();
-    const speak = () => hurt.say(announcements(shownWounds()), (w) =>
-        nerveInstance?.push(S.remote(
-            outerName || "friend", "error", sayWound(w), "error", lineRef(w))));
+    const say = temporal.gate((_key, { who, w, n, mute }) => {
+        if (mute) return
+        if (w) nerve()?.push(S.remote(who, "error", sayWound(w), "error", lineRef(w), n))
+        else nerve()?.push(S.remote(who, "☀︎", null, "output"))
+    });
+    const speak = () => {
+        const who = outerName || "friend";
+        // Frozen: nothing of ours ran and their spans point into a document we
+        // no longer show, so there is nothing to call well or unwell (R6).
+        const mute = term.drafting() && !draftLive;
+        const found = mute ? [] : wounds.read();
+        const w = primaryWound(found, outerAddr);
+        const n = announcements(found).length;
+        say(mute ? `${who}|` : `${who}|${w ? `${sayWound(w)} ○${n}` : "☀︎"}`, { who, w, n, mute });
+    };
 
     // The wash, one writer — health from the SAME wound list as ink and nerve
     // (`verdict`), never a separate state flag that can disagree with them.
     // Drafting says DRAFTING (who owns the text); health still rides the wounds.
+    // READ THE DOM, NEVER A LEDGER. This attribute has a second writer: it is
+    // server-rendered `ok`, and LiveView merges data-* onto phx-update="ignore"
+    // elements (dom.js mergeAttrs), so every patch resets it. A gate keyed on
+    // what WE last wrote would believe the error is still shown and never
+    // repaint it — the state stops holding. Cheap and true: ask the element.
     const paint = () => {
         if (!envEl) return
-        if (term.drafting()) {
-            envEl.dataset.outerState = 'draft'
-            return
-        }
-        const { state } = verdict(shownWounds(), outerAddr)
-        envEl.dataset.outerState = state === 'error' ? 'error' : 'ok'
+        const word = term.drafting() ? 'draft'
+            : verdict(wounds.read(), outerAddr).state === 'error' ? 'error'
+            : 'ok'
+        if (envEl.dataset.outerState !== word) envEl.dataset.outerState = word
     };
 
-    // The runtime changed under us — a live draft ran, or the child's own page
-    // did. Ask again: ink, nerve, wash — every reader of the fence.
-    const reask = () => { ink.refresh(); speak(); paint(); };
-    arena.add(watchWorld(reask));
+    // Readers subscribe; they are not called. The fourth projection is one more
+    // watch, not another site to find on every surface.
+    arena.add(wounds.watch(speak));
+    arena.add(wounds.watch(paint));
+
+    // News the world cell never hears — a friend's push arriving, a draft going
+    // live. reask() reaches EVERY reader, where a per-organ refresh reached one.
+    const reask = () => wounds.changed();
     // ========================================================================
 
     // Run the current draft as the friend's ambient on the canvas, so an
     // intervention on broken code actually executes. Their code keeps
     // streaming into the merge baseline (the diff reference) separately.
+    //
+    // Seed the seating ledger from THIS caret before the ambient seats: the
+    // reach publishes at 80 ms and a draft edit at 60 ms — without this, the
+    // canvas can still run cell 1 while the outer light already sits in cell 2.
     const runDraft = () => {
         if (!outerAddr) return;
+        if (term.shell && !term.shell.destroyed) {
+            try {
+                const line = term.shell.state.doc.lineAt(
+                    term.shell.state.selection.main.head,
+                ).number;
+                scene.attend(outerAddr, line);
+            } catch { /* mid-teardown — ambient still seats with whatever stands */ }
+        }
         scene.ambient(outerAddr, outerName || 'friend', term.getValue());
     };
     const stopDraftRun = () => {
@@ -161,7 +212,7 @@ function mountOuter(hook, { term, cm6 }) {
     // Crossing between runtimes: the ledger and the ink both re-arm, because a
     // wound heard from the wire must not silence the identical wound from our
     // own run — nor the other way.
-    const changedHands = () => { hurt.forget(); reask(); paint(); };
+    const changedHands = () => reask();   // the key carries the subject, so it re-arms itself
 
     const enterDraft = () => {
         // The watcher's place, given back before a single character lands.
@@ -328,7 +379,6 @@ function mountOuter(hook, { term, cm6 }) {
             if (prevAddr) scene.remove(prevAddr);
             if (term.drafting()) leaveDraft();
             prevAddr = payload.addr;
-            hurt.forget();   // another's wounds are not this one's
             wireWounds = NONE; // nor is another's diagnostics answer
             reach.reset();   // a fresh page opens at its first cell, already lit
             following = true; // and opening a friend's page IS asking to be shown
@@ -340,7 +390,11 @@ function mountOuter(hook, { term, cm6 }) {
         if (payload?.origin_name) outerName = payload.origin_name;
 
         if (outerName && outerName !== prevName) {
-            scene.focus(outerName);
+            // Do NOT scene.focus(outerAddr) here: a page has already dropped
+            // the whole-buffer slot, so resolveAddress(addr) is null and the
+            // canvas light goes dark on every open. The seating law lights the
+            // kindled cell (applyAttend / activateOuter re-attend). Name is
+            // only for the nerve claim.
             outerProj?.retarget(outerName);   // claim this friend's signals
             prevName = outerName;
         }
@@ -380,24 +434,9 @@ function mountOuter(hook, { term, cm6 }) {
         // The author's diagnostics answer, arriving whole each push (LSP-style:
         // an empty answer clears). HELD, not re-derived — the fence alone
         // decides whether this surface is showing theirs or ours. reask() is
-        // the breath: ink, nerve, and wash all re-read shownWounds().
+        // the breath: every reader re-reads the wounds.
         wireWounds = payload?.diagnostics ?? NONE;
         reask();
-    };
-
-    // Friend's execution status → the remote nerve below their code.
-    // A separate event from seeOuterShell so it flows even in a frozen
-    // draft, where the editor push is withheld. The line ref is the same
-    // shape coreshell passes — taken from the held diagnostics when the
-    // wire only carried a sentence.
-    const onOuterSignal = ({ state, message, name }) => {
-        const who = name || 'friend';
-        if (state === 'success') {
-            nerveInstance?.push(S.remote(who, '☀︎', null, 'output'));
-        } else if (state === 'error' && message) {
-            const wound = primaryWound(wireWounds, outerAddr) ?? wireWounds[0] ?? null
-            nerveInstance?.push(S.remote(who, 'error', message, 'error', lineRef(wound)));
-        }
     };
 
     // Keep-as-fork: deliberate promotion of the draft into a coreshell
@@ -418,8 +457,20 @@ function mountOuter(hook, { term, cm6 }) {
     };
     arena.on(outerEl, 'click', onDelegatedClick);
 
-    // Focus switching via scene bridge
+    // Focus switching via scene bridge. A click re-attends the caret's line so
+    // the seating law re-kindles the canvas figure — even when the line is
+    // unchanged (double-click select on the already-kindled cell). Focusing by
+    // display name alone can dim that figure: a local tab may wear the same
+    // name (D006). Never scene.focus(outerAddr) for a page — the whole-buffer
+    // slot is gone and resolveAddress(addr) returns null, blanking the light.
     const activateOuter = () => {
+        if (outerAddr && term.shell && !term.shell.destroyed) {
+            const line = term.shell.state.doc.lineAt(
+                term.shell.state.selection.main.head,
+            ).number;
+            scene.attend(outerAddr, line);
+            return;
+        }
         if (outerName) scene.focus(outerName);
     };
 
@@ -446,7 +497,6 @@ function mountOuter(hook, { term, cm6 }) {
         events: {
             seeOuterShell: onSeeOuterShell,
             outerAttend: onOuterAttend,
-            outerSignal: onOuterSignal,
             outerLive: onOuterLive,
         },
         arena,

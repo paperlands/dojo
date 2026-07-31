@@ -79,6 +79,16 @@ function buildSlot(signal, ch, { showSource, fade, onSourceClick }) {
         : signal.msg
     el.appendChild(msg)
 
+    // WHAT IS STILL OPEN, beside the next thing to fix. Its own span so it
+    // carries its own (muted) colour: a count of remaining work must not read
+    // as a count of alarms.
+    if (signal.tally > 1) {
+        const tally = document.createElement('span')
+        tally.className = 'nerve-tally'
+        tally.textContent = `○ ${signal.tally}`
+        el.appendChild(tally)
+    }
+
     if (signal.ref) el.style.cursor = 'pointer'
 
     return el

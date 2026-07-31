@@ -134,10 +134,6 @@ defmodule DojoWeb.ShellLive do
 
     # Only a preview/path bump is silence; everything else is news (D025 R3).
     if OuterShell.reflect_changed?(prev, turtle) do
-      # The friend's status always flows to the nerve — even in a frozen draft,
-      # where the editor push is held back so it won't disturb your draft.
-      socket = push_event(socket, "outerSignal", outer_signal(turtle, shell))
-
       socket =
         case OuterShell.render_intent(shell) do
           {:push, source} ->
@@ -360,7 +356,6 @@ defmodule DojoWeb.ShellLive do
         {:noreply,
          socket
          |> push_event("seeOuterShell", outer_shell_payload(turtle, outershell))
-         |> push_event("outerSignal", outer_signal(turtle, outershell))
          |> assign(:outershell, outershell)}
 
       _ ->
@@ -399,7 +394,6 @@ defmodule DojoWeb.ShellLive do
     {:noreply,
      socket
      |> push_event("seeOuterShell", outer_shell_payload(turtle, outershell))
-     |> push_event("outerSignal", outer_signal(turtle, outershell))
      |> assign(:outershell, outershell)}
   end
 
@@ -663,10 +657,6 @@ defmodule DojoWeb.ShellLive do
 
   # The friend's execution status for the remote nerve — independent of whether
   # the editor content is pushed (held back during a frozen draft).
-  defp outer_signal(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
-    %{state: turtle.state, message: turtle.message, name: shell.name}
-  end
-
   defp outer_shell_payload(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
     turtle
     |> Map.from_struct()

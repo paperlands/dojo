@@ -135,10 +135,14 @@ defmodule DojoWeb.OuterShellLive do
           </span>
         </div>
 
+        <%!-- data-outer-state is the CLIENT'S, and rendering it here made two
+              writers: phx-update="ignore" skips attributes EXCEPT data-*, which
+              LiveView merges (dom.js mergeAttrs), so every patch reset the wash
+              to "ok" — an error stopped holding and a draft never took the wash.
+              Absent is the same as "ok" to the CSS, so there is nothing to seed. --%>
         <div
           id="outerenv"
           phx-update="ignore"
-          data-outer-state="ok"
           class="overflow-y-scroll relative border pointer-events-auto rounded-lg h-[calc(100dvh-18rem)] lg:h-[60vh] border-amber-600/20 dark-scrollbar backdrop-blur-xs scrollbar-hide cursor-text"
         >
           <div

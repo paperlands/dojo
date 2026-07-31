@@ -8,7 +8,7 @@
 import { createObservable } from "../kernel/observable.js"
 
 export const CHANNELS = {
-    error:  { priority: 5, fadeMs: 60000, zone: 'status', css: 'nerve-error' },
+    error:  { priority: 5, fadeMs: 600000, zone: 'status', css: 'nerve-error' },
     system: { priority: 4, fadeMs: 15000, zone: 'status', css: 'nerve-system' },
     output: { priority: 1, fadeMs: 4000,  zone: 'status', css: 'nerve-output' },
     chat:   { priority: 3, fadeMs: 12000, zone: 'chat',   css: 'nerve-chat' },
@@ -28,7 +28,9 @@ export const CHANNELS = {
 
 export const signals = {
     output:  (msg, payload)          => ({ msg, payload: String(payload), source: 'system', kind: 'output' }),
-    error:   (msg, payload, ref)     => ({ msg, payload, source: 'system', kind: 'error', ref: ref ?? null }),
+    // `tally` — how many faults STAND, when more than this one. Beside the
+    // sentence, never inside it: it is a count, not words.
+    error:   (msg, payload, ref, tally) => ({ msg, payload, source: 'system', kind: 'error', ref: ref ?? null, tally: tally ?? 0 }),
     system:  (msg, payload)          => ({ msg, payload: payload ?? null, source: 'system', kind: 'system' }),
     shout:   (source, msg, payload, tabId) => ({ msg, payload, source, kind: 'shout', tabId }),
     chat:    (source, msg, target)   => ({ msg, payload: null, source, kind: 'chat', target: target ?? null }),
@@ -36,8 +38,8 @@ export const signals = {
     // A watched friend's signal — rendered in the outershell's own remote zone.
     // Same optional `ref` shape as `error` (`{ line }`, `{ key }`, …) so a
     // click navigates the outer editor the way the core nerve does.
-    remote:  (source, msg, payload, kind, ref) => ({
-        msg, payload: payload ?? null, source, kind, ref: ref ?? null,
+    remote:  (source, msg, payload, kind, ref, tally) => ({
+        msg, payload: payload ?? null, source, kind, ref: ref ?? null, tally: tally ?? 0,
     }),
     // A portal followed (Shoot 0). source: WHO walked (the walker's address
     // — never the kind; per-source FIFO and the keep's prefix law key on it).
@@ -92,6 +94,7 @@ export function createSignalStore(opts = {}) {
             // peers is per-source (source, id) — honestly partial globally.
             ts:      raw.ts ?? performance.now(),
             ref:     raw.ref ?? null,
+            tally:   raw.tally ?? 0,
             tabId:   raw.tabId ?? null,
         }
         signals.unshift(signal)

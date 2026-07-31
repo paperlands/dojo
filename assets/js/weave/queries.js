@@ -47,6 +47,25 @@ export function ailmentsFor(errors, key) {
     })
 }
 
+// EVERY STANDING CANVAS AILMENT, IN ONE LIST — frames, seats that threw with no
+// frame, phases whose vocabulary broke. Three holders, ONE law: a fault stands
+// until the thing that raised it runs again. Nothing downstream learns there was
+// more than one holder — that is this join's whole job.
+//
+// Only rehearsals dedupe, by where the hurt LIVES: cells of a phase share one
+// vocabulary, so a broken line there is one diagnostic, not one per cell.
+export function standingAilments({ frames = [], seats = [], rehearsals = [] } = {}) {
+    const out = [...frames, ...seats]
+    const seen = new Set()
+    for (const w of rehearsals) {
+        const at = `${w.message}@${w.span?.line ?? "?"}`
+        if (seen.has(at)) continue
+        seen.add(at)
+        out.push(w)
+    }
+    return out
+}
+
 // --- The gatherings. Each answers a LIST in the one wound shape, so joining
 // --- them is a concat and locating them is one pass over all of them.
 
@@ -85,35 +104,38 @@ const nameWounds = (cells, ids, key) =>
 // the page seats lazily — so without this the child learns it only by reaching
 // each one. No runtime for a fact already known.
 //
-// A warning, not an error: the dependent did not itself fail, and it is not a
-// FAULT kind, so no verdict turns on it. A cell with its own fault is skipped —
-// that is the more specific thing to say.
-const dependentWounds = (cells, ids, wounds, key) => {
-    const dead = new Set()
+// A CHILD OF THE DEATH THAT CAUSED IT, never a peer: rustc's SubDiagnostic,
+// LSP's relatedInformation. The dominoes it knocked over are not three more
+// problems — they are the shape of the one. Counting them as top-level would
+// tell a child "6 things are wrong" where one line broke.
+//
+// A warning, not an error: the dependent did not itself fail, so no verdict
+// turns on it. A cell with its own fault is skipped — that is the more specific
+// thing to say. Costs no extra pass: the wound that killed the cell is already
+// in hand here, and used to be thrown away.
+const attachDependents = (cells, ids, wounds, key) => {
+    const dead = new Map()   // cell index → the wound that killed it
     for (const w of wounds) {
         if (w.kind !== "walk" || w.span?.line == null) continue
         const at = cellAtLine(cells, w.span.line)
-        if (at != null) dead.add(at)
+        if (at != null && !dead.has(at)) dead.set(at, w)
     }
-    if (!dead.size) return []
+    if (!dead.size) return
 
-    const spoken = new Set(dead)
-    const out = []
-    for (const i of dead) {
+    const spoken = new Set(dead.keys())
+    for (const [i, parent] of dead) {
         for (const k of dependentsOf(cells, i)) {
             if (spoken.has(k)) continue
             spoken.add(k)
-            out.push({
+            ;(parent.children ??= []).push({
                 kind: "dependent",
                 standsOn: ids[i].name ?? ids[i].id,   // the fact; the words are the view's
-                severity: "warning",
                 span: cells[k].open == null ? null : { line: cells[k].open },
                 source: null,
                 address: cellKey(key, ids[k].id),
             })
         }
     }
-    return out
 }
 
 // --- The locating. One pass, one prose walk, over every gathered wound.
@@ -122,10 +144,14 @@ const dependentWounds = (cells, ids, wounds, key) => {
 // its cell slot, and the author's own word for that cell (D024). Derived from
 // the LINE (attention is the address, D021), never stored, so nothing goes stale.
 const locate = (w, nodes, cells, ids, marks) => {
-    if (w.span?.line == null) return w
+    // Children are wounds too: each stands somewhere of its own, and the ink
+    // must mark it there even while the voice folds it under its parent.
+    const kids = w.children?.map((c) => locate(c, nodes, cells, ids, marks))
+    if (w.span?.line == null) return kids ? { ...w, children: kids } : w
     const at = cellAtLine(cells, w.span.line)
     return {
         ...w,
+        ...(kids ? { children: kids } : null),
         // marks is the one outlineFromAst for this diagnostics pass — N wounds
         // share one print, never one print each.
         phase: phaseAt(nodes, w.span.line, marks),
@@ -156,28 +182,51 @@ export function diagnostics(ast, ailments = [], key = null) {
     const marks = outlineFromAst(nodes)
     const cells = phaseCells(nodes, marks)
     const ids = cellIdentities(cells)
-    const all = [
-        ...gathered,
-        ...nameWounds(cells, ids, key),
-        ...dependentWounds(cells, ids, gathered, key),
-    ]
+    // Dependents hang UNDER the death that caused them, so the top-level list
+    // stays the real faults — what a reader counts and what a verdict weighs.
+    attachDependents(cells, ids, gathered, key)
+    const all = [...gathered, ...nameWounds(cells, ids, key)]
     return all.length ? all.map((w) => locate(w, nodes, cells, ids, marks)) : all
 }
 
-// WHAT COUNTS AS A FAULT — the document is not well. A frame that died, a
-// vocabulary that never rehearsed, and a parse wound the tree still holds are
-// the same news for a watcher: something in this code did not happen cleanly.
+// THE TREE, FLAT — for a reader that must mark every hurt WHERE IT STANDS. The
+// ink needs this; the voice does not, because folding is the point of the tree.
+export const everyWound = (found) =>
+    (found ?? []).flatMap((w) => (w.children ? [w, ...everyWound(w.children)] : [w]))
+
+// WHAT MAKES TWO WOUNDS THE SAME WOUND — not object identity, which every ask
+// rebuilds. The four facts a reader could tell apart. (Not `mark`: this file's
+// `marks` are the outline print.)
+export const fingerprint = (w) =>
+    `${w.kind}:${w.address ?? "?"}:${w.message ?? ""}:${w.span?.line ?? "?"}`
+
+// THE WOUND VOCABULARY — one row per kind, and SEVERITY IS THE VERDICT AXIS.
+// A fault is a wound at "error": the document is not well.
 //
-// D020 is about the WALK, not the verdict. Error nodes stay inert at walk and
-// healthy statements still draw; the binary here is whether a friend may be
-// told ☀︎. A parse-broken buffer that reflected `success` painted sunshine on
-// the outershell while the author saw "looking for …" — the peer seam was
-// lying. Name collisions and dependents stay warnings (not FAULT).
-const FAULT = new Set(["walk", "rehearsal", "parse"])
+// It was two tables, and they had already drifted. `name` set no severity, so
+// the gutter defaulted it to "error" and inked it RED — while the verdict, on
+// its own list, called the document well and painted a friend ☀︎. Two fields
+// that must agree is a place they can disagree.
+//
+// D020 is about the WALK, not the verdict: error nodes stay inert and healthy
+// statements still draw. What turns on severity is whether a friend may be told
+// ☀︎ — a parse-broken buffer reflecting `success` was the peer seam lying.
+export const KINDS = {
+    parse:     { severity: "error" },     // the tree would not build
+    walk:      { severity: "error" },     // it ran and died
+    rehearsal: { severity: "error" },     // a vocabulary ancestor broke
+    name:      { severity: "warning" },   // two cells, one word (D024 rule 2)
+    dependent: { severity: "warning" },   // it stands on something that never ran
+}
+
+// An unknown kind is an ERROR: a hurt we cannot name must not be quietly
+// downgraded. wound-view says it out loud rather than saying nothing.
+export const severityOf = (w) => KINDS[w?.kind]?.severity ?? "error"
 
 // THE WOUNDS A SURFACE SAYS OUT LOUD — one list, so the HUD, a friend's panel
 // and a draft cannot disagree about what is worth a sentence.
-export const announcements = (found) => (found ?? []).filter((w) => FAULT.has(w.kind))
+export const announcements = (found) =>
+    (found ?? []).filter((w) => severityOf(w) === "error")
 
 // WHICH WOUND THE DOCUMENT SPEAKS OF — one selector, because two readers ask:
 // the child's own HUD and the reflect reaching a friend must name the SAME

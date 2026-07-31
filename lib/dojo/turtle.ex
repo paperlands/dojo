@@ -8,13 +8,18 @@ defmodule Dojo.Turtle do
   # rate-limiting by line, no fan-out by phase.
   #
   # `diagnostics` is a LIST, not a state — healthy parts live (D020).
+  #
+  # `state` is NOT news for a person — the client says every sentence itself,
+  # from the wounds. It is the client telling the SERVER whether this reflect
+  # may become the recall baseline (OuterShell.observe keeps last_good on
+  # :success), which the server cannot decide for itself because it has no
+  # walker. `message` was the human half and had no reader left; it is gone.
   defstruct state: :hatch,
             path: nil,
             commands: [],
             attend: nil,
             diagnostics: [],
             source: nil,
-            message: nil,
             # MILLISECONDS: a version stamp readers compare with `>`. At second
             # resolution the watcher's gate dropped all but one hatch a second.
             time: nil,

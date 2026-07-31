@@ -188,10 +188,21 @@ export function pageLaw({ localKeys = () => [] } = {}) {
             : cellAtLine(entries, attention.line)
         const { order, evicted } = ladder(held?.order ?? [], entries, index, mode, attention != null)
 
-        // A seat is a RUN, so nothing is emitted when the record about to be
-        // written is the record that already stands.
+        // A seat is a RUN, so nothing is SEATED when the record about to be
+        // written is the record that already stands. Focus may still reaffirm
+        // when attention still names the kindled cell: a watcher's click can
+        // steal the canvas light onto a colliding display name (D006) without
+        // changing which cell stands — re-clicking that cell must reclaim it.
+        // Prose (sticky, index null) leaves the record and the light alone.
         if (held && held.source === source && held.own === own &&
             held.mode === mode && sameOrder(held.order, order)) {
+            if (index != null && order[0] === index) {
+                const k = held.entries[held.order[0]]
+                return answer(
+                    [{ op: "focus", key: k.key, name: k.name }],
+                    { source, paged: mode !== "plain" },
+                )
+            }
             return answer([], { source, paged: mode !== "plain" })
         }
 
@@ -268,16 +279,21 @@ export function pageLaw({ localKeys = () => [] } = {}) {
 
         // THE PAGE'S OWN HANDLE (D024). A page seats no frame under its addr —
         // only its cells — so a surface holding just the addr asks pageLaw
-        // which key stands for the page, and gets its first cell.
+        // which key stands for the page, and gets the KINDLED cell (order[0]).
         //
         // This replaces "the first cell wears the page's name", which let such a
         // surface resolve by DISPLAY NAME. That could not survive an author
         // naming cell 1 herself, and it made a program's bare code and its cell 1
         // share a name. Nothing on the canvas is name-keyed now.
+        //
+        // The kindled cell — not entries[0] — is the one that runs bright. A
+        // page whose ladder sits on cell 2 must answer cell 2, or world-focus
+        // would dim the figure the child is looking at and light cell 1 again.
         pageKey(addr) {
             const page = pages.get(addr)
             if (!page || page.mode === "plain") return null
-            return page.entries[0]?.key ?? null
+            const i = page.order[0]
+            return (i != null ? page.entries[i]?.key : null) ?? page.entries[0]?.key ?? null
         },
 
         // One ladder step: the same observe, a new attention, and the document

@@ -14,7 +14,7 @@ import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
 import { parseProgram, reparseProgram } from "../../assets/js/turtling/parse.js"
-import { nodeDiagnostics, diagnostics, ailmentsFor, verdict, primaryWound, announcements } from "../../assets/js/weave/queries.js"
+import { nodeDiagnostics, diagnostics, ailmentsFor, verdict, primaryWound, announcements, standingAilments, fingerprint, severityOf, KINDS, everyWound } from "../../assets/js/weave/queries.js"
 import { describe as sayOf, sayWound } from "../../assets/js/weave/wound-view.js"
 
 describe("the memo law — identity at the reuse grain", () => {
@@ -282,19 +282,31 @@ describe("a dead cell names its dependents", () => {
     ].join("\n")
     const deadAtBase = [{ message: "boom", span: { line: 4 }, kind: "walk", address: "b1#1.base" }]
 
+    // A CHILD OF THE DEATH, never a peer (rustc SubDiagnostic / LSP
+    // relatedInformation): the dominoes are the shape of the one that fell.
+    test("the dependent hangs UNDER the wound that caused it", () => {
+        const found = diagnostics(parseProgram(SRC), deadAtBase, "b1")
+        assert.deepEqual(found.filter((w) => w.kind === "dependent"), [],
+            "never at the top level, where a reader would count it as its own problem")
+        const [walk] = found.filter((w) => w.kind === "walk")
+        assert.equal(walk.children.length, 1, "it hangs on the death that caused it")
+        assert.equal(walk.children[0].kind, "dependent")
+    })
+
     test("the dependent is warned, at its own fence, addressed to its own cell", () => {
         const found = diagnostics(parseProgram(SRC), deadAtBase, "b1")
-        const dep = found.filter((w) => w.kind === "dependent")
+        const dep = everyWound(found).filter((w) => w.kind === "dependent")
         assert.equal(dep.length, 1, "only the cell that INHERITS — a sister phase is untouched")
         assert.equal(dep[0].address, "b1#1.1.child", "addressed to the dependent, not the dead one")
         assert.equal(dep[0].standsOn, "base", "and it names what it stands on")
         assert.equal(dep[0].span.line, 7, "inked at its own opening fence")
-        assert.equal(dep[0].severity, "warning", "it did not itself fail")
+        assert.equal(severityOf(dep[0]), "warning", "it did not itself fail")
+        assert.equal(dep[0].severity, undefined, "and carries no literal — the KIND decides")
     })
 
     test("a dependent is not a death — the verdict never sees it", () => {
         const found = diagnostics(parseProgram(SRC), [], "b1")
-        assert.deepEqual(found.filter((w) => w.kind === "dependent"), [],
+        assert.deepEqual(everyWound(found).filter((w) => w.kind === "dependent"), [],
             "no walk fault, no dependents")
         const hurt = diagnostics(parseProgram(SRC), deadAtBase, "b1")
         assert.equal(verdict(hurt, "b1").state, "error")
@@ -306,13 +318,13 @@ describe("a dead cell names its dependents", () => {
         const both = [...deadAtBase,
             { message: "its own", span: { line: 7 }, kind: "walk", address: "b1#1.1.child" }]
         const found = diagnostics(parseProgram(SRC), both, "b1")
-        assert.deepEqual(found.filter((w) => w.kind === "dependent"), [],
+        assert.deepEqual(everyWound(found).filter((w) => w.kind === "dependent"), [],
             "its own wound is the more specific thing to say")
     })
 
     test("vocabulary flows DOWN the outline, never sideways (D019)", () => {
         const found = diagnostics(parseProgram(SRC), deadAtBase, "b1")
-        assert.ok(!found.some((w) => w.kind === "dependent" && w.address.includes("sister")),
+        assert.ok(!everyWound(found).some((w) => w.kind === "dependent" && w.address.includes("sister")),
             "a sister phase inherits nothing, so it is not compromised")
     })
 })
@@ -367,5 +379,168 @@ describe("a remote isolates regions from the wire alone", () => {
             assert.ok(w.span?.line, "placed")
             assert.ok(w.kind, "kinded")
         }
+    })
+})
+
+// THREE HOLDERS, ONE LAW: a fault stands until the thing that raised it runs
+// again. Frames hold their own (the scheduler clears on re-run); a SEAT that
+// threw has no frame at all, so the turtle holds it per address; a phase's
+// broken vocabulary is held per address too. This join is the ONE place that
+// plurality is allowed to exist — nothing downstream may learn of it.
+describe("standingAilments — three holders, one list", () => {
+    const w = (message, line, address) => ({ message, span: { line }, address, kind: "walk" })
+
+    test("nothing held is an empty list, not a crash", () => {
+        assert.deepEqual(standingAilments(), [])
+        assert.deepEqual(standingAilments({}), [])
+    })
+
+    test("a seat that threw stands beside a frame that died", () => {
+        const got = standingAilments({
+            frames: [w("frame died", 3, "a")],
+            seats: [w("seating threw", 1, "b")],
+        })
+        assert.equal(got.length, 2)
+        assert.deepEqual(got.map((x) => x.address), ["a", "b"])
+    })
+
+    test("a seat fault is a wound like any other — one shape, one list", () => {
+        const [only] = standingAilments({ seats: [w("boom", 2, "pond")] })
+        assert.equal(only.kind, "walk")
+        assert.equal(only.address, "pond")
+        assert.equal(only.span.line, 2)
+    })
+
+    test("map iterators are accepted, since that is how the turtle holds them", () => {
+        const seats = new Map([["pond", w("boom", 2, "pond")]])
+        assert.equal(standingAilments({ seats: seats.values() }).length, 1)
+    })
+
+    // Many cells of a phase share ONE vocabulary, so a broken line there is one
+    // diagnostic, not one per cell that reads it.
+    test("rehearsals dedupe by where the hurt lives", () => {
+        const got = standingAilments({
+            rehearsals: [w("no such word", 4, "p#c1"), w("no such word", 4, "p#c2")],
+        })
+        assert.equal(got.length, 1, "one broken line, one diagnostic")
+    })
+
+    test("but two different broken lines are two diagnostics", () => {
+        const got = standingAilments({
+            rehearsals: [w("no such word", 4, "p#c1"), w("no such word", 9, "p#c2")],
+        })
+        assert.equal(got.length, 2)
+    })
+
+    test("frames and seats never dedupe — two addresses, two hurts", () => {
+        const got = standingAilments({
+            frames: [w("boom", 1, "a"), w("boom", 1, "b")],
+            seats: [w("boom", 1, "c")],
+        })
+        assert.equal(got.length, 3, "same words, different tenants")
+    })
+
+    // The dedupe is a RULE ABOUT VOCABULARY, not about words. Two tabs can throw
+    // the identical message on the identical line and they are two hurts, in two
+    // places, each wanting its own ink — folding seats into the rehearsal dedupe
+    // would silently drop one of them.
+    test("two seats with identical words on identical lines are two hurts", () => {
+        const got = standingAilments({
+            seats: [w("boom", 1, "pond"), w("boom", 1, "meadow")],
+        })
+        assert.equal(got.length, 2, "the address is what tells them apart")
+        assert.deepEqual(got.map((x) => x.address), ["pond", "meadow"])
+    })
+
+    test("the address rule filters the joined list, as it does any other", () => {
+        const all = standingAilments({
+            frames: [w("frame", 1, "mine")],
+            seats: [w("seat", 2, "theirs")],
+        })
+        assert.deepEqual(ailmentsFor(all, "mine").map((x) => x.message), ["frame"])
+    })
+})
+
+// WHICH WOUND IS WHICH — a fact, so it lives beside the other facts. It was
+// `mark` in voice.js, one word away from this file's own `marks` (the outline
+// print every locate shares).
+describe("fingerprint — what makes two wounds the same wound", () => {
+    const w = (o) => ({ kind: "walk", address: "a", message: "boom", span: { line: 1 }, ...o })
+
+    test("the same four facts are the same wound", () => {
+        assert.equal(fingerprint(w()), fingerprint(w()))
+    })
+
+    test("another line is another wound", () => {
+        assert.notEqual(fingerprint(w()), fingerprint(w({ span: { line: 2 } })))
+    })
+
+    test("another frame is another wound", () => {
+        assert.notEqual(fingerprint(w()), fingerprint(w({ address: "b" })))
+    })
+
+    test("another kind of hurt in the same place is another wound", () => {
+        assert.notEqual(fingerprint(w()), fingerprint(w({ kind: "parse" })))
+    })
+
+    test("a placeless, wordless wound still has a fingerprint", () => {
+        assert.equal(typeof fingerprint({ kind: "walk" }), "string")
+    })
+})
+
+// SEVERITY IS THE VERDICT AXIS — one field, not two that must agree.
+//
+// They were two (a FAULT set and a severity literal) and they had already
+// drifted: `name` carried no severity, so the gutter defaulted it to "error"
+// and inked it RED, while the verdict — reading its own list — called the
+// document well and painted a watching friend ☀︎. Same class of lie the parse
+// widening was made to kill, alive on a different kind.
+describe("the wound vocabulary — one row per kind", () => {
+    test("every kind has a severity, and it is one of two words", () => {
+        for (const [kind, row] of Object.entries(KINDS)) {
+            assert.ok(["error", "warning"].includes(row.severity), `${kind}: ${row.severity}`)
+        }
+    })
+
+    test("what breaks the run is an error; what stands beside it is a warning", () => {
+        assert.equal(severityOf({ kind: "parse" }), "error")
+        assert.equal(severityOf({ kind: "walk" }), "error")
+        assert.equal(severityOf({ kind: "rehearsal" }), "error")
+        assert.equal(severityOf({ kind: "name" }), "warning")
+        assert.equal(severityOf({ kind: "dependent" }), "warning")
+    })
+
+    // A hurt we cannot name must not be quietly downgraded to a warning.
+    test("an unknown kind is an error, not a warning", () => {
+        assert.equal(severityOf({ kind: "something-new" }), "error")
+        assert.equal(severityOf({}), "error")
+        assert.equal(severityOf(null), "error")
+    })
+
+    test("announcements IS the severity filter — there is no second list", () => {
+        const wounds = Object.keys(KINDS).map((kind) => ({ kind }))
+        const said = announcements(wounds).map((w) => w.kind)
+        assert.deepEqual(said, ["parse", "walk", "rehearsal"])
+        for (const w of announcements(wounds)) assert.equal(severityOf(w), "error")
+    })
+})
+
+// THE LIE, PINNED. A document whose only wound is a name collision: the gutter
+// must show a WARNING and the verdict must call the document well — the two
+// answers agreeing because they read the same field.
+describe("a name collision no longer inks red on a healthy document", () => {
+    const dup = "###\n* one\n```spiral\nfw 1\n```\n```spiral\nfw 2\n```\n###"
+
+    test("the collision is warned, not errored", () => {
+        const found = diagnostics(parseProgram(dup), [], "b1")
+        const collision = found.find((w) => w.kind === "name")
+        assert.ok(collision, "still said out loud (D024 rule 2)")
+        assert.equal(severityOf(collision), "warning")
+    })
+
+    test("and the document is well — no friend is told otherwise", () => {
+        const found = diagnostics(parseProgram(dup), [], "b1")
+        assert.equal(verdict(found, "b1").state, "success")
+        assert.deepEqual(announcements(found), [], "nothing worth a sentence")
     })
 })

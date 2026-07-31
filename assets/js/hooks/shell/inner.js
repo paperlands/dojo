@@ -21,13 +21,13 @@ import { cameraBridge, scene } from "../../bridged.js"
 import { temporal } from "../../utils/temporal.js"
 import { pageLaw } from "../../weave/page.js"
 import { registerWorld, worldChanged } from "../../weave/world.js"
-import { diagnostics, ailmentsFor, verdict, primaryWound } from "../../weave/queries.js"
+import { diagnostics, ailmentsFor, verdict, primaryWound, announcements } from "../../weave/queries.js"
+import { readWounds } from "../../weave/wounds.js"
 import { sayWound } from "../../weave/wound-view.js"
-import { sayOnce } from "../../weave/voice.js"
 import { frameVitals, livingFamily } from "../../turtling/vitals.js"
 import { mountReach } from "../../editor/reach.js"
 import { mountDiagnosticsInk } from "../../editor/diagnostics.js"
-import { nerveInstance } from "../nerve.js"
+import { nerve } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
 import { commands, listeners, mutators } from "./core.js"
 import { register } from "./term-cell.js"
@@ -68,7 +68,7 @@ function mountInner(hook, { term, cm6 }) {
     // outershell panel; your own ambients fall to the local residual —
     // routing is a read-side concern, not decided here.
     turtle._onShout = (source, msg, payload) => {
-        nerveInstance?.push(S.shout(source, msg, payload))
+        nerve()?.push(S.shout(source, msg, payload))
     }
 
     const executeCommand  = commands.execute(term);
@@ -93,33 +93,46 @@ function mountInner(hook, { term, cm6 }) {
     let authored = null
     const disown = (addr) => { if (authored?.addr === addr) authored = null }
 
-    // The HUD's rhythm (weave/voice.js): the wound this document is standing
-    // with, said when it arrives and again only if it heals and returns.
-    const hurt = sayOnce()
-
     // Where the reader is, per addr — attention is the address (D021). Both
     // reach organs publish through scene.attend, so one ledger serves every
     // observe, and a followed friend's line arrives through the same door.
+    //
+    // TWO READERS OF ONE CURSOR (D021, D025):
+    //   • the shell this surface holds  → the live caret (editor light + seat)
+    //   • every other addr              → the `reached` ledger (outer draft,
+    //                                     a followed friend's line)
+    // Reading only `reached` for the child's own tab left a real desync: the
+    // editor lights the caret at once, the reach publishes at 80 ms, and an
+    // edit at 20 ms (or a restored buffer.attend on tab switch) could seat the
+    // PREVIOUS cell while cell 2 already wore the light. The cursor is the
+    // gate — when we hold it, we read it.
     const reached = new Map()
     const attentionOn = (addr) => (reached.has(addr) ? { line: reached.get(addr) } : null)
 
-    // WHERE THE AUTHOR IS, for the wire — the cursor's LINE, read live. Two
-    // readers of one cursor (D021), not two attentions: the seating ladder wants
-    // a cell and reads `reached`; the wire wants the line, which is TOTAL — so a
-    // friend stays visible in buffers that are not pages, unquantized to a fence.
-    //
-    // A live draft lives in the OUTER editor, which this surface does not hold;
-    // there the ladder's own address is the best answer available.
+    // Live caret line for an addr whose editor THIS surface holds; null if
+    // the shell is elsewhere or mid-teardown.
+    const cursorLine = (addr) => {
+        if (addr !== term.currentBufferId()) return null
+        const v = term.shell
+        if (!v || v.destroyed) return null
+        try { return v.state.doc.lineAt(v.state.selection.main.head).number }
+        catch { return null }
+    }
+
+    // Seating attention: live caret when we hold the shell, else the ledger.
+    const seatingAttention = (addr) => {
+        const line = cursorLine(addr)
+        if (line != null) return { line }
+        return attentionOn(addr)
+    }
+
+    // WHERE THE AUTHOR IS, for the wire — the cursor's LINE, read live. Same
+    // source as seating when the authored buffer is the one on screen; the
+    // ledger only when the draft lives in the OUTER editor (this surface
+    // does not hold that caret).
     const authoredAttention = () => {
         if (!authored) return null
-        if (authored.addr === term.currentBufferId()) {
-            const v = term.shell
-            if (v && !v.destroyed) {
-                try { return { line: v.state.doc.lineAt(v.state.selection.main.head).number } }
-                catch { /* mid-teardown — fall through to the ladder's address */ }
-            }
-        }
-        return attentionOn(authored.addr)
+        return seatingAttention(authored.addr)
     }
 
     // The buffer's STANDING TREE — a page's on the page record, a plain tab's in
@@ -128,7 +141,9 @@ function mountInner(hook, { term, cm6 }) {
 
     // The one diagnostics answer, asked not computed: the query joins the
     // tree's parse errors with the canvas's standing ailments and locates each
-    // diagnostic by line. One call, two readers — the editor's ink and the reflect.
+    // diagnostic by line. One call, every reader — ink, voice, wash, reflect.
+    // TWO sources, and the second is already a union (turtle.ailments): nothing
+    // downstream learns where a canvas fault came from.
     const askDiagnostics = (key) =>
         diagnostics(treeFor(key) ?? [], ailmentsFor(turtle.ailments, key), key)
 
@@ -198,9 +213,10 @@ function mountInner(hook, { term, cm6 }) {
     }))
 
     // The handle for the current tab: its own frame if it has one (a plain tab,
-    // a program's bare code), else the page's first cell — asked of the law,
+    // a program's bare code), else the page's KINDLED cell — asked of the law,
     // never of a display name (D024: once cell 1 can be named, a name cannot
-    // find the page).
+    // find the page). The kindled cell is what stands bright; answering the
+    // first cell would dim a cell-2 figure the moment world-focus returned.
     const currentTabRef = () => {
         const key = term.currentBufferId()
         if (!key) return null
@@ -274,20 +290,12 @@ function mountInner(hook, { term, cm6 }) {
     // very same wound and says it there, in its own nerve.
     const report = (addr, result) => {
         if (addr !== term.currentBufferId()) return
-        // ONE ASK, THREE READERS. Ink, reflect, and this nerve all take the
-        // wound from `diagnostics` (id:cmp-query-cell) — never a turtle-side
-        // `parseErrors` bag. `primaryWound` is the same selector the reflect
-        // ships, so a page cannot name one fault while the friend watching it
-        // is told another. A throw that has not yet landed in scheduler.errors
-        // still rides `result.wounds` as the last resort.
-        const wound = primaryWound(askDiagnostics(addr), addr)
-            ?? result.wounds?.[0]
-            ?? null
-        // Said once while it stands, and a healing run re-arms it: an edit
-        // re-evaluates at 20 ms, and a standing wound is one fact, not a drumbeat.
-        hurt.say(wound ? [wound] : [], (w) => nerveInstance?.push(
-            S.error("error", sayWound(w), w.span?.line ? { line: w.span.line } : null)))
-        if (result.success && !wound) nerveInstance?.push(S.output("☀︎", result.commandCount))
+        // ☀︎ IS AN EVENT — you ran it, and this is what drew. It belongs to the
+        // run, which is why it stays here while the WOUND moved to a reader of
+        // the document (`speakWound`). A state and an event are not one signal.
+        if (result.success && !primaryWound(askDiagnostics(addr), addr)) {
+            nerve()?.push(S.output("☀︎", result.commandCount))
+        }
     }
 
     // A transition, whole: the canvas performs, the organ settles, the run
@@ -312,14 +320,14 @@ function mountInner(hook, { term, cm6 }) {
     }
 
     const pacedRender = temporal.pace(({ id, name, content }) => {
-        nerveInstance?.run()
+        nerve()?.run()
         // The child's edit — this buffer is now the authored one (D022).
         authored = { addr: id, name, text: content }
-        // The attention is the cursor THIS keystroke landed on, not a
-        // debounced echo: the reach publishes at 80 ms, this at 20.
+        // The attention is the cursor THIS keystroke (or tab restore) landed
+        // on, not a debounced echo: the reach publishes at 80 ms, this at 20.
         // Speaking and breathing ride enact, with every other door.
         enact(id, law.observe(id, {
-            name, doc: content, own: true, attention: attentionOn(id),
+            name, doc: content, own: true, attention: seatingAttention(id),
         }))
         syncTabs()
     }, 20);
@@ -327,6 +335,15 @@ function mountInner(hook, { term, cm6 }) {
     // is gone would seat into a disposed turtle / push into a dead hook.
     arena.add(pacedRender.cancel);
     arena.add(term.bridge.sub(pacedRender));
+
+    // A TAB SWITCH IS NEWS THE WORLD NEVER HEARS: the ask reads currentBufferId(),
+    // this surface's own state, so it moves with no world breath behind it.
+    let shown = term.currentBufferId()
+    arena.add(term.bridge.sub(({ id }) => {
+        if (id === shown) return
+        shown = id
+        wounds.changed()
+    }));
 
     const pacedHatch = temporal.pace(
         (payload) => hook.pushEvent("hatchTurtle", {
@@ -365,16 +382,35 @@ function mountInner(hook, { term, cm6 }) {
     })
     arena.add(innerReach.cleanup)
 
-    // The lint ink asks; nothing is pushed into the editor but the breath
-    // (id:cmp-first-surface). Thunks, not bodies: the current view and the
-    // current buffer's wounds, each ask. This editor shows the child's own
-    // document, so the runtime it inks is the local one — the world cell's.
-    arena.add(mountDiagnosticsInk(cm6, {
-        view: () => term.shell,
-        // Asked of the face directly, not through the cell: this surface IS the
-        // registrant, and a room is for asking what you did not put there.
-        ask: () => askDiagnostics(term.currentBufferId()),
-    }))
+    // THIS SURFACE'S WOUNDS — one ask, one breath, every reader (weave/wounds.js).
+    // Asked of the face directly, not through the cell: this surface IS the
+    // registrant, and a room is for asking what you did not put there.
+    const wounds = readWounds({ ask: () => askDiagnostics(term.currentBufferId()) })
+    arena.add(wounds.release)
+
+    // The ink reads them; nothing is pushed into the editor but the breath
+    // (id:cmp-first-surface). A thunk, not a body: the current view, each breath.
+    arena.add(mountDiagnosticsInk(cm6, { view: () => term.shell, wounds }))
+
+    // A READER OF THE DOCUMENT, not of a run: spoken from `enact` it went silent
+    // on a tab switch and on any wound that arose without running. Said once
+    // while it stands — an edit re-evaluates at 20 ms.
+    // Keyed on the SENTENCE: say it once while it reads the same. Health is the
+    // empty one — a real transition, drawn as nothing, so the wound returning
+    // speaks again without a ledger to re-arm.
+    const say = temporal.gate((_key, { w, n }) => {
+        if (w) nerve()?.push(
+            S.error("error", sayWound(w), w.span?.line ? { line: w.span.line } : null, n))
+    })
+    const speakWound = () => {
+        const found = wounds.read()
+        const w = primaryWound(found, term.currentBufferId())
+        // The KEY carries the tally, or a heal from three faults to two would
+        // read as "already said" and the count would sit there stale.
+        const n = announcements(found).length
+        say(w ? `${sayWound(w)} ○${n}` : "", { w, n })
+    }
+    arena.add(wounds.watch(speakWound))
 
     // The one focus move both surfaces read: dim the previously bright ambient
     // and the local tabs, light the target. Focus and degree ride the ONE
@@ -447,6 +483,8 @@ function mountInner(hook, { term, cm6 }) {
         // means. The child's while it runs, so the child's to reflect (D022).
         ambient: ({ addr, name, code }) => {
             authored = { addr, name, text: code }
+            // A live draft's caret lives in the OUTER shell; this surface
+            // only holds the ledger the outer reach / activateOuter fills.
             enact(addr, law.observe(addr, {
                 name, doc: code, own: true, attention: attentionOn(addr),
             }))

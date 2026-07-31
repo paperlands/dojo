@@ -1,7 +1,7 @@
 // =============================================================================
 // THE DIAGNOSTICS ADAPTER — a wound answer projected into editor ink
-// (specs/compiler.org id:cmp-first-surface). Demand-driven: the surface
-// ASKS on each breath (watchWorld) and once at mount, then renders the
+// (specs/compiler.org id:cmp-first-surface). Demand-driven: the surface's
+// wounds organ breathes, this reads and renders the
 // whole answer through @codemirror/lint's
 // setDiagnostics — positions map through edits, the gutter and underline
 // come standing, severity is ready for the day we speak more than `error`.
@@ -14,25 +14,30 @@
 // HUD carries it whole; guessing a position would be a second grammar.
 // =============================================================================
 
-// The breath only — "ask again". WHAT to ask is the surface's, never this
-// organ's, so the world's faces are not imported here.
-import { watchWorld } from "../weave/world.js"
+// Words only. The breath and the ask both belong to the surface's wounds organ
+// (weave/wounds.js), so neither the world's faces nor its clock are imported here.
 import { describe, sourceOf } from "../weave/wound-view.js"
+import { severityOf, everyWound } from "../weave/queries.js"
+import { temporal } from "../utils/temporal.js"
 
 // Pure mapping: query answers → CM6 Diagnostic spans, against a doc.
-//   errors — [{ span: { line }, message, source?, severity? }]; entries
+//   errors — [{ span: { line }, message, kind, source? }]; entries
 //   without a span-true line (or with a line the doc no longer holds) are
 //   SKIPPED — no true place, no ink.
 export function toDiagnostics(doc, errors) {
     const out = []
-    for (const e of errors ?? []) {
+    // FLATTENED: a dependent hangs under the death that caused it, but it
+    // stands at a line of its own and a child must SEE where.
+    for (const e of everyWound(errors)) {
         const line = e?.span?.line ?? null
         if (line == null || line < 1 || line > doc.lines) continue
         const docLine = doc.line(line)
         out.push({
             from: docLine.from,
             to: docLine.to,
-            severity: e.severity ?? "error",
+            // The KIND decides, never a literal on the wound: they drifted once
+            // and a name collision inked red on a document called well.
+            severity: severityOf(e),
             // Through the view again: a reader knows where they are by their own
             // outline, so the attribution is the cell's name or its phase. "the
             // stage" is the last resort, not the default — bare code has no outline.
@@ -46,11 +51,16 @@ export function toDiagnostics(doc, errors) {
     return out
 }
 
-// Render the current answer into a view — the whole set each ask,
-// LSP-style (an empty array clears). Safe against a torn-down view.
-export function publishDiagnostics(cm6, view, errors) {
+// WOULD THIS READ THE SAME? Over the DRAWN fields, not the wounds: a renamed
+// cell changes `source` without moving a wound, and must still repaint.
+const digestOf = (ds) =>
+    ds.map((d) => `${d.from}:${d.to}:${d.severity}:${d.source}:${d.message}`).join("\n")
+
+// Render diagnostics into a view — the whole set each time, LSP-style (an empty
+// array clears). Safe against a torn-down view.
+export function publishDiagnostics(cm6, view, ds) {
     if (!view?.state) return
-    view.dispatch(cm6.setDiagnostics(view.state, toDiagnostics(view.state.doc, errors)))
+    view.dispatch(cm6.setDiagnostics(view.state, ds))
 }
 
 // The standing ink infrastructure — mount once per editor (extensions.js).
@@ -59,31 +69,22 @@ export function createDiagnosticsExtension(cm6) {
     return [cm6.lintGutter()]
 }
 
-// THE ONE INK WRITER FOR AN EDITOR. Subscribe the breath, ask, publish the whole
-// answer — and ask once at mount, so a remounted editor is whole.
-//
-// `ask` is the entire contract: WHOSE WOUNDS ARE THESE? The organ never decides.
-// The child's own editor asks the world cell for its buffer; the review surface
-// asks the wire while watching and the world cell while drafting — one surface,
-// two runtimes, and the choice belongs to the surface that knows which it shows.
-//
-// `view` is a thunk for the same reason: the surface holds no body, it asks its
-// owner each breath. Returns unmount, with .refresh() for a surface whose answer
-// can change without a breath (a push arriving, a mode flipping).
-export function mountDiagnosticsInk(cm6, { view, ask }) {
-    // Identity, not depth: an answer built fresh each ask is always new and
-    // always repaints, while a held array (the wire's) repaints only when the
-    // surface swaps it. Cheap where it helps, harmless where it does not.
-    let last
+// THE ONE INK WRITER FOR AN EDITOR. Reads the surface's wounds (weave/wounds.js),
+// which own the ask and the clock; this keeps neither. `view` is a thunk — the
+// surface holds no body. No .refresh(): news goes through wounds.changed(), which
+// reaches every reader, not just this one.
+export function mountDiagnosticsInk(cm6, { view, wounds }) {
+    // Keyed on what IT DRAWS, never on the answer given: the query answers a
+    // fresh list every read, so array identity never hit and a clean document
+    // repainted every breath. LSP's `previousResultId`, locally.
+    const draw = temporal.gate((_key, ds) => publishDiagnostics(cm6, view(), ds))
     const paint = () => {
         const v = view()
-        if (!v?.state) return          // nothing painted, so nothing remembered
-        const answer = ask() ?? []
-        if (answer === last) return
-        last = answer
-        publishDiagnostics(cm6, v, answer)
+        if (!v?.state) return          // nothing drawn, so nothing remembered
+        const next = toDiagnostics(v.state.doc, wounds.read())
+        draw(digestOf(next), next)
     }
-    const unwatch = watchWorld(paint)
+    const unwatch = wounds.watch(paint)
     paint()
-    return Object.assign(() => unwatch(), { refresh: paint })
+    return () => unwatch()
 }

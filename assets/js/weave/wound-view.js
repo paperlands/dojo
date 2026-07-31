@@ -26,21 +26,24 @@ export const placeOf = (w) => [
 export const sourceOf = (w) =>
     w?.source ?? w?.cellName ?? w?.phase?.[w.phase.length - 1] ?? null
 
-// WHAT HURT, in words. A wound with its own `message` speaks it verbatim
-// (the parser's or the canvas's own words, never rewritten); otherwise this
-// composes the sentence from the facts, keyed by `kind`.
+// THE COMPOSED SENTENCES — one per kind whose words are OURS. A kind whose
+// words came from elsewhere (the parser's, the canvas's) needs no row: it is
+// quoted.
+const SAYS = {
+    name: (w) => w.why === "place"
+        ? `"${w.word}" is a place, not a name — this cell answers to ${w.answersTo}`
+        : `two cells are named "${w.word}" — this one answers to ${w.answersTo}`,
+    dependent: (w) => `depends on ${w.standsOn}, which did not run`,
+}
+
+// WHAT HURT, in words. Two families and no third: a wound QUOTES the message it
+// was given, or COMPOSES one from its facts. So nothing can fall through
+// silently — a kind nobody taught to speak says so, where `default: ""` used to
+// render an empty gutter and look like health.
 export const describe = (w) => {
     if (w?.message != null) return w.message
-    switch (w?.kind) {
-    case "name":
-        return w.why === "place"
-            ? `"${w.word}" is a place, not a name — this cell answers to ${w.answersTo}`
-            : `two cells are named "${w.word}" — this one answers to ${w.answersTo}`
-    case "dependent":
-        return `depends on ${w.standsOn}, which did not run`
-    default:
-        return ""
-    }
+    const say = SAYS[w?.kind]
+    return say ? say(w) : `something went wrong here (${w?.kind ?? "?"})`
 }
 
 // The whole sentence — where it hurts, then what hurt. The one line every nerve

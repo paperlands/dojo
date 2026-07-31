@@ -24,7 +24,7 @@ import { diagnostics } from "../../weave/queries.js"
 import { signals as S } from "../../nerve/store.js"
 import { revealAmbient, registerNavigator } from "../../nerve/reveal.js"
 import { getStage } from "../../turtling/stage-cell.js"
-import { nerveInstance } from "../nerve.js"
+import { nerve as seatedNerve } from "../nerve.js"
 import { createArena } from "../../kernel/arena.js"
 
 export const weave = {
@@ -42,7 +42,7 @@ function mountWeave(hook, boot = {}) {
     const arena = createArena()
     const trailEl = hook.el
     const stage = () => boot.turtle ?? getStage()
-    const nerve = () => boot.nerve ?? nerveInstance
+    const nerve = () => boot.nerve ?? seatedNerve()
     // Who walks — source of every walk signal (kind carries 'walk'; source
     // is the walker: keep's prefix law, per-source FIFO).
     const walker = () => boot.walker ?? "?"

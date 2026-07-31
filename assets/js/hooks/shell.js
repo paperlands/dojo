@@ -15,7 +15,7 @@ import { bootShell } from "./shell/core.js";
 import { outer as outershell } from "./shell/outer.js";
 import { inner as coreshell } from "./shell/inner.js";
 import { weave } from "./shell/weave.js";
-import { nerveInstance } from "./nerve.js";
+import { nerve as seatedNerve } from "./nerve.js";
 import { getStage } from "../turtling/stage-cell.js";
 
 // Walker address for walk signals (source = who spoke). Session name is the
@@ -36,7 +36,7 @@ async function bootFor(hook) {
     if (hook.el.dataset.target === "weave") {
         return {
             get turtle() { return getStage(); },
-            get nerve() { return nerveInstance; },
+            get nerve() { return seatedNerve(); },
             get walker() { return walkerAddress(); },
         };
     }

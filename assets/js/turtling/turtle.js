@@ -5,7 +5,7 @@ import { parseProgram, reparseProgram } from "./parse.js"
 // serves; the import points DOWN-stream only (weave/queries.js reads
 // turtling/parse.js and nothing else), so spelling the rule twice is what would
 // cost us, not this.
-import { ailmentsFor } from "../weave/queries.js"
+import { ailmentsFor, standingAilments } from "../weave/queries.js"
 import { drainNamespace } from "./executor.js"
 import { Evaluator } from "./mafs/evaluate.js"
 import Render from "./render/index.js"
@@ -327,16 +327,11 @@ export class Turtle {
     // Deduped by where the diagnostic actually lives: many cells of a phase share
     // one vocabulary, and one broken line is one diagnostic, not one per reader.
     get ailments() {
-        const out = this.scheduler?.errors ? [...this.scheduler.errors] : []
-        if (!this._rehearsalDiagnostics?.size) return out
-        const seen = new Set()
-        for (const w of this._rehearsalDiagnostics.values()) {
-            const at = `${w.message}@${w.span?.line ?? "?"}`
-            if (seen.has(at)) continue
-            seen.add(at)
-            out.push(w)
-        }
-        return out
+        return standingAilments({
+            frames: this.scheduler?.errors,
+            seats: this._seatFaults?.values(),
+            rehearsals: this._rehearsalDiagnostics?.values(),
+        })
     }
 
     // hatch:false renders without refreshing the snapshot/thumbnail or reflecting
@@ -406,6 +401,10 @@ export class Turtle {
             // frame on the canvas, a watched friend's included, so reading it
             // whole reddens the child's reflect for a friend's broken code. The
             // address rule owns the filter; a page's cells ride `key#cellN`.
+            // Seated clean — last time's throw is healed. Cleared at the same
+            // site that sets it, so the pair cannot drift (cf. scheduler.js:534).
+            this._seatFaults?.delete(key)
+
             const wounds = ailmentsFor(this.scheduler.errors, key)
             if (wounds.length > 0) {
                 // THE TURTLE CARRIES WOUNDS, NEVER A SENTENCE. Each wound keeps
@@ -440,6 +439,10 @@ export class Turtle {
                 kind: error.kind ?? "walk",
                 address: key,
             }
+            // HELD, not just returned: the scheduler's registry is frame
+            // contexts and this throw never reached a frame, so standing here is
+            // the only way it joins `ailments` and reaches every reader.
+            ;(this._seatFaults ??= new Map()).set(key, wound)
             this.renderstate.meta = { state: "error", message: null, diagnostics: [wound] }
             return { success: false, wounds: [wound] }
         }
@@ -466,6 +469,7 @@ export class Turtle {
         this._localKeys.delete(key)
         this._parseMemo?.delete(key)
         this._rehearsalDiagnostics?.delete(key)
+        this._seatFaults?.delete(key)
         if (!this.scheduler) return
         this._lastReflectChange = performance.now()
 
