@@ -466,6 +466,31 @@ describe("activation memo — cursor movement stays free of linter churn", () =>
         const v2 = stepActivation(v1, { docChanged: true, doc: edited, headLine: 3 }, build, NONE)
         assert.equal(v2.cells, v1.cells)
     })
+
+    // Typing in the meadow used to re-apply first light on every keystroke:
+    // docChanged always fell through to cells[0], so kindling cell 2 and then
+    // editing the prose between them re-lit cell 1. The held CELL travels by
+    // outline identity (kindleCell), so a prose keystroke keeps the light.
+    test("an edit in prose keeps the kindled cell — sticky, not first light", () => {
+        const build = () => ({ deco: 1 })
+        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 8 }, build, NONE)
+        assert.equal(v0.key, 7)                              // cell #2
+        const typed = mkDoc("###\n```\nfw 100\nrt 90\n```\nbetwixt\n```\nrt 45\n```\n###")
+        const v1 = stepActivation(v0, { docChanged: true, doc: typed, headLine: 6 }, build, NONE)
+        assert.equal(v1.key, 7, "cell #2 still wears the light after a prose keystroke")
+    })
+
+    // A newline above shifts every fence. Holding by open-line would miss;
+    // holding the cell (coord) finds it again at its new open.
+    test("an edit that shifts lines keeps the kindled cell by outline identity", () => {
+        const build = () => ({ deco: 1 })
+        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 8 }, build, NONE)
+        assert.equal(v0.key, 7)
+        const shifted = mkDoc("\n###\n```\nfw 100\nrt 90\n```\nbetween\n```\nrt 45\n```\n###")
+        const v1 = stepActivation(v0, { docChanged: true, doc: shifted, headLine: 7 }, build, NONE)
+        assert.equal(v1.key, 8, "cell #2 is still kindled; its open is now 8")
+        assert.deepEqual(v1.held.coord, v0.held.coord, "same outline place")
+    })
 })
 
 // The margin outline — a `# * name` heading riding code folds the code beneath it,

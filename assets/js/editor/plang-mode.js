@@ -642,6 +642,36 @@ export const findMeadows = (doc) => findProse(doc).meadows;
 export const inMeadowRange = (meadows, lineNo) =>
     meadows.some((m) => lineNo >= m.open && lineNo <= m.end);
 
+// Same cell after a re-walk of the document. Identity is the outline place
+// (coord — D024), not a line number: typing a newline above moves every
+// fence, and the light must not fall with it. A restructure that renumbers
+// the place is a different cell, and sticky lets go.
+export const cellSame = (a, b) =>
+    !!a && !!b &&
+    a.coord?.length === b.coord?.length &&
+    !!a.coord?.every((n, i) => n === b.coord[i]);
+
+// THE CURSOR LAW (id:gw-cell) — which cell wears the light. Pure geometry,
+// one function, four clauses:
+//
+//   1. cursor in a cell            → that cell
+//   2. cursor in the meadow,
+//      a cell already held         → that cell, if it still stands
+//   3. cursor on bare code         → none (she is making)
+//   4. cursor in the meadow,
+//      nothing held, first light   → the first cell (a fresh page opens lit)
+//
+// `held` is the cell last kindled (or null). `first` is true only when the
+// surface has never spoken — birth. After bare code extinguishes the light,
+// prose alone does not re-kindle: first light is a birth, not a default.
+export function kindleCell(cells, meadows, headLine, held = null, first = false) {
+    const here = cellAt(cells, headLine);
+    if (here) return here;
+    if (!inMeadowRange(meadows, headLine)) return null;
+    if (held) return cells.find((c) => cellSame(c, held)) ?? null;
+    return first ? (cells[0] ?? null) : null;
+}
+
 // PAGE-shaped: every non-blank line lives inside a meadow — the shape the
 // press emits. Bare code outside the fences makes the doc a PROGRAM. The
 // priority law (the reach, the portal step) decides by this shape, never a

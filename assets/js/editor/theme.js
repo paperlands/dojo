@@ -182,20 +182,37 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
 
         // Diagnostics ink (id:cmp-first-surface) — an error is a play
         // surface (D020): loud in the ink, spoken in the theme's own ember,
-        // never stock lint red. The spark ✶ marks the gutter; the tooltip
-        // stands on twilight ground.
+        // never stock lint red. Gutter: ✶ death, ! warning. content only
+        // paints on ::before — stock CM6 uses content:url(svg) on the element.
         '.cm-lintRange-error': {
             backgroundImage: 'none',
             textDecoration: 'underline wavy oklch(0.63 0.21 25 / 0.85)',
             textUnderlineOffset: '3px',
             backgroundColor: 'oklch(0.63 0.21 25 / 0.08)',
         },
+        '.cm-lint-marker': {
+            width: '0.75em',
+            height: '1em',
+        },
         '.cm-lint-marker-error': {
-            content: '"✶"',
-            color: ERROR_RED,
-            textShadow: '0 0 8px rgb(240 168 61 / 0.6)',
-            fontSize: '11px',
-            lineHeight: '1.6',
+            content: 'none',
+            '&:before': {
+                content: '"✶"',
+                color: ERROR_RED,
+                textShadow: `0 0 6px ${PHOSPHOR}99`,
+                fontSize: '10px',
+                lineHeight: '1.4',
+            },
+        },
+        '.cm-lint-marker-warning': {
+            content: 'none',
+            '&:before': {
+                content: '"!"',
+                color: PHOSPHOR,
+                fontWeight: '700',
+                fontSize: '10px',
+                lineHeight: '1.4',
+            },
         },
         '.cm-tooltip': {
             backgroundColor: 'rgb(22 15 27 / 0.96)',
@@ -334,19 +351,36 @@ const everforestLight = ({ EditorView, HighlightStyle, syntaxHighlighting, tags 
         '.cm-peer-cell.cm-cell-inactive': { opacity: '0.66' },
         '.cm-peer-line.cm-cell-inactive':  { opacity: '0.88' },
 
-        // Diagnostics ink (id:cmp-first-surface) — errors are RED (the
-        // creator's law), in everforest's own red on the light ground.
+        // Diagnostics ink (id:cmp-first-surface) — errors RED, warnings amber
+        // (everforest). Same gutter glyphs as dark: ✶ and !.
         '.cm-lintRange-error': {
             backgroundImage: 'none',
             textDecoration: 'underline wavy rgba(248, 85, 82, 0.75)',
             textUnderlineOffset: '3px',
             backgroundColor: 'rgba(248, 85, 82, 0.07)',
         },
+        '.cm-lint-marker': {
+            width: '0.75em',
+            height: '1em',
+        },
         '.cm-lint-marker-error': {
-            content: '"✶"',
-            color: '#f85552',
-            fontSize: '11px',
-            lineHeight: '1.6',
+            content: 'none',
+            '&:before': {
+                content: '"✶"',
+                color: '#f85552',
+                fontSize: '10px',
+                lineHeight: '1.4',
+            },
+        },
+        '.cm-lint-marker-warning': {
+            content: 'none',
+            '&:before': {
+                content: '"!"',
+                color: '#dfa000',
+                fontWeight: '700',
+                fontSize: '10px',
+                lineHeight: '1.4',
+            },
         },
         '.cm-tooltip': {
             backgroundColor: '#fdf6e3',

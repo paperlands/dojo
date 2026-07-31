@@ -65,8 +65,30 @@ export function publishDiagnostics(cm6, view, ds) {
 
 // The standing ink infrastructure — mount once per editor (extensions.js).
 // lintGutter renders the marker; the underline rides setDiagnostics itself.
+// The column collapses when clean: no sparks, no reserved strip. :has() is
+// the whole gate — markers land as .cm-lint-marker, so empty gutters shrink
+// without a second Compartment or a paint-time reconfigure.
 export function createDiagnosticsExtension(cm6) {
-    return [cm6.lintGutter()]
+    return [
+        cm6.lintGutter(),
+        cm6.EditorView.theme({
+            // Stock is 1.4em + .2em pad — a strip for the SVG chips. Glyphs
+            // (✶ / !) need far less; collapse fully when clean.
+            ".cm-gutter-lint": {
+                width: "0",
+                minWidth: "0",
+                overflow: "hidden",
+            },
+            ".cm-gutter-lint:has(.cm-lint-marker)": {
+                width: "0.85em",
+                minWidth: "0.85em",
+                overflow: "visible",
+            },
+            ".cm-gutter-lint .cm-gutterElement": {
+                padding: "0.2em",
+            },
+        }),
+    ]
 }
 
 // THE ONE INK WRITER FOR AN EDITOR. Reads the surface's wounds (weave/wounds.js),

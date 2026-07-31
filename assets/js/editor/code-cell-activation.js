@@ -2,15 +2,10 @@
 //
 // The cell the cursor rests in is ACTIVE — full strength, and the only cell a
 // notebook would evaluate; every other ``` … ``` cell is inert: dimmed, not
-// evaluated. THE CURSOR LAW (the cell shape rule, id:gw-cell):
-//
-//   1. the cursor's cell, when the cursor rests in one — the cursor is the gate;
-//   2. else, inside the meadow, the cell already active stays — moving through
-//      prose never drops the light (the child is reading);
-//   3. out of the fence, on bare code, NO cell is active and none would be
-//      evaluated (the child is making — the cells rest);
-//   4. on first light in prose space, the FIRST cell — a fresh page opens with
-//      its first figure lit, matching the sibling ambient the canvas mounts.
+// evaluated. THE CURSOR LAW lives next to the geometry it reads — kindleCell
+// in plang-mode.js (id:gw-cell). This file is the CM6 field that paints it:
+// re-walk on edit, reuse the index on a cursor move, rebuild decorations only
+// when the kindled cell actually changes.
 //
 // Scroll-focus needs no second gate: the reach organ (editor/reach.js, mounted
 // by both shells) plants the caret in the cell the reader scrolled to, so this
@@ -18,7 +13,7 @@
 // surfaces (gw-appearance law 1). And it plants only for a READER (an unfocused
 // shell, nothing selected): where there is a cursor, the cursor decides alone.
 //
-// PERFORMANCE (why the field value is { deco, cells, key }, not just deco):
+// PERFORMANCE (why the field value is { deco, cells, held, key }, not just deco):
 // activation recomputes on every cursor move, and a naive findCells + RangeSet
 // rebuild is ~191µs/move on a 5k-line buffer (see test/js/profile/linter_bench.mjs)
 // — enough to make arrow keys grind. So we cache the cell index across selection
@@ -41,9 +36,11 @@
 // the two coincide and there is nothing extra to see; "spotlight only when not
 // following" is a coincidence of the geometry, not a guard anyone writes.
 
-import { findProse, cellAt, inMeadowRange } from "./plang-mode.js";
+import { findProse, cellAt, kindleCell } from "./plang-mode.js";
 
-const keyOf = (cell) => (cell ? cell.open : null);   // open-line uniquely ids a cell within one doc snapshot
+// open-line: cheap equality within one doc snapshot (the memo key). Across
+// edits the held CELL travels by outline identity (kindleCell / cellSame).
+const keyOf = (cell) => (cell ? cell.open : null);
 
 // Pure state transition for the activation field. `build(doc, cells, active, peerLine)`
 // makes the decoration set; `none` is the empty-decoration sentinel.
@@ -57,27 +54,25 @@ const keyOf = (cell) => (cell ? cell.open : null);   // open-line uniquely ids a
 // position in the document has one, so it means something in prose, on bare
 // code, between cells, and inside them alike. The CELL is derived from it at
 // build time and never stored: derive, don't duplicate.
+//
+// What is held across steps is the CELL itself (prev.held), not a line number.
+// kindleCell finds it again by outline place after a re-walk — so a keystroke
+// that shifts every fence cannot re-light the first cell by accident.
 export function stepActivation(prev, facts, build, none) {
     const { docChanged, selectionChanged, doc, headLine, peerLine = null } = facts;
     const paints = (cells) => cells.length || peerLine != null;
 
     if (!prev || docChanged) {
-        const { cells, meadows } = findProse(doc);           // the one walk, both indexes
-        const active = cellAt(cells, headLine)
-            ?? (inMeadowRange(meadows, headLine) ? cells[0] : null)  // first light — prose only
-            ?? null;
+        const { cells, meadows } = findProse(doc);
+        const active = kindleCell(cells, meadows, headLine, prev?.held ?? null, !prev);
         return {
             deco: paints(cells) ? build(doc, cells, active, peerLine) : none,
-            cells, meadows, key: keyOf(active), peerLine,
+            cells, meadows, key: keyOf(active), held: active, peerLine,
         };
     }
 
     if (selectionChanged || peerLine !== prev.peerLine) {
-        const active = cellAt(prev.cells, headLine)          // cached indexes — no re-walk
-            ?? (inMeadowRange(prev.meadows, headLine)
-                ? prev.cells.find((c) => c.open === prev.key) // sticky: prose moves keep the light
-                : null)                                       // out of the fence, on code: all cells rest
-            ?? null;
+        const active = kindleCell(prev.cells, prev.meadows, headLine, prev.held, false);
         const key = keyOf(active);
         // Memo hit — the SAME object, no rebuild, no allocation. The move path
         // is untouched by the peer key: the watcher's own cursor never changes
@@ -85,7 +80,7 @@ export function stepActivation(prev, facts, build, none) {
         if (key === prev.key && peerLine === prev.peerLine) return prev;
         return {
             deco: paints(prev.cells) ? build(doc, prev.cells, active, peerLine) : none,
-            cells: prev.cells, meadows: prev.meadows, key, peerLine,
+            cells: prev.cells, meadows: prev.meadows, key, held: active, peerLine,
         };
     }
 
