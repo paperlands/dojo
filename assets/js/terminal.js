@@ -133,7 +133,9 @@ export const createTerminal = (element, cm6, options = {}) => {
         return doc;
     };
 
-    const doSelectBuffer = (id, { offset } = {}) => {
+    // announce:false selects without publishing — construction has no audience
+    // yet, and the mount speaks the first breath itself (term.triggerBridge).
+    const doSelectBuffer = (id, { offset, announce = true } = {}) => {
         if (!state.collection.items.has(id)) throw new Error(`Buffer '${id}' not found`);
 
         // Projection happens only when the displayed buffer changes.
@@ -184,7 +186,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         shell.focus();
 
         // 5. Effects (each independent)
-        triggerBridge();
+        if (announce) triggerBridge();
         tabs?.selectTab(id);
 
         return selectedBuffer;
@@ -278,8 +280,11 @@ export const createTerminal = (element, cm6, options = {}) => {
                 tabs.addTab(id, buffer.name);
             }
 
-            // Select initial buffer
-            doSelectBuffer(state.collection.currentId);
+            // Select initial buffer — SILENT. Building a surface is not news:
+            // the mount is still wiring its organs, and a subscriber that fires
+            // here reads a half-built room. The mount announces birth when it
+            // is whole.
+            doSelectBuffer(state.collection.currentId, { announce: false });
 
             // Persist on tab hide / page unload — timer-based autosave alone is unreliable
             document.addEventListener('visibilitychange', onVisibilityChange);

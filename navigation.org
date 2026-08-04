@@ -270,8 +270,8 @@ Stage 1 (specs/compiler/compiler.org id:cmp-become-seed): =hotSwapChild=
 compares the frame's =seed= (ast element identity, functions/userspace
 identity, color) and refuses the rebuild when nothing changed — sibling
 cells stop blinking. =fresh:true= is the explicit restart door
-(=turtle.toggleAmbient= group restart). Pins: =test/js/become_test.mjs=;
-seam lint: =test/js/check_tree.mjs=.
+(=turtle.toggleAmbient= group restart). Pins: =test/js/runtime/become_test.mjs=;
+seam lint: =test/js/document/check_tree.mjs=.
 
 ** render clock — epoch rebase, idle fast-forward
 :PROPERTIES:
@@ -301,6 +301,29 @@ one. Decision 011 bullet 3. Head events for frame-targeted children are projecte
 :PATH: assets/js/turtling/view.js
 :END:
 SE(3) math in =assets/js/turtling/se3.js=.
+
+** camera gestures — zoom flies through, two fingers mean one thing
+:PROPERTIES:
+:ID: nav-gesture
+:KEYWORDS: zoom pinch touch gesture tilt roll twist dolly through arbitration slop wheel trackpad orbit controls span drift subclass vendored
+:PATH: assets/js/turtling/orbit.js
+:END:
+=DojoOrbitControls= — ALL dojo camera behaviour, as a SUBCLASS. The vendored
+=assets/js/utils/threeorbital.js= holds no dojo code, so three.js upgrades are a
+file swap (see [[file:assets/js/utils/VENDOR.org][VENDOR.org]] + =scripts/vendor_verify.sh=). Three behaviours:
+dolly-through (=dollyStandoff= floors the PIVOT, not the camera — =minDistance=0=
+disarms stock's clamp and =update()= floors the target instead), gesture
+arbitration, and the upstream =clientX=-as-y typo.
+
+The DECIDING is pure: =assets/js/utils/gesture.js= — span/drift/twist compete in
+one unit (twist as arc = |Δangle|·span/2), first past =gestureSlop= owns the
+gesture. Tested in =test/js/utils/gesture_test.mjs=; no THREE, no camera.
+
+Rule: apply what the rig can express, publish what it cannot. Twist leaves as a
+=twist= event and lands as the hand's own reframe M, composed with the eye's E⁻¹
+in =compositor.js::viewReframe= — see [[id:nav-eye]]. The subclass hooks
+underscore-private members, so =test/js/seams/orbit_seam_test.mjs= fails loudly if an
+upgrade renames one (otherwise arbitration would stop SILENTLY).
 
 ** GL lifecycle — dispose or leak per remount
 :PROPERTIES:
@@ -352,7 +375,7 @@ The old shape (=let nerveInstance=, nulled in =destroyed()=) therefore let the
 departing hook null the LIVE instance, after which every push was a silent
 no-op for the rest of the page's life. The cell's unregister is owner-guarded —
 a later mount wins, the earlier release is a no-op — pinned by
-=test/js/world_cell_test.mjs= ("a later mount wins").
+=test/js/wound/world_cell_test.mjs= ("a later mount wins").
 
 ** shell hook — dispatch point, two surfaces
 :PROPERTIES:
@@ -373,7 +396,7 @@ unknown name mounts nothing. Peers, not nesting ([[id:lex-unmarked]]).
 :END:
 booting → live → dead. Events register before the first await (the mount
 patch's own push_events are otherwise lost); the queue drains at live; a
-mid-boot destroy stands the mount down. Pure — =test/js/shell_lifecycle_test.mjs=.
+mid-boot destroy stands the mount down. Pure — =test/js/shell/lifecycle_test.mjs=.
 
 ** shell core — CM6 boot, execCommand seam, listener kit
 :PROPERTIES:
@@ -393,6 +416,29 @@ mid-boot destroy stands the mount down. Pure — =test/js/shell_lifecycle_test.m
 =cm6.manifest.json= carries the RESOLVED version + hashes of artifact, entry,
 and lockfile. =scripts/vendor_verify.sh= checks all of it and that
 =core.js='s =?v== token still tells the truth. Prose: [[file:assets/js/utils/VENDOR.org][VENDOR.org]] =::vendor-cm6=.
+
+** three.js surface — named once, checked twice
+:PROPERTIES:
+:ID: nav-three-entry
+:KEYWORDS: three.js three-entry surface contract REVISION vendor entry WebGLRenderer
+:PATH: assets/js/utils/three-entry.js
+:END:
+23 symbols, the whole dojo-authored three dependency. Bundler enforces at build;
+=test/js/seams/three_entry_test.mjs= enforces in CI (which never bundles).
+=vendor_verify.sh= keeps the =Version: =…== claim honest against =REVISION=.
+Prose: [[file:assets/js/utils/VENDOR.org][VENDOR.org]] =::vendor-three=.
+
+** three fat-line addons — r185, one rewrite
+:PROPERTIES:
+:ID: nav-three-lines
+:KEYWORDS: Line2 LineMaterial LineSegments2 LineGeometry fat-line three-addons GrowLine
+:PATH: assets/js/utils/three-addons/lines/
+:END:
+Pristine r185 =examples/jsm/lines/*= under =utils/three-addons/lines/=. One
+rewrite (=from 'three'= → =three.module.min.js=); sibling =../lines/= intact.
+Upgrade: =scripts/vendor-three-lines.sh=. =GrowLine.js= is dojo-owned
+(=turtling/render/line/=) and sits on top. Prose: [[file:assets/js/utils/VENDOR.org][VENDOR.org]]
+=::vendor-line-addons=.
 
 ** kernel cell — registry-of-one
 :PROPERTIES:
@@ -418,7 +464,7 @@ The breath every half-adopted list reimplemented. Atom is a value over it.
 :PATH: assets/js/kernel/arena.js::export function createArena
 :END:
 APR/region law: LIFO cleanups, nested children die first, register-after-destroy
-throws. =test/js/kernel_test.mjs=.
+throws. =test/js/kernel/kernel_test.mjs=.
 
 ** term cell — Terminals by role, not dunder
 :PROPERTIES:
@@ -532,7 +578,7 @@ phase's SISTER cells, every other cell behind its fences, and translates
 its docstring.* =phaseCells= carries
 each cell's =open=/=close= lines and its =path=. Why not a cell ordinal: it
 aliases under insertion and cannot name a phase that owns no cell yet.
-Pinned by =test/js/weave_phase_test.mjs=.
+Pinned by =test/js/phase/attention_test.mjs=.
 
 *** two addressings, one seam (=cmp-vet-4=)
 A LINE addresses an INTENTION — where the reader is; total (prose has one) and
@@ -559,7 +605,7 @@ span-true diagnostics. =authored= is a lifecycle — the child's edit, a live
 draft — never a per-seat residue and never a friend's push. The hatch gate is
 the BATCH's word (=turtle.reflectGate=, spoken once in =perform()=): a seat may
 only OPEN it, so a page's warm sibling can no longer close it last and mute the
-page. Pinned by =test/js/weave_reflect_test.mjs=.
+page. Pinned by =test/js/seat/reflect_test.mjs=.
 
 *** the hatch carries the fault — no runtime on the watcher (D020 amended)
 *=state= is the DOCUMENT's health; =diagnostics= are the addressed wounds.* Any
@@ -586,7 +632,7 @@ authoring surface says BEFORE the wire so the server carries words it never has
 to interpret (D022). =verdict= answers ={ state, wound }= — WHETHER and WHICH,
 never how it reads. They were one module and the query grew a =message= field
 that was sometimes quoted and sometimes its own composition, with nothing
-telling a reader which. Pinned by =test/js/wound_view_test.mjs=.
+telling a reader which. Pinned by =test/js/wound/wound_view_test.mjs=.
 
 *The turtle's fault channel is a LIST, never a sentence.* =renderstate.meta=
 carries =diagnostics= — abstract wounds (address ⊕ span ⊕ message ⊕ kind) — and
@@ -625,7 +671,7 @@ and =verdict= and the core HUD both read it. They used to choose independently
 (the HUD took the first, the verdict preferred the buffer's), so a page could
 say two different things about itself depending on who asked. =verdict= answers
 ={ state, wound }= — WHETHER and WHICH — and the surface renders the sentence
-through [[id:nav-wound-view]]. Pinned by =test/js/queries_test.mjs=.
+through [[id:nav-wound-view]]. Pinned by =test/js/wound/queries_test.mjs=.
 
 *** the attention rides, the document does not move (D025 R1 amended)
 =attend= is a coordinate INTO the whole tree that crosses beside it — the
@@ -695,7 +741,7 @@ event's KIND is unambiguous, and this organ only ever WRITES scroll.
 
 =chaseDirection(line, first, last)= is pure and answers =null= for any line the
 viewport was just moved onto, so the firefly needs no knowledge of following and
-carries no suppression clause. Pinned by =test/js/peer_attention_test.mjs=.
+carries no suppression clause. Pinned by =test/js/editor/peer_attention_test.mjs=.
 
 *The firefly is a sigil, and arousal is a VALUE* — no fill, no plate: their
 initials as ink, a hairline rim, light falling off. =chase.stir()= adds
@@ -749,7 +795,7 @@ holds (a followed PROGRAM does not hatch its previews, D023).
 :END:
 *One question a frame: would the watcher learn something new?* The policy is
 PURE and THREE-free (the =timeline.js= law) — =hatchVerdict(world)= in, ={owed,
-reason}= out, pinned by =test/js/hatch_test.mjs=. =reason= says hatch now;
+reason}= out, pinned by =test/js/stage/hatch_test.mjs=. =reason= says hatch now;
 =owed= keeps the render loop alive while a floor runs or the stage is mid-
 readback, so no hatch is ever dropped by an idle-out.
 
@@ -915,7 +961,7 @@ CM6's =requestMeasure= (out of the scroll callback it forces a layout per
 event); the plant does NOT — a transaction dispatched from =read=/=write=
 throws "not allowed while an update is in progress" and CM6 swallows it, so
 the cell would seat and RUN unlit. It lands one =queueMicrotask= later
-(=reach.js= =enter=, all of it pinned by =test/js/reach_test.mjs=). ONE WORD PER
+(=reach.js= =enter=, all of it pinned by =test/js/editor/reach_test.mjs=). ONE WORD PER
 ROLE in that organ: =reach= the module, =attend= the verb, a LINE the datum,
 =attending= what it last published, =reading()= the one test that lets scroll
 speak. The lexicon for this whole cluster —
@@ -931,14 +977,18 @@ first cell on first light). The degree ladder is one pure transition
 ** papertiger — the bestiary ground (runtime body left the tree)
 :PROPERTIES:
 :ID: nav-tiger
-:KEYWORDS: papertiger tiger companion mood stance mascot clippy pounce coil slink prowl halo intent resting question gaze leap undraw draw ink gesture playground meadow atelier carve seed grok imagine potrace normalize archetype bestiary ladder skeleton anima
+:KEYWORDS: papertiger tiger companion mood stance mascot clippy pounce coil slink prowl halo intent resting question gaze leap undraw draw ink gesture playground meadow atelier carve seed grok imagine potrace normalize archetype bestiary ladder skeleton anima image_edit image_gen image_to_video reference_to_video ZDR upload_url journey experiment lineage score
 :PATH: scripts/bestiary/papertiger
 :END:
 Canon lives in =specs/papertiger/= (=papertiger.org= + anima, atelier,
-evolve, moodboards, skeleton-alphabet). The living ground is the bestiary:
+evolve, moodboards, skeleton-alphabet, *grok_imagine* API runbook
+[[id:gi-entry]]). The living ground is the bestiary:
 =scripts/bestiary/papertiger/= (=core/=, =_carve/=, =_skeleton/=,
-=_ladder/= — the unfolding-ladder morphs, =dreams/=), fed by
+=_ladder/= — the unfolding-ladder morphs, =dreams/=, =journeys/= —
+experiment process + stitched law ledger [[id:pt-journeys]]), fed by
 =scripts/tiger_atelier.sh= =seed=/=carve= → =scripts/tiger_normalize.mjs=.
+Film ladders: REST via =_ladder/rasa_wheel/pilot/ref2vid/ref2vid_api.py=
+(agent video tools ZDR-blocked — see [[id:gi-zdr]]).
 The browser runtime (=tiger/mood.js= stance automaton, =tiger/tiger.js=
 body, =hooks/tiger.js= senses, the =/tiger= playground) left the working
 tree with the tyger-meadows reshape <2026-07-19>; its design stands in the
@@ -968,7 +1018,7 @@ Two kinds of prose, cleanly split (collapse-trivia pass):
 - a =#= comment is TRIVIA — the uniform =meta.comment= (a node's own/opening
   line) or =meta.endComment= (a block's =end=), attached by =attachComment=,
   re-emitted by =printAST= as =#= + the verbatim run (author whitespace kept).
-  =meta.lit= is never a comment. Instrument: =test/js/trivia_test.mjs=.
+  =meta.lit= is never a comment. Instrument: =test/js/document/trivia_test.mjs=.
 The lit-link click reveal is shared with the shout-source path in
 =assets/js/nerve/reveal.js=. See
 =specs/decisions/013-literate-atom-rendered.decision.md=.
@@ -989,7 +1039,7 @@ splits, and meadow folds). =collectErrors(ast)= is the diagnostics seed
 (Phase 2's first query); =turtle.run= rides it as =result.parseErrors= and
 the executor rests ='Error'= nodes (=executor.js= case). Elixir side
 tolerant: map patterns ignore =span=, =visit(_)= swallows unknown types.
-Pinned by =test/js/resilient_parse_test.mjs=.
+Pinned by =test/js/document/resilient_parse_test.mjs=.
 
 ** green tree — node identity across reparses
 :PROPERTIES:
@@ -1007,7 +1057,7 @@ Wired at both parse seams: =weave/page.js asTree= (records hold
 =source=/=program=; every surface enters through it, so a live draft reuses
 the held tree instead of handing the turtle a bare string — D023) and
 =turtle.upsertAmbient= (=_parseMemo= per key,
-evicted in =removeAmbient=). Pinned by =test/js/green_tree_test.mjs=
+evicted in =removeAmbient=). Pinned by =test/js/document/green_tree_test.mjs=
 (adversarial equivalence sweep + identity properties) and the law-level
 pin in =weave_page_test.mjs=.
 
@@ -1025,7 +1075,7 @@ degrades by optional chain. =worldChanged()= is the breath: it says only
 (=hooks/shell/inner.js=): faces =diagnostics(key) / vitals(name) /
 family(pattern)= read the owner's current bodies at ask time; the breath
 rides =debouncedRender= once per eval. Pinned by
-=test/js/world_cell_test.mjs=.
+=test/js/wound/world_cell_test.mjs=.
 
 ** diagnostics query — memo at the reuse grain
 :PROPERTIES:
@@ -1057,7 +1107,7 @@ core HUD, a friend's panel, the editor gutter (=toDiagnostics= → =describe=),
 and the reflect's =message=, said BEFORE the wire so the server carries words it
 never interprets (D022). Nothing here DECIDES: choosing which wound matters is
 =primaryWound='s, and whether the document is well is =verdict='s. Pinned by
-=test/js/wound_view_test.mjs=.
+=test/js/wound/wound_view_test.mjs=.
 
 ONE record, one meaning per key: ={ message, span, kind, source, address,
 phase, cell }=. =kind= is where it was born — =parse= (tree would not build),
@@ -1067,7 +1117,7 @@ phase, cell }=. =kind= is where it was born — =parse= (tree would not build),
 else, so a broken sister never darkens the page. Editor
 ink reads through =mountDiagnosticsInk= (=editor/diagnostics.js=) and
 renders via =@codemirror/lint= under the skip-law: no true span, no ink.
-Pinned by =test/js/queries_test.mjs= and =test/js/diagnostics_test.mjs=.
+Pinned by =test/js/wound/queries_test.mjs= and =test/js/wound/diagnostics_test.mjs=.
 
 ** surface wounds — one ask, one breath, N readers
 :PROPERTIES:
@@ -1093,7 +1143,7 @@ surface instead of once per reader. Holds no last answer on purpose: early
 cutoff belongs to each reader, keyed on what that reader emits — the voice
 compares its sentence, the ink its span list. =changed()= is for news the world
 cell never hears (a friend's push, a draft going live) and reaches EVERY reader,
-where the old =ink.refresh()= reached one. Pinned by =test/js/wounds_test.mjs=;
+where the old =ink.refresh()= reached one. Pinned by =test/js/wound/wounds_test.mjs=;
 reasoned in =specs/compiler/diagnostics-review.org= (=dg-move-cell=).
 
 ** diagnostics review — subsystem analysis, generics, findings
@@ -1120,7 +1170,7 @@ Pure readers over an injected scheduler (=specs/compiler.org=
 pulse or null (nobody home degrades to the word); =livingFamily= scans the
 registry with the ONE pattern law (=match.js=, the same scan =when= uses).
 Registered as world faces by the inner shell. Pinned by
-=test/js/vitals_test.mjs=.
+=test/js/stage/vitals_test.mjs=.
 
 * RIGS — proving ground
 :PROPERTIES:
@@ -1130,10 +1180,34 @@ Registered as world faces by the inner shell. Pinned by
 ** JS tests — zero-npm, node:test
 :PROPERTIES:
 :ID: nav-js-tests
-:KEYWORDS: node test mjs assert describe vitest-free
-:PATH: test/js/nerve_test.mjs
+:KEYWORDS: node test mjs assert describe vitest-free contract cluster
+:PATH: test/js/nerve/nerve_test.mjs
 :END:
-=node --test test/js/<file>.mjs= — each test file names its contract up top.
+=node --test test/js/= (all) or =node --test test/js/<cluster>/<file>.mjs=.
+Each file names its contract up top. Layout is by *law*, not by source package:
+
+| Cluster | Contract family | Blast radius if the law lies |
+|---|---|---|
+| =kernel/= | cell / observable / arena grain | every higher cell |
+| =document/= | green tree, total parse, trivia, literate | seating, memo, reflect, become seed |
+| =phase/= | attention → phase; outline = ambient tree | peer slice, vocabulary, diagnostics place |
+| =motion/= | SE3 / atom / commands | executor geometry |
+| =execute/= | AST → events / namespace | scheduler, phase rehearsal |
+| =runtime/= | scheduler, identity, become, communication, eye | continuity of living figures |
+| =stage/= | vitals, hatch, timeline readers | HUD, hatch gate, idle clock |
+| =seat/= | pageLaw, reflect, press, resolve, ladder | who runs; peer bytes |
+| =wound/= | queries → view → wounds → diagnostics → world | truth chain to HUD/gutter/wire |
+| =editor/= | tokenizer, reach, peer attention faces | buffer UX |
+| =terminal/= | CM surface | all shells |
+| =shell/= | LiveView hook lifecycle, term-cell | mount events, drafting |
+| =nerve/= | signal store | friend / outer HUD |
+| =utils/= | gesture, temporal | input / pacing helpers |
+| =render/= | GrowLine (headless) | stroke buffers |
+| =seams/= | vendor / export / private-member tripwires | silent product death |
+| =profile/= | cost benches, not unit law | perf regressions |
+
+Placement law: subject API whose docstring would change if the test fails;
+fixture import ≠ ownership; decides ≠ says ≠ carries ≠ inks.
 
 ** turtle profiler — headless + in-browser
 :PROPERTIES:

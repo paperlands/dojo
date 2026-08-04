@@ -1,5 +1,5 @@
 // weave/page.js — THE SEATING LAW. Pure decision, no DOM and no turtle;
-// tested in test/js/weave_page_test.mjs. Why it is one law and not three:
+// tested in test/js/seat/page_test.mjs. Why it is one law and not three:
 // one seating law (D023).
 //
 //   observe(addr, { name, doc, own, attention }) → answer

@@ -137,7 +137,8 @@ defmodule Dojo.MixProject do
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      # press.codex: id→{name,title} index for the weave resolver (Shoot 0 / Q2).
+      # press.codex: id→{name,title} index for the weave resolver (Shoot 0 / Q2),
+      # and the vendor recast into priv/static/codex (what the web reaches).
       "press.codex": &press_codex/1,
       "assets.build": ["press.codex", "tailwind dojo", "esbuild dojo"],
       "assets.deploy": [
@@ -150,8 +151,8 @@ defmodule Dojo.MixProject do
   end
 
   # The press is a projection OF the corpus, so it only runs where the corpus
-  # stands. Release images never ship codex/ (see .dockerignore) — no corpus,
-  # nothing to press, and the build must not care.
+  # stands. Images ship the committed vendor, never codex/ (see .dockerignore) —
+  # no corpus there, nothing to press, and the build must not care.
   defp press_codex(args) do
     if File.dir?("codex/fragments") do
       Mix.Task.run("cmd", ["node", "scripts/press_codex_index.mjs" | args])

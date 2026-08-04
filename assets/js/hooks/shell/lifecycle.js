@@ -1,6 +1,6 @@
 // =============================================================================
 // SHELL LIFECYCLE — the pure law of the boot seam (zero imports, node-tested
-// in test/js/shell_lifecycle_test.mjs).
+// in test/js/shell/lifecycle_test.mjs).
 //
 // LiveView's hook contract is synchronous: the patch mounts the hook, then the
 // SAME task dispatches the reply's push_events as window CustomEvents. Our boot

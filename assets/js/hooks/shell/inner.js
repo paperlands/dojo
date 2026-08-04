@@ -46,13 +46,24 @@ function mountInner(hook, { term, cm6 }) {
     // Inner shell: canvas, turtle, rendering, scene bridge subscription
     // One lifetime for this surface — every organ registers its release here,
     // where it is made, so teardown is reverse-of-creation with no ordered list.
+    //
+    // FOUR BANDS, and the order is the law: BODIES stand, ORGANS are made,
+    // WIRING listens, BIRTH speaks. Nothing publishes before birth, so every
+    // reader can name every organ above it.
     const arena = createArena();
+
+    // BODIES — the two surfaces this mount holds. The editor stands FIRST and
+    // silent, so every organ below reads a live term.shell.
     const canvas = document.getElementById('core-canvas');
     const turtle = new Turtle(canvas);
     arena.add(() => turtle.dispose());
     // Stage cell — the one address for the live turtle (gw-t-dom-registry).
     // Weave boot + revealAmbient read getStage(); no canvas.__turtle.
     arena.add(registerStage(turtle));
+
+    term.inner();
+    // Term cell — the one address for the coreshell Terminal (gw-t-dom-registry).
+    arena.add(register("coreshell", term));
 
     // Profiler overlay — opt-in via ?perf=1. Lazy-imported so it adds
     // zero cost to normal sessions. Reports RAF idle-spin + GPU growth.
@@ -62,7 +73,9 @@ function mountInner(hook, { term, cm6 }) {
             .catch(err => console.warn('profiler overlay failed to load:', err));
     }
 
-    // _onShout must precede term.bridge.sub which triggers first render.
+    // ORGANS — made before anything listens, so no subscriber can reach for one
+    // that is not yet born.
+    //
     // Push every shout into the one store, addressed by its source. The
     // friend's ambient shouts (source = their name) route to the claiming
     // outershell panel; your own ambients fall to the local residual —
@@ -108,6 +121,16 @@ function mountInner(hook, { term, cm6 }) {
     // gate — when we hold it, we read it.
     const reached = new Map()
     const attentionOn = (addr) => (reached.has(addr) ? { line: reached.get(addr) } : null)
+
+    // The reach on the child's own editor — the same organ the outershell
+    // mounts (editor/reach.js), publishing through the same scene.attend seam
+    // into the same page law: one behaviour, both shells. Made HERE, beside the
+    // ledger it feeds and above `settle`, which resets it.
+    const innerReach = mountReach(term.shell, {
+        gate: () => law.hasPage(term.currentBufferId()),
+        publish: (line) => scene.attend(term.currentBufferId(), line),
+    })
+    arena.add(innerReach.cleanup)
 
     // Live caret line for an addr whose editor THIS surface holds; null if
     // the shell is elsewhere or mid-teardown.
@@ -223,6 +246,31 @@ function mountInner(hook, { term, cm6 }) {
         return turtle.addressOf(key) ? key : law.pageKey(key)
     }
 
+    // The one focus move both surfaces read: dim the previously bright ambient
+    // and the local tabs, light the target. Focus and degree ride the ONE
+    // register — one ambient address (D006) — keyed by address. `ref` is
+    // whatever the caller holds (a key from the law, a friend's display name
+    // from the outer shell) and resolves to an address before anything is lit
+    // or dimmed.
+    const focusOuter = ({ ref, world = false }) => {
+        const target = turtle.addressOf(ref)
+        const prev = turtle.compositor?.focusedAddress
+        // Dim previous single ambient (covers outer→outer transitions)
+        if (prev && prev !== target) {
+            turtle.setAmbientOpacity(prev, DEGREE.warm)
+        }
+
+        // Core shell group: all active local tabs share focus. Dim them when
+        // focusing outer, restore when returning to 'world' — by KEY, so a
+        // program's bare code dims for its own cell instead of shadowing it.
+        const localOpacity = world ? DEGREE.kindled : DEGREE.warm
+        for (const k of turtle._localKeys) turtle.setAmbientOpacity(k, localOpacity)
+
+        turtle.focusAmbient(ref)
+        turtle.setAmbientOpacity(ref, DEGREE.kindled)
+        turtle.requestRender()
+    }
+
     // A transition's CANVAS consequences, in the turtle's own verbs. No policy
     // here: what this loop cannot do from the effect alone, the law was not
     // entitled to ask. Returns the result of the effect marked main.
@@ -319,6 +367,13 @@ function mountInner(hook, { term, cm6 }) {
         for (const addr of law.localPages()) term.setTabActive(addr)
     }
 
+    // THIS SURFACE'S WOUNDS — one ask, one breath, every reader (weave/wounds.js).
+    // Asked of the face directly, not through the cell: this surface IS the
+    // registrant, and a room is for asking what you did not put there.
+    const wounds = readWounds({ ask: () => askDiagnostics(term.currentBufferId()) })
+    arena.add(wounds.release)
+
+    // WIRING — every organ above stands; from here the surface only listens.
     const pacedRender = temporal.pace(({ id, name, content }) => {
         nerve()?.run()
         // The child's edit — this buffer is now the authored one (D022).
@@ -338,6 +393,7 @@ function mountInner(hook, { term, cm6 }) {
 
     // A TAB SWITCH IS NEWS THE WORLD NEVER HEARS: the ask reads currentBufferId(),
     // this surface's own state, so it moves with no world breath behind it.
+    // Seated from the standing editor, so the first breath is not a switch.
     let shown = term.currentBufferId()
     arena.add(term.bridge.sub(({ id }) => {
         if (id === shown) return
@@ -369,24 +425,6 @@ function mountInner(hook, { term, cm6 }) {
             break;
         }
     }));
-    term.inner();
-    // Term cell — the one address for the coreshell Terminal (gw-t-dom-registry).
-    arena.add(register("coreshell", term));
-
-    // The reach on the child's own editor — the same organ the outershell
-    // mounts (editor/reach.js), publishing through the same scene.attend seam
-    // into the same page law: one behaviour, both shells.
-    const innerReach = mountReach(term.shell, {
-        gate: () => law.hasPage(term.currentBufferId()),
-        publish: (line) => scene.attend(term.currentBufferId(), line),
-    })
-    arena.add(innerReach.cleanup)
-
-    // THIS SURFACE'S WOUNDS — one ask, one breath, every reader (weave/wounds.js).
-    // Asked of the face directly, not through the cell: this surface IS the
-    // registrant, and a room is for asking what you did not put there.
-    const wounds = readWounds({ ask: () => askDiagnostics(term.currentBufferId()) })
-    arena.add(wounds.release)
 
     // The ink reads them; nothing is pushed into the editor but the breath
     // (id:cmp-first-surface). A thunk, not a body: the current view, each breath.
@@ -411,31 +449,6 @@ function mountInner(hook, { term, cm6 }) {
         say(w ? `${sayWound(w)} ○${n}` : "", { w, n })
     }
     arena.add(wounds.watch(speakWound))
-
-    // The one focus move both surfaces read: dim the previously bright ambient
-    // and the local tabs, light the target. Focus and degree ride the ONE
-    // register — one ambient address (D006) — keyed by address. `ref` is
-    // whatever the caller holds (a key from the law, a friend's display name
-    // from the outer shell) and resolves to an address before anything is lit
-    // or dimmed.
-    const focusOuter = ({ ref, world = false }) => {
-        const target = turtle.addressOf(ref)
-        const prev = turtle.compositor?.focusedAddress
-        // Dim previous single ambient (covers outer→outer transitions)
-        if (prev && prev !== target) {
-            turtle.setAmbientOpacity(prev, DEGREE.warm)
-        }
-
-        // Core shell group: all active local tabs share focus. Dim them when
-        // focusing outer, restore when returning to 'world' — by KEY, so a
-        // program's bare code dims for its own cell instead of shadowing it.
-        const localOpacity = world ? DEGREE.kindled : DEGREE.warm
-        for (const k of turtle._localKeys) turtle.setAmbientOpacity(k, localOpacity)
-
-        turtle.focusAmbient(ref)
-        turtle.setAmbientOpacity(ref, DEGREE.kindled)
-        turtle.requestRender()
-    }
 
     // Scene moves from the outer surface — the consumer-side dual of the
     // scene constructors (bridged.js): the same vocabulary, one handler per
@@ -571,6 +584,11 @@ function mountInner(hook, { term, cm6 }) {
     arena.add(listeners.theme(theme => term.setOption('theme', theme)).mount());
     arena.add(slider.mount());
     arena.add(listeners.slider(term.shell, slider, cm6).mount());
+
+    // BIRTH — the room is whole, so now it may speak. The buffer on screen is
+    // published once, here, and the surface takes its first breath: every
+    // reader above hears it, and none of them hears anything sooner.
+    term.triggerBridge();
 
     return {
         events: {

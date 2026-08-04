@@ -3,7 +3,7 @@
 // This is a CONTRACT, not a convenience. Every dojo-authored module imports
 // three from here, so the whole dependency is legible in one file. Two
 // enforcers: the bundler fails the build and names a vanished symbol; and
-// test/js/three_entry_test.mjs asserts the same surface on the path CI already
+// test/js/seams/three_entry_test.mjs asserts the same surface on the path CI already
 // runs (CI never bundles). Without that, a vanished export is silently
 // `undefined` at the call site — which is exactly how `THREE.sRGBEncoding` sat
 // dead in stage.js for two years (removed upstream in r152), assigning nothing

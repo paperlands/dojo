@@ -65,8 +65,6 @@ erl_crash.dump
 /priv/static/assets/
 /priv/static/cache_manifest.json
 
-# codex stage3 integration is not wired into the build yet. The priv/static/codex
-# symlink points at ../../codex/fragments, which isn't copied into the image and
-# would dangle, breaking `mix phx.digest`. Parked on branch feels/knuth.
-/priv/static/codex
+#vendored cast under priv/static/codex SHIPS 
+!priv/static/codex/**
 /codex/

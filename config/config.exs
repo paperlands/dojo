@@ -37,9 +37,14 @@ config :dojo, DojoWeb.Endpoint,
 # at the `config/runtime.exs`.
 # config :dojo, Dojo.Mailer, adapter: Swoosh.Adapters.Local
 
-# Configure esbuild (the version is required)
+# Configure esbuild (the version is required).
+# ≥0.19 required for three.js r152+ static class fields: older esbuild rewrote
+# `class _i{static{_i.prototype.isX=!0}}` as `var _i=class{static{_i.prototype…}}`
+# where `_i` is still undefined during the static block — r185 dies at boot with
+# "Cannot read properties of undefined (reading 'prototype')". Newer esbuild
+# keeps a named class expression (`var _i=class __i{static{__i.prototype…}}`).
 config :esbuild,
-  version: "0.17.11",
+  version: "0.25.12",
   dojo: [
     args:
       ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --external:/vendor/* --alias:@=.),

@@ -5,10 +5,11 @@ on:
     branches: [staging]
     types: [opened, synchronize, reopened]
     # The constellation is prose: org/markdown-only pushes change nothing the
-    # image contains, so they buy no builder minutes.
+    # image contains, so they buy no builder minutes. Root-level globs only —
+    # priv/static/codex IS shipped org, and must always buy a deploy.
     paths-ignore:
-      - "**/*.org"
-      - "**/*.md"
+      - "*.org"
+      - "*.md"
       - "specs/**"
       - "codex/**"
       - "diagrams/**"

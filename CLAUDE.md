@@ -7,7 +7,7 @@
 ```bash
 mix setup                        # Install deps and compile assets
 mix test                         # All Elixir tests (path:line for one)
-node --test test/js/<file>.mjs   # JS tests (zero-npm, node:test)
+node --test test/js/             # JS tests (zero-npm, node:test; by contract cluster)
 mix format                       # Before committing
 mix release                      # Production release (Burrito)
 

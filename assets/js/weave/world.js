@@ -7,7 +7,7 @@
 //
 // Rebuilt on kernel/cell — the stage-cell idiom, with breath. createCell is
 // canonical; registerWorld / world / watchWorld / worldChanged are its named
-// view (D006). Contract pinned by test/js/world_cell_test.mjs.
+// view (D006). Contract pinned by test/js/wound/world_cell_test.mjs.
 
 import { createCell } from "../kernel/cell.js"
 
