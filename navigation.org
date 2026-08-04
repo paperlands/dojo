@@ -321,9 +321,10 @@ gesture. Tested in =test/js/utils/gesture_test.mjs=; no THREE, no camera.
 
 Rule: apply what the rig can express, publish what it cannot. Twist leaves as a
 =twist= event and lands as the hand's own reframe M, composed with the eye's E⁻¹
-in =compositor.js::viewReframe= — see [[id:nav-eye]]. The subclass hooks
-underscore-private members, so =test/js/seams/orbit_seam_test.mjs= fails loudly if an
-upgrade renames one (otherwise arbitration would stop SILENTLY).
+in =compositor.js::viewReframe= — see [[id:nav-eye]]. Span/drift route through
+public =pan= / =rotateLeft= / =rotateUp= / =dollyOut= (#32810); a few private
+entry points remain overridden, so =test/js/seams/orbit_seam_test.mjs= fails
+loudly if an upgrade renames one (otherwise arbitration would stop SILENTLY).
 
 ** GL lifecycle — dispose or leak per remount
 :PROPERTIES:
