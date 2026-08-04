@@ -25,8 +25,9 @@ let cm6 = null;
 // destroyed() teardown. Returns the { term, cm6 } the surface builds on.
 // ---------------------------------------------------------------------------
 export async function bootShell(hook) {
-    // Version string must match the built artifact in priv/static/vendor/.
-    if (!cm6) cm6 = await import('/vendor/cm6.js?v=6.36.3-p2');
+    // ?v= must equal "version" in priv/static/vendor/cm6.manifest.json, which the
+    // build derives from the resolved package. scripts/vendor_verify.sh checks it.
+    if (!cm6) cm6 = await import('/vendor/cm6.js?v=6.43.6-ee4bbbe8');
     // The import is the one real await — if the hook died while we were away
     // (panel closed mid-boot), stand down: no Terminal on a detached element.
     // The lifecycle machine sees null and never mounts the surface.

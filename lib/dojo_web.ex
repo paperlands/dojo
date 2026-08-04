@@ -17,11 +17,12 @@ defmodule DojoWeb do
   those modules here.
   """
 
-  # `codex` is the fragment press served raw (priv/static/codex → codex/fragments):
+  # `codex` is the fragment press served raw (priv/static/codex, vendored by
+  # `mix press.codex` from codex/fragments — the corpus itself never ships):
   # the weave parses org IN THE BROWSER — no server-side fragment engine, ever
   # (specs/groundwork.org Phase 2, the locality fence).
   def static_paths,
-    do: ~w(assets fonts images codemirror codex papertiger favicon robots.txt vendor)
+    do: ~w(assets fonts images codex papertiger favicon robots.txt vendor)
 
   def router do
     quote do

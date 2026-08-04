@@ -382,6 +382,18 @@ mid-boot destroy stands the mount down. Pure — =test/js/shell_lifecycle_test.m
 :PATH: assets/js/hooks/shell/core.js
 :END:
 
+** cm6 vendoring — build-time npm, runtime zero-npm
+:PROPERTIES:
+:ID: nav-cm6-vendor
+:KEYWORDS: cm6 codemirror vendor bundle esbuild version manifest sha256 drift lockfile reproducible
+:PATH: scripts/vendor-cm6.mjs
+:END:
+=cm6-entry.js= is the API contract, esbuild cuts it to
+=priv/static/vendor/cm6.js= (committed, byte-reproducible), and a sidecar
+=cm6.manifest.json= carries the RESOLVED version + hashes of artifact, entry,
+and lockfile. =scripts/vendor_verify.sh= checks all of it and that
+=core.js='s =?v== token still tells the truth. Prose: [[file:assets/js/utils/VENDOR.org][VENDOR.org]] =::vendor-cm6=.
+
 ** kernel cell — registry-of-one
 :PROPERTIES:
 :ID: nav-kernel-cell
