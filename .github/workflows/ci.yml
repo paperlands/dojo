@@ -1,0 +1,104 @@
+name: CI
+
+# The dojo had no gate: staging deployed straight from a PR and the release
+# branch compiled for the first time inside a 30-minute build. This is the
+# cheap question asked early — on every PR, and on the trunks.
+on:
+  pull_request:
+  push:
+    branches: [master, staging]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  ELIXIR_VERSION: "1.20.1"
+  OTP_VERSION: "29.0.2"
+
+jobs:
+  elixir:
+    name: Elixir tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MIX_ENV: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Erlang & Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          version-type: strict
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            ~/.hex
+          key: deps-${{ runner.os }}-otp${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}
+          restore-keys: deps-${{ runner.os }}-otp${{ env.OTP_VERSION }}-
+
+      - name: Cache build
+        uses: actions/cache@v4
+        with:
+          path: _build/test
+          key: build-test-${{ runner.os }}-otp${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}-${{ github.sha }}
+          restore-keys: |
+            build-test-${{ runner.os }}-otp${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}-
+            build-test-${{ runner.os }}-otp${{ env.OTP_VERSION }}-
+
+      - name: Install dependencies
+        run: |
+          mix local.hex --if-missing --force
+          mix local.rebar --if-missing --force
+          mix deps.get --only $MIX_ENV
+
+      # Each check reports on its own line, so a red run says which question failed.
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Compile
+        run: mix compile --warnings-as-errors
+
+      # --exclude clustered: those spawn a real BEAM peer mesh over multicast
+      # UDP, which a hosted runner cannot offer. ClusterCase already documents
+      # them as opt-in; run them on a machine with a LAN.
+      - name: Test
+        run: mix test --exclude clustered
+
+      # Advisory until the existing findings are cleared — see the note in the
+      # PR. Flip to a gate by deleting continue-on-error.
+      - name: Credo
+        continue-on-error: true
+        run: mix credo --strict
+
+  js:
+    name: JS tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Zero-npm by design: node:test only, nothing to install or cache.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Test
+        run: node --test test/js/
