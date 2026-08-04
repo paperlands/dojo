@@ -2,9 +2,9 @@ import {
 	InstancedInterleavedBuffer,
 	InterleavedBufferAttribute,
 	DynamicDrawUsage
-} from '../../../utils/three.core.min.js';
-import { LineSegmentsGeometry } from './LineSegmentsGeometry.js';
-import { Line2 } from './Line2.js';
+} from '../../../utils/three-entry.js';
+import { LineSegmentsGeometry } from '../../../utils/three-addons/lines/LineSegmentsGeometry.js';
+import { Line2 } from '../../../utils/three-addons/lines/Line2.js';
 
 // GrowLine — a fat-line polyline that GROWS by appending segments to a
 // pre-allocated dynamic instanced buffer, instead of rebuilding the whole geometry

@@ -9,7 +9,7 @@ import {
 	Sphere,
 	Vector3,
 	Vector4
-}  from '../../../utils/three.core.min.js';
+} from '../../three.module.min.js';
 import { LineSegmentsGeometry } from './LineSegmentsGeometry.js';
 import { LineMaterial } from './LineMaterial.js';
 
@@ -323,6 +323,14 @@ class LineSegments2 extends Mesh {
 		if ( camera === null && ! worldUnits ) {
 
 			console.error( 'LineSegments2: "Raycaster.camera" needs to be set in order to raycast against LineSegments2 while worldUnits is set to false.' );
+
+		}
+
+		// early out if no resolution has been set (line was not rendered yet)
+
+		if ( worldUnits === false && ( this.material.resolution.x === 0 || this.material.resolution.y === 0 ) ) {
+
+			return;
 
 		}
 

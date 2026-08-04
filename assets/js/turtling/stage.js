@@ -2,24 +2,33 @@
 // Owns scene, camera, renderer, controls, groups, head, recorder, renderLoop.
 // Extracted from turtle.js constructor + setupScene/Camera/Renderer.
 
-import * as THREE from '../utils/three.core.min.js'
-import { OrbitControls } from '../utils/threeorbital'
-import { WebGLRenderer } from '../utils/threerender'
+import {
+    Group,
+    MOUSE,
+    PerspectiveCamera,
+    Scene,
+    TOUCH,
+    WebGLRenderer,
+} from '../utils/three-entry.js'
+import { DojoOrbitControls } from './orbit.js'
 import Render from "./render/index.js"
 import { Recorder } from "./export/recorder.js"
 import { updateMaterialResolution } from "./materializer.js"
 import { cameraBridge } from "../bridged.js"
+// AXIS_Z is the camera's sight axis: E is in camera convention (view.js), where
+// the eye looks down local −Z, so a roll is a turn about local Z.
+import { SE3, AXIS_Z } from "./se3.js"
 
 export function createStage(canvas, bridge) {
     const ctx = canvas.getContext("webgl2") ?? canvas.getContext("webgl")
 
     // Scene
-    const scene = new THREE.Scene()
+    const scene = new Scene()
 
     // Groups
-    const pathGroup = new THREE.Group()
-    const gridGroup = new THREE.Group()
-    const glyphGroup = new THREE.Group()
+    const pathGroup = new Group()
+    const gridGroup = new Group()
+    const glyphGroup = new Group()
     glyphGroup.elements = []
 
     scene.add(pathGroup)
@@ -34,36 +43,43 @@ export function createStage(canvas, bridge) {
 
     // Camera
     const aspect = window.innerWidth / window.innerHeight
-    const camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 10000000)
+    const camera = new PerspectiveCamera(60, aspect, 0.1, 10000000)
     camera.lookAt(0, 0, 0)
     camera.position.set(0, 0, 500)
     camera.updateProjectionMatrix()
 
     // Controls
-    const controls = new OrbitControls(camera, canvas)
+    const controls = new DojoOrbitControls(camera, canvas)
     controls.target.set(0, 0, 0)
     controls.mouseButtons = {
-        RIGHT: THREE.MOUSE.ROTATE,
-        MIDDLE: THREE.MOUSE.DOLLY,
-        LEFT: THREE.MOUSE.PAN
+        RIGHT: MOUSE.ROTATE,
+        MIDDLE: MOUSE.DOLLY,
+        LEFT: MOUSE.PAN
     }
-    controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE }
+    controls.touches = { ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_ROTATE }
     controls.enableDamping = true
     controls.dampingFactor = 0.2
     controls.update()
 
-    // Dolly-through zoom, owned by OrbitControls (fork: `dollyThrough`).
-    // Zoom slides the rig along the ray under the pointer; `minDistance` floors
-    // the PIVOT, never the camera, so once you reach the floor you fly straight
-    // through the target at a constant step instead of asymptoting at it.
-    // One law, every input: wheel, trackpad, middle-drag, two-finger pinch.
+    // Zoom slides the rig along the ray under the pointer, and the standoff
+    // floors the PIVOT rather than the camera — so once you reach the floor you
+    // fly straight through the target at a constant step instead of asymptoting
+    // at it. One law, every input: wheel, trackpad, middle-drag, two-finger
+    // pinch. Arbitration (two fingers mean one thing at a time) comes with the
+    // subclass; `gestureSlop` is its one knob. See turtling/orbit.js.
     controls.zoomToCursor = true
-    controls.dollyThrough = true
-    // The floored standoff doubles as the fly-through cruising distance: the
-    // per-notch advance settles to minDistance·(1−scale) once you reach it, so it
-    // must be large enough that the approach never decays into a crawl near the
-    // pivot (≈5 crawls; ≥25 holds a constant step straight through the content).
-    controls.minDistance = 30
+
+    // The manual view offset M. The rig has no roll DOF, so a finger-twist rides
+    // the same model-layer seam the eye uses: effective camera = E·M·C, composed
+    // in compositor.updateGroupPositions. M belongs to the HAND — the program's
+    // eye is never written by a gesture. (view.js: manual orbit composes on top)
+    let viewOffset = SE3.identity()
+    const onTwist = ({ angle }) => {
+        // The event speaks radians (atan2's unit); SE3 speaks degrees.
+        viewOffset = SE3.rotateLocal(viewOffset, AXIS_Z, angle * 180 / Math.PI)
+        stage.requestRender?.()
+    }
+    controls.addEventListener('twist', onTwist)
 
     // Renderer
     const renderer = new WebGLRenderer({
@@ -72,7 +88,11 @@ export function createStage(canvas, bridge) {
         alpha: true
     })
     renderer.setSize(window.innerWidth, window.innerHeight)
-    renderer.outputEncoding = THREE.sRGBEncoding
+    // `outputEncoding = sRGBEncoding` stood here and did NOTHING: three removed
+    // sRGBEncoding in r152, so it assigned undefined to a property the renderer
+    // no longer reads. Colour has been coming from `outputColorSpace`'s default
+    // all along. Deleting it changes no pixel; setting it deliberately is a
+    // separate decision nobody has taken. (three-entry.js is what made it visible)
     renderer.capabilities.logarithmicDepthBuffer = true
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.sortObjects = false
@@ -103,6 +123,10 @@ export function createStage(canvas, bridge) {
         case 'recenter':
             camera.position.set(0, 0, 500)
             controls.target.set(0, 0, 0)
+            // Level the horizon too. A child who rolled the paper by accident
+            // needs ONE way back, and this is it — recenter means the default
+            // view, not the default view still banked.
+            viewOffset = SE3.identity()
             controls.update()
             break
         case 'snap':
@@ -169,6 +193,9 @@ export function createStage(canvas, bridge) {
         },
 
         renderLoop: null,
+
+        // The hand's own reframe, read by the compositor each frame.
+        viewOffset: () => viewOffset,
 
         // Render one frame
         render() {
@@ -257,6 +284,7 @@ export function createStage(canvas, bridge) {
         dispose() {
             disposed = true
             window.removeEventListener('resize', onResize)
+            controls.removeEventListener('twist', onTwist)
             cameraUnsub()
             controls.dispose()   // OrbitControls' own pointer/touch listeners
             if (stage.renderLoop) stage.renderLoop.stop()

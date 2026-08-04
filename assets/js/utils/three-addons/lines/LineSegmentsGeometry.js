@@ -7,7 +7,7 @@ import {
 	Sphere,
 	Vector3,
 	WireframeGeometry
-} from '../../../utils/three.core.min.js';
+} from '../../three.module.min.js';
 
 const _box = new Box3();
 const _vector = new Vector3();
@@ -279,7 +279,7 @@ class LineSegmentsGeometry extends InstancedBufferGeometry {
 
 			if ( isNaN( this.boundingSphere.radius ) ) {
 
-				//console.error( 'THREE.LineSegmentsGeometry.computeBoundingSphere(): Computed radius is NaN. The instanced position data is likely to have NaN values.', this );
+				console.error( 'THREE.LineSegmentsGeometry.computeBoundingSphere(): Computed radius is NaN. The instanced position data is likely to have NaN values.', this );
 
 			}
 

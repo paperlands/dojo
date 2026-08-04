@@ -168,6 +168,8 @@ export class Turtle {
                 renderer: this.stage.renderer,
                 recorder: this.stage.recorder,
                 renderstate: this.renderstate,
+                // The hand's own reframe (two-finger roll), composed with the eye's.
+                viewOffset: () => this.stage.viewOffset(),
                 hatch: () => this.hatch(),
                 // Let async materializers (troika Text builds glyphs off-thread)
                 // wake the render-on-demand loop once their geometry is ready,

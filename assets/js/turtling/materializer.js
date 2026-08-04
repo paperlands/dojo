@@ -2,12 +2,15 @@
 // Consumes executor events directly (tuple positions, clean field names).
 // Material cache (spec A3): one LineMaterial per (color, thickness) key.
 
-import * as THREE from '../utils/three.core.min.js'
+import {
+    GridHelper,
+    Vector3,
+} from '../utils/three-entry.js'
 import { ColorConverter } from '../utils/color.js'
 import { Text } from '../utils/threetext.js'
-import { Line2 } from './render/line/Line2.js'
-import { LineMaterial } from './render/line/LineMaterial.js'
-import { LineGeometry } from './render/line/LineGeometry.js'
+import { Line2 } from '../utils/three-addons/lines/Line2.js'
+import { LineMaterial } from '../utils/three-addons/lines/LineMaterial.js'
+import { LineGeometry } from '../utils/three-addons/lines/LineGeometry.js'
 import { GrowLine } from './render/line/GrowLine.js'
 
 // --- Material cache (spec A3) ---
@@ -213,7 +216,7 @@ function materializeHead(event, ctx) {
     if (ctx.camera) {
         switch (ctx.camera.desire) {
         case 'track': {
-            const deltaMovement = new THREE.Vector3(pos[0], pos[1], pos[2])
+            const deltaMovement = new Vector3(pos[0], pos[1], pos[2])
             deltaMovement.sub(ctx.head.position())
             ctx.camera.position.add(deltaMovement)
             ctx.controls.target.set(pos[0], pos[1], pos[2])
@@ -286,7 +289,7 @@ function materializeLabel(event, glyphGroup, ctx) {
 }
 
 function materializeGrid(event, gridGroup) {
-    const gridHelper = new THREE.GridHelper(
+    const gridHelper = new GridHelper(
         event.size,
         event.divisions,
         event.color,

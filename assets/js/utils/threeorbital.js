@@ -9,7 +9,7 @@ import {
 	Plane,
 	Ray,
 	MathUtils
-} from './three.core.min';
+} from './three.core.min.js';
 
 /**
  * Fires when the camera has been transformed by the controls.
@@ -91,7 +91,7 @@ class OrbitControls extends Controls {
 	 * Constructs a new controls instance.
 	 *
 	 * @param {Object3D} object - The object that is managed by the controls.
-	 * @param {?HTMLDOMElement} domElement - The HTML element used for event listeners.
+	 * @param {?HTMLElement} domElement - The HTML element used for event listeners.
 	 */
 	constructor( object, domElement = null ) {
 
@@ -306,19 +306,6 @@ class OrbitControls extends Controls {
 		this.zoomToCursor = false;
 
 		/**
-		 * DOJO FORK. With `zoomToCursor`, stock zoom clamps the DESTINATION radius,
-		 * so the advance decays to zero at `minDistance` and the camera can never
-		 * reach — let alone pass — the target. Set this true and `minDistance`
-		 * becomes a standoff for the PIVOT, not a wall for the camera: each notch
-		 * still advances `minDistance·(1−scale)`, so zoom flies through the target
-		 * carrying the orbit pivot with it. Perspective only.
-		 *
-		 * @type {boolean}
-		 * @default false
-		 */
-		this.dollyThrough = false;
-
-		/**
 		 * Set to true to automatically rotate around the target
 		 *
 		 * Note that if this is enabled, you must call `update()` in your animation loop.
@@ -404,6 +391,8 @@ class OrbitControls extends Controls {
 		 */
 		this.zoom0 = this.object.zoom;
 
+		this._cursorStyle = 'auto';
+
 		// the target DOM element for key events
 		this._domElementKeyEvents = null;
 
@@ -475,6 +464,34 @@ class OrbitControls extends Controls {
 
 	}
 
+	/**
+	 * Defines the visual representation of the cursor.
+	 *
+	 * @type {('auto'|'grab')}
+	 * @default 'auto'
+	 */
+	set cursorStyle( type ) {
+
+		this._cursorStyle = type;
+
+		if ( type === 'grab' ) {
+
+			this.domElement.style.cursor = 'grab';
+
+		} else {
+
+			this.domElement.style.cursor = 'auto';
+
+		}
+
+	}
+
+	get cursorStyle() {
+
+		return this._cursorStyle;
+
+	}
+
 	connect( element ) {
 
 		super.connect( element );
@@ -488,15 +505,15 @@ class OrbitControls extends Controls {
 		const document = this.domElement.getRootNode(); // offscreen canvas compatibility
 		document.addEventListener( 'keydown', this._interceptControlDown, { passive: true, capture: true } );
 
-		this.domElement.style.touchAction = 'none'; // disable touch scroll
+		this.domElement.style.touchAction = 'none'; // Disable touch scroll
 
 	}
 
 	disconnect() {
 
 		this.domElement.removeEventListener( 'pointerdown', this._onPointerDown );
-		this.domElement.removeEventListener( 'pointermove', this._onPointerMove );
-		this.domElement.removeEventListener( 'pointerup', this._onPointerUp );
+		this.domElement.ownerDocument.removeEventListener( 'pointermove', this._onPointerMove );
+		this.domElement.ownerDocument.removeEventListener( 'pointerup', this._onPointerUp );
 		this.domElement.removeEventListener( 'pointercancel', this._onPointerUp );
 
 		this.domElement.removeEventListener( 'wheel', this._onMouseWheel );
@@ -507,7 +524,7 @@ class OrbitControls extends Controls {
 		const document = this.domElement.getRootNode(); // offscreen canvas compatibility
 		document.removeEventListener( 'keydown', this._interceptControlDown, { capture: true } );
 
-		this.domElement.style.touchAction = 'auto';
+		this.domElement.style.touchAction = ''; // Restore touch scroll
 
 	}
 
@@ -554,7 +571,7 @@ class OrbitControls extends Controls {
 	 * Adds key event listeners to the given DOM element.
 	 * `window` is a recommended argument for using this method.
 	 *
-	 * @param {HTMLDOMElement} domElement - The DOM element
+	 * @param {HTMLElement} domElement - The DOM element
 	 */
 	listenToKeyEvents( domElement ) {
 
@@ -604,6 +621,67 @@ class OrbitControls extends Controls {
 		this.update();
 
 		this.state = _STATE.NONE;
+
+	}
+
+	/**
+	 * Programmatically pan the camera.
+	 *
+	 * @param {number} deltaX - The horizontal pan amount in pixels.
+	 * @param {number} deltaY - The vertical pan amount in pixels.
+	 */
+	pan( deltaX, deltaY ) {
+
+		this._pan( deltaX, deltaY );
+		this.update();
+
+	}
+
+	/**
+	 * Programmatically dolly in (zoom in for perspective camera).
+	 *
+	 * @param {number} dollyScale - The dolly scale factor.
+	 */
+	dollyIn( dollyScale ) {
+
+		this._dollyIn( dollyScale );
+		this.update();
+
+	}
+
+	/**
+	 * Programmatically dolly out (zoom out for perspective camera).
+	 *
+	 * @param {number} dollyScale - The dolly scale factor.
+	 */
+	dollyOut( dollyScale ) {
+
+		this._dollyOut( dollyScale );
+		this.update();
+
+	}
+
+	/**
+	 * Programmatically rotate the camera left (around the vertical axis).
+	 *
+	 * @param {number} angle - The rotation angle in radians.
+	 */
+	rotateLeft( angle ) {
+
+		this._rotateLeft( angle );
+		this.update();
+
+	}
+
+	/**
+	 * Programmatically rotate the camera up (around the horizontal axis).
+	 *
+	 * @param {number} angle - The rotation angle in radians.
+	 */
+	rotateUp( angle ) {
+
+		this._rotateUp( angle );
+		this.update();
 
 	}
 
@@ -735,13 +813,7 @@ class OrbitControls extends Controls {
 				const prevRadius = _v.length();
 				newRadius = this._clampDistance( prevRadius * this._scale );
 
-				// DOJO FORK (dollyThrough): the near clamp holds the pivot, not the
-				// camera — clamping the advance too is what makes zoom asymptote.
-				const step = this.dollyThrough
-					? Math.min( prevRadius * this._scale, this.maxDistance )
-					: newRadius;
-
-				const radiusDelta = prevRadius - step;
+				const radiusDelta = prevRadius - newRadius;
 				this.object.position.addScaledVector( this._dollyDirection, radiusDelta );
 				this.object.updateMatrixWorld();
 
@@ -1015,7 +1087,7 @@ class OrbitControls extends Controls {
 
 	_handleMouseDownDolly( event ) {
 
-		this._updateZoomParameters( event.clientX, event.clientY ); // DOJO FORK: upstream passes clientX as y
+		this._updateZoomParameters( event.clientX, event.clientX );
 		this._dollyStart.set( event.clientX, event.clientY );
 
 	}
@@ -1477,8 +1549,8 @@ function onPointerDown( event ) {
 
 		this.domElement.setPointerCapture( event.pointerId );
 
-		this.domElement.addEventListener( 'pointermove', this._onPointerMove );
-		this.domElement.addEventListener( 'pointerup', this._onPointerUp );
+		this.domElement.ownerDocument.addEventListener( 'pointermove', this._onPointerMove );
+		this.domElement.ownerDocument.addEventListener( 'pointerup', this._onPointerUp );
 
 	}
 
@@ -1497,6 +1569,12 @@ function onPointerDown( event ) {
 	} else {
 
 		this._onMouseDown( event );
+
+	}
+
+	if ( this._cursorStyle === 'grab' ) {
+
+		this.domElement.style.cursor = 'grabbing';
 
 	}
 
@@ -1528,12 +1606,18 @@ function onPointerUp( event ) {
 
 			this.domElement.releasePointerCapture( event.pointerId );
 
-			this.domElement.removeEventListener( 'pointermove', this._onPointerMove );
-			this.domElement.removeEventListener( 'pointerup', this._onPointerUp );
+			this.domElement.ownerDocument.removeEventListener( 'pointermove', this._onPointerMove );
+			this.domElement.ownerDocument.removeEventListener( 'pointerup', this._onPointerUp );
 
 			this.dispatchEvent( _endEvent );
 
 			this.state = _STATE.NONE;
+
+			if ( this._cursorStyle === 'grab' ) {
+
+				this.domElement.style.cursor = 'grab';
+
+			}
 
 			break;
 

@@ -1,7 +1,7 @@
 // Compositor — drains all ambient channels through materializer per frame.
 // Phase 6: unified tree — all ambients are children of a meta-root.
 //
-// Every ambient gets its own THREE.Group, Head, and Shapist.
+// Every ambient gets its own Group, Head, and Shapist.
 // The focused ambient's head tracks the camera; unfocused heads render
 // without camera tracking (materializeHead already gates on ctx.camera).
 //
@@ -12,7 +12,10 @@
 // 4. Updates child group positions from worldTransform (inertial frames)
 // 5. Cleans up layers for terminated ambients
 
-import * as THREE from '../utils/three.core.min.js'
+import {
+    Group,
+    Vector3,
+} from '../utils/three-entry.js'
 import { materialize, accumulateTrail, flushTrail, clearMaterialCache } from "./materializer.js"
 import { worldTransform, frameWorldTransform, visitPostOrder, findAncestorByName } from "./scheduler.js"
 import { SE3 } from "./se3.js"
@@ -70,7 +73,7 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
         const existing = ambientLayers.get(id)
         if (existing) return existing
 
-        const group = new THREE.Group()
+        const group = new Group()
         group.elements = []   // for text disposal (materializeLabel)
         stage.scene.add(group)
 
@@ -223,11 +226,24 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
         return isIdentitySE3(eyeInv) ? null : eyeInv
     }
 
+    // What the world is seen through: (E·M)⁻¹ = M⁻¹·E⁻¹, where E is the focused
+    // eye and M the hand's own offset (two-finger roll — the rig cannot express
+    // it). Both ride the same seam, so a rolled view composes with a driven eye
+    // without either knowing about the other. Null when the product is identity,
+    // so the common case still costs no per-layer compose.
+    function viewReframe() {
+        const eyeInv = focusedEyeReframe()
+        const offset = stage.viewOffset()
+        if (isIdentitySE3(offset)) return eyeInv
+        const offsetInv = SE3.invert(offset)
+        return eyeInv ? SE3.compose(offsetInv, eyeInv) : offsetInv
+    }
+
     // Position child groups — inertial frame effect, optionally reframed by the
     // focused eye (world ← E⁻¹·world). The eye's own layer is skipped (it emits no
     // mesh; reframing it would place it at the camera origin to no effect).
     function updateGroupPositions() {
-        const eyeInv = focusedEyeReframe()
+        const eyeInv = viewReframe()
         for (const [id, ambient] of scheduler.registry) {
             // The root/world layer (if any) positions at identity like any other
             // non-lens group; it only exists once something deposits into it.
@@ -290,8 +306,8 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
         }
     }
 
-    const _scratchHeadPos = new THREE.Vector3()
-    const _headWorldPos = new THREE.Vector3()
+    const _scratchHeadPos = new Vector3()
+    const _headWorldPos = new Vector3()
     function scaleChildHeads() {
         for (const [id, layer] of ambientLayers) {
             if (!layer.head) continue
