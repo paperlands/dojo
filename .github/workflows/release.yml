@@ -9,7 +9,12 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
+
+# GitHub's default is `bash -e`, which lets a broken pipe stage pass silently.
+defaults:
+  run:
+    shell: bash
 
 env:
   MIX_ENV: local
@@ -22,21 +27,78 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  # ── 32-bit Windows ──────────────────────────────────────────────────────
-  # Built in isolation on OTP 28.5.0.2 (see OTP_VERSION_WIN32). Burrito's
-  # default ERTS resolver fetches otp_win32_<host-OTP>.exe, so running this
-  # job on OTP 28 yields a consistent win32 ERTS + OTP-28 bytecode. The
-  # resulting installer is handed to the release job as an artifact.
-  build_win32:
-    name: Build Windows 32-bit installer
+  # ── Gate ────────────────────────────────────────────────────────────────
+  # The version guard costs seconds; the builds cost half an hour. Ask the
+  # cheap question first, so a forgotten version bump fails before the fleet
+  # spins up.
+  prepare:
+    name: Version gate
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+
+      - name: Extract version from mix.exs
+        id: version
+        run: |
+          # awk, not grep|head|sed: under pipefail head closes the pipe early
+          # and the whole step dies on a SIGPIPE that means nothing.
+          VERSION=$(awk -F'"' '/^ *version: *"/ {print $2; exit}' mix.exs)
+          test -n "$VERSION" || { echo "::error::Could not read version from mix.exs"; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Detected version: $VERSION"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Tag v$VERSION already exists. Bump the version in mix.exs before pushing to release."
+            exit 1
+          fi
+
+  # ── Production web ──────────────────────────────────────────────────────
+  # The web app and the desktop installers are two products of one commit,
+  # sharing no artifact — so the site ships beside the builds, not behind
+  # them. fly.toml already names thedojo; -a is belt and braces.
+  # Default (rolling) strategy: prod gets a handover, not a gap.
+  deploy_prod:
+    name: Deploy to Fly (thedojo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: prepare
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
+
+      - name: Deploy
+        run: |
+          flyctl deploy --remote-only \
+            --wait-timeout 600 \
+            -c fly.toml -a thedojo
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_PROD_API_TOKEN }}
+
+  # ── 32-bit Windows ──────────────────────────────────────────────────────
+  # Built in isolation on OTP 28.5.0.2 (see OTP_VERSION_WIN32). Burrito's
+  # default ERTS resolver fetches otp_win32_<host-OTP>.exe, so running this
+  # job on OTP 28 yields a consistent win32 ERTS + OTP-28 bytecode. The
+  # resulting installer is handed to the publish job as an artifact.
+  build_win32:
+    name: Build Windows 32-bit installer
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: prepare
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Cache Zig
         id: zig-cache
@@ -49,10 +111,10 @@ jobs:
         if: steps.zig-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.local/zig
-          ZIG_URL=$(curl -fsSL https://ziglang.org/download/index.json \
+          ZIG_URL=$(curl -fsSL --retry 3 --retry-delay 2 https://ziglang.org/download/index.json \
             | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['${{ env.ZIG_VERSION }}']['x86_64-linux']['tarball'])")
           echo "Downloading Zig from: $ZIG_URL"
-          curl -fSL "$ZIG_URL" | tar -xJ --strip-components=1 -C ~/.local/zig
+          curl -fSL --retry 3 --retry-delay 2 "$ZIG_URL" | tar -xJ --strip-components=1 -C ~/.local/zig
           ~/.local/zig/zig version
 
       - name: Add Zig to PATH
@@ -63,22 +125,39 @@ jobs:
         with:
           otp-version: ${{ env.OTP_VERSION_WIN32 }}
           elixir-version: ${{ env.ELIXIR_VERSION }}
+          version-type: strict
 
+      # ~/.hex holds the package tarballs, so a miss on deps/ still resolves
+      # offline-fast. Keyed per OTP: the two jobs must not share a build.
       - name: Cache deps
         uses: actions/cache@v4
         with:
-          path: deps
-          key: deps-${{ runner.os }}-${{ hashFiles('mix.lock') }}
-          restore-keys: deps-${{ runner.os }}-
+          path: |
+            deps
+            ~/.hex
+          key: deps-${{ runner.os }}-otp${{ env.OTP_VERSION_WIN32 }}-${{ hashFiles('mix.lock') }}
+          restore-keys: deps-${{ runner.os }}-otp${{ env.OTP_VERSION_WIN32 }}-
 
+      # The sha suffix means every run saves a fresh entry and every run
+      # restores the nearest one — incremental compile without a key that
+      # has to guess which sources matter.
       - name: Cache build
         uses: actions/cache@v4
         with:
           path: _build/local
-          key: build-local-win32-${{ runner.os }}-otp${{ env.OTP_VERSION_WIN32 }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('mix.lock') }}-${{ hashFiles('lib/**/*.ex', 'config/*.exs') }}
+          key: build-win32-${{ runner.os }}-otp${{ env.OTP_VERSION_WIN32 }}-${{ hashFiles('mix.lock') }}-${{ github.sha }}
           restore-keys: |
-            build-local-win32-${{ runner.os }}-otp${{ env.OTP_VERSION_WIN32 }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('mix.lock') }}-
-            build-local-win32-${{ runner.os }}-otp${{ env.OTP_VERSION_WIN32 }}-elixir${{ env.ELIXIR_VERSION }}-
+            build-win32-${{ runner.os }}-otp${{ env.OTP_VERSION_WIN32 }}-${{ hashFiles('mix.lock') }}-
+            build-win32-${{ runner.os }}-otp${{ env.OTP_VERSION_WIN32 }}-
+
+      # Burrito downloads an ERTS tarball per target and stores it by name.
+      # Cached, the wrap step stops pulling ~100MB from erlang.org each run.
+      - name: Cache Burrito ERTS
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/burrito_file_cache
+          key: burrito-erts-win32-otp${{ env.OTP_VERSION_WIN32 }}-${{ hashFiles('mix.lock') }}
+          restore-keys: burrito-erts-win32-otp${{ env.OTP_VERSION_WIN32 }}-
 
       - name: Install system packages
         run: |
@@ -87,15 +166,15 @@ jobs:
 
       - name: Download VC++ Redistributable (x86)
         run: |
-          curl -fSL -o rel/packaging/resources/VC_redist.x86.exe \
+          curl -fSL --retry 3 --retry-delay 2 -o rel/packaging/resources/VC_redist.x86.exe \
             "https://aka.ms/vs/17/release/vc_redist.x86.exe"
           ls -lh rel/packaging/resources/VC_redist.x86.exe
 
       - name: Install Elixir dependencies
         run: |
-          mix local.hex --force
-          mix local.rebar --force
-          mix deps.get
+          mix local.hex --if-missing --force
+          mix local.rebar --if-missing --force
+          mix deps.get --only $MIX_ENV
 
       - name: Compile
         run: mix compile --warnings-as-errors
@@ -111,9 +190,11 @@ jobs:
       - name: Verify 32-bit installer
         run: |
           ls -lh burrito_out
-          INSTALLER=$(ls burrito_out/PaperLandDojo-*-windows-x86-setup.exe 2>/dev/null | head -1)
-          test -n "$INSTALLER" || { echo "::error::Missing Windows x86 (32-bit) installer"; exit 1; }
-          echo "Built: $INSTALLER"
+          # a glob, not `ls | head` — that pipe dies of SIGPIPE under pipefail
+          shopt -s nullglob
+          INSTALLERS=(burrito_out/PaperLandDojo-*-windows-x86-setup.exe)
+          test ${#INSTALLERS[@]} -gt 0 || { echo "::error::Missing Windows x86 (32-bit) installer"; exit 1; }
+          echo "Built: ${INSTALLERS[0]}"
 
       - name: Upload 32-bit installer artifact
         uses: actions/upload-artifact@v4
@@ -122,31 +203,22 @@ jobs:
           path: burrito_out/PaperLandDojo-*-windows-x86-setup.exe
           if-no-files-found: error
           retention-days: 1
+          # installers are already compressed; re-zipping only burns time
+          compression-level: 0
 
-  release:
-    name: Build & Release
+  # ── Everything else ─────────────────────────────────────────────────────
+  # Linux, both macOS targets, and 64-bit Windows on the current OTP. Runs
+  # beside build_win32 rather than after it — the two share no artifact, so
+  # serialising them only doubled the wall clock.
+  build_main:
+    name: Build Linux, macOS & Windows 64-bit
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: build_win32
+    needs: prepare
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Extract version from mix.exs
-        id: version
-        run: |
-          VERSION=$(grep 'version:' mix.exs | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Detected version: $VERSION"
-
-          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-            echo "::error::Tag v$VERSION already exists. Bump the version in mix.exs before pushing to release."
-            exit 1
-          fi
 
       - name: Cache Zig
         id: zig-cache
@@ -159,10 +231,10 @@ jobs:
         if: steps.zig-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.local/zig
-          ZIG_URL=$(curl -fsSL https://ziglang.org/download/index.json \
+          ZIG_URL=$(curl -fsSL --retry 3 --retry-delay 2 https://ziglang.org/download/index.json \
             | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['${{ env.ZIG_VERSION }}']['x86_64-linux']['tarball'])")
           echo "Downloading Zig from: $ZIG_URL"
-          curl -fSL "$ZIG_URL" | tar -xJ --strip-components=1 -C ~/.local/zig
+          curl -fSL --retry 3 --retry-delay 2 "$ZIG_URL" | tar -xJ --strip-components=1 -C ~/.local/zig
           ~/.local/zig/zig version
 
       - name: Add Zig to PATH
@@ -173,22 +245,32 @@ jobs:
         with:
           otp-version: ${{ env.OTP_VERSION }}
           elixir-version: ${{ env.ELIXIR_VERSION }}
+          version-type: strict
 
       - name: Cache deps
         uses: actions/cache@v4
         with:
-          path: deps
-          key: deps-${{ runner.os }}-${{ hashFiles('mix.lock') }}
-          restore-keys: deps-${{ runner.os }}-
+          path: |
+            deps
+            ~/.hex
+          key: deps-${{ runner.os }}-otp${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}
+          restore-keys: deps-${{ runner.os }}-otp${{ env.OTP_VERSION }}-
 
       - name: Cache build
         uses: actions/cache@v4
         with:
           path: _build/local
-          key: build-local-${{ runner.os }}-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('mix.lock') }}-${{ hashFiles('lib/**/*.ex', 'config/*.exs') }}
+          key: build-local-${{ runner.os }}-otp${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}-${{ github.sha }}
           restore-keys: |
-            build-local-${{ runner.os }}-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('mix.lock') }}-
-            build-local-${{ runner.os }}-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-
+            build-local-${{ runner.os }}-otp${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}-
+            build-local-${{ runner.os }}-otp${{ env.OTP_VERSION }}-
+
+      - name: Cache Burrito ERTS
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/burrito_file_cache
+          key: burrito-erts-otp${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}
+          restore-keys: burrito-erts-otp${{ env.OTP_VERSION }}-
 
       - name: Install system packages
         run: |
@@ -197,15 +279,15 @@ jobs:
 
       - name: Download VC++ Redistributable (x64)
         run: |
-          curl -fSL -o rel/packaging/resources/VC_redist.x64.exe \
+          curl -fSL --retry 3 --retry-delay 2 -o rel/packaging/resources/VC_redist.x64.exe \
             "https://aka.ms/vs/17/release/vc_redist.x64.exe"
           ls -lh rel/packaging/resources/VC_redist.x64.exe
 
       - name: Install Elixir dependencies
         run: |
-          mix local.hex --force
-          mix local.rebar --force
-          mix deps.get
+          mix local.hex --if-missing --force
+          mix local.rebar --if-missing --force
+          mix deps.get --only $MIX_ENV
 
       - name: Compile
         run: mix compile --warnings-as-errors
@@ -216,25 +298,53 @@ jobs:
       - name: Build release
         run: mix release
 
-      - name: Download 32-bit Windows installer
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-x86-installer
-          path: burrito_out
-
-      - name: Rename artifacts to conventional names
+      - name: Rename Linux binary to its conventional name
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           cd burrito_out
           [ -f dojo_linux ] && mv dojo_linux "dojo-${VERSION}-linux-x86_64"
-          echo "=== Release artifacts ==="
+          echo "=== Built here ==="
           ls -lh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-artifacts
+          path: |
+            burrito_out/dojo-*-linux-x86_64
+            burrito_out/PaperLandDojo-*-windows-x86_64-setup.exe
+            burrito_out/PaperLandDojo-*-macos-*.dmg
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  # ── Publish ─────────────────────────────────────────────────────────────
+  # No compiler here: gather the five artifacts, check they are all present,
+  # sign, tag, release. Minutes, not half an hour.
+  publish:
+    name: Publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [prepare, build_win32, build_main]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: burrito_out
+          merge-multiple: true
 
       - name: Verify artifacts
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
+          ls -lh burrito_out
           test -f "burrito_out/dojo-${VERSION}-linux-x86_64" || { echo "::error::Missing Linux binary"; exit 1; }
           test -f "burrito_out/PaperLandDojo-${VERSION}-windows-x86_64-setup.exe" || { echo "::error::Missing Windows x86_64 installer"; exit 1; }
           test -f "burrito_out/PaperLandDojo-${VERSION}-windows-x86-setup.exe" || { echo "::error::Missing Windows x86 (32-bit) installer"; exit 1; }
@@ -247,7 +357,7 @@ jobs:
         env:
           CODE_SIGN_CERT: ${{ secrets.CODE_SIGN_CERT }}
           CODE_SIGN_KEY: ${{ secrets.CODE_SIGN_KEY }}
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           sudo apt-get install -yq osslsigncode
           echo "$CODE_SIGN_CERT" | base64 -d > /tmp/cert.pem
@@ -264,14 +374,14 @@ jobs:
 
       - name: Create git tag
         run: |
-          git tag "${{ steps.version.outputs.tag }}"
-          git push origin "${{ steps.version.outputs.tag }}"
+          git tag "${{ needs.prepare.outputs.tag }}"
+          git push origin "${{ needs.prepare.outputs.tag }}"
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
-          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           gh release create "$TAG" \
             --title "Dojo $TAG" \
@@ -281,4 +391,3 @@ jobs:
             "burrito_out/PaperLandDojo-${VERSION}-windows-x86-setup.exe" \
             "burrito_out/PaperLandDojo-${VERSION}-macos-x86_64.dmg" \
             "burrito_out/PaperLandDojo-${VERSION}-macos-arm64.dmg"
-

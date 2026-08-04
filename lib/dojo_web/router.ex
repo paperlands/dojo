@@ -23,8 +23,13 @@ defmodule DojoWeb.Router do
       on_mount: [{DojoWeb.Session, :anon}] do
       live("/book1", BookOneLive, :index)
       live("/shell", ShellLive, :index)
-      live("/tiger", TigerLive, :index)
       live("/welcome", BootLive, :index)
+
+      # The papertiger bench: TigerLive is not in the repo yet, so the route
+      # only stands where a missing module is a warning, never a shipped 500.
+      if Application.compile_env(:dojo, :dev_routes) do
+        live("/tiger", TigerLive, :index)
+      end
     end
   end
 

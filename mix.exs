@@ -138,7 +138,7 @@ defmodule Dojo.MixProject do
       test: ["test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       # press.codex: id→{name,title} index for the weave resolver (Shoot 0 / Q2).
-      "press.codex": ["cmd node scripts/press_codex_index.mjs"],
+      "press.codex": &press_codex/1,
       "assets.build": ["press.codex", "tailwind dojo", "esbuild dojo"],
       "assets.deploy": [
         "press.codex",
@@ -147,6 +147,17 @@ defmodule Dojo.MixProject do
         "phx.digest"
       ]
     ]
+  end
+
+  # The press is a projection OF the corpus, so it only runs where the corpus
+  # stands. Release images never ship codex/ (see .dockerignore) — no corpus,
+  # nothing to press, and the build must not care.
+  defp press_codex(args) do
+    if File.dir?("codex/fragments") do
+      Mix.Task.run("cmd", ["node", "scripts/press_codex_index.mjs" | args])
+    else
+      Mix.shell().info("press.codex: no codex/fragments here — skipped")
+    end
   end
 
   def releases do

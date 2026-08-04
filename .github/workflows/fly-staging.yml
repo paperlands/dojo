@@ -4,6 +4,22 @@ on:
   pull_request:
     branches: [staging]
     types: [opened, synchronize, reopened]
+    # The constellation is prose: org/markdown-only pushes change nothing the
+    # image contains, so they buy no builder minutes.
+    paths-ignore:
+      - "**/*.org"
+      - "**/*.md"
+      - "specs/**"
+      - "codex/**"
+      - "diagrams/**"
+      - "images/**"
+      - "TODO"
+      - ".github/workflows/release.yml"
+
+# GitHub's default is `bash -e`, which lets a broken pipe stage pass silently.
+defaults:
+  run:
+    shell: bash
 
 concurrency:
   group: fly-staging-pr-${{ github.event.pull_request.number }}
@@ -18,11 +34,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Setup flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@master
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
 
+      # --remote-only: the build runs on Fly's builder, which keeps this app's
+      # Docker layer cache between deploys — the runner ships context only.
+      # Staging is one machine, so immediate beats a rolling handover.
       - name: Deploy
-        run: flyctl deploy --remote-only -c fly.staging.toml -a paperland
+        run: |
+          flyctl deploy --remote-only \
+            --strategy immediate \
+            --wait-timeout 600 \
+            -c fly.staging.toml -a paperland
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_STAGING_API_TOKEN }}

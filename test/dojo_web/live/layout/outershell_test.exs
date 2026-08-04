@@ -5,7 +5,7 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
   alias DojoWeb.ShellLive.OuterShell
 
   defp ok(source \\ "fw 100"), do: %Turtle{state: :success, source: source, time: 1}
-  defp err(source \\ "fw"), do: %Turtle{state: :error, source: source, message: "boom", time: 2}
+  defp err(source \\ "fw"), do: %Turtle{state: :error, source: source, time: 2}
 
   describe "observe/2 — one uniform clause" do
     test "success sets both origin and last_good" do
@@ -133,9 +133,14 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
              )
     end
 
-    test "true when only the state or message moved" do
+    test "true when only the state moved" do
       assert OuterShell.reflect_changed?(ok("fw 100"), %Turtle{ok("fw 100") | state: :error})
-      assert OuterShell.reflect_changed?(ok("fw 100"), %Turtle{ok("fw 100") | message: "boom"})
+    end
+
+    # The gate names the bump, never the fields that matter (D025 R3), so a
+    # field no test here enumerates counts the day it is added.
+    test "true when a field no one enumerated moved" do
+      assert OuterShell.reflect_changed?(ok("fw 100"), %Turtle{ok("fw 100") | buffer_id: "b2"})
     end
 
     test "true when only the projected commands moved" do

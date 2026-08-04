@@ -306,6 +306,19 @@ class OrbitControls extends Controls {
 		this.zoomToCursor = false;
 
 		/**
+		 * DOJO FORK. With `zoomToCursor`, stock zoom clamps the DESTINATION radius,
+		 * so the advance decays to zero at `minDistance` and the camera can never
+		 * reach — let alone pass — the target. Set this true and `minDistance`
+		 * becomes a standoff for the PIVOT, not a wall for the camera: each notch
+		 * still advances `minDistance·(1−scale)`, so zoom flies through the target
+		 * carrying the orbit pivot with it. Perspective only.
+		 *
+		 * @type {boolean}
+		 * @default false
+		 */
+		this.dollyThrough = false;
+
+		/**
 		 * Set to true to automatically rotate around the target
 		 *
 		 * Note that if this is enabled, you must call `update()` in your animation loop.
@@ -722,7 +735,13 @@ class OrbitControls extends Controls {
 				const prevRadius = _v.length();
 				newRadius = this._clampDistance( prevRadius * this._scale );
 
-				const radiusDelta = prevRadius - newRadius;
+				// DOJO FORK (dollyThrough): the near clamp holds the pivot, not the
+				// camera — clamping the advance too is what makes zoom asymptote.
+				const step = this.dollyThrough
+					? Math.min( prevRadius * this._scale, this.maxDistance )
+					: newRadius;
+
+				const radiusDelta = prevRadius - step;
 				this.object.position.addScaledVector( this._dollyDirection, radiusDelta );
 				this.object.updateMatrixWorld();
 
@@ -996,7 +1015,7 @@ class OrbitControls extends Controls {
 
 	_handleMouseDownDolly( event ) {
 
-		this._updateZoomParameters( event.clientX, event.clientX );
+		this._updateZoomParameters( event.clientX, event.clientY ); // DOJO FORK: upstream passes clientX as y
 		this._dollyStart.set( event.clientX, event.clientY );
 
 	}
