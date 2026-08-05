@@ -1,69 +1,27 @@
 // Materializer — converts TurtleEvents into THREE.js scene objects.
 // Consumes executor events directly (tuple positions, clean field names).
-// Material cache (spec A3): one LineMaterial per (color, thickness) key.
+// Material cache (spec A3): one LineMaterial per (color, thickness) key —
+// owned by the stage via createMaterialCache (render/line/material-cache.js).
 
 import { GridHelper } from '../utils/three-entry.js'
 import { followPosition } from './view.js'
 import { ColorConverter } from '../utils/color.js'
 import { Text } from '../utils/threetext.js'
 import { Line2 } from '../utils/three-addons/lines/Line2.js'
-import { LineMaterial } from '../utils/three-addons/lines/LineMaterial.js'
 import { LineGeometry } from '../utils/three-addons/lines/LineGeometry.js'
 import { GrowLine } from './render/line/GrowLine.js'
 
-// --- Material cache (spec A3) ---
-// Keyed by (color, thickness). Typical program uses 1-5 unique combinations.
-// Reuse eliminates duplicate GPU uniform buffers and reduces WebGL state switches.
-const materialCache = new Map()
-
-// Read-only introspection for the profiler overlay (non-behavioral).
-export function materialCacheSize() {
-    return materialCache.size
-}
-
-// Cache is module-global and outlives without this — leaks one LineMaterial
-// (+ GPU buffers) per (color,thickness) key for the page's life. Called on
-// turtle.reset()/compositor.dispose().
-export function clearMaterialCache() {
-    for (const mat of materialCache.values()) mat.dispose()
-    materialCache.clear()
-}
-
-// Keep cached LineMaterials' resolution uniform in sync with the canvas — line
-// width is screen-space, so a stale resolution renders lines at the wrong width
-// after a window resize.
-export function updateMaterialResolution(width, height) {
-    for (const mat of materialCache.values()) mat.resolution?.set(width, height)
-}
-
-function getOrCreateMaterial(color, thickness) {
-    const key = `${color || 0xe77808}:${thickness || 2}`
-    let mat = materialCache.get(key)
-    if (!mat) {
-        mat = new LineMaterial({
-            color: color || 0xe77808,
-            linewidth: thickness || 2,
-            vertexColors: false,
-            dashed: false,
-        })
-        mat.resolution.set(window.innerWidth, window.innerHeight)
-        // Tag so layer teardown disposes per-mesh geometry but NOT this shared,
-        // cache-owned material (disposing it would corrupt every other mesh that
-        // shares the key). The cache owns disposal via clearMaterialCache().
-        mat._cached = true
-        materialCache.set(key, mat)
-    }
-    return mat
-}
+// Re-export so callers that already import materializer keep one door.
+export { createMaterialCache } from './render/line/material-cache.js'
 
 // Materialize a single event into the scene.
 // groups = { pathGroup, gridGroup, glyphGroup }
-// ctx    = { shapist, head, camera, controls }
+// ctx    = { materials, shapist, head, camera, controls }
 export function materialize(event, groups, ctx) {
     switch (event.type) {
 
     case "path":
-        materializePath(event, groups.pathGroup, ctx.shapist)
+        materializePath(event, groups.pathGroup, ctx.shapist, undefined, ctx.materials)
         break
 
     case "head":
@@ -103,7 +61,7 @@ export function materializeAll(events, groups, ctx) {
 
 // --- Internal materializers ---
 
-function materializePath(event, pathGroup, shapist, sourceId) {
+function materializePath(event, pathGroup, shapist, sourceId, materials) {
     try {
         if (!event.points || event.points.length === 0) return
 
@@ -118,7 +76,7 @@ function materializePath(event, pathGroup, shapist, sourceId) {
         const geometry = new LineGeometry()
         geometry.setPositions(positions)
 
-        const material = getOrCreateMaterial(event.color, event.thickness)
+        const material = materials.get(event.color, event.thickness)
         const mesh = new Line2(geometry, material)
         // Source attribution for reclaim when a target layer outlives the depositor.
         if (sourceId !== undefined) mesh._sourceId = sourceId
@@ -149,16 +107,19 @@ const SELF_SOURCE = 'self'
 
 // Start a fresh growable run for `source` and add its mesh to the layer. The mesh
 // is tagged with its source so a target layer that OUTLIVES the source (the
-// world/root layer) can reclaim this ink on rerun. (spec id:ft-d2 — GC)
-function newRun(event, source, layer) {
-    const line = new GrowLine(getOrCreateMaterial(event.color, event.thickness))
+// world/root layer) can reclaim this ink on rerun. Ink materials are
+// vertex-coloured (id:child-ink); mono get() stays for filled/one-shot paths.
+// (spec id:ft-d2 — GC)
+function newRun(event, source, layer, materials) {
+    const line = new GrowLine(materials.getInk(event.thickness))
     line.mesh._sourceId = source
     layer.group.add(line.mesh)
     return { runId: event.runId, source, line }
 }
 
 // Append a path event into its source's run in layer.trails. Returns the layer.
-export function accumulateTrail(event, layer) {
+// materials — the stage-owned cache (spec A3); required for path strokes.
+export function accumulateTrail(event, layer, materials) {
     if (!event.points || event.points.length === 0) return layer
 
     const source = event.sourceId != null ? event.sourceId : SELF_SOURCE
@@ -167,20 +128,21 @@ export function accumulateTrail(event, layer) {
     if (event.filled) {
         const open = layer.trails.get(source)
         if (open) { open.line.sync(); layer.trails.delete(source) }
-        materializePath(event, layer.group, layer.shapist, source)
+        materializePath(event, layer.group, layer.shapist, source, materials)
         return layer
     }
 
     // A path event continues its source's open run iff it carries the same
-    // stroke-run id (scheduler-assigned from local geometry+style). GrowLine.append
-    // joins from the run's last endpoint, skipping the shared start point. id:ft-d7-deposit-runid
+    // stroke-run id (scheduler: thickness + join; colour is ink). GrowLine.append
+    // joins from the run's last endpoint, skipping the shared start point.
+    // id:ft-d7-deposit-runid, id:child-ink
     let tr = layer.trails.get(source)
     if (!(tr && tr.runId === event.runId)) {
         if (tr) tr.line.sync()        // close the prior run; its mesh stays in the group
-        tr = newRun(event, source, layer)
+        tr = newRun(event, source, layer, materials)
         layer.trails.set(source, tr)
     }
-    tr.line.append(event.points)
+    tr.line.append(event.points, ColorConverter.toRGBArray(event.color))
     return layer
 }
 

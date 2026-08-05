@@ -329,18 +329,21 @@ loudly if an upgrade renames one (otherwise arbitration would stop SILENTLY).
 ** GL lifecycle — dispose or leak per remount
 :PROPERTIES:
 :ID: nav-stage
-:KEYWORDS: stage dispose teardown GL leak controls cameraBridge remount canvas
+:KEYWORDS: stage dispose teardown GL leak controls cameraBridge remount canvas materialCache materials LineMaterial
 :PATH: assets/js/turtling/stage.js
 :END:
 The canvas outlives the hook; teardown must free GL + controls + subscriptions.
+=stage.materials= (=createMaterialCache= in =turtling/render/line/material-cache.js=)
+is owned here — =stage.dispose()= always reclaims; compositor only =clear()=s on
+reset. Tested headless: =test/js/render/material_cache_test.mjs=.
 
 ** turtle↔compositor seam — what the compositor reads off the stage
 :PROPERTIES:
 :ID: nav-stage-contract
-:KEYWORDS: STAGE_CONTRACT compositor stage seam bag contract frameInterval mirror declared
+:KEYWORDS: STAGE_CONTRACT compositor stage seam bag contract frameInterval mirror declared materials
 :PATH: assets/js/turtling/compositor.js::STAGE_CONTRACT
 :END:
-Six names, checked at birth. The LIVE stage is passed in, never mirrored into a
+Seven names, checked at birth. The LIVE stage is passed in, never mirrored into a
 bag assembled by the caller — that mirror is how =frameInterval= sat in the wrong
 argument, silently taking the fallback, while four members nobody read rode along.
 Pinned by =test/js/seams/compositor_stage_test.mjs=, which reads SOURCE: the
@@ -445,13 +448,13 @@ Prose: [[file:assets/js/utils/VENDOR.org][VENDOR.org]] =::vendor-three=.
 ** three fat-line addons — r185, one rewrite
 :PROPERTIES:
 :ID: nav-three-lines
-:KEYWORDS: Line2 LineMaterial LineSegments2 LineGeometry fat-line three-addons GrowLine
+:KEYWORDS: Line2 LineMaterial LineSegments2 LineGeometry fat-line three-addons GrowLine materialCache createMaterialCache
 :PATH: assets/js/utils/three-addons/lines/
 :END:
 Pristine r185 =examples/jsm/lines/*= under =utils/three-addons/lines/=. One
 rewrite (=from 'three'= → =three.module.min.js=); sibling =../lines/= intact.
-Upgrade: =scripts/vendor-three-lines.sh=. =GrowLine.js= is dojo-owned
-(=turtling/render/line/=) and sits on top. Prose: [[file:assets/js/utils/VENDOR.org][VENDOR.org]]
+Upgrade: =scripts/vendor-three-lines.sh=. Dojo-owned on top: =GrowLine.js= +
+=material-cache.js= (=turtling/render/line/=). Prose: [[file:assets/js/utils/VENDOR.org][VENDOR.org]]
 =::vendor-line-addons=.
 
 ** kernel cell — registry-of-one

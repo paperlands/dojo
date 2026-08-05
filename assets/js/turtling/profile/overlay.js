@@ -14,8 +14,6 @@
 // setInterval, so it keeps reporting even while the render loop is idle. It does
 // not call requestRender(), so observing the system does not perturb it.
 
-import { materialCacheSize } from "../materializer.js"
-
 const FMT = (n, d = 0) => Number(n).toFixed(d)
 const MB = (bytes) => FMT(bytes / 1048576, 1)
 
@@ -97,7 +95,7 @@ const sample = () => {
     const textures = info?.memory?.textures ?? "—"
     const drawCalls = info?.render?.calls ?? "—"
     const programs = info?.programs?.length ?? "—"
-    const matCache = (() => { try { return materialCacheSize() } catch { return "—" } })()
+    const matCache = turtle.stage?.materials?.size ?? "—"
     const mem = performance.memory
     let heapLine = "heap:        n/a (Chrome only)"
     if (mem) {

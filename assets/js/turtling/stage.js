@@ -13,7 +13,7 @@ import {
 import { DojoOrbitControls } from './orbit.js'
 import Render from "./render/index.js"
 import { Recorder } from "./export/recorder.js"
-import { updateMaterialResolution } from "./materializer.js"
+import { createMaterialCache } from "./render/line/material-cache.js"
 import { cameraBridge } from "../bridged.js"
 // AXIS_Z is the camera's sight axis: E is in camera convention (view.js), where
 // the eye looks down local −Z, so a roll is a turn about local Z.
@@ -21,6 +21,10 @@ import { SE3, AXIS_Z } from "./se3.js"
 
 export function createStage(canvas, bridge) {
     const ctx = canvas.getContext("webgl2") ?? canvas.getContext("webgl")
+
+    // Material cache (spec A3) rides the WebGL lifetime. Owned here so
+    // stage.dispose() always reclaims — remount cannot leak by forgetting a free.
+    const materials = createMaterialCache()
 
     // Scene
     const scene = new Scene()
@@ -88,7 +92,7 @@ export function createStage(canvas, bridge) {
     // `outputEncoding` was removed in three r152 — setting it here did nothing;
     // colour comes from `outputColorSpace`'s default. Deleting it changes no
     // pixel (three-entry.js made the dead assignment visible).
-    renderer.capabilities.logarithmicDepthBuffer = true
+    //renderer.capabilities.logarithmicDepthBuffer = true
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.sortObjects = false
 
@@ -104,7 +108,7 @@ export function createStage(canvas, bridge) {
         camera.updateProjectionMatrix()
         renderer.setSize(window.innerWidth, window.innerHeight)
         // Line width is screen-space — keep cached materials' resolution current.
-        updateMaterialResolution(window.innerWidth, window.innerHeight)
+        materials.updateResolution(window.innerWidth, window.innerHeight)
         stage.requestRender?.()
     }
     window.addEventListener('resize', onResize)
@@ -170,6 +174,8 @@ export function createStage(canvas, bridge) {
         head,
         recorder,
         shapist,
+        // LineMaterial cache (spec A3) — WebGL-lifetime owner; dispose() frees it.
+        materials,
 
         // Root groups — used only by stage.head idle rendering.
         // Per-ambient groups are created dynamically by turtle.js.
@@ -279,6 +285,8 @@ export function createStage(canvas, bridge) {
             cameraUnsub()
             controls.dispose()   // OrbitControls' own pointer/touch listeners
             if (stage.renderLoop) stage.renderLoop.stop()
+            // Own the free: remount safety is structural, not a caller checklist.
+            materials.dispose()
             head.dispose()
             renderer.dispose()
             shapist.dispose()

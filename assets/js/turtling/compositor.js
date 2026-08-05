@@ -16,7 +16,7 @@ import {
     Group,
     Vector3,
 } from '../utils/three-entry.js'
-import { materialize, accumulateTrail, flushTrail, clearMaterialCache } from "./materializer.js"
+import { materialize, accumulateTrail, flushTrail } from "./materializer.js"
 import { worldTransform, frameWorldTransform, visitPostOrder, findAncestorByName } from "./scheduler.js"
 import { SE3 } from "./se3.js"
 import { eyeCameraPose } from "./view.js"
@@ -53,6 +53,7 @@ export const STAGE_CONTRACT = Object.freeze([
     'requestRender',  // wake the on-demand loop when async geometry lands
     'viewOffset',     // the hand's reframe M, folded with the eye's E
     'renderLoop',     // for frameInterval only; null until the turtle attaches it
+    'materials',      // LineMaterial cache (spec A3); stage owns, we clear on dispose
 ])
 
 // Create a compositor bound to a scheduler and the live stage.
@@ -101,9 +102,10 @@ export function createCompositor(scheduler, stage, opts = {}) {
     }
 
     // Dispose a mesh's geometry, and its material ONLY if not cache-owned.
-    // Shared LineMaterials (materializer cache, _cached) are disposed wholesale
-    // by clearMaterialCache(), never per-mesh — disposing one here would free a
-    // GPU material still referenced by every other mesh sharing its key.
+    // Shared LineMaterials (stage.materials, _cached) are disposed by the
+    // cache — clear on compositor.dispose, dispose on stage.dispose — never
+    // per-mesh: disposing one would free a GPU material still referenced by
+    // every other mesh sharing its key.
     function disposeMesh(c) {
         if (c.geometry) c.geometry.dispose()
         if (c.material && !c.material._cached) c.material.dispose()
@@ -160,6 +162,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
             // POSE itself is realized in updateGroupPositions as E⁻¹·world. id:eye-coordinates
             const camOn = ambient.isLens ? inFocusedSubtree(ambient) : focus.isFocused(ambient)
             const childCtx = {
+                materials: stage.materials,
                 shapist: layer.shapist,
                 head: layer.head,
                 camera: camOn ? stage.camera : null,
@@ -179,7 +182,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
                 } else if (event.type === 'path') {
                     // Consolidate contiguous segments into one growing mesh
                     // instead of one mesh per event (draw-call collapse).
-                    accumulateTrail(event, layer)
+                    accumulateTrail(event, layer, stage.materials)
                 } else {
                     materialize(event, childGroups, childCtx)
                 }
@@ -436,9 +439,9 @@ export function createCompositor(scheduler, stage, opts = {}) {
                 disposeLayer(id, layer)
             }
             ambientLayers.clear()
-            // Reclaim the module-global material cache — nothing references it
-            // once all layers are gone.
-            clearMaterialCache()
+            // Blank slate for the next compositor; stage still owns the cache
+            // and will dispose it for real on remount (stage.dispose).
+            stage.materials.clear()
         }
     }
 }

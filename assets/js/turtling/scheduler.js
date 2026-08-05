@@ -171,14 +171,15 @@ const _samePt = (a, b) =>
     a && b && Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6 && Math.abs(a[2] - b[2]) < 1e-6
 
 // Assign a stroke-run id to a path event from the SOURCE frame's own (pre-projection)
-// geometry + style. Stable across one continuous pen-down stroke (even when `wait`
+// geometry + pen-width. Stable across one continuous pen-down stroke (even when `wait`
 // splits it into per-tick events), bumped on a geometric break (jmp / pen-up) or a
-// style change; reset on re-exec (via `_strokeEnd = null`). The renderer groups runs
-// by this id alone — identical for the source's own pen and for projected ink whose
-// re-baked world points would otherwise look discontinuous. (spec id:ft-d7-deposit-runid)
+// thickness change. Colour does *not* break the run — it rides in the ink
+// (GrowLine instance colours); one gesture, many crayons (id:child-ink,
+// id:ft-d7-deposit-runid). Reset on re-exec via `_strokeEnd = null`.
 function tagRun(ctx, value) {
     if (value.type !== 'path' || !value.points || !value.points.length) return
-    const style = `${value.color}:${value.thickness}`
+    // Thickness only: LineMaterial.linewidth is uniform per mesh. Colour is data.
+    const style = `${value.thickness}`
     const continues = style === ctx._strokeStyle && _samePt(value.points[0], ctx._strokeEnd)
     if (!continues) ctx._strokeRun = (ctx._strokeRun || 0) + 1
     value.runId = ctx._strokeRun

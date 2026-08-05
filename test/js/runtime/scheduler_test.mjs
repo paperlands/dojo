@@ -1196,6 +1196,17 @@ describe("deposit run identity (runId unification)", () => {
         assert.equal(ids.length, 2, `jmp should break into 2 runs, got ${ids}`)
     })
 
+    test("beColour mid-stroke keeps ONE runId (child ink — colour is data)", () => {
+        // Engine model used to bump runId on colour; child ink keeps the gesture.
+        // Path events may still be monochrome slices (executor flush); runId unifies them.
+        const { paths } = collectPaths("fw 10\nwait 1\nbeColour 'red'\nfw 10\nwait 1")
+        assert.ok(paths.length >= 2, `expected colour-sliced path events, got ${paths.length}`)
+        const ids = new Set(paths.map(p => p.runId))
+        assert.equal(ids.size, 1, `beColour should not break runId, got ${[...ids]}`)
+        assert.ok(paths.some(p => p.color === 'red' || String(p.color).includes('red') || p.color !== paths[0].color),
+            'later path should carry the new colour')
+    })
+
     test("projected ink keeps ONE runId though the projection M moves each tick", () => {
         // The outer loop re-encounters `as dot origin do` each iteration, updating
         // dot's origin (so M = worldTransform(dot) changes every tick). dot draws a
