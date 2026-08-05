@@ -1,12 +1,11 @@
 name: CI
 
-# The dojo had no gate: staging deployed straight from a PR and the release
-# branch compiled for the first time inside a 30-minute build. This is the
-# cheap question asked early — on every PR, and on the trunks.
+# Gate merges into the deploy trunks. Staging deploys from PRs into it;
+# release is the production cut. No push triggers — CI answers only when
+# someone asks to land there.
 on:
   pull_request:
-  push:
-    branches: [master, staging]
+    branches: [master, staging, release]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -100,5 +99,10 @@ jobs:
         with:
           node-version: "22"
 
+      # Node 22+ regression: a directory arg is executed as a single file
+      # (MODULE_NOT_FOUND) instead of being walked. Shell-expand the test
+      # files so both Node 20 and 22 run the suite. Layout is
+      # test/js/<cluster>/*_test.mjs (profile/ benches stay out).
+      # See https://github.com/nodejs/node/issues/64555
       - name: Test
-        run: node --test test/js/
+        run: node --test test/js/*/*_test.mjs

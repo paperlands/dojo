@@ -7,7 +7,8 @@
 ```bash
 mix setup                        # Install deps and compile assets
 mix test                         # All Elixir tests (path:line for one)
-node --test test/js/             # JS tests (zero-npm, node:test; by contract cluster)
+node --test test/js/*/*_test.mjs # JS tests (zero-npm, node:test; by contract cluster)
+                                 # dir form `test/js/` is broken on Node 22+ (nodejs#64555)
 mix format                       # Before committing
 mix release                      # Production release (Burrito)
 
