@@ -26,12 +26,9 @@ export class DojoOrbitControls extends OrbitControls {
     constructor(object, domElement = null) {
         super(object, domElement)
 
-        // How close the PIVOT may sit to the camera. Not a wall the camera stops
-        // at — past it the rig keeps advancing `dollyStandoff·(1−scale)` per notch
-        // and flies through what you aimed at. It doubles as the fly-through
-        // cruising distance, so it must be large enough that the approach never
-        // decays into a crawl near the pivot (≈5 crawls; ≥25 holds a constant
-        // step straight through the content).
+        // How close the pivot may sit to the camera — not a hard wall; past it the
+        // rig keeps advancing and flies through what you aimed at. Doubles as the
+        // fly-through cruising distance, so it must stay large enough to not crawl.
         this.dollyStandoff = 30
 
         // Stock's near clamp would stop the camera dead at the pivot. Disarm it

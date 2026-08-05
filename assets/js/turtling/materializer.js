@@ -21,10 +21,9 @@ export function materialCacheSize() {
     return materialCache.size
 }
 
-// Dispose every cached material and empty the cache. Called on turtle.reset()/
-// compositor.dispose() — the cache is module-global and otherwise lives for the
-// whole page, so without this it leaks one LineMaterial (+ GPU uniform buffers)
-// per unique (color, thickness) for the session's lifetime.
+// Cache is module-global and outlives without this — leaks one LineMaterial
+// (+ GPU buffers) per (color,thickness) key for the page's life. Called on
+// turtle.reset()/compositor.dispose().
 export function clearMaterialCache() {
     for (const mat of materialCache.values()) mat.dispose()
     materialCache.clear()
@@ -139,25 +138,10 @@ function materializePath(event, pathGroup, shapist, sourceId) {
 }
 
 // --- Trail consolidation (draw-call collapse) ---
-//
-// `wait` breaks the stroke every temporal boundary, so an animated
-// `loop do fw 1 wait end` emits one path event per tick. Naively that is one
-// Line2 mesh per event → tens of thousands of meshes/draw-calls for a long
-// animation (the dominant cost on complex programs). But consecutive flushes of
-// a continuous pen-down trail share an endpoint, so they form ONE polyline.
-//
-// We accumulate contiguous path events into a single GROWING fat-line per source
-// (GrowLine): the new segments are appended to a persistent dynamic buffer rather
-// than rebuilt each frame. A discontinuity (new stroke-run id) closes the current
-// run — its mesh stays in the layer — and starts a new one. Filled polygons remain
-// standalone. (spec id:ft-d8-append-geometry)
-//
-// A layer is multi-tenant: its own pen plus any frame-targeted children that deposit
-// ink into it (`as child target do`). Each depositor's run is keyed by
-// `event.sourceId`, so sources never clobber each other and each grows independently.
-// Trail state (`layer.trails`, a Map<sourceKey, run>) is owned by the caller
-// (compositor), reset on clear. A run = { runId, source, line: GrowLine }.
-// (spec id:ft-d2-per-source-trails)
+// Contiguous path events accumulate into one growing per-source polyline
+// (GrowLine) instead of a mesh per event; a new stroke-run id closes the run
+// and starts fresh. Keyed by event.sourceId so multi-tenant layers never
+// clobber. id:ft-d8-append-geometry, id:ft-d2-per-source-trails
 
 // The layer's own pen (untagged events) shares one slot; deposited ink is keyed
 // by its source frame id.
@@ -187,11 +171,9 @@ export function accumulateTrail(event, layer) {
         return layer
     }
 
-    // One contiguity rule for every pen — own and projected alike: a path event
-    // continues the source's open run iff it carries the same stroke-run id, which
-    // the scheduler assigned from the source's local geometry + style.
-    // (spec id:ft-d7-deposit-runid). GrowLine.append joins from the run's last
-    // endpoint, so the shared start point is skipped automatically.
+    // A path event continues its source's open run iff it carries the same
+    // stroke-run id (scheduler-assigned from local geometry+style). GrowLine.append
+    // joins from the run's last endpoint, skipping the shared start point. id:ft-d7-deposit-runid
     let tr = layer.trails.get(source)
     if (!(tr && tr.runId === event.runId)) {
         if (tr) tr.line.sync()        // close the prior run; its mesh stays in the group
@@ -240,14 +222,9 @@ function materializeHead(event, ctx) {
     }
 }
 
-// Materialize a `view` event — the camera codomain of Output (sibling of
-// materializeHead). A Lens emits no turtle mesh and does NOT drive the camera
-// here: the eye is an ordinary ambient whose pose reframes the world at the model
-// layer (compositor.updateGroupPositions premultiplies non-eye layers by E⁻¹), so
-// the live orbit camera renders as effective camera E·C. All this leaf does is
-// keep the eye invisible and carry the E2 `fov` lens param. The eye's pose is read
-// live in the compositor from frameWorldTransform; nothing is set on the camera
-// pose here (no controls fight). (specs/eye-ambient.org id:eye-lens-primitive, id:eye-coordinates)
+// A Lens emits no mesh and never drives the camera — pose reframing happens at
+// the model layer (compositor E⁻¹ premultiply). This leaf only hides the eye
+// and carries the E2 fov param. id:eye-lens-primitive, id:eye-coordinates
 function materializeView(event, ctx) {
     // An eye is never a visible turtle.
     ctx.head?.hide?.()

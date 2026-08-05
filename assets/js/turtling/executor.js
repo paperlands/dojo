@@ -33,11 +33,9 @@ function* evalOrBlock(expr, scope, state) {
 //
 // deps = { mathParser, mathEvaluator }
 // opts = { maxRecurseDepth, maxRecurses, maxCommands, color, actorState }
-// The actor state, born from opts. Extracted so a caller may OWN the object it
-// will read back: `execute` mutates the state in place, so a run that throws
-// still leaves behind everything it registered before the fault. That is what
-// lets the rehearsal keep its healthy definitions — healthy parts live (D020),
-// applied to the vocabulary (id:cmp-t-healthy-parts); see drainNamespace.
+// Separate so callers own the object: execute mutates it in place, so a throw
+// still leaves already-registered defs standing (D020 healthy-parts-live).
+// See drainNamespace. id:cmp-t-healthy-parts
 export function createActorState(opts = {}) {
     return {
         // A Lens (`eye`) seeds its spawn frame to recenterPose() so an empty eye
@@ -272,20 +270,16 @@ function* walkBody(body, scope, state, stroke) {
         case 'Empty':
             break
 
-        // The healthy parts live (D020, specs/compiler.org id:cmp-resilient):
-        // a parse-time error node is INERT at walk — its children (an
-        // unterminated block's parsed body) rest inside it, contained. The
-        // ink is where it speaks. The fault path (a throw during a walk) is
-        // untouched: workers still die per let-it-crash.
+        // Error node is INERT at walk — its parsed children rest inside it,
+        // contained, not executed (D020 healthy-parts-live, id:cmp-resilient).
+        // The throw path is untouched: a runtime crash still kills the frame.
         case 'Error':
             break
         }
         } catch (error) {
-            // Runtime provenance (specs/compiler.org id:cmp-runtime-provenance):
-            // the INNERMOST spanned statement stamps a walk error with its birth
-            // line — recursion unwinds through outer nodes without overwriting.
-            // Let-it-crash untouched: the error still propagates and the frame
-            // still dies; it just dies knowing where.
+            // Runtime provenance (id:cmp-runtime-provenance): the innermost spanned
+            // node stamps a walk error with its birth line; recursion unwinds
+            // without overwriting. Let-it-crash untouched — error still kills the frame.
             if (error instanceof Error && !error.span && node.span) {
                 error.span = node.span
                 error.kind = 'walk'
@@ -295,27 +289,13 @@ function* walkBody(body, scope, state, stroke) {
     }
 }
 
-// The rehearsal (Decision 019) — run an AST headless from t=0 and return the
-// pure-function namespace it registered: `functions` (def/draw) and the math
-// parser's `userspace` (fn/func). The weave seats a cell's phase vocabulary
-// through this: ancestors' code runs lazily by the ONE executor semantics —
-// defs born under loop/when/wait flow exactly as a live walk would register
-// them, waits fast-forward (logical time costs nothing in a drain), and all
-// events are discarded (no drawing, no shout, no spawn mounts). No sibling
-// negotiation: deps carry no blocking resolver, so a cross-ambient read
-// resolves to nothing instead of suspending — sibling-dependent structure
-// belongs to `as … do` inside the cell, not to vocabulary. A crash or the
-// command budget ends the rehearsal loudly: no namespace, error surfaced.
+// Rehearsal (D019): runs an AST headless from t=0 via the ONE executor semantics
+// (defs/waits behave as a live walk; events discarded), returning the pure-function
+// namespace it registered. No sibling blocking; a crash ends it loudly, no namespace.
 export function drainNamespace(ast, deps, opts = {}) {
-    // THE HEALTHY PARTS OF A REHEARSAL LIVE — the containment law (D020),
-    // applied across cells. The state object is OURS, so a fault on line 10 of
-    // a phase leaves the `def`s registered on lines 1–9 standing.
-    //
-    // Discard them instead and the diagnostic cascades sideways: one broken line
-    // strips the whole phase's vocabulary from every descendant cell, and
-    // each descendant dies with "Function square not defined" pointing at ITS
-    // OWN line — blamed for an ancestor's diagnostic. The error rides back span-true
-    // on the ancestor's line instead, so a diagnostic is named where it was born.
+    // Healthy parts live (D020): state is owned here, so a fault mid-phase leaves
+    // earlier defs registered. Errors stay attributed to their own line instead of
+    // cascading as false "not defined" failures in unrelated descendant cells.
     const actorState = opts.actorState ?? createActorState({ maxCommands: 200_000, ...opts })
     try {
         const gen = execute(ast, deps, { maxCommands: 200_000, ...opts, actorState })

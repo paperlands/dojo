@@ -61,12 +61,9 @@ export function createStage(canvas, bridge) {
     controls.dampingFactor = 0.2
     controls.update()
 
-    // Zoom slides the rig along the ray under the pointer, and the standoff
-    // floors the PIVOT rather than the camera — so once you reach the floor you
-    // fly straight through the target at a constant step instead of asymptoting
-    // at it. One law, every input: wheel, trackpad, middle-drag, two-finger
-    // pinch. Arbitration (two fingers mean one thing at a time) comes with the
-    // subclass; `gestureSlop` is its one knob. See turtling/orbit.js.
+    // Standoff floors the PIVOT, not the camera — past the floor you fly
+    // straight through the target instead of asymptoting at it. One law for
+    // every zoom input (wheel/trackpad/pinch); gesture arbitration lives in orbit.js.
     controls.zoomToCursor = true
 
     // The manual view offset M. The rig has no roll DOF, so a finger-twist rides
@@ -88,11 +85,9 @@ export function createStage(canvas, bridge) {
         alpha: true
     })
     renderer.setSize(window.innerWidth, window.innerHeight)
-    // `outputEncoding = sRGBEncoding` stood here and did NOTHING: three removed
-    // sRGBEncoding in r152, so it assigned undefined to a property the renderer
-    // no longer reads. Colour has been coming from `outputColorSpace`'s default
-    // all along. Deleting it changes no pixel; setting it deliberately is a
-    // separate decision nobody has taken. (three-entry.js is what made it visible)
+    // `outputEncoding` was removed in three r152 — setting it here did nothing;
+    // colour comes from `outputColorSpace`'s default. Deleting it changes no
+    // pixel (three-entry.js made the dead assignment visible).
     renderer.capabilities.logarithmicDepthBuffer = true
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.sortObjects = false
@@ -114,10 +109,9 @@ export function createStage(canvas, bridge) {
     }
     window.addEventListener('resize', onResize)
 
-    // Camera bridge — responds to external camera commands.
-    // cameraBridge is a module-global EventTarget; the unsub MUST run on
-    // dispose, else this closure pins the whole stage (renderer/scene/camera)
-    // forever and ghost handlers render stale scenes after a hook remount.
+    // cameraBridge is a module-global EventTarget — unsub MUST run on dispose,
+    // else this closure pins the whole stage (renderer/scene/camera) forever
+    // and ghost handlers render stale scenes after a hook remount.
     const cameraUnsub = cameraBridge.sub(async (payload) => {
         switch (payload[0]) {
         case 'recenter':
@@ -205,12 +199,9 @@ export function createStage(canvas, bridge) {
             renderer.render(scene, camera)
         },
 
-        // Snapshot for thumbnail/recording. The readback is ASYNC on WebGL2:
-        // readPixels targets a PIXEL_PACK_BUFFER (returns without draining the
-        // GPU) and a fence signals when the pixels are ready — a synchronous
-        // readPixels here stalled the main thread ~40ms per capture. Returns
-        // false when a capture is already in flight, so callers don't count
-        // the call as a completed hatch.
+        // WebGL2 readback is ASYNC: PIXEL_PACK_BUFFER + fence, never a sync
+        // readPixels (stalled the main thread). Returns false when a capture
+        // is already in flight, so callers don't count it as a completed hatch.
         hatch(bridge) {
             if (hatchInFlight) return false
             const width = canvas.width

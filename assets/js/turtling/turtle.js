@@ -60,23 +60,14 @@ export class Turtle {
         // Unified scheduler + compositor (lazy — created on first upsertAmbient)
         this.scheduler = null
         this.compositor = null
-        // Hatch gate: when the canvas is driven by passive outershell content
-        // (watching a friend, or reverting to their code) this is true and the
-        // hatch is suppressed — a friend's drawing must never be hatched/
-        // reflected as the user's own. Only own edits and live drafts refresh
-        // the snapshot. A seat may only OPEN this gate; closing it is the
-        // batch's word (reflectGate) — see D022.
+        // Suppresses hatch while canvas shows passive content (watched friend,
+        // reverted draft); this seat may only OPEN it, never close it (D022).
         this._hatchSuppressed = false
         this._localKeys = new Set()  // buffer IDs of locally-rendered tab ambients
 
-        // THE THREE STAMPS THE VERDICT READS (hatch.js). Nothing else in this
-        // class decides when to hatch; these say what the world did, and
-        // hatchVerdict alone says what follows.
-        //
-        // _lastReflectChange — when the reflect last changed: a draw, an edit, a
-        // removal, a walking frame, a moved cursor, the keepalive. ONE QUESTION,
-        // TWO ENDS (D025 R3): this stamp and the server's `reflect_changed?` are
-        // the same sentence — would the watcher learn something new?
+        // The three stamps hatchVerdict reads; nothing else here decides when to
+        // hatch. _lastReflectChange answers the same question as the server's
+        // `reflect_changed?` — would the watcher learn something new? (D025 R3)
         this._lastReflectChange = 0
         this._lastHatchAt = 0
         this._firstDrawAt = 0
@@ -198,10 +189,9 @@ export class Turtle {
             }
 
             this._firstDrawAt ||= now
-            // THE RUN'S LAST WORD. A figure that has stopped moving is a change
-            // no glimpse taken mid-walk can carry — and it is the only thing a
-            // walking program says after it starts, which is why a loop that
-            // never reaches `done` hatches once and then holds its peace.
+            // A figure going still is a change no mid-walk glimpse carries — the
+            // only thing a walking program says after it starts. A loop that
+            // never reaches `done` hatches once on this edge, then stays silent.
             if (this._walking && !walking) this._lastReflectChange = now
             this._walking = walking
         } else {
@@ -243,47 +233,26 @@ export class Turtle {
         return true
     }
 
-    // THE ONE VERB — the client's half of `reflect_changed?` (D025 R3). Say the
-    // reflect changed; the verdict alone decides whether that becomes a hatch.
-    // Everything that used to reach for the shutter — the done edge, a moved
-    // cursor, the keepalive, a save request — says this instead.
-    //
-    // A caller may say what changed; a caller may not hatch. That is the whole
-    // discipline: no second wire path (D025 R4), no back door past the gate (a
-    // followed PROGRAM still never hatches its previews, D023), and no second
-    // rate limiter — the beat lives in hatch.js and nowhere else.
+    // The client's half of `reflect_changed?` (D025 R3): say what changed, the
+    // verdict alone decides to hatch. A caller may never hatch directly — no
+    // second wire path (D025 R4), no second rate limiter.
     reflectChanged() {
         this._lastReflectChange = performance.now()
         this.requestRender()
     }
 
-    // The reflect's COORDINATE moved while its canvas stands still — a reader
-    // who scrolls or steps between cells and types nothing (D025 R4). The
-    // attention rides the reflect it belongs to, or it does not ride: the
-    // redundant capture of an identical canvas is the price of no second wire,
-    // bounded by the settled floor. Do not decouple the message from the hatch
-    // to save it — that decoupling IS the second wire.
+    // A reader who scrolls or steps between cells without typing still moves
+    // the reflect's coordinate (D025 R4). Route it through reflectChanged too —
+    // a redundant capture is the price of never having a second wire.
     attentionMoved() {
         this.reflectChanged()
     }
 
     // --- Multi-ambient API ---
 
-    // The rehearsal (Decision 019): a cell's phase vocabulary is its
-    // ancestors' code, run lazily from t=0 by the one executor semantics
-    // (drainNamespace — headless, waits fast-forward, no sibling
-    // negotiation, loud budget). Content-keyed cache: same vocabulary, one
-    // rehearsal; an edit is new content and rehearses fresh. The KEY stays
-    // the printed vocab (identity law: content hash is the cross-eval
-    // predicate); the DRAIN runs the live node slices when the seam ships
-    // them — no re-parse (id:cmp-vet diagnostic 1).
-    // A wounded rehearsal is KEPT, not discarded: the definitions that
-    // registered before the fault still stand (drainNamespace), so a broken
-    // line in a phase no longer strips its whole vocabulary from every cell
-    // beneath it. The error rides back on the answer — span-true on the
-    // ANCESTOR's own line — instead of vanishing into a console warning; the
-    // caller records it so the ink lands where the diagnostic was born, never on the
-    // descendant that merely inherited the silence.
+    // Rehearsal is cached by vocab content (id:cmp-vet): same text, one run; an
+    // edit rehearses fresh. A wounded rehearsal keeps what registered before the
+    // fault, and the error's span stays on the ancestor line that broke.
     rehearseVocab(vocab, vocabNodes = null) {
         this._vocabCache ??= new Map()
         if (this._vocabCache.has(vocab)) return this._vocabCache.get(vocab)
@@ -306,14 +275,9 @@ export class Turtle {
         return ns
     }
 
-    // EVERY standing diagnostic the canvas holds, in ONE shape and one list: the
-    // frames' walk faults and the phases' rehearsal diagnostics. They are the same
-    // fact — an addressed hurt with a true line — so they must not arrive as two
-    // lists a reader has to know about and concatenate. The one address rule
-    // (ailmentsFor) filters this; nothing downstream learns a second source.
-    //
-    // Deduped by where the diagnostic actually lives: many cells of a phase share
-    // one vocabulary, and one broken line is one diagnostic, not one per reader.
+    // Walk faults and rehearsal diagnostics are the same fact — one addressed
+    // hurt with a true line — so ailmentsFor gives every reader ONE list, never
+    // two to concatenate. Deduped by where it lives: one broken line, one wound.
     get ailments() {
         return standingAilments({
             frames: this.scheduler?.errors,
@@ -372,11 +336,7 @@ export class Turtle {
                 env: ns?.userspace?.size ? { userspace: ns.userspace } : null
             }, { fresh })
 
-            // The gate is the BATCH's, not this seat's (D022): a page seats
-            // many times per transition, and the last seat is a warm sibling
-            // (hatch:false). Let a seat close the gate here and that sibling
-            // silently stops the page reflecting at all. A seat only ever
-            // OPENS it; closing is the batch's word, through reflectGate().
+            // Only OPEN the gate here on real content — closing is reflectGate's alone (D022).
             if (hatch) this._hatchSuppressed = false
 
             this.compositor.flush()
@@ -395,14 +355,9 @@ export class Turtle {
 
             const wounds = ailmentsFor(this.scheduler.errors, key)
             if (wounds.length > 0) {
-                // THE TURTLE CARRIES WOUNDS, NEVER A SENTENCE. Each wound keeps
-                // the key of the frame that died, so a watcher can isolate the
-                // cells that hurt without running anything — a flattened
-                // `message` leaves a receiver only a string to reprint.
-                //
-                // They ride `diagnostics`, the field the reflect already uses, so
-                // there is ONE wound channel. The reflect's are these same wounds
-                // LOCATED — an enrichment, never a second type.
+                // Wounds carry the dying frame's key, never a flattened message string, so
+                // a watcher can isolate the hurt cell without running anything. They ride
+                // `diagnostics` — the reflect's own field, never a second channel.
                 this.renderstate.meta = { state: "error", message: null, diagnostics: wounds }
                 this.requestRender()
                 return { success: false, wounds }
@@ -437,10 +392,8 @@ export class Turtle {
     }
 
     // The reflect gate, spoken once per transition (D022). `open` means the
-    // canvas is the CHILD'S this batch — their edit or live draft — so the
-    // snapshot may hatch and reflect. A batch of only passive seats (a watched
-    // friend's push, a reverted draft) closes it; a batch with no seat at all
-    // leaves it where it stands. One writer per transition, never N.
+    // canvas is the child's own this batch; an all-passive batch (a watched
+    // friend, a reverted draft) closes it. One writer per transition, never N.
     reflectGate(open) {
         this._hatchSuppressed = !open
     }

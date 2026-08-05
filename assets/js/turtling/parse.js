@@ -884,11 +884,9 @@ export function outline(lines) {
 export const feedsVocabulary = (sourcePath, targetPath) =>
     sourcePath.length < targetPath.length && sourcePath.every((t, i) => t === targetPath[i]);
 
-// WHO A CELL TAKES WITH IT — every LATER cell that inherits its vocabulary. A
-// cell that died leaves them standing on a definition that never ran, and they
-// are compromised WHETHER OR NOT THEY HAVE RUN: the page seats lazily, so the
-// child would otherwise learn it only by reaching each one. Indices, because
-// the caller already holds the cells.
+// Every LATER cell that inherits a dead cell's vocabulary — compromised
+// whether or not it has run, since the page seats lazily and would otherwise
+// learn the death only on reach. (D019 vocabulary edge)
 export const dependentsOf = (cells, i) => {
     const out = [];
     for (let k = i + 1; k < (cells?.length ?? 0); k++) {
@@ -956,24 +954,9 @@ export function phaseCells(ast, marks) {
     return cells;
 }
 
-// WHAT A CELL IS CALLED (D024) — spelled ONCE: the seating law keys frames on
-// `id`, the diagnostics query turns `collides` into a wound, and a second
-// spelling would be a second identity.
-//
-//   name  the author's word — a LABEL, free to repeat under different phases.
-//   id    the identity and the frame key: the section chain, then the name if
-//         one was written, else the cell's order among its sisters.
-//         → `1.2.myname`, `1.2.3`
-//
-// So `myname` under two subheadings is two ids. Two `myname` in ONE section is
-// one id and a collision: the first keeps the word, the later falls back to its
-// ordinal and is marked — silence would put two figures in one frame invisibly.
-//
-// The trade: a section opened ABOVE re-keys a named cell, so its figure is
-// reborn. Naming buys meaning and a blast radius bounded to true sisters.
-// A NAME MAY NOT BE SPELLED AS A PLACE: `1.2` as a word keys the same frame as
-// the cell that actually sits at 1.2, and a name-only duplicate check cannot see
-// it. Refusing the grammar kills the class.
+// D024: id = section chain + name (else sisters' order). Same name twice in
+// one section collides — first keeps it, rest fall back to ordinal. A
+// place-shaped name (`1.2`) is refused: it would alias the cell truly there.
 const PLACE_LIKE = /^\d+(\.\d+)*$/;
 
 export function cellIdentities(cells) {
@@ -1025,12 +1008,9 @@ export function cellAtLine(cells, line) {
 // Printed lines per node, by the one printer, so the count cannot drift.
 const printedHeight = (node) => printAST([node]).split('\n').length;
 
-// NOT WIRED. A distant cell keeps its fences but loses its body, so downstream
-// it seats with EMPTY CODE and its figure is wiped — "dormant" has to mean NOT
-// SEATED before this can ship. Attention crosses as a coordinate instead (D025 R1).
-// Tests stay: the line arithmetic is correct (weave_phase_test.mjs).
-// → { commands, attend }: kept nodes are the SAME objects; attend:null is the
-// identity, reached by the null path so there is one code path.
+// NOT WIRED: a distant cell loses its body, seating EMPTY CODE and wiping its
+// figure — blocked until "dormant" means NOT SEATED. Attention crosses as a
+// coordinate instead (D025 R1); kept nodes are the SAME objects, never copies.
 export function reflectPhase(ast, attend) {
     if (!ast || !attend || attend.line == null) return { commands: ast, attend: null };
 
@@ -1068,11 +1048,9 @@ export function reflectPhase(ast, attend) {
     };
 }
 
-// The program AROUND the cells — phaseCells' complement. When bare code
-// stands outside the fences it takes priority: it is the buffer's program,
-// and the cells are previews that run only on reach. The cell fences stay
-// (Empty no-ops, and they carry the meadow's edges) so the stripped source
-// re-parses clean; only the cells' code leaves.
+// phaseCells' complement: bare code outside the fences IS the buffer's
+// program; cells are previews that run only on reach. Fences stay as
+// no-ops so the stripped source still re-parses clean.
 export function stripCells(ast) {
     const out = [];
     let inCell = false;

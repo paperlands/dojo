@@ -155,13 +155,9 @@ export function createCompositor(scheduler, stage, opts = {}) {
             const isRoot = ambient === scheduler.root
             const layer = getOrCreateLayer(id, !isRoot)
 
-            // Camera gating: a Lens drives the viewport when it's in the focused
-            // subtree (the focused tab owns it, possibly via a nested eye); a
-            // non-lens head tracks the camera only on a strict focus-name match.
-            // Unfocused either way → null camera → no viewport effect. A focused
-            // eye's view leaf only carries fov / hides the head; the camera POSE is
-            // realized as a model-layer reframe in updateGroupPositions (world ←
-            // E⁻¹·world), read live from the eye's world pose. (id:eye-coordinates)
+            // Camera gating: a Lens tracks when in the focused subtree (even via a
+            // nested eye); a non-lens head only on strict focus-name match. Camera
+            // POSE itself is realized in updateGroupPositions as E⁻¹·world. id:eye-coordinates
             const camOn = ambient.isLens ? inFocusedSubtree(ambient) : focus.isFocused(ambient)
             const childCtx = {
                 shapist: layer.shapist,
@@ -368,13 +364,9 @@ export function createCompositor(scheduler, stage, opts = {}) {
             // we materialize the batch in a single pass (one trail rebuild, not N).
             drainAndMaterialize()
             updateGroupPositions()
-            // Reclaim HERE, not only in advance(). Every edit mints a new frame,
-            // so each flush() adds a fresh Group to the scene; leaving the sweep
-            // to the next rendered frame means a surface with no frames coming
-            // never sweeps. A backgrounded tab gets no rAF, so a watched friend's
-            // pushes piled up one orphan Group per push — measured at 200 groups
-            // and +8MB after 200 pushes, reclaimed only on foreground. flush()
-            // and advance() are one pipeline; both must collect their garbage.
+            // Reclaim HERE too, not only in advance(): flush() mints a fresh Group
+            // per edit, and a backgrounded tab gets no rAF to sweep it — orphans
+            // pile up until foreground. flush()/advance() share one GC pipeline.
             cleanupOrphanedLayers()
             return scheduler.done
         },
@@ -414,14 +406,9 @@ export function createCompositor(scheduler, stage, opts = {}) {
             scaleChildHeads()
         },
 
-        // Set opacity on an ambient's layer and all its descendants.
-        // Clones shared materials per-mesh to avoid mutating the material cache.
-        //
-        // Keyed by ADDRESS, like focus — the same register, both faces (D006).
-        // Never by display name: a program's bare code and its FIRST cell wear
-        // the same name (weave/page.js cellEntries), so a name-keyed dim could
-        // not tell them apart — it lit whichever the registry happened to hold
-        // first and left the other bright.
+        // Keyed by ADDRESS, like focus — same register, both faces (D006).
+        // Never by display name: a program's bare code and its first cell
+        // share a name (weave/page.js), so name-keying couldn't tell them apart.
         setOpacityByAddress(address, opacity) {
             if (address == null) return
             for (const ambient of scheduler.registry.values()) {

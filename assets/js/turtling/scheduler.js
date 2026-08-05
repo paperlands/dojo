@@ -89,24 +89,14 @@ function findAncestorByName(ctx, name) {
     return null
 }
 
-// `origin` is the synthetic root — the fixed identity datum at the top of every
-// tree. It never moves and never ticks (it runs no commands), so it is the stable
-// absolute frame: ink targeted at `origin` lands in absolute world coordinates
-// (the root layer renders at identity).
-//
-// `world`, by contrast, is the observer's OWN top-level program (see resolveReserved):
-// a live ambient with a moving transform and a running clock, resolved per-observer
-// and tab-local, so sibling tabs never couple through it.
-// (spec id:ft-d4-world-root — absolute-frame targeting moved from `world` to `origin`)
+// `origin` is the synthetic root — fixed identity, never ticks; ink targeted
+// at it lands in absolute world coordinates. `world` is the observer's own
+// top-level program instead — live, moving, tab-local. (id:ft-d4-world-root)
 const ROOT_NAME = "origin"
 
-// Stable, unique address of a frame across re-eval. Re-eval (hotSwapChild)
-// RECREATES frames — a frame's identity (id) does NOT survive it, nor does any
-// state stored on the frame. What IS stable is the path from root: the top tab's
-// registration KEY (root.children key, the buffer addr — unique per tab) plus the
-// chain of names down to the frame. Used to key cross-lifetime state (an eye's
-// running view pose) so it persists across re-eval (idempotency) yet never
-// collides across sibling tabs that share a reserved name like `eye`.
+// Re-eval RECREATES frames — `id` does not survive it. What's stable is the
+// path from root (registration key + names down), so cross-lifetime state
+// (an eye's view pose) persists across re-eval without colliding across tabs.
 export function frameAddress(root, frame) {
     const names = []
     let f = frame
@@ -196,14 +186,9 @@ function tagRun(ctx, value) {
     ctx._strokeStyle = style
 }
 
-// A frame-targeted child deposits its ink into the target frame, where the moving
-// projection continuously re-bakes it (the path keeps deforming as the target moves).
-// Its head must ride that SAME projection or it detaches — drifting on its own layer
-// while the ink it's "drawing" lives in the target frame. Bake the head's position
-// into the target frame (the compositor seats a frame-targeted head's group at the
-// target's worldTransform, mirroring where the path is deposited); rotation is left
-// alone — materializeHead orients frame-targeted heads by world velocity. Identity
-// when not frame-targeted. (spec id:ft-d5-head)
+// The head must ride the SAME projection as the ink it deposits into the
+// target frame, or it detaches and drifts on its own layer. Bakes position
+// only — rotation stays velocity-oriented; identity when not targeted. (id:ft-d5-head)
 function projectHead(headEvent, frameTarget, frameTransform) {
     if (!frameTarget) return headEvent
     return { ...headEvent, position: SE3.apply(frameTransform, headEvent.position) }
@@ -243,11 +228,9 @@ function metaRootFrame(frame) {
     return node
 }
 
-// The observer's top-level program: the direct child of the synthetic root on the
-// observer's own ancestor chain. This is `world` — a real ambient with a live clock
-// and moving transform, scoped to the observer's tab (sibling tabs never couple).
-// In production the root is synthetic plumbing, so this lands on the program; if the
-// observer IS the root (test harness runs a program as root), it resolves to itself.
+// `world`: the observer's direct child of the synthetic root — live clock,
+// moving transform, tab-scoped. If the observer IS root (test harness), it
+// resolves to itself.
 function topLevelFrame(frame) {
     const root = metaRootFrame(frame)
     if (frame === root) return root
@@ -542,14 +525,9 @@ function attachMeta(frame, targetFrame) {
 
 // --- The seed — become, stage 1 (specs/compiler.org id:cmp-become-seed) ---
 
-// The code organ a root child was seated with, held and compared BY
-// IDENTITY: the green tree adopts unchanged units to ===-same node objects,
-// and the vocab rehearsal cache answers ===-same functions/userspace for an
-// unchanged vocabulary — so "same seed" is a handful of pointer compares
-// and can never claim a sameness that isn't (nodes are never mutated at
-// walk). The ast array is copied (callers rebuild slices per edit); its
-// ELEMENTS are the identity. A missed reuse (coarse key, cleared vocab
-// cache) costs a rebuild, never a wrong world.
+// Compared BY IDENTITY: the green tree keeps unchanged units ===-same, so
+// "same seed" is pointer compares over the ast's ELEMENTS (the array itself
+// is copied). A missed reuse costs a rebuild, never a wrong world. (id:cmp-become-seed)
 function seedOf(spec) {
     return {
         ast: [...(spec.code?.ast ?? [])],
@@ -596,13 +574,9 @@ function unwireWorldCache(child) {
 
 // --- Shared child wiring ---
 
-// Wire a freshly created child frame: attach deps, mailbox, resolve binding,
-// world origin, cache invalidation, and register in the flat index.
-// Stamps the frame's stable ADDRESS — the one cross-eval identity register
-// (shout de-dup, focus, navigation). Requires top-level frames to already sit
-// in root.children so frameAddress finds their registration key. The id stays
-// per-LIFETIME plumbing: registry/layers/deposit-GC key on it so a re-eval
-// (new id) clears the old life's ink while the address keeps its identity.
+// Wires a fresh child (deps, mailbox, binding, cache) and stamps its stable
+// ADDRESS — see frameAddress for the id-vs-address distinction. Requires the
+// frame already sit in root.children so frameAddress finds its registration key.
 function wireChild(child, deps, mailbox, registry) {
     child.address = frameAddress(metaRootFrame(child), child)
     child.deps = deps
@@ -632,15 +606,9 @@ function rewireChild(child, value, createDeps, execOpts) {
 
 // --- Inline child drain ---
 
-// Advance a child's generator inline until it hits a wait or completes.
-// Called at spawn time so the child's state is observable immediately
-// by subsequent parent code (no wait-before-observe needed).
-//
-// For frame-targeted children, events are projected to the target frame.
-// For normal children, events go to the child's own channel.
-//
-// Uses an explicit stack (trampoline) so deeply nested spawn chains
-// don't overflow the JS call stack.
+// Drains inline at spawn time so the child's state is observable immediately
+// by the parent's next line — no wait-before-observe. An explicit stack
+// (trampoline) keeps deeply nested spawn chains off the JS call stack.
 function advanceChild(initialChild, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout) {
     const stack = [initialChild]
 
@@ -695,9 +663,7 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
         }
 
         if (value.type === "wait") {
-            // Anchor to the child's LOGICAL birth (shares parent's grid); a null
-            // birth (top-level) falls back to the live `now` — self-correcting
-            // across resets/reruns. (Fix A)
+            // First wait anchors to logicalBirth, not now — see frame.js. (Fix A)
             child.resumeAt = (child.resumeAt > 0 ? child.resumeAt : (child.logicalBirth ?? now)) + value.duration
             child.elapsedTime += value.duration / 1000
             if (value.position) {
@@ -752,12 +718,9 @@ function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, regi
                     nestedExisting.origin = value.origin
                     rewireChild(nestedExisting, value, createDeps, execOpts)
                     if (deferredShouts) deliverDeferredToFrame(deferredShouts, nestedExisting)
-                    // Re-run the re-encountered ambient by pushing it back onto the
-                    // trampoline (the drain returns it, advanceChild's stack drains it,
-                    // then resumes us). Mirrors the tick path's spawn re-encounter, which
-                    // calls advanceChild. Without this, a re-spawn inside a wait-free loop
-                    // rewires the child but never advances it — so it executes only on the
-                    // first iteration, leaving every later `as name … do` behind.
+                    // Push back onto the trampoline so it actually drains (mirrors
+                    // tick's spawn re-encounter). Without this a re-spawn inside a
+                    // wait-free loop rewires but never advances — runs once, drops later iterations.
                     return nestedExisting
                 }
                 // Running & not done → idempotent no-op
@@ -821,19 +784,9 @@ export function createScheduler(generator, opts = {}) {
         commandCount: 0,
         lastTickTime: 0,
 
-        // Hot-swap a child of root by key: terminate existing (if any),
-        // create fresh child from fork spec, advance inline.
-        // key = stable identity (buffer ID); forkSpec.name = display name (tab name).
-        // Uses lastTickTime so the new child's waits are relative to the
-        // current timeline, not time 0 (which would cause fast catch-up).
-        //
-        // Become, stage 1 — the seed law (id:cmp-become-seed): a seat whose
-        // seed is identical is SKIPPED WHOLE — the standing frame keeps
-        // running (clocks, transforms, mailbox, children, ink, standing
-        // error); a name difference updates in place (display is a view,
-        // the address holds). Continuity by refusal is total continuity.
-        // fresh:true is the OTHER door — an explicit restart gesture (the
-        // toggle group's restart-in-sync), never the edit path.
+        // The seed law (id:cmp-become-seed): a seat with an identical seed is
+        // SKIPPED WHOLE — the standing frame keeps running untouched. A name
+        // change updates in place; only fresh:true forces an explicit restart.
         hotSwapChild(key, forkSpec, { fresh = false } = {}) {
             const existing = root.children.get(key)
             if (existing && !fresh && sameSeed(existing.seed, forkSpec)) {
@@ -889,20 +842,9 @@ export function createScheduler(generator, opts = {}) {
             return errs
         },
 
-        // Advance the earliest logical instant. Post-order: children before parents.
-        // Returns true if any frame produced events this tick.
-        //
-        // Decision 011 bullet 3 — logical-`resumeAt`-ordered drain. Rather than
-        // advancing EVERY ready frame each tick (round-robin by tree position, which
-        // lets a wall-clock `now` jump collapse many logical instants into one pass so
-        // a frame reads a logically-LATER frame's state), advance only the frames at
-        // the smallest ready `resumeAt` — the earliest logical instant — one step.
-        // The compositor's catch-up loop then walks instants in increasing order up to
-        // the reveal frontier `now`. A frame never advances ahead of a logically-earlier
-        // one, so cross-ambient reads (`leader.heading`) and re-encounter (`existing.done`)
-        // tests always observe logically-prior state, regardless of how `now` was sampled.
-        // Within one instant, post-order tree position is the deterministic tiebreak and
-        // `yield` interleaves same-instant siblings across successive ticks (unchanged).
+        // Advances only the frames at the earliest ready `resumeAt`, never
+        // round-robin — so a frame can't read a logically-later frame's state
+        // even when `now` jumps. Post-order breaks ties within an instant. (Decision 011 #3)
         tick(now) {
             this.lastTickTime = now
             if (this.done) return false
@@ -982,9 +924,7 @@ export function createScheduler(generator, opts = {}) {
 
                     // --- Directive: wait ---
                     if (value.type === "wait") {
-                        // Anchor the first wait to the frame's LOGICAL birth (shares
-                        // the parent's grid); a null birth (top-level) falls back to
-                        // the live `now`, self-correcting across resets. (Fix A)
+                        // First wait anchors to logicalBirth, not now — see frame.js. (Fix A)
                         ctx.resumeAt = (ctx.resumeAt > 0 ? ctx.resumeAt : (ctx.logicalBirth ?? now)) + value.duration
                         ctx.elapsedTime += value.duration / 1000
                         if (value.position) {
@@ -1060,9 +1000,7 @@ export function createScheduler(generator, opts = {}) {
                                     parent: ctx,
                                     origin: value.origin,
                                     channelCapacity,
-                                    // Child born on the parent's LOGICAL clock (its
-                                    // resumeAt at spawn), not wall-clock now. (Fix A)
-                                    // 0 (parent hasn't waited) → null → live now.
+                                    // Born on the parent's logical clock, not now — see frame.js. (Fix A)
                                     logicalBirth: ctx.resumeAt || null,
                                 }),
                                 value.frame
