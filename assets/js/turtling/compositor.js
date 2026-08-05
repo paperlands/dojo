@@ -44,12 +44,26 @@ function setGroupOpacity(group, opacity) {
     })
 }
 
-// Create a compositor bound to a scheduler and stage infrastructure.
-//
-// ctx     = { camera, controls }
-// stage   = { scene, renderer, recorder, renderstate, hatch }
-// opts    = { createHead, createShapist }
-export function createCompositor(scheduler, ctx, stage, opts = {}) {
+// What the compositor reads off the live stage, checked at birth — never
+// copied into a bag (that's how `frameInterval` went missing before).
+export const STAGE_CONTRACT = Object.freeze([
+    'scene',          // layers are added here and removed here
+    'camera',         // read: head scaling. WRITTEN by materializeHead (camera.desire)
+    'controls',       // handed to materializeHead; never touched here
+    'requestRender',  // wake the on-demand loop when async geometry lands
+    'viewOffset',     // the hand's reframe M, folded with the eye's E
+    'renderLoop',     // for frameInterval only; null until the turtle attaches it
+])
+
+// Create a compositor bound to a scheduler and the live stage.
+// opts = { createHead, createShapist }
+export function createCompositor(scheduler, stage, opts = {}) {
+    for (const name of STAGE_CONTRACT) {
+        // Presence, not truthiness: `renderLoop` is legitimately null at first.
+        if (!stage || !(name in stage)) {
+            throw new TypeError(`compositor: stage is missing \`${name}\` (STAGE_CONTRACT)`)
+        }
+    }
     let epoch = null      // first real timestamp — rebases advance() to flush()'s 0-based timeline
     let lastWallT = null  // previous advance() wall timestamp, to detect idle-out gaps
     // Focus holds the frame's stable ADDRESS (frameAddress), never the display
@@ -59,10 +73,9 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
     const createHead = opts.createHead || null
     const createShapist = opts.createShapist || null
 
-    // Idle-gap detection (rerun lifecycle) lives in ./timeline.js so it can be
-    // tested without THREE. frameInterval is threaded from the render loop
-    // (Render.Loop, 1000/targetFPS); the idle floor derives from it.
-    const FRAME_MS = opts.frameInterval || (1000 / 60)
+    // Idle-gap detection (rerun lifecycle) lives in ./timeline.js, testable without
+    // THREE. Cadence is READ from the live loop, never copied in by the caller.
+    const FRAME_MS = stage.renderLoop?.frameInterval || (1000 / 60)
     const IDLE_GAP_MS = idleFloorMs(FRAME_MS)
 
     // Per-ambient rendering state: { group, head, shapist }
@@ -153,8 +166,8 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
             const childCtx = {
                 shapist: layer.shapist,
                 head: layer.head,
-                camera: camOn ? ctx.camera : null,
-                controls: camOn ? ctx.controls : null,
+                camera: camOn ? stage.camera : null,
+                controls: camOn ? stage.controls : null,
                 frame: ambient,
                 // Async materializers (troika Text) call this when their geometry
                 // finishes building, to wake a render-on-demand loop that may have
@@ -326,7 +339,7 @@ export function createCompositor(scheduler, ctx, stage, opts = {}) {
 
             // Reuse one scratch vector — this runs per head per frame.
             _scratchHeadPos.set(gp.x + headPos.x, gp.y + headPos.y, gp.z + headPos.z)
-            const dist = ctx.camera.position.distanceTo(_scratchHeadPos)
+            const dist = stage.camera.position.distanceTo(_scratchHeadPos)
             layer.head.scale(dist / 250)
         }
     }

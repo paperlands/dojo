@@ -334,6 +334,19 @@ loudly if an upgrade renames one (otherwise arbitration would stop SILENTLY).
 :END:
 The canvas outlives the hook; teardown must free GL + controls + subscriptions.
 
+** turtle↔compositor seam — what the compositor reads off the stage
+:PROPERTIES:
+:ID: nav-stage-contract
+:KEYWORDS: STAGE_CONTRACT compositor stage seam bag contract frameInterval mirror declared
+:PATH: assets/js/turtling/compositor.js::STAGE_CONTRACT
+:END:
+Six names, checked at birth. The LIVE stage is passed in, never mirrored into a
+bag assembled by the caller — that mirror is how =frameInterval= sat in the wrong
+argument, silently taking the fallback, while four members nobody read rode along.
+Pinned by =test/js/seams/compositor_stage_test.mjs=, which reads SOURCE: the
+compositor cannot be imported headless (materializer → vendored =threetext.js=,
+whose =from "./three.core.min"= has no extension and is immutable).
+
 ** math expressions — lex, parse, evaluate, typeset
 :PROPERTIES:
 :ID: nav-mafs

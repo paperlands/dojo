@@ -2,10 +2,8 @@
 // Consumes executor events directly (tuple positions, clean field names).
 // Material cache (spec A3): one LineMaterial per (color, thickness) key.
 
-import {
-    GridHelper,
-    Vector3,
-} from '../utils/three-entry.js'
+import { GridHelper } from '../utils/three-entry.js'
+import { followPosition } from './view.js'
 import { ColorConverter } from '../utils/color.js'
 import { Text } from '../utils/threetext.js'
 import { Line2 } from '../utils/three-addons/lines/Line2.js'
@@ -216,10 +214,12 @@ function materializeHead(event, ctx) {
     if (ctx.camera) {
         switch (ctx.camera.desire) {
         case 'track': {
-            const deltaMovement = new Vector3(pos[0], pos[1], pos[2])
-            deltaMovement.sub(ctx.head.position())
-            ctx.camera.position.add(deltaMovement)
-            ctx.controls.target.set(pos[0], pos[1], pos[2])
+            // Follow off the target, not the head mesh — the head respawns on
+            // every re-eval, which walked the camera per edit. (view.js followPosition)
+            const c = ctx.camera.position, t = ctx.controls.target
+            const next = followPosition([c.x, c.y, c.z], [t.x, t.y, t.z], pos)
+            c.set(next[0], next[1], next[2])
+            t.set(pos[0], pos[1], pos[2])
             break
         }
         case 'pan':

@@ -161,24 +161,10 @@ export class Turtle {
                 this._onShout?.(sourceName, msg, payload)
             }
         })
+        // Pass the live stage, not a copied bag — STAGE_CONTRACT checks what the
+        // compositor may read; a mirror here is how `frameInterval` went missing.
         this.compositor = createCompositor(this.scheduler,
-            { camera: this.stage.camera, controls: this.stage.controls },
-            {
-                scene: this.stage.scene,
-                renderer: this.stage.renderer,
-                recorder: this.stage.recorder,
-                renderstate: this.renderstate,
-                // The hand's own reframe (two-finger roll), composed with the eye's.
-                viewOffset: () => this.stage.viewOffset(),
-                hatch: () => this.hatch(),
-                // Let async materializers (troika Text builds glyphs off-thread)
-                // wake the render-on-demand loop once their geometry is ready,
-                // else a label finishing after the loop idles out never draws.
-                requestRender: () => this.requestRender(),
-                // The render loop's vsync cadence — lets the compositor distinguish a
-                // slow/throttled frame from a render-on-demand idle-out (id:eye/rerun).
-                frameInterval: this.renderLoop.frameInterval
-            },
+            this.stage,
             {
                 createHead: (parent) => new Render.Head(parent),
                 createShapist: (parent) => new Render.Shape(parent, {
