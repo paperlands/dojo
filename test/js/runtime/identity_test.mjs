@@ -80,11 +80,16 @@ describe("frameAddress — the one cross-eval register", () => {
     })
 })
 
+// A letter only reaches a frame that said it would listen (id:mailbox-listens-for),
+// so every receiver here names the pattern under test. The law being fenced is
+// de-dup by ADDRESS, which is unchanged.
+const EAR = (name) => `when '${name}' do\n  fw 1\nend`
+
 describe("shout de-dup — keyed on address, not the re-minted id", () => {
     test("a shout delivers once to a frame", () => {
         const s = makeScheduler()
         const a = s.hotSwapChild("buf-a", fork("a", "fw 1"))
-        const b = s.hotSwapChild("buf-b", fork("b", "fw 1"))
+        const b = s.hotSwapChild("buf-b", fork("b", EAR("ping")))
         const shout = { from: a, name: "ping", payload: 1 }
         deliverShout(shout, b)
         deliverShout(shout, b)
@@ -94,13 +99,13 @@ describe("shout de-dup — keyed on address, not the re-minted id", () => {
     test("a re-eval'd receiver is never re-delivered (same address, new id)", () => {
         const s = makeScheduler()
         const a = s.hotSwapChild("buf-a", fork("a", "fw 1"))
-        const b1 = s.hotSwapChild("buf-b", fork("b", "fw 1"))
+        const b1 = s.hotSwapChild("buf-b", fork("b", EAR("ping")))
         const shout = { from: a, name: "ping", payload: 1 }
         deliverShout(shout, b1)
         // A CHANGED re-eval mints the new lifetime (an unchanged seat is now
         // skipped whole — become stage 1, id:cmp-become-seed); the dedup law
         // under test is unchanged: delivery keys on the address, not the id.
-        const b2 = s.hotSwapChild("buf-b", fork("b", "fw 2"))
+        const b2 = s.hotSwapChild("buf-b", fork("b", EAR("ping") + "\nfw 2"))
         assert.notEqual(b2.id, b1.id)
         deliverShout(shout, b2)
         assert.equal(b2.mailbox.filter(m => m.name === "ping").length, 0,
@@ -109,11 +114,11 @@ describe("shout de-dup — keyed on address, not the re-minted id", () => {
 
     test("a shout never returns to its emitter, even reborn", () => {
         const s = makeScheduler()
-        const a1 = s.hotSwapChild("buf-a", fork("a", "fw 1"))
+        const a1 = s.hotSwapChild("buf-a", fork("a", EAR("echo")))
         const shout = { from: a1, name: "echo", payload: null }
         // Changed code so the emitter truly REBIRTHS (an unchanged seat is
         // skipped whole under the seed law, id:cmp-become-seed).
-        const a2 = s.hotSwapChild("buf-a", fork("a", "fw 2"))
+        const a2 = s.hotSwapChild("buf-a", fork("a", EAR("echo") + "\nfw 2"))
         deliverShout(shout, a2)
         assert.equal(a2.mailbox.filter(m => m.name === "echo").length, 0,
             "emitter's address must not receive its own shout")
@@ -121,7 +126,7 @@ describe("shout de-dup — keyed on address, not the re-minted id", () => {
 
     test("interleaved shouts still deliver across ambients (behaviour preserved)", () => {
         const s = makeScheduler()
-        s.hotSwapChild("buf-a", fork("a", "shout 'tick' 1"))
+        s.hotSwapChild("buf-a", fork("a", "when 'tick' do\n  fw 1\nend\nshout 'tick' 1"))
         const b = s.root.children.get("buf-a")
         assert.ok(b.mailbox.some(m => m.name === "tick"), "self-delivery at emission")
     })

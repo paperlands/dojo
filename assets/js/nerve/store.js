@@ -1,51 +1,37 @@
-// Signal Store — single source of truth for all nerve signals.
-// Renderers subscribe and react. Only push() creates signals.
-//
-// CHANNELS is the vocabulary. Each channel defines its visual identity
-// (zone, priority, fade duration, CSS class) and its signal constructor.
-// Callers use signal constructors — never raw objects.
+// Signal store — only push() creates; renderers subscribe. Pure, no DOM.
+// CHANNELS = vocabulary (zone, fade, css). Callers use constructors, not raw bags.
+// No error channel: wounds are health the seat pulls (D022). priority is chat-only.
 
 import { createObservable } from "../kernel/observable.js"
 
 export const CHANNELS = {
-    error:  { priority: 5, fadeMs: 600000, zone: 'status', css: 'nerve-error' },
-    system: { priority: 4, fadeMs: 15000, zone: 'status', css: 'nerve-system' },
-    output: { priority: 1, fadeMs: 4000,  zone: 'status', css: 'nerve-output' },
+    system: { fadeMs: 15000, zone: 'status', css: 'nerve-system' },
+    // Dedicated kind: monospaced glyph, independent mute; edges only.
+    helios: { fadeMs: 12000, zone: 'status', css: 'nerve-helios' },
+    output: { fadeMs: 4000,  zone: 'status', css: 'nerve-output' },
     chat:   { priority: 3, fadeMs: 12000, zone: 'chat',   css: 'nerve-chat' },
     eval:   { priority: 2, fadeMs: 8000,  zone: 'chat',   css: 'nerve-eval' },
     shout:  { priority: 1, fadeMs: 6000,  zone: 'chat',   css: 'nerve-shout' },
-    // Walk — a portal followed. Zone 'trail': the weave card draws the tail;
-    // the HUD never renders it (local store only — no socket adapter is the
-    // privacy fence until Shoot 5 chooses a crossing deliberately).
+    // Portal followed. trail zone; local store only (no socket = privacy fence).
     walk:   { priority: 2, fadeMs: 20000, zone: 'trail',  css: 'nerve-walk' },
 }
 
-// ---------------------------------------------------------------------------
-// Signal constructors — iconic form factor.
-// Every signal is { msg, payload, source, kind, target, ref, tabId }.
-// Constructors enforce shape; callers speak the vocabulary.
-// ---------------------------------------------------------------------------
-
+// Shape: { msg, payload, source, kind, target, ref, tabId }.
 export const signals = {
     output:  (msg, payload)          => ({ msg, payload: String(payload), source: 'system', kind: 'output' }),
-    // `tally` — how many faults STAND, when more than this one. Beside the
-    // sentence, never inside it: it is a count, not words.
-    error:   (msg, payload, ref, tally) => ({ msg, payload, source: 'system', kind: 'error', ref: ref ?? null, tally: tally ?? 0 }),
     system:  (msg, payload)          => ({ msg, payload: payload ?? null, source: 'system', kind: 'system' }),
+    // heliosView → signals.helios. msg = glyph; commands = payload; living while building.
+    helios:  (view) => ({
+        msg: view?.glyph ?? '',
+        payload: (view?.commands ?? 0) > 0 ? String(view.commands) : null,
+        source: 'system',
+        kind: 'helios',
+        living: view?.phase === 'building',
+    }),
     shout:   (source, msg, payload, tabId) => ({ msg, payload, source, kind: 'shout', tabId }),
     chat:    (source, msg, target)   => ({ msg, payload: null, source, kind: 'chat', target: target ?? null }),
     eval:    (source, msg, payload)  => ({ msg, payload: payload ?? null, source, kind: 'eval' }),
-    // A watched friend's signal — rendered in the outershell's own remote zone.
-    // Same optional `ref` shape as `error` (`{ line }`, `{ key }`, …) so a
-    // click navigates the outer editor the way the core nerve does.
-    remote:  (source, msg, payload, kind, ref, tally) => ({
-        msg, payload: payload ?? null, source, kind, ref: ref ?? null, tally: tally ?? 0,
-    }),
-    // A portal followed (Shoot 0). source: WHO walked (the walker's address
-    // — never the kind; per-source FIFO and the keep's prefix law key on it).
-    // target: spoken destination (~/spirals); payload: where she stood;
-    // ref: durable id when known (survives renames). Local store only —
-    // no adapter carries walk to the socket (the privacy fence).
+    // source = walker address; target = spoken dest; payload = from; ref survives renames.
     walk:    (source, from, to, ref) => ({
         msg: to,
         payload: from ?? null,
@@ -56,21 +42,21 @@ export const signals = {
     }),
 }
 
-// ---------------------------------------------------------------------------
-// Store — push/subscribe/mute. Pure runtime, no DOM.
-// ---------------------------------------------------------------------------
+// One place for omitted fields; push stamps id/epoch/ts over this.
+const DEFAULTS = Object.freeze({
+    msg: '', payload: null, target: null, source: '?', kind: 'shout',
+    ref: null, tally: 0, tabId: null, living: false,
+})
 
 export function createSignalStore(opts = {}) {
     const MAX = opts.maxSignals || 200
-    const signals = []
+    const log = []  // not `signals` — that name is the constructors export
     const subscribers = createObservable()
     const sources = new Set()
     const targets = new Set()
     const muted = new Set()
-    // Claimed addresses (ambient source-names). A peer panel claims its friend's
-    // name; the residual (local) projection shows everything no panel claimed.
-    // Routing is by address only — content filtering stays a separate matchPattern
-    // layer. See nerve.js project()/createNerve.
+    // Peer panels claim an address; residual projection shows the unclaimed rest.
+    // Routing by address only — content filter is a separate matchPattern layer.
     const claims = new Set()
     let counter = 0
     let epoch = 0
@@ -81,24 +67,17 @@ export function createSignalStore(opts = {}) {
 
     function push(raw) {
         const signal = {
-            id:      ++counter,
+            ...DEFAULTS,
+            ...raw,
+            id: ++counter,
             epoch,
-            msg:     raw.msg ?? '',
-            payload: raw.payload ?? null,
-            target:  raw.target ?? null,
-            source:  raw.source ?? '?',
-            kind:    raw.kind ?? 'shout',
-            // THE CLOCK LAW (gw-t-clock): ts belongs to the SOURCE. A signal
-            // that crossed a boundary keeps the clock it arrived with; only a
-            // locally-born signal (no ts) is stamped here. Ordering across
-            // peers is per-source (source, id) — honestly partial globally.
-            ts:      raw.ts ?? performance.now(),
-            ref:     raw.ref ?? null,
-            tally:   raw.tally ?? 0,
-            tabId:   raw.tabId ?? null,
+            // ts belongs to the SOURCE (gw-t-clock). Cross-boundary keeps arrival clock.
+            // Peer order is per-source (source, id) — honestly partial globally.
+            ts: raw.ts ?? performance.now(),
+            living: raw.living === true,  // boolean breath, never truthy string
         }
-        signals.unshift(signal)
-        if (signals.length > MAX) signals.length = MAX
+        log.unshift(signal)
+        if (log.length > MAX) log.length = MAX
 
         if (signal.source && signal.source !== '?') sources.add(signal.source)
         if (signal.target) targets.add(signal.target)
@@ -112,10 +91,10 @@ export function createSignalStore(opts = {}) {
 
     function mute(kind) { muted.add(kind) }
     function unmute(kind) { muted.delete(kind) }
-    function clear() { signals.length = 0 }
+    function clear() { log.length = 0 }
 
     return {
-        push, subscribe, run, signals, sources, targets, muted, mute, unmute, clear,
+        push, subscribe, run, signals: log, sources, targets, muted, mute, unmute, clear,
         claims, claim, release,
         get epoch() { return epoch },
     }

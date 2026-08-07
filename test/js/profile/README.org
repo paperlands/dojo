@@ -28,6 +28,8 @@ place of the materializer, isolating executor/scheduler cost from rendering.
 node --expose-gc test/js/profile/run.mjs
 node --expose-gc test/js/profile/typing_path_bench.mjs   # coreshell/CM keystroke spine
 node --expose-gc test/js/profile/linter_bench.mjs        # CM decoration / tokenize
+node test/js/profile/command_cost_bench.mjs             # cost spread across the command table
+node test/js/profile/breath_cost_bench.mjs              # what the preemption boundary costs
 #+END_SRC
 
 - =harness.mjs= — =profileProgram(src, { ticks, frameMs })=: builds a real
@@ -39,6 +41,16 @@ node --expose-gc test/js/profile/linter_bench.mjs        # CM decoration / token
   skips heap assertions with a warning.
 - =typing_path_bench.mjs= — reparse / contentKey / pageLaw.observe / findProse
   (spec memory: [[file:../../../specs/weave/typing-path.org][typing-path]]).
+- =command_cost_bench.mjs= — ns/command across the whole =COMMANDS= table. The
+  preemption quantum (D027 R3) is denominated in node visits, so it is only
+  meaningful if a visit is roughly a visit: this reports the spread. It is what
+  found =evaluateExpr= re-parsing on every evaluation (25x spread → 4x).
+- =breath_cost_bench.mjs= — what the breath costs, round-robin across quanta with
+  an explicit noise gate, *and* worst-block-under-slice for the three B1 shapes.
+  *It reports; it does not assert.* It began as asserting tests in
+  =quantum_spike_test.mjs= and failed under load — a wall-clock ratio measures
+  the machine. Correctness fences are deterministic and stay in =_test.mjs=
+  (B1 keeps =deadlineChecks > 0= only); cost and worst-block are a bench.
 
 *The leak signal* is =Δheap/tick= over the steady animation run: flat ≈ no leak.
 =registry= / =frames= staying constant across re-execution ≈ no frame accumulation.

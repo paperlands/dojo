@@ -1,38 +1,32 @@
-// Nerve — one write model (the store), N read models (projections).
-//
-// Every signal is pushed once into the store; producers never choose a
-// destination. Projections route by ADDRESS (a signal's `source` name):
-//   - the default projection is RESIDUAL — it shows every signal whose address
-//     no panel has claimed (your own ambients, system output, chat).
-//   - project(panelEl, …) mounts a CLAIMANT projection for one peer address;
-//     while claimed, that peer's signals route there instead of the residual.
-// Content filtering (matchPattern / the `[t]` filter) is a separate concern,
-// layered inside a projection — never conflated with this address routing.
+// Nerve — one write model (store), N read models (projections).
+// Push once; route by source address. Residual = unclaimed; project() claims a peer.
+// Content filter (matchPattern) is inside a projection — never address routing.
 
 import { createSignalStore } from './nerve/store.js'
 import { createHUD } from './nerve/hud.js'
 
-// `targets` (optional) scopes the residual projection's navigation to its own
-// editor/canvas; omit for the core surfaces. `run()` marks an execution-epoch
-// boundary — part of the nerve's surface, so callers never reach for the store.
+// targets scopes navigation to this instance's editor/canvas. run() is the epoch boundary.
 export function createNerve(container, pushEvent, targets) {
     const store = createSignalStore({ maxSignals: 200 })
 
+    // Seat base is a pull, not a signal. Surface lends health when whole (inner.js).
+    let healthOf = null
     const residual = createHUD(container, store, pushEvent, {
         targets,
+        health: () => healthOf?.() ?? null,
         select: (s) => !store.claims.has(s.source),
     })
 
-    // A peer projection renders only its claimed address, and holds that claim
-    // on the store so the residual stops showing it. retarget() switches peers
-    // (e.g. when the outershell follows a different disciple).
+    // Claim one peer address so residual stops showing them. retarget switches peers.
     function project(panelEl, opts = {}) {
         let address = null
         const hud = createHUD(panelEl, store, opts.pushEvent || pushEvent, {
             targets: opts.targets,
+            health: opts.health,  // friend's health — same seat law, other subject
             select: (s) => address != null && s.source === address,
         })
         return {
+            refresh: hud.refresh,
             retarget(name) {
                 const next = name ?? null
                 if (next === address) return
@@ -53,5 +47,12 @@ export function createNerve(container, pushEvent, targets) {
         project,
         hud: residual,
         destroy: residual.destroy,
+        // Lend residual health; returned release clears it when the surface dies.
+        health(fn) {
+            healthOf = fn
+            residual.refresh()
+            return () => { if (healthOf === fn) healthOf = null; residual.refresh() }
+        },
+        refresh: residual.refresh,
     }
 }

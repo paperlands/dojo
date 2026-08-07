@@ -1,47 +1,44 @@
-// Frame — the spatial scope primitive.
-//
-// A frame is a named coroutine with spatial hierarchy:
-// identity (id, name), tree (parent, children), spatial scope (origin, transform),
-// execution (generator, resumeAt, done), communication (channel).
-//
-// The scheduler attaches lifecycle metadata (error, commandCount, actorState,
-// targetFrame) as needed — bookkeeping, not part of the primitive contract.
+// Frame — one coroutine ambient: tree, pose, channel, park, ink bill.
+// Prior: green thread / generator process — not a native OS thread.
 
 import { SE3 } from "./se3.js"
 import { createAtom } from "../kernel/observable.js"
 import { createRingBuffer } from "./ring-buffer.js"
+import { createInk } from "./ledger.js"
 
 let _nextId = 0
 
 export function createFrame(name, generator, opts = {}) {
     return {
-        // Identity
         id: ++_nextId,
         name,
 
-        // Tree
         parent: opts.parent || null,
         children: new Map(),
 
-        // Spatial
-        origin: opts.origin || null,                          // parent's SE3 at birth (immutable)
-        transform: createAtom(opts.transform || SE3.identity()),  // local pose (evolving)
+        origin: opts.origin || null,  // parent's SE3 at birth (immutable)
+        transform: createAtom(opts.transform || SE3.identity()),  // local pose
 
-        // Spatial cache — invalidated via Atom.watch on ancestor transforms
+        // Invalidated via Atom.watch on ancestor transforms.
         _worldCache: null,
         _worldDirty: true,
 
-        // Execution
-        generator,
-        resumeAt: 0,
-        // Parent's LOGICAL clock at spawn — a child's first wait anchors here (not
-        // wall-clock now) so coincident events stay coincident (Decision 011, Fix A).
-        // Null means unset: only spawned children get a real birth; root stays null.
-        logicalBirth: opts.logicalBirth ?? null,
+        generator,            // JS generator = the green-thread body
+        resumeAt: 0,          // logical clock when a wait ends (D011)
+        logicalBirth: opts.logicalBirth ?? null,  // parent clock at spawn; null at root
         done: false,
 
-        // Communication
-        channel: createRingBuffer(opts.channelCapacity || 4096),
-        mailbox: [],
+        ink: createInk(),  // bag; ledger owns the law (id:output-ledger-r3-stock-flow)
+
+        // PARK — suspend mid-instant, like parking a thread mid-quantum.
+        // Siblings must not advance past (instant law). cause: time|credit|residency.
+        // null | { cause, owed, since }. Breath = park with nothing owed.
+        // (id:output-ledger-r2-instant)
+        park: null,
+
+        // Lossless channel ≈ blocking queue (CSP/Go); full → credit park.
+        channel: createRingBuffer(opts.channelCapacity || 4096, { lossless: opts.lossless !== false }),
+        sync: {},      // conflating head/view slot — last-write-wins, no credit (D027 R2.5)
+        mailbox: [],   // actor inbox (Hewitt/Erlang); see listensFor
     }
 }

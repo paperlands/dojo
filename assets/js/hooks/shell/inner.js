@@ -1,19 +1,6 @@
-// =============================================================================
-// CORESHELL — mine: the canvas surface (data-target="coreshell") where I
-// write and it runs. Turtle, rendering,
-// scene-bridge subscription, buffer/tab wiring. The rich program.
-// Named adapters travel WHOLE: signals (S) from nerve/store.js, the scene/
-// camera bridges from bridged.js — subscribed and pushed, never reconstructed.
-// key-is-address stays loud: every canvas mount keys on the addr through
-// turtle.upsertAmbient(addr, …) (gw-t-node-address). Built over the shared
-// core: bootShell hands it { term, cm6 }; term-cell.register writes the
-// registry once.
-//
-// The page relation — which cells stand, warm, leave; who owns an addr's
-// canvas slot — is the PAGE LAW (weave/page.js): pure decisions spoken in
-// the turtle's own transition alphabet. This surface only performs them
-// (perform() below); it holds no page or slot state of its own.
-// =============================================================================
+// Coreshell — my canvas (data-target="coreshell"): turtle, render, bridges, tabs.
+// Page law is weave/page.js; this surface only performs. (gw-t-node-address)
+// Adapters whole (S, scene/camera). bootShell + term-cell.register once.
 
 import { Turtle } from "../../turtling/turtle.js"
 import { registerStage } from "../../turtling/stage-cell.js"
@@ -24,18 +11,17 @@ import { registerWorld, worldChanged } from "../../weave/world.js"
 import { diagnostics, ailmentsFor, verdict, primaryWound, announcements } from "../../weave/queries.js"
 import { readWounds } from "../../weave/wounds.js"
 import { sayWound } from "../../weave/wound-view.js"
-import { frameVitals, livingFamily } from "../../turtling/vitals.js"
+import { frameVitals, livingFamily, worldProgress } from "../../turtling/vitals.js"
 import { mountReach } from "../../editor/reach.js"
 import { mountDiagnosticsInk } from "../../editor/diagnostics.js"
-import { nerve } from "../nerve.js"
+import { nerve, watchNerve } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
+import { createHeliosWalk } from "../../nerve/helios.js"
 import { commands, listeners, mutators } from "./core.js"
 import { register } from "./term-cell.js"
 import { createArena } from "../../kernel/arena.js"
 
-// The surface as data: the lifecycle machine registers these event names
-// synchronously at mounted(), queues payloads through the boot seam, and
-// drains them into the handlers mount() returns once the substrate stands.
+// Events registered at mounted(); handlers returned once mount() stands.
 export const inner = {
     events: ["seeOuterShell", "relayCamera", "selfkeepCanvas", "writeShell",
              "opBuffer", "forkBuffer"],
@@ -43,17 +29,11 @@ export const inner = {
 };
 
 function mountInner(hook, { term, cm6 }) {
-    // Inner shell: canvas, turtle, rendering, scene bridge subscription
-    // One lifetime for this surface — every organ registers its release here,
-    // where it is made, so teardown is reverse-of-creation with no ordered list.
-    //
-    // FOUR BANDS, and the order is the law: BODIES stand, ORGANS are made,
-    // WIRING listens, BIRTH speaks. Nothing publishes before birth, so every
-    // reader can name every organ above it.
+    // Order: bodies → organs → wiring → birth. Nothing publishes before birth.
+    // Arena releases are reverse-of-creation — register where made.
     const arena = createArena();
 
-    // BODIES — the two surfaces this mount holds. The editor stands FIRST and
-    // silent, so every organ below reads a live term.shell.
+    // BODIES — editor first and silent so organs below read a live term.shell.
     const canvas = document.getElementById('core-canvas');
     const turtle = new Turtle(canvas);
     arena.add(() => turtle.dispose());
@@ -73,13 +53,7 @@ function mountInner(hook, { term, cm6 }) {
             .catch(err => console.warn('profiler overlay failed to load:', err));
     }
 
-    // ORGANS — made before anything listens, so no subscriber can reach for one
-    // that is not yet born.
-    //
-    // Push every shout into the one store, addressed by its source. The
-    // friend's ambient shouts (source = their name) route to the claiming
-    // outershell panel; your own ambients fall to the local residual —
-    // routing is a read-side concern, not decided here.
+    // ORGANS — before any listener. Routing is read-side (claimant panels).
     turtle._onShout = (source, msg, payload) => {
         nerve()?.push(S.shout(source, msg, payload))
     }
@@ -91,49 +65,27 @@ function mountInner(hook, { term, cm6 }) {
 
     const slider  = mutators.slider('slider');
 
-    // The page law — every weave decision (pages, slots, ladder steps)
-    // lives there; this surface performs. The two degrees the law speaks
-    // (gw-appearance) map to canvas opacity here, once.
-    // The law's one injected read: the child's page must NAME the whole-buffer
-    // ambients it displaces, and only this surface holds them.
+    // Page law decides; this surface performs. localKeys names displaced ambients.
     const law = pageLaw({ localKeys: () => [...turtle._localKeys] })
-    const DEGREE = { kindled: 1.0, warm: 0.4 }
+    const DEGREE = { kindled: 1.0, warm: 0.4 }  // gw-appearance → canvas opacity
 
-    // The reflect subject — reflect the document (D022): exactly one buffer is
-    // AUTHORED at a time, the one the child is writing. Moves on the child's
-    // edit, entering/leaving a draft, forgetting an addr; never per seat,
-    // never on a friend's push.
+    // One authored buffer at a time (D022) — child's edit/draft, never a seat or friend push.
     let authored = null
     const disown = (addr) => { if (authored?.addr === addr) authored = null }
 
-    // Where the reader is, per addr — attention is the address (D021). Both
-    // reach organs publish through scene.attend, so one ledger serves every
-    // observe, and a followed friend's line arrives through the same door.
-    //
-    // TWO READERS OF ONE CURSOR (D021, D025):
-    //   • the shell this surface holds  → the live caret (editor light + seat)
-    //   • every other addr              → the `reached` ledger (outer draft,
-    //                                     a followed friend's line)
-    // Reading only `reached` for the child's own tab left a real desync: the
-    // editor lights the caret at once, the reach publishes at 80 ms, and an
-    // edit at 20 ms (or a restored buffer.attend on tab switch) could seat the
-    // PREVIOUS cell while cell 2 already wore the light. The cursor is the
-    // gate — when we hold it, we read it.
+    // Attention is the address (D021). Live caret when we hold the shell;
+    // reached ledger otherwise. Cursor is the gate — when we hold it, we read it.
     const reached = new Map()
     const attentionOn = (addr) => (reached.has(addr) ? { line: reached.get(addr) } : null)
 
-    // The reach on the child's own editor — the same organ the outershell
-    // mounts (editor/reach.js), publishing through the same scene.attend seam
-    // into the same page law: one behaviour, both shells. Made HERE, beside the
-    // ledger it feeds and above `settle`, which resets it.
+    // Own editor reach — same organ/seam as outershell (editor/reach.js).
     const innerReach = mountReach(term.shell, {
         gate: () => law.hasPage(term.currentBufferId()),
         publish: (line) => scene.attend(term.currentBufferId(), line),
     })
     arena.add(innerReach.cleanup)
 
-    // Live caret line for an addr whose editor THIS surface holds; null if
-    // the shell is elsewhere or mid-teardown.
+    // Live caret for an addr whose editor we hold; null if elsewhere or tearing down.
     const cursorLine = (addr) => {
         if (addr !== term.currentBufferId()) return null
         const v = term.shell
@@ -142,17 +94,13 @@ function mountInner(hook, { term, cm6 }) {
         catch { return null }
     }
 
-    // Seating attention: live caret when we hold the shell, else the ledger.
     const seatingAttention = (addr) => {
         const line = cursorLine(addr)
         if (line != null) return { line }
         return attentionOn(addr)
     }
 
-    // WHERE THE AUTHOR IS, for the wire — the cursor's LINE, read live. Same
-    // source as seating when the authored buffer is the one on screen; the
-    // ledger only when the draft lives in the OUTER editor (this surface
-    // does not hold that caret).
+    // Author's line for the wire — live caret when on screen, else ledger (outer draft).
     const authoredAttention = () => {
         if (!authored) return null
         return seatingAttention(authored.addr)
@@ -234,6 +182,25 @@ function mountInner(hook, { term, cm6 }) {
         vitals: (name) => frameVitals(turtle.scheduler, name),
         family: (pattern) => livingFamily(turtle.scheduler, pattern),
     }))
+
+    // Engine says "moved"; weave decides who cares (turtling never imports weave).
+    // Helios pulls worldProgress — own timer so the sun walks through quiet `wait`.
+    // Speaks on edges; this surface only forwards.
+    const heliosWalk = createHeliosWalk({ read: () => worldProgress(turtle.scheduler) })
+    let heliosTimer = null
+    const tickHelios = () => {
+        const view = heliosWalk.tick(performance.now())
+        if (view) nerve()?.push(S.helios(view))
+        if (heliosTimer == null && heliosWalk.isAnimating()) {
+            heliosTimer = setTimeout(() => { heliosTimer = null; tickHelios() },
+                                     heliosWalk.nextDelayMs())
+        }
+    }
+    arena.add(() => { if (heliosTimer != null) clearTimeout(heliosTimer) })
+    turtle.onProgress = () => {
+        worldChanged()
+        tickHelios()
+    }
 
     // The handle for the current tab: its own frame if it has one (a plain tab,
     // a program's bare code), else the page's KINDLED cell — asked of the law,
@@ -329,27 +296,18 @@ function mountInner(hook, { term, cm6 }) {
         else scene.landed(addr, landed.line)
     }
 
-    // WHAT A RUN SAYS. `main` is set only where the law marked the child's own
-    // run (page.js seatFrom), so a watched friend's passive seat reports nothing
-    // — their state is derived on the wire, never judged from a local run.
-    //
-    // And only for the document THIS editor shows: a live draft runs on a
-    // friend's addr but lives in the outer panel, which asks the world for the
-    // very same wound and says it there, in its own nerve.
+    // Run events only for the buffer this editor shows (child's own seat).
+    // ☀︎ is an event; wound is health — different seat layers (D022).
     const report = (addr, result) => {
         if (addr !== term.currentBufferId()) return
-        // ☀︎ IS AN EVENT — you ran it, and this is what drew. It belongs to the
-        // run, which is why it stays here while the WOUND moved to a reader of
-        // the document (`speakWound`). A state and an event are not one signal.
         if (result.success && !primaryWound(askDiagnostics(addr), addr)) {
             nerve()?.push(S.output("☀︎", result.commandCount))
         }
+        // Tiny runs finish in one tick — walk rises by run id, not phase edge.
+        tickHelios()
     }
 
-    // A transition, whole: the canvas performs, the organ settles, the run
-    // speaks, the world breathes. EVERY door — the child's own edit, a live
-    // draft on a friend's page, one ladder step — passes here, so none of them
-    // can be the one that forgets.
+    // One door for every transition: perform, settle, report, breathe.
     const enact = (addr, ans) => {
         const main = perform(ans.effects)
         settle(addr, ans.landed)
@@ -430,25 +388,30 @@ function mountInner(hook, { term, cm6 }) {
     // (id:cmp-first-surface). A thunk, not a body: the current view, each breath.
     arena.add(mountDiagnosticsInk(cm6, { view: () => term.shell, wounds }))
 
-    // A READER OF THE DOCUMENT, not of a run: spoken from `enact` it went silent
-    // on a tab switch and on any wound that arose without running. Said once
-    // while it stands — an edit re-evaluates at 20 ms.
-    // Keyed on the SENTENCE: say it once while it reads the same. Health is the
-    // empty one — a real transition, drawn as nothing, so the wound returning
-    // speaks again without a ledger to re-arm.
-    const say = temporal.gate((_key, { w, n }) => {
-        if (w) nerve()?.push(
-            S.error("error", sayWound(w), w.span?.line ? { line: w.span.line } : null, n))
-    })
-    const speakWound = () => {
+    // Seat base: pull standing health, never push. Ends when the document changes.
+    const health = () => {
         const found = wounds.read()
         const w = primaryWound(found, term.currentBufferId())
-        // The KEY carries the tally, or a heal from three faults to two would
-        // read as "already said" and the count would sit there stale.
-        const n = announcements(found).length
-        say(w ? `${sayWound(w)} ○${n}` : "", { w, n })
+        if (!w) return null
+        return {
+            msg: "*",
+            payload: sayWound(w),
+            ref: w.span?.line ? { line: w.span.line } : null,
+            tally: announcements(found).length,
+        }
     }
-    arena.add(wounds.watch(speakWound))
+    // Lend on every nerve seating — nerve may mount after us (hooks/nerve.js).
+    let releaseHealth = null
+    const lendHealth = () => {
+        const seated = nerve()
+        if (!seated) return
+        releaseHealth?.()
+        releaseHealth = seated.health(health)
+    }
+    lendHealth()
+    arena.add(watchNerve(lendHealth))
+    arena.add(() => releaseHealth?.())
+    arena.add(wounds.watch(() => nerve()?.refresh()))
 
     // Scene moves from the outer surface — the consumer-side dual of the
     // scene constructors (bridged.js): the same vocabulary, one handler per

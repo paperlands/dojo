@@ -3,8 +3,10 @@
 //
 // Guards the contract that the outershell's remote zone respects: a watched
 // friend's signals are first-class store signals (stamped with epoch, fanned to
-// subscribers), NOT a storeless shadow fed straight to a DOM mutator. The
-// `signals.remote()` atom must flow through push() like every other kind.
+// subscribers), NOT a storeless shadow fed straight to a DOM mutator.
+//
+// What is NOT a signal: their document's HEALTH. A wound has no lifetime of its
+// own, so it is pulled by the seat's base layer, not pushed (nerve/seat.js).
 
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
@@ -49,23 +51,27 @@ describe("nerve store: push is the only way in", () => {
     })
 })
 
-describe("nerve store: remote is a first-class atom (no bypass)", () => {
-    test("a watched friend's signal flows through push, routed by kind", () => {
+describe("nerve store: a friend's voice is health, not a signal", () => {
+    test("their SHOUTS still flow through push, addressed by source", () => {
         const store = createSignalStore()
         const seen = []
         store.subscribe((s) => seen.push(s))
 
-        store.push(S.remote("kai", "error", "boom", "error"))
-        store.push(S.remote("kai", "☀︎", null, "output"))
-
-        assert.equal(seen.length, 2)
+        store.push(S.shout("kai", "over here", null))
+        assert.equal(seen.length, 1)
         assert.equal(seen[0].source, "kai")
-        assert.equal(seen[0].kind, "error")
-        assert.equal(seen[1].kind, "output")
-        // The kinds resolve to real channels (so the HUD routes them to a zone):
-        assert.equal(CHANNELS.error.zone, "status")
-        assert.equal(CHANNELS.output.zone, "status")
         assert.equal(CHANNELS.shout.zone, "chat")
+        assert.equal(CHANNELS.output.zone, "status")
+    })
+
+    test("their WOUND does not — no remote constructor, no error channel", () => {
+        // A watched friend's fault is their document's standing health, and it
+        // reaches their panel's seat as the pulled base layer (nerve/seat.js).
+        // As a signal it needed a 10-minute fade and still lost the slot to
+        // whatever pushed next.
+        assert.equal(S.remote, undefined)
+        assert.equal(S.error, undefined)
+        assert.equal(CHANNELS.error, undefined)
     })
 
     test("muting a kind is observable on the store (HUD honours it)", () => {
@@ -99,7 +105,7 @@ describe("nerve store: address claims route by source (read-side routing)", () =
         const toResidual = residual(store)
         // No panel open: a core shout AND a stray friend signal both go local.
         assert.ok(toResidual(S.shout("sky", "tick", 1)))
-        assert.ok(toResidual(S.remote("kai", "error", "boom", "error")))
+        assert.ok(toResidual(S.shout("kai", "boom", null)))
     })
 
     test("claiming kai routes kai's signals to the panel, core stays local", () => {
@@ -110,7 +116,7 @@ describe("nerve store: address claims route by source (read-side routing)", () =
 
         const coreShout = S.shout("sky", "tick", 1)      // your own ambient
         const friendShout = S.shout("kai", "beat", 2)    // kai's ambient (local run)
-        const friendStatus = S.remote("kai", "error", "x", "error") // kai via server
+        const friendChat = S.chat("kai", "hello", null)  // kai, another producer
         const systemOut = S.output("☀︎", 3)              // your render result
 
         // The bug, inverted: core shouts NEVER reach the kai panel...
@@ -119,9 +125,9 @@ describe("nerve store: address claims route by source (read-side routing)", () =
         assert.ok(toResidual(systemOut))   // source 'system', unclaimed → local
         // ...and kai's signals (both producers) reach the panel, not the corner.
         assert.ok(toKai(friendShout))
-        assert.ok(toKai(friendStatus))
+        assert.ok(toKai(friendChat))
         assert.ok(!toResidual(friendShout))
-        assert.ok(!toResidual(friendStatus))
+        assert.ok(!toResidual(friendChat))
     })
 })
 
@@ -143,20 +149,20 @@ describe("nerve store: the clock law (gw-t-clock)", () => {
 // THE TALLY — the next thing to fix, then what is still open (R1). One sentence
 // for a learner (Elm narrows on purpose; twelve messages make a beginner quit),
 // and a count so narrowing loses nothing.
+// It rides on the HEALTH ANSWER now, beside the sentence, because both surfaces
+// PULL it — see seat_probe_test ("the tally moves without a re-arm"). The old
+// sentence-keyed gate had to smuggle the count into its own key to notice three
+// faults becoming two; a pulled layer just reads what stands.
 describe("the tally rides beside the sentence", () => {
-    test("error carries it, and defaults to none", () => {
-        assert.equal(S.error("error", "line 4 — boom", null, 3).tally, 3)
-        assert.equal(S.error("error", "line 4 — boom").tally, 0)
-    })
-
-    test("a friend's sentence carries it too — both surfaces say the same shape", () => {
-        assert.equal(S.remote("kai", "error", "boom", "error", null, 2).tally, 2)
-        assert.equal(S.remote("kai", "☀︎", null, "output").tally, 0)
-    })
-
-    test("the store keeps it whole", () => {
+    test("the store still carries one whole when a signal has it", () => {
         const store = createSignalStore()
-        store.push(S.error("error", "boom", null, 4))
+        store.push({ ...S.output("☀︎", 4), tally: 4 })
         assert.equal(store.signals.at(-1).tally, 4)
+    })
+
+    test("and defaults to none", () => {
+        const store = createSignalStore()
+        store.push(S.output("☀︎", 4))
+        assert.equal(store.signals.at(-1).tally, 0)
     })
 })

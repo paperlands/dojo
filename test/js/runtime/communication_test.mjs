@@ -626,11 +626,17 @@ describe("Phase 3: shout directive", () => {
 })
 
 describe("Phase 3: scheduler shout routing", () => {
-    test("shout delivers to all other ambients", () => {
-        // Root spawns two children. Child A shouts. Both root and child B should receive.
+    test("shout delivers to every ambient that LISTENS for it", () => {
+        // Was "delivers to all other ambients". A letter now reaches only a frame
+        // that named the pattern (id:mailbox-listens-for) — before that gate the
+        // root and every deaf sibling filled with mail no `when` could ever read,
+        // and the cap evicted a real listener's oldest letter to make room for it.
         const ast = parseProgram(
-            "as a do\n  shout 'hello' 42\nend\n" +
-            "as b do\n  fw 1\nend"
+            "when 'hello' do\n  fw 1\nend\n" +
+            "as a do\n  when 'hello' do\n    fw 1\n  end\n  shout 'hello' 42\nend\n" +
+            // `wait` first so b has not yet CONSUMED the letter when we look:
+            // a `when` that runs splices its match straight out of the mailbox.
+            "as b do\n  wait 1\n  when 'hello' do\n    fw 1\n  end\nend"
         )
         const deps = realDeps()
         const generator = execute(ast, deps, { color: '#fff' })
@@ -663,7 +669,7 @@ describe("Phase 3: scheduler shout routing", () => {
     test("shout with fn-bound message name", () => {
         const ast = parseProgram(
             "as sender do\n  fn msg 'ping'\n  shout msg 99\nend\n" +
-            "as receiver do\n  fw 1\nend"
+            "as receiver do\n  wait 1\n  when 'ping' do\n    fw 1\n  end\nend"
         )
         const deps = realDeps()
         const generator = execute(ast, deps, { color: '#fff' })

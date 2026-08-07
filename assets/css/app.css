@@ -438,9 +438,18 @@
 
 /* --- Status zone --- */
 
+.nerve-hud-status {
+  overflow: visible;
+  /* Datum for what is leaving — a ghost dissolves in the seat's own place. */
+  position: relative;
+}
+
 .nerve-hud-status-line {
   animation: hud-enter 150ms ease-out, hud-fade var(--hud-fade, 60s) ease-in forwards;
   animation-delay: 0s, 150ms;
+  /* What stands is above what is leaving (see .nerve-part). */
+  position: relative;
+  z-index: 1;
   padding-left: 1ch;
   padding-bottom: 2ch;
   display: flex;
@@ -451,15 +460,216 @@
 
 /* Status channels — typographic differentiation only */
 /* Errors speak RED (the creator's law) with a warm phosphor glow,
-   matching the editor's diagnostics ink. */
+   matching the editor's diagnostics ink. Arrive gently — a wound is not a flash. */
+@keyframes nerve-error-arrive {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
 .nerve-hud-status-line.nerve-error {
   color: oklch(0.63 0.21 25);
   text-shadow: 0 0 8px rgb(240 168 61 / 0.35);
+  /* No lifetime fade (health is a state); only the soft land. */
+  animation: none;
+  opacity: 1;
+}
+.nerve-hud-status-line.nerve-error.error-arrive {
+  animation: nerve-error-arrive 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .nerve-hud-status-line.nerve-error .nerve-msg { opacity: 1; }
 
 .nerve-hud-status-line.nerve-output { color: var(--color-primary); }
 .nerve-hud-status-line.nerve-system { font-style: italic; }
+
+/* --- Helios — seamless sun walk + blur radiate light-up -----------------
+   Does NOT use hud-enter/hud-fade: those restart from opacity 0 on every
+   rung and flash. The seat morphs in place; each step re-fires helios-lit. */
+@keyframes helios-arrive {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}
+
+@keyframes helios-radiate {
+  0% {
+    text-shadow: 0 0 4px color-mix(in oklch, var(--color-primary) 35%, transparent);
+    filter: brightness(1) blur(0);
+    transform: scale(1);
+  }
+  20% {
+    /* Peak: soft blur halo + multi-ring glow — the step lights up. */
+    text-shadow:
+      0 0 2px color-mix(in oklch, var(--color-primary) 100%, white),
+      0 0 10px color-mix(in oklch, var(--color-primary) 85%, transparent),
+      0 0 22px color-mix(in oklch, var(--color-primary) 55%, transparent),
+      0 0 40px color-mix(in oklch, var(--color-primary) 30%, transparent),
+      0 0 64px color-mix(in oklch, var(--color-primary) 14%, transparent);
+    filter: brightness(1.55) blur(0.45px);
+    transform: scale(1.045);
+  }
+  100% {
+    text-shadow:
+      0 0 6px color-mix(in oklch, var(--color-primary) 38%, transparent),
+      0 0 14px color-mix(in oklch, var(--color-primary) 16%, transparent);
+    filter: brightness(1) blur(0);
+    transform: scale(1);
+  }
+}
+
+/* Success — longer, softer bloom (no hard peak flash). */
+@keyframes helios-radiate-apex {
+  0% {
+    text-shadow: 0 0 4px color-mix(in oklch, var(--color-primary) 35%, transparent);
+    filter: brightness(1) blur(0);
+    transform: scale(1);
+  }
+  35% {
+    text-shadow:
+      0 0 3px color-mix(in oklch, var(--color-primary) 100%, white),
+      0 0 12px color-mix(in oklch, var(--color-primary) 80%, transparent),
+      0 0 24px color-mix(in oklch, var(--color-primary) 50%, transparent),
+      0 0 44px color-mix(in oklch, var(--color-primary) 28%, transparent),
+      0 0 68px color-mix(in oklch, var(--color-primary) 14%, transparent);
+    filter: brightness(1.45) blur(0.4px);
+    transform: scale(1.04);
+  }
+  100% {
+    text-shadow:
+      0 0 8px color-mix(in oklch, var(--color-primary) 42%, transparent),
+      0 0 18px color-mix(in oklch, var(--color-primary) 20%, transparent);
+    filter: brightness(1.05) blur(0);
+    transform: scale(1);
+  }
+}
+
+@keyframes helios-exit {
+  from {
+    opacity: 1;
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+
+.nerve-hud-status-line.nerve-helios {
+  /* Kill shared status enter/fade — morphs must not flash. */
+  animation: none;
+  opacity: 1;
+  font-style: normal;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
+  letter-spacing: 0.04ch;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+  text-shadow: 0 0 6px color-mix(in oklch, var(--color-primary) 28%, transparent);
+  /* Room for the radiate halo (status zone overflow is visible). */
+  padding-right: 1.5ch;
+}
+
+.nerve-hud-status-line.nerve-helios .nerve-msg {
+  opacity: 1;
+  will-change: filter, text-shadow, transform;
+  transform-origin: left center;
+}
+
+.nerve-hud-status-line.nerve-helios.helios-arrive {
+  animation: helios-arrive 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.nerve-hud-status-line.nerve-helios.helios-lit .nerve-msg {
+  animation: helios-radiate 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.nerve-hud-status-line.nerve-helios.helios-apex.helios-lit .nerve-msg {
+  animation: helios-radiate-apex 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Living hold — world still running (wait / pause / mid-build).
+   Soft breath only: slow glow, tiny sway. No hard blink. */
+@keyframes helios-breathe {
+  0%, 100% {
+    opacity: 0.88;
+    filter: brightness(1) blur(0);
+    text-shadow:
+      0 0 5px color-mix(in oklch, var(--color-primary) 28%, transparent),
+      0 0 12px color-mix(in oklch, var(--color-primary) 12%, transparent);
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.08) blur(0.12px);
+    text-shadow:
+      0 0 8px color-mix(in oklch, var(--color-primary) 40%, transparent),
+      0 0 18px color-mix(in oklch, var(--color-primary) 18%, transparent),
+      0 0 28px color-mix(in oklch, var(--color-primary) 8%, transparent);
+    transform: scale(1.015) rotate(0.4deg);
+  }
+}
+
+.nerve-hud-status-line.nerve-helios.helios-living .nerve-msg {
+  animation: helios-breathe 2.8s ease-in-out infinite;
+}
+
+/* Rung step: brief radiate, then settle back into the soft breath. */
+.nerve-hud-status-line.nerve-helios.helios-living.helios-lit .nerve-msg {
+  animation: helios-radiate 560ms cubic-bezier(0.22, 1, 0.36, 1) both,
+             helios-breathe 2.8s ease-in-out 560ms infinite;
+}
+
+.nerve-hud-status-line.nerve-helios.helios-living.helios-apex.helios-lit .nerve-msg {
+  animation: helios-radiate-apex 900ms cubic-bezier(0.22, 1, 0.36, 1) both,
+             helios-breathe 2.8s ease-in-out 900ms infinite;
+}
+
+.nerve-hud-status-line.nerve-helios.helios-exit {
+  animation: helios-exit 560ms ease-in forwards;
+  pointer-events: none;
+}
+
+.nerve-hud-status-line.nerve-helios.helios-exit .nerve-msg {
+  animation: none;
+}
+
+/* --- Leaving the seat — one becomes the other, never a cut ---------------
+   A wound taking the seat from a walking sun used to be a hard swap: the glyph
+   vanished and red text popped in the same frame, two symbologies with nothing
+   between them. What leaves is lifted out of the flow (so what arrives lands in
+   place) and blurs away underneath it. Short and soft — a sunset, not a second
+   message. Placed after the channel blocks so it wins their `animation: none`. */
+.nerve-hud-status-line.nerve-part {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes nerve-dissolve {
+  from { opacity: 1; filter: blur(0); transform: translateY(0); }
+  to   { opacity: 0; filter: blur(3px); transform: translateY(-1px); }
+}
+
+.nerve-hud-status-line.nerve-dissolve {
+  animation: nerve-dissolve 260ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
 
 /* The tally — what is STILL OPEN, beside the next thing to fix. Muted on
    purpose: a count of remaining work must not read as a count of alarms, so it

@@ -44,6 +44,15 @@ function drainTrails(scheduler, trails) {
         // exactly what varies run-to-run, so it must be in the fingerprint.
         const key = a === scheduler.root ? "world*" : (a.address ?? a.name ?? String(a.id))
         const evs = a.channel.drain()
+        // Poses ride a conflating SLOT since D027 R2.5, not the ledger. Sample and
+        // clear it exactly as the compositor does each frame — without this the
+        // fingerprint is EMPTY and every invariance test below passes vacuously.
+        // (Measured 2026-08-05: 0 positioned events on the ledger.)
+        if (a.sync) {
+            for (const t of ["head", "view"]) {
+                if (a.sync[t]) { evs.push(a.sync[t]); a.sync[t] = null }
+            }
+        }
         for (const ev of evs) {
             if (!ev || !ev.position) continue
             let trail = trails.get(key)
@@ -90,6 +99,10 @@ function fingerprint(src, deltas, maxFrames = 20000) {
 
     assert.ok(scheduler.done, `program did not complete within ${maxFrames} frames`)
     assert.deepEqual(scheduler.errors, [], "program raised errors")
+    // Coverage guard: an empty fingerprint compares equal to any other empty one,
+    // so every invariance test here would pass while measuring nothing. This fence
+    // went blind once already, when poses moved to the sync slot (D027 R2.5).
+    assert.ok(trails.size > 0, "fingerprint is EMPTY — this test is measuring nothing")
 
     // Sorted, stable serialization of every ambient's trail.
     return JSON.stringify([...trails.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1))

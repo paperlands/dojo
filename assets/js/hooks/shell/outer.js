@@ -1,12 +1,5 @@
-// =============================================================================
-// OUTERSHELL — a friend's: the read-only review surface over their lineage
-// (data-target="outershell"). Peer to the coreshell, not a container of it.
-// A claimant projection over the ONE shared nerve + a draft/fork surface.
-// Interactive moves (focus, remove, fork, live ambient) travel WHOLE as named
-// scene adapters (bridged.js) — this surface never reconstructs a payload shape.
-// Built over the shared core: bootShell hands it { term, cm6 }; term-cell.register
-// writes the DOM registry once.
-// =============================================================================
+// Outershell — friend's read-only surface (data-target="outershell"). Peer to coreshell.
+// Claimant nerve projection + draft/fork. Adapters whole via bridged.js.
 
 import { scene } from "../../bridged.js"
 import { temporal } from "../../utils/temporal.js"
@@ -20,62 +13,40 @@ import { announcements, verdict, primaryWound } from "../../weave/queries.js"
 import { readWounds } from "../../weave/wounds.js"
 import { world } from "../../weave/world.js"
 import { nerve, watchNerve } from "../nerve.js"
-import { signals as S } from "../../nerve/store.js"
 import { listeners } from "./core.js"
 import { register } from "./term-cell.js"
 import { createArena } from "../../kernel/arena.js"
 
-// The surface as data: the lifecycle machine registers these event names
-// synchronously at mounted() — the initial seeOuterShell rides the
-// SAME reply that mounts this panel (shell_live.ex "seeTurtle") and would be
-// lost to any listener added after the first await. mount() returns the
-// matching handlers once the substrate stands.
+// Events at mounted() — seeOuterShell rides the same reply that mounts this
+// panel (shell_live.ex "seeTurtle"); a post-await listener would miss it.
 export const outer = {
     events: ["seeOuterShell", "outerAttend", "outerLive"],
     mount: mountOuter,
 };
 
 function mountOuter(hook, { term, cm6 }) {
-    // Outer shell: read-only code viewer + bridge publisher.
-    // Rendering is handled by the inner shell via seeOuterShell.
-    // Interactive events (focus, remove, fork) go through scene bridge.
-    // One arena owns every long-lived listener on this surface.
+    // Read-only viewer; canvas render is inner via seeOuterShell. Arena owns listeners.
     const arena = createArena();
     let outerAddr = null;
     let outerName = null;
     let outerBufferId = null;
     let prevAddr = null;
     let prevName = null;
-    // WATCHER-LOCAL CONSENT (D023, D025 R7) — not a presence primitive and not a
-    // second address. It selects WHOSE attention drives this view: the friend's
-    // while true, the watcher's own the moment they move. Read in exactly one
-    // place; a friend's page opens it, own input ends it, the firefly gives it back.
+    // Whose attention drives this view (D023, D025 R7): friend's while true;
+    // own input ends it; firefly returns it. Not a presence primitive.
     let following = true;
-    // The friend's last known line, so a push carrying only their typing is not
-    // mistaken for them moving.
-    let peerAt = null;
-    // WHERE THE WATCHER WAS. The caret following writes is a display artifact —
-    // it is how the friend's cell lights by the cursor law — but the INSERTION
-    // POINT is wherever the watcher last put it. Stashed before the first follow
-    // of a run, spent when a draft opens.
+    let peerAt = null;    // friend's last line — typing alone is not a move
+    // Follow caret is display; insertion point is where the watcher last put it.
     let ownCaret = null;
 
     term.outer();
     arena.add(register("outershell", term));
     const envEl = hook.el.closest('#outerenv');
 
-    // A claimant projection over the ONE shared nerve: while open, this
-    // panel claims the watched friend's address (their name), so their
-    // signals — ambient shouts AND server status — route here instead of
-    // the local corner. Navigation targets the outer editor. The friend's
-    // ambient shouts arrive via the core turtle's _onShout (source = their
-    // name); no separate relay channel. retarget() follows disciple swaps.
-    // CLAIMED WHEN THE NERVE ARRIVES, not once at mount. This panel renders
-    // BEFORE #nerve-hud (shell_live.html.heex: 340 vs 361), so on a rejoin with
-    // the panel already open the hooks remount in document order and the seat is
-    // still empty here — asking once answered null, the claim never happened,
-    // and the friend's signals fell to the residual HUD for the rest of the
-    // session. Idempotent: the first nerve to seat wins.
+    // Claim friend's address on the shared nerve so their signals route here.
+    // Health is seat base (pulled), not a signal. Claim when nerve arrives —
+    // this panel mounts before #nerve-hud; a one-shot at mount loses the claim.
+    // health() is deferred: seat asks only on refresh() (silent construct).
     const remoteNerveEl = document.getElementById('outer-nerve');
     let outerProj = null;
     const claimNerve = () => {
@@ -85,8 +56,8 @@ function mountOuter(hook, { term, cm6 }) {
         outerProj = seated.project(remoteNerveEl, {
             pushEvent: (e, p) => hook.pushEvent(e, p),
             targets: { editorView: () => term.shell },
+            health: () => health(),
         });
-        // A friend may already be chosen — the claim must not arrive unaimed.
         if (outerName) outerProj.retarget(outerName);
     };
     claimNerve();
@@ -101,73 +72,39 @@ function mountOuter(hook, { term, cm6 }) {
     // frozen = you're only editing text against a snapshot.
     let draftLive = false;
 
-    // WHAT THE WIRE LAST SAID — the author's diagnostics answer, carried whole
-    // (the same list their `diagnostics` face produced at hatch). Held by
-    // reference so the ink can tell a repeat from news. Never re-parsed here.
+    // Wire's last diagnostics list (by ref — ink diffs by identity). Never re-parsed.
     let wireWounds = [];
 
-    // ==== THE SUBJECT ========================================================
-    // WHOSE RUNTIME IS THIS SURFACE SHOWING? Asked once, here, and handed to
-    // weave/wounds.js as its ask — so ink, voice and wash cannot answer it
-    // differently. The answer is always a WOUND LIST from the query surface
-    // (id:cmp-query-cell): held from the wire, or asked live of the world cell.
-    // None of the readers keeps a parallel "errored" bit.
-    //
-    //   watching       theirs — the hatch carried their diagnostics answer.
-    //   drafting live  ours — this very text is what stands at `outerAddr`, so
-    //                  the world cell is telling us about our own code.
-    //   drafting frozen nothing ran. Their spans point into a document we are no
-    //                  longer showing, and ours do not exist yet; a wound with no
-    //                  true place is a lie, so this surface says nothing at all.
-    //
-    // The empty answer is ONE array, not a fresh literal: the ink tells a repeat
-    // from news by identity, and a surface that is quiet should stay quiet.
+    // Whose runtime? One ask for ink, voice, wash (id:cmp-query-cell).
+    // watching → wire; draft-live → world cell; draft-frozen → quiet (no true place).
+    // NONE is one array so quiet stays quiet by identity.
     const NONE = [];
     const shownWounds = () =>
         !term.drafting() ? wireWounds
         : draftLive ? (world()?.diagnostics?.(outerAddr) ?? NONE)
         : NONE;
 
-    // THIS SURFACE'S WOUNDS — one ask, one breath, every reader (weave/wounds.js).
-    // The subject above is the ask, so no two readers can show different runtimes.
     const wounds = readWounds({ ask: shownWounds });
     arena.add(wounds.release);
 
-    // The ink: one writer for this editor, reading the wounds each breath.
     arena.add(mountDiagnosticsInk(cm6, { view: () => term.shell, wounds }));
 
-    // THE VOICE — one sentence and a tally, the same as the child's own shell
-    // (R1). The next thing to fix, then how much is still open; a learner facing
-    // twelve messages quits, and the count loses nothing.
-    //
-    // The KEY is the whole utterance INCLUDING who it is about, so a disciple
-    // switch to a friend whose code breaks identically is still news — the
-    // ledger that used to re-arm by hand is the key itself now.
+    // Seat base for this panel — same law as coreshell, friend's wounds (R1).
     const lineRef = (w) => (w?.span?.line ? { line: w.span.line } : null)
-    const say = temporal.gate((_key, { who, w, n, mute }) => {
-        if (mute) return
-        if (w) nerve()?.push(S.remote(who, "error", sayWound(w), "error", lineRef(w), n))
-        else nerve()?.push(S.remote(who, "☀︎", null, "output"))
-    });
-    const speak = () => {
-        const who = outerName || "friend";
-        // Frozen: nothing of ours ran and their spans point into a document we
-        // no longer show, so there is nothing to call well or unwell (R6).
-        const mute = term.drafting() && !draftLive;
-        const found = mute ? [] : wounds.read();
-        const w = primaryWound(found, outerAddr);
-        const n = announcements(found).length;
-        say(mute ? `${who}|` : `${who}|${w ? `${sayWound(w)} ○${n}` : "☀︎"}`, { who, w, n, mute });
+    const health = () => {
+        if (term.drafting() && !draftLive) return null  // frozen: nothing true to say (R6)
+        const found = wounds.read()
+        const w = primaryWound(found, outerAddr)
+        if (!w) return null
+        return {
+            msg: "*", payload: sayWound(w),
+            ref: lineRef(w), tally: announcements(found).length,
+        }
     };
+    const speak = () => outerProj?.refresh();
 
-    // The wash, one writer — health from the SAME wound list as ink and nerve
-    // (`verdict`), never a separate state flag that can disagree with them.
-    // Drafting says DRAFTING (who owns the text); health still rides the wounds.
-    // READ THE DOM, NEVER A LEDGER. This attribute has a second writer: it is
-    // server-rendered `ok`, and LiveView merges data-* onto phx-update="ignore"
-    // elements (dom.js mergeAttrs), so every patch resets it. A gate keyed on
-    // what WE last wrote would believe the error is still shown and never
-    // repaint it — the state stops holding. Cheap and true: ask the element.
+    // Wash from the same wound list. Read the DOM, never a ledger: LiveView
+    // mergeAttrs resets data-* on phx-update="ignore" every patch.
     const paint = () => {
         if (!envEl) return
         const word = term.drafting() ? 'draft'
@@ -492,6 +429,11 @@ function mountOuter(hook, { term, cm6 }) {
     // open); on close we want the slot gone. Registered last so it releases
     // FIRST: the canvas learns the panel is gone before the panel comes apart.
     arena.add(() => { if (outerAddr) scene.remove(outerAddr); });
+
+    // BIRTH — every organ stands, so now the surface may speak. One breath
+    // reaches every reader (seat, wash, ink) at once; the seat is built silent
+    // and this is the ask that seats a friend who is already mid-fault.
+    reask();
 
     return {
         events: {

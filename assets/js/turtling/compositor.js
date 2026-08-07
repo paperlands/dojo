@@ -1,31 +1,18 @@
-// Compositor — drains all ambient channels through materializer per frame.
-// Phase 6: unified tree — all ambients are children of a meta-root.
-//
-// Every ambient gets its own Group, Head, and Shapist.
-// The focused ambient's head tracks the camera; unfocused heads render
-// without camera tracking (materializeHead already gates on ctx.camera).
-//
-// Each frame the compositor:
-// 1. Ticks the scheduler (advance all ambient generators, fill channels)
-// 2. Creates layers (group + head + shapist) for newly spawned ambients
-// 3. Drains all ambient channels, materializing into per-ambient groups
-// 4. Updates child group positions from worldTransform (inertial frames)
-// 5. Cleans up layers for terminated ambients
+// Drain ambient channels into per-layer groups each frame.
 
 import {
     Group,
     Vector3,
 } from '../utils/three-entry.js'
 import { materialize, accumulateTrail, flushTrail } from "./materializer.js"
-import { worldTransform, frameWorldTransform, visitPostOrder, findAncestorByName } from "./scheduler.js"
+import { worldTransform, frameWorldTransform, visitPostOrder, findReferenceFrame, takeSync } from "./scheduler.js"
 import { SE3 } from "./se3.js"
 import { eyeCameraPose } from "./view.js"
 import { rebaseEpoch, idleFloorMs } from "./timeline.js"
 import { createFocus } from "./focus.js"
+import { createPacer } from "./pacer.js"
 
-// Set opacity on a group, cloning shared materials so the material cache isn't mutated.
-// Troika Text meshes own a derived SDF material — cloning it severs the shader, so
-// we set opacity directly on those without cloning.
+// Clone shared materials; troika Text sets opacity direct.
 function setGroupOpacity(group, opacity) {
     group.traverse(child => {
         if (child.material) {
@@ -44,39 +31,37 @@ function setGroupOpacity(group, opacity) {
     })
 }
 
-// What the compositor reads off the live stage, checked at birth — never
-// copied into a bag (that's how `frameInterval` went missing before).
+// Verbs the compositor needs on stage. controls/frameMs ride in opts, not here.
 export const STAGE_CONTRACT = Object.freeze([
-    'scene',          // layers are added here and removed here
-    'camera',         // read: head scaling. WRITTEN by materializeHead (camera.desire)
-    'controls',       // handed to materializeHead; never touched here
-    'requestRender',  // wake the on-demand loop when async geometry lands
-    'viewOffset',     // the hand's reframe M, folded with the eye's E
-    'renderLoop',     // for frameInterval only; null until the turtle attaches it
-    'materials',      // LineMaterial cache (spec A3); stage owns, we clear on dispose
+    'scene',          // add/remove layers
+    'camera',         // head scale; materializeHead may write desire
+    'requestRender',  // wake on-demand loop when async geometry lands
+    'viewOffset',     // hand reframe M, folded with eye E
+    'materials',      // LineMaterial cache (spec A3); stage owns lifetime
 ])
 
-// Create a compositor bound to a scheduler and the live stage.
-// opts = { createHead, createShapist }
+// opts = { createHead, createShapist, frameMs, controls }
+// controls = OrbitControls target for materializeHead only.
 export function createCompositor(scheduler, stage, opts = {}) {
     for (const name of STAGE_CONTRACT) {
-        // Presence, not truthiness: `renderLoop` is legitimately null at first.
         if (!stage || !(name in stage)) {
             throw new TypeError(`compositor: stage is missing \`${name}\` (STAGE_CONTRACT)`)
         }
     }
     let epoch = null      // first real timestamp — rebases advance() to flush()'s 0-based timeline
     let lastWallT = null  // previous advance() wall timestamp, to detect idle-out gaps
-    // Focus holds the frame's stable ADDRESS (frameAddress), never the display
-    // name — focus survives re-eval and rename, and same-named sibling tabs
-    // cannot steal it. Pure logic lives in focus.js (THREE-free, tested there).
+    // Focus by address; logic in focus.js.
     const focus = createFocus(scheduler)
     const createHead = opts.createHead || null
     const createShapist = opts.createShapist || null
+    // Orbit target for materializeHead; headless callers omit it.
+    const controls = opts.controls ?? null
+    // Timeslice budget lives with the frame loop (AIMD quantum). (id:output-ledger-r2-pacer)
+    const pacer = opts.pacer || createPacer()
+    let frameStart = null
 
-    // Idle-gap detection (rerun lifecycle) lives in ./timeline.js, testable without
-    // THREE. Cadence is READ from the live loop, never copied in by the caller.
-    const FRAME_MS = stage.renderLoop?.frameInterval || (1000 / 60)
+    // Cadence is an opt (default 60 Hz) — not reached through stage.renderLoop.
+    const FRAME_MS = opts.frameMs ?? (1000 / 60)
     const IDLE_GAP_MS = idleFloorMs(FRAME_MS)
 
     // Per-ambient rendering state: { group, head, shapist }
@@ -101,11 +86,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         return layer
     }
 
-    // Dispose a mesh's geometry, and its material ONLY if not cache-owned.
-    // Shared LineMaterials (stage.materials, _cached) are disposed by the
-    // cache — clear on compositor.dispose, dispose on stage.dispose — never
-    // per-mesh: disposing one would free a GPU material still referenced by
-    // every other mesh sharing its key.
+    // Dispose geometry; skip cache-owned materials.
     function disposeMesh(c) {
         if (c.geometry) c.geometry.dispose()
         if (c.material && !c.material._cached) c.material.dispose()
@@ -139,38 +120,32 @@ export function createCompositor(scheduler, stage, opts = {}) {
         ambientLayers.delete(id)
     }
 
-    // Is this ambient within the focused subtree? Generalizes the focused-name
-    // match to descendants — a nested `eye` Lens drives the viewport when the
-    // tab that owns it is focused, not only when its own name matches. Used for
-    // view routing; the head/track path keeps the stricter name match below.
+    // Focused subtree for view routing; head uses stricter name match.
     const inFocusedSubtree = (ambient) => focus.inFocusedSubtree(ambient)
 
     function drainAndMaterialize() {
         let produced = false
         for (const [id, ambient] of scheduler.registry) {
             const events = ambient.channel.drain()
-            if (events.length === 0) continue
+            // Two disciplines, one drain each: the channel keeps every event,
+            // the slot keeps only the newest pose. (id:output-ledger-r2-slot)
+            const poses = takeSync(ambient)
+            if (events.length === 0 && poses.length === 0) continue
 
-            // The root IS the world frame: a render surface for ink deposited by
-            // `as … world do`, drawn at identity with no turtle head.
-            // (spec id:ft-d4-world-root)
+            // Root world frame: ink only. (id:ft-d4-world-root)
             const isRoot = ambient === scheduler.root
             const layer = getOrCreateLayer(id, !isRoot)
 
-            // Camera gating: a Lens tracks when in the focused subtree (even via a
-            // nested eye); a non-lens head only on strict focus-name match. Camera
-            // POSE itself is realized in updateGroupPositions as E⁻¹·world. id:eye-coordinates
+            // Lens tracks in focused subtree; pose is E⁻¹·world. (id:eye-coordinates)
             const camOn = ambient.isLens ? inFocusedSubtree(ambient) : focus.isFocused(ambient)
             const childCtx = {
                 materials: stage.materials,
                 shapist: layer.shapist,
                 head: layer.head,
                 camera: camOn ? stage.camera : null,
-                controls: camOn ? stage.controls : null,
+                controls: camOn ? controls : null,
                 frame: ambient,
-                // Async materializers (troika Text) call this when their geometry
-                // finishes building, to wake a render-on-demand loop that may have
-                // already idled out.
+                // Wake render-on-demand when async geometry lands.
                 requestRender: stage.requestRender
             }
             const childGroups = { pathGroup: layer.group, gridGroup: layer.group, glyphGroup: layer.group }
@@ -187,6 +162,8 @@ export function createCompositor(scheduler, stage, opts = {}) {
                     materialize(event, childGroups, childCtx)
                 }
             }
+            // Poses land after the batch: the newest is where the turtle IS.
+            for (const pose of poses) materialize(pose, childGroups, childCtx)
             // Rebuild the trail mesh once per frame, not per event.
             flushTrail(layer)
             produced = true
@@ -202,27 +179,14 @@ export function createCompositor(scheduler, stage, opts = {}) {
         return d
     }
 
-    // Is this transform the identity (within ε)? An empty/default eye reframes by
-    // identity, so we can skip every per-layer compose and fall through to the
-    // plain inertial path — the common case costs the same as having no eye.
+    // Skip compose when reframe is identity.
     function isIdentitySE3(t) {
         const r = t.rotation, p = t.position
         return Math.abs(r.w - 1) < 1e-9 &&
             Math.abs(p[0]) < 1e-9 && Math.abs(p[1]) < 1e-9 && Math.abs(p[2]) < 1e-9
     }
 
-    // The focused eye's reframe: E⁻¹ where E = eye world pose in camera convention.
-    // The camera IS the eye — rather than move the THREE camera (which would fight
-    // OrbitControls and cannot express roll), we reframe the whole world by E⁻¹ at
-    // the model layer, so the live orbit camera C renders as effective camera E·C.
-    // An empty eye seeds to recenterPose ⇒ E = identity ⇒ E⁻¹ = identity. Returns
-    // null when no focused lens drives OR when the reframe is identity (the default
-    // eye), so callers skip the per-layer composes entirely.
-    //
-    // The camera is the DEEPEST focused lens. A camera tab is itself named `eye`
-    // (a lens container), and the user's `as eye do …` spawns a lens INSIDE it —
-    // two nested lenses. The innermost one is the camera the user actually drives;
-    // the outer container sits empty at identity. (specs/eye-ambient.org id:eye-d5)
+    // Deepest focused lens → E⁻¹ world reframe; null if identity. (id:eye-d5)
     function focusedEyeReframe() {
         if (!focus.address) return null
         let eye = null
@@ -238,11 +202,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         return isIdentitySE3(eyeInv) ? null : eyeInv
     }
 
-    // What the world is seen through: (E·M)⁻¹ = M⁻¹·E⁻¹, where E is the focused
-    // eye and M the hand's own offset (two-finger roll — the rig cannot express
-    // it). Both ride the same seam, so a rolled view composes with a driven eye
-    // without either knowing about the other. Null when the product is identity,
-    // so the common case still costs no per-layer compose.
+    // View = (E·M)⁻¹; null when identity. Eye and hand share one seam.
     function viewReframe() {
         const eyeInv = focusedEyeReframe()
         const offset = stage.viewOffset()
@@ -251,9 +211,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         return eyeInv ? SE3.compose(offsetInv, eyeInv) : offsetInv
     }
 
-    // Position child groups — inertial frame effect, optionally reframed by the
-    // focused eye (world ← E⁻¹·world). The eye's own layer is skipped (it emits no
-    // mesh; reframing it would place it at the camera origin to no effect).
+    // Seat groups at worldTransform; skip the driving eye's layer.
     function updateGroupPositions() {
         const eyeInv = viewReframe()
         for (const [id, ambient] of scheduler.registry) {
@@ -262,14 +220,10 @@ export function createCompositor(scheduler, stage, opts = {}) {
             const layer = ambientLayers.get(id)
             if (!layer) continue
 
-            // A frame-targeted child's only layer content is its head, and its head
-            // pose is baked into the TARGET frame (projectHead) to ride the deposited
-            // ink. So seat that layer at the target's worldTransform, not the child's
-            // own — otherwise the head drifts off its (target-projected) path while the
-            // parent marches. (spec id:ft-d5-head)
+            // Frame-targeted head seats at target worldTransform. (id:ft-d5-head)
             let wt = worldTransform(ambient)
             if (ambient.targetFrame) {
-                const target = findAncestorByName(ambient, ambient.targetFrame)
+                const target = findReferenceFrame(ambient, ambient.targetFrame)
                 if (target) wt = worldTransform(target)
             }
             if (eyeInv && !ambient.isLens) wt = SE3.compose(eyeInv, wt)
@@ -281,10 +235,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         }
     }
 
-    // Reclaim ink a dead source frame deposited into THIS layer. Frame-targeted
-    // children deposit into a target layer keyed by their source id; when the
-    // source dies (rerun/re-eval) but the target OUTLIVES it — the world/root
-    // layer never disposes — those runs would hang forever. (spec id:ft-d2 — GC)
+    // GC ink from dead sources that outlived their layer. (id:ft-d2)
     function reclaimDeposits(layer, deadIds) {
         // Open (still-tracked) runs.
         for (const [src, run] of layer.trails) {
@@ -302,8 +253,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         }
     }
 
-    // Remove layers for ambients no longer in the scheduler registry, then reclaim
-    // any ink those dead frames deposited into layers that survive them.
+    // Drop dead ambient layers; reclaim their deposited ink.
     function cleanupOrphanedLayers() {
         let deadIds = null
         for (const [id, layer] of ambientLayers) {
@@ -326,9 +276,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
             const headPos = layer.head.position()
             const gp = layer.group.position
 
-            // Frame-targeted heads orient by world velocity (the visible ink's
-            // tangent); normal heads already show their heading. Runs after
-            // updateGroupPositions, so the layer pose is current. (spec id:ft-d5-head)
+            // Frame-targeted heads orient by world velocity. (id:ft-d5-head)
             const ambient = scheduler.registry.get(id)
             if (ambient && ambient.targetFrame) {
                 _headWorldPos.set(headPos.x, headPos.y, headPos.z)
@@ -343,75 +291,75 @@ export function createCompositor(scheduler, stage, opts = {}) {
         }
     }
 
+    // Pump until rest / park-out / stall. Caller must arm the timeslice.
+    function driveToRest() {
+        const flushTime = scheduler.lastTickTime || 0
+        let maxTicks = 10000  // rate backstop; truth bounds fire first (id:output-ledger-r2-bounds)
+        while (maxTicks-- > 0) {
+            const progress = scheduler.tick(flushTime)
+            if (scheduler.done) break
+            // Still building → yield the thread to rAF (preempt the pump).
+            if (scheduler.building) { drainAndMaterialize(); break }
+            if (!progress && !drainAndMaterialize()) break
+        }
+    }
+
+    // Catch sim time to `now` inside the open slice, then materialize once.
+    function driveOneFrame(now) {
+        let budget = 64
+        let progress
+        do {
+            progress = scheduler.tick(now)
+        } while (progress && !scheduler.done && --budget > 0)
+    }
+
     return {
         scheduler,
+
+        get budgetMs() { return pacer.budgetMs },
 
         get focusedAddress() { return focus.address },
         set focusedAddress(v) { focus.address = v },
 
-        // The name view — display projection of the focused address. Read-only:
-        // writers go through focusedAddress (one register, one write path).
+        // Display projection of focusedAddress — write only through that register.
         get focusedName() { return focus.name },
 
-        // Eagerly drain a batch program (no waits) during draw().
-        // Uses scheduler.lastTickTime so new children's waits are
-        // relative to the current timeline, not time 0.
+        // Own timeslice: never inherit a spent deadline (would park on first breath).
         flush() {
-            const flushTime = scheduler.lastTickTime || 0
-            let maxTicks = 10000
-            while (maxTicks-- > 0) {
-                const progress = scheduler.tick(flushTime)
-                if (scheduler.done || !progress) break
-            }
-            // Drain once after all ticks — channels accumulate across ticks, so
-            // we materialize the batch in a single pass (one trail rebuild, not N).
-            drainAndMaterialize()
+            scheduler.withSlice(pacer.budgetMs, driveToRest)
+            drainAndMaterialize()  // one materialize pass after all ticks
             updateGroupPositions()
-            // Reclaim HERE too, not only in advance(): flush() mints a fresh Group
-            // per edit, and a backgrounded tab gets no rAF to sweep it — orphans
-            // pile up until foreground. flush()/advance() share one GC pipeline.
-            cleanupOrphanedLayers()
+            cleanupOrphanedLayers()  // background tabs get no rAF
             return scheduler.done
         },
 
-        // Per-frame work: tick generators, materialize, position, scale heads.
-        // Does NOT render — caller coordinates renderer.render().
+        // One display frame: tick generators under quantum, materialize, pose heads.
+        // Does not call renderer.render() — caller coordinates that.
         advance(t) {
-            // When the render-on-demand loop wakes after idling, the wall clock has
-            // marched on but sim time must not. rebaseEpoch absorbs an idle-out gap
-            // so `now` continues from where it paused instead of fast-forwarding the
-            // animation — the rerun-after-idle "starts halfway" bug. (timeline.js)
-            epoch = rebaseEpoch(epoch, lastWallT, t, FRAME_MS, IDLE_GAP_MS)
+            // Idle-out: rebase sim epoch so time does not jump. (timeline.js)
+            const rebased = rebaseEpoch(epoch, lastWallT, t, FRAME_MS, IDLE_GAP_MS)
+            const idledOut = rebased !== epoch
+            epoch = rebased
             lastWallT = t
             if (epoch === null) epoch = t
             const now = t - epoch
             scheduler.lastTickTime = now
+            // Idle gap is not a slow device — skip AIMD, do not cut the quantum.
+            if (frameStart !== null) {
+                if (idledOut) pacer.skip()
+                else pacer.observe(t - frameStart)
+            }
+            frameStart = t
             if (!scheduler.done) {
-                // Catch sim time up to the wall clock by ticking until no frame
-                // makes progress (each frame advances one wait-step per tick).
-                // Channels accumulate events across these ticks...
-                let budget = 64
-                let progress
-                do {
-                    progress = scheduler.tick(now)
-                } while (progress && !scheduler.done && --budget > 0)
-                // ...so drain + materialize ONCE per frame. Previously this ran
-                // per tick, rebuilding every trail mesh ~N× per frame (the heavy
-                // catch-up cost). One pass = one trail rebuild per ambient.
+                scheduler.withSlice(pacer.budgetMs, () => driveOneFrame(now))
                 drainAndMaterialize()
             }
-            // Reframe every frame, even when the scheduler is done: a focused eye's
-            // model-layer reframe (world ← E⁻¹·world) must persist while the user
-            // orbits a FINISHED batch program, and is recomputed live so a moving
-            // eye (animation/mount) keeps tracking. Cheap: one E⁻¹ + N composes.
             updateGroupPositions()
             cleanupOrphanedLayers()
             scaleChildHeads()
         },
 
-        // Keyed by ADDRESS, like focus — same register, both faces (D006).
-        // Never by display name: a program's bare code and its first cell
-        // share a name (weave/page.js), so name-keying couldn't tell them apart.
+        // Opacity by address, not display name. (D006)
         setOpacityByAddress(address, opacity) {
             if (address == null) return
             for (const ambient of scheduler.registry.values()) {

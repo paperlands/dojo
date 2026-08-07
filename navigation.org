@@ -294,6 +294,255 @@ Compositor consumes =now = t - epoch=: =assets/js/turtling/compositor.js=.
 one. Decision 011 bullet 3. Head events for frame-targeted children are projected via
 =projectHead= so the cursor rides its deposited (re-projected) ink (spec ft-d5-head).
 
+** ink credit — how a figure cannot be lost
+:PROPERTIES:
+:ID: nav-output-credit
+:KEYWORDS: channel ring-buffer capacity backpressure credit lossless drop-oldest park owed pushback overflow ledger routeOutput full
+:PATH: assets/js/turtling/ring-buffer.js
+:END:
+
+*Capacity bounds WHEN, not WHAT* (D027 R2). =createRingBuffer(cap, {lossless})=:
+lossless =put= returns false instead of overwriting the oldest, and =.full= is the
+credit signal. =routeOutput= (=scheduler.js=) tests credit BEFORE =tagRun= and the
+pose swap, so a refused event can be retried unchanged — it returns *null when
+taken, else the refusal's cause*. The pump parks it in =ctx.park.owed= and breaks;
+both pumps replay the owed event first, so the ledger keeps emission order. Drop
+the slot and 93 of 24000 events vanish, one per stall.
+
+Backpressure and exhaustion look identical through =tick()='s =progress=, so
+=compositor.flush()= must drain INSIDE its loop; live =advance()= just paints and
+resumes next frame. Every lossless channel needs a drainer or its producer
+livelocks — =drainAndMaterialize= walks the whole registry. =full= means "put
+would refuse", closed or open. Fences: =test/js/runtime/backpressure_spike_test.mjs=,
+=test/js/runtime/ring_buffer_test.mjs=.
+
+** a letter — who hears a shout, and what a full box means
+:PROPERTIES:
+:ID: nav-mailbox
+:KEYWORDS: shout mailbox letter when listensFor hears pushMailbox deliverShout limitMessage maxMailbox broadcast listener deaf rootHears
+:PATH: assets/js/turtling/scheduler.js::function hears
+:END:
+
+*A letter is truth* (D027 R2.9): measured, a tight cap made an ear walk 270 where
+a roomy one walked 360 — silent loss, silently different figure. So =pushMailbox=
+never trims; a full box *wounds* ("hearing more than it can hold"). The sender
+cannot be blocked instead — a listener that never reaches its =when= would stall
+the world through [[id:nav-output-credit]]'s instant law.
+
+*A letter reaches only a frame that said it would listen.* =shout= is a broadcast
+to the whole registry and =when= removes only what it matches, so before the gate
+the root and every deaf sibling filled with unreadable mail (measured 299/299/300/300)
+and the cap evicted a real listener's oldest letter to store it. =listenPatterns=
+reads every =when= literal from the tree AND every =def= body — a *superset* or the
+cure is worse (an ear whose only =when= lived in a def once heard nothing). =null=
+= deliver everything; only the live stage says =rootHears: []=. Fence:
+=test/js/runtime/mailbox_spike_test.mjs=.
+
+** the slice — building a world without hanging the tab
+:PROPERTIES:
+:ID: nav-pacer
+:KEYWORDS: pacer slice budget deadline preempt responsive AIMD backoff hang freeze progress worldProgress building sliceFor outOfTime
+:PATH: assets/js/turtling/pacer.js
+:END:
+
+*The pacer measures ONE thing and moves ONE thing*: last frame's real cost in,
+next frame's pump budget out. AIMD — down fast (one bad frame halves it), up slow
+(eight good frames earn it back), hysteresis band between, clamped so the pump is
+never starved and never eats the whole frame. No device profiles: a slow device
+reveals itself by taking longer. Pure, injected clock, headless — the
+=timeline.js= law.
+
+=scheduler.sliceFor(ms)= arms the deadline; *every* pump asks =runOpts.outOfTime=,
+not just =tick='s — =hotSwapChild= drains inline, and the keystroke is exactly
+where a big program hangs a tab. Arm the slice BEFORE seating. Deadline null =
+unpaced, so batch and headless still finish in one call.
+
+Letting go for time is the SAME event as letting go for credit — one =frame.park=
+with =cause: 'time'= ([[id:nav-park]]) — so [[id:nav-output-credit]]'s instant law
+holds unchanged.
+
+*An idle-out is not a slow device.* =compositor.advance= branches on
+=rebaseEpoch='s answer: =pacer.skip()= when the epoch moved (tab wake), else
+=pacer.observe(t - frameStart)=. Feeding the raw wall gap to =observe= halved the
+budget on every wake and walked it toward =minMs=; =skip()= had existed unwired
+since it was written. Author-facing state is
+=worldProgress(scheduler)= in =vitals.js= — real cursors, no invented ratio; the
+turtle breathes =onProgress=, the weave asks the =progress= face. Fence:
+=test/js/runtime/pacer_test.mjs= (live: 300k lines, max rAF gap 13.9 ms).
+
+*Read that 13.9 ms with R3 in hand* ([[id:output-ledger-r3]]): those 300k lines are
+stroke-BROKEN, and the quantum counts emitted events, so the pacer was verified
+on the one shape that could not escape it. The same 300k as one unbroken stroke
+blocks 1139 ms live. See [[id:nav-breath]].
+
+** the breath — the quantum charged in work, not in output
+:PROPERTIES:
+:ID: nav-breath
+:KEYWORDS: breath quantum reduction commandCount breathEvery strokeMax preemption escapee continuous stroke unbudgeted BIF work meter
+:PATH: assets/js/turtling/executor.js
+:END:
+
+*Protection must not be proportional to how talkative a figure is.* The slice
+([[id:nav-pacer]]) is checked once per 256 values the generator YIELDS, and the
+executor yields on output only — so an unbroken stroke is consulted twice for
+its whole length, and =loop 36 do fw 12 rt 10 end= is that shape.
+
+=state.commandCount++= (=callCommand=) was already a faithful reduction counter —
+no command makes more than one point — spent only on a hard kill. The *breath*
+spends it on a boundary: every =breathEvery= commands the executor yields a value
+carrying nothing and the scheduler reads the clock there. It takes an ordinary
+=frame.park= ([[id:nav-park]]) — a park with no cause worth keeping — so it adds no
+observation point. =strokeMax= is its partner: a stroke that breaks
+itself makes the run ceiling a budget instead of a bill, and gives credit
+something to pace.
+
+*LANDED 2026-08-06*, both default ON (=breathEvery= 512, =strokeMax= 512;
+=DOJO_BREATH= / =DOJO_STROKE_MAX= override). The old =(sliceCheck++ & 255)= gauge
+is *deleted* — the breath is the only preemption boundary. Live: the 300k
+continuous line went 1139 ms → 54–72 ms worst rAF gap, figure unchanged.
+
+K is *measured*, not chosen: =test/js/profile/command_cost_bench.mjs=. Its first
+run made K unchoosable (25× spread) and found the cause — =evaluateExpr=
+re-parsed its expression on EVERY evaluation. Memoised (=PARSE_MEMO=, executor.js,
+per-parser =WeakMap=), the spread is 4.2× and 512 sits 2.8× inside a 4 ms slice.
+
+Fences: =test/js/runtime/quantum_spike_test.mjs=, =residency_spike_test.mjs=.
+Ruling: [[id:output-ledger-r3]], landing record [[id:output-ledger-r3-landed]].
+
+** ink is a stock — resident, and the two ceilings
+:PROPERTIES:
+:ID: nav-ink-stock-flow
+:KEYWORDS: resident residency stage full refuse credit erase ceiling MAX_RUN_SEGMENTS MAX_STAGE_SEGMENTS MAX_RESIDENCY_STALL_MS bystander cascade ledger
+:PATH: assets/js/turtling/ledger.js
+:END:
+
+One public bag on the frame: =frame.ink = { resident, stageFull }= (=createInk=).
+The law lives in =ledger.js= (=chargeInk=, =woundInk=, =enforceResidency=,
+=MAX_*=); the scheduler only routes and refuses.
+
+=ink.resident= is what is on the GPU now. =erase= truly frees it, so =erase=
+zeroes it. It gates =MAX_RUN_SEGMENTS= (memory) and sums to the stage bound, and
+it is what =worldProgress= reports: the author is told what *stands*. Gating a
+monotone total instead would kill a legitimate =loop forever do ... erase end=,
+which holds 40k while its lifetime total passes 1e6 (D027 R3.5). The monotone
+=ink.drawn= was culled 2026-08-06 — charged every event, read nowhere; it returns
+with its sampler when the convergence question opens.
+
+*The stage bound refuses; it does not kill.* =enforceResidency= chooses no victim
+— killing a producer cannot fix a stock, and picking =worst= among =!f.done=
+excluded the finished figures that held the ink, so it wounded a 1-segment
+bystander and then cascaded one frame per tick. It now raises =ink.stageFull= and
+=routeOutput= refuses path events, which reaches exactly the frames still
+producing. A kill needs a culprit; a refusal needs only whoever is knocking, and
+=routeOutput= already holds them.
+
+*Stalls are timed, not counted.* A frame refused for =MAX_RESIDENCY_STALL_MS=
+(2000) is wounded — attribution by *waiting*, not by guilt. The clock is read
+only when the stage is actually full: =enforceResidency= runs every tick and the
+pump ticks up to 64× a frame. Timing lives on =frame.park.since= (see
+[[id:nav-park]]), never in =ink= — a tick counter there fired in ~2 frames under
+exactly the multi-ambient load it guards.
+
+** a park is a park — the cause names why
+:PROPERTIES:
+:ID: nav-park
+:KEYWORDS: park parked midInstant pending owed cause credit time residency instant law preempt breath sibling observe parkBreath parkOwing clearSpentPark
+:PATH: assets/js/turtling/scheduler.js
+:END:
+
+=frame.park = null | { cause: 'credit' | 'time' | 'residency', owed, since }= —
+one field for the mid-instant stop no sibling may read across (D027 R2.5b, R3.3:
+"a breath is a park with no cause"). It replaced three encodings that every new
+cause had to be written into separately.
+
+*Two doors, so debt is answered by the call* — never by reading a field:
+
+- =parkBreath(ctx)= — the pass ran out of time. Owes nothing; the generator
+  stands where it is. Re-breathing is a no-op on =cause: 'time'=.
+- =parkOwing(ctx, cause, deposit)= — a deposit was charged but refused. Held and
+  replayed FIRST next pass so emission order survives. Only ever called with a
+  FRESH deposit (standing debt is replayed by =stepOnce=, which reparks in place).
+- =clearSpentPark(ctx)= at the start of a pass — a park with nothing owed is
+  spent, but *a debt outlives the pass that made it*.
+- =frame.park !== null= is the "is this frame mid-instant" question; =advanceChild=
+  unwinds the whole spawn stack on it.
+
+Fences: =backpressure_spike_test.mjs= (C3, S6, P5, park doors for S16),
+=quantum_spike_test.mjs= (S7).
+
+*** parkBreath — stop with no debt
+:PROPERTIES:
+:ID: nav-park-breath
+:KEYWORDS: parkBreath breath time preempt midInstant no-debt
+:PATH: assets/js/turtling/scheduler.js::parkBreath
+:END:
+
+*** parkOwing — stop holding a charged deposit
+:PROPERTIES:
+:ID: nav-park-owing
+:KEYWORDS: parkOwing owed deposit credit residency refusal replay
+:PATH: assets/js/turtling/scheduler.js::parkOwing
+:END:
+
+** takeSync — conflate the latest pose off the frame
+:PROPERTIES:
+:ID: nav-takesync
+:KEYWORDS: takeSync putSync sync conflation latest head drain reader
+:PATH: assets/js/turtling/scheduler.js::takeSync
+:END:
+Take what stands in =frame.sync= and leave the slots empty. Emptying is the
+reader's half of conflation, so it lives beside the writer rather than in the
+compositor. Returns a frozen empty array when nothing stands.
+
+** offerDeposit / deliverDeposit — charge then sink, two steps
+:PROPERTIES:
+:ID: nav-deposit
+:KEYWORDS: offerDeposit deliverDeposit chargeInk credit residency ceiling refuse routeOutput ledger
+:PATH: assets/js/turtling/scheduler.js::offerDeposit
+:END:
+ONE DEPOSIT, TWO STEPS. Charged when first offered (=chargeInk=), delivered when
+a sink will take it — which may be a later pass, because a park holds an
+already-charged deposit. =deliverDeposit= is the pure sink half (null if taken,
+else refusal cause); =offerDeposit= is charge-then-deliver. Folding charge into
+delivery would re-charge on every replay.
+
+*** deliverDeposit — already-charged sink handoff
+:PROPERTIES:
+:ID: nav-deliver-deposit
+:KEYWORDS: deliverDeposit sink full residency credit projectHead putSync
+:PATH: assets/js/turtling/scheduler.js::deliverDeposit
+:END:
+
+** findReferenceFrame — resolve a frame target by name
+:PROPERTIES:
+:ID: nav-find-reference-frame
+:KEYWORDS: findReferenceFrame targetFrame resolve binding ambient name sibling ancestor
+:PATH: assets/js/turtling/scheduler.js::findReferenceFrame
+:END:
+Ambient name resolve used by the pump when a figure targets another frame's
+channel. Exported with the binding surface.
+
+** withSlice — drive the pump inside a closed deadline
+:PROPERTIES:
+:ID: nav-with-slice
+:KEYWORDS: withSlice sliceFor deadline outOfTime pacer drive pump unpaced
+:PATH: assets/js/turtling/scheduler.js::withSlice
+:END:
+=sliceFor(ms)= arms an open-ended deadline (tests that want to hold one open).
+=withSlice(ms, drive)= is the safe door: arms, runs =drive()=, clears in
+=finally=. Outside a slice the pump is unpaced; a forgotten arm reads as "no
+time" and every frame parks on its first breath.
+
+** wireRun — shared birth wiring for a child generator
+:PROPERTIES:
+:ID: nav-wire-run
+:KEYWORDS: wireRun wireChild rewireChild mailbox batch bindResolve listensFor spawn rewire
+:PATH: assets/js/turtling/scheduler.js::wireRun
+:END:
+What a fresh generator needs to be driven. ONE place: both first birth
+(=wireChild=) and re-run (=rewireChild=) call it — a field wired in only one of
+them is a bug that shows up a whole run later.
+
 ** the eye — model-layer camera reframe (E⁻¹), orbit, roll
 :PROPERTIES:
 :ID: nav-eye
@@ -340,15 +589,16 @@ reset. Tested headless: =test/js/render/material_cache_test.mjs=.
 ** turtle↔compositor seam — what the compositor reads off the stage
 :PROPERTIES:
 :ID: nav-stage-contract
-:KEYWORDS: STAGE_CONTRACT compositor stage seam bag contract frameInterval mirror declared materials
+:KEYWORDS: STAGE_CONTRACT compositor stage seam bag contract frameMs controls materials requestRender viewOffset
 :PATH: assets/js/turtling/compositor.js::STAGE_CONTRACT
 :END:
-Seven names, checked at birth. The LIVE stage is passed in, never mirrored into a
-bag assembled by the caller — that mirror is how =frameInterval= sat in the wrong
-argument, silently taking the fallback, while four members nobody read rode along.
-Pinned by =test/js/seams/compositor_stage_test.mjs=, which reads SOURCE: the
-compositor cannot be imported headless (materializer → vendored =threetext.js=,
-whose =from "./three.core.min"= has no extension and is immutable).
+Five real verbs, checked at birth: =scene=, =camera=, =requestRender=,
+=viewOffset=, =materials=. Cadence (=frameMs=) and orbit (=controls=) ride
+=opts= — not stage interface — so a headless caller can omit them. The LIVE
+stage is still passed in, never mirrored. Pinned by
+=test/js/seams/compositor_stage_test.mjs=, which reads SOURCE: the compositor
+cannot be imported headless (materializer → vendored =threetext.js=, whose
+=from "./three.core.min"= has no extension and is immutable).
 
 ** math expressions — lex, parse, evaluate, typeset
 :PROPERTIES:
@@ -365,10 +615,59 @@ whose =from "./three.core.min"= has no extension and is immutable).
 ** signal store — push is the only way in
 :PROPERTIES:
 :ID: nav-nerve-store
-:KEYWORDS: createSignalStore signals push epoch claims subscribe channels mute remote
+:KEYWORDS: createSignalStore signals push epoch claims subscribe channels mute priority
 :PATH: assets/js/nerve/store.js::createSignalStore
 :END:
-A watched friend's signals flow through =push()= like every other kind.
+A watched friend's signals flow through =push()= like every other kind. There is
+no =error= channel and no =remote= constructor: a wound is HEALTH, and health is
+pulled by the seat ([[id:nav-nerve-seat]]). =priority= belongs to the chat zone
+alone — its only reader is =chatMutator.evict=.
+
+** status seat — one slot, two layers
+:PROPERTIES:
+:ID: nav-nerve-seat
+:KEYWORDS: seat status slot base event health wound helios priority clobber layer createStatusSeat
+:PATH: assets/js/nerve/seat.js::createStatusSeat
+:END:
+=base ?? event=. The base is the document's standing health, PULLED (no
+lifetime); the event is the world's weather, pushed and fading.
+
+A state and an event are not one signal (D022). As one push-slot they raced:
+helios/output landed on an open wound, and =priority= could not arbitrate —
+while unwell the wound must win ALWAYS, once healed it must lose INSTANTLY.
+That is a layer, not a rank. Consequences, not rules: a wound is never
+clobbered, a heal needs no push, a stale tick is harmless, the walk needs no
+gate. =health= is injected, so the core shell lends its own wounds and a peer
+panel lends a friend's — one law, two subjects. DOM atom: =nerve/slot.js=.
+
+=retire()= vs =clear()= is a real distinction, not tidying: EMPTYING lets a
+helios sun set (=helios-exit=, ~500 ms), BEING TAKEN swaps instantly — a fade
+under an arriving wound reads as two messages at once. Collapsing them to a bare
+=remove()= silently kills the =.helios-exit= CSS; only the live shell catches it
+(no unit test can). Fence: =test/js/nerve/seat_probe_test.mjs= (+ =dom-shim.mjs=);
+live-probed <2026-08-06>.
+
+** helios — progress glyph language + nerve adapter
+:PROPERTIES:
+:ID: nav-nerve-helios
+:KEYWORDS: helios progress glyph pace CAST LADDER glyphFor heliosView signals.helios sun nerve status rung run
+:PATH: assets/js/nerve/helios.js
+:END:
+Pure cast + ladder over =worldProgress= (=phase, lines, ambients, run=). No
+DOM, no store, no turtle. Pipeline:
+
+  =heliosView= (truth) → =createHeliosWalk({read}).tick= (display) → =signals.helios= → =seat.push=
+
+Dedicated kind =helios= (not =system=). NO FAULT RUNG — a fault is health
+([[id:nav-nerve-seat]]). The walk PULLS =read= (a sampled bag held by a timer is
+stale by construction) and speaks on EDGES, returning =null= when nothing moved,
+so no caller diffs glyphs. A RUN IS THE IDENTITY: =progress.run= (stamped in
+=scheduler.resetRunState=) finds tiny runs that never breathe =building=, which
+is what the deleted =notifySettled= existed to patch. Walk never skips rungs;
+goal while building is =max(ink, time, peak)=; settle *outro* + shell tick chain
+finishes the ladder after the render loop stops. Live probe: tiny =0→S=,
+dense/sparse =0→…→4→S=, mid-build holds at 4.
+Fence: =test/js/nerve/helios_test.mjs=.
 
 ** nerve hook — the nerve's seat, one occupant
 :PROPERTIES:

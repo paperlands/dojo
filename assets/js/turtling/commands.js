@@ -168,6 +168,7 @@ function wait(ctx, duration = 1) {
     }
 }
 
+// Language yield — voluntary give-up-turn (coop multitasking). Instant completes.
 function yieldCmd(ctx) {
     return {
         effects: [{

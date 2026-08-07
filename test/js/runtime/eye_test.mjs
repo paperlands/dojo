@@ -57,6 +57,30 @@ function findChild(root, name) {
 
 // Drive a program in the root frame to completion. Steps `now` by 1s/tick so
 // animated programs (one wait = 1000ms) advance one wait per tick.
+// Sync is conflating (D027 R2.5): the slot holds only the LATEST pose, so a test
+// that wants each temporal boundary must sample per tick — exactly as the
+// compositor does every frame. Returns the poses in order.
+function samplePoses(src, type, name = null, opts = {}) {
+    const deps = realDeps()
+    const generator = execute(parseProgram(src), deps, { color: '#fff' })
+    const scheduler = createScheduler(generator, {
+        createDeps: realDeps, execOpts: { color: '#fff' }, rootDeps: deps, ...opts
+    })
+    const seen = []
+    const take = (f) => {
+        if (f.sync?.[type] && (!name || f.name === name)) { seen.push(f.sync[type]); f.sync[type] = null }
+        for (const c of f.children.values()) take(c)
+    }
+    let ticks = 0
+    while (!scheduler.done && ticks < 1000) {
+        scheduler.tick(ticks * 1000)
+        take(scheduler.root)
+        ticks++
+    }
+    take(scheduler.root)
+    return seen
+}
+
 function runProgram(src, opts = {}) {
     const deps = realDeps()
     const generator = execute(parseProgram(src), deps, { color: '#fff' })
@@ -87,11 +111,11 @@ describe("Phase E0: view Output", () => {
         assert.ok(eye, "eye frame exists")
         assert.ok(eye.isLens, "eye frame is flagged as a Lens")
 
-        const events = eye.channel.drain()
-        const views = events.filter(e => e.type === 'view')
-        const heads = events.filter(e => e.type === 'head')
-        assert.ok(views.length >= 1, "emits at least one view event")
-        assert.equal(heads.length, 0, "emits no head events")
+        // A pose is sync, so it lands in the conflating slot, not the ledger.
+        assert.ok(eye.sync.view, "emits a view pose")
+        assert.ok(!eye.sync.head, "emits no head pose")
+        assert.equal(eye.channel.drain().filter(e => e.type === 'view').length, 0,
+            "and never on the ledger")
     })
 
     test("a Lens forces the pen up — no path geometry", () => {
@@ -104,7 +128,7 @@ describe("Phase E0: view Output", () => {
     test("view event carries the eye's pose (position + rotation)", () => {
         const s = runProgram("as eye do\n  fw 100\nend")
         const eye = findChild(s.root, 'eye')
-        const view = eye.channel.drain().find(e => e.type === 'view')
+        const view = eye.sync.view
         assert.ok(view, "a view event was emitted")
         assert.ok(Array.isArray(view.position), "view carries a position tuple")
         assert.ok(view.rotation && typeof view.rotation.w === 'number', "view carries a rotation Versor")
@@ -119,19 +143,18 @@ describe("Phase E0: view Output", () => {
         assert.ok(walker, "walker frame exists")
         assert.ok(!walker.isLens, "walker is not a Lens")
 
-        const events = walker.channel.drain()
-        assert.ok(events.some(e => e.type === 'head'), "walker emits a head")
-        assert.equal(events.filter(e => e.type === 'view').length, 0, "walker emits no view")
+        assert.ok(walker.sync.head, "walker emits a head pose")
+        assert.ok(!walker.sync.view, "walker emits no view")
     })
 
     test("an animated Lens emits a view per temporal boundary", () => {
-        const s = runProgram("as eye do\n  loop 3 do\n    fw 1\n    wait\n  end\nend")
-        const eye = findChild(s.root, 'eye')
-        const events = eye.channel.drain()
-        const views = events.filter(e => e.type === 'view')
+        const src = "as eye do\n  loop 3 do\n    fw 1\n    wait\n  end\nend"
+        const views = samplePoses(src, 'view', 'eye')
         assert.ok(views.length >= 3, `expected >=3 views (one per wait), got ${views.length}`)
-        assert.equal(events.filter(e => e.type === 'head').length, 0, "no head events")
-        assert.equal(events.filter(e => e.type === 'path').length, 0, "no path events")
+        assert.equal(samplePoses(src, 'head', 'eye').length, 0, "the lens emits no head poses")
+        const s = runProgram(src)
+        const eye = findChild(s.root, 'eye')
+        assert.equal(eye.channel.drain().filter(e => e.type === 'path').length, 0, "no path events")
     })
 })
 

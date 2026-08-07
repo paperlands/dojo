@@ -1,36 +1,20 @@
-// Scheduler — cooperative tree walker for frame coroutines.
-//
-// Each Frame wraps an executor generator with its own channel
-// (RingBuffer) and transform Atom<SE3>. The scheduler walks the tree
-// post-order (children before parents) each tick, advancing each
-// ready generator until it yields a wait or exhausts.
-//
-// Tree relationships are direct references: frame.parent points to the
-// parent Frame (null for root), frame.children maps name → child.
-// The registry is a flat iteration index for the compositor — it plays
-// no role in tree traversal.
+// Cooperative scheduler for frame coroutines — green threads, not OS threads.
+// Pump + park: preemptive slice (time) and backpressure (credit/residency) share one park.
+// Instant law: no sibling advances past a parked mid-instant. (id:output-ledger-r2-instant)
 
 import { createFrame } from "./frame.js"
-import { execute } from "./executor.js"
+import { matchPattern } from "./match.js"
+import { execute, createActorState } from "./executor.js"
 import { SE3 } from "./se3.js"
+import { chargeInk, woundInk, enforceResidency, resetInk, createStock } from "./ledger.js"
 
-// --- Lens (camera-as-ambient) ---
-//
-// A Lens is an ambient whose Output codomain is the viewport, not the scene.
-// PAPERLANG's Output centre bifurcates: geometry-output (a pen) vs view-output
-// (an eye). A Lens carries the same SE(3) body as a turtle — the only
-// differences are that its pen is forced up (executor) and its head pose is
-// emitted as a `view` event the materializer writes to the camera (here). See
-// specs/eye-ambient.org (id:eye-lens-primitive). v1 reserves the name `eye`.
+// Lens: viewport Output, not scene. Name `eye`. (id:eye-lens-primitive)
 const LENS_NAMES = new Set(["eye"])
 export function isLensName(name) {
     return LENS_NAMES.has(name)
 }
 
-// A Lens frame's head pose lands on the camera, not in the scene: rewrite its
-// `head` events to `view`. Same pose payload (position/rotation), plus the lens
-// param `fov` (added in E2 — undefined until then). Non-lens / non-head events
-// pass through untouched. (id:eye-output-bifurcation)
+// Lens head → view event. (id:eye-output-bifurcation)
 function lensOutput(frame, event) {
     if (frame.isLens && event.type === "head") {
         const world = frameWorldTransform(frame)
@@ -73,30 +57,10 @@ function sumCounts(ctx) {
     return total
 }
 
-// --- Ancestor lookup by user-facing name ---
-
-// Walk up the parent chain to find the nearest ancestor with the given name.
-// Used by frame targeting (`as child in parent do`) where `parent` is a name.
-function findAncestorByName(ctx, name) {
-    const reserved = resolveReserved(ctx, name)
-    if (reserved) return reserved
-
-    let ancestor = ctx.parent
-    while (ancestor) {
-        if (ancestor.name === name) return ancestor
-        ancestor = ancestor.parent
-    }
-    return null
-}
-
-// `origin` is the synthetic root — fixed identity, never ticks; ink targeted
-// at it lands in absolute world coordinates. `world` is the observer's own
-// top-level program instead — live, moving, tab-local. (id:ft-d4-world-root)
+// origin = synthetic root (absolute); world = observer's top program. (id:ft-d4-world-root)
 const ROOT_NAME = "origin"
 
-// Re-eval RECREATES frames — `id` does not survive it. What's stable is the
-// path from root (registration key + names down), so cross-lifetime state
-// (an eye's view pose) persists across re-eval without colliding across tabs.
+// Address is the path from root — id dies on re-eval. (id:cmp-become-seed)
 export function frameAddress(root, frame) {
     const names = []
     let f = frame
@@ -116,10 +80,7 @@ export function frameAddress(root, frame) {
 
 // --- World transform: inertial frame composition ---
 
-// Compose all ancestor transforms to map local (0,0,0) to world coordinates.
-// Root returns identity. Walks direct parent refs — no registry, no cycles.
-// Cached on frame._worldCache, invalidated via Atom.watch on ancestor transforms.
-// Only uses cache when watches are wired (_worldWatched flag set by wireWorldCacheInvalidation).
+// Local origin → world via parent chain; cached when watches wired.
 function worldTransform(ctx) {
     if (ctx._worldWatched && !ctx._worldDirty && ctx._worldCache) return ctx._worldCache
     const chain = []
@@ -142,18 +103,12 @@ function worldTransform(ctx) {
 
 // --- Inertial frame targeting ---
 
-// Child-local → target-local change of basis, pivoting through world space:
-// M = worldTransform(target)⁻¹ ∘ worldTransform(ctx)  ( = unapply_target ∘ apply_ctx ).
-// The one shared coordinate mechanism — same pivot as observation/goto. Provably
-// a no-op when target = parent; the projection only manifests once the target
-// moves independently. (spec id:ft-d1-world-pivot)
+// Child-local → target-local via world pivot. (id:ft-d1-world-pivot)
 function relativeTransform(ctx, target) {
     return SE3.compose(SE3.invert(worldTransform(target)), worldTransform(ctx))
 }
 
-// Rewrite an event's coordinates from child-local to target-local, tagging the
-// source frame so the target layer can consolidate each depositor's ink into its
-// own trail run without corrupting the target's own pen. (spec id:ft-d2-per-source-trails)
+// Project event into target frame; tag source. (id:ft-d2-per-source-trails)
 function transformEvent(event, t, sourceId) {
     switch (event.type) {
         case 'path':
@@ -170,12 +125,7 @@ function transformEvent(event, t, sourceId) {
 const _samePt = (a, b) =>
     a && b && Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6 && Math.abs(a[2] - b[2]) < 1e-6
 
-// Assign a stroke-run id to a path event from the SOURCE frame's own (pre-projection)
-// geometry + pen-width. Stable across one continuous pen-down stroke (even when `wait`
-// splits it into per-tick events), bumped on a geometric break (jmp / pen-up) or a
-// thickness change. Colour does *not* break the run — it rides in the ink
-// (GrowLine instance colours); one gesture, many crayons (id:child-ink,
-// id:ft-d7-deposit-runid). Reset on re-exec via `_strokeEnd = null`.
+// Stroke-run id from source geometry+width; colour does not break. (id:child-ink, id:ft-d7-deposit-runid)
 function tagRun(ctx, value) {
     if (value.type !== 'path' || !value.points || !value.points.length) return
     // Thickness only: LineMaterial.linewidth is uniform per mesh. Colour is data.
@@ -187,51 +137,99 @@ function tagRun(ctx, value) {
     ctx._strokeStyle = style
 }
 
-// The head must ride the SAME projection as the ink it deposits into the
-// target frame, or it detaches and drifts on its own layer. Bakes position
-// only — rotation stays velocity-oriented; identity when not targeted. (id:ft-d5-head)
+// Head rides the same projection as its ink. (id:ft-d5-head)
 function projectHead(headEvent, frameTarget, frameTransform) {
     if (!frameTarget) return headEvent
     return { ...headEvent, position: SE3.apply(frameTransform, headEvent.position) }
 }
 
-// The single output path for both the tick loop and the inline drain. Head events
-// update the pose and (for frame-targeted children) ride the deposit projection.
-// Geometry is tagged with its stroke-run id, then either baked into the target frame
-// (frame targeting) or emitted on the frame's own channel. (spec id:ft-d7-deposit-runid)
-function routeOutput(ctx, value, frameTarget, frameTransform) {
-    if (value.type === "head") {
-        // Local pose drives the executor's own coordinate continuity — keep it local.
-        ctx.transform.swap(() => ({ rotation: value.rotation, position: [...value.position] }))
-        ctx.channel.put(lensOutput(ctx, projectHead(value, frameTarget, frameTransform)))
-        return
+// SLOT vs CHANNEL — two queue disciplines (classic: mailbox vs latest-value).
+// Channel: lossless; full refuses → park owing. Slot: conflates; newest wins; never owes.
+// A pose that never painted was not lost — it was superseded. (id:output-ledger-r2-slot)
+function putSync(ctx, event) {
+    ctx.sync[event.type] = event
+}
+
+// Reader empties the slot (conflation's other half). One owner — not the compositor.
+export function takeSync(frame) {
+    const slot = frame.sync
+    let taken = null
+    for (const type in slot) {
+        if (!slot[type]) continue
+        ;(taken ??= []).push(slot[type])
+        slot[type] = null
     }
+    return taken ?? EMPTY_SYNC
+}
+
+const EMPTY_SYNC = Object.freeze([])
+
+// Deliver an already-charged deposit. null = taken; else refusal cause.
+// Safe to retry — no side effects on refuse. (id:output-ledger-r2-credit)
+function deliverDeposit(ctx, value, frameTarget, frameTransform, stock) {
+    if (value.type === "head") {
+        ctx.transform.swap(() => ({ rotation: value.rotation, position: [...value.position] }))
+        putSync(ctx, lensOutput(ctx, projectHead(value, frameTarget, frameTransform)))
+        return null
+    }
+
+    // Residency = working set full (stage stock). One cell, not N flags.
+    // (id:output-ledger-r3-addressee, id:carving-todo-ledger-stock)
+    if (stock?.full && value.type === 'path') return 'residency'
+
+    // Credit = flow control: sink queue full (classic credit-based backpressure).
+    const sink = frameTarget ? frameTarget.channel : ctx.channel
+    if (sink.full) return 'credit'
+
     tagRun(ctx, value)
     if (frameTarget) {
-        frameTarget.channel.put(transformEvent(value, frameTransform, ctx.id))
+        sink.put(transformEvent(value, frameTransform, ctx.id))
     } else {
-        ctx.channel.put(lensOutput(ctx, value))
+        sink.put(lensOutput(ctx, value))
     }
+    return null
+}
+
+// Charge once, deliver maybe later. Park holds a charged deposit — replaying
+// must not charge again. (id:output-ledger-r3-stock-flow)
+// null | 'ceiling' (wounded) | refusal cause to parkOwing
+function offerDeposit(ctx, value, frameTarget, frameTransform, stock) {
+    if (!chargeInk(ctx, value, stock)) return 'ceiling'
+    return deliverDeposit(ctx, value, frameTarget, frameTransform, stock)
+}
+
+// PARK — two doors, debt answers "does this park owe?" (id:output-ledger-r2-instant)
+// Prior: OS parks a thread mid-quantum; resume continues the same instant.
+// time/credit/residency are ONE park event; cause only names why.
+
+// Breath = preemption: slice spent, generator stays put, owes nothing.
+// Like a timeslice interrupt with no I/O wait — spent next pass start.
+export function parkBreath(ctx) {
+    if (ctx.park?.cause !== 'time') ctx.park = { cause: 'time', owed: null, since: null }
+}
+
+// Owing = blocked on a full queue / full stage. Deposit held and replayed FIRST
+// so emission order survives (credit-based flow control + park). Fresh deposit only;
+// stepOnce reparks a standing debt in place.
+export function parkOwing(ctx, cause, deposit) {
+    ctx.park = { cause, owed: deposit, since: null }
+}
+
+// Breath dies at pass start; a debt outlives the pass that made it.
+function clearSpentPark(ctx) {
+    if (ctx.park && ctx.park.owed === null) ctx.park = null
 }
 
 // --- Binding resolution: observation + inheritance ---
 
-// Resolve a variable from the ambient tree. Dispatches dotted paths
-// (sibling observation) vs unqualified names (ancestor fn inheritance).
-// Find a named frame: check siblings first, then walk ancestors.
-// Searches by frame.name (display name), not by children map key,
-// so cross-ambient references use tab names (e.g., spiral.x).
-// The synthetic root: walk to the parentless top of the tree. This is `origin` —
-// the fixed identity datum (absolute coordinates, timeless).
+// Ambient name resolve: siblings then ancestors, by display name.
 function metaRootFrame(frame) {
     let node = frame
     while (node.parent) node = node.parent
     return node
 }
 
-// `world`: the observer's direct child of the synthetic root — live clock,
-// moving transform, tab-scoped. If the observer IS root (test harness), it
-// resolves to itself.
+// world = observer's root-child (or self if observer is root).
 function topLevelFrame(frame) {
     const root = metaRootFrame(frame)
     if (frame === root) return root
@@ -248,9 +246,37 @@ function resolveReserved(frame, name) {
     return null
 }
 
-function findFrame(frame, name) {
+// First frame named `name` anywhere under `node`, skipping `self`. Post-order,
+// so the answer does not depend on when a sibling happened to spawn.
+function findInTree(node, name, self) {
+    for (const child of node.children.values()) {
+        const hit = findInTree(child, name, self)
+        if (hit) return hit
+    }
+    return (node !== self && node.name === name) ? node : null
+}
+
+// Resolve a name to a frame. `reach` says how far the caller may look:
+//
+//   'near'   siblings, then ancestors — a reader's lexical neighbourhood.
+//   'world'  anywhere in the tree. A FRAME OF REFERENCE need not be kin: any
+//            frame can be one, so an ancestors-only walk made `as b a do`
+//            silently draw in b's own frame whenever a was a sibling.
+//
+// Nearest wins before the wide search, so locality still decides between two
+// frames of the same name.
+function findFrame(frame, name, reach = 'near') {
     const reserved = resolveReserved(frame, name)
     if (reserved) return reserved
+
+    // Own children come first for a frame of reference: nearest means nearest by
+    // TREE DISTANCE, so kin outrank a stranger's frame of the same name — names
+    // collide across tabs, and the wide search below is only ordered by walk.
+    if (reach === 'world') {
+        for (const child of frame.children.values()) {
+            if (child.name === name) return child
+        }
+    }
 
     // Siblings (parent's children, or own children if root)
     const parent = frame.parent || frame
@@ -264,7 +290,33 @@ function findFrame(frame, name) {
         if (ancestor.name === name) return ancestor
         ancestor = ancestor.parent
     }
-    return null
+
+    return reach === 'world' ? findInTree(metaRootFrame(frame), name, frame) : null
+}
+
+// The tree's shape-and-names generation. Bumped by every spawn, removal and
+// rename — precisely the events that can turn a resolved reference into the
+// wrong answer, or turn a missing one into a hit.
+function bumpTree(frame) {
+    const root = metaRootFrame(frame)
+    root._treeGen = (root._treeGen || 0) + 1
+}
+
+// The frame a `as <name> <frame> do` names. One door, so the drain, the tick
+// and the compositor cannot disagree about where a frame's ink belongs.
+//
+// Memoized against the tree generation: the wide search is O(tree), and this is
+// asked once per pass per frame AND once per layer per drawn frame. Measured at
+// 1024 frames it was 29 µs a call when the reference sat late in the walk.
+// A MISS is cached too — a name can only start existing via a spawn, and a
+// spawn bumps the generation.
+function findReferenceFrame(ctx, name) {
+    const gen = metaRootFrame(ctx)._treeGen || 0
+    const memo = ctx._ref
+    if (memo !== undefined && memo.gen === gen && memo.name === name) return memo.frame
+    const frame = findFrame(ctx, name, 'world')
+    ctx._ref = { gen, name, frame }
+    return frame
 }
 
 // Resolve a name against the ambient tree — unified for 0-arity (variables) and n-arity (functions).
@@ -388,11 +440,24 @@ function lookupFn(frame, name, arity, args) {
     return frame.deps.mathEvaluator.run(body, ctx)
 }
 
-// Bounded mailbox push — drops oldest messages when full.
+// Actor-model filter: deliver only if pattern matches listensFor. (id:mailbox-listens-for)
+function hears(frame, name) {
+    if (frame.listensFor === null || frame.listensFor === undefined) return true
+    for (const pattern of frame.listensFor) {
+        if (matchPattern(pattern, name) !== null) return true
+    }
+    return false
+}
+
 function pushMailbox(frame, msg) {
+    if (!hears(frame, msg.name)) return
     frame.mailbox.push(msg)
-    while (frame.mailbox.length > frame.maxMailbox) {
-        frame.mailbox.shift()
+    if (frame.mailbox.length <= frame.maxMailbox) return
+
+    // Full actor inbox wounds — drop-oldest would rewrite the figure. (id:mailbox-truth)
+    frame.mailbox.pop()
+    if (!frame.error) {
+        woundInk(frame, `this one is hearing more than it can hold — ${frame.maxMailbox} letters are already waiting`)
     }
 }
 
@@ -400,20 +465,26 @@ function pushMailbox(frame, msg) {
 // only for bare createFrame test harnesses that skip wireChild entirely.
 const addrOf = (frame) => frame.address ?? frame.id
 
-// Runtime provenance (specs/compiler.org id:cmp-runtime-provenance): a walk
-// error is stored and channeled STRUCTURED — the innermost spanned statement
-// already stamped span/kind in the executor. One shape, both catch sites;
-// frame.error is a record, never again a bare string.
+// A frame of reference that names nothing: every deposit went home instead of
+// where the author asked. Silence here draws the right figure in the wrong place.
+function woundMissingReference(ctx) {
+    if (ctx.error) return
+    ctx.error = {
+        message: `there is no '${ctx.targetFrame}' to draw in — this one drew in its own frame`,
+        span: null,
+        kind: 'walk',
+    }
+    ctx.channel.put({ type: 'error', ...ctx.error, ambientId: ctx.id })
+}
+
+// Walk error is a record: message, span, kind. (id:cmp-runtime-provenance)
 const errorRecord = (error) => ({
     message: error.message,
     span: error.span ?? null,
     kind: error.kind ?? 'walk',
 })
 
-// Deliver a single shout to a frame, tracking delivery to prevent duplicates.
-// De-dup keys on the frame's ADDRESS — a re-eval'd receiver (new frame, same
-// address) is never re-delivered, and a shout never returns to its emitter's
-// address even if the emitter was reborn. (specs/groundwork.org Phase 1.)
+// Deliver once per address; never back to the emitter.
 export function deliverShout(shout, target) {
     const addr = addrOf(target)
     const fromAddr = shout.from ? addrOf(shout.from) : null
@@ -441,12 +512,7 @@ function flushDeferredShouts(shouts, registry) {
     shouts.length = 0
 }
 
-// Intercept a `shout` event at its push site (the only place emission fires —
-// never at flushDeferredShouts, which just delivers what's already queued).
-// Self always sees it immediately; the rest of the tree gets it deferred
-// (siblings may not exist yet — tick's post-order pass, spawn-time inline
-// drains) or immediately via the registry when no deferral buffer is given
-// (bare-frame test harnesses calling the drain path directly).
+// Shout at push: self now; others deferred (or registry if no buffer).
 function interceptShout(frame, value, registry, deferredShouts, onShout) {
     pushMailbox(frame, { name: value.name, payload: value.payload })
     if (deferredShouts) {
@@ -460,10 +526,7 @@ function interceptShout(frame, value, registry, deferredShouts, onShout) {
     if (onShout) onShout(frame.name, value.name, value.payload)
 }
 
-// --- Cross-ambient observation flag ---
-// Wraps resolveBinding so the evaluator records when a dotted (cross-ambient)
-// name is read. The executor checks this flag at loop iteration boundaries
-// to auto-yield, giving sibling ambients a chance to advance.
+// Mark dotted cross-ambient reads so loops auto-yield.
 function bindResolve(deps, frame) {
     deps.mathEvaluator.resolveExternal = (v, a) => {
         const result = resolveBinding(frame, v, a)
@@ -474,10 +537,7 @@ function bindResolve(deps, frame) {
 
 // --- Child generator factory ---
 
-// Creates a child executor from a fork spec (spawn event).
-// Fork spec groups: origin + style (spatial), code (ast + functions), env (userspace + loopCounter).
-// Returns { generator, deps } so the scheduler can store deps on the frame
-// and wire resolveExternal after frame creation.
+// Fork spec → child generator + deps.
 function createChildGenerator(value, createDeps, execOpts) {
     const childDeps = createDeps()
     if (value.env?.userspace) {
@@ -485,50 +545,139 @@ function createChildGenerator(value, createDeps, execOpts) {
             childDeps.mathParser.userspace.set(k, v)
         }
     }
-    // Shared mailbox — same array passed to executor AND set on the frame.
-    // Scheduler pushes to frame.mailbox; executor reads from state.mailbox.
+    // One actor mailbox: scheduler pushes, executor drains (same array).
     const mailbox = []
-    return {
-        generator: execute(value.code.ast, childDeps, {
-            color: value.style?.color || execOpts.color,
-            maxRecurseDepth: execOpts.maxRecurseDepth,
-            maxRecurses: execOpts.maxRecurses,
-            maxCommands: execOpts.maxCommands,
-            functions: value.code.functions,
-            loopCounter: value.env?.loopCounter,
-            scope: value.env?.scope,
-            lens: isLensName(value.name),
-            mailbox,
-        }),
-        deps: childDeps,
+    const opts = {
+        color: value.style?.color || execOpts.color,
+        maxRecurseDepth: execOpts.maxRecurseDepth,
+        maxRecurses: execOpts.maxRecurses,
+        maxCommands: execOpts.maxCommands,
+        breathEvery: execOpts.breathEvery,
+        strokeMax: execOpts.strokeMax,
+        functions: value.code.functions,
+        loopCounter: value.env?.loopCounter,
+        scope: value.env?.scope,
+        lens: isLensName(value.name),
         mailbox,
     }
+    // The batch's state is BORN HERE, not on the generator's first next(), so a
+    // frame can be asked what it has done while it is still doing it (commandsOf).
+    const batch = createActorState(opts)
+    return {
+        generator: execute(value.code.ast, childDeps, { ...opts, actorState: batch }),
+        deps: childDeps,
+        mailbox,
+        batch,
+    }
+}
+
+// Commands walked so far: folded batches + the one still running. A batch is
+// folded into commandCount exactly when it ends, and `batch` is dropped there,
+// so nothing is counted twice and a wounded batch keeps what it did.
+export function commandsOf(frame) {
+    return (frame.commandCount || 0) + (frame.batch?.commandCount || 0)
 }
 
 // --- Scheduler metadata ---
 
-// Attach lifecycle bookkeeping to a frame. These fields are scheduler concerns,
-// not part of the Frame primitive contract.
-function attachMeta(frame, targetFrame) {
+// Superset of when-patterns; null = deliver all. (id:mailbox-listens-for)
+//
+// Memoized PER NODE ARRAY, not per call. Keying the whole answer on `functions`
+// identity never hit, because spawn copies `{ ...state.functions }` fresh every
+// time. Keying it on the AST alone hits always and LIES: a function body is
+// walked too, and one buffer's tree is shared by every vocabulary seated on it,
+// so the first seating's answer was handed to all the rest.
+//
+// Bodies are themselves stable arrays, so memoizing each one keeps the hit and
+// the truth. This set must be a SUPERSET — one that is a subset is a frame that
+// has gone quietly deaf. (id:carving-todo-listen-memo)
+const LISTEN_MEMO = new WeakMap()
+
+const NO_PATTERNS = Object.freeze([])
+
+// What one node array hears, children included. Memoized on the array itself.
+function heardIn(nodes) {
+    if (!Array.isArray(nodes)) return NO_PATTERNS
+    const hit = LISTEN_MEMO.get(nodes)
+    if (hit) return hit
+
+    const heard = []
+    const walk = (ns) => {
+        if (!Array.isArray(ns)) return
+        for (const node of ns) {
+            if (!node) continue
+            if (node.type === 'When' && node.meta?.event && typeof node.value === 'string') {
+                heard.push(node.value.slice(1, -1))
+            }
+            walk(node.children)
+        }
+    }
+    walk(nodes)
+    LISTEN_MEMO.set(nodes, heard)
+    return heard
+}
+
+function listenPatterns(ast, functions) {
+    if (!Array.isArray(ast)) return null
+    const own = heardIn(ast)
+    if (!functions) return own
+
+    // functions is a plain object, not a Map. Nothing to add is the common
+    // case, and then the memoized array goes back untouched.
+    let all = null
+    for (const fn of Object.values(functions)) {
+        const more = heardIn(fn?.body)
+        if (more.length === 0) continue
+        if (!all) all = [...own]
+        all.push(...more)
+    }
+    return all ?? own
+}
+
+function setListensFor(child, code) {
+    child.listensFor = listenPatterns(code?.ast, code?.functions)
+}
+
+// A RUN'S IDENTITY — monotonic, world-wide. The seat animates per run, and a
+// phase edge cannot name one: a run that starts and settles inside a single
+// breath never shows `building`. (id:output-ledger-r2-progress)
+let RUNS = 0
+
+// Run-ephemeral state shared by attachMeta and rewireChild. (id:output-ledger-r2-credit, id:output-ledger-r3-stock-flow)
+function resetRunState(frame, stock) {
+    frame.park = null
+    frame.error = null
+    frame.sync = {}
+    frame.run = ++RUNS
+    // Stroke joining is per run: BOTH halves of the join test must go, or the
+    // next run's first path could continue the last one's. (id:ft-d7-deposit-runid)
+    frame._strokeEnd = null
+    frame._strokeStyle = null
+    resetInk(frame, stock)
+}
+
+// Scheduler fields on a frame (not the Frame primitive).
+// TWO LIFETIMES. What is set here lasts as long as the frame is in the tree;
+// what resetRunState sets lasts one RUN and is reborn on every rewire.
+// Lens pose is live each frame — no stored baseline. (id:eye-view-pipeline)
+function attachMeta(frame, targetFrame, stock) {
     frame.targetFrame = targetFrame || null
     frame.isLens = isLensName(frame.name)
-    // A Lens needs no captured baseline: its camera effect is a pure function of
-    // its LIVE world pose, read each frame by the compositor's model-layer reframe
-    // (world ← E⁻¹·world). Idempotency is algebraic, not stored. (id:eye-view-pipeline)
-    frame.error = null
-    frame.commandCount = 0
+    frame.commandCount = 0    // walked across ALL runs — rewire does not zero it
     frame.elapsedTime = 0
     frame.actorState = null
     frame.maxMailbox = 8192
     frame.seed = null
+    // Run state, but wireRun is a beat away; hold a safe value until it lands.
+    frame.batch = null        // the running batch's state; null when nothing runs
+    frame.listensFor = null   // null = deliver everything (unknown tree)
+    resetRunState(frame, stock)
     return frame
 }
 
 // --- The seed — become, stage 1 (specs/compiler.org id:cmp-become-seed) ---
 
-// Compared BY IDENTITY: the green tree keeps unchanged units ===-same, so
-// "same seed" is pointer compares over the ast's ELEMENTS (the array itself
-// is copied). A missed reuse costs a rebuild, never a wrong world. (id:cmp-become-seed)
+// Same seed = element identity on green tree. (id:cmp-become-seed)
 function seedOf(spec) {
     return {
         ast: [...(spec.code?.ast ?? [])],
@@ -550,9 +699,7 @@ function sameSeed(seed, spec) {
         && seed.color === (spec.style?.color ?? null)
 }
 
-// Wire Atom.watch for worldTransform cache invalidation.
-// When a child's own transform or any ancestor's transform changes,
-// the child's cached worldTransform is invalidated.
+// Invalidate worldTransform cache on self/ancestor change.
 function wireWorldCacheInvalidation(child) {
     // Invalidate when own transform changes
     child.transform.watch('worldCache', () => { child._worldDirty = true })
@@ -575,195 +722,302 @@ function unwireWorldCache(child) {
 
 // --- Shared child wiring ---
 
-// Wires a fresh child (deps, mailbox, binding, cache) and stamps its stable
-// ADDRESS — see frameAddress for the id-vs-address distinction. Requires the
-// frame already sit in root.children so frameAddress finds its registration key.
-function wireChild(child, deps, mailbox, registry) {
-    child.address = frameAddress(metaRootFrame(child), child)
+// What a fresh generator needs to be driven. ONE place, because both births use
+// it — first (wireChild) and re-run (rewireChild) — and a field wired in only
+// one of them is a bug that shows up a whole run later.
+function wireRun(child, deps, mailbox, batch, code) {
     child.deps = deps
     child.mailbox = mailbox
+    child.batch = batch
     bindResolve(deps, child)
     deps.worldOriginFn = () => worldTransform(child)
+    setListensFor(child, code)
+}
+
+// Wire child: run wiring, plus the things that belong to its place in the tree.
+// Frame must already be in the tree — the address reads its parent chain.
+function wireChild(child, deps, mailbox, registry, code, batch = null) {
+    child.address = frameAddress(metaRootFrame(child), child)
+    wireRun(child, deps, mailbox, batch, code)
     wireWorldCacheInvalidation(child)
     registry.set(child.id, child)
 }
 
-// Re-execute a completed child with a fresh fork spec.
-// Reuses the existing frame (preserving id, parent, children, origin)
-// but replaces the generator, deps, and mailbox.
-function rewireChild(child, value, createDeps, execOpts) {
-    const re = createChildGenerator(value, createDeps, execOpts)
+// Fresh fork on an existing frame (keep id/tree/origin/address).
+function rewireChild(child, value, pump) {
+    const re = createChildGenerator(value, pump.createDeps, pump.execOpts)
     child.generator = re.generator
-    child.deps = re.deps
-    child.mailbox = re.mailbox
-    bindResolve(re.deps, child)
-    re.deps.worldOriginFn = () => worldTransform(child)
     child.done = false
-    child.error = null
-    child._strokeEnd = null   // fresh stroke run on re-exec (spec id:ft-d7-deposit-runid)
+    wireRun(child, re.deps, re.mailbox, re.batch, value.code)
+    resetRunState(child, pump.stock)      // ink per RUN; park/sync/error never ride the new one
+    // A NEW RUN IS A NEW CLOCK, anchored where a first birth would be (D011).
+    // The old run's resumeAt lies in the past, so every wait of the new run
+    // would already be over: a half-second animation replayed in one tick.
+    child.resumeAt = 0
+    child.logicalBirth = child.parent ? (child.parent.resumeAt || null) : null
     child.channel.drain()
     child.channel.put({ type: 'clear' })
 }
 
 // --- Inline child drain ---
 
-// Drains inline at spawn time so the child's state is observable immediately
-// by the parent's next line — no wait-before-observe. An explicit stack
-// (trampoline) keeps deeply nested spawn chains off the JS call stack.
-function advanceChild(initialChild, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout) {
+// Inline drain at spawn; trampoline for nested spawns.
+function advanceChild(initialChild, now, pump, deferredShouts) {
     const stack = [initialChild]
 
     while (stack.length > 0) {
         const child = stack[stack.length - 1]
-        const spawned = drainUntilPause(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout)
+        const spawned = drainUntilPause(child, now, pump, deferredShouts)
         if (spawned) {
             stack.push(spawned)
         } else {
             child.inlineAdvancing = false
             stack.pop()
+            // Park mid-instant → unwind spawn stack; no sibling born into a partial instant.
+            if (child.park) {
+                for (const f of stack) f.inlineAdvancing = false
+                return true
+            }
         }
     }
+    return false
+}
+
+// Effect table: one row per generator yield type. Unknown → deposit.
+// (id:carving-todo-effects-table)
+function breath(ctx, _value, _route, pump) {
+    // Preemption offer (BEAM-style reduction breath): if the timeslice is spent,
+    // park; else keep walking. Meter is reductions, not emits. (id:output-ledger-r3-meter)
+    if (pump.outOfTime()) {
+        parkBreath(ctx)
+        return { verdict: 'parked' }
+    }
+    return { verdict: 'continue' }
+}
+
+function blocked() {
+    // Cross-ambient read not ready — sleep, retry next tick (not a mid-instant park).
+    return { verdict: 'paused' }
+}
+
+function wait(ctx, value, route) {
+    // Logical sleep: first wait anchors to logicalBirth, not wall clock (D011).
+    const { now, frameTarget, frameTransform } = route
+    ctx.resumeAt = (ctx.resumeAt > 0 ? ctx.resumeAt : (ctx.logicalBirth ?? now)) + value.duration
+    ctx.elapsedTime += value.duration / 1000
+    if (value.position) {
+        ctx.transform.swap(() => ({
+            rotation: value.rotation,
+            position: [...value.position]
+        }))
+        putSync(ctx, lensOutput(ctx, projectHead({
+            type: "head",
+            position: value.position,
+            rotation: value.rotation,
+            color: value.color,
+            headSize: value.headSize
+        }, frameTarget, frameTransform)))
+    }
+    return { verdict: 'paused', produced: true }
+}
+
+// Language yield: voluntary give-up-turn (cooperative multitasking). Not a park —
+// instant is complete; siblings may advance. No sim-time cost.
+function yieldEffect(ctx, value) {
+    if (value.position) {
+        ctx.transform.swap(() => ({
+            rotation: value.rotation,
+            position: [...value.position]
+        }))
+    }
+    return { verdict: 'paused', produced: true }
+}
+
+function limitMailbox(ctx, value) {
+    ctx.maxMailbox = value.limit
+    return { verdict: 'continue' }
+}
+
+function shout(ctx, value, route, pump) {
+    interceptShout(ctx, value, pump.registry, route.deferredShouts, pump.onShout)
+    return { verdict: 'continue', produced: true }
+}
+
+function spawn(ctx, value, route, pump) {
+    // Keep parent transform atom current between head events.
+    ctx.transform.swap(() => value.origin)
+    const existing = ctx.children.get(value.name)
+    const deferredShouts = route.deferredShouts
+
+    if (existing) {
+        // Always update origin so the compositor tracks the parent's pose;
+        // worldTransform reads origin → group repositions.
+        existing.origin = value.origin
+        existing._worldDirty = true
+
+        if (existing.done && pump.createDeps) {
+            rewireChild(existing, value, pump)
+            if (deferredShouts) deliverDeferredToFrame(deferredShouts, existing)
+            // Caller must drain — rewire alone does not advance.
+            return { verdict: 'spawned', spawned: existing, produced: true }
+        }
+        // Running & not done → idempotent no-op (origin already refreshed).
+        return { verdict: 'continue' }
+    }
+
+    if (pump.createDeps) {
+        const { generator: childGen, deps: childDeps, mailbox: childMailbox,
+                batch: childBatch } =
+            createChildGenerator(value, pump.createDeps, pump.execOpts)
+        const child = attachMeta(
+            createFrame(value.name, childGen, {
+                parent: ctx,
+                origin: value.origin,
+                ...pump.channelOpts,
+                // Born on the parent's logical clock, not now — see frame.js. (Fix A)
+                // 0 (parent hasn't waited) → null → live now.
+                logicalBirth: ctx.resumeAt || null,
+            }),
+            value.frame,
+            pump.stock
+        )
+        // Register under the name BEFORE wiring: wireChild stamps the
+        // address, whose last segment is this children-map key.
+        ctx.children.set(value.name, child)
+        bumpTree(ctx)
+        wireChild(child, childDeps, childMailbox, pump.registry, value.code, childBatch)
+        if (deferredShouts) deliverDeferredToFrame(deferredShouts, child)
+        return { verdict: 'spawned', spawned: child, produced: true }
+    }
+    return { verdict: 'continue', produced: true }
+}
+
+// Output event — one offered deposit (head pose-swap + run tagging inside).
+// (spec id:ft-d7-deposit-runid)
+function deposit(ctx, value, route, pump) {
+    const { frameTarget, frameTransform } = route
+    const refusal = offerDeposit(ctx, value, frameTarget, frameTransform, pump.stock)
+    if (refusal === 'ceiling') return { verdict: 'ended', produced: true }
+    if (refusal) {
+        parkOwing(ctx, refusal, value)
+        return { verdict: 'parked', produced: true }
+    }
+    return { verdict: 'continue', produced: true }
+}
+
+const EFFECTS = {
+    breath, blocked, wait, yield: yieldEffect, shout, spawn, limitMailbox,
+}
+
+// Verdict for one yield. Pumps act; this only means. (id:output-ledger-r2-instant)
+function stepFrame(ctx, value, done, route, pump) {
+    if (done) {
+        const result = value || {}
+        if (result.actorState) {
+            ctx.actorState = result.actorState
+            // Lifetime across rewires — rewireChild does not zero this.
+            ctx.commandCount += result.actorState.commandCount
+        } else {
+            ctx.commandCount += (typeof result === 'number' ? result : (result.commandCount || 0))
+        }
+        // Folded — drop the live batch or commandsOf would count it twice.
+        ctx.batch = null
+        ctx.done = true
+        ctx.generator = null
+        // Said at the end, so a frame of reference may still arrive late.
+        if (ctx.targetFrame && !route.frameTarget) woundMissingReference(ctx)
+        return { verdict: 'ended' }
+    }
+
+    const handler = EFFECTS[value.type] ?? deposit
+    return handler(ctx, value, route, pump)
+}
+
+// One generator step (owed deposit first). Both pumps share this path.
+// (id:output-ledger-r2-credit)
+function stepOnce(ctx, route, pump) {
+    const { frameTarget, frameTransform } = route
+
+    // Resume after park: replay owed deposit first (preserve emission order).
+    if (ctx.park?.owed) {
+        const refusal = deliverDeposit(ctx, ctx.park.owed, frameTarget, frameTransform, pump.stock)
+        if (refusal) {
+            // Debt stays; only cause may change (credit→residency resets stall clock).
+            if (ctx.park.cause !== refusal) {
+                ctx.park.cause = refusal
+                ctx.park.since = null
+            }
+            return { verdict: 'parked' }
+        }
+        ctx.park = null
+        return { verdict: 'continue', produced: true }
+    }
+
+    let value, done
+    try {
+        ({ value, done } = ctx.generator.next())
+    } catch (error) {
+        ctx.done = true
+        ctx.generator = null
+        ctx.error = errorRecord(error)
+        ctx.channel.put({ type: 'error', ...ctx.error, ambientId: ctx.id })
+        return { verdict: 'ended', produced: true }
+    }
+
+    return stepFrame(ctx, value, done, route, pump)
 }
 
 // Drain a single child's generator until it pauses (wait/done/blocked/error)
 // or spawns a new child. Returns the spawned child frame, or null if paused.
-function drainUntilPause(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout) {
-    // Frame-targeted: route non-head events to ancestor frame
+function drainUntilPause(child, now, pump, deferredShouts) {
     let frameTarget = null
     let frameTransform = null
     if (child.targetFrame) {
-        frameTarget = findAncestorByName(child, child.targetFrame)
+        frameTarget = findReferenceFrame(child, child.targetFrame)
         if (frameTarget) frameTransform = relativeTransform(child, frameTarget)
     }
 
     child.inlineAdvancing = true
+    clearSpentPark(child)
+
+    // now + deferredShouts ride route — pump stays config. (id:carving-todo-effects-table)
+    const route = { frameTarget, frameTransform, now, deferredShouts }
 
     while (true) {
-        let value, done
-        try {
-            ({ value, done } = child.generator.next())
-        } catch (error) {
-            child.done = true
-            child.generator = null
-            child.error = errorRecord(error)
-            child.channel.put({ type: 'error', ...child.error, ambientId: child.id })
-            return null
-        }
-
-        if (done) {
-            const result = value || {}
-            if (result.actorState) {
-                child.actorState = result.actorState
-                child.commandCount += result.actorState.commandCount
-            } else {
-                child.commandCount += (typeof result === 'number' ? result : (result.commandCount || 0))
-            }
-            child.done = true
-            child.generator = null
-            return null
-        }
-
-        if (value.type === "wait") {
-            // First wait anchors to logicalBirth, not now — see frame.js. (Fix A)
-            child.resumeAt = (child.resumeAt > 0 ? child.resumeAt : (child.logicalBirth ?? now)) + value.duration
-            child.elapsedTime += value.duration / 1000
-            if (value.position) {
-                child.transform.swap(() => ({
-                    rotation: value.rotation,
-                    position: [...value.position]
-                }))
-                child.channel.put(lensOutput(child, projectHead({
-                    type: "head",
-                    position: value.position,
-                    rotation: value.rotation,
-                    color: value.color,
-                    headSize: value.headSize
-                }, frameTarget, frameTransform)))
-            }
-            return null
-        }
-
-        // Cooperative yield: give other frames a turn, no temporal effect.
-        if (value.type === "yield") {
-            if (value.position) {
-                child.transform.swap(() => ({
-                    rotation: value.rotation,
-                    position: [...value.position]
-                }))
-            }
-            return null
-        }
-
-        // Dataflow suspension: child blocked on unresolvable cross-ambient read.
-        // Generator is paused at yield point — resumes on next tick via visitPostOrder.
-        if (value.type === "blocked") {
-            return null
-        }
-
-        if (value.type === "limitMailbox") {
-            child.maxMailbox = value.limit
-            continue
-        }
-
-        if (value.type === "shout") {
-            interceptShout(child, value, registry, deferredShouts, onShout)
-            continue
-        }
-
-        if (value.type === "spawn") {
-            child.transform.swap(() => value.origin)
-            const nestedExisting = child.children.get(value.name)
-            if (nestedExisting) {
-                nestedExisting._worldDirty = true
-                if (nestedExisting.done && createDeps) {
-                    nestedExisting.origin = value.origin
-                    rewireChild(nestedExisting, value, createDeps, execOpts)
-                    if (deferredShouts) deliverDeferredToFrame(deferredShouts, nestedExisting)
-                    // Push back onto the trampoline so it actually drains (mirrors
-                    // tick's spawn re-encounter). Without this a re-spawn inside a
-                    // wait-free loop rewires but never advances — runs once, drops later iterations.
-                    return nestedExisting
-                }
-                // Running & not done → idempotent no-op
-            } else if (createDeps) {
-                const { generator: nestedGen, deps: nestedDeps, mailbox: nestedMailbox } = createChildGenerator(value, createDeps, execOpts)
-                const nested = attachMeta(
-                    createFrame(value.name, nestedGen, {
-                        parent: child,
-                        origin: value.origin,
-                        channelCapacity,
-                        // Nested child born on its parent's logical clock. (Fix A)
-                        // 0 (parent hasn't waited) → null → live now.
-                        logicalBirth: child.resumeAt || null,
-                    }),
-                    value.frame
-                )
-                wireChild(nested, nestedDeps, nestedMailbox, registry)
-                child.children.set(value.name, nested)
-                if (deferredShouts) deliverDeferredToFrame(deferredShouts, nested)
-                return nested
-            }
-            continue
-        }
-
-        // Output event — single routed path (head pose-swap + run tagging inside).
-        routeOutput(child, value, frameTarget, frameTransform)
+        const step = stepOnce(child, route, pump)
+        if (step.verdict === 'continue') continue
+        if (step.verdict === 'spawned') return step.spawned
+        return null  // paused | parked | ended
     }
 }
 
 // --- Scheduler ---
 
 export function createScheduler(generator, opts = {}) {
-    const channelCapacity = opts.channelCapacity || 4096
+    // Channel bag only; pump policy is separate. (D027 R2)
+    const channelOpts = {
+        channelCapacity: opts.channelCapacity || 4096,
+        lossless: opts.lossless !== false,
+    }
     const createDeps = opts.createDeps || null
     const execOpts = opts.execOpts || {}
     const onShout = opts.onShout || null
 
+    // Null = unpaced. (id:output-ledger-r2-pacer)
+    let deadline = null
+    const clock = opts.clock || (() => performance.now())
+
+    // One stage stock for the whole tree. (id:carving-todo-ledger-stock)
+    const stock = createStock()
+
     const root = attachMeta(
-        createFrame(ROOT_NAME, generator, { channelCapacity }),
-        null
+        createFrame(ROOT_NAME, generator, channelOpts),
+        null,
+        stock
     )
     root.address = ROOT_NAME
+    // Stage root has no when; rootHears opts in. (id:mailbox-listens-for)
+    if (opts.rootHears !== undefined) root.listensFor = opts.rootHears
     // Wire shared mailbox — same array the root executor reads from
     if (opts.rootMailbox) root.mailbox = opts.rootMailbox
     // Wire root observation — root can read children via dotted access
@@ -773,10 +1027,24 @@ export function createScheduler(generator, opts = {}) {
     }
     const registry = new Map([[root.id, root]])
 
+    // Shared pump bag for tick/hotSwap/advanceChild. Config only — now rides route.
+    // (id:output-ledger-r2-pacer, id:carving-todo-effects-table)
+    const pump = {
+        createDeps,
+        execOpts,
+        channelOpts,
+        registry,
+        onShout,
+        stock,
+        // Inline drain asks too — unpaced hang is real.
+        outOfTime: () => deadline !== null && clock() > deadline,
+    }
+
     return {
         root,
         channel: root.channel,   // backward compat — root frame's channel
         registry,
+        stock,
 
         get resumeAt() { return root.resumeAt },
         set resumeAt(v) { root.resumeAt = v },
@@ -785,42 +1053,59 @@ export function createScheduler(generator, opts = {}) {
         commandCount: 0,
         lastTickTime: 0,
 
-        // The seed law (id:cmp-become-seed): a seat with an identical seed is
-        // SKIPPED WHOLE — the standing frame keeps running untouched. A name
-        // change updates in place; only fresh:true forces an explicit restart.
+        // Arm a timeslice (OS quantum). Prefer withSlice — open deadline is a test seam.
+        // (id:output-ledger-r2-pacer)
+        sliceFor(ms) { deadline = ms == null ? null : clock() + ms },
+
+        // Run the pump inside a timeslice, then close it.
+        // Slice spans many ticks (driver loop, not one tick). Must close: an expired
+        // deadline reads as "no time", so every breath parks — silent freeze if forgotten.
+        // Outside a slice the pump is unpaced (batch/headless complete in one call).
+        withSlice(ms, drive) {
+            deadline = ms == null ? null : clock() + ms
+            try { return drive() } finally { deadline = null }
+        },
+
+        // Mid-build: last tick let go with work left.
+        get building() { return this._building === true },
+
+        // Same seed → skip; name may update in place. (id:cmp-become-seed)
         hotSwapChild(key, forkSpec, { fresh = false } = {}) {
             const existing = root.children.get(key)
             if (existing && !fresh && sameSeed(existing.seed, forkSpec)) {
                 const heldName = forkSpec.name || key
-                if (existing.name !== heldName) existing.name = heldName
+                // A rename is a resolution change even though the tree's shape held.
+                if (existing.name !== heldName) { existing.name = heldName; bumpTree(root) }
                 return existing
             }
             if (existing) {
                 terminateAmbient(existing)
-                visitPostOrder(existing, (c) => registry.delete(c.id))
+                // Leaving the tree frees its share of the stage stock.
+                visitPostOrder(existing, (c) => { resetInk(c, stock); registry.delete(c.id) })
                 root.children.delete(key)
+                bumpTree(root)
             }
 
             const displayName = forkSpec.name || key
-            const { generator, deps, mailbox } = createChildGenerator(forkSpec, createDeps, execOpts)
+            const { generator, deps, mailbox, batch } = createChildGenerator(forkSpec, createDeps, execOpts)
             const child = attachMeta(
                 createFrame(displayName, generator, {
                     parent: root,
                     origin: forkSpec.origin || SE3.identity(),
-                    channelCapacity,
-                    // Top-level: logicalBirth stays NULL so the first wait anchors to
-                    // the live `now` (= lastTickTime, passed to the inline advanceChild
-                    // below). Self-correcting across resets/reruns — no stale freeze.
+                    ...channelOpts,
+                    // null birth → first wait anchors to live now (D011).
                 }),
-                null
+                null,
+                stock
             )
             // Register under the key BEFORE wiring: wireChild stamps the frame's
             // address, whose top segment is this registration key.
             root.children.set(key, child)
-            wireChild(child, deps, mailbox, registry)
+            bumpTree(root)
+            wireChild(child, deps, mailbox, registry, forkSpec.code, batch)
             child.seed = seedOf(forkSpec)
 
-            advanceChild(child, this.lastTickTime, createDeps, execOpts, channelCapacity, registry, [], onShout)
+            advanceChild(child, this.lastTickTime, pump, [])
             this.done = false
             return child
         },
@@ -830,8 +1115,9 @@ export function createScheduler(generator, opts = {}) {
             const child = root.children.get(key)
             if (!child) return
             terminateAmbient(child)
-            visitPostOrder(child, (c) => registry.delete(c.id))
+            visitPostOrder(child, (c) => { resetInk(c, stock); registry.delete(c.id) })
             root.children.delete(key)
+            bumpTree(root)
             this.done = allDone(root)
         },
 
@@ -843,9 +1129,7 @@ export function createScheduler(generator, opts = {}) {
             return errs
         },
 
-        // Advances only the frames at the earliest ready `resumeAt`, never
-        // round-robin — so a frame can't read a logically-later frame's state
-        // even when `now` jumps. Post-order breaks ties within an instant. (Decision 011 #3)
+        // Earliest resumeAt only; post-order within an instant. (D011 #3)
         tick(now) {
             this.lastTickTime = now
             if (this.done) return false
@@ -865,161 +1149,48 @@ export function createScheduler(generator, opts = {}) {
                 return false
             }
 
-            visitPostOrder(root, (ctx) => {
-                if (ctx.done || ctx.resumeAt > frontier) return
+            // Park mid-instant: stop the pass; resume first next tick. (id:output-ledger-r2-instant)
+            let parked = false
 
-                // Shouts from inline-advanced children are deferred until
-                // the parent finishes spawning all siblings, so every
-                // sibling's mailbox exists at delivery time.
+            visitPostOrder(root, (ctx) => {
+                if (parked || ctx.done || ctx.resumeAt > frontier) return
+
+                // Defer shouts until all siblings exist.
                 const deferredShouts = []
 
-                // Cache frame projection for synchronous batches —
-                // parent transforms are constant within a tick pass.
-                // Recomputed on re-entry after a wait breaks the loop.
                 let frameTarget = null
                 let frameTransform = null
                 if (ctx.targetFrame) {
-                    frameTarget = findAncestorByName(ctx, ctx.targetFrame)
+                    frameTarget = findReferenceFrame(ctx, ctx.targetFrame)
                     if (frameTarget) {
                         frameTransform = relativeTransform(ctx, frameTarget)
                     }
                 }
 
-                // Cache worldOrigin for this tick — avoids repeated tree walks
-                // in executor's callCommand (goto/faceto/jmpto).
                 if (ctx.deps?.worldOriginFn) {
                     ctx.deps._cachedWorldOrigin = ctx.deps.worldOriginFn()
                 }
 
+                clearSpentPark(ctx)
+
+                // Same stepFrame as the trampoline. now on route, not pump. (id:output-ledger-r2-instant)
+                const route = { frameTarget, frameTransform, now, deferredShouts }
+
                 while (!ctx.done) {
-                    let value, done
-                    try {
-                        ({ value, done } = ctx.generator.next())
-                    } catch (error) {
-                        ctx.done = true
-                        ctx.generator = null
-                        ctx.error = errorRecord(error)
-                        ctx.channel.put({ type: 'error', ...ctx.error, ambientId: ctx.id })
-                        produced = true
-                        break
-                    }
+                    const step = stepOnce(ctx, route, pump)
+                    if (step.produced) produced = true
 
-                    if (done) {
-                        const result = value || {}
-                        if (result.actorState) {
-                            ctx.actorState = result.actorState
-                            ctx.commandCount = result.actorState.commandCount
-                        } else {
-                            ctx.commandCount += (typeof result === 'number' ? result : (result.commandCount || 0))
-                        }
-                        ctx.done = true
-                        ctx.generator = null
-                        break
-                    }
+                    if (step.verdict === 'continue') continue
 
-                    // --- Directive: blocked (dataflow suspension) ---
-                    if (value.type === "blocked") {
-                        // Generator paused on unresolvable dependency — retry next tick
-                        break
-                    }
-
-                    // --- Directive: wait ---
-                    if (value.type === "wait") {
-                        // First wait anchors to logicalBirth, not now — see frame.js. (Fix A)
-                        ctx.resumeAt = (ctx.resumeAt > 0 ? ctx.resumeAt : (ctx.logicalBirth ?? now)) + value.duration
-                        ctx.elapsedTime += value.duration / 1000
-                        if (value.position) {
-                            ctx.transform.swap(() => ({
-                                rotation: value.rotation,
-                                position: [...value.position]
-                            }))
-                            ctx.channel.put(lensOutput(ctx, projectHead({
-                                type: "head",
-                                position: value.position,
-                                rotation: value.rotation,
-                                color: value.color,
-                                headSize: value.headSize
-                            }, frameTarget, frameTransform)))
-                        }
-                        produced = true
-                        break
-                    }
-
-                    // --- Directive: yield (cooperative scheduling) ---
-                    if (value.type === "yield") {
-                        if (value.position) {
-                            ctx.transform.swap(() => ({
-                                rotation: value.rotation,
-                                position: [...value.position]
-                            }))
-                        }
-                        produced = true
-                        break
-                    }
-
-                    // --- Directive: limitMailbox ---
-                    if (value.type === "limitMailbox") {
-                        ctx.maxMailbox = value.limit
+                    if (step.verdict === 'spawned') {
+                        parked = advanceChild(step.spawned, now, pump, deferredShouts)
+                        if (parked) break
                         continue
                     }
 
-                    // --- Directive: shout ---
-                    if (value.type === "shout") {
-                        interceptShout(ctx, value, registry, deferredShouts, onShout)
-                        produced = true
-                        continue
-                    }
-
-                    // --- Directive: spawn ---
-                    if (value.type === "spawn") {
-                        // Keep parent transform atom current between head events
-                        ctx.transform.swap(() => value.origin)
-
-                        const existing = ctx.children.get(value.name)
-
-                        if (existing) {
-                            // Always update origin to track parent's evolving position.
-                            // worldTransform reads origin → compositor repositions the group.
-                            existing.origin = value.origin
-                            existing._worldDirty = true
-
-                            if (existing.done && createDeps) {
-                                rewireChild(existing, value, createDeps, execOpts)
-                                deliverDeferredToFrame(deferredShouts, existing)
-                                advanceChild(existing, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout)
-                                produced = true
-                            }
-                            // Running and not done → idempotent no-op
-                            continue
-                        }
-
-                        // First encounter: create child frame
-                        if (createDeps) {
-                            const { generator: childGen, deps: childDeps, mailbox: childMailbox } = createChildGenerator(value, createDeps, execOpts)
-                            const child = attachMeta(
-                                createFrame(value.name, childGen, {
-                                    parent: ctx,
-                                    origin: value.origin,
-                                    channelCapacity,
-                                    // Born on the parent's logical clock, not now — see frame.js. (Fix A)
-                                    logicalBirth: ctx.resumeAt || null,
-                                }),
-                                value.frame
-                            )
-                            wireChild(child, childDeps, childMailbox, registry)
-                            ctx.children.set(value.name, child)
-
-                            deliverDeferredToFrame(deferredShouts, child)
-                            advanceChild(child, now, createDeps, execOpts, channelCapacity, registry, deferredShouts, onShout)
-                        }
-                        produced = true
-                        continue
-                    }
-
-                    // --- Output: single routed path (head pose-swap + run tagging,
-                    // projection / own-channel routing). (spec id:ft-d7-deposit-runid)
-                    routeOutput(ctx, value, frameTarget, frameTransform)
-                    produced = true
+                    // paused | parked | ended
+                    if (step.verdict === 'parked') parked = true
+                    break
                 }
 
                 // Deliver any remaining deferred shouts
@@ -1028,6 +1199,11 @@ export function createScheduler(generator, opts = {}) {
                     produced = true
                 }
             })
+
+            // Stall wound only; full is stock.full. (id:output-ledger-r2-residency, id:carving-todo-ledger-stock)
+            enforceResidency(registry, clock, stock)
+            // Let go with work outstanding = the world is still building.
+            this._building = parked
 
             this.done = allDone(root)
             if (this.done) {
@@ -1043,5 +1219,5 @@ export function createScheduler(generator, opts = {}) {
 // Completes immediately — visitPostOrder still walks children.
 export function* metaRoot() { return 0 }
 
-export { createFrame, visitPostOrder, terminateAmbient, allDone, worldTransform, frameWorldTransform, findAncestorByName, resolveBinding }
+export { createFrame, visitPostOrder, terminateAmbient, allDone, worldTransform, frameWorldTransform, findReferenceFrame, resolveBinding }
 // frameAddress is exported at its definition (stable cross-re-eval frame key).

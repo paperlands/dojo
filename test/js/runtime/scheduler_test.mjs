@@ -75,10 +75,11 @@ describe("scheduler basics", () => {
         assert.ok(produced)
         assert.ok(scheduler.done)
 
+        // Ink rides the ledger; the pose rides its conflating slot (D027 R2.5).
         const drained = scheduler.channel.drain()
-        assert.equal(drained.length, 2)
+        assert.equal(drained.length, 1)
         assert.equal(drained[0].type, "path")
-        assert.equal(drained[1].type, "head")
+        assert.equal(scheduler.root.sync.head.position[0], 100)
     })
 
     test("empty generator completes immediately", () => {
@@ -115,10 +116,11 @@ describe("wait handling", () => {
         assert.equal(scheduler.resumeAt, 2000)
 
         const frame0 = scheduler.channel.drain()
-        // path before wait + head snapshot emitted at wait boundary
-        assert.equal(frame0.length, 2)
+        // path before wait on the ledger; the head snapshot at the wait boundary
+        // is a pose, so it sits in the sync slot (D027 R2.5).
+        assert.equal(frame0.length, 1)
         assert.equal(frame0[0].type, "path")
-        assert.equal(frame0[1].type, "head")
+        assert.equal(scheduler.root.sync.head.position[0], 50)
     })
 
     test("tick before resumeAt does nothing", () => {
@@ -154,9 +156,9 @@ describe("wait handling", () => {
         const frame1 = scheduler.channel.drain()
 
         assert.ok(scheduler.done)
-        assert.equal(frame1.length, 2) // path + head
+        assert.equal(frame1.length, 1) // path on the ledger; head is a slot pose
         assert.equal(frame1[0].type, "path")
-        assert.equal(frame1[1].type, "head")
+        assert.equal(scheduler.root.sync.head.position[0], 100)
     })
 
     test("multiple waits create multiple pause points", () => {
@@ -174,19 +176,21 @@ describe("wait handling", () => {
         scheduler.tick(0)
         assert.equal(scheduler.resumeAt, 500)
         const f0 = scheduler.channel.drain()
-        assert.equal(f0.length, 2) // path + head from wait
+        assert.equal(f0.length, 1) // path; the wait's head snapshot is a slot pose
 
         // t=500: second segment + wait head
         scheduler.tick(500)
         assert.equal(scheduler.resumeAt, 1000) // 500 + 500
         const f1 = scheduler.channel.drain()
-        assert.equal(f1.length, 2) // path + head from wait
+        assert.equal(f1.length, 1) // path; the wait's head snapshot is a slot pose
+        assert.equal(scheduler.root.sync.head.position[0], 20)
 
         // t=1000: final segment + head
         scheduler.tick(1000)
         assert.ok(scheduler.done)
         const f2 = scheduler.channel.drain()
-        assert.equal(f2.length, 2) // path + head
+        assert.equal(f2.length, 1) // path; final pose in the slot
+        assert.equal(scheduler.root.sync.head.position[0], 30)
     })
 })
 
@@ -249,7 +253,7 @@ describe("batch fast path", () => {
 
         assert.ok(scheduler.done)
         const all = scheduler.channel.drain()
-        assert.equal(all.length, 3)
+        assert.equal(all.length, 2)  // two paths; the trailing head is a slot pose
     })
 })
 
@@ -1119,7 +1123,7 @@ describe("idempotent spawn semantics", () => {
         const targetPaths = circling.channel.drain().filter(e => e.type === 'path')
         const ownEvents = circle.channel.drain()
         const ownPaths = ownEvents.filter(e => e.type === 'path')
-        const ownHeads = ownEvents.filter(e => e.type === 'head')
+        const ownHeads = circle.sync.head ? [circle.sync.head] : []
 
         assert.ok(targetPaths.length >= 1, 'projected path lands on the target frame')
         assert.equal(ownPaths.length, 0, 'no path on the child\'s own channel')
