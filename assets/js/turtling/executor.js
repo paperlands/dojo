@@ -21,11 +21,23 @@ const DEFAULT_BREATH_EVERY = envNum("DOJO_BREATH") || 512
 // Self-break long strokes so the meter can see them (rate, not truth).
 const DEFAULT_STROKE_MAX = envNum("DOJO_STROKE_MAX") || 512
 
-// Retry evaluateExpr; yield blocked on cross-ambient read failure.
-function* evalOrBlock(expr, scope, state) {
+// Per-hole residual domain {word, measure}. Missing verb → all measure.
+// Word = name costume (ink, label text, shout name). Default measure is
+// strict: bare unknown idents wound — never silent strings that NaN SE(3).
+const ARG_DOMAINS = {
+    beColour: ["word"],
+    label: ["word", "measure"],
+    shout: ["word", "measure"],
+}
+
+const holeDomain = (domains, i) => (domains?.[i] === "word" ? "word" : "measure")
+
+// Retry evaluateExpr; yield blocked on cross-ambient read failure only.
+// domain: "measure" (default) | "word"
+function* evalOrBlock(expr, scope, state, domain = "measure") {
     while (true) {
         try {
-            return evaluateExpr(expr, scope, state)
+            return evaluateExpr(expr, scope, state, domain)
         } catch (e) {
             if (e.blocked) {
                 yield { type: 'blocked' }
@@ -163,17 +175,17 @@ function* walkBody(body, scope, state, stroke) {
                 break
             }
 
-            // shout: emit event directive — evaluated args, scheduler intercepts
-            if (node.value === "shout") {
-                const name = yield* evalOrBlock(node.children[0]?.value, scope, state)
-                const payload = node.children[1] ? yield* evalOrBlock(node.children[1].value, scope, state) : undefined
-                yield { type: 'shout', name, payload }
-                break
+            // Zip each arg with its hole domain (default measure).
+            const domains = ARG_DOMAINS[node.value]
+            const args = []
+            for (let i = 0; i < node.children.length; i++) {
+                args.push(yield* evalOrBlock(node.children[i].value, scope, state, holeDomain(domains, i)))
             }
 
-            const args = []
-            for (const arg of node.children) {
-                args.push(yield* evalOrBlock(arg.value, scope, state))
+            // shout is a directive, not a COMMANDS entry — domain still from ARG_DOMAINS.
+            if (node.value === "shout") {
+                yield { type: 'shout', name: args[0], payload: args[1] }
+                break
             }
 
             // Check user-defined function first, then built-in command
@@ -246,7 +258,8 @@ function* walkBody(body, scope, state, stroke) {
         }
 
         case 'Ambient': {
-            const ambientName = String(yield* evalOrBlock(node.value, scope, state))
+            // Grammar hole: ambient name is word (seeker, mice[count] after interp).
+            const ambientName = String(yield* evalOrBlock(node.value, scope, state, "word"))
             yield {
                 type: 'spawn',
                 name: ambientName,
@@ -412,7 +425,9 @@ function parseMemo(mathParser, expr) {
     return tree
 }
 
-function evaluateExpr(expr, scope, state) {
+// Residual after shared resolve: measure → wound; word → string costume.
+// Math ops / quote interpolation stay measure. Not a numerical tower.
+function evaluateExpr(expr, scope, state, domain = "measure") {
     const { mathParser, mathEvaluator } = state.deps
 
     // String literal support
@@ -430,7 +445,8 @@ function evaluateExpr(expr, scope, state) {
                     if (innerExpr.trim().match(/^`.*`$/)) {
                         return match
                     }
-                    const value = evaluateExpr(innerExpr.trim(), scope, state)
+                    // Interpolation slots are always measure (count, x, …).
+                    const value = evaluateExpr(innerExpr.trim(), scope, state, "measure")
                     return value !== undefined ? String(value) : match
                 }
             )
@@ -442,26 +458,27 @@ function evaluateExpr(expr, scope, state) {
     // e.g. 'mice[follow]'.x → interpolate → mice1.x → dotted access
     const computedDot = expr.match(/^(['"])(.*?)\1\.(.+)$/)
     if (computedDot) {
-        const name = evaluateExpr(computedDot[1] + computedDot[2] + computedDot[1], scope, state)
-        return evaluateExpr(name + '.' + computedDot[3], scope, state)
+        const name = evaluateExpr(computedDot[1] + computedDot[2] + computedDot[1], scope, state, domain)
+        return evaluateExpr(name + '.' + computedDot[3], scope, state, domain)
     }
 
     if (mathParser.isNumeric(expr)) return parseFloat(expr)
     if (scope[expr] != null) return scope[expr]
     const tree = parseMemo(mathParser, expr)
 
-    // Expression or known namespace — always evaluate
+    // Expression or known namespace — always evaluate (ops already strict on leaves).
     if (tree.children.length > 0 || mathEvaluator.namespace_check(tree.value)) {
         return mathEvaluator.run(tree, scope)
     }
 
-    // Bare identifier — try evaluator (handles dotted + unqualified via resolveExternal).
-    // Fall back to raw string for labels/colors when identifier is truly unknown.
+    // Bare identifier — resolveExternal, then hole residual domain.
     if (typeof tree.value === 'string' && /^[a-zA-Z]/.test(tree.value)) {
         if (mathEvaluator.resolveExternal) {
             const resolved = mathEvaluator.resolveExternal(tree.value)
             if (resolved !== undefined) return resolved
         }
+        if (domain === "word") return tree.value
+        throw new Error(`Undefined variable: ${tree.value}`)
     }
     return tree.value
 }
