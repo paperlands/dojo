@@ -1,6 +1,10 @@
 // Signal store — only push() creates; renderers subscribe. Pure, no DOM.
 // CHANNELS = vocabulary (zone, fade, css). Callers use constructors, not raw bags.
 // No error channel: wounds are health the seat pulls (D022). priority is chat-only.
+//
+// Routing is a CLAIM: a panel registers the predicate that says which signals
+// are its own; residual is whatever no predicate claimed. Content filtering
+// (matchPattern) lives inside a projection, never here.
 
 import { createObservable } from "../kernel/observable.js"
 
@@ -16,17 +20,20 @@ export const CHANNELS = {
     walk:   { priority: 2, fadeMs: 20000, zone: 'trail',  css: 'nerve-walk' },
 }
 
-// Shape: { msg, payload, source, kind, target, ref, tabId }.
+// Shape: { msg, payload, source, kind, target, ref, tabId, place }.
 export const signals = {
     output:  (msg, payload)          => ({ msg, payload: String(payload), source: 'system', kind: 'output' }),
     system:  (msg, payload)          => ({ msg, payload: payload ?? null, source: 'system', kind: 'system' }),
     // heliosView → signals.helios. msg = glyph; commands = payload; living while building.
-    helios:  (view) => ({
+    // `place` routes it: every helios says 'system' — source routing alone
+    // sent every shell's sun to the residual.
+    helios:  (view, place = null) => ({
         msg: view?.glyph ?? '',
         payload: (view?.commands ?? 0) > 0 ? String(view.commands) : null,
         source: 'system',
         kind: 'helios',
         living: view?.phase === 'building',
+        place,
     }),
     shout:   (source, msg, payload, tabId) => ({ msg, payload, source, kind: 'shout', tabId }),
     chat:    (source, msg, target)   => ({ msg, payload: null, source, kind: 'chat', target: target ?? null }),
@@ -45,7 +52,7 @@ export const signals = {
 // One place for omitted fields; push stamps id/epoch/ts over this.
 const DEFAULTS = Object.freeze({
     msg: '', payload: null, target: null, source: '?', kind: 'shout',
-    ref: null, tally: 0, tabId: null, living: false,
+    ref: null, tally: 0, tabId: null, living: false, place: null,
 })
 
 export function createSignalStore(opts = {}) {
@@ -55,15 +62,26 @@ export function createSignalStore(opts = {}) {
     const sources = new Set()
     const targets = new Set()
     const muted = new Set()
-    // Peer panels claim an address; residual projection shows the unclaimed rest.
-    // Routing by address only — content filter is a separate matchPattern layer.
-    const claims = new Set()
+    // CLAIMS ARE PREDICATES, NOT INDICES. A panel says which signals are ITS
+    // OWN; residual is the complement of the union. Two parallel Sets (by
+    // source, by place) once, four methods, residual AND-ing both — a third
+    // axis meant editing three files. Essential relation never names an axis:
+    // residual = what nobody claimed.
+    const claimants = new Set()
     let counter = 0
     let epoch = 0
 
     function run() { ++epoch }
-    function claim(addr) { if (addr != null) claims.add(addr) }
-    function release(addr) { claims.delete(addr) }
+    // claimBy(pred) → release. Predicate is the panel's own `select`.
+    function claimBy(pred) {
+        if (typeof pred !== "function") return () => {}
+        claimants.add(pred)
+        return () => { claimants.delete(pred) }
+    }
+    function claimed(signal) {
+        for (const pred of claimants) if (pred(signal)) return true
+        return false
+    }
 
     function push(raw) {
         const signal = {
@@ -95,7 +113,7 @@ export function createSignalStore(opts = {}) {
 
     return {
         push, subscribe, run, signals: log, sources, targets, muted, mute, unmute, clear,
-        claims, claim, release,
+        claimBy, claimed,
         get epoch() { return epoch },
     }
 }

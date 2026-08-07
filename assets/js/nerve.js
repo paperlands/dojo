@@ -1,6 +1,6 @@
 // Nerve — one write model (store), N read models (projections).
-// Push once; route by source address. Residual = unclaimed; project() claims a peer.
-// Content filter (matchPattern) is inside a projection — never address routing.
+// Push once; route by claim. Residual = unclaimed; project() claims a peer.
+// Content filter (matchPattern) lives inside a projection — never here.
 
 import { createSignalStore } from './nerve/store.js'
 import { createHUD } from './nerve/hud.js'
@@ -14,28 +14,35 @@ export function createNerve(container, pushEvent, targets) {
     const residual = createHUD(container, store, pushEvent, {
         targets,
         health: () => healthOf?.() ?? null,
-        select: (s) => !store.claims.has(s.source),
+        // THE UNCLAIMED REST — complement of every panel's claim, whatever axis
+        // each claims on. Naming the axes here meant a third axis edited this
+        // line too.
+        select: (s) => !store.claimed(s),
     })
 
-    // Claim one peer address so residual stops showing them. retarget switches peers.
+    // Claim one peer so residual stops showing them. retarget switches peers.
+    // `place` is the second claim, held for the panel's life (a sun has no peer).
     function project(panelEl, opts = {}) {
         let address = null
+        const place = opts.place ?? null
+        // ONE PREDICATE, USED TWICE: panel renders what it selects; residual
+        // excludes exactly that. Written once as select and again as two claim
+        // calls on two indices — two spellings of one fact; retarget had to
+        // keep them in step by hand.
+        const mine = (s) => (address != null && s.source === address)
+            || (place != null && s.place === place)
         const hud = createHUD(panelEl, store, opts.pushEvent || pushEvent, {
             targets: opts.targets,
             health: opts.health,  // friend's health — same seat law, other subject
-            select: (s) => address != null && s.source === address,
+            select: mine,
         })
+        const unclaim = store.claimBy(mine)
         return {
             refresh: hud.refresh,
-            retarget(name) {
-                const next = name ?? null
-                if (next === address) return
-                store.release(address)
-                address = next
-                store.claim(address)
-            },
+            // Predicate reads `address` live — retargeting is one write.
+            retarget(name) { address = name ?? null },
             destroy() {
-                store.release(address)
+                unclaim()
                 hud.destroy()
             },
         }

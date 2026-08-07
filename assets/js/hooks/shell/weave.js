@@ -1,19 +1,17 @@
 // =============================================================================
-// WEAVE — the walk surface (shell/weave, id:weave-tending). COLLAPSED
-// (<2026-07-12>): the weave owns no panel, no page renderer, no posture.
-// A fragment page is a DOCUMENT, handled as documents are handled: fetched
-// as static text (weave/fragments.js), pressed to a literate buffer
-// (weave/parse.js), parsed by the one parser — then the OUTERSHELL is
-// invoked (seeWeave → seeOuterShell), the one review surface for another's
-// source. The library is a non-live friend: its page shows in the outer
-// viewer (the editor ink face renders the meadows), its figure mounts
-// through inner's existing seeOuterShell flow, fork is the outer fork
-// button, close is the outer close. Appearance-in-PLACE has one center.
+// WEAVE — the walk surface (shell/weave, id:weave-tending).
+//
+// COLLAPSED: the weave owns no panel, no page renderer, no posture. A
+// fragment page is a DOCUMENT — fetched as static text (weave/fragments.js),
+// pressed to a literate buffer (weave/parse.js), parsed by the one parser —
+// then the OUTERSHELL is invoked (seeWeave → seeOuterShell), the one review
+// surface for another's source. The library is a non-live friend: page in
+// the outer viewer, figure through inner's seeOuterShell, fork and close
+// inherited. Appearance-in-PLACE has one center.
 //
 // What remains HERE is only what did not exist: the resolver's scope law
 // (weave/resolve.js) wired to portals, and the HEARTH — the walk trail,
-// amber shanshui (CSS over theme pigments; the kindled step is green-alive,
-// losing it is the turning). The hook root IS the path.
+// amber shanshui. The hook root IS the path.
 // =============================================================================
 
 import { fetchFragment, fragmentIndex } from "../../weave/fragments.js"
@@ -37,8 +35,8 @@ const TRAIL_MAX = 12
 const DOORWAY = "the-chase"
 
 function mountWeave(hook, boot = {}) {
-    // One lifetime for this surface — every organ registers its release here,
-    // where it is made.
+    // One lifetime — every organ registers its release here; async
+    // continuations ask the same liveness (kernel/arena.js; hook adopts it).
     const arena = createArena()
     const trailEl = hook.el
     const stage = () => boot.turtle ?? getStage()
@@ -49,8 +47,9 @@ function mountWeave(hook, boot = {}) {
 
     // The address the child stands at — the newest fragment step's target.
     let hereAddr = null
+    // Only a NEWER open cancels an older one; a dead surface is answered by the
+    // arena, so the epoch does not have to say death too.
     let openEpoch = 0
-    arena.add(() => { openEpoch++ })   // cancels any in-flight open
 
     // Hearth projection of walk signals — derived at emit time, capped.
     const trail = []
@@ -121,7 +120,7 @@ function mountWeave(hook, boot = {}) {
                 }
                 if (step.ref?.id) {
                     fragmentIndex().then((idx) => {
-                        if (hook.dead) return
+                        if (!arena.alive) return
                         const hit = idx?.[step.ref.id]
                         if (hit) openPage(hit.name, { id: step.ref.id, title: hit.title })
                     })
@@ -135,9 +134,9 @@ function mountWeave(hook, boot = {}) {
     // outer viewer's lit links, which land here through the navigator cell
     // when no ambient answers (nerve/reveal.js).
     async function followPortal(word) {
-        if (hook.dead) return
+        if (!arena.alive) return
         const index = await fragmentIndex()
-        if (hook.dead) return
+        if (!arena.alive) return
 
         const r = resolve(word, { ambients: ambientNames(), index })
         const to = r.kind === "fragment" ? `~/${r.name}`
@@ -157,7 +156,7 @@ function mountWeave(hook, boot = {}) {
     async function openPage(name, meta = {}) {
         if (!name) return
         const my = ++openEpoch
-        const alive = () => my === openEpoch && !hook.dead
+        const alive = () => my === openEpoch && arena.alive
 
         const text = await fetchFragment(name)
         if (!alive()) return
@@ -180,21 +179,19 @@ function mountWeave(hook, boot = {}) {
             emitWalk(prev, addr, id ? { id } : null, "fragment")
         }
 
-        // Invoke the outershell: the one review surface shows the page,
-        // mounts the figure, offers fork and close — all inherited.
-        // The AST is the one representation crossing the seam: the inner
-        // shell derives the sibling-cell split from it (phaseCells), and the
-        // ~/ addr prefix is the page-ness — nothing rides beside the source.
+        // Invoke the outershell — the one review surface: page, figure, fork,
+        // close, all inherited. AST is the one representation crossing the
+        // seam (inner derives cell split via phaseCells); ~/ addr is page-ness
+        // — nothing rides beside the source.
         hook.pushEvent("seeWeave", {
             addr,
             name: (meta.title ?? title ?? name),
             source,
             commands: ast,
-            // A shelved page can be wounded too — a fragment whose cell was
-            // mis-pressed inks its own line in the viewer, addressed like any
-            // other diagnostic (D022). The library is a non-live friend, and it
-            // speaks the same fields — through the one diagnostics query, not
-            // a raw collectErrors bag beside it.
+            // A shelved page can be wounded too — mis-pressed cell inks its
+            // line in the viewer, addressed like any diagnostic (D022). The
+            // library is a non-live friend speaking the same fields through
+            // the one diagnostics query, not a raw collectErrors bag.
             diagnostics: diagnostics(ast, [], addr),
             ts: performance.now(),
         })

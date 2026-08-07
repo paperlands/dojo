@@ -129,7 +129,7 @@ for (const cells of SIZES) {
     for (const r of rows) console.log(fmt(r))
 
     // Seat emission: how often does a mid-edit produce canvas effects?
-    const law = pageLaw({ localKeys: () => [] })
+    const law = pageLaw()
     law.observe("e", { name: "e", doc: src, own: true, attention: { line: 5 } })
     let text = src, empty = 0, seats = 0
     for (let i = 0; i < 30; i++) {
@@ -137,8 +137,9 @@ for (const cells of SIZES) {
         const ans = law.observe("e", {
             name: "e", doc: text, own: true, attention: { line: editAt + 1 },
         })
-        if (!ans.effects.length) empty++
-        else seats += ans.effects.filter((e) => e.op === "seat" || e.op === "draw").length
+        // Two named arrays, not tagged ops (Cut A) — a run IS a seat.
+        if (!ans.runs.length) empty++
+        else seats += ans.runs.length
     }
     console.log(`  seat emission (30 mid-edits): empty=${empty} seat/draw=${seats}`)
 

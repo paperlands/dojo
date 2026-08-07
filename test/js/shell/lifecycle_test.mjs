@@ -38,7 +38,7 @@ function makeHook(hookDef, target = "outershell") {
 
 // A surface that records what reaches it.
 function makeSurface(events) {
-    const record = { mounts: 0, seen: [], cleaned: 0 }
+    const record = { mounts: 0, seen: [], cleaned: 0, births: 0 }
     const surface = {
         events,
         mount: () => {
@@ -50,6 +50,7 @@ function makeSurface(events) {
                     events.map((name) => [name, (p) => record.seen.push([name, p])])
                 ),
                 arena,
+                birth: () => { record.births++; record.seen.push(["birth", null]) },
             }
         },
     }
@@ -88,7 +89,11 @@ describe("boot seam: events riding the mount patch are never lost", () => {
         await tick()
 
         assert.equal(record.mounts, 1)
+        // Birth comes FIRST: the surface takes its own breath before it hears
+        // anything from the wire, or the queue lands on organs that have not
+        // yet been told the room is whole.
         assert.deepEqual(record.seen, [
+            ["birth", null],
             ["seeOuterShell", { addr: "a1", source: "fd 10" }],
             ["outerSignal", { state: "success" }],
         ])
@@ -104,7 +109,39 @@ describe("boot seam: events riding the mount patch are never lost", () => {
         await tick()
 
         hook.fire("seeOuterShell", { addr: "a2" })
-        assert.deepEqual(record.seen, [["seeOuterShell", { addr: "a2" }]])
+        assert.deepEqual(record.seen, [["birth", null], ["seeOuterShell", { addr: "a2" }]])
+    })
+
+    test("birth runs once, and only for a surface that stood", async () => {
+        const { surface, record } = makeSurface(["seeOuterShell"])
+        const hook = makeHook(
+            makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outershell: surface, coreshell: surface } })
+        )
+        hook.mounted()
+        await tick()
+        assert.equal(record.births, 1)
+
+        const stillborn = makeSurface(["seeOuterShell"])
+        const dead = makeHook(
+            makeShellHook({ boot: () => Promise.resolve(null), surfaces: { outershell: stillborn.surface, coreshell: stillborn.surface } })
+        )
+        dead.mounted()
+        await tick()
+        assert.equal(stillborn.record.births, 0)
+    })
+
+    test("a surface with no birth is legal — the phase is optional", async () => {
+        let mounted = 0
+        const surface = {
+            events: [],
+            mount: () => { mounted++; return { events: {}, arena: createArena() } },
+        }
+        const hook = makeHook(
+            makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outershell: surface, coreshell: surface } })
+        )
+        hook.mounted()
+        await tick()
+        assert.equal(mounted, 1)
     })
 
     test("data-target names the surface: outershell vs coreshell", async () => {
@@ -166,6 +203,39 @@ describe("dead state: a mid-boot destroy stands the mount down", () => {
         assert.deepEqual(record.seen, [])
     })
 
+    // ONE LIVENESS FACT — boot asks the hook's arena, not a flag beside it.
+    test("the hook's arena IS the liveness boot and the surfaces read", async () => {
+        const { surface } = makeSurface(["seeOuterShell"])
+        let aliveAtBoot = null
+        const hook = makeHook(
+            makeShellHook({
+                boot: (h) => { aliveAtBoot = h.arena.alive; return Promise.resolve({}) },
+                surfaces: { outershell: surface, coreshell: surface },
+            })
+        )
+
+        hook.mounted()
+        assert.equal(aliveAtBoot, true)
+        assert.equal(hook.arena.alive, true)
+        hook.destroyed()
+        assert.equal(hook.arena.alive, false, "boot's mid-flight stand-down check")
+    })
+
+    test("the surface's arena is adopted — one destroy ends one lifetime", async () => {
+        const { surface, record } = makeSurface(["seeOuterShell"])
+        const hook = makeHook(
+            makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outershell: surface, coreshell: surface } })
+        )
+        hook.mounted()
+        await tick()
+
+        hook.destroyed()
+        assert.equal(record.cleaned, 1)
+        assert.equal(hook.surface.arena.alive, false)
+        hook.destroyed()
+        assert.equal(record.cleaned, 1, "idempotent — the arena guards the second call")
+    })
+
     test("boot standing down (null, per bootShell's dead check) → no mount", async () => {
         const { surface, record } = makeSurface(["seeOuterShell"])
         const hook = makeHook(
@@ -189,7 +259,7 @@ describe("dead state: a mid-boot destroy stands the mount down", () => {
         hook.destroyed()
         hook.fire("seeOuterShell", { addr: "a4" })
 
-        assert.deepEqual(record.seen, [])
+        assert.deepEqual(record.seen, [["birth", null]], "the birth, and nothing after it")
     })
 
     test("destroyed after live runs the surface cleanup and destroys the term", async () => {

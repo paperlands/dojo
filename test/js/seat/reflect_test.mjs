@@ -8,15 +8,16 @@
 // behind it. Here the reflect is a QUERY over the authored buffer's standing
 // tree, so what a peer renders is the document, byte for byte.
 //
-// The harness is the real seam in miniature: the page law's effects, the
+// The harness is the real seam in miniature: the page law's answer, the
 // batch's hatch gate, and the reflect the surface would send. Nothing is
 // mocked but the canvas.
 
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
-import { pageLaw } from "../../../assets/js/weave/page.js"
+import { pageLaw, nodeOf } from "../../../assets/js/weave/page.js"
 import { printAST, parseProgram, phaseCells, phaseAt, cellAtLine } from "../../../assets/js/turtling/parse.js"
+import { makeReflector } from "../../../assets/js/weave/reflect.js"
 import { diagnostics } from "../../../assets/js/weave/queries.js"
 
 const PAGE_SRC = `###
@@ -61,32 +62,52 @@ end
 \`\`\`
 ###`
 
+// THE ANSWER, READ AS ITSELF (Cut A). The dual-read scaffold that spanned three
+// API generations — and mutated the law's own answers to normalise them — is
+// gone. Pins read NODE form; a canvas seat is `place:node`.
+// nodeOf comes from the law (weave/page.js) — one spelling of `place:node`.
+const view = (r, ans) => ({ ...r, key: nodeOf(r.slot), hatch: ans.hatch })
+
+/** Whole-buffer run — no cell `#` in the node. */
+const isBuffer = (r) => r?.node != null && !String(r.node).includes("#")
+
+const runsOf = (ans) => ans.runs.map((r) => view(r, ans))
+const seatsOf = (ans) => runsOf(ans)
+const drawsOf = (ans) => ans.runs.filter(isBuffer).map((r) => ({ ...view(r, ans), addr: r.node }))
+const removesOf = (ans) => ans.gone.map((key) => ({ key: nodeOf(key), slot: key }))
+
 // The inner surface in miniature: the authored record, the batch gate, and
 // the reflect the hatch seam would send (inner.js perform + reflection).
 function surface() {
     const law = pageLaw()
     const memo = new Map()          // stands for turtle._parseMemo (plain tabs)
+    // What the inner shell lends the reflect law: the standing tree (page record
+    // first, parse memo second) and the canvas's standing ailments.
+    let canvasAilments = []
+    const reflector = makeReflector({
+        tree: (addr, place) => law.tree(addr, place) ?? memo.get(addr) ?? null,
+        ailments: () => canvasAilments,
+        seatOf: (addr, place) => law.seatOf(addr, place),
+    })
     const reached = new Map()       // stands for the surface's attention ledger
     let authored = null
     let gate = true                 // !turtle._hatchSuppressed
 
-    const perform = (effects) => {
-        for (const e of effects) {
-            if (e.op === "seat") memo.set(e.key, e.nodes ?? parseProgram(e.code))
-            if (e.op === "draw") memo.set(e.addr, parseProgram(e.code))
-            if (e.op === "remove") memo.delete(e.key)
-        }
-        const runs = effects.filter((e) => e.op === "seat" || e.op === "draw")
-        if (runs.length) gate = runs.some((e) => e.hatch !== false)
-        return effects
+    // Two loops and one assignment — inner.js's perform, in miniature.
+    // Memo keys stay place-free (node): the canvas uses slot, the join uses node.
+    const perform = (ans) => {
+        for (const key of ans.gone) memo.delete(nodeOf(key))
+        for (const r of ans.runs) memo.set(r.node, r.nodes ?? parseProgram(r.code))
+        if (ans.hatch != null) gate = ans.hatch
+        return ans
     }
 
     // The surface's two channels, as inner.js has them: the canvas performs,
     // the input organ settles. Every law verb answers in one shape, so the
     // harness cannot hand the wrong half to the wrong door either.
     const enact = (addr, ans) => {
-        if (ans.landed) reached.set(addr, ans.landed.line)
-        return perform(ans.effects)
+        if (ans.at) reached.set(addr, ans.at.line)
+        return perform(ans)
     }
 
     return {
@@ -114,19 +135,23 @@ function surface() {
             return enact(addr, law.attend(addr, line))
         },
         friend(addr, name, ast) {
-            const r = law.observe(addr, { name, doc: ast, own: false, attention: null })
+            const r = law.observe(addr, {
+                name, doc: ast, own: false, place: "outershell", attention: null,
+            })
             enact(addr, r)
             return { ...r, code: r.source }
         },
-        // The reflect: the AUTHORED buffer's whole standing tree ⊕ its diagnostics.
+        // THE REAL REFLECT LAW (weave/reflect.js), not a copy of it. This used
+        // to be a ten-line reimplementation of what inner.js did inline, so the
+        // pins below were pinning the harness — two laws, and the test could
+        // only ever agree with itself.
         reflection() {
             if (!authored) return null
-            const ast = law.tree(authored.addr) ?? memo.get(authored.addr)
-            return {
+            return reflector.of({
+                addr: authored.addr,
+                place: authored.place ?? "coreshell",
                 source: authored.text,
-                commands: ast ?? [],
-                diagnostics: ast ? diagnostics(ast) : [],
-            }
+            })
         },
         // What the outershell would show: printAST over the reflected tree.
         rendered() {
@@ -240,29 +265,31 @@ describe("the hatch gate is the batch's word (D022)", () => {
 describe("a watched friend's page mounts as a page (D022 consequence)", () => {
     test("a cell-bearing push seats the first cell, not the whole tree", () => {
         const s = surface()
-        const { effects, code } = s.friend("@ada", "ada", parseProgram(PAGE_SRC))
+        const ans = s.friend("@ada", "ada", parseProgram(PAGE_SRC))
         // The document still crosses whole — the watcher's viewer shows it all.
-        assert.equal(code, PAGE_SRC)
-        const seats = effects.filter((e) => e.op === "seat")
-        assert.equal(seats.length, 1, "only the first cell mounts")
-        assert.equal(seats[0].key, "@ada#1.1")
-        assert.equal(seats[0].code, "loop 4 do\n  fw 100\n  rt 90\nend")
-        assert.ok(seats.every((e) => e.hatch === false), "a friend's page never hatches")
+        assert.equal(ans.code, PAGE_SRC)
+        // Prefer full answer (Cut 2 runs/hatch totals) over effects-only.
+        const seated = seatsOf(ans)
+        assert.equal(seated.length, 1, "only the first cell mounts")
+        assert.equal(seated[0].key, "@ada#1.1")
+        assert.equal(seated[0].code, "loop 4 do\n  fw 100\n  rt 90\nend")
+        assert.equal(ans.hatch, false, "a friend's page never hatches")
     })
 
     test("their next push re-seats what stands — a peer keeps typing", () => {
         const s = surface()
         s.friend("@ada", "ada", parseProgram(PAGE_SRC))
         const next = PAGE_SRC.replace("rt 45", "rt 60")
-        const { effects } = s.friend("@ada", "ada", parseProgram(next))
-        assert.ok(effects.some((e) => e.op === "seat"), "a live peer's page re-seats")
+        const ans = s.friend("@ada", "ada", parseProgram(next))
+        assert.ok(seatsOf(ans).length > 0, "a live peer's page re-seats")
     })
 
     test("a library page is static — a re-push changes nothing", () => {
         const s = surface()
         s.friend("~/roundness", "Roundness", parseProgram(PAGE_SRC))
-        const { effects } = s.friend("~/roundness", "Roundness", parseProgram(PAGE_SRC))
-        assert.deepEqual(effects, [])
+        const quiet = s.friend("~/roundness", "Roundness", parseProgram(PAGE_SRC))
+        assert.deepEqual(runsOf(quiet), [], "nothing re-seats")
+        assert.deepEqual(removesOf(quiet), [], "and nothing leaves")
     })
 
     test("another's page is not hers — it survives her opening a page", () => {
@@ -270,14 +297,14 @@ describe("a watched friend's page mounts as a page (D022 consequence)", () => {
         s.friend("@ada", "ada", parseProgram(PAGE_SRC))
         assert.equal(s.law.hasPage("@ada"), false, "not her page")
         const hers = s.edit("buf", "mine", PAGE_SRC)   // stands HER local pages down
-        assert.deepEqual(s.law.localPages(), ["buf"])
+        assert.deepEqual(s.law.standing(), ["buf"])
         // The exclusive law is the child's alone: opening his own page never reached
         // across to close theirs.
-        assert.ok(!hers.some((e) => e.op === "remove" && e.key.startsWith("@ada")),
+        assert.ok(!removesOf(hers).some((e) => e.key.startsWith("@ada")),
             "their cells are untouched by her page")
         // And their page is still live under it — their next keystroke seats.
-        const { effects } = s.friend("@ada", "ada", parseProgram(PAGE_SRC.replace("rt 45", "rt 60")))
-        assert.ok(effects.some((e) => e.op === "seat"))
+        const next = s.friend("@ada", "ada", parseProgram(PAGE_SRC.replace("rt 45", "rt 60")))
+        assert.ok(seatsOf(next).length > 0)
     })
 })
 

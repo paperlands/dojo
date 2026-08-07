@@ -1,25 +1,23 @@
-// The diagnostics query — the first face over the resilient tree
-// (specs/compiler.org id:cmp-memo-grain). Pure functions; the world cell
-// carries them as the registrant's contract.
+// THE DIAGNOSTICS QUERY — first face over the resilient tree
+// (id:cmp-memo-grain). Pure; the world cell carries these as the contract.
 //
-// THREE DUTIES, ALL OF THEM FACTS:
-//   gather   four kinds of hurt in one shape, so the join is a concat.
-//   locate   every wound names its phase, its cell, and the cell's word.
-//   judge    WHICH wound the document speaks of, and whether it is well.
+// THREE DUTIES, ALL FACTS:
+//   gather   four kinds of hurt in one shape — the join is a concat
+//   locate   every wound names its phase, its cell, and the cell's word
+//   judge    WHICH wound the document speaks of, and whether it is well
 //
-// NO PROSE LIVES HERE. An authored wound carries the FACTS for a sentence
-// (`why`, `word`, `answersTo`, `standsOn`); a wound passed through keeps the
-// words it was GIVEN, quoted. `weave/wound-view.js` is where facts become words.
+// NO PROSE LIVES HERE. An authored wound carries FACTS for a sentence
+// (`why`, `word`, `answersTo`, `standsOn`); a wound passed through keeps
+// the words it was GIVEN. `weave/wound-view.js` is where facts become words.
 //
-// The memo rule: memoize at the REUSE-UNIT grain. reparseProgram answers a
-// new root array every edit — adoption reuses top-level units, never the
-// root — so the WeakMap keys on the unit nodes, where green-tree identity
-// actually survives. A reused node answers its old array (literally the
-// same object — the memo-hit proof is identity); a fresh node has none.
-// No dirty flags, no cache protocol; a missed reuse costs recomputing one
-// unit, never a wrong answer.
+// Memo at the REUSE-UNIT grain. reparseProgram answers a new root every
+// edit — adoption reuses top-level units, never the root — so the WeakMap
+// keys on unit nodes, where green-tree identity survives. A reused node
+// answers its old array (same object = memo hit); a fresh node has none.
+// No dirty flags; a missed reuse recomputes one unit, never a wrong answer.
 
-import { collectErrors, phaseCells, phaseAt, cellAtLine, cellIdentities, dependentsOf, cellKey, outlineFromAst } from "../turtling/parse.js"
+import { collectErrors, phaseCells, phaseAt, cellAtLine, cellIdentities, dependentsOf, outlineFromAst } from "../turtling/parse.js"
+import { cellKey, isSeatOf, rebase } from "../turtling/address.js"
 
 const unitMemo = new WeakMap()
 
@@ -34,26 +32,35 @@ export function nodeDiagnostics(node) {
     return answer
 }
 
-// A buffer's standing walk ailments out of the scheduler's one error scan
-// (scheduler.errors): frames whose address TOP SEGMENT is the buffer's key
-// — the plain tab itself (key) or its page cells (key#cellN). Spans are
-// absolute buffer lines, so a sibling tab's line 7 must never cross into
-// this buffer's ink. Live read, never memoized.
-export function ailmentsFor(errors, key) {
-    if (!errors || key == null) return []
-    return errors.filter((e) => {
-        const top = String(e.address ?? "").split("/")[0]
-        return top === key || top.startsWith(`${key}#`)
-    })
+// Standing walk ailments for one seat — frames whose address belongs to this
+// plain tab or its page cells (scheduler.errors). Spans are absolute buffer
+// lines: a sibling tab's line 7 must never cross into this buffer's ink.
+// Live read, never memoized.
+//
+// TWO SPACES, ONE CONVERTER (id:light-ladders-place-axis). A figure RUNS at a
+// Slot (place:addr); a reader ADDRESSES it as a Node (addr) — a friend knows
+// nothing of my places. Select by `seat`, answer rebased to `key`; omit `key`
+// and answer in seat space (canvas asking about its own frames).
+//
+// Grammar is turtling/address.js — string arithmetic lived here once, which
+// is knowing a spelling that another module mints.
+export function ailmentsFor(errors, seat, key = seat) {
+    if (!errors || seat == null) return []
+    const out = []
+    for (const e of errors) {
+        if (!isSeatOf(e.address, seat)) continue
+        out.push(key === seat ? e : { ...e, address: rebase(e.address, seat, key) })
+    }
+    return out
 }
 
-// EVERY STANDING CANVAS AILMENT, IN ONE LIST — frames, seats that threw with no
-// frame, phases whose vocabulary broke. Three holders, ONE law: a fault stands
-// until the thing that raised it runs again. Nothing downstream learns there was
-// more than one holder — that is this join's whole job.
+// EVERY STANDING CANVAS AILMENT, IN ONE LIST — frames, seats that threw with
+// no frame, phases whose vocabulary broke. Three holders, ONE law: a fault
+// stands until the thing that raised it runs again. Nothing downstream learns
+// there was more than one holder — that is this join's whole job.
 //
 // Only rehearsals dedupe, by where the hurt LIVES: cells of a phase share one
-// vocabulary, so a broken line there is one diagnostic, not one per cell.
+// vocabulary, so a broken line is one diagnostic, not one per cell.
 export function standingAilments({ frames = [], seats = [], rehearsals = [] } = {}) {
     const out = [...frames, ...seats]
     const seen = new Set()
@@ -100,19 +107,17 @@ const nameWounds = (cells, ids, key) =>
     }])
 
 // WHO THE DEAD CELL TOOK WITH IT (D019's edge, walked backward). A cell
-// inheriting a dead cell's vocabulary stands on a definition that never ran, and
-// the page seats lazily — so without this the child learns it only by reaching
-// each one. No runtime for a fact already known.
+// inheriting a dead cell's vocabulary stands on a definition that never ran,
+// and the page seats lazily — without this the child learns it only by
+// reaching each one. No runtime for a fact already known.
 //
-// A CHILD OF THE DEATH THAT CAUSED IT, never a peer: rustc's SubDiagnostic,
-// LSP's relatedInformation. The dominoes it knocked over are not three more
-// problems — they are the shape of the one. Counting them as top-level would
-// tell a child "6 things are wrong" where one line broke.
+// A CHILD OF THE DEATH THAT CAUSED IT, never a peer (rustc SubDiagnostic,
+// LSP relatedInformation). The dominoes are the shape of the one problem, not
+// three more. Counting them top-level would say "6 things wrong" for one line.
 //
-// A warning, not an error: the dependent did not itself fail, so no verdict
-// turns on it. A cell with its own fault is skipped — that is the more specific
-// thing to say. Costs no extra pass: the wound that killed the cell is already
-// in hand here, and used to be thrown away.
+// Warning, not error: the dependent did not itself fail, so no verdict turns
+// on it. A cell with its own fault is skipped — more specific. Costs no extra
+// pass: the wound that killed the cell is already in hand.
 const attachDependents = (cells, ids, wounds, key) => {
     const dead = new Map()   // cell index → the wound that killed it
     for (const w of wounds) {
@@ -168,11 +173,11 @@ const anyNamed = (nodes) => nodes.some((n) => n?.meta?.cellFence && n.meta.info?
 
 // THE WHOLE ANSWER — four gatherings, one located list.
 //
-// A diagnostic is ADDRESSED (D022): a walk fault carries the address of the frame
-// that died — for a page, the CELL — so a reader breaks AT the cell instead of
-// smearing one death across the page. A parse error has no frame; its place is
-// its span. Locating is pure over the tree we already hold, so it belongs here:
-// a surface asks and paints, it does not compute the world.
+// A diagnostic is ADDRESSED (D022): a walk fault carries the address of the
+// frame that died — for a page, the CELL — so a reader breaks AT the cell
+// instead of smearing one death across the page. A parse error has no frame;
+// its place is its span. Locating is pure over the tree we hold — a surface
+// asks and paints; it does not compute the world.
 export function diagnostics(ast, ailments = [], key = null) {
     const nodes = ast ?? []
     const gathered = [...parseWounds(nodes, key), ...ailmentWounds(ailments, key)]
@@ -200,17 +205,17 @@ export const everyWound = (found) =>
 export const fingerprint = (w) =>
     `${w.kind}:${w.address ?? "?"}:${w.message ?? ""}:${w.span?.line ?? "?"}`
 
-// THE WOUND VOCABULARY — one row per kind, and SEVERITY IS THE VERDICT AXIS.
+// THE WOUND VOCABULARY — one row per kind; SEVERITY IS THE VERDICT AXIS.
 // A fault is a wound at "error": the document is not well.
 //
-// It was two tables, and they had already drifted. `name` set no severity, so
-// the gutter defaulted it to "error" and inked it RED — while the verdict, on
-// its own list, called the document well and painted a friend ☀︎. Two fields
-// that must agree is a place they can disagree.
+// The problem: two tables had already drifted. `name` set no severity, so the
+// gutter defaulted it to "error" and inked RED — while the verdict, on its own
+// list, called the document well and painted a friend ☀︎. Two fields that must
+// agree is a place they can disagree.
 //
 // D020 is about the WALK, not the verdict: error nodes stay inert and healthy
-// statements still draw. What turns on severity is whether a friend may be told
-// ☀︎ — a parse-broken buffer reflecting `success` was the peer seam lying.
+// statements still draw. Severity turns on whether a friend may be told ☀︎ —
+// a parse-broken buffer reflecting `success` was the peer seam lying.
 export const KINDS = {
     parse:     { severity: "error" },     // the tree would not build
     walk:      { severity: "error" },     // it ran and died
@@ -241,14 +246,13 @@ export const primaryWound = (found, key) => {
 // WELL: a watcher must never have to RUN the code (or squint at underlines) to
 // learn there is an error in it.
 //
-// This amends D020 for the VERDICT only. Execution still lets healthy parts
-// live; `state` is the document's health, `diagnostics` are the wounds, and
-// only the wounds are addressed — healthy cells keep their light, because
-// appearance rides a diagnostic's address, not this binary. The old rule bought
-// silence: a page whose tenant died (or whose parse still held a wound)
-// reflected `success`, so only a draft re-running the code could surface it.
+// Amends D020 for the VERDICT only. Execution still lets healthy parts live;
+// `state` is document health, `diagnostics` are the wounds — only wounds are
+// addressed; healthy cells keep their light (appearance rides a diagnostic's
+// address, not this binary). The old rule bought silence: a page whose tenant
+// died reflected `success`, and only a draft re-running the code could surface it.
 //
-// It answers WHETHER and WHICH, never how it reads — the surface says the wound
+// Answers WHETHER and WHICH, never how it reads — the surface says the wound
 // through wound-view.js.
 export function verdict(found, key) {
     const wound = primaryWound(found, key)

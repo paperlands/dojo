@@ -895,10 +895,9 @@ export const dependentsOf = (cells, i) => {
     return out;
 };
 
-// A cell's frame key, spelled ONCE (D024). The seating law mints it and the
-// diagnostics query addresses wounds to it; two spellings would drift the day
-// either changed.
-export const cellKey = (addr, id) => `${addr}#${id}`;
+// Address grammar lives in address.js — re-exported so existing callers keep
+// one import while `#` is spelled in exactly one place.
+export { cellKey } from "./address.js";
 
 // The one print→outline of an AST. phaseCells and phaseAt share it so a
 // diagnostics pass never reprints the tree per wound.

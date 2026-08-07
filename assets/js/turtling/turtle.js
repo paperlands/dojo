@@ -6,11 +6,15 @@ import { Evaluator } from "./mafs/evaluate.js"
 import Render from "./render/index.js"
 import { bridged } from "../bridged.js"
 import { createStage } from "./stage.js"
-import { createScheduler, metaRoot } from "./scheduler.js"
+import { createScheduler, metaRoot, sumCounts } from "./scheduler.js"
 import { createCompositor } from "./compositor.js"
-import { resolveAddress } from "./focus.js"
+import { createFocus, resolveAddress } from "./focus.js"
 import { hatchVerdict } from "./hatch.js"
 import { worldProgress } from "./vitals.js"
+
+// The witness whose gate this canvas keeps — one spelling, shared with the
+// seating law (kernel/witness.js, light-ladders-hatch-resolution).
+import { SELF } from "../kernel/witness.js"
 
 const PROGRESS_FLOOR_MS = 100   // progress breath floor (~10/s)
 
@@ -51,10 +55,12 @@ export class Turtle {
         // Unified scheduler + compositor (lazy — created on first upsertAmbient)
         this.scheduler = null
         this.compositor = null
-        // Suppresses hatch while canvas shows passive content (watched friend,
-        // reverted draft); this seat may only OPEN it, never close it (D022).
-        this._hatchSuppressed = false
-        this._localKeys = new Set()  // buffer IDs of locally-rendered tab ambients
+        // Light register (kindled + warm) outlives compositor dispose on empty
+        // canvas — D006 must hold across the transition it was written for.
+        this.focus = createFocus(null)
+        // gate[self] — hatch permission for this canvas. One bit while only
+        // self hatches here; reflectGate is the witness fence.
+        this._hatchMine = true
 
         // Hatch stamps only; reflect_changed? is the question. (D025 R3)
         this._lastReflectChange = 0
@@ -116,13 +122,16 @@ export class Turtle {
             this.stage.controls.removeEventListener(ev, this._onControlsActive)
         }
         // Dispose compositor/stage on remount — canvas outlives the hook.
+        // Light register dies with the turtle (not with the compositor).
         this.compositor?.dispose()
         this.compositor = null
         this.scheduler = null
+        this.focus.bind(null)
         this.stage.dispose()
     }
 
     // Lazy init: one scheduler (meta-root) + one compositor for the lifetime.
+    // Focus register is rebound (not recreated) so kindled/warm survive empty canvas.
     _ensureScheduler() {
         if (this.scheduler) return
         this.scheduler = createScheduler(metaRoot(), {
@@ -138,11 +147,14 @@ export class Turtle {
                 this._onShout?.(sourceName, msg, payload)
             }
         })
+        this.focus.bind(this.scheduler)
         // Live stage for STAGE_CONTRACT verbs; cadence + orbit target via opts
         // (not stage fields — renderLoop used to leak frameInterval that way).
+        // focus is turtle-owned — compositor only reads/projects it.
         this.compositor = createCompositor(this.scheduler,
             this.stage,
             {
+                focus: this.focus,
                 createHead: (parent) => new Render.Head(parent),
                 createShapist: (parent) => new Render.Shape(parent, {
                     layerMethod: 'renderOrder',
@@ -152,7 +164,7 @@ export class Turtle {
                 controls: this.stage.controls,
             }
         )
-        // focusedAddress left null — set by first draw() call
+        // kindled left as register holds — set by first draw() / focusAmbient
         this.stage.head.hide()
     }
 
@@ -190,10 +202,11 @@ export class Turtle {
         }
 
         // Only hatchVerdict decides hatch; owed keeps the loop awake.
+        // mine = gate[self] — foreign witness cells never answer here.
         const verdict = hatchVerdict({
             now,
             present: !!this.compositor,
-            mine: !this._hatchSuppressed,
+            mine: this._hatchMine,
             walking,
             changedAt: this._lastReflectChange,
             lastHatchAt: this._lastHatchAt,
@@ -308,7 +321,8 @@ export class Turtle {
                 }, { fresh }))
 
             // Only OPEN the gate here on real content — closing is reflectGate's alone (D022).
-            if (hatch) this._hatchSuppressed = false
+            // Self-scoped: a seat on this canvas writes gate[self], never a foreign cell.
+            if (hatch) this._hatchMine = true
 
             this.compositor.flush()
             // Any seat changes the reflect; gate only opens for the child.
@@ -328,7 +342,13 @@ export class Turtle {
             // Turtle owns walk fault; document is asked at the shell. (D022)
             this.renderstate.meta = { state: "success", message: null, diagnostics: [] }
             this.requestRender()
-            return { success: true, commandCount: this.scheduler.commandCount }
+            // THIS SEAT'S COUNT, not the world's. `scheduler.commandCount` is
+            // sumCounts(root) — every seat at every place — and is assigned ONLY
+            // when the whole world settles, so between settles it holds the
+            // PREVIOUS one. Announcing with it made a ladder step speak a ☀︎
+            // that belonged to some earlier run.
+            const seat = this.scheduler.root.children.get(key)
+            return { success: true, commandCount: seat ? sumCounts(seat) : 0 }
         } catch (error) {
             console.error(error)
             // Throw is a wound in the same shape.
@@ -345,18 +365,27 @@ export class Turtle {
         }
     }
 
-    // Reflect gate once per transition. (D022)
-    reflectGate(open) {
-        this._hatchSuppressed = !open
+    // Reflect gate once per transition, scoped by witness (D022;
+    // light-ladders-hatch-resolution).
+    //
+    // The problem: a foreign batch naming its witness could close the author's
+    // reflect. ONLY SELF MAY WRITE SELF'S GATE. One bit, one name — a Map for
+    // the second witness arrives with the second witness, not before.
+    reflectGate(open, { witness = SELF } = {}) {
+        if (witness !== SELF) return
+        this._hatchMine = !!open
     }
 
-    // Standing tree for plain-tab keys. (id:cmp-standing-primitives)
-    programFor(key) {
-        return this._parseMemo?.get(key)?.ast ?? null
+    // Standing tree for plain-tab keys (id:cmp-standing-primitives).
+    // Memo keyed by canvas SEAT (Cut 1 Slot = place:node) — caller asks with
+    // the seat; pageLaw.seatOf answers it. Guessing bare-then-each-place was
+    // the same missing-index disease ailmentsFor had.
+    programFor(seat) {
+        if (!this._parseMemo || seat == null) return null
+        return this._parseMemo.get(seat)?.ast ?? null
     }
 
     removeAmbient(key) {
-        this._localKeys.delete(key)
         this._parseMemo?.delete(key)
         this._rehearsalDiagnostics?.delete(key)
         this._seatFaults?.delete(key)
@@ -367,11 +396,13 @@ export class Turtle {
         // name-scan fallback is gone: one register, no second lookup space.)
         this.scheduler.removeChild(key)
 
-        // If no children left, tear down scheduler and show idle head
+        // If no children left, tear down compositor/scheduler and show idle head.
+        // Light register (kindled + warm) survives — rebound on next seat.
         if (this.scheduler.root.children.size === 0) {
             this.compositor.dispose()
             this.compositor = null
             this.scheduler = null
+            this.focus.bind(null)
             this.stage.head.show()
             this.stage.head.reset()
         }
@@ -379,28 +410,23 @@ export class Turtle {
         this.requestRender()
     }
 
-    // Focus by address or name-through-address.
-    focusAmbient(ref) {
-        if (this.compositor) {
-            this.compositor.focusedAddress = resolveAddress(this.scheduler, ref)
-        }
+    // THE ONE LIGHT WRITER — register, then projection, never one without the
+    // other. Two writers once: this (from the law's total) and focusAmbient,
+    // which moved kindled and projected nothing — a portal walk pointed the
+    // camera at one figure while a different one stayed bright.
+    //
+    // `total` is the law's `light` verbatim. Degree numbers are the caller's;
+    // no appearance policy lives on the turtle.
+    light(total, degree) {
+        this.focus.light = total ?? {}
+        this.compositor?.projectLight(degree)
+        this.requestRender()
     }
 
-    // Degree/focus share the address register. (D006)
-    setAmbientOpacity(ref, opacity) {
-        if (this.compositor) {
-            this.compositor.setOpacityByAddress(resolveAddress(this.scheduler, ref), opacity)
-        }
-    }
-
-    // Resolve ref → address for all appearance/focus callers.
+    // Resolve a name / nested address to the canonical address, for a caller
+    // who holds a word and needs the register's coordinate.
     addressOf(ref) {
         return resolveAddress(this.scheduler, ref)
-    }
-
-    isAmbientFocused(ref) {
-        const address = this.addressOf(ref)
-        return address != null && this.compositor?.focusedAddress === address
     }
 
     // Tab key whose subtree owns a display name.
@@ -419,41 +445,6 @@ export class Turtle {
         return null
     }
 
-    // Toggle ambient; add restarts the local group in sync.
-    toggleAmbient(id, name, code, resolveBuffer) {
-        this._ensureScheduler()
-        if (this.scheduler.root.children.has(id)) {
-            this.removeAmbient(id)
-        } else {
-            this._localKeys.add(id)
-            for (const key of this._localKeys) {
-                const info = key === id ? { name, content: code } : resolveBuffer?.(key)
-                // fresh: the group restart is a deliberate gesture — sisters
-                // re-run in sync even when their code didn't change.
-                if (info) this.upsertAmbient(key, info.name, info.content, { fresh: true })
-            }
-        }
-        this.requestRender()
-    }
-
-    // --- Backward-compatible API ---
-
-    draw(id, name, code, nodes = null) {
-        this._ensureScheduler()
-        // Outside the sister group, seat is exclusive.
-        if (!this._localKeys.has(id)) {
-            for (const key of this._localKeys) {
-                if (key !== id) this.removeAmbient(key)
-            }
-            this._localKeys.clear()
-            this._localKeys.add(id)
-        }
-        // Upsert then focus by key; nodes = live parse when present.
-        const result = this.upsertAmbient(id, name, code, { nodes })
-        this.focusAmbient(id)
-        return result
-    }
-
     reset() {
         if (this.scheduler) {
             // Remove all children
@@ -463,7 +454,11 @@ export class Turtle {
             this.compositor.dispose()
             this.compositor = null
             this.scheduler = null
+            this.focus.bind(null)
         }
+        // Blank canvas clears light + gate: a new life, not a mid-session empty.
+        this.focus.light = {}
+        this._hatchMine = true
         // A blank canvas is a new life: it has never drawn, so first light is
         // owed again — measured from the next draw, not from this moment.
         this._lastReflectChange = performance.now()

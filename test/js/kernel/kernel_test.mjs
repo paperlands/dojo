@@ -10,6 +10,7 @@ import assert from "node:assert/strict"
 import { createObservable, createAtom } from "../../../assets/js/kernel/observable.js"
 import { createCell } from "../../../assets/js/kernel/cell.js"
 import { createArena } from "../../../assets/js/kernel/arena.js"
+import { attach } from "../../../assets/js/kernel/attach.js"
 
 describe("createObservable — one watch/notify", () => {
     test("watch then notify delivers; unwatch stops delivery", () => {
@@ -221,5 +222,75 @@ describe("createArena — one lifetime, no individual free", () => {
         root.destroy()
         // mid.destroy runs before root's cleanups; leaf before mid's.
         assert.deepEqual(order, ["leaf", "mid", "root"])
+    })
+})
+
+describe("attach — a claim that lives exactly as long as the occupant", () => {
+    test("an empty seat binds nothing; the occupant's arrival binds once", () => {
+        const cell = createCell()
+        const bound = []
+        attach(cell, (o) => { bound.push(o.n) })
+        assert.deepEqual(bound, [], "nothing to claim yet")
+        cell.register({ n: 1 })
+        assert.deepEqual(bound, [1])
+    })
+
+    test("a standing occupant is bound immediately, before any breath", () => {
+        const cell = createCell()
+        cell.register({ n: 1 })
+        const bound = []
+        attach(cell, (o) => { bound.push(o.n) })
+        assert.deepEqual(bound, [1])
+    })
+
+    test("a reseating releases the old claim BEFORE binding the new", () => {
+        const cell = createCell()
+        const log = []
+        cell.register({ n: 1 })
+        attach(cell, (o) => {
+            log.push(`bind ${o.n}`)
+            return () => log.push(`release ${o.n}`)
+        })
+        cell.register({ n: 2 })
+        assert.deepEqual(log, ["bind 1", "release 1", "bind 2"],
+            "a claim never stacks — the departing one is dropped first")
+    })
+
+    test("emptying the seat releases the claim and binds nothing", () => {
+        const cell = createCell()
+        const log = []
+        const un = cell.register({ n: 1 })
+        attach(cell, (o) => {
+            log.push(`bind ${o.n}`)
+            return () => log.push(`release ${o.n}`)
+        })
+        un()
+        assert.deepEqual(log, ["bind 1", "release 1"])
+    })
+
+    test("the returned release ends the claim and stops listening", () => {
+        const cell = createCell()
+        const log = []
+        cell.register({ n: 1 })
+        const detach = attach(cell, (o) => {
+            log.push(`bind ${o.n}`)
+            return () => log.push(`release ${o.n}`)
+        })
+        detach()
+        assert.deepEqual(log, ["bind 1", "release 1"])
+        cell.register({ n: 2 })
+        assert.deepEqual(log, ["bind 1", "release 1"], "a dead attach hears nothing")
+        detach()
+        assert.deepEqual(log, ["bind 1", "release 1"], "idempotent")
+    })
+
+    test("a bind that returns nothing is legal — nothing to give back", () => {
+        const cell = createCell()
+        let binds = 0
+        const detach = attach(cell, () => { binds++ })
+        cell.register({})
+        cell.register({})
+        detach()
+        assert.equal(binds, 2)
     })
 })

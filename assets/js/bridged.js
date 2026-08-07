@@ -92,31 +92,40 @@ export const sceneBridge = bridged("scene");
  * tuple (mirrors the `signals` constructors in nerve/store.js). A typo
  * becomes a missing method, not a silently-ignored event. Subscribers still
  * switch on the tuple's first element.
+ *
+ * Surfaces speak four: observe · attend · remove · restore (+ fork/landed).
+ * focus died with the world sentinel — a click is attend (light-ladders-cut4).
+ * The `ambient`/`ambientStop` aliases died with their last caller.
  */
 export const scene = {
-    focus:       (ambientId)        => sceneBridge.pub(['focus', { ambientId }]),
     remove:      (ambientId)        => sceneBridge.pub(['remove', { ambientId }]),
     fork:        (payload)          => sceneBridge.pub(['fork', payload]),
-    ambient:     (addr, name, code) => sceneBridge.pub(['ambient', { addr, name, code }]),
-    ambientStop: (addr)             => sceneBridge.pub(['ambientStop', { addr }]),
-    // The cursor-gate crossing the seam: where the reader IS, spoken as
-    // (page addr, LINE) — one datum, because attention is the address (D021).
-    // Never an ordinal: that would make the reach organ resolve "which cell"
-    // for itself, and a cell inserted above would silently re-aim the answer.
-    // The line is the address; the page law owns the resolution, once.
-    // `null` = out on bare code, where every cell rests.
-    attend:      (addr, line)       => sceneBridge.pub(['attend', { addr, line }]),
+    // Live draft / hatch at (self, outershell) — place is fixed in the surface.
+    observe:     (addr, name, code) => sceneBridge.pub(['observe', { addr, name, code }]),
+    // Draft frozen: drop outershell draft; optional name/code re-seats peer.
+    restore:     (addr, opts = {})  => sceneBridge.pub(['restore', { addr, ...opts }]),
+    // Cursor-gate across the seam: where the reader IS, as (page addr, LINE) —
+    // one datum, because attention is the address (D021). Never an ordinal:
+    // that would make reach resolve "which cell" itself, and a cell inserted
+    // above would silently re-aim the answer. Line is the address; page law
+    // owns the resolution. `null` = out on bare code, every cell rests.
+    //
+    // WHOSE reach this is — and that is the whole of it. It was `follow: bool`,
+    // which outer could only set by first asking the law "do I hold the light?"
+    // — a read-then-write on the same authority. The witness answers both at
+    // once: mine claims the place; theirs is presence (P9).
+    attend:      (addr, line, opts = {}) =>
+        sceneBridge.pub(['attend', { addr, line, witness: opts.witness ?? 'self' }]),
     // attend's dual: where the ladder LANDED, when that is not where the organ
-    // pointed. It rides back rather than travelling as a canvas effect — an
-    // input organ belongs to the surface that owns the cursor.
+    // pointed. Rides back, not as a canvas effect — input organ belongs to the
+    // surface that owns the cursor.
     landed:      (addr, line)       => sceneBridge.pub(['landed', { addr, line }]),
-    // Note: a watched friend's shouts are NOT relayed over a scene channel —
-    // they arrive through the core turtle's _onShout and route by source via
-    // the nerve's claim model (see nerve.js project()).
+    // A watched friend's shouts are NOT relayed over a scene channel — they
+    // arrive through the core turtle's _onShout and route by nerve claim
+    // (nerve.js project()).
 
-    // The consumer-side dual of the constructors: subscribe with the SAME
-    // vocabulary the producers speak — one handler per named move, payload
-    // unwrapped. The tuple stays the wire shape; the shape, not a switch,
-    // is the seam. Returns the unsub fn, as sub always has.
+    // Consumer dual of the constructors: subscribe with the SAME vocabulary
+    // producers speak — one handler per named move, payload unwrapped. The
+    // tuple is the wire shape; the shape, not a switch, is the seam.
     sub: (handlers) => sceneBridge.sub(([type, payload]) => handlers[type]?.(payload)),
 };

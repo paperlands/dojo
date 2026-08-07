@@ -11,7 +11,7 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
-import { frameVitals, livingFamily } from "../../../assets/js/turtling/vitals.js"
+import { frameVitals, livingFamily, worldProgress } from "../../../assets/js/turtling/vitals.js"
 
 const mkFrame = (name, over = {}) => ({
     name, address: name, elapsedTime: 3.2, commandCount: 12,
@@ -63,5 +63,58 @@ describe("the stage's pulse — vitals and the living family", () => {
         assert.deepEqual(livingFamily(s, "coil"), ["coil"])
         assert.deepEqual(livingFamily(s, "mice[i]"), [])
         assert.deepEqual(livingFamily(null, "coil"), [])
+    })
+})
+
+// TWO SUNS OVER ONE SCHEDULER (id:light-ladders-place-axis). Both shells'
+// figures live in one registry, keyed by Slot — a place-blind sum is one total
+// answering for two.
+describe("worldProgress — scoped by seat", () => {
+    const twoShells = () => mkScheduler(
+        mkFrame("coreshell:mine", { commandCount: 10, done: true, run: 3 }),
+        mkFrame("outershell:friend", { commandCount: 7, done: true, run: 5 }),
+    )
+
+    test("the world sums everything; a seat counts only its own shell", () => {
+        const s = twoShells()
+        assert.equal(worldProgress(s).commands, 17, "both shells, one total")
+        assert.equal(worldProgress(s, ["coreshell:mine"]).commands, 10)
+        assert.equal(worldProgress(s, ["outershell:friend"]).commands, 7)
+    })
+
+    test("a figure's children count with it — the subtree is the figure", () => {
+        const child = mkFrame("coil", { commandCount: 5, done: true })
+        const top = mkFrame("coreshell:mine", {
+            commandCount: 10, done: true, children: new Map([["coil", child]]),
+        })
+        const s = mkScheduler(top, mkFrame("outershell:friend", { commandCount: 7, done: true }))
+        assert.equal(worldProgress(s, ["coreshell:mine"]).commands, 15, "10 + its spawned coil")
+        assert.equal(worldProgress(s, ["outershell:friend"]).commands, 7, "and none of theirs")
+    })
+
+    test("a seat with no frame is silent, never a throw", () => {
+        assert.equal(worldProgress(twoShells(), []).commands, 0)
+        assert.equal(worldProgress(twoShells(), ["coreshell:gone"]).commands, 0)
+    })
+
+    test("a place builds on its OWN unfinished work, not the world's", () => {
+        const s = mkScheduler(
+            mkFrame("coreshell:mine", { done: true }),
+            mkFrame("outershell:friend", { done: false }),
+        )
+        // The scheduler parked with work outstanding — a world fact.
+        s.building = true
+        assert.equal(worldProgress(s).phase, "building", "the world is busy")
+        assert.equal(worldProgress(s, ["outershell:friend"]).phase, "building", "theirs runs")
+        assert.equal(
+            worldProgress(s, ["coreshell:mine"]).phase, "settled",
+            "mine is done — their work must not keep my sun up",
+        )
+    })
+
+    test("run identity is the place's own — a new sun there is not one here", () => {
+        const s = twoShells()
+        assert.equal(worldProgress(s, ["coreshell:mine"]).run, 3)
+        assert.equal(worldProgress(s, ["outershell:friend"]).run, 5)
     })
 })

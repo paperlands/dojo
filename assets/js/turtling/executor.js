@@ -478,6 +478,13 @@ function evaluateExpr(expr, scope, state, domain = "measure") {
             if (resolved !== undefined) return resolved
         }
         if (domain === "word") return tree.value
+        // A DOTTED NAME IS A CROSS-AMBIENT READ. Landing here means there is no
+        // ambient tree to read against — the rehearsal is headless and does not
+        // negotiate with siblings (D019). An absent sibling is NOTHING, not a
+        // wound: words past it must still register. A live walk never lands
+        // here for a dotted name — `namespace_check` routes it through
+        // resolveExternal (`Undefined assistant` or blocks).
+        if (tree.value.includes('.')) return null
         throw new Error(`Undefined variable: ${tree.value}`)
     }
     return tree.value

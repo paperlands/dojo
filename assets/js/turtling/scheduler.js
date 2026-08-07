@@ -49,7 +49,10 @@ function allDone(ctx) {
     return true
 }
 
-function sumCounts(ctx) {
+// A frame's whole walk — itself plus everything it spawned. Exported because
+// a SEAT needs its own count: `scheduler.commandCount` is this over the ROOT
+// (every seat at every place) — so a ladder step cannot announce that total.
+export function sumCounts(ctx) {
     let total = ctx.commandCount || 0
     for (const child of ctx.children.values()) {
         total += sumCounts(child)

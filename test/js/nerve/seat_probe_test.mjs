@@ -85,6 +85,24 @@ describe("a seat is built silent", () => {
         assert.equal(asked, 1, "and birth is what asks")
     })
 
+    // THE SECOND DOOR (2026-08-07). Silent construction was the half that got
+    // pinned. `push` renders too, and rendering pulls health — so speaking
+    // early dies the same death. It did: the outershell's sun ticked inside
+    // claimNerve, at the top of the mount, and read `health` in its dead zone.
+    test("push asks health too — speaking early is the same death as asking early", (t) => {
+        let asked = 0
+        const container = makeEl()
+        const store = createSignalStore()
+        const hud = createHUD(container, store, () => {}, {
+            health: () => { asked++; return null },
+        })
+        t.after(() => hud.destroy())
+        assert.equal(asked, 0, "silent so far")
+
+        store.push(S.helios({ glyph: "☼----", commands: 1, phase: "building" }, "outershell"))
+        assert.ok(asked > 0, "a push pulls health: nothing may speak before the organs stand")
+    })
+
     test("a panel opening on a friend already mid-fault seats on that first ask", (t) => {
         const container = makeEl()
         const store = createSignalStore()
@@ -107,6 +125,31 @@ describe("1/7 — an open wound owns the seat", () => {
         store.push(S.helios(heliosView({ phase: "building", commands: 10_000 })))
         store.push(S.output("☀︎", 42))
         assert.equal(seatText(container), SAID)
+    })
+})
+
+// ONE SLOT, SO ONE SPEAKER (2026-08-07). Two producers of the same sentence do
+// not merge — they TAKE the slot from each other. `report` pushed a bare ☀︎ on
+// every seat while helios already said it at `success`, so a ladder step parted
+// the live sun and left a stale number. The seat cannot arbitrate; one speaker can.
+describe("the sun has one speaker", () => {
+    test("helios' success rung already IS the ☀︎ and its count", () => {
+        const v = heliosView({ phase: "settled", commands: 42 })
+        assert.equal(v.id, "success")
+        assert.ok(v.glyph.includes("☀︎"), "the resting sun is the glyph")
+        assert.equal(S.helios(v).payload, "42", "and the count rides beside it")
+    })
+
+    test("a second producer TAKES the slot — different kinds never merge", (t) => {
+        const { container, store } = mount(t)
+        const sun = heliosView({ phase: "settled", commands: 42 })
+        store.push(S.helios(sun))
+        assert.equal(seatKind(container), "nerve-helios")
+
+        // What report() did on every seat. It does not sit beside the sun.
+        store.push(S.output("☀︎", 7))
+        assert.equal(seatKind(container), "nerve-output", "the sun was displaced")
+        assert.equal(seatText(container), "☀︎ 7", "by a second, poorer telling")
     })
 })
 

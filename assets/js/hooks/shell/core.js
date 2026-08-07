@@ -1,13 +1,12 @@
 // =============================================================================
-// SHELL CORE — the substrate the two shell surfaces (coreshell, outershell)
-// are both built over. It owns:
-//   1. the CM6 module loader + Terminal construction (bootShell),
-//   2. the shell's behavioral kit (commands / listeners / mutators) — the
-//      shared vocabulary each surface uses the subset it needs.
-// Terminal identity registers directly against term-cell.js by role
-// (id:gw-t-dom-registry) — no wiring door here.
-// Named adapters (scene, signals, cameraBridge) do NOT live here — they travel
-// whole from their canonical modules into whichever surface calls them.
+// SHELL CORE — substrate both shell surfaces (coreshell, outershell) build on.
+// Owns:
+//   1. CM6 module loader + Terminal construction (bootShell),
+//   2. the behavioral kit (commands / listeners / mutators) — shared vocabulary
+//      each surface uses the subset it needs.
+// Terminal identity registers against term-cell.js by role
+// (id:gw-t-dom-registry) — no wiring door here. Named adapters (scene,
+// signals, cameraBridge) travel whole from their canonical modules.
 // =============================================================================
 
 import { Terminal } from "../../terminal.js"
@@ -31,7 +30,7 @@ export async function bootShell(hook) {
     // The import is the one real await — if the hook died while we were away
     // (panel closed mid-boot), stand down: no Terminal on a detached element.
     // The lifecycle machine sees null and never mounts the surface.
-    if (hook.dead) return null;
+    if (!hook.arena.alive) return null;
     const term = new Terminal(hook.el, cm6);
     hook.term = term;
     return { term, cm6 };

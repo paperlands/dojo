@@ -132,51 +132,56 @@ describe("shout de-dup — keyed on address, not the re-minted id", () => {
     })
 })
 
-describe("focus — one address register; the name is a view", () => {
-    test("focus survives re-eval and rename; the name view derives display", () => {
+describe("focus — one register, written whole; the address is the identity", () => {
+    test("the light survives re-eval and rename — it holds the ADDRESS", () => {
         const s = makeScheduler()
         const f = createFocus(s)
         s.hotSwapChild("buf-1", fork("spiral", "fw 10"))
-        f.address = "buf-1"
-        assert.equal(f.name, "spiral")
+        f.light = { kindled: "buf-1", warm: [] }
 
         // live rename (opBuffer rename mutates child.name without re-eval)
         s.root.children.get("buf-1").name = "coil"
-        assert.equal(f.address, "buf-1", "rename changes display only")
-        assert.equal(f.name, "coil", "the name view follows the address")
+        assert.equal(f.kindled, "buf-1", "a rename cannot move the light")
 
         // re-eval
         s.hotSwapChild("buf-1", fork("coil", "fw 20"))
-        assert.equal(f.address, "buf-1", "focus survives re-eval")
-        assert.equal(f.name, "coil")
+        assert.equal(f.kindled, "buf-1", "nor can a re-eval")
         assert.ok(f.isFocused(s.root.children.get("buf-1")))
     })
 
-    test("two tabs sharing a display name cannot steal each other's focus", () => {
+    test("two tabs sharing a display name cannot steal each other's light", () => {
         const s = makeScheduler()
         const f = createFocus(s)
         s.hotSwapChild("buf-1", fork("sky", "fw 10"))
         s.hotSwapChild("buf-2", fork("sky", "fw 10"))
-        f.address = "buf-2"
-        assert.equal(f.name, "sky")
+        f.light = { kindled: "buf-2", warm: [] }
         assert.ok(!f.isFocused(s.root.children.get("buf-1")))
         assert.ok(f.isFocused(s.root.children.get("buf-2")))
     })
 
-    test("a nested lens is in the focused subtree when its tab is focused", () => {
+    test("a nested lens is in the focused subtree when its tab is kindled", () => {
         const s = makeScheduler()
         const f = createFocus(s)
         s.hotSwapChild("buf-1", fork("tab", "as sky do\nfw 5\nend"))
         const sky = s.root.children.get("buf-1").children.get("sky")
-        f.address = "buf-1"
+        f.light = { kindled: "buf-1" }
         assert.ok(f.inFocusedSubtree(sky))
         assert.ok(!f.isFocused(sky), "strict match stays strict")
     })
 
-    test("the name view is null when nothing is focused", () => {
+    test("ONE write path: the whole total, or nothing", () => {
         const s = makeScheduler()
         const f = createFocus(s)
-        assert.equal(f.name, null)
+        s.hotSwapChild("buf-1", fork("spiral", "fw 10"))
+        f.light = { kindled: "buf-1", warm: ["buf-2", null] }
+        assert.deepEqual(f.light, { kindled: "buf-1", warm: ["buf-2"] },
+            "nulls never enter the warm set")
+        f.light = {}
+        assert.deepEqual(f.light, { kindled: null, warm: [] }, "an empty total clears it")
+        // warm reads a copy — a getter handing out the live Set is a read that writes.
+        f.light = { kindled: null, warm: ["a"] }
+        f.warm.push("b")
+        assert.deepEqual(f.warm, ["a"])
     })
 })
 

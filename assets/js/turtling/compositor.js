@@ -9,23 +9,34 @@ import { worldTransform, frameWorldTransform, visitPostOrder, findReferenceFrame
 import { SE3 } from "./se3.js"
 import { eyeCameraPose } from "./view.js"
 import { rebaseEpoch, idleFloorMs } from "./timeline.js"
-import { createFocus } from "./focus.js"
 import { createPacer } from "./pacer.js"
 
 // Clone shared materials; troika Text sets opacity direct.
 function setGroupOpacity(group, opacity) {
+    // Lines/fills: transparent only when opacity < 1 — full-bright with
+    // transparent:true loses depth write and trails vanish (sister ambient
+    // looks like a lone head). Text is different: SDF edges *are* alpha, so
+    // transparent must stay on or the soft step hard-cuts (torn outline).
+    const seeThrough = opacity < 1
     group.traverse(child => {
         if (child.material) {
             if (typeof child.text === 'string') {
-                child.material.transparent = true
-                child.material.opacity = opacity
+                const mats = Array.isArray(child.material)
+                    ? child.material
+                    : [child.material]
+                for (const m of mats) {
+                    if (!m) continue
+                    m.transparent = true
+                    m.opacity = opacity
+                }
             } else {
                 if (!child._ownMaterial) {
                     child.material = child.material.clone()
                     child._ownMaterial = true
                 }
-                child.material.transparent = true
+                child.material.transparent = seeThrough
                 child.material.opacity = opacity
+                child.material.depthWrite = !seeThrough
             }
         }
     })
@@ -40,7 +51,9 @@ export const STAGE_CONTRACT = Object.freeze([
     'materials',      // LineMaterial cache (spec A3); stage owns lifetime
 ])
 
-// opts = { createHead, createShapist, frameMs, controls }
+// opts = { focus, createHead, createShapist, frameMs, controls }
+// focus = turtle-owned light register (kindled + warm). Compositor reads and
+// projects opacity — never owns or destroys it (light-ladders Phase B).
 // controls = OrbitControls target for materializeHead only.
 export function createCompositor(scheduler, stage, opts = {}) {
     for (const name of STAGE_CONTRACT) {
@@ -50,8 +63,11 @@ export function createCompositor(scheduler, stage, opts = {}) {
     }
     let epoch = null      // first real timestamp — rebases advance() to flush()'s 0-based timeline
     let lastWallT = null  // previous advance() wall timestamp, to detect idle-out gaps
-    // Focus by address; logic in focus.js.
-    const focus = createFocus(scheduler)
+    // Light register lives on the turtle so it outlives empty-canvas dispose.
+    const focus = opts.focus
+    if (!focus) {
+        throw new TypeError('compositor: opts.focus is required (turtle-owned register)')
+    }
     const createHead = opts.createHead || null
     const createShapist = opts.createShapist || null
     // Orbit target for materializeHead; headless callers omit it.
@@ -186,9 +202,25 @@ export function createCompositor(scheduler, stage, opts = {}) {
             Math.abs(p[0]) < 1e-9 && Math.abs(p[1]) < 1e-9 && Math.abs(p[2]) < 1e-9
     }
 
+    // Opacity by address, not display name (D006). A closure, not a method:
+    // projectLight uses it, and `this` on a factory's returned object breaks
+    // the moment a caller destructures.
+    function setOpacityByAddress(address, opacity) {
+        if (address == null) return
+        for (const ambient of scheduler.registry.values()) {
+            if (ambient.address === address) {
+                visitPostOrder(ambient, (frame) => {
+                    const layer = ambientLayers.get(frame.id)
+                    if (layer) setGroupOpacity(layer.group, opacity)
+                })
+                break
+            }
+        }
+    }
+
     // Deepest focused lens → E⁻¹ world reframe; null if identity. (id:eye-d5)
     function focusedEyeReframe() {
-        if (!focus.address) return null
+        if (!focus.kindled) return null
         let eye = null
         let deepest = -1
         for (const [id, ambient] of scheduler.registry) {
@@ -318,11 +350,54 @@ export function createCompositor(scheduler, stage, opts = {}) {
 
         get budgetMs() { return pacer.budgetMs },
 
-        get focusedAddress() { return focus.address },
-        set focusedAddress(v) { focus.address = v },
+        // The shared register itself (kindled + warm). Read-only seam.
+        get light() { return focus },
 
-        // Display projection of focusedAddress — write only through that register.
-        get focusedName() { return focus.name },
+        // Play-gauge: layer poses + head local + first mesh opacity (probe only).
+        probeLayers() {
+            const out = []
+            for (const [id, layer] of ambientLayers) {
+                const ambient = scheduler.registry.get(id)
+                const headPos = layer.head?.position?.()
+                let opacity = null
+                layer.group.traverse((c) => {
+                    if (opacity == null && c.material && typeof c.material.opacity === "number"
+                        && typeof c.text !== "string") {
+                        opacity = c.material.opacity
+                    }
+                })
+                out.push({
+                    id,
+                    address: ambient?.address ?? null,
+                    name: ambient?.name ?? null,
+                    group: {
+                        pos: [layer.group.position.x, layer.group.position.y, layer.group.position.z],
+                        quat: {
+                            x: layer.group.quaternion.x, y: layer.group.quaternion.y,
+                            z: layer.group.quaternion.z, w: layer.group.quaternion.w,
+                        },
+                    },
+                    headLocal: headPos
+                        ? [headPos.x, headPos.y, headPos.z]
+                        : null,
+                    headVisible: layer.head?.turtleGroup?.visible ?? null,
+                    trailRuns: layer.trails?.size ?? 0,
+                    childMeshes: layer.group.children.length,
+                    opacity,
+                })
+            }
+            return out
+        },
+
+        // Project register → material opacity. DEGREE is the caller's (no
+        // policy here); turtle.light is the one writer of the register this reads.
+        projectLight(degree = { kindled: 1.0, warm: 0.4 }) {
+            const { kindled, warm } = focus.light
+            for (const addr of warm) {
+                if (addr !== kindled) setOpacityByAddress(addr, degree.warm)
+            }
+            setOpacityByAddress(kindled, degree.kindled)
+        },
 
         // Own timeslice: never inherit a spent deadline (would park on first breath).
         flush() {
@@ -360,19 +435,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         },
 
         // Opacity by address, not display name. (D006)
-        setOpacityByAddress(address, opacity) {
-            if (address == null) return
-            for (const ambient of scheduler.registry.values()) {
-                if (ambient.address === address) {
-                    const applyOpacity = (frame) => {
-                        const layer = ambientLayers.get(frame.id)
-                        if (layer) setGroupOpacity(layer.group, opacity)
-                    }
-                    visitPostOrder(ambient, applyOpacity)
-                    break
-                }
-            }
-        },
+        setOpacityByAddress,
 
         // Propagate opacity to all child ambient layers.
         setOpacity(opacity) {
@@ -381,7 +444,8 @@ export function createCompositor(scheduler, stage, opts = {}) {
             }
         },
 
-        // Clean up all layers. Called on turtle.reset().
+        // Clean up all layers. Called on turtle.reset() / empty canvas.
+        // Does NOT touch the light register — that outlives this compositor.
         dispose() {
             for (const [id, layer] of ambientLayers) {
                 disposeLayer(id, layer)

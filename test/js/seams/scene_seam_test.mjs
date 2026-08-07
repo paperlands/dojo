@@ -15,12 +15,17 @@ import assert from "node:assert/strict"
 import { scene } from "../../../assets/js/bridged.js"
 
 // Every named move the surfaces publish, with a representative payload.
+// light-ladders-cut4: focus died — a click is attend. Surfaces speak four:
+// observe · attend · remove · restore (+ fork/landed). The ambient/ambientStop
+// aliases died with their last caller (Cut A).
 const MOVES = {
-    focus:       [["coil"], { ambientId: "coil" }],
-    remove:      [["b1"], { ambientId: "b1" }],
-    ambient:     [["@ada", "ada", "fw 1"], { addr: "@ada", name: "ada", code: "fw 1" }],
-    ambientStop: [["@ada"], { addr: "@ada" }],
-    attend:      [["b1", 12], { addr: "b1", line: 12 }],
+    remove:  [["b1"], { ambientId: "b1" }],
+    observe: [["@ada", "ada", "fw 1"], { addr: "@ada", name: "ada", code: "fw 1" }],
+    restore: [["@ada"], { addr: "@ada" }],
+    // The witness IS the claim — self by default, `{ witness: "peer" }` for
+    // their presence. `follow: bool` was the same fact spelled as a flag the
+    // surface could only set by asking the law who held the light.
+    attend:  [["b1", 12], { addr: "b1", line: 12, witness: "self" }],
 }
 
 describe("the scene seam — one vocabulary, both sides", () => {
@@ -33,6 +38,15 @@ describe("the scene seam — one vocabulary, both sides", () => {
             assert.deepEqual(seen, [expected])
         })
     }
+
+    test("the deprecated aliases are culled — one name per move", () => {
+        assert.equal(scene.ambient, undefined)
+        assert.equal(scene.ambientStop, undefined)
+    })
+
+    test("focus is culled — a click is attend (light-ladders-cut4)", () => {
+        assert.equal(scene.focus, undefined, "no focus door survives")
+    })
 
     test("fork travels as one payload — the surface never reshapes it", () => {
         const payload = { source: "fw 1", name: "ada", addr: "@ada", time: 1, offset: 0 }
@@ -51,7 +65,10 @@ describe("the scene seam — one vocabulary, both sides", () => {
         scene.attend("b1", null)          // out on bare code — every cell rests
         scene.attend("b1", 7)
         unsub()
-        assert.deepEqual(seen, [{ addr: "b1", line: null }, { addr: "b1", line: 7 }])
+        assert.deepEqual(seen, [
+            { addr: "b1", line: null, witness: "self" },
+            { addr: "b1", line: 7, witness: "self" },
+        ])
     })
 
     test("an unsubscribed consumer hears nothing more", () => {

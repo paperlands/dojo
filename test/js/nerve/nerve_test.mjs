@@ -83,36 +83,28 @@ describe("nerve store: a friend's voice is health, not a signal", () => {
     })
 })
 
-describe("nerve store: address claims route by source (read-side routing)", () => {
-    // The store holds claims; projections route on them. These predicates are
-    // exactly what nerve.js's residual and claimant projections apply.
-    const residual = (store) => (s) => !store.claims.has(s.source)
-    const claimant = (addr) => (s) => s.source === addr
+// ROUTING IS A CLAIM, AND A CLAIM IS A PREDICATE. This was two describes — one
+// per routing axis (by source, by place) — each re-declaring nerve.js's residual
+// predicate verbatim, which is how the axes got into three files at once. A panel
+// now registers the predicate it already had, and residual is the complement.
+describe("nerve store: claims route, residual is the rest", () => {
+    const CORE = "coreshell"
+    const OUTER = "outershell"
+    // Exactly what nerve.js's project() registers — a panel's own `select`.
+    const panel = (addr, place) => (s) =>
+        (addr != null && s.source === addr) || (place != null && s.place === place)
 
-    test("claim / release manage the address registry", () => {
+    test("with no panel open, everything falls to the residual", () => {
         const store = createSignalStore()
-        assert.ok(!store.claims.has("kai"))
-        store.claim("kai")
-        assert.ok(store.claims.has("kai"))
-        store.release("kai")
-        assert.ok(!store.claims.has("kai"))
-        store.claim(null) // null address is inert, never claimed
-        assert.equal(store.claims.size, 0)
-    })
-
-    test("an unclaimed friend's signals fall to the residual (local) projection", () => {
-        const store = createSignalStore()
-        const toResidual = residual(store)
-        // No panel open: a core shout AND a stray friend signal both go local.
-        assert.ok(toResidual(S.shout("sky", "tick", 1)))
-        assert.ok(toResidual(S.shout("kai", "boom", null)))
+        assert.ok(!store.claimed(S.shout("sky", "tick", 1)), "your own ambient")
+        assert.ok(!store.claimed(S.shout("kai", "boom", null)), "and a stray friend's")
+        assert.ok(!store.claimed(S.output("☀︎", 3)))
     })
 
     test("claiming kai routes kai's signals to the panel, core stays local", () => {
         const store = createSignalStore()
-        store.claim("kai")
-        const toResidual = residual(store)
-        const toKai = claimant("kai")
+        const toKai = panel("kai", null)
+        store.claimBy(toKai)
 
         const coreShout = S.shout("sky", "tick", 1)      // your own ambient
         const friendShout = S.shout("kai", "beat", 2)    // kai's ambient (local run)
@@ -121,13 +113,64 @@ describe("nerve store: address claims route by source (read-side routing)", () =
 
         // The bug, inverted: core shouts NEVER reach the kai panel...
         assert.ok(!toKai(coreShout))
-        assert.ok(toResidual(coreShout))
-        assert.ok(toResidual(systemOut))   // source 'system', unclaimed → local
+        assert.ok(!store.claimed(coreShout))
+        assert.ok(!store.claimed(systemOut))   // source 'system', unclaimed → local
         // ...and kai's signals (both producers) reach the panel, not the corner.
         assert.ok(toKai(friendShout))
         assert.ok(toKai(friendChat))
-        assert.ok(!toResidual(friendShout))
-        assert.ok(!toResidual(friendChat))
+        assert.ok(store.claimed(friendShout))
+        assert.ok(store.claimed(friendChat))
+    })
+
+    // A sun speaks for no one — every helios says 'system', so address routing
+    // alone sent all of them to the residual and the outershell had no sun at
+    // all (id:light-ladders-place-axis). The panel's predicate says `place`; the
+    // store never learns there is such a thing as a place.
+    test("each shell's sun reaches its own panel and no other", () => {
+        const store = createSignalStore()
+        const toOuter = panel("kai", OUTER)
+        store.claimBy(toOuter)
+
+        const coreSun = S.helios({ glyph: "☼----", commands: 3 }, CORE)
+        const outerSun = S.helios({ glyph: "☼----", commands: 40 }, OUTER)
+
+        assert.ok(!store.claimed(coreSun), "the coreshell's sun stays in the corner")
+        assert.ok(!toOuter(coreSun), "and never crosses into the friend's panel")
+        assert.ok(toOuter(outerSun), "the outershell's sun reaches its panel")
+        assert.ok(store.claimed(outerSun), "and does not double in the corner")
+    })
+
+    test("an unplaced, unclaimed signal still falls to the residual", () => {
+        const store = createSignalStore()
+        store.claimBy(panel("kai", OUTER))
+        assert.ok(!store.claimed(S.output("☀︎", 3)), "no place named → the corner, as before")
+        assert.ok(!store.claimed(S.system("hello")))
+    })
+
+    test("one predicate carries both arms — there is nothing to keep in step", () => {
+        const store = createSignalStore()
+        const toOuter = panel("kai", OUTER)
+        store.claimBy(toOuter)
+        assert.ok(toOuter(S.shout("kai", "beat", 2)), "their voice, by address")
+        assert.ok(toOuter(S.helios({ glyph: "☼----" }, OUTER)), "their sun, by place")
+        assert.ok(store.claimed(S.shout("kai", "beat", 2)))
+    })
+
+    test("releasing hands the signals back to the residual", () => {
+        const store = createSignalStore()
+        const unclaim = store.claimBy(panel("kai", OUTER))
+        const theirs = S.shout("kai", "beat", 2)
+        assert.ok(store.claimed(theirs))
+        unclaim()
+        assert.ok(!store.claimed(theirs), "a torn-down panel claims nothing")
+    })
+
+    test("a third axis costs the store nothing — it never knew the first two", () => {
+        const store = createSignalStore()
+        // A predicate over a field the store has never heard of.
+        store.claimBy((s) => s.kind === "walk")
+        assert.ok(store.claimed(S.walk("kai", "here", "there", null)))
+        assert.ok(!store.claimed(S.shout("kai", "beat", 2)))
     })
 })
 

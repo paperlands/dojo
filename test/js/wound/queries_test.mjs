@@ -116,6 +116,52 @@ describe("ailmentsFor — a buffer's standing ailments by address", () => {
     })
 })
 
+// THE TWO SPACES (id:light-ladders-place-axis). Frames register at a Slot
+// (`place:addr`); readers address a Node (`addr`). Written in SLOT form on
+// purpose — the seat suite strips the place before comparing, so a place-blind
+// ask reads as passing there. Here it cannot.
+describe("ailmentsFor — slot in, node out", () => {
+    // What the scheduler actually reports once a page seats at a place.
+    const errors = [
+        { address: "coreshell:buf1", message: "bare", span: { line: 2 } },
+        { address: "coreshell:buf1#greet/coil", message: "cell", span: { line: 7 } },
+        { address: "outershell:buf1#greet", message: "the peer's own", span: { line: 7 } },
+    ]
+
+    test("one document, two places — each answers for its own figure", () => {
+        // Asking by bare addr is the bug that silenced every walk fault.
+        assert.deepEqual(ailmentsFor(errors, "buf1"), [])
+        assert.deepEqual(
+            ailmentsFor(errors, "coreshell:buf1").map((e) => e.message), ["bare", "cell"])
+        assert.deepEqual(
+            ailmentsFor(errors, "outershell:buf1").map((e) => e.message), ["the peer's own"])
+    })
+
+    test("rebased to node space; nested path whole; the error bag untouched", () => {
+        assert.deepEqual(
+            ailmentsFor(errors, "coreshell:buf1", "buf1").map((e) => e.address),
+            ["buf1", "buf1#greet/coil"],
+        )
+        assert.equal(errors[0].address, "coreshell:buf1", "the live read stays live")
+    })
+
+    test("omitting key answers in seat space — the canvas asking about itself", () => {
+        assert.deepEqual(
+            ailmentsFor(errors, "coreshell:buf1").map((e) => e.address),
+            ["coreshell:buf1", "coreshell:buf1#greet/coil"],
+        )
+    })
+
+    test("a walk fault reaches the verdict once it is in the reader's space", () => {
+        // primaryWound prefers the buffer's OWN address; in slot space no
+        // ailment could ever match it, so a plain tab's death went unspoken.
+        const found = ailmentsFor(errors, "coreshell:buf1", "buf1")
+            .map((a) => ({ ...a, kind: "walk" }))
+        assert.equal(primaryWound(found, "buf1")?.message, "bare")
+        assert.equal(verdict(found, "buf1").state, "error")
+    })
+})
+
 // TWO CELLS, ONE NAME (D024 rule 2). Silence here would seat two figures in one
 // frame invisibly — the exact bug the decision exists to end — so the collision
 // is a WOUND: visible, located, and hers to fix. The healthy cells still run.
