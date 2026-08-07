@@ -52,7 +52,10 @@ defmodule Dojo.IdentityTest do
     test "an addressless meta crashes loudly, not silently" do
       # apply/3: deliberate clause miss — static call would type-warn under 1.20
       assert_raise FunctionClauseError, fn -> apply(Disciple, :reg_key, [%{name: "kai"}]) end
-      assert_raise FunctionClauseError, fn -> apply(Disciple, :table_address, [%{name: "kai"}]) end
+
+      assert_raise FunctionClauseError, fn ->
+        apply(Disciple, :table_address, [%{name: "kai"}])
+      end
     end
   end
 

@@ -27,14 +27,23 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  # ── Gate ────────────────────────────────────────────────────────────────
+  # ── CI first ────────────────────────────────────────────────────────────
+  # A push to release has no PR event, so the PR-only CI workflow would not
+  # re-run. Call it here: red format/tests stop the version gate, Fly, and
+  # the half-hour installers from ever starting.
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  # ── Version gate ────────────────────────────────────────────────────────
   # The version guard costs seconds; the builds cost half an hour. Ask the
   # cheap question first, so a forgotten version bump fails before the fleet
-  # spins up.
+  # spins up. needs: ci — never cut a tag from a red suite.
   prepare:
     name: Version gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    needs: [ci]
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}

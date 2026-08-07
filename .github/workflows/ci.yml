@@ -1,13 +1,17 @@
 name: CI
 
 # Gate merges into the deploy trunks. Staging deploys from PRs into it;
-# release is the production cut. No push triggers — CI answers only when
-# someone asks to land there.
+# release is the production cut. No push triggers of its own — CI answers
+# when someone asks to land (pull_request), or when a deploy workflow calls
+# it (workflow_call) so red tests cannot ship.
 on:
   pull_request:
     branches: [master, staging, release]
+  workflow_call:
 
 concurrency:
+  # workflow_call has no head_ref; fall back to the run's ref so a release
+  # push and a PR on the same branch do not cancel each other wrongly.
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
@@ -106,3 +110,19 @@ jobs:
       # See https://github.com/nodejs/node/issues/64555
       - name: Test
         run: node --test test/js/*/*_test.mjs
+
+  # One name for branch protection and for deploy workflows that wait on CI.
+  # if: always() so a red leaf does not leave this check "skipped" (which
+  # would look like permission to proceed).
+  gate:
+    name: CI gate
+    runs-on: ubuntu-latest
+    needs: [elixir, js]
+    if: always()
+    steps:
+      - name: Both suites green
+        run: |
+          echo "elixir=${{ needs.elixir.result }}"
+          echo "js=${{ needs.js.result }}"
+          test "${{ needs.elixir.result }}" = "success"
+          test "${{ needs.js.result }}" = "success"
