@@ -6,6 +6,8 @@
 //   module are in CM5 {line, ch} form (for API compatibility with commands)
 //   but internally converted to/from offsets via posToOffset / offsetToPos.
 
+import { blockDelta } from "../turtling/parse.js"
+
 // ---------------------------------------------------------------------------
 // Position helpers
 // ---------------------------------------------------------------------------
@@ -22,15 +24,12 @@ const offsetToPos = (state, offset) => {
 // Structural indent — nesting depth from do/end pairs
 // ---------------------------------------------------------------------------
 
-// Scan lines 1..lineNumber counting do-terminated and end-starting lines.
+// Scan lines 1..lineNumber via the one blockDelta (id:gw-grammar).
 // Returns indent in spaces (depth * 2, matching PaperLang convention).
 const structuralIndent = (doc, lineNumber) => {
     let depth = 0;
     for (let ln = 1; ln <= lineNumber; ln++) {
-        const text = doc.line(ln).text.trim();
-        if (!text || text.startsWith('#')) continue;
-        if (/\bdo\s*$/.test(text)) depth++;
-        if (/^end\b/.test(text)) depth--;
+        depth += blockDelta(doc.line(ln).text);
     }
     return Math.max(0, depth) * 2;
 };

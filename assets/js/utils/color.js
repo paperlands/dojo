@@ -1,4 +1,6 @@
-import * as THREE from './three.core.min.js';
+import {
+    Color,
+} from './three-entry.js'
 // Utility class to convert various color formats to RGB arrays
 export class ColorConverter {
     static toRGBArray(color) {
@@ -6,11 +8,11 @@ export class ColorConverter {
             return color;
         }
         if (typeof color === 'string') {
-            const threeColor = new THREE.Color(color);
+            const threeColor = new Color(color);
             return [threeColor.r, threeColor.g, threeColor.b];
         }
         if (typeof color === 'number') {
-            const threeColor = new THREE.Color(color);
+            const threeColor = new Color(color);
             return [threeColor.r, threeColor.g, threeColor.b];
         }
         return [1.0, 1.0, 1.0];
@@ -18,8 +20,8 @@ export class ColorConverter {
 
     static toHex(color) {
         if (typeof color === 'number') return color;
-        if (typeof color === 'string') return new THREE.Color(color).getHex();
-        if (Array.isArray(color)) return new THREE.Color(color[0], color[1], color[2]).getHex();
+        if (typeof color === 'string') return new Color(color).getHex();
+        if (Array.isArray(color)) return new Color(color[0], color[1], color[2]).getHex();
         return 0xffffff;
     }
 

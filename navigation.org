@@ -1,0 +1,1723 @@
+#+title: Navigation — Code Lookup Hotpaths
+#+FILETAGS: :navigation:
+#+STARTUP: overview indent hidestars
+
+#+BEGIN_QUOTE
+I despise everything which merely instructs me without increasing or
+immediately enlivening my activity. — Goethe
+#+END_QUOTE
+
+* PROTOCOL — how this file enlivens
+:PROPERTIES:
+:ID: nav-protocol
+:END:
+
+Every entry below is a *hotpath*: an intent, its keywords, and the exact place
+in code where the action is. This file does not instruct — it dispatches.
+
+- *Search it*: =emacsclient --eval '(dojo/nav "epoch")'= matches headings and
+  =:KEYWORDS:=, returns =(heading path keywords)=. Or plain =Grep= this file —
+  keywords are chosen as the words you'd guess.
+- *Fire in parallel*: lookups are independent — batch =dojo/nav= + =LSP= +
+  =Grep= calls in one volley, never serially.
+- *Jump*: =:PATH:= is =file= or =file::symbol=. Feed the symbol to LSP
+  (documentSymbol/findReferences) once you land.
+- *Vitality, not staleness*: every =:PATH:= is machine-checked by
+  =scripts/nav_verify.sh= and =(dojo/nav-verify)=. A *Stop hook* runs the
+  check when a session tries to end: changes are what break hotpaths, and the
+  session that made the change has the context to mend the map most
+  succinctly — it is blocked from stopping until the entries are true again.
+  An entry that rots gets fixed or culled, never trusted. When you add code
+  worth finding, add its hotpath in the same change.
+
+** tool decision tree — locate vs. harvest vs. symbol-work
+:PROPERTIES:
+:ID: nav-tool-decision-tree
+:KEYWORDS: grep read lsp dojo-nav bridge decision tree when which tool locate harvest
+:END:
+Learned by REFLECT: the three lookup tools are not interchangeable. Choose by
+the *shape of the question*, not by habit.
+
+- *Locate code* — "where does X live", "which files use X", "where's the boot
+  tree": *Grep + Read first*. Fastest, no cold-boot risk. This is the default
+  and wins on nearly every discovery count.
+- *Harvest links* — only when *authoring* a constellation-anchored doc and you
+  need a canonical =[[id:...]]= or a reusable =:ID:=: =dojo/nav= /
+  =dojo/section-for-module=. The bridge earns its keep for writing, not finding.
+- *Symbol-precise work* — rename, find-references, type/hover, exact
+  definition: *LSP*. Not for file-level "where does X live".
+
+In short: Grep/Read to find, the bridge to cite, LSP to operate on a symbol.
+
+* STATE — tuplespace, presence, cache
+:PROPERTIES:
+:ID: nav-state
+:END:
+
+** the one write path for a disciple's state
+:PROPERTIES:
+:ID: nav-table-write
+:KEYWORDS: buffer writethrough last store record cache projection debounce broadcast publish
+:PATH: lib/dojo/table.ex::defp record
+:END:
+Decision 009: =record/3= is the only writer of =state.last= and its cache
+projection (=async_cache_put=). Briefly diverged as WIP; reconciled by =1d19ad4=.
+
+** table lifecycle — singleton per disciple, TTL, registry
+:PROPERTIES:
+:ID: nav-table-lifecycle
+:KEYWORDS: via_tuple TableRegistry TTL timeout singleton GenServer watcher
+:PATH: lib/dojo/table.ex::def via_tuple
+:END:
+
+** spawning tables — sharded dynamic supervision
+:PROPERTIES:
+:ID: nav-class-spawn
+:KEYWORDS: start_table DynamicSupervisor PartitionSupervisor shard spawn class
+:PATH: lib/dojo/class.ex::defp start_table
+:END:
+
+** who is present — tracker, join/leave
+:PROPERTIES:
+:ID: nav-gate
+:KEYWORDS: presence tracker gate join leave online disciples metadata transport
+:PATH: lib/dojo/gate.ex
+:END:
+Decision 002: presence doubles as metadata transport.
+
+** persistence — nebulex cache as primary store
+:PROPERTIES:
+:ID: nav-cache
+:KEYWORDS: cache nebulex shards persistence put get ttl
+:PATH: lib/dojo/cache.ex
+:END:
+
+** identity — disciple, address, reg key
+:PROPERTIES:
+:ID: nav-disciple
+:KEYWORDS: identity disciple table_address reg_key session name addr
+:PATH: lib/dojo/disciple.ex::def table_address
+:END:
+Decisions 006/007: one ambient address, one user identity.
+
+** room state — shared class space
+:PROPERTIES:
+:ID: nav-room
+:KEYWORDS: room leaderboard book class shared
+:PATH: lib/dojo/room.ex
+:END:
+
+** nerve server side — signal envelope
+:PROPERTIES:
+:ID: nav-nerve-ex
+:KEYWORDS: nerve envelope signal clock server broadcast shout
+:PATH: lib/dojo/nerve.ex
+:END:
+Decision 008: envelope clock law.
+
+* CLUSTERING — discovery, transport, roaming
+:PROPERTIES:
+:ID: nav-clustering
+:END:
+
+** peer discovery — mDNS, TXT records
+:PROPERTIES:
+:ID: nav-mdns
+:KEYWORDS: mdns discovery peer TXT record multicast _erlang._tcp routable ipv4
+:PATH: lib/dojo/cluster/mdns.ex
+:END:
+
+** peer liveness — tracking seen peers
+:PROPERTIES:
+:ID: nav-peer-track
+:KEYWORDS: peer track stale liveness expiry seen
+:PATH: lib/dojo/cluster/mdns/peer_track.ex
+:END:
+
+** wifi roaming — interface polling, listener hot-swap
+:PROPERTIES:
+:ID: nav-monitor
+:KEYWORDS: network change interface ip roaming hot-swap listener debounce monitor
+:PATH: lib/dojo/cluster/monitor.ex
+:END:
+
+** broadcast over partisan — dedup, storm control
+:PROPERTIES:
+:ID: nav-partisan-pubsub
+:KEYWORDS: pubsub broadcast partisan seen_table dedup storm fanout
+:PATH: lib/dojo/partisan_pubsub.ex
+:END:
+Decision 005: antifragile broadcast storm. Partisan internals: grep
+=/home/putra/Repos/partisan/src/= (fork; LSP won't index).
+
+** which address routes — fly vs local
+:PROPERTIES:
+:ID: nav-routing
+:KEYWORDS: routable_addr routing fly local address resolution
+:PATH: lib/dojo/cluster/routing.ex::def routable_addr
+:END:
+
+* WEB — the shell seam
+:PROPERTIES:
+:ID: nav-web
+:END:
+
+** the shell — every user event lands here
+:PROPERTIES:
+:ID: nav-shell-live
+:KEYWORDS: shell_live handle_event mount liveview hatch eval publish run
+:PATH: lib/dojo_web/live/shell_live.ex
+:END:
+From a JS =pushEvent= name, jump with =C-c d e= or grep =handle_event("name"=.
+
+** outer shell layout — zones around the editor
+:PROPERTIES:
+:ID: nav-outershell
+:KEYWORDS: outershell outer shell layout zones rightthird vh chrome
+:PATH: lib/dojo_web/components/outer_shell.ex
+:END:
+
+** deck — card components
+:PROPERTIES:
+:ID: nav-deck
+:KEYWORDS: deck cards command control flip
+:PATH: lib/dojo_web/components/deck.ex
+:END:
+
+** play rig — drive the live shell headlessly (CDP)
+:PROPERTIES:
+:ID: nav-play-cdp
+:KEYWORDS: play cdp devtools websocket screenshot inject drive rig headless bare
+:PATH: scripts/play_cdp.mjs
+:END:
+One call per played night: =run <prog> [waitMs] [out.png] --bare= · =shot= · =eval=;
+the protocol lives in =codex/play.org=.
+
+** session — mutation, not replacement
+:PROPERTIES:
+:ID: nav-session
+:KEYWORDS: session mutateSession reg_key sname connect_params
+:PATH: lib/dojo_web/session.ex
+:END:
+
+** routes
+:PROPERTIES:
+:ID: nav-router
+:KEYWORDS: router route path scope pipeline live
+:PATH: lib/dojo_web/router.ex
+:END:
+
+* WORLD — the mathematics
+:PROPERTIES:
+:ID: nav-world
+:END:
+
+** 1D cellular automaton — 256 universes in one function
+:PROPERTIES:
+:ID: nav-world-ca
+:KEYWORDS: cellular automaton rule_pattern wolfram rule world 1d
+:PATH: lib/dojo/world.ex::def rule_pattern
+:END:
+
+** 2D game of life
+:PROPERTIES:
+:ID: nav-conway
+:KEYWORDS: conway game of life 2d grid neighbors
+:PATH: lib/dojo/conway.ex
+:END:
+
+** server-side turtle — AST over the wire
+:PROPERTIES:
+:ID: nav-turtle-ex
+:KEYWORDS: turtle elixir ast hatch commands server
+:PATH: lib/dojo/turtle.ex
+:END:
+
+* TURTLING (JS) — the living canvas
+:PROPERTIES:
+:ID: nav-turtling
+:END:
+
+** PaperLang builtins — what words the turtle knows
+:PROPERTIES:
+:ID: nav-commands
+:KEYWORDS: commands builtins primitives forward wait yield def fn paperlang
+:PATH: assets/js/turtling/commands.js
+:END:
+Verified syntax lives in =PAPERLANG.org= + =codex/refs/Library=.
+
+** evaluation — run, re-eval, frame swap
+:PROPERTIES:
+:ID: nav-executor
+:KEYWORDS: executor eval run interpret step walk
+:PATH: assets/js/turtling/executor.js
+:END:
+
+** re-eval recreates frames — persistent state keys by frameAddress
+:PROPERTIES:
+:ID: nav-hotswap
+:KEYWORDS: hotSwapChild frame id frameAddress re-eval persistent state remount
+:PATH: assets/js/turtling/turtle.js::hotSwapChild
+:END:
+
+** become — the seed law: an unchanged seat is skipped whole
+:PROPERTIES:
+:ID: nav-become-seed
+:KEYWORDS: become seed sameSeed skip idempotent seat fresh restart continuity hotSwapChild
+:PATH: assets/js/turtling/scheduler.js::sameSeed
+:END:
+Stage 1 (specs/compiler/compiler.org id:cmp-become-seed): =hotSwapChild=
+compares the frame's =seed= (ast element identity, functions/userspace
+identity, color) and refuses the rebuild when nothing changed — sibling
+cells stop blinking. =fresh:true= is the explicit restart door
+(=pageLaw.toggle= — the pin IS the membership; =turtle.toggleAmbient= was a
+second machine for it and is gone). Pins: =test/js/runtime/become_test.mjs=;
+seam lint: =test/js/document/check_tree.mjs=.
+
+** render clock — epoch rebase, idle fast-forward
+:PROPERTIES:
+:ID: nav-timeline
+:KEYWORDS: timeline epoch rebase idle clock now animation fast-forward
+:PATH: assets/js/turtling/timeline.js
+:END:
+Compositor consumes =now = t - epoch=: =assets/js/turtling/compositor.js=.
+
+** scheduling — ticks, yields, work slicing
+:PROPERTIES:
+:ID: nav-scheduler
+:KEYWORDS: scheduler tick yield slice budget requestAnimationFrame frontier resumeAt logical-time drain causal
+:PATH: assets/js/turtling/scheduler.js
+:END:
+
+=tick(now)= drains the earliest logical instant only: a pre-pass computes the
+=frontier= (smallest ready =resumeAt=), then advances just the frames at that instant
+(post-order tiebreak), so a wall-clock jump can't let a frame read a logically-later
+one. Decision 011 bullet 3. Head events for frame-targeted children are projected via
+=projectHead= so the cursor rides its deposited (re-projected) ink (spec ft-d5-head).
+
+** ink credit — how a figure cannot be lost
+:PROPERTIES:
+:ID: nav-output-credit
+:KEYWORDS: channel ring-buffer capacity backpressure credit lossless drop-oldest park owed pushback overflow ledger routeOutput full
+:PATH: assets/js/turtling/ring-buffer.js
+:END:
+
+*Capacity bounds WHEN, not WHAT* (D027 R2). =createRingBuffer(cap, {lossless})=:
+lossless =put= returns false instead of overwriting the oldest, and =.full= is the
+credit signal. =routeOutput= (=scheduler.js=) tests credit BEFORE =tagRun= and the
+pose swap, so a refused event can be retried unchanged — it returns *null when
+taken, else the refusal's cause*. The pump parks it in =ctx.park.owed= and breaks;
+both pumps replay the owed event first, so the ledger keeps emission order. Drop
+the slot and 93 of 24000 events vanish, one per stall.
+
+Backpressure and exhaustion look identical through =tick()='s =progress=, so
+=compositor.flush()= must drain INSIDE its loop; live =advance()= just paints and
+resumes next frame. Every lossless channel needs a drainer or its producer
+livelocks — =drainAndMaterialize= walks the whole registry. =full= means "put
+would refuse", closed or open. Fences: =test/js/runtime/backpressure_spike_test.mjs=,
+=test/js/runtime/ring_buffer_test.mjs=.
+
+** a letter — who hears a shout, and what a full box means
+:PROPERTIES:
+:ID: nav-mailbox
+:KEYWORDS: shout mailbox letter when listensFor hears pushMailbox deliverShout limitMessage maxMailbox broadcast listener deaf rootHears
+:PATH: assets/js/turtling/scheduler.js::function hears
+:END:
+
+*A letter is truth* (D027 R2.9): measured, a tight cap made an ear walk 270 where
+a roomy one walked 360 — silent loss, silently different figure. So =pushMailbox=
+never trims; a full box *wounds* ("hearing more than it can hold"). The sender
+cannot be blocked instead — a listener that never reaches its =when= would stall
+the world through [[id:nav-output-credit]]'s instant law.
+
+*A letter reaches only a frame that said it would listen.* =shout= is a broadcast
+to the whole registry and =when= removes only what it matches, so before the gate
+the root and every deaf sibling filled with unreadable mail (measured 299/299/300/300)
+and the cap evicted a real listener's oldest letter to store it. =listenPatterns=
+reads every =when= literal from the tree AND every =def= body — a *superset* or the
+cure is worse (an ear whose only =when= lived in a def once heard nothing). =null=
+= deliver everything; only the live stage says =rootHears: []=. Fence:
+=test/js/runtime/mailbox_spike_test.mjs=.
+
+** the slice — building a world without hanging the tab
+:PROPERTIES:
+:ID: nav-pacer
+:KEYWORDS: pacer slice budget deadline preempt responsive AIMD backoff hang freeze progress worldProgress building sliceFor outOfTime
+:PATH: assets/js/turtling/pacer.js
+:END:
+
+*The pacer measures ONE thing and moves ONE thing*: last frame's real cost in,
+next frame's pump budget out. AIMD — down fast (one bad frame halves it), up slow
+(eight good frames earn it back), hysteresis band between, clamped so the pump is
+never starved and never eats the whole frame. No device profiles: a slow device
+reveals itself by taking longer. Pure, injected clock, headless — the
+=timeline.js= law.
+
+=scheduler.sliceFor(ms)= arms the deadline; *every* pump asks =runOpts.outOfTime=,
+not just =tick='s — =hotSwapChild= drains inline, and the keystroke is exactly
+where a big program hangs a tab. Arm the slice BEFORE seating. Deadline null =
+unpaced, so batch and headless still finish in one call.
+
+Letting go for time is the SAME event as letting go for credit — one =frame.park=
+with =cause: 'time'= ([[id:nav-park]]) — so [[id:nav-output-credit]]'s instant law
+holds unchanged.
+
+*An idle-out is not a slow device.* =compositor.advance= branches on
+=rebaseEpoch='s answer: =pacer.skip()= when the epoch moved (tab wake), else
+=pacer.observe(t - frameStart)=. Feeding the raw wall gap to =observe= halved the
+budget on every wake and walked it toward =minMs=; =skip()= had existed unwired
+since it was written. Author-facing state is
+=worldProgress(scheduler)= in =vitals.js= — real cursors, no invented ratio; the
+turtle breathes =onProgress=, the weave asks the =progress= face. Fence:
+=test/js/runtime/pacer_test.mjs= (live: 300k lines, max rAF gap 13.9 ms).
+
+*Read that 13.9 ms with R3 in hand* ([[id:output-ledger-r3]]): those 300k lines are
+stroke-BROKEN, and the quantum counts emitted events, so the pacer was verified
+on the one shape that could not escape it. The same 300k as one unbroken stroke
+blocks 1139 ms live. See [[id:nav-breath]].
+
+** the breath — the quantum charged in work, not in output
+:PROPERTIES:
+:ID: nav-breath
+:KEYWORDS: breath quantum reduction commandCount breathEvery strokeMax preemption escapee continuous stroke unbudgeted BIF work meter
+:PATH: assets/js/turtling/executor.js
+:END:
+
+*Protection must not be proportional to how talkative a figure is.* The slice
+([[id:nav-pacer]]) is checked once per 256 values the generator YIELDS, and the
+executor yields on output only — so an unbroken stroke is consulted twice for
+its whole length, and =loop 36 do fw 12 rt 10 end= is that shape.
+
+=state.commandCount++= (=callCommand=) was already a faithful reduction counter —
+no command makes more than one point — spent only on a hard kill. The *breath*
+spends it on a boundary: every =breathEvery= commands the executor yields a value
+carrying nothing and the scheduler reads the clock there. It takes an ordinary
+=frame.park= ([[id:nav-park]]) — a park with no cause worth keeping — so it adds no
+observation point. =strokeMax= is its partner: a stroke that breaks
+itself makes the run ceiling a budget instead of a bill, and gives credit
+something to pace.
+
+*LANDED 2026-08-06*, both default ON (=breathEvery= 512, =strokeMax= 512;
+=DOJO_BREATH= / =DOJO_STROKE_MAX= override). The old =(sliceCheck++ & 255)= gauge
+is *deleted* — the breath is the only preemption boundary. Live: the 300k
+continuous line went 1139 ms → 54–72 ms worst rAF gap, figure unchanged.
+
+K is *measured*, not chosen: =test/js/profile/command_cost_bench.mjs=. Its first
+run made K unchoosable (25× spread) and found the cause — =evaluateExpr=
+re-parsed its expression on EVERY evaluation. Memoised (=PARSE_MEMO=, executor.js,
+per-parser =WeakMap=), the spread is 4.2× and 512 sits 2.8× inside a 4 ms slice.
+
+Fences: =test/js/runtime/quantum_spike_test.mjs=, =residency_spike_test.mjs=.
+Ruling: [[id:output-ledger-r3]], landing record [[id:output-ledger-r3-landed]].
+
+** ink is a stock — resident, and the two ceilings
+:PROPERTIES:
+:ID: nav-ink-stock-flow
+:KEYWORDS: resident residency stage full refuse credit erase ceiling MAX_RUN_SEGMENTS MAX_STAGE_SEGMENTS MAX_RESIDENCY_STALL_MS bystander cascade ledger
+:PATH: assets/js/turtling/ledger.js
+:END:
+
+One public bag on the frame: =frame.ink = { resident, stageFull }= (=createInk=).
+The law lives in =ledger.js= (=chargeInk=, =woundInk=, =enforceResidency=,
+=MAX_*=); the scheduler only routes and refuses.
+
+=ink.resident= is what is on the GPU now. =erase= truly frees it, so =erase=
+zeroes it. It gates =MAX_RUN_SEGMENTS= (memory) and sums to the stage bound, and
+it is what =worldProgress= reports: the author is told what *stands*. Gating a
+monotone total instead would kill a legitimate =loop forever do ... erase end=,
+which holds 40k while its lifetime total passes 1e6 (D027 R3.5). The monotone
+=ink.drawn= was culled 2026-08-06 — charged every event, read nowhere; it returns
+with its sampler when the convergence question opens.
+
+*The stage bound refuses; it does not kill.* =enforceResidency= chooses no victim
+— killing a producer cannot fix a stock, and picking =worst= among =!f.done=
+excluded the finished figures that held the ink, so it wounded a 1-segment
+bystander and then cascaded one frame per tick. It now raises =ink.stageFull= and
+=routeOutput= refuses path events, which reaches exactly the frames still
+producing. A kill needs a culprit; a refusal needs only whoever is knocking, and
+=routeOutput= already holds them.
+
+*Stalls are timed, not counted.* A frame refused for =MAX_RESIDENCY_STALL_MS=
+(2000) is wounded — attribution by *waiting*, not by guilt. The clock is read
+only when the stage is actually full: =enforceResidency= runs every tick and the
+pump ticks up to 64× a frame. Timing lives on =frame.park.since= (see
+[[id:nav-park]]), never in =ink= — a tick counter there fired in ~2 frames under
+exactly the multi-ambient load it guards.
+
+** a park is a park — the cause names why
+:PROPERTIES:
+:ID: nav-park
+:KEYWORDS: park parked midInstant pending owed cause credit time residency instant law preempt breath sibling observe parkBreath parkOwing clearSpentPark
+:PATH: assets/js/turtling/scheduler.js
+:END:
+
+=frame.park = null | { cause: 'credit' | 'time' | 'residency', owed, since }= —
+one field for the mid-instant stop no sibling may read across (D027 R2.5b, R3.3:
+"a breath is a park with no cause"). It replaced three encodings that every new
+cause had to be written into separately.
+
+*Two doors, so debt is answered by the call* — never by reading a field:
+
+- =parkBreath(ctx)= — the pass ran out of time. Owes nothing; the generator
+  stands where it is. Re-breathing is a no-op on =cause: 'time'=.
+- =parkOwing(ctx, cause, deposit)= — a deposit was charged but refused. Held and
+  replayed FIRST next pass so emission order survives. Only ever called with a
+  FRESH deposit (standing debt is replayed by =stepOnce=, which reparks in place).
+- =clearSpentPark(ctx)= at the start of a pass — a park with nothing owed is
+  spent, but *a debt outlives the pass that made it*.
+- =frame.park !== null= is the "is this frame mid-instant" question; =advanceChild=
+  unwinds the whole spawn stack on it.
+
+Fences: =backpressure_spike_test.mjs= (C3, S6, P5, park doors for S16),
+=quantum_spike_test.mjs= (S7).
+
+*** parkBreath — stop with no debt
+:PROPERTIES:
+:ID: nav-park-breath
+:KEYWORDS: parkBreath breath time preempt midInstant no-debt
+:PATH: assets/js/turtling/scheduler.js::parkBreath
+:END:
+
+*** parkOwing — stop holding a charged deposit
+:PROPERTIES:
+:ID: nav-park-owing
+:KEYWORDS: parkOwing owed deposit credit residency refusal replay
+:PATH: assets/js/turtling/scheduler.js::parkOwing
+:END:
+
+** takeSync — conflate the latest pose off the frame
+:PROPERTIES:
+:ID: nav-takesync
+:KEYWORDS: takeSync putSync sync conflation latest head drain reader
+:PATH: assets/js/turtling/scheduler.js::takeSync
+:END:
+Take what stands in =frame.sync= and leave the slots empty. Emptying is the
+reader's half of conflation, so it lives beside the writer rather than in the
+compositor. Returns a frozen empty array when nothing stands.
+
+** offerDeposit / deliverDeposit — charge then sink, two steps
+:PROPERTIES:
+:ID: nav-deposit
+:KEYWORDS: offerDeposit deliverDeposit chargeInk credit residency ceiling refuse routeOutput ledger
+:PATH: assets/js/turtling/scheduler.js::offerDeposit
+:END:
+ONE DEPOSIT, TWO STEPS. Charged when first offered (=chargeInk=), delivered when
+a sink will take it — which may be a later pass, because a park holds an
+already-charged deposit. =deliverDeposit= is the pure sink half (null if taken,
+else refusal cause); =offerDeposit= is charge-then-deliver. Folding charge into
+delivery would re-charge on every replay.
+
+*** deliverDeposit — already-charged sink handoff
+:PROPERTIES:
+:ID: nav-deliver-deposit
+:KEYWORDS: deliverDeposit sink full residency credit projectHead putSync
+:PATH: assets/js/turtling/scheduler.js::deliverDeposit
+:END:
+
+** findReferenceFrame — resolve a frame target by name
+:PROPERTIES:
+:ID: nav-find-reference-frame
+:KEYWORDS: findReferenceFrame targetFrame resolve binding ambient name sibling ancestor
+:PATH: assets/js/turtling/scheduler.js::findReferenceFrame
+:END:
+Ambient name resolve used by the pump when a figure targets another frame's
+channel. Exported with the binding surface.
+
+** withSlice — drive the pump inside a closed deadline
+:PROPERTIES:
+:ID: nav-with-slice
+:KEYWORDS: withSlice sliceFor deadline outOfTime pacer drive pump unpaced
+:PATH: assets/js/turtling/scheduler.js::withSlice
+:END:
+=sliceFor(ms)= arms an open-ended deadline (tests that want to hold one open).
+=withSlice(ms, drive)= is the safe door: arms, runs =drive()=, clears in
+=finally=. Outside a slice the pump is unpaced; a forgotten arm reads as "no
+time" and every frame parks on its first breath.
+
+** wireRun — shared birth wiring for a child generator
+:PROPERTIES:
+:ID: nav-wire-run
+:KEYWORDS: wireRun wireChild rewireChild mailbox batch bindResolve listensFor spawn rewire
+:PATH: assets/js/turtling/scheduler.js::wireRun
+:END:
+What a fresh generator needs to be driven. ONE place: both first birth
+(=wireChild=) and re-run (=rewireChild=) call it — a field wired in only one of
+them is a bug that shows up a whole run later.
+
+** the eye — model-layer camera reframe (E⁻¹), orbit, roll
+:PROPERTIES:
+:ID: nav-eye
+:KEYWORDS: eye camera ambient reframe orbit roll lens view E inverse
+:PATH: assets/js/turtling/view.js
+:END:
+SE(3) math in =assets/js/turtling/se3.js=.
+
+** camera gestures — zoom flies through, two fingers mean one thing
+:PROPERTIES:
+:ID: nav-gesture
+:KEYWORDS: zoom pinch touch gesture tilt roll twist dolly through arbitration slop wheel trackpad orbit controls span drift subclass vendored
+:PATH: assets/js/turtling/orbit.js
+:END:
+=DojoOrbitControls= — ALL dojo camera behaviour, as a SUBCLASS. The vendored
+=assets/js/utils/threeorbital.js= holds no dojo code, so three.js upgrades are a
+file swap (see [[file:assets/js/utils/VENDOR.org][VENDOR.org]] + =scripts/vendor_verify.sh=). Three behaviours:
+dolly-through (=dollyStandoff= floors the PIVOT, not the camera — =minDistance=0=
+disarms stock's clamp and =update()= floors the target instead), gesture
+arbitration, and the upstream =clientX=-as-y typo.
+
+The DECIDING is pure: =assets/js/utils/gesture.js= — span/drift/twist compete in
+one unit (twist as arc = |Δangle|·span/2), first past =gestureSlop= owns the
+gesture. Tested in =test/js/utils/gesture_test.mjs=; no THREE, no camera.
+
+Rule: apply what the rig can express, publish what it cannot. Twist leaves as a
+=twist= event and lands as the hand's own reframe M, composed with the eye's E⁻¹
+in =compositor.js::viewReframe= — see [[id:nav-eye]]. Span/drift route through
+public =pan= / =rotateLeft= / =rotateUp= / =dollyOut= (#32810); a few private
+entry points remain overridden, so =test/js/seams/orbit_seam_test.mjs= fails
+loudly if an upgrade renames one (otherwise arbitration would stop SILENTLY).
+
+** GL lifecycle — dispose or leak per remount
+:PROPERTIES:
+:ID: nav-stage
+:KEYWORDS: stage dispose teardown GL leak controls cameraBridge remount canvas materialCache materials LineMaterial
+:PATH: assets/js/turtling/stage.js
+:END:
+The canvas outlives the hook; teardown must free GL + controls + subscriptions.
+=stage.materials= (=createMaterialCache= in =turtling/render/line/material-cache.js=)
+is owned here — =stage.dispose()= always reclaims; compositor only =clear()=s on
+reset. Tested headless: =test/js/render/material_cache_test.mjs=.
+
+** turtle↔compositor seam — what the compositor reads off the stage
+:PROPERTIES:
+:ID: nav-stage-contract
+:KEYWORDS: STAGE_CONTRACT compositor stage seam bag contract frameMs controls materials requestRender viewOffset
+:PATH: assets/js/turtling/compositor.js::STAGE_CONTRACT
+:END:
+Five real verbs, checked at birth: =scene=, =camera=, =requestRender=,
+=viewOffset=, =materials=. Cadence (=frameMs=) and orbit (=controls=) ride
+=opts= — not stage interface — so a headless caller can omit them. The LIVE
+stage is still passed in, never mirrored. Pinned by
+=test/js/seams/compositor_stage_test.mjs=, which reads SOURCE: the compositor
+cannot be imported headless (materializer → vendored =threetext.js=, whose
+=from "./three.core.min"= has no extension and is immutable).
+
+** math expressions — lex, parse, evaluate, typeset
+:PROPERTIES:
+:ID: nav-mafs
+:KEYWORDS: mafs math expression lexer parse evaluate typeset versor
+:PATH: assets/js/turtling/mafs/evaluate.js
+:END:
+
+* NERVE & TERMINAL (JS) — signals and surfaces
+:PROPERTIES:
+:ID: nav-nerve-js
+:END:
+
+** signal store — push is the only way in
+:PROPERTIES:
+:ID: nav-nerve-store
+:KEYWORDS: createSignalStore signals push epoch claims subscribe channels mute priority
+:PATH: assets/js/nerve/store.js::createSignalStore
+:END:
+A watched friend's signals flow through =push()= like every other kind. There is
+no =error= channel and no =remote= constructor: a wound is HEALTH, and health is
+pulled by the seat ([[id:nav-nerve-seat]]). =priority= belongs to the chat zone
+alone — its only reader is =chatMutator.evict=.
+
+** status seat — one slot, two layers
+:PROPERTIES:
+:ID: nav-nerve-seat
+:KEYWORDS: seat status slot base event health wound helios priority clobber layer createStatusSeat
+:PATH: assets/js/nerve/seat.js::createStatusSeat
+:END:
+=base ?? event=. The base is the document's standing health, PULLED (no
+lifetime); the event is the world's weather, pushed and fading.
+
+A state and an event are not one signal (D022). As one push-slot they raced:
+helios/output landed on an open wound, and =priority= could not arbitrate —
+while unwell the wound must win ALWAYS, once healed it must lose INSTANTLY.
+That is a layer, not a rank. Consequences, not rules: a wound is never
+clobbered, a heal needs no push, a stale tick is harmless, the walk needs no
+gate. =health= is injected, so the core shell lends its own wounds and a peer
+panel lends a friend's — one law, two subjects. DOM atom: =nerve/slot.js=.
+
+=retire()= vs =clear()= is a real distinction, not tidying: EMPTYING lets a
+helios sun set (=helios-exit=, ~500 ms), BEING TAKEN swaps instantly — a fade
+under an arriving wound reads as two messages at once. Collapsing them to a bare
+=remove()= silently kills the =.helios-exit= CSS; only the live shell catches it
+(no unit test can). Fence: =test/js/nerve/seat_probe_test.mjs= (+ =dom-shim.mjs=);
+live-probed <2026-08-06>.
+
+** helios — progress glyph language + nerve adapter
+:PROPERTIES:
+:ID: nav-nerve-helios
+:KEYWORDS: helios progress glyph pace CAST LADDER glyphFor heliosView signals.helios sun mountSun nerve status rung run place scoped seats slotsAt two suns claim claimBy claimed predicate
+:PATH: assets/js/nerve/helios.js
+:END:
+Pure cast + ladder over =worldProgress= (=phase, lines, ambients, run=). No
+DOM, no store, no turtle. Pipeline:
+
+  =heliosView= (truth) → =createHeliosWalk({read}).tick= (display) → =signals.helios= → =seat.push=
+
+Dedicated kind =helios= (not =system=). NO FAULT RUNG — a fault is health
+([[id:nav-nerve-seat]]). The walk PULLS =read= (a sampled bag held by a timer is
+stale by construction) and speaks on EDGES, returning =null= when nothing moved,
+so no caller diffs glyphs. A RUN IS THE IDENTITY: =progress.run= (stamped in
+=scheduler.resetRunState=) finds tiny runs that never breathe =building=, which
+is what the deleted =notifySettled= existed to patch. Walk never skips rungs;
+goal while building is =max(ink, time, peak)=; settle *outro* + shell tick chain
+finishes the ladder after the render loop stops. Live probe: tiny =0→S=,
+dense/sparse =0→…→4→S=, mid-build holds at 4.
+Fence: =test/js/nerve/helios_test.mjs=.
+
+*ONE SUN PER SHELL, AND ONE SPEAKER.* Both shells' figures live in ONE
+scheduler keyed by Slot, so =worldProgress(scheduler)= summed across places —
+one total answering for two. It takes =seats= now
+(=worldProgress(scheduler, law.slotsAt(place))=), walking each seat's SUBTREE.
+Phase is the place's own unfinished work; =scheduler.building= is global and
+would light both suns. Lines are NOT divisible — one stage, one residency.
+
+Routing needed a second index: every helios says =source: 'system'=, so address
+routing sent all of them to the residual and the outershell had no sun at all.
+=signals.helios(view, place)= carries it; =store.claimPlace= mirrors the
+address claim. Each surface walks its own — =outer.js= reads through
+=world().progress(place)=, both ticking off =watchWorld=.
+
+*No second speaker.* =report='s =S.output("☀︎", n)= said what helios already
+says at =success=, and both land in the ONE status slot, so a ladder step
+parted the live sun and left =scheduler.commandCount= — a WORLD sum written
+only at settle, hence an old number. Deleted; the wound guard went with it (the
+seat's base layer already covers weather, D022). See
+[[id:light-ladders-place-axis]]; pinned by =test/js/stage/vitals_test.mjs=,
+=test/js/nerve/nerve_test.mjs= and =test/js/nerve/seat_probe_test.mjs=.
+
+** nerve hook — the nerve's seat, one occupant
+:PROPERTIES:
+:ID: nav-nerve-hook
+:KEYWORDS: nerve hook seat cell registry one occupant remount destroyed mounted order guard zone fade DOM render hud
+:PATH: assets/js/hooks/nerve.js::export const nerve
+:END:
+=nerve()= asks the seat; =watchNerve(fn)= hears it fill or empty. A kernel cell
+(=kernel/cell.js=), like the world, the stage and the term — never a module-level
+=let=, and the reason is LiveView's patch order, not taste.
+
+In =performPatch= (=deps/phoenix_live_view/assets/js/phoenix_live_view/view.js:664-709=)
+an ADDED element's hook is mounted DURING =patch.perform=, while a DISCARDED one
+is only pushed onto =removedEls= — =destroyHook= runs afterwards in
+=afterElementsRemoved=. So when an element carrying a hook is REPLACED,
+=mounted()= lands before =destroyed()=, deterministically. =addHook='s guard
+does not save you: it keys on =ViewHook.elementID=, a private per-element id
+(=view_hook.ts:285=), and a replacement element is a fresh node with none.
+
+The old shape (=let nerveInstance=, nulled in =destroyed()=) therefore let the
+departing hook null the LIVE instance, after which every push was a silent
+no-op for the rest of the page's life. The cell's unregister is owner-guarded —
+a later mount wins, the earlier release is a no-op — pinned by
+=test/js/wound/world_cell_test.mjs= ("a later mount wins").
+
+** shell hook — dispatch point, two surfaces
+:PROPERTIES:
+:ID: nav-shell-hook
+:KEYWORDS: shell hook dispatch surfaces data-target coreshell outershell weave mounted destroyed
+:PATH: assets/js/hooks/shell.js
+:END:
+Live play protocol: read =codex/play.org= FIRST. The hook is a dispatch point:
+lifecycle machine × { coreshell, outershell, weave } over the shared core.
+=data-target= IS the surface's name — the map key, not a value to branch on; an
+unknown name mounts nothing. Peers, not nesting ([[id:lex-unmarked]]).
+
+** shell lifecycle — the boot seam law
+:PROPERTIES:
+:ID: nav-shell-lifecycle
+:KEYWORDS: lifecycle boot seam queue booting live dead handleEvent dropped event zombie mount
+:PATH: assets/js/hooks/shell/lifecycle.js
+:END:
+booting → live → dead. Events register before the first await (the mount
+patch's own push_events are otherwise lost); the queue drains at live; a
+mid-boot destroy stands the mount down. Pure — =test/js/shell/lifecycle_test.mjs=.
+
+** shell core — CM6 boot, execCommand seam, listener kit
+:PROPERTIES:
+:ID: nav-shell-core
+:KEYWORDS: shell core editor execCommand cm-content codemirror keymap bootShell keyboard capture slider
+:PATH: assets/js/hooks/shell/core.js
+:END:
+
+** cm6 vendoring — build-time npm, runtime zero-npm
+:PROPERTIES:
+:ID: nav-cm6-vendor
+:KEYWORDS: cm6 codemirror vendor bundle esbuild version manifest sha256 drift lockfile reproducible
+:PATH: scripts/vendor-cm6.mjs
+:END:
+=cm6-entry.js= is the API contract, esbuild cuts it to
+=priv/static/vendor/cm6.js= (committed, byte-reproducible), and a sidecar
+=cm6.manifest.json= carries the RESOLVED version + hashes of artifact, entry,
+and lockfile. =scripts/vendor_verify.sh= checks all of it and that
+=core.js='s =?v== token still tells the truth. Prose: [[file:assets/js/utils/VENDOR.org][VENDOR.org]] =::vendor-cm6=.
+
+** three.js surface — named once, checked twice
+:PROPERTIES:
+:ID: nav-three-entry
+:KEYWORDS: three.js three-entry surface contract REVISION vendor entry WebGLRenderer
+:PATH: assets/js/utils/three-entry.js
+:END:
+23 symbols, the whole dojo-authored three dependency. Bundler enforces at build;
+=test/js/seams/three_entry_test.mjs= enforces in CI (which never bundles).
+=vendor_verify.sh= keeps the =Version: =…== claim honest against =REVISION=.
+Prose: [[file:assets/js/utils/VENDOR.org][VENDOR.org]] =::vendor-three=.
+
+** three fat-line addons — r185, one rewrite
+:PROPERTIES:
+:ID: nav-three-lines
+:KEYWORDS: Line2 LineMaterial LineSegments2 LineGeometry fat-line three-addons GrowLine materialCache createMaterialCache
+:PATH: assets/js/utils/three-addons/lines/
+:END:
+Pristine r185 =examples/jsm/lines/*= under =utils/three-addons/lines/=. One
+rewrite (=from 'three'= → =three.module.min.js=); sibling =../lines/= intact.
+Upgrade: =scripts/vendor-three-lines.sh=. Dojo-owned on top: =GrowLine.js= +
+=material-cache.js= (=turtling/render/line/=). Prose: [[file:assets/js/utils/VENDOR.org][VENDOR.org]]
+=::vendor-line-addons=.
+
+** kernel cell — registry-of-one
+:PROPERTIES:
+:ID: nav-kernel-cell
+:KEYWORDS: kernel cell createCell register get watch changed breathes stage-cell idiom later mount wins
+:PATH: assets/js/kernel/cell.js::export function createCell
+:END:
+One occupant, owner-guarded release. Optional breath. Stage, world, navigator,
+terminals all sit on this.
+
+** kernel observable — one watch/notify
+:PROPERTIES:
+:ID: nav-kernel-observable
+:KEYWORDS: kernel observable createObservable createAtom watch notify swap deref
+:PATH: assets/js/kernel/observable.js::export function createObservable
+:END:
+The breath every half-adopted list reimplemented. Atom is a value over it.
+
+** kernel arena — one lifetime, no individual free
+:PROPERTIES:
+:ID: nav-kernel-arena
+:KEYWORDS: kernel arena createArena LIFO child destroy clear on timer zombie mount
+:PATH: assets/js/kernel/arena.js::export function createArena
+:END:
+APR/region law: LIFO cleanups, nested children die first, register-after-destroy
+throws. =test/js/kernel/kernel_test.mjs=.
+
+** kernel attach — a claim that outlives no occupant
+:PROPERTIES:
+:ID: nav-kernel-attach
+:KEYWORDS: kernel attach claim seat occupant rebind reseat release lend health project nerve cell watch late mount successor
+:PATH: assets/js/kernel/attach.js::export function attach
+:END:
+=attach({get, watch}, bind)= — bind the standing occupant and every successor;
+the previous release runs FIRST, so a claim never stacks and a departing
+occupant never leaves a live one behind. Was hand-rolled three times in three
+shapes (a claim-once guard in =outer.js=, a release-then-relend in =inner.js=,
+a bare thunk in =weave.js=). =nerveSeat= (=hooks/nerve.js=) is the named view.
+
+** the address grammar — three marks, one speller
+:PROPERTIES:
+:ID: nav-address-grammar
+:KEYWORDS: address grammar cellKey topOf isSeatOf rebase separator node slot nest cell hash slash colon coordinate
+:PATH: assets/js/turtling/address.js
+:END:
+=addr= · =addr#cellId= (a cell, D024) · =…/name= (a spawned frame). It was three
+owners and no shared reader — =parse.js= minted =#=, =weave/queries.js=
+=ailmentsFor= split on =/= with its own string arithmetic, =weave/page.js= minted
+=:=. Node is PLACE-FREE (the join key that pairs my cell 3 with theirs); where a
+figure SHOWS is the weave's Slot, and =weave/page.js= =nodeOf=/=placeOf= is the
+only reading of that mark — tests included.
+
+** witness — who a transition belongs to
+:PROPERTIES:
+:ID: nav-witness
+:KEYWORDS: witness SELF PEER own boolean unmarked identity index gate hatch record key co-residency
+:PATH: assets/js/kernel/witness.js
+:END:
+In the kernel because it is neither the weave's nor the turtle's: the seating law
+indexes records by it and the canvas scopes =reflectGate= by it, so two spellings
+would disagree silently. Was =own: true/false= — one identity with two values,
+one unnamed, and unusable as a key. =PEER= is every friend at once; the ADDR
+names which, one addr being one friend's document.
+
+** the reflect law — a buffer's whole truth, and the sentence a friend gets
+:PROPERTIES:
+:ID: nav-reflect-law
+:KEYWORDS: reflect makeReflector ask diagnostics verdict authored attend D022 D025 printAST line count reflectPhase peer seam
+:PATH: assets/js/weave/reflect.js::export function makeReflector
+:END:
+=ask(addr, place)= (by PLACE — one document seated twice faults differently in
+each) and =of({ addr, place, source, attend })=. Lived inline in
+=hooks/shell/inner.js=, so the only way to test it was to write it again in the
+harness. Holds the D025 R1 reasoning: the attention rides UNTRANSLATED because
+=printAST= preserves line count, and why =reflectPhase= must not be used.
+=test/js/seat/reflect_test.mjs= drives this, not a copy of it.
+
+** one shell's sun — the self-rescheduling walk
+:PROPERTIES:
+:ID: nav-sun
+:KEYWORDS: sun mountSun helios timer place tick release setTimeout quiet wait progress glyph residual
+:PATH: assets/js/nerve/sun.js::export function mountSun
+:END:
+Its own timer, so the sun keeps walking through a quiet =wait= where no render
+breathes. Written verbatim in both shells before — the pacing was two things to
+keep equal. =place= rides the signal because a sun names no peer (every helios
+says =system=), see [[id:nav-nerve-helios]]. Wire the first tick at BIRTH: a push
+pulls =health()= synchronously.
+
+** seat base — pull standing health, never push
+:PROPERTIES:
+:ID: nav-seat-health
+:KEYWORDS: seat health seatHealth primaryWound announcements tally mute frozen draft pull thunk
+:PATH: assets/js/weave/seat-health.js::export function seatHealth
+:END:
+One law, both shells, other subject. =mute= is for a surface with nothing TRUE to
+say — a frozen draft has run nothing of ours, so there is no runtime to report
+(D025 R6).
+
+** term cell — Terminals by role, not dunder
+:PROPERTIES:
+:ID: nav-term-cell
+:KEYWORDS: term-cell register get outerDrafting role coreshell outershell gw-t-dom-registry
+:PATH: assets/js/hooks/shell/term-cell.js
+:END:
+=register(role, term)= / =get(role)= over one =createCell()= per surface name —
+role is data, an unknown one throws by name ([[id:lex-unmarked]]). Replaces
+=__cm= / =__terminal= walks (id:gw-t-dom-registry).
+
+** outer surface — review, draft, fork
+:PROPERTIES:
+:ID: nav-shell-outer
+:KEYWORDS: outershell outer surface seeOuterShell outerSignal draft fork watch claimant projection cells stripped empty fences lint ink another's diagnostics
+:PATH: assets/js/hooks/shell/outer.js
+:END:
+The viewer renders =printAST(payload.commands)= in EVERY state (D022) — the
+tree always builds and holds a broken line verbatim (D020), so the string
+=source= is only the honest degrade for a peer that sent no tree. Their
+=diagnostics= ink through =publishDiagnostics= (=editor/diagnostics.js=),
+withheld while drafting — the visible doc is then the CHILD'S draft, and the
+friend's line 12 is not his line 12.
+
+** the grammar table — one fence / one blockDelta
+:PROPERTIES:
+:ID: nav-grammar
+:KEYWORDS: grammar MEADOW_FENCE CELL_OPEN CELL_CLOSE CELL_PROBE blockDelta BLOCK_KW isMeadowFence isCellOpen isCellClose MEADOW_MARK CELL_MARK outlineFromAst
+:PATH: assets/js/turtling/parse.js::export const MEADOW_FENCE
+:END:
+The fence and block-open law (id:gw-grammar). Tokenizer, outline, editor,
+press, page probe, do-end matching all read here — never re-spell.
+
+** the scan — one walk, roles only
+:PROPERTIES:
+:ID: nav-classify
+:KEYWORDS: classify scan roles ROLE splitLines lineText naming meadowOpen meadowClose cellOpen cellClose headline prose code closesCell info one walk shared mind CRLF
+:PATH: assets/js/turtling/parse.js::export function classify
+:END:
+The predicates at [[id:nav-grammar]] are the marks; this is the ONE walk that
+applies them. Every line gets one name for its place in the clearing — no spans,
+no records, no tree — and every reader downstream is a FOLD over those roles
+([[id:nav-outline]] into geometry; the tokenizer into records, next).
+
+Roles-only on purpose: the moment the scan reshapes, counts, or spans, it has
+become a second mind wearing the name of the first. Fan-out (a glued =end=
+splitting into two records) belongs to the fold, so the scan stays 1:1 with the
+tape. =splitLines= is the one split — line endings are the tape's, never content.
+
+** the prose walk — ONE geometry, every reader a view
+:PROPERTIES:
+:ID: nav-outline
+:KEYWORDS: outline prose walk meadow cell fence headline phase path findProse findCells findMeadows inMeadowRange fold state machine one grammar name coord cellIdentities identity frame key duplicate collision
+:PATH: assets/js/turtling/parse.js::export function outline
+:END:
+A FOLD over [[id:nav-classify]], never a walk of its own — it reads roles, not
+text, because the fences were already named once.
+
+*A CELL'S IDENTITY RIDES THIS WALK* (D024). Each cell carries =name= — the word
+on its opening fence, the author's own — and =coord=, its place in the tree: the
+section-index chain, then its order among its own section's cells.
+
+*A NAME IS NOT THE IDENTITY; THE ID IS* (rule 4′). Two things, two jobs: =name=
+is a LABEL, free to repeat under different phases and displayed as she wrote it;
+=id= is the frame key — the section chain, then her word or this cell's ordinal
+(=1.2.myname=, =1.2.3=). So the same word under two subheadings is two cells and
+no wound; twice in ONE section is one place claimed twice, and that is a real
+collision. Titles never enter the key (prose changes freely; the tree's SHAPE is
+the structure), and every cell takes an ordinal slot whether named or not, so
+naming one never re-keys her sisters.
+
+=cellIdentities(cells)= spells the rule ONCE — =id=, =name=, =named=, =collides=,
+=why= — because two readers want it: the seating law keys frames on =id=, the
+diagnostics query turns =collides= into a wound (=why= picks the sentence). A
+name may not be spelled as a PLACE (=/^\d+(\.\d+)*$/=): =1.2= as a word would key
+the frame that SITS at 1.2, and a duplicate check watching names alone could
+never see it — the grammar is refused so the class dies, not the instance.
+
+*Bounded, not immortal.* A SECTION opened above re-keys everything beneath it,
+named or not: nothing survives a restructuring, and rule 4′ chose reusable names
+over immortal ones. What this replaced (=#cellN=) was worse in kind — it made
+every cell a neighbour of every other, so opening one in chapter one re-aimed a
+running figure in chapter nine.
+
+=outline(lines)= → ={ meadows, cells, phases }= is THE walk over prose space
+(=cmp-vet-4=). It takes LINES, because a line is the one thing both a tree and
+a CM6 doc already have — text in, shape out, pure. Every reader is a view:
+=phaseCells= (nodes + vocabulary), =phaseAt= / =cellAtLine= (the phase,
+D021), and the editor's =findProse= / =findCells= / =findMeadows= /
+=inMeadowRange= / the fold services (=plang-mode.js= is now only the CM6
+adapter). Three hand-rolled copies of this machine used to agree by luck;
+=lit_tokenizer_test.mjs= pins the two sides as one answer. The healing marks
+(=implicit=, =meadowCloseImplicit=, =info=) keep =printAST= round-tripping
+exactly, which is what the line arithmetic rests on.
+
+** the phase — a line names a phase (D021)
+:PROPERTIES:
+:ID: nav-phase
+:KEYWORDS: phase attention line address phaseAt cellAtLine reflectPhase attend scene.attend phase sister sibling subheading ordinal aliasing dormant empty cell path kind diagnostic
+:PATH: assets/js/turtling/parse.js::export function phaseAt
+:END:
+ONE datum names where a peer is — a LINE — and the rest is DERIVED, never
+stored (D021). =phaseAt(ast, line)= reads the headline path off the
+PRINTED document (the one printer is the one grammar, so it answers alike for
+a tree and for a projection of it); =cellAtLine(cells, line)= finds a cell by
+its FENCES, so a cell just opened and still empty is addressable (dormant ≢
+empty); =reflectPhase(ast, attend)= keeps all prose and only the inhabited
+phase's SISTER cells, every other cell behind its fences, and translates
+=attend= into the projection's coordinates — *NOT WIRED, and must not be:
+"dormant" downstream means seated with EMPTY CODE, which wipes the figure. See
+its docstring.* =phaseCells= carries
+each cell's =open=/=close= lines and its =path=. Why not a cell ordinal: it
+aliases under insertion and cannot name a phase that owns no cell yet.
+Pinned by =test/js/phase/attention_test.mjs=.
+
+*** two addressings, one seam (=cmp-vet-4=)
+A LINE addresses an INTENTION — where the reader is; total (prose has one) and
+local, so it crosses surfaces (=scene.attend(addr, line)=) and the wire, and the
+page law resolves it once (=law.attend= → =cellAtLine=). A KEY names a BODY for
+one evaluation — the frame key; re-derived each parse, crossing nothing. A line
+would be worse there: any edit above a cell would move its key and restart a
+running figure. That key is the cell's NAME, or its tree coordinate when unnamed
+(D024, [[id:nav-outline]]) — never a flat ordinal, which had the same disease a
+line has, only quieter. Pinned by =weave_page_test.mjs= ⊗ =scene_seam_test.mjs=.
+
+** the reflect seam — what crosses to a peer
+:PROPERTIES:
+:ID: nav-reflect-seam
+:KEYWORDS: reflect hatchTurtle renderstate meta commands attend document authored buffer stripped cells peer seam hatch gate hatchMine gate self reflectGate diagnostics propagate projection inhabited verdict primaryWound sayWound describe placeOf wound-view view layer facts words prose dependent dependentsOf feedsVocabulary cellKey parseWounds ailmentWounds nameWounds dependentWounds locate isolate severity warning outerSignal located fault runtime
+:PATH: assets/js/hooks/shell/inner.js::const reflection
+:END:
+D022 — *the reflect is the document, not the residue of the walk.* The turtle
+publishes only what it OWNS (=renderstate.meta= = the fault: =state= /
+=message=, address-filtered by =ailmentsFor= so a watched friend's error
+never reddens the child's); the surface supplies the DOCUMENT at the hatch seam:
+=reflection()= answers the AUTHORED buffer's standing tree AS INHABITED ⊕ its
+span-true diagnostics. =authored= is a lifecycle — the child's edit, a live
+draft — never a per-seat residue and never a friend's push. The hatch gate is
+the BATCH's word (=turtle.reflectGate=, spoken once in =perform()=): a seat may
+only OPEN it, so a page's warm sibling can no longer close it last and mute the
+page. Pinned by =test/js/seat/reflect_test.mjs=.
+
+*** the hatch carries the fault — no runtime on the watcher (D020 amended)
+*=state= is the DOCUMENT's health; =diagnostics= are the addressed wounds.* Any
+standing WALK wound makes =verdict= answer =error=, with a LOCATED message
+(=Arrowhead › wow › wow · line 7 — …=, via =spokenWound=). It used to answer
+=error= only for the buffer's OWN key, so a page whose CELL died reflected
+=success= with a null message — and =outerSignal= carries exactly ={state,
+message}=, so a FOLLOWING watcher was told nothing. Only a DRAFT showed it,
+because a draft RE-RUNS the friend's code on her own canvas: runtime standing in
+for a fact the author already knew and had already sent. Appearance still rides
+the diagnostic's ADDRESS, never this binary, so healthy cells keep their light.
+A parse error is still not a death (=kind: "walk"= only).
+
+*FACTS AND WORDS ARE TWO LAYERS.* =weave/queries.js= is the QUERY — gather,
+locate, judge — and it authors no prose: a wound it makes carries the facts for
+a sentence (=why=, =word=, =answersTo=, =standsOn=), never the sentence, while a
+wound it passes through keeps the words it was GIVEN (the parser's, the
+canvas's), quoted and never rewritten. =weave/wound-view.js= is the VIEW, and
+the only place facts become words: =placeOf= (where it hurts), =describe= (what
+hurt — quoted where given, composed where not), =sayWound= (the whole sentence).
+Every surface renders through it — the core HUD, a friend's panel, the editor's
+gutter (=toDiagnostics= → =describe=), and the reflect's =message=, which the
+authoring surface says BEFORE the wire so the server carries words it never has
+to interpret (D022). =verdict= answers ={ state, wound }= — WHETHER and WHICH,
+never how it reads. They were one module and the query grew a =message= field
+that was sometimes quoted and sometimes its own composition, with nothing
+telling a reader which. Pinned by =test/js/wound/wound_view_test.mjs=.
+
+*The turtle's fault channel is a LIST, never a sentence.* =renderstate.meta=
+carries =diagnostics= — abstract wounds (address ⊕ span ⊕ message ⊕ kind) — and
+=upsertAmbient= answers ={ success, wounds }=. It published
+={ state, message: errors[0].message }=: an arbitrary pick (a second selector
+beside =primaryWound=), the other wounds discarded, and a receiver handed a
+STRING it could only reprint. A sentence has no address, so nothing could be
+isolated. The wounds ride the SAME field the reflect uses, so there is one
+channel: the turtle's are abstract, the reflect's are the same wounds LOCATED,
+and locating is an ENRICHMENT, never a second type. A throw is a wound too.
+
+*The wound is isolated to its CELL, and to the cells that stand on it.*
+=weave/queries.js= gathers FOUR kinds in one shape — =parseWounds= (the tree's
+broken statements), =ailmentWounds= (the canvas's walk faults, each keeping the
+address of the frame that died), =nameWounds= (D024 collisions), and
+=dependentWounds= — then =locate= names every one's phase, cell and line in a
+single prose walk. Breaking them apart is what let the fourth exist without
+growing the function.
+
+*Dependents are D019's edge, walked BACKWARD.* =feedsVocabulary(sourcePath,
+targetPath)= is the one predicate: =phaseCells= walks it forward to build a
+cell's vocabulary, =dependentsOf(cells, i)= walks it backward to find who a dead
+cell leaves standing on a definition that never ran. They are compromised
+WHETHER OR NOT THEY HAVE RUN — a page seats lazily, so otherwise the child
+learns it only by reaching each one and watching it die. Marked
+=kind: "dependent"=, =severity: "warning"= (the existing =toDiagnostics=
+severity does the rest — no new machinery), addressed to the DEPENDENT's own
+cell key via =cellKey=, and skipped where a cell already carries its own fault.
+=verdict= never sees them (=kind: "walk"= alone), so a warning is never a death.
+Vocabulary flows down the outline, never sideways: a sister phase inherits
+nothing and is not compromised.
+
+*One selector, two readers.* =primaryWound(found, key)= says WHICH fault the
+document speaks of — the buffer's own if it has one, else the first tenant's —
+and =verdict= and the core HUD both read it. They used to choose independently
+(the HUD took the first, the verdict preferred the buffer's), so a page could
+say two different things about itself depending on who asked. =verdict= answers
+={ state, wound }= — WHETHER and WHICH — and the surface renders the sentence
+through [[id:nav-wound-view]]. Pinned by =test/js/wound/queries_test.mjs=.
+
+*** the attention rides, the document does not move (D025 R1 amended)
+=attend= is a coordinate INTO the whole tree that crosses beside it — the
+author's own line, UNTRANSLATED, because the watcher holds the same document and
+=printAST= round-trips exactly. No projection, no shift, no second coordinate
+space. =Dojo.Turtle= carries it as luggage: the server has no AST walker and may
+not grow one, so it must not rate-limit by line or fan out by phase.
+
+=reflection()= must NOT call =reflectPhase=. Wired [2026-07-27] and reverted the
+same day: projecting by phase drops each distant cell's BODY and keeps its
+fences, so downstream every one seats with empty code, its figure is wiped, and
+the gutted text becomes the merge baseline of a code-review surface. A cursor
+move must not rewrite the friend's document. See the warning on the function.
+
+** the watcher's law — one latch, three doors
+:PROPERTIES:
+:ID: nav-watch-law
+:KEYWORDS: watch law follow latch following peerAt ownCaret step openWatch resume hand reassert draftEnter draftView peerLine claim viewport mark chase stir intervene firefly caret stash outershell
+:PATH: assets/js/editor/watch-law.js::export function step
+:END:
+=step(state, event) → { state, ...acts }= over ={following, peerAt, ownCaret}=.
+AN ACT NAMED IS AN ACT PERFORMED; =null= is a real value (unmark, unclaim), an
+absent key is an absence. Every reading rides the event — the law never looks at
+a view. The mark and the firefly track the peer in EVERY state; only the claim
+and the viewport are the latch's to give. =outer.js= =walk()= performs, in one
+order: caret → halt → stir → mark → chase → claim → viewport. It was five
+mutable locals across five handlers; the invariants (the caret is stashed once
+and spent once; the light has exactly one owner) are properties of one value now
+— =test/js/editor/watch_law_test.mjs=.
+
+** peer attention — the friend's cell, and following it
+:PROPERTIES:
+:ID: nav-peer-attention
+:KEYWORDS: peer attention following follow followTo haltFollow scrollBoxOf chase firefly sigil stir fly-wake is-awake peer-ink violet cm-peer-line cm-peer-cell setPeerCell chaseDirection visibleLines watcher consent intervention scroll focus anchor caret herCaret minimalChange updateOuter heldBy
+:PATH: assets/js/editor/peer-attention.js
+:END:
+The watcher's side of a friend's line (D025 R5/R6). THE DATUM IS A LINE and only
+a line is stored — a line is TOTAL, so it means the same in prose, on bare code,
+between cells and inside them. Two marks derive from it in ONE walk over the
+EXISTING activation field: =.cm-peer-line= (him, exactly) and =.cm-peer-cell=
+(his FOCUS — the cell that line kindles, when it falls in one; absent otherwise,
+which is itself true and says he is making). =setPeerCell(view, line)= is a
+=StateEffect=; the surface dispatches it where it sets the DOCUMENT, so a draft
+(whose text is the CHILD'S) clears it by saying what is true rather than by
+guarding. FOLLOWING IS ARRIVING, not scrolling: =follow(view, line)= lands her CARET on
+his line, and the laws that already exist do the rest — the cursor law lights his
+cell in her editor, and the surface hands the same line to =scene.attend=, where
+the page law KINDLES that cell on her canvas. Two readers of one line, the same
+two her own reach feeds when she walks a page herself.
+
+*ONE LAW AT THE SURFACE.* Only a line the document holds is news. The meta
+(=outerAttend=) can name a line a breath before the body arrives; refusing that
+name leaves =peerAt= behind so the push that brings the body is still a move and
+following completes. Committing early made every later same-line push a no-op and
+froze the view at its first paint (firefly stuck "below"). Same line already held:
+re-measure the firefly, do not re-arrive — that is typing. =followTo= is already a
+no-op when centred; the gate is identity of the line, not geometry.
+
+*THE SCROLLER IS ONE.* Measured [2026-07-27]: =.cm-scroller= (=view.scrollDOM=)
+is the scrolling box; =#outerenv= does not overflow. The chain is =#outerenv=
+(fixed height) → =#outershell= (=h-full=) → =.cm-editor= (height 100%), so CM6
+scrolls inside. =scrollBoxOf= names that one element. =followTo= and
+=visibleLines= work in height-map space (=scrollTop= and =lineBlockAtHeight=
+share one basis — the same read reach.js makes). The firefly LISTENS to that box
+but does not live in it: it hangs in =anchorOf(box)=, the first positioned
+ancestor that does not scroll. Inside the scroller a =top= chased by hand can
+only ever be one frame behind the text — that lag WAS the jitter. Out in the
+still frame it does not move, and the box's edges within that frame are a LAYOUT
+fact, remeasured by =ResizeObserver=, never on the scroll path. On a fast scroll
+it thins to nothing (=.is-flitting=) and settles back.
+
+*Following is whose attention drives the VIEWPORT* — one =let following=, read
+in ONE place (the receive); its writes are its whole lifecycle (a friend's page
+opens it, her input ends it, the firefly gives it back).
+
+*Viewport only.* It cannot also answer /may their push claim the light/ —
+=following= is released only by input on =#outerenv=, so a hand moving to the
+*coreshell* left it stale-true and every peer push took the light back. That
+question is the law's: =pageLaw.attentionAt()=, reached through the world cell
+and read in =outer.js= as =holdsLight()= — asked, never cached. The missing
+dual is =inner.js claimCore= (mousedown / focusin): before it, light came home
+only by TYPING. *Opening* a friend claims; a later push only *reasserts* where
+the light already is. See [[id:light-ladders-place-axis]]; pinned by
+=test/js/seat/light_test.mjs=.
+
+*Intervention is read off INPUT, never off scroll* — =wheel=, =touchmove=,
+=mousedown=, =keydown= bound on =#outerenv=, the widest surface her input can
+land on (the editor's own events bubble up to it). NOT the reach's publish: reach's scroll
+listener fires for programmatic scrolling exactly as for a wheel, so ending
+following there means =followTo= kills following on the first line it follows.
+A "was this ours" flag is no better — it races the dispatch that caused it. An
+event's KIND is unambiguous, and this organ only ever WRITES scroll.
+
+=chaseDirection(line, first, last)= is pure and answers =null= for any line the
+viewport was just moved onto, so the firefly needs no knowledge of following and
+carries no suppression clause. Pinned by =test/js/editor/peer_attention_test.mjs=.
+
+*The firefly is a sigil, and arousal is a VALUE* — no fill, no plate: their
+initials as ink, a hairline rim, light falling off. =chase.stir()= adds
+=.is-awake=, which pins one registered custom property (=--fly-wake=, 0→1 in
+=assets/css/app.css=); pigment, glow, rim, halo and swell are all =calc= over it,
+so nothing can be awake in one property and asleep in another. It kindles in a
+breath and cools over three seconds. =stir= is called ABOVE =applyAttend='s
+idempotence gate: a push with the line unchanged is the friend TYPING — the
+viewport must not move for it, the firefly must burn for it.
+
+*The friend has ONE pigment* — =--peer-ink=, a violet declared once in
+=assets/css/app.css=, read by the firefly AND by =.cm-peer-line= /
+=.cm-peer-cell= in =assets/js/editor/theme.js= (via =color-mix= for their
+alphas, both themes). His line and his glyph are one mark at three distances, so
+they cannot drift. Violet because the pigment's whole job is to say SOMEONE
+ELSE and your own live cell is chartreuse — and because violet is the theme's
+own hue on both grounds (dark base is violet-black, the paper's ink is violet).
+Wake is never a hue change: one hue, brightening in chroma and glow.
+
+*And ONE margin* — =.cm-peer-cell= rules the RIGHT edge (=inset -2px 0 0=), not
+the left: the left margin is spoken for (line numbers, folds, the lint spark ✶),
+and the firefly hangs on the right too. The cell's rule and the glyph past the
+edge fall on one vertical line, so the friend owns a margin rather than a badge.
+
+** the reflect's breath — one question, two ends (D025)
+:PROPERTIES:
+:ID: nav-reflect-breath
+:KEYWORDS: reflect_changed code_changed gate bump attentionMoved lastReflectChange reflectChanged dirty predicate outerSignal suppress push watcher learn
+:PATH: lib/dojo_web/live/layout/outer_shell.ex::def reflect_changed?
+:END:
+*Would the watcher learn something new?* — asked at both ends, one sentence.
+SERVER: =reflect_changed?/2= compares two turtles with the BUMP blanked
+(=@bump= = =time=, =path= — the fields a mere image re-publish moves). Naming
+the bump, never a union of the fields that matter, is the design: a field added
+to the reflect is covered the day it is added and can never mint a second gate.
+Replaced =code_changed?=, which read =source= alone and so dropped changed
+=diagnostics= (which carry RUNTIME walk ailments), =state=, and =message=
+whenever the source repeated — =outerSignal= included. CLIENT:
+=turtle.reflectChanged()= is that same sentence spoken forward — it stamps
+=_lastReflectChange= and wakes the loop; the verdict ([[id:nav-hatch-verdict]])
+alone decides whether that becomes a hatch. =attentionMoved()= says it and
+nothing more. One call site — the =scene.attend= handler, guarded to the
+authored addr. Routes through the one render loop, so =gate[self]= (hatchMine)
+still holds (a followed PROGRAM does not hatch its previews, D023).
+
+** when the reflect is hatched — the one verdict
+:PROPERTIES:
+:ID: nav-hatch-verdict
+:KEYWORDS: hatch verdict hatchVerdict BEAT first-light alive settled owed reason floor cadence animation loop snapshot onFrame keepRendering firstDrawAt lastHatchAt reflectChanged stage hatchInFlight
+:PATH: assets/js/turtling/hatch.js::export function hatchVerdict
+:END:
+*One question a frame: would the watcher learn something new?* The policy is
+PURE and THREE-free (the =timeline.js= law) — =hatchVerdict(world)= in, ={owed,
+reason}= out, pinned by =test/js/stage/hatch_test.mjs=. =reason= says hatch now;
+=owed= keeps the render loop alive while a floor runs or the stage is mid-
+readback, so no hatch is ever dropped by an idle-out.
+
+*ONE HATCH PER RUN* — a run passes its code and ONE snapshot; the reflect is not
+a video feed. The floors are a TABLE, not a branch: =first-light= 500 (from the
+canvas's first draw, never the page's epoch clock), =alive= 500 (a walking run's
+single glimpse, measured from the SEAT so it lands half a second into the walk
+and not on an empty first frame — the case a list of causes could not name, so a
+=loop 9400 … wait 1/24= hatched never and its reflect froze), =settled= 200 (the
+floor that keeps typing from a drumbeat). Nothing re-arms while a figure walks;
+the run's END is the one change it speaks after starting (=onFrame= stamps the
+=_walking= edge), so a run that finishes still sends its final figure.
+
+Callers say =reflectChanged()= and nothing else — no second wire (D025 R4), no
+back door past =gate[self]= (D022/D023; witness-scoped), no second rate limiter. The
+=snap= camera command says it too (it used to clear the =hatched= sentinel to
+trick first light into firing).
+
+** attention's two carriers — arrival and movement (D025 R9)
+:PROPERTIES:
+:ID: nav-attend-carriers
+:KEYWORDS: outerAttend attend push_attend broadcast_hatch meta presence-class carrier applyAttend self-watch fetch task follow caret herCaret enterDraft
+:PATH: lib/dojo_web/live/shell_live.ex::defp push_attend
+:END:
+His line crosses on TWO carriers, and they say different things. THE REFLECT
+(=seeOuterShell=, =Turtle.attend=) carries where he is *as the document arrives*
+— the coordinate a watcher needs on her first paint. THE HATCH META
+(=outerAttend=, =push_attend/3=, fed by =broadcast_hatch='s =Map.take(..., :attend)=)
+carries where he *moved*: ~40 bytes, no =Dojo.Table= fetch, no spawned task, no
+time gate. The meta path is why a reader who MOVES and does not type crosses at
+all, and why SELF-WATCH works — =maybe_follow_code= requires =dis[reg_key][:node]=
+and silently excluded it.
+
+Attention is PRESENCE-CLASS in both directions (R9 extends R8). This is not a
+second wire path — R4 governs the TRIGGER (still one =eagerHatch=) — and not a
+fifth name: both carriers call ONE act, =applyAttend= (hooks/shell/outer.js),
+idempotent on his line. Two doors, one room; nothing may branch on which door.
+
+*The follow caret is a display artifact* (R10). =follow()= lands her CARET so the
+existing cursor law lights his cell — but =onDraftKey= does not =preventDefault=,
+so CM6 would apply her keystroke at HIS line. =herCaret= stashes her place before
+the first follow of a run and =enterDraft()= spends it — the ONE door every draft
+entry passes. A pointer-down releases the stash (a click places a caret); a wheel
+does not.
+
+** inner surface — canvas, turtle, scene bridge
+:PROPERTIES:
+:ID: nav-shell-inner
+:KEYWORDS: inner surface canvas turtle sceneBridge opBuffer writeShell forkBuffer ambient opacity focus
+:PATH: assets/js/hooks/shell/inner.js
+:END:
+
+** terminal buffers — tabs, writethrough
+:PROPERTIES:
+:ID: nav-terminal-buffers
+:KEYWORDS: terminal buffer tab writethrough storage swap
+:PATH: assets/js/terminal/buffers.js
+:END:
+
+** literate editor — meadow grammar, code cells, cursor gate
+:PROPERTIES:
+:ID: nav-literate-editor
+:KEYWORDS: plang-mode tokenizer meadow margin literate quote snippet code cell fence findCells cellAt activation dim active fold theme ink face lit heading portal notebook PROSE_BLOCKS proseBlockAt shared grammar outline outshine marginOutlineFoldService
+:PATH: assets/js/editor/plang-mode.js
+:END:
+The lit tokenizer (margin =#=, meadow =###=, =|= quote, => = snippet, =``` ```=
+cell) plus =findCells=/=cellAt=/=codeCellFoldService=. ONE prose-line grammar
+behind both doors: =PROSE_BLOCKS= + =proseBlockAt= is a shared, extensible table
+of per-line marks (=* | >=) consumed by BOTH =readMargin= and =readMeadow=; a
+=spansLines= flag keeps the =``` ```= cell meadow-only. So =# * Title= is an
+outline heading riding code (=marginOutlineFoldService= folds it outshine-style).
+Ink faces in =editor/theme.js=; cursor-driven active/inert dimming (a memoised
+StateField, ~560× on the move path) in =editor/code-cell-activation.js=.
+Reasoning: [[id:gw-cell]], [[id:gw-grammar]]; perf in [[id:gw-reflect-6]].
+
+** liveview bridge — JS ↔ server seam
+:PROPERTIES:
+:ID: nav-bridged
+:KEYWORDS: bridged liveview hooks socket pushEvent handleEvent uploaders
+:PATH: assets/js/bridged.js
+:END:
+From a HEEx =phx-hook= name, jump with =C-c d h=.
+
+** the seating world — one value, one door
+:PROPERTIES:
+:ID: nav-seating-world
+:KEYWORDS: seating world openWorld step lightOf presenceOf slotsOf recordFor attentionAt records ladders places pins order purity partition demote place ladder pageLaw shell thin ll-audit-purity
+:PATH: assets/js/weave/page.js::export function step
+:END:
+=step(world, event) → { world, answer }=, and =pageLaw()= is the thin shell that
+owns a world and forwards — its face never moved. It was FOUR closure
+containers (=pages=, =placeOrders=, =placePins=, =placeLadder=): four things to
+keep in step for one fact, and no way to say "this world" in a test. Two of them
+were one index split in half — an order and its pins are ONE ladder. =self=
+lives in the world because it IS the world's identity, so every reader is
+=f(world, …)=.
+
+  =records= (witness, place, addr) · =ladders= (witness, place) → ={order, pins}=
+  · =places= (where self looks; head kindles)
+
+Readers are exported and pure, which is what the purity was FOR:
+=lightOf(world, place)= partitions the standing slots, and the place ladder
+DEMOTES when a place empties — both quantified over every document shape in
+=test/js/seat/world_test.mjs=, each falsified (break the code, the right pin
+turns red). Closes =ll-audit-purity=.
+
+ASKED, NEVER SENT: =presenceOf(world)= and =witnessesOn(world, addr, place)=.
+=presence= rode every answer and no surface ever read one — a walk of every
+record per keystroke to fill a field nobody opened. And nothing ENUMERATES
+witnesses now (=forget= walked =[SELF, PEER]= by hand, so a third witness
+survived it) — the day one is minted per friend, the law needs no edit.
+
+** weave fragments — woven content
+:PROPERTIES:
+:ID: nav-weave
+:KEYWORDS: weave fragments trail loom press transpile splitCells phaseCells vocab vocabulary outline heading scope rehearsal rehearseVocab drainNamespace sibling ambient scene.attend attend observe restore witness own place attention draft cursor gate stretch ladder visit page law seating law pageLaw perform light kindled warm shape SHAPE seatsBuffer bound paints co-residency drop
+:PATH: assets/js/weave/fragments.js
+:END:
+The press (=weave/parse.js= =transpile=) emits =```= cells inside the meadow —
+ONE representation; the sibling split DERIVES from the AST
+(=turtling/parse.js= =phaseCells=; =splitCells= is its flat view), keyed
+=addr#cellN=, mounted lazily by the SEATING LAW (=weave/page.js= =pageLaw=:
+pure decisions, no DOM and no turtle). Every verb answers in ONE shape — TWO
+DELTAS then TOTALS: ={ gone, runs, light, presence, at, hatch, main, source,
+merge }=. =gone= ⊕ =runs= are the canvas consequences (two named arrays, never
+tagged ops — the =gone=-before-=runs= ordering lives in the shape, where a test
+can see it), performed by =inner.js= =perform=: two loops, then
+=turtle.light(ans.light)= and the hatch gate. =at= is where the ladder actually
+put the light, for the INPUT ORGAN that addressed the law (=inner.js= =settle=,
+and =scene.landed= back across the seam for the outer one).
+
+THREE INDICES, INDEPENDENT (id:light-ladders-data): =records= at
+=(witness, place, addr)=, =ladders= at =(witness, place)=. ONE VERB (D023):
+=observe(addr, { name, doc, witness, place, attention })= is the only door — the
+child's core shell, her live draft on a friend's page, and a watched friend's
+push are the SAME call, differing in =witness= (=kernel/witness.js= =SELF=/=PEER=
+— =own: true/false= is the surface sugar) and =attention= (a LINE). Unit of
+execution, green-tree identity and the ladder are therefore shared: drafting on
+a friend's cell means what editing your own cell means.
+
+CO-RESIDENCY: two witnesses may HOLD a record for one document at one place, and
+=paints= decides which one draws — a Slot is =place:node=, one canvas seat, so
+self's record paints and the friend's is held (its tree, its diagnostics, the
+baseline a draft reverts to). =restore(addr, place)= drops self's and HANDS THE
+SEAT OVER with the held record's own body, so leaving a draft needs no re-seat
+from the surface and never blanks the frame. =drop(witness, place, addr)= is the
+one destructive move; a slot appears in =gone= only when nothing left standing
+paints it.
+
+THREE SHAPES, TWO FACTS: =SHAPE= is a table — =plain {seatsBuffer, bound:0}=,
+=program {true, 1}=, =page {false, 2}= — read instead of branched, and derived
+from the document alone (=shapeFor=). Nothing stores a mode word.
+=attend(addr, line, place, { witness })= is sugar over =observe= with the
+document unchanged, and the WITNESS is the claim: self's reach moves the light,
+theirs is presence and never takes it from a hand in the other shell (P9).
+Idempotence is the RECORD's — the law emits nothing when what it
+would write already stands, over every addr, where a =~/= prefix used to
+stand in for it. PAGE-NESS FOLLOWS THE DOCUMENT (D022): any cell-bearing
+push mounts as a page — first cell shown, the rest lazy — so a watched
+peer's page is never run all at once. The inner
+surface only performs (=hooks/shell/inner.js= =perform=; =DEGREE= maps the light
+total to opacity there, once, through =turtle.light= — the ONE writer of the
+register, so a portal walk can never move the camera without moving the paint). The OUTLINE IS THE AMBIENT TREE
+(D019): a meadow headline scopes
+— each cell carries =vocab=, its ancestor headings' cells' code (down, never
+sideways; siblings sovereign), REHEARSED at seat time: =upsertAmbient({
+vocab })= → =turtle.rehearseVocab= (content-keyed cache) → =executor.js=
+=drainNamespace= (headless from-zero run by the one executor, waits
+fast-forward, no sibling negotiation, loud budget) — NO SIBLING NEGOTIATION is
+carried by the residual in =evaluateExpr=: a bare unknown ident WOUNDS (measure
+is strict — never a silent string that NaNs SE(3)), a DOTTED one resolves to
+nothing, because reaching the residual at all means there is no ambient tree to
+read and an absent sibling is not the author's fault. A live walk never lands
+there for a dotted name — =namespace_check= routes it through =resolveExternal=,
+which speaks its own =Undefined assistant= or blocks → the pure-function
+namespace (=functions= + =fn= userspace) forks as a COPY through the same
+spec =as name do= uses. On a PROGRAM, previews fork from the program's
+rehearsal; the outline is ignored. The reach is ONE organ, =editor/reach.js= =mountReach=, mounted
+by BOTH shells — each publishes =scene.attend(addr, line)= (a LINE, D021: the
+organ says where the reader is, the law decides which cell that is), the outer
+one for the watched page AND for the child's live draft on it (the gate no longer
+stands down while drafting — that is what made a draft run the whole buffer).
+Both land in =pageLaw().attend=. The PRIORITY LAW decides by document shape:
+all-cells = a PAGE (kindled runs + warm window, whole buffer never runs);
+bare code outside fences = a PROGRAM (=stripCells= runs as the ambient,
+cells are cursor-only PREVIEWS, =index null= stands them down). Cursor's
+cell when present; on a page when absent, a passive scroll listener +
+=posAtCoords= resolves the EYELINE cell — the TOPMOST cell still on screen
+(=plang-mode.js= =eyelineCell=; off the bottom of every cell the nearest one
+ABOVE holds, before any cell the first) — and plants the caret at its door so the editor light follows the one cursor
+law — landing on the cell's LAST INSIDE LINE, at its end (=plang-mode.js=
+=cellBodyEnd=), the writing position and not the door: reading a cell hands it
+over to be continued, and a caret parked on a =```= fence turns the next
+keystroke into a broken cell, which un-pages the document and collapses every
+sibling with it. THE EYELINE LEANS TOP because only the top edge is reachable:
+any cell can be scrolled to it, and below the last line you can always press
+Enter for more room, whereas the bottom edge is pinned by the doc's own end — so
+the older LOWEST-visible reading gave cells packed close together no window of
+their own (three in one viewport and only the third ever lit, the first two
+skipped forever). SCROLL NEVER DETERMINES THE CURSOR: the whole scroll gesture —
+publish and plant both — stands down unless the shell is UNFOCUSED with NOTHING
+SELECTED (=reach.js= =reading()=, asked at the top of the gesture and again
+where the deferred plant lands, so a click arriving mid-flight drops it). A
+focused shell is being written in and its scrolling is a byproduct of the
+writing — typing at a cell's foot scrolls the doc — so a caret is only ever
+moved for a reader; where there is a cursor, the cursor law owns it alone. That
+replaces the visibility horizon (=cellInSpan=, now gone), which handed the light
+on when a cell scrolled out of sight and so could steal a caret mid-edit.
+The visible span comes off the HEIGHT MAP in the scroller's own coordinates
+(=scrollTop= ⊗ =lineBlockAtHeight=, the =peer-attention.js= reading) — always
+answered, so an unmeasurable viewport is not a case to carry. That READ rides
+CM6's =requestMeasure= (out of the scroll callback it forces a layout per
+event); the plant does NOT — a transaction dispatched from =read=/=write=
+throws "not allowed while an update is in progress" and CM6 swallows it, so
+the cell would seat and RUN unlit. It lands one =queueMicrotask= later
+(=reach.js= =enter=, all of it pinned by =test/js/editor/reach_test.mjs=). ONE WORD PER
+ROLE in that organ: =reach= the module, =attend= the verb, a LINE the datum,
+=attending= what it last published, =reading()= the one test that lets scroll
+speak. The lexicon for this whole cluster —
+and the Feynman test turned on our own metaphors — is
+=specs/weave/lexicon.org=
+(=code-cell-activation.js= =stepActivation=: sticky inside the meadow, dark
+on bare code outside the fence — =findProse=, the one meadow⊗cell walk —
+first cell on first light). The degree ladder is one pure transition
+(=weave/ladder.js= =visit=, capacity 2): reached is kindled, last-left warms
+(dimmed) for before/after, past-the-window evicts ([[id:gw-play]] Shoot 1,
+[[id:gw-appearance]]).
+
+** papertiger — the bestiary ground (runtime body left the tree)
+:PROPERTIES:
+:ID: nav-tiger
+:KEYWORDS: papertiger tiger companion mood stance mascot clippy pounce coil slink prowl halo intent resting question gaze leap undraw draw ink gesture playground meadow atelier carve seed grok imagine potrace normalize archetype bestiary ladder skeleton anima image_edit image_gen image_to_video reference_to_video ZDR upload_url journey experiment lineage score
+:PATH: scripts/bestiary/papertiger
+:END:
+Canon lives in =specs/papertiger/= (=papertiger.org= + anima, atelier,
+evolve, moodboards, skeleton-alphabet, *grok_imagine* API runbook
+[[id:gi-entry]]). The living ground is the bestiary:
+=scripts/bestiary/papertiger/= (=core/=, =_carve/=, =_skeleton/=,
+=_ladder/= — the unfolding-ladder morphs, =dreams/=, =journeys/= —
+experiment process + stitched law ledger [[id:pt-journeys]]), fed by
+=scripts/tiger_atelier.sh= =seed=/=carve= → =scripts/tiger_normalize.mjs=.
+Film ladders: REST via =_ladder/rasa_wheel/pilot/ref2vid/ref2vid_api.py=
+(agent video tools ZDR-blocked — see [[id:gi-zdr]]).
+The browser runtime (=tiger/mood.js= stance automaton, =tiger/tiger.js=
+body, =hooks/tiger.js= senses, the =/tiger= playground) left the working
+tree with the tyger-meadows reshape <2026-07-19>; its design stands in the
+specs canon — re-anchor this hotpath at the code when a body returns.
+
+** PaperLang editor mode — syntax, indents, do/end
+:PROPERTIES:
+:ID: nav-editor
+:KEYWORDS: plang-mode editor syntax highlight indent do-end matching theme lit tokenizer margin meadow heading portal fold ink face litFoldService readMeadow readMargin PROSE_BLOCKS proseBlockAt marginOutlineFoldService outline
+:PATH: assets/js/editor/plang-mode.js
+:END:
+The literate faces (id:gw-grammar): =readMargin=/=readMeadow=/=litInline= tokenize
+the =#= margin and =###= meadow, sharing ONE per-line block grammar
+(=PROSE_BLOCKS= / =proseBlockAt=); =litFoldService= folds a =* name= meadow
+phase, =marginOutlineFoldService= folds a =# * name= code-side outline node; the
+ink face (serif prose, dim marker, glowing portal) is in =editor/theme.js=.
+
+** literate atom store — meta.lit prose, meta.comment trivia
+:PROPERTIES:
+:ID: nav-literate
+:KEYWORDS: literate meta.lit meta.comment meta.endComment trivia meadow fence prose store printAST round-trip headline portal margin comment endComment tokenize parseProgram attachComment
+:PATH: assets/js/turtling/parse.js::function tokenize
+:END:
+Two kinds of prose, cleanly split (collapse-trivia pass):
+- =###= meadow → one =Empty= node, verbatim multiline =meta.lit= (CONTENT),
+  =meta.meadow=; =printAST= re-emits the fences; auto-closes at EOF.
+- a =#= comment is TRIVIA — the uniform =meta.comment= (a node's own/opening
+  line) or =meta.endComment= (a block's =end=), attached by =attachComment=,
+  re-emitted by =printAST= as =#= + the verbatim run (author whitespace kept).
+  =meta.lit= is never a comment. Instrument: =test/js/document/trivia_test.mjs=.
+The lit-link click reveal is shared with the shout-source path in
+=assets/js/nerve/reveal.js=. See
+=specs/decisions/013-literate-atom-rendered.decision.md=.
+
+** resilient parse — total parser, error nodes, spans
+:PROPERTIES:
+:ID: nav-resilient-parse
+:KEYWORDS: resilient total parse error node span line number containment unterminated missing end diagnostics collectErrors errorNode stamp healthy parts live D020 compiler
+:PATH: assets/js/turtling/parse.js::function errorNode
+:END:
+Phase 1 of the intelligent compiler (=specs/compiler.org= [[id:cmp-resilient]],
+D020): =parseProgram= is TOTAL — malformed input becomes ='Error'= nodes
+under the containment law (one line for a head error; head-to-EOF for an
+unterminated block, parsed children riding inside, inert). Every statement
+node carries =span: {line, endLine}= in TRUE original buffer lines (the
+=tokenize= line pass carries birth lines through blank-drops, glued-=end=
+splits, and meadow folds). =collectErrors(ast)= is the diagnostics seed
+(Phase 2's first query); =turtle.run= rides it as =result.parseErrors= and
+the executor rests ='Error'= nodes (=executor.js= case). Elixir side
+tolerant: map patterns ignore =span=, =visit(_)= swallows unknown types.
+Pinned by =test/js/document/resilient_parse_test.mjs=.
+
+** green tree — node identity across reparses
+:PROPERTIES:
+:ID: nav-green-tree
+:KEYWORDS: green tree reparse reuse node identity adopt content key early cutoff memo swap predicate incremental parse span overlay reparseProgram
+:PATH: assets/js/turtling/parse.js::export function reparseProgram
+:END:
+Phase 1's second half (=specs/compiler.org= [[id:cmp-green-tree]]):
+=reparseProgram(text, prevText, prevAst)= parses WHOLE (the total parse is
+ground truth — reuse can never lie), then adopts identity by content
+equality at the top-level grain: a statement, a block, a meadow chunk, a
+cell fence. Unchanged units keep their node OBJECTS ===-identical across
+edits; spans (absolute buffer lines, the position overlay) copy in place.
+Wired at both parse seams: =weave/page.js asTree= (records hold
+=source=/=program=; every surface enters through it, so a live draft reuses
+the held tree instead of handing the turtle a bare string — D023) and
+=turtle.upsertAmbient= (=_parseMemo= per key,
+evicted in =removeAmbient=). Pinned by =test/js/document/green_tree_test.mjs=
+(adversarial equivalence sweep + identity properties) and the law-level
+pin in =weave_page_test.mjs=.
+
+** world cell — the one query seam
+:PROPERTIES:
+:ID: nav-world-cell
+:KEYWORDS: world cell query seam registerWorld watchWorld worldChanged breath ask again faces registrant demand pull empty center
+:PATH: assets/js/weave/world.js::export function registerWorld
+:END:
+Phase 2's empty center (=specs/compiler.org= [[id:cmp-query-cell]]): every
+surface asks about the world through this ONE seam. The cell holds the
+registrant's faces opaque and enumerates nothing — an unspoken face
+degrades by optional chain. =worldChanged()= is the breath: it says only
+"ask again", never carries the world. The inner shell is the registrant
+(=hooks/shell/inner.js=): faces =diagnostics(key) / vitals(name) /
+family(pattern)= read the owner's current bodies at ask time; the breath
+rides =debouncedRender= once per eval. Pinned by
+=test/js/wound/world_cell_test.mjs=.
+
+** diagnostics query — memo at the reuse grain
+:PROPERTIES:
+:ID: nav-diagnostics-query
+:KEYWORDS: diagnostics query memo WeakMap reuse unit grain nodeDiagnostics ailments ailmentsFor address filter walk error standing kind parse rehearsal verdict record shape phase cell slot node seat place rebase two spaces askDiagnostics seatOf
+:PATH: assets/js/weave/queries.js::export function nodeDiagnostics
+:END:
+The first query face (=specs/compiler.org= [[id:cmp-memo-grain]]):
+=nodeDiagnostics(node)= memoizes per reuse unit in a =WeakMap= — green-tree
+adoption makes invalidation free (a reused node answers its old array, the
+===-same object). =diagnostics(ast, ailments)= joins live walk ailments,
+never memoized.
+
+*TWO SPACES, ONE CONVERTER* ([[id:light-ladders]] Cut 1). A figure RUNS at a
+Slot (=place:addr=, the scheduler's registration key) and a reader ADDRESSES it
+as a Node (=addr=) — ink, verdict, and a friend's reflect all speak node,
+because a peer has no idea what my places are.
+=ailmentsFor(errors, seat, key)= is where the two meet: select by =seat=,
+answer rebased to =key=. Omit =key= and it answers in seat space (the canvas
+asking about its own frames, =turtle.js upsertAmbient=).
+
+Surfaces never build a slot — =pageLaw.seatOf(addr, place)= answers it, and
+=askDiagnostics(addr, place)= (=hooks/shell/inner.js=) is the one ask. Place is
+load-bearing, not decoration: one document seated in two places runs twice and
+can fault differently in each, so a place-blind ask answers for the wrong
+figure. Pinned by =test/js/wound/queries_test.mjs= ("slot in, node out").
+
+** wound view — facts become words, once
+:PROPERTIES:
+:ID: nav-wound-view
+:KEYWORDS: wound view sayWound describe placeOf sentence message prose facts words presentation layer render breadcrumb tooltip severity dependent name collision
+:PATH: assets/js/weave/wound-view.js
+:END:
+The VIEW half of the diagnostics seam, split out from the query so neither has
+a duty it cannot name. =placeOf(w)= — where it hurts, in the author's own
+outline (phase chain › her word for the cell · line). =describe(w)= — what
+hurt: a message the wound was GIVEN (the parser's, the canvas's) is quoted
+verbatim, while a wound carrying only FACTS (=kind: "name"= with
+=why/word/answersTo=, =kind: "dependent"= with =standsOn=) is composed here.
+=sayWound(w)= is the whole sentence, and every surface renders through it — the
+core HUD, a friend's panel, the editor gutter (=toDiagnostics= → =describe=),
+and the reflect's =message=, said BEFORE the wire so the server carries words it
+never interprets (D022). Nothing here DECIDES: choosing which wound matters is
+=primaryWound='s, and whether the document is well is =verdict='s. Pinned by
+=test/js/wound/wound_view_test.mjs=.
+
+ONE record, one meaning per key: ={ message, span, kind, source, address,
+phase, cell }=. =kind= is where it was born — =parse= (tree would not build),
+=walk= (ran and died), =rehearsal= (a vocabulary ancestor broke); =phase= and
+=cell= are where it LIVES, derived from its line by the one prose walk.
+=verdict()= reddens on =kind: "walk"= at the subject's OWN address and nothing
+else, so a broken sister never darkens the page. Editor
+ink reads through =mountDiagnosticsInk= (=editor/diagnostics.js=) and
+renders via =@codemirror/lint= under the skip-law: no true span, no ink.
+Pinned by =test/js/wound/queries_test.mjs= and =test/js/wound/diagnostics_test.mjs=.
+
+** surface wounds — one ask, one breath, N readers
+:PROPERTIES:
+:ID: nav-wounds
+:KEYWORDS: readWounds wounds surface breath clock ask subject reader ink voice wash watch changed release double paint fan out
+:PATH: assets/js/weave/wounds.js::export function readWounds
+:END:
+Each reader keeps its OWN early cutoff, keyed on what that reader emits — the
+ink digests the CM6 diagnostics it is about to publish (=digestOf=,
+=editor/diagnostics.js=), the wash latches its one word. Keying on the answer
+instead never hit: the query builds a fresh list every read, so a clean document
+dispatched =setDiagnostics= on every breath forever. Same move LSP made when
+pull diagnostics grew =previousResultId= and an =unchanged= reply.
+
+=readWounds({ ask })= is a surface's ONE clock over its own diagnostics answer.
+It owns the single =watchWorld= for that surface and fans it to every reader —
+the ink at the line, the voice in the nerve, the wash on the frame, and the
+canvas figure when it comes. Before it, the ink carried its own =watchWorld=, so
+a surface that also beat time (the outershell's =reask=) painted TWICE per
+breath, both dispatching a full =setDiagnostics= while a draft ran live.
+=ask= moved up here from the ink, so WHOSE WOUNDS ARE THESE is answered once per
+surface instead of once per reader. Holds no last answer on purpose: early
+cutoff belongs to each reader, keyed on what that reader emits — the voice
+compares its sentence, the ink its span list. =changed()= is for news the world
+cell never hears (a friend's push, a draft going live) and reaches EVERY reader,
+where the old =ink.refresh()= reached one. Pinned by =test/js/wound/wounds_test.mjs=;
+reasoned in =specs/compiler/diagnostics-review.org= (=dg-move-cell=).
+
+** diagnostics review — subsystem analysis, generics, findings
+:PROPERTIES:
+:ID: nav-diagnostics-review
+:KEYWORDS: diagnostics review wound cell fence breath tally voice rhythm kind code severity fault probe teach codex lookup findings leak D022 amendment
+:PATH: specs/compiler/diagnostics-review.org
+:END:
+Walks the diagnostics path twice (fact → query → words → rhythm → surfaces → wire → back).
+Names six load-bearing generics, fourteen findings (A–I first walk, J–N second), the five
+prior-art modes the subsystem stands in, and nine ranked moves. Eight rulings: one sentence
+plus a tally, dependents as children, =kind= closed / =code= open, teaching by lookup, the
+wire summary as a probe. Decisions to record land in D022 (=specs/decisions/=, cited by path
+— the bridge indexes =.org= only).
+
+** vitals — the stage's pulse, read-only
+:PROPERTIES:
+:ID: nav-vitals
+:KEYWORDS: vitals pulse peek frameVitals livingFamily family pattern holes mailbox letters kin elapsed reader
+:PATH: assets/js/turtling/vitals.js::export function frameVitals
+:END:
+Pure readers over an injected scheduler (=specs/compiler.org=
+[[id:cmp-queries-ground]]): =frameVitals= answers a live frame's observable
+pulse or null (nobody home degrades to the word); =livingFamily= scans the
+registry with the ONE pattern law (=match.js=, the same scan =when= uses).
+Registered as world faces by the inner shell. Pinned by
+=test/js/stage/vitals_test.mjs=.
+
+* RIGS — proving ground
+:PROPERTIES:
+:ID: nav-rigs
+:END:
+
+** JS tests — zero-npm, node:test
+:PROPERTIES:
+:ID: nav-js-tests
+:KEYWORDS: node test mjs assert describe vitest-free contract cluster
+:PATH: test/js/nerve/nerve_test.mjs
+:END:
+=node --test test/js/= (all) or =node --test test/js/<cluster>/<file>.mjs=.
+Each file names its contract up top. Layout is by *law*, not by source package:
+
+| Cluster | Contract family | Blast radius if the law lies |
+|---|---|---|
+| =kernel/= | cell / observable / arena grain | every higher cell |
+| =document/= | green tree, total parse, trivia, literate | seating, memo, reflect, become seed |
+| =phase/= | attention → phase; outline = ambient tree | peer slice, vocabulary, diagnostics place |
+| =motion/= | SE3 / atom / commands | executor geometry |
+| =execute/= | AST → events / namespace | scheduler, phase rehearsal |
+| =runtime/= | scheduler, identity, become, communication, eye | continuity of living figures |
+| =stage/= | vitals, hatch, timeline readers | HUD, hatch gate, idle clock |
+| =seat/= | pageLaw, reflect, press, resolve, ladder | who runs; peer bytes |
+| =wound/= | queries → view → wounds → diagnostics → world | truth chain to HUD/gutter/wire |
+| =editor/= | tokenizer, reach, peer attention faces | buffer UX |
+| =terminal/= | CM surface | all shells |
+| =shell/= | LiveView hook lifecycle, term-cell | mount events, drafting |
+| =nerve/= | signal store | friend / outer HUD |
+| =utils/= | gesture, temporal | input / pacing helpers |
+| =render/= | GrowLine (headless) | stroke buffers |
+| =seams/= | vendor / export / private-member tripwires | silent product death |
+| =profile/= | cost benches, not unit law | perf regressions |
+
+Placement law: subject API whose docstring would change if the test fails;
+fixture import ≠ ownership; decides ≠ says ≠ carries ≠ inks.
+
+** turtle profiler — headless + in-browser
+:PROPERTIES:
+:ID: nav-profile
+:KEYWORDS: profile perf harness headless overlay measure benchmark
+:PATH: test/js/profile/harness.mjs
+:END:
+
+** live shell play — drive the real app
+:PROPERTIES:
+:ID: nav-play
+:KEYWORDS: play shell chrome-devtools execCommand silent deaths friend
+:PATH: codex/play.org
+:END:

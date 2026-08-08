@@ -1,0 +1,128 @@
+name: CI
+
+# Gate merges into the deploy trunks. Staging deploys from PRs into it;
+# release is the production cut. No push triggers of its own — CI answers
+# when someone asks to land (pull_request), or when a deploy workflow calls
+# it (workflow_call) so red tests cannot ship.
+on:
+  pull_request:
+    branches: [master, staging, release]
+  workflow_call:
+
+concurrency:
+  # workflow_call has no head_ref; fall back to the run's ref so a release
+  # push and a PR on the same branch do not cancel each other wrongly.
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  ELIXIR_VERSION: "1.20.1"
+  OTP_VERSION: "29.0.2"
+
+jobs:
+  elixir:
+    name: Elixir tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MIX_ENV: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Erlang & Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          version-type: strict
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            ~/.hex
+          key: deps-${{ runner.os }}-otp${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}
+          restore-keys: deps-${{ runner.os }}-otp${{ env.OTP_VERSION }}-
+
+      - name: Cache build
+        uses: actions/cache@v4
+        with:
+          path: _build/test
+          key: build-test-${{ runner.os }}-otp${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}-${{ github.sha }}
+          restore-keys: |
+            build-test-${{ runner.os }}-otp${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}-
+            build-test-${{ runner.os }}-otp${{ env.OTP_VERSION }}-
+
+      - name: Install dependencies
+        run: |
+          mix local.hex --if-missing --force
+          mix local.rebar --if-missing --force
+          mix deps.get --only $MIX_ENV
+
+      # Each check reports on its own line, so a red run says which question failed.
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Compile
+        run: mix compile --warnings-as-errors
+
+      # --exclude clustered: those spawn a real BEAM peer mesh over multicast
+      # UDP, which a hosted runner cannot offer. ClusterCase already documents
+      # them as opt-in; run them on a machine with a LAN.
+      - name: Test
+        run: mix test --exclude clustered
+
+      # Advisory until the existing findings are cleared — see the note in the
+      # PR. Flip to a gate by deleting continue-on-error.
+      - name: Credo
+        continue-on-error: true
+        run: mix credo --strict
+
+  js:
+    name: JS tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Zero-npm by design: node:test only, nothing to install or cache.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Node 22+ regression: a directory arg is executed as a single file
+      # (MODULE_NOT_FOUND) instead of being walked. Shell-expand the test
+      # files so both Node 20 and 22 run the suite. Layout is
+      # test/js/<cluster>/*_test.mjs (profile/ benches stay out).
+      # See https://github.com/nodejs/node/issues/64555
+      - name: Test
+        run: node --test test/js/*/*_test.mjs
+
+  # One name for branch protection and for deploy workflows that wait on CI.
+  # if: always() so a red leaf does not leave this check "skipped" (which
+  # would look like permission to proceed).
+  gate:
+    name: CI gate
+    runs-on: ubuntu-latest
+    needs: [elixir, js]
+    if: always()
+    steps:
+      - name: Both suites green
+        run: |
+          echo "elixir=${{ needs.elixir.result }}"
+          echo "js=${{ needs.js.result }}"
+          test "${{ needs.elixir.result }}" = "success"
+          test "${{ needs.js.result }}" = "success"

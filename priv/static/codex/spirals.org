@@ -1,0 +1,17 @@
+* SPIRALS — CI stub
+:PROPERTIES:
+:ID: frag-spiral
+:TYPE: pattern
+:STATE: seed
+:END:
+#+title: Spirals (stub)
+#+FILETAGS: :codex:fragment:
+
+# Pressed corpus is not on this branch yet. This file is only the static-door
+# pin (test/dojo_web/weave_fragments_test.exs): raw /codex/*.org, unparsed.
+# Recast the real shelf with `mix press.codex` once codex/ is ready to ship.
+
+#+BEGIN_SRC paperlang
+fw 50
+rt 90
+#+END_SRC

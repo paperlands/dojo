@@ -8,13 +8,11 @@
 //     the material cache size climbing across redraws = leak.
 //
 // Attach by loading /shell?perf=1, or from devtools:
-//   import("/assets/js/turtling/profile/overlay.js").then(m => m.attachProfilerOverlay(document.getElementById('core-canvas').__turtle))
+//   import("/assets/js/turtling/profile/overlay.js").then(m => m.attachProfilerOverlay(getStage()))
 //
 // Passive: it wraps turtle.onFrame to count frames and samples state on its own
 // setInterval, so it keeps reporting even while the render loop is idle. It does
 // not call requestRender(), so observing the system does not perturb it.
-
-import { materialCacheSize } from "../materializer.js"
 
 const FMT = (n, d = 0) => Number(n).toFixed(d)
 const MB = (bytes) => FMT(bytes / 1048576, 1)
@@ -58,9 +56,9 @@ export function attachProfilerOverlay(turtle, opts = {}) {
     // --- DOM panel ---
     const el = document.createElement("div")
 el.style.cssText = [
-    "position:fixed", "top:8px", "left:8px", "z-index:2147483647",
+    "position:fixed", "bottom:8px", "right:8px", "z-index:2147483647",
     "font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace",
-    "color:#cde", "background:rgba(12,16,22,0.86)", "border:1px solid #2a3340",
+    "color:#cde", "background:rgba(12,16,22,0.46)", "border:1px solid #2a3340",
     "border-radius:6px", "padding:8px 10px", "white-space:pre", "pointer-events:auto",
     "min-width:230px", "box-shadow:0 2px 8px rgba(0,0,0,0.4)",
     "cursor:pointer", "user-select:none",
@@ -97,7 +95,7 @@ const sample = () => {
     const textures = info?.memory?.textures ?? "—"
     const drawCalls = info?.render?.calls ?? "—"
     const programs = info?.programs?.length ?? "—"
-    const matCache = (() => { try { return materialCacheSize() } catch { return "—" } })()
+    const matCache = turtle.stage?.materials?.size ?? "—"
     const mem = performance.memory
     let heapLine = "heap:        n/a (Chrome only)"
     if (mem) {

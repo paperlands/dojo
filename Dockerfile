@@ -21,6 +21,8 @@ ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}"
 FROM ${BUILDER_IMAGE} as builder
 
 # install build dependencies
+# No node: tailwind and esbuild are standalone binaries, and press.codex
+# skips itself where codex/ isn't shipped.
 RUN apt-get update -y && apt-get install -y build-essential git \
     && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
@@ -49,10 +51,12 @@ COPY priv priv
 
 COPY lib lib
 
-COPY assets assets
-
-# Compile the release
+# Compile the release. Before assets: LiveView writes colocated hooks into
+# _build, which esbuild resolves through NODE_PATH.
 RUN mix compile
+
+# assets come last so a JS/CSS-only change reuses the compile layer
+COPY assets assets
 
 # compile assets
 RUN mix assets.deploy

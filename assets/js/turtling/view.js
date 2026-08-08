@@ -53,6 +53,17 @@ export function eyeCameraPose(worldPose) {
     }
 }
 
+// Camera and target move together, so standoff survives the subject's walk.
+// ABSOLUTE from the live target, never the head mesh (which respawns on
+// re-eval). id:eye-d2-follow-coords
+export function followPosition(camera, target, subject) {
+    return [
+        subject[0] + camera[0] - target[0],
+        subject[1] + camera[1] - target[1],
+        subject[2] + camera[2] - target[2]
+    ]
+}
+
 // The eye's default spawn LOCAL transform. Rotation = CAMERA_TO_TURTLE so that
 // eyeCameraPose(identity ∘ seed) = identity orientation; with no translation the
 // reframe E⁻¹ is identity for an empty eye ⇒ the live orbit camera renders

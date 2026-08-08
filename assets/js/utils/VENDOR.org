@@ -1,0 +1,270 @@
+:PROPERTIES:
+:ID: vendor-manifest
+:TYPE: reference
+:END:
+#+title: Vendored — provenance, hashes, and the one rule
+#+FILETAGS: :vendor:three:provenance:
+#+STARTUP: overview indent
+
+* THE ONE RULE
+:PROPERTIES:
+:ID: vendor-rule
+:END:
+
+*Vendored files are immutable.* Dojo behaviour goes in dojo-owned code that
+/extends/ them — never inside them. The reason is upgrades: a file nobody has
+edited is replaced with =curl > file=, while an edited one is archaeology, and a
+silent mis-merge quietly reinstates bugs that were measured and fixed.
+
+We stay *zero-npm at runtime* — the app and CI never see a =node_modules=. For
+the curled files below there is no lockfile at all, so provenance is not carried
+by one; it is carried here. =scripts/vendor_verify.sh= re-hashes every file below
+and fails loudly on drift. (CM6 is the one build-time exception — [[id:vendor-cm6]].)
+
+The live example: OrbitControls once carried three dojo inventions inside it,
+plus a 30-line header whose whole job was to make a merge survivable. All three
+moved to [[file:../turtling/orbit.js][turtling/orbit.js]] as a subclass, and the header became the short
+backport list you see below ([[file:../../specs/decisions/026-two-fingers-one-meaning.decision.md][D026]]).
+
+* three.js
+:PROPERTIES:
+:ID: vendor-three
+:KEYWORDS: three.js vendored version upgrade provenance sha256
+:END:
+
+Upstream: https://github.com/mrdoob/three.js · addons under
+=examples/jsm/=. License MIT, header retained in each file.
+
+=threerender.js= was *deleted* <2026-08-04>: it was a second, unminified copy of
+the same module as =three.module.min.js=, and both were reaching the bundle —
+=alphahash_fragment= appeared 13 + 11 = *24 times in the built =app.js=*, because
+nothing could deduplicate two separate files. The six symbols the app took from
+it (=WebGLRenderer=, =ShaderLib=, =ShaderMaterial=, =UniformsLib=,
+=UniformsUtils=, =Vector2=) are all exported by =three.module.min.js=.
+
+*Version: =185=.* Tag =r185= (2026-07-01), the current release. Upgraded from
+=179dev= <2026-08-04> as a matched set (core, module, orbital, line addons).
+=scripts/vendor_verify.sh= greps =REVISION= out of =three.core.min.js= and fails
+if this claim disagrees — a recorded fact with no check is a comment. Three is
+bundled, so there is no URL token to bust; only this record to keep honest.
+
+#+BEGIN_SRC sh
+grep -oE '[A-Za-z_$][A-Za-z0-9_$]* as REVISION' assets/js/utils/three.core.min.js | head -1
+#+END_SRC
+
+*Markers in =threeorbital.js= (post-upgrade):*
+
+| marker                                              | present? | means            |
+|-----------------------------------------------------+----------+------------------|
+| =connect( element )= / =super.connect( element )=   | yes      | ≥ #30772         |
+| public =pan= / =rotateLeft= / =dollyIn= / =dollyOut= | yes     | ≥ #32810         |
+| =cursorStyle= property                              | yes      | ≥ #32981         |
+
+⇒ consistent with =r185=. =_routeGesture= routes span/drift through the public
+=pan= / =rotateLeft= / =rotateUp= / =dollyOut= (#32810); the seam test guards
+that public surface plus the remaining private pointer/zoom bookkeeping.
+
+| file                  | status                        | sha256 (first 16) |
+|-----------------------+-------------------------------+-------------------|
+| =three.core.min.js=   | pristine r185                 | =05b2609338c76cd6= |
+| =three.module.min.js= | pristine r185                 | =86bcee248b64f44b= |
+| =threetext.js=        | pristine (troika, peer ≥0.125)| =a992bdfb5befb420= |
+| =threeorbital.js=     | r185 + import rewrite         | =1620e0c5719dac1c= |
+| =three-addons/lines/*= | r185 + import rewrite        | see table below   |
+
+** orbital: backports deleted, one bug remains
+:PROPERTIES:
+:ID: vendor-backports
+:END:
+
+The two backports we used to carry (#32323 ownerDocument listeners, #33144
+=touchAction=''= on disconnect) are *in upstream r185*. They were deleted on
+upgrade — not re-applied. That is the whole difference from a fork.
+
+*Still ours, still upstream's bug:* =_handleMouseDownDolly= passes =clientX= as
+its /y/ argument (still present in r185:
+=_updateZoomParameters( event.clientX, event.clientX )=). The fix lives in
+=turtling/orbit.js=, so the vendored file keeps upstream's line and never
+conflicts. Worth a PR.
+
+*Import rewrite only:* =from 'three'= → =from './three.core.min.js'=. No dojo
+header, no body edits.
+
+** when upgrading
+:PROPERTIES:
+:ID: vendor-upgrade
+:END:
+
+0. *esbuild ≥ 0.19* (we pin =0.25.12= in =config/config.exs=). three r152+ uses
+   class static blocks of the form =class _i{static{_i.prototype.isX=!0}}=.
+   Older esbuild rewrote that to =var _i=class{static{_i.prototype…}}= where
+   =_i= is still undefined during the static block — the app dies at boot with
+   =Cannot read properties of undefined (reading 'prototype')=. Newer esbuild
+   emits a named class expression (=var _i=class __i{static{__i.prototype…}}=).
+   After bumping the version: =mix esbuild.install= and restart the server.
+1. Replace the files as a *matched set* — core, module, text, orbital, *and*
+   =three-addons/lines/*= are one build; mixing revisions is how you get silent
+   shader/API drift. For the fat-line addons:
+   =./scripts/vendor-three-lines.sh rNNN= (curl + the one import rewrite).
+2. Set the =Version: =…== claim above to the new =REVISION=, then re-run
+   =scripts/vendor_verify.sh --record= to restamp the hashes here. The script
+   checks the claim against the file; =--record= only restamps hashes.
+3. =node --test test/js/= — [[file:../../test/js/seams/orbit_seam_test.mjs][orbit_seam_test.mjs]] is the seam tripwire;
+   [[file:../../test/js/seams/three_entry_test.mjs][three_entry_test.mjs]] is the surface tripwire;
+   [[file:../../test/js/render/growline_test.mjs][growline_test.mjs]] exercises the addons under GrowLine.
+4. Then the browser rig ([[file:../../codex/play.org][codex/play.org]]) — channel isolation, fly-through
+   constant step, recenter identity. Thick multi-colour trail. Numbers in D026.
+5. #32810 is in (=r185=): =_routeGesture= already routes through public =pan= /
+   =rotateLeft= / =rotateUp= / =dollyOut=. Keep it that way on upgrade — do not
+   re-grow the private touch-move surface the seam test dropped.
+
+* CodeMirror 6 — built here, not curled
+:PROPERTIES:
+:ID: vendor-cm6
+:KEYWORDS: codemirror cm6 vendor bundle esbuild manifest sha256 version drift reproducible zero-npm
+:END:
+
+CM6 is the one vendored thing we *build*. =scripts/package.json= pins the
+=@codemirror/*= packages, =scripts/cm6-entry.js= names the exact API surface we
+are willing to depend on, and =scripts/vendor-cm6.mjs= esbuilds those into
+=priv/static/vendor/cm6.js=, which is committed. npm lives at build time only;
+the running app and CI never see =scripts/node_modules/=.
+
+THE ONE RULE is trivially satisfied here — *nothing is patched*. There is no
+dojo line inside =cm6.js= to protect, because the file is generated: edit it and
+the next rebuild silently eats your change. The hash is what makes that loud.
+
+*Byte-reproducible.* Same lockfile, same command, same bytes:
+
+#+BEGIN_SRC sh
+cd scripts && ./node_modules/.bin/esbuild cm6-entry.js \
+  --bundle --format=esm --minify --legal-comments=none --outfile=/tmp/cm6-check.js
+cmp /tmp/cm6-check.js ../priv/static/vendor/cm6.js
+#+END_SRC
+
+That property is why provenance rides in a *sidecar*,
+=priv/static/vendor/cm6.manifest.json=, and never as a banner inside the bundle
+— a banner would break the diff above.
+
+| field          | what it pins                                            | what it catches                       |
+|----------------+---------------------------------------------------------+---------------------------------------|
+| =version=      | the RESOLVED =@codemirror/view= version                 | the number a human reads              |
+| =token=        | =version=-=sha256[0:8]=, the =?v== the consumer must use | a stale token, and a stale cache      |
+| =sha256=       | the artifact                                            | a hand-edit of =cm6.js=               |
+| =entryHash=    | =cm6-entry.js=, the surface the bundle was cut to       | a widened API with no rebuild         |
+| =lockfileHash= | =scripts/package-lock.json=                             | deps moved, bundle never rebuilt      |
+
+The version is read from =node_modules/@codemirror/view/package.json=, never
+from the range in =package.json= (once =^6.36.3=). The range is a floor, not a
+fact: it resolved to *6.43.6* — seven minors of drift — while the build kept
+printing =6.36.3=, because it was printing the floor. Same lesson as the three.js
+markers above: a version you did not verify is worse than none, because it gets
+trusted. Floors are restamped on upgrade so the gap does not reopen unnoticed.
+
+*The consumer must agree.* =assets/js/hooks/shell/core.js= imports
+=/vendor/cm6.js?v=<token>=, and =vendor_verify.sh= fails if that token and the
+manifest disagree, naming the line to change. It does *not* rewrite it — a
+cache-bust token that fixes itself is a token nobody ever reads.
+
+The token is *content-addressed* (=6.43.7-030a3151= today), not the bare version,
+for two reasons that are really one. Widen =cm6-entry.js= and the bytes move while
+=@codemirror/view= stays put: a version-only token would serve a stale cache.
+And the bundle is /nine/ packages — =state=, =language=, =lint= and the rest can
+all move under an unchanged =view=, so a version-only token speaks for eight
+packages it never saw. The digest saw all nine.
+
+*Load-bearing, but NOT vendored:* =priv/static/vendor/package.json= is ours —
+eighteen bytes, ={"type":"module"}=, which is what lets node import the bundle
+as ESM in =test/js/terminal/terminal_test.mjs=. It is deliberately absent from the hash
+list: that list means /do not edit this, it is someone else's/, and saying so
+about a file we author would be a lie. Its absence already fails loudly — the
+test that imports the bundle is the one that breaks.
+
+** when upgrading
+:PROPERTIES:
+:ID: vendor-cm6-upgrade
+:END:
+
+1. Bump the range in =scripts/package.json=, then =cd scripts && npm install=.
+2. =node vendor-cm6.mjs= — rewrites the bundle *and* the manifest together.
+   Never write either by hand; both are derived.
+3. =./scripts/vendor_verify.sh=. It has no =--record= for CM6 on purpose: the
+   only honest restamp is a rebuild. If the =?v== token is now stale it prints
+   the file, line, and replacement — change that one line by hand.
+4. =node --test test/js/terminal/terminal_test.mjs= — the export tripwire. It imports
+   every name =cm6-entry.js= promises, so a package that renamed or dropped one
+   fails here instead of at runtime in a panel nobody had opened yet.
+
+* other vendored
+:PROPERTIES:
+:ID: vendor-other
+:END:
+
+| file                  | upstream                                  | status   | sha256 (first 16) |
+|-----------------------+-------------------------------------------+----------+-------------------|
+| =earcut.js=           | https://github.com/mapbox/earcut          | pristine | =922a4fb61fb3ed6c= |
+| =mediabunny.min.mjs=  | https://github.com/Vanilagy/mediabunny    | pristine | =35824dbe68d6eeae= |
+
+Dojo-owned, NOT vendored (edit freely): =color.js=, =nama.js=, =temporal.js=,
+=gesture.js=.
+
+* the one that hid — CodeMirror 5, removed <2026-08-04>
+:PROPERTIES:
+:ID: vendor-cm5-removed
+:KEYWORDS: codemirror 5 dead vendored removed static_paths audit
+:END:
+
+=priv/static/codemirror/= held *CodeMirror 5* — 584K across seven tracked files
+(=codemirror.js=, =codemirror.css=, an APL mode, three themes). It was served:
+=codemirror= sat in =DojoWeb.static_paths()=. It was imported by *nothing*. An
+exhaustive sweep found every other mention in the tree to be CM6 (=@codemirror/*=
+package names) or the =static_paths= entry serving the dead directory itself.
+
+It survived because *nothing tracked vendored things at all*. That is the failure
+this file exists to prevent, and it is worth naming precisely: not a wrong
+version, not a bad merge — an entire dependency that no one could see, shipped to
+every visitor, for as long as nobody thought to look.
+
+So the census is the point. A vendored thing that is not listed here is either an
+oversight or a corpse, and both want finding. When you remove a dependency, remove
+its =static_paths= entry in the same change — a served directory is a live
+dependency whether or not any code imports it.
+
+* fat-line addons — =utils/three-addons/lines/=
+:PROPERTIES:
+:ID: vendor-line-addons
+:KEYWORDS: line addons LineMaterial LineSegments2 Line2 GrowLine three-addons r185
+:END:
+
+Five files, *r185* =examples/jsm/lines/*=, bodies byte-identical to upstream
+aside from one mechanical import rewrite. They live next to the rest of the
+vendored three surface — not under dojo-owned =turtling/=.
+
+| file                         | status                         | sha256 (first 16) |
+|------------------------------+--------------------------------+-------------------|
+| =Line2.js=                   | r185 + import rewrite          | =69dd2120d4df1420= |
+| =LineGeometry.js=            | r185 + import rewrite          | =b7ec6b0011e3b09d= |
+| =LineMaterial.js=            | r185 + import rewrite          | =ffd73c9d85e95fd2= |
+| =LineSegments2.js=           | r185 + import rewrite          | =9e26439b296303b8= |
+| =LineSegmentsGeometry.js=    | r185 + import rewrite          | =7d77b8c11a18a7c4= |
+
+*The one rewrite.* Upstream says =from 'three'=. We have no package named
+=three=; the whole graph is =three.module.min.js= (which imports core). So:
+
+#+BEGIN_SRC sh
+# applied by scripts/vendor-three-lines.sh
+sed -i "s|from 'three'|from '../../three.module.min.js'|" assets/js/utils/three-addons/lines/*.js
+#+END_SRC
+
+Sibling imports stay *pristine* — =from '../lines/X'= — because the files sit
+in a directory named =lines/=, matching upstream's layout under =examples/jsm/=.
+Upgrade = curl the tag into that folder, run the sed, =vendor_verify.sh --record=.
+
+*Not vendored:* =turtling/render/line/GrowLine.js= is dojo-invented. It is the
+deep adaptation for append-only trails (O(Δ)/frame) *on top of* this stack —
+see [[id:ft-d8-append-geometry]]. Edit freely; never hash it here.
+
+*Why this shape.* Earlier these five lived under =turtling/render/line/= with
+hand-rewrites and a muted =console.error=, undeclared and unhashed — the CM5
+lesson in live form. Restored <2026-08-04>, then upgraded to r185 with core.
+The blast radius of a renderer bump is a file swap + the sed, not archaeology.

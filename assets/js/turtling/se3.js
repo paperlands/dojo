@@ -4,6 +4,13 @@
 
 import { Versor } from "./mafs/versors.js"
 
+// The three local axes, shared and frozen — one definition, no allocation in
+// hot loops. Turtle-local: heading = +X, lateral = +Y, up = +Z. In the camera
+// convention (view.js) the eye looks down −Z, so +Z is also the sight axis.
+export const AXIS_X = Object.freeze({ x: 1, y: 0, z: 0 })
+export const AXIS_Y = Object.freeze({ x: 0, y: 1, z: 0 })
+export const AXIS_Z = Object.freeze({ x: 0, y: 0, z: 1 })
+
 // Transform = { rotation: Versor, position: [x, y, z] }
 
 export const SE3 = {

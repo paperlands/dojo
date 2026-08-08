@@ -15,6 +15,9 @@ import { createStorage } from "./terminal/storage.js"
 import * as buffers from "./terminal/buffers.js"
 import * as editorView from "./terminal/view.js"
 import { buildExtensions, reapplyCompartments } from "./terminal/extensions.js"
+import { revealAmbient } from "./nerve/reveal.js"
+import { defaultAttend } from "./editor/plang-mode.js"
+import { get } from "./hooks/shell/term-cell.js"
 
 const DEFAULT_OPTIONS = { theme: 'abbott', mode: 'plang' };
 
@@ -130,7 +133,9 @@ export const createTerminal = (element, cm6, options = {}) => {
         return doc;
     };
 
-    const doSelectBuffer = (id, { offset } = {}) => {
+    // announce:false selects without publishing — construction has no audience
+    // yet, and the mount speaks the first breath itself (term.triggerBridge).
+    const doSelectBuffer = (id, { offset, announce = true } = {}) => {
         if (!state.collection.items.has(id)) throw new Error(`Buffer '${id}' not found`);
 
         // Projection happens only when the displayed buffer changes.
@@ -169,17 +174,19 @@ export const createTerminal = (element, cm6, options = {}) => {
             shell.dispatch({ effects: state.compartments.merge.reconfigure([]) });
         }
 
-        // 4. Cursor: explicit offset always wins; entering a buffer starts at
-        // the end; re-selecting the current buffer leaves the cursor alone.
+        // 4. Cursor: explicit offset always wins; entering a buffer lands on
+        // its last attended point, or — never attended — the shape default;
+        // re-selecting the current buffer leaves the cursor alone.
         if (offset != null) {
             editorView.cursorTo(shell, cm6, offset);
         } else if (switching) {
-            editorView.cursorToEnd(shell, cm6);
+            const target = selectedBuffer.attend ?? defaultAttend(shell.state.doc);
+            if (target != null) editorView.cursorTo(shell, cm6, target);
         }
         shell.focus();
 
         // 5. Effects (each independent)
-        triggerBridge();
+        if (announce) triggerBridge();
         tabs?.selectTab(id);
 
         return selectedBuffer;
@@ -231,6 +238,9 @@ export const createTerminal = (element, cm6, options = {}) => {
                 },
                 onSelectionChange: (selection) => {
                     selectionBridge.pub(selection);
+                    if (state.projectedId) {
+                        state.collection = buffers.updateAttend(state.collection, state.projectedId, selection.main.head);
+                    }
                 },
                 onSwitchNext: () => {
                     const id = buffers.nextId(state.collection);
@@ -243,6 +253,7 @@ export const createTerminal = (element, cm6, options = {}) => {
                 onToggleComment: (view) => {
                     editorView.toggleComment(view);
                 },
+                onLitLink: (name) => revealAmbient(name),
             });
 
             state.extensions = extensions;
@@ -269,8 +280,11 @@ export const createTerminal = (element, cm6, options = {}) => {
                 tabs.addTab(id, buffer.name);
             }
 
-            // Select initial buffer
-            doSelectBuffer(state.collection.currentId);
+            // Select initial buffer — SILENT. Building a surface is not news:
+            // the mount is still wiring its organs, and a subscriber that fires
+            // here reads a half-built room. The mount announces birth when it
+            // is whole.
+            doSelectBuffer(state.collection.currentId, { announce: false });
 
             // Persist on tab hide / page unload — timer-based autosave alone is unreliable
             document.addEventListener('visibilitychange', onVisibilityChange);
@@ -283,6 +297,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             // Publish draft edits so the hook can run them live as an ambient.
             const { extensions, compartments } = buildExtensions(cm6, {
                 onDocChange: (content) => bridge.pub({ content }),
+                onLitLink: (name) => revealAmbient(name),
             });
 
             // Read-only lives in its own compartment so the review surface can
@@ -317,11 +332,10 @@ export const createTerminal = (element, cm6, options = {}) => {
             if (!shell || state.drafting) return;
             const friendSource = editorView.getContent(shell);
 
-            // Lineage-aware seed: read your existing fork of this code from the
-            // inner terminal (owner of the buffer collection). Falls back to the
-            // friend's code when you have no fork yet.
-            const inner = document.getElementById('your-buffer')?.__terminal;
-            const forkContent = inner?.forkContent?.(addr, buffer_id) ?? null;
+            // Lineage-aware seed: my own fork of this code, read from the
+            // coreshell (owner of the buffer collection). Falls back to the
+            // friend's code when I have no fork yet.
+            const forkContent = get("coreshell")?.forkContent?.(addr, buffer_id) ?? null;
             const draft = forkContent ?? friendSource;
 
             state.drafting = true;

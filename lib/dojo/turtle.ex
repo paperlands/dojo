@@ -1,9 +1,27 @@
 defmodule Dojo.Turtle do
+  # The reflect envelope. `commands` is the buffer's WHOLE standing tree (D022);
+  # `attend` is where the author is looking in it (D025 R1).
+  #
+  # CARRIED, NEVER INTERPRETED — the tree and the line alike. The server has no
+  # printer and no AST walker and must not grow one: it had one, with zero
+  # callers, and it drifted until it emitted a node type retired by D013. So no
+  # rate-limiting by line, no fan-out by phase.
+  #
+  # `diagnostics` is a LIST, not a state — healthy parts live (D020).
+  #
+  # `state` is NOT news for a person — the client says every sentence itself,
+  # from the wounds. It is the client telling the SERVER whether this reflect
+  # may become the recall baseline (OuterShell.observe keeps last_good on
+  # :success), which the server cannot decide for itself because it has no
+  # walker. `message` was the human half and had no reader left; it is gone.
   defstruct state: :hatch,
             path: nil,
             commands: [],
+            attend: nil,
+            diagnostics: [],
             source: nil,
-            message: nil,
+            # MILLISECONDS: a version stamp readers compare with `>`. At second
+            # resolution the watcher's gate dropped all but one hatch a second.
             time: nil,
             buffer_id: nil
 
@@ -11,7 +29,7 @@ defmodule Dojo.Turtle do
     body
     |> Map.new(fn {k, v} -> {to_atom(k), v} end)
     |> (&struct(__MODULE__, &1)).()
-    |> Map.merge(%{state: :success, time: System.os_time(:second)})
+    |> Map.merge(%{state: :success, time: System.os_time(:millisecond)})
     |> Map.update(:path, nil, &store(&1, opts))
     |> Map.update(:commands, [], &Enum.take(&1, 1008))
     |> reflect(opts)
@@ -21,7 +39,7 @@ defmodule Dojo.Turtle do
     body
     |> Map.new(fn {k, v} -> {to_atom(k), v} end)
     |> (&struct(__MODULE__, &1)).()
-    |> Map.merge(%{state: :error, time: System.os_time(:second)})
+    |> Map.merge(%{state: :error, time: System.os_time(:millisecond)})
     |> Map.update(:path, nil, &store(&1, opts))
     |> reflect(opts)
   end
@@ -45,8 +63,10 @@ defmodule Dojo.Turtle do
     with file when is_binary(file) <-
            DojoWeb.Utils.Base64.to_file(path, Path.join([dest_dir, id])),
          ext when byte_size(ext) > 0 <- Path.extname(file) do
+      # Same unit as `time` (ms) so bump_path_time in shell_live does not
+      # rewrite the cache-buster from seconds into milliseconds mid-life.
       Path.join(["frames", clan, id]) <>
-        ext <> "?t=#{System.os_time(:second)}" <> Dojo.Cluster.Routing.asset_path_params()
+        ext <> "?t=#{System.os_time(:millisecond)}" <> Dojo.Cluster.Routing.asset_path_params()
     else
       _ -> nil
     end
@@ -65,119 +85,5 @@ defmodule Dojo.Turtle do
       # Keep as string if atom doesn't exist
       ArgumentError -> key
     end
-  end
-
-  def find_title(ast) when is_list(ast) do
-    Enum.reduce_while(ast, "", fn
-      %{"meta" => %{"lit" => title}}, _acc when is_binary(title) ->
-        {:halt, title}
-
-      _, _ ->
-        {:cont, ""}
-    end)
-  end
-
-  def find_title(_) do
-    ""
-  end
-
-  def filter_fns(ast) when is_map(ast) do
-    ast
-    |> Enum.reject(fn
-      %{
-        "type" => "Define",
-        "value" => _value,
-        "meta" => %{"args" => _args},
-        "children" => _children
-      } ->
-        false
-
-      _ ->
-        true
-    end)
-  end
-
-  def filter_fns(_) do
-    []
-  end
-
-  def find_fn(ast, name) do
-    ast
-    |> Enum.reject(fn
-      %{"type" => "Define", "value" => ^name} ->
-        false
-
-      _ ->
-        true
-    end)
-  end
-
-  def print(ast) when is_list(ast) do
-    ast |> Enum.map(&visit/1) |> Enum.join("\n")
-  end
-
-  def print(ast) when is_map(ast) do
-    visit(ast)
-  end
-
-  def print(_) do
-    ""
-  end
-
-  defp visit(%{"type" => "Call", "value" => value, "children" => children}) do
-    child_output = children |> Enum.map(&visit/1) |> Enum.join(" ")
-    "#{value} #{child_output}"
-  end
-
-  defp visit(%{"type" => "Argument", "value" => value}) do
-    value
-  end
-
-  defp visit(%{"type" => "Lit", "value" => value}) do
-    "# #{String.trim(value)}"
-  end
-
-  defp visit(%{"type" => "Loop", "value" => value, "children" => children}) do
-    child_output = children |> Enum.map(&visit/1) |> Enum.join("\n")
-
-    """
-    for #{value} do
-    #{indent_lines(child_output)}
-    end
-    """
-  end
-
-  defp visit(%{"type" => "When", "value" => value, "children" => children}) do
-    child_output = children |> Enum.map(&visit/1) |> Enum.join("\n")
-
-    """
-    when #{value} do
-    #{indent_lines(child_output)}
-    end
-    """
-  end
-
-  defp visit(%{
-         "type" => "Define",
-         "value" => value,
-         "meta" => %{"args" => args},
-         "children" => children
-       }) do
-    arg_output = args |> Enum.map(&visit/1) |> Enum.join(" ")
-    child_output = children |> Enum.map(&visit/1) |> Enum.join("\n")
-
-    """
-    draw #{value} #{arg_output} do
-    #{indent_lines(child_output)}
-    end
-    """
-  end
-
-  defp visit(_), do: ""
-
-  defp indent_lines(input) do
-    input
-    |> String.split("\n")
-    |> Enum.map_join("\n", fn line -> "  #{line}" end)
   end
 end

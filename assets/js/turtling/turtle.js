@@ -1,14 +1,22 @@
 import { Parser } from "./mafs/parse.js"
-import { parseProgram } from "./parse.js"
+import { parseProgram, reparseProgram } from "./parse.js"
+import { ailmentsFor, standingAilments } from "../weave/queries.js"  // buffer ailments (D022)
+import { drainNamespace } from "./executor.js"
 import { Evaluator } from "./mafs/evaluate.js"
 import Render from "./render/index.js"
 import { bridged } from "../bridged.js"
 import { createStage } from "./stage.js"
-import { createScheduler, metaRoot } from "./scheduler.js"
+import { createScheduler, metaRoot, sumCounts } from "./scheduler.js"
 import { createCompositor } from "./compositor.js"
-import { resolveAddress } from "./focus.js"
+import { createFocus, resolveAddress } from "./focus.js"
+import { hatchVerdict } from "./hatch.js"
+import { worldProgress } from "./vitals.js"
 
-// --- Turtle ---
+// The witness whose gate this canvas keeps — one spelling, shared with the
+// seating law (kernel/witness.js, light-ladders-hatch-resolution).
+import { SELF } from "../kernel/witness.js"
+
+const PROGRESS_FLOOR_MS = 100   // progress breath floor (~10/s)
 
 export class Turtle {
     constructor(canvas) {
@@ -18,25 +26,22 @@ export class Turtle {
         this.stage = stage
         this.renderstate = stage.renderstate
 
-        // Render-on-demand: the loop stops itself when nothing is changing and
-        // is woken by requestRender(). Without this it rendered at 60fps for the
-        // page's whole life — a finished static drawing burned full WebGL frames
-        // forever (the dominant persistent-CPU cost on low-compute clients).
+        // Render-on-demand: wake via requestRender, else stop.
         this.renderLoop = new Render.Loop(null, {
             onRender: (t) => this.onFrame(t),
             stopCondition: () => this._shouldStop()
         })
         stage.renderLoop = this.renderLoop
-        // Let the stage (resize, camera bridge) wake the on-demand loop.
+        // Let the stage (resize, camera bridge) wake the on-demand loop, and say
+        // the reflect changed when a camera command asks for a fresh capture.
         stage.requestRender = () => this.requestRender()
+        stage.reflectChanged = () => this.reflectChanged()
 
         this._renderRequested = false    // one-shot: render at least one more frame
         this._keepRendering = false      // set each frame: is there ongoing work?
         this._controlsActiveUntil = 0    // ms timestamp: keep rendering until damping settles
 
-        // Wake the loop on camera interaction; extend a settle window so inertial
-        // damping completes after the user releases (controls.update() also keeps
-        // it alive while it reports change, but the window is robust on its own).
+        // Wake loop on camera interaction; settle window after release.
         this._onControlsActive = () => {
             this._controlsActiveUntil = performance.now() + 700
             this.requestRender()
@@ -50,25 +55,25 @@ export class Turtle {
         // Unified scheduler + compositor (lazy — created on first upsertAmbient)
         this.scheduler = null
         this.compositor = null
-        this._snapshotPending = false
-        // Hatch gate: when the canvas is driven by passive outershell content
-        // (watching a friend, or reverting to their code) this is true and the
-        // onFrame hatch is suppressed — a friend's drawing must never be
-        // hatched/reflected as the user's own. Only own edits and live drafts
-        // refresh the snapshot. See upsertAmbient({ hatch }).
-        this._hatchSuppressed = false
-        this._localKeys = new Set()  // buffer IDs of locally-rendered tab ambients
+        // Light register (kindled + warm) outlives compositor dispose on empty
+        // canvas — D006 must hold across the transition it was written for.
+        this.focus = createFocus(null)
+        // gate[self] — hatch permission for this canvas. One bit while only
+        // self hatches here; reflectGate is the witness fence.
+        this._hatchMine = true
 
-        // Dirty marker: stamped on every draw/edit/removal. hatch() stamps
-        // _lastHatchTime, so a drawing is "dirty" while _lastContentChange is
-        // newer than the last hatch. eagerHatch skips when nothing changed.
-        this._lastHatchTime = 0
-        this._lastContentChange = 0
+        // Hatch stamps only; reflect_changed? is the question. (D025 R3)
+        this._lastReflectChange = 0
+        this._lastHatchAt = 0
+        this._firstDrawAt = 0
+        this._walking = false   // last frame's phase, to catch the run's end
 
         this._heartbeatTimer = null
         this._onVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
-                this.eagerHatch()
+                // Nothing changed while hidden — just wake the loop and let the
+                // verdict find whatever change went unhatched.
+                this.requestRender()
                 this._scheduleHeartbeat()
             } else {
                 this._stopHeartbeat()
@@ -91,14 +96,15 @@ export class Turtle {
         return !this._renderRequested && !this._keepRendering
     }
 
-    // Keepalive: re-publish the snapshot  within the server's 10-min cache
+    // Keepalive: re-publish the reflect within the server's 10-min cache. Saying
+    // it changed IS the force — a cache about to forget would learn something.
     _scheduleHeartbeat() {
         if (this._heartbeatTimer) return
         const delay = 5 * 60_000 + Math.random() * 60_000
         this._heartbeatTimer = setTimeout(() => {
             this._heartbeatTimer = null
             if (document.visibilityState === 'visible') {
-                this.eagerHatch(0, { force: true })
+                this.reflectChanged()
                 this._scheduleHeartbeat()
             }
         }, delay)
@@ -115,63 +121,58 @@ export class Turtle {
         for (const ev of ['start', 'change', 'end']) {
             this.stage.controls.removeEventListener(ev, this._onControlsActive)
         }
-        // Free the render stack. The canvas is phx-update="ignore" and outlives
-        // the hook, so a fresh Turtle is built on it each remount — without this
-        // the old compositor's GPU layers and the stage (renderer/loop/controls/
-        // cameraBridge) leak per remount, exhausting WebGL contexts over reconnects.
+        // Dispose compositor/stage on remount — canvas outlives the hook.
+        // Light register dies with the turtle (not with the compositor).
         this.compositor?.dispose()
         this.compositor = null
         this.scheduler = null
+        this.focus.bind(null)
         this.stage.dispose()
     }
 
     // Lazy init: one scheduler (meta-root) + one compositor for the lifetime.
+    // Focus register is rebound (not recreated) so kindled/warm survive empty canvas.
     _ensureScheduler() {
         if (this.scheduler) return
         this.scheduler = createScheduler(metaRoot(), {
+            // The stage holds no `when` of its own. (id:mailbox-listens-for)
+            rootHears: [],
             createDeps: () => ({
                 mathParser: new Parser(),
                 mathEvaluator: new Evaluator()
             }),
             execOpts: { color: this.color },
-            // Pass the EMITTER's own name — its signal address. (Was the globally
-            // focused ambient, which mis-addressed every shout to whatever panel
-            // had focus.) Routing to a panel is a read-side concern, by source.
+            // onShout carries the emitter's name; routing is read-side.
             onShout: (sourceName, msg, payload) => {
                 this._onShout?.(sourceName, msg, payload)
             }
         })
+        this.focus.bind(this.scheduler)
+        // Live stage for STAGE_CONTRACT verbs; cadence + orbit target via opts
+        // (not stage fields — renderLoop used to leak frameInterval that way).
+        // focus is turtle-owned — compositor only reads/projects it.
         this.compositor = createCompositor(this.scheduler,
-            { camera: this.stage.camera, controls: this.stage.controls },
+            this.stage,
             {
-                scene: this.stage.scene,
-                renderer: this.stage.renderer,
-                recorder: this.stage.recorder,
-                renderstate: this.renderstate,
-                hatch: () => this.hatch(),
-                // Let async materializers (troika Text builds glyphs off-thread)
-                // wake the render-on-demand loop once their geometry is ready,
-                // else a label finishing after the loop idles out never draws.
-                requestRender: () => this.requestRender(),
-                // The render loop's vsync cadence — lets the compositor distinguish a
-                // slow/throttled frame from a render-on-demand idle-out (id:eye/rerun).
-                frameInterval: this.renderLoop.frameInterval
-            },
-            {
+                focus: this.focus,
                 createHead: (parent) => new Render.Head(parent),
                 createShapist: (parent) => new Render.Shape(parent, {
                     layerMethod: 'renderOrder',
                     polygonOffset: { factor: -0.1, units: -1 }
-                })
+                }),
+                frameMs: this.renderLoop.frameInterval,
+                controls: this.stage.controls,
             }
         )
-        // focusedAddress left null — set by first draw() call
+        // kindled left as register holds — set by first draw() / focusAmbient
         this.stage.head.hide()
     }
 
     onFrame(t) {
         this._renderRequested = false
         let controlsChanged = false
+        const now = performance.now()
+        const walking = !!this.scheduler && !this.scheduler.done
 
         if (this.compositor) {
             try {
@@ -187,14 +188,10 @@ export class Turtle {
                 this.stage.recorder.captureFrame()
             }
 
-            if (this.renderstate.snapshot.frame == null && t > 500 && !this._hatchSuppressed) {
-                this.hatch()
-            }
-
-            if (this.scheduler.done && !this._snapshotPending && !this._hatchSuppressed) {
-                this._snapshotPending = true
-                this.hatch()
-            }
+            this._firstDrawAt ||= now
+            // Still-edge is hatch news; a never-done loop hatches once.
+            if (this._walking && !walking) this._lastReflectChange = now
+            this._walking = walking
         } else {
             // No ambients — idle render (orbit controls, stage head)
             const { head, camera, controls, renderer, scene } = this.stage
@@ -204,92 +201,208 @@ export class Turtle {
             renderer.render(scene, camera)
         }
 
-        // Decide whether the loop should keep running. Keep going while a program
-        // animates, while recording, while the camera is still moving/damping, or
-        // until the first thumbnail snapshot is captured; otherwise idle out.
-        const animating = !!this.scheduler && !this.scheduler.done
+        // Only hatchVerdict decides hatch; owed keeps the loop awake.
+        // mine = gate[self] — foreign witness cells never answer here.
+        const verdict = hatchVerdict({
+            now,
+            present: !!this.compositor,
+            mine: this._hatchMine,
+            walking,
+            changedAt: this._lastReflectChange,
+            lastHatchAt: this._lastHatchAt,
+            firstDrawAt: this._firstDrawAt,
+        })
+        if (verdict.reason) this.hatch()
+
+        // Keep loop while walking, recording, camera settling, or hatch owed.
         const recording = this.stage.recorder.isRecording
-        // Only the compositor branch can hatch — don't pin the idle loop on.
-        // A suppressed hatch must not pin the on-demand loop: with snapshot.frame
-        // left null (we never capture for foreign content) this would spin forever.
-        const needHatch = !!this.compositor && this.renderstate.snapshot.frame == null && !this._hatchSuppressed
-        const controlsSettling = performance.now() < this._controlsActiveUntil
-        this._keepRendering = animating || recording || controlsChanged || controlsSettling || needHatch
+        const controlsSettling = now < this._controlsActiveUntil
+        this._keepRendering = walking || recording || controlsChanged || controlsSettling || verdict.owed
+
+        this._sayProgress(now)
     }
 
+    // Clock not payload — reader pulls the world. Phase/run edges always speak
+    // so a tiny run's sun still rises. (id:output-ledger-r2-progress)
+    _sayProgress(now) {
+        if (!this.onProgress) return
+        const p = worldProgress(this.scheduler)
+        const edge = p.phase !== this._lastProgressPhase || p.run !== this._lastProgressRun
+        if (!edge && now - (this._lastProgressAt || 0) < PROGRESS_FLOOR_MS) return
+        this._lastProgressPhase = p.phase
+        this._lastProgressRun = p.run
+        this._lastProgressAt = now
+        this.onProgress(p)
+    }
+
+    // false = readback in flight; retry next frame.
     hatch() {
-        this._lastHatchTime = performance.now()
-        this.stage.hatch(this.bridge)
+        if (this.stage.hatch(this.bridge) === false) return false
+        this._lastHatchAt = performance.now()
+        return true
     }
 
-    eagerHatch(cooldown = 8_000, { force = false } = {}) {
-        if (!this.compositor) return
-        if (performance.now() - this._lastHatchTime < cooldown) return
-        // Skip redundant re-publishes of an unchanged drawing. The periodic
-        // keepalive passes force:true to refresh the server-side cache TTL.
-        if (!force && this._lastContentChange <= this._lastHatchTime) return
-        this._snapshotPending = false
+    // Verdict alone hatches. (D025 R3/R4)
+    reflectChanged() {
+        this._lastReflectChange = performance.now()
         this.requestRender()
+    }
+
+    // Attention is reflect news too. (D025 R4)
+    attentionMoved() {
+        this.reflectChanged()
     }
 
     // --- Multi-ambient API ---
 
-    // hatch:false renders without refreshing the snapshot/thumbnail or reflecting
-    // to the server — for passive outershell content (a watched friend, or a
-    // reverted draft). Own edits and live drafts leave it default (true).
-    upsertAmbient(key, displayName, code, { hatch = true } = {}) {
+    // Rehearse once per vocab text. (id:cmp-vet)
+    rehearseVocab(vocab, vocabNodes = null) {
+        this._vocabCache ??= new Map()
+        if (this._vocabCache.has(vocab)) return this._vocabCache.get(vocab)
+        let ns = null
         try {
-            const instructions = parseProgram(code)
+            const deps = { mathParser: new Parser(), mathEvaluator: new Evaluator() }
+            ns = drainNamespace(vocabNodes ?? parseProgram(vocab), deps)
+            // No absolute span from a re-parsed vocab string; drop it.
+            if (!vocabNodes && ns?.error?.span) ns.error = { ...ns.error, span: null }
+        } catch (error) {
+            // The drain is total; this is the impossible path (a broken dep).
+            ns = { functions: null, userspace: null, error }
+        }
+        if (this._vocabCache.size >= 32) this._vocabCache.clear()
+        this._vocabCache.set(vocab, ns)
+        return ns
+    }
+
+    // One ailments list for walk and rehearsal wounds.
+    get ailments() {
+        return standingAilments({
+            frames: this.scheduler?.errors,
+            seats: this._seatFaults?.values(),
+            rehearsals: this._rehearsalDiagnostics?.values(),
+        })
+    }
+
+    // hatch:false = passive seat (no snapshot/reflect).
+    // vocab = phase ancestors (D019); fresh:true forces restart. (id:cmp-become-seed)
+    upsertAmbient(key, displayName, code, { hatch = true, vocab = null, nodes = null, vocabNodes = null, fresh = false } = {}) {
+        try {
+            // Live node slices when present; green tree reuses otherwise. (id:cmp-green-tree)
+            let instructions = nodes
+            if (!instructions) {
+                this._parseMemo ??= new Map()
+                const held = this._parseMemo.get(key)
+                instructions = reparseProgram(code, held?.text ?? null, held?.ast ?? null)
+                this._parseMemo.set(key, { text: code, ast: instructions })
+            }
             this._ensureScheduler()
 
-            this.scheduler.hotSwapChild(key, {
-                name: displayName,
-                code: { ast: instructions, functions: null },
-                style: { color: this.color },
-                env: null
-            })
-
-            this._hatchSuppressed = !hatch
-            if (hatch) {
-                // Fresh hatch cycle — clear previous snapshot so onFrame re-hatches
-                this.renderstate.snapshot = { frame: null, save: this.renderstate.snapshot.save }
-                this._snapshotPending = false
+            const ns = vocab ? this.rehearseVocab(vocab, vocabNodes) : null
+            // Phase diagnostic under seat key, ancestor's span.
+            this._rehearsalDiagnostics ??= new Map()
+            if (ns?.error) {
+                this._rehearsalDiagnostics.set(key, {
+                    address: key, name: displayName, message: ns.error.message,
+                    span: ns.error.span ?? null, kind: 'rehearsal',
+                })
+            } else {
+                this._rehearsalDiagnostics.delete(key)
             }
+            // A keystroke seats a world INLINE, so the seating gets a slice of
+            // its own — without one a big program builds all of itself between
+            // two letters. The slice closes with the call, so nothing downstream
+            // inherits a spent deadline. (id:output-ledger-r2-pacer)
+            this.scheduler.withSlice(this.compositor?.budgetMs ?? 4, () =>
+                this.scheduler.hotSwapChild(key, {
+                    name: displayName,
+                    code: { ast: instructions, functions: ns?.functions ?? null },
+                    style: { color: this.color },
+                    env: ns?.userspace?.size ? { userspace: ns.userspace } : null
+                }, { fresh }))
+
+            // Only OPEN the gate here on real content — closing is reflectGate's alone (D022).
+            // Self-scoped: a seat on this canvas writes gate[self], never a foreign cell.
+            if (hatch) this._hatchMine = true
 
             this.compositor.flush()
-            this._lastContentChange = performance.now()
+            // Any seat changes the reflect; gate only opens for the child.
+            this._lastReflectChange = performance.now()
 
-            const errors = this.scheduler.errors
-            if (errors.length > 0) {
-                this.renderstate.meta = { state: "error", message: errors[0].message, source: code, commands: instructions }
+            // Own-address faults only on the child's reflect. (D022)
+            this._seatFaults?.delete(key)
+
+            const wounds = ailmentsFor(this.scheduler.errors, key)
+            if (wounds.length > 0) {
+                // Wounds carry frame key on diagnostics — one channel.
+                this.renderstate.meta = { state: "error", message: null, diagnostics: wounds }
                 this.requestRender()
-                return { success: false, error: errors[0].message }
+                return { success: false, wounds }
             }
 
-            this.renderstate.meta = { state: "success", commands: instructions }
+            // Turtle owns walk fault; document is asked at the shell. (D022)
+            this.renderstate.meta = { state: "success", message: null, diagnostics: [] }
             this.requestRender()
-            return { success: true, commandCount: this.scheduler.commandCount }
+            // THIS SEAT'S COUNT, not the world's. `scheduler.commandCount` is
+            // sumCounts(root) — every seat at every place — and is assigned ONLY
+            // when the whole world settles, so between settles it holds the
+            // PREVIOUS one. Announcing with it made a ladder step speak a ☀︎
+            // that belonged to some earlier run.
+            const seat = this.scheduler.root.children.get(key)
+            return { success: true, commandCount: seat ? sumCounts(seat) : 0 }
         } catch (error) {
             console.error(error)
-            this.renderstate.meta = { state: "error", message: error.message, source: code }
-            return { success: false, error: error.message }
+            // Throw is a wound in the same shape.
+            const wound = {
+                message: error.message,
+                span: error.span ?? null,
+                kind: error.kind ?? "walk",
+                address: key,
+            }
+            // Hold pre-frame throws so ailments still see them.
+            ;(this._seatFaults ??= new Map()).set(key, wound)
+            this.renderstate.meta = { state: "error", message: null, diagnostics: [wound] }
+            return { success: false, wounds: [wound] }
         }
     }
 
+    // Reflect gate once per transition, scoped by witness (D022;
+    // light-ladders-hatch-resolution).
+    //
+    // The problem: a foreign batch naming its witness could close the author's
+    // reflect. ONLY SELF MAY WRITE SELF'S GATE. One bit, one name — a Map for
+    // the second witness arrives with the second witness, not before.
+    reflectGate(open, { witness = SELF } = {}) {
+        if (witness !== SELF) return
+        this._hatchMine = !!open
+    }
+
+    // Standing tree for plain-tab keys (id:cmp-standing-primitives).
+    // Memo keyed by canvas SEAT (Cut 1 Slot = place:node) — caller asks with
+    // the seat; pageLaw.seatOf answers it. Guessing bare-then-each-place was
+    // the same missing-index disease ailmentsFor had.
+    programFor(seat) {
+        if (!this._parseMemo || seat == null) return null
+        return this._parseMemo.get(seat)?.ast ?? null
+    }
+
     removeAmbient(key) {
-        this._localKeys.delete(key)
+        this._parseMemo?.delete(key)
+        this._rehearsalDiagnostics?.delete(key)
+        this._seatFaults?.delete(key)
         if (!this.scheduler) return
-        this._lastContentChange = performance.now()
+        this._lastReflectChange = performance.now()
 
         // Address only — callers pass the key they registered with. (The old
         // name-scan fallback is gone: one register, no second lookup space.)
         this.scheduler.removeChild(key)
 
-        // If no children left, tear down scheduler and show idle head
+        // If no children left, tear down compositor/scheduler and show idle head.
+        // Light register (kindled + warm) survives — rebound on next seat.
         if (this.scheduler.root.children.size === 0) {
             this.compositor.dispose()
             this.compositor = null
             this.scheduler = null
+            this.focus.bind(null)
             this.stage.head.show()
             this.stage.head.reset()
         }
@@ -297,24 +410,26 @@ export class Turtle {
         this.requestRender()
     }
 
-    // Focus by address (registration key / nested path) or by display name —
-    // a name resolves THROUGH the address (one register + a name view), so
-    // focus survives re-eval and rename and never collides across tabs.
-    focusAmbient(ref) {
-        if (this.compositor) {
-            this.compositor.focusedAddress = resolveAddress(this.scheduler, ref)
-        }
+    // THE ONE LIGHT WRITER — register, then projection, never one without the
+    // other. Two writers once: this (from the law's total) and focusAmbient,
+    // which moved kindled and projected nothing — a portal walk pointed the
+    // camera at one figure while a different one stayed bright.
+    //
+    // `total` is the law's `light` verbatim. Degree numbers are the caller's;
+    // no appearance policy lives on the turtle.
+    light(total, degree) {
+        this.focus.light = total ?? {}
+        this.compositor?.projectLight(degree)
+        this.requestRender()
     }
 
-    setAmbientOpacity(name, opacity) {
-        if (this.compositor) {
-            this.compositor.setOpacityByName(name, opacity)
-        }
+    // Resolve a name / nested address to the canonical address, for a caller
+    // who holds a word and needs the register's coordinate.
+    addressOf(ref) {
+        return resolveAddress(this.scheduler, ref)
     }
 
-    // The tab (root-child key === buffer id) whose subtree defines an ambient by
-    // display name: a top-level tab named `name`, or the tab whose code spawned
-    // `as name do …`. Returns null if not found (e.g. a remote peer's addr key).
+    // Tab key whose subtree owns a display name.
     tabKeyForAmbient(name) {
         if (!this.scheduler?.root) return null
         const defines = (frame) => {
@@ -330,45 +445,6 @@ export class Turtle {
         return null
     }
 
-    // Toggle a tab's ambient: shift+click adds if absent, removes if present.
-    // On add, re-upserts ALL local ambients so they restart in sync.
-    // resolveBuffer(key) → { name, content } provides sibling code for restart.
-    toggleAmbient(id, name, code, resolveBuffer) {
-        this._ensureScheduler()
-        if (this.scheduler.root.children.has(id)) {
-            this.removeAmbient(id)
-        } else {
-            this._localKeys.add(id)
-            for (const key of this._localKeys) {
-                const info = key === id ? { name, content: code } : resolveBuffer?.(key)
-                if (info) this.upsertAmbient(key, info.name, info.content)
-            }
-        }
-        this.requestRender()
-    }
-
-    // --- Backward-compatible API ---
-
-    draw(id, name, code) {
-        this._ensureScheduler()
-        // Exclusive only when entering a tab OUTSIDE the active group: switching
-        // to a fresh tab replaces the previous drawing. A tab already in
-        // _localKeys (sisters brought alive via shift+click → toggleAmbient)
-        // keeps its sisters running — editing or re-selecting one member must
-        // not collapse the group; only that member's ambient is re-upserted.
-        if (!this._localKeys.has(id)) {
-            for (const key of this._localKeys) {
-                if (key !== id) this.removeAmbient(key)
-            }
-            this._localKeys.clear()
-            this._localKeys.add(id)
-        }
-        // Upsert first so the frame exists, then focus by its key directly.
-        const result = this.upsertAmbient(id, name, code)
-        this.focusAmbient(id)
-        return result
-    }
-
     reset() {
         if (this.scheduler) {
             // Remove all children
@@ -378,14 +454,21 @@ export class Turtle {
             this.compositor.dispose()
             this.compositor = null
             this.scheduler = null
+            this.focus.bind(null)
         }
-        this._snapshotPending = false
-        this._lastContentChange = performance.now()
+        // Blank canvas clears light + gate: a new life, not a mid-session empty.
+        this.focus.light = {}
+        this._hatchMine = true
+        // A blank canvas is a new life: it has never drawn, so first light is
+        // owed again — measured from the next draw, not from this moment.
+        this._lastReflectChange = performance.now()
+        this._lastHatchAt = 0
+        this._firstDrawAt = 0
 
         this.stage.head.show()
         this.stage.head.reset()
-        this.renderstate.snapshot = { frame: null, save: false }
-        this.renderstate.meta = { state: null, message: null, commands: [] }
+        this.renderstate.snapshot = { save: false }
+        this.renderstate.meta = { state: null, message: null, commands: [], diagnostics: [] }
         this.renderLoop.requestRestart()
     }
 }

@@ -1,0 +1,214 @@
+// One Address — Phase 1 of the tilling (specs/groundwork.org id:gw-development).
+// Run with: node --test test/js/runtime/identity_test.mjs
+//
+// The stable address (frameAddress: top registration key + name path) is the one
+// cross-eval identity register: shout de-dup, focus, and keys route on it.
+// frame.id remains per-LIFETIME render plumbing (layers, deposit GC) — a re-eval
+// mints a new id (clearing old ink) but keeps the address (keeping identity).
+
+import { test, describe } from "node:test"
+import assert from "node:assert/strict"
+
+import {
+    createScheduler, metaRoot, frameAddress, deliverShout
+} from "../../../assets/js/turtling/scheduler.js"
+import { createFocus, resolveAddress } from "../../../assets/js/turtling/focus.js"
+import { parseProgram } from "../../../assets/js/turtling/parse.js"
+import { Parser } from "../../../assets/js/turtling/mafs/parse.js"
+import { Evaluator } from "../../../assets/js/turtling/mafs/evaluate.js"
+
+function makeScheduler() {
+    return createScheduler(metaRoot(), {
+        createDeps: () => ({
+            mathParser: new Parser(),
+            mathEvaluator: new Evaluator()
+        }),
+        execOpts: { color: '#e77808' }
+    })
+}
+
+function fork(name, code) {
+    return {
+        name,
+        code: { ast: parseProgram(code), functions: null },
+        style: { color: '#e77808' },
+        env: null
+    }
+}
+
+
+describe("frameAddress — the one cross-eval register", () => {
+    test("a top-level ambient's address is its registration key, not its name", () => {
+        const s = makeScheduler()
+        const child = s.hotSwapChild("buf-1", fork("spiral", "fw 10"))
+        assert.equal(child.address, "buf-1")
+        assert.equal(frameAddress(s.root, child), "buf-1")
+    })
+
+    test("address survives re-eval; id does not (per-lifetime plumbing)", () => {
+        const s = makeScheduler()
+        const first = s.hotSwapChild("buf-1", fork("spiral", "fw 10"))
+        const second = s.hotSwapChild("buf-1", fork("spiral", "fw 20"))
+        assert.notEqual(second.id, first.id)
+        assert.equal(second.address, first.address)
+    })
+
+    test("rename changes display only — address holds", () => {
+        const s = makeScheduler()
+        const first = s.hotSwapChild("buf-1", fork("spiral", "fw 10"))
+        const renamed = s.hotSwapChild("buf-1", fork("coil", "fw 10"))
+        assert.equal(renamed.name, "coil")
+        assert.equal(renamed.address, first.address)
+    })
+
+    test("a nested ambient's address is the path under its tab's key", () => {
+        const s = makeScheduler()
+        s.hotSwapChild("buf-1", fork("tab", "as sky do\nfw 5\nend"))
+        const tab = s.root.children.get("buf-1")
+        const sky = tab.children.get("sky")
+        assert.ok(sky, "nested ambient spawned")
+        assert.equal(sky.address, "buf-1/sky")
+    })
+
+    test("same nested name under sibling tabs never collides", () => {
+        const s = makeScheduler()
+        s.hotSwapChild("buf-1", fork("a", "as sky do\nfw 5\nend"))
+        s.hotSwapChild("buf-2", fork("b", "as sky do\nfw 5\nend"))
+        const sky1 = s.root.children.get("buf-1").children.get("sky")
+        const sky2 = s.root.children.get("buf-2").children.get("sky")
+        assert.notEqual(sky1.address, sky2.address)
+    })
+})
+
+// A letter only reaches a frame that said it would listen (id:mailbox-listens-for),
+// so every receiver here names the pattern under test. The law being fenced is
+// de-dup by ADDRESS, which is unchanged.
+const EAR = (name) => `when '${name}' do\n  fw 1\nend`
+
+describe("shout de-dup — keyed on address, not the re-minted id", () => {
+    test("a shout delivers once to a frame", () => {
+        const s = makeScheduler()
+        const a = s.hotSwapChild("buf-a", fork("a", "fw 1"))
+        const b = s.hotSwapChild("buf-b", fork("b", EAR("ping")))
+        const shout = { from: a, name: "ping", payload: 1 }
+        deliverShout(shout, b)
+        deliverShout(shout, b)
+        assert.equal(b.mailbox.filter(m => m.name === "ping").length, 1)
+    })
+
+    test("a re-eval'd receiver is never re-delivered (same address, new id)", () => {
+        const s = makeScheduler()
+        const a = s.hotSwapChild("buf-a", fork("a", "fw 1"))
+        const b1 = s.hotSwapChild("buf-b", fork("b", EAR("ping")))
+        const shout = { from: a, name: "ping", payload: 1 }
+        deliverShout(shout, b1)
+        // A CHANGED re-eval mints the new lifetime (an unchanged seat is now
+        // skipped whole — become stage 1, id:cmp-become-seed); the dedup law
+        // under test is unchanged: delivery keys on the address, not the id.
+        const b2 = s.hotSwapChild("buf-b", fork("b", EAR("ping") + "\nfw 2"))
+        assert.notEqual(b2.id, b1.id)
+        deliverShout(shout, b2)
+        assert.equal(b2.mailbox.filter(m => m.name === "ping").length, 0,
+            "the address already received this shout in its previous life")
+    })
+
+    test("a shout never returns to its emitter, even reborn", () => {
+        const s = makeScheduler()
+        const a1 = s.hotSwapChild("buf-a", fork("a", EAR("echo")))
+        const shout = { from: a1, name: "echo", payload: null }
+        // Changed code so the emitter truly REBIRTHS (an unchanged seat is
+        // skipped whole under the seed law, id:cmp-become-seed).
+        const a2 = s.hotSwapChild("buf-a", fork("a", EAR("echo") + "\nfw 2"))
+        deliverShout(shout, a2)
+        assert.equal(a2.mailbox.filter(m => m.name === "echo").length, 0,
+            "emitter's address must not receive its own shout")
+    })
+
+    test("interleaved shouts still deliver across ambients (behaviour preserved)", () => {
+        const s = makeScheduler()
+        s.hotSwapChild("buf-a", fork("a", "when 'tick' do\n  fw 1\nend\nshout 'tick' 1"))
+        const b = s.root.children.get("buf-a")
+        assert.ok(b.mailbox.some(m => m.name === "tick"), "self-delivery at emission")
+    })
+})
+
+describe("focus — one register, written whole; the address is the identity", () => {
+    test("the light survives re-eval and rename — it holds the ADDRESS", () => {
+        const s = makeScheduler()
+        const f = createFocus(s)
+        s.hotSwapChild("buf-1", fork("spiral", "fw 10"))
+        f.light = { kindled: "buf-1", warm: [] }
+
+        // live rename (opBuffer rename mutates child.name without re-eval)
+        s.root.children.get("buf-1").name = "coil"
+        assert.equal(f.kindled, "buf-1", "a rename cannot move the light")
+
+        // re-eval
+        s.hotSwapChild("buf-1", fork("coil", "fw 20"))
+        assert.equal(f.kindled, "buf-1", "nor can a re-eval")
+        assert.ok(f.isFocused(s.root.children.get("buf-1")))
+    })
+
+    test("two tabs sharing a display name cannot steal each other's light", () => {
+        const s = makeScheduler()
+        const f = createFocus(s)
+        s.hotSwapChild("buf-1", fork("sky", "fw 10"))
+        s.hotSwapChild("buf-2", fork("sky", "fw 10"))
+        f.light = { kindled: "buf-2", warm: [] }
+        assert.ok(!f.isFocused(s.root.children.get("buf-1")))
+        assert.ok(f.isFocused(s.root.children.get("buf-2")))
+    })
+
+    test("a nested lens is in the focused subtree when its tab is kindled", () => {
+        const s = makeScheduler()
+        const f = createFocus(s)
+        s.hotSwapChild("buf-1", fork("tab", "as sky do\nfw 5\nend"))
+        const sky = s.root.children.get("buf-1").children.get("sky")
+        f.light = { kindled: "buf-1" }
+        assert.ok(f.inFocusedSubtree(sky))
+        assert.ok(!f.isFocused(sky), "strict match stays strict")
+    })
+
+    test("ONE write path: the whole total, or nothing", () => {
+        const s = makeScheduler()
+        const f = createFocus(s)
+        s.hotSwapChild("buf-1", fork("spiral", "fw 10"))
+        f.light = { kindled: "buf-1", warm: ["buf-2", null] }
+        assert.deepEqual(f.light, { kindled: "buf-1", warm: ["buf-2"] },
+            "nulls never enter the warm set")
+        f.light = {}
+        assert.deepEqual(f.light, { kindled: null, warm: [] }, "an empty total clears it")
+        // warm reads a copy — a getter handing out the live Set is a read that writes.
+        f.light = { kindled: null, warm: ["a"] }
+        f.warm.push("b")
+        assert.deepEqual(f.warm, ["a"])
+    })
+})
+
+describe("resolveAddress — names resolve through the address", () => {
+    test("a registration key resolves to itself", () => {
+        const s = makeScheduler()
+        s.hotSwapChild("buf-1", fork("spiral", "fw 10"))
+        assert.equal(resolveAddress(s, "buf-1"), "buf-1")
+    })
+
+    test("a display name resolves to its frame's address", () => {
+        const s = makeScheduler()
+        s.hotSwapChild("buf-1", fork("spiral", "fw 10"))
+        assert.equal(resolveAddress(s, "spiral"), "buf-1")
+    })
+
+    test("a nested name resolves to its path address", () => {
+        const s = makeScheduler()
+        s.hotSwapChild("buf-1", fork("tab", "as sky do\nfw 5\nend"))
+        assert.equal(resolveAddress(s, "sky"), "buf-1/sky")
+        assert.equal(resolveAddress(s, "buf-1/sky"), "buf-1/sky")
+    })
+
+    test("an unknown reference resolves to null", () => {
+        const s = makeScheduler()
+        s.hotSwapChild("buf-1", fork("spiral", "fw 10"))
+        assert.equal(resolveAddress(s, "ghost"), null)
+        assert.equal(resolveAddress(s, null), null)
+    })
+})

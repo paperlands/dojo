@@ -1,0 +1,112 @@
+name: Deploy Staging
+
+on:
+  pull_request:
+    branches: [staging]
+    types: [opened, synchronize, reopened]
+    # The constellation is prose: org/markdown-only pushes change nothing the
+    # image contains, so they buy no builder minutes. Root-level globs only —
+    # priv/static/codex IS shipped org, and must always buy a deploy.
+    paths-ignore:
+      - "*.org"
+      - "*.md"
+      - "specs/**"
+      - "codex/**"
+      - "diagrams/**"
+      - "images/**"
+      - "TODO"
+      - ".github/workflows/release.yml"
+
+# GitHub's default is `bash -e`, which lets a broken pipe stage pass silently.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: fly-staging-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # CI runs as its own workflow on the same PR. Wait for its aggregate gate
+  # before Fly spends a builder — a red suite must not ship to paperland.
+  # (Do not re-invoke CI here: that would double the bill and race the PR check.)
+  require_ci:
+    name: Require CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      checks: read
+
+    steps:
+      - name: Wait for CI gate on this head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # Single aggregate check from ci.yml — fails when either leaf fails.
+          NAME="CI gate"
+          deadline=$((SECONDS + 1200))
+
+          while (( SECONDS < deadline )); do
+            # Paginated stream of matching runs; highest id is the latest attempt.
+            row="$(
+              gh api --paginate "repos/${REPO}/commits/${SHA}/check-runs" \
+                --jq ".check_runs[] | select(.name == \"${NAME}\") | [.id, .status, (.conclusion // \"null\")] | @tsv" \
+                | sort -n -k1,1 | tail -1 || true
+            )"
+
+            if [[ -z "$row" ]]; then
+              echo "waiting: no '$NAME' check on ${SHA:0:8} yet"
+              sleep 15
+              continue
+            fi
+
+            status="$(echo "$row" | cut -f2)"
+            conclusion="$(echo "$row" | cut -f3)"
+            echo "$NAME: status=$status conclusion=$conclusion"
+
+            if [[ "$status" != "completed" ]]; then
+              sleep 15
+              continue
+            fi
+
+            if [[ "$conclusion" == "success" ]]; then
+              echo "CI green on ${SHA:0:8} — deploy may proceed"
+              exit 0
+            fi
+
+            echo "::error::CI gate is '$conclusion' on ${SHA:0:8} — refusing staging deploy"
+            exit 1
+          done
+
+          echo "::error::Timed out waiting for CI gate on ${SHA:0:8}"
+          exit 1
+
+  deploy:
+    name: Deploy to Fly (paperland)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: require_ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
+
+      # --remote-only: the build runs on Fly's builder, which keeps this app's
+      # Docker layer cache between deploys — the runner ships context only.
+      # Staging is one machine, so immediate beats a rolling handover.
+      - name: Deploy
+        run: |
+          flyctl deploy --remote-only \
+            --strategy immediate \
+            --wait-timeout 600 \
+            -c fly.staging.toml -a paperland
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_STAGING_API_TOKEN }}

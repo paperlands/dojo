@@ -1,6 +1,5 @@
-// Executor — generator-based AST walker.
-// Walks parsed AST, calls pure command functions, yields TurtleEvents.
-// No side effects beyond yielded events. Math context injected as dependency.
+// AST walker as a generator coroutine — yields effects; scheduler is the OS.
+// Math deps injected.
 
 import { COMMANDS, DEFAULT_STYLE } from "./commands.js"
 import { SE3 } from "./se3.js"
@@ -10,14 +9,35 @@ import { matchPattern } from "./match.js"
 
 const roundVec = (v) => Math.abs(v) < 1e-10 ? 0 : Math.round(v * 1e9) / 1e9
 
-// Dataflow suspension helper — wraps evaluateExpr in a retry loop.
-// When a cross-ambient read fails during inline advance (blocked error),
-// yields { type: 'blocked' } to suspend the generator, then retries on resume.
-// Used with yield* from walkBody so the suspension propagates up the chain.
-function* evalOrBlock(expr, scope, state) {
+// typeof guard: bare process?.env throws on undeclared process in the browser.
+const envNum = (name) => {
+    if (typeof process === "undefined") return 0
+    return Number(process.env?.[name] ?? 0) || 0
+}
+
+// Breath quantum: node visits between preemption offers (BEAM reductions prior).
+// Charge work, not talkativeness. Bench: command_cost_bench.mjs. (id:output-ledger-r3-meter)
+const DEFAULT_BREATH_EVERY = envNum("DOJO_BREATH") || 512
+// Self-break long strokes so the meter can see them (rate, not truth).
+const DEFAULT_STROKE_MAX = envNum("DOJO_STROKE_MAX") || 512
+
+// Per-hole residual domain {word, measure}. Missing verb → all measure.
+// Word = name costume (ink, label text, shout name). Default measure is
+// strict: bare unknown idents wound — never silent strings that NaN SE(3).
+const ARG_DOMAINS = {
+    beColour: ["word"],
+    label: ["word", "measure"],
+    shout: ["word", "measure"],
+}
+
+const holeDomain = (domains, i) => (domains?.[i] === "word" ? "word" : "measure")
+
+// Retry evaluateExpr; yield blocked on cross-ambient read failure only.
+// domain: "measure" (default) | "word"
+function* evalOrBlock(expr, scope, state, domain = "measure") {
     while (true) {
         try {
-            return evaluateExpr(expr, scope, state)
+            return evaluateExpr(expr, scope, state, domain)
         } catch (e) {
             if (e.blocked) {
                 yield { type: 'blocked' }
@@ -28,22 +48,12 @@ function* evalOrBlock(expr, scope, state) {
     }
 }
 
-// Execute a parsed AST, yielding TurtleEvents.
-// Caller drains the generator (synchronously for batch, per-tick for coroutines).
-//
-// deps = { mathParser, mathEvaluator }
-// opts = { maxRecurseDepth, maxRecurses, maxCommands, color, actorState }
-export function* execute(ast, deps, opts = {}) {
-    // Actor state: if provided, this is a continuation — same ambient, new command batch.
-    // The state object is shared and mutated in-place across all batches.
-    const state = opts.actorState || {
-        // A Lens (`eye`) seeds its spawn frame to recenterPose() so an empty eye
-        // reframes the world to identity ⇒ the live orbit camera renders today's
-        // default view; fw/rt/dive/roll then compose from there. (id:eye-view-pipeline)
+// Actor state for execute. Mutated in place so a throw keeps registered defs. (D020, id:cmp-t-healthy-parts)
+export function createActorState(opts = {}) {
+    return {
+        // Empty eye seeds to recenterPose. (id:eye-view-pipeline)
         transform: opts.lens ? recenterPose() : SE3.identity(),
-        // A Lens (`eye`) is pen-up by construction: its Output codomain is the
-        // viewport, not the scene, so it never lays down geometry. (Phase E0,
-        // specs/eye-ambient.org id:eye-lens-primitive.)
+        // Lens is pen-up: Output is the viewport. (id:eye-lens-primitive)
         style: { ...DEFAULT_STYLE, color: opts.color || DEFAULT_STYLE.color, ...(opts.lens ? { down: false } : {}) },
         functions: opts.functions ? { ...opts.functions } : {},
         commandCount: 0,
@@ -51,25 +61,29 @@ export function* execute(ast, deps, opts = {}) {
         maxRecurseDepth: opts.maxRecurseDepth || 360,
         maxRecurses: opts.maxRecurses || 888888,
         maxCommands: opts.maxCommands || 88888888,
+        // Reductions: preemption meter (not language-visible commandCount). (D027 R3)
+        reductions: 0,
+        breathEvery: opts.breathEvery ?? DEFAULT_BREATH_EVERY,
+        strokeMax: opts.strokeMax ?? DEFAULT_STROKE_MAX,  // 0 = off
         elapsedTime: 0,
         loopCounter: opts.loopCounter || 0,
         mailbox: opts.mailbox || null,
     }
+}
 
-    // Stroke accumulator — local to this execution pass, not persisted in actorState.
-    // Path is always flushed before execution ends.
+export function* execute(ast, deps, opts = {}) {
+    // actorState = continuation of same ambient; mutated in place across batches.
+    const state = opts.actorState || createActorState(opts)
+
+    // Pass-local stroke; always flushed before execute ends.
     const stroke = createStroke()
 
-    // Rebind deps for this execution pass (fresh math context per batch)
     state.deps = deps
     if (opts.actorState) state.loopCounter = opts.loopCounter ?? state.loopCounter
 
-    // Link evaluator to parser's userspace for call-by-value function dispatch
     deps.mathEvaluator.userFunctions = deps.mathParser.userspace
 
-    // Bind runtime state into evaluator — thunks are lazy,
-    // only invoked when an expression actually references the name.
-    // Closures capture `state` (shared actorState), so they read live values.
+    // Lazy thunks — live values when read.
     const ec = deps.mathEvaluator.constants
     ec['time'] = () => state.elapsedTime / 1000
     ec['x'] = () => roundVec(state.transform.position[0])
@@ -113,14 +127,19 @@ function* walkBody(body, scope, state, stroke) {
     let matched = false
 
     for (const node of body) {
+        // Offer preemption every breathEvery visits — work meter, not emits.
+        state.reductions++
+        if (state.breathEvery !== 0 && state.reductions % state.breathEvery === 0) {
+            yield { type: "breath" }
+        }
+        try {
         switch (node.type) {
 
         case 'Loop': {
             const times = yield* evalOrBlock(node.value, scope, state)
             const prevCount = state.loopCounter
             for (let i = 0; i < times; i++) {
-                // Auto-yield: if previous iteration observed a sibling, yield
-                // before next step so all ambients advance in lockstep.
+                // Observed a sibling → voluntary yield so ambients lockstep (coop MT).
                 if (i > 0 && state.deps.mathEvaluator._observedSibling) {
                     state.deps.mathEvaluator._observedSibling = false
                     yield {
@@ -128,6 +147,11 @@ function* walkBody(body, scope, state, stroke) {
                         position: [...state.transform.position],
                         rotation: state.transform.rotation
                     }
+                }
+                // Empty body still burns a reduction (when-loop freeze fence).
+                state.reductions++
+                if (state.breathEvery !== 0 && state.reductions % state.breathEvery === 0) {
+                    yield { type: "breath" }
                 }
                 state.loopCounter = i
                 yield* walkBody(node.children, scope, state, stroke)
@@ -137,10 +161,7 @@ function* walkBody(body, scope, state, stroke) {
         }
 
         case 'Call': {
-            // fn/func: math function definition — delegate to math parser.
-            // Capture foldable evaluator constants (count, x, y, z, time) at definition
-            // time so fn bodies are frozen snapshots. Deferred constants (random) stay
-            // symbolic so they re-evaluate lazily at each point of use.
+            // Capture foldable constants at def; deferred (random) stay symbolic.
             if (node.value === "fn" || node.value === "func") {
                 const rawArgs = node.children.map(arg => arg.value)
                 const fnScope = { ...scope }
@@ -154,17 +175,17 @@ function* walkBody(body, scope, state, stroke) {
                 break
             }
 
-            // shout: emit event directive — evaluated args, scheduler intercepts
-            if (node.value === "shout") {
-                const name = yield* evalOrBlock(node.children[0]?.value, scope, state)
-                const payload = node.children[1] ? yield* evalOrBlock(node.children[1].value, scope, state) : undefined
-                yield { type: 'shout', name, payload }
-                break
+            // Zip each arg with its hole domain (default measure).
+            const domains = ARG_DOMAINS[node.value]
+            const args = []
+            for (let i = 0; i < node.children.length; i++) {
+                args.push(yield* evalOrBlock(node.children[i].value, scope, state, holeDomain(domains, i)))
             }
 
-            const args = []
-            for (const arg of node.children) {
-                args.push(yield* evalOrBlock(arg.value, scope, state))
+            // shout is a directive, not a COMMANDS entry — domain still from ARG_DOMAINS.
+            if (node.value === "shout") {
+                yield { type: 'shout', name: args[0], payload: args[1] }
+                break
             }
 
             // Check user-defined function first, then built-in command
@@ -237,7 +258,8 @@ function* walkBody(body, scope, state, stroke) {
         }
 
         case 'Ambient': {
-            const ambientName = String(yield* evalOrBlock(node.value, scope, state))
+            // Grammar hole: ambient name is word (seeker, mice[count] after interp).
+            const ambientName = String(yield* evalOrBlock(node.value, scope, state, "word"))
             yield {
                 type: 'spawn',
                 name: ambientName,
@@ -251,17 +273,34 @@ function* walkBody(body, scope, state, stroke) {
             break
         }
 
-        case 'Record': {
-            const title = node.value ? String(yield* evalOrBlock(node.value, scope, state)) : null
-            yield { type: 'record', action: 'start', title }
-            yield* walkBody(node.children, scope, state, stroke)
-            yield { type: 'record', action: 'stop', title }
-            break
-        }
-
         case 'Empty':
             break
+
+        // Error node inert at walk; crash path still kills. (D020, id:cmp-resilient)
+        case 'Error':
+            break
         }
+        } catch (error) {
+            // Innermost span wins; do not overwrite. (id:cmp-runtime-provenance)
+            if (error instanceof Error && !error.span && node.span) {
+                error.span = node.span
+                error.kind = 'walk'
+            }
+            throw error
+        }
+    }
+}
+
+// Headless walk; return registered namespace. Events discarded. (D019)
+export function drainNamespace(ast, deps, opts = {}) {
+    // Fault mid-phase keeps earlier defs. (D020)
+    const actorState = opts.actorState ?? createActorState({ maxCommands: 200_000, ...opts })
+    try {
+        const gen = execute(ast, deps, { maxCommands: 200_000, ...opts, actorState })
+        while (!gen.next().done) { /* events discarded */ }
+        return { functions: actorState.functions, userspace: deps.mathParser.userspace, error: null }
+    } catch (error) {
+        return { functions: actorState.functions, userspace: deps.mathParser.userspace, error }
     }
 }
 
@@ -276,9 +315,7 @@ function* callCommand(name, args, state, stroke) {
     }
     state.commandCount++
 
-    // World position for global-coordinate commands (goto, faceto, jmpto).
-    // Per-tick cache set by scheduler avoids repeated tree walks.
-    // Falls back to worldOriginFn for inline-advanced frames.
+    // World origin: tick cache, else inline fn.
     const worldOrigin = state.deps._cachedWorldOrigin
         ?? (state.deps.worldOriginFn ? state.deps.worldOriginFn() : null)
     const worldPosition = worldOrigin
@@ -296,9 +333,7 @@ function* callCommand(name, args, state, stroke) {
 
     const result = cmd(ctx, ...args)
 
-    // Resolve world-space delta to local transform.
-    // Commands that operate in global coordinates return { world: { position, rotation } }.
-    // This is the single conversion point — commands declare intent, executor resolves.
+    // Global-coordinate commands → local transform here.
     if (result.world) {
         if (result.world.position) {
             const localPos = worldOrigin
@@ -345,6 +380,11 @@ function* callCommand(name, args, state, stroke) {
     if (result.stroke) {
         if (result.stroke === "extend") {
             strokeExtend(stroke, result.point, state.style)
+            // Bound stroke so credit and ceiling stay real. (id:output-ledger-r3-meter)
+            if (state.strokeMax !== 0 && stroke.path.points.length >= state.strokeMax) {
+                const event = strokeFlush(stroke)
+                if (event) yield event
+            }
         } else if (result.stroke === "fill") {
             const event = strokeFill(stroke)
             if (event) yield event
@@ -368,9 +408,26 @@ function* callCommand(name, args, state, stroke) {
 
 // --- Expression evaluation ---
 // Delegates to the injected math parser/evaluator.
-// Mirrors turtle.js evaluateExpression exactly.
+// The one owner of PaperLang expression evaluation.
 
-function evaluateExpr(expr, scope, state) {
+// Memo parse by expression; WeakMap on injected parser. (id:output-ledger-r3-meter)
+const PARSE_MEMO = new WeakMap()
+const MAX_MEMO = 512   // interpolated names ('mice[i]'.x) mint fresh strings
+
+function parseMemo(mathParser, expr) {
+    let memo = PARSE_MEMO.get(mathParser)
+    if (memo === undefined) { memo = new Map(); PARSE_MEMO.set(mathParser, memo) }
+    const hit = memo.get(expr)
+    if (hit !== undefined) return hit
+    const tree = mathParser.parse(expr)
+    if (memo.size >= MAX_MEMO) memo.clear()
+    memo.set(expr, tree)
+    return tree
+}
+
+// Residual after shared resolve: measure → wound; word → string costume.
+// Math ops / quote interpolation stay measure. Not a numerical tower.
+function evaluateExpr(expr, scope, state, domain = "measure") {
     const { mathParser, mathEvaluator } = state.deps
 
     // String literal support
@@ -388,7 +445,8 @@ function evaluateExpr(expr, scope, state) {
                     if (innerExpr.trim().match(/^`.*`$/)) {
                         return match
                     }
-                    const value = evaluateExpr(innerExpr.trim(), scope, state)
+                    // Interpolation slots are always measure (count, x, …).
+                    const value = evaluateExpr(innerExpr.trim(), scope, state, "measure")
                     return value !== undefined ? String(value) : match
                 }
             )
@@ -400,26 +458,34 @@ function evaluateExpr(expr, scope, state) {
     // e.g. 'mice[follow]'.x → interpolate → mice1.x → dotted access
     const computedDot = expr.match(/^(['"])(.*?)\1\.(.+)$/)
     if (computedDot) {
-        const name = evaluateExpr(computedDot[1] + computedDot[2] + computedDot[1], scope, state)
-        return evaluateExpr(name + '.' + computedDot[3], scope, state)
+        const name = evaluateExpr(computedDot[1] + computedDot[2] + computedDot[1], scope, state, domain)
+        return evaluateExpr(name + '.' + computedDot[3], scope, state, domain)
     }
 
     if (mathParser.isNumeric(expr)) return parseFloat(expr)
     if (scope[expr] != null) return scope[expr]
-    const tree = mathParser.parse(expr)
+    const tree = parseMemo(mathParser, expr)
 
-    // Expression or known namespace — always evaluate
+    // Expression or known namespace — always evaluate (ops already strict on leaves).
     if (tree.children.length > 0 || mathEvaluator.namespace_check(tree.value)) {
         return mathEvaluator.run(tree, scope)
     }
 
-    // Bare identifier — try evaluator (handles dotted + unqualified via resolveExternal).
-    // Fall back to raw string for labels/colors when identifier is truly unknown.
+    // Bare identifier — resolveExternal, then hole residual domain.
     if (typeof tree.value === 'string' && /^[a-zA-Z]/.test(tree.value)) {
         if (mathEvaluator.resolveExternal) {
             const resolved = mathEvaluator.resolveExternal(tree.value)
             if (resolved !== undefined) return resolved
         }
+        if (domain === "word") return tree.value
+        // A DOTTED NAME IS A CROSS-AMBIENT READ. Landing here means there is no
+        // ambient tree to read against — the rehearsal is headless and does not
+        // negotiate with siblings (D019). An absent sibling is NOTHING, not a
+        // wound: words past it must still register. A live walk never lands
+        // here for a dotted name — `namespace_check` routes it through
+        // resolveExternal (`Undefined assistant` or blocks).
+        if (tree.value.includes('.')) return null
+        throw new Error(`Undefined variable: ${tree.value}`)
     }
     return tree.value
 }

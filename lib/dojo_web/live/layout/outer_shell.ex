@@ -79,11 +79,10 @@ defmodule DojoWeb.ShellLive.OuterShell do
 
   # --- UI actions: just set the selector ---
 
-  # Intervening on a *working* friend runs your draft right away (auto-live).
-  # Intervening on an *error* is deliberate — start frozen; you toggle to run.
-  def draft(%__MODULE__{origin: %Turtle{state: :error}} = shell),
-    do: %{shell | view: :draft, stream: false}
-
+  # A DRAFT RUNS. You intervene *because* their code is broken, so the state that
+  # used to start frozen is the one that most needs a runtime — and since a dead
+  # cell makes the whole document `:error`, freezing there froze nearly every
+  # draft. Toggle to hold; holding is the deliberate act now.
   def draft(%__MODULE__{} = shell), do: %{shell | view: :draft, stream: true}
 
   def toggle_stream(%__MODULE__{stream: stream} = shell), do: %{shell | stream: !stream}
@@ -113,15 +112,21 @@ defmodule DojoWeb.ShellLive.OuterShell do
   def wants_updates?(%__MODULE__{view: :draft}), do: true
   def wants_updates?(_), do: false
 
+  # Name the BUMP, never the fields that matter: a field added to the reflect is
+  # covered the day it is added and can never mint a second gate (D025 R3).
+  @bump %{time: nil, path: nil}
+
   @doc """
-  Did the friend's code actually change between two turtles?
+  Would the watcher learn something new? The one question, asked at both ends —
+  the client's `_lastReflectChange` speaks the same sentence. Only a
+  preview/path bump is suppressed.
 
-  A hatch can fire for a mere image/preview/path bump with identical code — in
-  that case the outershell shouldn't react (no re-render, re-stream, or re-run).
-  Only suppresses when both sources are present and equal; reacts otherwise.
+  Replaced `code_changed?`, which read `source` alone and so also dropped a
+  changed `diagnostics` (runtime ailments move while source does not) and
+  `state`.
   """
-  def code_changed?(%Turtle{source: a}, %Turtle{source: b}) when is_binary(a) and is_binary(b),
-    do: a != b
+  def reflect_changed?(%Turtle{} = prev, %Turtle{} = new),
+    do: struct(prev, @bump) != struct(new, @bump)
 
-  def code_changed?(_prev, _new), do: true
+  def reflect_changed?(_prev, _new), do: true
 end

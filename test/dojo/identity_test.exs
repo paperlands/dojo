@@ -23,8 +23,9 @@ defmodule Dojo.IdentityTest do
     end
 
     test "refuses a session without a name" do
+      # apply/3: deliberate clause miss — static call would type-warn under 1.20
       assert_raise FunctionClauseError, fn ->
-        Session.user_id(%Session{name: nil})
+        apply(Session, :user_id, [%Session{name: nil}])
       end
     end
   end
@@ -49,15 +50,20 @@ defmodule Dojo.IdentityTest do
     end
 
     test "an addressless meta crashes loudly, not silently" do
-      assert_raise FunctionClauseError, fn -> Disciple.reg_key(%{name: "kai"}) end
-      assert_raise FunctionClauseError, fn -> Disciple.table_address(%{name: "kai"}) end
+      # apply/3: deliberate clause miss — static call would type-warn under 1.20
+      assert_raise FunctionClauseError, fn -> apply(Disciple, :reg_key, [%{name: "kai"}]) end
+
+      assert_raise FunctionClauseError, fn ->
+        apply(Disciple, :table_address, [%{name: "kai"}])
+      end
     end
   end
 
   describe "Class.join/3 — identity required" do
     test "a join without user_id crashes at the door" do
+      # apply/3: deliberate clause miss — static call would type-warn under 1.20
       assert_raise FunctionClauseError, fn ->
-        Dojo.Class.join(self(), "test-identity", %Disciple{name: "kai", user_id: nil})
+        apply(Dojo.Class, :join, [self(), "test-identity", %Disciple{name: "kai", user_id: nil}])
       end
     end
   end

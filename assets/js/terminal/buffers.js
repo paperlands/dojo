@@ -21,6 +21,7 @@ export const createCollection = (nameGen, idGen) => {
         name: DEFAULT_NAME,
         content: DEFAULT_CONTENT,
         mode: DEFAULT_MODE,
+        attend: null,
         created: Date.now(),
         lastModified: Date.now(),
     };
@@ -56,6 +57,7 @@ export const addBuffer = (collection, opts = {}, nameGen, idGen) => {
         content: opts.content ?? '',
         mode: opts.mode ?? DEFAULT_MODE,
         origin: opts.origin ?? null,
+        attend: null,
         created: Date.now(),
         lastModified: Date.now(),
     };
@@ -102,6 +104,17 @@ export const updateContent = (collection, id, content) => {
     return { items, currentId: collection.currentId };
 };
 
+// Where the reader last was in this buffer — an offset, not a line: this never
+// crosses the reflect projection a friend's attention does, so there is nothing
+// to translate. Attention that DOES cross the seam is line-addressed instead
+// (attention is the address, D021).
+export const updateAttend = (collection, id, offset) => {
+    if (!collection.items.has(id)) return collection;
+    const items = new Map(collection.items);
+    items.set(id, { ...items.get(id), attend: offset });
+    return { items, currentId: collection.currentId };
+};
+
 // --- Navigation ---
 
 export const nextId = (collection) => {
@@ -142,6 +155,7 @@ export const serialize = (collection) => {
             active: collection.currentId === id,
             content: buffer.content,
             mode: buffer.mode,
+            attend: buffer.attend ?? null,
             origin: buffer.origin ?? null,
             created: buffer.created,
             lastModified: buffer.lastModified,
@@ -157,6 +171,7 @@ const fillDefaults = (raw, nameGen, idGen) => ({
     name: raw.name ?? nameGen(),
     content: raw.content ?? DEFAULT_CONTENT,
     mode: raw.mode ?? DEFAULT_MODE,
+    attend: raw.attend ?? null,
     origin: raw.origin ?? null,
     created: raw.created ?? Date.now(),
     lastModified: raw.lastModified ?? Date.now(),

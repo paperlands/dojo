@@ -132,13 +132,8 @@ defmodule DojoWeb.ShellLive do
     shell = OuterShell.observe(socket.assigns.outershell, turtle)
     socket = assign(socket, :outershell, shell)
 
-    # A hatch with unchanged code is just a preview/path bump — advance time
-    # (via observe above) but don't react: no re-render, re-stream, or re-run.
-    if OuterShell.code_changed?(prev, turtle) do
-      # The friend's status always flows to the nerve — even in a frozen draft,
-      # where the editor push is held back so it won't disturb your draft.
-      socket = push_event(socket, "outerSignal", outer_signal(turtle, shell))
-
+    # Only a preview/path bump is silence; everything else is news (D025 R3).
+    if OuterShell.reflect_changed?(prev, turtle) do
       socket =
         case OuterShell.render_intent(shell) do
           {:push, source} ->
@@ -193,6 +188,7 @@ defmodule DojoWeb.ShellLive do
     {:noreply,
      socket
      |> update_visible_meta(reg_key, meta)
+     |> push_attend(reg_key, meta)
      |> maybe_follow_code(reg_key, meta[:time])}
   end
 
@@ -360,12 +356,45 @@ defmodule DojoWeb.ShellLive do
         {:noreply,
          socket
          |> push_event("seeOuterShell", outer_shell_payload(turtle, outershell))
-         |> push_event("outerSignal", outer_signal(turtle, outershell))
          |> assign(:outershell, outershell)}
 
       _ ->
         {:noreply, socket}
     end
+  end
+
+  # The weave invokes the outershell (Shoot 0): a fragment page is a document,
+  # handled as documents are — a non-live friend named the library. The client
+  # fetched, PRESSED, and parsed the org (the server never parses org —
+  # the dojo_web.ex fence); this handler only ferries the pressed buffer into
+  # the one review surface. ts rides the source's clock (decision 008).
+  def handle_event(
+        "seeWeave",
+        %{"addr" => addr, "name" => name, "source" => source} = payload,
+        socket
+      )
+      when is_binary(addr) and is_binary(source) do
+    turtle = %Dojo.Turtle{
+      state: :success,
+      source: source,
+      commands: payload["commands"] || [],
+      diagnostics: payload["diagnostics"] || [],
+      time: payload["ts"]
+    }
+
+    outershell =
+      OuterShell.observe(
+        %OuterShell{addr: addr, active: true, name: name, follow: false},
+        turtle
+      )
+
+    # The sibling-cell split is DERIVED client-side from the commands
+    # (phaseCells over the one AST; page-ness follows the document) — nothing
+    # rides beside the pressed buffer. Ferried, not parsed.
+    {:noreply,
+     socket
+     |> push_event("seeOuterShell", outer_shell_payload(turtle, outershell))
+     |> assign(:outershell, outershell)}
   end
 
   def handle_event("seeTurtle", _, socket) do
@@ -554,6 +583,22 @@ defmodule DojoWeb.ShellLive do
     maybe_follow_code(socket, reg_key, time)
   end
 
+  # The attention rides the META already in hand — no fetch, no task, ~40 bytes.
+  # No time gate: `maybe_follow_code`'s is second-resolution and dropped moves
+  # inside one second. No `:node` either, which is why self-watch got nothing.
+  # The client already ignores a line equal to the one it holds.
+  defp push_attend(socket, reg_key, %{attend: attend}) when not is_nil(attend) do
+    outershell = socket.assigns.outershell
+
+    if outershell.addr == reg_key and OuterShell.wants_updates?(outershell) do
+      push_event(socket, "outerAttend", %{addr: reg_key, attend: attend})
+    else
+      socket
+    end
+  end
+
+  defp push_attend(socket, _reg_key, _meta), do: socket
+
   defp maybe_follow_code(socket, reg_key, time) do
     %{outershell: outershell, disciples: dis} = socket.assigns
 
@@ -612,10 +657,6 @@ defmodule DojoWeb.ShellLive do
 
   # The friend's execution status for the remote nerve — independent of whether
   # the editor content is pushed (held back during a frozen draft).
-  defp outer_signal(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
-    %{state: turtle.state, message: turtle.message, name: shell.name}
-  end
-
   defp outer_shell_payload(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
     turtle
     |> Map.from_struct()

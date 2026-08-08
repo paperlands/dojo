@@ -1,102 +1,119 @@
-// Signal Store — single source of truth for all nerve signals.
-// Renderers subscribe and react. Only push() creates signals.
+// Signal store — only push() creates; renderers subscribe. Pure, no DOM.
+// CHANNELS = vocabulary (zone, fade, css). Callers use constructors, not raw bags.
+// No error channel: wounds are health the seat pulls (D022). priority is chat-only.
 //
-// CHANNELS is the vocabulary. Each channel defines its visual identity
-// (zone, priority, fade duration, CSS class) and its signal constructor.
-// Callers use signal constructors — never raw objects.
+// Routing is a CLAIM: a panel registers the predicate that says which signals
+// are its own; residual is whatever no predicate claimed. Content filtering
+// (matchPattern) lives inside a projection, never here.
+
+import { createObservable } from "../kernel/observable.js"
 
 export const CHANNELS = {
-    error:  { priority: 5, fadeMs: 60000, zone: 'status', css: 'nerve-error' },
-    system: { priority: 4, fadeMs: 15000, zone: 'status', css: 'nerve-system' },
-    output: { priority: 1, fadeMs: 4000,  zone: 'status', css: 'nerve-output' },
+    system: { fadeMs: 15000, zone: 'status', css: 'nerve-system' },
+    // Dedicated kind: monospaced glyph, independent mute; edges only.
+    helios: { fadeMs: 12000, zone: 'status', css: 'nerve-helios' },
+    output: { fadeMs: 4000,  zone: 'status', css: 'nerve-output' },
     chat:   { priority: 3, fadeMs: 12000, zone: 'chat',   css: 'nerve-chat' },
     eval:   { priority: 2, fadeMs: 8000,  zone: 'chat',   css: 'nerve-eval' },
     shout:  { priority: 1, fadeMs: 6000,  zone: 'chat',   css: 'nerve-shout' },
+    // Portal followed. trail zone; local store only (no socket = privacy fence).
+    walk:   { priority: 2, fadeMs: 20000, zone: 'trail',  css: 'nerve-walk' },
 }
 
-// ---------------------------------------------------------------------------
-// Signal constructors — iconic form factor.
-// Every signal is { msg, payload, source, kind, target, ref, tabId }.
-// Constructors enforce shape; callers speak the vocabulary.
-// ---------------------------------------------------------------------------
-
+// Shape: { msg, payload, source, kind, target, ref, tabId, place }.
 export const signals = {
     output:  (msg, payload)          => ({ msg, payload: String(payload), source: 'system', kind: 'output' }),
-    error:   (msg, payload, ref)     => ({ msg, payload, source: 'system', kind: 'error', ref: ref ?? null }),
     system:  (msg, payload)          => ({ msg, payload: payload ?? null, source: 'system', kind: 'system' }),
+    // heliosView → signals.helios. msg = glyph; commands = payload; living while building.
+    // `place` routes it: every helios says 'system' — source routing alone
+    // sent every shell's sun to the residual.
+    helios:  (view, place = null) => ({
+        msg: view?.glyph ?? '',
+        payload: (view?.commands ?? 0) > 0 ? String(view.commands) : null,
+        source: 'system',
+        kind: 'helios',
+        living: view?.phase === 'building',
+        place,
+    }),
     shout:   (source, msg, payload, tabId) => ({ msg, payload, source, kind: 'shout', tabId }),
     chat:    (source, msg, target)   => ({ msg, payload: null, source, kind: 'chat', target: target ?? null }),
     eval:    (source, msg, payload)  => ({ msg, payload: payload ?? null, source, kind: 'eval' }),
-    // A watched friend's signal — rendered in the outershell's own remote zone.
-    remote:  (source, msg, payload, kind) => ({ msg, payload: payload ?? null, source, kind }),
+    // source = walker address; target = spoken dest; payload = from; ref survives renames.
+    walk:    (source, from, to, ref) => ({
+        msg: to,
+        payload: from ?? null,
+        source: source ?? '?',
+        kind: 'walk',
+        target: to,
+        ref: ref ?? null,
+    }),
 }
 
-// ---------------------------------------------------------------------------
-// Store — push/subscribe/mute. Pure runtime, no DOM.
-// ---------------------------------------------------------------------------
+// One place for omitted fields; push stamps id/epoch/ts over this.
+const DEFAULTS = Object.freeze({
+    msg: '', payload: null, target: null, source: '?', kind: 'shout',
+    ref: null, tally: 0, tabId: null, living: false, place: null,
+})
 
 export function createSignalStore(opts = {}) {
     const MAX = opts.maxSignals || 200
-    const signals = []
-    const subscribers = []
+    const log = []  // not `signals` — that name is the constructors export
+    const subscribers = createObservable()
     const sources = new Set()
     const targets = new Set()
     const muted = new Set()
-    // Claimed addresses (ambient source-names). A peer panel claims its friend's
-    // name; the residual (local) projection shows everything no panel claimed.
-    // Routing is by address only — content filtering stays a separate matchPattern
-    // layer. See nerve.js project()/createNerve.
-    const claims = new Set()
+    // CLAIMS ARE PREDICATES, NOT INDICES. A panel says which signals are ITS
+    // OWN; residual is the complement of the union. Two parallel Sets (by
+    // source, by place) once, four methods, residual AND-ing both — a third
+    // axis meant editing three files. Essential relation never names an axis:
+    // residual = what nobody claimed.
+    const claimants = new Set()
     let counter = 0
     let epoch = 0
 
     function run() { ++epoch }
-    function claim(addr) { if (addr != null) claims.add(addr) }
-    function release(addr) { claims.delete(addr) }
+    // claimBy(pred) → release. Predicate is the panel's own `select`.
+    function claimBy(pred) {
+        if (typeof pred !== "function") return () => {}
+        claimants.add(pred)
+        return () => { claimants.delete(pred) }
+    }
+    function claimed(signal) {
+        for (const pred of claimants) if (pred(signal)) return true
+        return false
+    }
 
     function push(raw) {
         const signal = {
-            id:      ++counter,
+            ...DEFAULTS,
+            ...raw,
+            id: ++counter,
             epoch,
-            msg:     raw.msg ?? '',
-            payload: raw.payload ?? null,
-            target:  raw.target ?? null,
-            source:  raw.source ?? '?',
-            kind:    raw.kind ?? 'shout',
-            // THE CLOCK LAW (gw-t-clock): ts belongs to the SOURCE. A signal
-            // that crossed a boundary keeps the clock it arrived with; only a
-            // locally-born signal (no ts) is stamped here. Ordering across
-            // peers is per-source (source, id) — honestly partial globally.
-            ts:      raw.ts ?? performance.now(),
-            ref:     raw.ref ?? null,
-            tabId:   raw.tabId ?? null,
+            // ts belongs to the SOURCE (gw-t-clock). Cross-boundary keeps arrival clock.
+            // Peer order is per-source (source, id) — honestly partial globally.
+            ts: raw.ts ?? performance.now(),
+            living: raw.living === true,  // boolean breath, never truthy string
         }
-        signals.unshift(signal)
-        if (signals.length > MAX) signals.length = MAX
+        log.unshift(signal)
+        if (log.length > MAX) log.length = MAX
 
         if (signal.source && signal.source !== '?') sources.add(signal.source)
         if (signal.target) targets.add(signal.target)
 
-        for (let i = 0; i < subscribers.length; i++) {
-            subscribers[i](signal)
-        }
+        subscribers.notify(signal)
     }
 
     function subscribe(fn) {
-        subscribers.push(fn)
-        return () => {
-            const idx = subscribers.indexOf(fn)
-            if (idx !== -1) subscribers.splice(idx, 1)
-        }
+        return subscribers.watch(fn)
     }
 
     function mute(kind) { muted.add(kind) }
     function unmute(kind) { muted.delete(kind) }
-    function clear() { signals.length = 0 }
+    function clear() { log.length = 0 }
 
     return {
-        push, subscribe, run, signals, sources, targets, muted, mute, unmute, clear,
-        claims, claim, release,
+        push, subscribe, run, signals: log, sources, targets, muted, mute, unmute, clear,
+        claimBy, claimed,
         get epoch() { return epoch },
     }
 }

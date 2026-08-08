@@ -1,37 +1,20 @@
-// HUD — two-zone overlay + expandable log panel.
-// Status zone: single slot for error/system/output.
-// Chat zone: ambient slots for chat/shout/eval.
-// Log: click chat → full run history; click outside → collapse.
+// HUD — status seat + chat slots + log. Composition only (seat owns status law).
+// Click chat opens run history; click outside collapses.
 
 import { CHANNELS } from './store.js'
+import { revealAmbient } from './reveal.js'
+import { createStatusSeat } from './seat.js'
+import { buildSlot } from './slot.js'
+import { get } from '../hooks/shell/term-cell.js'
 
 const MAX_CHAT_SLOTS = 5
 const SHOUT_THROTTLE_MS = 500
 
-// ---------------------------------------------------------------------------
-// Navigation — what happens when you click a slot. Targets resolve which
-// editor/canvas a click acts on, so each nerve instance (core, outer panel)
-// navigates its own surfaces. Defaults to the core shell's editor + canvas.
-// ---------------------------------------------------------------------------
-
+// targets pick which editor/canvas this instance navigates (core vs outer panel).
 function resolveTargets(targets) {
     return {
-        editorView: targets?.editorView || (() => document.getElementById('your-buffer')?.__cm),
-        // Reveal an ambient by name: switch the editor to the tab that DEFINES it
-        // (top-level tab, or the tab whose code spawned `as name do …`), then
-        // focus it on the canvas. If the owning key isn't a local buffer (a remote
-        // peer's addr), the tab switch is skipped and we just focus.
-        revealAmbient: targets?.revealAmbient || ((name) => {
-            const turtle = document.getElementById('core-canvas')?.__turtle
-            if (!turtle) return
-            const term = document.getElementById('your-buffer')?.__terminal
-            const tabKey = turtle.tabKeyForAmbient?.(name)
-            if (tabKey != null && term?.getBufferInfo?.(tabKey)) {
-                term.opBufferHandler({ op: 'select', target: tabKey })
-            }
-            turtle.focusAmbient(name)
-            turtle.requestRender?.()
-        }),
+        editorView: targets?.editorView || (() => get("coreshell")?.shell),
+        revealAmbient: targets?.revealAmbient || revealAmbient,  // same path as [[portal]]
     }
 }
 
@@ -47,8 +30,7 @@ function navigate(signal, pushEvent, t) {
         })
     }
 
-    // A shout's source IS the ambient's address (display name) — reveal it:
-    // jump to the tab that defines it and focus it on the canvas.
+    // Shout source is the ambient address — reveal it on the canvas.
     if (kind === 'shout' && signal.source && signal.source !== 'system') {
         t.revealAmbient(signal.source)
     }
@@ -61,77 +43,7 @@ function scrollToLine(n, view) {
     view.focus()
 }
 
-// ---------------------------------------------------------------------------
-// Slot — the single DOM atom for all signal elements.
-// ---------------------------------------------------------------------------
-
-function buildSlot(signal, ch, { showSource, fade, onSourceClick }) {
-    const el = document.createElement('div')
-    el.className = `${showSource ? 'nerve-hud-msg' : 'nerve-hud-status-line'} pointer-events-auto ${ch.css}`
-    if (fade) el.style.setProperty('--hud-fade', `${ch.fadeMs}ms`)
-    else      el.classList.add('nerve-no-fade')
-
-    if (showSource) {
-        const src = document.createElement('span')
-        src.className = 'nerve-source'
-        src.textContent = signal.source
-        if (onSourceClick) src.addEventListener('click', (e) => {
-            e.stopPropagation()
-            onSourceClick(signal)
-        })
-        el.appendChild(src)
-    }
-
-    const msg = document.createElement('span')
-    msg.className = 'nerve-msg'
-    msg.textContent = signal.payload != null
-        ? `${signal.msg} ${signal.payload}`
-        : signal.msg
-    el.appendChild(msg)
-
-    if (signal.ref) el.style.cursor = 'pointer'
-
-    return el
-}
-
-// ---------------------------------------------------------------------------
-// Status mutator — single slot, always replaces previous.
-// ---------------------------------------------------------------------------
-
-function statusMutator(zone) {
-    let slot = null
-
-    function set(signal, ch, nav) {
-        clear()
-        const el = buildSlot(signal, ch, { showSource: false, fade: true })
-
-        if (signal.ref) {
-            el.addEventListener('click', () => nav(signal))
-        }
-
-        const timer = setTimeout(() => {
-            if (slot?.el === el) { el.remove(); slot = null }
-        }, ch.fadeMs)
-
-        slot = { signal, el, timer }
-        zone.innerHTML = ''
-        zone.appendChild(el)
-    }
-
-    function clear() {
-        if (!slot) return
-        clearTimeout(slot.timer)
-        slot.el.remove()
-        slot = null
-    }
-
-    return { set, clear }
-}
-
-// ---------------------------------------------------------------------------
-// Chat mutator — multi-slot with priority eviction and per-source throttle.
-// ---------------------------------------------------------------------------
-
+// Chat slots: priority eviction + per-source shout throttle.
 function chatMutator(zone) {
     const slots = []
     const shoutTimestamps = new Map()
@@ -196,10 +108,7 @@ function chatMutator(zone) {
     return { add, clear }
 }
 
-// ---------------------------------------------------------------------------
-// Log mutator — scrollable run history. Toggle on click, dismiss on blur.
-// ---------------------------------------------------------------------------
-
+// Run history panel — open on chat click, dismiss on outside click.
 function logMutator(container, store, nav, select) {
     let panel = null
     let unsub = null
@@ -260,15 +169,10 @@ function logMutator(container, store, nav, select) {
     return { toggle, close }
 }
 
-// ---------------------------------------------------------------------------
-// HUD — composes status + chat + log. Subscribes to store.
-// ---------------------------------------------------------------------------
-
-// A HUD is one read-model (projection) over the store. `opts.select(signal) →
-// bool` is its routing predicate — the residual HUD takes what no panel claimed,
-// a peer panel takes its claimed address. `opts.targets` scopes navigation.
+// One projection over the store. select routes (residual vs claimed peer).
+// health is the seat base thunk; omit → weather only.
 export function createHUD(container, store, pushEvent, opts = {}) {
-    const { targets, select = () => true } = opts
+    const { targets, select = () => true, health } = opts
 
     const statusZone = document.createElement('div')
     statusZone.className = 'nerve-hud-status'
@@ -281,11 +185,14 @@ export function createHUD(container, store, pushEvent, opts = {}) {
     const t = resolveTargets(targets)
     const nav = (signal) => navigate(signal, pushEvent, t)
 
-    const status = statusMutator(statusZone)
+    let hidden = false
+    // Covered seat answers null; re-asks when shown again.
+    const seat = createStatusSeat(statusZone, {
+        nav,
+        health: () => (hidden || !health ? null : health()),
+    })
     const chat = chatMutator(chatZone)
     const log = logMutator(container, store, nav, select)
-
-    let hidden = false
 
     const unsub = store.subscribe((signal) => {
         if (hidden) return
@@ -295,21 +202,26 @@ export function createHUD(container, store, pushEvent, opts = {}) {
         const ch = CHANNELS[signal.kind]
         if (!ch || !ch.fadeMs) return
 
-        if (ch.zone === 'status') status.set(signal, ch, nav)
-        else                      chat.add(signal, ch, nav, log.toggle)
+        // Zone is the routing key: status and chat are HUD; trail belongs to
+        // the weave card (and any later keep projection) — never re-rendered
+        // here, or the walk channel would double as chat.
+        if (ch.zone === 'status') seat.push(signal, ch)
+        else if (ch.zone === 'chat') chat.add(signal, ch, nav, log.toggle)
     })
 
-    function show() { hidden = false; container.style.display = '' }
-    function hide() { hidden = true; container.style.display = 'none'; status.clear(); chat.clear(); log.close() }
+    function show() { hidden = false; container.style.display = ''; seat.refresh() }
+    function hide() { hidden = true; container.style.display = 'none'; seat.destroy(); chat.clear(); log.close() }
 
     function destroy() {
         unsub()
-        status.clear()
+        seat.destroy()
         chat.clear()
         log.close()
         statusZone.remove()
         chatZone.remove()
     }
 
-    return { show, hide, destroy }
+    // `refresh` is the surface's one wire for health news — hook it to the
+    // wounds' breath (weave/wounds.js readWounds().watch).
+    return { show, hide, destroy, refresh: seat.refresh }
 }

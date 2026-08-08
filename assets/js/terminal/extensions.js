@@ -5,6 +5,8 @@
 import { createPlangExtensions } from "../editor/plang-mode.js"
 import { createIndentGuidesExtension } from "../editor/indent-guides.js"
 import { createDoEndMatchingExtension } from "../editor/do-end-matching.js"
+import { createCodeCellActivationExtension } from "../editor/code-cell-activation.js"
+import { createDiagnosticsExtension } from "../editor/diagnostics.js"
 
 export const buildExtensions = (cm6, {
     onDocChange,
@@ -12,6 +14,7 @@ export const buildExtensions = (cm6, {
     onSwitchNext,
     onSwitchPrev,
     onToggleComment,
+    onLitLink,
 } = {}) => {
     const {
         EditorView,
@@ -54,11 +57,18 @@ export const buildExtensions = (cm6, {
         EditorView.scrollMargins.of(() => ({ bottom: 32 })),
 
         // Mobile: keyboard opens on focus — nudge a space in/out to trigger
-        // CM6's natural scroll-to-cursor (the only thing that actually works)
+        // CM6's natural scroll-to-cursor (the only thing that actually works).
+        // NEVER on a read-only surface: the outershell is a review of another's
+        // page, and this mutation races double-click select (focus at T0, word
+        // select at T~50–150, nudge at T+100) — caret/kindling can jump or
+        // the kindled cell goes dim while the selection lands. Editable only.
         EditorView.domEventHandlers({
             focus: (event, view) => {
                 setTimeout(() => {
-                    if (!view.hasFocus) return;
+                    if (!view.hasFocus || view.state.readOnly) return;
+                    // Mid-select: do not rewrite the doc under a range the
+                    // user is still painting.
+                    if (!view.state.selection.main.empty) return;
                     const end = view.state.doc.length;
                     view.dispatch({ changes: { from: end, insert: ' ' }, scrollIntoView: true });
                     view.dispatch({ changes: { from: end, to: end + 1, insert: '' } });
@@ -67,7 +77,34 @@ export const buildExtensions = (cm6, {
             },
         }),
 
+        // Lit-link navigation — touch a [[portal]] in the prose, be elsewhere
+        // (id:gw-grammar). Only fires on a primary click that lands inside a
+        // `[[…]]` span; every other click falls through to normal editing.
+        EditorView.domEventHandlers({
+            mousedown: (event, view) => {
+                if (!onLitLink || event.button !== 0) return false;
+                const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+                if (pos == null) return false;
+                const line = view.state.doc.lineAt(pos);
+                const col = pos - line.from;
+                const re = /\[\[([^\]\[]+)\]\]/g;
+                let m;
+                while ((m = re.exec(line.text))) {
+                    if (col >= m.index && col <= m.index + m[0].length) {
+                        event.preventDefault();
+                        onLitLink(m[1].trim());
+                        return true;
+                    }
+                }
+                return false;
+            },
+        }),
+
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+
+        // Diagnostics ink infrastructure (editor/diagnostics.js): the gutter
+        // marker; the underline rides setDiagnostics per ask.
+        ...createDiagnosticsExtension(cm6),
 
         // Gutter mousedown → select whole line
         gutter({
@@ -114,6 +151,7 @@ export const buildExtensions = (cm6, {
         // Visual aids
         createIndentGuidesExtension(cm6),
         createDoEndMatchingExtension(cm6),
+        createCodeCellActivationExtension(cm6),
 
         // Compartment slots — reconfigured live by the coordinator
         themeCompartment.of([]),
