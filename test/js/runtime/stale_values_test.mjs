@@ -134,6 +134,69 @@ describe("fn captures evaluator constants at definition time", () => {
     })
 })
 
+describe("parse memo drops when userspace changes", () => {
+    // parse() expands 0-arity names into the tree; the executor memos by
+    // expression string. A hit after `fn out …` rewrote out is a lie — the
+    // multi-index mice program only "worked" when a prior label had cached
+    // the old expansion and every later square reused mice*00.
+    test("redefined 0-arity is re-read after a prior evaluation", () => {
+        const ast = parseProgram(
+            "fn out 0\n" +
+            "as a do\n" +
+            "  label 'k[out]'\n" +           // evaluates + memos out → 0
+            "  fn out [out+1]//4\n" +        // out body becomes 1
+            "  fn saw [out]\n" +             // must see 1, not the memoized 0
+            "  wait 0\n" +
+            "end"
+        )
+        const deps = realDeps()
+        const gen = execute(ast, deps, { color: '#fff' })
+        const sched = createScheduler(gen, {
+            createDeps: realDeps, execOpts: { color: '#fff' }, rootDeps: deps
+        })
+        for (let i = 0; i < 20; i++) { sched.tick(i * 100); if (sched.done) break }
+
+        assert.equal(resolveBinding(sched.root, 'a.saw'), 1, 'saw should be post-redefine out=1')
+    })
+
+    test("multi-index as-name mints a friend per outer/out/count cell", () => {
+        // Without epoch invalidation only the first square was born: every
+        // later `as 'mice[count][out][outer]'` hit a memo of out=0, outer=0.
+        const ast = parseProgram(
+            "loop 2 do\n" +
+            "  fn outer count\n" +
+            "  loop 2 do\n" +
+            "    fn out count\n" +
+            "    loop 2 do\n" +
+            "      as 'mice[count][out][outer]' do\n" +
+            "        wait 0\n" +
+            "      end\n" +
+            "    end\n" +
+            "  end\n" +
+            "end"
+        )
+        const deps = realDeps()
+        const gen = execute(ast, deps, { color: '#fff' })
+        const sched = createScheduler(gen, {
+            createDeps: realDeps, execOpts: { color: '#fff' }, rootDeps: deps
+        })
+        for (let i = 0; i < 50; i++) { sched.tick(i * 100); if (sched.done) break }
+
+        const names = []
+        const walk = (f) => {
+            if (f.name?.startsWith('mice')) names.push(f.name)
+            for (const c of f.children.values()) walk(c)
+        }
+        walk(sched.root)
+        names.sort()
+        assert.equal(names.length, 8, `expected 2×2×2 mice, got ${names.length}: ${names}`)
+        assert.deepEqual(names, [
+            'mice000', 'mice001', 'mice010', 'mice011',
+            'mice100', 'mice101', 'mice110', 'mice111',
+        ])
+    })
+})
+
 // --- Yield and auto-yield tests ---
 
 describe("explicit yield command", () => {

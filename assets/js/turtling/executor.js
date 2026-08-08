@@ -411,17 +411,26 @@ function* callCommand(name, args, state, stroke) {
 // The one owner of PaperLang expression evaluation.
 
 // Memo parse by expression; WeakMap on injected parser. (id:output-ledger-r3-meter)
+// Entry is { epoch, map }: parse() expands 0-arity userspace names into the
+// tree, so a hit is only safe while mathParser.epoch is unchanged. defineFunction
+// / reset bump epoch — without that, `label 'mice[out]'` then `fn out …` left
+// the old expansion of `out` stuck in the memo (every later square renamed to
+// the first; multi-index follow "worked" only when the label ran first).
 const PARSE_MEMO = new WeakMap()
 const MAX_MEMO = 512   // interpolated names ('mice[i]'.x) mint fresh strings
 
 function parseMemo(mathParser, expr) {
-    let memo = PARSE_MEMO.get(mathParser)
-    if (memo === undefined) { memo = new Map(); PARSE_MEMO.set(mathParser, memo) }
-    const hit = memo.get(expr)
+    const epoch = mathParser.epoch ?? 0
+    let entry = PARSE_MEMO.get(mathParser)
+    if (entry === undefined || entry.epoch !== epoch) {
+        entry = { epoch, map: new Map() }
+        PARSE_MEMO.set(mathParser, entry)
+    }
+    const hit = entry.map.get(expr)
     if (hit !== undefined) return hit
     const tree = mathParser.parse(expr)
-    if (memo.size >= MAX_MEMO) memo.clear()
-    memo.set(expr, tree)
+    if (entry.map.size >= MAX_MEMO) entry.map.clear()
+    entry.map.set(expr, tree)
     return tree
 }
 
