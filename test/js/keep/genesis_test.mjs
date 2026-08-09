@@ -13,7 +13,7 @@ const keep = (f) => readFileSync(join(here, "../../../assets/js/keep/", f), "utf
 
 // THE LANDMARK IS THIS LIST (id:kc-verify steps 0-4). The naming layer is pure;
 // the two doors are not in it. Adding a file here is a deliberate act.
-const PURE = ["hash.js", "entry.js", "genesis.js"]
+const PURE = ["hash.js", "entry.js", "genesis.js", "upcast.js"]
 
 const TS = Object.freeze({ t: 1_700_000_000_000, n: 0 })
 

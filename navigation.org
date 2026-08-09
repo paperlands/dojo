@@ -127,6 +127,56 @@ dropped entry — the clamp and =n= are identity, not tidiness
 ([[file:specs/weave/keep-carve.org][keep-carve]] =kc-c-stamp=). =n= never
 crosses a boundary; cross-hand compares read =t= alone (D008).
 
+** keep hash — text → hex64, one engine always
+:PROPERTIES:
+:ID: nav-keep-hash
+:KEYWORDS: keep hash sha256 hex64 name content-address vendored FIPS
+:PATH: assets/js/keep/hash.js
+:END:
+The only hash engine. Vendored because =crypto.subtle= is secure-context only
+([[file:specs/weave/keep-carve.org][keep-carve]] =kc-env=). Pure, sync.
+
+** keep entry — the message is text
+:PROPERTIES:
+:ID: nav-keep-entry
+:KEYWORDS: keep entry message write read name catalog frozen free kind
+:PATH: assets/js/keep/entry.js
+:END:
+=write/read/name=. Catalog last so a body cannot displace a frozen field. The
+entry is a string; there is nothing to canonicalize
+([[file:specs/weave/keep-carve.org][keep-carve]] =kc-p-text=).
+
+** keep genesis — the log names itself
+:PROPERTIES:
+:ID: nav-keep-genesis
+:KEYWORDS: keep genesis root nonce mint continuant getRandomValues once journal self
+:PATH: assets/js/keep/genesis.js
+:END:
+=nonce(random)= → hex64; =genesisBytes(random, ts)= → the entry whose =name= is
+the journal's root. Pure law — the BINDING (once, ever; find-or-create) lives
+in the journal ([[file:specs/weave/keep-build.org][keep-build]] =kb-3=).
+=root: null= is the base case. =work_id= reuses =nonce=.
+
+** keep upcast — the fold exists before it is needed
+:PROPERTIES:
+:ID: nav-keep-upcast
+:KEYWORDS: keep upcast fold STEPS view ahead version projection never-written
+:PATH: assets/js/keep/upcast.js
+:END:
+=upcast(value)= → view. Empty =STEPS=; first shape change is a one-line append.
+A view has no id and is never written ([[file:specs/weave/keep-build.org][keep-build]] =kb-4=).
+
+** keep journal — durability door engine (worker-bound)
+:PROPERTIES:
+:ID: nav-keep-journal
+:KEYWORDS: keep journal put get list local share image source genesis IndexedDB blob cap self
+:PATH: assets/js/keep/journal.store.js
+:END:
+Eight verbs; four stores (log · blobs · source · self). =put= takes bytes, not
+id. =local= is =1|0=. Reverse cursor. Genesis is one readwrite tx over
+=[self, log]=. Worker: =journal.worker.js=; door is step 6
+([[file:specs/weave/keep-build.org][keep-build]] =kb-5=).
+
 * CLUSTERING — discovery, transport, roaming
 :PROPERTIES:
 :ID: nav-clustering
