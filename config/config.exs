@@ -52,15 +52,17 @@ config :esbuild,
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]
 
-# Configure tailwind (the version is required)
+# Configure tailwind (the version is required).
+# ≥ 4.2.3 for colocated CSS; NODE_PATH resolves phoenix-colocated/dojo (lvdx-0).
 config :tailwind,
-  version: "4.1.5",
+  version: "4.3.3",
   dojo: [
     args: ~w(
     --input=assets/css/app.css
     --output=priv/static/assets/css/app.css
     ),
-    cd: Path.expand("..", __DIR__)
+    cd: Path.expand("..", __DIR__),
+    env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]
 
 # Configures Elixir's Logger

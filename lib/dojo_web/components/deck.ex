@@ -145,6 +145,7 @@ defmodule DojoWeb.DeckLive do
         <div
           id="deckofcards"
           class="h-10/12 z-80 overflow-y-scroll pl-4 sm:py-2 sm:px-4 pointer-events-auto mt-2"
+          phx-hook="DojoWeb.ShellLive.AutoCh"
         >
           <%= for {key, spec} <- @primitive do %>
             <div
@@ -206,27 +207,10 @@ defmodule DojoWeb.DeckLive do
                             )
                           }
                           phx-key="Enter"
-                          oninput="this.style.width = (this.value.length || this.placeholder.length) + 1 + 'ch';"
                           onclick="event.stopPropagation()"
                         />
                       </span>
                     </p>
-                    <script>
-                      // Initialize all input fields lengths
-                      window.addEventListener('DOMContentLoaded', () => {
-                        document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
-                        const mutobserver = new MutationObserver((mutations) => {
-                          mutations.forEach((mutation) => {
-                          // If nodes were added or attributes changed, resize inputs
-                          if (mutation.type === 'childList' || mutation.type === 'attributes') {
-                            document.querySelectorAll('input[id^="cmdparam-"]').forEach(input => {input.style.width = ((input.value.length || input.placeholder.length) + 1) + 'ch';});
-                          }
-                          });
-                        });
-                        const targetNode = document.getElementById("deckofcards");
-                        mutobserver.observe(targetNode, {childList: true});
-                      });
-                    </script>
                   </div>
                 </div>
               <% end %>

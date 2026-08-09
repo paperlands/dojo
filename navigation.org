@@ -115,6 +115,18 @@ Decisions 006/007: one ambient address, one user identity.
 :END:
 Decision 008: envelope clock law.
 
+** the stamp — wall clock + same-ms tiebreak, minted at the source
+:PROPERTIES:
+:ID: nav-stamp
+:KEYWORDS: stamp clock ts monotone Date.now wall time tiebreak order mint t n
+:PATH: assets/js/utils/stamp.js
+:END:
+=stamp()= → ={t, n}=, strictly increasing per process. The stamp rides inside
+the kept entry's bytes and the bytes are the name, so a reissued stamp is a
+dropped entry — the clamp and =n= are identity, not tidiness
+([[file:specs/weave/keep-carve.org][keep-carve]] =kc-c-stamp=). =n= never
+crosses a boundary; cross-hand compares read =t= alone (D008).
+
 * CLUSTERING — discovery, transport, roaming
 :PROPERTIES:
 :ID: nav-clustering
@@ -729,12 +741,25 @@ unknown name mounts nothing. Peers, not nesting ([[id:lex-unmarked]]).
 ** shell lifecycle — the boot seam law
 :PROPERTIES:
 :ID: nav-shell-lifecycle
-:KEYWORDS: lifecycle boot seam queue booting live dead handleEvent dropped event zombie mount
+:KEYWORDS: lifecycle boot seam queue booting live dead handleEvent dropped event zombie mount phx dispatch dual-origin
 :PATH: assets/js/hooks/shell/lifecycle.js
 :END:
 booting → live → dead. Events register before the first await (the mount
 patch's own push_events are otherwise lost); the queue drains at live; a
-mid-boot destroy stands the mount down. Pure — =test/js/shell/lifecycle_test.mjs=.
+mid-boot destroy stands the mount down. The door is =window= =phx:*=
+(server push, client =dispatchPhx=, or =JS.dispatch= bubbling from body) —
+origin does not matter; timing does. Pure — =test/js/shell/lifecycle_test.mjs=.
+
+** outer-shell payload — one envelope, two producers
+:PROPERTIES:
+:ID: nav-outer-shell-payload
+:KEYWORDS: seeOuterShell outerShellPayload OUTER_SHELL_KEYS dispatchPhx OuterShell.payload path attend buffer_id dual shape
+:PATH: assets/js/hooks/shell/outer-shell-payload.js
+:END:
+Client builder + =dispatchPhx=; server dual =OuterShell.payload/2=
+(=live/layout/outer_shell.ex=). Twelve keys always present (nils, not
+sparse). Weave local open and friend hatch speak the same shape —
+=test/js/shell/outer_shell_payload_test.mjs=, =outershell_test.exs=.
 
 ** shell core — CM6 boot, execCommand seam, listener kit
 :PROPERTIES:

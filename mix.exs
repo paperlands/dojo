@@ -47,12 +47,12 @@ defmodule Dojo.MixProject do
       {:postgrex, ">= 0.0.0"},
       {:phoenix_html, "~> 4.0"},
       {:phoenix_live_reload, "~> 1.5", only: :dev},
-      {:phoenix_live_view, "~> 1.1.3"},
+      {:phoenix_live_view, "~> 1.2.0"},
       {:phoenix_pubsub, "~> 2.2"},
       {:floki, ">= 0.30.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.8.6"},
       {:esbuild, "~> 0.9", runtime: Mix.env() == :dev},
-      {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
+      {:tailwind, "~> 0.5", runtime: Mix.env() == :dev},
       {:heroicons,
        github: "tailwindlabs/heroicons",
        tag: "v2.1.1",
@@ -84,7 +84,6 @@ defmodule Dojo.MixProject do
       # Protocol Buffers for safe, non-atom signaling
       {:recon, "~> 2.5"},
       {:protox, "~> 2.0"}
-      # {:libcluster, "~> 3.3.0"}
     ]
   end
 
@@ -140,7 +139,11 @@ defmodule Dojo.MixProject do
       # press.codex: id→{name,title} index for the weave resolver (Shoot 0 / Q2),
       # and the vendor recast into priv/static/codex (what the web reaches).
       "press.codex": &press_codex/1,
-      "assets.build": ["press.codex", "tailwind dojo", "esbuild dojo"],
+      "assets.build": [
+        "press.codex",
+        "tailwind dojo",
+        "esbuild dojo"
+      ],
       "assets.deploy": [
         "press.codex",
         "tailwind dojo --minify",

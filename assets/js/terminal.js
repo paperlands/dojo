@@ -82,6 +82,7 @@ export const createTerminal = (element, cm6, options = {}) => {
     const saveToStorage = () => {
         if (!store || !state.collection) return;
         store.save(buffers.serialize(state.collection));
+        state.autosaveTimer = null;
     };
 
     // Write-through keeps the collection current on every transaction, so
@@ -229,7 +230,9 @@ export const createTerminal = (element, cm6, options = {}) => {
                     if (id) {
                         state.collection = buffers.updateContent(state.collection, id, content);
                     }
-                    // 2. Autosave (scheduled effect)
+                    // 2. Autosave (scheduled effect). Nothing tracks "dirty":
+                    // destroy() and the two page listeners all save, so the
+                    // pending timer is the only unsaved state there is.
                     clearTimeout(state.autosaveTimer);
                     state.autosaveTimer = setTimeout(saveToStorage, 500);
                     // 3. Bridge (event effect) — capture identity at publish time
@@ -286,7 +289,8 @@ export const createTerminal = (element, cm6, options = {}) => {
             // is whole.
             doSelectBuffer(state.collection.currentId, { announce: false });
 
-            // Persist on tab hide / page unload — timer-based autosave alone is unreliable
+            // Persist on tab hide / page unload — timer-based autosave alone is unreliable.
+            // Fence pending (lvdx-6) tracks unfenced edits for leave guards.
             document.addEventListener('visibilitychange', onVisibilityChange);
             window.addEventListener('beforeunload', onBeforeUnload);
 

@@ -2,12 +2,13 @@
 // Arena owns the listener: destroyed hooks leave nothing behind.
 
 import { createArena } from "../kernel/arena.js"
+import { safePush } from "../adapter.js"
 
 const Sensei = {
   mounted() {
     this._arena = createArena()
     this._arena.on(this.el, "dblclick", (e) => {
-      if (e.ctrlKey || e.metaKey) this.pushEvent("opensenseime", {})
+      if (e.ctrlKey || e.metaKey) safePush(this, "opensenseime", {})
     })
   },
 

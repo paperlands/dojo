@@ -1,7 +1,14 @@
 @import "tailwindcss" source(none);
+@import "phoenix-colocated/dojo/colocated.css";
 @source "../css";
 @source "../js";
 @source "../../lib/dojo_web";
+/* Colocated CSS — Tailwind content scan for class names inside extracted
+   blocks (lvdx-0). Both envs: assets.deploy runs under MIX_ENV=prod and
+   writes under _build/prod; dev watch writes under _build/dev. Missing
+   path is a quiet empty source, not a build error. */
+@source "../../_build/dev/phoenix-colocated/dojo/*/";
+@source "../../_build/prod/phoenix-colocated/dojo/*/";
 
 /* A Tailwind plugin that makes "hero-#{ICON}" classes available.
    The heroicons installation itself is managed by your mix.exs */
@@ -222,7 +229,6 @@
     -ms-overflow-style: -ms-autohiding-scrollbar;
     scrollbar-color: rgba(255,153,51,0.05) transparent; /* Thumb color and track color */
     scrollbar-width: thin; /* Thin scrollbar */
-    scrollbar-width-legacy: 5px;
   }
 
   .dark-scrollbar:hover {
@@ -505,27 +511,30 @@
   }
 }
 
+/* Glow colors live on the element (not inside @keyframes). Tailwind rewrites
+   color-mix into @supports duals; keyframes may only hold declarations, so
+   color-mix inside them becomes invalid CSS and the browser drops the glow. */
 @keyframes helios-radiate {
   0% {
-    text-shadow: 0 0 4px color-mix(in oklch, var(--color-primary) 35%, transparent);
+    text-shadow: 0 0 4px var(--helios-glow-35);
     filter: brightness(1) blur(0);
     transform: scale(1);
   }
   20% {
     /* Peak: soft blur halo + multi-ring glow — the step lights up. */
     text-shadow:
-      0 0 2px color-mix(in oklch, var(--color-primary) 100%, white),
-      0 0 10px color-mix(in oklch, var(--color-primary) 85%, transparent),
-      0 0 22px color-mix(in oklch, var(--color-primary) 55%, transparent),
-      0 0 40px color-mix(in oklch, var(--color-primary) 30%, transparent),
-      0 0 64px color-mix(in oklch, var(--color-primary) 14%, transparent);
+      0 0 2px var(--helios-glow-core),
+      0 0 10px var(--helios-glow-85),
+      0 0 22px var(--helios-glow-55),
+      0 0 40px var(--helios-glow-30),
+      0 0 64px var(--helios-glow-14);
     filter: brightness(1.55) blur(0.45px);
     transform: scale(1.045);
   }
   100% {
     text-shadow:
-      0 0 6px color-mix(in oklch, var(--color-primary) 38%, transparent),
-      0 0 14px color-mix(in oklch, var(--color-primary) 16%, transparent);
+      0 0 6px var(--helios-glow-38),
+      0 0 14px var(--helios-glow-16);
     filter: brightness(1) blur(0);
     transform: scale(1);
   }
@@ -534,24 +543,24 @@
 /* Success — longer, softer bloom (no hard peak flash). */
 @keyframes helios-radiate-apex {
   0% {
-    text-shadow: 0 0 4px color-mix(in oklch, var(--color-primary) 35%, transparent);
+    text-shadow: 0 0 4px var(--helios-glow-35);
     filter: brightness(1) blur(0);
     transform: scale(1);
   }
   35% {
     text-shadow:
-      0 0 3px color-mix(in oklch, var(--color-primary) 100%, white),
-      0 0 12px color-mix(in oklch, var(--color-primary) 80%, transparent),
-      0 0 24px color-mix(in oklch, var(--color-primary) 50%, transparent),
-      0 0 44px color-mix(in oklch, var(--color-primary) 28%, transparent),
-      0 0 68px color-mix(in oklch, var(--color-primary) 14%, transparent);
+      0 0 3px var(--helios-glow-core),
+      0 0 12px var(--helios-glow-80),
+      0 0 24px var(--helios-glow-50),
+      0 0 44px var(--helios-glow-28),
+      0 0 68px var(--helios-glow-14);
     filter: brightness(1.45) blur(0.4px);
     transform: scale(1.04);
   }
   100% {
     text-shadow:
-      0 0 8px color-mix(in oklch, var(--color-primary) 42%, transparent),
-      0 0 18px color-mix(in oklch, var(--color-primary) 20%, transparent);
+      0 0 8px var(--helios-glow-42),
+      0 0 18px var(--helios-glow-20);
     filter: brightness(1.05) blur(0);
     transform: scale(1);
   }
@@ -578,7 +587,25 @@
   letter-spacing: 0.04ch;
   font-variant-numeric: tabular-nums;
   color: var(--color-primary);
-  text-shadow: 0 0 6px color-mix(in oklch, var(--color-primary) 28%, transparent);
+  /* Keyframe-safe glow tokens (see helios-radiate comment above). */
+  --helios-glow-core: color-mix(in oklch, var(--color-primary) 100%, white);
+  --helios-glow-85: color-mix(in oklch, var(--color-primary) 85%, transparent);
+  --helios-glow-80: color-mix(in oklch, var(--color-primary) 80%, transparent);
+  --helios-glow-55: color-mix(in oklch, var(--color-primary) 55%, transparent);
+  --helios-glow-50: color-mix(in oklch, var(--color-primary) 50%, transparent);
+  --helios-glow-42: color-mix(in oklch, var(--color-primary) 42%, transparent);
+  --helios-glow-40: color-mix(in oklch, var(--color-primary) 40%, transparent);
+  --helios-glow-38: color-mix(in oklch, var(--color-primary) 38%, transparent);
+  --helios-glow-35: color-mix(in oklch, var(--color-primary) 35%, transparent);
+  --helios-glow-30: color-mix(in oklch, var(--color-primary) 30%, transparent);
+  --helios-glow-28: color-mix(in oklch, var(--color-primary) 28%, transparent);
+  --helios-glow-20: color-mix(in oklch, var(--color-primary) 20%, transparent);
+  --helios-glow-18: color-mix(in oklch, var(--color-primary) 18%, transparent);
+  --helios-glow-16: color-mix(in oklch, var(--color-primary) 16%, transparent);
+  --helios-glow-14: color-mix(in oklch, var(--color-primary) 14%, transparent);
+  --helios-glow-12: color-mix(in oklch, var(--color-primary) 12%, transparent);
+  --helios-glow-8: color-mix(in oklch, var(--color-primary) 8%, transparent);
+  text-shadow: 0 0 6px var(--helios-glow-28);
   /* Room for the radiate halo (status zone overflow is visible). */
   padding-right: 1.5ch;
 }
@@ -608,17 +635,17 @@
     opacity: 0.88;
     filter: brightness(1) blur(0);
     text-shadow:
-      0 0 5px color-mix(in oklch, var(--color-primary) 28%, transparent),
-      0 0 12px color-mix(in oklch, var(--color-primary) 12%, transparent);
+      0 0 5px var(--helios-glow-28),
+      0 0 12px var(--helios-glow-12);
     transform: scale(1) rotate(0deg);
   }
   50% {
     opacity: 1;
     filter: brightness(1.08) blur(0.12px);
     text-shadow:
-      0 0 8px color-mix(in oklch, var(--color-primary) 40%, transparent),
-      0 0 18px color-mix(in oklch, var(--color-primary) 18%, transparent),
-      0 0 28px color-mix(in oklch, var(--color-primary) 8%, transparent);
+      0 0 8px var(--helios-glow-40),
+      0 0 18px var(--helios-glow-18),
+      0 0 28px var(--helios-glow-8);
     transform: scale(1.015) rotate(0.4deg);
   }
 }
@@ -681,39 +708,10 @@
     color: var(--color-warning);
 }
 
-/* --- Remote nerve (a watched friend's signals, below the outershell) --- */
-/* These render as .nerve-hud-msg slots, so they need their own channel colors. */
-#outer-nerve .nerve-error {
-  color: oklch(0.63 0.21 25);
-  text-shadow: 0 0 8px rgb(240 168 61 / 0.35);
-}
-#outer-nerve .nerve-error .nerve-msg { opacity: 1; }
-#outer-nerve .nerve-output { color: var(--color-primary); }
-
-/* --- Command deck: one toggle, one truth ----------------------------------
-   The deck's open/closed state lives in a single flag — `#deck-state.deck-open`
-   — held in a phx-update="ignore" node so server re-renders can't clobber it.
-   Panel visibility, the button's glow, and yielding the pane to an active
-   outershell are all DERIVED here, so no two DOM nodes can fall out of sync.
-   It's pure CSS + a client-side class toggle: no socket, works offline.
-   Specificity (.rightpane …) beats Tailwind's single-class display utilities,
-   so the deck panel carries no display utility of its own. */
-.rightpane .deck { display: none; }
-
-.rightpane:has(#deck-state.deck-open):not(:has(.outershell)) .deck {
-  display: flex;
-}
-
-@media (min-width: 40rem) {
-  .rightpane:has(#deck-state.deck-open):not(:has(.outershell)) .deck {
-    display: block;
-  }
-}
-
-.rightpane:has(#deck-state.deck-open):not(:has(.outershell)) #manualdeckbutton {
-  fill: var(--color-secondary-content);
-  filter: drop-shadow(0 1px 1px var(--color-secondary-content));
-}
+/* --- Command deck / outer-nerve / outer wash: colocated with owners (lvdx-1).
+   Deck open/closed lives in shell_live ColocatedCSS; outer nerve + wash in
+   OuterShellLive. Always-present .outershell uses :not(.hidden) so inactive
+   islands still yield the deck (lvdx-2). */
 
 /* --- Log panel — expanded history, click to open, click-outside to close --- */
 
@@ -838,122 +836,7 @@
     background: rgba(248, 85, 82, 0.1);
 }
 
-/* === OuterShell break transition — code glitches into a bug, settles errored,
-      transitions back to clean when it works. Driven by #outerenv[data-outer-state]. === */
-
-@keyframes outer-glitch {
-    0%   { transform: translate(0, 0) skewX(0deg);    filter: none; }
-    18%  { transform: translate(-2px, 0) skewX(-1deg); filter: hue-rotate(-25deg) saturate(1.5); }
-    36%  { transform: translate(2px, 1px) skewX(1deg);  filter: hue-rotate(15deg); }
-    54%  { transform: translate(-1px, 0) skewX(-0.5deg); }
-    72%  { transform: translate(1px, -1px) skewX(0.5deg); }
-    100% { transform: translate(0, 0) skewX(0deg);    filter: none; }
-}
-
-#outerenv {
-    transition: background-color 300ms ease, box-shadow 300ms ease;
-}
-
-#outerenv .cm-content {
-    transition: color 300ms ease;
-}
-
-/* Errored — live break shown in place (not the last-good freeze). */
-#outerenv[data-outer-state="error"] {
-    background-color: rgba(100, 22, 24, 0.12);
-    box-shadow: inset 0 0 24px rgba(180, 30, 30, 0.18);
-}
-
-#outerenv[data-outer-state="error"] .cm-content {
-    animation: outer-glitch 320ms ease-out;
-    color: rgba(255, 140, 120, 0.95);
-}
-
-/* Draft — a distinct secondary-content (yellow) wash, never confused with the
-   error red. Your modification in progress, not their break. */
-#outerenv[data-outer-state="draft"] {
-    background-color: color-mix(in oklch, var(--color-secondary-content) 9%, transparent);
-    box-shadow: inset 0 0 24px color-mix(in oklch, var(--color-secondary-content) 16%, transparent);
-}
-
-/* === The hearth — amber shanshui (shell/weave, Shoot 0) ===================
-   Only the path lives here: pages open in the outershell; the trail is the
-   weave's one chrome. The hearth owns NO pigment — every color is a
-   color-mix over the theme's own variables, the pigments there all summer:
-
-     chlorophyll  --color-accent   (hue 125) — the living green: where she IS
-     xanthophyll  --color-warning  (hue  84) — the gold as the green drains
-     carotene     --color-primary  (hue  60) — the amber underneath
-     paper        --color-base-*              — the mist steps dissolve into
-
-   The signature is THE TURNING: the kindled (newest) step is green — alive.
-   Walk on, it loses .weave-trail-kindled, and its green drains over ~2s into
-   amber-by-heat; older steps yellow toward gold and dissolve upward into
-   mist (the mask). No box, no border, no dark glass: ink on the app's own
-   paper. */
-
-.weave {
-    --chlorophyll: var(--color-accent);
-    --xanthophyll: var(--color-warning);
-    --carotene: var(--color-primary);
-    --mist: var(--color-base-200);
-    --ink: var(--color-secondary-content);
-}
-
-.weave-path {
-    display: flex;
-    flex-direction: column-reverse; /* newest-first DOM ⇒ newest at her hand */
-    align-items: flex-end;
-    gap: 0.1rem;
-    max-height: 8rem;
-    overflow: hidden;
-    /* older steps dissolve upward into the paper behind — the mist */
-    mask-image: linear-gradient(to top, black 55%, transparent 96%);
-}
-
-.weave-trail-step {
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    line-height: 1.5;
-    cursor: pointer;
-    /* heat = pigment concentration: amber→gold with age, diluting to paper */
-    --step-pigment: color-mix(
-        in oklch,
-        color-mix(in oklch, var(--carotene) calc(var(--trail-heat, 0.5) * 100%), var(--xanthophyll))
-            calc(22% + var(--trail-heat, 0.5) * 70%),
-        var(--mist)
-    );
-    color: color-mix(in oklch, var(--step-pigment) 78%, var(--ink));
-    transition: color 2s ease, text-shadow 2s ease;
-}
-.weave-trail-step::before {
-    content: "· ";
-    color: var(--step-pigment);
-}
-.weave-trail-step:hover {
-    color: color-mix(in oklch, var(--carotene) 60%, var(--ink));
-}
-
-/* the kindled step: green, alive — where she stands. Losing this class IS
-   the turning: chlorophyll drains, the amber beneath leaks through. */
-.weave-trail-kindled {
-    color: color-mix(in oklch, var(--chlorophyll) 55%, var(--ink));
-    text-shadow: 0 0 14px color-mix(in oklch, var(--chlorophyll) 45%, transparent);
-}
-.weave-trail-kindled::before {
-    color: color-mix(in oklch, var(--chlorophyll) 80%, var(--ink));
-}
-
-/* unborn: a word waiting to be born — gold, the invitation kept mortal */
-.weave-unborn,
-.weave-unborn.weave-trail-kindled {
-    color: color-mix(in oklch, var(--xanthophyll) 45%, var(--ink));
-    text-shadow: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .weave-trail-step { transition: none; }
-}
+/* Hearth trail paint → colocated on #weave-hearth (lvdx-1). */
 
 /* ---------------------------------------------------------------------------
    THE FIREFLY — a watched friend, past the edge you lost them at (D025 R6).

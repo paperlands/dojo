@@ -24,6 +24,9 @@ import { revealAmbient, registerNavigator } from "../../nerve/reveal.js"
 import { getStage } from "../../turtling/stage-cell.js"
 import { nerve as seatedNerve } from "../nerve.js"
 import { createArena } from "../../kernel/arena.js"
+import { stamp } from "../../utils/stamp.js"
+import { safePush } from "../../adapter.js"
+import { outerShellPayload, dispatchPhx } from "./outer-shell-payload.js"
 
 export const weave = {
     events: [],
@@ -179,22 +182,26 @@ function mountWeave(hook, boot = {}) {
             emitWalk(prev, addr, id ? { id } : null, "fragment")
         }
 
-        // Invoke the outershell — the one review surface: page, figure, fork,
-        // close, all inherited. AST is the one representation crossing the
-        // seam (inner derives cell split via phaseCells); ~/ addr is page-ness
-        // — nothing rides beside the source.
-        hook.pushEvent("seeWeave", {
+        // Local open (lvdx-5): outer handlers already have the pressed buffer.
+        // onSeeOuterShell owns the open flag. Server is informed only — no ferry.
+        // Full envelope via outerShellPayload — same 12 keys as OuterShell.payload/2.
+        const pageName = meta.title ?? title ?? name
+        const diags = diagnostics(ast, [], addr)
+        // `t` alone — %Turtle{time:} is an LWW key compared across hands (D008).
+        const ts = stamp().t
+        dispatchPhx("seeOuterShell", outerShellPayload({
             addr,
-            name: (meta.title ?? title ?? name),
+            origin_name: pageName,
             source,
             commands: ast,
-            // A shelved page can be wounded too — mis-pressed cell inks its
-            // line in the viewer, addressed like any diagnostic (D022). The
-            // library is a non-live friend speaking the same fields through
-            // the one diagnostics query, not a raw collectErrors bag.
-            diagnostics: diagnostics(ast, [], addr),
-            ts: performance.now(),
-        })
+            diagnostics: diags,
+            state: "success",
+            view: "watch",
+            stream: true,
+            time: ts,
+            // path / attend / buffer_id — library has none; builder keeps keys as null
+        }))
+        safePush(hook, "seeWeave", { addr, name: pageName, source, ts })
     }
 
     // Portals anywhere (editor ink, outer viewer) fall through to the scope

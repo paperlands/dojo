@@ -112,6 +112,40 @@ defmodule DojoWeb.ShellLive.OuterShell do
   def wants_updates?(%__MODULE__{view: :draft}), do: true
   def wants_updates?(_), do: false
 
+  # seeOuterShell envelope keys — Turtle fields + shell overlay. Client dual:
+  # OUTER_SHELL_KEYS / outerShellPayload in hooks/shell/outer-shell-payload.js.
+  # Keep both lists in lockstep (outershell_test + outer_shell_payload_test).
+  @payload_keys [
+    :state,
+    :path,
+    :commands,
+    :attend,
+    :diagnostics,
+    :source,
+    :time,
+    :buffer_id,
+    :addr,
+    :origin_name,
+    :view,
+    :stream
+  ]
+
+  @doc "The 12-key seeOuterShell contract (atoms). Dual of JS OUTER_SHELL_KEYS."
+  def payload_keys, do: @payload_keys
+
+  @doc """
+  Build the seeOuterShell map. One named builder for every server push path.
+  Client dual: `outerShellPayload` (same keys; library fills path/attend/buffer_id as null).
+  """
+  def payload(%Turtle{} = turtle, %__MODULE__{} = shell) do
+    turtle
+    |> Map.from_struct()
+    |> Map.put(:addr, shell.addr)
+    |> Map.put(:origin_name, shell.name)
+    |> Map.put(:view, shell.view)
+    |> Map.put(:stream, shell.stream)
+  end
+
   # Name the BUMP, never the fields that matter: a field added to the reflect is
   # covered the day it is added and can never mint a second gate (D025 R3).
   @bump %{time: nil, path: nil}

@@ -1,3 +1,161 @@
+<style :type={DojoWeb.ColocatedCSS}>
+  .container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: #fff;
+  }
+
+  #logo {
+    width: 66dvw;
+    height: 66dvh;
+  }
+
+  /* Base columns animation */
+  #pAACLOnr9, #p1AwsLrXpS, #pWuIj6C5c, #p1F6cuHqs0, #pvoyvKgx2 {
+    opacity: 0;
+    transform-origin: bottom;
+    animation: buildUp 1s ease-out forwards;
+  }
+
+  /* Stagger the column animations */
+  #pAACLOnr9 { animation-delay: 0.2s; }
+  #p1AwsLrXpS { animation-delay: 0.4s; }
+  #pWuIj6C5c { animation-delay: 0.5s; }
+  #p1F6cuHqs0 { animation-delay: 0.4s; }
+  #pvoyvKgx2 { animation-delay: 0.2s; }
+
+  /* Center connector piece */
+  #p10VNjL5vf {
+    opacity: 0;
+    animation: fadeIn 0.8s ease-out 1.2s forwards;
+  }
+
+  /* Circular elements spiral in */
+  #pvFImyXDn, #p5iyLG4gS, #pDmVo2rkS {
+    opacity: 0;
+    transform-origin: center;
+    animation: spiralIn 1.5s ease-out forwards;
+  }
+
+  #pvFImyXDn { animation-delay: 1.4s; }
+  #p5iyLG4gS { animation-delay: 1.6s; }
+  #pDmVo2rkS { animation-delay: 1.8s; }
+
+  /* Rays fade and rotate in */
+  #p16CCKk7d8-6, #p1AA96coGd, #p16CCKk7d8-6-5, #p10eejDqeS, #p16CCKk7d8 {
+    opacity: 0;
+    transform-origin: center;
+    animation: rayRotate 1s ease-out forwards;
+  }
+
+  #p16CCKk7d8-6 { animation-delay: 2s; }
+  #p1AA96coGd { animation-delay: 2.1s; }
+  #p16CCKk7d8-6-5 { animation-delay: 2.2s; }
+  #p10eejDqeS { animation-delay: 2.3s; }
+  #p16CCKk7d8 { animation-delay: 2.4s; }
+
+  /* Golden ratio-based spiral animation for circular elements */
+  #pvFImyXDn, #p5iyLG4gS, #pDmVo2rkS {
+    opacity: 0;
+    transform-origin: center;
+    animation: heliosSpiral 2.5s cubic-bezier(0.645, 0.045, 0.355, 1) forwards;
+  }
+
+  /* Stagger the animations with golden ratio timing */
+  #pvFImyXDn { animation-delay: 0.4s; }
+  #p5iyLG4gS { animation-delay: 0.618s; }
+  #pDmVo2rkS { animation-delay: 0.7s; }
+
+  /* Add radiation glow effect */
+  #pvFImyXDn, #p5iyLG4gS, #pDmVo2rkS {
+    filter: drop-shadow(5px 5px 2px rgba(255, 153, 51, 0.6));
+  }
+
+  /* 0%/30% carry only opacity + brightness — the unitless rotate()s on
+     those stops never painted (parse drop). Prod's lived feel is fade +
+     warm-up, then the late scale bloom from 60%. */
+  @keyframes heliosSpiral {
+    0% {
+      opacity: 0;
+      filter: brightness(0.5);
+    }
+    30% {
+      opacity: 0.6;
+      filter: brightness(1.1);
+    }
+    60% {
+      opacity: 0.8;
+      transform: translateY(0) scale(1);
+      filter: brightness(1.15);
+    }
+    80% {
+      opacity: 1;
+      transform: scale(1.118);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+      filter: brightness(1);
+    }
+  }
+
+  /* Add pulsing radiation effect */
+  .sun-radiation {
+    animation: radiate 2s ease-in-out infinite;
+  }
+
+  @keyframes radiate {
+    0% {
+      filter: drop-shadow(0 0 5px rgba(255, 153, 51, 0.4));
+    }
+    50% {
+      filter: drop-shadow(0 0 15px rgba(255, 153, 51, 0.8));
+    }
+    100% {
+      filter: drop-shadow(0 0 5px rgba(255, 153, 51, 0.4));
+    }
+  }
+
+  @keyframes buildUp {
+    from {
+      opacity: 0;
+      transform: scaleY(0);
+    }
+    to {
+      opacity: 1;
+      transform: scaleY(1);
+    }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes spiralIn {
+    0% {
+      opacity: 0;
+      transform: scale(0) rotate(-180deg);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+    }
+  }
+
+  @keyframes rayRotate {
+    0% {
+      opacity: 0;
+      transform: rotate(-45deg) scale(0.8);
+    }
+    100% {
+      opacity: 1;
+      transform: rotate(0deg) scale(1);
+    }
+  }
+</style>
 <div class="fixed inset-0 bg-secondary min-h-dvh  flex flex-col  items-center justify-center z-50">
   <svg id="logo" class="pt-16" viewBox="0 0  3000 2400" xmlns="http://www.w3.org/2000/svg">
     <g
@@ -137,160 +295,4 @@
   </div>
 </div>
 
-<style>
-  .container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    background: #fff;
-  }
 
-  #logo {
-    width: 66dvw;
-    height: 66dvh;
-  }
-
-  /* Base columns animation */
-  #pAACLOnr9, #p1AwsLrXpS, #pWuIj6C5c, #p1F6cuHqs0, #pvoyvKgx2 {
-    opacity: 0;
-    transform-origin: bottom;
-    animation: buildUp 1s ease-out forwards;
-  }
-
-  /* Stagger the column animations */
-  #pAACLOnr9 { animation-delay: 0.2s; }
-  #p1AwsLrXpS { animation-delay: 0.4s; }
-  #pWuIj6C5c { animation-delay: 0.5s; }
-  #p1F6cuHqs0 { animation-delay: 0.4s; }
-  #pvoyvKgx2 { animation-delay: 0.2s; }
-
-  /* Center connector piece */
-  #p10VNjL5vf {
-    opacity: 0;
-    animation: fadeIn 0.8s ease-out 1.2s forwards;
-  }
-
-  /* Circular elements spiral in */
-  #pvFImyXDn, #p5iyLG4gS, #pDmVo2rkS {
-    opacity: 0;
-    transform-origin: center;
-    animation: spiralIn 1.5s ease-out forwards;
-  }
-
-  #pvFImyXDn { animation-delay: 1.4s; }
-  #p5iyLG4gS { animation-delay: 1.6s; }
-  #pDmVo2rkS { animation-delay: 1.8s; }
-
-  /* Rays fade and rotate in */
-  #p16CCKk7d8-6, #p1AA96coGd, #p16CCKk7d8-6-5, #p10eejDqeS, #p16CCKk7d8 {
-    opacity: 0;
-    transform-origin: center;
-    animation: rayRotate 1s ease-out forwards;
-  }
-
-  #p16CCKk7d8-6 { animation-delay: 2s; }
-  #p1AA96coGd { animation-delay: 2.1s; }
-  #p16CCKk7d8-6-5 { animation-delay: 2.2s; }
-  #p10eejDqeS { animation-delay: 2.3s; }
-  #p16CCKk7d8 { animation-delay: 2.4s; }
-
-  /* Golden ratio-based spiral animation for circular elements */
-  #pvFImyXDn, #p5iyLG4gS, #pDmVo2rkS {
-    opacity: 0;
-    transform-origin: center;
-    animation: heliosSpiral 2.5s cubic-bezier(0.645, 0.045, 0.355, 1) forwards;
-  }
-
-  /* Stagger the animations with golden ratio timing */
-  #pvFImyXDn { animation-delay: 0.4s; }
-  #p5iyLG4gS { animation-delay: 0.618s; }
-  #pDmVo2rkS { animation-delay: 0.7s; }
-
-  /* Add radiation glow effect */
-  #pvFImyXDn, #p5iyLG4gS, #pDmVo2rkS {
-    filter: drop-shadow(5px 5px 2px rgba(255, 153, 51, 0.6));
-  }
-
-  @keyframes heliosSpiral {
-    0% {
-      opacity: 0;
-      transform: translateY(2px) scale(0.1) rotate(100);
-      filter: brightness(0.5);
-    }
-    30% {
-      opacity: 0.6;
-      transform: translateY(5px) scale(0.618) rotate(50) ;
-      filter: brightness(1.1);
-    }
-    60% {
-      opacity: 0.8;
-      transform: translateY(0) scale(1) ;
-      filter: brightness(1.15);
-    }
-    80% {
-      opacity: 1;
-      transform: scale(1.118) ;
-    }
-    100% {
-      opacity: 1;
-      transform: scale(1) rotate(0);
-      filter: brightness(1);
-    }
-  }
-
-  /* Add pulsing radiation effect */
-  .sun-radiation {
-    animation: radiate 2s ease-in-out infinite;
-  }
-
-  @keyframes radiate {
-    0% {
-      filter: drop-shadow(0 0 5px rgba(255, 153, 51, 0.4));
-    }
-    50% {
-      filter: drop-shadow(0 0 15px rgba(255, 153, 51, 0.8));
-    }
-    100% {
-      filter: drop-shadow(0 0 5px rgba(255, 153, 51, 0.4));
-    }
-  }
-
-  @keyframes buildUp {
-    from {
-      opacity: 0;
-      transform: scaleY(0);
-    }
-    to {
-      opacity: 1;
-      transform: scaleY(1);
-    }
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  @keyframes spiralIn {
-    0% {
-      opacity: 0;
-      transform: scale(0) rotate(-180deg);
-    }
-    100% {
-      opacity: 1;
-      transform: scale(1) rotate(0deg);
-    }
-  }
-
-  @keyframes rayRotate {
-    0% {
-      opacity: 0;
-      transform: rotate(-45deg) scale(0.8);
-    }
-    100% {
-      opacity: 1;
-      transform: rotate(0deg) scale(1);
-    }
-  }
-</style>

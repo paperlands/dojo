@@ -6,6 +6,8 @@
  * for the multiplayer env
  * */
 
+import { safePush } from "./adapter.js"
+
 class BridgedEventTarget extends EventTarget {}
 
 /**
@@ -61,20 +63,14 @@ export const bridged = (eventName) => { // TODO: consider renaming to registerBr
 
     /**
      * Given a payload, publishes it on its topic and also pushes
-     * a server-side event to the LiveView.
+     * a server-side event to the LiveView (adapter seat — no outbox).
      *
      * Preconditions:
      * - if selector has been provided, then it's assumed to be a valid dom selector that can be queried.
      * */
     const dispatch = (el, payload, selector=null) => {
         pub(payload)
-        // customEventTarget.dispatchEvent(new CustomEvent(eventName, { detail: data }));
-        const isTargettedDispatch = !!selector
-        if(isTargettedDispatch) {
-            el.pushEventTo(selector, eventName, payload)
-        } else {
-            el.pushEvent(eventName, payload);
-        }
+        safePush(el, eventName, payload, selector || null)
     }
 
     return { sub, pub, dispatch };

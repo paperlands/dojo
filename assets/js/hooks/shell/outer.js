@@ -20,11 +20,12 @@ import { listeners } from "./core.js"
 import { register } from "./term-cell.js"
 import { createArena } from "../../kernel/arena.js"
 import { attach } from "../../kernel/attach.js"
+import { safePush } from "../../adapter.js"
 
 // Events at mounted() — seeOuterShell rides the same reply that mounts this
 // panel (shell_live.ex "seeTurtle"); a post-await listener would miss it.
 export const outer = {
-    events: ["seeOuterShell", "outerAttend", "outerLive"],
+    events: ["seeOuterShell", "outerAttend", "outerLive", "outerClose"],
     mount: mountOuter,
 };
 
@@ -62,7 +63,7 @@ function mountOuter(hook, { term, cm6 }) {
     arena.add(attach(nerveSeat, (seated) => {
         if (!remoteNerveEl) return;
         outerProj = seated.project(remoteNerveEl, {
-            pushEvent: (e, p) => hook.pushEvent(e, p),
+            pushEvent: (e, p) => safePush(hook, e, p),
             targets: { editorView: () => term.shell },
             health: () => health(),
             // A sun names no peer — route by place, not address.
@@ -186,7 +187,7 @@ function mountOuter(hook, { term, cm6 }) {
         if (!outerAddr) return;
 
         enterDraft();
-        hook.pushEvent("outerDraft", {});
+        safePush(hook, "outerDraft", {});
     };
     arena.on(term.shell.dom, 'keydown', onDraftKey, true);
 
@@ -288,9 +289,9 @@ function mountOuter(hook, { term, cm6 }) {
     };
 
     const onSeeOuterShell = (payload) => {
-        // New friend: re-arm follow. Drop previous addr's canvas seat + draft.
-        // outerAddr IS the previous until the line below moves it — a second
-        // variable for that was one fact kept in two places.
+        document.getElementById("outer-open")?.classList.add("is-open")
+
+        // New friend: drop previous canvas seat + draft before seating this one.
         const opening = !!payload?.addr && payload.addr !== outerAddr;
         if (opening) {
             if (outerAddr) scene.remove(outerAddr);
@@ -329,7 +330,22 @@ function mountOuter(hook, { term, cm6 }) {
         reask();
     };
 
-    // Keep-as-fork → coreshell tab.
+    // Idempotent: close_js already dropped the flag; server notify may re-fire.
+    const onOuterClose = () => {
+        document.getElementById("outer-open")?.classList.remove("is-open")
+        if (term.drafting()) leaveDraft()
+        if (outerAddr) {
+            scene.remove(outerAddr)
+            outerAddr = null
+        }
+        outerName = null
+        outerBufferId = null
+        wireWounds = NONE
+        term.changeouter("")
+        if (envEl) envEl.dataset.outerState = "ok"
+        reask()
+    }
+
     const onDelegatedClick = (e) => {
         if (!e.target.closest('#outer-fork')) return;
         const source = term.getValue();
@@ -368,6 +384,7 @@ function mountOuter(hook, { term, cm6 }) {
             seeOuterShell: onSeeOuterShell,
             outerAttend: onOuterAttend,
             outerLive: onOuterLive,
+            outerClose: onOuterClose,
         },
         arena,
     };

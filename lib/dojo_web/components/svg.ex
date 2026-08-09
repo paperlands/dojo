@@ -48,7 +48,6 @@ defmodule DojoWeb.SVGComponents do
       x="0px"
       y="0px"
       viewBox="0 0 100 100"
-      enable-background="new 0 0 100 100"
       xml:space="preserve"
     >
       <path d="M92.2,50.9L45.1,78.3l-7.9-4.6v0L8.1,57v-7.7L45,70.6l52.8-30.7L55,15.1L2.1,45.8h0v0l0,0l0,0v14.3h0l32,18.4v0l11,6.3  l52.8-30.7L92.2,50.9z M39.4,43.6c1.6-0.8,3.1-1.2,4.4-1.4c1.8-0.2,4.3-0.1,7.6,0.2c1.6,0.2,3.2,0.2,4.7,0c1.5-0.2,2.8-0.7,4-1.3  c1.2-0.7,1.9-1.5,2-2.3c0.1-0.8-0.5-1.6-1.7-2.3c-1-0.6-2.1-0.9-3.4-0.9c-0.8,0-1.6,0.1-2.4,0.3c-0.9,0.3-2.1,0.2-2.9-0.3  c0,0,0,0,0,0L47,32.9c-0.6-0.4-0.6-0.9,0.1-1.2c2.7-1.4,5.6-1.9,8.8-1.7c3.6,0.3,7,1.4,10.3,3.3c3.5,2,5.4,4.2,5.7,6.4  c0.3,2.2-1.1,4.2-4.1,5.9c-1.8,1.1-4.1,1.7-6.8,2c-2.7,0.3-5.3,0.2-7.9-0.3c-1.6-0.2-2.9-0.2-3.9,0.1c-0.7,0.2-1.5,0.4-2.3,0.8  c-0.6,0.3-1.6,0.3-2.2-0.1l-5.2-3C38.7,44.6,38.7,43.9,39.4,43.6z M30.6,48.7l2.7-1.6c0.9-0.5,2.4-0.5,3.3,0l4.2,2.4  c0.9,0.5,0.9,1.4,0,1.9L38.1,53c-0.9,0.5-2.4,0.5-3.3,0l-4.2-2.4C29.7,50.1,29.7,49.2,30.6,48.7z" />
@@ -149,11 +148,9 @@ defmodule DojoWeb.SVGComponents do
           <path
             d="m 2.4653667,-78.002117 c -18.7786657,-0.259297 -35.6567147,11.767015 -41.8739357,29.907975 -6.217221,18.14096 -0.346643,38.3346964 14.523537,50.0735544 l 1.668037,1.318374 2.50927,-3.488023 -1.660858,-1.318374 C -35.827878,-12.135452 -41.085772,-30.27024 -35.482947,-46.618009 c 5.602824,-16.348927 20.843832,-27.243069 37.8908497,-27.007782 17.0470173,0.23539 25.7855143,9.633935 30.9528503,26.130205 5.347746,9.780215 6.620015,0.235485 -8.095387,46.6446194 l -1.704002,1.265648 2.422982,3.563353 1.696824,-1.265609 C 42.856285,-8.6121746 49.268243,-28.64121 43.534734,-46.948413 37.801226,-65.255616 21.244548,-77.742376 2.4669867,-78.001577 Z"
             color="#000000"
-            color-rendering="auto"
             dominant-baseline="auto"
             fill-rule="evenodd"
             image-rendering="auto"
-            solid-color="#000000"
             style="font-variant-ligatures:normal;font-variant-position:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-alternates:normal;font-feature-settings:normal;text-indent:0;text-decoration-line:none;text-decoration-style:solid;text-decoration-color:#000000;text-transform:none;text-orientation:mixed;white-space:normal;shape-padding:0;isolation:auto;mix-blend-mode:normal;fill:url(#pattern14);fill-opacity:1;stroke:none;stroke-width:0;stroke-dasharray:none;stroke-opacity:1;paint-order:stroke markers fill"
           />
           <g
@@ -164,10 +161,8 @@ defmodule DojoWeb.SVGComponents do
             <path
               d="M 4.0508,9.0645 3.71291,9.51958 c -2.6877885,3.621873 -2.1106012,8.412183 -0.5024052,12.249961 0.2089107,0.498541 -0.2675899,1.081308 0.00232,1.556542 0.4695031,0.826675 0.7359707,2.046696 1.4688565,2.767832 4.3975,4.3275 11.7419337,4.502965 17.1559337,1.362965 5.4144,-3.1399 7.7536,-9.4541 5.5527,-15.078 l -0.20508,-0.52734 -1.0566,0.41211 0.20703,0.5293 c 1.9975,5.1043 -0.09673,10.8 -5.0664,13.682 -4.9697,2.882 -11.4400001,2.1013 -15.4590001,-1.8535 C 4.957482,23.782294 4.2512495,23.818129 3.7189622,22.829225 1.7426685,19.157587 2.0062742,13.721388 4.62276,10.19545 L 4.96065,9.74037 Z"
               color="#000000"
-              color-rendering="auto"
               dominant-baseline="auto"
               image-rendering="auto"
-              solid-color="#000000"
               style="font-variant-ligatures:normal;font-variant-position:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-alternates:normal;font-feature-settings:normal;text-indent:0;text-decoration-line:none;text-decoration-style:solid;text-decoration-color:#000000;text-transform:none;text-orientation:mixed;white-space:normal;shape-padding:0;isolation:auto;mix-blend-mode:normal;fill:url(#pattern14);fill-opacity:1;stroke:none;stroke-width:0;stroke-dasharray:none;stroke-opacity:1;paint-order:stroke markers fill"
             />
           </g>
@@ -333,7 +328,6 @@ defmodule DojoWeb.SVGComponents do
       version="1.1"
       class={@class}
       viewBox="0 0 100 100"
-      style="enable-background:new 0 0 100 100;"
       xml:space="preserve"
     >
       <g i:extraneous="self">
@@ -426,7 +420,6 @@ defmodule DojoWeb.SVGComponents do
       version="1.1"
       class={@class}
       viewBox="0 0 84.220417 85.000316"
-      enable-background="new 0 0 100 100"
       xml:space="preserve"
       width="84.220421"
       height="85.00032"
@@ -492,19 +485,19 @@ defmodule DojoWeb.SVGComponents do
       <g transform="translate(1.4065934065934016 1.4065934065934016) scale(2.81 2.81)">
         <path
           d="M 42.918 50.129 c -1.144 0 -2.277 -0.497 -3.054 -1.454 c -1.367 -1.685 -1.108 -4.159 0.577 -5.526 l 22.419 -18.18 c 1.685 -1.364 4.159 -1.108 5.526 0.577 c 1.366 1.686 1.108 4.159 -0.577 5.526 L 45.39 49.251 C 44.662 49.842 43.787 50.129 42.918 50.129 z"
-          style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 10; ; fill-rule: nonzero; opacity: 1;"
+          style="fill-rule: nonzero"
           transform=" matrix(1 0 0 1 0 0) "
           stroke-linecap="round"
         />
         <path
           d="M 71.946 43.083 c -1.343 0 -2.648 -0.69 -3.381 -1.924 l -6.608 -11.133 c -1.108 -1.865 -0.493 -4.276 1.372 -5.383 c 1.866 -1.107 4.277 -0.492 5.383 1.373 l 4.664 7.857 l 10.793 -5.967 c 1.9 -1.05 4.289 -0.361 5.339 1.537 c 1.049 1.899 0.362 4.289 -1.537 5.339 l -14.128 7.81 C 73.242 42.925 72.59 43.083 71.946 43.083 z"
-          style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 10; a; fill-rule: nonzero; opacity: 1;"
+          style="fill-rule: nonzero"
           transform=" matrix(1 0 0 1 0 0) "
           stroke-linecap="round"
         />
         <path
           d="M 38.608 34.788 c -1.203 0 -2.391 -0.551 -3.161 -1.593 c -1.29 -1.744 -0.922 -4.204 0.822 -5.494 l 11.837 -8.758 c 1.092 -0.808 2.525 -0.995 3.787 -0.492 l 14.893 5.92 c 2.016 0.801 3.001 3.085 2.199 5.102 c -0.801 2.017 -3.086 3 -5.101 2.2 l -12.862 -5.112 l -10.08 7.458 C 40.239 34.537 39.42 34.788 38.608 34.788 z"
-          style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 10; ; fill-rule: nonzero; opacity: 1;"
+          style="fill-rule: nonzero"
           transform=" matrix(1 0 0 1 0 0) "
           stroke-linecap="round"
         />
@@ -512,42 +505,42 @@ defmodule DojoWeb.SVGComponents do
           cx="76.622"
           cy="19.962"
           r="6.782"
-          style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 10; ; fill-rule: nonzero; opacity: 1;"
+          style="fill-rule: nonzero"
           transform="  matrix(1 0 0 1 0 0) "
         />
         <path
           d="M 20.115 74.459 c -1.237 0 -2.455 -0.582 -3.219 -1.673 c -1.246 -1.776 -0.816 -4.226 0.96 -5.472 l 15.626 -10.962 l 5.916 -11.901 c 0.966 -1.943 3.325 -2.733 5.266 -1.77 c 1.943 0.966 2.735 3.324 1.77 5.266 l -6.36 12.795 c -0.292 0.587 -0.726 1.091 -1.262 1.467 L 22.368 73.746 C 21.681 74.228 20.894 74.459 20.115 74.459 z"
-          style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 10; ; fill-rule: nonzero; opacity: 1;"
+          style="fill-rule: nonzero"
           transform=" matrix(1 0 0 1 0 0) "
           stroke-linecap="round"
         />
         <path
           d="M 57.856 56.365 c -0.504 0 -1.017 -0.098 -1.511 -0.304 l -14.943 -6.235 c -2.002 -0.835 -2.948 -3.136 -2.112 -5.138 c 0.836 -2.002 3.137 -2.946 5.138 -2.112 L 59.37 48.81 c 2.003 0.835 2.948 3.136 2.113 5.138 C 60.854 55.455 59.394 56.365 57.856 56.365 z"
-          style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 10; ; fill-rule: nonzero; opacity: 1;"
+          style="fill-rule: nonzero"
           transform=" matrix(1 0 0 1 0 0) "
           stroke-linecap="round"
         />
         <path
           d="M 50.014 76.82 c -0.467 0 -0.943 -0.083 -1.405 -0.261 c -2.026 -0.777 -3.039 -3.049 -2.262 -5.075 l 7.842 -20.456 c 0.777 -2.026 3.048 -3.04 5.075 -2.263 s 3.038 3.049 2.263 5.075 l -7.843 20.456 C 53.084 75.86 51.594 76.82 50.014 76.82 z"
-          style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 10; ; fill-rule: nonzero; opacity: 1;"
+          style="fill-rule: nonzero"
           transform=" matrix(1 0 0 1 0 0) "
           stroke-linecap="round"
         />
         <path
           d="M 31.603 45.981 H 1.964 C 0.879 45.981 0 45.102 0 44.017 c 0 -1.085 0.879 -1.964 1.964 -1.964 h 29.639 c 1.085 0 1.964 0.879 1.964 1.964 C 33.568 45.102 32.688 45.981 31.603 45.981 z"
-          style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 10; ; fill-rule: nonzero; opacity: 1;"
+          style="fill-rule: nonzero"
           transform=" matrix(1 0 0 1 0 0) "
           stroke-linecap="round"
         />
         <path
           d="M 27.581 35.524 H 9.204 c -1.085 0 -1.964 -0.879 -1.964 -1.964 s 0.879 -1.964 1.964 -1.964 h 18.377 c 1.085 0 1.964 0.879 1.964 1.964 S 28.666 35.524 27.581 35.524 z"
-          style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 10; ; fill-rule: nonzero; opacity: 1;"
+          style="fill-rule: nonzero"
           transform=" matrix(1 0 0 1 0 0) "
           stroke-linecap="round"
         />
         <path
           d="M 25.168 56.438 H 9.204 c -1.085 0 -1.964 -0.879 -1.964 -1.964 s 0.879 -1.964 1.964 -1.964 h 15.964 c 1.085 0 1.964 0.879 1.964 1.964 S 26.253 56.438 25.168 56.438 z"
-          style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-linejoin: miter; stroke-miterlimit: 10; ; fill-rule: nonzero; opacity: 1;"
+          style="fill-rule: nonzero"
           transform=" matrix(1 0 0 1 0 0) "
           stroke-linecap="round"
         />
@@ -1009,7 +1002,7 @@ defmodule DojoWeb.SVGComponents do
         transform="translate(-5.0023437,-957.58561)"
       >
         <path
-          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:medium;line-height:normal;font-family:sans-serif;text-indent:0;text-align:start;text-decoration:none;text-decoration-line:none;text-decoration-style:solid;text-decoration-color:#000000;letter-spacing:normal;word-spacing:normal;text-transform:none;writing-mode:lr-tb;direction:ltr;baseline-shift:baseline;text-anchor:start;white-space:normal;clip-rule:nonzero;display:inline;overflow:visible;visibility:visible;opacity:1;isolation:auto;mix-blend-mode:normal;color-interpolation:sRGB;color-interpolation-filters:linearRGB;solid-color:#000000;solid-opacity:1;stroke:none;stroke-width:5.59297;stroke-linecap:square;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;color-rendering:auto;image-rendering:auto;shape-rendering:auto;text-rendering:auto;"
+          stroke="none"
           d="m 50.256286,957.58931 a 4.2683675,4.2683675 0 0 0 -4.3324,4.1991 l -0.96028,31.9339 c -0.12463,3.9215 -2.94207,4.8676 -5.33715,3.7211 l -28.45961,-13.6218 a 4.2683675,4.2683675 0 0 0 -2.0650501,-0.4401 4.2683675,4.2683675 0 0 0 -1.62049,8.1402 l 30.1289901,14.42209 h 0.007 c 2.05785,1.0942 2.53171,1.2835 3.95896,2.7453 0.23162,0.248 0.47166,0.4864 0.7002,0.7379 2.73484,3.01 5.23486,6.2827 7.5356,9.7206 l -7.08879,24.0873 a 2.9878573,2.9878573 0 1 0 5.7306,1.6872 l 5.76172,-19.5726 c 0.87251,-2.9642 0.88983,-2.9913 3.54106,-4.5502 0.018,-0.011 0.024,-0.016 0.0422,-0.026 l 0.94695,-0.5558 2.53187,-1.4894 0.92916,-0.5468 0.02,-0.011 c 2.09341,-1.2305 2.1076,-1.2302 4.59248,-0.2934 l 24.10942,9.0895 a 2.9878573,2.9878573 0 1 0 2.10952,-5.5907 l -28.59298,-10.7788 c -2.63788,-4.0263 -5.5796,-7.8864 -8.80707,-11.53229 l 0.54905,0.598 c -2.78087,-3.0296 -2.74882,-3.8171 -2.64523,-7.2488 l 0.91583,-30.3714 a 4.2683675,4.2683675 0 0 0 -4.20125,-4.4568 z m 29.57328,30.3068 v 4.0279 h -3.18317 c -6.52453,0 -12.76053,1.2367 -18.50552,3.4655 0.21316,0.294 0.57072,0.7369 1.17812,1.4004 l 0.0114,0.014 -0.0489,0.044 c 1.07046,1.2266 2.09378,2.4863 3.09426,3.76099 4.48383,-1.49609 9.27786,-2.31849 14.27094,-2.31849 h 3.18316 v 4.02799 l 6.24409,-3.60559 6.24409,-3.6054 -6.24409,-3.6056 -6.24409,-3.6056 z m -42.69719,22.63799 c -7.36532,8.8851 -11.79909,20.2849 -11.79908,32.7052 v 3.1833 h 6.36412 v -3.1833 c -10e-6,-10.6247 3.67686,-20.3694 9.81849,-28.055 -0.77637,-0.9849 -1.56842,-1.9494 -2.3985,-2.8631 -0.11845,-0.1304 -0.33495,-0.3502 -0.59572,-0.6268 h -0.002 c -0.69129,-0.7081 -0.97989,-0.9341 -1.38708,-1.1603 z m 27.59268,8.6935 c -4.19738,0 -7.61117,3.4139 -7.61117,7.6113 10e-4,4.2235 3.41493,7.6111 7.61117,7.6111 4.22355,0 7.64673,-3.3876 7.64673,-7.6111 0,-4.1974 -3.42318,-7.6113 -7.64673,-7.6113 z"
         />
       </g>
@@ -1087,7 +1080,7 @@ defmodule DojoWeb.SVGComponents do
 
   def cmd_icon(%{command: _} = assigns) do
     ~H"""
-    <svg class={@class} viewBox="0 0 100 125" enable-background="new 0 0 100 100" xml:space="preserve">
+    <svg class={@class} viewBox="0 0 100 125" xml:space="preserve">
       <path d="M94.543,48.617H77.999c0,0,41.751-17.072-2.628-26.157c-0.027,0.022-2.246-0.353-2.246-0.353S70.5,12.539,70.5,11.67  c0-2.983-3.95-5.75-7.047-6.068c-0.027,0-1.727-0.496-4.223,0.056c-2.104,0.464-3.773,0.962-6.462,1.229  C48.59,7.303,43.99,7.243,40.335,7.652c-2.877,0.394-3.941,1.809-4.378,2.372C35.562,10.534,27.449,25.112,26,27.17  c-0.151,0.215,0.188-3.332,0.188-3.332s-38.854,10.542-8.166,24.779C18,48.463,0,48.758,0,48.758l17.6,24.076  c0,0-4.475,4.961-6.475,7.461s-6.338,12.25-6.338,12.25h88.137c0,0-3.02-14.21-10.138-22.244c-0.169-0.191-6.064,2.917-6.007,2.628  C76.827,72.695,94.543,48.617,94.543,48.617z M50.967,63.166c-7.978,0.938-10.402-1.399-12.092-4.496  c0.281,0-4.615,3.839-9.965,2.056c-5.351-1.783-7.737-10.245-6.477-9.861c5.948,1.81,23.519,5.61,36.694,3.098  C61.988,53.416,58.945,62.229,50.967,63.166z" /><path d="M80.426,67.639" />
     </svg>
     """

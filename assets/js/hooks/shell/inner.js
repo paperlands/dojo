@@ -21,6 +21,7 @@ import { commands, listeners, mutators } from "./core.js"
 import { register, outerDrafting } from "./term-cell.js"
 import { createArena } from "../../kernel/arena.js"
 import { attach } from "../../kernel/attach.js"
+import { safePush } from "../../adapter.js"
 
 // Events registered at mounted(); handlers returned once mount() stands.
 export const inner = {
@@ -259,7 +260,7 @@ function mountInner(hook, { term, cm6 }) {
     }));
 
     const pacedHatch = temporal.pace(
-        (payload) => hook.pushEvent("hatchTurtle", {
+        (payload) => safePush(hook, "hatchTurtle", {
             ...payload,
             buffer_id: term.currentBufferId(),
         }),
@@ -425,7 +426,7 @@ function mountInner(hook, { term, cm6 }) {
     // Editor listeners last, so they release FIRST: a keystroke or selection
     // landing mid-teardown must not reach organs already let go.
     arena.add(listeners.keyboard(term.shell, cm6).mount());
-    arena.add(listeners.selection(term.selectionBridge, hook.pushEvent.bind(hook)).mount());
+    arena.add(listeners.selection(term.selectionBridge, (e, p) => safePush(hook, e, p)).mount());
     arena.add(listeners.theme(theme => term.setOption('theme', theme)).mount());
     arena.add(slider.mount());
     arena.add(listeners.slider(term.shell, slider, cm6).mount());

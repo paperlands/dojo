@@ -4,6 +4,7 @@
 
 import { createCell } from '../kernel/cell.js'
 import { createNerve } from '../nerve.js'
+import { safePush } from '../adapter.js'
 
 const cell = createCell()
 
@@ -18,7 +19,7 @@ export const nerveSeat = { get: nerve, watch: watchNerve }
 
 const NerveHook = {
     mounted() {
-        const pushEvent = (event, payload) => this.pushEvent(event, payload)
+        const pushEvent = (event, payload) => safePush(this, event, payload)
         // Held on the hook, not the module: teardown destroys ITS OWN
         // instance even when a successor already holds the seat.
         this.nerve = createNerve(this.el, pushEvent)

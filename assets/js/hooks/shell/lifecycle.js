@@ -16,6 +16,14 @@
 //             zombie-mounting over a torn-down hook (leaked listeners, nerve
 //             claims, Terminals on detached elements).
 //
+// THE DOOR IS WINDOW, NOT "SERVER ONLY." LiveView's handleEvent is exactly
+// window.addEventListener("phx:"+name, e => cb(e.detail)). Origins may be
+// server push_event, client window.dispatchEvent / dispatchPhx (weave local
+// open), or Elixir JS.dispatch (close_js → body; bubbles defaults true so
+// it reaches window). This file owns WHEN we register; origin does not
+// matter. A LV upgrade that moves that listener is a silent break — pin
+// it in lifecycle_test (the window-dispatch bridge).
+//
 // LIVENESS IS THE HOOK'S ARENA, and nothing else. A `dead` flag here and an
 // `alive` region there meant every async continuation asked whichever its
 // author remembered. The surface's arena is adopted into the hook's — one

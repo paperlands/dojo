@@ -1,3 +1,5 @@
+import { safePush } from "../adapter.js"
+
 const DiscipleWindow = {
   mounted() {
     // Visibility tracking: set of names currently visible
@@ -217,7 +219,7 @@ const DiscipleWindow = {
       // sort for consistent order
       visibleArray.sort();
 
-      this.pushEvent("seeDisciples", {
+      safePush(this, "seeDisciples", {
         visible_disciples: visibleArray
       });
     }, this.debounceDelay);

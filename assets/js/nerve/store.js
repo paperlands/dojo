@@ -7,6 +7,7 @@
 // (matchPattern) lives inside a projection, never here.
 
 import { createObservable } from "../kernel/observable.js"
+import { stamp } from "../utils/stamp.js"
 
 export const CHANNELS = {
     system: { fadeMs: 15000, zone: 'status', css: 'nerve-system' },
@@ -89,9 +90,11 @@ export function createSignalStore(opts = {}) {
             ...raw,
             id: ++counter,
             epoch,
-            // ts belongs to the SOURCE (gw-t-clock). Cross-boundary keeps arrival clock.
-            // Peer order is per-source (source, id) — honestly partial globally.
-            ts: raw.ts ?? performance.now(),
+            // ts belongs to the SOURCE (gw-t-clock / lvdx-clock). Wall-clock ms
+            // only — never performance.now() on a boundary-crossing stamp.
+            // `t` alone: the envelope is compared across hands, where n means
+            // nothing. Peer order is per-source (source, id) — partial globally.
+            ts: raw.ts ?? stamp().t,
             living: raw.living === true,  // boolean breath, never truthy string
         }
         log.unshift(signal)

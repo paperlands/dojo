@@ -17,6 +17,14 @@ defmodule DojoWeb.ShellLive do
   [canvas]     [canvas]
   """
 
+  # ShellLive only (lvdx-9). Real Module attributes — Phoenix html/tag engines
+  # read them and stop emitting data-phx-loc / HEEx source annotations on every
+  # node. Without this the morph tree drowns in debug attrs; with it, a future
+  # reader must not "clean up dead code." Unrelated to the data-* mergeAttrs
+  # trap on phx-update=ignore islands — that is JS.ignore_attributes (lvdx-2).
+  @debug_heex_annotations false
+  @debug_attributes false
+
   def mount(_params, _session, socket) do
     {:ok,
      socket
@@ -137,7 +145,7 @@ defmodule DojoWeb.ShellLive do
       socket =
         case OuterShell.render_intent(shell) do
           {:push, source} ->
-            push_event(socket, "seeOuterShell", outer_shell_payload(source, shell))
+            push_event(socket, "seeOuterShell", OuterShell.payload(source, shell))
 
           :hold ->
             socket
@@ -228,10 +236,6 @@ defmodule DojoWeb.ShellLive do
   end
 
   # --- OuterShell LiveComponent messages ---
-
-  def handle_info({:outer_shell, :close}, socket) do
-    {:noreply, reset_outershell(socket)}
-  end
 
   def handle_info({:outer_shell, :toggle_follow}, socket) do
     # The LiveView owns the authoritative follow flag; the component emits a bare
@@ -355,7 +359,7 @@ defmodule DojoWeb.ShellLive do
 
         {:noreply,
          socket
-         |> push_event("seeOuterShell", outer_shell_payload(turtle, outershell))
+         |> push_event("seeOuterShell", OuterShell.payload(turtle, outershell))
          |> assign(:outershell, outershell)}
 
       _ ->
@@ -363,11 +367,8 @@ defmodule DojoWeb.ShellLive do
     end
   end
 
-  # The weave invokes the outershell (Shoot 0): a fragment page is a document,
-  # handled as documents are — a non-live friend named the library. The client
-  # fetched, PRESSED, and parsed the org (the server never parses org —
-  # the dojo_web.ex fence); this handler only ferries the pressed buffer into
-  # the one review surface. ts rides the source's clock (decision 008).
+  # Weave open is client-local (lvdx-5). This event only informs chrome assigns —
+  # never re-pushes seeOuterShell (that was the ferry).
   def handle_event(
         "seeWeave",
         %{"addr" => addr, "name" => name, "source" => source} = payload,
@@ -388,19 +389,15 @@ defmodule DojoWeb.ShellLive do
         turtle
       )
 
-    # The sibling-cell split is DERIVED client-side from the commands
-    # (phaseCells over the one AST; page-ness follows the document) — nothing
-    # rides beside the pressed buffer. Ferried, not parsed.
-    {:noreply,
-     socket
-     |> push_event("seeOuterShell", outer_shell_payload(turtle, outershell))
-     |> assign(:outershell, outershell)}
+    {:noreply, assign(socket, :outershell, outershell)}
   end
 
+  # Empty seeTurtle = close. Server must tell the client (no prior close_js).
   def handle_event("seeTurtle", _, socket) do
-    {:noreply, reset_outershell(socket)}
+    {:noreply, reset_outershell(socket, notify: true)}
   end
 
+  # Client already ran close_js (flag + outerClose). Assigns only.
   def handle_event("closeTurtle", _, socket) do
     {:noreply, reset_outershell(socket)}
   end
@@ -642,28 +639,20 @@ defmodule DojoWeb.ShellLive do
   # Apply a view/stream change: persist it, then push the source if one is due.
   # The view/stream ride the seeOuterShell payload, so JS configures the editor
   # (read-only watch vs editable merge) from that alone.
-  # The single definition of "close/reset the outershell" — reached by the
-  # component's :close intent, the close button, and switching away (seeTurtle).
-  defp reset_outershell(socket), do: assign(socket, :outershell, %OuterShell{})
+  # Chrome assigns only. Client owns open flag + canvas cleanup.
+  # notify: true when the server closes without a prior close_js (empty seeTurtle).
+  defp reset_outershell(socket, opts \\ []) do
+    socket = assign(socket, :outershell, %OuterShell{})
+    if opts[:notify], do: push_event(socket, "outerClose", %{}), else: socket
+  end
 
   defp apply_outer_view(socket, %OuterShell{} = shell) do
     socket = assign(socket, :outershell, shell)
 
     case OuterShell.render_intent(shell) do
-      {:push, source} -> push_event(socket, "seeOuterShell", outer_shell_payload(source, shell))
+      {:push, source} -> push_event(socket, "seeOuterShell", OuterShell.payload(source, shell))
       :hold -> socket
     end
-  end
-
-  # The friend's execution status for the remote nerve — independent of whether
-  # the editor content is pushed (held back during a frozen draft).
-  defp outer_shell_payload(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
-    turtle
-    |> Map.from_struct()
-    |> Map.put(:addr, shell.addr)
-    |> Map.put(:origin_name, shell.name)
-    |> Map.put(:view, shell.view)
-    |> Map.put(:stream, shell.stream)
   end
 
   def export(assigns) do

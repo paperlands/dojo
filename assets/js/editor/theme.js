@@ -199,7 +199,7 @@ const abbottDark = ({ EditorView, HighlightStyle, syntaxHighlighting, tags }) =>
             '&:before': {
                 content: '"✶"',
                 color: ERROR_RED,
-                textShadow: `0 0 6px ${PHOSPHOR}99`,
+                textShadow: '0 0 6px rgb(240 168 61 / 0.6)',
                 fontSize: '10px',
                 lineHeight: '1.4',
             },

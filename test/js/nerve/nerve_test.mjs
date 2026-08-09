@@ -174,18 +174,22 @@ describe("nerve store: claims route, residual is the rest", () => {
     })
 })
 
-describe("nerve store: the clock law (gw-t-clock)", () => {
+describe("nerve store: the clock law (gw-t-clock / lvdx-clock)", () => {
     test("a boundary-crossing signal keeps its source's ts", () => {
         const store = createSignalStore()
         store.push({ msg: "hello", source: "kai", kind: "chat", ts: 12345 })
         assert.equal(store.signals[0].ts, 12345, "ts belongs to the source — never replaced")
     })
 
-    test("a locally-born signal (no ts) is stamped here", () => {
+    test("a locally-born signal (no ts) is stamped with wall clock, not performance.now()", () => {
         const store = createSignalStore()
-        const before = performance.now()
+        const before = Date.now()
         store.push(S.shout("sky", "tick", 1))
-        assert.ok(store.signals[0].ts >= before, "local signals get the local clock")
+        const ts = store.signals[0].ts
+        const after = Date.now()
+        assert.ok(ts >= before && ts <= after + 5, "local signals get wall-clock ms")
+        // performance.now() is typically << 1e12; wall clock is ~1.7e12
+        assert.ok(ts > 1e12, "ts is wall-clock epoch ms, not navigation-relative")
     })
 })
 

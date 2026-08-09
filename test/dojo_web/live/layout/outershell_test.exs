@@ -151,6 +151,45 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
     end
   end
 
+  describe "payload/2 — the seeOuterShell envelope (dual of JS OUTER_SHELL_KEYS)" do
+    test "emits exactly payload_keys — every Turtle field plus shell overlay" do
+      turtle = %Turtle{
+        state: :success,
+        source: "fw 10",
+        commands: [],
+        diagnostics: [],
+        time: 1,
+        path: "frames/x.png",
+        attend: %{line: 2},
+        buffer_id: "buf-1"
+      }
+
+      shell = %OuterShell{addr: "alice", name: "Alice", view: :watch, stream: true}
+      payload = OuterShell.payload(turtle, shell)
+
+      assert Map.keys(payload) |> Enum.sort() == OuterShell.payload_keys() |> Enum.sort()
+      assert map_size(payload) == 12
+      assert payload.addr == "alice"
+      assert payload.origin_name == "Alice"
+      assert payload.view == :watch
+      assert payload.stream == true
+      assert payload.source == "fw 10"
+      assert payload.path == "frames/x.png"
+      assert payload.attend == %{line: 2}
+      assert payload.buffer_id == "buf-1"
+    end
+
+    test "nil Turtle fields stay present as nil — not dropped (key absence is not the contract)" do
+      payload = OuterShell.payload(%Turtle{state: :success, source: "fw"}, %OuterShell{addr: "a"})
+      assert Map.has_key?(payload, :path)
+      assert Map.has_key?(payload, :attend)
+      assert Map.has_key?(payload, :buffer_id)
+      assert payload.path == nil
+      assert payload.attend == nil
+      assert payload.buffer_id == nil
+    end
+  end
+
   describe "errored?/1 — when recall is offered" do
     test "true only while watching a friend whose current code errors" do
       assert OuterShell.errored?(%OuterShell{view: :watch, origin: err()})
