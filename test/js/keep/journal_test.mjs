@@ -135,6 +135,26 @@ describe("journal: list is newest-first; local is a number", () => {
             ["c", "b"],
         )
     })
+
+    test("local(root, n) caps at n — newest kept-local first (id:kb-8-page)", async () => {
+        // n bounds the shared fold; announce still drains local(root) whole.
+        const ids = []
+        for (let i = 0; i < 8; i++) {
+            ids.push(await j.put(snap(root, { i }, { t: 2000 + i, n: 0 })))
+        }
+        // Share the five oldest → kept local is i = 5,6,7.
+        for (let i = 0; i < 5; i++) {
+            await j.share(ids[i], { at: i, node: "n" })
+        }
+        const top = await j.local(root, 2)
+        assert.equal(top.length, 2)
+        assert.deepEqual(
+            top.map((x) => read(x).i),
+            [7, 6],
+            "newest two kept-local, not the whole unshipped set",
+        )
+        assert.equal((await j.local(root)).length, 3)
+    })
 })
 
 describe("journal: share is a fact beside; genesis is once", () => {
@@ -304,12 +324,10 @@ describe("journal: projection rebuild IS the upgrade", () => {
                 row.local = 1 // lie: shared but local=1
                 store.put(row)
             }
+            // Auto-commit when requests drain — no _commit hook (finding 4).
             tx.oncomplete = resolve
             tx.onerror = () => reject(tx.error)
-            if (typeof tx._commit === "function") {
-                // allow the get/put microtasks then commit
-                queueMicrotask(() => queueMicrotask(() => tx._commit()))
-            }
+            tx.onabort = () => reject(tx.error || new Error("abort"))
         })
         raw.close()
         await j1.close()
@@ -343,6 +361,84 @@ describe("journal: what it is not", () => {
             const held = await j.local(root)
             assert.equal(held.length, 2)
             // No high-water, no seq — the query is the mark.
+        } finally {
+            await j.close()
+        }
+    })
+})
+
+describe("journal: projection floor — ts that will never project is refused", () => {
+    // Mirror of kb-11-derive on the client (finding 1). Measured: put with
+    // ts:null stores the row, get finds it, list/local return empty — silent
+    // forever. Loud at the seam beats that.
+
+    test("missing ts is refused — not stored invisible", async () => {
+        const j = freshJournal()
+        const root = "j".repeat(64)
+        try {
+            const bytes = write("snap", { tag: "ghost" }, {
+                root,
+                target: "b".repeat(64),
+                // ts defaults to null in write()
+            })
+            await assert.rejects(
+                () => j.put(bytes),
+                (e) => /ts will never project/.test(e.message),
+            )
+            // Nothing landed under a name we can list.
+            assert.equal((await j.list(root)).length, 0)
+            // get by derived name is also empty — we never wrote.
+            assert.equal(await j.get(name(bytes)), undefined)
+        } finally {
+            await j.close()
+        }
+    })
+
+    test("string ts.t is refused — valid key, wrong type, outside the range", async () => {
+        const j = freshJournal()
+        const root = "k".repeat(64)
+        try {
+            // Bypass write()'s shape: author a string with a non-numeric t.
+            const bytes = JSON.stringify({
+                tag: "bad",
+                v: 1,
+                kind: "snap",
+                root,
+                ts: { t: "not-a-number", n: 0 },
+                target: "b".repeat(64),
+            })
+            await assert.rejects(
+                () => j.put(bytes),
+                (e) => /ts will never project/.test(e.message),
+            )
+            assert.equal((await j.list(root)).length, 0)
+        } finally {
+            await j.close()
+        }
+    })
+
+    test("a good ts is listed — the floor does not eat honest work", async () => {
+        const j = freshJournal()
+        const root = "l".repeat(64)
+        try {
+            const bytes = snap(root, { tag: "ok" }, { t: 1, n: 0 })
+            const id = await j.put(bytes)
+            assert.equal((await j.list(root)).length, 1)
+            assert.equal(await j.get(id), bytes)
+        } finally {
+            await j.close()
+        }
+    })
+})
+
+describe("journal: empty source is stored, not a tombstone", () => {
+    test("put with source:'' stores under name('')", async () => {
+        const j = freshJournal()
+        const root = "m".repeat(64)
+        try {
+            const bytes = snap(root, { source_id: name("") }, { t: 1, n: 0 })
+            await j.put(bytes, { source: "" })
+            assert.equal(await j.source(name("")), "")
         } finally {
             await j.close()
         }

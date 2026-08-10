@@ -18,6 +18,7 @@ import { buildExtensions, reapplyCompartments } from "./terminal/extensions.js"
 import { revealAmbient } from "./nerve/reveal.js"
 import { defaultAttend } from "./editor/plang-mode.js"
 import { get } from "./hooks/shell/term-cell.js"
+import { nonce } from "./keep/genesis.js"
 
 const DEFAULT_OPTIONS = { theme: 'abbott', mode: 'plang' };
 
@@ -50,6 +51,16 @@ const DEFAULT_OPTIONS = { theme: 'abbott', mode: 'plang' };
 export const createTerminal = (element, cm6, options = {}) => {
     const opts = { ...DEFAULT_OPTIONS, ...options };
     const names = createNameGen();
+    // Every mint this terminal makes, in one bag — so the next continuant is a
+    // key here, not a fourth positional everywhere (id:kb-2a). ONE injection
+    // point: opts.mints replaces the whole bag or none of it.
+    // work is the second continuant (id:kb-work): the same draw as genesis's
+    // nonce, hex64 — the work's name IS the draw, not name(entry).
+    const mints = opts.mints ?? {
+        name: names,
+        id: idGen,
+        work: () => nonce(globalThis.crypto.getRandomValues.bind(globalThis.crypto)),
+    };
 
     const bridge = bridged("terminal");
     const selectionBridge = bridged("terminal.selection");
@@ -71,6 +82,9 @@ export const createTerminal = (element, cm6, options = {}) => {
         mergeOriginals: new Map(),  // addr → latest outershell content (for lazy merge updates)
         mergeActive: false,           // true while outershell mode is active
         drafting: false,              // outer review surface: editing a draft in place
+        // River standing on a keep/draft: show foreign text without writing the
+        // head buffer. Losing the head on refresh is fatal.
+        projecting: false,
     };
 
     let shell = null;         // CM6 EditorView — inherently mutable
@@ -205,6 +219,14 @@ export const createTerminal = (element, cm6, options = {}) => {
 
         currentBufferId() { return state.collection?.currentId; },
 
+        // The work the current tab is of — target on a keep (id:kb-work).
+        // Beside currentBufferId so the mint receives both without closing over
+        // pacedHatch (id:kb-vet2-work, id:kb-7).
+        currentWorkId() {
+            if (!state.collection) return null;
+            return buffers.currentBuffer(state.collection)?.work_id ?? null;
+        },
+
         currentBufferName() {
             const id = state.collection?.currentId;
             return id ? state.collection.items.get(id)?.name : null;
@@ -223,19 +245,22 @@ export const createTerminal = (element, cm6, options = {}) => {
         inner() {
             const { extensions, compartments } = buildExtensions(cm6, {
                 onDocChange: (content) => {
-                    // 1. Write-through: the displayed buffer's content lands in
-                    // the collection on every change — the single content
-                    // writer, keyed by the surface the edit landed on.
                     const id = state.projectedId;
-                    if (id) {
-                        state.collection = buffers.updateContent(state.collection, id, content);
+                    // Projecting a keep/draft: the canvas still breathes, but
+                    // the head buffer is not the surface under the fingers.
+                    if (!state.projecting) {
+                        // 1. Write-through: the displayed buffer's content lands
+                        // in the collection — the single content writer.
+                        if (id) {
+                            state.collection = buffers.updateContent(state.collection, id, content);
+                        }
+                        // 2. Autosave (scheduled effect). Nothing tracks "dirty":
+                        // destroy() and the two page listeners all save, so the
+                        // pending timer is the only unsaved state there is.
+                        clearTimeout(state.autosaveTimer);
+                        state.autosaveTimer = setTimeout(saveToStorage, 500);
                     }
-                    // 2. Autosave (scheduled effect). Nothing tracks "dirty":
-                    // destroy() and the two page listeners all save, so the
-                    // pending timer is the only unsaved state there is.
-                    clearTimeout(state.autosaveTimer);
-                    state.autosaveTimer = setTimeout(saveToStorage, 500);
-                    // 3. Bridge (event effect) — capture identity at publish time
+                    // 3. Bridge always — river drift and the live walk need it.
                     const name = id ? state.collection.items.get(id)?.name : null;
                     bridge.pub({ id, name, content });
                 },
@@ -274,8 +299,8 @@ export const createTerminal = (element, cm6, options = {}) => {
 
             const stored = store.load();
             state.collection = stored
-                ? buffers.loadCollection(stored, names, idGen)
-                : buffers.createCollection(names, idGen);
+                ? buffers.loadCollection(stored, mints)
+                : buffers.createCollection(mints);
 
             // Create EditorState per buffer and populate tab UI
             for (const [id, buffer] of state.collection.items) {
@@ -411,8 +436,38 @@ export const createTerminal = (element, cm6, options = {}) => {
             return editorView.getContent(shell);
         },
 
-        setValue(content) {
+        /**
+         * @param {string} content
+         * @param {{ project?: boolean }} [opts] - project: show without writing the head buffer
+         */
+        setValue(content, { project = false } = {}) {
+            state.projecting = !!project;
             editorView.setContent(shell, content);
+        },
+
+        /** Authored head content (collection), never the projected keep/draft text. */
+        headContent() {
+            const id = state.collection?.currentId;
+            if (!id) return null;
+            return state.collection.items.get(id)?.content ?? null;
+        },
+
+        /** Force the head buffer to this text (heals a clobber after reload). */
+        pinHead(content) {
+            if (typeof content !== "string" || !state.collection) return;
+            const id = state.collection.currentId;
+            if (!id) return;
+            state.projecting = false;
+            state.collection = buffers.updateContent(state.collection, id, content);
+            clearTimeout(state.autosaveTimer);
+            state.autosaveTimer = setTimeout(saveToStorage, 500);
+            if (shell && editorView.getContent(shell) !== content) {
+                editorView.setContent(shell, content);
+            }
+        },
+
+        projecting() {
+            return state.projecting;
         },
 
         setOption(option, value) {
@@ -435,9 +490,10 @@ export const createTerminal = (element, cm6, options = {}) => {
         },
 
         createBuffer(name = '', content = '', origin = null) {
-            const bufferName = name || names();
+            const bufferName = name || mints.name();
+            // Blank tab = new river (id:kb-vet2-work). No work_id in opts.
             const { collection, id } = buffers.addBuffer(
-                state.collection, { name: bufferName, content, origin }, names, idGen
+                state.collection, { name: bufferName, content, origin }, mints
             );
             state.collection = collection;
             state.docs.set(id, createDoc(content));
@@ -477,8 +533,10 @@ export const createTerminal = (element, cm6, options = {}) => {
 
                     const bufferName = name ? `${name}'s fork (merge)` : 'fork (merge)';
                     const origin = { addr, buffer_id, source, time, name };
+                    // Peer fork is a new river for this author — mint work_id.
+                    // Same-river continues via opts.work_id (keep rejoin / same hand).
                     const { collection, id } = buffers.addBuffer(
-                        state.collection, { name: bufferName, content: forkContent, origin }, names, idGen
+                        state.collection, { name: bufferName, content: forkContent, origin }, mints
                     );
                     state.collection = collection;
                     state.docs.set(id, createDoc(forkContent));
@@ -495,7 +553,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             const bufferName = name ? `${name}'s fork` : 'fork';
             const origin = { addr, buffer_id, source, time, name };
             const { collection, id } = buffers.addBuffer(
-                state.collection, { name: bufferName, content: source, origin }, names, idGen
+                state.collection, { name: bufferName, content: source, origin }, mints
             );
             state.collection = collection;
             state.docs.set(id, createDoc(source));

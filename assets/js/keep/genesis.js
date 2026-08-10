@@ -22,7 +22,7 @@ import { write } from "./entry.js"
  *
  * Continuants mint once through this draw. The journal's root is not this
  * value — it is the *name of the genesis entry that carries it*. A work_id is
- * this value directly (workGen = () => nonce(crypto.getRandomValues)).
+ * this value directly — the terminal's `mints.work` (id:kb-2a).
  *
  * `random` has the shape of crypto.getRandomValues: it fills the array it is
  * handed. Never crypto.randomUUID — that throws on the classroom path and

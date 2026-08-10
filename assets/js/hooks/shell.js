@@ -15,6 +15,7 @@ import { bootShell } from "./shell/core.js";
 import { outer as outershell } from "./shell/outer.js";
 import { inner as coreshell } from "./shell/inner.js";
 import { weave } from "./shell/weave.js";
+import { river } from "./shell/river.js";
 import { nerve as seatedNerve } from "./nerve.js";
 import { getStage } from "../turtling/stage-cell.js";
 
@@ -30,9 +31,11 @@ function walkerAddress() {
     }
 }
 
-// Weave is client-lazy: no CM6, no Terminal. Ports only — stage cell + nerve
-// + walker. No getElementById dunder read (gw-t-dom-registry).
+// Weave and river are client-lazy: no CM6, no Terminal. Ports only. The river
+// asks its two cells (keep door, coreshell Terminal) itself, because both may
+// be seated after it — nothing to hand it here (gw-t-dom-registry).
 async function bootFor(hook) {
+    if (hook.el.dataset.target === "river") return {}
     if (hook.el.dataset.target === "weave") {
         return {
             get turtle() { return getStage(); },
@@ -48,7 +51,7 @@ async function bootFor(hook) {
 // coreshell (I write, it runs) and outershell (I watch a friend's lineage).
 const Shell = makeShellHook({
     boot: bootFor,
-    surfaces: { coreshell, outershell, weave },
+    surfaces: { coreshell, outershell, weave, river },
 });
 
 export default Shell;

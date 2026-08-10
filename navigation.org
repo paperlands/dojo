@@ -166,16 +166,136 @@ in the journal ([[file:specs/weave/keep-build.org][keep-build]] =kb-3=).
 =upcast(value)= → view. Empty =STEPS=; first shape change is a one-line append.
 A view has no id and is never written ([[file:specs/weave/keep-build.org][keep-build]] =kb-4=).
 
-** keep journal — durability door engine (worker-bound)
+** keep journal engine — IndexedDB behind the worker
 :PROPERTIES:
-:ID: nav-keep-journal
-:KEYWORDS: keep journal put get list local share image source genesis IndexedDB blob cap self
+:ID: nav-keep-journal-store
+:KEYWORDS: keep journal store put get list local share image source genesis IndexedDB blob cap self
 :PATH: assets/js/keep/journal.store.js
 :END:
 Eight verbs; four stores (log · blobs · source · self). =put= takes bytes, not
-id. =local= is =1|0=. Reverse cursor. Genesis is one readwrite tx over
-=[self, log]=. Worker: =journal.worker.js=; door is step 6
-([[file:specs/weave/keep-build.org][keep-build]] =kb-5=).
+id, and refuses a =ts= that will never project. =local= is =1|0=; =list(root, n)=
+and =local(root, n)= both cap, newest-first by reverse cursor. Genesis is one
+readwrite tx over =[self, log]=. Worker-only; the door never imports this
+([[file:specs/weave/keep-build.org][keep-build]] =kb-5= · =kb-5-floor=).
+
+** keep journal door — the durability door
+:PROPERTIES:
+:ID: nav-keep-journal
+:KEYWORDS: keep journal door put get list local share image source genesis worker root
+:PATH: assets/js/keep/journal.js
+:END:
+Promise-per-call over the worker. Engine never leaks. =root()= is the one way
+to ask who am I. Verbs from =verbs.js=. Hatch path never awaits
+([[file:specs/weave/keep-build.org][keep-build]] =kb-6=).
+
+** keep verbs — one list both sides of the door
+:PROPERTIES:
+:ID: nav-keep-verbs
+:KEYWORDS: keep verbs put get list local share image source genesis
+:PATH: assets/js/keep/verbs.js
+:END:
+Door and worker import the same set — no second list to drift.
+
+** keep snap kind — first kind, the mint
+:PROPERTIES:
+:ID: nav-keep-snap
+:KEYWORDS: keep snap kind writeSnap keepSnap toBlob work_id target source_id title mint
+:PATH: assets/js/keep/kinds/snap.js
+:END:
+=writeSnap= · =toBlob= · =keepSnap=. =target= is =work_id=; source is a blob
+pointer; data URL dies at the mint. Called from =inner.js= *before* the pacer
+([[file:specs/weave/keep-build.org][keep-build]] =kb-7=).
+
+** keep shared — the fold, not a field
+:PROPERTIES:
+:ID: nav-keep-shared
+:KEYWORDS: keep shared fold list local name accept put-then-share clan history page depth source fan
+:PATH: assets/js/keep/shared.js
+:END:
+=shared(list, local)= by =name(bytes)= at the reader — **same depth on both
+reads** (=local(root, n)=; measured 462 ms → 1.2 ms). =accept= is put then share
+— never =put({shared})= — and the *source* rides it. Clan history lands =local:1=
+([[file:specs/weave/keep-build.org][keep-build]] =kb-8= · =kb-8-page=).
+
+** keep river — ofWork fold, self per work
+:PROPERTIES:
+:ID: nav-keep-river
+:KEYWORDS: keep river ofWork fold work versions strip helios atoms ring kept-local land light rig sun shade shadow night mood ladder ignite descent reflection meridian wheel center scroll dusk twilight mirror water sibling line meet prev swap fork
+:PATH: specs/weave/keep-river.org
+:END:
+First keep surface: moments of *this* work. Pure =ofWork(list, work_id)=;
+lit by helios: one sun pinned at the meridian, the river slides (timer-wheel
+detent, position is focus); shade a pure function, inky dusk west / twilight
+east; moods vary the light, never the two words; ignition ladder = a keep's
+one-way day; the water = the mirror — the sibling line forked with same
+provenance, true up to the meet, swap holds the trunk still. Boards + stills
+in =diagrams/keep-river/= (00–04 grammar, 05–09 light, 10–12 meridian+mirror;
+rig in =_light.css=). ([[file:specs/weave/keep-river.org][keep-river]]).
+
+** keep work — the fold that makes a river (and its lines)
+:PROPERTIES:
+:ID: nav-keep-work
+:KEYWORDS: keep work ofWork fold target versions line lines head meet mirror sibling prev parent columns trunk swap divergence page-honesty
+:PATH: assets/js/keep/work.js
+:END:
+=ofWork(listed, work_id)= filters the page by =target=; =linesOf= / =lineOf=
+walk =prev= (author order IS the chain until a fork mints one); =meetOf= is
+derived at the reader; =mirrorOf= picks the nearest sibling by meet;
+=columnsOf= keys trunk columns by keep id and divergent ones by distance —
+*that keying is why a swap holds the trunk still*. Pure, synchronous, never
+written ([[file:specs/weave/keep-river.org][keep-river]] =kr-fold= · =kr-mirror=).
+
+** keep cell — one door, one land breath
+:PROPERTIES:
+:ID: nav-keep-cell
+:KEYWORDS: keep cell door registerDoor getDoor doorSeat landed watchLanded askKeep watchAsk signal breath journal single
+:PATH: assets/js/keep/cell.js
+:END:
+The coreshell opens the journal and seats it here; every other reader asks
+rather than opening a second worker over one database. =landed()= carries
+nothing — the river re-folds and derives the new seat itself
+([[file:specs/weave/keep-build.org][keep-build]] =kb-3-owner=).
+
+** river surface — meridian, mirror, swap
+:PROPERTIES:
+:ID: nav-river-surface
+:KEYWORDS: river surface shell data-target meridian wheel mirror water swap seat ring mark shade sun mood rig ignite land paint atoms light scroll-snap detent present unkept drift title message keep-gesture setValue
+:PATH: assets/js/hooks/shell/river.js
+:END:
+Fourth Shell surface (=data-target="river"=), client-lazy like the weave.
+*The column under the sun is where the child is*: scroll west and =setValue=
+puts that keep's source in the editor, so the canvas redraws it — walking the
+river walks the work. East of every keep stands the PRESENT (the unkept
+buffer); east of that, a local DRAFT when the child edits a past keep —
+never clobbers =unkept=, never a journal row. Two local memories, per work:
+=@paperlands.river.heads= (unkept present — =river/head-memory.js=) and
+=@paperlands.river.drafts= (fork draft — =river/draft-memory.js=). Standing on
+a keep *projects* into the editor (=setValue(…, {project:true})=) so
+write-through cannot kill the head; refresh heals via =pinHead=. Commit lands
+a fork (=prev= = from); × / Escape drops the draft.
+Writing a word in the caption *is* the keep gesture. =unkept= makes the
+present a place: leaving it stashes the buffer, returning restores it.
+Organs: =river/light.js= (pure mood, shade, and =nearness= — distance in
+SEATS, the one number every meridian crossfade rides), =river/atoms.js= (the
+CAST — a seat wears both a picture and a sun; away from the meridian the
+picture, at it the sun, because that keep is already on the canvas),
+=river/paint.js= (keyed reconcile — the rail never wipes), =river/wheel.js=
+(pinned sun, sliding river, detent, click-to-centre + one-seat wheel step; a
+rest asked for while hidden is *owed* until the strip has width). A keep
+landing flares the SUN — no streak, no per-seat radiate: one light, one
+announcement. Nothing driven by =--near= may carry a CSS transition. DOM + paint from
+=DojoWeb.RiverComponent=; its colocated CSS sits in =@layer components= so
+call-site utilities still win.
+
+** work_id on the buffer — the second continuant
+:PROPERTIES:
+:ID: nav-work-id
+:KEYWORDS: work_id work buffer target continuant mint river fork tab
+:PATH: assets/js/terminal/buffers.js
+:END:
+=work_id= on every buffer; blank tab mints, fork continues, fork-from-keep
+rejoins. =term.currentWorkId()= is the seam to the mint
+([[file:specs/weave/keep-build.org][keep-build]] =kb-2a= · =kb-work=).
 
 * CLUSTERING — discovery, transport, roaming
 :PROPERTIES:

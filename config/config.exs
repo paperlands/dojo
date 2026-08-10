@@ -46,8 +46,12 @@ config :dojo, DojoWeb.Endpoint,
 config :esbuild,
   version: "0.25.12",
   dojo: [
+    # app.js is the page; journal.worker.js is the keep's durability boundary
+    # (id:kb-6) — a second entry so the worker is one IIFE with its engine
+    # inlined. The door loads it by the digested path in root.html.heex
+    # (import.meta.url is empty under IIFE — empty-import-meta).
     args:
-      ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --external:/vendor/* --alias:@=.),
+      ~w(js/app.js js/keep/journal.worker.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --external:/vendor/* --alias:@=.),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]

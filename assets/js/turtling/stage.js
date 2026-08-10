@@ -131,7 +131,13 @@ export function createStage(canvas, bridge) {
             // Ask for the next hatch to be kept, then say the reflect changed.
             // (This used to clear the `hatched` sentinel to trick the first-light
             // rule into firing — a doorbell wired to a phase flag.)
-            stage.renderstate.snapshot = { save: true, title: payload[1].title }
+            // download:false is the river's ask — keep the moment, do not put a
+            // file on the child's disk. The record button still downloads.
+            stage.renderstate.snapshot = {
+                save: true,
+                title: payload[1].title,
+                download: payload[1].download !== false,
+            }
             stage.reflectChanged?.()
             break
         case 'pan':
@@ -220,16 +226,28 @@ export function createStage(canvas, bridge) {
                 queueMicrotask(async () => {
                     const result = await recorder.takeSnapshot({ pixels, width, height })
                     if (result) {
-                        if (stage.renderstate.snapshot.save) {
-                            bridge.pub(["saveRecord", {
-                                snapshot: result.full,
-                                type: "image",
-                                title: stage.renderstate.snapshot.title
-                            }])
+                        // Capture the flag BEFORE the clear (id:kb-7-stage).
+                        // meta is a persistent object — a sticky keep:true would
+                        // make every later hatch a keep. Always spread so the
+                        // paced hatch holds a snapshot, not a live reference.
+                        const keep = !!stage.renderstate.snapshot.save
+                        const title = stage.renderstate.snapshot.title ?? null
+                        if (keep) {
+                            if (stage.renderstate.snapshot.download !== false) {
+                                bridge.pub(["saveRecord", {
+                                    snapshot: result.full,
+                                    type: "image",
+                                    title
+                                }])
+                            }
                             stage.renderstate.snapshot.save = false
                         }
                         stage.renderstate.meta.path = result.trimmed
-                        bridge.pub(["hatchTurtle", stage.renderstate.meta])
+                        // The child's word for this moment rides only the hatch
+                        // that was asked to be kept — never a later one.
+                        bridge.pub(["hatchTurtle", {
+                            ...stage.renderstate.meta, keep, title: keep ? title : null
+                        }])
                     }
                 })
             }

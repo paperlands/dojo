@@ -16,6 +16,15 @@
   .outershell { display: none; }
   .rightpane:has(#outer-open.is-open) .outershell { display: block; }
 
+  /* the river's own flag — placement and gating are the call site's;
+     the component itself is placement-agnostic (id:kr-place) */
+  .rightpane .river-sky { display: none; }
+  .rightpane:has(#river-state.river-open) .river-sky { display: block; }
+  .rightpane:has(#river-state.river-open) #riverbutton {
+    fill: var(--color-secondary-content);
+    border-color: var(--color-secondary-content);
+  }
+
   /* outer nerve + wash */
   #outer-nerve .nerve-error {
     color: oklch(0.63 0.21 25);
@@ -114,12 +123,10 @@
   }
 </style>
 <div class="relative h-screen w-screen bg-secondary">
-  <canvas phx-update="ignore" id="core-canvas" class="fixed inset-0 z-0 bg-inherit select-none">
-  </canvas>
+  <canvas phx-update="ignore" id="core-canvas" class="fixed inset-0 z-0 bg-inherit select-none"></canvas>
   <!-- Desktop Layout (lg and up) -->
   <div class="fixed inset-0 grid grid-cols-[40dvw_20dvw_40dvw] md:grid-cols-[40dvw_25dvw_30dvw]  grid-rows-[60dvh_40dvh]  lg:grid-cols-[25dvw_50dvw_25dvw]  lg:grid-rows-[1fr_30dvh] gap-0.5 lg:gap-1 pointer-events-none">
-    
-<!-- Left Pane - Code Editor -->
+    <!-- Left Pane - Code Editor -->
     <div
       id="lefthird"
       class="row-span-1 col-span-1 lg:row-span-2 mt-2 lg:col-span-1 overflow-y-hidden pointer-events-none scrollbar-hide"
@@ -246,7 +253,6 @@
         />
       </div>
       <!-- Code Output -->
-
     </div>
     <!-- Zhong -->
     <div class="bg-transparent pointer-events-none select-none" />
@@ -254,6 +260,7 @@
     <div class="rightpane row-span-1 col-span-1 lg:row-span-2 p-1 sm:p-2 lg:p-4 relative ">
       <div id="deck-state" phx-update="ignore" class="deck-open hidden"></div>
       <div id="outer-open" phx-update="ignore" class="hidden"></div>
+      <.river_state />
       <div id="sessionbox" phx-hook="Box" class="fixed z-50 right-0 ml-4 ">
         <div :if={!@session.name} class="relative right-0 group">
           <!-- Login Link Button -->
@@ -271,8 +278,7 @@
           :if={@session.name}
           class="relative font-mono right-2 text-primary bg-transparent border border-none rounded px-2 py-1 w-full max-w-xs"
         >
-          
-<!-- Welcome message row -->
+          <!-- Welcome message row -->
           <div
             dir={Session.dir(@locale)}
             class="flex items-center text-[12px] sm:text-xs mb-1 border-b border-accent/50 pb-1 overflow-hidden"
@@ -309,8 +315,8 @@
               </span>
             </span>
           </div>
-          
-<!-- Command keys row -->
+
+          <!-- Command keys row -->
           <div class="flex items-center justify-between">
             <!-- Empty spacer div with minimum width on small screens -->
 
@@ -391,6 +397,8 @@
                   class="w-7 h-7 animate-rotate transition-transform duration-700  fill-error drop-shadow-xs drop-shadow-error text-amber-400/50 hover:rotate-[-40deg]"
                 />
               </button>
+
+              <.river_toggle />
 
               <button
                 id="centering"
@@ -475,6 +483,14 @@
         locale={@locale}
       />
       <.live_component module={DojoWeb.DeckLive} id="command-deck" locale={@locale} />
+      <%!-- The keep river (id:kr-orient): this work's moments, lit by one sun.
+           Folded on the client out of the local journal — the server renders
+           furniture and never learns what the child kept.
+
+           TOP CENTER, where the sun already is: the light enters at the top of
+           the screen and dissolves downward into the drawing. No panel, no
+           blur pane — the strip has no edge to notice (id:kr-meridian). --%>
+      <.river class="fixed top-0 left-1/2 -translate-x-1/2 z-40 w-[min(760px,94vw)] pointer-events-none" />
       <%!-- The hearth (Shoot 0): the walk trail — the weave's only chrome.
            Pages open in the outershell (seeWeave invokes it); this path is
            the residue of the walking, amber shanshui over theme pigments. --%>

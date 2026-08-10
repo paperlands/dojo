@@ -204,7 +204,7 @@ and *renderer.info growth* signals are CPU-side counts and remain valid.)
 Tools surface only after a Claude Code restart. Protocol per session:
 
 1. =new_page= → navigate to =http://localhost:4000/shell?perf=1= (Phoenix already
-   serves locally — the =tidewave= MCP server connecting confirms it's up).
+   serves locally — a successful page load confirms it's up).
 2. =evaluate_script= the probe (=__turtle= is exposed on the canvas):
    #+BEGIN_SRC js
    () => { const t = document.getElementById('core-canvas').__turtle; return {

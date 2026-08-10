@@ -379,6 +379,36 @@ describe("Terminal (CM6)", () => {
         assert.equal(term.getValue(), "fw 100");
     });
 
+    test("projecting a keep does not write the head buffer", () => {
+        const cm6  = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        term.setValue("label 'head' 10\n");
+        assert.equal(term.headContent(), "label 'head' 10\n");
+
+        // Stand on an older keep — show it, do not clobber the head.
+        term.setValue("fw 999\n", { project: true });
+        assert.equal(term.getValue(), "fw 999\n", "editor shows the keep");
+        assert.equal(term.projecting(), true);
+        assert.equal(term.headContent(), "label 'head' 10\n", "head buffer untouched");
+
+        // Return to present — write-through is the head again.
+        term.setValue("label 'head' 10\n");
+        assert.equal(term.projecting(), false);
+        assert.equal(term.headContent(), "label 'head' 10\n");
+    });
+
+    test("pinHead heals a clobbered buffer after reload", () => {
+        const cm6  = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        term.setValue("corrupted keep text");
+        term.pinHead("label 'saved head' 10\n");
+        assert.equal(term.headContent(), "label 'saved head' 10\n");
+        assert.equal(term.getValue(), "label 'saved head' 10\n");
+        assert.equal(term.projecting(), false);
+    });
+
     test("setValue multiple times — last value wins", () => {
         const cm6  = makeMockCm6();
         const term = new Terminal(makeEditorStub(), cm6);
@@ -492,7 +522,7 @@ describe("Terminal (CM6)", () => {
     // buffers.js pure transition backing the rename path
     test("buffers.renameBuffer renames by id, leaves content and selection", async () => {
         const buffers = await import("../../../assets/js/terminal/buffers.js");
-        const made = buffers.createCollection(() => 'gen', () => 'b1');
+        const made = buffers.createCollection({ name: () => 'gen', id: () => 'b1', work: () => 'w1' });
         const renamed = buffers.renameBuffer(made, 'b1', 'turtle');
         assert.equal(renamed.items.get('b1').name, 'turtle');
         assert.equal(renamed.items.get('b1').content, made.items.get('b1').content);
@@ -584,11 +614,14 @@ describe("Terminal (CM6)", () => {
     // buffers.js pure transition backing the attend path
     test("buffers: attend persists through serialize/loadCollection round-trip", async () => {
         const buffers = await import("../../../assets/js/terminal/buffers.js");
-        const made = buffers.createCollection(() => 'gen', () => 'b1');
+        const made = buffers.createCollection({ name: () => 'gen', id: () => 'b1', work: () => 'w1' });
         const withAttend = buffers.updateAttend(made, 'b1', 7);
         assert.equal(buffers.serialize(withAttend).b1.attend, 7);
 
-        const loaded = buffers.loadCollection(buffers.serialize(withAttend), () => 'gen2', () => 'b2');
+        const loaded = buffers.loadCollection(
+            buffers.serialize(withAttend),
+            { name: () => 'gen2', id: () => 'b2', work: () => 'w2' },
+        );
         assert.equal(loaded.items.get('b1').attend, 7, "attend survives the round-trip");
     });
 })

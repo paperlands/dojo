@@ -10,25 +10,15 @@
 // {id, ok, value|error}.
 
 import { createJournal } from "./journal.store.js"
+import { VERB_SET } from "./verbs.js"
 
 const journal = createJournal()
 
-const VERBS = new Set([
-    "put",
-    "get",
-    "list",
-    "local",
-    "share",
-    "image",
-    "source",
-    "genesis",
-])
-
 self.onmessage = async (ev) => {
     const msg = ev.data
-    if (!msg || typeof msg.id !== "number" && typeof msg.id !== "string") return
+    if (!msg || (typeof msg.id !== "number" && typeof msg.id !== "string")) return
     const { id, op, args = [] } = msg
-    if (!VERBS.has(op)) {
+    if (!VERB_SET.has(op)) {
         self.postMessage({ id, ok: false, error: `unknown op: ${op}` })
         return
     }

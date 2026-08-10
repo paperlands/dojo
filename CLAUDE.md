@@ -33,10 +33,10 @@ Look up by intent; don't re-read whole files.
 | Symbol → definition / references / type / file outline | `LSP` tool: goToDefinition, findReferences, hover, documentSymbol |
 | Find symbol across workspace | `LSP` workspaceSymbol — scope the query (`Dojo.`); `experiments/` pollutes results; on `:noconnection` (Expert cold boot) retry once |
 | What a module is *for* — architecture, lenses, ids | `emacsclient --eval '(dojo/section-for-module "Dojo.Table")'` · `(dojo/list-modules)` · `(dojo/list-lenses)` · `(dojo/list-ids)` · `(dojo/heading-body "id")` — spans root `*.org` + `specs/**/*.org` |
-| Runtime state, eval, logs, Ecto schemas | Tidewave MCP (live when phx.server is up) |
+| Runtime state, eval, logs, Ecto schemas | IEx on the running node (`iex -S mix phx.server`); or `mix run -e '...'` |
 | Browser/JS runtime, live shell play | chrome-devtools MCP — read `codex/play.org` first |
 | JS performance | `test/js/profile/` rig (its README.org explains) |
-| Dependency docs | Tidewave `get_docs` / `search_package_docs`; offline: `mix usage_rules.docs Mod.fun` |
+| Dependency docs | `mix usage_rules.docs Mod.fun` / `mix usage_rules.search_docs "..."` |
 | Strings, HEEx templates, config, comments | Grep / Glob |
 | Partisan internals | Grep `/home/putra/Repos/partisan/src/` — custom fork, LSP won't index it |
 

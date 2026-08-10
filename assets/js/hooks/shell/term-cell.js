@@ -21,6 +21,13 @@ export function get(role) {
     return cellFor(role).get()
 }
 
+// {get, watch} — the shape attach() claims, for a surface that must wait for
+// a Terminal that mounts after it (kernel/attach.js).
+export function seatOf(role) {
+    const cell = cellFor(role)
+    return { get: () => cell.get(), watch: (fn) => cell.watch(fn) }
+}
+
 // Keystroke path — is the outershell drafting? No DOM walk.
 export function outerDrafting() {
     return !!get("outershell")?.drafting?.()

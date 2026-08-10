@@ -3,6 +3,7 @@ defmodule DojoWeb.ShellLive do
   alias DojoWeb.Session
   alias DojoWeb.ShellLive.{OuterShell}
   import DojoWeb.SVGComponents
+  import DojoWeb.RiverComponent
 
   @moduledoc """
   This LV module defines the Turtling Experience

@@ -47,7 +47,7 @@ describe("nonce: pattern 1's mint side", () => {
     })
 
     test("is the draw any continuant reuses — work_id is the same shape", () => {
-        // workGen = () => nonce(crypto.getRandomValues) (id:kb-work, id:kb-2a)
+        // mints.work = () => nonce(crypto.getRandomValues) (id:kb-work, id:kb-2a)
         // One law, two instances: author root rides the entry's name; work_id
         // is the draw itself. Both are hex64; neither carries meaning.
         const workId = nonce(fill(0x42))

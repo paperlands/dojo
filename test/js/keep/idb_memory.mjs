@@ -3,6 +3,16 @@
 // compound indexes over nested paths, put/get/delete/getAllKeys, openCursor
 // with bound range and "prev"|"next".
 //
+// Semantics that make prose into green (id:kb-5):
+//   • A transaction auto-commits when its request count drains AT THE TASK
+//     BOUNDARY — the browser's own lifetime. No _commit hook for production to
+//     call. Microtask awaits survive, as they do in a browser; await anything
+//     that yields to the task queue (fetch, timer, worker round-trip,
+//     blob.arrayBuffer) and the next request throws TransactionInactiveError.
+//   • Readwrite is serialised: the second writer's requests wait on the first
+//     writer's completion (genesis race fence, id:kb-3-owner) — held inside
+//     the fake, never exposed as tx._ready.
+//
 // Booleans are not valid keys (measured: boolean index holds 0 rows).
 // Incomplete compound keys are sparse (absent from the index, not an error).
 
@@ -89,21 +99,10 @@ function isIndexable(key) {
     return true
 }
 
-// ── request ─────────────────────────────────────────────────────────
-
-function request(run) {
-    const r = { result: undefined, error: null, onsuccess: null, onerror: null }
-    // Microtask: await idbReq(...) works; transaction lifetime covers it.
-    queueMicrotask(() => {
-        try {
-            r.result = run()
-            r.onsuccess?.({ target: r })
-        } catch (e) {
-            r.error = e
-            r.onerror?.({ target: r })
-        }
-    })
-    return r
+function inactiveError() {
+    const e = new Error("TransactionInactiveError")
+    e.name = "TransactionInactiveError"
+    return e
 }
 
 // ── store ───────────────────────────────────────────────────────────
@@ -180,7 +179,51 @@ class Store {
     }
 }
 
-function cursor(entries, range, direction, onUpdate) {
+// ── request / cursor — lifetime owned by the transaction ────────────
+
+/**
+ * @param {object} life - { active, pending, onIdle, gate }
+ *   gate: Promise that resolves when this writer may run (readwrite serialise)
+ *   onIdle: called when pending hits 0 after a request — schedules auto-commit
+ */
+function request(life, run) {
+    const r = { result: undefined, error: null, onsuccess: null, onerror: null }
+    const start = () => {
+        if (!life.active) {
+            queueMicrotask(() => {
+                r.error = inactiveError()
+                r.onerror?.({ target: r })
+            })
+            return
+        }
+        life.pending += 1
+        queueMicrotask(() => {
+            if (!life.active) {
+                life.pending -= 1
+                r.error = inactiveError()
+                r.onerror?.({ target: r })
+                if (life.pending === 0) life.onIdle()
+                return
+            }
+            try {
+                r.result = run()
+                r.onsuccess?.({ target: r })
+            } catch (e) {
+                r.error = e
+                r.onerror?.({ target: r })
+            } finally {
+                life.pending -= 1
+                if (life.pending === 0) life.onIdle()
+            }
+        })
+    }
+    // Write lock: wait for the previous readwrite to finish, then run.
+    if (life.gate) life.gate.then(start)
+    else start()
+    return r
+}
+
+function cursor(life, entries, range, direction, onUpdate) {
     let list = range ? entries.filter((e) => range.includes(e.key)) : entries.slice()
     list.sort((a, b) => cmp(a.key, b.key))
     if (direction === "prev") list.reverse()
@@ -188,51 +231,78 @@ function cursor(entries, range, direction, onUpdate) {
     const r = { result: undefined, error: null, onsuccess: null, onerror: null }
 
     function emit() {
+        if (!life.active) {
+            queueMicrotask(() => {
+                r.error = inactiveError()
+                r.onerror?.({ target: r })
+            })
+            return
+        }
+        life.pending += 1
         queueMicrotask(() => {
-            if (i >= list.length) {
-                r.result = null
-            } else {
-                const e = list[i]
-                r.result = {
-                    key: e.key,
-                    primaryKey: e.primaryKey,
-                    value: e.value,
-                    continue() {
-                        i += 1
-                        emit()
-                    },
-                    update(v) {
-                        onUpdate?.(e.primaryKey, v)
-                        e.value = v
-                    },
-                }
+            if (!life.active) {
+                life.pending -= 1
+                r.error = inactiveError()
+                r.onerror?.({ target: r })
+                if (life.pending === 0) life.onIdle()
+                return
             }
-            r.onsuccess?.({ target: r })
+            try {
+                if (i >= list.length) {
+                    r.result = null
+                } else {
+                    const e = list[i]
+                    r.result = {
+                        key: e.key,
+                        primaryKey: e.primaryKey,
+                        value: e.value,
+                        continue() {
+                            i += 1
+                            emit()
+                        },
+                        update(v) {
+                            onUpdate?.(e.primaryKey, v)
+                            e.value = v
+                        },
+                    }
+                }
+                r.onsuccess?.({ target: r })
+            } catch (err) {
+                r.error = err
+                r.onerror?.({ target: r })
+            } finally {
+                life.pending -= 1
+                if (life.pending === 0) life.onIdle()
+            }
         })
     }
-    emit()
+
+    if (life.gate) life.gate.then(emit)
+    else emit()
     return r
 }
 
-function wrapStore(store) {
+function wrapStore(store, life) {
     return {
         name: store.name,
         keyPath: store.keyPath,
         createIndex: (n, kp) => store.createIndex(n, kp),
-        put: (value, key) => request(() => store.put(value, key)),
-        get: (key) => request(() => store.get(key)),
-        delete: (key) => request(() => store.delete(key)),
-        getAllKeys: () => request(() => store.getAllKeys()),
-        getAll: () => request(() => store.getAll()),
+        put: (value, key) => request(life, () => store.put(value, key)),
+        get: (key) => request(life, () => store.get(key)),
+        delete: (key) => request(life, () => store.delete(key)),
+        getAllKeys: () => request(life, () => store.getAllKeys()),
+        getAll: () => request(life, () => store.getAll()),
         openCursor: (range = null, direction = "next") =>
-            cursor(store.entries(), range, direction, (pk, v) => store.update(pk, v)),
+            cursor(life, store.entries(), range, direction, (pk, v) =>
+                store.update(pk, v),
+            ),
         index: (name) => ({
             openCursor: (range = null, direction = "next") =>
-                cursor(store.indexEntries(name), range, direction, (pk, v) =>
+                cursor(life, store.indexEntries(name), range, direction, (pk, v) =>
                     store.update(pk, v),
                 ),
             getAll: (range = null) =>
-                request(() => {
+                request(life, () => {
                     let es = store.indexEntries(name)
                     if (range) es = es.filter((e) => range.includes(e.key))
                     es.sort((a, b) => cmp(a.key, b.key))
@@ -256,14 +326,15 @@ class DatabaseState {
         this.stores = new Map()
         /** @type {Set<Connection>} */
         this.connections = new Set()
-        /** Serialize readwrite transactions — the genesis race fence. */
+        /** Serialize readwrite: next writer's gate waits on this. */
         this._writeChain = Promise.resolve()
     }
 
     createObjectStore(name, opts = {}) {
         const s = new Store(name, opts)
         this.stores.set(name, s)
-        return wrapStore(s)
+        // Upgrade path has no transaction lifetime yet — bare wrap.
+        return wrapStore(s, { active: true, pending: 0, onIdle: () => {}, gate: null })
     }
 }
 
@@ -292,7 +363,26 @@ class Connection {
         if (this._closed) throw new Error("DB closed")
         const names = Array.isArray(storeNames) ? storeNames : [storeNames]
         const state = this._state
+
+        /** @type {{ active: boolean, pending: number, onIdle: () => void, gate: Promise<void> | null }} */
+        const life = {
+            active: true,
+            pending: 0,
+            onIdle: () => {},
+            gate: null,
+        }
+
         let finished = false
+        let releaseLock = null
+
+        if (mode === "readwrite") {
+            // This writer's requests wait on the previous writer.
+            const prev = state._writeChain
+            life.gate = prev
+            state._writeChain = new Promise((r) => {
+                releaseLock = r
+            })
+        }
 
         const tx = {
             mode,
@@ -304,36 +394,51 @@ class Connection {
                 contains: (n) => names.includes(n) && state.stores.has(n),
             },
             objectStore(n) {
+                if (!life.active) throw inactiveError()
                 if (!names.includes(n)) throw new Error(`store ${n} not in transaction`)
                 const s = state.stores.get(n)
                 if (!s) throw new Error(`no store ${n}`)
-                return wrapStore(s)
+                return wrapStore(s, life)
             },
-            _commit() {
-                if (finished) return
-                finished = true
-                queueMicrotask(() => {
-                    tx.oncomplete?.()
-                    tx._resolveLock?.()
-                })
+            abort() {
+                finish("abort")
             },
-            _resolveLock: null,
         }
 
-        // Readwrite is serialised so concurrent genesis is find-or-create,
-        // not a fork — the property real IDB transactions give us (id:kb-3-owner).
-        if (mode === "readwrite") {
-            let release
-            const gate = new Promise((r) => {
-                release = r
-            })
-            tx._resolveLock = release
-            const prev = state._writeChain
-            state._writeChain = prev.then(() => gate)
-            tx._ready = prev
-        } else {
-            tx._ready = Promise.resolve()
-            tx._resolveLock = null
+        function finish(how) {
+            if (finished) return
+            finished = true
+            life.active = false
+            if (how === "complete") {
+                queueMicrotask(() => tx.oncomplete?.())
+            } else if (how === "abort") {
+                tx.error = tx.error || new Error("journal: abort")
+                queueMicrotask(() => tx.onabort?.())
+            }
+            // Release the write lock so the next writer may run.
+            if (releaseLock) {
+                releaseLock()
+                releaseLock = null
+            }
+        }
+
+        // Auto-commit AT THE TASK BOUNDARY — the browser's own model.
+        // A real transaction lives through the whole microtask drain and dies
+        // when control returns to the event loop. So the check is a macrotask:
+        // every `await` that stays in the microtask queue survives (as it does
+        // in a browser), and everything id:kb-5 actually names — a fetch, a
+        // timer, a worker round-trip, blob.arrayBuffer() — yields to the task
+        // queue and finds the transaction gone.
+        //
+        // A microtask-granular check was measurably STRICTER than the browser:
+        // one `await Promise.resolve()` between two requests killed the tx here
+        // and survives there. A green a harmless await can fail is a bad green.
+        life.onIdle = () => {
+            if (finished) return
+            setTimeout(() => {
+                if (finished || life.pending > 0) return
+                finish("complete")
+            }, 0)
         }
 
         return tx
@@ -380,16 +485,20 @@ export function createMemoryIDB() {
                         }
                         const conn = new Connection(state)
                         conn.version = version
+                        const upgradeLife = {
+                            active: true,
+                            pending: 0,
+                            onIdle: () => {},
+                            gate: null,
+                        }
                         const upgradeTx = {
                             objectStoreNames: conn.objectStoreNames,
                             objectStore: (n) => {
                                 const s = state.stores.get(n)
                                 if (!s) throw new Error(`no store ${n}`)
-                                return wrapStore(s)
+                                return wrapStore(s, upgradeLife)
                             },
                         }
-                        // createObjectStore goes on the connection during upgrade
-                        // (and mutates shared state).
                         req.transaction = upgradeTx
                         req.result = conn
                         req.onupgradeneeded?.({
@@ -398,7 +507,7 @@ export function createMemoryIDB() {
                             newVersion: version,
                         })
                         state.version = version
-                        // Drain reproject cursors, then succeed.
+                        // Drain reproject getAll, then succeed.
                         queueMicrotask(() => {
                             queueMicrotask(() => {
                                 req.onsuccess?.({ target: req })
@@ -419,7 +528,9 @@ export function createMemoryIDB() {
         },
         deleteDatabase(name) {
             registry.delete(name)
-            return request(() => undefined)
+            const r = { result: undefined, error: null, onsuccess: null, onerror: null }
+            queueMicrotask(() => r.onsuccess?.({ target: r }))
+            return r
         },
     }
 

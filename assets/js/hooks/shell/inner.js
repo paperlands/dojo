@@ -22,6 +22,9 @@ import { register, outerDrafting } from "./term-cell.js"
 import { createArena } from "../../kernel/arena.js"
 import { attach } from "../../kernel/attach.js"
 import { safePush } from "../../adapter.js"
+import { createJournal } from "../../keep/journal.js"
+import { keepSnap } from "../../keep/kinds/snap.js"
+import { landed, registerDoor, takeForkPrev, watchAsk } from "../../keep/cell.js"
 
 // Events registered at mounted(); handlers returned once mount() stands.
 export const inner = {
@@ -260,13 +263,30 @@ function mountInner(hook, { term, cm6 }) {
     }));
 
     const pacedHatch = temporal.pace(
-        (payload) => safePush(hook, "hatchTurtle", {
-            ...payload,
-            buffer_id: term.currentBufferId(),
-        }),
+        (payload) => {
+            // keep is a stage→inner fact; strip it before the socket
+            // (id:kc-p-fence — no routing flag rides the wire).
+            const { keep: _keep, ...wire } = payload
+            safePush(hook, "hatchTurtle", {
+                ...wire,
+                buffer_id: term.currentBufferId(),
+            })
+        },
         200
     );
     arena.add(pacedHatch.cancel);
+
+    // The keep's durability door (id:kb-6). Genesis warms in the background;
+    // the mint may wait, the hatch never does (id:kb-7).
+    const journal = createJournal();
+    // One door for the page (id:kb-3-owner). The river reads through this cell
+    // rather than opening a second worker over the same database.
+    arena.add(registerDoor(journal));
+    arena.add(() => journal.close());
+
+    // The river asks; this shell answers, because the hatch is here. Same
+    // gesture as the record button, minus the file on the child's disk.
+    arena.add(watchAsk((title) => cameraCommand("snap", { title, download: false })));
 
     arena.add(turtle.bridge.sub(([event, payload]) => {
         switch (event) {
@@ -274,13 +294,30 @@ function mountInner(hook, { term, cm6 }) {
             if (payload.type === "video") saveRecording(payload.snapshot);
             if (payload.type === "image") saveImage(payload.snapshot);
             break;
-        case "hatchTurtle":
+        case "hatchTurtle": {
             // The reflect seam (D022): the turtle contributes what it owns —
             // the fault and the snapshot path; the DOCUMENT is asked for here,
             // where the authored buffer lives. Order matters: the reflection
             // is authoritative over any stale document field.
-            pacedHatch({ ...payload, ...(reflection() ?? {}) });
+            const hatch = { ...payload, ...(reflection() ?? {}) };
+            // THE KEEP EXISTS here — pure mint · journal.put · cannot be paced
+            // away (id:kb-7). Before the pacer, before the clear, before any
+            // socket. Video path never sets snapshot.save, so never keeps.
+            // keepSnap never rejects — a drop is a fact (id:kc-c-wire).
+            if (payload.keep) {
+                // Settled, the keep is news: the river re-folds and the sky
+                // ignites. Still never awaited — a keep that could not be
+                // minted lands null and says nothing (id:kc-c-wire).
+                void keepSnap(hatch, {
+                    work_id: term.currentWorkId(),
+                    buffer_id: term.currentBufferId(),
+                    // Draft commit lands as a fork — prev is the keep it grew from.
+                    prev: takeForkPrev(),
+                }, journal).then((id) => { if (id) landed(); });
+            }
+            pacedHatch(hatch); // still paced, still lossy — and now correct
             break;
+        }
         }
     }));
 

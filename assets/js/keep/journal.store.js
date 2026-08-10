@@ -109,19 +109,18 @@ export function createJournal(opts = {}) {
      * to the task queue — and the tx commits underneath you, so the NEXT request
      * throws TransactionInactiveError. Intermittently, under load, far from here.
      * That is the one way this file breaks; decode and hash BEFORE entering.
+     *
+     * No test-double hooks. Lifetime is the engine's (and the memory fake's
+     * auto-commit) — production code never names _ready / _commit / _resolveLock.
      */
     async function withStore(storeNames, mode, fn) {
         const d = await open()
         const tx = d.transaction(storeNames, mode)
-        // Memory IDB serialises readwrite via tx._ready (genesis race fence).
-        if (tx._ready) await tx._ready
         // Handlers first — a real IDB may complete in the microtask after the
         // last request; missing oncomplete would hang the verb forever.
         const committed = whenCommitted(tx)
         try {
             const result = await fn(tx)
-            // Memory IDB: no auto-lifetime; flush once the verb's work settled.
-            if (typeof tx._commit === "function") tx._commit()
             await committed
             return result
         } catch (err) {
@@ -130,8 +129,6 @@ export function createJournal(opts = {}) {
             } catch {
                 /* already failed */
             }
-            // Release the write lock on failure too.
-            if (typeof tx._resolveLock === "function") tx._resolveLock()
             throw err
         }
     }
@@ -162,6 +159,14 @@ export function createJournal(opts = {}) {
      * Hashes the message, projects columns, stores. Image under the message's
      * id; source under name(source). ONE tx over [log, blobs, source].
      * Idempotent on id: a second put of the same name preserves shared/local.
+     *
+     * Projection floor (id:kb-11-derive, client twin): a ts that will never
+     * project is refused — loud at the seam, not silent forever in neither
+     * index. The floor is the same on both sides of the wire.
+     *
+     * Clan history lands as local: 1. The permanent answer is a later share,
+     * never a put option — put then share (id:kb-8, keep/shared.js accept).
+     * There is no put(bytes, {shared}).
      */
     async function put(bytes, extras = {}) {
         if (typeof bytes !== "string") {
@@ -171,6 +176,14 @@ export function createJournal(opts = {}) {
         const value = read(bytes)
         const root = value.root ?? null
         const ts = value.ts ?? null
+
+        // ts.t / ts.n must be finite numbers or the compound index never sees
+        // the row: list, local, ship, and shared-eviction all go blind.
+        if (!projectableTs(ts)) {
+            throw new TypeError(
+                "journal.put: ts will never project — refuse silent loss",
+            )
+        }
 
         await withStore(["log", "blobs", "source"], "readwrite", async (tx) => {
             const log = tx.objectStore("log")
@@ -189,9 +202,10 @@ export function createJournal(opts = {}) {
                 const has = await idbReq(blobs.get(id))
                 if (!has) blobs.put(extras.image, id)
             }
-            if (extras.source != null) {
+            // Store source unconditionally when handed — even "". source_id =
+            // name("") must point at a row, not a tombstone (id:kb-source-absence).
+            if (extras.source !== undefined) {
                 const sid = name(extras.source)
-                // Source is content-addressed and never evicted. put is fine.
                 sources.put(extras.source, sid)
             }
         })
@@ -227,16 +241,21 @@ export function createJournal(opts = {}) {
 
     /**
      * Kept local: not yet permanently answered. local is 1|0, a NUMBER —
-     * a boolean index holds 0 rows (measured).
+     * a boolean index holds 0 rows (measured). Newest first, like list.
+     *
+     * n bounds the SHARED FOLD (id:kb-8-page): a kept-local entry inside the
+     * newest n of the whole log is necessarily among the newest n kept-local,
+     * so local(root, n) is exactly enough to fold list(root, n). announce
+     * still drains local(root) whole — the drain wants every unshipped entry.
      */
-    async function local(root) {
+    async function local(root, n = Infinity) {
         return withStore(["log"], "readonly", async (tx) => {
             const idx = tx.objectStore("log").index("by_root_local")
             const range = KeyRange.bound(
                 [root, 1, -Infinity, -Infinity],
                 [root, 1, Infinity, Infinity],
             )
-            return cursorCollect(idx.openCursor(range, "prev"), Infinity)
+            return cursorCollect(idx.openCursor(range, "prev"), n)
         })
     }
 
@@ -280,6 +299,10 @@ export function createJournal(opts = {}) {
      * Two tabs: the engine serialises the tx; the second reads the first's
      * mint. A random body makes two tabs a fork without this — the transaction
      * is the race fence, not idempotence (id:kb-3-owner).
+     *
+     * The genesis is NOT a put, so the projection floor is not its law. It is
+     * the one row unindexed on purpose (root: null — id:kb-5-genesis-place):
+     * history never shows it and it never ships. Do not "fix" the asymmetry.
      */
     async function genesis() {
         return withStore(["self", "log"], "readwrite", async (tx) => {
@@ -423,6 +446,20 @@ function reproject(tx) {
 }
 
 // ── IDB helpers ─────────────────────────────────────────────────────
+
+/**
+ * The projection floor — same law the server holds at kb-11-derive.
+ * A stamp the index cannot hold is a keep nobody can list, ship, or find.
+ */
+export function projectableTs(ts) {
+    return (
+        ts != null &&
+        typeof ts.t === "number" &&
+        Number.isFinite(ts.t) &&
+        typeof ts.n === "number" &&
+        Number.isFinite(ts.n)
+    )
+}
 
 function idbReq(request) {
     return new Promise((resolve, reject) => {
