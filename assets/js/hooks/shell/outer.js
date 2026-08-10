@@ -276,7 +276,11 @@ function mountOuter(hook, { term, cm6 }) {
         changedHands();
     };
 
+    // Trailing edge must die with the surface — same law as pacedRender
+    // on coreshell (inner.js). Without cancel, a quiet 60 ms fires into a
+    // disposed turtle / dead hook.
     const runDraftPaced = temporal.pace(runDraft, 60);
+    arena.add(runDraftPaced.cancel);
     arena.add(term.bridge.sub(() => {
         if (term.drafting() && draftLive) runDraftPaced();
     }));

@@ -27,6 +27,7 @@
 import { createArena } from "../../kernel/arena.js"
 import { attach } from "../../kernel/attach.js"
 import { name, read } from "../../keep/entry.js"
+import { PAGE } from "../../keep/page.js"
 import { shared } from "../../keep/shared.js"
 import { columnsOf, mirrorOf, ofWork } from "../../keep/work.js"
 import { askKeep, doorSeat, getDoor, watchLanded } from "../../keep/cell.js"
@@ -43,10 +44,8 @@ export const river = {
     mount: mountRiver,
 }
 
-// The page is small because human snaps are few and a child reads few things
-// well (id:kr-vis). list and local read at the SAME depth or the fold lies
-// (id:kb-8-page).
-const PAGE = 12
+// PAGE is keep/page.js — same depth the wire ships (id:kb-8-page, id:kb-9).
+// list and local read at the SAME depth or the fold lies.
 
 // Column keys that are not keep ids — never collides with hex64 (id:kb-work-three).
 const PRESENT = "present"
@@ -106,6 +105,24 @@ function mountRiver(hook) {
     function forgetFaces() {
         for (const url of faces.values()) URL.revokeObjectURL(url)
         faces.clear()
+    }
+
+    // The page is the keep set we may paint; everything else is residue.
+    // Draft parent and the seat under the sun may sit just outside the list
+    // for a beat — keep those two. Revoke the rest so blob: URLs do not grow
+    // with every keep that ages off PAGE.
+    function pruneCaches(versions) {
+        const want = new Set(versions.map(name))
+        if (draft?.from) want.add(draft.from)
+        if (at?.id) want.add(at.id)
+        for (const [id, url] of faces) {
+            if (want.has(id)) continue
+            URL.revokeObjectURL(url)
+            faces.delete(id)
+        }
+        for (const id of sources.keys()) {
+            if (!want.has(id)) sources.delete(id)
+        }
     }
 
     /** Hold a potential head in memory and on disk for this work. */
@@ -171,6 +188,7 @@ function mountRiver(hook) {
 
         const versions = ofWork(listed, work)
         byId = new Map(versions.map((bytes) => [name(bytes), bytes]))
+        pruneCaches(versions)
 
         // Shared is the difference between two folds, never a field
         // (id:kb-8): what the clan has permanently answered.
@@ -286,6 +304,9 @@ function mountRiver(hook) {
             // The picture may simply not be here: a shared keep's blob may have
             // yielded to the cap (id:kc-evict). The sun is the honest answer.
             if (!arena.alive || my !== work) return
+            // A concurrent refold may have won the seat while we awaited —
+            // re-check before createObjectURL, or the loser leaks a blob: URL.
+            if (faces.has(id)) continue
             if (blob == null) continue
             const url = URL.createObjectURL(blob)
             faces.set(id, url)

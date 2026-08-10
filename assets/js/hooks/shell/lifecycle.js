@@ -39,6 +39,10 @@
 // breath must reach organs that ALL stand. Named as a phase — after mount
 // returns, before the boot queue drains. Once a trailing block three hundred
 // lines below the organ it ticked.
+//
+// RECONNECTED is not a second path. LiveView calls reconnected() when the
+// socket returns; the surface says the same sentence birth said (id:kb-9) —
+// announce, don't ask. A surface with nothing to re-announce is a no-op.
 // =============================================================================
 
 import { createArena } from "../../kernel/arena.js";
@@ -80,6 +84,12 @@ export function makeShellHook({ boot, surfaces }) {
                 }
                 pending.length = 0;
             }).catch((err) => console.error("Shell boot failed:", err));
+        },
+
+        // Same sentence as birth — no reconnect path to get wrong (id:kb-9).
+        reconnected() {
+            if (!this.arena?.alive) return;
+            this.surface?.reconnected?.();
         },
 
         destroyed() {

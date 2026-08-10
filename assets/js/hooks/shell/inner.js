@@ -23,6 +23,7 @@ import { createArena } from "../../kernel/arena.js"
 import { attach } from "../../kernel/attach.js"
 import { safePush } from "../../adapter.js"
 import { createJournal } from "../../keep/journal.js"
+import { createWire } from "../../keep/wire.js"
 import { keepSnap } from "../../keep/kinds/snap.js"
 import { landed, registerDoor, watchAsk } from "../../keep/cell.js"
 
@@ -283,6 +284,10 @@ function mountInner(hook, { term, cm6 }) {
     arena.add(registerDoor(journal));
     arena.add(() => journal.close());
 
+    // The keep's one socket edge (id:kb-9). birth and reconnected say the same
+    // sentence — there is no reconnect path distinct from the birth path.
+    const wire = createWire({ hook, door: journal });
+
     // The river asks with one value; this shell answers (kb-vet4 33).
     arena.add(watchAsk((ask) =>
         cameraCommand("snap", { title: ask.title, prev: ask.prev, download: false })
@@ -474,7 +479,13 @@ function mountInner(hook, { term, cm6 }) {
         // BIRTH — the room is whole, so now it may speak. Buffer on screen
         // published once; every reader above hears it, none sooner.
         // Lifecycle machine calls this; it is a phase, not a trailing line.
-        birth: () => term.triggerBridge(),
+        // announce is the same sentence reconnected will say (id:kb-9).
+        birth: () => {
+            term.triggerBridge();
+            void wire.announce();
+        },
+        // The healer: clear the drain latch, then say birth's sentence again.
+        reconnected: () => void wire.reconnected(),
 
         events: {
             seeOuterShell:  onSeeOuterShell,

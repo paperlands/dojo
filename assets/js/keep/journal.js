@@ -75,7 +75,7 @@ export function createJournal(opts = {}) {
         list(r, n) {
             return request("list", n === undefined ? [r] : [r, n])
         },
-        /** n bounds the shared fold; announce drains without it (id:kb-8-page). */
+        /** n bounds the fold and the ship page (id:kb-8-page, id:kb-9). */
         local(r, n) {
             return request("local", n === undefined ? [r] : [r, n])
         },

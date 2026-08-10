@@ -53,10 +53,15 @@ defmodule DojoWeb.RiverComponent do
         --river-seat: 44px;
         --river-gap: 18px;
         --river-pad: 1rem;
-        --river-top: 2.25rem;
+        --river-top: 1.5rem;
+        /* one band for the word under the sun, before the seats */
+        --river-caption: 1.7rem;
+        --river-caption-gap: 0.2rem;
         --river-bottom: 1.25rem;
         /* the rig — the surface rewrites this once per mood; seats only read */
         --sun-size: 340px;
+        /* seats begin after the top pad and the caption band */
+        --river-seats-top: calc(var(--river-top) + var(--river-caption) + var(--river-caption-gap));
 
         --river-8: color-mix(in oklch, var(--color-primary) 8%, transparent);
         --river-core: color-mix(in oklch, var(--color-primary) 100%, white);
@@ -173,19 +178,6 @@ defmodule DojoWeb.RiverComponent do
       }
       .river-rail.is-dragging { cursor: grabbing; }
       .river-rail::-webkit-scrollbar { display: none; }
-      /* the time gutter — the ground shadows lie on; it does not slide */
-      .river-rail::before {
-        content: "";
-        position: absolute;
-        left: 0;
-        right: 0;
-        top: calc(var(--river-pad) + var(--river-seat) / 2);
-        height: 1px;
-        /* the gutter dissolves at both ends — a line that stops is an edge */
-        background: linear-gradient(to right,
-          transparent, var(--river-hair) 18%, var(--river-hair) 82%, transparent);
-        z-index: 0;
-      }
 
       .river-col {
         position: relative;
@@ -318,7 +310,7 @@ defmodule DojoWeb.RiverComponent do
         position: absolute;
         left: 1.5rem;
         right: 1.5rem;
-        top: calc(var(--river-top) + var(--river-pad) + var(--river-seat) + var(--river-gap) / 2);
+        top: calc(var(--river-seats-top) + var(--river-pad) + var(--river-seat) + var(--river-gap) / 2);
         height: 1px;
         z-index: 0;
         opacity: 1;
@@ -347,7 +339,7 @@ defmodule DojoWeb.RiverComponent do
       .river-lens {
         position: absolute;
         left: 50%;
-        top: calc(var(--river-top) + var(--river-pad) - 6px);
+        top: calc(var(--river-seats-top) + var(--river-pad) - 6px);
         width: calc(var(--river-seat) + 22px);
         height: calc(var(--river-seat) + 12px);
         transform: translateX(-50%);
@@ -365,17 +357,19 @@ defmodule DojoWeb.RiverComponent do
          light runs out. */
 
       /* ── the word at the meridian ────────────────────────────────────
-         One caption for one sun. Standing in a keep it reads that keep's
-         title; standing in the present it becomes the line where the next
-         word is written — and writing one is the whole keep gesture. */
+         One caption for one sun — ABOVE the rail, under the light. Standing
+         in a keep it reads that keep's title; standing in the present it
+         becomes the line where the next word is written. Top keeps the
+         name on the sky line when the water mirror opens below. */
       .river-caption {
         position: relative;
         z-index: 4;
         display: flex;
         align-items: center;
         justify-content: center;
-        min-height: 1.6rem;
-        margin-top: 0.4rem;
+        box-sizing: border-box;
+        min-height: var(--river-caption);
+        margin: 0 0 var(--river-caption-gap);
         padding-inline: 1.5rem;
         pointer-events: auto;
       }
@@ -456,12 +450,9 @@ defmodule DojoWeb.RiverComponent do
       aria-label="the keeps of this work"
     >
       <span class="river-sun" data-sun=""></span>
-      <span class="river-waterline"></span>
-      <div class="river-rail" data-rail=""></div>
-      <span class="river-lens"></span>
-      <%!-- The word at the meridian: the title of the moment you stand in,
-            or the empty line where the next one is written. One caption,
-            because there is one meridian. --%>
+      <%!-- The word at the meridian — under the sun, above the seats.
+            One caption because there is one meridian; top so the name
+            stays on the sky line when the water opens. --%>
       <div class="river-caption">
         <span class="river-word" data-word=""></span>
         <input
@@ -482,6 +473,9 @@ defmodule DojoWeb.RiverComponent do
           title="discard"
         >×</button>
       </div>
+      <span class="river-waterline"></span>
+      <div class="river-rail" data-rail=""></div>
+      <span class="river-lens"></span>
     </div>
     """
   end

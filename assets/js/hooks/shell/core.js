@@ -257,11 +257,15 @@ export const listeners = {
 // =============================================================================
 
 export const mutators = {
+    // #slider lives OUTSIDE the Shell hook (shell_live.ex) and survives remount.
+    // Named handlers + full release — an inline arrow would stack forever on
+    // each coreshell remount (same law as hooks/draggable.js).
     slider: (sliderId) => {
         const element = document.getElementById(sliderId);
         let hideTimer, observer;
 
         const hide = () => {
+            if (!element) return;
             element.classList.add('hidden');
             if (observer) { observer.disconnect(); observer = null; }
         };
@@ -271,15 +275,26 @@ export const mutators = {
             hideTimer = setTimeout(hide, 2000);
         };
 
+        const onOver = () => clearTimeout(hideTimer);
+        const onLeave = () => resetHideTimer();
+
         return {
             mount: () => {
-                element.addEventListener('mouseover', () => clearTimeout(hideTimer));
-                element.addEventListener('mouseleave', resetHideTimer);
-                return hide;
+                if (!element) return () => {};
+                element.addEventListener('mouseover', onOver);
+                element.addEventListener('mouseleave', onLeave);
+                return () => {
+                    element.removeEventListener('mouseover', onOver);
+                    element.removeEventListener('mouseleave', onLeave);
+                    clearTimeout(hideTimer);
+                    hideTimer = null;
+                    hide();
+                };
             },
 
             // view: EditorView; pos: { lineOffset, tokenStart }; token: matched number string
             show: (view, pos, token, event) => {
+                if (!element) return;
                 element.classList.remove('hidden');
 
                 const selection = window.getSelection();

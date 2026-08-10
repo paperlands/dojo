@@ -262,8 +262,8 @@ export function createEngine(opts = {}) {
      *
      * n bounds the SHARED FOLD (id:kb-8-page): a kept-local entry inside the
      * newest n of the whole log is necessarily among the newest n kept-local,
-     * so local(root, n) is exactly enough to fold list(root, n). announce
-     * still drains local(root) whole — the drain wants every unshipped entry.
+     * so local(root, n) is exactly enough to fold list(root, n). The wire
+     * ships local(root, PAGE) the same way — one page per pass (id:kb-9).
      */
     async function local(root, n = Infinity) {
         return withStore(["log"], "readonly", async (tx) => {

@@ -17,6 +17,7 @@
 // inside the newest n of the whole log has at most n-1 entries above it, so at
 // most n-1 kept-local entries are above it — it is among the newest n
 // kept-local. Same n on both reads; 1.1 ms; no ninth verb, no cached verdict.
+// The wire ships that same n (keep/page.js PAGE) — one generic, two seats.
 
 import { name } from "./entry.js"
 
