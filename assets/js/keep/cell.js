@@ -16,9 +16,6 @@ import { createObservable } from "../kernel/observable.js"
 const doorCell = createCell()
 const landing = createObservable()
 const asking = createObservable()
-// One pending parent for the next mint — the river's draft commit is a fork
-// (id:kr-mirror). Taken once by the hatch path; never a durable field here.
-let forkPrev = null
 
 /** Seat the door for this page's lifetime. Returns its unregister. */
 export function registerDoor(door) {
@@ -45,25 +42,17 @@ export function watchLanded(fn) {
 }
 
 /**
- * Ask for this moment to be kept, with the child's word for it.
- *
- * The river holds the word; the coreshell holds the hatch that can answer —
- * the source, the picture, the ailments. So the ask carries the ONE thing the
- * answering shell cannot know, and nothing it already has.
+ * Ask for this moment to be kept. The ask IS one value (kb-vet4 33):
+ * `{ title, prev? }` — prev only when forking from a draft parent.
+ * Not a boolean beside a title beside a side-channel prev.
  *
  * @param {string} title
  * @param {{ prev?: string | null }} [opts] - parent keep id when committing a draft fork
  */
 export function askKeep(title, { prev = null } = {}) {
-    forkPrev = typeof prev === "string" && prev ? prev : null
-    asking.notify(title)
-}
-
-/** Consume the pending fork parent for the next keepSnap. Once only. */
-export function takeForkPrev() {
-    const p = forkPrev
-    forkPrev = null
-    return p
+    const ask = { title }
+    if (typeof prev === "string" && prev) ask.prev = prev
+    asking.notify(ask)
 }
 
 export function watchAsk(fn) {

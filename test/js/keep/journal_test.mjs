@@ -2,7 +2,7 @@
 // Store and random injected; memory IDB speaks the measured shapes.
 import { describe, test, beforeEach, afterEach } from "node:test"
 import assert from "node:assert/strict"
-import { createJournal, DB_VERSION } from "../../../assets/js/keep/journal.store.js"
+import { createEngine, DB_VERSION } from "../../../assets/js/keep/journal.store.js"
 import { write, read, name, V } from "../../../assets/js/keep/entry.js"
 import { createMemoryIDB } from "./idb_memory.mjs"
 
@@ -21,7 +21,7 @@ function freshJournal(opts = {}) {
         c += 1
         return { t: t + c, n: 0 }
     }
-    return createJournal({
+    return createEngine({
         idb,
         KeyRange,
         dbName: `test-keep-${n}`,
@@ -40,7 +40,7 @@ function snap(root, body, ts) {
 }
 
 describe("journal: put derives the name; get returns the bytes", () => {
-    /** @type {ReturnType<typeof createJournal>} */
+    /** @type {ReturnType<typeof createEngine>} */
     let j
     beforeEach(() => {
         j = freshJournal()
@@ -78,7 +78,7 @@ describe("journal: put derives the name; get returns the bytes", () => {
 })
 
 describe("journal: list is newest-first; local is a number", () => {
-    /** @type {ReturnType<typeof createJournal>} */
+    /** @type {ReturnType<typeof createEngine>} */
     let j
     const root = "d".repeat(64)
     beforeEach(() => {
@@ -158,7 +158,7 @@ describe("journal: list is newest-first; local is a number", () => {
 })
 
 describe("journal: share is a fact beside; genesis is once", () => {
-    /** @type {ReturnType<typeof createJournal>} */
+    /** @type {ReturnType<typeof createEngine>} */
     let j
     beforeEach(() => {
         j = freshJournal({ random: fill(0xab) })
@@ -207,7 +207,7 @@ describe("journal: share is a fact beside; genesis is once", () => {
         // Drive both through one factory; concurrent genesis must not fork.
         const { idb, KeyRange } = createMemoryIDB()
         const mk = (byte) =>
-            createJournal({
+            createEngine({
                 idb,
                 KeyRange,
                 dbName: "race-genesis",
@@ -294,7 +294,7 @@ describe("journal: projection rebuild IS the upgrade", () => {
     test("force local to disagree, bump version, open → local restored from shared", async () => {
         const { idb, KeyRange } = createMemoryIDB()
         const dbName = "reproject-test"
-        const j1 = createJournal({
+        const j1 = createEngine({
             idb,
             KeyRange,
             dbName,
@@ -304,12 +304,11 @@ describe("journal: projection rebuild IS the upgrade", () => {
         })
         const root = "h".repeat(64)
         const bytes = snap(root, { tag: "x" }, { t: 5, n: 0 })
+        // put/share already open the engine — no production _open hook (id:kb-vet4 37).
         const id = await j1.put(bytes)
         await j1.share(id, { at: 1, node: "n" })
         // Corrupt: local should be 0 after share; force it to 1 while shared stands.
-        await j1._open()
-        // Reach into memory DB — use put on a raw path via a second open upgrade.
-        // Corrupt through a direct transaction on the shared factory:
+        // Reach into memory DB via the factory directly.
         const raw = await new Promise((resolve, reject) => {
             const req = idb.open(dbName, 1)
             req.onsuccess = () => resolve(req.result)
@@ -333,7 +332,7 @@ describe("journal: projection rebuild IS the upgrade", () => {
         await j1.close()
 
         // Bump version → reproject
-        const j2 = createJournal({
+        const j2 = createEngine({
             idb,
             KeyRange,
             dbName,
@@ -367,10 +366,11 @@ describe("journal: what it is not", () => {
     })
 })
 
-describe("journal: projection floor — ts that will never project is refused", () => {
-    // Mirror of kb-11-derive on the client (finding 1). Measured: put with
-    // ts:null stores the row, get finds it, list/local return empty — silent
-    // forever. Loud at the seam beats that.
+describe("journal: projection floor — every index column must project", () => {
+    // Mirror of kb-11-derive on the client (finding 1; id:kb-vet4 29). Measured:
+    // put with ts:null stores the row, get finds it, list/local return empty —
+    // silent forever. root:null is the same wound through the other field.
+    // Loud at the seam beats that. Genesis is not a put — leave it alone.
 
     test("missing ts is refused — not stored invisible", async () => {
         const j = freshJournal()
@@ -417,7 +417,48 @@ describe("journal: projection floor — ts that will never project is refused", 
         }
     })
 
-    test("a good ts is listed — the floor does not eat honest work", async () => {
+    test("root:null is refused — durable-invisible through the other field", async () => {
+        // Indexes lead with root; null is not a valid IDB key (id:kb-vet4 29).
+        const j = freshJournal()
+        try {
+            const bytes = write("snap", { tag: "orphan" }, {
+                root: null,
+                target: "b".repeat(64),
+                ts: { t: 1, n: 0 },
+            })
+            await assert.rejects(
+                () => j.put(bytes),
+                (e) => /root will never project/.test(e.message),
+            )
+            // No phantom under any list key — nothing was written.
+            assert.equal(await j.get(name(bytes)), undefined)
+        } finally {
+            await j.close()
+        }
+    })
+
+    test("non-string root is refused — same floor sentence", async () => {
+        const j = freshJournal()
+        try {
+            const bytes = JSON.stringify({
+                tag: "numroot",
+                v: 1,
+                kind: "snap",
+                root: 42,
+                ts: { t: 1, n: 0 },
+                target: "b".repeat(64),
+            })
+            await assert.rejects(
+                () => j.put(bytes),
+                (e) => /root will never project/.test(e.message),
+            )
+            assert.equal(await j.get(name(bytes)), undefined)
+        } finally {
+            await j.close()
+        }
+    })
+
+    test("a good root+ts is listed — the floor does not eat honest work", async () => {
         const j = freshJournal()
         const root = "l".repeat(64)
         try {
@@ -498,6 +539,58 @@ describe("journal: the genesis's place in the log is a decision, not an accident
     })
 })
 
+describe("journal: reopen after versionchange is versionless", () => {
+    // Memory IDB does not throw VersionError on a lower-than-held pin
+    // (gap: real IDB would). Assert the open path itself: after versionchange
+    // the next open passes no version, so it adopts what the upgrade left
+    // (id:kb-vet4 31, id:kc-adapt 1).
+
+    test("next open after versionchange adopts held version — no pin", async () => {
+        const { idb, KeyRange } = createMemoryIDB()
+        const dbName = "adopt-held"
+        /** @type {unknown[][]} */
+        const opens = []
+        const wrapping = {
+            open(...args) {
+                opens.push(args)
+                return idb.open(...args)
+            },
+        }
+        const j = createEngine({
+            idb: wrapping,
+            KeyRange,
+            dbName,
+            version: 1,
+            random: fill(0x31),
+            stamp: () => ({ t: 1, n: 0 }),
+        })
+        try {
+            const gen = await j.genesis()
+            assert.equal(opens.length, 1)
+            assert.deepEqual(opens[0], [dbName, 1], "first open pins this build")
+
+            // Another connection upgrades past us — fires our onversionchange.
+            const upgraded = await new Promise((resolve, reject) => {
+                const req = idb.open(dbName, 2)
+                req.onsuccess = () => resolve(req.result)
+                req.onerror = () => reject(req.error)
+            })
+            upgraded.close()
+
+            opens.length = 0
+            assert.equal(await j.get(name(gen)), gen)
+            assert.equal(opens.length, 1)
+            assert.deepEqual(
+                opens[0],
+                [dbName],
+                "reopen is versionless — adopts the held schema",
+            )
+        } finally {
+            await j.close()
+        }
+    })
+})
+
 describe("journal: eviction cannot cost what it does not need", () => {
     test("a message-only put never reads a blob", async () => {
         // Only a NEW blob can push the store over the cap. Measured before the
@@ -533,7 +626,7 @@ describe("journal: eviction cannot cost what it does not need", () => {
             },
         }
         let c = 0
-        const j = createJournal({
+        const j = createEngine({
             idb: counting, KeyRange, dbName: "evict-cost",
             random: fill(0x11), stamp: () => ({ t: 1000 + (c += 1), n: 0 }),
             blobCap: 1024 * 1024,

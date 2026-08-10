@@ -3,7 +3,7 @@ import { describe, test, beforeEach, afterEach } from "node:test"
 import assert from "node:assert/strict"
 import { writeSnap, toBlob, keepSnap } from "../../../assets/js/keep/kinds/snap.js"
 import { createJournal as createDoor } from "../../../assets/js/keep/journal.js"
-import { createJournal as createEngine } from "../../../assets/js/keep/journal.store.js"
+import { createEngine } from "../../../assets/js/keep/journal.store.js"
 import { read, name, V } from "../../../assets/js/keep/entry.js"
 import { createMemoryIDB } from "./idb_memory.mjs"
 
@@ -135,6 +135,23 @@ describe("writeSnap: the first kind", () => {
         // And the source itself is far larger than the message that points at it.
         assert.ok(source.length > bytes.length)
     })
+    test("ts is required — no ambient default in the pure write (id:kc-parts)", () => {
+        // Gesture draws, write requires: same tell genesis refused for half-ambient.
+        const base = {
+            root: "a".repeat(64),
+            work_id: "b".repeat(64),
+            source: "fw 1\n",
+        }
+        assert.throws(() => writeSnap(base), TypeError)
+        assert.throws(() => writeSnap({ ...base, ts: null }), TypeError)
+        assert.throws(() => writeSnap({ ...base, ts: {} }), TypeError)
+        assert.throws(() => writeSnap({ ...base, ts: { t: 1 } }), TypeError)
+        assert.throws(() => writeSnap({ ...base, ts: { t: "1", n: 0 } }), TypeError)
+        // Fixed pair → fixed bytes: a test need not re-read ts out of the wire.
+        const fixed = { t: 9, n: 1 }
+        assert.deepEqual(read(writeSnap({ ...base, ts: fixed })).ts, fixed)
+    })
+
 })
 
 describe("toBlob: data URL dies at the mint (id:kb-vet2-image)", () => {
@@ -181,6 +198,11 @@ describe("keepSnap: pure mint then put; hatch never awaits", () => {
         assert.equal(v.target, work)
         assert.equal(v.root, await door.root())
         assert.equal(v.source_id, name(source))
+        // keepSnap mints with stamp() — a projectable ts lands in the bytes
+        assert.equal(typeof v.ts.t, "number")
+        assert.ok(Number.isFinite(v.ts.t))
+        assert.equal(typeof v.ts.n, "number")
+        assert.ok(Number.isFinite(v.ts.n))
         // Image beside the message under the message's id
         const img = await door.image(id)
         assert.ok(img, "image stored under message id")

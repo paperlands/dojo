@@ -8,7 +8,7 @@ import {
     createJournal,
     JOURNAL_VERBS,
 } from "../../../assets/js/keep/journal.js"
-import { createJournal as createEngine } from "../../../assets/js/keep/journal.store.js"
+import { createEngine } from "../../../assets/js/keep/journal.store.js"
 import { VERBS as SOURCE_VERBS } from "../../../assets/js/keep/verbs.js"
 import { write, name } from "../../../assets/js/keep/entry.js"
 import { createMemoryIDB } from "./idb_memory.mjs"
@@ -149,13 +149,27 @@ describe("journal door: structural greps (id:kb-6 GREEN)", () => {
         const store = readFileSync(join(keepDir, "journal.store.js"), "utf8")
             .replace(/\/\*[\s\S]*?\*\//g, "")
             .replace(/\/\/.*$/gm, "")
-        for (const hook of ["_ready", "_commit", "_resolveLock"]) {
+        // _open was the last production test hook (id:kb-vet4 37).
+        for (const hook of ["_ready", "_commit", "_resolveLock", "_open"]) {
             assert.equal(
                 store.includes(hook),
                 false,
                 `store must not name ${hook}`,
             )
         }
+    })
+
+    test("engine export is createEngine, not createJournal (id:kb-vet4 35)", () => {
+        const store = readFileSync(join(keepDir, "journal.store.js"), "utf8")
+        assert.match(store, /export function createEngine\b/)
+        assert.equal(
+            /export function createJournal\b/.test(store),
+            false,
+            "journal = the door; the store is the engine",
+        )
+        const worker = readFileSync(join(keepDir, "journal.worker.js"), "utf8")
+        assert.match(worker, /createEngine/)
+        assert.equal(/createJournal/.test(worker), false)
     })
 
     test("door and worker share one verbs module", () => {
@@ -166,6 +180,33 @@ describe("journal door: structural greps (id:kb-6 GREEN)", () => {
         // No second VERBS list in either file.
         assert.equal(/\bconst VERBS\b/.test(door), false)
         assert.equal(/\bconst VERBS\b/.test(worker), false)
+    })
+})
+
+describe("journal door: dead worker (id:kb-vet4 30)", () => {
+    test("onerror latches dead — later verbs refuse, never hang", async () => {
+        /** @type {((ev: {message?: string}) => void) | null} */
+        let fireError = null
+        class FakeWorker {
+            constructor() {
+                fireError = (ev) => this.onerror?.(ev)
+            }
+            postMessage() {}
+            terminate() {}
+        }
+
+        const door = createJournal({
+            Worker: FakeWorker,
+            workerUrl: "about:blank",
+        })
+        // In-flight warm (genesis) settles when the transport dies.
+        fireError({ message: "script 404" })
+        await assert.rejects(() => door.root(), /worker dead|script 404/)
+
+        // Subsequent verbs reject at once — no hang (id:kb-vet4 30).
+        await assert.rejects(() => door.put("x"), /journal: worker dead/)
+        await assert.rejects(() => door.root(), /journal: worker dead/)
+        await door.close()
     })
 })
 

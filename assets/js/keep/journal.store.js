@@ -48,7 +48,7 @@ const SELF_KEY = "genesis"
  * @param {number} [opts.blobCap]
  * @param {typeof IDBKeyRange} [opts.KeyRange] - injectable for node tests
  */
-export function createJournal(opts = {}) {
+export function createEngine(opts = {}) {
     const idb = opts.idb ?? globalThis.indexedDB
     if (!idb) throw new Error("journal: no indexedDB (and none injected)")
     const KeyRange = opts.KeyRange ?? globalThis.IDBKeyRange
@@ -67,12 +67,19 @@ export function createJournal(opts = {}) {
     /** @type {IDBDatabase | null} */
     let db = null
     let closed = false
+    // After versionchange, the held schema may be newer than this build.
+    // Next open adopts it — never re-pins our own version (id:kb-vet4 31).
+    let adoptHeldVersion = false
 
     function open() {
         if (closed) return Promise.reject(new Error("journal: closed"))
         if (dbp) return dbp
         dbp = new Promise((resolve, reject) => {
-            const req = idb.open(dbName, version)
+            // Versionless after versionchange; versioned on first open / our bump.
+            const req = adoptHeldVersion
+                ? idb.open(dbName)
+                : idb.open(dbName, version)
+            adoptHeldVersion = false
             req.onerror = () => reject(req.error)
             req.onupgradeneeded = () => {
                 const d = req.result
@@ -85,13 +92,14 @@ export function createJournal(opts = {}) {
                 const d = req.result
                 // The upgrade waits for every older connection to close
                 // (id:kb-vet3 22). Answer versionchange by closing so the
-                // upgrade can proceed; the next verb re-opens.
+                // upgrade can proceed; the next verb re-opens versionless.
                 d.onversionchange = () => {
                     d.close()
                     if (db === d) {
                         db = null
                         dbp = null
                     }
+                    adoptHeldVersion = true
                 }
                 db = d
                 resolve(d)
@@ -129,6 +137,9 @@ export function createJournal(opts = {}) {
             } catch {
                 /* already failed */
             }
+            // Observe the abort rejection so it is not an unhandledrejection
+            // noise that buries the real err (id:kb-vet4 32).
+            void committed.catch(() => {})
             throw err
         }
     }
@@ -160,9 +171,9 @@ export function createJournal(opts = {}) {
      * id; source under name(source). ONE tx over [log, blobs, source].
      * Idempotent on id: a second put of the same name preserves shared/local.
      *
-     * Projection floor (id:kb-11-derive, client twin): a ts that will never
-     * project is refused — loud at the seam, not silent forever in neither
-     * index. The floor is the same on both sides of the wire.
+     * Projection floor (id:kb-11-derive, client twin; id:kb-vet4 29): every
+     * index column must project — root a string, ts finite. Refuse silent loss
+     * in neither index. The genesis is not a put (id:kb-5-genesis-place).
      *
      * Clan history lands as local: 1. The permanent answer is a later share,
      * never a put option — put then share (id:kb-8, keep/shared.js accept).
@@ -177,6 +188,12 @@ export function createJournal(opts = {}) {
         const root = value.root ?? null
         const ts = value.ts ?? null
 
+        // Indexes lead with root; null is not a valid IDB key. Same floor as ts.
+        if (!projectableRoot(root)) {
+            throw new TypeError(
+                "journal.put: root will never project — refuse silent loss",
+            )
+        }
         // ts.t / ts.n must be finite numbers or the compound index never sees
         // the row: list, local, ship, and shared-eviction all go blind.
         if (!projectableTs(ts)) {
@@ -391,8 +408,6 @@ export function createJournal(opts = {}) {
         source,
         genesis,
         close,
-        /** @internal test aid — forces open / upgrade */
-        _open: open,
         get blobCap() {
             return blobCap
         },
@@ -449,8 +464,13 @@ function reproject(tx) {
 
 /**
  * The projection floor — same law the server holds at kb-11-derive.
- * A stamp the index cannot hold is a keep nobody can list, ship, or find.
+ * Every column the index holds must project, or the keep is invisible.
+ * root: string (null is not a key). ts: finite numbers (id:kb-vet4 29).
  */
+export function projectableRoot(root) {
+    return typeof root === "string"
+}
+
 export function projectableTs(ts) {
     return (
         ts != null &&

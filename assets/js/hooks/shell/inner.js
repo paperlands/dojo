@@ -24,7 +24,7 @@ import { attach } from "../../kernel/attach.js"
 import { safePush } from "../../adapter.js"
 import { createJournal } from "../../keep/journal.js"
 import { keepSnap } from "../../keep/kinds/snap.js"
-import { landed, registerDoor, takeForkPrev, watchAsk } from "../../keep/cell.js"
+import { landed, registerDoor, watchAsk } from "../../keep/cell.js"
 
 // Events registered at mounted(); handlers returned once mount() stands.
 export const inner = {
@@ -264,9 +264,8 @@ function mountInner(hook, { term, cm6 }) {
 
     const pacedHatch = temporal.pace(
         (payload) => {
-            // keep is a stage→inner fact; strip it before the socket
-            // (id:kc-p-fence — no routing flag rides the wire).
-            const { keep: _keep, ...wire } = payload
+            // One strip, whole ask (kb-vet4 33–34). keep and title never ride.
+            const { keep: _keep, title: _title, ...wire } = payload
             safePush(hook, "hatchTurtle", {
                 ...wire,
                 buffer_id: term.currentBufferId(),
@@ -284,9 +283,10 @@ function mountInner(hook, { term, cm6 }) {
     arena.add(registerDoor(journal));
     arena.add(() => journal.close());
 
-    // The river asks; this shell answers, because the hatch is here. Same
-    // gesture as the record button, minus the file on the child's disk.
-    arena.add(watchAsk((title) => cameraCommand("snap", { title, download: false })));
+    // The river asks with one value; this shell answers (kb-vet4 33).
+    arena.add(watchAsk((ask) =>
+        cameraCommand("snap", { title: ask.title, prev: ask.prev, download: false })
+    ));
 
     arena.add(turtle.bridge.sub(([event, payload]) => {
         switch (event) {
@@ -303,16 +303,18 @@ function mountInner(hook, { term, cm6 }) {
             // THE KEEP EXISTS here — pure mint · journal.put · cannot be paced
             // away (id:kb-7). Before the pacer, before the clear, before any
             // socket. Video path never sets snapshot.save, so never keeps.
+            // keep is the ask `{ title, prev? }` or absent (kb-vet4 33).
             // keepSnap never rejects — a drop is a fact (id:kc-c-wire).
-            if (payload.keep) {
+            const keep = payload.keep
+            if (keep && typeof keep === "object") {
+                if (typeof keep.title === "string") hatch.title = keep.title
                 // Settled, the keep is news: the river re-folds and the sky
                 // ignites. Still never awaited — a keep that could not be
                 // minted lands null and says nothing (id:kc-c-wire).
                 void keepSnap(hatch, {
                     work_id: term.currentWorkId(),
                     buffer_id: term.currentBufferId(),
-                    // Draft commit lands as a fork — prev is the keep it grew from.
-                    prev: takeForkPrev(),
+                    prev: typeof keep.prev === "string" && keep.prev ? keep.prev : null,
                 }, journal).then((id) => { if (id) landed(); });
             }
             pacedHatch(hatch); // still paced, still lossy — and now correct

@@ -23,8 +23,6 @@ import { VERBS, VERB_SET } from "./verbs.js"
  * @param {{ [op: string]: (...args: any) => any, close?: () => any }} [opts.engine]
  *   Inject the store directly (node tests — no Worker). The public surface is
  *   identical; the engine still never appears in return values.
- * @param {(op: string, args: any[]) => any} [opts.call]
- *   Full transport control: (op, args) → value | Promise.
  * @param {Worker} [opts.worker] - prebuilt worker
  * @param {string | URL} [opts.workerUrl]
  * @param {typeof Worker} [opts.Worker]
@@ -128,13 +126,7 @@ export function createJournal(opts = {}) {
 // ── transport ───────────────────────────────────────────────────────
 
 function makeTransport(opts) {
-    if (typeof opts.call === "function") {
-        return {
-            request: (op, args) => Promise.resolve(opts.call(op, args)),
-            close: async () => {},
-        }
-    }
-
+    // One injection point: engine, or the worker (id:kb-vet4 36).
     if (opts.engine) {
         const engine = opts.engine
         return {
@@ -151,9 +143,7 @@ function makeTransport(opts) {
 function workerTransport(opts) {
     const WorkerCtor = opts.Worker ?? globalThis.Worker
     if (!WorkerCtor) {
-        throw new Error(
-            "journal: no Worker (inject opts.engine or opts.call under node)",
-        )
+        throw new Error("journal: no Worker (inject opts.engine under node)")
     }
 
     // IIFE build cannot use import.meta.url (empty under esbuild iife).
@@ -172,6 +162,17 @@ function workerTransport(opts) {
     let seq = 0
     /** @type {Map<number, {resolve: Function, reject: Function}>} */
     const pending = new Map()
+    // Latch dead once — answers or refuses, never hangs (id:kb-vet4 30).
+    /** @type {Error | null} */
+    let dead = null
+
+    function latchDead(inFlight) {
+        if (dead) return
+        dead = new Error("journal: worker dead")
+        const err = inFlight ?? dead
+        for (const p of pending.values()) p.reject(err)
+        pending.clear()
+    }
 
     worker.onmessage = (ev) => {
         const msg = ev.data
@@ -184,13 +185,17 @@ function workerTransport(opts) {
     }
 
     worker.onerror = (ev) => {
-        const err = new Error(ev?.message || "journal worker error")
-        for (const p of pending.values()) p.reject(err)
-        pending.clear()
+        latchDead(new Error(ev?.message || "journal worker error"))
+    }
+
+    // Unusable channel — same fence as onerror (id:kb-vet4 30).
+    worker.onmessageerror = () => {
+        latchDead()
     }
 
     return {
         request(op, args) {
+            if (dead) return Promise.reject(dead)
             const id = ++seq
             return new Promise((resolve, reject) => {
                 pending.set(id, { resolve, reject })

@@ -9,10 +9,10 @@
 // indexedDB is reached. Verbs arrive as {id, op, args}; replies as
 // {id, ok, value|error}.
 
-import { createJournal } from "./journal.store.js"
+import { createEngine } from "./journal.store.js"
 import { VERB_SET } from "./verbs.js"
 
-const journal = createJournal()
+const journal = createEngine()
 
 self.onmessage = async (ev) => {
     const msg = ev.data

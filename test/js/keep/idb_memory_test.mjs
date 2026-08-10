@@ -131,3 +131,17 @@ describe("projectableTs", () => {
         assert.equal(projectableTs({ t: NaN, n: 0 }), false)
     })
 })
+
+describe("projectableRoot", () => {
+    test("string only — null is not an IDB key (id:kb-vet4 29)", async () => {
+        const { projectableRoot } = await import(
+            "../../../assets/js/keep/journal.store.js"
+        )
+        assert.equal(projectableRoot("a".repeat(64)), true)
+        assert.equal(projectableRoot(""), true)
+        assert.equal(projectableRoot(null), false)
+        assert.equal(projectableRoot(undefined), false)
+        assert.equal(projectableRoot(42), false)
+        assert.equal(projectableRoot({}), false)
+    })
+})

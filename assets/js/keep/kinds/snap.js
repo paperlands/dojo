@@ -16,10 +16,14 @@
 // here and it is gone. IDB holds Blobs natively; base64 exists again only at ship.
 
 import { write, name } from "../entry.js"
-import { stamp as ambientStamp } from "../../utils/stamp.js"
+import { stamp } from "../../utils/stamp.js"
 
 /**
  * Author a snap message. Pure and synchronous.
+ *
+ * ts is drawn by the caller (keepSnap passes stamp()) — never ambient inside
+ * the pure write (id:kc-parts). Same tell genesis refused for half-ambient
+ * inputs: a test must not re-read ts out of bytes to reproduce them.
  *
  * @param {object} p
  * @param {string} p.root
@@ -29,7 +33,7 @@ import { stamp as ambientStamp } from "../../utils/stamp.js"
  * @param {unknown} [p.diagnostics]
  * @param {string | null} [p.buffer_id] - UI residue in the free body only
  * @param {string | null} [p.prev] - causal parent; only on a fork (id:kr-mirror)
- * @param {{t: number, n: number}} [p.ts]
+ * @param {{t: number, n: number}} p.ts - required; no ambient default
  * @returns {string} the entry bytes
  */
 export function writeSnap({
@@ -42,15 +46,21 @@ export function writeSnap({
     prev = null,
     ts,
 }) {
+    // Loud at the pure seam — never default, never invent (id:kc-parts).
+    if (
+        ts == null ||
+        typeof ts.t !== "number" ||
+        !Number.isFinite(ts.t) ||
+        typeof ts.n !== "number" ||
+        !Number.isFinite(ts.n)
+    ) {
+        throw new TypeError("writeSnap: ts is required — {t, n} finite numbers")
+    }
     const source_id = name(source)
     const body = { source_id, title, diagnostics, buffer_id }
     // Absent, not null: a straight keep carries no parent key (id:kc-r-absence).
     if (typeof prev === "string" && prev) body.prev = prev
-    return write(
-        "snap",
-        body,
-        { root, target: work_id, ts: ts ?? ambientStamp() },
-    )
+    return write("snap", body, { root, target: work_id, ts })
 }
 
 /**
@@ -106,6 +116,7 @@ export async function keepSnap(hatch, ids, door) {
             diagnostics: hatch.diagnostics ?? [],
             buffer_id: ids.buffer_id ?? null,
             prev: typeof ids.prev === "string" && ids.prev ? ids.prev : null,
+            ts: stamp(),
         })
 
         const image = toBlob(hatch.path)

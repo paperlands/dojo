@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
 import { shared, accept } from "../../../assets/js/keep/shared.js"
-import { createJournal } from "../../../assets/js/keep/journal.store.js"
+import { createEngine } from "../../../assets/js/keep/journal.store.js"
 import { write, name, read } from "../../../assets/js/keep/entry.js"
 import { createMemoryIDB } from "./idb_memory.mjs"
 
@@ -21,7 +21,7 @@ function snap(root, body, ts) {
 function fresh() {
     const { idb, KeyRange } = createMemoryIDB()
     let c = 0
-    return createJournal({
+    return createEngine({
         idb,
         KeyRange,
         dbName: `shared-${Math.random().toString(36).slice(2)}`,
@@ -32,7 +32,7 @@ function fresh() {
 }
 
 describe("shared: list minus local, by name(bytes) at the reader", () => {
-    /** @type {ReturnType<typeof createJournal>} */
+    /** @type {ReturnType<typeof createEngine>} */
     let j
     beforeEach(() => {
         j = fresh()
@@ -136,7 +136,7 @@ describe("shared: list minus local, by name(bytes) at the reader", () => {
 })
 
 describe("accept: put then share — the order, not a put parameter", () => {
-    /** @type {ReturnType<typeof createJournal>} */
+    /** @type {ReturnType<typeof createEngine>} */
     let j
     beforeEach(() => {
         j = fresh()
@@ -287,7 +287,7 @@ describe("shared: the surface's four reads, and the laws they carry (id:kb-8)", 
             },
         }
         let c = 0
-        const j = createJournal({
+        const j = createEngine({
             idb: counting,
             KeyRange,
             dbName: `list-no-blob-${Math.random().toString(36).slice(2)}`,
@@ -316,7 +316,7 @@ describe("shared: the surface's four reads, and the laws they carry (id:kb-8)", 
         // Cap so a shared image must yield. The message stays forever.
         const { idb, KeyRange } = createMemoryIDB()
         let c = 0
-        const j = createJournal({
+        const j = createEngine({
             idb,
             KeyRange,
             dbName: `outlive-${Math.random().toString(36).slice(2)}`,
