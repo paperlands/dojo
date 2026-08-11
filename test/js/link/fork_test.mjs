@@ -78,7 +78,7 @@ describe("hex64 — a minted continuant", () => {
         const door = fakeDoor({ keeps: { [name(bytes)]: bytes }, sources: { s1: "fw 50" } })
         const landed = await forkRef(name(bytes), { door, term, say: () => {} })
         assert.equal(landed, "kept-buf")
-        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 50", name: "the chase" }])
+        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 50", name: "the chase", land: true }])
     })
 
     test("a bare work id re-enters through the newest picture", async () => {
@@ -89,7 +89,7 @@ describe("hex64 — a minted continuant", () => {
         const door = fakeDoor({ listed: [newest, older], sources: { s1: "fw 50" } })
         const landed = await forkRef(WORK, { door, term, say: () => {} })
         assert.equal(landed, "kept-buf")
-        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 50", name: "later" }])
+        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 50", name: "later", land: true }])
     })
 
     test("a tombstone still asks — find-only, source null, and says why", async () => {
@@ -136,7 +136,7 @@ describe("the hand decides the gesture (id:la-fork-hand)", () => {
         assert.equal(landed, "fork-buf")
         assert.equal(term.asked.forkKeep.length, 0, "a foreign hand never rejoins")
         assert.deepEqual(term.asked.forkBuffer,
-            [{ source: "fw 7", name: "theirs", addr: WORK, time: TS.t }])
+            [{ source: "fw 7", name: "theirs", addr: WORK, time: TS.t, land: true }])
     })
 
     test("a pulled foreign keep is still kept, then peer-forked", async () => {
@@ -189,7 +189,7 @@ describe("pull — beyond this machine (id:la-fork-pull)", () => {
         const pull = async () => ({ id: name(bytes), message: bytes, source: "fw 9", at: 5, node: "n1" })
         const landed = await forkRef(name(bytes), { door, term, pull, say: () => {} })
         assert.equal(landed, "kept-buf")
-        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 9", name: "the chase" }])
+        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 9", name: "the chase", land: true }])
         assert.deepEqual(door.wrote.put, [{ bytes, extras: { source: "fw 9" } }])
         assert.deepEqual(door.wrote.share, [{ id: name(bytes), fact: { at: 5, node: "n1" } }])
     })
@@ -221,7 +221,7 @@ describe("pull — beyond this machine (id:la-fork-pull)", () => {
         const pull = async () => ({ id: name(head), message: head, source: "fw 99", at: 9, node: "n1" })
         const landed = await forkRef(WORK, { door, term, pull, say: () => {} })
         assert.equal(landed, "kept-buf")
-        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 99", name: "later" }])
+        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 99", name: "later", land: true }])
         assert.equal(door.wrote.put.length, 1, "the newer HEAD is kept")
         assert.equal(door.wrote.put[0].bytes, head)
     })
@@ -239,7 +239,7 @@ describe("pull — beyond this machine (id:la-fork-pull)", () => {
         })
         const pull = async () => ({ id: name(room), message: room, source: "fw room", at: 1, node: "n1" })
         await forkRef(WORK, { door, term, pull, say: () => {} })
-        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw local", name: "mine" }])
+        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw local", name: "mine", land: true }])
         assert.equal(door.wrote.put.length, 0, "local already newer — no re-accept of the room's past")
     })
 
@@ -261,7 +261,7 @@ describe("pull — beyond this machine (id:la-fork-pull)", () => {
         }
         await forkRef(name(older), { door, term, pull, say: () => {} })
         assert.equal(pulled, 0, "commit-specific never re-pulls")
-        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 1", name: "pinned" }])
+        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 1", name: "pinned", land: true }])
     })
 
     test("a lying room lands nothing — wrong bytes are refused at the reader", async () => {
@@ -274,7 +274,7 @@ describe("pull — beyond this machine (id:la-fork-pull)", () => {
         const landed = await forkRef(wrongRef, { door, term, pull, say: (...a) => said.push(a) })
         assert.equal(landed, null)
         assert.equal(door.wrote.put.length, 0, "nothing accepted")
-        assert.deepEqual(term.asked.forkKeep, [{ work_id: wrongRef, source: null, name: null }],
+        assert.deepEqual(term.asked.forkKeep, [{ work_id: wrongRef, source: null, name: null, land: true }],
             "still a find — a buffer bearing the work would answer")
         assert.ok(said.length >= 1)
     })
@@ -314,7 +314,7 @@ describe("a corpus word", () => {
         const landed = await forkRef("the-chase", { term, corpus: fakeCorpus(), say: () => {} })
         assert.equal(landed, "fork-buf")
         assert.deepEqual(term.asked.forkBuffer,
-            [{ source: "fw 100", name: "The Chase", addr: "~/the-chase" }])
+            [{ source: "fw 100", name: "The Chase", addr: "~/the-chase", land: true }])
     })
 
     test("an id-face resolves through the index to the same landing", async () => {

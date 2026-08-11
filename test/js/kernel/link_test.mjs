@@ -23,6 +23,20 @@ describe("read — never consumes", () => {
         const link = createLink("")
         assert.equal(link.read("action"), null)
     })
+
+    test("live location wins over the seed when one stands (id:la-law)", () => {
+        // Soft nav rewrites the address without re-importing the module —
+        // the engine must re-read location, not a closed-over snapshot.
+        const prev = globalThis.location
+        globalThis.location = { search: "?fork=live", pathname: "/shell", hash: "" }
+        try {
+            const link = createLink("?fork=seed")
+            assert.equal(link.read("fork"), "live")
+        } finally {
+            if (prev === undefined) delete globalThis.location
+            else globalThis.location = prev
+        }
+    })
 })
 
 describe("carry — the mirror writes only on change", () => {

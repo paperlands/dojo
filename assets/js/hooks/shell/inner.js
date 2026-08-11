@@ -413,9 +413,14 @@ function mountInner(hook, { term, cm6 }) {
         })
         enact(payload.addr, ans, { witness: PEER })
         const { source, merge } = ans
+        // Outershell is the compare surface: stream the peer baseline, then
+        // light the coreshell merge view only while watching (resumeMerge).
+        // forkBuffer itself never enables merge — a fork without outer is
+        // ordinary editing (terminal.mergeActive / id:la-fork).
         if (merge && payload.buffer_id) {
             term.updateMergeOriginal(source, payload.addr, payload.buffer_id)
         }
+        term.resumeMerge()
     };
 
     const onOpBuffer = (event) => {
@@ -482,13 +487,27 @@ function mountInner(hook, { term, cm6 }) {
             term.triggerBridge();
             // ?fork=<ref> forks the named thing or finds its buffer — after
             // birth, so every organ stands; idempotent, so a remount only
-            // finds what the first enactment made (id:la-fork).
-            const ref = link.read("fork");
-            if (ref) void forkRef(ref, {
-                door: journal,
-                term,
-                corpus: { index: fragmentIndex, fetch: fetchFragment, press: transpile },
-                pull: pullKeep,
+            // finds what the first enactment made (id:la-fork). land writes
+            // the keep's source so a reopened link updates (id:la-fork-pull).
+            const enactFork = () => {
+                const ref = link.read("fork");
+                if (!ref) return;
+                void forkRef(ref, {
+                    door: journal,
+                    term,
+                    corpus: { index: fragmentIndex, fetch: fetchFragment, press: transpile },
+                    pull: pullKeep,
+                });
+            };
+            enactFork();
+            // Soft nav (live_patch / back-forward) never remounts the hook —
+            // re-read the address and enact again (id:la-law).
+            const onNav = () => enactFork();
+            window.addEventListener("phx:navigate", onNav);
+            window.addEventListener("popstate", onNav);
+            arena.add(() => {
+                window.removeEventListener("phx:navigate", onNav);
+                window.removeEventListener("popstate", onNav);
             });
             void wire.announce();
         },

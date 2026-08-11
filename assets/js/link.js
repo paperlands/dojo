@@ -10,6 +10,8 @@ import { PAGE } from "./keep/page.js"
 import { accept } from "./keep/shared.js"
 import { resolve } from "./weave/resolve.js"
 
+// Seed is only for off-document (tests); on the page, read prefers location
+// (id:la-law — the address bar is the fact store, not a closed-over snapshot).
 export const link = createLink(
     typeof location === "undefined" ? "" : location.search,
     (qs) => history.replaceState(null, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`),
@@ -138,7 +140,9 @@ async function forkKept(ref, { door, term, pull, say }) {
     if (bytes && root !== mine) {
         return forkForeign({ term, say, ref, work, bytes, source, title, ts })
     }
-    const landed = term.forkKeep({ work_id: work, source, name: title })
+    // land: the address asked for this keep/HEAD — open it, don't only
+    // rejoin a stale draft of the same river (id:la-fork-pull).
+    const landed = term.forkKeep({ work_id: work, source, name: title, land: true })
     if (!landed) say(`nothing kept as ${ref}`)
     return landed
 }
@@ -186,11 +190,14 @@ function forkForeign({ term, say, ref, work, bytes, source, title, ts }) {
         say(`nothing kept as ${ref}`)
         return null
     }
+    // land: a link open shows the keep (HEAD or pinned), even when a fork
+    // buffer already stands with a diverged draft (id:la-fork-pull).
     const landed = term.forkBuffer({
         source,
         name: title ?? "kept",
         addr,
         time: ts?.t ?? Date.now(),
+        land: true,
     }) ?? null
     if (!landed) say(`nothing kept as ${ref}`)
     return landed
@@ -242,5 +249,6 @@ async function forkCorpus(word, { term, corpus, say }) {
     const { title, source } = corpus.press(text)
     // The inherited library-fork path: find-or-create by origin.addr; a
     // library fork is a new river for this author (id:kb-vet2-work).
-    return term.forkBuffer({ source, name: title ?? r.name, addr: `~/${r.name}` }) ?? null
+    // land: same as the keep face — a link open shows the page.
+    return term.forkBuffer({ source, name: title ?? r.name, addr: `~/${r.name}`, land: true }) ?? null
 }

@@ -83,7 +83,7 @@ defmodule DojoWeb.RiverComponent do
         position: relative;
         padding: var(--river-top) 0 var(--river-bottom);
         /* The sky is light, not a pane: the wash must never steal the
-           shell underneath. Only seats and the caption take a hand
+           shell underneath. Only seats and caption controls take a hand
            (same pattern as #disciple_panels). */
         pointer-events: none;
 
@@ -170,8 +170,10 @@ defmodule DojoWeb.RiverComponent do
         cursor: grab;
         user-select: none;
         -webkit-user-select: none;
-        /* Sky is pointer-events:none; the rail takes the hand. */
-        pointer-events: auto;
+        /* Rail padding is half the strip so a seat can sit under the sun —
+           that empty air must NOT take the hand or the shell under the
+           strip can't be typed in. Only columns catch (bubble to rail). */
+        pointer-events: none;
         /* Night is the seats dissolving at the page edge (id:kr-shadow). */
         -webkit-mask-image: linear-gradient(to right,
           transparent 0%, black 22%, black 78%, transparent 100%);
@@ -184,6 +186,7 @@ defmodule DojoWeb.RiverComponent do
       .river-col {
         position: relative;
         z-index: 1;
+        /* Seats alone take the hand — drag/tap/wheel start here. */
         pointer-events: auto;
         flex: 0 0 var(--river-seat);
         display: flex;
@@ -481,10 +484,14 @@ defmodule DojoWeb.RiverComponent do
         align-items: center;
         justify-content: center;
         box-sizing: border-box;
+        /* Shrink-wrap to the word/line — a full-width band would steal
+           clicks from the shell under the strip's sides. */
+        width: fit-content;
+        max-width: 100%;
         min-height: var(--river-caption);
-        margin: 0 0 var(--river-caption-gap);
+        margin: 0 auto var(--river-caption-gap);
         padding-inline: 1.5rem;
-        pointer-events: auto;
+        pointer-events: none;
       }
       .river-word,
       .river-message {
@@ -501,10 +508,12 @@ defmodule DojoWeb.RiverComponent do
         color: color-mix(in oklch, var(--color-base-content) 72%, transparent);
         /* hold → keep: primary eases into the quiet title */
         transition: color 520ms ease, opacity 360ms ease;
+        pointer-events: auto;
       }
       .river-message {
         display: none;
-        width: min(32ch, 78%);
+        width: min(32ch, 78vw);
+        max-width: 32ch;
         padding: 0.12rem 0.3rem 0.18rem;
         background: transparent;
         border: none;
@@ -513,6 +522,7 @@ defmodule DojoWeb.RiverComponent do
         color: var(--color-primary);
         caret-color: var(--color-primary);
         transition: border-color 240ms ease;
+        pointer-events: auto;
       }
       .river-message::placeholder {
         letter-spacing: 0.22em;
@@ -557,6 +567,7 @@ defmodule DojoWeb.RiverComponent do
         font-size: 1rem;
         line-height: 1;
         cursor: pointer;
+        pointer-events: auto;
       }
       .river-drop:focus-visible { outline: none; }
       .river-sky.at-draft .river-drop { display: inline-flex; }
@@ -578,6 +589,7 @@ defmodule DojoWeb.RiverComponent do
         color: var(--color-secondary-content);
         cursor: copy;
         opacity: 0.92;
+        pointer-events: auto;
         filter:
           drop-shadow(0 0 3px color-mix(in oklch, var(--color-secondary-content) 55%, transparent))
           drop-shadow(0 0 8px color-mix(in oklch, var(--color-secondary-content) 28%, transparent));

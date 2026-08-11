@@ -148,6 +148,27 @@ export const createTerminal = (element, cm6, options = {}) => {
         return doc;
     };
 
+    // Write keep source into a standing buffer + the live editor when it is
+    // that buffer. origin (optional) refreshes lineage for a landed peer fork.
+    const landContent = (id, content, origin = undefined) => {
+        if (!state.collection?.items.has(id) || typeof content !== 'string') return;
+        state.collection = buffers.updateContent(state.collection, id, content);
+        if (origin !== undefined) {
+            const items = new Map(state.collection.items);
+            const buf = items.get(id);
+            items.set(id, { ...buf, origin });
+            state.collection = { items, currentId: state.collection.currentId };
+        }
+        state.docs.set(id, createDoc(content));
+        state.projecting = false;
+        if (shell && state.projectedId === id && editorView.getContent(shell) !== content) {
+            editorView.setContent(shell, content);
+        }
+        clearTimeout(state.autosaveTimer);
+        state.autosaveTimer = setTimeout(saveToStorage, 500);
+        triggerBridge();
+    };
+
     // announce:false selects without publishing — construction has no audience
     // yet, and the mount speaks the first breath itself (term.triggerBridge).
     const doSelectBuffer = (id, { offset, announce = true } = {}) => {
@@ -514,10 +535,19 @@ export const createTerminal = (element, cm6, options = {}) => {
         // bearing the work IS the fork; otherwise the keep's source opens a
         // new hand on it. Never creates without source — a fork with nothing
         // to fork is a find (id:la-fork).
-        forkKeep({ work_id, source, name }) {
+        // land: a link open (id:la-fork-pull) writes the keep's source into
+        // the standing buffer so HEAD/pin actually appears — a plain rejoin
+        // only selects (drafts and outer forks keep their hand).
+        forkKeep({ work_id, source, name, land = false }) {
             if (!work_id || !state.collection) return null;
             for (const [id, buffer] of state.collection.items) {
-                if (buffer.work_id === work_id) { doSelectBuffer(id); return id; }
+                if (buffer.work_id === work_id) {
+                    doSelectBuffer(id);
+                    if (land && typeof source === 'string' && buffer.content !== source) {
+                        landContent(id, source);
+                    }
+                    return id;
+                }
             }
             if (typeof source !== 'string') return null;
             return terminal.createBuffer(name || '', source, null, work_id);
@@ -531,15 +561,26 @@ export const createTerminal = (element, cm6, options = {}) => {
             return id ? state.collection.items.get(id).content : null;
         },
 
-        forkBuffer({ source, name, addr, buffer_id, time, offset }) {
+        // Fork only makes a buffer with lineage. The merge (git-style) view is
+        // outershell compare mode — resumeMerge / clearMerge own mergeActive.
+        // A plain fork or ?fork= link must not light the diff (id:la-fork).
+        forkBuffer({ source, name, addr, buffer_id, time, offset, land = false }) {
             if (!source || !addr) return;
-            state.mergeActive = true;
 
             const selectFork = (id) => doSelectBuffer(id, { offset });
 
             const existing = this.findFork(addr, buffer_id);
             if (existing) {
                 const existingBuffer = state.collection.items.get(existing);
+
+                // A link open lands the keep: show HEAD/pin even when a draft
+                // already stands on this lineage (id:la-fork-pull).
+                if (land) {
+                    const origin = { addr, buffer_id, source, time, name: name ?? existingBuffer.origin?.name };
+                    landContent(existing, source, origin);
+                    selectFork(existing);
+                    return existing;
+                }
 
                 // Remote user iterated on the same tab — create new merge tab
                 if (existingBuffer.origin?.source !== source) {

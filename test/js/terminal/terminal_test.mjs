@@ -188,11 +188,14 @@ function makeMockCm6() {
 
         constructor({ state, parent: _parent } = {}) {
             this._state = state || EditorState.create({});
+            this._dispatches = [];
         }
 
         get state() { return this._state; }
 
-        dispatch({ changes, selection, effects: _fx } = {}) {
+        dispatch(tr = {}) {
+            const { changes, selection, effects } = tr;
+            this._dispatches.push(tr);
             if (changes) {
                 const ch  = Array.isArray(changes) ? changes[0] : changes;
                 const old = this._state.doc.toString();
@@ -204,6 +207,8 @@ function makeMockCm6() {
             if (selection) this._state = { ...this._state, selection };
             const update = { docChanged: !!changes, selectionSet: !!selection, state: this._state };
             for (const fn of updateListeners) fn(update);
+            // keep effects visible for merge-view assertions
+            void effects;
         }
 
         setState(state) { this._state = state; }
@@ -249,11 +254,30 @@ function makeMockCm6() {
         lintGutter:          () => [],
         setDiagnostics:      (_state, _diags) => ({ effects: [] }),
         MergeView:           class { constructor() {} },
+        // Coreshell compare mode (unifiedMergeView) — present so mergeActive
+        // paths can reconfigure; tests assert on dispatch effects.
+        unifiedMergeView:    (opts) => ({ _type: 'unifiedMergeView', opts }),
+        Text:                { of: (lines) => ({ lines, toString: () => lines.join('\n') }) },
         StreamLanguage:      { define: (_mode) => [] },
         foldService:         { of: (_fn) => [] },
         undo:                () => {},
         redo:                () => {},
     };
+}
+
+// True when a dispatch reconfigured the merge compartment to a live unify view
+// (not the empty [] that hides it).
+function mergeViewLit(term) {
+    const dispatches = term.shell?._dispatches ?? [];
+    for (let i = dispatches.length - 1; i >= 0; i--) {
+        const effects = [].concat(dispatches[i]?.effects ?? []);
+        for (const e of effects) {
+            if (e?._type !== 'reconfigure') continue;
+            if (Array.isArray(e._value) && e._value.length === 0) return false;
+            if (e._value?._type === 'unifiedMergeView') return true;
+        }
+    }
+    return false;
 }
 
 // Editor element stub — supplies the DOM operations inner() calls
@@ -621,6 +645,17 @@ describe("Terminal (CM6)", () => {
         const again = term.forkKeep({ work_id: "w".repeat(64), source: "other", name: "second" });
         assert.equal(again, held, "the standing buffer IS the fork");
         assert.equal(term.currentBufferId(), held);
+        assert.equal(term.getValue(), "fw 1", "plain rejoin does not clobber the draft");
+    });
+
+    test("forkKeep land writes the keep's source into the standing buffer", () => {
+        const cm6  = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const held = term.forkKeep({ work_id: "w".repeat(64), source: "fw 1", name: "first" });
+        term.forkKeep({ work_id: "w".repeat(64), source: "fw 99", name: "later", land: true });
+        assert.equal(term.currentBufferId(), held);
+        assert.equal(term.getValue(), "fw 99", "a link open lands HEAD/pin (id:la-fork-pull)");
     });
 
     test("forkKeep creates carrying the keep's work_id, and the next mint differs", () => {
@@ -641,6 +676,40 @@ describe("Terminal (CM6)", () => {
         const before = term.currentBufferId();
         assert.equal(term.forkKeep({ work_id: "b".repeat(64), source: null, name: "ghost" }), null);
         assert.equal(term.currentBufferId(), before, "nothing was made, nothing moved");
+    });
+
+    test("forkBuffer land updates an existing lineage to the keep's source", () => {
+        const cm6  = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const addr = "c".repeat(64);
+        const held = term.forkBuffer({ source: "fw 1", name: "theirs", addr, time: 1 });
+        term.setValue("fw 1  // stale local draft");
+        const again = term.forkBuffer({ source: "fw 1", name: "theirs", addr, time: 1, land: true });
+        assert.equal(again, held);
+        assert.equal(term.getValue(), "fw 1", "link open lands the keep over a diverged draft");
+    });
+
+    // Merge (git-style) view is outershell compare mode, not a side effect of
+    // forking. A plain fork / ?fork= must leave the editor without unified merge.
+    test("forkBuffer does not light the merge view; resumeMerge does", () => {
+        const cm6  = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const addr = "d".repeat(64);
+        term.shell._dispatches = [];
+        term.forkBuffer({ source: "fw 10", name: "friend", addr, time: 1 });
+        assert.equal(mergeViewLit(term), false,
+            "fork alone is ordinary editing — no git diff without outershell");
+
+        term.shell._dispatches = [];
+        term.resumeMerge();
+        assert.equal(mergeViewLit(term), true,
+            "outershell compare mode shows the fork against its origin");
+
+        term.shell._dispatches = [];
+        term.clearMerge();
+        assert.equal(mergeViewLit(term), false, "clearMerge hides the diff");
     });
 
     // buffers.js pure transition backing the attend path
