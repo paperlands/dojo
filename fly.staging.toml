@@ -1,6 +1,5 @@
 # fly.toml app configuration file for the staging app (paperland).
-# Deployed automatically by .github/workflows/fly-staging.yml on every push
-# to a pull request targeting the "staging" branch.
+# Deployed by .github/workflows/ci.yml when a PR targets the "staging" branch.
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #

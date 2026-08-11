@@ -28,10 +28,9 @@ env:
 
 jobs:
   # ── CI first ────────────────────────────────────────────────────────────
-  # A push to release has no PR event, so the PR-only CI workflow would not
-  # re-run. Call it here: red format/tests stop the version gate and the
-  # half-hour installers from ever starting.
-  # Production web deploys separately: fly-prod.yml on PRs into release.
+  # A push has no PR event, so call the reusable CI workflow: red tests stop
+  # the version gate and the half-hour installers. Web already shipped from
+  # the PR into release (ci.yml deploy job); this path is installers only.
   ci:
     name: CI
     uses: ./.github/workflows/ci.yml

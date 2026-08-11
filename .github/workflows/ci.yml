@@ -1,19 +1,23 @@
 name: CI
 
-# Gate merges into the deploy trunks. Staging and production web deploy from
-# PRs into staging / release; push to release still cuts desktop installers.
-# No push triggers of its own — CI answers when someone asks to land
-# (pull_request), or when a release workflow calls it (workflow_call) so red
-# tests cannot ship.
+# One pipeline per ask: test, then ship when the PR targets a deploy trunk.
+#
+#   elixir ──┐
+#            ├── CI gate          (branch protection; always reports)
+#   js     ──┘
+#            └── Deploy           (staging → paperland, release → thedojo)
+#
+# No cross-workflow waiting. Re-run this workflow and everything re-runs.
+# Desktop installers still live on push → release.yml (calls this for tests).
 on:
   pull_request:
     branches: [master, staging, release]
   workflow_call:
 
 concurrency:
-  # workflow_call has no head_ref; fall back to the run's ref so a release
-  # push and a PR on the same branch do not cancel each other wrongly.
-  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  # Per-PR so a dual open (staging + release) from the same head never
+  # cancels the other. workflow_call has no PR number → fall back to ref.
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -28,6 +32,7 @@ env:
   OTP_VERSION: "29.0.2"
 
 jobs:
+  # ── Leaves (parallel) ───────────────────────────────────────────────────
   elixir:
     name: Elixir tests
     runs-on: ubuntu-latest
@@ -112,9 +117,9 @@ jobs:
       - name: Test
         run: node --test test/js/*/*_test.mjs
 
-  # One name for branch protection and for deploy workflows that wait on CI.
+  # ── Fan-in: branch protection ───────────────────────────────────────────
   # if: always() so a red leaf does not leave this check "skipped" (which
-  # would look like permission to proceed).
+  # would look like permission to merge under required checks).
   gate:
     name: CI gate
     runs-on: ubuntu-latest
@@ -127,3 +132,46 @@ jobs:
           echo "js=${{ needs.js.result }}"
           test "${{ needs.elixir.result }}" = "success"
           test "${{ needs.js.result }}" = "success"
+
+  # ── Fan-in: ship web when the PR targets a deploy trunk ─────────────────
+  # Same needs as the gate — deploy starts the moment both suites are green,
+  # no second workflow, no poll. Skipped on master PRs and on workflow_call
+  # (release.yml installer cut). Red leaf → this job is skipped automatically.
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [elixir, js]
+    if: |
+      github.event_name == 'pull_request' &&
+      (github.base_ref == 'staging' || github.base_ref == 'release')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
+
+      # --remote-only: build on Fly's builder (layer cache lives with the app).
+      # Staging is one machine → immediate. Prod → default rolling handover.
+      - name: Deploy to Fly (paperland)
+        if: github.base_ref == 'staging'
+        run: |
+          flyctl deploy --remote-only \
+            --strategy immediate \
+            --wait-timeout 600 \
+            -c fly.staging.toml -a paperland
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_STAGING_API_TOKEN }}
+
+      - name: Deploy to Fly (thedojo)
+        if: github.base_ref == 'release'
+        run: |
+          flyctl deploy --remote-only \
+            --wait-timeout 600 \
+            -c fly.toml -a thedojo
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_PROD_API_TOKEN }}
