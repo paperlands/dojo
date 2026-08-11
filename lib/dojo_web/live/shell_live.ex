@@ -483,6 +483,37 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
+  # Keep ship — one message, one answer (id:kb-12). Clan is a fact of the
+  # socket; author_id is Session.user_id/1 (D007). Silence when unready is
+  # not an answer: the entry stays kept local and rides the next announce.
+  def handle_event(
+        "keep",
+        payload,
+        %{assigns: %{clan: clan, session: %Session{name: name} = session}} = socket
+      )
+      when is_binary(clan) and is_binary(name) and is_map(payload) do
+    reply =
+      Dojo.Keep.receive(payload,
+        clan: clan,
+        author_id: Session.user_id(session)
+      )
+
+    {:reply, reply, socket}
+  end
+
+  def handle_event("keep", _payload, socket), do: {:noreply, socket}
+
+  # The image follows the fact (id:kb-12a). Fire and forget on the wire, so
+  # there is no reply to design: it lands or it does not, and a lost picture
+  # degrades to re-running the turtle — never to a hole.
+  def handle_event("keep:image", payload, %{assigns: %{clan: clan}} = socket)
+      when is_binary(clan) and is_map(payload) do
+    Dojo.Keep.image(payload, clan: clan)
+    {:noreply, socket}
+  end
+
+  def handle_event("keep:image", _payload, socket), do: {:noreply, socket}
+
   # pokemon clause
   def handle_event(
         e,

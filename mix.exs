@@ -43,6 +43,7 @@ defmodule Dojo.MixProject do
       {:phoenix, "~> 1.8"},
       {:phoenix_ecto, "~> 4.4"},
       {:ecto_sql, "~> 3.10"},
+      {:ecto_sqlite3, "~> 0.24.1"},
       {:postgrex, ">= 0.0.0"},
       {:phoenix_html, "~> 4.0"},
       {:phoenix_live_reload, "~> 1.5", only: :dev},
@@ -130,10 +131,18 @@ defmodule Dojo.MixProject do
 
   defp aliases do
     [
-      setup: ["deps.get", "compile", "assets.setup", "assets.build", "assets.deploy"],
-      "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
+      setup: [
+        "deps.get",
+        "compile",
+        "ecto.create",
+        "ecto.migrate",
+        "assets.setup",
+        "assets.build",
+        "assets.deploy"
+      ],
+      "ecto.setup": ["ecto.create", "ecto.migrate"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
-      test: ["test"],
+      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       # press.codex: id→{name,title} index for the weave resolver (Shoot 0 / Q2),
       # and the vendor recast into priv/static/codex (what the web reaches).

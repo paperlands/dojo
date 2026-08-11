@@ -8,6 +8,10 @@
 //   announce()          — birth AND reconnected say the same sentence
 //   attached()          — the one honest answer; exactly one legitimate caller
 //
+// Three verbs, and the count is the contract (id:kb-9). A fourth — `stand`,
+// pushing what the surface stands on — grew here and was excised: it had no
+// caller, and seeTurtle is pushed from nerve/hud.js (id:kb-vet5 44).
+//
 // announce pages local(root, PAGE), serially, newest first — the same page
 // depth the river folds (id:kb-8-page, keep/page.js). A kill mid-drain leaves
 // the oldest unshared — the least costly residue.
@@ -29,8 +33,11 @@
 import { name, read } from "./entry.js"
 import { PAGE } from "./page.js"
 
-/** The event that ships one kept-local message. Image rides a later verb. */
+/** The event that ships one kept-local message. */
 export const KEEP_EVENT = "keep"
+
+/** The referent that follows the fact — one verb after the share (id:kb-12a). */
+export const IMAGE_EVENT = "keep:image"
 
 /**
  * Open the keep's socket edge.
@@ -38,10 +45,8 @@ export const KEEP_EVENT = "keep"
  * @param {object} opts
  * @param {{ pushEvent?: Function, liveSocket?: { isConnected?: () => boolean } }} opts.hook
  *   The LiveView hook (or a test double). pushEvent is named only here in keep/.
- * @param {{ root: () => Promise<string>, local: Function, share: Function, source?: Function }} [opts.door]
- *   The journal door. Absent → announce still says standing, ships nothing.
- * @param {() => ({ name: string, payload?: object } | null | undefined)} [opts.stand]
- *   What this surface stands on. Null/undefined → say nothing about standing.
+ * @param {{ root: () => Promise<string>, local: Function, share: Function, source?: Function, image?: Function }} [opts.door]
+ *   The journal door. Absent → announce ships nothing and says so.
  * @param {(eventName: string, err?: unknown) => void} [opts.onDrop]
  *   Optional log for a dropped push — never throws into the caller.
  * @param {(note: { kind: string, id: string, why?: string }) => void} [opts.onNote]
@@ -51,7 +56,6 @@ export const KEEP_EVENT = "keep"
 export function createWire(opts = {}) {
     const hook = opts.hook
     const door = opts.door
-    let standing = typeof opts.stand === "function" ? opts.stand : () => null
     const onDrop = opts.onDrop
     const onNote = opts.onNote
     const page =
@@ -96,8 +100,8 @@ export function createWire(opts = {}) {
 
     /**
      * The same sentence at birth and at every rejoin.
-     * Standing first; then one page of unshipped keeps, newest first, serial.
-     * Never throws. Re-entry while a drain is live is a no-op.
+     * One page of unshipped keeps, newest first, serial. Never throws.
+     * Re-entry while a drain is live is a no-op.
      *
      * @returns {Promise<void>}
      */
@@ -108,12 +112,6 @@ export function createWire(opts = {}) {
         /** @type {boolean} */
         let chain = false
         try {
-            // What this surface stands on — one push, fire and forget.
-            const seat = standing()
-            if (seat && typeof seat.name === "string" && seat.name) {
-                void say(seat.name, seat.payload ?? {})
-            }
-
             if (!door || typeof door.root !== "function") return
 
             const root = await door.root()
@@ -143,8 +141,13 @@ export function createWire(opts = {}) {
                 }
 
                 // Only the id we just shipped may settle (probe W1).
-                await settle(door, reply, onNote, id)
+                const wasShared = await settle(door, reply, note, id)
                 heard = true
+
+                // The image follows the fact (id:kb-12a). Never awaited: the
+                // message is durable and answered, and the picture is heavy,
+                // absent-is-a-state, and re-derivable by re-running the turtle.
+                if (wasShared) void shipImage(door, id, say)
             }
 
             // Clan was answering and more remain → continue after the latch
@@ -198,16 +201,6 @@ export function createWire(opts = {}) {
         }
     }
 
-    /**
-     * Replace what the surface stands on. Surfaces that have nothing to say
-     * leave it null — no branch.
-     *
-     * @param {() => ({ name: string, payload?: object } | null | undefined)} fn
-     */
-    function stand(fn) {
-        standing = typeof fn === "function" ? fn : () => null
-    }
-
     function noteDrop(eventName, err) {
         try {
             onDrop?.(eventName, err)
@@ -222,7 +215,21 @@ export function createWire(opts = {}) {
         }
     }
 
-    return { say, announce, attached, reconnected, stand }
+    /**
+     * A permanent refusal is said out loud, hook or no hook — the same law and
+     * the same fallback a drop already had (id:kb-7, id:kb-vet5 43).
+     * Keep it, or say why not. Never neither.
+     */
+    function note(n) {
+        try {
+            onNote?.(n)
+            if (!onNote) console.debug?.(`[keep/wire] ${n.kind} ${n.id}:`, n.why)
+        } catch {
+            /* a note that throws is still a note */
+        }
+    }
+
+    return { say, announce, attached, reconnected }
 }
 
 // ── pack one message for the wire ────────────────────────────────────
@@ -259,19 +266,27 @@ async function pack(door, id, bytes) {
  * The settle is fenced to `expectedId` — the name of the message this push
  * carried. Foreign ids in the reply are ignored (not shared, not noted).
  *
+ * THE REPLY IS A LIST FOR A ONE-SHIP VERB, on purpose (id:kb-vet5 45): it is
+ * the door a batch would enter by, and the shape kb-12 wrote. Do not collapse
+ * it to one fact, and do not grow a second verb beside it.
+ *
  * @param {{ share: Function }} door
  * @param {{ shared?: Array, refused?: Array }} reply
- * @param {Function} [onNote]
+ * @param {(note: {kind: string, id: string, why?: string}) => void} note
  * @param {string} expectedId - name(bytes) of the entry just shipped
+ * @returns {Promise<boolean>} true when the clan SHARED it — the image may follow
  */
-async function settle(door, reply, onNote, expectedId) {
-    if (!reply || typeof reply !== "object") return
-    if (typeof expectedId !== "string" || !expectedId) return
+async function settle(door, reply, note, expectedId) {
+    if (!reply || typeof reply !== "object") return false
+    if (typeof expectedId !== "string" || !expectedId) return false
+
+    let wasShared = false
 
     const shared = Array.isArray(reply.shared) ? reply.shared : []
     for (const s of shared) {
         if (s && s.id === expectedId && typeof s.at === "number") {
             await door.share(s.id, { at: s.at, node: s.node })
+            wasShared = true
         }
     }
 
@@ -280,11 +295,50 @@ async function settle(door, reply, onNote, expectedId) {
         // Permanent refusal is an answer: same fact shape, why rides beside.
         if (r && r.id === expectedId && typeof r.at === "number") {
             await door.share(r.id, { at: r.at, node: r.node })
-            try {
-                onNote?.({ kind: "refused", id: r.id, why: r.why })
-            } catch {
-                /* notes must not break the drain */
-            }
+            note({ kind: "refused", id: r.id, why: r.why })
         }
     }
+
+    return wasShared
+}
+
+// ── the image follows the fact (id:kb-12a) ───────────────────────────
+
+/**
+ * Ship the picture once, after the message is durable AND answered.
+ *
+ * Only what we hold: before shared the blob may be the only copy; after
+ * shared the room holds it and the fold may let it go. No retry and no
+ * queue — there is no next share for an already-shared id (id:kb-vet3 24),
+ * and what licenses the refusal is RE-DERIVABILITY: the source survives,
+ * so a lost picture degrades to re-running the turtle, never to a hole.
+ *
+ * Base64 exists again only here — the store holds bytes (id:kb-vet2-image).
+ *
+ * @param {{ image?: Function }} door
+ * @param {string} id
+ * @param {(name: string, payload?: object) => Promise<unknown>} say
+ */
+async function shipImage(door, id, say) {
+    try {
+        if (typeof door.image !== "function") return
+        const blob = await door.image(id)
+        if (blob == null) return
+        const image = await toBase64(blob)
+        if (image) void say(IMAGE_EVENT, { id, image })
+    } catch {
+        // A drop is a fact. The message is already shared; the picture is not
+        // the keep.
+    }
+}
+
+async function toBase64(blob) {
+    const buf = await blob.arrayBuffer()
+    const bytes = new Uint8Array(buf)
+    let bin = ""
+    // Chunked: String.fromCharCode.apply over a whole PNG overflows the stack.
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000))
+    }
+    return globalThis.btoa(bin)
 }

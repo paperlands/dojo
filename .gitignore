@@ -1,3 +1,7 @@
+# Keep journal SQLite files (id:kb-10) — never commit a live log.
+/priv/keep/*.db
+/priv/keep/*.db-*
+
 # The directory Mix will write compiled artifacts to.
 /_build/
 

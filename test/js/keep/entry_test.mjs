@@ -1,7 +1,8 @@
 // The entry is text (id:kb-2, id:kc-p-text) — pure, sync, no mocks.
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { V, write, read, name } from "../../../assets/js/keep/entry.js"
+import { readFileSync } from "node:fs"
+import { V, write, read, name, unshaped } from "../../../assets/js/keep/entry.js"
 import { hash } from "../../../assets/js/keep/hash.js"
 
 const ctx = Object.freeze({
@@ -160,5 +161,36 @@ describe("entry: what it is not", () => {
         assert.equal(typeof bytes, "string")
         // name takes the string, never the value.
         assert.equal(name(bytes), hash(bytes))
+    })
+})
+
+// ── THE PROJECTION FLOOR — one law, both sides of the wire ────────────
+//
+// The fixture is the law's ONE artifact: this suite and Dojo.Keep.ProjectTest
+// read the same file, so the two floors cannot drift apart in silence. They
+// did once — client finite, server non-negative integer — and a client could
+// mint what the clan refuses forever (id:kb-5-floor, id:kb-vet5 42).
+
+describe("entry: the projection floor", () => {
+    const cases = JSON.parse(
+        readFileSync(
+            new URL("../../fixtures/keep_floor.json", import.meta.url),
+            "utf8",
+        ),
+    )
+
+    for (const c of cases) {
+        test(c.note, () => {
+            assert.equal(unshaped(c.value), c.why)
+        })
+    }
+
+    test("what write authors always clears the floor", () => {
+        assert.equal(unshaped(read(write("snap", { any: 1 }, ctx))), null)
+    })
+
+    test("the genesis is below the floor, and is not a put (id:kb-5-genesis-place)", () => {
+        const g = read(write("genesis", { nonce: "c" }, { root: null, ts: ctx.ts }))
+        assert.equal(unshaped(g), "root")
     })
 })

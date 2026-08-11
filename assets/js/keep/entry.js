@@ -52,3 +52,29 @@ export function read(bytes) {
 export function name(bytes) {
     return hash(bytes)
 }
+
+const whole = (x) => Number.isInteger(x) && x >= 0
+
+/**
+ * THE PROJECTION FLOOR — one law, both sides of the wire (id:kb-5-floor).
+ *
+ * Every column an index or a row holds must project, or the keep is durable
+ * and INVISIBLE: in no index, unlistable, unshippable. It lives here because
+ * the floor is a fact about the five frozen fields, not about a store.
+ *
+ * Dojo.Keep.shaped?/1 is the Elixir mirror; the two say the same thing clause
+ * for clause. They diverged once — client finite, server non-negative integer —
+ * and a client could mint what the clan refuses forever (id:kb-vet5 42).
+ *
+ * @param {object} value - entry.read(bytes)
+ * @returns {string | null} the first field that will never project, else null
+ */
+export function unshaped(value) {
+    if (value == null || typeof value !== "object") return "message"
+    if (typeof value.root !== "string") return "root"
+    if (typeof value.kind !== "string") return "kind"
+    if (typeof value.target !== "string" && value.target !== null) return "target"
+    if (value.ts == null || !whole(value.ts.t) || !whole(value.ts.n)) return "ts"
+    if (!whole(value.v) || value.v < 1) return "v"
+    return null
+}

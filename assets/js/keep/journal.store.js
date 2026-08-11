@@ -20,7 +20,7 @@
 // the rest — not "the room surely holds the image" (id:kb-vet3 23).
 
 import { stamp as ambientStamp } from "../utils/stamp.js"
-import { name, read } from "./entry.js"
+import { name, read, unshaped } from "./entry.js"
 import { genesisBytes } from "./genesis.js"
 
 /** Schema version = projection version. Bump ⇒ re-project every row. */
@@ -185,22 +185,20 @@ export function createEngine(opts = {}) {
         }
         const id = name(bytes)
         const value = read(bytes)
-        const root = value.root ?? null
-        const ts = value.ts ?? null
 
-        // Indexes lead with root; null is not a valid IDB key. Same floor as ts.
-        if (!projectableRoot(root)) {
+        // The floor covers every column the index holds, and it is the SAME
+        // floor the clan applies (entry.unshaped ↔ Dojo.Keep.shaped?/1). A
+        // keep below it is durable and invisible here, or shared-and-refused
+        // there — one law, one seam, loud (id:kb-5-floor, id:kb-vet5 42).
+        const missing = unshaped(value)
+        if (missing) {
             throw new TypeError(
-                "journal.put: root will never project — refuse silent loss",
+                `journal.put: ${missing} will never project — refuse silent loss`,
             )
         }
-        // ts.t / ts.n must be finite numbers or the compound index never sees
-        // the row: list, local, ship, and shared-eviction all go blind.
-        if (!projectableTs(ts)) {
-            throw new TypeError(
-                "journal.put: ts will never project — refuse silent loss",
-            )
-        }
+
+        const root = value.root
+        const ts = value.ts
 
         await withStore(["log", "blobs", "source"], "readwrite", async (tx) => {
             const log = tx.objectStore("log")
@@ -461,25 +459,6 @@ function reproject(tx) {
 }
 
 // ── IDB helpers ─────────────────────────────────────────────────────
-
-/**
- * The projection floor — same law the server holds at kb-11-derive.
- * Every column the index holds must project, or the keep is invisible.
- * root: string (null is not a key). ts: finite numbers (id:kb-vet4 29).
- */
-export function projectableRoot(root) {
-    return typeof root === "string"
-}
-
-export function projectableTs(ts) {
-    return (
-        ts != null &&
-        typeof ts.t === "number" &&
-        Number.isFinite(ts.t) &&
-        typeof ts.n === "number" &&
-        Number.isFinite(ts.n)
-    )
-}
 
 function idbReq(request) {
     return new Promise((resolve, reject) => {

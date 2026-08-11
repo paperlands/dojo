@@ -33,10 +33,12 @@ defmodule DojoWeb.Router do
     end
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", DojoWeb do
-  #   pipe_through :api
-  # end
+  scope "/", DojoWeb do
+    pipe_through :api
+
+    # The fork word's read door (id:la-fork-pull).
+    get "/keeps/:ref", KeepController, :pull
+  end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:dojo, :dev_routes) do

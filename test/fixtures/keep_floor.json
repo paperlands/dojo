@@ -1,0 +1,82 @@
+[
+  {
+    "note": "an honest snap — every column projects",
+    "why": null,
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": "bbbb"}
+  },
+  {
+    "note": "null target is lawful — a keep about no work yet",
+    "why": null,
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 0, "n": 0}, "target": null}
+  },
+  {
+    "note": "root null — indexes lead with root, and null is not an IDB key",
+    "why": "root",
+    "value": {"v": 1, "kind": "snap", "root": null, "ts": {"t": 1, "n": 0}, "target": null}
+  },
+  {
+    "note": "root a number — a valid key of the wrong type is still invisible",
+    "why": "root",
+    "value": {"v": 1, "kind": "snap", "root": 42, "ts": {"t": 1, "n": 0}, "target": null}
+  },
+  {
+    "note": "root absent — five keys always",
+    "why": "root",
+    "value": {"v": 1, "kind": "snap", "ts": {"t": 1, "n": 0}, "target": null}
+  },
+  {
+    "note": "kind absent — the server indexes it",
+    "why": "kind",
+    "value": {"v": 1, "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": null}
+  },
+  {
+    "note": "kind a number — never interpreted, always indexed",
+    "why": "kind",
+    "value": {"v": 1, "kind": 7, "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": null}
+  },
+  {
+    "note": "target a number — string or null, nothing else",
+    "why": "target",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": 9}
+  },
+  {
+    "note": "ts absent — the row lands in neither index",
+    "why": "ts",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "target": null}
+  },
+  {
+    "note": "ts null",
+    "why": "ts",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": null, "target": null}
+  },
+  {
+    "note": "ts.t a string — a valid IDB key, outside every numeric range",
+    "why": "ts",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": "1", "n": 0}, "target": null}
+  },
+  {
+    "note": "ts.n absent",
+    "why": "ts",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1}, "target": null}
+  },
+  {
+    "note": "ts.t fractional — the client stored it, the clan refused it forever",
+    "why": "ts",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1.5, "n": 0}, "target": null}
+  },
+  {
+    "note": "ts.t negative — a clock before the epoch orders nothing",
+    "why": "ts",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": -1, "n": 0}, "target": null}
+  },
+  {
+    "note": "v absent — the fold has no floor to stand on",
+    "why": "v",
+    "value": {"kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": null}
+  },
+  {
+    "note": "v zero — every entry we author starts at V >= 1",
+    "why": "v",
+    "value": {"v": 0, "kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": null}
+  }
+]

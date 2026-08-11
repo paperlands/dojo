@@ -489,11 +489,12 @@ export const createTerminal = (element, cm6, options = {}) => {
             }
         },
 
-        createBuffer(name = '', content = '', origin = null) {
+        createBuffer(name = '', content = '', origin = null, work_id = null) {
             const bufferName = name || mints.name();
-            // Blank tab = new river (id:kb-vet2-work). No work_id in opts.
+            // Blank tab = new river (id:kb-vet2-work); a caller passing
+            // work_id rejoins one (fork-from-keep, id:kb-2a).
             const { collection, id } = buffers.addBuffer(
-                state.collection, { name: bufferName, content, origin }, mints
+                state.collection, { name: bufferName, content, origin, work_id }, mints
             );
             state.collection = collection;
             state.docs.set(id, createDoc(content));
@@ -507,6 +508,19 @@ export const createTerminal = (element, cm6, options = {}) => {
                 if (buffer.origin?.addr === addr && (!buffer_id || buffer.origin?.buffer_id === buffer_id)) return id;
             }
             return null;
+        },
+
+        // Fork-from-keep rejoins the river (id:kb-2a): a buffer already
+        // bearing the work IS the fork; otherwise the keep's source opens a
+        // new hand on it. Never creates without source — a fork with nothing
+        // to fork is a find (id:la-fork).
+        forkKeep({ work_id, source, name }) {
+            if (!work_id || !state.collection) return null;
+            for (const [id, buffer] of state.collection.items) {
+                if (buffer.work_id === work_id) { doSelectBuffer(id); return id; }
+            }
+            if (typeof source !== 'string') return null;
+            return terminal.createBuffer(name || '', source, null, work_id);
         },
 
         // Current content of your fork along a lineage, if you have one.

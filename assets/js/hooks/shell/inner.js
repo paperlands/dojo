@@ -26,6 +26,9 @@ import { createJournal } from "../../keep/journal.js"
 import { createWire } from "../../keep/wire.js"
 import { keepSnap } from "../../keep/kinds/snap.js"
 import { landed, registerDoor, watchAsk } from "../../keep/cell.js"
+import { forkRef, link, pullKeep } from "../../link.js"
+import { fetchFragment, fragmentIndex } from "../../weave/fragments.js"
+import { transpile } from "../../weave/parse.js"
 
 // Events registered at mounted(); handlers returned once mount() stands.
 export const inner = {
@@ -54,7 +57,7 @@ function mountInner(hook, { term, cm6 }) {
     // Profiler overlay — opt-in via ?perf=1. Lazy-imported so it adds
     // zero cost to normal sessions. Reports RAF idle-spin + GPU growth.
     // Probe port rides the same gate (light-ladders-probe-port) — read/poke only.
-    if (new URLSearchParams(location.search).has('perf')) {
+    if (link.read('perf') != null) {
         import('../../turtling/profile/overlay.js')
             .then(m => { if (arena.alive) arena.add(m.attachProfilerOverlay(turtle)); })
             .catch(err => console.warn('profiler overlay failed to load:', err));
@@ -477,6 +480,16 @@ function mountInner(hook, { term, cm6 }) {
         // announce is the same sentence reconnected will say (id:kb-9).
         birth: () => {
             term.triggerBridge();
+            // ?fork=<ref> forks the named thing or finds its buffer — after
+            // birth, so every organ stands; idempotent, so a remount only
+            // finds what the first enactment made (id:la-fork).
+            const ref = link.read("fork");
+            if (ref) void forkRef(ref, {
+                door: journal,
+                term,
+                corpus: { index: fragmentIndex, fetch: fetchFragment, press: transpile },
+                pull: pullKeep,
+            });
             void wire.announce();
         },
         // The healer: clear the drain latch, then say birth's sentence again.

@@ -35,7 +35,9 @@ defmodule Dojo.Application do
                [strategy: :rest_for_one]
              ]}
         },
-        # Dojo.Repo,
+        # Dojo.Repo stays shut (id:kb-10). Keep's two halfs: one writer, one read pool.
+        Dojo.Keep.Repo,
+        Dojo.Keep.Repo.Reader,
         {DNSCluster, query: Application.get_env(:dojo, :dns_cluster_query) || :ignore},
         {Finch, name: Dojo.Finch},
         Dojo.Cache,

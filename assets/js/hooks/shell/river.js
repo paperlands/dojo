@@ -26,6 +26,7 @@
 
 import { createArena } from "../../kernel/arena.js"
 import { attach } from "../../kernel/attach.js"
+import { link, shareForkRef } from "../../link.js"
 import { name, read } from "../../keep/entry.js"
 import { PAGE } from "../../keep/page.js"
 import { shared } from "../../keep/shared.js"
@@ -63,6 +64,7 @@ function mountRiver(hook) {
     const word = root.querySelector("[data-word]")
     const message = root.querySelector("[data-message]")
     const drop = root.querySelector("[data-drop]")
+    const copy = root.querySelector("[data-copy]")
     if (!rail || !word || !message) {
         console.error("river: the sky is missing its rail or its word")
         arena.destroy()
@@ -70,6 +72,22 @@ function mountRiver(hook) {
     }
 
     const term = seatOf("coreshell")
+
+    // ?action=share holds the sharing sky open (id:la-vocabulary). The class
+    // IS the fact, whatever hand toggles it — the mirror keeps a copied
+    // address honest. #river-state is phx-update=ignore, so the flag
+    // survives the wire; the link survives the tab.
+    const flag = document.getElementById("river-state")
+    if (flag) {
+        if (link.read("action") === "share") flag.classList.add("river-open")
+        const mirror = () => {
+            if (flag.classList.contains("river-open")) link.carry("action", "share")
+            else if (link.read("action") === "share") link.carry("action", null)
+        }
+        const mo = new MutationObserver(mirror)
+        mo.observe(flag, { attributes: true, attributeFilter: ["class"] })
+        arena.add(() => mo.disconnect())
+    }
 
     // The shell's chosen head. null is the resting head — the newest keep —
     // and a swap is nothing but this field naming the other line's head.
@@ -329,8 +347,11 @@ function mountRiver(hook) {
     function say() {
         const here = at.key === PRESENT
         const drafting = at.key === DRAFT
+        // A kept title is the only place the copy-link stands — present and
+        // draft have no address yet (id:la-fork wants a hex64 or a word).
         root.classList.toggle("at-present", here)
         root.classList.toggle("at-draft", drafting)
+        root.classList.toggle("at-keep", !here && !drafting && !!at.id)
         if (here) {
             // The first word names the river; every later one names a step.
             message.placeholder = byId.size === 0 ? "YOUR TITLE" : "YOUR MESSAGE"
@@ -351,6 +372,37 @@ function mountRiver(hook) {
         if (message.value && document.activeElement !== message) message.value = ""
         const bytes = at.id && byId.get(at.id)
         word.textContent = (bytes && titleOf(bytes)) || "—"
+    }
+
+    /**
+     * Absolute address for the standing keep (id:la-fork-pull · id:la-vocabulary).
+     *
+     * HEAD of this work → ?fork=<work_id> (always latest at open).
+     * Older keep       → ?fork=<keep_id>  (that commit only).
+     * work_id is the keep's target — the river that was shared — never a
+     * fresh mint; root rides inside the keep the ref resolves to.
+     */
+    function shareLink() {
+        if (!at.id) return null
+        // byId insertion order = ofWork order = newest-first (id:kb-8).
+        const headId = byId.size ? byId.keys().next().value : null
+        let workId = work
+        const bytes = byId.get(at.id)
+        if (bytes) {
+            try {
+                const target = read(bytes).target
+                if (typeof target === "string" && target) workId = target
+            } catch {
+                /* keep id still answers */
+            }
+        }
+        const ref = shareForkRef(at.id, { workId, headId })
+        if (!ref) return null
+        const out = new URL(location.pathname, location.origin)
+        const clan = new URLSearchParams(location.search).get("clan")
+        if (clan) out.searchParams.set("clan", clan)
+        out.searchParams.set("fork", ref)
+        return out.toString()
     }
 
     function titleOf(bytes) {
@@ -523,6 +575,41 @@ function mountRiver(hook) {
             e.preventDefault()
             e.stopPropagation()
             if (at.key === DRAFT) discardDraft()
+        })
+    }
+
+    // Copy the share link — HEAD shares the work (latest at open); an older
+    // keep pins that commit (id:la-fork-pull). Not a toast.
+    if (copy) {
+        let copiedTimer = null
+        arena.add(() => clearTimeout(copiedTimer))
+        arena.on(copy, "click", async (e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            const url = shareLink()
+            if (!url) return
+            try {
+                if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(url)
+                else throw new Error("no clipboard")
+            } catch {
+                // Last resort: select-and-copy via a transient field.
+                const ta = document.createElement("textarea")
+                ta.value = url
+                ta.setAttribute("readonly", "")
+                ta.style.position = "fixed"
+                ta.style.opacity = "0"
+                document.body.appendChild(ta)
+                ta.select()
+                try { document.execCommand("copy") } catch { /* spoken by title only */ }
+                ta.remove()
+            }
+            copy.classList.add("is-copied")
+            copy.title = "copied"
+            clearTimeout(copiedTimer)
+            copiedTimer = setTimeout(() => {
+                copy.classList.remove("is-copied")
+                copy.title = "copy link"
+            }, 1100)
         })
     }
 

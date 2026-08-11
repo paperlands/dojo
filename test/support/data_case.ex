@@ -1,27 +1,19 @@
 defmodule Dojo.DataCase do
   @moduledoc """
-  This module defines the setup for tests requiring
-  access to the application's data layer.
+  Setup for tests that touch the keep's data layer (id:kb-10).
 
-  You may define functions here to be used as helpers in
-  your tests.
-
-  Finally, if the test case interacts with the database,
-  we enable the SQL sandbox, so changes done to the database
-  are reverted at the end of every test. If you are using
-  PostgreSQL, you can even run database tests asynchronously
-  by setting `use Dojo.DataCase, async: true`, although
-  this option is not recommended for other databases.
+  The sandbox does not reach an external process (D004's Table owns its
+  connection for life). Name it in the first test that crosses that seam,
+  not the tenth.
   """
 
   use ExUnit.CaseTemplate
 
   using do
     quote do
-      alias Dojo.Repo
+      alias Dojo.Keep.Repo
 
       import Ecto
-      import Ecto.Changeset
       import Ecto.Query
       import Dojo.DataCase
     end
@@ -33,26 +25,10 @@ defmodule Dojo.DataCase do
   end
 
   @doc """
-  Sets up the sandbox based on the test tags.
+  Own the writer's sandbox connection for this test process.
   """
   def setup_sandbox(tags) do
-    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Dojo.Repo, shared: not tags[:async])
+    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Dojo.Keep.Repo, shared: not tags[:async])
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
-  end
-
-  @doc """
-  A helper that transforms changeset errors into a map of messages.
-
-      assert {:error, changeset} = Accounts.create_user(%{password: "short"})
-      assert "password is too short" in errors_on(changeset).password
-      assert %{password: ["password is too short"]} = errors_on(changeset)
-
-  """
-  def errors_on(changeset) do
-    Ecto.Changeset.traverse_errors(changeset, fn {message, opts} ->
-      Regex.replace(~r"%{(\w+)}", message, fn _, key ->
-        opts |> Keyword.get(String.to_existing_atom(key), key) |> to_string()
-      end)
-    end)
   end
 end

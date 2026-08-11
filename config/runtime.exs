@@ -163,6 +163,31 @@ config :dojo, Phoenix.PubSub.Partisan,
   channel_data: :data,
   channel_control: :control
 
+# Keep journal path — runtime, never inside a Burrito extract (id:keep-ms-sqlite-path).
+# KEEP_PATH wins; else a stable data dir beside the release.
+if config_env() in [:prod, :local] do
+  keep_path =
+    System.get_env("KEEP_PATH") ||
+      Path.join([System.user_home!(), ".dojo", "keep.db"])
+
+  keep_dir = Path.dirname(keep_path)
+  File.mkdir_p!(keep_dir)
+
+  config :dojo, Dojo.Keep.Repo,
+    database: keep_path,
+    priv: "priv/keep",
+    pool_size: 1,
+    journal_mode: :wal,
+    busy_timeout: 5_000
+
+  config :dojo, Dojo.Keep.Repo.Reader,
+    database: keep_path,
+    priv: "priv/keep",
+    pool_size: 10,
+    journal_mode: :wal,
+    busy_timeout: 5_000
+end
+
 if config_env() == :prod do
   # database_url =
   #   System.get_env("DATABASE_URL") ||

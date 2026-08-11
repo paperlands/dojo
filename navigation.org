@@ -188,6 +188,66 @@ Promise-per-call over the worker. Engine never leaks. =root()= is the one way
 to ask who am I. Verbs from =verbs.js=. Hatch path never awaits
 ([[file:specs/weave/keep-build.org][keep-build]] =kb-6=).
 
+** keep server repo — the adapter is the store
+:PROPERTIES:
+:ID: nav-keep-repo
+:KEYWORDS: keep repo reader sqlite ecto Dojo.Keep.Repo WAL pool_size priv/keep
+:PATH: lib/dojo/keep/repo.ex
+:END:
+=Dojo.Keep.Repo= (one writer) + =Dojo.Keep.Repo.Reader= (=read_only: true=).
+=priv: "priv/keep"= — never the default last-segment derivation. Do not touch
+=Dojo.Repo= ([[file:specs/weave/keep-build.org][keep-build]] =kb-10=).
+
+** keep project — derive columns, accept none
+:PROPERTIES:
+:ID: nav-keep-project
+:KEYWORDS: keep project hash shaped name unparseable shape anti-divergence promoted columns
+:PATH: lib/dojo/keep.ex
+:END:
+=project(message, claimed_id)= → columns or =:unparseable|:shape|:name=.
+No schema, no changeset. Five frozen fields only. The name is derived; a
+mismatch is anti-divergence ([[file:specs/weave/keep-build.org][keep-build]] =kb-11= · =kb-11-derive=).
+
+** keep receive — bind · stamp · insert · the row's fact
+:PROPERTIES:
+:ID: nav-keep-receive
+:KEYWORDS: keep receive share refuse bind TOFU stamp insert on_conflict root author clan wire
+:PATH: lib/dojo/keep.ex
+:END:
+=receive(payload, clan:, author_id:)= → =%{shared, refused}=. Project is not a
+judgement; bind is the only decision. Permanent refusals are stamped so
+announce terminates. Reply is the row's fact, never the attempt's stamp
+([[file:specs/weave/keep-build.org][keep-build]] =kb-12=). LiveView door:
+=shell_live= event ="keep"=.
+
+** keep referents — what a keep points at
+:PROPERTIES:
+:ID: nav-keep-referent
+:KEYWORDS: keep referent source image sources table keeps.image too_big max_text max_image ceiling clan fence base64 tombstone
+:PATH: lib/dojo/keep.ex
+:END:
+A referent is what a keep *points at*; the message is what it *is*. =source=
+(key =hash(text)=, =sources= table, fans on announce, never evicted, **no
+fence** — it proves itself) and =image= (key = the message's id, so its home is
+=keeps.image=; rides the share; evictable; fenced by =clan= + =image IS NULL=,
+and the fence's subject is the *bind's* subject). One ceiling for both plus the
+message: =@max_text= / =@max_image= → =why: :too_big=. Client side ships the
+image from =keep/wire.js= after the share reply; LiveView door: =shell_live=
+event ="keep:image"= ([[file:specs/weave/keep-build.org][keep-build]]
+=kb-vet5-referent= · =kb-12a=).
+
+** keep floor — one law, both sides of the wire
+:PROPERTIES:
+:ID: nav-keep-floor
+:KEYWORDS: keep floor unshaped shaped projection durable invisible fixture keep_floor.json ts root kind target v
+:PATH: assets/js/keep/entry.js
+:END:
+=entry.unshaped(value)= → the first field that will never project, else null.
+=Dojo.Keep.shaped?/1= is its mirror; =test/fixtures/keep_floor.json= is read by
+*both* suites so the two cannot drift. Below the floor a keep is durable and
+invisible here, or shared-and-refused there
+([[file:specs/weave/keep-build.org][keep-build]] =kb-5-floor= · =kb-vet5=).
+
 ** keep verbs — one list both sides of the door
 :PROPERTIES:
 :ID: nav-keep-verbs
@@ -296,6 +356,17 @@ call-site utilities still win.
 =work_id= on every buffer; blank tab mints, fork continues, fork-from-keep
 rejoins. =term.currentWorkId()= is the seam to the mint
 ([[file:specs/weave/keep-build.org][keep-build]] =kb-2a= · =kb-work=).
+
+** link actions — the address bar as a fact store
+:PROPERTIES:
+:ID: nav-link-actions
+:KEYWORDS: link url query param action share fork deep-link read carry address searchparams pull head cross-machine
+:PATH: assets/js/link.js
+:END:
+=?action=share= · =?fork=<ref>= · =?weave== · =?perf= — surfaces read their
+word at mount and enact idempotently; =carry= mirrors moved state back. One
+engine (=kernel/link.js=); =forkRef= is the fork word's ladder
+([[file:specs/weave/link-actions.org][link-actions]] =la-law= · =la-fork=).
 
 * CLUSTERING — discovery, transport, roaming
 :PROPERTIES:

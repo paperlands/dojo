@@ -13,7 +13,7 @@ import assert from "node:assert/strict"
 import { readFileSync, readdirSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
-import { createWire, KEEP_EVENT } from "../../../assets/js/keep/wire.js"
+import { createWire, KEEP_EVENT, IMAGE_EVENT } from "../../../assets/js/keep/wire.js"
 import { PAGE } from "../../../assets/js/keep/page.js"
 import { createJournal } from "../../../assets/js/keep/journal.js"
 import { createEngine } from "../../../assets/js/keep/journal.store.js"
@@ -380,26 +380,91 @@ describe("wire: announce — one drain, newest first, serial", () => {
         assert.equal(ship.payload.image, undefined)
     })
 
-    test("standing is said once per announce, before the drain", async () => {
+    // ── the image follows the fact (id:kb-12a, id:kb-vet5 41) ──────────
+
+    test("the message shares, THEN the image ships — in that order", async () => {
         const root = await door.root()
-        await door.put(snap(root, { tag: "x" }, { t: 1, n: 0 }))
+        const bytes = snap(root, { tag: "pic" }, { t: 1, n: 0 })
+        await door.put(bytes, { image: new Blob([new Uint8Array([1, 2, 3])]) })
 
         const hook = makeHook({
-            [KEEP_EVENT]: async (payload) => ({
-                shared: [{ id: payload.id, at: 1, node: "n" }],
+            [KEEP_EVENT]: async (p) => ({
+                shared: [{ id: p.id, at: 7, node: "n" }],
                 refused: [],
             }),
-            seeTurtle: async () => undefined,
         })
-        const wire = createWire({
-            hook,
-            door,
-            stand: () => ({ name: "seeTurtle", payload: { addr: "me" } }),
-        })
+        const wire = createWire({ hook, door })
         await wire.announce()
-        assert.equal(hook.log[0].name, "seeTurtle")
-        assert.equal(hook.log[0].payload.addr, "me")
-        assert.equal(hook.log[1].name, KEEP_EVENT)
+        // The ship is not awaited by the drain — let its microtasks settle.
+        await new Promise((r) => setTimeout(r, 0))
+
+        const order = hook.log.map((e) => e.name)
+        assert.deepEqual(order.slice(0, 2), [KEEP_EVENT, IMAGE_EVENT])
+
+        const shipped = hook.log.find((e) => e.name === IMAGE_EVENT)
+        assert.equal(shipped.payload.id, name(bytes))
+        // base64 exists again only at ship — the store holds bytes.
+        assert.equal(typeof shipped.payload.image, "string")
+        assert.equal(globalThis.atob(shipped.payload.image).length, 3)
+    })
+
+    test("silence ships no image — before shared the blob may be the only copy", async () => {
+        const root = await door.root()
+        await door.put(snap(root, { tag: "quiet" }, { t: 1, n: 0 }), {
+            image: new Blob([new Uint8Array([9])]),
+        })
+
+        const hook = makeHook({ [KEEP_EVENT]: async () => undefined })
+        await createWire({ hook, door }).announce()
+        await new Promise((r) => setTimeout(r, 0))
+
+        assert.equal(hook.log.some((e) => e.name === IMAGE_EVENT), false)
+    })
+
+    test("a permanent refusal ships no image, and says why out loud", async () => {
+        const root = await door.root()
+        await door.put(snap(root, { tag: "no" }, { t: 1, n: 0 }), {
+            image: new Blob([new Uint8Array([9])]),
+        })
+
+        const notes = []
+        const hook = makeHook({
+            [KEEP_EVENT]: async (p) => ({
+                shared: [],
+                refused: [{ id: p.id, at: 3, node: "n", why: "root" }],
+            }),
+        })
+        await createWire({ hook, door, onNote: (n) => notes.push(n) }).announce()
+        await new Promise((r) => setTimeout(r, 0))
+
+        assert.equal(hook.log.some((e) => e.name === IMAGE_EVENT), false)
+        // Keep it, or say why not — never neither (id:kb-vet5 43).
+        assert.deepEqual(notes, [{ kind: "refused", id: notes[0]?.id, why: "root" }])
+    })
+
+    test("a keep with no blob held ships nothing, and the drain lives", async () => {
+        const root = await door.root()
+        await door.put(snap(root, { tag: "textonly" }, { t: 1, n: 0 }))
+
+        const hook = makeHook({
+            [KEEP_EVENT]: async (p) => ({
+                shared: [{ id: p.id, at: 1, node: "n" }],
+                refused: [],
+            }),
+        })
+        await createWire({ hook, door }).announce()
+        await new Promise((r) => setTimeout(r, 0))
+
+        assert.equal(hook.log.some((e) => e.name === IMAGE_EVENT), false)
+        assert.equal(hook.log.filter((e) => e.name === KEEP_EVENT).length, 1)
+    })
+
+    test("three verbs and no fourth — stand was excised (id:kb-vet5 44)", async () => {
+        const wire = createWire({ hook: makeHook({}), door })
+        assert.deepEqual(
+            Object.keys(wire).sort(),
+            ["announce", "attached", "reconnected", "say"],
+        )
     })
 })
 

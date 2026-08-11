@@ -611,6 +611,38 @@ describe("Terminal (CM6)", () => {
         localStorage.clear();
     });
 
+    // forkKeep — fork-from-keep rejoins the river (id:kb-2a, id:la-fork)
+    test("forkKeep selects the buffer already bearing the work", () => {
+        const cm6  = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const held = term.forkKeep({ work_id: "w".repeat(64), source: "fw 1", name: "first" });
+        assert.ok(held, "created on an empty river");
+        const again = term.forkKeep({ work_id: "w".repeat(64), source: "other", name: "second" });
+        assert.equal(again, held, "the standing buffer IS the fork");
+        assert.equal(term.currentBufferId(), held);
+    });
+
+    test("forkKeep creates carrying the keep's work_id, and the next mint differs", () => {
+        const cm6  = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.forkKeep({ work_id: "a".repeat(64), source: "fw 50", name: "kept" });
+        assert.equal(term.currentWorkId(), "a".repeat(64), "the fork rejoined the keep's river");
+        const blank = term.createBuffer("blank", "");
+        assert.notEqual(blank, id);
+        assert.notEqual(term.currentWorkId(), "a".repeat(64), "a blank tab is still a new river");
+    });
+
+    test("forkKeep never creates without source — a fork with nothing to fork is a find", () => {
+        const cm6  = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const before = term.currentBufferId();
+        assert.equal(term.forkKeep({ work_id: "b".repeat(64), source: null, name: "ghost" }), null);
+        assert.equal(term.currentBufferId(), before, "nothing was made, nothing moved");
+    });
+
     // buffers.js pure transition backing the attend path
     test("buffers: attend persists through serialize/loadCollection round-trip", async () => {
         const buffers = await import("../../../assets/js/terminal/buffers.js");

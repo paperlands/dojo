@@ -118,30 +118,5 @@ describe("idb_memory: auto-commit is real IDB lifetime", () => {
     })
 })
 
-describe("projectableTs", () => {
-    test("finite numbers only", async () => {
-        const { projectableTs } = await import(
-            "../../../assets/js/keep/journal.store.js"
-        )
-        assert.equal(projectableTs({ t: 1, n: 0 }), true)
-        assert.equal(projectableTs(null), false)
-        assert.equal(projectableTs({ t: null, n: 0 }), false)
-        assert.equal(projectableTs({ t: "1", n: 0 }), false)
-        assert.equal(projectableTs({ t: 1 }), false)
-        assert.equal(projectableTs({ t: NaN, n: 0 }), false)
-    })
-})
-
-describe("projectableRoot", () => {
-    test("string only — null is not an IDB key (id:kb-vet4 29)", async () => {
-        const { projectableRoot } = await import(
-            "../../../assets/js/keep/journal.store.js"
-        )
-        assert.equal(projectableRoot("a".repeat(64)), true)
-        assert.equal(projectableRoot(""), true)
-        assert.equal(projectableRoot(null), false)
-        assert.equal(projectableRoot(undefined), false)
-        assert.equal(projectableRoot(42), false)
-        assert.equal(projectableRoot({}), false)
-    })
-})
+// The floor moved to entry.js — one law, both sides of the wire (id:kb-vet5 42).
+// It is asserted against the Elixir mirror in entry_test.mjs.

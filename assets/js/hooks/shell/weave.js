@@ -24,6 +24,7 @@ import { revealAmbient, registerNavigator } from "../../nerve/reveal.js"
 import { getStage } from "../../turtling/stage-cell.js"
 import { nerve as seatedNerve } from "../nerve.js"
 import { createArena } from "../../kernel/arena.js"
+import { link } from "../../link.js"
 import { stamp } from "../../utils/stamp.js"
 import { safePush } from "../../adapter.js"
 import { outerShellPayload, dispatchPhx } from "./outer-shell-payload.js"
@@ -212,8 +213,8 @@ function mountWeave(hook, boot = {}) {
     renderTrail()
     arena.add(() => trailEl.replaceChildren())
 
-    // Deep-link: ?weave=spirals opens the page.
-    const seed = new URLSearchParams(location.search).get("weave")
+    // Deep-link: ?weave=spirals opens the page (id:la-vocabulary).
+    const seed = link.read("weave")
     if (seed) openPage(seed)
 
     return { events: {}, arena, openPage }

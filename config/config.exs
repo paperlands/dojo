@@ -8,7 +8,9 @@
 import Config
 
 config :dojo,
-  ecto_repos: [Dojo.Repo],
+  # Keep.Repo only — Dojo.Repo stays commented out of the tree (id:kb-10).
+  # The reader never migrates; priv is set on the repo config, not derived.
+  ecto_repos: [Dojo.Keep.Repo],
   generators: [timestamp_type: :utc_datetime]
 
 # Configures the endpoint

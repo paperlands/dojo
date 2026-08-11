@@ -18,6 +18,8 @@ defmodule DojoWeb.RiverComponent do
   """
   use Phoenix.Component
 
+  import DojoWeb.SVGComponents
+
   alias Phoenix.LiveView.JS
 
   @doc """
@@ -431,9 +433,71 @@ defmodule DojoWeb.RiverComponent do
       .river-drop:focus-visible { outline: none; }
       .river-sky.at-draft .river-drop { display: inline-flex; }
 
+      /* Copy-link: next to a kept title. Active deck idiom — secondary
+         + soft glow invites the hand (same family as #riverbutton open). */
+      .river-copy {
+        display: none;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: center;
+        width: 1.35rem;
+        height: 1.35rem;
+        margin-left: 0.4rem;
+        padding: 0;
+        border: none;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--color-secondary-content);
+        cursor: copy;
+        opacity: 0.92;
+        filter:
+          drop-shadow(0 0 3px color-mix(in oklch, var(--color-secondary-content) 55%, transparent))
+          drop-shadow(0 0 8px color-mix(in oklch, var(--color-secondary-content) 28%, transparent));
+        transition: opacity 200ms ease, color 200ms ease, transform 200ms ease;
+      }
+      .river-sky.at-keep .river-copy {
+        display: inline-flex;
+        animation: river-copy-glow 2.6s ease-in-out infinite;
+      }
+      .river-copy:hover {
+        opacity: 1;
+        transform: scale(1.08);
+      }
+      /* :active = press; amber like the rest of the deck */
+      .river-copy:active {
+        color: oklch(0.79 0.16 75);
+        transform: scale(0.96);
+        filter:
+          drop-shadow(0 0 5px color-mix(in oklch, oklch(0.79 0.16 75) 65%, transparent))
+          drop-shadow(0 0 14px color-mix(in oklch, oklch(0.79 0.16 75) 35%, transparent));
+      }
+      .river-copy:focus-visible { outline: none; }
+      .river-sky.at-keep .river-copy.is-copied {
+        animation: river-copy-flash 900ms ease both;
+      }
+      @keyframes river-copy-glow {
+        0%, 100% {
+          filter:
+            drop-shadow(0 0 3px color-mix(in oklch, var(--color-secondary-content) 50%, transparent))
+            drop-shadow(0 0 8px color-mix(in oklch, var(--color-secondary-content) 24%, transparent));
+        }
+        50% {
+          filter:
+            drop-shadow(0 0 5px color-mix(in oklch, var(--color-secondary-content) 72%, transparent))
+            drop-shadow(0 0 14px color-mix(in oklch, var(--color-secondary-content) 38%, transparent));
+        }
+      }
+      @keyframes river-copy-flash {
+        0%   { transform: scale(1); opacity: 1; }
+        35%  { transform: scale(1.18); opacity: 1; }
+        100% { transform: scale(1); opacity: 0.92; }
+      }
+
       @media (prefers-reduced-motion: reduce) {
         .river-col.noon .river-ring-open,
         .river-sun.flare { animation: none; }
+        .river-sky.at-keep .river-copy,
+        .river-sky.at-keep .river-copy.is-copied { animation: none; }
         .river-water { transition: none; }
         .river-rail { scroll-behavior: auto; }
       }
@@ -455,6 +519,15 @@ defmodule DojoWeb.RiverComponent do
             stays on the sky line when the water opens. --%>
       <div class="river-caption">
         <span class="river-word" data-word=""></span>
+        <button
+          type="button"
+          class="river-copy"
+          data-copy=""
+          aria-label="copy share link"
+          title="copy link"
+        >
+          <.copy_link class="w-3.5 h-3.5" />
+        </button>
         <input
           class="river-message"
           data-message=""
@@ -493,19 +566,15 @@ defmodule DojoWeb.RiverComponent do
       class={[
         "flex items-center justify-center w-9 h-9 border-1 border-accent backdrop-blur-sm",
         "transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg]",
-        "lg:w-8 lg:h-8 rounded-sm fill-primary hover:fill-primary active:border-amber-500",
+        "lg:w-8 lg:h-8 rounded-sm text-primary active:border-amber-500",
         "touch-manipulation",
         @class
       ]}
-      title="the river of keeps"
+      title="sharing"
+      aria-label="sharing"
       phx-click={JS.toggle_class("river-open", to: "#river-state")}
     >
-      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M2 12h20" stroke="currentColor" stroke-opacity="0.35" stroke-width="1" />
-        <circle cx="6" cy="12" r="1.6" fill="currentColor" fill-opacity="0.45" />
-        <circle cx="12" cy="12" r="3" fill="currentColor" fill-opacity="0.9" />
-        <circle cx="18" cy="12" r="1.6" fill="currentColor" fill-opacity="0.45" />
-      </svg>
+      <.share class="river-share-icon w-6 h-6" />
     </button>
     """
   end
