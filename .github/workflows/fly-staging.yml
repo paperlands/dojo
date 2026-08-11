@@ -16,6 +16,7 @@ on:
       - "images/**"
       - "TODO"
       - ".github/workflows/release.yml"
+      - ".github/workflows/fly-prod.yml"
 
 # GitHub's default is `bash -e`, which lets a broken pipe stage pass silently.
 defaults:

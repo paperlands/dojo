@@ -1,9 +1,10 @@
 name: CI
 
-# Gate merges into the deploy trunks. Staging deploys from PRs into it;
-# release is the production cut. No push triggers of its own — CI answers
-# when someone asks to land (pull_request), or when a deploy workflow calls
-# it (workflow_call) so red tests cannot ship.
+# Gate merges into the deploy trunks. Staging and production web deploy from
+# PRs into staging / release; push to release still cuts desktop installers.
+# No push triggers of its own — CI answers when someone asks to land
+# (pull_request), or when a release workflow calls it (workflow_call) so red
+# tests cannot ship.
 on:
   pull_request:
     branches: [master, staging, release]

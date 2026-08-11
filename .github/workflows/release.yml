@@ -29,8 +29,9 @@ env:
 jobs:
   # ── CI first ────────────────────────────────────────────────────────────
   # A push to release has no PR event, so the PR-only CI workflow would not
-  # re-run. Call it here: red format/tests stop the version gate, Fly, and
-  # the half-hour installers from ever starting.
+  # re-run. Call it here: red format/tests stop the version gate and the
+  # half-hour installers from ever starting.
+  # Production web deploys separately: fly-prod.yml on PRs into release.
   ci:
     name: CI
     uses: ./.github/workflows/ci.yml
@@ -67,32 +68,6 @@ jobs:
             echo "::error::Tag v$VERSION already exists. Bump the version in mix.exs before pushing to release."
             exit 1
           fi
-
-  # ── Production web ──────────────────────────────────────────────────────
-  # The web app and the desktop installers are two products of one commit,
-  # sharing no artifact — so the site ships beside the builds, not behind
-  # them. fly.toml already names thedojo; -a is belt and braces.
-  # Default (rolling) strategy: prod gets a handover, not a gap.
-  deploy_prod:
-    name: Deploy to Fly (thedojo)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: prepare
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
-
-      - name: Deploy
-        run: |
-          flyctl deploy --remote-only \
-            --wait-timeout 600 \
-            -c fly.toml -a thedojo
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_PROD_API_TOKEN }}
 
   # ── 32-bit Windows ──────────────────────────────────────────────────────
   # Built in isolation on OTP 28.5.0.2 (see OTP_VERSION_WIN32). Burrito's

@@ -1,4 +1,6 @@
-# fly.toml app configuration file generated for thedojo on 2024-05-17T06:49:22+08:00
+# fly.toml app configuration file for the production app (thedojo).
+# Deployed automatically by .github/workflows/fly-prod.yml on every push
+# to a pull request targeting the "release" branch.
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
