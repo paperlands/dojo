@@ -91,10 +91,10 @@ ENV MIX_ENV="prod"
 # Only copy the final release from the build stage
 COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/dojo ./
 
-# Root only long enough to chown the Fly volume at /data, then drop to nobody.
-# See rel/overlays/bin/docker-entrypoint and fly.staging.toml [mounts].
+# Starts as root only to take ownership of the mounted volume; the entrypoint
+# execs the release as nobody. See rel/overlays/bin/docker-entrypoint.
 USER root
-RUN chmod +x /app/bin/docker-entrypoint /app/bin/server /app/bin/migrate 2>/dev/null || true
+RUN chmod +x /app/bin/docker-entrypoint /app/bin/server /app/bin/migrate
 
 ENTRYPOINT ["/app/bin/docker-entrypoint"]
 CMD ["/app/bin/server"]

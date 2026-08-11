@@ -175,9 +175,9 @@ defmodule Dojo.MixProject do
   def releases do
     steps =
       if Mix.env() == :local do
-        [:assemble, &Burrito.wrap/1, &post_wrap/1]
+        [:assemble, &prune_journals/1, &Burrito.wrap/1, &post_wrap/1]
       else
-        [:assemble]
+        [:assemble, &prune_journals/1]
       end
 
     [
@@ -188,6 +188,20 @@ defmodule Dojo.MixProject do
         ]
       ]
     ]
+  end
+
+  # priv/ ships whole, so a keep_dev.db left in the tree would ride into an
+  # installer carrying its author's journal. Only the migrations belong here.
+  defp prune_journals(%Mix.Release{path: path} = release) do
+    [path, "lib", "dojo-*", "priv", "keep", "*.db*"]
+    |> Path.join()
+    |> Path.wildcard()
+    |> Enum.each(fn stray ->
+      Mix.shell().info("prune_journals: #{Path.relative_to(stray, path)}")
+      File.rm!(stray)
+    end)
+
+    release
   end
 
   # Burrito build targets.

@@ -217,7 +217,9 @@ defmodule DojoWeb.RiverComponent do
       }
       .river-seat.has-face .river-face { opacity: 0.78; }
 
-      /* Present (new): dotted circle, warmed by --near. */
+      /* Present (new): dotted circle, warmed by --near.
+         border-color / filter / opacity may ease (ready↔rest, seal);
+         inset rides --near and must NOT transition (id:kr-near). */
       .river-open {
         position: absolute;
         inset: calc(18% - 6% * var(--near, 0));
@@ -229,11 +231,19 @@ defmodule DojoWeb.RiverComponent do
         filter:
           drop-shadow(0 0 calc(var(--near, 0) * 4px)
             color-mix(in oklch, var(--color-primary) calc(var(--near, 0) * 35%), transparent));
+        opacity: 1;
+        transform: scale(1);
+        transition:
+          border-color 320ms ease,
+          filter 320ms ease,
+          opacity 320ms ease,
+          transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
       }
 
-      /* Draft: past the open east — grayed figure, no open circle.
+      /* Draft: past the open east — grayed figure; open circle fades in
+         only when ready / sealing (opacity, never display, so it can ease).
          Not a keep: local only; name it or drop it (×). */
-      .river-draft .river-open { display: none; }
+      .river-draft .river-open { opacity: 0; }
       .river-draft .river-face {
         inset: 8%;
         border-radius: 50%;
@@ -241,10 +251,111 @@ defmodule DojoWeb.RiverComponent do
         background-size: cover;
         background-position: center;
         filter: grayscale(1) brightness(0.78);
+        transition: opacity 320ms ease, filter 320ms ease;
       }
       .river-draft.has-face .river-face {
         opacity: 0.62;
         filter: grayscale(0.85) brightness(0.82);
+      }
+
+      /* Ready to keep: a word stands in the caption (id:kr-ready).
+         Noon present/draft only — re-tap the open seat to send; Enter
+         is the same door. Primary green breath, not a third keep-word. */
+      .river-sky.is-ready .river-col.noon.is-present,
+      .river-sky.is-ready .river-col.noon.is-draft {
+        cursor: pointer;
+      }
+      .river-sky.is-ready .river-col.noon.is-present .river-open,
+      .river-sky.is-ready .river-col.noon.is-draft .river-open {
+        border-style: solid;
+        border-color: color-mix(in oklch, var(--color-primary) 92%, white);
+        opacity: 1;
+        filter:
+          drop-shadow(0 0 4px color-mix(in oklch, var(--color-primary) 55%, transparent))
+          drop-shadow(0 0 10px color-mix(in oklch, var(--color-primary) 28%, transparent));
+        animation: river-ready-breath 2.4s ease-in-out infinite;
+      }
+      @keyframes river-ready-breath {
+        0%, 100% {
+          filter:
+            drop-shadow(0 0 3px color-mix(in oklch, var(--color-primary) 48%, transparent))
+            drop-shadow(0 0 8px color-mix(in oklch, var(--color-primary) 22%, transparent));
+        }
+        50% {
+          filter:
+            drop-shadow(0 0 6px color-mix(in oklch, var(--color-primary) 72%, transparent))
+            drop-shadow(0 0 14px color-mix(in oklch, var(--color-primary) 38%, transparent));
+        }
+      }
+
+      /* Holding — covers the snap's flight (id:kr-ready). Soft breath for
+         as long as land takes; never collapses to empty, never a hard cut. */
+      .river-sky.is-keeping {
+        /* sky warms a little while the word is on its way */
+        --river-wash: 13%;
+      }
+      .river-sky.is-keeping .river-col.is-present .river-open,
+      .river-sky.is-keeping .river-col.is-draft .river-open {
+        border-style: solid;
+        border-color: color-mix(in oklch, var(--color-primary) 88%, white);
+        opacity: 1;
+        animation: river-holding 1.6s ease-in-out infinite;
+      }
+      @keyframes river-holding {
+        0%, 100% {
+          transform: scale(1);
+          filter:
+            drop-shadow(0 0 4px color-mix(in oklch, var(--color-primary) 48%, transparent))
+            drop-shadow(0 0 11px color-mix(in oklch, var(--color-primary) 24%, transparent));
+        }
+        50% {
+          transform: scale(1.06);
+          filter:
+            drop-shadow(0 0 7px color-mix(in oklch, var(--color-primary) 68%, transparent))
+            drop-shadow(0 0 16px color-mix(in oklch, var(--color-primary) 36%, transparent));
+        }
+      }
+
+      /* Land — handoff from the hold: soft bloom, not a pop (id:kr-land).
+         Only applied when ignite paints a fresh seat — never on first fold. */
+      .river-seat.is-landing {
+        animation: river-land 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+      .river-seat.is-landing .river-face {
+        animation: river-land-face 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+      .river-seat.is-landing .river-ring-open {
+        animation: river-land-radiate 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+      @keyframes river-land {
+        0%   { opacity: 0; filter: blur(4px); transform: scale(0.94); }
+        40%  { opacity: 1; filter: blur(0); transform: scale(1.03); }
+        100% { opacity: 1; filter: blur(0); transform: scale(1); }
+      }
+      @keyframes river-land-face {
+        0%   { opacity: 0; }
+        100% { opacity: 0.78; }
+      }
+      @keyframes river-land-radiate {
+        0% {
+          opacity: 0.4;
+          filter:
+            drop-shadow(0 0 4px color-mix(in oklch, var(--color-primary) 50%, transparent))
+            drop-shadow(0 0 12px color-mix(in oklch, var(--color-primary) 28%, transparent));
+        }
+        40% {
+          opacity: 1;
+          filter:
+            drop-shadow(0 0 5px color-mix(in oklch, var(--color-primary-content) 65%, transparent))
+            drop-shadow(0 0 14px color-mix(in oklch, var(--color-primary-content) 38%, transparent))
+            drop-shadow(0 0 26px color-mix(in oklch, var(--color-primary) 26%, transparent));
+        }
+        100% {
+          opacity: 1;
+          filter:
+            drop-shadow(0 0 3px color-mix(in oklch, var(--color-primary-content) 40%, transparent))
+            drop-shadow(0 0 8px color-mix(in oklch, var(--color-primary-content) 16%, transparent));
+        }
       }
 
       /* Keep selection: command-deck L-corners in primary-content, via --near. */
@@ -388,6 +499,8 @@ defmodule DojoWeb.RiverComponent do
         text-overflow: ellipsis;
         white-space: nowrap;
         color: color-mix(in oklch, var(--color-base-content) 72%, transparent);
+        /* hold → keep: primary eases into the quiet title */
+        transition: color 520ms ease, opacity 360ms ease;
       }
       .river-message {
         display: none;
@@ -413,6 +526,21 @@ defmodule DojoWeb.RiverComponent do
       /* Fork draft: same editable line as the present, plus a cross to drop it. */
       .river-sky.at-draft .river-word { display: none; }
       .river-sky.at-draft .river-message { display: block; }
+
+      /* Mid-keep: caption freezes as the title — never flash YOUR MESSAGE.
+         Soft opacity breath covers the snap's flight until land. */
+      .river-sky.is-keeping .river-word {
+        display: block;
+        color: var(--color-primary);
+        animation: river-word-hold 1.6s ease-in-out infinite;
+      }
+      .river-sky.is-keeping .river-message,
+      .river-sky.is-keeping .river-drop,
+      .river-sky.is-keeping .river-copy { display: none; }
+      @keyframes river-word-hold {
+        0%, 100% { opacity: 0.88; }
+        50%      { opacity: 1; }
+      }
       /* Colour rides the same tab-close utilities: text-red-500/70 hover:text-red-500. */
       .river-drop {
         display: none;
@@ -495,7 +623,18 @@ defmodule DojoWeb.RiverComponent do
 
       @media (prefers-reduced-motion: reduce) {
         .river-col.noon .river-ring-open,
-        .river-sun.flare { animation: none; }
+        .river-sun.flare,
+        .river-sky.is-ready .river-col.noon.is-present .river-open,
+        .river-sky.is-ready .river-col.noon.is-draft .river-open,
+        .river-sky.is-keeping .river-col.is-present .river-open,
+        .river-sky.is-keeping .river-col.is-draft .river-open,
+        .river-sky.is-keeping .river-word,
+        .river-seat.is-landing,
+        .river-seat.is-landing .river-face,
+        .river-seat.is-landing .river-ring-open { animation: none; }
+        .river-open,
+        .river-word,
+        .river-draft .river-face { transition: none; }
         .river-sky.at-keep .river-copy,
         .river-sky.at-keep .river-copy.is-copied { animation: none; }
         .river-water { transition: none; }

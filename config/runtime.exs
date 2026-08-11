@@ -59,12 +59,28 @@ if config_env() == :prod do
   partisan_port = String.to_integer(System.get_env("PARTISAN_PORT") || "9090")
 
   # Fly: FLY_PRIVATE_IP; K8s: POD_IP; bare metal: set PARTISAN_IP directly
-  own_ip = System.get_env("PARTISAN_IP") || System.get_env("FLY_PRIVATE_IP")
+  own_ip =
+    System.get_env("PARTISAN_IP") || System.get_env("FLY_PRIVATE_IP") ||
+      System.get_env("POD_IP") ||
+      raise """
+      no address to bind Partisan to.
+
+      Set PARTISAN_IP to this node's own address. On Fly and Kubernetes,
+      FLY_PRIVATE_IP and POD_IP are supplied for you.
+      """
+
   partisan_name = System.get_env("PARTISAN_NAME") || "dojo@#{own_ip}"
   System.put_env("PARTISAN_PORT", "#{partisan_port}")
   System.put_env("PARTISAN_NAME", partisan_name)
 
-  {:ok, ip_tuple} = :inet.parse_address(String.to_charlist(own_ip))
+  ip_tuple =
+    case :inet.parse_address(String.to_charlist(own_ip)) do
+      {:ok, tuple} ->
+        tuple
+
+      {:error, :einval} ->
+        raise "PARTISAN_IP is #{inspect(own_ip)}, which is not an IP address. Partisan binds an address, not a hostname."
+    end
 
   dns_query = System.get_env("DNS_CLUSTER_QUERY")
 
@@ -164,14 +180,24 @@ config :dojo, Phoenix.PubSub.Partisan,
   channel_control: :control
 
 # Keep journal path — runtime, never inside a Burrito extract (id:keep-ms-sqlite-path).
-# KEEP_PATH wins; else a stable data dir beside the release.
+# KEEP_PATH wins. Else beside the release, since a server release has no home
+# to speak of (nobody's is /nonexistent); only the desktop build falls to $HOME.
 if config_env() in [:prod, :local] do
-  keep_path =
-    System.get_env("KEEP_PATH") ||
-      Path.join([System.user_home!(), ".dojo", "keep.db"])
+  keep_home =
+    case {config_env(), System.get_env("RELEASE_ROOT")} do
+      # Desktop (Burrito): home, never the extract, which is wiped per version.
+      {:local, _} -> Path.join(System.user_home!(), ".dojo")
+      {_, nil} -> Path.join(System.user_home!(), ".dojo")
+      {_, root} -> Path.join(root, "data")
+    end
+
+  keep_path = System.get_env("KEEP_PATH") || Path.join(keep_home, "keep.db")
 
   keep_dir = Path.dirname(keep_path)
   File.mkdir_p!(keep_dir)
+
+  # A release has no mix task to migrate with, and the volume only exists here.
+  config :dojo, migrate_on_boot: true
 
   config :dojo, Dojo.Keep.Repo,
     database: keep_path,

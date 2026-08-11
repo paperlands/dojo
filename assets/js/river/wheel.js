@@ -19,9 +19,13 @@ export const DRAG_PX = 5
  * @param {{
  *   onCenter?: (at: {key: string, id: string|null} | null) => void,
  *   onSettle?: (at: {key: string, id: string|null} | null) => void,
+ *   onTap?: (at: {key: string, id: string|null}) => boolean,
  * }} [hooks]
+ * onTap — when the finger lifts on the *already-centered* seat, return true
+ * to claim the tap (e.g. keep when the caption word is ready). False/absent
+ * falls through to restAt (idempotent re-seat).
  */
-export function mountWheel(rail, { onCenter, onSettle } = {}) {
+export function mountWheel(rail, { onCenter, onSettle, onTap } = {}) {
     let centered = null
     /** Last key committed to onSettle — skip re-standing the same rest. */
     let settled = undefined
@@ -225,9 +229,13 @@ export function mountWheel(rail, { onCenter, onSettle } = {}) {
         }
 
         if (!wasMoved) {
-            // Tap → seat the pressed keep. Water is left for the river click (swap).
+            // Tap → seat the pressed keep. Already under the sun: onTap may
+            // claim it (ready keep). Water is left for the river click (swap).
             const col = target?.closest?.(".river-col")
-            if (col?.dataset.key && !target?.closest?.(".river-water")) restAt(col.dataset.key)
+            if (col?.dataset.key && !target?.closest?.(".river-water")) {
+                if (col.dataset.key === centered && onTap?.(whereOf(col))) return
+                restAt(col.dataset.key)
+            }
             return
         }
 

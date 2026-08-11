@@ -319,7 +319,7 @@ nothing — the river re-folds and derives the new seat itself
 ** river surface — meridian, mirror, swap
 :PROPERTIES:
 :ID: nav-river-surface
-:KEYWORDS: river surface shell data-target meridian wheel mirror water swap seat ring mark shade sun mood rig ignite land paint atoms light scroll-snap detent present unkept drift title message keep-gesture setValue
+:KEYWORDS: river surface shell data-target meridian wheel mirror water swap seat ring mark shade sun mood rig ignite land paint atoms light scroll-snap detent present unkept drift title message keep-gesture setValue ready is-ready onTap commitKeep
 :PATH: assets/js/hooks/shell/river.js
 :END:
 Fourth Shell surface (=data-target="river"=), client-lazy like the weave.
@@ -333,8 +333,10 @@ never clobbers =unkept=, never a journal row. Two local memories, per work:
 a keep *projects* into the editor (=setValue(…, {project:true})=) so
 write-through cannot kill the head; refresh heals via =pinHead=. Commit lands
 a fork (=prev= = from); × / Escape drops the draft.
-Writing a word in the caption *is* the keep gesture. =unkept= makes the
-present a place: leaving it stashes the buffer, returning restores it.
+Writing a word in the caption *is* the keep gesture. A non-empty word lights
+the noon open circle (=is-ready=); re-tap that seat (or Enter) keeps — draft
+is two beats (seat, then send). =unkept= makes the present a place: leaving
+it stashes the buffer, returning restores it.
 Organs: =river/light.js= (pure mood, shade, and =nearness= — distance in
 SEATS, the one number every meridian crossfade rides), =river/atoms.js= (the
 CAST — a seat wears both a picture and a sun; away from the meridian the

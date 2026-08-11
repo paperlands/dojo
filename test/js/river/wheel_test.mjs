@@ -274,6 +274,82 @@ describe("wheel: drag-to-pan", () => {
         wheel.release()
     })
 
+    test("re-tap on the centered seat: onTap true claims it (ready keep)", () => {
+        const rail = makeRail(["a", "present"])
+        const settles = []
+        const taps = []
+        const wheel = mountWheel(rail, {
+            onSettle: (w) => settles.push(w?.key ?? null),
+            onTap: (w) => {
+                taps.push(w?.key ?? null)
+                return w?.key === "present"
+            },
+        })
+
+        wheel.restAt("present")
+        settles.length = 0
+
+        const present = rail.children[1]
+        rail.dispatch("pointerdown", { button: 0, pointerId: 1, clientX: 100, target: present })
+        rail.dispatch("pointerup", { pointerId: 1, target: present })
+
+        assert.deepEqual(taps, ["present"], "onTap sees the re-tap")
+        assert.deepEqual(settles, [], "claimed tap does not re-settle")
+
+        wheel.release()
+    })
+
+    test("re-tap on the centered seat: onTap false still restAts", () => {
+        const rail = makeRail(["a", "present"])
+        const settles = []
+        const taps = []
+        const wheel = mountWheel(rail, {
+            onSettle: (w) => settles.push(w?.key ?? null),
+            onTap: (w) => {
+                taps.push(w?.key ?? null)
+                return false
+            },
+        })
+
+        wheel.restAt("present")
+        settles.length = 0
+
+        const present = rail.children[1]
+        rail.dispatch("pointerdown", { button: 0, pointerId: 1, clientX: 100, target: present })
+        rail.dispatch("pointerup", { pointerId: 1, target: present })
+
+        assert.deepEqual(taps, ["present"])
+        // restAt same key is idempotent — onSettle does not re-fire.
+        assert.deepEqual(settles, [], "same seat rest is still quiet")
+
+        wheel.release()
+    })
+
+    test("tap on a different seat: onTap is not asked; seat jumps", () => {
+        const rail = makeRail(["a", "present"])
+        const settles = []
+        let tapCount = 0
+        const wheel = mountWheel(rail, {
+            onSettle: (w) => settles.push(w?.key ?? null),
+            onTap: () => {
+                tapCount++
+                return true
+            },
+        })
+
+        wheel.restAt("present")
+        settles.length = 0
+
+        const colA = rail.children[0]
+        rail.dispatch("pointerdown", { button: 0, pointerId: 1, clientX: 100, target: colA })
+        rail.dispatch("pointerup", { pointerId: 1, target: colA })
+
+        assert.equal(tapCount, 0, "onTap only for the seat already under the sun")
+        assert.deepEqual(settles, ["a"], "first tap still seats the draft/keep")
+
+        wheel.release()
+    })
+
     test("ghost click after a pan is swallowed", () => {
         const keys = ["a", "present"]
         const rail = makeRail(keys)

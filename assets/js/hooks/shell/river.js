@@ -10,7 +10,9 @@
 // THE PRESENT IS A PLACE. East of every keep stands one open seat: the buffer
 // as it is now, unkept. The child rests there by default. Writing a word there
 // is the whole keep gesture — the first word names the river, the rest name
-// the steps.
+// the steps. A non-empty word lights the open circle green (is-ready); re-tap
+// that noon seat to send — Enter is the same door. Draft is one beat farther:
+// first tap seats the draft, second sends when ready.
 //
 // EAST OF PRESENT: a local DRAFT — a potential head. Editing a past keep
 // does not clobber the head buffer; it opens one draft seat (from, text,
@@ -55,6 +57,13 @@ const DRAFT = "draft"
 // How long the sky stays lit after a keep descends (id:kr-motion ≤400ms
 // streak, then the standing weather takes the sky back).
 const IGNITE_MS = 700
+// If the snap never lands, drop is-keeping so the caption is not stuck.
+const KEEP_GUARD_MS = 2400
+// Softest hold before seating the keep — covers a fast snap so send→land
+// is never a hard cut (slow snaps already breathe via is-keeping).
+const HOLD_MIN_MS = 320
+// Safety clear for is-landing after river-land / river-land-radiate.
+const LAND_MS = 800
 
 function mountRiver(hook) {
     const arena = createArena()
@@ -104,6 +113,16 @@ function mountRiver(hook) {
     // Only a NEWER fold may paint; a slow read must never overwrite a fresh one.
     let epoch = 0
     let igniting = null
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let keepingT = null
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let landHoldT = null
+    // Committed title held in the caption until the keep seat exists — never
+    // flash YOUR MESSAGE between send and land.
+    /** @type {string | null} */
+    let sealingTitle = null
+    /** When beginKeeping started (ms) — land waits out HOLD_MIN_MS if needed. */
+    let keepingAt = 0
     let siblingHead = null
     let at = { key: PRESENT, id: null }
     // What the child had in hand when they last walked away from the present.
@@ -115,9 +134,11 @@ function mountRiver(hook) {
     // Never a keep — but remembered per work (id: draft-memory).
     let draft = null
 
-    const wheel = mountWheel(rail, { onCenter, onSettle })
+    const wheel = mountWheel(rail, { onCenter, onSettle, onTap })
     arena.add(wheel.release)
     arena.add(() => clearTimeout(igniting))
+    arena.add(() => clearTimeout(keepingT))
+    arena.add(() => clearTimeout(landHoldT))
     arena.add(forgetFaces)
 
     function forgetFaces() {
@@ -250,17 +271,41 @@ function mountRiver(hook) {
             })
         }
 
-        paint(rail, columns, { kept, faceOf: (id) => faces.get(id) ?? null })
+        const { seats: seatMap, arrived } = paint(rail, columns, {
+            kept,
+            faceOf: (id) => faces.get(id) ?? null,
+        })
 
         sky(moodOf({ keptLocal: keptNow.size, landing: ignite, settling }))
-        if (ignite) flare()
+        // Fresh seats only bloom on a land edge — first fold must not radiate
+        // every keep that was already here.
+        if (ignite) {
+            for (const id of arrived) lightLand(seatMap.get(id))
+            flare()
+        }
         void openFaces(versions)
 
         if (rest === "head") wheel.restAt(headKey)
         else if (rest === PRESENT) wheel.restAt(PRESENT)
         else if (rest === DRAFT && draft) wheel.restAt(DRAFT)
         else wheel.update()
+        // Land seats the keep: release the held word so say() reads the real title.
+        if (ignite && sealingTitle != null) endKeeping()
         say()
+    }
+
+    /**
+     * One keep arrived on the rail — blur→clear + ring radiate (id:kr-land).
+     * @param {HTMLElement | null | undefined} seatEl
+     */
+    function lightLand(seatEl) {
+        if (!seatEl) return
+        seatEl.classList.remove("is-landing")
+        void seatEl.offsetWidth
+        seatEl.classList.add("is-landing")
+        const clear = () => seatEl.classList.remove("is-landing")
+        seatEl.addEventListener("animationend", clear, { once: true })
+        setTimeout(clear, LAND_MS)
     }
 
     // ── the light ────────────────────────────────────────────────────
@@ -345,6 +390,15 @@ function mountRiver(hook) {
     // or the empty line where the next one is written. One caption, because
     // there is one meridian (id:kr-vis: a caption lives outside the strip).
     function say() {
+        // Mid-keep: the caption already is the name — hold it until land seats.
+        if (sealingTitle != null) {
+            word.textContent = sealingTitle
+            root.classList.remove("at-present", "at-draft")
+            root.classList.add("at-keep")
+            // No address yet — copy stays dark via is-keeping CSS.
+            paintReady()
+            return
+        }
         const here = at.key === PRESENT
         const drafting = at.key === DRAFT
         // A kept title is the only place the copy-link stands — present and
@@ -355,6 +409,7 @@ function mountRiver(hook) {
         if (here) {
             // The first word names the river; every later one names a step.
             message.placeholder = byId.size === 0 ? "YOUR TITLE" : "YOUR MESSAGE"
+            paintReady()
             return
         }
         if (drafting) {
@@ -366,12 +421,61 @@ function mountRiver(hook) {
             if (document.activeElement !== message) {
                 message.value = typeof draft?.title === "string" ? draft.title : ""
             }
+            paintReady()
             return
         }
         // Leaving an editable seat: do not leave a half-typed word on a keep.
         if (message.value && document.activeElement !== message) message.value = ""
         const bytes = at.id && byId.get(at.id)
         word.textContent = (bytes && titleOf(bytes)) || "—"
+        paintReady()
+    }
+
+    /**
+     * A word in the caption at present/draft lights the open circle (id:kr-ready).
+     * Re-tap that noon seat (or Enter) keeps — not clan-share, not a third word.
+     */
+    function isReady() {
+        if (sealingTitle != null) return false
+        if (at.key !== PRESENT && at.key !== DRAFT) return false
+        return message.value.trim().length > 0
+    }
+
+    function paintReady() {
+        root.classList.toggle("is-ready", isReady())
+    }
+
+    /**
+     * Freeze the caption as the keep's name; soft hold covers the snap's flight.
+     * No empty placeholder — land blooms onto this same word.
+     */
+    function beginKeeping(title) {
+        sealingTitle = title
+        keepingAt = typeof performance !== "undefined" ? performance.now() : Date.now()
+        message.value = ""
+        message.blur()
+        word.textContent = title
+        root.classList.remove("is-ready", "at-present", "at-draft")
+        root.classList.add("is-keeping", "at-keep")
+        clearTimeout(keepingT)
+        keepingT = setTimeout(endKeeping, KEEP_GUARD_MS)
+    }
+
+    function endKeeping() {
+        clearTimeout(keepingT)
+        keepingT = null
+        sealingTitle = null
+        keepingAt = 0
+        root.classList.remove("is-keeping")
+    }
+
+    /** Seat the keep after a gentle minimum hold (covers fast snaps). */
+    function landWhenReady() {
+        clearTimeout(landHoldT)
+        landHoldT = null
+        if (at.key === DRAFT) dropDraft()
+        head = null
+        void refold({ ignite: true, rest: "head" })
     }
 
     /**
@@ -532,19 +636,57 @@ function mountRiver(hook) {
     }
 
     // ── the gesture: a word keeps the moment ─────────────────────────
+    // Enter and a re-tap of the noon open seat share one door (id:kr-ready).
+    // Draft feels like two taps: first seats the draft, second sends when ready.
 
     function discardDraft() {
         if (!draft) return
         message.value = ""
         message.blur()
         dropDraft()
+        paintReady()
         void refold({ rest: PRESENT })
     }
 
+    /**
+     * Spend the caption word as a keep. Same path for Enter and ready re-tap.
+     * Caption freezes as the title (never YOUR MESSAGE); land leaps onto it.
+     * @returns {boolean} true when a keep was asked
+     */
+    function commitKeep() {
+        const title = message.value.trim()
+        // A keep deserves a word. An empty line is not a refusal to keep, it
+        // is simply nothing said yet.
+        if (!title) return false
+        if (at.key !== PRESENT && at.key !== DRAFT) return false
+        if (sealingTitle != null) return false
+        // Draft title memory rides holdDraft; clear it so a failed land does
+        // not re-light ready from a spent word.
+        if (at.key === DRAFT && draft) holdDraft({ ...draft, title: "" })
+        beginKeeping(title)
+        // Draft commit is a fork: prev names the keep it grew from.
+        if (at.key === DRAFT && draft?.from) askKeep(title, { prev: draft.from })
+        else askKeep(title)
+        return true
+    }
+
+    /**
+     * Wheel re-tap on the seat already under the sun.
+     * Ready present/draft → keep. Else false so restAt still runs.
+     */
+    function onTap(where) {
+        if (!where) return false
+        if (where.key !== PRESENT && where.key !== DRAFT) return false
+        if (where.key !== at.key) return false
+        if (!isReady()) return false
+        return commitKeep()
+    }
+
     // Hold the fork's title as they type — potential head, still not a keep.
+    // Any caption stroke repaints readiness (present and draft).
     arena.on(message, "input", () => {
-        if (at.key !== DRAFT || !draft) return
-        holdDraft({ ...draft, title: message.value })
+        if (at.key === DRAFT && draft) holdDraft({ ...draft, title: message.value })
+        paintReady()
     })
 
     arena.on(message, "keydown", (e) => {
@@ -556,18 +698,12 @@ function mountRiver(hook) {
             }
             message.value = ""
             message.blur()
+            paintReady()
             return
         }
         if (e.key !== "Enter") return
         e.preventDefault()
-        const title = message.value.trim()
-        // A keep deserves a word. An empty line is not a refusal to keep, it
-        // is simply nothing said yet.
-        if (!title) return
-        message.value = ""
-        // Draft commit is a fork: prev names the keep it grew from.
-        if (at.key === DRAFT && draft?.from) askKeep(title, { prev: draft.from })
-        else askKeep(title)
+        commitKeep()
     })
 
     if (drop) {
@@ -626,10 +762,15 @@ function mountRiver(hook) {
     // A keep landed. The signal carries nothing; the fold is the answer.
     // Only a commit from the draft seat spends the draft (fork finished).
     // A keep from the present leaves any side draft alone.
+    // Caption already holds the title; if the snap was fast, wait out a soft
+    // minimum hold so send→land is one breath, not a cut.
     arena.add(watchLanded(() => {
-        if (at.key === DRAFT) dropDraft()
-        head = null
-        void refold({ ignite: true, rest: "head" })
+        const now = typeof performance !== "undefined" ? performance.now() : Date.now()
+        const elapsed = keepingAt ? now - keepingAt : HOLD_MIN_MS
+        const wait = Math.max(0, HOLD_MIN_MS - elapsed)
+        clearTimeout(landHoldT)
+        if (wait <= 0) landWhenReady()
+        else landHoldT = setTimeout(landWhenReady, wait)
     }))
 
     // The door may arrive after us (the coreshell opens it) and may be
