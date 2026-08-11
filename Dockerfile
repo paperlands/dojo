@@ -91,11 +91,10 @@ ENV MIX_ENV="prod"
 # Only copy the final release from the build stage
 COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/dojo ./
 
-USER nobody
+# Root only long enough to chown the Fly volume at /data, then drop to nobody.
+# See rel/overlays/bin/docker-entrypoint and fly.staging.toml [mounts].
+USER root
+RUN chmod +x /app/bin/docker-entrypoint /app/bin/server /app/bin/migrate 2>/dev/null || true
 
-# If using an environment that doesn't automatically reap zombie processes, it is
-# advised to add an init process such as tini via `apt-get install`
-# above and adding an entrypoint. See https://github.com/krallin/tini for details
-# ENTRYPOINT ["/tini", "--"]
-
+ENTRYPOINT ["/app/bin/docker-entrypoint"]
 CMD ["/app/bin/server"]

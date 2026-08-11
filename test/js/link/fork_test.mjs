@@ -205,6 +205,65 @@ describe("pull — beyond this machine (id:la-fork-pull)", () => {
         assert.equal(door.wrote.put.length, 1)
     })
 
+    test("a work face re-pulls HEAD even when a local keep already stands", async () => {
+        // The first visit accepted an old keep; without re-pull the HEAD link
+        // freezes that artifact forever (the user's two-link "same initial").
+        const older = write("snap", { source_id: "s0", title: "first" },
+            { root: ROOT, target: WORK, ts: { t: 1, n: 0 } })
+        const head = write("snap", { source_id: "s1", title: "later" },
+            { root: ROOT, target: WORK, ts: { t: 2000, n: 0 } })
+        const term = fakeTerm()
+        const door = fakeDoor({
+            listed: [older],
+            keeps: { [name(older)]: older },
+            sources: { s0: "fw 1", s1: "fw 99" },
+        })
+        const pull = async () => ({ id: name(head), message: head, source: "fw 99", at: 9, node: "n1" })
+        const landed = await forkRef(WORK, { door, term, pull, say: () => {} })
+        assert.equal(landed, "kept-buf")
+        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 99", name: "later" }])
+        assert.equal(door.wrote.put.length, 1, "the newer HEAD is kept")
+        assert.equal(door.wrote.put[0].bytes, head)
+    })
+
+    test("a work face keeps a newer local head when the room is behind", async () => {
+        const local = write("snap", { source_id: "s1", title: "mine" },
+            { root: ROOT, target: WORK, ts: { t: 5000, n: 0 } })
+        const room = write("snap", { source_id: "s0", title: "old share" },
+            { root: ROOT, target: WORK, ts: { t: 1, n: 0 } })
+        const term = fakeTerm()
+        const door = fakeDoor({
+            listed: [local],
+            keeps: { [name(local)]: local },
+            sources: { s1: "fw local", s0: "fw room" },
+        })
+        const pull = async () => ({ id: name(room), message: room, source: "fw room", at: 1, node: "n1" })
+        await forkRef(WORK, { door, term, pull, say: () => {} })
+        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw local", name: "mine" }])
+        assert.equal(door.wrote.put.length, 0, "local already newer — no re-accept of the room's past")
+    })
+
+    test("a keep face stays pinned — does not chase HEAD", async () => {
+        const older = write("snap", { source_id: "s0", title: "pinned" },
+            { root: ROOT, target: WORK, ts: { t: 1, n: 0 } })
+        const head = write("snap", { source_id: "s1", title: "later" },
+            { root: ROOT, target: WORK, ts: { t: 2000, n: 0 } })
+        const term = fakeTerm()
+        const door = fakeDoor({
+            keeps: { [name(older)]: older },
+            sources: { s0: "fw 1", s1: "fw 99" },
+        })
+        // Pull would answer HEAD if asked; keep face must not ask for work HEAD.
+        let pulled = 0
+        const pull = async () => {
+            pulled++
+            return { id: name(head), message: head, source: "fw 99", at: 9, node: "n1" }
+        }
+        await forkRef(name(older), { door, term, pull, say: () => {} })
+        assert.equal(pulled, 0, "commit-specific never re-pulls")
+        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 1", name: "pinned" }])
+    })
+
     test("a lying room lands nothing — wrong bytes are refused at the reader", async () => {
         const bytes = snap()
         const said = []

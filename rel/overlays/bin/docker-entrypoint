@@ -1,0 +1,11 @@
+#!/bin/sh
+# Fly volumes mount as root-owned; app runs as nobody. Fix ownership then drop.
+# Only touch the Keep data mount — leave the rest of the image alone.
+set -e
+
+if [ -d /data ]; then
+  chown -R nobody:nogroup /data
+  chmod 755 /data
+fi
+
+exec runuser -u nobody -- "$@"

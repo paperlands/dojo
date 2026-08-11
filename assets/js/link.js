@@ -73,32 +73,43 @@ async function forkKept(ref, { door, term, pull, say }) {
     let mine = null
     try {
         mine = await door.root()
-        bytes = await door.get(ref)
-        if (bytes) {
-            work = read(bytes).target
+        const asKeep = await door.get(ref)
+        if (asKeep) {
+            // Keep face, already held — pin this commit (never chase HEAD).
+            bytes = asKeep
+            work = read(asKeep).target
         } else {
-            // Not a keep: a work id, re-entered through its newest picture
-            // (id:kb-2a — the healing gesture for a lost buffer).
-            bytes = ofWork(await door.list(mine, PAGE), ref)[0] ?? null
+            // ofWork hit ⇒ work face with a local head. Miss ⇒ cold keep or
+            // cold work; the room's answer (or its absence) decides.
+            const local = ofWork(await door.list(mine, PAGE), ref)[0] ?? null
+            if (local) {
+                // Work face: HEAD at *open time*. A prior accept must not
+                // freeze the first artifact — re-ask the room and take the
+                // newer by the author's ts (id:la-fork-pull, id:kb-8).
+                work = ref
+                bytes = local
+                if (pull) {
+                    const got = await askRoom(ref, { pull, say: () => {} })
+                    if (got && newerKeep(local, got.bytes) === got.bytes) {
+                        bytes = got.bytes
+                        source = got.source
+                        await keepPulled(door, got, say)
+                    }
+                }
+            } else if (pull) {
+                // Cold machine: keep id or work id — one ask, both faces.
+                const got = await askRoom(ref, { pull, say })
+                if (got) {
+                    bytes = got.bytes
+                    work = read(bytes).target
+                    source = got.source
+                    await keepPulled(door, got, say)
+                }
+            }
         }
     } catch (e) {
         say("the door refused", e)
         return null
-    }
-    if (!bytes && pull) {
-        // Beyond this machine: ask the room, keep the answer, then fork —
-        // the link works offline from the second visit on (id:la-fork-pull).
-        const got = await askRoom(ref, { pull, say })
-        if (got) {
-            bytes = got.bytes
-            work = read(bytes).target
-            source = got.source
-            try {
-                await accept(door, bytes, got.fact, source != null ? { source } : {})
-            } catch (e) {
-                say("pulled, not kept", e)
-            }
-        }
     }
     let title = null
     let root = null
@@ -108,6 +119,9 @@ async function forkKept(ref, { door, term, pull, say }) {
         title = typeof value.title === "string" ? value.title : null
         root = value.root
         ts = value.ts
+        // Work is always the keep's target when we hold bytes — never the
+        // keep's own name mistaken for a work id on a cold keep-face pull.
+        if (typeof value.target === "string" && value.target) work = value.target
         if (source == null) {
             try {
                 source = value.source_id ? await door.source(value.source_id) : null
@@ -127,6 +141,35 @@ async function forkKept(ref, { door, term, pull, say }) {
     const landed = term.forkKeep({ work_id: work, source, name: title })
     if (!landed) say(`nothing kept as ${ref}`)
     return landed
+}
+
+async function keepPulled(door, got, say) {
+    try {
+        await accept(
+            door,
+            got.bytes,
+            got.fact,
+            got.source != null ? { source: got.source } : {},
+        )
+    } catch (e) {
+        say("pulled, not kept", e)
+    }
+}
+
+/** Author order (id:kb-8): newer ts wins; missing/unreadable loses. */
+function newerKeep(a, b) {
+    if (!a) return b
+    if (!b) return a
+    try {
+        const ta = read(a).ts
+        const tb = read(b).ts
+        if (!tb || typeof tb.t !== "number") return a
+        if (!ta || typeof ta.t !== "number") return b
+        if (tb.t > ta.t || (tb.t === ta.t && (tb.n ?? 0) > (ta.n ?? 0))) return b
+        return a
+    } catch {
+        return a
+    }
 }
 
 // A foreign keep rides the peer-fork path: find-or-create by origin.addr —

@@ -19,7 +19,13 @@ kill_signal = 'SIGTERM'
   PORT = '8080'
   DNS_CLUSTER_QUERY = 'paperland.internal'
   PARTISAN_PORT = '9090'
+  # Keep journal (SQLite) on the mounted volume — runtime.exs: KEEP_PATH (id:keep-ms-sqlite-path)
+  KEEP_PATH = '/data/keep.db'
 
+# Durable Keep store. Size set at create: fly volumes create keep_data --size 1 --region sin -a paperland
+[mounts]
+  source = 'keep_data'
+  destination = '/data'
 
 [http_service]
   internal_port = 8080
