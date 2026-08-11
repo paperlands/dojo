@@ -308,11 +308,10 @@ export class Turtle {
             } else {
                 this._rehearsalDiagnostics.delete(key)
             }
-            // A keystroke seats a world INLINE, so the seating gets a slice of
-            // its own — without one a big program builds all of itself between
-            // two letters. The slice closes with the call, so nothing downstream
-            // inherits a spent deadline. (id:output-ledger-r2-pacer)
-            this.scheduler.withSlice(this.compositor?.budgetMs ?? 4, () =>
+            // Slice the seat so a big program cannot swallow a keystroke
+            // (id:output-ledger-r2-pacer). Hold = same frame back (id:cmp-become-seed).
+            const before = this.scheduler.root.children.get(key)
+            const seat = this.scheduler.withSlice(this.compositor?.budgetMs ?? 4, () =>
                 this.scheduler.hotSwapChild(key, {
                     name: displayName,
                     code: { ast: instructions, functions: ns?.functions ?? null },
@@ -320,34 +319,26 @@ export class Turtle {
                     env: ns?.userspace?.size ? { userspace: ns.userspace } : null
                 }, { fresh }))
 
-            // Only OPEN the gate here on real content — closing is reflectGate's alone (D022).
-            // Self-scoped: a seat on this canvas writes gate[self], never a foreign cell.
             if (hatch) this._hatchMine = true
+            this._seatFaults?.delete(key)
+
+            if (before && seat === before) {
+                return { success: true, commandCount: sumCounts(seat) }
+            }
 
             this.compositor.flush()
-            // Any seat changes the reflect; gate only opens for the child.
             this._lastReflectChange = performance.now()
-
-            // Own-address faults only on the child's reflect. (D022)
-            this._seatFaults?.delete(key)
 
             const wounds = ailmentsFor(this.scheduler.errors, key)
             if (wounds.length > 0) {
-                // Wounds carry frame key on diagnostics — one channel.
                 this.renderstate.meta = { state: "error", message: null, diagnostics: wounds }
                 this.requestRender()
                 return { success: false, wounds }
             }
 
-            // Turtle owns walk fault; document is asked at the shell. (D022)
             this.renderstate.meta = { state: "success", message: null, diagnostics: [] }
             this.requestRender()
-            // THIS SEAT'S COUNT, not the world's. `scheduler.commandCount` is
-            // sumCounts(root) — every seat at every place — and is assigned ONLY
-            // when the whole world settles, so between settles it holds the
-            // PREVIOUS one. Announcing with it made a ladder step speak a ☀︎
-            // that belonged to some earlier run.
-            const seat = this.scheduler.root.children.get(key)
+            // This seat's count — not the world's sum across places.
             return { success: true, commandCount: seat ? sumCounts(seat) : 0 }
         } catch (error) {
             console.error(error)

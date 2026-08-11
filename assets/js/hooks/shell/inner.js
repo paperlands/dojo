@@ -235,23 +235,18 @@ function mountInner(hook, { term, cm6 }) {
     arena.add(wounds.release)
 
     // WIRING — every organ above stands; from here the surface only listens.
-    const pacedRender = temporal.pace(({ id, name, content }) => {
+    // Seat after quiet (not under keys). Hatch rests longer (BEAT.settled).
+    const quietRender = temporal.quiet(({ id, name, content }) => {
         nerve()?.run()
-        // The child's edit — this buffer is now the authored one (D022).
         authored = { addr: id, place: CORESHELL, name, text: content }
-        // The attention is the cursor THIS keystroke (or tab restore) landed
-        // on, not a debounced echo: the reach publishes at 80 ms, this at 20.
-        // Speaking and breathing ride enact, with every other door.
         enact(id, law.observe(id, {
             name, doc: content, witness: SELF, place: CORESHELL,
             attention: seatingAttention(id),
         }))
         syncTabs()
-    }, 20);
-    // Drop pending trailing calls: a paced timer that fires after the surface
-    // is gone would seat into a disposed turtle / push into a dead hook.
-    arena.add(pacedRender.cancel);
-    arena.add(term.bridge.sub(pacedRender));
+    }, 100)
+    arena.add(quietRender.cancel)
+    arena.add(term.bridge.sub(quietRender))
 
     // A TAB SWITCH IS NEWS THE WORLD NEVER HEARS: the ask reads currentBufferId(),
     // this surface's own state, so it moves with no world breath behind it.

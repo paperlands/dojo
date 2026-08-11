@@ -11,18 +11,14 @@
 // coming (keep the loop alive while the floor runs or the stage reads back);
 // `reason` says hatch now.
 
-// How long a change waits before it becomes a hatch. The only durations here.
+// How long a change waits before it becomes a hatch. One half-second quiet.
 export const BEAT = {
-    // Let a fresh canvas draw something worth reflecting before the first hatch.
+    // Fresh canvas: half a second of drawing before the first hatch.
     "first-light": 500,
-    // ONE GLIMPSE, half a second into the walk — long enough for the figure to
-    // be worth sending. A run carries its code and ONE snapshot; a loop that
-    // runs for minutes is not a video feed, so nothing re-arms while it walks.
+    // ONE GLIMPSE mid-walk — a run is not a video feed; nothing re-arms after.
     alive: 500,
-    // A still canvas hatches when something changes the reflect: the run ended,
-    // the cursor moved, the keepalive came due. The floor is what keeps a person
-    // typing from becoming a drumbeat.
-    settled: 200,
+    // Still canvas: quiet from the CHANGE (not from last hatch). Keys postpone.
+    settled: 500,
 }
 
 export const NOTHING = { owed: false, reason: null }
@@ -45,10 +41,9 @@ export function hatchVerdict({ now, present, mine, walking, changedAt, lastHatch
     // The last hatch already carries it — the watcher would learn nothing.
     if (changedAt <= lastHatchAt) return NOTHING
     const beat = !lastHatchAt ? "first-light" : walking ? "alive" : "settled"
-    // WHAT THE FLOOR IS MEASURED FROM. Still canvas: from the last hatch.
-    // Walking: from the change that set it walking — so the one glimpse lands
-    // half a second INTO the run, not at the empty first frame. Before any
-    // hatch: from first draw ("half a second of drawing" — what first light meant).
-    const since = Math.max(lastHatchAt, firstDrawAt, walking ? changedAt : 0)
+    // settled: quiet from the change. first-light/alive: from draw / walk start.
+    const since = beat === "settled"
+        ? Math.max(firstDrawAt, changedAt)
+        : Math.max(lastHatchAt, firstDrawAt, walking ? changedAt : 0)
     return { owed: true, reason: now - since >= BEAT[beat] ? beat : null }
 }

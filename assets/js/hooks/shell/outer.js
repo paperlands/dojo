@@ -132,8 +132,8 @@ function mountOuter(hook, { term, cm6 }) {
     // separately.
     //
     // Seed seating ledger from THIS caret before the page seats: reach at
-    // 80 ms, draft edit at 60 ms — without this, canvas can still run cell 1
-    // while the outer light already sits in cell 2.
+    // 80 ms; draft seats after quiet (below) — without the attend, canvas can
+    // still run cell 1 while the outer light already sits in cell 2.
     const runDraft = () => {
         if (!outerAddr) return;
         if (term.shell && !term.shell.destroyed) {
@@ -276,14 +276,14 @@ function mountOuter(hook, { term, cm6 }) {
         changedHands();
     };
 
-    // Trailing edge must die with the surface — same law as pacedRender
-    // on coreshell (inner.js). Without cancel, a quiet 60 ms fires into a
-    // disposed turtle / dead hook.
-    const runDraftPaced = temporal.pace(runDraft, 60);
-    arena.add(runDraftPaced.cancel);
+    // Same quiet law as coreshell — seat after a break, not under the keys.
+    const runDraftQuiet = temporal.quiet(() => {
+        if (term.drafting() && draftLive) runDraft()
+    }, 100)
+    arena.add(runDraftQuiet.cancel)
     arena.add(term.bridge.sub(() => {
-        if (term.drafting() && draftLive) runDraftPaced();
-    }));
+        if (term.drafting() && draftLive) runDraftQuiet()
+    }))
 
     // Line-only carrier (~40 bytes) — reader who moves without typing.
     const onOuterAttend = ({ addr, attend }) => {

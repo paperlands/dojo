@@ -1435,8 +1435,9 @@ a video feed. The floors are a TABLE, not a branch: =first-light= 500 (from the
 canvas's first draw, never the page's epoch clock), =alive= 500 (a walking run's
 single glimpse, measured from the SEAT so it lands half a second into the walk
 and not on an empty first frame — the case a list of causes could not name, so a
-=loop 9400 … wait 1/24= hatched never and its reflect froze), =settled= 200 (the
-floor that keeps typing from a drumbeat). Nothing re-arms while a figure walks;
+=loop 9400 … wait 1/24= hatched never and its reflect froze), =settled= 500
+(quiet while typing: debounce from =changedAt=, not throttle from last hatch).
+Nothing re-arms while a figure walks;
 the run's END is the one change it speaks after starting (=onFrame= stamps the
 =_walking= edge), so a run that finishes still sends its final figure.
 

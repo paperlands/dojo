@@ -76,6 +76,52 @@ describe("temporal.pace", () => {
     })
 })
 
+// QUIET — the dual of pace: fire only after silence (seats after a typing break).
+describe("temporal.quiet", () => {
+    test("a lone call lands after the quiet floor", async () => {
+        const seen = []
+        const q = temporal.quiet((x) => seen.push(x), 30)
+        q("only")
+        assert.deepEqual(seen, [])
+        await sleep(60)
+        assert.deepEqual(seen, ["only"])
+    })
+
+    test("sustained input starves — only the break lands the newest", async () => {
+        const seen = []
+        const q = temporal.quiet((x) => seen.push(x), 40)
+        for (let i = 0; i < 10; i++) {
+            q(i)
+            await sleep(10)   // gaps shorter than quiet floor
+        }
+        assert.deepEqual(seen, [], "no fire while keys keep coming")
+        await sleep(60)
+        assert.deepEqual(seen, [9], "one fire, newest args")
+    })
+
+    test("cancel() drops a pending call", async () => {
+        const seen = []
+        const q = temporal.quiet((x) => seen.push(x), 30)
+        q("x")
+        q.cancel()
+        await sleep(60)
+        assert.deepEqual(seen, [])
+    })
+
+    test("flush() lands pending now; at rest it is a no-op", async () => {
+        const seen = []
+        const q = temporal.quiet((x) => seen.push(x), 200)
+        q.flush()
+        assert.deepEqual(seen, [])
+        q("a")
+        q("b")
+        q.flush()
+        assert.deepEqual(seen, ["b"])
+        await sleep(50)
+        assert.deepEqual(seen, ["b"], "timer does not fire again")
+    })
+})
+
 // GATE — memo for side effects: do it only when it would read differently.
 // Suppresses by SAMENESS where pace suppresses by RATE. The early cutoff every
 // reader of a standing answer needs; hand-rolled three times before it was named.

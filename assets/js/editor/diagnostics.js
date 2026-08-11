@@ -65,27 +65,28 @@ export function publishDiagnostics(cm6, view, ds) {
 
 // The standing ink infrastructure — mount once per editor (extensions.js).
 // lintGutter renders the marker; the underline rides setDiagnostics itself.
-// The column collapses when clean: no sparks, no reserved strip. :has() is
-// the whole gate — markers land as .cm-lint-marker, so empty gutters shrink
-// without a second Compartment or a paint-time reconfigure.
+// Overlay, never layout: the column keeps width 0 so sparks do not push the
+// code or grow the codeshell. Markers paint over the gutter edge via
+// overflow:visible + translate — present when wounded, absent when clean.
 export function createDiagnosticsExtension(cm6) {
     return [
         cm6.lintGutter(),
         cm6.EditorView.theme({
-            // Stock is 1.4em + .2em pad — a strip for the SVG chips. Glyphs
-            // (✶ / !) need far less; collapse fully when clean.
-            ".cm-gutter-lint": {
+            // Stock is 1.4em + .2em pad — a reserved strip. We take none of it.
+            // Beat base `.cm-gutter { overflow:hidden }` so the glyph can spill.
+            ".cm-gutter.cm-gutter-lint": {
                 width: "0",
                 minWidth: "0",
-                overflow: "hidden",
-            },
-            ".cm-gutter-lint:has(.cm-lint-marker)": {
-                width: "0.85em",
-                minWidth: "0.85em",
                 overflow: "visible",
+                pointerEvents: "none",
             },
+            // Hang left over the gutter strip so the glyph never covers code.
             ".cm-gutter-lint .cm-gutterElement": {
                 padding: "0.2em",
+                width: "0.85em",
+                boxSizing: "border-box",
+                transform: "translateX(-100%)",
+                pointerEvents: "auto",
             },
         }),
     ]

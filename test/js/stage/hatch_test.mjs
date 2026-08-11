@@ -96,30 +96,46 @@ describe("hatch: alive — one glimpse per run", () => {
 })
 
 describe("hatch: settled", () => {
-    test("the run's final figure lands after the settle floor", () => {
+    test("the run's final figure lands after quiet from the end-of-walk change", () => {
         // The end of the walk is a change (turtle.js stamps the edge), so the
         // final figure crosses even when a mid-walk glimpse already went.
+        // Quiet is measured from that change — not from the last mid-walk hatch.
         const ended = { walking: false, changedAt: 9_950, lastHatchAt: 9_900 }
-        assert.equal(world({ ...ended, now: 9_900 + BEAT.settled - 1 }).reason, null)
-        assert.equal(world({ ...ended, now: 9_900 + BEAT.settled }).reason, "settled")
+        assert.equal(world({ ...ended, now: 9_950 + BEAT.settled - 1 }).reason, null)
+        assert.equal(world({ ...ended, now: 9_950 + BEAT.settled }).reason, "settled")
     })
 
-    test("a change on a long-still canvas hatches at once", () => {
-        // Attention moved (D025 R4), or the keepalive came due. The floor is long past.
-        assert.equal(world({ changedAt: 9_999 }).reason, "settled")
+    test("a change on a still canvas waits the quiet floor from the change", () => {
+        // Attention moved (D025 R4), or the keepalive came due. Not "at once":
+        // settled is quiet-while-typing (debounce from changedAt).
+        const moved = { changedAt: 9_500 }
+        assert.equal(world({ ...moved, now: 9_500 + BEAT.settled - 1 }).reason, null)
+        assert.equal(world({ ...moved, now: 9_500 + BEAT.settled }).reason, "settled")
     })
 
-    test("typing is a drumbeat of changes and not of hatches", () => {
-        // A keystroke every 20ms for a second: the floor, not the keystroke, sets the beat.
+    test("typing stays quiet until a break — then one hatch", () => {
+        // Continuous keys: each key postpones. No hatch mid-burst.
         let lastHatchAt = 5_000
         let shots = 0
+        let lastKey = 5_000
         for (let now = 5_000; now < 6_000; now += 20) {
+            lastKey = now
             const v = hatchVerdict({
                 now, present: true, mine: true, walking: false,
                 changedAt: now, lastHatchAt, firstDrawAt: 1_000,
             })
             if (v.reason) { shots++; lastHatchAt = now }
         }
-        assert.equal(shots, 4, "one hatch per settle floor, not one per keystroke")
+        assert.equal(shots, 0, "no hatch while keys keep coming")
+
+        // After the last key, one hatch when the quiet floor elapses.
+        assert.equal(hatchVerdict({
+            now: lastKey + BEAT.settled - 1, present: true, mine: true, walking: false,
+            changedAt: lastKey, lastHatchAt, firstDrawAt: 1_000,
+        }).reason, null)
+        assert.equal(hatchVerdict({
+            now: lastKey + BEAT.settled, present: true, mine: true, walking: false,
+            changedAt: lastKey, lastHatchAt, firstDrawAt: 1_000,
+        }).reason, "settled")
     })
 })

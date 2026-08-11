@@ -1073,6 +1073,7 @@ export function createScheduler(generator, opts = {}) {
         get building() { return this._building === true },
 
         // Same seed → skip; name may update in place. (id:cmp-become-seed)
+        // Caller sees hold by identity: returned frame === the one already seated.
         hotSwapChild(key, forkSpec, { fresh = false } = {}) {
             const existing = root.children.get(key)
             if (existing && !fresh && sameSeed(existing.seed, forkSpec)) {
