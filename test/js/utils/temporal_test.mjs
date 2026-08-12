@@ -74,6 +74,31 @@ describe("temporal.pace", () => {
         await sleep(60)
         assert.deepEqual(seen, ["after"])
     })
+
+    test("flush() lands pending now; at rest it is a no-op", async () => {
+        const seen = []
+        const p = temporal.pace((x) => seen.push(x), 200)
+        p.flush()
+        assert.deepEqual(seen, [])
+        p("a")
+        p("b")
+        p.flush()
+        assert.deepEqual(seen, ["b"])
+        await sleep(50)
+        assert.deepEqual(seen, ["b"], "timer does not fire again")
+    })
+
+    test("flush() starts the rate window — next fire waits", async () => {
+        const seen = []
+        const p = temporal.pace((x) => seen.push(x), 40)
+        p("a")
+        p.flush()
+        p("b")
+        await sleep(20)
+        assert.deepEqual(seen, ["a"], "still inside the window after flush")
+        await sleep(40)
+        assert.deepEqual(seen, ["a", "b"])
+    })
 })
 
 // QUIET — the dual of pace: fire only after silence (seats after a typing break).
@@ -215,5 +240,68 @@ describe("a projection that includes its count", () => {
         say("line 4 — boom", "line 4 — boom ○3")
         say("line 4 — boom", "line 4 — boom ○2")
         assert.deepEqual(said, ["line 4 — boom ○3"], "the count only ever counts up")
+    })
+})
+
+describe("temporal.once — the rendezvous (id:kj-answer-once)", () => {
+    /** A producer shaped like observable.watch / cell.watch. */
+    function producer() {
+        const fns = new Set()
+        return {
+            watch: (fn) => (fns.add(fn), () => fns.delete(fn)),
+            emit: (v) => [...fns].forEach((fn) => fn(v)),
+            get watchers() {
+                return fns.size
+            },
+        }
+    }
+
+    test("settles with the next value", async () => {
+        const p = producer()
+        const waited = temporal.once(p.watch, 1000)
+        p.emit("a picture")
+        assert.equal(await waited, "a picture")
+    })
+
+    test("the FIRST value only — a second emit is nobody's business", async () => {
+        const p = producer()
+        const waited = temporal.once(p.watch, 1000)
+        p.emit("first")
+        p.emit("second")
+        assert.equal(await waited, "first")
+    })
+
+    test("a producer that never produces settles null — never pending forever", async () => {
+        // kernel/motion.js's law: the producer is not obliged to produce.
+        const p = producer()
+        assert.equal(await temporal.once(p.watch, 20), null)
+    })
+
+    test("unsubscribes both ways — no watcher outlives the wait", async () => {
+        const p = producer()
+        const waited = temporal.once(p.watch, 1000)
+        assert.equal(p.watchers, 1)
+        p.emit("done")
+        await waited
+        assert.equal(p.watchers, 0, "settled by value")
+
+        const timedOut = temporal.once(p.watch, 20)
+        await timedOut
+        assert.equal(p.watchers, 0, "settled by deadline")
+    })
+
+    test("a synchronous producer resolves and still releases its watcher", async () => {
+        const p = producer()
+        // Notifies inside subscribe — the caller's unsub is not yet bound.
+        const eager = (fn) => (fn("now"), p.watch(fn))
+        assert.equal(await temporal.once(eager, 1000), "now")
+        assert.equal(p.watchers, 0)
+    })
+
+    test("a null value is a null answer, not a wait", async () => {
+        const p = producer()
+        const waited = temporal.once(p.watch, 1000)
+        p.emit(null)
+        assert.equal(await waited, null)
     })
 })

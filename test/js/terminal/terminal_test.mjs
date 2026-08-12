@@ -678,6 +678,24 @@ describe("Terminal (CM6)", () => {
         assert.equal(term.currentBufferId(), before, "nothing was made, nothing moved");
     });
 
+    test("forkBuffer finds without source (tombstone); never creates", () => {
+        const cm6  = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const addr = "e".repeat(64);
+        const held = term.forkBuffer({ source: "fw 1", name: "theirs", addr, time: 1 });
+        term.createBuffer("other", "x"); // move selection off the fork
+        const found = term.forkBuffer({ source: null, name: "ghost", addr, time: 2 });
+        assert.equal(found, held, "the river already held is the find");
+        assert.equal(term.currentBufferId(), held, "selects the held river");
+        assert.equal(term.findFork(addr), held, "still one buffer on that addr");
+        assert.equal(
+            term.forkBuffer({ source: null, name: "ghost", addr: "f".repeat(64), time: 2 }),
+            null,
+            "nothing held, nothing made",
+        );
+    });
+
     test("forkBuffer land updates an existing lineage to the keep's source", () => {
         const cm6  = makeMockCm6();
         const term = new Terminal(makeEditorStub(), cm6);

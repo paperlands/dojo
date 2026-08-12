@@ -186,10 +186,9 @@ export function createEngine(opts = {}) {
         const id = name(bytes)
         const value = read(bytes)
 
-        // The floor covers every column the index holds, and it is the SAME
-        // floor the clan applies (entry.unshaped ↔ Dojo.Keep.shaped?/1). A
-        // keep below it is durable and invisible here, or shared-and-refused
-        // there — one law, one seam, loud (id:kb-5-floor, id:kb-vet5 42).
+        // The floor covers every column the index holds — one table
+        // (floor.json) both sides interpret (id:kb-5-floor). A keep below
+        // it is durable and invisible here, or shared-and-refused there.
         const missing = unshaped(value)
         if (missing) {
             throw new TypeError(

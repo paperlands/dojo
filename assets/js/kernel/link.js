@@ -6,9 +6,17 @@
 // snapshot goes stale under soft nav (live_patch, back/forward) and the next
 // carry would clobber the real query (id:la-law watched clause, now built).
 
-// createLink(search, write) → { read, carry }
+// A word the server owns (handle_params). Server words are the page's
+// identity, so they ride into a minted address; client words are this
+// session's state and never travel (id:la-mint).
+export const SERVER = "server"
+
+// createLink(search, write, {words, base}) → { read, carry, address }
 // search is the seed when no location exists (node tests, SSR).
-export function createLink(search, write = () => {}) {
+// words is the vocabulary table (id:la-vocabulary) — the only thing the
+// engine reads from it is who owns each word. base overrides origin+pathname
+// off-document.
+export function createLink(search, write = () => {}, { words = {}, base = null } = {}) {
     // Off-document seed — carry keeps it in step so tests (no location) still
     // round-trip. On the page, location wins on every read.
     let seed = search ?? ""
@@ -44,5 +52,30 @@ export function createLink(search, write = () => {}) {
         write(qs)
     }
 
-    return { read, carry }
+    // Where this page stands, read fresh — pathname moves under soft nav.
+    function here() {
+        if (base != null) return base
+        if (typeof location === "undefined") return ""
+        return `${location.origin}${location.pathname}`
+    }
+
+    // Mint the address someone else opens (id:la-mint). Server words carry
+    // over because they name the page; every client word is dropped, and the
+    // overrides say what this link is FOR. Never writes — minting is a read.
+    function address(overrides = {}) {
+        const held = params()
+        const out = new URLSearchParams()
+        for (const word of Object.keys(words)) {
+            if (words[word] !== SERVER) continue
+            const value = held.get(word)
+            if (value != null) out.set(word, value)
+        }
+        for (const [word, value] of Object.entries(overrides)) {
+            if (value != null) out.set(word, String(value))
+        }
+        const qs = out.toString()
+        return `${here()}${qs ? `?${qs}` : ""}`
+    }
+
+    return { read, carry, address }
 }

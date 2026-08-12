@@ -1,20 +1,30 @@
-// The page's one link, and the fork word's ladder (specs link-actions).
-//
-// The singleton is the only reader of location.search in the tree — a
-// surface parsing location itself is the regression (id:la-not).
+// Page link + fork ladder (id:la-not). Only location.search reader in the tree.
 
-import { createLink } from "./kernel/link.js"
+import { createLink, SERVER } from "./kernel/link.js"
 import { name, read } from "./keep/entry.js"
-import { ofWork } from "./keep/work.js"
+import { newerKeep, ofWork } from "./keep/work.js"
 import { PAGE } from "./keep/page.js"
 import { accept } from "./keep/shared.js"
 import { resolve } from "./weave/resolve.js"
 
-// Seed is only for off-document (tests); on the page, read prefers location
-// (id:la-law — the address bar is the fact store, not a closed-over snapshot).
+/** One word, one owner (id:la-vocabulary). Minted address carries SERVER words. */
+export const WORDS = Object.freeze({
+    clan: SERVER,
+    fork: "hooks/shell/inner.js",
+    action: "hooks/shell/river.js",
+    weave: "hooks/shell/weave.js",
+    perf: "hooks/shell/inner.js",
+})
+
+// Prefer live location; preserve LV history.state on carry (id:la-law).
 export const link = createLink(
     typeof location === "undefined" ? "" : location.search,
-    (qs) => history.replaceState(null, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`),
+    (qs) => history.replaceState(
+        history.state,
+        "",
+        `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`,
+    ),
+    { words: WORDS },
 )
 
 // A minted continuant's shape (id:kb-work-three) — keep id or work_id.
@@ -67,82 +77,129 @@ export async function pullKeep(ref) {
     return res.ok ? res.json() : null
 }
 
+// The hex64 ladder (id:la-fork · la-fork-pull · la-fork-hand).
+//
+// Face (hold bytes), then hand (gesture). Each rung returns a new bag —
+// nothing is reassigned through nested faces. ofWork / newerKeep are pure
+// (work.js). This word is door → room → accept → hand.
+//
+//   face:
+//     localKeep     → pinCommit          (never pull)
+//     localHead     → headAtOpen         (quiet pull; newer wins)
+//     cold + pull   → coldPull           (loud askRoom)
+//     cold, no pull → empty face         (find-only)
+//   hand:
+//     foreignRoot   → landForeign        (forkBuffer peer river)
+//     mine / empty  → landMine           (forkKeep rejoin)
+
 async function forkKept(ref, { door, term, pull, say }) {
     if (!door) { say("no door standing"); return null }
-    let bytes = null
-    let work = ref
-    let source = null
-    let mine = null
+    const face = await holdFace(ref, { door, pull, say })
+    if (!face) return null
+    const picture = await openPicture(face, { door, ref, say })
+    return landHand(term, say, ref, picture)
+}
+
+/** Face → {bytes, source, mine}. No work yet; no gesture yet. */
+async function holdFace(ref, { door, pull, say }) {
     try {
-        mine = await door.root()
+        const mine = await door.root()
+
+        // localKeep — pin this commit (never chase HEAD).
         const asKeep = await door.get(ref)
-        if (asKeep) {
-            // Keep face, already held — pin this commit (never chase HEAD).
-            bytes = asKeep
-            work = read(asKeep).target
-        } else {
-            // ofWork hit ⇒ work face with a local head. Miss ⇒ cold keep or
-            // cold work; the room's answer (or its absence) decides.
-            const local = ofWork(await door.list(mine, PAGE), ref)[0] ?? null
-            if (local) {
-                // Work face: HEAD at *open time*. A prior accept must not
-                // freeze the first artifact — re-ask the room and take the
-                // newer by the author's ts (id:la-fork-pull, id:kb-8).
-                work = ref
-                bytes = local
-                if (pull) {
-                    const got = await askRoom(ref, { pull, say: () => {} })
-                    if (got && newerKeep(local, got.bytes) === got.bytes) {
-                        bytes = got.bytes
-                        source = got.source
-                        await keepPulled(door, got, say)
-                    }
-                }
-            } else if (pull) {
-                // Cold machine: keep id or work id — one ask, both faces.
-                const got = await askRoom(ref, { pull, say })
-                if (got) {
-                    bytes = got.bytes
-                    work = read(bytes).target
-                    source = got.source
-                    await keepPulled(door, got, say)
-                }
-            }
-        }
+        if (asKeep) return pinCommit(asKeep, mine)
+
+        // localHead — ofWork hit: HEAD at open time.
+        const local = ofWork(await door.list(mine, PAGE), ref)[0] ?? null
+        if (local) return headAtOpen(ref, { local, mine, door, pull, say })
+
+        // cold — keep or work id, nothing held here.
+        if (pull) return coldPull(ref, { mine, door, pull, say })
+        return { bytes: null, source: null, mine }
     } catch (e) {
         say("the door refused", e)
         return null
     }
-    let title = null
-    let root = null
-    let ts = null
-    if (bytes) {
-        const value = read(bytes)
-        title = typeof value.title === "string" ? value.title : null
-        root = value.root
-        ts = value.ts
-        // Work is always the keep's target when we hold bytes — never the
-        // keep's own name mistaken for a work id on a cold keep-face pull.
-        if (typeof value.target === "string" && value.target) work = value.target
-        if (source == null) {
-            try {
-                source = value.source_id ? await door.source(value.source_id) : null
-            } catch {
-                source = null
-            }
+}
+
+function pinCommit(bytes, mine) {
+    return { bytes, source: null, mine }
+}
+
+// Work face with a local head: re-ask quietly; take the newer by author ts
+// (id:la-fork-pull, id:kb-8). A prior accept must not freeze the first artifact.
+async function headAtOpen(ref, { local, mine, door, pull, say }) {
+    if (!pull) return { bytes: local, source: null, mine }
+    const got = await askRoom(ref, { pull, say: () => {} })
+    if (!got) return { bytes: local, source: null, mine }
+    if (newerKeep(local, got.bytes) !== got.bytes) {
+        return { bytes: local, source: null, mine }
+    }
+    await keepPulled(door, got, say)
+    return { bytes: got.bytes, source: got.source, mine }
+}
+
+// Cold machine: one loud ask covers both keep-face and work-face.
+async function coldPull(ref, { mine, door, pull, say }) {
+    const got = await askRoom(ref, { pull, say })
+    if (!got) return { bytes: null, source: null, mine }
+    await keepPulled(door, got, say)
+    return { bytes: got.bytes, source: got.source, mine }
+}
+
+// Derive work / title / root / ts / source once. Work is the keep's target
+// when we hold bytes — never the keep's own name mistaken for a work id on
+// a cold keep-face pull.
+async function openPicture(face, { door, ref, say }) {
+    const { bytes, mine } = face
+    if (!bytes) {
+        return { work: ref, bytes: null, source: face.source, mine, title: null, root: null, ts: null }
+    }
+    const value = read(bytes)
+    const work = (typeof value.target === "string" && value.target) ? value.target : ref
+    const title = typeof value.title === "string" ? value.title : null
+    const root = value.root
+    const ts = value.ts
+    let source = face.source
+    if (source == null) {
+        try {
+            source = value.source_id ? await door.source(value.source_id) : null
+        } catch {
+            source = null
         }
-        // A tombstone still finds; it cannot create (id:kb-source-absence).
-        if (typeof source !== "string") say(`no source held for ${ref}`)
     }
-    // The hand decides the gesture (id:la-fork-hand, id:kb-vet2-work): my own
-    // keep rejoins its river; another hand's keep is a peer fork — a new
-    // river, lineage in origin. Works stay single-hand by construction.
-    if (bytes && root !== mine) {
-        return forkForeign({ term, say, ref, work, bytes, source, title, ts })
+    // A tombstone still finds; it cannot create (id:kb-source-absence).
+    if (typeof source !== "string") say(`no source held for ${ref}`)
+    return { work, bytes, source, mine, title, root, ts }
+}
+
+// Hand (id:la-fork-hand, id:kb-vet2-work): same root rejoins; foreign is a
+// peer fork. Works stay single-hand by construction.
+function landHand(term, say, ref, picture) {
+    if (picture.bytes && picture.root !== picture.mine) {
+        return landForeign(term, say, ref, picture)
     }
-    // land: the address asked for this keep/HEAD — open it, don't only
-    // rejoin a stale draft of the same river (id:la-fork-pull).
+    return landMine(term, say, ref, picture)
+}
+
+// land: open the keep/HEAD — do not only rejoin a stale draft (id:la-fork-pull).
+function landMine(term, say, ref, { work, source, title }) {
     const landed = term.forkKeep({ work_id: work, source, name: title, land: true })
+    if (!landed) say(`nothing kept as ${ref}`)
+    return landed
+}
+
+// Peer-fork by the river (origin.addr = work), not the moment — so a HEAD
+// reopen after the author kept again merges the same lineage. forkBuffer
+// itself finds without source (tombstone) and lands with it.
+function landForeign(term, say, ref, { work, bytes, source, title, ts }) {
+    const landed = term.forkBuffer({
+        source,
+        name: title ?? "kept",
+        addr: work ?? name(bytes),
+        time: ts?.t ?? Date.now(),
+        land: true,
+    }) ?? null
     if (!landed) say(`nothing kept as ${ref}`)
     return landed
 }
@@ -158,49 +215,6 @@ async function keepPulled(door, got, say) {
     } catch (e) {
         say("pulled, not kept", e)
     }
-}
-
-/** Author order (id:kb-8): newer ts wins; missing/unreadable loses. */
-function newerKeep(a, b) {
-    if (!a) return b
-    if (!b) return a
-    try {
-        const ta = read(a).ts
-        const tb = read(b).ts
-        if (!tb || typeof tb.t !== "number") return a
-        if (!ta || typeof ta.t !== "number") return b
-        if (tb.t > ta.t || (tb.t === ta.t && (tb.n ?? 0) > (ta.n ?? 0))) return b
-        return a
-    } catch {
-        return a
-    }
-}
-
-// A foreign keep rides the peer-fork path: find-or-create by origin.addr —
-// the river, not the moment, so a HEAD link reopened after the author kept
-// again lands a merge on the same lineage rather than a second fork.
-function forkForeign({ term, say, ref, work, bytes, source, title, ts }) {
-    const addr = work ?? name(bytes)
-    if (typeof source !== "string") {
-        const held = term.findFork?.(addr) ?? null
-        if (held) {
-            term.opBufferHandler({ op: "select", target: held })
-            return held
-        }
-        say(`nothing kept as ${ref}`)
-        return null
-    }
-    // land: a link open shows the keep (HEAD or pinned), even when a fork
-    // buffer already stands with a diverged draft (id:la-fork-pull).
-    const landed = term.forkBuffer({
-        source,
-        name: title ?? "kept",
-        addr,
-        time: ts?.t ?? Date.now(),
-        land: true,
-    }) ?? null
-    if (!landed) say(`nothing kept as ${ref}`)
-    return landed
 }
 
 // The reader verifies the name (id:kc-law 3): a keep face must BE the ref,

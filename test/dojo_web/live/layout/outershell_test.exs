@@ -164,7 +164,13 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
         buffer_id: "buf-1"
       }
 
-      shell = %OuterShell{addr: "alice", name: "Alice", view: :watch, stream: true}
+      shell = %OuterShell{
+        addr: "alice",
+        name: "Alice",
+        view: :watch,
+        stream: true
+      }
+
       payload = OuterShell.payload(turtle, shell)
 
       assert Map.keys(payload) |> Enum.sort() == OuterShell.payload_keys() |> Enum.sort()

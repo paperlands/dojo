@@ -163,37 +163,30 @@ export const listeners = {
     // shell.on('beforeSelectionChange'). The bridge is fired from the
     // updateListener extension in terminal.js#buildExtensions().
     // selectionBridge.sub() returns the unsub function directly.
-    selection: (selectionBridge, pushEvent) => {
-        const pacedPush = temporal.pace(
-            (eventName, eventData) => pushEvent(eventName, eventData),
-            180
-        );
+    selection: (selectionBridge) => ({
+        mount: () => {
+            let hadSelection = false;
 
-        return {
-            mount: () => {
-                let hadSelection = false;
+            // CM6 EditorSelection: ranges[0].from !== ranges[0].to means selection exists
+            const handler = (selection) => {
+                if (!selection || selection.ranges.length !== 1) return;
 
-                // CM6 EditorSelection: ranges[0].from !== ranges[0].to means selection exists
-                const handler = (selection) => {
-                    if (!selection || selection.ranges.length !== 1) return;
+                const range = selection.ranges[0];
+                const hasSelection = range.from !== range.to;
 
-                    const range = selection.ranges[0];
-                    const hasSelection = range.from !== range.to;
+                if (hadSelection && !hasSelection) {
+                    document.querySelector('.command-keyselector')?.click();
+                } else if (!hadSelection && hasSelection) {
+                    document.querySelector('.control-keyselector')?.click();
+                }
 
-                    if (hadSelection && !hasSelection) {
-                        document.querySelector('.command-keyselector')?.click();
-                    } else if (!hadSelection && hasSelection) {
-                        document.querySelector('.control-keyselector')?.click();
-                    }
+                hadSelection = hasSelection;
+            };
 
-                    hadSelection = hasSelection;
-                };
-
-                // sub() returns the unsub function
-                return selectionBridge.sub(handler);
-            }
-        };
-    },
+            // sub() returns the unsub function
+            return selectionBridge.sub(handler);
+        }
+    }),
 
     // Theme listener: watches data-theme attribute — no CM6 dependency.
     // The one listener both surfaces share.
@@ -262,7 +255,7 @@ export const mutators = {
     // each coreshell remount (same law as hooks/draggable.js).
     slider: (sliderId) => {
         const element = document.getElementById(sliderId);
-        let hideTimer, observer;
+        let observer;
 
         const hide = () => {
             if (!element) return;
@@ -270,13 +263,10 @@ export const mutators = {
             if (observer) { observer.disconnect(); observer = null; }
         };
 
-        const resetHideTimer = () => {
-            clearTimeout(hideTimer);
-            hideTimer = setTimeout(hide, 2000);
-        };
-
-        const onOver = () => clearTimeout(hideTimer);
-        const onLeave = () => resetHideTimer();
+        // Hover cancels; leave re-arms; two quiet seconds and it goes.
+        const hideQuiet = temporal.quiet(hide, 2000);
+        const onOver = () => hideQuiet.cancel();
+        const onLeave = () => hideQuiet();
 
         return {
             mount: () => {
@@ -286,8 +276,7 @@ export const mutators = {
                 return () => {
                     element.removeEventListener('mouseover', onOver);
                     element.removeEventListener('mouseleave', onLeave);
-                    clearTimeout(hideTimer);
-                    hideTimer = null;
+                    hideQuiet.cancel();
                     hide();
                 };
             },
@@ -328,7 +317,7 @@ export const mutators = {
                     subtree: true, childList: true, attributeFilter: ['slideval']
                 });
 
-                resetHideTimer();
+                hideQuiet();
             },
 
             hide,

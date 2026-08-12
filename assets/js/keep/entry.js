@@ -1,41 +1,27 @@
-// The message is text (id:kc-p-text, id:kb-2).
-//
-// An entry is a string. It is never an object that gets serialized — write is
-// the one place a value becomes text, and read is for display, never re-kept.
-// The name is the hash of those bytes (id:kc-law 2,3).
-//
-// Catalog last: body cannot overwrite a frozen field. One line makes a silent
-// corruption of root inexpressible rather than documented (id:kb-2).
-//
-// No key-order normalizer — nothing to force. Key order is the string's;
-// one write per kind makes it stable by construction, not by rule (id:kc-p-text).
+// Message is text (id:kc-p-text). write once → string; name = hash(bytes).
+// Catalog last so body cannot overwrite a frozen field (id:kb-2).
 
 import { hash } from "./hash.js"
+// floor.json — law as data; Dojo.Keep.shaped?/1 walks the same table (id:kb-5-floor).
+import FLOOR from "./floor.json" with { type: "json" }
 
-/** The version this build authors. Selects the fold's floor, never a parser. */
+/** Version this build authors. */
 export const V = 1
 
 /**
- * The one place a value becomes text.
- * Catalog fields are written last so a kind's body can never displace them.
- *
- * The catalog defaults to null so it is FIVE KEYS ALWAYS: JSON.stringify omits
- * an undefined value, and an omitted key is a different string, so a different
- * name for the same value (id:kc-r-absence — not whether it is there).
- *
+ * The one place a value becomes text. Catalog written last.
+ * Defaults null so five keys always stringify (id:kc-r-absence).
  * @param {string} kind
- * @param {object} body - free fields for this kind (may carry unknowns)
+ * @param {object} body
  * @param {{ root?: string | null, target?: string | null, ts?: {t: number, n: number} | null }} ctx
- * @returns {string} the entry — the durable message
+ * @returns {string}
  */
 export function write(kind, body, { root = null, target = null, ts = null }) {
     return JSON.stringify({ ...body, v: V, kind, root, ts, target })
 }
 
 /**
- * For display. Never re-serialized; never handed back to write as an entry.
- * A fold's output is not an entry (id:kb-4).
- *
+ * For display only — never re-kept (id:kb-4).
  * @param {string} bytes
  * @returns {object}
  */
@@ -44,8 +30,7 @@ export function read(bytes) {
 }
 
 /**
- * The name of the entry, derived from the bytes that hold it (id:kc-law 3).
- *
+ * Name from bytes (id:kc-law 3).
  * @param {string} bytes
  * @returns {string} hex64
  */
@@ -53,28 +38,55 @@ export function name(bytes) {
     return hash(bytes)
 }
 
-const whole = (x) => Number.isInteger(x) && x >= 0
+// ── floor interpreter ────────────────────────────────────────────────
+
+const MISSING = Symbol("missing")
+
+/** @param {unknown} obj @param {string} path */
+function fetchPath(obj, path) {
+    let cur = obj
+    for (const key of path.split(".")) {
+        if (cur == null || typeof cur !== "object" || !(key in /** @type {object} */ (cur))) {
+            return MISSING
+        }
+        cur = /** @type {object} */ (cur)[key]
+    }
+    return cur
+}
+
+/** @param {unknown} value @param {string} type */
+function typeOk(value, type) {
+    if (value === MISSING) return false
+    switch (type) {
+        case "string":
+            return typeof value === "string"
+        case "string|null":
+            return typeof value === "string" || value === null
+        case "nonneg_int":
+            return Number.isInteger(value) && /** @type {number} */ (value) >= 0
+        case "int>=1":
+            return Number.isInteger(value) && /** @type {number} */ (value) >= 1
+        default:
+            throw new Error(`unknown floor type: ${type}`)
+    }
+}
+
+/** Nested paths report top-level column (ts.t → ts). */
+function whyOf(field) {
+    const i = field.indexOf(".")
+    return i === -1 ? field : field.slice(0, i)
+}
 
 /**
- * THE PROJECTION FLOOR — one law, both sides of the wire (id:kb-5-floor).
- *
- * Every column an index or a row holds must project, or the keep is durable
- * and INVISIBLE: in no index, unlistable, unshippable. It lives here because
- * the floor is a fact about the five frozen fields, not about a store.
- *
- * Dojo.Keep.shaped?/1 is the Elixir mirror; the two say the same thing clause
- * for clause. They diverged once — client finite, server non-negative integer —
- * and a client could mint what the clan refuses forever (id:kb-vet5 42).
- *
+ * Projection floor (id:kb-5-floor). First failing field, else null.
+ * Unshaped → durable and invisible (no index, no ship).
  * @param {object} value - entry.read(bytes)
- * @returns {string | null} the first field that will never project, else null
+ * @returns {string | null}
  */
 export function unshaped(value) {
     if (value == null || typeof value !== "object") return "message"
-    if (typeof value.root !== "string") return "root"
-    if (typeof value.kind !== "string") return "kind"
-    if (typeof value.target !== "string" && value.target !== null) return "target"
-    if (value.ts == null || !whole(value.ts.t) || !whole(value.ts.n)) return "ts"
-    if (!whole(value.v) || value.v < 1) return "v"
+    for (const { field, type } of FLOOR) {
+        if (!typeOk(fetchPath(value, field), type)) return whyOf(field)
+    }
     return null
 }

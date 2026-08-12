@@ -196,10 +196,7 @@ describe("wire: announce — one drain, newest first, serial", () => {
                 // Yield so a concurrent announce could race if the latch failed.
                 await Promise.resolve()
                 inflight--
-                return {
-                    shared: [{ id: payload.id, at: 1, node: "n1" }],
-                    refused: [],
-                }
+                return { id: payload.id, at: 1, node: "n1" }
             },
         })
         const wire = createWire({ hook, door })
@@ -220,10 +217,7 @@ describe("wire: announce — one drain, newest first, serial", () => {
         await door.put(bytes)
 
         const hook = makeHook({
-            [KEEP_EVENT]: async (payload) => ({
-                shared: [{ id: payload.id, at: 42, node: "peer" }],
-                refused: [],
-            }),
+            [KEEP_EVENT]: async (payload) => ({ id: payload.id, at: 42, node: "peer" }),
         })
         const wire = createWire({ hook, door })
         await wire.announce()
@@ -247,10 +241,7 @@ describe("wire: announce — one drain, newest first, serial", () => {
 
         const notes = []
         const hook = makeHook({
-            [KEEP_EVENT]: async (payload) => ({
-                shared: [],
-                refused: [{ id: payload.id, at: 7, node: "n1", why: "root" }],
-            }),
+            [KEEP_EVENT]: async (payload) => ({ id: payload.id, at: 7, node: "n1", why: "root" }),
         })
         const wire = createWire({
             hook,
@@ -314,10 +305,7 @@ describe("wire: announce — one drain, newest first, serial", () => {
         const hook = makeHook({
             [KEEP_EVENT]: async (payload) => {
                 ships++
-                return {
-                    shared: [{ id: payload.id, at: ships, node: "n" }],
-                    refused: [],
-                }
+                return { id: payload.id, at: ships, node: "n" }
             },
         })
         const wire = createWire({ hook, door, page: 3 })
@@ -341,10 +329,7 @@ describe("wire: announce — one drain, newest first, serial", () => {
                 n++
                 // First page (3) answers; if a 4th ship happens without chain
                 // from silence we'd still get answers — we answer all.
-                return {
-                    shared: [{ id: payload.id, at: n, node: "n" }],
-                    refused: [],
-                }
+                return { id: payload.id, at: n, node: "n" }
             },
         })
         const wire = createWire({ hook, door, page: 3 })
@@ -368,10 +353,7 @@ describe("wire: announce — one drain, newest first, serial", () => {
         await door.put(bytes, { source: text })
 
         const hook = makeHook({
-            [KEEP_EVENT]: async (payload) => ({
-                shared: [{ id: payload.id, at: 1, node: "n" }],
-                refused: [],
-            }),
+            [KEEP_EVENT]: async (payload) => ({ id: payload.id, at: 1, node: "n" }),
         })
         const wire = createWire({ hook, door })
         await wire.announce()
@@ -388,10 +370,7 @@ describe("wire: announce — one drain, newest first, serial", () => {
         await door.put(bytes, { image: new Blob([new Uint8Array([1, 2, 3])]) })
 
         const hook = makeHook({
-            [KEEP_EVENT]: async (p) => ({
-                shared: [{ id: p.id, at: 7, node: "n" }],
-                refused: [],
-            }),
+            [KEEP_EVENT]: async (p) => ({ id: p.id, at: 7, node: "n" }),
         })
         const wire = createWire({ hook, door })
         await wire.announce()
@@ -429,10 +408,7 @@ describe("wire: announce — one drain, newest first, serial", () => {
 
         const notes = []
         const hook = makeHook({
-            [KEEP_EVENT]: async (p) => ({
-                shared: [],
-                refused: [{ id: p.id, at: 3, node: "n", why: "root" }],
-            }),
+            [KEEP_EVENT]: async (p) => ({ id: p.id, at: 3, node: "n", why: "root" }),
         })
         await createWire({ hook, door, onNote: (n) => notes.push(n) }).announce()
         await new Promise((r) => setTimeout(r, 0))
@@ -447,10 +423,7 @@ describe("wire: announce — one drain, newest first, serial", () => {
         await door.put(snap(root, { tag: "textonly" }, { t: 1, n: 0 }))
 
         const hook = makeHook({
-            [KEEP_EVENT]: async (p) => ({
-                shared: [{ id: p.id, at: 1, node: "n" }],
-                refused: [],
-            }),
+            [KEEP_EVENT]: async (p) => ({ id: p.id, at: 1, node: "n" }),
         })
         await createWire({ hook, door }).announce()
         await new Promise((r) => setTimeout(r, 0))
@@ -478,7 +451,7 @@ describe("wire: re-entry and reconnect", () => {
         await door.close()
     })
 
-    test("a second announce while draining is a no-op (no double-ship)", async () => {
+    test("a second announce while draining does not double-ship (reannounce-armed)", async () => {
         const root = await door.root()
         await door.put(snap(root, { tag: "a" }, { t: 1, n: 0 }))
         await door.put(snap(root, { tag: "b" }, { t: 2, n: 0 }))
@@ -501,21 +474,101 @@ describe("wire: re-entry and reconnect", () => {
                     sawFirst(undefined)
                     await gate // hold the first reply
                 }
-                return {
-                    shared: [{ id: payload.id, at: ships, node: "n" }],
-                    refused: [],
-                }
+                return { id: payload.id, at: ships, node: "n" }
             },
         })
         const wire = createWire({ hook, door })
         const first = wire.announce()
         await firstShip // drain has entered the first push
-        // Concurrent re-entry must not start a second drain.
+        // Concurrent re-entry arms reannounce — never a second concurrent drain.
         await wire.announce()
-        assert.equal(ships, 1, "second announce skipped while in flight")
+        assert.equal(ships, 1, "second announce deferred while in flight")
         release(undefined)
         await first
+        // First drain ships both; free pass finds local empty.
         assert.equal(ships, 2, "serial drain finished both")
+        assert.equal((await door.local(root)).length, 0)
+    })
+
+    test("eager keep mid-drain ships on the reannounce free pass", async () => {
+        const root = await door.root()
+        const a = snap(root, { tag: "a" }, { t: 1, n: 0 })
+        await door.put(a)
+
+        /** @type {((v: unknown) => void) | null} */
+        let release = null
+        const gate = new Promise((r) => {
+            release = r
+        })
+        /** @type {((v: unknown) => void) | null} */
+        let sawFirst = null
+        const firstShip = new Promise((r) => {
+            sawFirst = r
+        })
+        /** @type {string[]} */
+        const tags = []
+        const hook = makeHook({
+            [KEEP_EVENT]: async (payload) => {
+                tags.push(read(payload.message).tag)
+                if (tags.length === 1) {
+                    sawFirst(undefined)
+                    await gate
+                }
+                return { id: payload.id, at: tags.length, node: "n" }
+            },
+        })
+        const wire = createWire({ hook, door })
+        const first = wire.announce()
+        await firstShip
+        // Mint while the first keep is still in flight — eager re-announce.
+        await door.put(snap(root, { tag: "fresh" }, { t: 2, n: 0 }))
+        await wire.announce()
+        assert.deepEqual(tags, ["a"], "no concurrent second drain")
+        release(undefined)
+        await first
+        for (let i = 0; i < 40 && (await door.local(root)).length > 0; i++) {
+            await new Promise((r) => setTimeout(r, 5))
+        }
+        assert.ok(tags.includes("fresh"), "reannounce free pass shipped the new keep")
+        assert.equal((await door.local(root)).length, 0)
+    })
+
+    test("one-fact reply: shared settles, refused notes, silence ends — no UI callback", async () => {
+        // Wire settles the journal only. Share-edge UI is fold-derived (river).
+        const src = readFileSync(join(KEEP_DIR, "wire.js"), "utf8")
+        assert.equal(src.includes("onShared"), false)
+
+        const root = await door.root()
+        const ok = snap(root, { tag: "ok" }, { t: 3, n: 0 })
+        const bad = snap(root, { tag: "bad" }, { t: 2, n: 0 })
+        const quiet = snap(root, { tag: "quiet" }, { t: 1, n: 0 })
+        await door.put(ok)
+        await door.put(bad)
+        await door.put(quiet)
+
+        const notes = []
+        const hook = makeHook({
+            [KEEP_EVENT]: async (payload) => {
+                const tag = read(payload.message).tag
+                if (tag === "quiet") return undefined
+                if (tag === "bad") {
+                    return { id: payload.id, at: 1, node: "n", why: "root" }
+                }
+                return { id: payload.id, at: 1, node: "n" }
+            },
+        })
+        const wire = createWire({
+            hook,
+            door,
+            onNote: (n) => notes.push(n),
+        })
+        // Newest first: ok shared → settle; bad refused → settle+note; quiet silence → break.
+        await wire.announce()
+        assert.equal((await door.local(root)).length, 1, "quiet stays kept local")
+        assert.deepEqual(notes, [{ kind: "refused", id: name(bad), why: "root" }])
+        // ok is shared (left local); quiet remains.
+        const held = (await door.local(root)).map((x) => read(x).tag)
+        assert.deepEqual(held, ["quiet"])
     })
 
     test("reconnected clears the latch; a hung reply cannot block the healer", async () => {
@@ -538,10 +591,7 @@ describe("wire: re-entry and reconnect", () => {
                     // Never settles — the old channel's silence (id:kb-vet2 15).
                     return new Promise(() => {})
                 }
-                return Promise.resolve({
-                    shared: [{ id: payload.id, at: 9, node: "n" }],
-                    refused: [],
-                })
+                return Promise.resolve({ id: payload.id, at: 9, node: "n" })
             },
         })
         const wire = createWire({ hook, door })
@@ -568,10 +618,7 @@ describe("wire: re-entry and reconnect", () => {
         const hook = makeHook({
             [KEEP_EVENT]: async (payload) => {
                 n++
-                return {
-                    shared: [{ id: payload.id, at: n, node: "n" }],
-                    refused: [],
-                }
+                return { id: payload.id, at: n, node: "n" }
             },
         })
         const wire = createWire({ hook, door })
@@ -589,7 +636,7 @@ describe("wire: re-entry and reconnect", () => {
     })
 })
 
-describe("wire: settle is fenced to the shipped id (probe W1)", () => {
+describe("wire: one-fact settle is fenced to the shipped id (probe W1)", () => {
     /** @type {ReturnType<typeof freshDoor>} */
     let door
     beforeEach(() => {
@@ -611,16 +658,10 @@ describe("wire: settle is fenced to the shipped id (probe W1)", () => {
         const hook = makeHook({
             [KEEP_EVENT]: async (payload) => {
                 if (payload.id === idA) {
-                    return {
-                        shared: [{ id: idB, at: 1, node: "evil" }],
-                        refused: [],
-                    }
+                    return { id: idB, at: 1, node: "evil" }
                 }
                 // Honest reply for B if it still ships
-                return {
-                    shared: [{ id: payload.id, at: 2, node: "n" }],
-                    refused: [],
-                }
+                return { id: payload.id, at: 2, node: "n" }
             },
         })
         await createWire({ hook, door }).announce()
@@ -638,10 +679,7 @@ describe("wire: settle is fenced to the shipped id (probe W1)", () => {
         // Next announce re-offers A only.
         await createWire({
             hook: makeHook({
-                [KEEP_EVENT]: async (payload) => ({
-                    shared: [{ id: payload.id, at: 9, node: "n" }],
-                    refused: [],
-                }),
+                [KEEP_EVENT]: async (payload) => ({ id: payload.id, at: 9, node: "n" }),
             }),
             door,
         }).announce()

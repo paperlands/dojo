@@ -1,4 +1,8 @@
 import { createArena } from "../kernel/arena.js"
+import { temporal } from "../utils/temporal.js"
+
+/** Finger held on a tab long enough to mean "activate", not "select". */
+const LONG_PRESS_MS = 500
 
 export class Tabber {
     constructor(containerId = 'tabs', scaffoldId = 'tab-scaffold-root') {
@@ -63,8 +67,14 @@ export class Tabber {
 
         // Shift+click activates ambient without switching editor.
         // Long-press on mobile does the same.
-        let longPressTimer = null;
         let longPressed = false;
+        // Cancelled by touchend/move, not by surface lifetime — a quiet, so the
+        // arming and the cancelling are the same one object.
+        const longPress = temporal.quiet(() => {
+            longPressed = true;
+            this.dispatch('phx:opBuffer', { op: 'activate', target: id });
+        }, LONG_PRESS_MS);
+        arena.add(longPress.cancel);
 
         arena.on(element, 'click', (e) => {
             if (longPressed) { longPressed = false; return; }
@@ -75,17 +85,12 @@ export class Tabber {
             }
         });
 
-        // Long-press timer is cancelled by touchend/move — not surface lifetime,
-        // so it stays a local clearTimeout pair, not arena.timer.
         arena.on(element, 'touchstart', () => {
             longPressed = false;
-            longPressTimer = setTimeout(() => {
-                longPressed = true;
-                this.dispatch('phx:opBuffer', { op: 'activate', target: id });
-            }, 500);
+            longPress();
         }, { passive: true });
-        arena.on(element, 'touchend', () => clearTimeout(longPressTimer));
-        arena.on(element, 'touchmove', () => clearTimeout(longPressTimer));
+        arena.on(element, 'touchend', longPress.cancel);
+        arena.on(element, 'touchmove', longPress.cancel);
 
         return element;
     }

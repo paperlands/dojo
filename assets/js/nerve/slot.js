@@ -69,10 +69,3 @@ export function makeSlot(signal, ch, opts) {
     }
     return slot
 }
-
-// remove → reflow → add so CSS restarts.
-export function retrigger(el, cls) {
-    el.classList.remove(cls)
-    void el.offsetWidth
-    el.classList.add(cls)
-}

@@ -17,53 +17,10 @@
   .rightpane:has(#outer-open.is-open) .outershell { display: block; }
 
   /* the river's own flag — placement and gating are the call site's;
-     the component itself is placement-agnostic (id:kr-place) */
+     the component itself is placement-agnostic (id:kr-place). Open paint
+     for #riverbutton lives on river_state (ColocatedCSS). */
   .rightpane .river-sky { display: none; }
-  .rightpane:has(#river-state.river-open) .river-sky { display: block; }
-  /* active = deck idiom: secondary fill + soft glow */
-  .rightpane:has(#river-state.river-open) #riverbutton {
-    color: var(--color-secondary-content);
-    border-color: var(--color-secondary-content);
-    filter: drop-shadow(0 1px 1px var(--color-secondary-content));
-  }
-  /* share suns wind on open/close — same ease/duration family as
-     recenter flash (ease-out ~500–700ms) and record/deck transform.
-     Origin is local 0,0: each node group is already seated at its hub.
-     Rays make the turn read; disks fill like helios cores when open. */
-  #riverbutton .share-node {
-    transform: rotate(0deg);
-    transform-origin: 0 0;
-    transition:
-      transform 700ms cubic-bezier(0.22, 1, 0.36, 1),
-      fill 300ms ease;
-  }
-  #riverbutton .share-disk {
-    fill: none;
-    transition: fill 300ms ease;
-  }
-  .rightpane:has(#river-state.river-open) #riverbutton .share-disk {
-    fill: currentColor;
-  }
-  /* mesh: neighbours turn opposite ways, one full turn per edge */
-  .rightpane:has(#river-state.river-open) #riverbutton .share-node-top {
-    transform: rotate(360deg);
-  }
-  .rightpane:has(#river-state.river-open) #riverbutton .share-node-mid {
-    transform: rotate(-360deg);
-  }
-  .rightpane:has(#river-state.river-open) #riverbutton .share-node-bot {
-    transform: rotate(360deg);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    #riverbutton .share-node {
-      transition: fill 300ms ease;
-    }
-    .rightpane:has(#river-state.river-open) #riverbutton .share-node-top,
-    .rightpane:has(#river-state.river-open) #riverbutton .share-node-mid,
-    .rightpane:has(#river-state.river-open) #riverbutton .share-node-bot {
-      transform: none;
-    }
-  }
+  .rightpane:has(#river-state.is-open) .river-sky { display: block; }
 
   /* outer nerve + wash */
   #outer-nerve .nerve-error {
@@ -368,7 +325,17 @@
             >
               <button
                 class="flex items-center justify-center w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
-                phx-click={JS.toggle_class("deck-open", to: "#deck-state")}
+                title="close command deck"
+                aria-label="close command deck"
+                phx-click={
+                  JS.toggle_class("deck-open", to: "#deck-state")
+                  |> JS.toggle_attribute(
+                    {"title", "close command deck", "open command deck"}
+                  )
+                  |> JS.toggle_attribute(
+                    {"aria-label", "close command deck", "open command deck"}
+                  )
+                }
               >
                 <.manual
                   id="manualdeckbutton"
@@ -391,6 +358,8 @@
               <button
                 id="startrecording"
                 class="flex items-center justify-center w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8   rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+                title="record creation"
+                aria-label="record creation"
                 phx-click={
                   JS.dispatch("phx:relayCamera", detail: %{command: "record"})
                   |> JS.hide(to: "#startrecording")
@@ -426,6 +395,8 @@
               <button
                 id="endrecording"
                 class="flex items-center justify-center hidden w-9 h-9 border-2 border-primary/50  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8   rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+                title="stop recording"
+                aria-label="stop recording"
                 phx-click={
                   JS.dispatch("phx:relayCamera", detail: %{command: "endrecord"})
                   |> JS.hide(to: "#endrecording")
@@ -443,6 +414,8 @@
               <button
                 id="centering"
                 class=" flex items-center justify-center  w-9 h-9 border border-accent backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0   rounded-sm  lg:w-8 lg:h-8   fill-primary hover:fill-primary active:border-primary touch-manipulation"
+                title="recenter"
+                aria-label="recenter"
                 phx-rtclick={
                   JS.dispatch("phx:relayCamera", detail: %{command: "pan"})
                   |> JS.toggle_class("hidden", to: "#centering")
@@ -470,6 +443,8 @@
               <button
                 id="centered"
                 class=" flex items-center justify-center hidden w-9 h-9 border border-accent backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0  rounded-sm  lg:w-8 lg:h-8   fill-primary hover:fill-primary active:border-primary touch-manipulation"
+                title="follow turtle"
+                aria-label="follow turtle"
                 phx-click={
                   JS.dispatch("phx:relayCamera", detail: %{command: "track"})
                   |> JS.toggle_class(

@@ -2,7 +2,8 @@
 // base = health (pulled); event = weather (pushed, fades). (D022)
 // health injected (own or peer). Never call at construct — surface refresh()s.
 
-import { makeSlot, statusText, retrigger } from './slot.js'
+import { makeSlot, statusText } from './slot.js'
+import { pulse, whenDone } from '../kernel/motion.js'
 
 // Base channel: no lifetime fade — a state ends when the document changes.
 const BASE = Object.freeze({ fadeMs: 0, css: 'nerve-error' })
@@ -97,7 +98,7 @@ export function createStatusSeat(zone, { health = () => null, nav = () => {} } =
     function light(el, signal, changed) {
         el.classList.toggle('helios-living', signal.living === true)
         el.classList.toggle('helios-apex', heliosApex(signal))
-        if (changed) retrigger(el, 'helios-lit')  // rung change only, not keep-alives
+        if (changed) pulse(el, 'helios-lit')  // rung change only, not keep-alives
     }
 
     // Emptying (nothing follows) = long helios-exit; being taken = quick dissolve in part.
@@ -121,19 +122,15 @@ export function createStatusSeat(zone, { health = () => null, nav = () => {} } =
         leave(el, 'nerve-dissolve', 400)
     }
 
-    // Remove on animation end; timer if the animation is swallowed.
-    function leave(el, animationName, fallbackMs) {
-        let timer
+    // Remove on animation end; the fallback is kernel/motion's law, not ours.
+    function leave(el, animation, fallbackMs) {
         const done = () => {
-            clearTimeout(timer)
             leaving.delete(done)
             el.remove()
         }
         done.el = el
-        timer = setTimeout(done, fallbackMs)
+        done.now = whenDone(el, { animation, ms: fallbackMs }, done)
         leaving.add(done)
-        el.addEventListener('animationend',
-            (e) => { if (e.animationName === animationName) done() }, { once: true })
     }
 
     function clear() {
@@ -147,7 +144,8 @@ export function createStatusSeat(zone, { health = () => null, nav = () => {} } =
         refresh: render,  // health may have moved
         destroy() {
             clearTimeout(fadeTimer); fadeTimer = null; event = null
-            for (const d of leaving) d()
+            // finish, not just run: the ghost's own timer/listener go with it.
+            for (const d of leaving) d.now()
             clear()
         },
     }

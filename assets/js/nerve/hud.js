@@ -5,6 +5,7 @@ import { CHANNELS } from './store.js'
 import { revealAmbient } from './reveal.js'
 import { createStatusSeat } from './seat.js'
 import { buildSlot } from './slot.js'
+import { whenDone } from '../kernel/motion.js'
 import { get } from '../hooks/shell/term-cell.js'
 
 const MAX_CHAT_SLOTS = 5
@@ -48,12 +49,14 @@ function chatMutator(zone) {
     const slots = []
     const shoutTimestamps = new Map()
 
+    // Out of the list FIRST: stopping the fade lands it, and a landing that
+    // still found this slot would splice a second time, taking a neighbour.
     function removeSlot(idx) {
         const s = slots[idx]
         if (!s) return
-        clearTimeout(s.timer)
-        s.el.remove()
         slots.splice(idx, 1)
+        s.stop()
+        s.el.remove()
     }
 
     function evict() {
@@ -85,19 +88,15 @@ function chatMutator(zone) {
             onExpand()
         })
 
-        const timer = setTimeout(() => {
+        // The fade animation may never run (hidden tab, reduced motion), so
+        // the lifetime rides kernel/motion's fallback, not the animation alone.
+        const drop = () => {
             const idx = slots.findIndex(s => s.el === el)
             if (idx !== -1) removeSlot(idx)
-        }, ch.fadeMs)
+        }
+        const stop = whenDone(el, { animation: 'hud-fade', ms: ch.fadeMs }, drop)
 
-        el.addEventListener('animationend', (e) => {
-            if (e.animationName === 'hud-fade') {
-                const idx = slots.findIndex(s => s.el === el)
-                if (idx !== -1) removeSlot(idx)
-            }
-        })
-
-        slots.push({ signal, el, timer })
+        slots.push({ signal, el, stop })
         zone.prepend(el)
     }
 

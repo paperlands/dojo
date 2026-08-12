@@ -109,13 +109,13 @@ describe("paint: the rail receives, it never wipes", () => {
 
     test("the east is always open — the present stands even on an empty river", () => {
         const rail = makeEl()
+        // East kind is the key itself — no present: true flag.
         const openEast = {
             key: "present",
             sky: null,
             water: null,
             trunk: false,
             meet: false,
-            present: true,
         }
 
         paint(rail, [openEast], { kept: allShared, faceOf: noFace })
@@ -141,7 +141,6 @@ describe("paint: the rail receives, it never wipes", () => {
             water: null,
             trunk: false,
             meet: false,
-            present: true,
         }
         const draftCol = {
             key: "draft",
@@ -149,7 +148,6 @@ describe("paint: the rail receives, it never wipes", () => {
             water: null,
             trunk: false,
             meet: false,
-            draft: true,
             face: "blob:last",
         }
 

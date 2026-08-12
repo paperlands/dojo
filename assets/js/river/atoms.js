@@ -1,11 +1,15 @@
 // The CAST of the river — fixed atoms, invented nowhere else (id:kr-atoms).
 //
-//   rail · seat · present · draft · ring-open · ring-settled · ripple
+//   rail · seat · open · ring-open · ring-settled · ripple
 //
 // TWO WORDS ONLY (id:kc-lexicon):
 //   kept local → ring-open + breath        shared → ring-settled, breath ends
 // The ring is four square edges (command-deck corners), lit by --near.
-// Present and draft are not keeps: no open/settled word, never in the journal.
+// Open seats (present, draft) are not keeps: no open/settled word, never
+// in the journal. One atom, two places — the kind names which.
+//
+// KIND is the only catalogue of seat shapes. Paint names a key; make runs it.
+// A fifth kind is one entry — two constructors that could drift cannot.
 
 const NS = "river"
 
@@ -18,22 +22,14 @@ export function seat({ water = false } = {}) {
 }
 
 /**
- * The open east — the present (id:kr-meridian).
- * A dotted circle, not keep-corners; no open/settled word yet.
+ * An open east seat (id:kr-meridian). Present is bare potential; draft
+ * carries a parent face. Not a keep: no journal, no share.
+ *
+ * @param {"present"|"draft"} which
  */
-export function present() {
-    const el = div(`${NS}-seat ${NS}-present`)
-    el.appendChild(div(`${NS}-open`))
-    return el
-}
-
-/**
- * East of present — a local draft from a past keep. Not a keep: no journal,
- * no share. Face sits inside the dotted circle (figure, then ring).
- */
-export function draft() {
-    const el = div(`${NS}-seat ${NS}-draft`)
-    el.appendChild(div(`${NS}-face`))
+export function open(which) {
+    const el = div(`${NS}-seat ${NS}-${which}`)
+    if (which === "draft") el.appendChild(div(`${NS}-face`))
     el.appendChild(div(`${NS}-open`))
     return el
 }
@@ -42,6 +38,14 @@ export function draft() {
 export function slot() {
     return div(`${NS}-slot`)
 }
+
+/** Kind name → maker. Seat alone needs water; others ignore the bag. */
+export const KIND = Object.freeze({
+    seat: ({ water = false } = {}) => seat({ water }),
+    present: () => open("present"),
+    draft: () => open("draft"),
+    slot: () => slot(),
+})
 
 /** One column: this line above, the sibling mirrored beneath. */
 export function column(key) {

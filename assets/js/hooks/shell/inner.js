@@ -21,19 +21,23 @@ import { commands, listeners, mutators } from "./core.js"
 import { register, outerDrafting } from "./term-cell.js"
 import { createArena } from "../../kernel/arena.js"
 import { attach } from "../../kernel/attach.js"
+import { createObservable } from "../../kernel/observable.js"
 import { safePush } from "../../adapter.js"
 import { createJournal } from "../../keep/journal.js"
 import { createWire } from "../../keep/wire.js"
-import { keepSnap } from "../../keep/kinds/snap.js"
-import { landed, registerDoor, watchAsk } from "../../keep/cell.js"
+import { attachImage, mintSnap } from "../../keep/kinds/snap.js"
+import { askKeep, registerDoor, registerKeeper, touched } from "../../keep/cell.js"
 import { forkRef, link, pullKeep } from "../../link.js"
 import { fetchFragment, fragmentIndex } from "../../weave/fragments.js"
 import { transpile } from "../../weave/parse.js"
 
+// Picture deadline: two hatch beats + readback. Late face, never lost keep.
+const SNAP_WAIT_MS = 1200
+
 // Events registered at mounted(); handlers returned once mount() stands.
 export const inner = {
-    events: ["seeOuterShell", "relayCamera", "selfkeepCanvas", "writeShell",
-             "opBuffer", "forkBuffer"],
+    events: ["seeOuterShell", "relayCamera", "selfkeepCanvas", "outerkeepCanvas",
+             "writeShell", "opBuffer", "forkBuffer"],
     mount: mountInner,
 };
 
@@ -261,12 +265,11 @@ function mountInner(hook, { term, cm6 }) {
         wounds.changed()
     }));
 
+    // Hatch carries no ask (id:kc-p-join).
     const pacedHatch = temporal.pace(
         (payload) => {
-            // One strip, whole ask (kb-vet4 33–34). keep and title never ride.
-            const { keep: _keep, title: _title, ...wire } = payload
             safePush(hook, "hatchTurtle", {
-                ...wire,
+                ...payload,
                 buffer_id: term.currentBufferId(),
             })
         },
@@ -274,22 +277,42 @@ function mountInner(hook, { term, cm6 }) {
     );
     arena.add(pacedHatch.cancel);
 
-    // The keep's durability door (id:kb-6). Genesis warms in the background;
-    // the mint may wait, the hatch never does (id:kb-7).
+    // Journal door (id:kb-3-owner) + wire edge (id:kb-9).
     const journal = createJournal();
-    // One door for the page (id:kb-3-owner). The river reads through this cell
-    // rather than opening a second worker over the same database.
     arena.add(registerDoor(journal));
     arena.add(() => journal.close());
 
-    // The keep's one socket edge (id:kb-9). birth and reconnected say the same
-    // sentence — there is no reconnect path distinct from the birth path.
-    const wire = createWire({ hook, door: journal });
+    const wireDoor = {
+        root: () => journal.root(),
+        local: (r, n) => journal.local(r, n),
+        source: (id) => journal.source(id),
+        image: (id) => journal.image(id),
+        share: async (id, shared) => {
+            const out = await journal.share(id, shared)
+            touched()
+            return out
+        },
+    }
+    const wire = createWire({ hook, door: wireDoor });
 
-    // The river asks with one value; this shell answers (kb-vet4 33).
-    arena.add(watchAsk((ask) =>
-        cameraCommand("snap", { title: ask.title, prev: ask.prev, download: false })
-    ));
+    // Hatch products: subscribe, don't command (id:kj-answer).
+    const paths = createObservable();
+
+    // Join: mint first (word is cause), attach picture later (reveal).
+    arena.add(registerKeeper(async (ask) => {
+        const minted = await mintSnap(ask, reflection() ?? {}, {
+            work_id: term.currentWorkId(),
+            buffer_id: term.currentBufferId(),
+        }, journal);
+        if (!minted) return null
+        touched();
+        void wire.announce();
+        void turtle.reflectChanged?.();
+        void temporal.once(paths.watch, SNAP_WAIT_MS).then(async (path) => {
+            if (await attachImage(journal, minted.bytes, path)) touched()
+        });
+        return minted.id
+    }));
 
     arena.add(turtle.bridge.sub(([event, payload]) => {
         switch (event) {
@@ -298,29 +321,10 @@ function mountInner(hook, { term, cm6 }) {
             if (payload.type === "image") saveImage(payload.snapshot);
             break;
         case "hatchTurtle": {
-            // The reflect seam (D022): the turtle contributes what it owns —
-            // the fault and the snapshot path; the DOCUMENT is asked for here,
-            // where the authored buffer lives. Order matters: the reflection
-            // is authoritative over any stale document field.
+            // D022: document from this surface; reflection wins over stale hatch fields.
             const hatch = { ...payload, ...(reflection() ?? {}) };
-            // THE KEEP EXISTS here — pure mint · journal.put · cannot be paced
-            // away (id:kb-7). Before the pacer, before the clear, before any
-            // socket. Video path never sets snapshot.save, so never keeps.
-            // keep is the ask `{ title, prev? }` or absent (kb-vet4 33).
-            // keepSnap never rejects — a drop is a fact (id:kc-c-wire).
-            const keep = payload.keep
-            if (keep && typeof keep === "object") {
-                if (typeof keep.title === "string") hatch.title = keep.title
-                // Settled, the keep is news: the river re-folds and the sky
-                // ignites. Still never awaited — a keep that could not be
-                // minted lands null and says nothing (id:kc-c-wire).
-                void keepSnap(hatch, {
-                    work_id: term.currentWorkId(),
-                    buffer_id: term.currentBufferId(),
-                    prev: typeof keep.prev === "string" && keep.prev ? keep.prev : null,
-                }, journal).then((id) => { if (id) landed(); });
-            }
-            pacedHatch(hatch); // still paced, still lossy — and now correct
+            if (payload.path) paths.notify(payload.path);
+            pacedHatch(hatch);
             break;
         }
         }
@@ -473,10 +477,16 @@ function mountInner(hook, { term, cm6 }) {
     // Editor listeners last, so they release FIRST: a keystroke or selection
     // landing mid-teardown must not reach organs already let go.
     arena.add(listeners.keyboard(term.shell, cm6).mount());
-    arena.add(listeners.selection(term.selectionBridge, (e, p) => safePush(hook, e, p)).mount());
+    arena.add(listeners.selection(term.selectionBridge).mount());
     arena.add(listeners.theme(theme => term.setOption('theme', theme)).mount());
     arena.add(slider.mount());
     arena.add(listeners.slider(term.shell, slider, cm6).mount());
+
+    /** The aperture's gesture: keep the moment, and put a file on disk too. */
+    const keepAndSave = (title) => {
+        void askKeep(title)
+        cameraCommand("snap", { title })
+    }
 
     return {
         // BIRTH — the room is whole, so now it may speak. Buffer on screen
@@ -487,28 +497,16 @@ function mountInner(hook, { term, cm6 }) {
             term.triggerBridge();
             // ?fork=<ref> forks the named thing or finds its buffer — after
             // birth, so every organ stands; idempotent, so a remount only
-            // finds what the first enactment made (id:la-fork). land writes
-            // the keep's source so a reopened link updates (id:la-fork-pull).
-            const enactFork = () => {
-                const ref = link.read("fork");
-                if (!ref) return;
+            // Mount is the whole enactment (id:la-law) — no nav listener race.
+            const ref = link.read("fork");
+            if (ref) {
                 void forkRef(ref, {
                     door: journal,
                     term,
                     corpus: { index: fragmentIndex, fetch: fetchFragment, press: transpile },
                     pull: pullKeep,
                 });
-            };
-            enactFork();
-            // Soft nav (live_patch / back-forward) never remounts the hook —
-            // re-read the address and enact again (id:la-law).
-            const onNav = () => enactFork();
-            window.addEventListener("phx:navigate", onNav);
-            window.addEventListener("popstate", onNav);
-            arena.add(() => {
-                window.removeEventListener("phx:navigate", onNav);
-                window.removeEventListener("popstate", onNav);
-            });
+            }
             void wire.announce();
         },
         // The healer: clear the drain latch, then say birth's sentence again.
@@ -517,7 +515,9 @@ function mountInner(hook, { term, cm6 }) {
         events: {
             seeOuterShell:  onSeeOuterShell,
             relayCamera:    ({ command }) => cameraCommand(command),
-            selfkeepCanvas: ({ title })   => cameraCommand("snap", { title }),
+            // Same ask fence as the river (id:kj-vet 6); file beside the keep.
+            selfkeepCanvas:  ({ title })  => keepAndSave(title),
+            outerkeepCanvas: ({ title })  => keepAndSave(title),
             writeShell:     executeCommand,
             opBuffer:       onOpBuffer,
             forkBuffer:     (forkData) => term.forkBuffer(forkData),

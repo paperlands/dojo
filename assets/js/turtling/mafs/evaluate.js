@@ -15,7 +15,8 @@ export class Evaluator {
             'atan': (x) => this.toDegrees(Math.atan(x)),
             'sqrt': Math.sqrt,
             'log': Math.log,
-            'exp': Math.exp
+            'exp': Math.exp,
+            'abs': Math.abs
         };
 
         // Deferred = stochastic/streaming primitives that must re-evaluate at

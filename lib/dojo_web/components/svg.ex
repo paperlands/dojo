@@ -28,51 +28,48 @@ defmodule DojoWeb.SVGComponents do
     """
   end
 
-  # Share network: three little helios + short links. Each node is a sun disk
-  # with a dotted corona (not spoke-hair) so spin still reads and the node
-  # owns the weight — see #riverbutton open transition.
+  # Organic solar mass — three hubs as one body (hand-drawn share.svg).
+  # Closed = filled shell (primary). Open = rim reflows, corona blooms
+  # (diagrams/share-mass · reflow-bloom). Motion CSS lives on river.ex.
+  @share_d "m -1037.3186,-1196.4101 c -5.32,-1.09 -10.34,0.16 -14.23,2.92 -2.79,1.97 -6.37,2.35 -9.43,0.83 l -1.58,-0.8 c -3.6,-1.79 -5.67,-5.54 -5.65,-9.56 v -0.07 c 0,-0.09 -0.02,-0.2 -0.02,-0.29 -0.07,-3.89 1.97,-7.51 5.47,-9.25 l 7.01,-3.51 c 2.68,-1.34 5.83,-1.21 8.46,0.22 2.48,1.32 5.41,1.87 8.51,1.32 5.34,-0.94 9.63,-5.27 10.56,-10.61 1.36,-7.99 -4.6,-14.98 -12.26,-15.36 -4.65,-0.24 -8.89,2.37 -11.52,6.23 -1.2,1.76 -1.83,3.42 -2.08,5.02 -0.49,2.9 -2.28,5.4 -4.89,6.7 l -10.07,5.03 c -2.55,1.27 -5.56,1.29 -8.09,-0.02 -3.08,-1.58 -6.72,-2.21 -10.54,-1.47 -6.46,1.23 -11.66,6.45 -12.86,12.93 -1.89,10.32 6.02,19.36 16.02,19.36 2.68,0 5.23,-0.67 7.46,-1.83 2.5,-1.3 5.49,-1.23 8,0.04 l 5.07,2.54 c 2.93,1.47 4.65,4.49 4.73,7.77 0.05,1.85 0.4,3.78 1.16,5.78 2.54,6.54 8.55,11.34 15.54,11.86 11.75,0.91 21.4,-9.51 19.19,-21.48 -1.3,-7.09 -6.92,-12.85 -13.96,-14.3 z"
+
   def share(assigns) do
+    assigns = assign(assigns, :share_d, @share_d)
+
     ~H"""
     <svg
-      class={@class}
-      viewBox="0 0 100 100"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="3.5"
-      stroke-linecap="round"
-      stroke-linejoin="round"
+      class={["river-share-svg overflow-visible", @class]}
+      viewBox="-1102.0 -1242.1 80.2 82.9"
       aria-hidden="true"
     >
-      <%!-- short edges: just enough to join corona to corona --%>
-      <line class="share-link" x1="40" y1="44" x2="64" y2="30" />
-      <line class="share-link" x1="40" y1="56" x2="64" y2="70" />
-      <%!-- outer g seats the node; inner g is what CSS rotates (so translate
-           is not wiped when transform: rotate lands). --%>
-      <g transform="translate(28 50)">
-        <g class="share-node share-node-mid"><.share_sun /></g>
-      </g>
-      <g transform="translate(78 22)">
-        <g class="share-node share-node-top"><.share_sun /></g>
-      </g>
-      <g transform="translate(78 78)">
-        <g class="share-node share-node-bot"><.share_sun /></g>
-      </g>
+      <%!-- light that leaves the body — scales; mass does not --%>
+      <path class="share-glow" fill="currentColor" fill-rule="evenodd" d={@share_d} />
+      <%!-- settled body — always the command orange (never a hollow hole) --%>
+      <path class="share-fill" fill="currentColor" fill-rule="evenodd" d={@share_d} />
+      <%!-- quiet outline while closed; dashes off on open --%>
+      <path
+        class="share-shell"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="3.2"
+        stroke-linejoin="round"
+        stroke-linecap="round"
+        pathLength="1"
+        d={@share_d}
+      />
+      <%!-- traveling ink on open — same contour, dash runs the rim;
+           stroke thickens only while open (river.ex) so the body stays small --%>
+      <path
+        class="share-flow"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="3.2"
+        stroke-linejoin="round"
+        stroke-linecap="round"
+        pathLength="1"
+        d={@share_d}
+      />
     </svg>
-    """
-  end
-
-  # Disk + dotted corona. The ring is the radial edge — short, even, and
-  # distinct; spin turns the dash pattern so the gear feel stays without spokes.
-  defp share_sun(assigns) do
-    ~H"""
-    <circle class="share-disk" r="9" />
-    <circle
-      class="share-corona"
-      r="13.5"
-      stroke-width="2.8"
-      stroke-dasharray="2.2 3.4"
-      stroke-linecap="round"
-    />
     """
   end
 

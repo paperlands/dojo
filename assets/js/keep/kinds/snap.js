@@ -1,40 +1,22 @@
-// The snap kind — first kind (id:kb-7-snap).
-//
-// target = work_id — the work the picture is of (id:kb-work).
-// body   = { source_id, title, diagnostics, buffer_id }
-//   title is the CHILD'S WORD for this moment — the first one names the river,
-//   the rest name the steps. It is the only thing here no fold could recover,
-//   so it is kept; everything else in the body is a pointer or an ailment.
-//   source is a BLOB named by hash(source); the message carries only the pointer
-//   (id:kb-source). commands are gone: the AST is derived. state and message
-//   are folds, not fields (id:kc-adapt 2). diagnostics stay — runtime ailments
-//   no re-parse can recover. attend is excluded — a live coordinate is not a
-//   kept moment. prev is absent on a straight keep; the fork gesture mints it
-//   (id:kr-mirror) — causal parent of a line that split.
-//
-// Blob at the mint (id:kb-vet2-image): the stage hands a data URL; one decode
-// here and it is gone. IDB holds Blobs natively; base64 exists again only at ship.
+// Snap kind (id:kb-7-snap). target = work_id. body = { source_id, title,
+// diagnostics, buffer_id, prev? }. Title is the only unrecovered word; source
+// is a hash-named blob; prev only on fork. Data URL dies at toBlob.
 
 import { write, name } from "../entry.js"
 import { stamp } from "../../utils/stamp.js"
 
 /**
- * Author a snap message. Pure and synchronous.
- *
- * ts is drawn by the caller (keepSnap passes stamp()) — never ambient inside
- * the pure write (id:kc-parts). Same tell genesis refused for half-ambient
- * inputs: a test must not re-read ts out of bytes to reproduce them.
- *
+ * Author a snap. Pure. ts required from caller — never ambient (id:kc-parts).
  * @param {object} p
  * @param {string} p.root
- * @param {string} p.work_id - becomes the frozen field target
- * @param {string} [p.source] - program text; stored as a blob, pointed by source_id
- * @param {string | null} [p.title] - the child's word for this moment
+ * @param {string} p.work_id
+ * @param {string} [p.source]
+ * @param {string | null} [p.title]
  * @param {unknown} [p.diagnostics]
- * @param {string | null} [p.buffer_id] - UI residue in the free body only
- * @param {string | null} [p.prev] - causal parent; only on a fork (id:kr-mirror)
- * @param {{t: number, n: number}} p.ts - required; no ambient default
- * @returns {string} the entry bytes
+ * @param {string | null} [p.buffer_id]
+ * @param {string | null} [p.prev]
+ * @param {{t: number, n: number}} p.ts
+ * @returns {string}
  */
 export function writeSnap({
     root,
@@ -46,7 +28,6 @@ export function writeSnap({
     prev = null,
     ts,
 }) {
-    // Loud at the pure seam — never default, never invent (id:kc-parts).
     if (
         ts == null ||
         typeof ts.t !== "number" ||
@@ -58,18 +39,12 @@ export function writeSnap({
     }
     const source_id = name(source)
     const body = { source_id, title, diagnostics, buffer_id }
-    // Absent, not null: a straight keep carries no parent key (id:kc-r-absence).
+    // Absent, not null (id:kc-r-absence).
     if (typeof prev === "string" && prev) body.prev = prev
     return write("snap", body, { root, target: work_id, ts })
 }
 
-/**
- * Decode a data URL to a Blob once. The data URL dies at this seam.
- * Already-a-Blob passes through. Null/unknown → null.
- *
- * @param {string | Blob | null | undefined} path
- * @returns {Blob | null}
- */
+/** Data URL → Blob once; Blob passes through; else null. */
 export function toBlob(path) {
     if (path == null) return null
     if (typeof Blob !== "undefined" && path instanceof Blob) return path
@@ -79,55 +54,68 @@ export function toBlob(path) {
 }
 
 /**
- * Mint a snap and put it in the journal. Fire-and-forget from the hatch path —
- * the caller must not await (id:kb-7). A drop is a fact, never an exception
- * (id:kc-c-wire) — failures are said out loud and settle as null, never reject.
- *
- * @param {object} hatch - reflect payload: source, path, diagnostics, …
- * @param {{ work_id: string, buffer_id?: string | null, prev?: string | null }} ids
+ * Mint into the journal — word is cause; picture attaches later (id:kj-answer).
+ * Null is a spoken drop, never a reject (id:kc-c-wire). Returns {id, bytes}
+ * so attach can re-put (idempotent on the name).
+ * @param {{ title: string, prev?: string }} ask
+ * @param {{ source?: string, diagnostics?: unknown }} reflection
+ * @param {{ work_id: string, buffer_id?: string | null }} ids
  * @param {{ root: () => Promise<string>, put: Function }} door
- * @returns {Promise<string | null>} the keep id, or null if the mint could not run
+ * @returns {Promise<{ id: string, bytes: string } | null>}
  */
-export async function keepSnap(hatch, ids, door) {
+export async function mintSnap(ask, reflection, ids, door) {
     if (!door) {
-        say("keepSnap: no door")
+        say("mintSnap: no door")
         return null
     }
-    if (!hatch) {
-        say("keepSnap: no hatch")
+    if (!ask) {
+        say("mintSnap: no ask")
         return null
     }
     if (!ids?.work_id) {
-        // A silent no-op on the durability path is the wound step 7 exists to
-        // prevent. Say it — never vanish without a trace.
-        say("keepSnap: no work_id — refuse silent keep")
+        say("mintSnap: no work_id — refuse silent keep")
         return null
     }
 
     try {
-        // One way to ask who am I (id:kc-p-fence) — never a capability probe.
         const root = await door.root()
-        const source = typeof hatch.source === "string" ? hatch.source : ""
+        const source = typeof reflection?.source === "string" ? reflection.source : ""
         const bytes = writeSnap({
             root,
             work_id: ids.work_id,
             source,
-            title: typeof hatch.title === "string" && hatch.title ? hatch.title : null,
-            diagnostics: hatch.diagnostics ?? [],
+            title: typeof ask.title === "string" && ask.title ? ask.title : null,
+            diagnostics: reflection?.diagnostics ?? [],
             buffer_id: ids.buffer_id ?? null,
-            prev: typeof ids.prev === "string" && ids.prev ? ids.prev : null,
+            prev: typeof ask.prev === "string" && ask.prev ? ask.prev : null,
             ts: stamp(),
         })
 
-        const image = toBlob(hatch.path)
-        const extras = { source } // always — even ""; no tombstone (id:kb-source-absence)
-        if (image != null) extras.image = image
-
-        return await door.put(bytes, extras)
+        // Source always — even ""; no tombstone (id:kb-source-absence).
+        const id = await door.put(bytes, { source })
+        return { id, bytes }
     } catch (e) {
-        // Dead worker, quota, rejected root, bad ts — a drop is a fact.
-        say("keepSnap failed:", e && e.message ? e.message : e)
+        say("mintSnap failed:", e && e.message ? e.message : e)
         return null
+    }
+}
+
+/**
+ * Picture on an existing keep — fact beside value, like share (id:kc-p-facts).
+ * @param {{ put: Function }} door
+ * @param {string} bytes
+ * @param {string | Blob | null} path
+ * @returns {Promise<boolean>}
+ */
+export async function attachImage(door, bytes, path) {
+    const image = toBlob(path)
+    if (!door || typeof bytes !== "string" || image == null) return false
+    try {
+        await door.put(bytes, { image })
+        return true
+    } catch (e) {
+        say("attachImage failed:", e && e.message ? e.message : e)
+        return false
     }
 }
 

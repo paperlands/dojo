@@ -26,7 +26,8 @@ kill_timeout = '30s'
 
 # Durable Keep store. initial_size lets `fly deploy` create the volume itself.
 # One volume per machine, and SQLite has one writer, so this app stays at
-# `fly scale count 1`.
+# `fly scale count 1`. Keep.pull/1 reads the local file only (id:kb-10) —
+# scale past one and the read door 404s nondeterministically.
 [mounts]
   source = 'keep_data'
   destination = '/data'

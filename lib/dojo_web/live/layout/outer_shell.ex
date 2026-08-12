@@ -130,7 +130,7 @@ defmodule DojoWeb.ShellLive.OuterShell do
     :stream
   ]
 
-  @doc "The 12-key seeOuterShell contract (atoms). Dual of JS OUTER_SHELL_KEYS."
+  @doc "The seeOuterShell contract (atoms). Dual of JS OUTER_SHELL_KEYS."
   def payload_keys, do: @payload_keys
 
   @doc """
@@ -140,10 +140,12 @@ defmodule DojoWeb.ShellLive.OuterShell do
   def payload(%Turtle{} = turtle, %__MODULE__{} = shell) do
     turtle
     |> Map.from_struct()
-    |> Map.put(:addr, shell.addr)
-    |> Map.put(:origin_name, shell.name)
-    |> Map.put(:view, shell.view)
-    |> Map.put(:stream, shell.stream)
+    |> Map.merge(%{
+      addr: shell.addr,
+      origin_name: shell.name,
+      view: shell.view,
+      stream: shell.stream
+    })
   end
 
   # Name the BUMP, never the fields that matter: a field added to the reflect is

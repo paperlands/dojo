@@ -15,7 +15,27 @@
 // here at the reader, never stored. Ancestry never becomes an edge on the
 // rail; it becomes which surface a keep rides (sky or water) plus one ripple.
 
+// DERIVE ONCE PER FOLD, NOT ONCE PER FUNCTION (id:ka-passes). Measured: a
+// river paint hashed its page 6.4 times because each function re-derived the
+// names the one before it already had. kc-law 3 still holds — the reader
+// derives the id from the bytes it holds — it is just performed once.
+//
+// So every fold takes `ids` and defaults to deriving them. A caller that
+// already holds the page's names passes them; one that does not pays a pass.
+// The trust is the same shape shared() already asks for: pass the page you
+// actually folded, or the answer lies (id:kb-8-page).
+
 import { name, read } from "./entry.js"
+
+/**
+ * The page, named once — the single hashing point of a fold (id:ka-passes).
+ *
+ * @param {string[]} versions - bytes[], newest-first
+ * @returns {string[]} ids, parallel to versions
+ */
+export function namesOf(versions) {
+    return versions.map(name)
+}
 
 /**
  * The work's keeps among a page of the author's history.
@@ -40,6 +60,29 @@ function targetOf(bytes) {
 }
 
 /**
+ * Author order (id:kb-8): newer ts wins; missing/unreadable loses.
+ * Pure fold — the pull rung picks which picture to hold, never invents order.
+ *
+ * @param {string|null|undefined} a
+ * @param {string|null|undefined} b
+ * @returns {string|null|undefined} the newer of the two, or the one that reads
+ */
+export function newerKeep(a, b) {
+    if (!a) return b
+    if (!b) return a
+    try {
+        const ta = read(a).ts
+        const tb = read(b).ts
+        if (!tb || typeof tb.t !== "number") return a
+        if (!ta || typeof ta.t !== "number") return b
+        if (tb.t > ta.t || (tb.t === ta.t && (tb.n ?? 0) > (ta.n ?? 0))) return b
+        return a
+    } catch {
+        return a
+    }
+}
+
+/**
  * The chain under a page of one work's keeps.
  *
  * The causal parent is `prev` in the body of the kinds that have one
@@ -54,10 +97,10 @@ function targetOf(bytes) {
  * page is a foot — its parent is under the horizon (page honesty).
  *
  * @param {string[]} versions - ofWork output, newest-first
+ * @param {string[]} [ids] - the page's names, if the caller already holds them
  * @returns {{ids: string[], parent: Map<string,string|null>, byId: Map<string,string>, heads: string[]}}
  */
-export function linesOf(versions) {
-    const ids = versions.map(name)
+export function linesOf(versions, ids = namesOf(versions)) {
     const byId = new Map()
     for (let i = 0; i < versions.length; i++) byId.set(ids[i], versions[i])
 
@@ -88,22 +131,26 @@ export function linesOf(versions) {
  *
  * @param {string[]} versions - ofWork output
  * @param {string} headId
+ * @param {string[]} [ids] - the page's names, if the caller already holds them
  * @returns {string[]} bytes[]
  */
-export function lineOf(versions, headId) {
-    const { parent, byId } = linesOf(versions)
-    return walk(parent, byId, headId)
+export function lineOf(versions, headId, ids = namesOf(versions)) {
+    const { parent, byId } = linesOf(versions, ids)
+    return walk(parent, byId, headId).map((id) => byId.get(id))
 }
 
 // A cycle cannot arise from an honest mint, and a reader that trusts that
 // hangs the render thread. Seen is the whole fence.
+//
+// Walks in IDS, not bytes: every caller wants both, and the id is the only one
+// that cannot be recovered without a hash (id:ka-passes).
 function walk(parent, byId, headId) {
     const out = []
     const seen = new Set()
     let at = headId
     while (at != null && byId.has(at) && !seen.has(at)) {
         seen.add(at)
-        out.push(byId.get(at))
+        out.push(at)
         at = parent.get(at) ?? null
     }
     return out
@@ -117,11 +164,14 @@ function walk(parent, byId, headId) {
  * @returns {string|null} the meet's id
  */
 export function meetOf(lineA, lineB) {
-    const inB = new Set(lineB.map(name))
-    for (const bytes of lineA) {
-        const id = name(bytes)
-        if (inB.has(id)) return id
-    }
+    return meetOfIds(lineA.map(name), lineB.map(name))
+}
+
+// The same sentence over ids — the face a fold that already named its page
+// uses, so the meet costs no hash at all (id:ka-passes).
+function meetOfIds(idsA, idsB) {
+    const inB = new Set(idsB)
+    for (const id of idsA) if (inB.has(id)) return id
     return null
 }
 
@@ -131,33 +181,58 @@ export function meetOf(lineA, lineB) {
  * One mirror at a time (helios: one speaker). Nearest = the latest meet —
  * the sibling that walked with us longest. Further siblings wait beneath.
  *
+ * The ids ride out beside the bytes so the caller's next fold (columnsOf) does
+ * not re-derive names this one already holds (id:ka-passes).
+ *
  * @param {string[]} versions - ofWork output, newest-first
  * @param {string} [headId] - defaults to the newest keep: this shell's head
- * @returns {{head: string|null, line: string[], sibling: string[], siblingHead: string|null, meet: string|null}}
+ * @param {string[]} [ids] - the page's names, if the caller already holds them
+ * @returns {{head: string|null, line: string[], lineIds: string[], sibling: string[], siblingIds: string[], siblingHead: string|null, meet: string|null}}
  */
-export function mirrorOf(versions, headId) {
-    const { parent, byId, heads, ids } = linesOf(versions)
+export function mirrorOf(versions, headId, ids = namesOf(versions)) {
+    const { parent, byId, heads } = linesOf(versions, ids)
     const head = headId && byId.has(headId) ? headId : (ids[0] ?? null)
     if (head == null) {
-        return { head: null, line: [], sibling: [], siblingHead: null, meet: null }
+        return EMPTY_MIRROR
     }
 
-    const line = walk(parent, byId, head)
-    const lineIndex = new Map(line.map((bytes, i) => [name(bytes), i]))
+    const lineIds = walk(parent, byId, head)
+    const lineIndex = new Map(lineIds.map((id, i) => [id, i]))
 
     let best = null
     for (const other of heads) {
         if (other === head) continue
-        const sib = walk(parent, byId, other)
-        const meet = meetOf(line, sib)
+        const sibIds = walk(parent, byId, other)
+        const meet = meetOfIds(lineIds, sibIds)
         // Distance from the head, in seats. No meet at all sorts last.
         const depth = meet != null ? lineIndex.get(meet) : Infinity
-        if (best == null || depth < best.depth) best = { other, sib, meet, depth }
+        if (best == null || depth < best.depth) best = { other, sibIds, meet, depth }
     }
 
-    if (!best) return { head, line, sibling: [], siblingHead: null, meet: null }
-    return { head, line, sibling: best.sib, siblingHead: best.other, meet: best.meet }
+    const line = lineIds.map((id) => byId.get(id))
+    if (!best) {
+        return { head, line, lineIds, sibling: [], siblingIds: [], siblingHead: null, meet: null }
+    }
+    return {
+        head,
+        line,
+        lineIds,
+        sibling: best.sibIds.map((id) => byId.get(id)),
+        siblingIds: best.sibIds,
+        siblingHead: best.other,
+        meet: best.meet,
+    }
 }
+
+const EMPTY_MIRROR = Object.freeze({
+    head: null,
+    line: [],
+    lineIds: [],
+    sibling: [],
+    siblingIds: [],
+    siblingHead: null,
+    meet: null,
+})
 
 /**
  * The river's columns, oldest-first (west → east).
@@ -173,33 +248,31 @@ export function mirrorOf(versions, headId) {
  * @param {string[]} line - newest-first
  * @param {string[]} sibling - newest-first (empty when the river is one line)
  * @param {string|null} meet
+ * @param {{line?: string[], sibling?: string[]}} [ids] - mirrorOf's lineIds /
+ *   siblingIds, when the caller already holds them (id:ka-passes)
  * @returns {{key: string, sky: string|null, water: string|null, trunk: boolean, meet: boolean}[]}
  */
-export function columnsOf(line, sibling, meet) {
+export function columnsOf(line, sibling, meet, ids = {}) {
     const L = [...line].reverse()
     const S = [...sibling].reverse()
+    // Oldest-first, like L and S — the ids ride the same reversal as the bytes.
+    const LK = [...(ids.line ?? namesOf(line))].reverse()
+    const SK = [...(ids.sibling ?? namesOf(sibling))].reverse()
 
-    if (!S.length || meet == null) {
-        return L.map((bytes) => ({
-            key: name(bytes),
+    const oneLine = () =>
+        L.map((bytes, i) => ({
+            key: LK[i],
             sky: bytes,
             water: null,
             trunk: false,
             meet: false,
         }))
-    }
 
-    const li = L.findIndex((b) => name(b) === meet)
-    const si = S.findIndex((b) => name(b) === meet)
-    if (li < 0 || si < 0) {
-        return L.map((bytes) => ({
-            key: name(bytes),
-            sky: bytes,
-            water: null,
-            trunk: false,
-            meet: false,
-        }))
-    }
+    if (!S.length || meet == null) return oneLine()
+
+    const li = LK.indexOf(meet)
+    const si = SK.indexOf(meet)
+    if (li < 0 || si < 0) return oneLine()
 
     const columns = []
     // Trunk, paired backwards from the meet so the two walks stay aligned
@@ -208,7 +281,7 @@ export function columnsOf(line, sibling, meet) {
     for (let k = depth; k >= 0; k--) {
         const sky = L[li - k]
         columns.push({
-            key: name(sky),
+            key: LK[li - k],
             sky,
             water: S[si - k] ?? sky,
             trunk: true,

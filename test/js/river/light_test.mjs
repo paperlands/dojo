@@ -38,12 +38,13 @@ describe("moodOf: the sky, from truths the fold already owns", () => {
     })
 })
 
-describe("rigOf: the sun's size, once per mood", () => {
-    test("every mood answers with only --sun-size", () => {
+describe("rigOf: sun size + wash, once per mood (no dual-author CSS)", () => {
+    test("every mood answers with --sun-size and --river-wash", () => {
         for (const mood of MOODS) {
             const rig = rigOf(mood)
-            assert.deepEqual(Object.keys(rig), ["--sun-size"])
+            assert.deepEqual(Object.keys(rig).sort(), ["--river-wash", "--sun-size"])
             assert.ok(/^\d+px$/.test(rig["--sun-size"]))
+            assert.ok(/^\d+%$/.test(rig["--river-wash"]))
         }
     })
 
@@ -53,6 +54,12 @@ describe("rigOf: the sun's size, once per mood", () => {
         const ignite = parseInt(rigOf("ignite")["--sun-size"], 10)
         assert.ok(ignite > rest)
         assert.ok(waking < ignite)
+    })
+
+    test("ignite is the brightest wash", () => {
+        const rest = parseInt(rigOf("rest")["--river-wash"], 10)
+        const ignite = parseInt(rigOf("ignite")["--river-wash"], 10)
+        assert.ok(ignite > rest)
     })
 
     test("an unknown mood rests rather than throws — light never faults", () => {

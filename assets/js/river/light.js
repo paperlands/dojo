@@ -29,8 +29,9 @@ export function moodOf({ keptLocal = 0, landing = false, settling = false } = {}
 }
 
 /**
- * The rig, as the custom properties the strip root sets once per mood.
+ * The rig — custom properties the strip root sets once per mood.
  * Seats READ these; they never write them (id:kr-rig NOT).
+ * Sun size and wash live here so CSS does not dual-author the light.
  *
  * @param {string} mood
  * @returns {{[prop: string]: string}}
@@ -38,13 +39,25 @@ export function moodOf({ keptLocal = 0, landing = false, settling = false } = {}
 export function rigOf(mood) {
     switch (mood) {
         case "waking":
-            return { "--sun-size": "300px" }
+            return { "--sun-size": "300px", "--river-wash": "12%" }
         case "ignite":
-            return { "--sun-size": "400px" }
+            return { "--sun-size": "400px", "--river-wash": "16%" }
         case "settle":
-            return { "--sun-size": "330px" }
+            return { "--sun-size": "330px", "--river-wash": "9%" }
         default:
-            return { "--sun-size": "340px" }
+            return { "--sun-size": "340px", "--river-wash": "7%" }
+    }
+}
+
+/**
+ * Write mood onto the strip root — dataset + rig. One verb for the sky.
+ * @param {HTMLElement} root
+ * @param {string} mood
+ */
+export function paintSky(root, mood) {
+    root.dataset.mood = mood
+    for (const [prop, value] of Object.entries(rigOf(mood))) {
+        root.style.setProperty(prop, value)
     }
 }
 

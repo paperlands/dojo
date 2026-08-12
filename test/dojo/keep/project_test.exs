@@ -167,12 +167,31 @@ defmodule Dojo.Keep.ProjectTest do
     end
   end
 
-  describe "the projection floor — one law, both sides of the wire" do
-    # The fixture is the law's ONE artifact: this suite and entry_test.mjs
-    # read the same file, so the two floors cannot drift apart in silence.
-    # They did once — the client took any finite ts, this side takes only a
-    # non-negative integer — so a client could mint what the clan refuses
-    # forever, and a permanent refusal marks it SHARED (id:kb-vet5 42).
+  describe "the projection floor — one table, both sides of the wire" do
+    # floor.json is the law; keep_floor.json is the cases. This suite and
+    # entry_test.mjs walk the same cases against interpreters of the same
+    # table — floor divergence is impossible by construction (id:kb-vet5 42).
+
+    test "the table is one file both interpreters walk" do
+      path = "assets/js/keep/floor.json"
+      assert File.exists?(path)
+      floor = path |> File.read!() |> Jason.decode!()
+
+      assert Enum.map(floor, & &1["field"]) == ~w(root kind target ts.t ts.n v)
+
+      for row <- floor do
+        assert is_binary(row["type"]) and row["type"] != ""
+      end
+
+      # shaped? is driven by the table, not hand-coded field_* clauses.
+      src = File.read!("lib/dojo/keep.ex")
+      assert src =~ "floor.json"
+      assert src =~ "@external_resource"
+      refute src =~ "defp field_string"
+      refute src =~ "defp field_ts"
+      refute src =~ "defp field_v"
+    end
+
     for c <- "test/fixtures/keep_floor.json" |> File.read!() |> Jason.decode!() do
       @case c
 
@@ -194,18 +213,28 @@ defmodule Dojo.Keep.ProjectTest do
   end
 
   describe "structural — five frozen fields, no others" do
-    test "this module's source names the five catalog keys and no sixth entry field" do
-      # id:kc-verify / id:kb-11: a grep of the server's keep module names
-      # exactly five entry fields. clan is a wire fact, never an entry field.
+    test "the floor table names the five catalog keys; project promotes four" do
+      # id:kc-verify / id:kb-11: the five frozen fields live in floor.json.
+      # project promotes root/kind/target/ts (as ts_t/ts_n); v is the fold
+      # floor, never a column. clan is a wire fact, never an entry field.
+      floor = "assets/js/keep/floor.json" |> File.read!() |> Jason.decode!()
+
+      fields =
+        floor
+        |> Enum.map(& &1["field"])
+        |> Enum.map(&(String.split(&1, ".") |> hd()))
+        |> Enum.uniq()
+
+      assert Enum.sort(fields) == Enum.sort(~w(kind root target ts v))
+
       src = File.read!("lib/dojo/keep.ex")
 
-      # The five: kind, root, target, ts (as ts_t/ts_n after split), v.
+      # The promoted columns still read from the message map.
       for key <- ~w(kind root target) do
-        assert src =~ ~s["#{key}"], "expected frozen field #{key} to be read"
+        assert src =~ ~s["#{key}"], "expected frozen field #{key} to be projected"
       end
 
       assert src =~ ~s["ts"]
-      assert src =~ ~s["v"]
 
       # clan must not be read from the message
       refute src =~ ~s|e["clan"]|, "clan is a wire fact, never an entry field"

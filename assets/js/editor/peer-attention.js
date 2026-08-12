@@ -2,6 +2,8 @@
 // Writes HER copy only; nothing travels back. The law (watch-law.js) decides
 // who owns the light; this is the glide and the firefly that perform it.
 
+import { temporal } from "../utils/temporal.js"
+
 // Asked at call time — a preference can change mid-session.
 const stillness = () =>
     typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -221,14 +223,13 @@ export function mountChase(view, { initials = () => null, onResume } = {}) {
     // is the part you watch.
     const RUSH = 26;          // px between events that counts as a rush
     let wasAt = null;
-    let settle = null;
+    const restFlit = temporal.quiet(() => el.classList.remove('is-flitting'), 140);
 
     function onScroll() {
         const now = host ? host.scrollTop : 0;
         if (wasAt != null && Math.abs(now - wasAt) > RUSH && !stillness()) {
             el.classList.add('is-flitting');
-            clearTimeout(settle);
-            settle = setTimeout(() => el.classList.remove('is-flitting'), 140);
+            restFlit();
         }
         wasAt = now;
         render();
@@ -236,16 +237,14 @@ export function mountChase(view, { initials = () => null, onResume } = {}) {
 
     // AROUSAL IS A VALUE, not an event: the class pins --fly-wake to 1; CSS
     // kindles in a breath; letting go cools it. Every sign of life re-arms the
-    // timer — burns while they type, dims when they stop. A dim glyph means a
+    // quiet — burns while they type, dims when they stop. A dim glyph means a
     // still friend.
-    const QUIET_MS = 1400;
-    let sleep = null;
+    const cool = temporal.quiet(() => el.classList.remove('is-awake'), 1400);
 
     const stir = () => {
         if (dead || stillness()) return;
         el.classList.add('is-awake');
-        clearTimeout(sleep);
-        sleep = setTimeout(() => el.classList.remove('is-awake'), QUIET_MS);
+        cool();
     };
 
     return {
@@ -258,8 +257,8 @@ export function mountChase(view, { initials = () => null, onResume } = {}) {
         },
         cleanup() {
             dead = true;
-            clearTimeout(sleep);
-            clearTimeout(settle);
+            cool.cancel();
+            restFlit.cancel();
             observer?.disconnect();
             sizer?.disconnect();
             host?.removeEventListener('scroll', onScroll);

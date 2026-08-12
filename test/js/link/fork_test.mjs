@@ -14,16 +14,22 @@ const snap = (over = {}) =>
     write("snap", { source_id: "s1", title: "the chase", ...over.body },
         { root: ROOT, target: over.target ?? WORK, ts: TS })
 
-// A term that answers like the real one: forkKeep finds-or-creates, and the
-// test reads back WHAT it was asked, which is the contract under test.
+// A term that answers like the real one: forkKeep / forkBuffer find-or-create
+// (and find-without-source); the test reads WHAT it was asked.
 function fakeTerm({ forks = {} } = {}) {
-    const asked = { forkKeep: [], forkBuffer: [], select: [] }
+    const asked = { forkKeep: [], forkBuffer: [] }
     return {
         asked,
-        forkKeep(ask) { asked.forkKeep.push(ask); return typeof ask.source === "string" || ask.found ? "kept-buf" : null },
-        forkBuffer(ask) { asked.forkBuffer.push(ask); return "fork-buf" },
+        forkKeep(ask) {
+            asked.forkKeep.push(ask)
+            return typeof ask.source === "string" || ask.found ? "kept-buf" : null
+        },
+        forkBuffer(ask) {
+            asked.forkBuffer.push(ask)
+            if (typeof ask.source === "string") return "fork-buf"
+            return forks[ask.addr] ?? null
+        },
         findFork(addr) { return forks[addr] ?? null },
-        opBufferHandler(op) { asked.select.push(op) },
     }
 }
 
@@ -157,8 +163,11 @@ describe("the hand decides the gesture (id:la-fork-hand)", () => {
         const door = fakeDoor({ keeps: { [name(bytes)]: bytes }, sources: {} })
         const landed = await forkRef(name(bytes), { door, term, say: () => {} })
         assert.equal(landed, "held-buf")
-        assert.deepEqual(term.asked.select, [{ op: "select", target: "held-buf" }])
-        assert.equal(term.asked.forkBuffer.length, 0)
+        // One verb: forkBuffer finds without source (id:kb-source-absence).
+        assert.equal(term.asked.forkBuffer.length, 1)
+        assert.equal(term.asked.forkBuffer[0].source, null)
+        assert.equal(term.asked.forkBuffer[0].addr, WORK)
+        assert.equal(term.asked.forkKeep.length, 0)
     })
 
     test("a foreign tombstone with nothing held settles null and says so", async () => {
@@ -168,6 +177,7 @@ describe("the hand decides the gesture (id:la-fork-hand)", () => {
         const door = fakeDoor({ keeps: { [name(bytes)]: bytes }, sources: {} })
         const landed = await forkRef(name(bytes), { door, term, say: (...a) => said.push(a) })
         assert.equal(landed, null)
+        assert.equal(term.asked.forkBuffer.length, 1)
         assert.ok(said.length >= 1)
     })
 

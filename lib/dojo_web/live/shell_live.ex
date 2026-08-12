@@ -171,7 +171,11 @@ defmodule DojoWeb.ShellLive do
         {:join, "class:shell" <> _, disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
-    {:noreply, assign(socket, :disciples, Map.put(d, Dojo.Disciple.reg_key(disciple), disciple))}
+    reg_key = Dojo.Disciple.reg_key(disciple)
+    # Gate.change re-joins under a new phx_ref; hatch meta is not Tracker state.
+    disciple = retain_hatch_meta(disciple, d[reg_key])
+
+    {:noreply, assign(socket, :disciples, Map.put(d, reg_key, disciple))}
   end
 
   def handle_info(
@@ -352,6 +356,8 @@ defmodule DojoWeb.ShellLive do
       when is_binary(addr) do
     case Dojo.Table.last(Dojo.Disciple.table_address(dis[addr]), :hatch) do
       %Dojo.Turtle{} = turtle ->
+        # The friend's work_id lives in presence (`dis[addr][:keep]`) — read it
+        # HERE, at the click, when this shell wants that work's keeps (id:kb-8).
         outershell =
           OuterShell.observe(
             %OuterShell{addr: addr, active: true, name: "#{dis[addr][:name]}"},
@@ -486,6 +492,8 @@ defmodule DojoWeb.ShellLive do
   # Keep ship — one message, one answer (id:kb-12). Clan is a fact of the
   # socket; author_id is Session.user_id/1 (D007). Silence when unready is
   # not an answer: the entry stays kept local and rides the next announce.
+  # Shared → presence :keep is the work_id (continuant). pull/1 resolves
+  # work → head by ts; N keeps of one river collapse to one presence fact.
   def handle_event(
         "keep",
         payload,
@@ -498,7 +506,7 @@ defmodule DojoWeb.ShellLive do
         author_id: Session.user_id(session)
       )
 
-    {:reply, reply, socket}
+    {:reply, reply, publish_latest_keep(socket, reply)}
   end
 
   def handle_event("keep", _payload, socket), do: {:noreply, socket}
@@ -686,6 +694,25 @@ defmodule DojoWeb.ShellLive do
       :hold -> socket
     end
   end
+
+  # Presence holds the work this shell stands on — continuant, not moment.
+  # This is the ONLY place the work_id travels: one meta per ship, read back at
+  # the click (seeTurtle). One-fact reply: only a shared keep carries target.
+  defp publish_latest_keep(
+         %{assigns: %{class: class}} = socket,
+         %{target: target}
+       )
+       when is_pid(class) and is_binary(target) do
+    Dojo.Table.change_meta(class, {:keep, target})
+    socket
+  end
+
+  defp publish_latest_keep(socket, _), do: socket
+
+  defp retain_hatch_meta(disciple, %{meta: meta}) when not is_nil(meta),
+    do: Map.put(disciple, :meta, meta)
+
+  defp retain_hatch_meta(disciple, _), do: disciple
 
   def export(assigns) do
     ~H"""

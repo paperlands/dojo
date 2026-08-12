@@ -42,6 +42,8 @@ defmodule DojoWeb.LocalePickerLive do
       <button
         id={"#{@id}-toggle"}
         phx-click={toggle_panel(@id)}
+        title="switch language"
+        aria-label="switch language"
         class="flex text-center items-center justify-center text-primary-content/70 w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 lg:w-8 lg:h-8 rounded-sm active:border-amber-500 touch-manipulation text-secondary-content text-shadow-sm text-shadow-secondary-content"
       >
         {current_label(@current_locale, @locales)}

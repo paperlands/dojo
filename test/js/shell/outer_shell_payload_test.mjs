@@ -1,4 +1,4 @@
-// seeOuterShell envelope — full 12-key shape; dual of OuterShell.payload/2.
+// seeOuterShell envelope — full key shape; dual of OuterShell.payload/2.
 // Run: node --test test/js/shell/outer_shell_payload_test.mjs
 
 import { test, describe } from "node:test"

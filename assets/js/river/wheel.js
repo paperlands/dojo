@@ -6,6 +6,7 @@
 //   onCenter — nearest seat changed (caption, corners) — never setValue
 //   onSettle — drum still — stand or restore once
 
+import { temporal } from "../utils/temporal.js"
 import { nearness, shadeOf } from "./light.js"
 
 /** Quiet after the last non-drag scroll before we trust the rest (ms). */
@@ -32,8 +33,10 @@ export function mountWheel(rail, { onCenter, onSettle, onTap } = {}) {
     let queued = false
     let dead = false
     let owed = null
-    /** @type {ReturnType<typeof setTimeout> | null} */
-    let settleT = null
+
+    // One rest in flight: every scroll restarts the quiet, so the drum speaks
+    // once, when it has actually stopped.
+    const settleSoon = temporal.quiet(flushSettle, SETTLE_MS)
 
     let dragging = false
     let moved = false
@@ -64,15 +67,11 @@ export function mountWheel(rail, { onCenter, onSettle, onTap } = {}) {
 
     function armSettle() {
         if (dead || dragging) return
-        if (settleT != null) clearTimeout(settleT)
-        settleT = setTimeout(flushSettle, SETTLE_MS)
+        settleSoon()
     }
 
     function flushSettle() {
-        if (settleT != null) {
-            clearTimeout(settleT)
-            settleT = null
-        }
+        settleSoon.cancel()
         if (dead || centered === settled) return
         settled = centered
         const col =
@@ -177,10 +176,7 @@ export function mountWheel(rail, { onCenter, onSettle, onTap } = {}) {
         startX = e.clientX
         startScroll = rail.scrollLeft
         pressTarget = e.target
-        if (settleT != null) {
-            clearTimeout(settleT)
-            settleT = null
-        }
+        settleSoon.cancel()
     }
 
     function beginPan(e) {
@@ -291,8 +287,7 @@ export function mountWheel(rail, { onCenter, onSettle, onTap } = {}) {
         flushSettle,
         release() {
             dead = true
-            if (settleT != null) clearTimeout(settleT)
-            settleT = null
+            settleSoon.cancel()
             rail.classList.remove("is-dragging")
             rail.removeEventListener("scroll", tick)
             rail.removeEventListener("scrollend", onScrollEnd)

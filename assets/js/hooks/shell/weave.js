@@ -185,7 +185,7 @@ function mountWeave(hook, boot = {}) {
 
         // Local open (lvdx-5): outer handlers already have the pressed buffer.
         // onSeeOuterShell owns the open flag. Server is informed only — no ferry.
-        // Full envelope via outerShellPayload — same 12 keys as OuterShell.payload/2.
+        // Full envelope via outerShellPayload — same keys as OuterShell.payload/2.
         const pageName = meta.title ?? title ?? name
         const diags = diagnostics(ast, [], addr)
         // `t` alone — %Turtle{time:} is an LWW key compared across hands (D008).

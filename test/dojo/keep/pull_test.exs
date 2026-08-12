@@ -41,7 +41,7 @@ defmodule Dojo.Keep.PullTest do
 
   test "a keep id answers the message, its source, and the row's fact" do
     bytes = snap("fw 50")
-    %{shared: [%{at: at}]} = ship(bytes, source: "fw 50")
+    %{at: at} = ship(bytes, source: "fw 50")
 
     assert {:ok, keep} = Keep.pull(Keep.hash(bytes))
     assert keep.id == Keep.hash(bytes)

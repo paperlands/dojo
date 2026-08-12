@@ -1,42 +1,22 @@
 defmodule Dojo.Keep do
   @moduledoc """
-  Server half of the keep (id:kb-11 · id:kb-12).
+  Server half of the keep (id:kb-11 · id:kb-12). No Ecto schema/changeset.
 
-  No Ecto schema. No changeset. An entry is already true when it is written.
+  * `project/2` — derive columns; accept none (id:kb-11-derive)
+  * `receive/2` — project → bind → stamp → insert → row fact (id:kb-12)
+  * `image/2` — referent after the fact (id:kb-12a)
 
-  * `project/2` — derive every promoted column from the message; accept none
-    (id:kb-11-derive). Pure.
-  * `receive/2` — one ship: project → bind → stamp → insert → the **row's**
-    fact (id:kb-12). The one place the clan decides anything is the bind;
-    everything else is mechanical.
-  * `image/2` — the referent that follows the fact (id:kb-12a).
+  Frozen entry fields: v · kind · root · ts · target. `clan` is wire fact.
 
-  Five frozen fields only: v · kind · root · ts · target. Grep this module
-  for entry fields and find those five, and no others, ever. `clan` is a
-  fact of the wire, never of the entry.
-
-  ## The referent law (id:kb-vet5-referent)
-
-  A referent is what a keep POINTS AT; the message is what a keep IS. Both
-  ride the same door, the same ceiling, the same fence — and the fence's
-  subject is whatever the bind's subject is.
-
-      source  hash(text)          fans on announce   never evicted   NO fence:
-                                                                     it proves
-                                                                     itself
-      image   the message's id    rides the share    evictable       fenced by
-                                                                     the bind
-
-  Source needs no ownership fence because it is *verifiable*: `hash(text)`
-  is its key, so wrong bytes land under a different name and harm nothing.
-  The image is unverifiable by nature — its hash is deliberately not in the
-  message — so first-write-wins must be fenced.
+  Referents (id:kb-vet5-referent): source is hash(text) — verifiable, no fence;
+  image is the message id — fenced by the bind, first-write-wins.
   """
 
   import Ecto.Query
   require Logger
 
   alias Dojo.Keep.Repo
+  alias Dojo.Keep.Repo.Reader
 
   @type cols :: %{
           id: String.t(),
@@ -50,29 +30,26 @@ defmodule Dojo.Keep do
 
   @type reason :: :unparseable | :shape | :name | :root | :too_big
 
-  # A ceiling at the door, per species (id:kb-vet5-referent, finding 47).
-  # Measured (id:kb-source): message 298 B, source ~850 B, image ~17 KB.
-  # These are ~200× headroom — a fence against a runaway walk, not a budget.
-  # The premise that held this open ("wants a measured number") has moved.
-  @max_text 256 * 1024
-  @max_image 4 * 1024 * 1024
+  # The keeps table columns — STRICT migration is the schema; this is the
+  # one map both insert_all and tests build. Not an Ecto schema, not a
+  # changeset (id:kb-11). image last: queries that omit it skip blob pages.
+  @keep_cols ~w(id clan root kind target ts_t ts_n message shared_at shared_node inserted_at image)a
 
-  @type fact :: %{id: String.t(), at: integer(), node: String.t()}
+  # Ceilings: footprint (~15× measured) + latency (one writer stalls the room).
+  # Measured: msg ~298 B, source ~850 B, image ~17 KB (id:kb-source).
+  @max_text 256 * 1024
+  @max_image 256 * 1024
+
+  # One ship → one fact (id:kb-12). Shared: target; refused: why; silence: nil.
+  @type fact :: %{id: String.t(), at: integer(), node: String.t(), target: String.t() | nil}
   @type refusal :: %{id: String.t(), at: integer(), node: String.t(), why: reason()}
-  @type reply :: %{shared: [fact()], refused: [refusal()]}
+  @type reply :: fact() | refusal() | nil
 
   # ── project (pure) ───────────────────────────────────────────────────
 
   @doc """
-  Project a message into the columns the row holds.
-
-  The wire carries `{id, message}`. The id is a *claim*; the name is derived
-  from the bytes. Mismatch → `:name` (anti-divergence, not anti-forgery):
-  a derived id the client never minted would make `share` no-op and re-ship
-  forever.
-
-  Returns `{:ok, cols}` or `{:error, :unparseable | :shape | :name}`.
-  Pure — no repo, no side effect.
+  Project message → row columns. Id is a claim; name is derived (mismatch → `:name`).
+  Pure.
   """
   @spec project(String.t(), String.t()) :: {:ok, cols()} | {:error, :unparseable | :shape | :name}
   def project(message, claimed_id)
@@ -108,30 +85,13 @@ defmodule Dojo.Keep do
   # ── receive (one ship) ───────────────────────────────────────────────
 
   @doc """
-  One ship of one message (id:kb-12).
+  One ship (id:kb-12): project → bind (TOFU) → stamp → insert → **row** fact.
 
-  Order is the law:
+  Permanent refusals are answers (stamped + why). Silence is nil. Source lands
+  in the same transaction (id:kb-source-absence); key is `hash(text)`, never
+  from the message.
 
-  1. **project** — can this message be a row? Mechanical.
-  2. **bind** — first arrival of `root` owns it (TOFU). The only *decision*.
-  3. **stamp** — `{at, node}` on every permanent answer, refusals included.
-  4. **insert** — `ON CONFLICT DO NOTHING`.
-  5. **reply** — the **row's** fact, read back; never the attempt's stamp.
-
-  Permanent refusals (`:unparseable | :shape | :name | :root | :too_big`) are
-  answers: stamped so the client can mark shared and announce terminates.
-  Silence (empty reply, or no LiveView reply) is not an answer.
-
-  The source rides beside the message and lands in the same transaction
-  (id:kb-source-absence): it is the one referent that cannot be re-derived
-  from anything, so a keep stored without it is a tombstone. Its key is
-  **derived** — `hash(text)` — never read out of the message, which would be
-  a sixth entry field.
-
-  ## Options
-
-    * `:clan` — fact of the wire (required)
-    * `:author_id` — recorded on first arrival, never compared (id:kb-vet5-bind)
+  Options: `:clan` (required), `:author_id` (recorded, not compared).
   """
   @spec receive(map(), keyword()) :: reply()
   def receive(%{"id" => id, "message" => message} = payload, opts)
@@ -168,14 +128,14 @@ defmodule Dojo.Keep do
         end)
 
         case fact_of(cols.id) do
-          %{} = fact -> %{shared: [fact], refused: []}
+          %{} = fact -> fact
           # Insert vanished — pool blip, not an answer.
           nil -> silence()
         end
 
       :root ->
         note_refuse(cols.id, :root)
-        %{shared: [], refused: [%{id: cols.id, at: at, node: node, why: :root}]}
+        %{id: cols.id, at: at, node: node, why: :root}
     end
   end
 
@@ -215,37 +175,49 @@ defmodule Dojo.Keep do
     :ok
   end
 
+  @doc """
+  The keeps row for `insert_all` — columns only, not a schema (id:kb-11).
+
+  Built once from projected cols + the wire stamp. Tests use the same
+  builder so a second hand-written map cannot drift.
+  """
+  @spec row(cols(), String.t(), integer() | nil, String.t() | nil) :: map()
+  def row(%{} = cols, clan, at, node) when is_binary(clan) do
+    %{
+      id: cols.id,
+      clan: clan,
+      root: cols.root,
+      kind: cols.kind,
+      target: cols.target,
+      ts_t: cols.ts_t,
+      ts_n: cols.ts_n,
+      message: cols.message,
+      shared_at: at,
+      shared_node: node,
+      inserted_at: DateTime.utc_now(:millisecond) |> DateTime.to_iso8601(),
+      image: nil
+    }
+  end
+
+  @doc "Column atoms the STRICT `keeps` table holds — one list, the map's keys."
+  @spec keep_cols() :: [atom()]
+  def keep_cols, do: @keep_cols
+
   defp put_keep(cols, clan, at, node) do
-    Repo.insert_all(
-      "keeps",
-      [
-        %{
-          id: cols.id,
-          clan: clan,
-          root: cols.root,
-          kind: cols.kind,
-          target: cols.target,
-          ts_t: cols.ts_t,
-          ts_n: cols.ts_n,
-          message: cols.message,
-          shared_at: at,
-          shared_node: node,
-          inserted_at: DateTime.utc_now(:millisecond) |> DateTime.to_iso8601(),
-          image: nil
-        }
-      ],
+    Repo.insert_all("keeps", [row(cols, clan, at, node)],
       on_conflict: :nothing,
       conflict_target: :id
     )
   end
 
   # The reply is the row's fact (id:kb-vet3 26) — ship twice is once for the
-  # reply too, not only the disk.
+  # reply too, not only the disk. target rides so presence holds a continuant.
+  # Read pool: the insert already committed (id:kb-10).
   defp fact_of(id) do
-    Repo.one(
+    Reader.one(
       from(k in "keeps",
         where: k.id == ^id,
-        select: %{id: k.id, at: k.shared_at, node: k.shared_node}
+        select: %{id: k.id, at: k.shared_at, node: k.shared_node, target: k.target}
       )
     )
   end
@@ -309,6 +281,14 @@ defmodule Dojo.Keep do
   This answer carries no authority: the reader verifies the name
   (id:kc-law 3), so wrong bytes land under a different name and are refused
   at the client.
+
+  ## Single-machine (id:kb-10)
+
+  WAL is single-machine by physics — processes must share memory. This door
+  reads the local file only. Correctness depends on one machine owning the
+  volume (`fly scale count 1`; see fly.toml mounts). Scale past one and
+  half the traffic 404s with no error — the constraint lives at this door,
+  not only in a deploy comment.
   """
   @spec pull(String.t()) :: {:ok, map()} | :none
   def pull(ref) when is_binary(ref) do
@@ -334,8 +314,9 @@ defmodule Dojo.Keep do
 
   def pull(_), do: :none
 
+  # Pull half lives on the read pool (id:kb-10) — WAL readers, not the writer.
   defp by_id(id) do
-    Repo.one(
+    Reader.one(
       from(k in "keeps",
         where: k.id == ^id,
         select: %{id: k.id, message: k.message, at: k.shared_at, node: k.shared_node}
@@ -344,7 +325,7 @@ defmodule Dojo.Keep do
   end
 
   defp head_of(target) do
-    Repo.one(
+    Reader.one(
       from(k in "keeps",
         where: k.target == ^target,
         order_by: [desc: k.ts_t, desc: k.ts_n],
@@ -360,7 +341,7 @@ defmodule Dojo.Keep do
     with {:ok, e} <- decode(message),
          sid when is_binary(sid) <- Map.get(e, "source_id"),
          text when is_binary(text) <-
-           Repo.one(from(s in "sources", where: s.id == ^sid, select: s.text)) do
+           Reader.one(from(s in "sources", where: s.id == ^sid, select: s.text)) do
       text
     else
       _ -> nil
@@ -390,10 +371,10 @@ defmodule Dojo.Keep do
   defp refuse(id, why) do
     %{at: at, node: node} = stamp()
     note_refuse(id, why)
-    %{shared: [], refused: [%{id: id, at: at, node: node, why: why}]}
+    %{id: id, at: at, node: node, why: why}
   end
 
-  defp silence, do: %{shared: [], refused: []}
+  defp silence, do: nil
 
   defp stamp do
     %{at: System.system_time(:millisecond), node: node_name()}
@@ -414,6 +395,14 @@ defmodule Dojo.Keep do
 
   # ── private: project ─────────────────────────────────────────────────
 
+  # THE PROJECTION FLOOR as data (id:kb-5-floor). entry.unshaped walks the
+  # same file. Two hand-written predicates diverged once (id:kb-vet5 42);
+  # one table cannot. @external_resource recompiles this module when the
+  # table changes.
+  @floor_path Path.expand("../../assets/js/keep/floor.json", __DIR__)
+  @external_resource @floor_path
+  @floor @floor_path |> File.read!() |> Jason.decode!()
+
   defp decode(message) do
     case Jason.decode(message) do
       {:ok, %{} = e} -> {:ok, e}
@@ -423,40 +412,46 @@ defmodule Dojo.Keep do
   end
 
   # Five frozen fields, right types. Meaning is never judged (id:kc-c-room).
+  # The law is @floor; this is its interpreter — the twin of entry.unshaped.
   # A ts that will never project is a permanent refusal — the server orders
   # by the column it derives (id:kb-11-derive). Caller has already decoded a map.
-  defp shaped?(e) do
-    with :ok <- field_string(e, "kind"),
-         :ok <- field_string(e, "root"),
-         :ok <- field_target(e),
-         :ok <- field_ts(e),
-         :ok <- field_v(e) do
-      :ok
-    else
-      :error -> {:error, :shape}
-    end
+  defp shaped?(e) when is_map(e) do
+    Enum.reduce_while(@floor, :ok, fn %{"field" => field, "type" => type}, :ok ->
+      if type_ok?(fetch_path(e, field), type),
+        do: {:cont, :ok},
+        else: {:halt, {:error, :shape}}
+    end)
   end
 
-  defp field_string(e, key) do
-    case e do
-      %{^key => v} when is_binary(v) -> :ok
-      _ -> :error
-    end
+  # Present-or-missing, never null-as-absent: target may be JSON null and
+  # that is lawful; a missing key is not (id:kc-r-absence).
+  defp fetch_path(e, path) do
+    path
+    |> String.split(".")
+    |> Enum.reduce_while({:ok, e}, fn
+      key, {:ok, %{} = m} ->
+        case Map.fetch(m, key) do
+          {:ok, v} -> {:cont, {:ok, v}}
+          :error -> {:halt, :missing}
+        end
+
+      _key, _ ->
+        {:halt, :missing}
+    end)
   end
 
-  # target is always present; null is lawful (a keep about no work yet).
-  defp field_target(%{"target" => t}) when is_binary(t) or is_nil(t), do: :ok
-  defp field_target(_), do: :error
+  # The table's four type tags — vocabulary only; which fields wear which
+  # lives solely in floor.json.
+  defp type_ok?({:ok, v}, "string") when is_binary(v), do: true
+  defp type_ok?({:ok, v}, "string|null") when is_binary(v) or is_nil(v), do: true
+  defp type_ok?({:ok, v}, "nonneg_int") when is_integer(v) and v >= 0, do: true
+  defp type_ok?({:ok, v}, "int>=1") when is_integer(v) and v >= 1, do: true
 
-  defp field_ts(%{"ts" => %{"t" => t, "n" => n}})
-       when is_integer(t) and is_integer(n) and t >= 0 and n >= 0 do
-    :ok
-  end
+  defp type_ok?(_, type)
+       when type in ~w(string string|null nonneg_int int>=1),
+       do: false
 
-  defp field_ts(_), do: :error
-
-  defp field_v(%{"v" => v}) when is_integer(v) and v >= 1, do: :ok
-  defp field_v(_), do: :error
+  defp type_ok?(_, type), do: raise("unknown floor type: #{type}")
 
   defp name_matches?(id, claimed) when id == claimed, do: :ok
   defp name_matches?(_, _), do: {:error, :name}

@@ -128,16 +128,11 @@ export function createStage(canvas, bridge) {
             controls.update()
             break
         case 'snap': {
-            // Hold the whole ask on snapshot until hatch (kb-vet4 33).
-            // download:false is local — river keeps without a file on disk.
+            // ASK A FILE, NOT A KEEP (id:kc-p-join). Durability left this
+            // command: the keep is minted at the door owner's seat on the
+            // child's word. What remains is the download and its filename.
             const p = payload[1] ?? {}
-            const snap = {
-                save: true,
-                title: p.title,
-                download: p.download !== false,
-            }
-            if (typeof p.prev === "string" && p.prev) snap.prev = p.prev
-            stage.renderstate.snapshot = snap
+            stage.renderstate.snapshot = { save: true, title: p.title }
             stage.reflectChanged?.()
             break
         }
@@ -227,39 +222,22 @@ export function createStage(canvas, bridge) {
                 queueMicrotask(async () => {
                     const result = await recorder.takeSnapshot({ pixels, width, height })
                     if (result) {
-                        // Capture the ask BEFORE the clear (id:kb-7-stage).
-                        // keep is the ask object or absent — never boolean false
-                        // sticky on meta (kb-vet4 33). download stays local.
+                        // The file, if one was asked for — read the flag before
+                        // the clear, and clear it whole (id:kb-7-stage).
                         const snap = stage.renderstate.snapshot
-                        const asked = !!snap.save
-                        const title = snap.title ?? null
-                        const prev = typeof snap.prev === "string" && snap.prev
-                            ? snap.prev
-                            : null
-                        /** @type {{ title: any, prev?: string } | null} */
-                        const ask = asked
-                            ? (prev ? { title, prev } : { title })
-                            : null
-                        if (asked) {
-                            if (snap.download !== false) {
-                                bridge.pub(["saveRecord", {
-                                    snapshot: result.full,
-                                    type: "image",
-                                    title
-                                }])
-                            }
-                            // Whole ask off — no sticky title/prev (id:kb-7-stage).
+                        if (snap.save) {
                             stage.renderstate.snapshot = { save: false }
+                            bridge.pub(["saveRecord", {
+                                snapshot: result.full,
+                                type: "image",
+                                title: snap.title ?? null,
+                            }])
                         }
+                        // The stage returns a PICTURE and world meta — never an
+                        // ask (id:kj-types). `full` is the file's; `trimmed` is
+                        // the one the keep and the clan share.
                         stage.renderstate.meta.path = result.trimmed
-                        // Omit keep when not asked; title rides hatch for keepSnap,
-                        // stripped once before the socket (kb-vet4 34).
-                        const hatch = { ...stage.renderstate.meta }
-                        if (ask) {
-                            hatch.keep = ask
-                            hatch.title = ask.title
-                        }
-                        bridge.pub(["hatchTurtle", hatch])
+                        bridge.pub(["hatchTurtle", { ...stage.renderstate.meta }])
                     }
                 })
             }

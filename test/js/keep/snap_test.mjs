@@ -1,7 +1,12 @@
 // The snap kind and the mint (id:kb-7, id:kb-7-snap).
 import { describe, test, beforeEach, afterEach } from "node:test"
 import assert from "node:assert/strict"
-import { writeSnap, toBlob, keepSnap } from "../../../assets/js/keep/kinds/snap.js"
+import {
+    writeSnap,
+    toBlob,
+    mintSnap,
+    attachImage,
+} from "../../../assets/js/keep/kinds/snap.js"
 import { createJournal as createDoor } from "../../../assets/js/keep/journal.js"
 import { createEngine } from "../../../assets/js/keep/journal.store.js"
 import { read, name, V } from "../../../assets/js/keep/entry.js"
@@ -169,7 +174,10 @@ describe("toBlob: data URL dies at the mint (id:kb-vet2-image)", () => {
     })
 })
 
-describe("keepSnap: pure mint then put; hatch never awaits", () => {
+const PNG_1PX =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+describe("mintSnap: the word is the cause (id:kj-answer)", () => {
     /** @type {ReturnType<typeof freshDoor>} */
     let door
     beforeEach(() => {
@@ -179,103 +187,117 @@ describe("keepSnap: pure mint then put; hatch never awaits", () => {
         await door.close()
     })
 
-    test("mints one keep holding the image; name verifies", async () => {
+    test("mints one keep from word + source; name verifies", async () => {
         const work = "c".repeat(64)
         const source = "fd 100"
-        const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-        const hatch = {
-            source,
-            path: `data:image/png;base64,${png}`,
-            diagnostics: [],
-            keep: true,
-        }
-        const id = await keepSnap(hatch, { work_id: work, buffer_id: "buf" }, door)
-        assert.ok(id)
-        const bytes = await door.get(id)
-        assert.equal(name(bytes), id)
+        const minted = await mintSnap(
+            { title: "a small step" },
+            { source, diagnostics: [] },
+            { work_id: work, buffer_id: "buf" },
+            door,
+        )
+        assert.ok(minted)
+        const bytes = await door.get(minted.id)
+        assert.equal(name(bytes), minted.id)
+        assert.equal(minted.bytes, bytes, "the bytes come back for the attach")
         const v = read(bytes)
         assert.equal(v.kind, "snap")
         assert.equal(v.target, work)
         assert.equal(v.root, await door.root())
         assert.equal(v.source_id, name(source))
-        // keepSnap mints with stamp() — a projectable ts lands in the bytes
-        assert.equal(typeof v.ts.t, "number")
+        // mintSnap draws stamp() — a projectable ts lands in the bytes
         assert.ok(Number.isFinite(v.ts.t))
-        assert.equal(typeof v.ts.n, "number")
         assert.ok(Number.isFinite(v.ts.n))
-        // Image beside the message under the message's id
-        const img = await door.image(id)
-        assert.ok(img, "image stored under message id")
         // Source blob under name(source)
         assert.equal(await door.source(name(source)), source)
     })
 
-    test("two keeps during 'animation' — each is independent; pacer cannot drop the mint", async () => {
-        // The mint is outside the pacer. Two fire-and-forget keepSnaps both land.
-        const work = "d".repeat(64)
-        const p1 = keepSnap(
-            { source: "a", path: null, diagnostics: [] },
-            { work_id: work, buffer_id: "1" },
+    test("NO GPU ON THIS PATH — the keep exists with no picture at all", async () => {
+        // The frame clock may never fire (turtling/hatch.js: !present, mine ===
+        // false, a canvas that never changes). It can cost a picture; it must
+        // never cost the child's word.
+        const minted = await mintSnap(
+            { title: "kept in the dark" },
+            { source: "fw 1\n", diagnostics: [] },
+            { work_id: "a".repeat(64) },
             door,
         )
-        const p2 = keepSnap(
-            { source: "b", path: null, diagnostics: [] },
-            { work_id: work, buffer_id: "2" },
-            door,
-        )
-        const [id1, id2] = await Promise.all([p1, p2])
-        assert.ok(id1)
-        assert.ok(id2)
-        assert.notEqual(id1, id2)
-        const listed = await door.list(await door.root())
-        assert.equal(listed.length, 2)
+        assert.ok(minted, "a pictureless keep is a keep")
+        assert.equal(read(await door.get(minted.id)).title, "kept in the dark")
+        assert.equal(await door.image(minted.id), undefined)
     })
 
-    test("the word rides the hatch into the keep; a wordless one stays silent", async () => {
+    test("the reflection's wounds ride into the body (D022)", async () => {
+        const wounds = [{ line: 2, message: "unknown verb" }]
+        const minted = await mintSnap(
+            { title: "hurt" },
+            { source: "fw 1\nzz 2\n", diagnostics: wounds },
+            { work_id: "a".repeat(64) },
+            door,
+        )
+        assert.deepEqual(read(await door.get(minted.id)).diagnostics, wounds)
+    })
+
+    test("prev rides the ASK, not the ids — the fork is the child's gesture", async () => {
+        const parent = "9".repeat(64)
         const work = "b".repeat(64)
-        const id = await keepSnap(
-            { source: "fw 1\n", title: "a small step", diagnostics: [] },
+        const forked = await mintSnap(
+            { title: "forked", prev: parent },
+            { source: "fw 1\n", diagnostics: [] },
             { work_id: work },
             door,
         )
-        assert.equal(read(await door.get(id)).title, "a small step")
+        assert.equal(read(await door.get(forked.id)).prev, parent)
 
-        // A hatch with no word — the record button's path — keeps nothing
-        // where a word would be, rather than inventing one.
-        const quiet = await keepSnap(
+        // Absent, not null, on a straight keep (id:kc-r-absence).
+        const straight = await mintSnap(
+            { title: "straight" },
             { source: "fw 2\n", diagnostics: [] },
             { work_id: work },
             door,
         )
-        assert.equal(read(await door.get(quiet)).title, null)
+        assert.equal(Object.hasOwn(read(await door.get(straight.id)), "prev"), false)
+    })
 
-        // An empty word is no word: a keep never carries "" as a title.
-        const blank = await keepSnap(
-            { source: "fw 3\n", title: "", diagnostics: [] },
+    test("two keeps in one breath — each independent; nothing can pace a mint away", async () => {
+        const work = "d".repeat(64)
+        const [a, b] = await Promise.all([
+            mintSnap({ title: "one" }, { source: "a" }, { work_id: work }, door),
+            mintSnap({ title: "two" }, { source: "b" }, { work_id: work }, door),
+        ])
+        assert.notEqual(a.id, b.id)
+        assert.equal((await door.list(await door.root())).length, 2)
+    })
+
+    test("a wordless ask stays silent; an empty word is no word", async () => {
+        const work = "b".repeat(64)
+        const quiet = await mintSnap({}, { source: "fw 2\n" }, { work_id: work }, door)
+        assert.equal(read(await door.get(quiet.id)).title, null)
+        const blank = await mintSnap(
+            { title: "" },
+            { source: "fw 3\n" },
             { work_id: work },
             door,
         )
-        assert.equal(read(await door.get(blank)).title, null)
+        assert.equal(read(await door.get(blank.id)).title, null)
     })
 
     test("without work_id the mint returns null and does not reject", async () => {
         // A drop is a fact (id:kc-c-wire) — said out loud, never an unhandled rejection.
-        const id = await keepSnap(
-            { source: "x", diagnostics: [] },
-            { work_id: null },
-            door,
+        assert.equal(
+            await mintSnap({ title: "x" }, { source: "x" }, { work_id: null }, door),
+            null,
         )
-        assert.equal(id, null)
     })
 
     test("empty source is stored — source_id is not a tombstone", async () => {
-        const work = "e".repeat(64)
-        const id = await keepSnap(
-            { source: "", diagnostics: [] },
-            { work_id: work, buffer_id: "b" },
+        const minted = await mintSnap(
+            { title: "blank" },
+            { source: "" },
+            { work_id: "e".repeat(64), buffer_id: "b" },
             door,
         )
-        assert.ok(id)
+        assert.ok(minted)
         assert.equal(await door.source(name("")), "")
     })
 
@@ -288,11 +310,53 @@ describe("keepSnap: pure mint then put; hatch never awaits", () => {
                 throw new Error("unreachable")
             },
         }
-        const id = await keepSnap(
-            { source: "x", diagnostics: [] },
-            { work_id: "f".repeat(64) },
-            dead,
+        assert.equal(
+            await mintSnap({ title: "x" }, { source: "x" }, { work_id: "f".repeat(64) }, dead),
+            null,
         )
-        assert.equal(id, null)
+    })
+})
+
+describe("attachImage: the picture is the reveal (id:kj-answer-attach)", () => {
+    /** @type {ReturnType<typeof freshDoor>} */
+    let door
+    beforeEach(() => {
+        door = freshDoor()
+    })
+    afterEach(async () => {
+        await door.close()
+    })
+
+    const mint = (title) =>
+        mintSnap({ title }, { source: "fd 100" }, { work_id: "c".repeat(64) }, door)
+
+    test("the picture lands on a keep that already exists; the keep is unchanged", async () => {
+        const minted = await mint("later")
+        assert.equal(await door.image(minted.id), undefined)
+
+        assert.equal(await attachImage(door, minted.bytes, PNG_1PX), true)
+
+        const img = await door.image(minted.id)
+        assert.ok(img, "image stored under the message id")
+        // Same name, same bytes — put is idempotent, so the attach is not a
+        // second keep (id:kc-p-facts).
+        assert.equal(await door.get(minted.id), minted.bytes)
+        assert.equal((await door.list(await door.root())).length, 1)
+    })
+
+    test("no picture is not a wound — it says false and keeps nothing", async () => {
+        const minted = await mint("dark")
+        assert.equal(await attachImage(door, minted.bytes, null), false)
+        assert.equal(await door.image(minted.id), undefined)
+    })
+
+    test("a dead door yields false, never a rejection", async () => {
+        const minted = await mint("doomed")
+        const dead = {
+            put: async () => {
+                throw new Error("worker gone")
+            },
+        }
+        assert.equal(await attachImage(dead, minted.bytes, PNG_1PX), false)
     })
 })

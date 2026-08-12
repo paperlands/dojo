@@ -19,6 +19,7 @@ import { revealAmbient } from "./nerve/reveal.js"
 import { defaultAttend } from "./editor/plang-mode.js"
 import { get } from "./hooks/shell/term-cell.js"
 import { nonce } from "./keep/genesis.js"
+import { temporal } from "./utils/temporal.js"
 
 const DEFAULT_OPTIONS = { theme: 'abbott', mode: 'plang' };
 
@@ -78,7 +79,6 @@ export const createTerminal = (element, cm6, options = {}) => {
         projectedId: null,    // id the editor currently displays (view concern, not model selection)
         extensions: null,     // shared extension array
         compartments: null,   // { theme, lang, merge } — Compartment handles
-        autosaveTimer: null,
         mergeOriginals: new Map(),  // addr → latest outershell content (for lazy merge updates)
         mergeActive: false,           // true while outershell mode is active
         drafting: false,              // outer review surface: editing a draft in place
@@ -96,16 +96,24 @@ export const createTerminal = (element, cm6, options = {}) => {
     const saveToStorage = () => {
         if (!store || !state.collection) return;
         store.save(buffers.serialize(state.collection));
-        state.autosaveTimer = null;
     };
+
+    // Seat after a typing break — the pending quiet is the only unsaved state.
+    const autosave = temporal.quiet(saveToStorage, 500);
 
     // Write-through keeps the collection current on every transaction, so
     // persisting on tab hide / page unload needs no live capture.
     const onVisibilityChange = () => {
-        if (document.visibilityState === 'hidden') saveToStorage();
+        if (document.visibilityState === 'hidden') {
+            autosave.cancel();
+            saveToStorage();
+        }
     };
 
-    const onBeforeUnload = () => saveToStorage();
+    const onBeforeUnload = () => {
+        autosave.cancel();
+        saveToStorage();
+    };
 
     const triggerBridge = () => {
         const buffer = buffers.currentBuffer(state.collection);
@@ -164,8 +172,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         if (shell && state.projectedId === id && editorView.getContent(shell) !== content) {
             editorView.setContent(shell, content);
         }
-        clearTimeout(state.autosaveTimer);
-        state.autosaveTimer = setTimeout(saveToStorage, 500);
+        autosave();
         triggerBridge();
     };
 
@@ -275,11 +282,10 @@ export const createTerminal = (element, cm6, options = {}) => {
                         if (id) {
                             state.collection = buffers.updateContent(state.collection, id, content);
                         }
-                        // 2. Autosave (scheduled effect). Nothing tracks "dirty":
-                        // destroy() and the two page listeners all save, so the
-                        // pending timer is the only unsaved state there is.
-                        clearTimeout(state.autosaveTimer);
-                        state.autosaveTimer = setTimeout(saveToStorage, 500);
+                        // 2. Autosave after quiet. destroy() and the page
+                        // listeners flush; the pending quiet is the only
+                        // unsaved state there is.
+                        autosave();
                     }
                     // 3. Bridge always — river drift and the live walk need it.
                     const name = id ? state.collection.items.get(id)?.name : null;
@@ -480,8 +486,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             if (!id) return;
             state.projecting = false;
             state.collection = buffers.updateContent(state.collection, id, content);
-            clearTimeout(state.autosaveTimer);
-            state.autosaveTimer = setTimeout(saveToStorage, 500);
+            autosave();
             if (shell && editorView.getContent(shell) !== content) {
                 editorView.setContent(shell, content);
             }
@@ -564,13 +569,22 @@ export const createTerminal = (element, cm6, options = {}) => {
         // Fork only makes a buffer with lineage. The merge (git-style) view is
         // outershell compare mode — resumeMerge / clearMerge own mergeActive.
         // A plain fork or ?fork= link must not light the diff (id:la-fork).
+        // Same find-without-source law as forkKeep (id:kb-source-absence): a
+        // tombstone still finds; it never creates.
         forkBuffer({ source, name, addr, buffer_id, time, offset, land = false }) {
-            if (!source || !addr) return;
+            if (!addr || !state.collection) return null;
 
             const selectFork = (id) => doSelectBuffer(id, { offset });
+            const hasSource = typeof source === 'string';
 
             const existing = this.findFork(addr, buffer_id);
             if (existing) {
+                // Find-only (tombstone): select the river, change nothing.
+                if (!hasSource) {
+                    selectFork(existing);
+                    return existing;
+                }
+
                 const existingBuffer = state.collection.items.get(existing);
 
                 // A link open lands the keep: show HEAD/pin even when a draft
@@ -604,6 +618,8 @@ export const createTerminal = (element, cm6, options = {}) => {
                 selectFork(existing);
                 return existing;
             }
+
+            if (!hasSource) return null;
 
             const bufferName = name ? `${name}'s fork` : 'fork';
             const origin = { addr, buffer_id, source, time, name };
@@ -717,7 +733,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         destroy() {
             document.removeEventListener('visibilitychange', onVisibilityChange);
             window.removeEventListener('beforeunload', onBeforeUnload);
-            clearTimeout(state.autosaveTimer);
+            autosave.cancel();
             saveToStorage();
             editorView.destroy(shell, element);
         },

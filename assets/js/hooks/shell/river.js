@@ -1,69 +1,46 @@
-// =============================================================================
-// RIVER — the keep surface: self, one work (id:kr-orient, id:kr-place).
-//
-// The first surface over the journal, and the shell's spine: the column under
-// the sun is WHERE THE CHILD IS. Drag (or tap) the strip; once the drum is
-// still, the editor holds that keep's source and the canvas follows — the
-// shell evaluates live (D021: attention is the address). Chrome tracks the
-// sun mid-motion; setValue waits for settle.
-//
-// THE PRESENT IS A PLACE. East of every keep stands one open seat: the buffer
-// as it is now, unkept. The child rests there by default. Writing a word there
-// is the whole keep gesture — the first word names the river, the rest name
-// the steps. A non-empty word lights the open circle green (is-ready); re-tap
-// that noon seat to send — Enter is the same door. Draft is one beat farther:
-// first tap seats the draft, second sends when ready.
-//
-// EAST OF PRESENT: a local DRAFT — a potential head. Editing a past keep
-// does not clobber the head buffer; it opens one draft seat (from, text,
-// face), never a journal row. Commit lands a fork (prev = from); discard
-// drops it. Local memory holds the draft per work so reload and tab switch
-// do not forget a head that has not been kept yet.
-//
-// Client-lazy like the weave: no CM6, no Terminal of its own. Its two ports
-// arrive through cells — the coreshell's door (keep/cell.js) and the
-// coreshell's Terminal (term-cell.js) — because the shell that mints is the
-// shell whose work this river is of.
-// =============================================================================
+// River — keep surface for one work (id:kr-orient).
+// fold → paint → chrome → effects. Truths: keeps, view, seal.
 
 import { createArena } from "../../kernel/arena.js"
 import { attach } from "../../kernel/attach.js"
-import { link, shareForkRef } from "../../link.js"
+import { link } from "../../link.js"
 import { name, read } from "../../keep/entry.js"
 import { PAGE } from "../../keep/page.js"
-import { shared } from "../../keep/shared.js"
-import { columnsOf, mirrorOf, ofWork } from "../../keep/work.js"
-import { askKeep, doorSeat, getDoor, watchLanded } from "../../keep/cell.js"
-import { seatOf } from "./term-cell.js"
-import { moodOf, rigOf } from "../../river/light.js"
+import { ofWork } from "../../keep/work.js"
+import { askKeep, doorSeat, getDoor, watchTouched } from "../../keep/cell.js"
+import { seatOf as termSeatOf } from "./term-cell.js"
+import { moodOf, paintSky } from "../../river/light.js"
+import { pulse, whenDone } from "../../kernel/motion.js"
+import { copyText } from "../../utils/clipboard.js"
+import { temporal } from "../../utils/temporal.js"
 import { wear } from "../../river/atoms.js"
-import { readDraft, writeDraft } from "../../river/draft-memory.js"
-import { readHead, writeHead } from "../../river/head-memory.js"
+import { readDraft, readHead, writeDraft, writeHead } from "../../river/memory.js"
 import { paint } from "../../river/paint.js"
 import { mountWheel } from "../../river/wheel.js"
+import { HEAD, fold, landed, restKey } from "../../river/fold.js"
+import { BEAT, paintChrome, shareLinkOf } from "../../river/chrome.js"
+import { DRAFT, modeOf, PRESENT } from "../../river/mode.js"
+import { clear as clearKeeps, faceOf, ingest, prune } from "../../river/keeps.js"
 
 export const river = {
     events: [],
     mount: mountRiver,
 }
 
-// PAGE is keep/page.js — same depth the wire ships (id:kb-8-page, id:kb-9).
-// list and local read at the SAME depth or the fold lies.
+/** No door, no work, or a sour read — the fold still runs, on nothing. */
+const NO_PAGE = Object.freeze({ versions: [], held: [] })
 
-// Column keys that are not keep ids — never collides with hex64 (id:kb-work-three).
-const PRESENT = "present"
-const DRAFT = "draft"
+/** One clock for the ceremony — monotonic where the browser offers it. */
+const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now())
 
-// How long the sky stays lit after a keep descends (id:kr-motion ≤400ms
-// streak, then the standing weather takes the sky back).
-const IGNITE_MS = 700
-// If the snap never lands, drop is-keeping so the caption is not stuck.
-const KEEP_GUARD_MS = 2400
-// Softest hold before seating the keep — covers a fast snap so send→land
-// is never a hard cut (slow snaps already breathe via is-keeping).
-const HOLD_MIN_MS = 320
-// Safety clear for is-landing after river-land / river-land-radiate.
-const LAND_MS = 800
+function emptyView() {
+    return {
+        sharedIds: new Set(),
+        siblingHead: null,
+        keptLocal: new Set(),
+        newestId: null,
+    }
+}
 
 function mountRiver(hook) {
     const arena = createArena()
@@ -80,17 +57,14 @@ function mountRiver(hook) {
         return { events: {}, arena }
     }
 
-    const term = seatOf("coreshell")
+    const term = termSeatOf("coreshell")
 
-    // ?action=share holds the sharing sky open (id:la-vocabulary). The class
-    // IS the fact, whatever hand toggles it — the mirror keeps a copied
-    // address honest. #river-state is phx-update=ignore, so the flag
-    // survives the wire; the link survives the tab.
+    // ?action=share holds the sharing sky open (id:la-vocabulary).
     const flag = document.getElementById("river-state")
     if (flag) {
-        if (link.read("action") === "share") flag.classList.add("river-open")
+        if (link.read("action") === "share") flag.classList.add("is-open")
         const mirror = () => {
-            if (flag.classList.contains("river-open")) link.carry("action", "share")
+            if (flag.classList.contains("is-open")) link.carry("action", "share")
             else if (link.read("action") === "share") link.carry("action", null)
         }
         const mo = new MutationObserver(mirror)
@@ -98,595 +72,387 @@ function mountRiver(hook) {
         arena.add(() => mo.disconnect())
     }
 
-    // The shell's chosen head. null is the resting head — the newest keep —
-    // and a swap is nothing but this field naming the other line's head.
-    let head = null
+    // ── independent truths ───────────────────────────────────────────
     let work = null
-    // The two things this surface holds that the log does not: the text behind
-    // each keep, so standing in one costs a read only the first time, and an
-    // object URL per picture, which the arena revokes.
-    const sources = new Map()
-    const faces = new Map()
-    // The standing fold, so the caption and the walk can ask by id.
-    let byId = new Map()
-    let keptLast = new Set()
-    // Only a NEWER fold may paint; a slow read must never overwrite a fresh one.
+    /** Chosen line head for the mirror (null = newest). */
+    let lineHead = null
+    let at = { key: PRESENT, id: null }
+    let unkept = null
+    /** @type {{from: string, text: string, title: string, face: string|null}|null} */
+    let draft = null
+    /** @type {Map<string, {bytes: string, source?: string, face?: string}>} */
+    const keeps = new Map()
+    let view = emptyView()
+    /** @type {{title: string, at: number, head: string|null}|null} */
+    let seal = null
     let epoch = 0
-    let igniting = null
-    /** @type {ReturnType<typeof setTimeout> | null} */
-    let keepingT = null
+
+    // Guards, not truths. landHold is a setTimeout (remaining HOLD_MIN).
+    const sealGuard = temporal.quiet(endSeal, BEAT.KEEP_GUARD_MS)
+    const flareOut = temporal.quiet(cool, BEAT.IGNITE_MS)
     /** @type {ReturnType<typeof setTimeout> | null} */
     let landHoldT = null
-    // Committed title held in the caption until the keep seat exists — never
-    // flash YOUR MESSAGE between send and land.
-    /** @type {string | null} */
-    let sealingTitle = null
-    /** When beginKeeping started (ms) — land waits out HOLD_MIN_MS if needed. */
-    let keepingAt = 0
-    let siblingHead = null
-    let at = { key: PRESENT, id: null }
-    // What the child had in hand when they last walked away from the present.
-    // Without this the present is not a place: stepping west into a keep would
-    // overwrite unkept work and stepping back would find it gone. Persisted —
-    // refresh while standing on an older keep must not kill the head.
-    let unkept = null
-    // Edit-from-keep: local potential head. null | { from, text, title, face }.
-    // Never a keep — but remembered per work (id: draft-memory).
-    let draft = null
 
     const wheel = mountWheel(rail, { onCenter, onSettle, onTap })
     arena.add(wheel.release)
-    arena.add(() => clearTimeout(igniting))
-    arena.add(() => clearTimeout(keepingT))
+    arena.add(flareOut.cancel)
+    arena.add(sealGuard.cancel)
     arena.add(() => clearTimeout(landHoldT))
-    arena.add(forgetFaces)
+    arena.add(() => clearKeeps(keeps))
 
-    function forgetFaces() {
-        for (const url of faces.values()) URL.revokeObjectURL(url)
-        faces.clear()
-    }
-
-    // The page is the keep set we may paint; everything else is residue.
-    // Draft parent and the seat under the sun may sit just outside the list
-    // for a beat — keep those two. Revoke the rest so blob: URLs do not grow
-    // with every keep that ages off PAGE.
-    function pruneCaches(versions) {
-        const want = new Set(versions.map(name))
-        if (draft?.from) want.add(draft.from)
-        if (at?.id) want.add(at.id)
-        for (const [id, url] of faces) {
-            if (want.has(id)) continue
-            URL.revokeObjectURL(url)
-            faces.delete(id)
-        }
-        for (const id of sources.keys()) {
-            if (!want.has(id)) sources.delete(id)
-        }
-    }
-
-    /** Hold a potential head in memory and on disk for this work. */
-    function holdDraft(next) {
+    function setDraft(next) {
         draft = next
         if (work) writeDraft(work, next)
     }
 
-    function dropDraft() {
-        draft = null
-        if (work) writeDraft(work, null)
-    }
-
-    /** Stash the authored head — local memory so refresh cannot kill it. */
-    function holdUnkept(text) {
+    function setUnkept(text) {
         if (typeof text !== "string") return
         unkept = text
         if (work) writeHead(work, text)
     }
 
-    // ── the fold ─────────────────────────────────────────────────────
+    // ── refold: door → keeps + fold → paint → chrome → effects ───────
 
     async function refold({ ignite = false, rest = null } = {}) {
-        const door = getDoor()
-        const shell = term.get()
         const my = ++epoch
         const alive = () => arena.alive && my === epoch
 
-        const workNow = shell?.currentWorkId() ?? null
-        if (workNow !== work) {
-            // A new work is a new river: the head and kept-local memory
-            // belonged to the last one. Draft and unkept are potential heads —
-            // load this work's; the last was already written on hold.
-            work = workNow
-            head = null
-            sources.clear()
-            forgetFaces()
-            keptLast = new Set()
-            unkept = readHead(work)
-            draft = readDraft(work)
-            // Heal a buffer that was clobbered by projecting a keep last session.
-            if (unkept != null && shell?.pinHead) shell.pinHead(unkept)
-            rest = PRESENT
-        }
-
-        let listed = [], held = []
-        if (door && work) {
-            try {
-                const rootName = await door.root()
-                if (!alive()) return
-                ;[listed, held] = await Promise.all([
-                    door.list(rootName, PAGE),
-                    door.local(rootName, PAGE),
-                ])
-            } catch {
-                // A door that cannot answer is not a river with no keeps — the
-                // present still stands, so the child can still begin.
-                listed = []
-                held = []
-            }
-        }
+        if (reseat()) rest = PRESENT
+        const page = await readPage(alive)
         if (!alive()) return
 
-        const versions = ofWork(listed, work)
-        byId = new Map(versions.map((bytes) => [name(bytes), bytes]))
-        pruneCaches(versions)
+        const folded = reindex(page)
 
-        // Shared is the difference between two folds, never a field
-        // (id:kb-8): what the clan has permanently answered.
-        const answered = new Set(shared(versions, held).map(name))
-        const kept = (id) => !answered.has(id)
-        const keptNow = new Set(versions.map(name).filter(kept))
-
-        // A share edge is the only other thing the fold owns: a keep that was
-        // ours alone last breath and is the room's now.
-        const settling = [...keptLast].some((id) => !keptNow.has(id) && answered.has(id))
-        keptLast = keptNow
-
-        const { line, sibling, meet, siblingHead: sib } = mirrorOf(versions, head)
-        siblingHead = sib
-        root.classList.toggle("has-mirror", sibling.length > 0)
-
-        const columns = columnsOf(line, sibling, meet)
-        const headKey = columns.length ? columns[columns.length - 1].key : PRESENT
-        // The east is always open (id:kr-meridian) — even on an empty river,
-        // where it is the whole sky and the only place there is.
-        columns.push({
-            key: PRESENT,
-            sky: null,
-            water: null,
-            trunk: false,
-            meet: false,
-            present: true,
-        })
-        // Draft sits past the present — potential head, never a journal row.
-        if (draft) {
-            // Face is session-only; re-wear the parent's picture when we have it.
-            const face = draft.face ?? faces.get(draft.from) ?? null
-            columns.push({
-                key: DRAFT,
-                sky: null,
-                water: null,
-                trunk: false,
-                meet: false,
-                draft: true,
-                face,
-            })
+        // Land is fold-derived (id:kr-land) — mint grows newestId past seal.head.
+        if (!ignite && seal && landed(seal.head, folded.newestId)) {
+            const wait = Math.max(0, BEAT.HOLD_MIN_MS - (now() - seal.at))
+            if (wait > 0) {
+                clearTimeout(landHoldT)
+                landHoldT = setTimeout(landWhenReady, wait)
+            } else {
+                landWhenReady()
+                return
+            }
         }
 
-        const { seats: seatMap, arrived } = paint(rail, columns, {
-            kept,
-            faceOf: (id) => faces.get(id) ?? null,
-        })
+        show(folded, ignite)
+        void openFace()
 
-        sky(moodOf({ keptLocal: keptNow.size, landing: ignite, settling }))
-        // Fresh seats only bloom on a land edge — first fold must not radiate
-        // every keep that was already here.
-        if (ignite) {
-            for (const id of arrived) lightLand(seatMap.get(id))
-            flare()
-        }
-        void openFaces(versions)
-
-        if (rest === "head") wheel.restAt(headKey)
-        else if (rest === PRESENT) wheel.restAt(PRESENT)
-        else if (rest === DRAFT && draft) wheel.restAt(DRAFT)
+        const key = restKey(rest, folded)
+        if (key) wheel.restAt(key)
         else wheel.update()
-        // Land seats the keep: release the held word so say() reads the real title.
-        if (ignite && sealingTitle != null) endKeeping()
+
+        if (ignite && seal) endSeal()
         say()
     }
 
-    /**
-     * One keep arrived on the rail — blur→clear + ring radiate (id:kr-land).
-     * @param {HTMLElement | null | undefined} seatEl
-     */
+    /** The child moved to another work: forget this fold, wear that work's memory. */
+    function reseat() {
+        const shell = term.get()
+        const workNow = shell?.currentWorkId() ?? null
+        if (workNow === work) return false
+        work = workNow
+        lineHead = null
+        clearKeeps(keeps)
+        view = emptyView()
+        unkept = readHead(work)
+        draft = readDraft(work)
+        if (unkept != null) shell?.pinHead?.(unkept)
+        return true
+    }
+
+    /** The door's page, folded to this work. A shut or sour door is no page. */
+    async function readPage(alive) {
+        const door = getDoor()
+        if (!door || !work) return NO_PAGE
+        try {
+            const rootName = await door.root()
+            if (!alive()) return NO_PAGE
+            const [listed, held] = await Promise.all([
+                door.list(rootName, PAGE),
+                door.local(rootName, PAGE),
+            ])
+            return { versions: ofWork(listed, work), held }
+        } catch {
+            return NO_PAGE
+        }
+    }
+
+    /** Index the page, drop what nothing points at, fold the geometry. */
+    function reindex({ versions, held }) {
+        ingest(keeps, versions)
+        const want = new Set(versions.map(name))
+        if (draft?.from) want.add(draft.from)
+        if (at?.id) want.add(at.id)
+        prune(keeps, want)
+
+        const folded = fold(versions, held, {
+            head: lineHead,
+            draft,
+            faceOf: (id) => faceOf(keeps, id),
+            keptLocal: view.keptLocal,
+        })
+        view = {
+            sharedIds: folded.sharedIds,
+            siblingHead: folded.siblingHead,
+            keptLocal: folded.keptLocal,
+            newestId: folded.newestId,
+        }
+        return folded
+    }
+
+    /** Paint: rail, sky, and — on a landing — the arrival ceremony. */
+    function show(folded, ignite) {
+        root.classList.toggle("has-mirror", folded.hasMirror)
+        const { seats, arrived } = paint(rail, folded.columns, {
+            kept: folded.kept,
+            faceOf: (id) => faceOf(keeps, id),
+        })
+        paintSky(root, moodOf({
+            keptLocal: folded.keptLocal.size,
+            landing: ignite,
+            settling: folded.settling,
+        }))
+        if (!ignite) return
+        for (const id of arrived) lightLand(seats.get(id))
+        flare()
+    }
+
+    /** @param {HTMLElement | null | undefined} seatEl */
     function lightLand(seatEl) {
         if (!seatEl) return
-        seatEl.classList.remove("is-landing")
-        void seatEl.offsetWidth
-        seatEl.classList.add("is-landing")
-        const clear = () => seatEl.classList.remove("is-landing")
-        seatEl.addEventListener("animationend", clear, { once: true })
-        setTimeout(clear, LAND_MS)
+        pulse(seatEl, "is-landing")
+        whenDone(seatEl, { ms: BEAT.LAND_MS }, () => seatEl.classList.remove("is-landing"))
     }
 
-    // ── the light ────────────────────────────────────────────────────
-
-    // One sun, set once at the strip root; every seat only reads (id:kr-rig).
-    function sky(mood) {
-        root.dataset.mood = mood
-        for (const [prop, value] of Object.entries(rigOf(mood))) {
-            root.style.setProperty(prop, value)
-        }
-    }
-
-    /**
-     * A keep landed, and THE SUN SAYS SO — nothing else moves.
-     *
-     * Land was a descent with a streak and a seat that radiated (id:kr-land);
-     * three announcements of one fact, two of them on the rail. One sun lights
-     * this river (id:kr-light), so one flare is the whole event: the seats
-     * simply are where they are, brighter for a moment because the light is.
-     */
     function flare() {
         if (!sun) return
-        sun.classList.remove("flare")
-        void sun.offsetWidth // restart the one animation, never queue two
-        sun.classList.add("flare")
-        // One timer, re-armed. A child who keeps six pictures in a minute must
-        // not leave six cleanups behind on the arena.
-        clearTimeout(igniting)
-        igniting = setTimeout(() => {
-            igniting = null
-            sun.classList.remove("flare")
-            // The sky returns to the standing weather — ignite decays, it is
-            // not a state anyone stores.
-            void refold()
-        }, IGNITE_MS)
+        pulse(sun, "flare")
+        flareOut()
     }
 
-    /**
-     * The pictures of the keeps you are NOT standing in.
-     *
-     * The list still never touches bytes (id:kb-8) — this is the open, just
-     * asked for every seat on the page rather than one. The page is small by
-     * law (id:kr-vis), so this is a dozen small reads, once, and a seat that
-     * has one never asks again.
-     */
-    async function openFaces(versions) {
+    /** The sky lets the land go — and re-folds, because the seal has passed. */
+    function cool() {
+        sun?.classList.remove("flare")
+        void refold()
+    }
+
+    /** Face for the seat under the sun; epoch+row so a stale open never sticks. */
+    async function openFace() {
         const door = getDoor()
-        if (!door) return
-        for (const bytes of versions) {
-            const id = name(bytes)
-            if (faces.has(id)) continue
-            const my = work
-            let blob
-            try {
-                blob = await door.image(id)
-            } catch {
-                continue
-            }
-            // The picture may simply not be here: a shared keep's blob may have
-            // yielded to the cap (id:kc-evict). The sun is the honest answer.
-            if (!arena.alive || my !== work) return
-            // A concurrent refold may have won the seat while we awaited —
-            // re-check before createObjectURL, or the loser leaks a blob: URL.
-            if (faces.has(id)) continue
-            if (blob == null) continue
-            const url = URL.createObjectURL(blob)
-            faces.set(id, url)
-            const seat = seatFor(id)
-            if (seat) wear(seat, { kept: keptLast.has(id), face: url })
-            // A restored draft re-wears its parent's face once the picture lands.
-            if (draft?.from === id) {
-                draft = { ...draft, face: url }
-                const dSeat = rail.querySelector(`[data-key="${DRAFT}"] [data-place="sky"]`)
-                if (dSeat) wear(dSeat, { kept: false, face: url })
-            }
+        const id = at.id
+        if (!door || !id) return
+        const row = keeps.get(id)
+        if (!row || row.face) return
+
+        const my = epoch
+        let blob
+        try {
+            blob = await door.image(id)
+        } catch {
+            return
+        }
+        if (!arena.alive || my !== epoch) return
+        if (keeps.get(id) !== row || row.face) {
+            return
+        }
+        if (blob == null) return
+
+        const url = URL.createObjectURL(blob)
+        if (!arena.alive || my !== epoch || keeps.get(id) !== row) {
+            URL.revokeObjectURL(url)
+            return
+        }
+        row.face = url
+        const seat = seatFor(id)
+        if (seat) wear(seat, { kept: view.keptLocal.has(id), face: url })
+        if (draft?.from === id) {
+            draft = { ...draft, face: url }
+            const dSeat = rail.querySelector(`[data-key="${DRAFT}"] [data-place="sky"]`)
+            if (dSeat) wear(dSeat, { kept: false, face: url })
         }
     }
 
-    // ── the word at the meridian ─────────────────────────────────────
+    // ── chrome ───────────────────────────────────────────────────────
 
-    // The child's word for wherever they are standing: a kept moment's title,
-    // or the empty line where the next one is written. One caption, because
-    // there is one meridian (id:kr-vis: a caption lives outside the strip).
     function say() {
-        // Mid-keep: the caption already is the name — hold it until land seats.
-        if (sealingTitle != null) {
-            word.textContent = sealingTitle
-            root.classList.remove("at-present", "at-draft")
-            root.classList.add("at-keep")
-            // No address yet — copy stays dark via is-keeping CSS.
-            paintReady()
-            return
-        }
-        const here = at.key === PRESENT
-        const drafting = at.key === DRAFT
-        // A kept title is the only place the copy-link stands — present and
-        // draft have no address yet (id:la-fork wants a hex64 or a word).
-        root.classList.toggle("at-present", here)
-        root.classList.toggle("at-draft", drafting)
-        root.classList.toggle("at-keep", !here && !drafting && !!at.id)
-        if (here) {
-            // The first word names the river; every later one names a step.
-            message.placeholder = byId.size === 0 ? "YOUR TITLE" : "YOUR MESSAGE"
-            paintReady()
-            return
-        }
-        if (drafting) {
-            // Editable name for the fork; × or Escape drops the draft.
-            const from = draft?.from && byId.get(draft.from)
-            const parent = (from && titleOf(from)) || null
-            message.placeholder = parent ? `from ${parent}` : "YOUR MESSAGE"
-            // Don't fight the caret while they type; restore when they return.
-            if (document.activeElement !== message) {
-                message.value = typeof draft?.title === "string" ? draft.title : ""
-            }
-            paintReady()
-            return
-        }
-        // Leaving an editable seat: do not leave a half-typed word on a keep.
-        if (message.value && document.activeElement !== message) message.value = ""
-        const bytes = at.id && byId.get(at.id)
-        word.textContent = (bytes && titleOf(bytes)) || "—"
-        paintReady()
+        paintChrome({
+            root,
+            word,
+            message,
+            at,
+            sharedIds: view.sharedIds,
+            sealing: seal?.title ?? null,
+            draft,
+            keeps,
+            empty: view.newestId == null,
+        })
     }
 
-    /**
-     * A word in the caption at present/draft lights the open circle (id:kr-ready).
-     * Re-tap that noon seat (or Enter) keeps — not clan-share, not a third word.
-     */
-    function isReady() {
-        if (sealingTitle != null) return false
-        if (at.key !== PRESENT && at.key !== DRAFT) return false
-        return message.value.trim().length > 0
-    }
-
-    function paintReady() {
-        root.classList.toggle("is-ready", isReady())
-    }
-
-    /**
-     * Freeze the caption as the keep's name; soft hold covers the snap's flight.
-     * No empty placeholder — land blooms onto this same word.
-     */
-    function beginKeeping(title) {
-        sealingTitle = title
-        keepingAt = typeof performance !== "undefined" ? performance.now() : Date.now()
+    function beginSeal(title) {
+        seal = { title, at: now(), head: view.newestId }
+        sealGuard()
         message.value = ""
         message.blur()
         word.textContent = title
-        root.classList.remove("is-ready", "at-present", "at-draft")
-        root.classList.add("is-keeping", "at-keep")
-        clearTimeout(keepingT)
-        keepingT = setTimeout(endKeeping, KEEP_GUARD_MS)
+        say()
     }
 
-    function endKeeping() {
-        clearTimeout(keepingT)
-        keepingT = null
-        sealingTitle = null
-        keepingAt = 0
-        root.classList.remove("is-keeping")
+    function endSeal() {
+        sealGuard.cancel()
+        clearTimeout(landHoldT)
+        landHoldT = null
+        seal = null
+        say()
     }
 
-    /** Seat the keep after a gentle minimum hold (covers fast snaps). */
     function landWhenReady() {
         clearTimeout(landHoldT)
         landHoldT = null
-        if (at.key === DRAFT) dropDraft()
-        head = null
-        void refold({ ignite: true, rest: "head" })
+        if (!seal) return
+        if (at.key === DRAFT) setDraft(null)
+        lineHead = null
+        void refold({ ignite: true, rest: HEAD })
     }
 
-    /**
-     * Absolute address for the standing keep (id:la-fork-pull · id:la-vocabulary).
-     *
-     * HEAD of this work → ?fork=<work_id> (always latest at open).
-     * Older keep       → ?fork=<keep_id>  (that commit only).
-     * work_id is the keep's target — the river that was shared — never a
-     * fresh mint; root rides inside the keep the ref resolves to.
-     */
-    function shareLink() {
-        if (!at.id) return null
-        // byId insertion order = ofWork order = newest-first (id:kb-8).
-        const headId = byId.size ? byId.keys().next().value : null
-        let workId = work
-        const bytes = byId.get(at.id)
-        if (bytes) {
-            try {
-                const target = read(bytes).target
-                if (typeof target === "string" && target) workId = target
-            } catch {
-                /* keep id still answers */
-            }
-        }
-        const ref = shareForkRef(at.id, { workId, headId })
-        if (!ref) return null
-        const out = new URL(location.pathname, location.origin)
-        const clan = new URLSearchParams(location.search).get("clan")
-        if (clan) out.searchParams.set("clan", clan)
-        out.searchParams.set("fork", ref)
-        return out.toString()
-    }
-
-    function titleOf(bytes) {
-        try {
-            const title = read(bytes).title
-            return typeof title === "string" ? title : null
-        } catch {
-            return null
-        }
-    }
-
-    // ── standing (id:kr-open) ────────────────────────────────────────
-    // onCenter = chrome. onSettle = setValue (once the drum is still).
+    // ── standing ─────────────────────────────────────────────────────
 
     function onCenter(where) {
         const from = at.key
         at = where ?? { key: PRESENT, id: null }
         root.dataset.centered = at.id ?? at.key
-        // Leaving the present stashes the head — draft never steals it; memory
-        // holds it so a refresh mid-walk cannot kill the buffer.
         if (from === PRESENT && at.key !== PRESENT) {
             const shell = term.get()
-            holdUnkept(shell?.getValue() ?? unkept)
+            setUnkept(shell?.getValue() ?? unkept)
         }
         say()
+        void openFace()
     }
 
     function onSettle(where) {
-        if (where == null) {
-            if (at.key !== PRESENT) onCenter(null)
-        } else if (at.key !== where.key || at.id !== where.id) {
-            onCenter(where)
-        }
-        if (at.key === PRESENT) restore()
-        else if (at.key === DRAFT) restoreDraft()
-        else if (at.id) void stand(at.id)
+        onCenter(where)
+        projectStanding()
     }
 
-    function restore() {
+    /** setValue: text and project mode together. */
+    function hold(text, project) {
         const shell = term.get()
-        if (!shell || unkept == null) return
-        // Authoring again: write-through is the head.
-        if (shell.getValue() !== unkept || shell.projecting?.()) shell.setValue(unkept)
+        if (!shell) return
+        if (shell.getValue() === text && !!shell.projecting?.() === project) return
+        shell.setValue(text, { project })
     }
 
-    function restoreDraft() {
-        const shell = term.get()
-        if (!shell || !draft) return
-        // Project only — the head buffer stays what holdUnkept saved.
-        if (shell.getValue() !== draft.text || !shell.projecting?.()) {
-            shell.setValue(draft.text, { project: true })
+    /** Editor holds whatever the standing seat names. */
+    function projectStanding() {
+        if (at.key === PRESENT) {
+            if (unkept != null) hold(unkept, false)
+        } else if (at.key === DRAFT) {
+            if (draft) hold(draft.text, true)
+        } else if (at.id) {
+            void stand(at.id)
         }
     }
 
-    /** Put this keep's source in the editor. Only from onSettle. */
+    /** Fill source field on the keep row, then project into the editor. */
     async function stand(id) {
         const door = getDoor()
-        const shell = term.get()
-        const bytes = byId.get(id)
-        if (!door || !shell || !bytes) return
+        const row = keeps.get(id)
+        if (!door || !row) return
 
-        let text = sources.get(id)
-        if (text == null) {
+        if (row.source == null) {
             const my = work
+            let text
             try {
-                text = await door.source(read(bytes).source_id)
+                text = await door.source(read(row.bytes).source_id)
             } catch {
                 return
             }
-            // Tombstone without source (id:kb-source-absence): do not blank the editor.
             if (!arena.alive || my !== work || typeof text !== "string") return
-            sources.set(id, text)
+            row.source = text
         }
         if (at.id !== id) return
-        // Project the keep; never write it through as the head buffer.
-        if (shell.getValue() === text && shell.projecting?.()) return
-        shell.setValue(text, { project: true })
+        hold(row.source, true)
     }
 
     function seatFor(id) {
-        return rail.querySelector(`[data-place="sky"][data-id="${cssId(id)}"]`)
+        const esc = typeof CSS?.escape === "function" ? CSS.escape(id) : id
+        return rail.querySelector(`[data-place="sky"][data-id="${esc}"]`)
     }
 
-    // Ids are hex64 by construction (id:kb-work-three) — quote anyway so no
-    // future id shape can turn a selector into a parse error.
-    function cssId(id) {
-        return typeof CSS?.escape === "function" ? CSS.escape(id) : id
-    }
-
-    /**
-     * The buffer moved off the keep we are standing in.
-     * Edit-from-keep opens a local draft past the present — never overwrites
-     * unkept. Comparison IS the fact; no stored "dirty" flag.
-     */
     function drift() {
         const shell = term.get()
         if (!shell) return
 
-        // At the present: keep head memory warm so a later walk + refresh is safe.
         if (at.key === PRESENT) {
             if (shell.projecting?.()) return
             const text = shell.getValue()
-            if (typeof text === "string" && text !== unkept) holdUnkept(text)
+            if (typeof text === "string" && text !== unkept) setUnkept(text)
             return
         }
 
         if (at.key === DRAFT) {
             if (!draft) return
             const text = shell.getValue()
-            if (text !== draft.text) holdDraft({ ...draft, text })
+            if (text !== draft.text) setDraft({ ...draft, text })
             return
         }
 
-        const held = at.id != null ? sources.get(at.id) : null
-        if (held == null) return
-        if (shell.getValue() === held) return
+        const held = at.id != null ? keeps.get(at.id)?.source : null
+        if (held == null || shell.getValue() === held) return
 
-        // One draft per work — a potential head. Unkept stays put.
         const from = at.id
-        holdDraft({
+        setDraft({
             from,
             text: shell.getValue(),
             title: typeof draft?.title === "string" && draft?.from === from ? draft.title : "",
-            face: faces.get(from) ?? null,
+            face: faceOf(keeps, from),
         })
         void refold({ rest: DRAFT })
     }
 
-    // ── the gesture: a word keeps the moment ─────────────────────────
-    // Enter and a re-tap of the noon open seat share one door (id:kr-ready).
-    // Draft feels like two taps: first seats the draft, second sends when ready.
+    // ── the gesture ──────────────────────────────────────────────────
 
     function discardDraft() {
         if (!draft) return
         message.value = ""
         message.blur()
-        dropDraft()
-        paintReady()
+        setDraft(null)
+        say()
         void refold({ rest: PRESENT })
     }
 
-    /**
-     * Spend the caption word as a keep. Same path for Enter and ready re-tap.
-     * Caption freezes as the title (never YOUR MESSAGE); land leaps onto it.
-     * @returns {boolean} true when a keep was asked
-     */
+    /** Lit ring predicate — light, tap, Enter share it (id:kr-ready). */
+    function ready() {
+        return modeOf({
+            at,
+            sharedIds: view.sharedIds,
+            sealing: seal?.title ?? null,
+            caption: message.value,
+        }).ready
+    }
+
+    /** @returns {boolean} true when a keep was asked */
     function commitKeep() {
+        if (!ready()) return false
         const title = message.value.trim()
-        // A keep deserves a word. An empty line is not a refusal to keep, it
-        // is simply nothing said yet.
-        if (!title) return false
-        if (at.key !== PRESENT && at.key !== DRAFT) return false
-        if (sealingTitle != null) return false
-        // Draft title memory rides holdDraft; clear it so a failed land does
-        // not re-light ready from a spent word.
-        if (at.key === DRAFT && draft) holdDraft({ ...draft, title: "" })
-        beginKeeping(title)
-        // Draft commit is a fork: prev names the keep it grew from.
-        if (at.key === DRAFT && draft?.from) askKeep(title, { prev: draft.from })
-        else askKeep(title)
+        if (at.key === DRAFT && draft) setDraft({ ...draft, title: "" })
+        beginSeal(title)
+        const prev = at.key === DRAFT && draft?.from ? draft.from : null
+        void askKeep(title, { prev }).then((id) => {
+            if (!id && seal) endSeal()
+        })
         return true
     }
 
-    /**
-     * Wheel re-tap on the seat already under the sun.
-     * Ready present/draft → keep. Else false so restAt still runs.
-     */
+    /** A tap on the seat already under the sun keeps, when the ring is lit. */
     function onTap(where) {
-        if (!where) return false
-        if (where.key !== PRESENT && where.key !== DRAFT) return false
-        if (where.key !== at.key) return false
-        if (!isReady()) return false
+        if (where?.key !== at.key) return false
         return commitKeep()
     }
 
-    // Hold the fork's title as they type — potential head, still not a keep.
-    // Any caption stroke repaints readiness (present and draft).
     arena.on(message, "input", () => {
-        if (at.key === DRAFT && draft) holdDraft({ ...draft, title: message.value })
-        paintReady()
+        if (at.key === DRAFT && draft) setDraft({ ...draft, title: message.value })
+        say()
     })
 
     arena.on(message, "keydown", (e) => {
@@ -698,7 +464,7 @@ function mountRiver(hook) {
             }
             message.value = ""
             message.blur()
-            paintReady()
+            say()
             return
         }
         if (e.key !== "Enter") return
@@ -714,73 +480,42 @@ function mountRiver(hook) {
         })
     }
 
-    // Copy the share link — HEAD shares the work (latest at open); an older
-    // keep pins that commit (id:la-fork-pull). Not a toast.
     if (copy) {
-        let copiedTimer = null
-        arena.add(() => clearTimeout(copiedTimer))
+        const uncopy = temporal.quiet(() => {
+            copy.classList.remove("is-copied")
+            copy.title = "copy link"
+        }, BEAT.COPIED_MS)
+        arena.add(uncopy.cancel)
         arena.on(copy, "click", async (e) => {
             e.preventDefault()
             e.stopPropagation()
-            const url = shareLink()
+            const url = shareLinkOf({
+                at,
+                sharedIds: view.sharedIds,
+                keeps,
+                newestId: view.newestId,
+                work,
+            })
             if (!url) return
-            try {
-                if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(url)
-                else throw new Error("no clipboard")
-            } catch {
-                // Last resort: select-and-copy via a transient field.
-                const ta = document.createElement("textarea")
-                ta.value = url
-                ta.setAttribute("readonly", "")
-                ta.style.position = "fixed"
-                ta.style.opacity = "0"
-                document.body.appendChild(ta)
-                ta.select()
-                try { document.execCommand("copy") } catch { /* spoken by title only */ }
-                ta.remove()
-            }
+            await copyText(url)
             copy.classList.add("is-copied")
             copy.title = "copied"
-            clearTimeout(copiedTimer)
-            copiedTimer = setTimeout(() => {
-                copy.classList.remove("is-copied")
-                copy.title = "copy link"
-            }, 1100)
+            uncopy()
         })
     }
 
     // ── swap: touch the water (id:kr-mirror) ─────────────────────────
-    // Seating is the wheel (tap / pan / step). This click is only the swap.
     arena.on(rail, "click", (e) => {
-        if (!siblingHead || !e.target.closest?.(".river-water")) return
-        head = siblingHead
+        if (!view.siblingHead || !e.target.closest?.(".river-water")) return
+        lineHead = view.siblingHead
         void refold()
     })
 
     // ── edges ────────────────────────────────────────────────────────
 
-    // A keep landed. The signal carries nothing; the fold is the answer.
-    // Only a commit from the draft seat spends the draft (fork finished).
-    // A keep from the present leaves any side draft alone.
-    // Caption already holds the title; if the snap was fast, wait out a soft
-    // minimum hold so send→land is one breath, not a cut.
-    arena.add(watchLanded(() => {
-        const now = typeof performance !== "undefined" ? performance.now() : Date.now()
-        const elapsed = keepingAt ? now - keepingAt : HOLD_MIN_MS
-        const wait = Math.max(0, HOLD_MIN_MS - elapsed)
-        clearTimeout(landHoldT)
-        if (wait <= 0) landWhenReady()
-        else landHoldT = setTimeout(landWhenReady, wait)
-    }))
+    arena.add(watchTouched(() => { void refold() }))
 
-    // The door may arrive after us (the coreshell opens it) and may be
-    // replaced under us — attach owns both.
-    arena.add(attach(doorSeat, () => {
-        void refold({ rest: PRESENT })
-    }))
-
-    // A tab switch is a work switch; a keystroke is a drift. The bridge
-    // breathes for both, and the two questions are cheap and local.
+    arena.add(attach(doorSeat, () => { void refold({ rest: PRESENT }) }))
     arena.add(attach(term, (shell) => {
         void refold({ rest: PRESENT })
         return shell.bridge.sub(() => {
@@ -789,8 +524,6 @@ function mountRiver(hook) {
         })
     }))
 
-    // Hidden, the wheel has no width and cannot find its meridian. Showing is
-    // therefore an edge like any other — and the one that seats the present.
     if (typeof IntersectionObserver !== "undefined") {
         const io = arena.observe(
             new IntersectionObserver((entries) => {

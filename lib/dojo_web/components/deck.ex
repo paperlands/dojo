@@ -61,7 +61,7 @@ defmodule DojoWeb.DeckLive do
     ~H"""
     <div
       id="commanddeck"
-      class="rightthird fixed right-0 deck mt-[15dvh] h-3/5 lg:h-4/5 select-none animate-fade"
+      class="rightthird fixed right-0 deck font-mono mt-[15dvh] h-3/5 lg:h-4/5 select-none animate-fade"
     >
       <!-- Command Deck Panel -->
       <div class="h-5/6 md:h-full transition-all duration-100 ease-in-out transform scrollbar-hide dark-scrollbar">
@@ -177,7 +177,7 @@ defmodule DojoWeb.DeckLive do
                   </div>
                   <div class="grow">
                     <%!-- Description --%>
-                    <code class="font-mono text-sm text-secondary-content">{desc}</code>
+                    <code class="text-sm text-secondary-content">{desc}</code>
                     <%!-- Sample code --%>
                     <p class="text-xs text-lint-commands flex items-baseline flex-wrap">
                       {cmd}

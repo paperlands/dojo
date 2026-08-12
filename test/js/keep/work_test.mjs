@@ -11,6 +11,7 @@ import {
     linesOf,
     meetOf,
     mirrorOf,
+    newerKeep,
     ofWork,
 } from "../../../assets/js/keep/work.js"
 import { name, write } from "../../../assets/js/keep/entry.js"
@@ -65,6 +66,22 @@ describe("ofWork: the work's keeps among a page of the author's history", () => 
         const all = Array.from({ length: 10 }, (_, i) => snap(`k${i}`, { t: i }))
         const page = newestFirst(...all.slice(7))
         assert.equal(ofWork(page, WORK).length, 3)
+    })
+})
+
+describe("newerKeep: author order, pure (id:kb-8)", () => {
+    test("the later ts wins", () => {
+        const older = snap("a", { t: 1 })
+        const newer = snap("b", { t: 9 })
+        assert.equal(newerKeep(older, newer), newer)
+        assert.equal(newerKeep(newer, older), newer)
+    })
+
+    test("a missing side loses; unreadable loses", () => {
+        const good = snap("a", { t: 5 })
+        assert.equal(newerKeep(null, good), good)
+        assert.equal(newerKeep(good, null), good)
+        assert.equal(newerKeep(good, "{not json"), good)
     })
 })
 

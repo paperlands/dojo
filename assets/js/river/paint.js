@@ -6,15 +6,18 @@
 // keyed by distance past the meet and trade contents in place. That is why a
 // swap moves the futures and leaves the trunk standing — the keys say so, and
 // no animation has to be told which seats are common.
+//
+// Column shape is the surface. East kinds (present, draft) are the key
+// itself — no parallel boolean flags. KIND in atoms is the only catalogue
+// of seat shapes; fill only picks a key and runs it.
 
 import { name } from "../keep/entry.js"
-import { column, draft, present, ripple, seat, slot, wear } from "./atoms.js"
-
-const PLACES = ["sky", "water"]
+import { column, KIND, ripple, wear } from "./atoms.js"
+import { DRAFT, isOpen } from "./mode.js"
 
 /**
  * @param {HTMLElement} rail - the scrolling wheel
- * @param {{key: string, sky: string|null, water: string|null, trunk: boolean, meet: boolean, present?: boolean, draft?: boolean, face?: string|null}[]} columns
+ * @param {{key: string, sky: string|null, water: string|null, trunk: boolean, meet: boolean, face?: string|null}[]} columns
  * @param {{kept: (id: string) => boolean, faceOf: (id: string) => string|null}} law
  * @returns {{seats: Map<string, HTMLElement>, arrived: string[]}} sky seats by keep id
  */
@@ -37,17 +40,20 @@ export function paint(rail, columns, { kept, faceOf }) {
         const fresh = !el
         if (fresh) el = column(col.key)
         held.delete(col.key)
-        el.classList.toggle("is-present", !!col.present)
-        el.classList.toggle("is-draft", !!col.draft)
 
         const skySeat = fill(el, "sky", col.sky, {
-            present: col.present,
-            draft: col.draft,
+            key: col.key,
             face: col.face ?? null,
             kept,
             faceOf,
         })
-        fill(el, "water", col.water, { water: true, kept, faceOf, fog: !col.trunk })
+        fill(el, "water", col.water, {
+            key: col.key,
+            water: true,
+            kept,
+            faceOf,
+            fog: !col.trunk,
+        })
         mark(el, col.meet)
 
         if (skySeat && col.sky) {
@@ -64,34 +70,29 @@ export function paint(rail, columns, { kept, faceOf }) {
     return { seats, arrived }
 }
 
+/** Bytes claim a keep seat; open east keys name their shape; else a slot. */
+function kindOf(place, bytes, key) {
+    if (bytes) return "seat"
+    // Column key IS the kind — present and draft stay two places (id:kr-meridian).
+    if (place === "sky" && isOpen(key)) return key
+    return "slot"
+}
+
 // One surface of one column. Absence is a slot of the same size, so the
 // message stays whole where a line reached less far than its sibling.
 function fill(col, place, bytes, {
+    key,
     water = false,
-    present: isPresent = false,
-    draft: isDraft = false,
     face = null,
     kept,
     faceOf,
     fog = false,
 }) {
-    const wanted = bytes
-        ? "seat"
-        : isDraft && place === "sky"
-            ? "draft"
-            : isPresent && place === "sky"
-                ? "present"
-                : "slot"
+    const wanted = kindOf(place, bytes, key)
     let el = col.querySelector(`[data-place="${place}"]`)
 
     if (!el || el.dataset.kind !== wanted) {
-        const made = wanted === "seat"
-            ? seat({ water })
-            : wanted === "present"
-                ? present()
-                : wanted === "draft"
-                    ? draft()
-                    : slot()
+        const made = KIND[wanted]({ water })
         made.dataset.place = place
         made.dataset.kind = wanted
         if (el) el.replaceWith(made)
@@ -101,8 +102,9 @@ function fill(col, place, bytes, {
 
     if (!bytes) {
         delete el.dataset.id
-        if (wanted === "draft") wear(el, { kept: false, face })
-        return wanted === "present" || wanted === "draft" ? el : null
+        if (wanted === DRAFT) wear(el, { kept: false, face })
+        // Only keep seats answer the seats map; east opens are places, not ids.
+        return null
     }
 
     const id = name(bytes)
@@ -114,7 +116,7 @@ function fill(col, place, bytes, {
 
 // Sky above the waterline, water below — order is the geometry (id:kr-geo).
 function insert(col, place, el) {
-    if (place === PLACES[0]) col.prepend(el)
+    if (place === "sky") col.prepend(el)
     else {
         const rip = col.querySelector(".river-ripple")
         if (rip) col.insertBefore(el, rip)

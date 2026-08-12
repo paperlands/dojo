@@ -1,4 +1,5 @@
 import { safePush } from "../adapter.js"
+import { temporal } from "../utils/temporal.js"
 
 const DiscipleWindow = {
   mounted() {
@@ -11,9 +12,15 @@ const DiscipleWindow = {
     // Name set for detecting morphing/element replacement
     this.lastNames = null;
 
-    // debounce config
-    this.debounceTimeout = null;
-    this.debounceDelay = 150; // milliseconds
+    // See the room after a break; re-scan the strip under scroll load.
+    this.sendVisible = temporal.quiet(() => {
+      const visible_disciples = Array.from(this.visibleDisciples).sort()
+      safePush(this, "seeDisciples", { visible_disciples })
+    }, 150)
+    this.onScroll = temporal.pace(() => {
+      this.checkForNewElements()
+      this.cullInvisibleDisciples()
+    }, 250)
 
     // intersection observer config
     this.observer = new IntersectionObserver(
@@ -49,10 +56,7 @@ const DiscipleWindow = {
     // init observation
     this.initializeObservation();
 
-    // throttle scroll listener
-    this.scrollThrottleTimer = null;
-    this.handleScroll = this.handleScroll.bind(this);
-    this.el.addEventListener('scroll', this.handleScroll, { passive: true });
+    this.el.addEventListener('scroll', this.onScroll, { passive: true });
 
     // Vertical wheel scrolls the panel strip horizontally. Held on `this` and
     // paired with its element: it lives on #disciple_panels, NOT on this.el, so
@@ -149,10 +153,7 @@ const DiscipleWindow = {
       changed = true;
     });
 
-    // Send update if needed
-    if (changed) {
-      this.debounceSendVisibleDisciples();
-    }
+    if (changed) this.sendVisible()
   },
 
   handleIntersection(entries) {
@@ -179,20 +180,7 @@ const DiscipleWindow = {
       }
     });
 
-    // Only update if visibility changed
-    if (changed) {
-      this.debounceSendVisibleDisciples();
-    }
-  },
-
-  handleScroll() {
-    if (!this.scrollThrottleTimer) {
-      this.scrollThrottleTimer = setTimeout(() => {
-        this.scrollThrottleTimer = null;
-        this.checkForNewElements();
-        this.cullInvisibleDisciples();
-      }, 250); // throttle to 250ms
-    }
+    if (changed) this.sendVisible()
   },
 
   checkForNewElements() {
@@ -206,23 +194,6 @@ const DiscipleWindow = {
         this.observer.observe(element);
       }
     });
-  },
-
-  debounceSendVisibleDisciples() {
-    if (this.debounceTimeout) {
-      clearTimeout(this.debounceTimeout);
-    }
-
-    this.debounceTimeout = setTimeout(() => {
-      const visibleArray = Array.from(this.visibleDisciples);
-
-      // sort for consistent order
-      visibleArray.sort();
-
-      safePush(this, "seeDisciples", {
-        visible_disciples: visibleArray
-      });
-    }, this.debounceDelay);
   },
 
   findDiscipleElements() {
@@ -250,22 +221,14 @@ const DiscipleWindow = {
   },
 
   cleanup() {
-    // Clear all timeouts
-    if (this.debounceTimeout) {
-      clearTimeout(this.debounceTimeout);
-      this.debounceTimeout = null;
-    }
-
-    if (this.scrollThrottleTimer) {
-      clearTimeout(this.scrollThrottleTimer);
-      this.scrollThrottleTimer = null;
-    }
+    this.sendVisible?.cancel()
+    this.onScroll?.cancel()
 
     // dc observers
     this.observer.disconnect();
     this.mutationObserver.disconnect();
 
-    this.el.removeEventListener('scroll', this.handleScroll);
+    this.el.removeEventListener('scroll', this.onScroll);
     this.panelsEl?.removeEventListener('wheel', this.handleWheel);
     this.panelsEl = null;
 

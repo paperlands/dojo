@@ -38,6 +38,22 @@ export function shared(listed, held) {
 }
 
 /**
+ * The same sentence, over names a fold has already derived (id:ka-passes).
+ *
+ * TWO FACES, ONE LAW — and the case that made it two: a caller that already
+ * holds the page's ids must not hash it again to ask this question. `shared`
+ * is the bytes face; this is the id face; both are `listed − held`, and a test
+ * asserts they never disagree. Adding a third face would be the drift.
+ *
+ * @param {string[]} ids - names of the listed page, in the author's order
+ * @param {Set<string>} heldIds - names of the kept-local page, same depth
+ * @returns {string[]} the ids the clan has permanently answered
+ */
+export function sharedIds(ids, heldIds) {
+    return ids.filter((id) => !heldIds.has(id))
+}
+
+/**
  * Accept a message that arrived with a permanent clan answer.
  *
  * Order is put, then share — always. Clan history lands as local:1; the fact

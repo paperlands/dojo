@@ -199,19 +199,16 @@ if config_env() in [:prod, :local] do
   # A release has no mix task to migrate with, and the volume only exists here.
   config :dojo, migrate_on_boot: true
 
-  config :dojo, Dojo.Keep.Repo,
+  keep_opts = [
     database: keep_path,
     priv: "priv/keep",
-    pool_size: 1,
     journal_mode: :wal,
     busy_timeout: 5_000
+  ]
 
-  config :dojo, Dojo.Keep.Repo.Reader,
-    database: keep_path,
-    priv: "priv/keep",
-    pool_size: 10,
-    journal_mode: :wal,
-    busy_timeout: 5_000
+  # Writer is one connection; Reader is the WAL read pool (id:kb-10).
+  config :dojo, Dojo.Keep.Repo, keep_opts ++ [pool_size: 1]
+  config :dojo, Dojo.Keep.Repo.Reader, keep_opts ++ [pool_size: 10]
 end
 
 if config_env() == :prod do

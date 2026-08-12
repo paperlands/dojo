@@ -1,9 +1,8 @@
 // seeOuterShell envelope — one shape, two producers (server + client).
 //
 // Server dual: OuterShell.payload/2 (lib/dojo_web/live/layout/outer_shell.ex).
-// Turtle fields + shell overlay { addr, origin_name, view, stream }. Keep
-// OUTER_SHELL_KEYS in lockstep with that list; sparse objects (key absence)
-// are not the contract — nils are.
+// Turtle fields + shell overlay { addr, origin_name, view, stream }.
+// OUTER_SHELL_KEYS stays in lockstep; sparse objects are not the contract — nils are.
 
 /** Full envelope keys — present even when the value is null. */
 export const OUTER_SHELL_KEYS = [

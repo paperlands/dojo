@@ -1,23 +1,15 @@
-// The keep cell — one door, one breath (id:gw-t-dom-registry, id:cmp-query-cell).
-//
-// The coreshell opens the durability door because it owns the hatch that mints
-// (id:kb-7). Every other reader — the river first — asks HERE rather than
-// opening a second journal: two doors are two workers over one database, and
-// the second one's genesis race is exactly what the mint's transaction fence
-// exists to prevent (id:kb-3-owner).
-//
-// LAND CARRIES NOTHING. A keep entered the log; ask again. The id is not in
-// the signal because the river derives the new seat by re-folding — a payload
-// here would be a second, staler truth beside the fold (id:kc-p-fold).
+// Keep cell — page door + answered ask (id:kb-3-owner, id:kc-p-join).
+// One door per page; the river never opens a second journal worker.
+// touched: empty fold breath. askKeep: valued edge, Promise answer.
 
 import { createCell } from "../kernel/cell.js"
 import { createObservable } from "../kernel/observable.js"
 
 const doorCell = createCell()
-const landing = createObservable()
-const asking = createObservable()
+const keeperCell = createCell()
+const folding = createObservable()
 
-/** Seat the door for this page's lifetime. Returns its unregister. */
+/** Seat the door for this page. Returns unregister. */
 export function registerDoor(door) {
     return doorCell.register(door)
 }
@@ -26,35 +18,46 @@ export function getDoor() {
     return doorCell.get()
 }
 
-/** {get, watch} — the shape attach() claims (kernel/attach.js). */
+/** {get, watch} — attach() shape (kernel/attach.js). */
 export const doorSeat = {
     get: getDoor,
     watch: (fn) => doorCell.watch(fn),
 }
 
-/** A keep landed. No payload, ever — the signal says "ask again". */
-export function landed() {
-    landing.notify()
+/** Journal moved; river re-folds. */
+export function touched() {
+    folding.notify()
 }
 
-export function watchLanded(fn) {
-    return landing.watch(fn)
+export function watchTouched(fn) {
+    return folding.watch(fn)
+}
+
+/** Seat the machine that joins ask → mint. */
+export function registerKeeper(keeper) {
+    return keeperCell.register(keeper)
 }
 
 /**
- * Ask for this moment to be kept. The ask IS one value (kb-vet4 33):
- * `{ title, prev? }` — prev only when forking from a draft parent.
- * Not a boolean beside a title beside a side-channel prev.
- *
+ * Ask once: `{ title, prev? }`. Answered with id or null (never hangs).
  * @param {string} title
- * @param {{ prev?: string | null }} [opts] - parent keep id when committing a draft fork
+ * @param {{ prev?: string | null }} [opts]
+ * @returns {Promise<string | null>}
  */
-export function askKeep(title, { prev = null } = {}) {
+export async function askKeep(title, { prev = null } = {}) {
+    const keeper = keeperCell.get()
+    if (!keeper) return null
     const ask = { title }
     if (typeof prev === "string" && prev) ask.prev = prev
-    asking.notify(ask)
-}
-
-export function watchAsk(fn) {
-    return asking.watch(fn)
+    try {
+        return (await keeper(ask)) ?? null
+    } catch (e) {
+        // Drop is a fact, never an exception (id:kc-c-wire).
+        try {
+            console.warn("[keep] askKeep: keeper threw —", e?.message ?? e)
+        } catch {
+            /* nowhere to write */
+        }
+        return null
+    }
 }

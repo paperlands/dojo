@@ -164,12 +164,12 @@ describe("entry: what it is not", () => {
     })
 })
 
-// ── THE PROJECTION FLOOR — one law, both sides of the wire ────────────
+// ── THE PROJECTION FLOOR — one table, both sides of the wire ──────────
 //
-// The fixture is the law's ONE artifact: this suite and Dojo.Keep.ProjectTest
-// read the same file, so the two floors cannot drift apart in silence. They
-// did once — client finite, server non-negative integer — and a client could
-// mint what the clan refuses forever (id:kb-5-floor, id:kb-vet5 42).
+// floor.json is the law; keep_floor.json is the cases. This suite and
+// Dojo.Keep.ProjectTest walk the same cases against interpreters of the
+// same table — floor divergence is impossible by construction
+// (id:kb-5-floor, id:kb-vet5 42).
 
 describe("entry: the projection floor", () => {
     const cases = JSON.parse(
@@ -178,6 +178,31 @@ describe("entry: the projection floor", () => {
             "utf8",
         ),
     )
+    const floor = JSON.parse(
+        readFileSync(
+            new URL("../../../assets/js/keep/floor.json", import.meta.url),
+            "utf8",
+        ),
+    )
+
+    test("the table is field/type rows — the law, not a second predicate", () => {
+        assert.deepEqual(
+            floor.map((r) => r.field),
+            ["root", "kind", "target", "ts.t", "ts.n", "v"],
+        )
+        for (const row of floor) {
+            assert.equal(typeof row.type, "string")
+            assert.ok(row.type.length > 0)
+        }
+        // unshaped is driven by the table, not hand-coded field clauses.
+        const src = readFileSync(
+            new URL("../../../assets/js/keep/entry.js", import.meta.url),
+            "utf8",
+        )
+        assert.match(src, /floor\.json/)
+        assert.doesNotMatch(src, /typeof value\.root/)
+        assert.doesNotMatch(src, /typeof value\.kind/)
+    })
 
     for (const c of cases) {
         test(c.note, () => {
