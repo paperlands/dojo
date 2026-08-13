@@ -22,13 +22,14 @@ keep_opts = [
   busy_timeout: 5_000
 ]
 
-config :dojo, Dojo.Keep.Repo,
-  keep_opts ++
-    [
-      pool_size: 1,
-      stacktrace: true,
-      show_sensitive_data_on_connection_error: true
-    ]
+config :dojo,
+       Dojo.Keep.Repo,
+       keep_opts ++
+         [
+           pool_size: 1,
+           stacktrace: true,
+           show_sensitive_data_on_connection_error: true
+         ]
 
 config :dojo, Dojo.Keep.Repo.Reader, keep_opts ++ [pool_size: 10]
 

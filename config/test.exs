@@ -33,8 +33,7 @@ keep_opts = [
 ]
 
 config :dojo, Dojo.Keep.Repo, keep_opts ++ [pool_size: 1]
-config :dojo, Dojo.Keep.Repo.Reader,
-  keep_opts ++ [pool_size: System.schedulers_online() * 2]
+config :dojo, Dojo.Keep.Repo.Reader, keep_opts ++ [pool_size: System.schedulers_online() * 2]
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

@@ -36,8 +36,17 @@ defmodule DojoWeb.Router do
   scope "/", DojoWeb do
     pipe_through :api
 
-    # The fork word's read door (id:la-fork-pull).
+    # The read ladder: a room, a river, a moment, a picture. All open — privacy
+    # is residence, and the room holds only what was already shipped. The binds
+    # defend authorship on the way IN (id:ka-rule).
+    get "/keeps", KeepController, :latest
+    # One river, cursored (id:ka-door-shape). Revalidates — a work is a
+    # continuant and its head moves.
+    get "/keeps/:ref/history", KeepController, :history
+    # One moment, for the fork word (id:la-fork-pull).
     get "/keeps/:ref", KeepController, :pull
+    # The picture (id:kb-13). Immutable — the id names an occurrent.
+    get "/keeps/:id/image", KeepController, :image
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

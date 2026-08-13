@@ -329,9 +329,7 @@
                 aria-label="close command deck"
                 phx-click={
                   JS.toggle_class("deck-open", to: "#deck-state")
-                  |> JS.toggle_attribute(
-                    {"title", "close command deck", "open command deck"}
-                  )
+                  |> JS.toggle_attribute({"title", "close command deck", "open command deck"})
                   |> JS.toggle_attribute(
                     {"aria-label", "close command deck", "open command deck"}
                   )
