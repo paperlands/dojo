@@ -214,11 +214,11 @@ mismatch is anti-divergence ([[file:specs/weave/keep-build.org][keep-build]] =kb
 :KEYWORDS: keep receive share refuse bind TOFU stamp insert on_conflict root author clan wire
 :PATH: lib/dojo/keep.ex
 :END:
-=receive(payload, clan:, author_id:)= → =%{shared, refused}=. Project is not a
-judgement; bind is the only decision. Permanent refusals are stamped so
-announce terminates. Reply is the row's fact, never the attempt's stamp
-([[file:specs/weave/keep-build.org][keep-build]] =kb-12=). LiveView door:
-=shell_live= event ="keep"=.
+=receive(payload, clan:, author_id:)= → one fact (shared or refused) or =nil=
+silence. Project is not a judgement; bind is the only decision. Permanent
+refusals are stamped so announce terminates. Reply is the row's fact, never
+the attempt's stamp ([[file:specs/weave/keep-build.org][keep-build]] =kb-12=).
+LiveView door: =shell_live= event ="keep"=.
 
 ** keep referents — what a keep points at
 :PROPERTIES:
@@ -236,17 +236,61 @@ image from =keep/wire.js= after the share reply; LiveView door: =shell_live=
 event ="keep:image"= ([[file:specs/weave/keep-build.org][keep-build]]
 =kb-vet5-referent= · =kb-12a=).
 
+** keep by-target — one index, three doors
+:PROPERTIES:
+:ID: nav-keep-by-target
+:KEYWORDS: keep target index keeps_head_idx head_of pull history backlinks range EXPLAIN QUERY PLAN work river capability
+:PATH: priv/keep/migrations/20260812000000_create_keeps_head_idx.exs
+:END:
+=target= is not "the work" — it is *what a keep is about*, so one index
+=keeps_head_idx (target, ts_t DESC, ts_n DESC)= serves three doors: =head_of=
+(=lib/dojo/keep.ex=, the =?fork== pull), a work's history range, and by-target
+backlinks when the walk kind is born. A visitor's capability is a =work_id=, so
+the door reads by =target= and never by =root= — by-root would over-answer.
+Plan asserted, not timed (=test/dojo/keep/repo_test.exs=)
+([[file:specs/weave/keep-access.org][keep-access]] =ka-door-shape= ·
+=ka-capability=).
+
+** keep works bind — a river belongs to one hand
+:PROPERTIES:
+:ID: nav-keep-works
+:KEYWORDS: keep works bind target work_id TOFU hijack refuse why work head_of single-hand continuant backfill rowid kinds.json subquery
+:PATH: lib/dojo/keep.ex
+:END:
+=bind_work/1= — TOFU for the second continuant (id:ka-works-bind). Refuses
+=:work=, stamped and permanent, so =announce= terminates. Both binds live
+*inside* =Repo.transact= — =roots= and =works= are two more stores holding one
+fact. It reads =kind= against =keep/kinds.json= (what a target *names*; the
+=kinds/= directory is the other interpreter) and **fails open** on kinds it has
+not heard of — a node is owned by nobody. =head_of= fences with a *scalar
+subquery, never a join*: a join trades =keeps_head_idx= for
+=keeps_history_idx=. The migration backfills by *=rowid=* — arrival order, not
+=ts_t=, which is the wire the attacker writes. Signatures do not close this
+([[file:specs/weave/keep-hand.org][keep-hand]] ·
+[[file:specs/weave/keep-access.org][keep-access]] =ka-hijack= · =ka-vet=).
+
+** keep fold passes — derive once per fold
+:PROPERTIES:
+:ID: nav-keep-passes
+:KEYWORDS: keep fold hash passes namesOf sharedIds lineIds memo river paint frame mirrorOf columnsOf performance
+:PATH: assets/js/keep/work.js
+:END:
+A river paint hashed its page **6.4 times**. =namesOf= is the single hashing
+point; folds take =ids= with a deriving default. =river/fold.js= names the
+page once — 27.7 → 6.5 ms at 500 seats
+([[file:specs/weave/keep-access.org][keep-access]] =ka-passes=).
+
 ** keep floor — one law, both sides of the wire
 :PROPERTIES:
 :ID: nav-keep-floor
-:KEYWORDS: keep floor unshaped shaped projection durable invisible fixture keep_floor.json ts root kind target v
-:PATH: assets/js/keep/entry.js
+:KEYWORDS: keep floor unshaped shaped projection durable invisible fixture keep_floor.json floor.json ts root kind target v
+:PATH: assets/js/keep/floor.json
 :END:
-=entry.unshaped(value)= → the first field that will never project, else null.
-=Dojo.Keep.shaped?/1= is its mirror; =test/fixtures/keep_floor.json= is read by
-*both* suites so the two cannot drift. Below the floor a keep is durable and
-invisible here, or shared-and-refused there
-([[file:specs/weave/keep-build.org][keep-build]] =kb-5-floor= · =kb-vet5=).
+=floor.json= is the law — a table of ={field, type}= rows. =entry.unshaped=
+and =Dojo.Keep.shaped?/1= are the same interpreter of that table (not two
+predicates). =test/fixtures/keep_floor.json= is the *cases* both suites walk.
+Below the floor a keep is durable and invisible here, or shared-and-refused
+there ([[file:specs/weave/keep-build.org][keep-build]] =kb-5-floor= · =kb-vet5=).
 
 ** keep verbs — one list both sides of the door
 :PROPERTIES:
@@ -305,21 +349,24 @@ derived at the reader; =mirrorOf= picks the nearest sibling by meet;
 *that keying is why a swap holds the trunk still*. Pure, synchronous, never
 written ([[file:specs/weave/keep-river.org][keep-river]] =kr-fold= · =kr-mirror=).
 
-** keep cell — one door, one land breath
+** keep cell — one door, one empty fold breath
 :PROPERTIES:
 :ID: nav-keep-cell
-:KEYWORDS: keep cell door registerDoor getDoor doorSeat landed watchLanded askKeep watchAsk signal breath journal single
+:KEYWORDS: keep cell door registerDoor getDoor doorSeat touched watchTouched askKeep watchAsk signal breath journal single empty valued fold
 :PATH: assets/js/keep/cell.js
 :END:
 The coreshell opens the journal and seats it here; every other reader asks
-rather than opening a second worker over one database. =landed()= carries
-nothing — the river re-folds and derives the new seat itself
-([[file:specs/weave/keep-build.org][keep-build]] =kb-3-owner=).
+rather than opening a second worker over one database. One empty fold breath
+([[file:specs/weave/keep-build.org][keep-build]] =kb-3-owner= · =kc-p-fold=):
+=touched()= means the journal moved in a way the fold must see (mint entered
+the log, share bit flipped). Rest/ignite is river policy from its seal — not a
+second pubsub atom. =askKeep= is the valued edge (=title= / =prev?=). Share edge
+is fold-derived (=fold.settling= / =sharedIds=) — not a wire callback.
 
 ** river surface — meridian, mirror, swap
 :PROPERTIES:
 :ID: nav-river-surface
-:KEYWORDS: river surface shell data-target meridian wheel mirror water swap seat ring mark shade sun mood rig ignite land paint atoms light scroll-snap detent present unkept drift title message keep-gesture setValue ready is-ready onTap commitKeep
+:KEYWORDS: river surface shell data-target meridian wheel mirror water swap seat ring mark shade sun mood rig ignite land paint atoms light scroll-snap detent present unkept drift title message keep-gesture setValue ready is-ready onTap commitKeep fold mode chrome applyMode refold reseat readPage reindex restKey perWork canon
 :PATH: assets/js/hooks/shell/river.js
 :END:
 Fourth Shell surface (=data-target="river"=), client-lazy like the weave.
@@ -328,26 +375,48 @@ puts that keep's source in the editor, so the canvas redraws it — walking the
 river walks the work. East of every keep stands the PRESENT (the unkept
 buffer); east of that, a local DRAFT when the child edits a past keep —
 never clobbers =unkept=, never a journal row. Two local memories, per work:
-=@paperlands.river.heads= (unkept present — =river/head-memory.js=) and
-=@paperlands.river.drafts= (fork draft — =river/draft-memory.js=). Standing on
-a keep *projects* into the editor (=setValue(…, {project:true})=) so
-write-through cannot kill the head; refresh heals via =pinHead=. Commit lands
-a fork (=prev= = from); × / Escape drops the draft.
+=@paperlands.river.heads= / =@paperlands.river.drafts= (one module
+=river/memory.js=, one =perWork(namespace, canon)= bag twice — =canon= is the
+whole law, same way in as out; an unreadable row is refused, only =null=
+clears). Standing on a keep
+*projects* into the editor (=setValue(…, {project:true})=) so write-through
+cannot kill the head; refresh heals via =pinHead=. Commit lands a fork
+(=prev= = from); × / Escape drops the draft. One law does all three seats:
+=hold(text, project)= — the editor must hold this text IN this mode, so
+leaving a projection is as much a change as the text.
 Writing a word in the caption *is* the keep gesture. A non-empty word lights
 the noon open circle (=is-ready=); re-tap that seat (or Enter) keeps — draft
-is two beats (seat, then send). =unkept= makes the present a place: leaving
-it stashes the buffer, returning restores it.
-Organs: =river/light.js= (pure mood, shade, and =nearness= — distance in
-SEATS, the one number every meridian crossfade rides), =river/atoms.js= (the
-CAST — a seat wears both a picture and a sun; away from the meridian the
-picture, at it the sun, because that keep is already on the canvas),
-=river/paint.js= (keyed reconcile — the rail never wipes), =river/wheel.js=
-(pinned sun, sliding river, detent, click-to-centre + one-seat wheel step; a
-rest asked for while hidden is *owed* until the strip has width). A keep
-landing flares the SUN — no streak, no per-seat radiate: one light, one
-announcement. Nothing driven by =--near= may carry a CSS transition. DOM + paint from
-=DojoWeb.RiverComponent=; its colocated CSS sits in =@layer components= so
-call-site utilities still win.
+is two beats (seat, then send). One predicate =ready()= answers the light,
+the tap and the Enter, so they cannot disagree. =unkept= makes the present a
+place: leaving it stashes the buffer, returning restores it.
+The hook is process, not god: =refold= is five named beats — =reseat= (work
+switch) → =readPage= (door) → =reindex= (=ingest/keeps= + pure =fold=) →
+=show= (=paint= + sky + ignite) → =restKey= (where the wheel rests) →
+=paintChrome= / =applyMode=. Rest is a table, not a ladder: =restKey(rest,
+folded)= in =river/fold.js= turns =HEAD= | a column key | =null= into the one
+column to seat, or =null= to hold still — a rest for a column that is not
+standing is no rest.
+Independent truths at the fold edge: =keeps= (=Map<id,{bytes,source?,face?}>=
+— one index; openFace/stand fill fields), =view= (last fold geometry),
+=seal= (={title,at,head}|=null — keep→land; =head= freezes pre-mint
+=newestId=; land is fold-derived via =landed(was,now)=, never seal alone).
+Timers are guards, not truths.
+Mode is one structure (={seat, shared, ready, sealing}=); ready is derived
+inside =modeOf=. Present and draft are *two places* in the fold and two
+process laws (head vs fork); chrome projects *one* open seat: class
+=at-open=, attribute =data-seat= for draft-only surfaces (drop, parent
+word). One open atom (=open(which)=); =is-ready= / =is-keeping= light
+=.river-open= without dual data-key selectors. Organs: =river/keeps.js=,
+=river/fold.js=, =river/mode.js=, =river/chrome.js=, =river/memory.js=
+(work heads+drafts), =river/light.js=, =river/atoms.js=, =river/paint.js=,
+=river/wheel.js=, =utils/clipboard.js=, =kernel/motion.js=
+([[id:nav-kernel-motion]] — landing + flare). The surface shape this obeys,
+and the two laws it shares with the nerve: [[id:surface-shape]].
+Style:
+=assets/css/river.css= (@layer components; HEEx via =DojoWeb.RiverComponent=).
+NAMES: =river-*= belongs to the atoms (=river-open= is the open seat's
+dotted circle); a surface's own state wears =is-*=. The share flag is
+=#river-state.is-open=, the same shape as =#outer-open.is-open=.
 
 ** work_id on the buffer — the second continuant
 :PROPERTIES:
@@ -362,13 +431,19 @@ rejoins. =term.currentWorkId()= is the seam to the mint
 ** link actions — the address bar as a fact store
 :PROPERTIES:
 :ID: nav-link-actions
-:KEYWORDS: link url query param action share fork deep-link read carry address searchparams pull head cross-machine
+:KEYWORDS: link url query param action share fork deep-link read carry address mint vocabulary WORDS owner searchparams pull head cross-machine forkKept pinCommit headAtOpen coldPull landHand foreign
 :PATH: assets/js/link.js
 :END:
 =?action=share= · =?fork=<ref>= · =?weave== · =?perf= — surfaces read their
 word at mount and enact idempotently; =carry= mirrors moved state back. One
 engine (=kernel/link.js=); =forkRef= is the fork word's ladder
 ([[file:specs/weave/link-actions.org][link-actions]] =la-law= · =la-fork=).
+=WORDS= is the vocabulary table — word → owner; =SERVER= words are the only
+ones =link.address({fork})= mints into a shareable URL (=la-mint=), and
+=test/js/link/vocabulary_test.mjs= is the fence that keeps surfaces off
+=location=.
+Hex64 face is named cases (=pinCommit= / =headAtOpen= / =coldPull=), then
+hand (=landForeign= / =landMine=) — no mutable walk through nested faces.
 
 * CLUSTERING — discovery, transport, roaming
 :PROPERTIES:
@@ -996,13 +1071,15 @@ origin does not matter; timing does. Pure — =test/js/shell/lifecycle_test.mjs=
 ** outer-shell payload — one envelope, two producers
 :PROPERTIES:
 :ID: nav-outer-shell-payload
-:KEYWORDS: seeOuterShell outerShellPayload OUTER_SHELL_KEYS dispatchPhx OuterShell.payload path attend buffer_id dual shape
+:KEYWORDS: seeOuterShell outerShellPayload OUTER_SHELL_KEYS dispatchPhx OuterShell.payload path attend buffer_id keep dual shape presence
 :PATH: assets/js/hooks/shell/outer-shell-payload.js
 :END:
 Client builder + =dispatchPhx=; server dual =OuterShell.payload/2=
-(=live/layout/outer_shell.ex=). Twelve keys always present (nils, not
-sparse). Weave local open and friend hatch speak the same shape —
-=test/js/shell/outer_shell_payload_test.mjs=, =outershell_test.exs=.
+(=live/layout/outer_shell.ex=). Thirteen keys always present (nils, not
+sparse); =keep= is the friend's =work_id= from presence (continuant —
+=Keep.pull/1= resolves head by ts). Weave local open and friend hatch speak
+the same shape — =test/js/shell/outer_shell_payload_test.mjs=,
+=outershell_test.exs=.
 
 ** shell core — CM6 boot, execCommand seam, listener kit
 :PROPERTIES:
@@ -1083,6 +1160,45 @@ the previous release runs FIRST, so a claim never stacks and a departing
 occupant never leaves a live one behind. Was hand-rolled three times in three
 shapes (a claim-once guard in =outer.js=, a release-then-relend in =inner.js=,
 a bare thunk in =weave.js=). =nerveSeat= (=hooks/nerve.js=) is the named view.
+
+** kernel motion — an animation the browser may never run
+:PROPERTIES:
+:ID: nav-kernel-motion
+:KEYWORDS: kernel motion pulse whenDone retrigger reflow offsetWidth animationend fallback swallowed restart one-shot landing exit dissolve helios-lit is-landing
+:PATH: assets/js/kernel/motion.js
+:END:
+=pulse(el, cls)= — remove → REFLOW READ → add; the read is the function, since
+remove alone leaves a class the browser never saw leave. =whenDone(el,
+{animation, ms}, done)= — done runs at =animationend= or after =ms=, whichever
+comes first, exactly once; returns the same finish so an owner tearing down
+early can land it now. A name filter must never ride ={once:true}=: the first
+*other* animation would spend the listener. display:none, a background tab and
+reduced-motion all mean the event never arrives, so anything waiting on an
+animation is stuck without the fallback. BOTH WERE WRITTEN TWICE before they
+had a name (=nerve/slot.js::retrigger=, =river= =lightLand=) — the empirical
+case for [[id:surface-shape]]. Fence: =test/js/kernel/motion_test.mjs=.
+
+** temporal — three suppressors, and the shape they refuse
+:PROPERTIES:
+:ID: nav-temporal
+:KEYWORDS: temporal quiet pace gate debounce throttle suppressor timer clearTimeout setTimeout cancel flush alarm delay hand-rolled
+:PATH: assets/js/utils/temporal.js
+:END:
+=quiet= (fire after =ms= of silence) · =pace= (at most once per =ms=) ·
+=gate= (only when the key reads differently). All three take MANY CALLS IN and
+let FEWER OUT; pace and quiet are one machine, the dual being whether a call
+restarts the clock. =.cancel()= is what a surface hands its arena.
+Hand-rolled stream timers are the failure mode: =quiet= replaced the
+=let t; clearTimeout(t); t = setTimeout(…)= trio in the wheel's rest, the
+river's flare / seal-guard / copied word, and the tabber's long press.
+
+WHAT IT DOES NOT COVER, and this is deliberate: an ALARM whose delay is not
+knowable at construction. Three stand, each honest — =nerve/sun.js= (delay is
+=walk.nextDelayMs()=, and it re-arms ITSELF, so there is no call stream to
+suppress), =nerve/seat.js= =armFade= (delay is the channel's =fadeMs=), and
+the river's land hold (delay is what remains of =BEAT.HOLD_MIN_MS=). Giving
+=quiet= a per-call delay would re-complect the one knob it has. Waiting on an
+ANIMATION is a different law again — [[id:nav-kernel-motion]].
 
 ** the address grammar — three marks, one speller
 :PROPERTIES:
@@ -1990,3 +2106,40 @@ fixture import ≠ ownership; decides ≠ says ≠ carries ≠ inks.
 :KEYWORDS: play shell chrome-devtools execCommand silent deaths friend
 :PATH: codex/play.org
 :END:
+
+** keep latest — the fan, two clocks
+:PROPERTIES:
+:ID: nav-keep-latest
+:KEYWORDS: keep latest fan room memory clan shared_at two clocks works roots river head of root page cursor room_cursor
+:PATH: lib/dojo/keep.ex
+:END:
+=latest/2= — each continuant's head, arranged by the ROOM's clock.
+=of: :target= (default) is last keep of each river; =of: :root= is last keep
+of each journal. **The author's clock picks the head; the room's clock
+arranges the heads** (=by_author/1= · =by_room/1=). Cursored by =at.id= —
+a cap without a cursor is a wall. Returns ={rows, next}=. Seat: =GET /keeps=.
+([[file:specs/weave/keep-access.org][keep-access]] =ka-latest= · =ka-surface=).
+
+** keep history — one continuant, cursored
+:PROPERTIES:
+:ID: nav-keep-history
+:KEYWORDS: keep history river journal cursor after page work_id root target of range door
+:PATH: lib/dojo/keep.ex
+:END:
+=history/2= + =GET /keeps/:ref/history= — one handle opened. =of: :target=
+(default) is a river (work id, never a keep id); =of: :root= is a journal
+(a root owns itself). View door, not accept — no =source=. Cursor is the
+author's stamp; a cursor cannot cross a hop. Returns ={rows, next}=.
+([[file:specs/weave/keep-access.org][keep-access]] =ka-door-shape= · =ka-surface= · =ka-cursor=).
+
+** prodkeep — versioned prod backups
+:PROPERTIES:
+:ID: nav-prodkeep
+:KEYWORDS: prod backup fly sqlite keep.db pull versioned snapshot restore census clan submissions disaster recovery ops runbook
+:PATH: scripts/prodkeep.sh
+:END:
+=scripts/prodkeep.sh= SFTP-pulls =/data/keep.db= off Fly app =thedojo= into a
+timestamped, never-overwritten backup under =backups/keep/=, checkpointing the
+WAL first so one =cp= is the whole store ([[file:specs/weave/keep-access.org][keep-access]] =kb-10=). =--census= /
+=--clan= / =--list= read local backups with no network. Runbook: read a clan,
+extract images, restore — [[file:scripts/prodkeep.org][scripts/prodkeep.org]] =ops-prodkeep=.
