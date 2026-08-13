@@ -63,14 +63,13 @@ describe("genesisBytes: the entry whose name is the root", () => {
         assert.ok(bytes.startsWith("{"))
     })
 
-    test("authors a genesis keep: five frozen fields, free body is the nonce", () => {
+    test("authors the journal's name — kind, time, and the nonce", () => {
         const v = read(genesisBytes(fill(0x22), TS))
         assert.equal(v.v, V)
         assert.equal(v.kind, "genesis")
-        // root: null is the base case — the first entry cannot name a log
-        // that does not yet exist (id:kb-3).
-        assert.equal(v.root, null)
-        assert.equal(v.target, null)
+        // No journal, no work: this entry IS the journal (id:kb-5-genesis-place).
+        assert.equal(v.root, undefined)
+        assert.equal(v.target, undefined)
         assert.equal(typeof v.ts.t, "number")
         assert.equal(typeof v.ts.n, "number")
         assert.equal(v.nonce, "22".repeat(32))
@@ -101,7 +100,7 @@ describe("genesisBytes: the entry whose name is the root", () => {
         assert.equal(a.sessionId, undefined)
         assert.deepEqual(
             Object.keys(a).sort(),
-            ["kind", "nonce", "root", "target", "ts", "v"],
+            ["kind", "nonce", "ts", "v"],
         )
     })
 
@@ -151,8 +150,6 @@ describe("genesisBytes: the entry whose name is the root", () => {
         const root = name(bytes)
         // The surface may hold a display name; the entry does not.
         const again = write("genesis", { nonce: read(bytes).nonce }, {
-            root: null,
-            target: null,
             ts: read(bytes).ts,
         })
         assert.equal(name(again), root)
@@ -200,9 +197,9 @@ describe("genesis: pure law — what it is not", () => {
         const bytes = write(
             "genesis",
             { nonce: "aa".repeat(32), root: "forged".padEnd(64, "0") },
-            { root: null, target: null, ts: { t: 1, n: 0 } },
+            { ts: { t: 1, n: 0 } },
         )
-        assert.equal(read(bytes).root, null)
+        assert.equal(read(bytes).root, undefined)
         assert.equal(read(bytes).nonce, "aa".repeat(32))
     })
 })

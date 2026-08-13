@@ -1,8 +1,0 @@
-[
-  {"field": "root", "type": "string"},
-  {"field": "kind", "type": "string"},
-  {"field": "target", "type": "string|null"},
-  {"field": "ts.t", "type": "nonneg_int"},
-  {"field": "ts.n", "type": "nonneg_int"},
-  {"field": "v", "type": "int>=1"}
-]

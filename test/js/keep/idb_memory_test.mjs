@@ -118,5 +118,5 @@ describe("idb_memory: auto-commit is real IDB lifetime", () => {
     })
 })
 
-// The floor moved to entry.js — one law, both sides of the wire (id:kb-vet5 42).
+// The skeleton lives in entry.js — one law, both sides of the wire (id:kb-vet5 42).
 // It is asserted against the Elixir mirror in entry_test.mjs.

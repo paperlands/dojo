@@ -57,7 +57,7 @@ Subagents do **not** inherit this file. Spawn project work as the `kohai` agent
 
 ## The Constellation
 
-- `navigation.org` — code lookup hotpaths (`:KEYWORDS:` + `:PATH:`); when you add code worth finding, add its hotpath in the same change; `scripts/nav_verify.sh` / `(dojo/nav-verify)` keep it vital
+- `navigation.org` — code lookup hotpaths (`:KEYWORDS:` + `:PATH:`); when you add code worth finding, add its hotpath in the same change; `scripts/verify/nav_verify.sh` / `(dojo/nav-verify)` keep it vital
 - `ARCHITECTURE_NEUE.org` — what Dojo is, how we think, module anatomy (`:MODULE:`-anchored)
 - `specs/` — Kumite reasoning; its own git repo, enter via `specs/ATLAS.org` (map + live census). Domains `turtle/` `compiler/` `weave/` `papertiger/`; `decisions/` (check before designing), `tensions/` (active forces), `_meta/` (framework + lenses)
 - `codex/` — PaperLang pattern language; `codex/play.org` is the live-shell play protocol

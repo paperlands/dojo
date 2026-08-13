@@ -1,17 +1,18 @@
-// The log names itself (id:kc-law 1, id:kb-3).
+// The journal names itself (id:kc-law 1, id:kb-3).
 //
 // We roll one die and write one message; that message's fingerprint is the
-// name of the whole journal (id:kc-feynman). The root is name(bytes) of the
-// genesis entry — not hash(a bare nonce). Pattern 1: a continuant is minted;
-// an occurrent is derived. The author is the first continuant; work is the
+// name of the whole journal (id:kc-feynman). The root is name(bytes) of this
+// entry — not hash(a bare nonce). Pattern 1: a continuant is minted; an
+// occurrent is derived. The author is the first continuant; work is the
 // second (id:kb-work) and reuses nonce() for its draw.
 //
-// root: null is the base case, not an exception. The first entry cannot name a
-// log that does not yet exist. Every entry after names this one.
+// This is the journal's name, kept in `self`. It is not a log row: identity
+// is not a moment the author kept, and the nonce never ships (id:kb-5-genesis-place).
+// Every log keep names this one as `root`.
 //
 // This file is pure law. The BINDING — once, ever; find-or-create; two tabs
 // one genesis — lives in the journal as one readwrite transaction over
-// [self, log] (id:kb-3-owner, id:kb-vet2-root). A random body makes two tabs a
+// `self` (id:kb-3-owner, id:kb-vet2-root). A random body makes two tabs a
 // fork, not a dedup; the stamp's "identical body ⇒ same page" premise does not
 // transfer here (id:kc-c-stamp, id:kb-vet3).
 
@@ -59,5 +60,5 @@ export function nonce(random) {
  * @returns {string} the entry — the durable message
  */
 export function genesisBytes(random, ts) {
-    return write("genesis", { nonce: nonce(random) }, { root: null, target: null, ts })
+    return write("genesis", { nonce: nonce(random) }, { ts })
 }

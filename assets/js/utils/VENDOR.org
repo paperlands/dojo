@@ -18,7 +18,7 @@ silent mis-merge quietly reinstates bugs that were measured and fixed.
 
 We stay *zero-npm at runtime* — the app and CI never see a =node_modules=. For
 the curled files below there is no lockfile at all, so provenance is not carried
-by one; it is carried here. =scripts/vendor_verify.sh= re-hashes every file below
+by one; it is carried here. =scripts/verify/vendor_verify.sh= re-hashes every file below
 and fails loudly on drift. (CM6 is the one build-time exception — [[id:vendor-cm6]].)
 
 The live example: OrbitControls once carried three dojo inventions inside it,
@@ -44,7 +44,7 @@ it (=WebGLRenderer=, =ShaderLib=, =ShaderMaterial=, =UniformsLib=,
 
 *Version: =185=.* Tag =r185= (2026-07-01), the current release. Upgraded from
 =179dev= <2026-08-04> as a matched set (core, module, orbital, line addons).
-=scripts/vendor_verify.sh= greps =REVISION= out of =three.core.min.js= and fails
+=scripts/verify/vendor_verify.sh= greps =REVISION= out of =three.core.min.js= and fails
 if this claim disagrees — a recorded fact with no check is a comment. Three is
 bundled, so there is no URL token to bust; only this record to keep honest.
 
@@ -105,9 +105,9 @@ header, no body edits.
 1. Replace the files as a *matched set* — core, module, text, orbital, *and*
    =three-addons/lines/*= are one build; mixing revisions is how you get silent
    shader/API drift. For the fat-line addons:
-   =./scripts/vendor-three-lines.sh rNNN= (curl + the one import rewrite).
+   =./scripts/vendor/vendor-three-lines.sh rNNN= (curl + the one import rewrite).
 2. Set the =Version: =…== claim above to the new =REVISION=, then re-run
-   =scripts/vendor_verify.sh --record= to restamp the hashes here. The script
+   =scripts/verify/vendor_verify.sh --record= to restamp the hashes here. The script
    checks the claim against the file; =--record= only restamps hashes.
 3. =node --test test/js/= — [[file:../../test/js/seams/orbit_seam_test.mjs][orbit_seam_test.mjs]] is the seam tripwire;
    [[file:../../test/js/seams/three_entry_test.mjs][three_entry_test.mjs]] is the surface tripwire;
@@ -124,11 +124,11 @@ header, no body edits.
 :KEYWORDS: codemirror cm6 vendor bundle esbuild manifest sha256 version drift reproducible zero-npm
 :END:
 
-CM6 is the one vendored thing we *build*. =scripts/package.json= pins the
-=@codemirror/*= packages, =scripts/cm6-entry.js= names the exact API surface we
-are willing to depend on, and =scripts/vendor-cm6.mjs= esbuilds those into
+CM6 is the one vendored thing we *build*. =scripts/vendor/package.json= pins the
+=@codemirror/*= packages, =scripts/vendor/cm6-entry.js= names the exact API surface we
+are willing to depend on, and =scripts/vendor/vendor-cm6.mjs= esbuilds those into
 =priv/static/vendor/cm6.js=, which is committed. npm lives at build time only;
-the running app and CI never see =scripts/node_modules/=.
+the running app and CI never see =scripts/vendor/node_modules/=.
 
 THE ONE RULE is trivially satisfied here — *nothing is patched*. There is no
 dojo line inside =cm6.js= to protect, because the file is generated: edit it and
@@ -137,9 +137,9 @@ the next rebuild silently eats your change. The hash is what makes that loud.
 *Byte-reproducible.* Same lockfile, same command, same bytes:
 
 #+BEGIN_SRC sh
-cd scripts && ./node_modules/.bin/esbuild cm6-entry.js \
+cd scripts/vendor && ./node_modules/.bin/esbuild cm6-entry.js \
   --bundle --format=esm --minify --legal-comments=none --outfile=/tmp/cm6-check.js
-cmp /tmp/cm6-check.js ../priv/static/vendor/cm6.js
+cmp /tmp/cm6-check.js ../../priv/static/vendor/cm6.js
 #+END_SRC
 
 That property is why provenance rides in a *sidecar*,
@@ -152,7 +152,7 @@ That property is why provenance rides in a *sidecar*,
 | =token=        | =version=-=sha256[0:8]=, the =?v== the consumer must use | a stale token, and a stale cache      |
 | =sha256=       | the artifact                                            | a hand-edit of =cm6.js=               |
 | =entryHash=    | =cm6-entry.js=, the surface the bundle was cut to       | a widened API with no rebuild         |
-| =lockfileHash= | =scripts/package-lock.json=                             | deps moved, bundle never rebuilt      |
+| =lockfileHash= | =scripts/vendor/package-lock.json=                             | deps moved, bundle never rebuilt      |
 
 The version is read from =node_modules/@codemirror/view/package.json=, never
 from the range in =package.json= (once =^6.36.3=). The range is a floor, not a
@@ -185,10 +185,10 @@ test that imports the bundle is the one that breaks.
 :ID: vendor-cm6-upgrade
 :END:
 
-1. Bump the range in =scripts/package.json=, then =cd scripts && npm install=.
+1. Bump the range in =scripts/vendor/package.json=, then =cd scripts/vendor && npm install=.
 2. =node vendor-cm6.mjs= — rewrites the bundle *and* the manifest together.
    Never write either by hand; both are derived.
-3. =./scripts/vendor_verify.sh=. It has no =--record= for CM6 on purpose: the
+3. =./scripts/verify/vendor_verify.sh=. It has no =--record= for CM6 on purpose: the
    only honest restamp is a rebuild. If the =?v== token is now stale it prints
    the file, line, and replacement — change that one line by hand.
 4. =node --test test/js/terminal/terminal_test.mjs= — the export tripwire. It imports
@@ -252,7 +252,7 @@ vendored three surface — not under dojo-owned =turtling/=.
 =three=; the whole graph is =three.module.min.js= (which imports core). So:
 
 #+BEGIN_SRC sh
-# applied by scripts/vendor-three-lines.sh
+# applied by scripts/vendor/vendor-three-lines.sh
 sed -i "s|from 'three'|from '../../three.module.min.js'|" assets/js/utils/three-addons/lines/*.js
 #+END_SRC
 

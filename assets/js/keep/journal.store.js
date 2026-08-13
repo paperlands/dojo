@@ -171,9 +171,9 @@ export function createEngine(opts = {}) {
      * id; source under name(source). ONE tx over [log, blobs, source].
      * Idempotent on id: a second put of the same name preserves shared/local.
      *
-     * Projection floor (id:kb-11-derive, client twin; id:kb-vet4 29): every
-     * index column must project — root a string, ts finite. Refuse silent loss
-     * in neither index. The genesis is not a put (id:kb-5-genesis-place).
+     * Skeleton (id:kb-11-derive, client twin): a log keep names its
+     * journal, its work, and its time. Refuse silent loss in neither index.
+     * The genesis is not a put — it lives in `self` (id:kb-5-genesis-place).
      *
      * Clan history lands as local: 1. The permanent answer is a later share,
      * never a put option — put then share (id:kb-8, keep/shared.js accept).
@@ -186,9 +186,9 @@ export function createEngine(opts = {}) {
         const id = name(bytes)
         const value = read(bytes)
 
-        // The floor covers every column the index holds — one table
-        // (floor.json) both sides interpret (id:kb-5-floor). A keep below
-        // it is durable and invisible here, or shared-and-refused there.
+        // The skeleton covers every column the index holds — one table
+        // (skeleton.json) both sides interpret (id:kb-5-skeleton). Without
+        // it a keep is durable and invisible here, or shared-and-refused there.
         const missing = unshaped(value)
         if (missing) {
             throw new TypeError(
@@ -232,9 +232,14 @@ export function createEngine(opts = {}) {
     }
 
     async function get(id) {
-        return withStore(["log"], "readonly", async (tx) => {
+        // The journal's name lives in `self`, not the log. Hold the root,
+        // hold the genesis (id:kb-3-owner, id:kb-5-genesis-place).
+        return withStore(["log", "self"], "readonly", async (tx) => {
             const row = await idbReq(tx.objectStore("log").get(id))
-            return row ? row.message : undefined
+            if (row) return row.message
+            const held = await idbReq(tx.objectStore("self").get(SELF_KEY))
+            if (held != null && name(held) === id) return held
+            return undefined
         })
     }
 
@@ -309,37 +314,22 @@ export function createEngine(opts = {}) {
     }
 
     /**
-     * Read-or-mint in ONE readwrite transaction over [self, log].
+     * Read-or-mint in ONE readwrite transaction over `self`.
      * Two tabs: the engine serialises the tx; the second reads the first's
      * mint. A random body makes two tabs a fork without this — the transaction
      * is the race fence, not idempotence (id:kb-3-owner).
      *
-     * The genesis is NOT a put, so the projection floor is not its law. It is
-     * the one row unindexed on purpose (root: null — id:kb-5-genesis-place):
-     * history never shows it and it never ships. Do not "fix" the asymmetry.
+     * The genesis is the journal's name, not a log row. History never shows
+     * it and it never ships, because it is not in the log (id:kb-5-genesis-place).
      */
     async function genesis() {
-        return withStore(["self", "log"], "readwrite", async (tx) => {
+        return withStore(["self"], "readwrite", async (tx) => {
             const self = tx.objectStore("self")
-            const log = tx.objectStore("log")
             const held = await idbReq(self.get(SELF_KEY))
             if (held != null) return held
 
             const bytes = genesisBytes(random, stampFn())
-            const id = name(bytes)
-            const value = read(bytes)
             self.put(bytes, SELF_KEY)
-            // Genesis also takes its log place in the same breath (id:kb-6).
-            // root is null on the entry — the log's first entry cannot name a
-            // log that does not yet exist. list(root) uses the *name* of this
-            // entry as root for every later keep.
-            log.put({
-                id,
-                message: bytes,
-                root: value.root ?? null,
-                ts: value.ts ?? null,
-                local: 1,
-            })
             return bytes
         })
     }

@@ -12,7 +12,7 @@
 # Two sources of truth, because there are two kinds of vendored file: files we
 # curled are hashed against VENDOR.org; the CM6 bundle we build is hashed
 # against the sidecar its own build emits.
-cd "$(dirname "$0")/.." || exit 1
+cd "$(dirname "$0")/../.." || exit 1
 
 MANIFEST="assets/js/utils/VENDOR.org"
 FILES=(
@@ -108,7 +108,7 @@ CM6_CONSUMER="assets/js/hooks/shell/core.js"
 
 if [ "$1" != "--record" ]; then
     if [ ! -f "$CM6" ] || [ ! -f "$CM6_MANIFEST" ]; then
-        echo "MISSING  $CM6 or $CM6_MANIFEST — run: cd scripts && node vendor-cm6.mjs" >&2
+        echo "MISSING  $CM6 or $CM6_MANIFEST — run: cd scripts/vendor && node vendor-cm6.mjs" >&2
         drift=1
     else
         want="$(grep -oE '"sha256"[^"]*"[0-9a-f]{64}"' "$CM6_MANIFEST" | grep -oE '[0-9a-f]{64}')"
@@ -119,20 +119,20 @@ if [ "$1" != "--record" ]; then
             echo "         on disk  $have" >&2
             echo "         this file is generated — the next rebuild eats any hand-edit." >&2
             echo "         put the change in cm6-entry.js or dojo code, then:" >&2
-            echo "         cd scripts && node vendor-cm6.mjs" >&2
+            echo "         cd scripts/vendor && node vendor-cm6.mjs" >&2
             drift=1
         fi
 
         # A matching artifact hash only says nobody edited the bundle. This says
         # the bundle was built from the lockfile that sits beside it.
         want_l="$(grep -oE '"lockfileHash"[^"]*"[0-9a-f]{64}"' "$CM6_MANIFEST" | grep -oE '[0-9a-f]{64}')"
-        have_l="$(sha256sum scripts/package-lock.json | cut -d' ' -f1)"
+        have_l="$(sha256sum scripts/vendor/package-lock.json | cut -d' ' -f1)"
         if [ "$want_l" != "$have_l" ]; then
-            echo "UNBUILT  scripts/package-lock.json changed since cm6.js was built" >&2
+            echo "UNBUILT  scripts/vendor/package-lock.json changed since cm6.js was built" >&2
             echo "         manifest $want_l" >&2
             echo "         on disk  $have_l" >&2
             echo "         rebuild so the artifact matches its deps:" >&2
-            echo "         cd scripts && npm install && node vendor-cm6.mjs" >&2
+            echo "         cd scripts/vendor && npm install && node vendor-cm6.mjs" >&2
             drift=1
         fi
 

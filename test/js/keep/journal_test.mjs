@@ -188,7 +188,7 @@ describe("journal: share is a fact beside; genesis is once", () => {
             assert.equal(name(again), root)
         }
         assert.equal(read(first).kind, "genesis")
-        assert.equal(read(first).root, null)
+        assert.equal(read(first).root, undefined)
         assert.equal(read(first).v, V)
     })
 
@@ -366,7 +366,7 @@ describe("journal: what it is not", () => {
     })
 })
 
-describe("journal: projection floor — every index column must project", () => {
+describe("journal: skeleton — every index column must project", () => {
     // Mirror of kb-11-derive on the client (finding 1; id:kb-vet4 29). Measured:
     // put with ts:null stores the row, get finds it, list/local return empty —
     // silent forever. root:null is the same wound through the other field.
@@ -379,7 +379,7 @@ describe("journal: projection floor — every index column must project", () => 
             const bytes = write("snap", { tag: "ghost" }, {
                 root,
                 target: "b".repeat(64),
-                // ts defaults to null in write()
+                // no ts — write() omits it; put refuses
             })
             await assert.rejects(
                 () => j.put(bytes),
@@ -437,7 +437,7 @@ describe("journal: projection floor — every index column must project", () => 
         }
     })
 
-    test("non-string root is refused — same floor sentence", async () => {
+    test("non-string root is refused — same skeleton sentence", async () => {
         const j = freshJournal()
         try {
             const bytes = JSON.stringify({
@@ -458,7 +458,7 @@ describe("journal: projection floor — every index column must project", () => 
         }
     })
 
-    test("a good root+ts is listed — the floor does not eat honest work", async () => {
+    test("a good root+ts is listed — the skeleton does not eat honest work", async () => {
         const j = freshJournal()
         const root = "l".repeat(64)
         try {
@@ -486,11 +486,10 @@ describe("journal: empty source is stored, not a tombstone", () => {
     })
 })
 
-describe("journal: the genesis's place in the log is a decision, not an accident", () => {
-    // Its own root is null, and null is not a valid IDB key, so the genesis
-    // sits in NEITHER index. That is right twice over — but it was true by
-    // accident, and meaning must never ride on an absence (id:kc-r-absence).
-    // These tests make the two consequences deliberate.
+describe("journal: the genesis lives in self, not the log", () => {
+    // Identity is not a moment kept. The journal's name sits in `self`.
+    // get(root) reads it there; list/local never see it, because it is not
+    // a log row (id:kb-5-genesis-place).
 
     test("the root IS the address of the genesis — get(root) returns its bytes", async () => {
         const j = freshJournal()

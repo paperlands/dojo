@@ -23,7 +23,7 @@ in code where the action is. This file does not instruct — it dispatches.
 - *Jump*: =:PATH:= is =file= or =file::symbol=. Feed the symbol to LSP
   (documentSymbol/findReferences) once you land.
 - *Vitality, not staleness*: every =:PATH:= is machine-checked by
-  =scripts/nav_verify.sh= and =(dojo/nav-verify)=. A *Stop hook* runs the
+  =scripts/verify/nav_verify.sh= and =(dojo/nav-verify)=. A *Stop hook* runs the
   check when a session tries to end: changes are what break hotpaths, and the
   session that made the change has the context to mend the map most
   succinctly — it is blocked from stopping until the entries are true again.
@@ -154,8 +154,8 @@ entry is a string; there is nothing to canonicalize
 :END:
 =nonce(random)= → hex64; =genesisBytes(random, ts)= → the entry whose =name= is
 the journal's root. Pure law — the BINDING (once, ever; find-or-create) lives
-in the journal ([[file:specs/weave/keep-build.org][keep-build]] =kb-3=).
-=root: null= is the base case. =work_id= reuses =nonce=.
+in =self= ([[file:specs/weave/keep-build.org][keep-build]] =kb-3= ·
+=kb-5-genesis-place=). Not a log row. =work_id= reuses =nonce=.
 
 ** keep upcast — the fold exists before it is needed
 :PROPERTIES:
@@ -176,7 +176,7 @@ Eight verbs; four stores (log · blobs · source · self). =put= takes bytes, no
 id, and refuses a =ts= that will never project. =local= is =1|0=; =list(root, n)=
 and =local(root, n)= both cap, newest-first by reverse cursor. Genesis is one
 readwrite tx over =[self, log]=. Worker-only; the door never imports this
-([[file:specs/weave/keep-build.org][keep-build]] =kb-5= · =kb-5-floor=).
+([[file:specs/weave/keep-build.org][keep-build]] =kb-5= · =kb-5-skeleton=).
 
 ** keep journal door — the durability door
 :PROPERTIES:
@@ -280,17 +280,18 @@ point; folds take =ids= with a deriving default. =river/fold.js= names the
 page once — 27.7 → 6.5 ms at 500 seats
 ([[file:specs/weave/keep-access.org][keep-access]] =ka-passes=).
 
-** keep floor — one law, both sides of the wire
+** keep skeleton — one law, both sides of the wire
 :PROPERTIES:
-:ID: nav-keep-floor
-:KEYWORDS: keep floor unshaped shaped projection durable invisible fixture keep_floor.json floor.json ts root kind target v
-:PATH: assets/js/keep/floor.json
+:ID: nav-keep-skeleton
+:KEYWORDS: keep skeleton unshaped shaped projection durable invisible fixture keep_skeleton.json skeleton.json ts root kind target v
+:PATH: priv/keep/skeleton.json
 :END:
-=floor.json= is the law — a table of ={field, type}= rows. =entry.unshaped=
-and =Dojo.Keep.shaped?/1= are the same interpreter of that table (not two
-predicates). =test/fixtures/keep_floor.json= is the *cases* both suites walk.
-Below the floor a keep is durable and invisible here, or shared-and-refused
-there ([[file:specs/weave/keep-build.org][keep-build]] =kb-5-floor= · =kb-vet5=).
+=priv/keep/skeleton.json= is the law — neither language owns it. A table of
+={field, type, means}= rows. =means= is for readers; the walk uses field and
+type. =entry.unshaped= and =Dojo.Keep.shaped?/1= are guests of the same file.
+Every log keep names its journal, its work, and its time. The genesis lives
+in =self=, not the log ([[file:specs/weave/keep-build.org][keep-build]]
+=kb-5-skeleton= · =kb-5-genesis-place=).
 
 ** keep verbs — one list both sides of the door
 :PROPERTIES:
@@ -507,6 +508,18 @@ From a JS =pushEvent= name, jump with =C-c d e= or grep =handle_event("name"=.
 :PATH: lib/dojo_web/components/outer_shell.ex
 :END:
 
+** helios-window — disciple strip, selenic turn
+:PROPERTIES:
+:ID: nav-helios-window
+:KEYWORDS: helios-window selene selenic disciple window moon twilight lichtung lantern crescent veil blood peer-ink
+:PATH: design/helios-window/NOTES.org
+:END:
+Disciple panels are WINDOWS (frame · pane · sill). 00–05 settled the laws
+under a sun; the lamp was wrong. Author is solar; a peer is moonlight
+(=--peer-ink=). Boards: =06-phases.html= · =07-twilight.html= ·
+=08-lichtung.html=. Overlay: =_selene.css=. Live seam still
+=#disciple_panels= in =shell_live.html.heex=.
+
 ** deck — card components
 :PROPERTIES:
 :ID: nav-deck
@@ -518,7 +531,7 @@ From a JS =pushEvent= name, jump with =C-c d e= or grep =handle_event("name"=.
 :PROPERTIES:
 :ID: nav-play-cdp
 :KEYWORDS: play cdp devtools websocket screenshot inject drive rig headless bare
-:PATH: scripts/play_cdp.mjs
+:PATH: scripts/play/play_cdp.mjs
 :END:
 One call per played night: =run <prog> [waitMs] [out.png] --bare= · =shot= · =eval=;
 the protocol lives in =codex/play.org=.
@@ -890,7 +903,7 @@ SE(3) math in =assets/js/turtling/se3.js=.
 :END:
 =DojoOrbitControls= — ALL dojo camera behaviour, as a SUBCLASS. The vendored
 =assets/js/utils/threeorbital.js= holds no dojo code, so three.js upgrades are a
-file swap (see [[file:assets/js/utils/VENDOR.org][VENDOR.org]] + =scripts/vendor_verify.sh=). Three behaviours:
+file swap (see [[file:assets/js/utils/VENDOR.org][VENDOR.org]] + =scripts/verify/vendor_verify.sh=). Three behaviours:
 dolly-through (=dollyStandoff= floors the PIVOT, not the camera — =minDistance=0=
 disarms stock's clamp and =update()= floors the target instead), gesture
 arbitration, and the upstream =clientX=-as-y typo.
@@ -1092,12 +1105,12 @@ the same shape — =test/js/shell/outer_shell_payload_test.mjs=,
 :PROPERTIES:
 :ID: nav-cm6-vendor
 :KEYWORDS: cm6 codemirror vendor bundle esbuild version manifest sha256 drift lockfile reproducible
-:PATH: scripts/vendor-cm6.mjs
+:PATH: scripts/vendor/vendor-cm6.mjs
 :END:
 =cm6-entry.js= is the API contract, esbuild cuts it to
 =priv/static/vendor/cm6.js= (committed, byte-reproducible), and a sidecar
 =cm6.manifest.json= carries the RESOLVED version + hashes of artifact, entry,
-and lockfile. =scripts/vendor_verify.sh= checks all of it and that
+and lockfile. =scripts/verify/vendor_verify.sh= checks all of it and that
 =core.js='s =?v== token still tells the truth. Prose: [[file:assets/js/utils/VENDOR.org][VENDOR.org]] =::vendor-cm6=.
 
 ** three.js surface — named once, checked twice
@@ -1119,7 +1132,7 @@ Prose: [[file:assets/js/utils/VENDOR.org][VENDOR.org]] =::vendor-three=.
 :END:
 Pristine r185 =examples/jsm/lines/*= under =utils/three-addons/lines/=. One
 rewrite (=from 'three'= → =three.module.min.js=); sibling =../lines/= intact.
-Upgrade: =scripts/vendor-three-lines.sh=. Dojo-owned on top: =GrowLine.js= +
+Upgrade: =scripts/vendor/vendor-three-lines.sh=. Dojo-owned on top: =GrowLine.js= +
 =material-cache.js= (=turtling/render/line/=). Prose: [[file:assets/js/utils/VENDOR.org][VENDOR.org]]
 =::vendor-line-addons=.
 
@@ -1857,7 +1870,7 @@ evolve, moodboards, skeleton-alphabet, *grok_imagine* API runbook
 =scripts/bestiary/papertiger/= (=core/=, =_carve/=, =_skeleton/=,
 =_ladder/= — the unfolding-ladder morphs, =dreams/=, =journeys/= —
 experiment process + stitched law ledger [[id:pt-journeys]]), fed by
-=scripts/tiger_atelier.sh= =seed=/=carve= → =scripts/tiger_normalize.mjs=.
+=scripts/bestiary/tiger_atelier.sh= =seed=/=carve= → =scripts/bestiary/tiger_normalize.mjs=.
 Film ladders: REST via =_ladder/rasa_wheel/pilot/ref2vid/ref2vid_api.py=
 (agent video tools ZDR-blocked — see [[id:gi-zdr]]).
 The browser runtime (=tiger/mood.js= stance automaton, =tiger/tiger.js=
@@ -2136,10 +2149,10 @@ author's stamp; a cursor cannot cross a hop. Returns ={rows, next}=.
 :PROPERTIES:
 :ID: nav-prodkeep
 :KEYWORDS: prod backup fly sqlite keep.db pull versioned snapshot restore census clan submissions disaster recovery ops runbook
-:PATH: scripts/prodkeep.sh
+:PATH: scripts/ops/prodkeep.sh
 :END:
-=scripts/prodkeep.sh= SFTP-pulls =/data/keep.db= off Fly app =thedojo= into a
+=scripts/ops/prodkeep.sh= SFTP-pulls =/data/keep.db= off Fly app =thedojo= into a
 timestamped, never-overwritten backup under =backups/keep/=, checkpointing the
 WAL first so one =cp= is the whole store ([[file:specs/weave/keep-access.org][keep-access]] =kb-10=). =--census= /
 =--clan= / =--list= read local backups with no network. Runbook: read a clan,
-extract images, restore — [[file:scripts/prodkeep.org][scripts/prodkeep.org]] =ops-prodkeep=.
+extract images, restore — [[file:scripts/ops/prodkeep.org][scripts/ops/prodkeep.org]] =ops-prodkeep=.

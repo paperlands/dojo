@@ -5,7 +5,7 @@
 // a reader upcasts, forks from the upcast, and mints an entry nobody authored.
 //
 // v selects a fold suffix; it never selects a parser (id:kc-adapt). Under weak
-// schema a reader does not need v to parse. Its two jobs are the fold's floor
+// schema a reader does not need v to parse. Its two jobs are the fold's skeleton
 // and honest degradation: /this was written by something newer than me/.
 //
 // Built empty on purpose: the first shape change is then a one-line append

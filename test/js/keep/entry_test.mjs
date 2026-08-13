@@ -117,34 +117,24 @@ describe("entry: read is for display; unknowns need no rule", () => {
         assert.deepEqual(read(again).mystery, { nested: true, n: 7 })
     })
 
-    test("the catalog is five keys ALWAYS — an omitted one is not an absent one", () => {
-        // JSON.stringify DROPS an undefined value, so an omitted `target` would
-        // be a different string, hence a different name, for the same value.
-        // That is meaning smuggled into an absence (id:kc-r-absence) at the very
-        // bottom of the stack — the bytes that ARE the name.
+    test("only a value is written — null and omitted are the same absence", () => {
+        // A missing work and a null work must not be two names (id:kc-r-absence).
+        // write() emits neither. put refuses both, because a log keep is about something.
         const omitted = write("snap", { source: "x" }, { root: ctx.root, ts: ctx.ts })
         const explicit = write("snap", { source: "x" }, { ...ctx, target: null })
 
-        assert.equal(omitted, explicit, "omitted target must equal explicit null")
+        assert.equal(omitted, explicit)
         assert.equal(name(omitted), name(explicit))
-        assert.ok(omitted.includes('"target":null'))
-        assert.deepEqual(
-            Object.keys(read(omitted)).sort(),
-            ["kind", "root", "source", "target", "ts", "v"],
-        )
+        assert.equal(omitted.includes("target"), false)
+        assert.equal(read(omitted).target, undefined)
+        assert.equal(unshaped(read(omitted)), "target")
     })
 
-    test("null root and target are first-class (genesis base case)", () => {
-        // The log's first entry cannot name a log that does not exist yet
-        // (id:kb-3). null is the base case, not an exception.
-        const bytes = write(
-            "genesis",
-            { nonce: "c".repeat(64) },
-            { root: null, target: null, ts: ctx.ts },
-        )
+    test("genesis carries no journal and no work — it is the journal's name", () => {
+        const bytes = write("genesis", { nonce: "c".repeat(64) }, { ts: ctx.ts })
         const v = read(bytes)
-        assert.equal(v.root, null)
-        assert.equal(v.target, null)
+        assert.equal(v.root, undefined)
+        assert.equal(v.target, undefined)
         assert.equal(v.kind, "genesis")
         assert.equal(typeof name(bytes), "string")
     })
@@ -164,44 +154,52 @@ describe("entry: what it is not", () => {
     })
 })
 
-// ── THE PROJECTION FLOOR — one table, both sides of the wire ──────────
+// ── THE SKELETON — one table, both sides of the wire ─────────────────
 //
-// floor.json is the law; keep_floor.json is the cases. This suite and
+// skeleton.json is the law; keep_skeleton.json is the cases. This suite and
 // Dojo.Keep.ProjectTest walk the same cases against interpreters of the
-// same table — floor divergence is impossible by construction
-// (id:kb-5-floor, id:kb-vet5 42).
+// same table — skeleton divergence is impossible by construction
+// (id:kb-5-skeleton, id:kb-vet5 42).
 
-describe("entry: the projection floor", () => {
+describe("entry: the skeleton", () => {
     const cases = JSON.parse(
         readFileSync(
-            new URL("../../fixtures/keep_floor.json", import.meta.url),
+            new URL("../../fixtures/keep_skeleton.json", import.meta.url),
             "utf8",
         ),
     )
-    const floor = JSON.parse(
+    const skeleton = JSON.parse(
         readFileSync(
-            new URL("../../../assets/js/keep/floor.json", import.meta.url),
+            new URL("../../../priv/keep/skeleton.json", import.meta.url),
             "utf8",
         ),
     )
 
     test("the table is field/type rows — the law, not a second predicate", () => {
         assert.deepEqual(
-            floor.map((r) => r.field),
+            skeleton.map((r) => r.field),
             ["root", "kind", "target", "ts.t", "ts.n", "v"],
         )
-        for (const row of floor) {
+        for (const row of skeleton) {
             assert.equal(typeof row.type, "string")
             assert.ok(row.type.length > 0)
+            assert.equal(typeof row.means, "string")
+            assert.ok(row.means.length > 0)
         }
         // unshaped is driven by the table, not hand-coded field clauses.
         const src = readFileSync(
             new URL("../../../assets/js/keep/entry.js", import.meta.url),
             "utf8",
         )
-        assert.match(src, /floor\.json/)
+        assert.match(src, /priv\/keep\/skeleton\.json/)
         assert.doesNotMatch(src, /typeof value\.root/)
         assert.doesNotMatch(src, /typeof value\.kind/)
+        // write() catalog is the skeleton's top-level keys — not a second list.
+        const tops = [...new Set(skeleton.map((r) => r.field.split(".")[0]))]
+        assert.deepEqual(
+            [...tops].sort(),
+            ["kind", "root", "target", "ts", "v"],
+        )
     })
 
     for (const c of cases) {
@@ -210,12 +208,12 @@ describe("entry: the projection floor", () => {
         })
     }
 
-    test("what write authors always clears the floor", () => {
+    test("what write authors always clears the skeleton", () => {
         assert.equal(unshaped(read(write("snap", { any: 1 }, ctx))), null)
     })
 
-    test("the genesis is below the floor, and is not a put (id:kb-5-genesis-place)", () => {
-        const g = read(write("genesis", { nonce: "c" }, { root: null, ts: ctx.ts }))
+    test("the genesis fails the skeleton, and is not a put (id:kb-5-genesis-place)", () => {
+        const g = read(write("genesis", { nonce: "c" }, { ts: ctx.ts }))
         assert.equal(unshaped(g), "root")
     })
 })

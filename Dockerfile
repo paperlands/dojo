@@ -49,6 +49,9 @@ RUN mix deps.compile
 
 COPY priv priv
 
+# keep.ex loads priv/keep/skeleton.json at compile time (id:kb-5-skeleton).
+# It arrives with priv above. The rest of assets stays after compile.
+
 COPY lib lib
 
 # Compile the release. Before assets: LiveView writes colocated hooks into

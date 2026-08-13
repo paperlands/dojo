@@ -253,11 +253,8 @@ defmodule Dojo.Keep.ReceiveTest do
                1
     end
 
-    test "an OWNED kind with no target binds nothing and still lands" do
-      # target is string|null by the floor, so even a work-owning kind may
-      # carry none. Written with `snap` on purpose: with `note` it would pass
-      # for the wrong reason — the unknown-kind branch — and never exercise
-      # the nil-target one at all.
+    test "a snap with no work is unshaped — it never lands" do
+      # A keep is about something. Null target is not a work (id:kc-r-absence).
       bytes =
         Jason.encode!(%{
           "source_id" => "abc",
@@ -268,9 +265,8 @@ defmodule Dojo.Keep.ReceiveTest do
           "target" => nil
         })
 
-      assert %{id: id} = reply = ship(bytes)
-      refute Map.has_key?(reply, :why)
-      assert count_keeps(id) == 1
+      assert %{why: :shape} = ship(bytes)
+      assert count_keeps(Keep.hash(bytes)) == 0
       assert Repo.one(from(w in "works", select: count(w.work_id))) == 0
     end
 

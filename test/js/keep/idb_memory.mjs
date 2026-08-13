@@ -92,7 +92,7 @@ function isIndexable(key) {
     if (typeof key === "boolean") return false // measured: boolean index = 0 rows
     // null is NOT a valid IDB key either. A fake that is MORE permissive than
     // the browser is how a false green is born, so refuse what the browser
-    // refuses: this is what keeps the genesis (root: null) out of both indexes.
+    // refuses: null is not an IDB key. The genesis is not in the log.
     if (key === undefined || key === null) return false
     if (typeof key === "number" && Number.isNaN(key)) return false
     if (Array.isArray(key)) return key.every(isIndexable)

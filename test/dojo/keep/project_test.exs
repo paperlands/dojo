@@ -48,10 +48,9 @@ defmodule Dojo.Keep.ProjectTest do
       assert {:ok, %{id: ^id}} = Keep.project(bytes, id)
     end
 
-    test "null target is lawful — a keep about no work yet" do
+    test "null target is unshaped — a keep is about something" do
       bytes = message(%{"target" => nil})
-      id = Keep.hash(bytes)
-      assert {:ok, %{target: nil}} = Keep.project(bytes, id)
+      assert Keep.project(bytes, Keep.hash(bytes)) == {:error, :shape}
     end
 
     test "unknown free fields pass — meaning is never judged" do
@@ -127,7 +126,7 @@ defmodule Dojo.Keep.ProjectTest do
       assert Keep.project(bytes, Keep.hash(bytes)) == {:error, :shape}
     end
 
-    test "missing target key → :shape (five keys always)" do
+    test "missing target key → :shape (a keep is about something)" do
       bytes =
         Jason.encode!(%{
           "v" => 1,
@@ -167,32 +166,35 @@ defmodule Dojo.Keep.ProjectTest do
     end
   end
 
-  describe "the projection floor — one table, both sides of the wire" do
-    # floor.json is the law; keep_floor.json is the cases. This suite and
+  describe "the skeleton — one table, both sides of the wire" do
+    # skeleton.json is the law; keep_skeleton.json is the cases. This suite and
     # entry_test.mjs walk the same cases against interpreters of the same
-    # table — floor divergence is impossible by construction (id:kb-vet5 42).
+    # table — skeleton divergence is impossible by construction (id:kb-vet5 42).
 
     test "the table is one file both interpreters walk" do
-      path = "assets/js/keep/floor.json"
+      path = "priv/keep/skeleton.json"
       assert File.exists?(path)
-      floor = path |> File.read!() |> Jason.decode!()
+      skeleton = path |> File.read!() |> Jason.decode!()
 
-      assert Enum.map(floor, & &1["field"]) == ~w(root kind target ts.t ts.n v)
+      assert Enum.map(skeleton, & &1["field"]) == ~w(root kind target ts.t ts.n v)
 
-      for row <- floor do
+      for row <- skeleton do
         assert is_binary(row["type"]) and row["type"] != ""
+        assert is_binary(row["means"]) and row["means"] != ""
       end
 
       # shaped? is driven by the table, not hand-coded field_* clauses.
+      # The law lives with the keep, not under a language's tree.
       src = File.read!("lib/dojo/keep.ex")
-      assert src =~ "floor.json"
+      assert src =~ "priv/keep/skeleton.json"
+      refute src =~ "priv/keep/floor.json"
       assert src =~ "@external_resource"
       refute src =~ "defp field_string"
       refute src =~ "defp field_ts"
       refute src =~ "defp field_v"
     end
 
-    for c <- "test/fixtures/keep_floor.json" |> File.read!() |> Jason.decode!() do
+    for c <- "test/fixtures/keep_skeleton.json" |> File.read!() |> Jason.decode!() do
       @case c
 
       test "#{c["note"]}" do
@@ -213,14 +215,14 @@ defmodule Dojo.Keep.ProjectTest do
   end
 
   describe "structural — five frozen fields, no others" do
-    test "the floor table names the five catalog keys; project promotes four" do
-      # id:kc-verify / id:kb-11: the five frozen fields live in floor.json.
+    test "the skeleton names the five catalog keys; project promotes four" do
+      # id:kc-verify / id:kb-11: the five frozen fields live in skeleton.json.
       # project promotes root/kind/target/ts (as ts_t/ts_n); v is the fold
-      # floor, never a column. clan is a wire fact, never an entry field.
-      floor = "assets/js/keep/floor.json" |> File.read!() |> Jason.decode!()
+      # skeleton, never a column. clan is a wire fact, never an entry field.
+      skeleton = "priv/keep/skeleton.json" |> File.read!() |> Jason.decode!()
 
       fields =
-        floor
+        skeleton
         |> Enum.map(& &1["field"])
         |> Enum.map(&(String.split(&1, ".") |> hd()))
         |> Enum.uniq()

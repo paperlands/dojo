@@ -166,7 +166,7 @@ defmodule Dojo.MixProject do
   # no corpus there, nothing to press, and the build must not care.
   defp press_codex(args) do
     if File.dir?("codex/fragments") do
-      Mix.Task.run("cmd", ["node", "scripts/press_codex_index.mjs" | args])
+      Mix.Task.run("cmd", ["node", "scripts/codex/press_codex_index.mjs" | args])
     else
       Mix.shell().info("press.codex: no codex/fragments here — skipped")
     end

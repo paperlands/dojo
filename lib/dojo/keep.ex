@@ -33,7 +33,7 @@ defmodule Dojo.Keep do
           id: String.t(),
           root: String.t(),
           kind: String.t(),
-          target: String.t() | nil,
+          target: String.t(),
           ts_t: integer(),
           ts_n: integer(),
           message: String.t()
@@ -71,6 +71,7 @@ defmodule Dojo.Keep do
          :ok <- name_matches?(id, claimed_id) do
       {:ok,
        %{
+         # whose journal · what sort · what about · when (t) · which (n)
          id: id,
          root: e["root"],
          kind: e["kind"],
@@ -687,11 +688,12 @@ defmodule Dojo.Keep do
 
   # ── private: project ─────────────────────────────────────────────────
 
-  # Projection floor as data (id:kb-5-floor). entry.unshaped walks the same file.
+  # Skeleton as data (id:kb-5-skeleton). Neither language owns it —
+  # priv/keep is the keep's home; JS and this module are both guests.
   # Two hand-written predicates diverged once (id:kb-vet5 42); one table cannot.
-  @floor_path Path.expand("../../assets/js/keep/floor.json", __DIR__)
-  @external_resource @floor_path
-  @floor @floor_path |> File.read!() |> Jason.decode!()
+  @skeleton_path Path.expand("../../priv/keep/skeleton.json", __DIR__)
+  @external_resource @skeleton_path
+  @skeleton @skeleton_path |> File.read!() |> Jason.decode!()
 
   defp decode(message) do
     case Jason.decode(message) do
@@ -701,18 +703,18 @@ defmodule Dojo.Keep do
     end
   end
 
-  # Five frozen fields, right types. Meaning is never judged (id:kc-c-room).
-  # The law is @floor; this is its interpreter — twin of entry.unshaped.
+  # Catalog fields, right types. Meaning is never judged (id:kc-c-room).
+  # The law is @skeleton; this is its interpreter — twin of entry.unshaped.
+  # `means` on a row is for readers; the walk uses only field and type.
   defp shaped?(e) when is_map(e) do
-    Enum.reduce_while(@floor, :ok, fn %{"field" => field, "type" => type}, :ok ->
+    Enum.reduce_while(@skeleton, :ok, fn %{"field" => field, "type" => type}, :ok ->
       if type_ok?(fetch_path(e, field), type),
         do: {:cont, :ok},
         else: {:halt, {:error, :shape}}
     end)
   end
 
-  # Present-or-missing, never null-as-absent: target may be JSON null and
-  # that is lawful; a missing key is not (id:kc-r-absence).
+  # A missing key or a null is the same: not a value (id:kc-r-absence).
   defp fetch_path(e, path) do
     path
     |> String.split(".")
@@ -728,18 +730,17 @@ defmodule Dojo.Keep do
     end)
   end
 
-  # The table's four type tags — vocabulary only; which fields wear which
-  # lives solely in floor.json.
+  # The table's type tags — vocabulary only; which fields wear which
+  # lives solely in skeleton.json.
   defp type_ok?({:ok, v}, "string") when is_binary(v), do: true
-  defp type_ok?({:ok, v}, "string|null") when is_binary(v) or is_nil(v), do: true
   defp type_ok?({:ok, v}, "nonneg_int") when is_integer(v) and v >= 0, do: true
   defp type_ok?({:ok, v}, "int>=1") when is_integer(v) and v >= 1, do: true
 
   defp type_ok?(_, type)
-       when type in ~w(string string|null nonneg_int int>=1),
+       when type in ~w(string nonneg_int int>=1),
        do: false
 
-  defp type_ok?(_, type), do: raise("unknown floor type: #{type}")
+  defp type_ok?(_, type), do: raise("unknown skeleton type: #{type}")
 
   defp name_matches?(id, claimed) when id == claimed, do: :ok
   defp name_matches?(_, _), do: {:error, :name}
