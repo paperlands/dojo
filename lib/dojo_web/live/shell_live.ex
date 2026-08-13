@@ -3,6 +3,7 @@ defmodule DojoWeb.ShellLive do
   alias DojoWeb.Session
   alias DojoWeb.ShellLive.{OuterShell}
   import DojoWeb.SVGComponents
+  import DojoWeb.RiverComponent
 
   @moduledoc """
   This LV module defines the Turtling Experience
@@ -16,6 +17,14 @@ defmodule DojoWeb.ShellLive do
     v            v
   [canvas]     [canvas]
   """
+
+  # ShellLive only (lvdx-9). Real Module attributes — Phoenix html/tag engines
+  # read them and stop emitting data-phx-loc / HEEx source annotations on every
+  # node. Without this the morph tree drowns in debug attrs; with it, a future
+  # reader must not "clean up dead code." Unrelated to the data-* mergeAttrs
+  # trap on phx-update=ignore islands — that is JS.ignore_attributes (lvdx-2).
+  @debug_heex_annotations false
+  @debug_attributes false
 
   def mount(_params, _session, socket) do
     {:ok,
@@ -132,17 +141,12 @@ defmodule DojoWeb.ShellLive do
     shell = OuterShell.observe(socket.assigns.outershell, turtle)
     socket = assign(socket, :outershell, shell)
 
-    # A hatch with unchanged code is just a preview/path bump — advance time
-    # (via observe above) but don't react: no re-render, re-stream, or re-run.
-    if OuterShell.code_changed?(prev, turtle) do
-      # The friend's status always flows to the nerve — even in a frozen draft,
-      # where the editor push is held back so it won't disturb your draft.
-      socket = push_event(socket, "outerSignal", outer_signal(turtle, shell))
-
+    # Only a preview/path bump is silence; everything else is news (D025 R3).
+    if OuterShell.reflect_changed?(prev, turtle) do
       socket =
         case OuterShell.render_intent(shell) do
           {:push, source} ->
-            push_event(socket, "seeOuterShell", outer_shell_payload(source, shell))
+            push_event(socket, "seeOuterShell", OuterShell.payload(source, shell))
 
           :hold ->
             socket
@@ -167,7 +171,11 @@ defmodule DojoWeb.ShellLive do
         {:join, "class:shell" <> _, disciple},
         %{assigns: %{disciples: d}} = socket
       ) do
-    {:noreply, assign(socket, :disciples, Map.put(d, Dojo.Disciple.reg_key(disciple), disciple))}
+    reg_key = Dojo.Disciple.reg_key(disciple)
+    # Gate.change re-joins under a new phx_ref; hatch meta is not Tracker state.
+    disciple = retain_hatch_meta(disciple, d[reg_key])
+
+    {:noreply, assign(socket, :disciples, Map.put(d, reg_key, disciple))}
   end
 
   def handle_info(
@@ -193,6 +201,7 @@ defmodule DojoWeb.ShellLive do
     {:noreply,
      socket
      |> update_visible_meta(reg_key, meta)
+     |> push_attend(reg_key, meta)
      |> maybe_follow_code(reg_key, meta[:time])}
   end
 
@@ -232,10 +241,6 @@ defmodule DojoWeb.ShellLive do
   end
 
   # --- OuterShell LiveComponent messages ---
-
-  def handle_info({:outer_shell, :close}, socket) do
-    {:noreply, reset_outershell(socket)}
-  end
 
   def handle_info({:outer_shell, :toggle_follow}, socket) do
     # The LiveView owns the authoritative follow flag; the component emits a bare
@@ -351,6 +356,8 @@ defmodule DojoWeb.ShellLive do
       when is_binary(addr) do
     case Dojo.Table.last(Dojo.Disciple.table_address(dis[addr]), :hatch) do
       %Dojo.Turtle{} = turtle ->
+        # The friend's work_id lives in presence (`dis[addr][:keep]`) — read it
+        # HERE, at the click, when this shell wants that work's keeps (id:kb-8).
         outershell =
           OuterShell.observe(
             %OuterShell{addr: addr, active: true, name: "#{dis[addr][:name]}"},
@@ -359,8 +366,7 @@ defmodule DojoWeb.ShellLive do
 
         {:noreply,
          socket
-         |> push_event("seeOuterShell", outer_shell_payload(turtle, outershell))
-         |> push_event("outerSignal", outer_signal(turtle, outershell))
+         |> push_event("seeOuterShell", OuterShell.payload(turtle, outershell))
          |> assign(:outershell, outershell)}
 
       _ ->
@@ -368,10 +374,37 @@ defmodule DojoWeb.ShellLive do
     end
   end
 
-  def handle_event("seeTurtle", _, socket) do
-    {:noreply, reset_outershell(socket)}
+  # Weave open is client-local (lvdx-5). This event only informs chrome assigns —
+  # never re-pushes seeOuterShell (that was the ferry).
+  def handle_event(
+        "seeWeave",
+        %{"addr" => addr, "name" => name, "source" => source} = payload,
+        socket
+      )
+      when is_binary(addr) and is_binary(source) do
+    turtle = %Dojo.Turtle{
+      state: :success,
+      source: source,
+      commands: payload["commands"] || [],
+      diagnostics: payload["diagnostics"] || [],
+      time: payload["ts"]
+    }
+
+    outershell =
+      OuterShell.observe(
+        %OuterShell{addr: addr, active: true, name: name, follow: false},
+        turtle
+      )
+
+    {:noreply, assign(socket, :outershell, outershell)}
   end
 
+  # Empty seeTurtle = close. Server must tell the client (no prior close_js).
+  def handle_event("seeTurtle", _, socket) do
+    {:noreply, reset_outershell(socket, notify: true)}
+  end
+
+  # Client already ran close_js (flag + outerClose). Assigns only.
   def handle_event("closeTurtle", _, socket) do
     {:noreply, reset_outershell(socket)}
   end
@@ -455,6 +488,39 @@ defmodule DojoWeb.ShellLive do
     Dojo.Nerve.chat(clan, name, target, body, params["ts"])
     {:noreply, socket}
   end
+
+  # Keep ship — one message, one answer (id:kb-12). Clan is a fact of the
+  # socket; author_id is Session.user_id/1 (D007). Silence when unready is
+  # not an answer: the entry stays kept local and rides the next announce.
+  # Shared → presence :keep is the work_id (continuant). pull/1 resolves
+  # work → head by ts; N keeps of one river collapse to one presence fact.
+  def handle_event(
+        "keep",
+        payload,
+        %{assigns: %{clan: clan, session: %Session{name: name} = session}} = socket
+      )
+      when is_binary(clan) and is_binary(name) and is_map(payload) do
+    reply =
+      Dojo.Keep.receive(payload,
+        clan: clan,
+        author_id: Session.user_id(session)
+      )
+
+    {:reply, reply, publish_latest_keep(socket, reply)}
+  end
+
+  def handle_event("keep", _payload, socket), do: {:noreply, socket}
+
+  # The image follows the fact (id:kb-12a). Fire and forget on the wire, so
+  # there is no reply to design: it lands or it does not, and a lost picture
+  # degrades to re-running the turtle — never to a hole.
+  def handle_event("keep:image", payload, %{assigns: %{clan: clan}} = socket)
+      when is_binary(clan) and is_map(payload) do
+    Dojo.Keep.image(payload, clan: clan)
+    {:noreply, socket}
+  end
+
+  def handle_event("keep:image", _payload, socket), do: {:noreply, socket}
 
   # pokemon clause
   def handle_event(
@@ -554,6 +620,22 @@ defmodule DojoWeb.ShellLive do
     maybe_follow_code(socket, reg_key, time)
   end
 
+  # The attention rides the META already in hand — no fetch, no task, ~40 bytes.
+  # No time gate: `maybe_follow_code`'s is second-resolution and dropped moves
+  # inside one second. No `:node` either, which is why self-watch got nothing.
+  # The client already ignores a line equal to the one it holds.
+  defp push_attend(socket, reg_key, %{attend: attend}) when not is_nil(attend) do
+    outershell = socket.assigns.outershell
+
+    if outershell.addr == reg_key and OuterShell.wants_updates?(outershell) do
+      push_event(socket, "outerAttend", %{addr: reg_key, attend: attend})
+    else
+      socket
+    end
+  end
+
+  defp push_attend(socket, _reg_key, _meta), do: socket
+
   defp maybe_follow_code(socket, reg_key, time) do
     %{outershell: outershell, disciples: dis} = socket.assigns
 
@@ -597,33 +679,40 @@ defmodule DojoWeb.ShellLive do
   # Apply a view/stream change: persist it, then push the source if one is due.
   # The view/stream ride the seeOuterShell payload, so JS configures the editor
   # (read-only watch vs editable merge) from that alone.
-  # The single definition of "close/reset the outershell" — reached by the
-  # component's :close intent, the close button, and switching away (seeTurtle).
-  defp reset_outershell(socket), do: assign(socket, :outershell, %OuterShell{})
+  # Chrome assigns only. Client owns open flag + canvas cleanup.
+  # notify: true when the server closes without a prior close_js (empty seeTurtle).
+  defp reset_outershell(socket, opts \\ []) do
+    socket = assign(socket, :outershell, %OuterShell{})
+    if opts[:notify], do: push_event(socket, "outerClose", %{}), else: socket
+  end
 
   defp apply_outer_view(socket, %OuterShell{} = shell) do
     socket = assign(socket, :outershell, shell)
 
     case OuterShell.render_intent(shell) do
-      {:push, source} -> push_event(socket, "seeOuterShell", outer_shell_payload(source, shell))
+      {:push, source} -> push_event(socket, "seeOuterShell", OuterShell.payload(source, shell))
       :hold -> socket
     end
   end
 
-  # The friend's execution status for the remote nerve — independent of whether
-  # the editor content is pushed (held back during a frozen draft).
-  defp outer_signal(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
-    %{state: turtle.state, message: turtle.message, name: shell.name}
+  # Presence holds the work this shell stands on — continuant, not moment.
+  # This is the ONLY place the work_id travels: one meta per ship, read back at
+  # the click (seeTurtle). One-fact reply: only a shared keep carries target.
+  defp publish_latest_keep(
+         %{assigns: %{class: class}} = socket,
+         %{target: target}
+       )
+       when is_pid(class) and is_binary(target) do
+    Dojo.Table.change_meta(class, {:keep, target})
+    socket
   end
 
-  defp outer_shell_payload(%Dojo.Turtle{} = turtle, %OuterShell{} = shell) do
-    turtle
-    |> Map.from_struct()
-    |> Map.put(:addr, shell.addr)
-    |> Map.put(:origin_name, shell.name)
-    |> Map.put(:view, shell.view)
-    |> Map.put(:stream, shell.stream)
-  end
+  defp publish_latest_keep(socket, _), do: socket
+
+  defp retain_hatch_meta(disciple, %{meta: meta}) when not is_nil(meta),
+    do: Map.put(disciple, :meta, meta)
+
+  defp retain_hatch_meta(disciple, _), do: disciple
 
   def export(assigns) do
     ~H"""

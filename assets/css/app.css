@@ -1,7 +1,15 @@
 @import "tailwindcss" source(none);
+@import "phoenix-colocated/dojo/colocated.css";
+@import "./river.css";
 @source "../css";
 @source "../js";
 @source "../../lib/dojo_web";
+/* Colocated CSS — Tailwind content scan for class names inside extracted
+   blocks (lvdx-0). Both envs: assets.deploy runs under MIX_ENV=prod and
+   writes under _build/prod; dev watch writes under _build/dev. Missing
+   path is a quiet empty source, not a build error. */
+@source "../../_build/dev/phoenix-colocated/dojo/*/";
+@source "../../_build/prod/phoenix-colocated/dojo/*/";
 
 /* A Tailwind plugin that makes "hero-#{ICON}" classes available.
    The heroicons installation itself is managed by your mix.exs */
@@ -222,7 +230,6 @@
     -ms-overflow-style: -ms-autohiding-scrollbar;
     scrollbar-color: rgba(255,153,51,0.05) transparent; /* Thumb color and track color */
     scrollbar-width: thin; /* Thin scrollbar */
-    scrollbar-width-legacy: 5px;
   }
 
   .dark-scrollbar:hover {
@@ -438,9 +445,18 @@
 
 /* --- Status zone --- */
 
+.nerve-hud-status {
+  overflow: visible;
+  /* Datum for what is leaving — a ghost dissolves in the seat's own place. */
+  position: relative;
+}
+
 .nerve-hud-status-line {
   animation: hud-enter 150ms ease-out, hud-fade var(--hud-fade, 60s) ease-in forwards;
   animation-delay: 0s, 150ms;
+  /* What stands is above what is leaving (see .nerve-part). */
+  position: relative;
+  z-index: 1;
   padding-left: 1ch;
   padding-bottom: 2ch;
   display: flex;
@@ -450,48 +466,253 @@
 }
 
 /* Status channels — typographic differentiation only */
+/* Errors speak RED (the creator's law) with a warm phosphor glow,
+   matching the editor's diagnostics ink. Arrive gently — a wound is not a flash. */
+@keyframes nerve-error-arrive {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
 .nerve-hud-status-line.nerve-error {
-  color: var(--color-error);
-  text-shadow: 0 0 8px oklch(0.58 0.24 27 / 0.3);
+  color: oklch(0.63 0.21 25);
+  text-shadow: 0 0 8px rgb(240 168 61 / 0.35);
+  /* No lifetime fade (health is a state); only the soft land. */
+  animation: none;
+  opacity: 1;
+}
+.nerve-hud-status-line.nerve-error.error-arrive {
+  animation: nerve-error-arrive 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .nerve-hud-status-line.nerve-error .nerve-msg { opacity: 1; }
 
 .nerve-hud-status-line.nerve-output { color: var(--color-primary); }
 .nerve-hud-status-line.nerve-system { font-style: italic; }
 
-/* --- Remote nerve (a watched friend's signals, below the outershell) --- */
-/* These render as .nerve-hud-msg slots, so they need their own channel colors. */
-#outer-nerve .nerve-error {
-  color: var(--color-error);
-  text-shadow: 0 0 8px oklch(0.58 0.24 27 / 0.3);
-}
-#outer-nerve .nerve-error .nerve-msg { opacity: 1; }
-#outer-nerve .nerve-output { color: var(--color-primary); }
-
-/* --- Command deck: one toggle, one truth ----------------------------------
-   The deck's open/closed state lives in a single flag — `#deck-state.deck-open`
-   — held in a phx-update="ignore" node so server re-renders can't clobber it.
-   Panel visibility, the button's glow, and yielding the pane to an active
-   outershell are all DERIVED here, so no two DOM nodes can fall out of sync.
-   It's pure CSS + a client-side class toggle: no socket, works offline.
-   Specificity (.rightpane …) beats Tailwind's single-class display utilities,
-   so the deck panel carries no display utility of its own. */
-.rightpane .deck { display: none; }
-
-.rightpane:has(#deck-state.deck-open):not(:has(.outershell)) .deck {
-  display: flex;
-}
-
-@media (min-width: 40rem) {
-  .rightpane:has(#deck-state.deck-open):not(:has(.outershell)) .deck {
-    display: block;
+/* --- Helios — seamless sun walk + blur radiate light-up -----------------
+   Does NOT use hud-enter/hud-fade: those restart from opacity 0 on every
+   rung and flash. The seat morphs in place; each step re-fires helios-lit. */
+@keyframes helios-arrive {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
   }
 }
 
-.rightpane:has(#deck-state.deck-open):not(:has(.outershell)) #manualdeckbutton {
-  fill: var(--color-secondary-content);
-  filter: drop-shadow(0 1px 1px var(--color-secondary-content));
+/* Glow colors live on the element (not inside @keyframes). Tailwind rewrites
+   color-mix into @supports duals; keyframes may only hold declarations, so
+   color-mix inside them becomes invalid CSS and the browser drops the glow. */
+@keyframes helios-radiate {
+  0% {
+    text-shadow: 0 0 4px var(--helios-glow-35);
+    filter: brightness(1) blur(0);
+    transform: scale(1);
+  }
+  20% {
+    /* Peak: soft blur halo + multi-ring glow — the step lights up. */
+    text-shadow:
+      0 0 2px var(--helios-glow-core),
+      0 0 10px var(--helios-glow-85),
+      0 0 22px var(--helios-glow-55),
+      0 0 40px var(--helios-glow-30),
+      0 0 64px var(--helios-glow-14);
+    filter: brightness(1.55) blur(0.45px);
+    transform: scale(1.045);
+  }
+  100% {
+    text-shadow:
+      0 0 6px var(--helios-glow-38),
+      0 0 14px var(--helios-glow-16);
+    filter: brightness(1) blur(0);
+    transform: scale(1);
+  }
 }
+
+/* Success — longer, softer bloom (no hard peak flash). */
+@keyframes helios-radiate-apex {
+  0% {
+    text-shadow: 0 0 4px var(--helios-glow-35);
+    filter: brightness(1) blur(0);
+    transform: scale(1);
+  }
+  35% {
+    text-shadow:
+      0 0 3px var(--helios-glow-core),
+      0 0 12px var(--helios-glow-80),
+      0 0 24px var(--helios-glow-50),
+      0 0 44px var(--helios-glow-28),
+      0 0 68px var(--helios-glow-14);
+    filter: brightness(1.45) blur(0.4px);
+    transform: scale(1.04);
+  }
+  100% {
+    text-shadow:
+      0 0 8px var(--helios-glow-42),
+      0 0 18px var(--helios-glow-20);
+    filter: brightness(1.05) blur(0);
+    transform: scale(1);
+  }
+}
+
+@keyframes helios-exit {
+  from {
+    opacity: 1;
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+
+.nerve-hud-status-line.nerve-helios {
+  /* Kill shared status enter/fade — morphs must not flash. */
+  animation: none;
+  opacity: 1;
+  font-style: normal;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
+  letter-spacing: 0.04ch;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+  /* Keyframe-safe glow tokens (see helios-radiate comment above). */
+  --helios-glow-core: color-mix(in oklch, var(--color-primary) 100%, white);
+  --helios-glow-85: color-mix(in oklch, var(--color-primary) 85%, transparent);
+  --helios-glow-80: color-mix(in oklch, var(--color-primary) 80%, transparent);
+  --helios-glow-55: color-mix(in oklch, var(--color-primary) 55%, transparent);
+  --helios-glow-50: color-mix(in oklch, var(--color-primary) 50%, transparent);
+  --helios-glow-42: color-mix(in oklch, var(--color-primary) 42%, transparent);
+  --helios-glow-40: color-mix(in oklch, var(--color-primary) 40%, transparent);
+  --helios-glow-38: color-mix(in oklch, var(--color-primary) 38%, transparent);
+  --helios-glow-35: color-mix(in oklch, var(--color-primary) 35%, transparent);
+  --helios-glow-30: color-mix(in oklch, var(--color-primary) 30%, transparent);
+  --helios-glow-28: color-mix(in oklch, var(--color-primary) 28%, transparent);
+  --helios-glow-20: color-mix(in oklch, var(--color-primary) 20%, transparent);
+  --helios-glow-18: color-mix(in oklch, var(--color-primary) 18%, transparent);
+  --helios-glow-16: color-mix(in oklch, var(--color-primary) 16%, transparent);
+  --helios-glow-14: color-mix(in oklch, var(--color-primary) 14%, transparent);
+  --helios-glow-12: color-mix(in oklch, var(--color-primary) 12%, transparent);
+  --helios-glow-8: color-mix(in oklch, var(--color-primary) 8%, transparent);
+  text-shadow: 0 0 6px var(--helios-glow-28);
+  /* Room for the radiate halo (status zone overflow is visible). */
+  padding-right: 1.5ch;
+}
+
+.nerve-hud-status-line.nerve-helios .nerve-msg {
+  opacity: 1;
+  will-change: filter, text-shadow, transform;
+  transform-origin: left center;
+}
+
+.nerve-hud-status-line.nerve-helios.helios-arrive {
+  animation: helios-arrive 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.nerve-hud-status-line.nerve-helios.helios-lit .nerve-msg {
+  animation: helios-radiate 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.nerve-hud-status-line.nerve-helios.helios-apex.helios-lit .nerve-msg {
+  animation: helios-radiate-apex 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Living hold — world still running (wait / pause / mid-build).
+   Soft breath only: slow glow, tiny sway. No hard blink. */
+@keyframes helios-breathe {
+  0%, 100% {
+    opacity: 0.88;
+    filter: brightness(1) blur(0);
+    text-shadow:
+      0 0 5px var(--helios-glow-28),
+      0 0 12px var(--helios-glow-12);
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.08) blur(0.12px);
+    text-shadow:
+      0 0 8px var(--helios-glow-40),
+      0 0 18px var(--helios-glow-18),
+      0 0 28px var(--helios-glow-8);
+    transform: scale(1.015) rotate(0.4deg);
+  }
+}
+
+.nerve-hud-status-line.nerve-helios.helios-living .nerve-msg {
+  animation: helios-breathe 2.8s ease-in-out infinite;
+}
+
+/* Rung step: brief radiate, then settle back into the soft breath. */
+.nerve-hud-status-line.nerve-helios.helios-living.helios-lit .nerve-msg {
+  animation: helios-radiate 560ms cubic-bezier(0.22, 1, 0.36, 1) both,
+             helios-breathe 2.8s ease-in-out 560ms infinite;
+}
+
+.nerve-hud-status-line.nerve-helios.helios-living.helios-apex.helios-lit .nerve-msg {
+  animation: helios-radiate-apex 900ms cubic-bezier(0.22, 1, 0.36, 1) both,
+             helios-breathe 2.8s ease-in-out 900ms infinite;
+}
+
+.nerve-hud-status-line.nerve-helios.helios-exit {
+  animation: helios-exit 560ms ease-in forwards;
+  pointer-events: none;
+}
+
+.nerve-hud-status-line.nerve-helios.helios-exit .nerve-msg {
+  animation: none;
+}
+
+/* --- Leaving the seat — one becomes the other, never a cut ---------------
+   A wound taking the seat from a walking sun used to be a hard swap: the glyph
+   vanished and red text popped in the same frame, two symbologies with nothing
+   between them. What leaves is lifted out of the flow (so what arrives lands in
+   place) and blurs away underneath it. Short and soft — a sunset, not a second
+   message. Placed after the channel blocks so it wins their `animation: none`. */
+.nerve-hud-status-line.nerve-part {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes nerve-dissolve {
+  from { opacity: 1; filter: blur(0); transform: translateY(0); }
+  to   { opacity: 0; filter: blur(3px); transform: translateY(-1px); }
+}
+
+.nerve-hud-status-line.nerve-dissolve {
+  animation: nerve-dissolve 260ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+/* The tally — what is STILL OPEN, beside the next thing to fix. Muted on
+   purpose: a count of remaining work must not read as a count of alarms, so it
+   never inherits .nerve-error's red. */
+.nerve-tally {
+    margin-left: 0.6em;
+    opacity: 0.55;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-warning);
+}
+
+/* --- Command deck / outer-nerve / outer wash: colocated with owners (lvdx-1).
+   Deck open/closed lives in shell_live ColocatedCSS; outer nerve + wash in
+   OuterShellLive. Always-present .outershell uses :not(.hidden) so inactive
+   islands still yield the deck (lvdx-2). */
 
 /* --- Log panel — expanded history, click to open, click-outside to close --- */
 
@@ -522,6 +743,22 @@
 
 /* No-fade — static slots inside log */
 .nerve-no-fade { animation: none !important; opacity: 0.9; }
+
+/* === THE FRIEND'S PIGMENT — one violet, everywhere he appears ==============
+   His line, the cell that line kindles, and the firefly at the edge are ONE
+   mark seen from three distances. They read one token so they cannot drift.
+
+   Why violet, and not the chartreuse the firefly first wore: the one thing this
+   pigment must say at a glance is SOMEONE ELSE, and your own live cell is
+   chartreuse. A green friend and a green you is no distinction at all. Violet
+   is the far side of that wheel — and it is the theme's own hue on both grounds
+   (the dark base is violet-black, the paper's ink is violet), so it arrives
+   native rather than as a highlighter laid on top.
+
+   Wake is never a hue change: one hue throughout, brightening in chroma and
+   glow. A mark that changes colour to mean "awake" is two marks. */
+:root                  { --peer-ink: oklch(0.74 0.15 312); }
+[data-theme="light"]   { --peer-ink: oklch(0.50 0.17 302); }
 
 /* === CM6 Merge View — Shanshui CRT glow aesthetic === */
 
@@ -600,41 +837,168 @@
     background: rgba(248, 85, 82, 0.1);
 }
 
-/* === OuterShell break transition — code glitches into a bug, settles errored,
-      transitions back to clean when it works. Driven by #outerenv[data-outer-state]. === */
+/* Hearth trail paint → colocated on #weave-hearth (lvdx-1). */
 
-@keyframes outer-glitch {
-    0%   { transform: translate(0, 0) skewX(0deg);    filter: none; }
-    18%  { transform: translate(-2px, 0) skewX(-1deg); filter: hue-rotate(-25deg) saturate(1.5); }
-    36%  { transform: translate(2px, 1px) skewX(1deg);  filter: hue-rotate(15deg); }
-    54%  { transform: translate(-1px, 0) skewX(-0.5deg); }
-    72%  { transform: translate(1px, -1px) skewX(0.5deg); }
-    100% { transform: translate(0, 0) skewX(0deg);    filter: none; }
+/* ---------------------------------------------------------------------------
+   THE FIREFLY — a watched friend, past the edge you lost them at (D025 R6).
+
+   D021 asked for a gutter marker. A gutter says "someone is on this line" to a
+   reader who cannot see the line. This says DIRECTION and DISTANCE as a living
+   thing: it drifts at the edge she left them past, and burns brighter while
+   they type, so a dim glyph means a still friend. Click it, following resumes.
+
+   Sight, not power: it is drawn on the WATCHER'S canvas and reports nothing
+   back. The author never learns they are watched.
+
+   A SIGIL, NOT A CHIP. No fill, no plate — their initials as ink, a lantern's
+   hairline rim, and light falling off it into the page. It wears `--peer-ink`,
+   the SAME violet as the friend's line and the cell he kindles: one mark at
+   three distances, never three marks.
+
+   ONE SCALAR IS THE WHOLE STATE. --fly-wake 0→1 kindles in a breath and cools
+   over three seconds; color, glow, rim, bloom and swell are all calc over it.
+   Arousal is a value here, not a branch — so there is one thing to tune, and
+   nothing can be half-awake in one property and asleep in another.
+   --------------------------------------------------------------------------- */
+@property --fly-wake {
+    syntax: "<number>";
+    inherits: true;
+    initial-value: 0;
 }
 
-#outerenv {
-    transition: background-color 300ms ease, box-shadow 300ms ease;
+.cm-peer-firefly {
+    /* asleep is the same violet sunk into the ground — one hue, two depths */
+    --fly-live: var(--peer-ink);
+    --fly-rest: color-mix(in oklab, var(--peer-ink) 66%, var(--color-base-300));
+    --fly-halo: var(--peer-ink);
+    --fly-bloom: 1;   /* glow gain: light blooms on a dark ground, ink does not */
+
+    position: absolute;
+    /* clear of the liveness chip (top-2 right-2 in outer_shell.ex): a 0.5rem dot
+       whose animate-ping halo doubles it, so it owns out to ~1.25rem. That chip
+       is the follow toggle — the one control here — and the firefly must not
+       land on the thing you reach for. Held for BOTH directions: a glyph that
+       slides sideways depending on which way it points says nothing by moving. */
+    right: 1.75rem;
+    z-index: 5;
+    display: grid;
+    place-items: center;
+    width: 1.55rem;
+    height: 1.55rem;
+    padding: 0;
+    border: 0;
+    border-radius: 9999px;
+    background: none;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-indent: 0.05em;   /* tracking pushes centred text left by its own gap */
+    text-transform: lowercase;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+
+    color: color-mix(in oklab, var(--fly-live) calc(var(--fly-wake) * 100%), var(--fly-rest));
+    /* the INK is what burns — the bloom is only the air around it */
+    text-shadow: 0 0 calc(0.35rem + var(--fly-wake) * 0.85rem)
+        color-mix(in oklab, var(--fly-live)
+            calc((24% + var(--fly-wake) * 66%) * var(--fly-bloom)), transparent);
+    box-shadow: inset 0 0 0 1px
+        color-mix(in oklab, var(--fly-halo)
+            calc((7% + var(--fly-wake) * 18%) * var(--fly-bloom)), transparent);
+    /* wake is carried by pigment and glow, never by fading out: a sleeping
+       firefly still has to be READ — it is holding a name and a direction. */
+    opacity: calc(0.84 + var(--fly-wake) * 0.16);
+    scale: calc(1 + var(--fly-wake) * 0.1);
+    animation: peer-firefly-drift 3.4s ease-in-out infinite;
+    /* only the scalar eases; everything above recomputes from it, so the whole
+       glyph cools as one thing. The slow way down is the point. */
+    transition: --fly-wake 3.2s ease-in, filter 420ms ease-out;
 }
 
-#outerenv .cm-content {
-    transition: color 300ms ease;
+/* THE RUSH — while the page tears past, the glyph thins almost to nothing and
+   settles back after. `filter` and not `opacity`, because the drift is already
+   animating opacity and an animation always wins the property it holds; these
+   two multiply instead of fighting. Out in 90ms, back over 420ms: the leaving
+   should be quicker than the eye, the returning slow enough to watch. */
+.cm-peer-firefly.is-flitting {
+    filter: opacity(0.12);
+    transition: --fly-wake 3.2s ease-in, filter 90ms ease-out;
 }
 
-/* Errored — live break shown in place (not the last-good freeze). */
-#outerenv[data-outer-state="error"] {
-    background-color: rgba(100, 22, 24, 0.12);
-    box-shadow: inset 0 0 24px rgba(180, 30, 30, 0.18);
+/* paper: ink does not glow, it DEEPENS. Same violet, dilute at rest, and the
+   halo damped — a bloom on cream reads as a smudge, not as light. */
+[data-theme="light"] .cm-peer-firefly {
+    --fly-rest: color-mix(in oklab, var(--peer-ink) 72%, var(--color-base-300));
+    --fly-bloom: 0.6;
 }
 
-#outerenv[data-outer-state="error"] .cm-content {
-    animation: outer-glitch 320ms ease-out;
-    color: rgba(255, 140, 120, 0.95);
+/* awake: the friend is moving. Up in a breath (0.22s), down over three seconds. */
+.cm-peer-firefly.is-awake {
+    --fly-wake: 1;
+    transition: --fly-wake 0.22s ease-out;
 }
 
-/* Draft — a distinct secondary-content (yellow) wash, never confused with the
-   error red. Your modification in progress, not their break. */
-#outerenv[data-outer-state="draft"] {
-    background-color: color-mix(in oklch, var(--color-secondary-content) 9%, transparent);
-    box-shadow: inset 0 0 24px color-mix(in oklch, var(--color-secondary-content) 16%, transparent);
+.cm-peer-firefly[hidden] { display: none; }
+/* `top` is set in JS against the box's scrollTop — sticky by hand, because the
+   glyph is a child of the SCROLLING element and an absolute top would scroll
+   away with the text. */
+
+/* THE LIGHT ITSELF — a HALO, hollow at the middle. A gradient that is opaque at
+   its centre is a plate with soft edges; the light has to leave the ink alone
+   for the mark to float in it. */
+.cm-peer-firefly::before {
+    content: "";
+    position: absolute;
+    inset: -0.6rem;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(circle at 50% 50%,
+        color-mix(in oklab, var(--fly-halo) calc(24% * var(--fly-bloom)), transparent) 0%,
+        color-mix(in oklab, var(--fly-halo) calc(15% * var(--fly-bloom)), transparent) 42%,
+        transparent 74%);
+    opacity: calc((0.25 + var(--fly-wake) * 0.6) * var(--fly-bloom));
+    scale: calc(0.92 + var(--fly-wake) * 0.2);
+    animation: peer-firefly-breath 2.6s ease-in-out infinite;
 }
 
+/* a direction, said quietly — a hairline chevron leaning the way they went */
+.cm-peer-firefly[data-dir]::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    width: 0.34rem;
+    height: 0.34rem;
+    border-top: 1px solid currentColor;
+    border-right: 1px solid currentColor;
+    opacity: calc(0.55 + var(--fly-wake) * 0.45);
+    pointer-events: none;
+}
+.cm-peer-firefly[data-dir="above"]::after { top: -0.4rem;    translate: -50% 0; rotate: -45deg; }
+.cm-peer-firefly[data-dir="below"]::after { bottom: -0.4rem; translate: -50% 0; rotate: 135deg; }
+
+/* the hand firms the rim — it must not claim the friend moved */
+.cm-peer-firefly:hover,
+.cm-peer-firefly:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--fly-live) 58%, transparent);
+}
+
+/* off screen: a light nobody can see is a compositor layer nobody asked for */
+.cm-peer-firefly.is-still,
+.cm-peer-firefly.is-still::before { animation: none; }
+
+@keyframes peer-firefly-drift {
+    0%, 100% { translate: 0 0;    opacity: calc(0.78 + var(--fly-wake) * 0.2); }
+    50%      { translate: 0 -3px; opacity: calc(0.92 + var(--fly-wake) * 0.08); }
+}
+/* the breath is always breathing; wake is only its depth */
+@keyframes peer-firefly-breath {
+    0%, 100% { scale: calc(0.90 + var(--fly-wake) * 0.16); }
+    50%      { scale: calc(1.04 + var(--fly-wake) * 0.34); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cm-peer-firefly,
+    .cm-peer-firefly::before { animation: none; }
+}

@@ -28,6 +28,9 @@ export class Parser {
 
         // User-defined functions keys by [name, arity]: [ast, params]
         this.userspace = new Map();
+        // Bumped on every userspace write so expression parse-memos that
+        // expanded 0-arity names (out → 0) cannot outlive a later `fn out …`.
+        this.epoch = 0;
         this.lexer = new Lexer();
     }
 
@@ -209,6 +212,9 @@ export class Parser {
 
         const key = this.makeKey(name, params.length);
         this.userspace.set(key, [subexpressionAST, params]);
+        // Parse expands 0-arity names into their bodies; a cached tree of
+        // bare `out` must not survive this write. (label-before-fn mice bug)
+        this.epoch++;
     }
 
     parseSignature(signature) {
@@ -339,5 +345,6 @@ export class Parser {
 
     reset() {
         this.userspace = new Map();
+        this.epoch++;
     }
 }

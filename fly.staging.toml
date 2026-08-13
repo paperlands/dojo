@@ -1,0 +1,56 @@
+# fly.toml app configuration file for the staging app (paperland).
+# Deployed by .github/workflows/ci.yml when a PR targets the "staging" branch.
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'paperland'
+primary_region = 'sin'
+kill_signal = 'SIGTERM'
+# Room for the BEAM to stop and SQLite to checkpoint its WAL. Fly's default 5s
+# can SIGKILL mid-write.
+kill_timeout = '30s'
+
+[build]
+
+#[deploy]
+#  release_command = '/app/bin/migrate'
+
+[env]
+  PHX_HOST = 'paperland.fly.dev'
+  PORT = '8080'
+  DNS_CLUSTER_QUERY = 'paperland.internal'
+  PARTISAN_PORT = '9090'
+  # Keep journal (SQLite) on the mounted volume — runtime.exs: KEEP_PATH (id:keep-ms-sqlite-path)
+  KEEP_PATH = '/data/keep.db'
+
+# Durable Keep store. initial_size lets `fly deploy` create the volume itself —
+# CI has no other way to. One volume per machine, and SQLite has one writer, so
+# this app stays at `fly scale count 1`. Keep.pull/1 is local-file only
+# (id:kb-10); scale past one and the read door 404s nondeterministically.
+[mounts]
+  source = 'keep_data'
+  destination = '/data'
+  initial_size = '1gb'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [http_service.concurrency]
+    type = 'connections'
+    hard_limit = 888
+    soft_limit = 500
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512

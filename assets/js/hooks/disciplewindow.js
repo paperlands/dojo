@@ -1,3 +1,6 @@
+import { safePush } from "../adapter.js"
+import { temporal } from "../utils/temporal.js"
+
 const DiscipleWindow = {
   mounted() {
     // Visibility tracking: set of names currently visible
@@ -9,9 +12,15 @@ const DiscipleWindow = {
     // Name set for detecting morphing/element replacement
     this.lastNames = null;
 
-    // debounce config
-    this.debounceTimeout = null;
-    this.debounceDelay = 150; // milliseconds
+    // See the room after a break; re-scan the strip under scroll load.
+    this.sendVisible = temporal.quiet(() => {
+      const visible_disciples = Array.from(this.visibleDisciples).sort()
+      safePush(this, "seeDisciples", { visible_disciples })
+    }, 150)
+    this.onScroll = temporal.pace(() => {
+      this.checkForNewElements()
+      this.cullInvisibleDisciples()
+    }, 250)
 
     // intersection observer config
     this.observer = new IntersectionObserver(
@@ -36,23 +45,32 @@ const DiscipleWindow = {
       childList: false,
       subtree: true,
       attributes: true,
-      attributeFilter: ['data-name', 'phx-value-disciple-name', 'phx-value-addr']
+      // 'data-name' is deliberately NOT watched: ensureNameAttribute WRITES
+      // it, so watching it feeds this observer its own initializeObservation
+      // and the whole reset runs twice for every disciple that appears. The
+      // phx-value-* attributes are the true identity source; data-name is only
+      // our cache of them.
+      attributeFilter: ['phx-value-disciple-name', 'phx-value-addr']
     });
 
     // init observation
     this.initializeObservation();
 
-    // throttle scroll listener
-    this.scrollThrottleTimer = null;
-    this.handleScroll = this.handleScroll.bind(this);
-    this.el.addEventListener('scroll', this.handleScroll, { passive: true });
-    var el = document.getElementById('disciple_panels');
-    el.addEventListener('wheel', function(e) {
-        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-          e.preventDefault();
-          el.scrollLeft += e.deltaY;
-        }
-      }, { passive: false })
+    this.el.addEventListener('scroll', this.onScroll, { passive: true });
+
+    // Vertical wheel scrolls the panel strip horizontally. Held on `this` and
+    // paired with its element: it lives on #disciple_panels, NOT on this.el, so
+    // cleanup() must reach back for it. An anonymous listener here would
+    // survive every teardown — and being non-passive with preventDefault, it
+    // would go on taking the wheel for a hook that is gone.
+    this.panelsEl = document.getElementById('disciple_panels');
+    this.handleWheel = (e) => {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault();
+        this.panelsEl.scrollLeft += e.deltaY;
+      }
+    };
+    this.panelsEl?.addEventListener('wheel', this.handleWheel, { passive: false });
   },
 
   updated() {
@@ -76,8 +94,13 @@ const DiscipleWindow = {
     }
   },
 
-  disconnected() {
-    // Clean up all resources
+  // destroyed(), not disconnected(). disconnected() fires when the SOCKET
+  // drops — the element is still on the page and comes back — so tearing down
+  // there does both harms at once: observers outlive every genuinely removed
+  // element, and the panel goes permanently blind after a reconnect, since
+  // nothing rebuilds them. destroyed() is the one teardown; a socket blip
+  // changes nothing here, which is right, because the DOM survives it too.
+  destroyed() {
     this.cleanup();
   },
 
@@ -130,10 +153,7 @@ const DiscipleWindow = {
       changed = true;
     });
 
-    // Send update if needed
-    if (changed) {
-      this.debounceSendVisibleDisciples();
-    }
+    if (changed) this.sendVisible()
   },
 
   handleIntersection(entries) {
@@ -160,20 +180,7 @@ const DiscipleWindow = {
       }
     });
 
-    // Only update if visibility changed
-    if (changed) {
-      this.debounceSendVisibleDisciples();
-    }
-  },
-
-  handleScroll() {
-    if (!this.scrollThrottleTimer) {
-      this.scrollThrottleTimer = setTimeout(() => {
-        this.scrollThrottleTimer = null;
-        this.checkForNewElements();
-        this.cullInvisibleDisciples();
-      }, 250); // throttle to 250ms
-    }
+    if (changed) this.sendVisible()
   },
 
   checkForNewElements() {
@@ -187,23 +194,6 @@ const DiscipleWindow = {
         this.observer.observe(element);
       }
     });
-  },
-
-  debounceSendVisibleDisciples() {
-    if (this.debounceTimeout) {
-      clearTimeout(this.debounceTimeout);
-    }
-
-    this.debounceTimeout = setTimeout(() => {
-      const visibleArray = Array.from(this.visibleDisciples);
-
-      // sort for consistent order
-      visibleArray.sort();
-
-      this.pushEvent("seeDisciples", {
-        visible_disciples: visibleArray
-      });
-    }, this.debounceDelay);
   },
 
   findDiscipleElements() {
@@ -231,22 +221,16 @@ const DiscipleWindow = {
   },
 
   cleanup() {
-    // Clear all timeouts
-    if (this.debounceTimeout) {
-      clearTimeout(this.debounceTimeout);
-      this.debounceTimeout = null;
-    }
-
-    if (this.scrollThrottleTimer) {
-      clearTimeout(this.scrollThrottleTimer);
-      this.scrollThrottleTimer = null;
-    }
+    this.sendVisible?.cancel()
+    this.onScroll?.cancel()
 
     // dc observers
     this.observer.disconnect();
     this.mutationObserver.disconnect();
 
-    this.el.removeEventListener('scroll', this.handleScroll);
+    this.el.removeEventListener('scroll', this.onScroll);
+    this.panelsEl?.removeEventListener('wheel', this.handleWheel);
+    this.panelsEl = null;
 
     // Clear data structures
     this.visibleDisciples.clear();

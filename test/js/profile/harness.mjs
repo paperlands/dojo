@@ -180,9 +180,12 @@ export function profileProgram(src, opts = {}) {
         let guard = 10000
         while (guard-- > 0) {
             const progress = scheduler.tick(flushTime)
-            drainAll(scheduler, tally)
+            const drained = drainAll(scheduler, tally)
             flushTicks++
-            if (scheduler.done || !progress) break
+            if (scheduler.done) break
+            // A drain that freed credit is progress the tick could not see.
+            // (id:output-ledger-r2-drivers)
+            if (!progress && drained === 0) break
         }
     }
     const flushMs = performance.now() - flushT0

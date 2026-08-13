@@ -1,27 +1,40 @@
 defmodule Dojo.DataCase do
   @moduledoc """
-  This module defines the setup for tests requiring
-  access to the application's data layer.
+  Setup for tests that touch the keep's data layer (id:kb-10).
 
-  You may define functions here to be used as helpers in
-  your tests.
+  ## Two pools, one sandbox
 
-  Finally, if the test case interacts with the database,
-  we enable the SQL sandbox, so changes done to the database
-  are reverted at the end of every test. If you are using
-  PostgreSQL, you can even run database tests asynchronously
-  by setting `use Dojo.DataCase, async: true`, although
-  this option is not recommended for other databases.
+  The writer and the reader are different pools. A sandbox transaction on
+  `Dojo.Keep.Repo` is invisible to `Dojo.Keep.Repo.Reader`. So this case
+  points Reader at Repo *for the test process only* — most tests exercise
+  the query shape, not the pool boundary. The two-pool seam (committed
+  write → real reader) is a separate test that uses
+  `Ecto.Adapters.SQL.Sandbox.unboxed_run/2`.
+
+  ## ConnTest trap
+
+  `Phoenix.ConnTest` runs the endpoint in another process. That process
+  does not inherit `put_dynamic_repo`, so `Keep.pull/1` hits the *real*
+  Reader pool and cannot see an uncommitted sandbox write — 404 that looks
+  like a storage bug. Before a conn that touches the keep:
+
+    * keep Reader pointed at Repo for that process too, **or**
+    * share ownership (`shared: true` / `Sandbox.allow/3`) and still
+      route Reader through Repo, **or**
+    * commit outside the sandbox (`unboxed_run`).
+
+  The sandbox also does not reach an external process (D004's Table owns
+  its connection for life). Name both seams in the first test that
+  crosses them, not the tenth.
   """
 
   use ExUnit.CaseTemplate
 
   using do
     quote do
-      alias Dojo.Repo
+      alias Dojo.Keep.Repo
 
       import Ecto
-      import Ecto.Changeset
       import Ecto.Query
       import Dojo.DataCase
     end
@@ -33,26 +46,27 @@ defmodule Dojo.DataCase do
   end
 
   @doc """
-  Sets up the sandbox based on the test tags.
+  Own the writer's sandbox connection for this test process.
+
+  Reader is pointed at Repo for the test process so sandbox writes are
+  visible on the read path (id:kb-10) — two pools do not share a transaction.
+
+  Tag `:two_pool` to leave both pools real (committed writes, real Reader).
+  Those tests own cleanup.
   """
   def setup_sandbox(tags) do
-    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Dojo.Repo, shared: not tags[:async])
-    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
-  end
+    if tags[:two_pool] do
+      # Real writer connection (no sandbox transaction) + real read pool.
+      # pool_size is 1: unboxed_run cannot steal the owner connection.
+      :ok = Ecto.Adapters.SQL.Sandbox.checkout(Dojo.Keep.Repo, sandbox: false)
+      Dojo.Keep.Repo.Reader.put_dynamic_repo(Dojo.Keep.Repo.Reader)
+      on_exit(fn -> Ecto.Adapters.SQL.Sandbox.checkin(Dojo.Keep.Repo) end)
+    else
+      pid =
+        Ecto.Adapters.SQL.Sandbox.start_owner!(Dojo.Keep.Repo, shared: not tags[:async])
 
-  @doc """
-  A helper that transforms changeset errors into a map of messages.
-
-      assert {:error, changeset} = Accounts.create_user(%{password: "short"})
-      assert "password is too short" in errors_on(changeset).password
-      assert %{password: ["password is too short"]} = errors_on(changeset)
-
-  """
-  def errors_on(changeset) do
-    Ecto.Changeset.traverse_errors(changeset, fn {message, opts} ->
-      Regex.replace(~r"%{(\w+)}", message, fn _, key ->
-        opts |> Keyword.get(String.to_existing_atom(key), key) |> to_string()
-      end)
-    end)
+      Dojo.Keep.Repo.Reader.put_dynamic_repo(Dojo.Keep.Repo)
+      on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
+    end
   end
 end

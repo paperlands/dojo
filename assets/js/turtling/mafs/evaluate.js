@@ -15,14 +15,13 @@ export class Evaluator {
             'atan': (x) => this.toDegrees(Math.atan(x)),
             'sqrt': Math.sqrt,
             'log': Math.log,
-            'exp': Math.exp
+            'exp': Math.exp,
+            'abs': Math.abs
         };
 
-        // Deferred (late-evaluated) constants: stochastic / streaming primitives that
-        // must re-evaluate at each point of use and must never be folded into an fn body
-        // at definition time. Foldable literals (pi, e) and contextual snapshots
-        // (x, y, z, count, time) are NOT here — they may be captured eagerly. Seed of the
-        // scmutils numerical tower: values-now vs generators-per-access.
+        // Deferred = stochastic/streaming primitives that must re-evaluate at
+        // each use, never folded into an fn body at definition time. Foldable
+        // literals (pi, e) and context snapshots (x,y,z,count,time) may fold eagerly.
         this.deferred = new Set(['random']);
 
         // TODO: Numerical Tower extensible hierarchy of generic mathematical operations that

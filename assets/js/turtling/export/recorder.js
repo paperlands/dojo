@@ -608,11 +608,20 @@ export class Recorder {
                 });
             }
 
-            const { width, height } = this._canvas;
-            
-            const pixels = new Uint8Array(width * height * 4);
-            this._gl.readPixels(0, 0, width, height, this._gl.RGBA, this._gl.UNSIGNED_BYTE, pixels);
-            
+            // Caller-supplied pixels (the async PBO readback in stage.hatch)
+            // must be used as-is: by the time this runs the non-preserved
+            // drawing buffer has been composited and cleared, so a readPixels
+            // here would return only zeros. Dimensions ride along too — the
+            // canvas may have resized between the enqueue and the fence.
+            const width = options.width ?? this._canvas.width;
+            const height = options.height ?? this._canvas.height;
+
+            let pixels = options.pixels;
+            if (!pixels) {
+                pixels = new Uint8Array(width * height * 4);
+                this._gl.readPixels(0, 0, width, height, this._gl.RGBA, this._gl.UNSIGNED_BYTE, pixels);
+            }
+
             this._flipPixelsVertically(pixels, width, height);
             
             const imageData = new ImageData(new Uint8ClampedArray(pixels), width, height);

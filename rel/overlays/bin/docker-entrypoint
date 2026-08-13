@@ -1,0 +1,30 @@
+#!/bin/sh
+# Fly volumes mount root-owned; the app runs as nobody. Take the data mount,
+# then hand over with setpriv — it execs rather than forks, so the BEAM stays
+# PID 1 and keeps its own signal handling and child reaping.
+set -eu
+
+APP_UID=65534
+APP_GID=65534
+
+# The mount to own is the Keep journal's directory; DATA_DIR overrides.
+if [ -z "${DATA_DIR:-}" ]; then
+  if [ -n "${KEEP_PATH:-}" ]; then
+    DATA_DIR="$(dirname "$KEEP_PATH")"
+  else
+    DATA_DIR=/data
+  fi
+fi
+
+# Non-root already (docker --user, k8s runAsNonRoot): nothing to take or drop.
+if [ "$(id -u)" != 0 ]; then
+  exec "$@"
+fi
+
+# Idempotent: a volume already ours is left alone, so boot stays O(1).
+if [ -d "$DATA_DIR" ] && [ "$(stat -c %u "$DATA_DIR")" != "$APP_UID" ]; then
+  chown -R "$APP_UID:$APP_GID" "$DATA_DIR" || echo "docker-entrypoint: cannot chown $DATA_DIR" >&2
+  chmod 755 "$DATA_DIR"
+fi
+
+exec setpriv --reuid="$APP_UID" --regid="$APP_GID" --clear-groups --no-new-privs -- "$@"

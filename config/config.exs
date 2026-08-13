@@ -8,7 +8,9 @@
 import Config
 
 config :dojo,
-  ecto_repos: [Dojo.Repo],
+  # Keep.Repo only — Dojo.Repo stays commented out of the tree (id:kb-10).
+  # The reader never migrates; priv is set on the repo config, not derived.
+  ecto_repos: [Dojo.Keep.Repo],
   generators: [timestamp_type: :utc_datetime]
 
 # Configures the endpoint
@@ -37,25 +39,36 @@ config :dojo, DojoWeb.Endpoint,
 # at the `config/runtime.exs`.
 # config :dojo, Dojo.Mailer, adapter: Swoosh.Adapters.Local
 
-# Configure esbuild (the version is required)
+# Configure esbuild (the version is required).
+# ≥0.19 required for three.js r152+ static class fields: older esbuild rewrote
+# `class _i{static{_i.prototype.isX=!0}}` as `var _i=class{static{_i.prototype…}}`
+# where `_i` is still undefined during the static block — r185 dies at boot with
+# "Cannot read properties of undefined (reading 'prototype')". Newer esbuild
+# keeps a named class expression (`var _i=class __i{static{__i.prototype…}}`).
 config :esbuild,
-  version: "0.17.11",
+  version: "0.25.12",
   dojo: [
+    # app.js is the page; journal.worker.js is the keep's durability boundary
+    # (id:kb-6) — a second entry so the worker is one IIFE with its engine
+    # inlined. The door loads it by the digested path in root.html.heex
+    # (import.meta.url is empty under IIFE — empty-import-meta).
     args:
-      ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --external:/codemirror/* --external:/vendor/* --alias:@=.),
+      ~w(js/app.js js/keep/journal.worker.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --external:/vendor/* --alias:@=.),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]
 
-# Configure tailwind (the version is required)
+# Configure tailwind (the version is required).
+# ≥ 4.2.3 for colocated CSS; NODE_PATH resolves phoenix-colocated/dojo (lvdx-0).
 config :tailwind,
-  version: "4.1.5",
+  version: "4.3.3",
   dojo: [
     args: ~w(
     --input=assets/css/app.css
     --output=priv/static/assets/css/app.css
     ),
-    cd: Path.expand("..", __DIR__)
+    cd: Path.expand("..", __DIR__),
+    env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]
 
 # Configures Elixir's Logger
