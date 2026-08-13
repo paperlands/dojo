@@ -43,18 +43,18 @@ msgstr "Tulis Sesuatu"
 
 #: lib/dojo_web/components/deck.ex:16
 #, elixir-autogen, elixir-format
-msgid "Move to a Point"
+msgid "Move to Point"
 msgstr "Melangkah ke Titik"
 
 #: lib/dojo_web/components/deck.ex:17
 #, elixir-autogen, elixir-format
-msgid "Jump to a Point"
+msgid "Jump to Point"
 msgstr "Lompat ke Titik"
 
 #: lib/dojo_web/components/deck.ex:18
 #, elixir-autogen, elixir-format
 msgid "Shout a Message"
-msgstr "Laungkan Pesan"
+msgstr "Laungkan Pesanan"
 
 #: lib/dojo_web/components/deck.ex:19
 #, elixir-autogen, elixir-format
@@ -63,7 +63,7 @@ msgstr "Buat Petak-petak"
 
 #: lib/dojo_web/components/deck.ex:20
 #, elixir-autogen, elixir-format
-msgid "Face Point"
+msgid "Face a Point"
 msgstr "Pandang ke Titik"
 
 #: lib/dojo_web/components/deck.ex:21

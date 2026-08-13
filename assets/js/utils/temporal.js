@@ -1,71 +1,83 @@
-// Core primitive: execution with state
-const exec = (fn) => {
-  let running = false, result;
-  return async (...args) => {
-    if (running) return result;
-    running = true;
-    try { return result = await fn(...args); }
-    finally { running = false; }
-  };
-};
+// Hot-path timers: pace / quiet / gate drop; once waits (or null).
+// Hand-rolled stream timers are the failure mode.
 
-// coordinators
-const delay = (ms) => (fn) => {
-  let timer;
-  return (...args) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), ms);
-  };
-};
+const hold = (ms, paced) => (fn) => {
+  let timer = null
+  let pending = null
+  let last = -Infinity
 
-const interval = (ms) => (fn) => {
-  let last = 0;
-  return (...args) => {
-    const now = Date.now();
-    if (now - last >= ms) {
-      last = now;
-      return fn(...args);
+  const fire = () => {
+    timer = null
+    last = Date.now()
+    const args = pending
+    pending = null
+    if (args) fn(...args)
+  }
+
+  const held = (...args) => {
+    pending = args
+    if (paced) {
+      if (timer) return
+      timer = setTimeout(fire, Math.max(0, ms - (Date.now() - last)))
+    } else {
+      clearTimeout(timer)
+      timer = setTimeout(fire, ms)
     }
-  };
-};
+  }
 
-const memo = (keyFn = JSON.stringify) => (fn) => {
-  let key, result;
+  held.flush = () => {
+    if (!pending) return
+    clearTimeout(timer)
+    timer = null
+    fire()
+  }
+
+  held.cancel = () => {
+    clearTimeout(timer)
+    timer = null
+    pending = null
+  }
+
+  return held
+}
+
+const pace = (ms) => hold(ms, true)
+const quiet = (ms) => hold(ms, false)
+
+// Side-effect memo. Key = first arg by default — never walk the payload.
+const gate = (fn, keyOf = (args) => args[0]) => {
+  let key
+  let seen = false
   return (...args) => {
-    const k = keyFn(args);
-    if (k !== key) {
-      key = k;
-      result = fn(...args);
+    const k = keyOf(args)
+    if (seen && k === key) return
+    seen = true
+    key = k
+    return fn(...args)
+  }
+}
+
+// Next value or null. Producer is never obliged to produce (never hangs).
+const once = (subscribe, ms) =>
+  new Promise((resolve) => {
+    let done = false
+    let unsub = null
+    const settle = (value) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      unsub?.()
+      resolve(value ?? null)
     }
-    return result;
-  };
-};
+    const timer = setTimeout(() => settle(null), ms)
+    // Sync notify inside subscribe: unsub still null; release below runs.
+    unsub = subscribe(settle)
+    if (done) unsub?.()
+  })
 
-const once = (fn) => {
-  let called = false, result;
-  return (...args) => {
-    if (!called) {
-      called = true;
-      result = fn(...args);
-    }
-    return result;
-  };
-};
-
-// Composition
-const pipe = (...fns) => (x) => fns.reduce((acc, fn) => fn(acc), x);
-
-// Export
 export const temporal = {
-  exec,
-  delay,
-  interval,
-  memo,
+  pace: (fn, ms) => pace(ms)(fn),
+  quiet: (fn, ms) => quiet(ms)(fn),
+  gate,
   once,
-  pipe,
-
-  debounce: (fn, ms) => pipe(exec, delay(ms))(fn),
-  throttle: (fn, ms) => pipe(exec, interval(ms))(fn),
-  debounceOnce: (fn, ms) => pipe(exec, once, delay(ms))(fn),
-  throttleOnce: (fn, ms) => pipe(exec, once, interval(ms))(fn)
-};
+}

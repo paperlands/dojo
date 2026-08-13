@@ -4,7 +4,7 @@ defmodule Dojo.MixProject do
   def project do
     [
       app: :dojo,
-      version: "0.4.2",
+      version: "0.5.0",
       elixir: "~> 1.20",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() in [:prod, :local],
@@ -36,7 +36,6 @@ defmodule Dojo.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
-      {:tidewave, "~> 0.5", only: [:dev]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:igniter, "~> 0.6", only: [:dev, :test]},
       {:usage_rules, "~> 1.1", only: :dev},
@@ -44,15 +43,16 @@ defmodule Dojo.MixProject do
       {:phoenix, "~> 1.8"},
       {:phoenix_ecto, "~> 4.4"},
       {:ecto_sql, "~> 3.10"},
+      {:ecto_sqlite3, "~> 0.24.1"},
       {:postgrex, ">= 0.0.0"},
       {:phoenix_html, "~> 4.0"},
       {:phoenix_live_reload, "~> 1.5", only: :dev},
-      {:phoenix_live_view, "~> 1.1.3"},
+      {:phoenix_live_view, "~> 1.2.0"},
       {:phoenix_pubsub, "~> 2.2"},
       {:floki, ">= 0.30.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.8.6"},
       {:esbuild, "~> 0.9", runtime: Mix.env() == :dev},
-      {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
+      {:tailwind, "~> 0.5", runtime: Mix.env() == :dev},
       {:heroicons,
        github: "tailwindlabs/heroicons",
        tag: "v2.1.1",
@@ -84,7 +84,6 @@ defmodule Dojo.MixProject do
       # Protocol Buffers for safe, non-atom signaling
       {:recon, "~> 2.5"},
       {:protox, "~> 2.0"}
-      # {:libcluster, "~> 3.3.0"}
     ]
   end
 
@@ -132,13 +131,29 @@ defmodule Dojo.MixProject do
 
   defp aliases do
     [
-      setup: ["deps.get", "compile", "assets.setup", "assets.build", "assets.deploy"],
-      "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
+      setup: [
+        "deps.get",
+        "compile",
+        "ecto.create",
+        "ecto.migrate",
+        "assets.setup",
+        "assets.build",
+        "assets.deploy"
+      ],
+      "ecto.setup": ["ecto.create", "ecto.migrate"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
-      test: ["test"],
+      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["tailwind dojo", "esbuild dojo"],
+      # press.codex: id→{name,title} index for the weave resolver (Shoot 0 / Q2),
+      # and the vendor recast into priv/static/codex (what the web reaches).
+      "press.codex": &press_codex/1,
+      "assets.build": [
+        "press.codex",
+        "tailwind dojo",
+        "esbuild dojo"
+      ],
       "assets.deploy": [
+        "press.codex",
         "tailwind dojo --minify",
         "esbuild dojo --minify",
         "phx.digest"
@@ -146,12 +161,23 @@ defmodule Dojo.MixProject do
     ]
   end
 
+  # The press is a projection OF the corpus, so it only runs where the corpus
+  # stands. Images ship the committed vendor, never codex/ (see .dockerignore) —
+  # no corpus there, nothing to press, and the build must not care.
+  defp press_codex(args) do
+    if File.dir?("codex/fragments") do
+      Mix.Task.run("cmd", ["node", "scripts/codex/press_codex_index.mjs" | args])
+    else
+      Mix.shell().info("press.codex: no codex/fragments here — skipped")
+    end
+  end
+
   def releases do
     steps =
       if Mix.env() == :local do
-        [:assemble, &Burrito.wrap/1, &post_wrap/1]
+        [:assemble, &prune_journals/1, &Burrito.wrap/1, &post_wrap/1]
       else
-        [:assemble]
+        [:assemble, &prune_journals/1]
       end
 
     [
@@ -162,6 +188,20 @@ defmodule Dojo.MixProject do
         ]
       ]
     ]
+  end
+
+  # priv/ ships whole, so a keep_dev.db left in the tree would ride into an
+  # installer carrying its author's journal. Only the migrations belong here.
+  defp prune_journals(%Mix.Release{path: path} = release) do
+    [path, "lib", "dojo-*", "priv", "keep", "*.db*"]
+    |> Path.join()
+    |> Path.wildcard()
+    |> Enum.each(fn stray ->
+      Mix.shell().info("prune_journals: #{Path.relative_to(stray, path)}")
+      File.rm!(stray)
+    end)
+
+    release
   end
 
   # Burrito build targets.

@@ -32,6 +32,21 @@ defmodule DojoWeb.ConnCase do
   end
 
   setup _tags do
+    # [⚠] THE SANDBOX IS OFF HERE, AND THE FIRST KEEP ConnTest WILL PAY FOR IT.
+    #
+    # id:kb-vet7 57 predicted half of this: a controller runs in its own
+    # process, so `DataCase`'s per-process `default_dynamic_repo` trick does
+    # not reach it and a Reader read would see nothing. The other half is the
+    # line below — with the sandbox commented out there is no containment at
+    # all, so a ConnTest over `/keeps/*` writes to the real test database and
+    # leaks into every suite after it.
+    #
+    # Closing it wants `Phoenix.Ecto.SQL.Sandbox` plus `Sandbox.allow/3` for
+    # the controller's pid — shared test infrastructure, and its own change.
+    # Until then the keep's HTTP doors are covered underneath: the domain in
+    # `test/dojo/keep/pull_test.exs`, the cursor codec purely, and the query
+    # plans in `repo_test.exs`.
+    #
     # Dojo.DataCase.setup_sandbox(tags)
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end

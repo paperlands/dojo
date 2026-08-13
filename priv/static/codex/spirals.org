@@ -1,0 +1,126 @@
+* SPIRALLING TO THE END * 
+:PROPERTIES:
+:ID: frag-spiral
+:TYPE: pattern
+:INVARIANCE: progress
+:THEME: Shapes Change Process
+:STATE: interwoven
+:TOWARD: [[id:codex-vision-movement]]
+:END:
+#+title: Unending Spirals — Spiralling to the End
+#+FILETAGS: :codex:fragment:shapes:change:process:
+#+STARTUP: overview indent hidestars
+#+OPTIONS: toc:nil num:nil ^:{} tags:not-in-toc
+
+#+BEGIN_QUOTE
+From the shell of a snail's back to the galaxy we call home, if you follow a spiral inward, where does it actually end?
+#+END_QUOTE
+
+The Snake who once bit its tail had grown restless in youth. Equal steps had given it a
+ring ([[id:frag-roundness][Roundness]]). Now it wanted to know how else it could move 
+
+So it grew its step out.
+
+#+BEGIN_SRC paperlang
+fw 50
+rt 90
+fw 60 # length increases +10 each time
+rt 90
+fw 70
+rt 90
+fw 80
+rt 90
+fw 90
+# ...
+#+END_SRC
+
+50. Then 60. Then 70. The turn remained the same right angle, but each length
+outgrew the last, and the tip that had once waited under the chin slipped further away with every
+coil. The Snake was calling itself coiling outwards without knowing how to stop.
+
+
+#+BEGIN_SRC paperlang
+def coil len do
+  fw len
+  rt 90
+  coil len+10
+end
+
+coil 50
+
+#+END_SRC
+
+An Owl watched perched above the maze.
+
+"Your coil will not close," said the Owl.
+
+"I closed before."
+
+"You kept the same step then. You are not keeping it now."
+
+"Then where do I end?"
+
+"When you stop calling," said the Owl. "You do not know yet, only I do."
+
+
+The trail is a spiral. The snakes rule gives rise to the spiral. Make a similar turn, go forward, call
+yourself again. When the length of the step stayed the same, the mouth bit its own tail. When the steps change,
+the mouth never finds the tail, and the turning that never ends leaves behind this open maze instead.
+
+And then, when does the Snake stop, it should be an unending dance.
+Something in the Dojo already keeps a ceiling on self-calling. The End was real.
+It was not yet the Snake's decision.
+
+"You stopped me," said the Snake.
+
+"The Dojo stops what will not stop itself," said the Owl. "That is mercy, not knowing. Knowing is
+when the End lives in your own song."
+
+"Teach me."
+
+"Decide when to stop. When it is not, do not call yourself."
+
+#+BEGIN_SRC paperlang
+def coil x do
+  fw x
+  rt 90
+  wait 0.01
+  when x<100 do
+    coil x+10
+  end
+end
+
+coil 0
+#+END_SRC
+
+=when x<100= is the Owl's gift, carried in the climb: go on only while the tread is still below a
+hundred. The moment the condition turns false, the next call is not made, and there is silence.
+The trail is still a spiral. The song now ends where the Snake chose.
+
+Forever and until are the same climb. One of them asked whether to go on.
+
+- Move the End. Try =when x<20=, then =when x<200=. Where does the trail still look finished, and
+  where does the room's ceiling take over if you climb past three hundred and sixty?
+- Two ways to finish. A =loop 12= counts its end and stops. A =when= asks and stops when the answer
+  turns false. When would you reach for each? ([[id:frag-the-endless-chain][The Endless Chain]]
+  counts; this night asks.)
+- Soften the well. =rt 92= instead of =rt 90=. The leftover angle is the old closed walk still
+  hiding. For the mouth and the tip again, return to [[id:frag-roundness][Roundness]].
+- Climb down. =coil 100= with =coil x-1=. Inward, toward the shell. What happens at nought?
+  ([[id:frag-shapeshifting][Shapeshifting]].)
+- Delete the =when=. Does the quiet fall in the same place as before?
+- Four dancers, each chasing the next, share this hunger in a ring:
+  [[id:frag-the-whirlpool][The Dancers' Whirlpool]].
+
+When the second song ended, the Snake looked up.
+
+"Can I go on forever? ", it asked.
+
+** The stage-hand's drawer
+- The Dojo's quiet ceiling is a recursion depth of three hundred and sixty.
+  =limitRecurse= can raise it call it before your definition.  =when= gives more control for how the End is chosen.
+
+The snakes first experience is [[id:frag-roundness]]. The name that lets the Snake call itself is
+[[id:frag-magic-word]] and [[id:prim-def]]. The Owl's gift is [[id:prim-when]]. The climb that
+returns instead of growing is [[id:frag-waves]]. · [[id:codex-corpus-exupery]] ·
+[[id:codex-corpus-beast-fable]] · [[id:codex-corpus-sicp]] · [[id:codex-vision-movement]]

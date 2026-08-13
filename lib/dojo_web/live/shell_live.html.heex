@@ -1,10 +1,129 @@
+<style :type={DojoWeb.ColocatedCSS}>
+  /* deck + outer open flags (#deck-state / #outer-open, phx-update=ignore) */
+  .rightpane .deck { display: none; }
+  .rightpane:has(#deck-state.deck-open):not(:has(#outer-open.is-open)) .deck {
+    display: flex;
+  }
+  @media (min-width: 40rem) {
+    .rightpane:has(#deck-state.deck-open):not(:has(#outer-open.is-open)) .deck {
+      display: block;
+    }
+  }
+  .rightpane:has(#deck-state.deck-open):not(:has(#outer-open.is-open)) #manualdeckbutton {
+    fill: var(--color-secondary-content);
+    filter: drop-shadow(0 1px 1px var(--color-secondary-content));
+  }
+  .outershell { display: none; }
+  .rightpane:has(#outer-open.is-open) .outershell { display: block; }
+
+  /* the river's own flag — placement and gating are the call site's;
+     the component itself is placement-agnostic (id:kr-place). Open paint
+     for #riverbutton lives on river_state (ColocatedCSS). */
+  .rightpane .river-sky { display: none; }
+  .rightpane:has(#river-state.is-open) .river-sky { display: block; }
+
+  /* outer nerve + wash */
+  #outer-nerve .nerve-error {
+    color: oklch(0.63 0.21 25);
+    text-shadow: 0 0 8px rgb(240 168 61 / 0.35);
+  }
+  #outer-nerve .nerve-error .nerve-msg { opacity: 1; }
+  #outer-nerve .nerve-output { color: var(--color-primary); }
+  @keyframes outer-glitch {
+    0%   { transform: translate(0, 0) skewX(0deg);    filter: none; }
+    18%  { transform: translate(-2px, 0) skewX(-1deg); filter: hue-rotate(-25deg) saturate(1.5); }
+    36%  { transform: translate(2px, 1px) skewX(1deg);  filter: hue-rotate(15deg); }
+    54%  { transform: translate(-1px, 0) skewX(-0.5deg); }
+    72%  { transform: translate(1px, -1px) skewX(0.5deg); }
+    100% { transform: translate(0, 0) skewX(0deg);    filter: none; }
+  }
+  #outerenv {
+    transition: background-color 300ms ease, box-shadow 300ms ease;
+  }
+  #outerenv .cm-content {
+    transition: color 300ms ease;
+  }
+  #outerenv[data-outer-state="error"] {
+    background-color: rgba(100, 22, 24, 0.12);
+    box-shadow: inset 0 0 24px rgba(180, 30, 30, 0.18);
+  }
+  #outerenv[data-outer-state="error"] .cm-content {
+    animation: outer-glitch 320ms ease-out;
+    color: rgba(255, 140, 120, 0.95);
+  }
+  #outerenv[data-outer-state="draft"] {
+    background-color: color-mix(in oklch, var(--color-secondary-content) 9%, transparent);
+    box-shadow: inset 0 0 24px color-mix(in oklch, var(--color-secondary-content) 16%, transparent);
+  }
+
+  /* hearth trail */
+  .weave {
+    --chlorophyll: var(--color-accent);
+    --xanthophyll: var(--color-warning);
+    --carotene: var(--color-primary);
+    --mist: var(--color-base-200);
+    --ink: var(--color-secondary-content);
+  }
+  .weave-path {
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 0.1rem;
+    max-height: 8rem;
+    overflow: hidden;
+    mask-image: linear-gradient(to top, black 55%, transparent 96%);
+  }
+  .weave-trail-step {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    line-height: 1.5;
+    cursor: pointer;
+    --step-pigment: color-mix(
+      in oklch,
+      color-mix(in oklch, var(--carotene) calc(var(--trail-heat, 0.5) * 100%), var(--xanthophyll))
+        calc(22% + var(--trail-heat, 0.5) * 70%),
+      var(--mist)
+    );
+    color: color-mix(in oklch, var(--step-pigment) 78%, var(--ink));
+    transition: color 2s ease, text-shadow 2s ease;
+  }
+  .weave-trail-step::before {
+    content: "· ";
+    color: var(--step-pigment);
+  }
+  .weave-trail-step:hover {
+    color: color-mix(in oklch, var(--carotene) 60%, var(--ink));
+  }
+  .weave-trail-kindled {
+    color: color-mix(in oklch, var(--chlorophyll) 55%, var(--ink));
+    text-shadow: 0 0 14px color-mix(in oklch, var(--chlorophyll) 45%, transparent);
+  }
+  .weave-trail-kindled::before {
+    color: color-mix(in oklch, var(--chlorophyll) 80%, var(--ink));
+  }
+  .weave-unborn,
+  .weave-unborn.weave-trail-kindled {
+    color: color-mix(in oklch, var(--xanthophyll) 45%, var(--ink));
+    text-shadow: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .weave-trail-step { transition: none; }
+  }
+
+  /* presence expires with the socket */
+  .phx-disconnected #disciple_panels [data-disciple],
+  .phx-client-error #disciple_panels [data-disciple],
+  .phx-error #disciple_panels [data-disciple] {
+    opacity: 0.55;
+    filter: grayscale(0.35);
+    pointer-events: none;
+  }
+</style>
 <div class="relative h-screen w-screen bg-secondary">
-  <canvas phx-update="ignore" id="core-canvas" class="fixed inset-0 z-0 bg-inherit select-none">
-  </canvas>
+  <canvas phx-update="ignore" id="core-canvas" class="fixed inset-0 z-0 bg-inherit select-none"></canvas>
   <!-- Desktop Layout (lg and up) -->
   <div class="fixed inset-0 grid grid-cols-[40dvw_20dvw_40dvw] md:grid-cols-[40dvw_25dvw_30dvw]  grid-rows-[60dvh_40dvh]  lg:grid-cols-[25dvw_50dvw_25dvw]  lg:grid-rows-[1fr_30dvh] gap-0.5 lg:gap-1 pointer-events-none">
-    
-<!-- Left Pane - Code Editor -->
+    <!-- Left Pane - Code Editor -->
     <div
       id="lefthird"
       class="row-span-1 col-span-1 lg:row-span-2 mt-2 lg:col-span-1 overflow-y-hidden pointer-events-none scrollbar-hide"
@@ -31,6 +150,7 @@
               id="tabs"
               class="flex flex-row items-center overflow-x-auto scrollbar-hide scroll-smooth"
               phx-update="ignore"
+              phx-hook=".AutoCh"
             >
               <div
                 :for={%{"value" => value} <- [%{"value" => "Papert"}]}
@@ -71,10 +191,28 @@
                 </button>
               </div>
 
-              <script>
-                window.addEventListener('DOMContentLoaded', () => {
-                      document.querySelectorAll('input[id^="tab-"]').forEach(input => {input.style.width=Math.max(input.value.length||input.placeholder.length,1)+'ch';});
-                    });
+              <script :type={Phoenix.LiveView.ColocatedHook} name=".AutoCh">
+                export default {
+                  mounted() {
+                    const size = (el) => {
+                      const n = Math.max((el.value || el.placeholder || "").length, 1)
+                      el.style.width = n + "ch"
+                    }
+                    const resize = (e) => size(e.target)
+                    const root = this.el
+                    const scan = () => root.querySelectorAll("input").forEach(size)
+                    root.addEventListener("input", resize)
+                    // Deck/tabs morph — re-size when children appear.
+                    const mo = new MutationObserver(scan)
+                    mo.observe(root, { childList: true, subtree: true })
+                    scan()
+                    this._autoChRelease = () => {
+                      root.removeEventListener("input", resize)
+                      mo.disconnect()
+                    }
+                  },
+                  destroyed() { this._autoChRelease?.() }
+                }
               </script>
             </div>
           </div>
@@ -105,24 +243,21 @@
           <.slider slider_value="50" />
         </div>
         <textarea
-          id="your-buffer"
+          id="coreshell"
           class="relative rounded-sm pointer-events-auto cursor-text bg-transparent border-none h-11/12"
           phx-hook="Shell"
-          data-target="core"
+          data-target="coreshell"
         />
       </div>
       <!-- Code Output -->
-
     </div>
     <!-- Zhong -->
     <div class="bg-transparent pointer-events-none select-none" />
     <!-- Right pane -->
     <div class="rightpane row-span-1 col-span-1 lg:row-span-2 p-1 sm:p-2 lg:p-4 relative ">
-      <%!-- Single source of truth for the command deck's open/closed state.
-            phx-update="ignore" keeps the client-toggled `deck-open` class alive
-            across server re-renders; CSS derives panel + button + outershell
-            yield from it. Pure client-side, so it works offline. --%>
       <div id="deck-state" phx-update="ignore" class="deck-open hidden"></div>
+      <div id="outer-open" phx-update="ignore" class="hidden"></div>
+      <.river_state />
       <div id="sessionbox" phx-hook="Box" class="fixed z-50 right-0 ml-4 ">
         <div :if={!@session.name} class="relative right-0 group">
           <!-- Login Link Button -->
@@ -140,8 +275,7 @@
           :if={@session.name}
           class="relative font-mono right-2 text-primary bg-transparent border border-none rounded px-2 py-1 w-full max-w-xs"
         >
-          
-<!-- Welcome message row -->
+          <!-- Welcome message row -->
           <div
             dir={Session.dir(@locale)}
             class="flex items-center text-[12px] sm:text-xs mb-1 border-b border-accent/50 pb-1 overflow-hidden"
@@ -178,8 +312,8 @@
               </span>
             </span>
           </div>
-          
-<!-- Command keys row -->
+
+          <!-- Command keys row -->
           <div class="flex items-center justify-between">
             <!-- Empty spacer div with minimum width on small screens -->
 
@@ -191,7 +325,15 @@
             >
               <button
                 class="flex items-center justify-center w-9 h-9 border-1 border-accent fill-primary  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 lg:mx-1 rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
-                phx-click={JS.toggle_class("deck-open", to: "#deck-state")}
+                title="close command deck"
+                aria-label="close command deck"
+                phx-click={
+                  JS.toggle_class("deck-open", to: "#deck-state")
+                  |> JS.toggle_attribute({"title", "close command deck", "open command deck"})
+                  |> JS.toggle_attribute(
+                    {"aria-label", "close command deck", "open command deck"}
+                  )
+                }
               >
                 <.manual
                   id="manualdeckbutton"
@@ -214,6 +356,8 @@
               <button
                 id="startrecording"
                 class="flex items-center justify-center w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8   rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+                title="record creation"
+                aria-label="record creation"
                 phx-click={
                   JS.dispatch("phx:relayCamera", detail: %{command: "record"})
                   |> JS.hide(to: "#startrecording")
@@ -249,6 +393,8 @@
               <button
                 id="endrecording"
                 class="flex items-center justify-center hidden w-9 h-9 border-2 border-primary/50  backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8   rounded-sm flex items-center justify-center hover:fill-primary active:border-amber-500 touch-manipulation"
+                title="stop recording"
+                aria-label="stop recording"
                 phx-click={
                   JS.dispatch("phx:relayCamera", detail: %{command: "endrecord"})
                   |> JS.hide(to: "#endrecording")
@@ -261,9 +407,13 @@
                 />
               </button>
 
+              <.river_toggle />
+
               <button
                 id="centering"
                 class=" flex items-center justify-center  w-9 h-9 border border-accent backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0   rounded-sm  lg:w-8 lg:h-8   fill-primary hover:fill-primary active:border-primary touch-manipulation"
+                title="recenter"
+                aria-label="recenter"
                 phx-rtclick={
                   JS.dispatch("phx:relayCamera", detail: %{command: "pan"})
                   |> JS.toggle_class("hidden", to: "#centering")
@@ -291,6 +441,8 @@
               <button
                 id="centered"
                 class=" flex items-center justify-center hidden w-9 h-9 border border-accent backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0  rounded-sm  lg:w-8 lg:h-8   fill-primary hover:fill-primary active:border-primary touch-manipulation"
+                title="follow turtle"
+                aria-label="follow turtle"
                 phx-click={
                   JS.dispatch("phx:relayCamera", detail: %{command: "track"})
                   |> JS.toggle_class(
@@ -338,13 +490,34 @@
         </div>
       </div>
       <.live_component
-        :if={@outershell.active}
         module={DojoWeb.OuterShellLive}
         id="outer-shell-component"
         outershell={@outershell}
         locale={@locale}
       />
       <.live_component module={DojoWeb.DeckLive} id="command-deck" locale={@locale} />
+      <%!-- The keep river (id:kr-orient): this work's moments, lit by one sun.
+           Folded on the client out of the local journal — the server renders
+           furniture and never learns what the child kept.
+
+           TOP CENTER, where the sun already is: the light enters at the top of
+           the screen and dissolves downward into the drawing. No panel, no
+           blur pane — the strip has no edge to notice (id:kr-meridian). --%>
+      <%!-- Width is the light wash only — hit targets are seats + caption
+           controls inside (pointer-events none on the sky/rail padding). --%>
+      <.river class="fixed top-0 left-1/2 -translate-x-1/2 z-40 w-[min(760px,94vw)] pointer-events-none" />
+      <%!-- The hearth (Shoot 0): the walk trail — the weave's only chrome.
+           Pages open in the outershell (seeWeave invokes it); this path is
+           the residue of the walking, amber shanshui over theme pigments. --%>
+      <nav
+        id="weave-hearth"
+        phx-hook="Shell"
+        phx-update="ignore"
+        data-target="weave"
+        aria-label="walk trail"
+        class="weave weave-path fixed bottom-24 right-3 z-40 pointer-events-auto max-w-[min(38ch,calc(100vw-1.5rem))]"
+      >
+      </nav>
       <div
         id="nerve-hud"
         phx-hook="NerveHook"
@@ -384,7 +557,10 @@
           :for={{reg_key, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
           class="bg-transparent pointer-events-auto"
         >
-          <div class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out mx-2 backdrop-blur-[1px] animate-fade flex-shrink-0" <> is_main_focus(reg_key, @focused_name)}>
+          <div
+            data-disciple
+            class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out mx-2 backdrop-blur-[1px] animate-fade flex-shrink-0" <> is_main_focus(reg_key, @focused_name)}
+          >
             <.icon
               :if={@sensei}
               name="hero-cursor-arrow-ripple"
@@ -395,7 +571,7 @@
             <div
               phx-click={
                 (@outershell && @outershell.addr == reg_key &&
-                   JS.push("closeTurtle")) ||
+                   DojoWeb.OuterShellLive.close_js()) ||
                   JS.push("seeTurtle")
               }
               phx-throttle="500"

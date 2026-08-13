@@ -43,12 +43,12 @@ msgstr "Escribe algo"
 
 #: lib/dojo_web/components/deck.ex:16
 #, elixir-autogen, elixir-format
-msgid "Move to a Point"
+msgid "Move to Point"
 msgstr "Avanza al punto"
 
 #: lib/dojo_web/components/deck.ex:17
 #, elixir-autogen, elixir-format
-msgid "Jump to a Point"
+msgid "Jump to Point"
 msgstr "Salta al punto"
 
 #: lib/dojo_web/components/deck.ex:18
@@ -63,7 +63,7 @@ msgstr "Dibuja una cuadrícula"
 
 #: lib/dojo_web/components/deck.ex:20
 #, elixir-autogen, elixir-format
-msgid "Face Point"
+msgid "Face a Point"
 msgstr "Gira hacia el punto"
 
 #: lib/dojo_web/components/deck.ex:21

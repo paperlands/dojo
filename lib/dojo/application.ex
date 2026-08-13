@@ -35,7 +35,14 @@ defmodule Dojo.Application do
                [strategy: :rest_for_one]
              ]}
         },
-        # Dojo.Repo,
+        # Dojo.Repo stays shut (id:kb-10). Keep's two halfs: one writer, one read pool.
+        # The schema is raised here, not by a release_command: Fly mounts no
+        # volume on that machine, so it would migrate a disk nobody keeps.
+        {Ecto.Migrator,
+         repos: Application.fetch_env!(:dojo, :ecto_repos),
+         skip: not Application.get_env(:dojo, :migrate_on_boot, false)},
+        Dojo.Keep.Repo,
+        Dojo.Keep.Repo.Reader,
         {DNSCluster, query: Application.get_env(:dojo, :dns_cluster_query) || :ignore},
         {Finch, name: Dojo.Finch},
         Dojo.Cache,
