@@ -3,7 +3,7 @@
 import { createLink, SERVER } from "./kernel/link.js"
 import { name, read } from "./keep/entry.js"
 import { newerKeep, ofWork } from "./keep/work.js"
-import { PAGE } from "./keep/page.js"
+import { REACH } from "./keep/page.js"
 import { accept } from "./keep/shared.js"
 import { resolve } from "./weave/resolve.js"
 
@@ -77,20 +77,7 @@ export async function pullKeep(ref) {
     return res.ok ? res.json() : null
 }
 
-// The hex64 ladder (id:la-fork · la-fork-pull · la-fork-hand).
-//
-// Face (hold bytes), then hand (gesture). Each rung returns a new bag —
-// nothing is reassigned through nested faces. ofWork / newerKeep are pure
-// (work.js). This word is door → room → accept → hand.
-//
-//   face:
-//     localKeep     → pinCommit          (never pull)
-//     localHead     → headAtOpen         (quiet pull; newer wins)
-//     cold + pull   → coldPull           (loud askRoom)
-//     cold, no pull → empty face         (find-only)
-//   hand:
-//     foreignRoot   → landForeign        (forkBuffer peer river)
-//     mine / empty  → landMine           (forkKeep rejoin)
+// Hex64 ladder (id:la-fork · la-fork-pull · la-fork-hand). Face then hand; each rung returns a new bag.
 
 async function forkKept(ref, { door, term, pull, say }) {
     if (!door) { say("no door standing"); return null }
@@ -105,15 +92,16 @@ async function holdFace(ref, { door, pull, say }) {
     try {
         const mine = await door.root()
 
-        // localKeep — pin this commit (never chase HEAD).
         const asKeep = await door.get(ref)
         if (asKeep) return pinCommit(asKeep, mine)
 
-        // localHead — ofWork hit: HEAD at open time.
-        const local = ofWork(await door.list(mine, PAGE), ref)[0] ?? null
+        // REACH, not PAGE (id:ka-reach). At the wire's depth an older work's
+        // own fork link misses the copy already in IDB and falls through to
+        // coldPull — a round trip for bytes we hold, and nothing at all with
+        // the door shut.
+        const local = ofWork(await door.list(mine, REACH), ref)[0] ?? null
         if (local) return headAtOpen(ref, { local, mine, door, pull, say })
 
-        // cold — keep or work id, nothing held here.
         if (pull) return coldPull(ref, { mine, door, pull, say })
         return { bytes: null, source: null, mine }
     } catch (e) {

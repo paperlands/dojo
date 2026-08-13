@@ -11,10 +11,12 @@ import {
     linesOf,
     meetOf,
     mirrorOf,
+    namesOf,
     newerKeep,
     ofWork,
 } from "../../../assets/js/keep/work.js"
 import { name, write } from "../../../assets/js/keep/entry.js"
+import { PAGE, REACH } from "../../../assets/js/keep/page.js"
 
 const ROOT = "r".repeat(64)
 const WORK = "w".repeat(64)
@@ -66,6 +68,70 @@ describe("ofWork: the work's keeps among a page of the author's history", () => 
         const all = Array.from({ length: 10 }, (_, i) => snap(`k${i}`, { t: i }))
         const page = newestFirst(...all.slice(7))
         assert.equal(ofWork(page, WORK).length, 3)
+    })
+})
+
+// ONE DEPTH PER FOLD, NOT ONE DEPTH IN THE SYSTEM (id:ka-reach).
+//
+// The river filters a page of the WHOLE log down to one work, so at the wire's
+// depth it goes blind: measured on 41 real keeps across 12 works, PAGE=12
+// showed *nothing* for two works that certainly had keeps (id:ka-ground 4).
+// ka-reach ruled the split and it did not land for a day — so this is the
+// fence that would have caught that, in the form the wound actually took.
+describe("REACH: the river reads past the author's other rivers (id:ka-reach)", () => {
+    // The shape the wound actually has on real data: works are not visited
+    // round-robin. One river is busy and recent; older ones sit behind it. A
+    // round-robin generator puts every work inside the newest PAGE and proves
+    // nothing — the first cut of this test did exactly that and passed the
+    // wrong way.
+    const OLD = "0".padStart(64, "0")
+    const busyLogWithAnOldRiver = (oldKeeps, busyKeeps) => {
+        const all = []
+        let t = 0
+        for (let i = 0; i < oldKeeps; i++) all.push(snap(`old${i}`, { work: OLD, t: ++t }))
+        for (let i = 0; i < busyKeeps; i++) {
+            all.push(snap(`busy${i}`, { work: `${1 + (i % 5)}`.padStart(64, "0"), t: ++t }))
+        }
+        return all.reverse() // newest-first, as list() hands it over
+    }
+
+    test("at the wire's depth an old work is wholly invisible; at REACH it is whole", () => {
+        const log = busyLogWithAnOldRiver(3, PAGE + 8)
+
+        assert.equal(
+            ofWork(log.slice(0, PAGE), OLD).length,
+            0,
+            "the wound: at PAGE the river shows an empty history for a work that has keeps",
+        )
+        assert.equal(ofWork(log.slice(0, REACH), OLD).length, 3, "at REACH the work is whole")
+    })
+
+    test("REACH clears W x n for a classroom's W", () => {
+        assert.ok(REACH > PAGE, "the river reads deeper than the wire drains")
+        assert.ok(REACH >= 12 * PAGE, `REACH must clear W x n; got ${REACH}`)
+    })
+
+    test("[structural] the river folds at REACH, the wire drains at PAGE", () => {
+        const read = (p) =>
+            readFileSync(join(dirname(fileURLToPath(import.meta.url)), p), "utf8")
+                .replace(/\/\*[\s\S]*?\*\//g, "")
+                .replace(/^\s*\/\/.*$/gm, "")
+
+        const river = read("../../../assets/js/hooks/shell/river.js")
+        const wire = read("../../../assets/js/keep/wire.js")
+        const link = read("../../../assets/js/link.js")
+
+        // Same depth on BOTH sides of the fold — that is kb-8-page's proof.
+        assert.ok(/list\([^)]*REACH\)/.test(river), "river lists at REACH")
+        assert.ok(/local\([^)]*REACH\)/.test(river), "river folds local at REACH")
+        assert.ok(!/\bPAGE\b/.test(river), "the river must not drain-depth its fold")
+
+        assert.ok(/\bPAGE\b/.test(wire), "the wire still drains a human handful")
+        assert.ok(!/\bREACH\b/.test(wire), "the wire must not ship a river's depth")
+
+        // The fork word resolves against the local journal at the same depth,
+        // or an older work's own link round-trips for bytes already held.
+        assert.ok(/list\([^)]*REACH\)/.test(link), "the fork word reads at REACH")
     })
 })
 
@@ -205,13 +271,92 @@ describe("mirrorOf: this line, and the nearest sibling by meet", () => {
     })
 
     test("an empty fold yields an empty mirror, not a throw", () => {
+        // Ids ride out so columnsOf need not re-hash (id:ka-passes).
         assert.deepEqual(mirrorOf([]), {
             head: null,
             line: [],
+            lineIds: [],
             sibling: [],
+            siblingIds: [],
             siblingHead: null,
             meet: null,
         })
+    })
+
+    test("lineIds are the line's names, in the line's order", () => {
+        const a = snap("a", { t: 1 })
+        const b = snap("b", { t: 2 })
+        const m = mirrorOf([b, a])
+        assert.deepEqual(m.lineIds, m.line.map(name), "ids parallel the bytes")
+    })
+})
+
+// Pin the collapse: precomputed ids change nothing, and hashing actually stops (id:ka-passes).
+// Counted, never timed — a timing test passes on a fast machine (id:kb-5).
+describe("the page is named once (id:ka-passes)", () => {
+    const page = () => [snap("c", { t: 3 }), snap("b", { t: 2 }), snap("a", { t: 1 })]
+
+    test("namesOf is the page's ids, parallel and in order", () => {
+        const v = page()
+        assert.deepEqual(namesOf(v), v.map(name))
+    })
+
+    test("precomputed ids change nothing — linesOf, lineOf, mirrorOf", () => {
+        const v = page()
+        const ids = namesOf(v)
+        assert.deepEqual(linesOf(v, ids), linesOf(v))
+        assert.deepEqual(mirrorOf(v, undefined, ids), mirrorOf(v))
+        assert.deepEqual(lineOf(v, ids[0], ids), lineOf(v, ids[0]))
+    })
+
+    test("precomputed keys change nothing — columnsOf, one line and two", () => {
+        const v = page()
+        const m = mirrorOf(v)
+        assert.deepEqual(
+            columnsOf(m.line, m.sibling, m.meet, { line: m.lineIds, sibling: m.siblingIds }),
+            columnsOf(m.line, m.sibling, m.meet),
+            "one line",
+        )
+        const forked = snap("d", { t: 4, prev: name(v[2]) })
+        const f = mirrorOf([forked, ...v])
+        assert.deepEqual(
+            columnsOf(f.line, f.sibling, f.meet, { line: f.lineIds, sibling: f.siblingIds }),
+            columnsOf(f.line, f.sibling, f.meet),
+            "two lines and a meet",
+        )
+    })
+
+    test("[structural] the river's fold names the page in exactly one place", () => {
+        // ESM namespaces are read-only; work.js closes over `name`. Fence is structural (id:kb-vet4).
+        const src = readFileSync(
+            join(dirname(fileURLToPath(import.meta.url)), "../../../assets/js/river/fold.js"),
+            "utf8",
+        ).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+
+        const names = src.match(/namesOf\(/g) ?? []
+        assert.equal(names.length, 1, "the page is named ONCE in the river fold")
+
+        // held is a different page — one `.map(name)` (id:kb-8-page).
+        const maps = src.match(/(\w+)\.map\(name\)/g) ?? []
+        assert.deepEqual(maps, ["held.map(name)"], "only the held page is named separately")
+        assert.ok(
+            /mirrorOf\([^)]*ids\)/.test(src) && /columnsOf\([^)]*lineIds/.test(src),
+            "the ids are threaded into both work folds, not re-derived",
+        )
+    })
+
+    test("kc-law 3 is unmoved: every id the fold hands back names its bytes", async () => {
+        const { fold } = await import("../../../assets/js/river/fold.js")
+        const v = page()
+        const out = fold(v, [v[0]])
+
+        assert.equal(out.newestId, name(v[0]), "newest is the page's first name")
+        for (const id of out.keptLocal) {
+            assert.ok(v.some((b) => name(b) === id), "a kept id names a keep on the page")
+        }
+        for (const c of out.columns) {
+            if (c.sky) assert.equal(c.key, name(c.sky), "a column's key IS its keep's name")
+        }
     })
 })
 
@@ -242,8 +387,7 @@ describe("columnsOf: the geometry the swap rides (id:kr-mirror)", () => {
     })
 
     test("THE TRUNK HOLDS STILL — a swap re-keys nothing it shares", () => {
-        // The whole mechanism: trunk keys are keep ids, divergent keys are
-        // positions. Trading the lines therefore leaves the trunk's DOM alone.
+        // Trunk keys are keep ids; divergent keys are positions. A swap leaves the trunk's DOM alone.
         const a = snap("a", { t: 1, prev: null })
         const b = snap("b", { t: 2, prev: name(a) })
         const mine = snap("mine", { t: 3, prev: name(b) })

@@ -5,7 +5,7 @@ import { createArena } from "../../kernel/arena.js"
 import { attach } from "../../kernel/attach.js"
 import { link } from "../../link.js"
 import { name, read } from "../../keep/entry.js"
-import { PAGE } from "../../keep/page.js"
+import { REACH } from "../../keep/page.js"
 import { ofWork } from "../../keep/work.js"
 import { askKeep, doorSeat, getDoor, watchTouched } from "../../keep/cell.js"
 import { seatOf as termSeatOf } from "./term-cell.js"
@@ -168,9 +168,12 @@ function mountRiver(hook) {
         try {
             const rootName = await door.root()
             if (!alive()) return NO_PAGE
+            // REACH, not PAGE — this page is filtered down to one work, so it
+            // must reach past the author's other rivers (id:ka-reach). SAME
+            // depth on both sides: that is what kb-8-page's proof requires.
             const [listed, held] = await Promise.all([
-                door.list(rootName, PAGE),
-                door.local(rootName, PAGE),
+                door.list(rootName, REACH),
+                door.local(rootName, REACH),
             ])
             return { versions: ofWork(listed, work), held }
         } catch {
@@ -237,6 +240,22 @@ function mountRiver(hook) {
         void refold()
     }
 
+    /**
+     * The room's picture for a keep we no longer hold bytes for (id:kb-13).
+     *
+     * Best-effort by nature: a drop is a fact, never an exception
+     * (id:kc-c-wire). Offline, or a keep the room never got, simply has no
+     * face — which is the state kc-e-missing-image already names.
+     */
+    async function roomFace(id) {
+        try {
+            const res = await fetch(`/keeps/${id}/image`, { headers: { accept: "image/png" } })
+            return res.ok ? await res.blob() : null
+        } catch {
+            return null
+        }
+    }
+
     /** Face for the seat under the sun; epoch+row so a stale open never sticks. */
     async function openFace() {
         const door = getDoor()
@@ -252,10 +271,19 @@ function mountRiver(hook) {
         } catch {
             return
         }
+        // THE PICTURE ARRIVES ON THE WALK (id:kb-13). A held blob may have
+        // been evicted — lawful precisely because the room holds it
+        // (id:kc-evict) — and until this fetch existed that law was true about
+        // the bytes and false about reachability: the seat just stayed
+        // faceless forever. Immutable at the door, so the browser cache makes
+        // the second walk free (id:ka-seat).
+        if (blob == null) blob = await roomFace(id)
         if (!arena.alive || my !== epoch) return
         if (keeps.get(id) !== row || row.face) {
             return
         }
+        // Still absent is a NAMED state, never an error (id:kc-e-missing-image):
+        // the message is whole and re-runs the turtle. A void, not a blank.
         if (blob == null) return
 
         const url = URL.createObjectURL(blob)

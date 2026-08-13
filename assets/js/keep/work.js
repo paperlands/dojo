@@ -1,34 +1,10 @@
-// The work fold — self, one work (id:kr-fold).
-//
-//   ofWork(listed, work_id) = list(root, n) filter target === work_id
-//
-// Pure: bytes in, bytes out (id:kc-p-fold). Nothing here is ever written, and
-// no verb is added — the river is a fold over the four reads the door already
-// has (id:kb-8). Order is list's order, which is the author's ts.
-//
-// Page honesty (id:kb-8-page): this shows the work's keeps among the newest n
-// of the WHOLE log. Older keeps of the same work are absent by construction —
-// the surface paints that absence as night, never as an empty history.
-//
-// THE LINES (id:kr-mirror). A line is a fold: walk a head back through its
-// causal parent. The meet of two lines — the latest common keep — is derived
-// here at the reader, never stored. Ancestry never becomes an edge on the
-// rail; it becomes which surface a keep rides (sky or water) plus one ripple.
-
-// DERIVE ONCE PER FOLD, NOT ONCE PER FUNCTION (id:ka-passes). Measured: a
-// river paint hashed its page 6.4 times because each function re-derived the
-// names the one before it already had. kc-law 3 still holds — the reader
-// derives the id from the bytes it holds — it is just performed once.
-//
-// So every fold takes `ids` and defaults to deriving them. A caller that
-// already holds the page's names passes them; one that does not pays a pass.
-// The trust is the same shape shared() already asks for: pass the page you
-// actually folded, or the answer lies (id:kb-8-page).
+// The work fold — self, one work (id:kr-fold · id:kr-mirror).
+// Page honesty: the work among the newest n of the whole log (id:kb-8-page).
 
 import { name, read } from "./entry.js"
 
 /**
- * The page, named once — the single hashing point of a fold (id:ka-passes).
+ * The page, named once (id:ka-passes). Measured: a river paint hashed 6.4 times.
  *
  * @param {string[]} versions - bytes[], newest-first
  * @returns {string[]} ids, parallel to versions
@@ -53,8 +29,7 @@ function targetOf(bytes) {
     try {
         return read(bytes).target ?? null
     } catch {
-        // An unreadable message is not this fold's to repair; it simply is not
-        // this work's. The reader verifies names elsewhere (id:kb-8).
+        // Unreadable is not this work's (id:kb-8).
         return null
     }
 }
@@ -85,16 +60,9 @@ export function newerKeep(a, b) {
 /**
  * The chain under a page of one work's keeps.
  *
- * The causal parent is `prev` in the body of the kinds that have one
- * (id:kc-contracts). A snap gains one only when the fork gesture mints it.
- * ONE SEAM CARRIES BOTH ERAS without a global switch:
- *
- *   explicit string prev  →  that parent (fork or continued line)
- *   absent                →  next older in author order (the un-forked chain)
- *
- * So the first fork can land on a still-linear river: the new keep names its
- * parent; the older keeps keep walking by time. A prev pointing outside the
- * page is a foot — its parent is under the horizon (page honesty).
+ * Causal parent is `prev` when minted (id:kc-contracts); else next older by
+ * author order. First fork can land on a still-linear river. A prev outside
+ * the page is a foot.
  *
  * @param {string[]} versions - ofWork output, newest-first
  * @param {string[]} [ids] - the page's names, if the caller already holds them
@@ -139,11 +107,7 @@ export function lineOf(versions, headId, ids = namesOf(versions)) {
     return walk(parent, byId, headId).map((id) => byId.get(id))
 }
 
-// A cycle cannot arise from an honest mint, and a reader that trusts that
-// hangs the render thread. Seen is the whole fence.
-//
-// Walks in IDS, not bytes: every caller wants both, and the id is the only one
-// that cannot be recovered without a hash (id:ka-passes).
+// A cycle cannot arise from an honest mint; seen is the fence. Walks ids (id:ka-passes).
 function walk(parent, byId, headId) {
     const out = []
     const seen = new Set()
@@ -167,8 +131,7 @@ export function meetOf(lineA, lineB) {
     return meetOfIds(lineA.map(name), lineB.map(name))
 }
 
-// The same sentence over ids — the face a fold that already named its page
-// uses, so the meet costs no hash at all (id:ka-passes).
+// Same sentence over ids already named (id:ka-passes).
 function meetOfIds(idsA, idsB) {
     const inB = new Set(idsB)
     for (const id of idsA) if (inB.has(id)) return id
@@ -176,13 +139,8 @@ function meetOfIds(idsA, idsB) {
 }
 
 /**
- * The mirror fold: this shell's line, and the nearest sibling by meet.
- *
- * One mirror at a time (helios: one speaker). Nearest = the latest meet —
- * the sibling that walked with us longest. Further siblings wait beneath.
- *
- * The ids ride out beside the bytes so the caller's next fold (columnsOf) does
- * not re-derive names this one already holds (id:ka-passes).
+ * This shell's line, and the nearest sibling by meet (one speaker).
+ * Ids ride out so columnsOf does not re-hash (id:ka-passes).
  *
  * @param {string[]} versions - ofWork output, newest-first
  * @param {string} [headId] - defaults to the newest keep: this shell's head
@@ -204,7 +162,7 @@ export function mirrorOf(versions, headId, ids = namesOf(versions)) {
         if (other === head) continue
         const sibIds = walk(parent, byId, other)
         const meet = meetOfIds(lineIds, sibIds)
-        // Distance from the head, in seats. No meet at all sorts last.
+        // Distance from the head, in seats. No meet sorts last.
         const depth = meet != null ? lineIndex.get(meet) : Infinity
         if (best == null || depth < best.depth) best = { other, sibIds, meet, depth }
     }
@@ -236,14 +194,8 @@ const EMPTY_MIRROR = Object.freeze({
 
 /**
  * The river's columns, oldest-first (west → east).
- *
- * Beneath the trunk the water is the sky exactly — same keeps, one river
- * twice-stepped. Past the meet each surface carries its own line's keeps.
- *
- * KEYS ARE THE SWAP'S WHOLE MECHANISM: a trunk column is keyed by its keep's
- * id, a divergent column by its distance past the meet. Trading the two lines
- * therefore re-paints only the divergent columns — the trunk holds still,
- * because the common past is common (id:kr-mirror).
+ * Trunk keyed by keep id, divergent by distance past the meet — so a swap
+ * holds the trunk still (id:kr-mirror).
  *
  * @param {string[]} line - newest-first
  * @param {string[]} sibling - newest-first (empty when the river is one line)
@@ -255,7 +207,7 @@ const EMPTY_MIRROR = Object.freeze({
 export function columnsOf(line, sibling, meet, ids = {}) {
     const L = [...line].reverse()
     const S = [...sibling].reverse()
-    // Oldest-first, like L and S — the ids ride the same reversal as the bytes.
+    // Ids ride the same reversal as the bytes.
     const LK = [...(ids.line ?? namesOf(line))].reverse()
     const SK = [...(ids.sibling ?? namesOf(sibling))].reverse()
 
@@ -275,8 +227,7 @@ export function columnsOf(line, sibling, meet, ids = {}) {
     if (li < 0 || si < 0) return oneLine()
 
     const columns = []
-    // Trunk, paired backwards from the meet so the two walks stay aligned
-    // even where one line reaches further into the page than the other.
+    // Pair backwards from the meet so unequal page depths stay aligned.
     const depth = Math.min(li, si)
     for (let k = depth; k >= 0; k--) {
         const sky = L[li - k]

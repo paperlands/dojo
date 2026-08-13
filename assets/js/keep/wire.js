@@ -1,8 +1,5 @@
 // Keep socket edge (id:kb-9, id:kc-c-wire). Only keep/ file that names pushEvent.
-// say · announce · attached — three verbs. Wire settles journal only; share UI
-// is fold-derived. Bound not backoff: PAGE ships, silence ends pass, free pass
-// on progress. phase+epoch for generation kill; reconnected() resets then
-// announces (id:kb-vet2 15). No online flag, outbox, or queue.
+// Bound not backoff: PAGE ships, silence ends pass. No online flag, outbox, or queue.
 
 import { name, read } from "./entry.js"
 import { PAGE } from "./page.js"

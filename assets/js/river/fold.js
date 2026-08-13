@@ -51,10 +51,7 @@ export function fold(versions, held, {
     faceOf = () => null,
     keptLocal: keptWas = new Set(),
 } = {}) {
-    // THE PAGE IS NAMED ONCE (id:ka-passes). Measured 6.4 hashing passes here
-    // before this line existed — shared, its result, keptLocal, newestId and
-    // both work folds each re-derived what the one before it already had.
-    // kc-law 3 is unmoved: the reader still derives the id from the bytes.
+    // The page is named once (id:ka-passes). Measured 6.4 hashing passes before this line.
     const ids = namesOf(versions)
 
     // Shared = list − local, never a field (id:kb-8).
