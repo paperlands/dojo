@@ -12,7 +12,7 @@ defmodule Dojo.BroadcastStormTest do
   """
   use ExUnit.Case, async: false
 
-  alias Dojo.{Table, Class, Gate, PubSub, Disciple}
+  alias Dojo.{Table, Class, PubSub, Disciple}
   alias Phoenix.PubSub.Partisan.Handler
 
   @topic "class:shell:StormLab"
@@ -24,8 +24,6 @@ defmodule Dojo.BroadcastStormTest do
     %Disciple{name: name, action: "active", user_id: user_id || name}
   end
 
-  defp reg_key(name), do: "#{@topic}:#{name}"
-
   defp spawn_watcher do
     spawn(fn -> Process.sleep(:infinity) end)
   end
@@ -36,27 +34,7 @@ defmodule Dojo.BroadcastStormTest do
     {watcher, table}
   end
 
-  defp assert_eventually(func, timeout \\ 2_000, interval \\ 50) do
-    deadline = System.monotonic_time(:millisecond) + timeout
-    do_poll(func, deadline, interval)
-  end
-
-  defp do_poll(func, deadline, interval) do
-    if func.() do
-      :ok
-    else
-      remaining = deadline - System.monotonic_time(:millisecond)
-
-      if remaining <= 0 do
-        flunk("Condition not met within timeout")
-      else
-        Process.sleep(min(interval, remaining))
-        do_poll(func, deadline, interval)
-      end
-    end
-  end
-
-  defp publish_hatch(table, reg_key, time \\ nil) do
+  defp publish_hatch(table, time \\ nil) do
     t = time || System.monotonic_time(:millisecond)
     turtle = %Dojo.Turtle{state: :hatch, path: "/test", commands: [:fd], time: t}
     Table.publish(table, {Dojo.Turtle, nil, turtle}, :hatch)
@@ -283,8 +261,7 @@ defmodule Dojo.BroadcastStormTest do
         for i <- 1..30 do
           name = "storm_#{i}"
           {watcher, table} = join_as(name)
-          rk = reg_key(name)
-          {watcher, table, rk}
+          {watcher, table}
         end
 
       # Wait for all joins to settle
@@ -302,8 +279,8 @@ defmodule Dojo.BroadcastStormTest do
       t_start = System.monotonic_time(:millisecond)
 
       for _tick <- 1..iterations do
-        for {_w, table, rk} <- tables do
-          publish_hatch(table, rk)
+        for {_w, table} <- tables do
+          publish_hatch(table)
         end
 
         Process.sleep(interval_ms)
@@ -319,7 +296,7 @@ defmodule Dojo.BroadcastStormTest do
       {hatch_count, version_count} = count_hatch_messages(5_000)
 
       # Measure process health after the storm
-      table_pids = Enum.map(tables, fn {_, t, _} -> t end)
+      table_pids = Enum.map(tables, fn {_, t} -> t end)
       max_table_mq = max_mailbox_depth(table_pids)
 
       plumtree_mq =
@@ -350,7 +327,7 @@ defmodule Dojo.BroadcastStormTest do
       assert plumtree_mq < 1_000, "Plumtree mailbox should not explode (was #{plumtree_mq})"
 
       # Cleanup
-      Enum.each(tables, fn {w, _, _} -> Process.exit(w, :kill) end)
+      Enum.each(tables, fn {w, _} -> Process.exit(w, :kill) end)
       Process.sleep(200)
     end
   end
@@ -474,8 +451,7 @@ defmodule Dojo.BroadcastStormTest do
         for i <- 1..30 do
           name = "stable_#{i}"
           {watcher, table} = join_as(name)
-          rk = reg_key(name)
-          {watcher, table, rk, name}
+          {watcher, table}
         end
 
       Process.sleep(300)
@@ -485,8 +461,8 @@ defmodule Dojo.BroadcastStormTest do
       publisher =
         spawn(fn ->
           for _tick <- 1..10 do
-            for {_w, table, rk, _name} <- stable_tables do
-              if Process.alive?(table), do: publish_hatch(table, rk)
+            for {_w, table} <- stable_tables do
+              if Process.alive?(table), do: publish_hatch(table)
             end
 
             Process.sleep(150)
@@ -522,7 +498,7 @@ defmodule Dojo.BroadcastStormTest do
       Process.sleep(500)
 
       # Phase 4: Measure health
-      stable_pids = Enum.map(stable_tables, fn {_, t, _, _} -> t end)
+      stable_pids = Enum.map(stable_tables, fn {_, t} -> t end)
       alive_count = Enum.count(stable_pids, &Process.alive?/1)
 
       max_mq = max_mailbox_depth(stable_pids)
@@ -558,7 +534,7 @@ defmodule Dojo.BroadcastStormTest do
       assert_receive {:sanity, :check}, 2_000
 
       # Cleanup
-      Enum.each(stable_tables, fn {w, _, _, _} -> Process.exit(w, :kill) end)
+      Enum.each(stable_tables, fn {w, _} -> Process.exit(w, :kill) end)
       Process.sleep(200)
     end
   end
