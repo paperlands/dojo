@@ -6,7 +6,9 @@
 
 ```bash
 mix setup                        # Install deps and compile assets
-mix test                         # All Elixir tests (path:line for one)
+mix test                         # Deterministic Elixir suite (path:line for one)
+bash scripts/verify/reload_test.sh # Destructive code-loading stressors, alone
+bash scripts/verify/lan_test.sh    # Partisan multinode E2E in an isolated LAN
 node --test test/js/*/*_test.mjs # JS tests (zero-npm, node:test; by contract cluster)
                                  # dir form `test/js/` is broken on Node 22+ (nodejs#64555)
 mix format                       # Before committing

@@ -145,6 +145,24 @@ else
     connect_timeout: 1_500
 end
 
+# LAN nodes share a compiled application, never a SQLite journal. The wrapper
+# provides these values before each node starts.
+if config_env() == :lan do
+  lan_dir = System.fetch_env!("DOJO_LAN_DIR")
+  node = System.fetch_env!("DOJO_LAN_NODE")
+
+  keep_opts = [
+    database: Path.join(lan_dir, "keep#{node}.db"),
+    priv: "priv/keep",
+    journal_mode: :wal,
+    busy_timeout: 5_000
+  ]
+
+  config :dojo, Dojo.Keep.Repo, keep_opts ++ [pool_size: 1]
+  config :dojo, Dojo.Keep.Repo.Reader, keep_opts ++ [pool_size: 2]
+  config :dojo, migrate_on_boot: true
+end
+
 # ── Shared Partisan config (both prod and local) ──────────────────────
 config :partisan,
   authentication: :partisan_auth_hmac,

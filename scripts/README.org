@@ -1,0 +1,113 @@
+#+TITLE: scripts — categories and actions
+#+STARTUP: showall
+
+* Map
+:PROPERTIES:
+:ID: scripts-map
+:KEYWORDS: scripts categories actions verify vendor ops play codex spikes bestiary
+:END:
+
+Tooling lives under =scripts/= by *category*, then by *action*. Nothing at the
+root of =scripts/= except this map and =.gitignore=.
+
+| category | path | what it does |
+|----------|------|--------------|
+| *verify* | [[file:verify/][scripts/verify/]] | silent-when-green checks (nav hotpaths, vendor drift) |
+| *vendor* | [[file:vendor/][scripts/vendor/]] | build / refresh vendored assets (CM6, three fat-lines) |
+| *ops* | [[file:ops/][scripts/ops/]] | production ops (prod Keep backup + report book) |
+| *play* | [[file:play/][scripts/play/]] | live-shell play rig (raw CDP) |
+| *codex* | [[file:codex/][scripts/codex/]] | PaperLang codex index press |
+| *spikes* | [[file:spikes/][scripts/spikes/]] | one-shot experiments (not product code) |
+| *bestiary* | [[file:bestiary/][scripts/bestiary/]] | papertiger pipeline + living ground |
+
+** verify — vitality
+:PROPERTIES:
+:ID: scripts-verify
+:END:
+
+| action | command |
+|--------|---------|
+| nav hotpaths | =bash scripts/verify/nav_verify.sh= (Stop hook: =--stop-hook=) |
+| vendor drift | =bash scripts/verify/vendor_verify.sh= · restamp after upgrade: =--record= |
+| reload stressors | =bash scripts/verify/reload_test.sh= (fresh VM per destructive tier) |
+| Partisan LAN E2E | =bash scripts/verify/lan_test.sh= (user + network namespace) |
+
+** vendor — build / drop
+:PROPERTIES:
+:ID: scripts-vendor
+:END:
+
+Owns its own =package.json= + =node_modules= (CM6 build only). Commit the
+output under =priv/static/vendor/=; never run this in CI.
+
+| action | command |
+|--------|---------|
+| rebuild CM6 | =cd scripts/vendor && npm install && node vendor-cm6.mjs= |
+| drop three fat-lines | =./scripts/vendor/vendor-three-lines.sh [rNNN]= then =./scripts/verify/vendor_verify.sh --record= |
+
+Prose: [[file:../assets/js/utils/VENDOR.org][VENDOR.org]].
+
+** ops — production Keep
+:PROPERTIES:
+:ID: scripts-ops
+:END:
+
+| action | command |
+|--------|---------|
+| pull + census | =scripts/ops/prodkeep.sh= |
+| census only | =scripts/ops/prodkeep.sh --census= · =--clan NAME= · =--list= |
+| report book | =scripts/ops/prodkeep.sh --book --clan NAME= (=keepbook.mjs=) |
+
+Runbook: [[file:ops/prodkeep.org][ops/prodkeep.org]] =ops-prodkeep=.
+
+** play — live shell
+:PROPERTIES:
+:ID: scripts-play
+:END:
+
+| action | command |
+|--------|---------|
+| run a night | =node scripts/play/play_cdp.mjs run <prog> [waitMs] [out.png] [--bare]= |
+| screenshot | =node scripts/play/play_cdp.mjs shot <out.png> [--bare]= |
+| eval | =node scripts/play/play_cdp.mjs eval '<js>'= |
+
+Protocol: [[file:../codex/play.org][codex/play.org]].
+
+** codex — index press
+:PROPERTIES:
+:ID: scripts-codex
+:END:
+
+| action | command |
+|--------|---------|
+| press index | =node scripts/codex/press_codex_index.mjs= |
+
+** spikes — experiments
+:PROPERTIES:
+:ID: scripts-spikes
+:END:
+
+Not product. Kept for reproduction of distributed findings.
+
+| action | command |
+|--------|---------|
+| ekv + partisan | =MIX_ENV=dev mix run --no-start scripts/spikes/spike_ekv_partisan.exs= |
+| ekv multippartition | =scripts/spikes/spike_ekv_multipartition_disterl.exs= |
+
+** bestiary — papertiger
+:PROPERTIES:
+:ID: scripts-bestiary
+:END:
+
+Pipeline tools next to the living ground (=papertiger/=). Morph deps: own
+=package.json= (=npm install= in =scripts/bestiary/=).
+
+| action | command |
+|--------|---------|
+| keys + bake | =node scripts/bestiary/cli.mjs all= |
+| atelier seed/carve | =bash scripts/bestiary/tiger_atelier.sh seed|carve …= |
+| morph | =node scripts/bestiary/tiger_morph.mjs <from> <to> <outDir> …= |
+| end-to-end carve rack | =bash scripts/bestiary/carve.sh= |
+| DiffVG venv | =bash scripts/bestiary/install_diffvg.sh= |
+
+Ground: =scripts/bestiary/papertiger/=. Canon: =specs/papertiger/=.

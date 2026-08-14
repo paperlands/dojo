@@ -488,6 +488,43 @@ Decision 005: antifragile broadcast storm. Partisan internals: grep
 :PATH: lib/dojo/cluster/routing.ex::def routable_addr
 :END:
 
+** multinode tests — partisan discovery across IP changes, from ExUnit
+:PROPERTIES:
+:ID: nav-lan-test
+:KEYWORDS: lan multinode test exunit netns namespace roam partition discovery partisan programmatic
+:PATH: test/support/lan.ex
+:END:
+=scripts/verify/lan_test.sh= runs =test/dojo/cluster/lan_test.exs= inside a
+throwaway namespace; past the wrapper it is ordinary ExUnit. =Dojo.Test.Lan=
+builds the bridge, namespaces and nodes from Elixir: =start/2=, =roam/2=,
+=partition/1=, =heal/1=, =call/5= (MFA, never a closure), =await_mesh/2=.
+Each node holds one address, so =routable_ipv4_addrs/0= is per-node truth.
+br0 deliberately has no IPv4 — an address there would enlist ExUnit itself as
+another node. Nodes start serially: two =mix run='s racing on =_build= inflict
+the very absent-module fault the rig studies.
+
+Failover / departure / recovery are ported here from =multinode_test.exs=,
+which runs them against DistAdapter — a path only test config selects. Two
+things the port established: =MDNS.terminate/2= never runs (the GenServer does
+not trap exits, so a supervisor shutdown kills it outright), which means
+goodbyes ship only via =Application.prep_stop/1=; and the =nodedown= test does
+not port at all, being gated on =supports_node_monitor?= that PartisanAdapter
+answers false.
+
+** dev code-reload crashes — the absent-module window
+:PROPERTIES:
+:ID: nav-reload-rig
+:KEYWORDS: reload recompile crash purge beam undefined function dev loop rig dbg_callback
+:PATH: scripts/verify/reload_rig.exs
+:END:
+One module vanishing is survivable; =Compiling 75 files= is not. The whole
+ebin empties at once and =PartisanAdapter= goes with it, so
+=partisan_peer_discovery_agent= burns ={rest_for_one, 10, 10}= and takes the
+partisan application — then dojo — down. Reproduced by
+=test/dojo/cluster/full_recompile_test.exs=. A module cannot guard itself
+against its own absence: the rescue at =partisan_adapter.ex::lookup= and
+=@reloadable= in =monitor.ex= both go missing with the code they defend.
+
 * WEB — the shell seam
 :PROPERTIES:
 :ID: nav-web
@@ -517,7 +554,8 @@ From a JS =pushEvent= name, jump with =C-c d e= or grep =handle_event("name"=.
 Disciple panels are WINDOWS (frame · pane · sill). 00–05 settled the laws
 under a sun; the lamp was wrong. Author is solar; a peer is moonlight
 (=--peer-ink=). Boards: =06-phases.html= · =07-twilight.html= ·
-=08-lichtung.html=. Overlay: =_selene.css=. Live seam still
+=08-lichtung.html= · =09-selenic.html= · =10-lichtung.html=.
+Overlay: =_selene.css=; the rim seeing is =_takahata.css=. Live seam still
 =#disciple_panels= in =shell_live.html.heex=.
 
 ** deck — card components
