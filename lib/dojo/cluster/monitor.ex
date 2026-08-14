@@ -25,17 +25,28 @@ defmodule Dojo.Cluster.NetworkMonitor do
 
   @impl true
   def init(_opts) do
-    current_ips = Dojo.Cluster.MDNS.routable_ipv4_addrs()
     port = partisan_port()
 
-    Logger.info(
-      "[NetworkMonitor] init — IPs=#{inspect(Enum.map(current_ips, &fmt/1))} port=#{port}"
-    )
+    # ips: nil means "not read yet" — the first successful poll adopts it as
+    # baseline instead of mistaking it for a roam.
+    current_ips =
+      case read_ips() do
+        {:ok, ips} -> ips
+        :unavailable -> nil
+      end
 
-    # Seed addr cache so Gate.routable_addr/0 reads from cache instead of live syscall
-    current_addr = Dojo.Cluster.Routing.routable_addr()
-    :persistent_term.put({Dojo.Gate, :addr}, current_addr)
-    Logger.info("[NetworkMonitor] seeded addr=#{current_addr}")
+    Logger.info("[NetworkMonitor] init — IPs=#{fmt_ips(current_ips)} port=#{port}")
+
+    # Seed addr cache so Gate.routable_addr/0 reads from cache instead of live
+    # syscall. Skipping the seed is safe — Gate falls back to computing it live.
+    case read_addr() do
+      {:ok, addr} ->
+        :persistent_term.put({Dojo.Gate, :addr}, addr)
+        Logger.info("[NetworkMonitor] seeded addr=#{addr}")
+
+      :unavailable ->
+        Logger.debug("[NetworkMonitor] addr seed skipped — module reloading")
+    end
 
     schedule_poll()
     {:ok, %{ips: current_ips, port: port, pending_ips: nil, stable_count: 0}}
@@ -43,10 +54,21 @@ defmodule Dojo.Cluster.NetworkMonitor do
 
   @impl true
   def handle_info(:poll, state) do
-    new_ips = Dojo.Cluster.MDNS.routable_ipv4_addrs()
-    state = debounce_ip_change(new_ips, state)
+    state =
+      case read_ips() do
+        {:ok, new_ips} -> debounce_ip_change(new_ips, state)
+        :unavailable -> state
+      end
+
     schedule_poll()
     {:noreply, state}
+  end
+
+  # init couldn't read interfaces — adopt the first real reading as the
+  # baseline rather than hot-swapping Partisan against a phantom change.
+  defp debounce_ip_change(new_ips, %{ips: nil} = state) do
+    Logger.info("[NetworkMonitor] baseline adopted — IPs=#{fmt_ips(new_ips)}")
+    %{state | ips: new_ips, pending_ips: nil, stable_count: 0}
   end
 
   # Debounce state machine: require @debounce_stable_count consecutive polls
@@ -264,6 +286,31 @@ defmodule Dojo.Cluster.NetworkMonitor do
     end
   end
 
+  # Dev code reload purges a module before recompiling it, so a sibling can be
+  # briefly absent. A poll that lands in that window skips the tick; it must
+  # never kill this process, because a failed init would burn the restart budget.
+  @reloadable [Dojo.Cluster.MDNS, Dojo.Cluster.Routing, Dojo.Cluster.Routing.Local]
+
+  defp read_ips do
+    {:ok, Dojo.Cluster.MDNS.routable_ipv4_addrs()}
+  rescue
+    e in UndefinedFunctionError -> mid_reload(e, __STACKTRACE__)
+  end
+
+  defp read_addr do
+    {:ok, Dojo.Cluster.Routing.routable_addr()}
+  rescue
+    e in UndefinedFunctionError -> mid_reload(e, __STACKTRACE__)
+  end
+
+  # Only a purged sibling is tolerated; any other undefined call is a real bug.
+  defp mid_reload(%UndefinedFunctionError{module: mod} = e, stacktrace) do
+    if mod in @reloadable, do: :unavailable, else: reraise(e, stacktrace)
+  end
+
   defp schedule_poll, do: Process.send_after(self(), :poll, @poll_interval)
+
+  defp fmt_ips(nil), do: "unread"
+  defp fmt_ips(ips), do: inspect(Enum.map(ips, &fmt/1))
   defp fmt(ip), do: ip |> :inet.ntoa() |> to_string()
 end
