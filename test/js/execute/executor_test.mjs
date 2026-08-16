@@ -120,11 +120,15 @@ describe("path management", () => {
         assert.equal(paths.length, 2)
     })
 
-    test("jmpto breaks path", () => {
+    test("jmpto moves in frame space and breaks path", () => {
         const ast = [call("fw", 50), call("jmpto", 100, 100), call("fw", 50)]
         const events = drainEvents(ast, mockDeps())
         const paths = eventsOfType(events, "path")
+        const heads = eventsOfType(events, "head")
         assert.equal(paths.length, 2)
+        // jmpto lands at (100,100); fw 50 continues along +x → (150,100)
+        assert.ok(near(heads[0].position[0], 150))
+        assert.ok(near(heads[0].position[1], 100))
     })
 
     test("beColour breaks path for new color", () => {
@@ -403,10 +407,34 @@ describe("integration", () => {
         const ast = [call("fw", 50), call("goto", 100, 100)]
         const events = drainEvents(ast, mockDeps())
         const paths = eventsOfType(events, "path")
+        const heads = eventsOfType(events, "head")
 
         // Single continuous path: [0,0] -> [50,0] -> [100,100]
         assert.equal(paths.length, 1)
         assert.equal(paths[0].points.length, 3)
+        assert.ok(near(paths[0].points[2][0], 100))
+        assert.ok(near(paths[0].points[2][1], 100))
+        // Head must move with the frame-local place.
+        assert.ok(near(heads[0].position[0], 100))
+        assert.ok(near(heads[0].position[1], 100))
+    })
+
+    test("faceto aims in frame space then fw walks toward the point", () => {
+        // From origin, face (0, 100), step 50 → land on +y.
+        const ast = [call("faceto", 0, 100), call("fw", 50)]
+        const events = drainEvents(ast, mockDeps())
+        const heads = eventsOfType(events, "head")
+        assert.ok(near(heads[0].position[0], 0))
+        assert.ok(near(heads[0].position[1], 50))
+    })
+
+    test("faceto from an offset pose still uses birth-frame coords", () => {
+        // goto (10,0), faceto (10,100), fw 40 → (10, 40)
+        const ast = [call("goto", 10, 0), call("faceto", 10, 100), call("fw", 40)]
+        const events = drainEvents(ast, mockDeps())
+        const heads = eventsOfType(events, "head")
+        assert.ok(near(heads[0].position[0], 10))
+        assert.ok(near(heads[0].position[1], 40))
     })
 
     test("home resets position", () => {

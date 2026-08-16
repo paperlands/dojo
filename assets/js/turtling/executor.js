@@ -315,46 +315,15 @@ function* callCommand(name, args, state, stroke) {
     }
     state.commandCount++
 
-    // World origin: tick cache, else inline fn.
-    const worldOrigin = state.deps._cachedWorldOrigin
-        ?? (state.deps.worldOriginFn ? state.deps.worldOriginFn() : null)
-    const worldPosition = worldOrigin
-        ? SE3.apply(worldOrigin, state.transform.position)
-        : [...state.transform.position]
-
     const ctx = {
         transform: state.transform,
-        style: state.style,
-        worldPosition
+        style: state.style
     }
 
     // Snapshot position before command mutates transform
     stroke.lastPos = [...state.transform.position]
 
     const result = cmd(ctx, ...args)
-
-    // Global-coordinate commands → local transform here.
-    if (result.world) {
-        if (result.world.position) {
-            const localPos = worldOrigin
-                ? SE3.unapply(worldOrigin, result.world.position)
-                : result.world.position
-            result.transform = {
-                rotation: state.transform.rotation,
-                position: localPos
-            }
-            if (result.stroke === "extend") result.point = localPos
-        }
-        if (result.world.rotation) {
-            const localRot = worldOrigin
-                ? SE3.localRotation(worldOrigin, result.world.rotation)
-                : result.world.rotation
-            result.transform = {
-                rotation: localRot,
-                position: result.transform?.position || state.transform.position
-            }
-        }
-    }
 
     // Apply transform changes
     if (result.transform) {

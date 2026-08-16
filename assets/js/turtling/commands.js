@@ -3,10 +3,9 @@
 // ctx   = { transform: SE3, style }
 // Delta = { transform?, style?, stroke?, point?, effects?, limits? }
 //
-// Three orthogonal concerns in the delta:
-//   pose:    transform + style   (how the turtle changed)
-//   stroke:  "extend"|"break"|"fill" + point  (path accumulation action)
-//   output:  effects[]           (events for the renderer/scheduler)
+// pose / stroke+point / effects.
+// Place (goto/jmpto) and aim (faceto): frame-local — same space as home/fw,
+// coords in the ambient's birth frame.
 
 import { Versor } from "./mafs/versors.js"
 import { SE3, AXIS_X, AXIS_Y, AXIS_Z } from "./se3.js"
@@ -25,18 +24,20 @@ function fw(ctx, distance = 0) {
     return { transform, stroke: "break" }
 }
 
+// Absolute in the frame that created this ambient (same space as home).
 function goTo(ctx, x = 0, y = 0, z = null) {
-    const wp = ctx.worldPosition
-    return {
-        world: { position: [x, y, z ?? wp[2]] },
-        stroke: ctx.style.down ? "extend" : "break"
+    const pos = [x, y, z ?? ctx.transform.position[2]]
+    const transform = { rotation: ctx.transform.rotation, position: pos }
+    if (ctx.style.down) {
+        return { transform, stroke: "extend", point: pos }
     }
+    return { transform, stroke: "break" }
 }
 
 function jmpto(ctx, x = 0, y = 0, z = null) {
-    const wp = ctx.worldPosition
+    const pos = [x, y, z ?? ctx.transform.position[2]]
     return {
-        world: { position: [x, y, z ?? wp[2]] },
+        transform: { rotation: ctx.transform.rotation, position: pos },
         stroke: "break"
     }
 }
@@ -80,15 +81,12 @@ function left(ctx, angle = 0) {
 
 // --- Absolute orientation ---
 
-function faceto(ctx, targetX = 0, targetY = 0, targetZ = null) {
-    const wp = ctx.worldPosition
-    const tx = targetX
-    const ty = targetY
-    const tz = targetZ ?? wp[2]
-
-    const dx = tx - wp[0]
-    const dy = ty - wp[1]
-    const dz = tz - wp[2]
+function faceto(ctx, x = 0, y = 0, z = null) {
+    // Aim at a birth-frame point — same coordinate noun as goto/jmpto/home.
+    const pos = ctx.transform.position
+    const dx = x - pos[0]
+    const dy = y - pos[1]
+    const dz = (z ?? pos[2]) - pos[2]
 
     const distXY = Math.sqrt(dx * dx + dy * dy)
     const distTotal = Math.sqrt(dx * dx + dy * dy + dz * dz)
@@ -105,7 +103,7 @@ function faceto(ctx, targetX = 0, targetY = 0, targetZ = null) {
     const rotation = yawRotation.multiply(pitchRotation)
 
     return {
-        world: { rotation }
+        transform: { rotation, position: pos }
     }
 }
 

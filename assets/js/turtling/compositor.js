@@ -301,21 +301,13 @@ export function createCompositor(scheduler, stage, opts = {}) {
     }
 
     const _scratchHeadPos = new Vector3()
-    const _headWorldPos = new Vector3()
     function scaleChildHeads() {
         for (const [id, layer] of ambientLayers) {
             if (!layer.head) continue
             const headPos = layer.head.position()
             const gp = layer.group.position
 
-            // Frame-targeted heads orient by world velocity. (id:ft-d5-head)
-            const ambient = scheduler.registry.get(id)
-            if (ambient && ambient.targetFrame) {
-                _headWorldPos.set(headPos.x, headPos.y, headPos.z)
-                    .applyQuaternion(layer.group.quaternion).add(gp)
-                layer.head.orientToWorld(_headWorldPos, layer.group.quaternion)
-            }
-
+            // Heading comes from the head event (projected if frame-targeted).
             // Reuse one scratch vector — this runs per head per frame.
             _scratchHeadPos.set(gp.x + headPos.x, gp.y + headPos.y, gp.z + headPos.z)
             const dist = stage.camera.position.distanceTo(_scratchHeadPos)

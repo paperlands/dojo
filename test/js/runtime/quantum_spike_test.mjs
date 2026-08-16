@@ -127,7 +127,6 @@ describe("the meter — commandCount already counts the work", () => {
         const ctx = {
             transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
             style: { color: "#fff", thickness: 1, down: true, showTurtle: 10 },
-            worldPosition: [0, 0, 0],
         }
         const multiPoint = []
         for (const [name, fn] of COMMANDS) {

@@ -44,7 +44,10 @@ export class Evaluator {
         if (!ast) return 0;
 
         if (ast.type === 'operand') {
-            if (/^\d+\.?\d*$/.test(ast.value)) {
+            // Function/constant folding may leave a number in the AST. Keep it
+            // numeric; routing it through name resolution breaks on exponents.
+            if (typeof ast.value === 'number') return ast.value;
+            if (/^-?\d+\.?\d*(?:[eE][+-]?\d+)?$/.test(ast.value)) {
                 return parseFloat(ast.value);
             }
             else if (context && ast.value in context) {

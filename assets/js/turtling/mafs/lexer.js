@@ -32,8 +32,9 @@ export class Lexer {
 
         //tokenization pattern
         const pattern = new RegExp([
-            // Numbers first — claims the dot in `1.5` before operators can
-            '\\d+(?:\\.\\d+)?',
+            // Numbers first — claims the dot in `1.5` and an optional exponent
+            // before operators can split them into identifiers and signs.
+            '\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?',
             // Dotted identifiers before operators — atomically consumes `mice1.x` as one token
             // This is the guarantee that prevents implicit mult from ever seeing it split
             '[a-zA-Z][a-zA-Z0-9_]*(?:\\.[a-zA-Z][a-zA-Z0-9_]*)*',

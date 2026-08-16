@@ -340,7 +340,7 @@ export class Parser {
 
     isNumeric(str) {
         if (typeof str !== "string") return false;
-        return !isNaN(str) && !isNaN(parseFloat(str));
+        return /^-?\d+\.?\d*(?:[eE][+-]?\d+)?$/.test(str);
     }
 
     reset() {

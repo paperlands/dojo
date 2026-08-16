@@ -140,10 +140,15 @@ function tagRun(ctx, value) {
     ctx._strokeStyle = style
 }
 
-// Head rides the same projection as its ink. (id:ft-d5-head)
+// Head rides the same projection as its ink — pose and heading. (id:ft-d5-head)
+// headLocal = R_frame * R_local so group(target) * headLocal = world heading.
 function projectHead(headEvent, frameTarget, frameTransform) {
     if (!frameTarget) return headEvent
-    return { ...headEvent, position: SE3.apply(frameTransform, headEvent.position) }
+    return {
+        ...headEvent,
+        position: SE3.apply(frameTransform, headEvent.position),
+        rotation: frameTransform.rotation.multiply(headEvent.rotation),
+    }
 }
 
 // SLOT vs CHANNEL — two queue disciplines (classic: mailbox vs latest-value).
@@ -325,7 +330,7 @@ function findReferenceFrame(ctx, name) {
 // Resolve a name against the ambient tree — unified for 0-arity (variables) and n-arity (functions).
 // Called from evaluator's resolveContext (args=undefined) and applyFunction (args=[...]).
 function resolveBinding(frame, name, args) {
-    if (name.includes('.')) {
+    if (typeof name === 'string' && name.includes('.')) {
         // Dotted: target.property or target.fn[args]
         const dot = name.indexOf('.')
         const targetName = name.slice(0, dot)
@@ -533,7 +538,7 @@ function interceptShout(frame, value, registry, deferredShouts, onShout) {
 function bindResolve(deps, frame) {
     deps.mathEvaluator.resolveExternal = (v, a) => {
         const result = resolveBinding(frame, v, a)
-        if (v.includes('.')) deps.mathEvaluator._observedSibling = true
+        if (typeof v === 'string' && v.includes('.')) deps.mathEvaluator._observedSibling = true
         return result
     }
 }
@@ -733,7 +738,6 @@ function wireRun(child, deps, mailbox, batch, code) {
     child.mailbox = mailbox
     child.batch = batch
     bindResolve(deps, child)
-    deps.worldOriginFn = () => worldTransform(child)
     setListensFor(child, code)
 }
 
@@ -1169,10 +1173,6 @@ export function createScheduler(generator, opts = {}) {
                     if (frameTarget) {
                         frameTransform = relativeTransform(ctx, frameTarget)
                     }
-                }
-
-                if (ctx.deps?.worldOriginFn) {
-                    ctx.deps._cachedWorldOrigin = ctx.deps.worldOriginFn()
                 }
 
                 clearSpentPark(ctx)

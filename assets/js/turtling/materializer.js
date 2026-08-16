@@ -173,12 +173,9 @@ function materializeHead(event, ctx) {
     }
 
     if (event.headSize) {
-        // Frame-targeted heads get no heading here — the compositor orients them by
-        // world velocity (Head.orientToWorld), since their local heading cancels the
-        // rotating layer group. Normal heads show their heading. (spec id:ft-d5-head)
-        const rotation = ctx.frame && ctx.frame.targetFrame ? null : event.rotation
+        // Heading is layer-local (projectHead folds frame targeting in).
         ctx.head.show()
-        ctx.head.update(pos, rotation, event.color, event.headSize)
+        ctx.head.update(pos, event.rotation, event.color, event.headSize)
     } else {
         ctx.head.hide()
     }
