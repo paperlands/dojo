@@ -7,9 +7,6 @@ import { PAGE } from "./page.js"
 /** The event that ships one kept-local message. */
 export const KEEP_EVENT = "keep"
 
-/** The referent that follows the fact — one verb after the share (id:kb-12a). */
-export const IMAGE_EVENT = "keep:image"
-
 /** @typedef {"idle" | "draining" | "reannounce-armed"} Phase */
 
 /**
@@ -107,9 +104,6 @@ export function createWire(opts = {}) {
                 // Only the id just shipped may settle (id:kb-12).
                 const outcome = await settle(door, reply, note, id)
                 if (outcome) progressed = true
-
-                // Image follows the fact; never awaited (id:kb-12a).
-                if (outcome === "shared") void shipImage(door, id, say)
             }
 
             if (mine === epoch && progressed && !silenced) {
@@ -183,13 +177,13 @@ export function createWire(opts = {}) {
 // ── pack one message for the wire ────────────────────────────────────
 
 /**
- * Message + claimed id; source if held. Image never rides announce (id:kb-12a).
- * @param {{ source?: Function }} door
+ * Message + claimed id; source and image if held. One ship, both referents.
+ * @param {{ source?: Function, image?: Function }} door
  * @param {string} id
  * @param {string} bytes
  */
 async function pack(door, id, bytes) {
-    /** @type {{ id: string, message: string, source?: string }} */
+    /** @type {{ id: string, message: string, source?: string, image?: string }} */
     const payload = { id, message: bytes }
     try {
         const v = read(bytes)
@@ -200,6 +194,17 @@ async function pack(door, id, bytes) {
         }
     } catch {
         // Ship the message alone rather than drop the keep for a bad body.
+    }
+    try {
+        if (typeof door.image === "function") {
+            const blob = await door.image(id)
+            if (blob != null) {
+                const image = await toBase64(blob)
+                if (image) payload.image = image
+            }
+        }
+    } catch {
+        // Ship what the mint held. A missing blob is a faceless keep, not a drop.
     }
     return payload
 }
@@ -224,26 +229,6 @@ async function settle(door, reply, note, expectedId) {
         return "refused"
     }
     return "shared"
-}
-
-// ── the image follows the fact (id:kb-12a) ───────────────────────────
-
-/**
- * Picture after durable+answered share. No retry (id:kb-vet3 24); re-derivable.
- * @param {{ image?: Function }} door
- * @param {string} id
- * @param {(name: string, payload?: object) => Promise<unknown>} say
- */
-async function shipImage(door, id, say) {
-    try {
-        if (typeof door.image !== "function") return
-        const blob = await door.image(id)
-        if (blob == null) return
-        const image = await toBase64(blob)
-        if (image) void say(IMAGE_EVENT, { id, image })
-    } catch {
-        /* drop is a fact; message already shared */
-    }
 }
 
 async function toBase64(blob) {

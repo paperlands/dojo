@@ -12,6 +12,7 @@ export const BEAT = Object.freeze({
     HOLD_MIN_MS: 320,
     LAND_MS: 800,
     COPIED_MS: 1100,
+    BLUSH_MS: 1100,
 })
 
 /**

@@ -54,16 +54,16 @@ export function toBlob(path) {
 }
 
 /**
- * Mint into the journal — word is cause; picture attaches later (id:kj-answer).
- * Null is a spoken drop, never a reject (id:kc-c-wire). Returns {id, bytes}
- * so attach can re-put (idempotent on the name).
+ * Mint a snap — one put, message + picture. No picture is a spoken drop.
+ * Reflection is captured by the caller at the ask, before the wait.
  * @param {{ title: string, prev?: string }} ask
  * @param {{ source?: string, diagnostics?: unknown }} reflection
  * @param {{ work_id: string, buffer_id?: string | null }} ids
  * @param {{ root: () => Promise<string>, put: Function }} door
- * @returns {Promise<{ id: string, bytes: string } | null>}
+ * @param {string | Blob | null} path  hatch product; toBlob decides
+ * @returns {Promise<string | null>}  the keep id, or null
  */
-export async function mintSnap(ask, reflection, ids, door) {
+export async function mintSnap(ask, reflection, ids, door, path) {
     if (!door) {
         say("mintSnap: no door")
         return null
@@ -74,6 +74,11 @@ export async function mintSnap(ask, reflection, ids, door) {
     }
     if (!ids?.work_id) {
         say("mintSnap: no work_id — refuse silent keep")
+        return null
+    }
+    const image = toBlob(path)
+    if (image == null) {
+        say("no picture — not kept")
         return null
     }
 
@@ -91,31 +96,11 @@ export async function mintSnap(ask, reflection, ids, door) {
             ts: stamp(),
         })
 
-        // Source always — even ""; no tombstone (id:kb-source-absence).
-        const id = await door.put(bytes, { source })
-        return { id, bytes }
+        // One write: source + picture. The keep is a photograph or it is not.
+        return await door.put(bytes, { source, image })
     } catch (e) {
         say("mintSnap failed:", e && e.message ? e.message : e)
         return null
-    }
-}
-
-/**
- * Picture on an existing keep — fact beside value, like share (id:kc-p-facts).
- * @param {{ put: Function }} door
- * @param {string} bytes
- * @param {string | Blob | null} path
- * @returns {Promise<boolean>}
- */
-export async function attachImage(door, bytes, path) {
-    const image = toBlob(path)
-    if (!door || typeof bytes !== "string" || image == null) return false
-    try {
-        await door.put(bytes, { image })
-        return true
-    } catch (e) {
-        say("attachImage failed:", e && e.message ? e.message : e)
-        return false
     }
 }
 

@@ -118,6 +118,28 @@
   100% { opacity: 0.55; transform: translateX(-50%) scale(1); }
 }
 
+/* Dual of flare — a refused keep reddens the light that is felt, not a
+   banner. The disc sits above the frame; the wash is what the eye gets. */
+.river-sun.blush {
+  background: radial-gradient(circle,
+    color-mix(in oklch, var(--color-error) 42%, transparent) 0%,
+    color-mix(in oklch, var(--color-error) 20%, transparent) 32%,
+    color-mix(in oklch, var(--color-error) 8%, transparent) 56%,
+    transparent 74%);
+  animation: river-blush 1100ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.river-sky:has(.river-sun.blush) {
+  background: radial-gradient(ellipse 72% 118% at 50% 0%,
+    color-mix(in oklch, var(--color-error) 14%, transparent) 0%,
+    color-mix(in oklch, var(--color-error) 5%, transparent) 44%,
+    transparent 76%);
+}
+@keyframes river-blush {
+  0%   { opacity: 0.55; transform: translateX(-50%) scale(1); }
+  22%  { opacity: 0.95; transform: translateX(-50%) scale(1.1); }
+  100% { opacity: 0.55; transform: translateX(-50%) scale(1); }
+}
+
 /* ── the wheel — fixed lens; drag-to-pan in wheel.js ────────────── */
 .river-rail {
   position: relative;
@@ -616,6 +638,7 @@
 @media (prefers-reduced-motion: reduce) {
   .river-col.noon .river-ring-open,
   .river-sun.flare,
+  .river-sun.blush,
   .river-sky.is-ready .river-col.noon .river-open,
   .river-sky.is-keeping .river-open,
   .river-sky.is-keeping .river-word,

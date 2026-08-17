@@ -8,6 +8,8 @@ import { name, read } from "../../keep/entry.js"
 import { REACH } from "../../keep/page.js"
 import { ofWork } from "../../keep/work.js"
 import { askKeep, doorSeat, getDoor, watchTouched } from "../../keep/cell.js"
+import { nerve } from "../nerve.js"
+import { signals as S } from "../../nerve/store.js"
 import { seatOf as termSeatOf } from "./term-cell.js"
 import { moodOf, paintSky } from "../../river/light.js"
 import { pulse, whenDone } from "../../kernel/motion.js"
@@ -88,7 +90,9 @@ function mountRiver(hook) {
     let epoch = 0
 
     // Guards, not truths. landHold is a setTimeout (remaining HOLD_MIN).
-    const sealGuard = temporal.quiet(endSeal, BEAT.KEEP_GUARD_MS)
+    const sealGuard = temporal.quiet(() => {
+        if (seal) miss(seal.title)
+    }, BEAT.KEEP_GUARD_MS)
     const flareOut = temporal.quiet(cool, BEAT.IGNITE_MS)
     /** @type {ReturnType<typeof setTimeout> | null} */
     let landHoldT = null
@@ -230,6 +234,7 @@ function mountRiver(hook) {
 
     function flare() {
         if (!sun) return
+        sun.classList.remove("blush")
         pulse(sun, "flare")
         flareOut()
     }
@@ -238,6 +243,26 @@ function mountRiver(hook) {
     function cool() {
         sun?.classList.remove("flare")
         void refold()
+    }
+
+    /** Dual of flare: the sun reddens, the word comes back, the nerve says why. */
+    function blush() {
+        if (!sun) return
+        pulse(sun, "blush")
+        whenDone(sun, { animation: "river-blush", ms: BEAT.BLUSH_MS }, () => {
+            sun.classList.remove("blush")
+        })
+    }
+
+    function miss(title) {
+        endSeal()
+        if (typeof title === "string" && title) {
+            message.value = title
+            if (at.key === DRAFT && draft) setDraft({ ...draft, title })
+        }
+        blush()
+        say()
+        nerve()?.push(S.system("failed to keep try again"))
     }
 
     /**
@@ -467,7 +492,7 @@ function mountRiver(hook) {
         beginSeal(title)
         const prev = at.key === DRAFT && draft?.from ? draft.from : null
         void askKeep(title, { prev }).then((id) => {
-            if (!id && seal) endSeal()
+            if (!id && seal) miss(title)
         })
         return true
     }

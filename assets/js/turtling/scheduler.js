@@ -378,8 +378,16 @@ function frameWorldTransform(frame) {
     return SE3.compose(world, local)
 }
 
-// Spatial properties — world-space projections of a frame's transform.
-// Cross-ambient reads see global coordinates, not local ones.
+// Target pose in the observer's birth frame — same numbers goto/faceto drink.
+// Root / missing observer → identity birth → world numbers (the tab floor).
+function poseInObserverBirth(target, observer) {
+    const world = frameWorldTransform(target)
+    if (!observer) return world
+    const birth = worldTransform(observer)
+    return SE3.compose(SE3.invert(birth), world)
+}
+
+// Spatial properties — projections of a pose (birth-frame when read by a friend).
 const SPATIAL = {
     x: (t) => roundVec(t.position[0]),
     y: (t) => roundVec(t.position[1]),
@@ -420,7 +428,7 @@ const RELATIONAL = {
 // Resolve a property on a target frame — spatial, temporal, relational, or fn.
 function resolveProperty(target, property, args, observer) {
     if (!args && SPATIAL[property]) {
-        return SPATIAL[property](frameWorldTransform(target))
+        return SPATIAL[property](poseInObserverBirth(target, observer))
     }
     if (!args && TEMPORAL[property]) {
         return TEMPORAL[property](target)

@@ -21,18 +21,16 @@ import { commands, listeners, mutators } from "./core.js"
 import { register, outerDrafting } from "./term-cell.js"
 import { createArena } from "../../kernel/arena.js"
 import { attach } from "../../kernel/attach.js"
-import { createObservable } from "../../kernel/observable.js"
+
 import { safePush } from "../../adapter.js"
 import { createJournal } from "../../keep/journal.js"
 import { createWire } from "../../keep/wire.js"
-import { attachImage, mintSnap } from "../../keep/kinds/snap.js"
+import { mintSnap } from "../../keep/kinds/snap.js"
 import { askKeep, registerDoor, registerKeeper, touched } from "../../keep/cell.js"
 import { forkRef, link, pullKeep } from "../../link.js"
 import { fetchFragment, fragmentIndex } from "../../weave/fragments.js"
 import { transpile } from "../../weave/parse.js"
 
-// Picture deadline: two hatch beats + readback. Late face, never lost keep.
-const SNAP_WAIT_MS = 1200
 
 // Events registered at mounted(); handlers returned once mount() stands.
 export const inner = {
@@ -295,23 +293,19 @@ function mountInner(hook, { term, cm6 }) {
     }
     const wire = createWire({ hook, door: wireDoor });
 
-    // Hatch products: subscribe, don't command (id:kj-answer).
-    const paths = createObservable();
-
-    // Join: mint first (word is cause), attach picture later (reveal).
+    // Join: snap now (not a hatch beat), one put, then announce. No picture → null.
     arena.add(registerKeeper(async (ask) => {
-        const minted = await mintSnap(ask, reflection() ?? {}, {
+        const seen = reflection() ?? {}
+        const ids = {
             work_id: term.currentWorkId(),
             buffer_id: term.currentBufferId(),
-        }, journal);
-        if (!minted) return null
-        touched();
-        void wire.announce();
-        void turtle.reflectChanged?.();
-        void temporal.once(paths.watch, SNAP_WAIT_MS).then(async (path) => {
-            if (await attachImage(journal, minted.bytes, path)) touched()
-        });
-        return minted.id
+        }
+        const path = (await turtle.snap?.()) ?? null
+        const id = await mintSnap(ask, seen, ids, journal, path)
+        if (!id) return null
+        touched()
+        void wire.announce()
+        return id
     }));
 
     arena.add(turtle.bridge.sub(([event, payload]) => {
@@ -323,7 +317,6 @@ function mountInner(hook, { term, cm6 }) {
         case "hatchTurtle": {
             // D022: document from this surface; reflection wins over stale hatch fields.
             const hatch = { ...payload, ...(reflection() ?? {}) };
-            if (payload.path) paths.notify(payload.path);
             pacedHatch(hatch);
             break;
         }
@@ -484,7 +477,9 @@ function mountInner(hook, { term, cm6 }) {
 
     /** The aperture's gesture: keep the moment, and put a file on disk too. */
     const keepAndSave = (title) => {
-        void askKeep(title)
+        void askKeep(title).then((id) => {
+            if (!id) nerve()?.push(S.system("not kept — try again"))
+        })
         cameraCommand("snap", { title })
     }
 

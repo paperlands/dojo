@@ -158,12 +158,30 @@ export function createStage(canvas, bridge) {
         stage.requestRender?.()
     })
 
-    // One capture at a time — hatch() swallows re-entry while the async
-    // readback is in flight (the first-light retry calls it every frame).
+    // One capture: one promise. hatch() starts the work (or joins it).
     // dispose() flips `disposed` so a pending fence poll stands down instead
     // of touching freed GL or publishing to a dead surface.
     let hatchInFlight = false
     let disposed = false
+    /** @type {Promise<string | null> | null} */
+    let hatchP = null
+    /** @type {((path: string | null) => void) | null} */
+    let resolveHatch = null
+
+    function picture() {
+        if (!hatchP) {
+            hatchP = new Promise((r) => { resolveHatch = r })
+        }
+        return hatchP
+    }
+
+    function settle(path) {
+        const r = resolveHatch
+        hatchP = null
+        resolveHatch = null
+        hatchInFlight = false
+        if (r) r(path)
+    }
 
     // Assembled stage object
     const stage = {
@@ -207,11 +225,22 @@ export function createStage(canvas, bridge) {
             renderer.render(scene, camera)
         },
 
+        get hatching() { return hatchInFlight },
+
+        // The picture this hatch will produce. A keep borrows this; hatch()
+        // starts the work after the frame has been drawn.
+        picture() { return picture() },
+
         // WebGL2 readback is ASYNC: PIXEL_PACK_BUFFER + fence, never a sync
-        // readPixels (stalled the main thread). Returns false when a capture
-        // is already in flight, so callers don't count it as a completed hatch.
+        // readPixels (stalled the main thread). Returns the picture promise.
+        // In-flight joins the same promise; lastHatchAt stamps only a start.
         hatch(bridge) {
-            if (hatchInFlight) return false
+            const p = picture()
+            if (hatchInFlight || disposed) {
+                if (disposed) settle(null)
+                return p
+            }
+            hatchInFlight = true
             const width = canvas.width
             const height = canvas.height
 
@@ -220,25 +249,32 @@ export function createStage(canvas, bridge) {
                 // below, and holding it would pin a full-canvas Uint8Array
                 // (1920×993×4 ≈ 7.6MB) per tab for the life of the page.
                 queueMicrotask(async () => {
-                    const result = await recorder.takeSnapshot({ pixels, width, height })
-                    if (result) {
-                        // The file, if one was asked for — read the flag before
-                        // the clear, and clear it whole (id:kb-7-stage).
-                        const snap = stage.renderstate.snapshot
-                        if (snap.save) {
-                            stage.renderstate.snapshot = { save: false }
-                            bridge.pub(["saveRecord", {
-                                snapshot: result.full,
-                                type: "image",
-                                title: snap.title ?? null,
-                            }])
+                    try {
+                        const result = await recorder.takeSnapshot({ pixels, width, height })
+                        if (result) {
+                            // The file, if one was asked for — read the flag before
+                            // the clear, and clear it whole (id:kb-7-stage).
+                            const snap = stage.renderstate.snapshot
+                            if (snap.save) {
+                                stage.renderstate.snapshot = { save: false }
+                                bridge.pub(["saveRecord", {
+                                    snapshot: result.full,
+                                    type: "image",
+                                    title: snap.title ?? null,
+                                }])
+                            }
+                            // The stage returns a PICTURE and world meta — never an
+                            // ask (id:kj-types). `full` is the file's; `trimmed` is
+                            // the one the keep and the clan share.
+                            stage.renderstate.meta.path = result.trimmed
+                            bridge.pub(["hatchTurtle", { ...stage.renderstate.meta }])
+                            settle(result.trimmed ?? null)
+                            return
                         }
-                        // The stage returns a PICTURE and world meta — never an
-                        // ask (id:kj-types). `full` is the file's; `trimmed` is
-                        // the one the keep and the clan share.
-                        stage.renderstate.meta.path = result.trimmed
-                        bridge.pub(["hatchTurtle", { ...stage.renderstate.meta }])
+                    } catch {
+                        /* encode died — a keep waiting on this capture hears null */
                     }
+                    settle(null)
                 })
             }
 
@@ -247,13 +283,12 @@ export function createStage(canvas, bridge) {
                 const pixels = new Uint8Array(width * height * 4)
                 ctx.readPixels(0, 0, width, height, ctx.RGBA, ctx.UNSIGNED_BYTE, pixels)
                 finish(pixels)
-                return
+                return p
             }
 
             // Enqueue the GPU-side copy now (reads this frame's drawing buffer,
             // same as the old sync path), collect the bytes once the fence says
             // the copy landed — no pipeline stall on this thread.
-            hatchInFlight = true
             const buf = ctx.createBuffer()
             ctx.bindBuffer(ctx.PIXEL_PACK_BUFFER, buf)
             ctx.bufferData(ctx.PIXEL_PACK_BUFFER, width * height * 4, ctx.STREAM_READ)
@@ -266,15 +301,18 @@ export function createStage(canvas, bridge) {
                 if (disposed || ctx.isContextLost()) {
                     // Stand down, but hand the GL objects back first: bailing
                     // straight out leaks the fence and the pack buffer.
-                    hatchInFlight = false
                     if (!ctx.isContextLost()) { ctx.deleteSync(sync); ctx.deleteBuffer(buf) }
+                    settle(null)
                     return
                 }
                 const status = ctx.clientWaitSync(sync, 0, 0)
                 if (status === ctx.TIMEOUT_EXPIRED) { setTimeout(poll, 8); return }
                 ctx.deleteSync(sync)
-                hatchInFlight = false
-                if (status === ctx.WAIT_FAILED) { ctx.deleteBuffer(buf); return }
+                if (status === ctx.WAIT_FAILED) {
+                    ctx.deleteBuffer(buf)
+                    settle(null)
+                    return
+                }
                 const pixels = new Uint8Array(width * height * 4)
                 ctx.bindBuffer(ctx.PIXEL_PACK_BUFFER, buf)
                 ctx.getBufferSubData(ctx.PIXEL_PACK_BUFFER, 0, pixels)
@@ -283,11 +321,13 @@ export function createStage(canvas, bridge) {
                 finish(pixels)
             }
             setTimeout(poll, 0)
+            return p
         },
 
         // Cleanup
         dispose() {
             disposed = true
+            settle(null)
             window.removeEventListener('resize', onResize)
             controls.removeEventListener('twist', onTwist)
             cameraUnsub()
