@@ -16,19 +16,13 @@ import { outer as outershell } from "./shell/outer.js";
 import { inner as coreshell } from "./shell/inner.js";
 import { weave } from "./shell/weave.js";
 import { river } from "./shell/river.js";
+import { sessionName } from "./shell/session-name.js";
 import { nerve as seatedNerve } from "./nerve.js";
 import { getStage } from "../turtling/stage-cell.js";
 
-// Walker address for walk signals (source = who spoke). Session name is the
-// child's word; until Shoot 5 mints a durable user id on the client, this is
-// the one mouth that can tell two children at one table apart.
+// Walker address for walk signals (source = who spoke). Letters from session.
 function walkerAddress() {
-    try {
-        const session = JSON.parse(localStorage.getItem("session") || "{}");
-        return session?.name || "?";
-    } catch {
-        return "?";
-    }
+    return sessionName() || "?";
 }
 
 // Weave and river are client-lazy: no CM6, no Terminal. Ports only. The river
