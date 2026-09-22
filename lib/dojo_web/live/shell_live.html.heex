@@ -16,6 +16,11 @@
   .outershell { display: none; }
   .rightpane:has(#outer-open.is-open) .outershell { display: block; }
 
+  /* pane flip flag (#pane-state, phx-update=ignore) — client-driven like
+     #deck-state: the panel stays mounted, CSS gates it, no server round-trip */
+  #pane-frame #disciple_panels { display: none; }
+  #pane-frame:has(#pane-state.pane-open) #disciple_panels { display: flex; }
+
   /* the river's own flag — placement and gating are the call site's;
      the component itself is placement-agnostic (id:kr-place). Open paint
      for #riverbutton lives on river_state (ColocatedCSS). */
@@ -110,12 +115,14 @@
     .weave-trail-step { transition: none; }
   }
 
-  /* presence expires with the socket */
+  /* presence wavers with the socket — the strip BANKS TO EMBER, not grayed out:
+     dimmed and warmed, so it keeps the state's own colour while the line is
+     down (the ember scheme, never a pure-gray dropout). */
   .phx-disconnected #disciple_panels [data-disciple],
   .phx-client-error #disciple_panels [data-disciple],
   .phx-error #disciple_panels [data-disciple] {
-    opacity: 0.55;
-    filter: grayscale(0.35);
+    opacity: 0.75;
+    filter: sepia(0.22) saturate(1.05) brightness(0.94);
     pointer-events: none;
   }
 </style>
@@ -528,15 +535,18 @@
     </div>
     <!-- <div class="backdrop-blur-sm border border-gray-700/50 rounded-lg p-4"/> -->
     <!-- Bottom Pane - Visual Previews (spans both columns) -->
-    <div class="col-span-3 row-start-2 lg:row-span-1 lg:col-span-1 ">
+    <div id="pane-frame" class="col-span-3 row-start-2 lg:row-span-1 lg:col-span-1 ">
+      <div id="pane-state" phx-update="ignore" class="pane-open hidden"></div>
       <div
         id="paneflip"
         class="fixed z-50 -translate-x-1/2 pointer-events-auto transition-transform duration-300 bottom-2 left-1/2"
-        phx-hook="Sensei"
       >
         <svg
-          class={"z-50 w-6 h-6 text-primary/50 items-center flex m-auto rounded-lg backdrop-blur-sm transform transition-transform duration-300 active:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
-          phx-click="flipPane"
+          class="z-50 w-6 h-6 text-primary/50 items-center flex m-auto rounded-lg backdrop-blur-sm transform transition-transform duration-300 active:text-amber-400 cursor-pointer rotate-180"
+          phx-click={
+            JS.toggle_class("pane-open", to: "#pane-state")
+            |> JS.toggle_class("rotate-180", to: "#paneflip svg")
+          }
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -547,71 +557,16 @@
       </div>
       <%!-- Turtle viewing pane --%>
       <div
-        :if={@pane}
         id="disciple_panels"
         phx-hook="DiscipleWindow"
-        class="fixed bg-transparent bottom-0 pointer-events-auto z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto pointer-events-none"
+        class="disciple-strip fixed bg-transparent bottom-0 z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto pointer-events-none"
       >
-        <!-- Other people's turtles -->
-        <div
-          :for={{reg_key, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
-          class="bg-transparent pointer-events-auto"
-        >
-          <div
-            data-disciple
-            class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out mx-2 backdrop-blur-[1px] animate-fade flex-shrink-0" <> is_main_focus(reg_key, @focused_name)}
-          >
-            <.icon
-              :if={@sensei}
-              name="hero-cursor-arrow-ripple"
-              phx-click="toggle-focus"
-              phx-value-disciple-name={reg_key}
-              class="cursor-pointer pointer-events-auto text-primary"
-            />
-            <div
-              phx-click={
-                (@outershell && @outershell.addr == reg_key &&
-                   DojoWeb.OuterShellLive.close_js()) ||
-                  JS.push("seeTurtle")
-              }
-              phx-throttle="500"
-              phx-value-addr={reg_key}
-              class={[
-                "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md hover:border-primary transition-colors delay-150 ",
-                (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") ||
-                  "cursor-progress pointer-events-none",
-                (Map.has_key?(dis, :meta) && dis.meta.state == :error && "border-error/50") ||
-                  (@outershell && @outershell.addr == reg_key &&
-                     "border-accent-content text-accent-content") ||
-                  "border-accent/50 text-accent"
-              ]}
-            >
-              <div class="absolute font-mono  text-sm tracking-wider rotate-0 select-none top-2 right-2">
-                {dis.name}
-              </div>
-
-              <.droplet_loader
-                :if={!Map.has_key?(dis, :meta)}
-                class="size-10 fill-amber-600"
-                loading="eager"
-                decoding="sync"
-              />
-              <!-- <%= #Map.has_key?(dis, :meta) && IO.inspect("//" <> (dis[:addr] || "") <> "/#{dis.meta.path}") %> -->
-              <img
-                :if={Map.has_key?(dis, :meta)}
-                src={"//" <> (dis[:addr] || "") <> "/#{dis.meta.path}"}
-                onerror="this.src='/images/turtlehead.png';"
-                class="object-scale-down p-1 max-h-full m-auto"
-                loading="eager"
-                decoding="sync"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div :if={@sensei} class="z-50 flex mb-2 pointer-events-auto">
-          <.export />
-        </div>
+        <%!-- The living run, on the presence clock. The lantern run is a second
+              run on the room's clock — composed, never sorted together. --%>
+        <DojoWeb.DiscipleStrip.strip
+          windows={DojoWeb.ShellLive.DiscipleWindow.strip(@disciples, @lanterns)}
+          outershell={@outershell}
+        />
       </div>
     </div>
   </div>

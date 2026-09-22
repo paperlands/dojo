@@ -1,0 +1,657 @@
+/* THE DISCIPLE WINDOWS — frame · pane · sill, and the light on them.
+   ─────────────────────────────────────────────────────────────────────
+   The author is a sun; a peer is a moon (id:hw-selene). Chartreuse is you,
+   violet is someone else. Nothing here may glow like the nerve.
+
+   Two eyes rule this file:
+
+   COLE — one lamp. The moon hangs in the sky, not on the figures; every
+   window takes that one light, from one direction. Depth is AIR, never a
+   divider: far lamps thin to points. Light is weather, not a dimmer.
+
+   TAKAHATA — the figure is left alone. A wash, a filter, no stroke. The
+   image is the center and no hour may touch it; hours are where the light
+   sits. What can be removed is removed.
+
+   IN @layer components ON PURPOSE (as river.css): unlayered utility classes
+   at the call site must still win. */
+
+/* Registered so the hours INTERPOLATE — unregistered, every one of these
+   steps and a 900ms crossing becomes a snap. Outside the layer, as river.css.
+   Five, not the board's eight: --work-sepia and --work-hue were declared and
+   never varied, and --work-bright died with "the halo thins with distance,
+   the work does not". */
+@property --illum {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0.7;
+}
+@property --edge {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --rim-in {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --rim-out {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --work-sat {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
+@layer components {
+  .disciple-strip {
+    /* ONE LAMP, ONE PLACE (Cole). Every window's light is read from this
+       single point; nothing below may name a direction of its own. */
+    --moon-x: 34%;
+    --moon-y: 26%;
+    /* Where the light LANDS — the lamp's reflection. Both the inward wash and
+       the outward spill open from here, so the whole strip is lit as one room. */
+    --lit-x: calc(100% - var(--moon-x));
+    --lit-y: calc(100% - var(--moon-y));
+
+    --edge: color-mix(in oklch, var(--color-base-content) 42%, transparent);
+    --rim-in: color-mix(in oklch, var(--color-base-content) 14%, transparent);
+    --rim-out: color-mix(in oklch, var(--color-base-content) 12%, transparent);
+    --pass-shade: color-mix(in oklch, var(--color-base-100) 26%, transparent);
+    --pass-lit: color-mix(in oklch, var(--color-base-content) 16%, transparent);
+    /* LIVE PRESENCE WEARS A WARM COAL. Accent, smothered — the border-accent
+       language of the room, damped to a resting ember: it says "a hand is here"
+       against the lunar edge of kept memory. Stroke only, no glow, no pulse —
+       the frame differentiates, the one lamp still washes every seat alike. */
+    --ember: color-mix(in oklch, var(--color-accent) 44%, transparent);
+    /* TWILIGHT — amber meeting violet, the warm seed against the moon's violet
+       cloud (Kaguya). The hover crossing wears it; focus resolves it to pure
+       --peer-ink. It is the road from a warm live seat to a chosen peer. */
+    --twilight: color-mix(in oklch, var(--peer-ink) 55%, var(--color-primary));
+    --work-sat: 1;
+    /* THE SPILL BELONGS TO THE CROSSING, not to resting. Cole's tower windows
+       are bright patches in uniform night; they do not each wear a halo. A
+       steady spill hangs a second moon on every seat. On paper, less again. */
+    --spill-gain: 0.26;
+    /* ONE DIMMER FOR THE WHOLE ROOM. Every light layer — edge, wash, spill —
+       is scaled by this, so the strip stays subtle without re-tuning a single
+       hour's colour. Turn it down for less; this is the knob. */
+    --lum: 0.68;
+
+    display: flex;
+    align-items: flex-end;
+    gap: 1.1rem;
+  }
+
+  :root[data-theme="light"] .disciple-strip {
+    --spill-gain: 0.1;
+  }
+
+  /* ── the window ──────────────────────────────────────────────────── */
+
+  /* The frame stays: the seat outlives the sitter. overflow is visible
+     because the spill renders 22px outside the box. */
+  .disciple-strip .win {
+    position: relative;
+    width: 162px;
+    height: 108px;
+    flex-shrink: 0;
+    overflow: visible;
+    --illum: 0.7;
+    transition:
+      --illum 900ms ease,
+      --edge 900ms ease,
+      --rim-in 900ms ease,
+      --rim-out 900ms ease,
+      --work-sat 900ms ease;
+  }
+
+  @media (max-width: 640px) {
+    .disciple-strip .win {
+      width: 140px;
+      height: 94px;
+    }
+  }
+
+  /* The border is the moon at the glass — light, never a pen. NOTHING LEAVES
+     THE FRAME AT REST: an outward glow here would be a second moon on every
+     seat (Cole). The spill is the only outward light, and it is the crossing's. */
+  .disciple-strip .win::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: 7px;
+    z-index: 2;
+    pointer-events: none;
+    box-shadow:
+      inset 0 0 0 1px var(--edge),
+      inset 0 0 14px var(--rim-in);
+    opacity: var(--lum);
+    transition: box-shadow 900ms ease;
+  }
+
+  .disciple-strip .pane {
+    position: absolute;
+    inset: 0;
+    border-radius: 6px;
+    z-index: 1;
+  }
+
+  /* ── the two faces ───────────────────────────────────────────────── */
+
+  /* `now` is the hand at work, `kept` is the room's memory. They never cross.
+     The image is the center — grid, not absolute placement. */
+  .disciple-strip .face {
+    position: absolute;
+    inset: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    color: var(--color-base-content);
+  }
+
+  /* THE FIGURE IS LEFT ALONE. One filter, one axis, and that axis is distance
+     — no hour may touch the work (Takahata). */
+  .disciple-strip .work {
+    width: 70%;
+    height: 70%;
+    object-fit: contain;
+    opacity: 0.92;
+    filter: saturate(var(--work-sat));
+    transition: filter 900ms ease;
+  }
+
+  .disciple-strip .name {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    user-select: none;
+    color: color-mix(in oklch, var(--color-base-content) 50%, transparent);
+    opacity: 0.75;
+  }
+
+  /* The ledge the last work rests on — only the kept face has one. A gradient,
+     no rule line: a border here would be the one stroke Takahata refuses. */
+  .disciple-strip .sill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 3px 8px 4px;
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.55rem;
+    letter-spacing: 0.1em;
+    user-select: none;
+    color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+    background: linear-gradient(
+      to top,
+      color-mix(in oklch, var(--color-base-100) 78%, transparent),
+      transparent
+    );
+  }
+
+  .disciple-strip .sill .ago {
+    opacity: 0.62;
+  }
+
+  /* ── light: inward wash, outward spill, passing weather ──────────── */
+
+  .disciple-strip .rim,
+  .disciple-strip .spill,
+  .disciple-strip .pass {
+    position: absolute;
+    pointer-events: none;
+    border-radius: 6px;
+  }
+
+  /* The wash opens from where the light LANDS, so the moon-side edge is the
+     brightest on every window in the strip — this is the one lamp, and it lives
+     on the glass. The spill below is the aperture's own light and is centred. */
+  .disciple-strip .rim {
+    inset: 0;
+    z-index: 4;
+    background: radial-gradient(
+      ellipse 88% 82% at var(--lit-x) var(--lit-y),
+      transparent 42%,
+      var(--rim-in) 100%
+    );
+    opacity: var(--lum);
+    transition: background 900ms ease;
+  }
+
+  .disciple-strip .spill {
+    inset: -34px;
+    z-index: 0;
+    border-radius: 26px;
+    background: radial-gradient(
+      ellipse 42% 38% at 50% 50%,
+      var(--rim-out) 0%,
+      transparent 70%
+    );
+    opacity: calc((0.18 + var(--illum) * 0.42) * var(--spill-gain) * var(--lum));
+    transition:
+      opacity 900ms ease,
+      background 900ms ease;
+  }
+
+  /* Clouds pass IN FRONT of the light: a shade band, a break, a backlit rim.
+     Two bands on one clock, so the weather is one system, not two effects. */
+  .disciple-strip .pass {
+    inset: 0;
+    z-index: 5;
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 700ms ease;
+  }
+
+  .disciple-strip .pass::before,
+  .disciple-strip .pass::after {
+    content: "";
+    position: absolute;
+    inset: -24% -55%;
+    background-size: 50% 170%;
+    background-repeat: no-repeat;
+    filter: blur(14px);
+    animation: cloud-pass 20s ease-in-out infinite;
+  }
+
+  .disciple-strip .pass::before {
+    background-image: linear-gradient(
+      108deg,
+      transparent 0%,
+      var(--pass-shade) 24%,
+      transparent 40%,
+      color-mix(in oklch, var(--color-base-100) 40%, transparent) 56%,
+      transparent 72%
+    );
+    mix-blend-mode: multiply;
+    opacity: 0.2;
+  }
+
+  .disciple-strip .pass::after {
+    background-image: linear-gradient(
+      108deg,
+      transparent 18%,
+      var(--pass-lit) 26%,
+      transparent 36%,
+      color-mix(in oklch, var(--color-base-content) 8%, transparent) 54%,
+      transparent 66%
+    );
+    mix-blend-mode: screen;
+    opacity: 0.5;
+  }
+
+  @keyframes cloud-pass {
+    0% {
+      transform: translateX(16%);
+    }
+    100% {
+      transform: translateX(-58%);
+    }
+  }
+
+  /* ── the hours ───────────────────────────────────────────────────────
+     Four, and each is only where the light sits. The seam table's `draft`
+     (composing) is absent until its decay is walked (id:hw-selene-seam). */
+
+  /* crescent — here, nothing drawn yet: a coal warming at the glass. Warm, not
+     lunar, so waiting and working are one light and the crossing is seamless. */
+  .disciple-strip .win.crescent {
+    --illum: 0.16;
+    /* a faint coal just catching — live, but not yet at work */
+    --edge: color-mix(in oklch, var(--color-accent) 28%, transparent);
+    --rim-in: transparent;
+    --rim-out: color-mix(in oklch, var(--color-primary) 6%, transparent);
+  }
+
+  .disciple-strip .win.crescent::before {
+    box-shadow:
+      inset 0 0 0 1px var(--edge),
+      inset 10px 10px 18px -10px
+        color-mix(in oklch, var(--color-primary) 16%, transparent);
+  }
+
+  /* the coal's own light on the corner — warm, where the lunar limb used to be */
+  .disciple-strip .win.crescent .rim {
+    background: radial-gradient(
+      circle at var(--moon-x) var(--moon-y),
+      color-mix(in oklch, var(--color-primary) 26%, transparent) 0%,
+      color-mix(in oklch, var(--color-primary) 7%, transparent) 22%,
+      transparent 38%
+    );
+  }
+
+  /* veil — a hand at work. ACTIVE IS VEILED, NOT BRIGHTER: the weather moves
+     and the work is untouched. A window that merely dimmed would read disabled. */
+  .disciple-strip .win.veil {
+    --illum: 0.74;
+    --edge: var(--ember);
+    /* ONE WARM LIGHT, IN AND OUT. A hand at work throws the room's warm light
+       (--color-primary, the deck's active colour) — the same on the face's wash
+       as on the spill, so what lands on the glass and what spills under are one
+       illumination. Faint at rest, held back by the passing clouds: light ready
+       to break through, not yet full. The frame stays the cool cloud.
+       The face wash is a WHISPER at rest — felt only when it moves (Cole:
+       light is weather, not a dimmer); the spill carries the resting warmth. */
+    --rim-in: color-mix(in oklch, var(--color-primary) 6%, transparent);
+    --rim-out: color-mix(in oklch, var(--color-primary) 18%, transparent);
+  }
+
+  .disciple-strip .win.veil .pass {
+    opacity: 1;
+  }
+
+  .disciple-strip .win.veil .spill {
+    animation: spill-weather 20s ease-in-out infinite;
+  }
+
+  /* The halo breathes on the clouds' own clock — one weather, not two.
+     Scaled by --lum like every other light, so the one dimmer reaches here. */
+  @keyframes spill-weather {
+    0%,
+    100% {
+      opacity: calc(0.38 * var(--lum));
+    }
+    30% {
+      opacity: calc(0.14 * var(--lum));
+    }
+    42% {
+      opacity: calc(0.58 * var(--lum));
+    }
+    70% {
+      opacity: calc(0.2 * var(--lum));
+    }
+  }
+
+  /* blood — the world broke. The air turns at the frame and dies toward the
+     middle; the drawing stays a pale disk. Not a red border, not a red card. */
+  .disciple-strip .win.blood {
+    --illum: 0.4;
+    --edge: color-mix(in oklch, var(--color-error) 17%, transparent);
+    --rim-in: color-mix(in oklch, var(--color-error) 6%, transparent);
+    --rim-out: color-mix(in oklch, var(--color-error) 5%, transparent);
+  }
+
+  .disciple-strip .win.blood .rim {
+    background: radial-gradient(
+      ellipse 96% 92% at var(--lit-x) var(--lit-y),
+      transparent 0 72%,
+      color-mix(in oklch, var(--color-error) 5%, transparent) 88%,
+      color-mix(in oklch, var(--color-error) 13%, transparent) 100%
+    );
+  }
+
+  .disciple-strip .win.blood .spill {
+    background: radial-gradient(
+      ellipse 42% 38% at 50% 50%,
+      color-mix(in oklch, var(--color-error) 8%, transparent) 0%,
+      color-mix(in oklch, var(--color-error) 2%, transparent) 52%,
+      transparent 72%
+    );
+  }
+
+  /* kept — the hand is gone and the lamp remains. Full, and STILL: the weather
+     stops first, which is how stillness becomes the news. */
+  .disciple-strip .win.kept {
+    --illum: 1;
+    --edge: color-mix(in oklch, var(--color-base-content) 26%, transparent);
+    --rim-in: color-mix(in oklch, var(--color-base-content) 12%, transparent);
+    --rim-out: color-mix(in oklch, var(--color-base-content) 10%, transparent);
+  }
+
+  .disciple-strip .win.kept .pass {
+    opacity: 0;
+    transition: opacity 240ms ease;
+  }
+
+  .disciple-strip .win.kept .spill {
+    animation: none;
+  }
+
+  /* ── depth is air (Cole) ─────────────────────────────────────────────
+     How long gone reads as distance, and distance is atmosphere: the halo
+     thins and colour leaves. There is no divider anywhere in this strip —
+     a line between here and there would be a stage flat, not a clearing. */
+
+  .disciple-strip .win.d1 { --edge: color-mix(in oklch, var(--color-base-content) 17%, transparent);
+    --rim-out: color-mix(in oklch, var(--color-base-content) 8%, transparent); --work-sat: 0.9; }
+  .disciple-strip .win.d2 { --edge: color-mix(in oklch, var(--color-base-content) 13%, transparent);
+    --rim-out: color-mix(in oklch, var(--color-base-content) 6%, transparent); --work-sat: 0.76; }
+  .disciple-strip .win.d3 { --edge: color-mix(in oklch, var(--color-base-content) 9%, transparent);
+    --rim-out: color-mix(in oklch, var(--color-base-content) 4%, transparent); --work-sat: 0.6; }
+  .disciple-strip .win.d4 { --edge: color-mix(in oklch, var(--color-base-content) 6%, transparent);
+    --rim-out: color-mix(in oklch, var(--color-base-content) 2%, transparent); --work-sat: 0.46; }
+
+  /* The ROOM goes quiet with distance and the work holds — the far seat is a
+     frame and one mark, which is the true sentence: the hand is gone, the work
+     is not. Names and ledges are the room; never the work. */
+  .disciple-strip .win.d1 .name { opacity: 0.58; }
+  .disciple-strip .win.d2 .name { opacity: 0.42; }
+  .disciple-strip .win.d3 .name { opacity: 0.28; }
+  .disciple-strip .win.d4 .name { opacity: 0.18; }
+  .disciple-strip .win.d3 .sill,
+  .disciple-strip .win.d4 .sill { opacity: 0.66; }
+
+  /* ── hover — the light breaks through (peer-select preview) ──────────
+     The hand nears and TWILIGHT crosses in — amber meeting violet at the frame
+     and in the spill below (the reference's violet cloud), while the face wash
+     only just rises: subtle, felt because it MOVES, not because it glows. The
+     amber core holds against the moon; the violet is the road to focus, which
+     resolves it to pure --peer-ink. Excludes .focus so a chosen peer keeps its
+     violet, and .kept, which the hand cannot open. Twilight is still last. */
+  .disciple-strip .win:not(.kept):not(.focus):hover {
+    --illum: 0.95;
+    --edge: color-mix(in oklch, var(--twilight) 44%, transparent);
+    --rim-in: color-mix(in oklch, var(--color-primary) 16%, transparent);
+    --rim-out: color-mix(in oklch, var(--twilight) 38%, transparent);
+    cursor: pointer;
+  }
+
+  /* ── twilight — looking tints the air, never a ring ──────────────────
+     AFTER every hour on purpose: focus reassigns the same three colours, so
+     it must be the last word. Violet is someone else; chartreuse is you. */
+
+  .disciple-strip .win.focus {
+    --edge: color-mix(in oklch, var(--peer-ink) 28%, transparent);
+    --rim-in: color-mix(in oklch, var(--peer-ink) 10%, transparent);
+    --rim-out: color-mix(in oklch, var(--peer-ink) 9%, transparent);
+  }
+
+  /* ── the crossing ────────────────────────────────────────────────────
+     ONE CLASS DOES ALL OF IT: `.kept`. Everything else is transition, so the
+     server says only which face is true and the window says how. No JS —
+     a client-added class does not survive the next patch (spike, 2026-08-13).
+
+     Three beats, this order: weather stills (240ms) · the light leaves and the
+     kept face rises like a tide (820ms) · the ledge lights last (+700ms). */
+
+  .disciple-strip .face.now {
+    opacity: 1;
+    transition: opacity 260ms ease;
+  }
+
+  .disciple-strip .face.kept {
+    opacity: 0;
+    transition: opacity 240ms ease;
+    -webkit-mask-image: linear-gradient(to top, black 38%, transparent 62%);
+    mask-image: linear-gradient(to top, black 38%, transparent 62%);
+    -webkit-mask-size: 100% 300%;
+    mask-size: 100% 300%;
+    -webkit-mask-position: 0 0%;
+    mask-position: 0 0%;
+  }
+
+  .disciple-strip .sill {
+    transform: translateY(105%);
+    opacity: 0;
+    transition:
+      transform 200ms ease,
+      opacity 200ms ease;
+  }
+
+  .disciple-strip .win.kept .face.now {
+    opacity: 0;
+    transition: opacity 560ms ease 340ms;
+  }
+
+  .disciple-strip .win.kept .face.kept {
+    opacity: 1;
+    -webkit-mask-position: 0 100%;
+    mask-position: 0 100%;
+    transition:
+      opacity 620ms ease 260ms,
+      -webkit-mask-position 820ms cubic-bezier(0.22, 1, 0.36, 1) 200ms,
+      mask-position 820ms cubic-bezier(0.22, 1, 0.36, 1) 200ms;
+  }
+
+  .disciple-strip .win.kept .sill {
+    transform: none;
+    opacity: 1;
+    transition:
+      transform 480ms cubic-bezier(0.22, 1, 0.36, 1) 700ms,
+      opacity 480ms ease 700ms;
+  }
+
+  /* ── peek: hover a living seat to glimpse its last keep ───────────────
+     The weather clears, the lamp rises from behind, the sill lifts. Same
+     spill the leave-crossing uses, but voluntary and reversible — the work
+     is never touched (id:hw-takahata), only what covers it. */
+
+  .disciple-strip .win.peekable {
+    cursor: help;
+  }
+
+  .disciple-strip .win.peekable:hover .face.now {
+    opacity: 0;
+    transition: opacity 240ms ease;
+  }
+
+  .disciple-strip .win.peekable:hover .face.kept {
+    opacity: 1;
+    -webkit-mask-position: 0 100%;
+    mask-position: 0 100%;
+    transition:
+      opacity 300ms ease 80ms,
+      -webkit-mask-position 420ms cubic-bezier(0.22, 1, 0.36, 1) 40ms,
+      mask-position 420ms cubic-bezier(0.22, 1, 0.36, 1) 40ms;
+  }
+
+  .disciple-strip .win.peekable:hover .sill {
+    transform: none;
+    opacity: 1;
+    transition:
+      transform 260ms cubic-bezier(0.22, 1, 0.36, 1) 200ms,
+      opacity 260ms ease 200ms;
+  }
+
+  /* ── the waiting mark: droplet as a small ember ──────────────────────
+     The droplet turns (its own slow spin); the coal's breath is the warm
+     halo around it — same light the veil will throw, so waiting flows
+     into working. Smaller than the old size-10 loader; glow, not glare. */
+
+  .disciple-strip .kindle {
+    position: absolute;
+    left: 50%;
+    top: 54%;
+    width: 28px;
+    height: 28px;
+    transform: translate(-50%, -50%);
+    color: var(--color-primary);
+    z-index: 2;
+    pointer-events: none;
+    animation: kindle 3.2s ease-in-out infinite;
+  }
+
+  /* the coal's breath — soft warm halo behind the droplet, same clock */
+  .disciple-strip .face.waiting::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 54%;
+    width: 52px;
+    height: 52px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(
+      circle at 50% 50%,
+      color-mix(in oklch, var(--color-primary) 34%, transparent) 0%,
+      color-mix(in oklch, var(--color-primary) 10%, transparent) 42%,
+      transparent 72%
+    );
+    opacity: 0.45;
+    pointer-events: none;
+    animation: kindle-breath 3.2s ease-in-out infinite;
+  }
+
+  /* blown to life and settling — the spin is the droplet's; this is the glow */
+  @keyframes kindle {
+    0%,
+    100% {
+      opacity: 0.55;
+      transform: translate(-50%, -50%) scale(0.86);
+      filter:
+        brightness(0.88)
+        drop-shadow(0 0 3px color-mix(in oklch, var(--color-primary) 45%, transparent));
+    }
+    45% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.04);
+      filter:
+        brightness(1.28)
+        drop-shadow(0 0 10px color-mix(in oklch, var(--color-primary) 70%, transparent))
+        drop-shadow(0 0 18px color-mix(in oklch, var(--color-primary) 35%, transparent));
+    }
+    72% {
+      opacity: 0.72;
+      transform: translate(-50%, -50%) scale(0.94);
+      filter:
+        brightness(1.05)
+        drop-shadow(0 0 6px color-mix(in oklch, var(--color-primary) 55%, transparent));
+    }
+  }
+
+  @keyframes kindle-breath {
+    0%,
+    100% {
+      opacity: 0.28;
+      transform: translate(-50%, -50%) scale(0.82);
+    }
+    45% {
+      opacity: 0.62;
+      transform: translate(-50%, -50%) scale(1.14);
+    }
+    72% {
+      opacity: 0.36;
+      transform: translate(-50%, -50%) scale(0.96);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .disciple-strip .pass::before,
+    .disciple-strip .pass::after,
+    .disciple-strip .win.veil .spill,
+    .disciple-strip .kindle,
+    .disciple-strip .face.waiting::after {
+      animation: none;
+    }
+
+    /* spin is SMIL — freeze the glow; droplet still readable at rest */
+    .disciple-strip .kindle {
+      opacity: 0.78;
+      filter:
+        brightness(1.05)
+        drop-shadow(0 0 6px color-mix(in oklch, var(--color-primary) 50%, transparent));
+    }
+  }
+}

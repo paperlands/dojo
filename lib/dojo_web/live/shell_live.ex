@@ -1,5 +1,6 @@
 defmodule DojoWeb.ShellLive do
   use DojoWeb, :live_shell
+  require Logger
   alias DojoWeb.Session
   alias DojoWeb.ShellLive.{OuterShell}
   import DojoWeb.SVGComponents
@@ -33,13 +34,11 @@ defmodule DojoWeb.ShellLive do
        label: nil,
        clan: nil,
        outershell: %OuterShell{},
-       sensei: false,
        class: nil,
        disciples: %{},
-       visible_disciples: MapSet.new(),
-       pane: true
-     )
-     |> assign(focused_name: "")}
+       lanterns: [],
+       visible_disciples: MapSet.new()
+     )}
   end
 
   def handle_params(params, _url, socket) do
@@ -57,24 +56,44 @@ defmodule DojoWeb.ShellLive do
   end
 
   defp join_clan(socket, clan) do
+    uid = self_id(socket)
+
     socket
     |> assign(clan: clan)
     |> start_async(:list_disciples, fn -> Dojo.Class.list_disciples("shell:" <> clan) end)
+    # The room's lanterns — journal heads, room-ordered, minus my own (ks-light,
+    # ks-delta). A seat's dark face. Fetched once: room memory is slow where
+    # presence is churn.
+    |> start_async(:load_lanterns, fn -> Dojo.Keep.latest(clan, of: :root, except: uid) end)
   end
+
+  defp self_id(%{assigns: %{session: %Session{name: name} = s}}) when is_binary(name),
+    do: Session.author_id(s)
+
+  defp self_id(_), do: nil
+
+  # The seat a hand stands on, resolved once from the work_id presence already
+  # carries (ks-light). `Keep.owner_of` is the works bind — any river to its
+  # journal, not only the head a fan shows. A local derivation on the read-only
+  # projection, never written back; an unshared work resolves to nil → rootless.
+  defp with_root(%{keep: work} = disciple) when is_binary(work),
+    do: Map.put(disciple, :root, Dojo.Keep.owner_of(work))
+
+  defp with_root(disciple), do: disciple
 
   defp sync_session(%{assigns: %{session: %Session{name: name} = session, clan: clan}} = socket)
        when is_binary(name) do
     parent = self()
 
-    # The one identity derivation — Session.user_id/1 (decision 007).
-    user_id = Session.user_id(session)
+    # Pre-cut occupancy (keep-cut II). Occupancy is root; this is not it.
+    author_id = Session.author_id(session)
 
     socket
     |> start_async(:join_disciples, fn ->
       Dojo.Class.join!(parent, "shell:" <> clan, %Dojo.Disciple{
         name: name,
         action: "active",
-        user_id: user_id
+        author_id: author_id
       })
     end)
   end
@@ -85,11 +104,20 @@ defmodule DojoWeb.ShellLive do
 
   def handle_async(:list_disciples, {:ok, disciples}, %{assigns: %{clan: clan}} = socket) do
     Dojo.Class.listen("shell:" <> clan)
-    {:noreply, assign(socket, :disciples, disciples)}
+    {:noreply, assign(socket, :disciples, Map.new(disciples, fn {k, d} -> {k, with_root(d)} end))}
   end
 
   def handle_async(:list_disciples, {:exit, reason}, socket) do
-    IO.inspect(reason, label: "disciples load failed")
+    Logger.error("[LC:ShellLive] disciples load failed: #{inspect(reason)}")
+    {:noreply, socket}
+  end
+
+  def handle_async(:load_lanterns, {:ok, {lanterns, _cursor}}, socket) do
+    {:noreply, assign(socket, :lanterns, lanterns)}
+  end
+
+  def handle_async(:load_lanterns, {:exit, reason}, socket) do
+    Logger.error("[LC:ShellLive] lanterns load failed: #{inspect(reason)}")
     {:noreply, socket}
   end
 
@@ -99,7 +127,7 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_async(:join_disciples, {:exit, reason}, socket) do
-    IO.inspect(reason, label: "disciples join failed")
+    Logger.error("[LC:ShellLive] disciples join failed: #{inspect(reason)}")
     {:noreply, socket}
   end
 
@@ -173,7 +201,7 @@ defmodule DojoWeb.ShellLive do
       ) do
     reg_key = Dojo.Disciple.reg_key(disciple)
     # Gate.change re-joins under a new phx_ref; hatch meta is not Tracker state.
-    disciple = retain_hatch_meta(disciple, d[reg_key])
+    disciple = disciple |> retain_hatch_meta(d[reg_key]) |> with_root()
 
     {:noreply, assign(socket, :disciples, Map.put(d, reg_key, disciple))}
   end
@@ -186,14 +214,15 @@ defmodule DojoWeb.ShellLive do
     # only delete if the leaving ref matches the current ref for this reg_key
     # prevents stale-leave race when Gate.change regenerates phx_ref
     if d[reg_key][:phx_ref] == ref do
-      {:noreply, assign(socket, :disciples, Map.delete(d, reg_key))}
+      leaving = d[reg_key]
+
+      {:noreply,
+       socket
+       |> assign(:disciples, Map.delete(d, reg_key))
+       |> relight(leaving)}
     else
       {:noreply, socket}
     end
-  end
-
-  def handle_info({Dojo.PubSub, :focused_name, {focused_name}}, socket) do
-    {:noreply, assign(socket, focused_name: focused_name)}
   end
 
   # Layer 2a: local hatch push — meta already in message, no RPC needed
@@ -301,39 +330,14 @@ defmodule DojoWeb.ShellLive do
   end
 
   def handle_event(
-        "keepTurtle",
-        _,
-        %{assigns: %{disciples: dis}} = socket
-      ) do
-    push_socket =
-      dis
-      |> Enum.reduce(
-        socket,
-        fn
-          {_reg_key, %{name: name, meta: %{path: path}}}, sock ->
-            sock
-            |> push_event("download-file", %{
-              href: "///" <> path,
-              filename: name <> ".png"
-            })
-
-          _, sock ->
-            sock
-        end
-      )
-
-    {:noreply, push_socket}
-  end
-
-  def handle_event(
         "hatchTurtle",
         %{"state" => _state} = payload,
         %{assigns: %{class: class, clan: clan, session: %Session{name: name} = session}} =
           socket
       )
       when is_binary(name) do
-    # The one identity derivation — Session.user_id/1 (decision 007).
-    id = Session.user_id(session)
+    # Pre-cut hatch attribution (keep-cut II).
+    id = Session.author_id(session)
 
     Dojo.Turtle.reflect(payload, %{topic: :hatch, class: class, node: node(), id: id, clan: clan})
 
@@ -360,7 +364,12 @@ defmodule DojoWeb.ShellLive do
         # HERE, at the click, when this shell wants that work's keeps (id:kb-8).
         outershell =
           OuterShell.observe(
-            %OuterShell{addr: addr, active: true, name: "#{dis[addr][:name]}"},
+            %OuterShell{
+              addr: addr,
+              active: true,
+              name: "#{dis[addr][:name]}",
+              root: dis[addr][:root]
+            },
             turtle
           )
 
@@ -449,51 +458,18 @@ defmodule DojoWeb.ShellLive do
     end
   end
 
-  def handle_event("flipPane", _, socket), do: {:noreply, update(socket, :pane, &(!&1))}
-
-  def handle_event("opensenseime", _, %{assigns: %{sensei: bool}} = socket) do
-    {:noreply, assign(socket, sensei: !bool)}
-  end
-
-  def handle_event(
-        "toggle-focus",
-        %{"disciple-name" => _name},
-        %{assigns: %{sensei: false}} = socket
-      ),
-      do: {:noreply, socket}
-
-  def handle_event(
-        "toggle-focus",
-        %{"disciple-name" => name},
-        %{assigns: %{sensei: true, clan: clan}} = socket
-      ) do
-    old_name = socket.assigns.focused_name
-
-    new_name =
-      case old_name do
-        "" -> name
-        ^name -> ""
-        _ -> name
-      end
-
-    Dojo.PubSub.publish({new_name}, :focused_name, "class:shell:" <> clan)
-
-    {:noreply, assign(socket, focused_name: new_name)}
-  end
-
   # pushEvent ↔ envelope adapter (Phase 3): the client's `ts` rides through
   # untouched — Dojo.Nerve annotates received_at, never replaces (gw-t-clock).
+  # source is pre-cut occupancy (keep-cut II); letters ride presence name.
   def handle_event("nerveGlobal", %{"target" => target, "body" => body} = params, socket) do
-    %{assigns: %{clan: clan, session: %{name: name}}} = socket
-    Dojo.Nerve.chat(clan, name, target, body, params["ts"])
+    %{assigns: %{clan: clan, session: %Session{} = session}} = socket
+    Dojo.Nerve.chat(clan, Session.author_id(session), target, body, params["ts"])
     {:noreply, socket}
   end
 
-  # Keep ship — one message, one answer (id:kb-12). Clan is a fact of the
-  # socket; author_id is Session.user_id/1 (D007). Silence when unready is
-  # not an answer: the entry stays kept local and rides the next announce.
-  # Shared → presence :keep is the work_id (continuant). pull/1 resolves
-  # work → head by ts; N keeps of one river collapse to one presence fact.
+  # Keep ship — one message, one answer. Clan hangs; author_id is pre-cut.
+  # Silence when unready is not an answer: the entry stays kept local.
+  # Presence :keep should be the origin id (keep-cut VI).
   def handle_event(
         "keep",
         payload,
@@ -503,24 +479,14 @@ defmodule DojoWeb.ShellLive do
     reply =
       Dojo.Keep.receive(payload,
         clan: clan,
-        author_id: Session.user_id(session)
+        author_id: Session.author_id(session),
+        name: name
       )
 
     {:reply, reply, publish_latest_keep(socket, reply)}
   end
 
   def handle_event("keep", _payload, socket), do: {:noreply, socket}
-
-  # The image follows the fact (id:kb-12a). Fire and forget on the wire, so
-  # there is no reply to design: it lands or it does not, and a lost picture
-  # degrades to re-running the turtle — never to a hole.
-  def handle_event("keep:image", payload, %{assigns: %{clan: clan}} = socket)
-      when is_binary(clan) and is_map(payload) do
-    Dojo.Keep.image(payload, clan: clan)
-    {:noreply, socket}
-  end
-
-  def handle_event("keep:image", _payload, socket), do: {:noreply, socket}
 
   # pokemon clause
   def handle_event(
@@ -536,11 +502,10 @@ defmodule DojoWeb.ShellLive do
 
   # pokemon clause
   def handle_call(
-        e,
+        _e,
         p,
         socket
       ) do
-    dbg()
     IO.inspect(p, label: "pokemon params")
 
     {:noreply, socket}
@@ -670,11 +635,19 @@ defmodule DojoWeb.ShellLive do
   defp bump_path_time(nil, _time), do: nil
   defp bump_path_time(path, time), do: Regex.replace(~r/\?t=\d+/, path, "?t=#{time}")
 
-  defp find_reg_key(disciples, name) do
-    Enum.find_value(disciples, fn {key, %{name: n}} ->
-      if n == name, do: key
+  # Nerve source is the author id (id:ki-presence). Match presence meta or
+  # the reg_key suffix `"#{topic}:#{author_id}"`.
+  defp find_reg_key(disciples, author_id) when is_binary(author_id) do
+    Enum.find_value(disciples, fn {key, dis} ->
+      cond do
+        Map.get(dis, :author_id) == author_id -> key
+        is_binary(key) and String.ends_with?(key, ":" <> author_id) -> key
+        true -> nil
+      end
     end)
   end
+
+  defp find_reg_key(_disciples, _), do: nil
 
   # Apply a view/stream change: persist it, then push the source if one is due.
   # The view/stream ride the seeOuterShell payload, so JS configures the editor
@@ -695,9 +668,7 @@ defmodule DojoWeb.ShellLive do
     end
   end
 
-  # Presence holds the work this shell stands on — continuant, not moment.
-  # This is the ONLY place the work_id travels: one meta per ship, read back at
-  # the click (seeTurtle). One-fact reply: only a shared keep carries target.
+  # Presence :keep should be the origin id (keep-cut VI). Pre-cut still ships target.
   defp publish_latest_keep(
          %{assigns: %{class: class}} = socket,
          %{target: target}
@@ -709,54 +680,32 @@ defmodule DojoWeb.ShellLive do
 
   defp publish_latest_keep(socket, _), do: socket
 
+  # A departed hand leaves its lamp — the head of its journal (id:ks-delta). The
+  # root is already on the disciple (owner_of, resolved upstream), so we ask the
+  # log only for the fresh head and key it by that root. The living name is still
+  # on the leaving hand — history does not join authors; copy it (id:ks-name).
+  # A hand with no root made no keep: nothing to leave, no query, no harm.
+  defp relight(%{assigns: %{lanterns: lanterns}} = socket, %{root: root} = leaving)
+       when is_binary(root) do
+    case Dojo.Keep.history(root, of: :root) do
+      {[lamp | _], _} ->
+        lamp = put_name(lamp, Map.get(leaving, :name))
+        assign(socket, :lanterns, [lamp | Enum.reject(lanterns, &(&1.root == root))])
+
+      _ ->
+        socket
+    end
+  end
+
+  defp relight(socket, _leaving), do: socket
+
+  defp put_name(lamp, name) when is_binary(name) and name != "", do: Map.put(lamp, :name, name)
+  defp put_name(lamp, _), do: lamp
+
   defp retain_hatch_meta(disciple, %{meta: meta}) when not is_nil(meta),
     do: Map.put(disciple, :meta, meta)
 
   defp retain_hatch_meta(disciple, _), do: disciple
-
-  def export(assigns) do
-    ~H"""
-    <div
-      phx-click="keepTurtle"
-      class="relative z-[60] flex items-center m-auto gap-2 px-4 py-2 bg-transparent rounded-lg backdrop-blur-sm transform transition-all duration-300 hover:scale-105 group z-[100]"
-    >
-      <div class="relative w-6 h-6">
-        <svg
-          class="absolute inset-0 w-6 h-6 text-primary-content transform transition-transform group-hover:translate-y-0.5"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="7 10 12 15 17 10" />
-          <line x1="12" y1="15" x2="12" y2="3" />
-        </svg>
-      </div>
-
-      <span class="font-mono text-sm tracking-wide transition-all duration-300 transform text-primary group-hover:text-primary">
-        Keep Creations
-      </span>
-      <!-- Decorative corners -->
-      <div class="absolute w-2 h-2 border-t-2 border-l-2 -top-1 animate-pulse -left-1 border-primary">
-      </div>
-      <div class="absolute w-2 h-2 border-t-2 border-r-2 -top-1 animate-pulse -right-1 border-primary">
-      </div>
-      <div class="absolute w-2 h-2 border-b-2 border-l-2 -bottom-1 animate-pulse -left-1 border-primary">
-      </div>
-      <div class="absolute w-2 h-2 border-b-2 border-r-2 -bottom-1 animate-pulse -right-1 border-primary">
-      </div>
-    </div>
-    <!-- Tooltip -->
-    <div class="absolute mb-2 transition-opacity duration-200 -translate-x-1/2 opacity-0 bottom-full left-1/2 group-hover:opacity-100">
-      <div class="px-2 py-1 text-xs border rounded bg-primary/90 text-primary border-primary backdrop-blur-sm whitespace-nowrap">
-        Download Your Creation
-      </div>
-    </div>
-    """
-  end
 
   def slider(assigns) do
     ~H"""
@@ -824,13 +773,6 @@ defmodule DojoWeb.ShellLive do
       </div>
     </div>
     """
-  end
-
-  defp is_main_focus(name, focused_name) do
-    case name do
-      ^focused_name -> " scale-150"
-      _ -> " border-primary"
-    end
   end
 
   defp to_titlecase(snek) when is_binary(snek) do

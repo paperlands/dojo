@@ -221,23 +221,27 @@ defmodule DojoWeb.SVGComponents do
     """
   end
 
+  # Waiting mark — a slow coal turning. Fill rides `currentColor` / Tailwind
+  # `fill-*` so the strip can warm it to an ember without a second glyph.
+  attr :class, :any, default: nil
+
   def droplet_loader(assigns) do
     ~H"""
     <svg
-      xmlns:svg="http://www.w3.org/2000/svg"
       xmlns="http://www.w3.org/2000/svg"
-      xmlns:xlink="http://www.w3.org/1999/xlink"
       version="1.0"
       class={@class}
       viewBox="0 0 128 128"
       xml:space="preserve"
+      aria-hidden="true"
     >
       <g>
         <path
-          fill="#000000"
+          fill="currentColor"
+          opacity="0.22"
           d="M64,128a64,64,0,1,1,64-64A64,64,0,0,1,64,128ZM64,2.75A61.25,61.25,0,1,0,125.25,64,61.25,61.25,0,0,0,64,2.75Z"
         /><path
-          fill="inherit"
+          fill="currentColor"
           d="M64 128a64 64 0 1 1 64-64 64 64 0 0 1-64 64zM64 2.75A61.2 61.2 0 0 0 3.34 72.4c1.28-3.52 3.9-6.32 7.5-6.86 6.55-1 11.9 2.63 13.6 8.08 3.52 11.27.5 23 15 35.25 19.47 16.46 40.34 13.54 52.84 9.46A61.25 61.25 0 0 0 64 2.75z"
         />
         <animateTransform
