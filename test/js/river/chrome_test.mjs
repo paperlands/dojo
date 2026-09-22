@@ -16,8 +16,8 @@ function snap(title) {
 }
 
 describe("BEAT: one place for keep→land durations", () => {
-    test("four named durations, positive", () => {
-        for (const k of ["IGNITE_MS", "KEEP_GUARD_MS", "HOLD_MIN_MS", "LAND_MS"]) {
+    test("named durations, positive", () => {
+        for (const k of ["IGNITE_MS", "KEEP_GUARD_MS", "HOLD_MIN_MS", "LAND_MS", "BLUSH_MS"]) {
             assert.ok(BEAT[k] > 0, k)
         }
         assert.ok(Object.isFrozen(BEAT))

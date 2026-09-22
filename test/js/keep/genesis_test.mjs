@@ -46,13 +46,10 @@ describe("nonce: pattern 1's mint side", () => {
         assert.equal(seen.length, 32)
     })
 
-    test("is the draw any continuant reuses — work_id is the same shape", () => {
-        // mints.work = () => nonce(crypto.getRandomValues) (id:kb-work, id:kb-2a)
-        // One law, two instances: author root rides the entry's name; work_id
-        // is the draw itself. Both are hex64; neither carries meaning.
-        const workId = nonce(fill(0x42))
-        assert.match(workId, /^[0-9a-f]{64}$/)
-        assert.equal(workId.length, 64)
+    test("the draw is hex64 — genesis uses it; a work does not", () => {
+        const draw = nonce(fill(0x42))
+        assert.match(draw, /^[0-9a-f]{64}$/)
+        assert.equal(draw.length, 64)
     })
 })
 

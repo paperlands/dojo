@@ -34,6 +34,7 @@ function mountOuter(hook, { term, cm6 }) {
     const arena = createArena();
     let outerAddr = null;
     let outerName = null;
+    let outerRoot = null;
     let outerBufferId = null;
     // Who owns the light, where the peer stands, what the caret owes — one value,
     // decided by editor/watch-law.js. This surface only performs its answers.
@@ -311,6 +312,8 @@ function mountOuter(hook, { term, cm6 }) {
             outerName = payload.origin_name;
             outerProj?.retarget(outerName);
         }
+        if (typeof payload?.root === "string" && payload.root) outerRoot = payload.root;
+        else if (payload?.root == null && opening) outerRoot = null;
         if (payload?.buffer_id) outerBufferId = payload.buffer_id;
 
         const view = payload?.view ?? 'watch';
@@ -343,6 +346,7 @@ function mountOuter(hook, { term, cm6 }) {
             outerAddr = null
         }
         outerName = null
+        outerRoot = null
         outerBufferId = null
         wireWounds = NONE
         term.changeouter("")
@@ -357,6 +361,7 @@ function mountOuter(hook, { term, cm6 }) {
         scene.fork({
             source,
             name: outerName || 'friend',
+            root: outerRoot || undefined,
             addr: outerAddr,
             buffer_id: outerBufferId,
             time: Date.now(),

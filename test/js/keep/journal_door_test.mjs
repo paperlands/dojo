@@ -4,10 +4,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
-import {
-    createJournal,
-    JOURNAL_VERBS,
-} from "../../../assets/js/keep/journal.js"
+import { createJournal } from "../../../assets/js/keep/journal.js"
 import { createEngine } from "../../../assets/js/keep/journal.store.js"
 import { VERBS as SOURCE_VERBS } from "../../../assets/js/keep/verbs.js"
 import { write, name } from "../../../assets/js/keep/entry.js"
@@ -52,11 +49,9 @@ describe("journal door: public surface", () => {
 
     test("names the verbs; put derives the name; no id parameter", async () => {
         assert.deepEqual(
-            [...JOURNAL_VERBS].sort(),
+            [...SOURCE_VERBS].sort(),
             ["genesis", "get", "image", "list", "local", "put", "share", "source"].sort(),
         )
-        // One list — door re-exports verbs.js
-        assert.equal(JOURNAL_VERBS, SOURCE_VERBS)
         const root = await door.root()
         const bytes = snap(root, { tag: 1 }, { t: 1, n: 0 })
         const id = await door.put(bytes)

@@ -3,17 +3,16 @@
 //
 // A buffer is a plain value:
 //   { id, work_id, name, content, mode, created, lastModified, origin }
-//   origin: null | { id, addr, source, time, name } — fork lineage
-//   work_id: the work this tab is of — a mint, hex64 (id:kb-work, id:kb-2a).
-//            UI-only buffer.id never reaches the log; work_id becomes target.
+//   origin: null | { addr, buffer_id, source, time, name, root? } — fork lineage
+//            root is the peer's device root (signature_of on first keep).
+//   work_id: the origin keep this tab is of, once kept. Null until the first
+//            put. Then stash that keep's name. Never a minted nonce.
 //
 // A collection is a plain value:
 //   { items: Map<id, buffer>, currentId: string | null }
 //
-// Mints arrive as one bag — { name, id, work } — so the next continuant is free
-// instead of a fourth positional everywhere (id:kb-2a). This file stays
-// zero-import. Blank tab mints a new river; same-river / fork-from-keep rejoins
-// via opts.work_id = parent.work_id | keep.target.
+// Mints: { name, id }. Blank tab has no work. Rejoin / fork-from-keep passes
+// opts.work_id = origin keep id.
 
 const DEFAULT_CONTENT = `label 'hello.' 10\njmp 50`;
 const DEFAULT_MODE = 'plang';
@@ -25,7 +24,7 @@ export const createCollection = (mints) => {
     const id = mints.id();
     const buffer = {
         id,
-        work_id: mints.work(),
+        work_id: null,
         name: DEFAULT_NAME,
         content: DEFAULT_CONTENT,
         mode: DEFAULT_MODE,
@@ -63,7 +62,7 @@ export const addBuffer = (collection, opts = {}, mints) => {
     const id = mints.id();
     const buffer = {
         id,
-        work_id: opts.work_id ?? mints.work(),
+        work_id: typeof opts.work_id === "string" && opts.work_id ? opts.work_id : null,
         name: opts.name || mints.name(),
         content: opts.content ?? '',
         mode: opts.mode ?? DEFAULT_MODE,
@@ -126,6 +125,18 @@ export const updateAttend = (collection, id, offset) => {
     return { items, currentId: collection.currentId };
 };
 
+// Stash the origin keep on this tab (keep kernel).
+export const setWorkId = (collection, id, work_id) => {
+    if (!collection.items.has(id) || typeof work_id !== "string" || !work_id) {
+        return collection
+    }
+    const held = collection.items.get(id)
+    if (held.work_id === work_id) return collection
+    const items = new Map(collection.items)
+    items.set(id, { ...held, work_id })
+    return { items, currentId: collection.currentId }
+};
+
 // --- Navigation ---
 
 export const nextId = (collection) => {
@@ -178,11 +189,11 @@ export const serialize = (collection) => {
 
 // --- Internal ---
 
-// ?? mints.work() is the whole migration (id:kb-2a): buffers already in
-// localStorage have no work_id; first load mints one and it sticks.
+// Legacy rows may still carry a minted nonce; keep it until adoptWork heals.
+// Missing work_id stays null — the first keep names the work.
 const fillDefaults = (raw, mints) => ({
     id: raw.id ?? mints.id(),
-    work_id: raw.work_id ?? mints.work(),
+    work_id: typeof raw.work_id === "string" && raw.work_id ? raw.work_id : null,
     name: raw.name ?? mints.name(),
     content: raw.content ?? DEFAULT_CONTENT,
     mode: raw.mode ?? DEFAULT_MODE,

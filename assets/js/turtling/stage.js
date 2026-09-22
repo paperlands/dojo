@@ -110,7 +110,6 @@ export function createStage(canvas, bridge, instruments = {}) {
         return recorder
     }
 
-
     // Head
     const head = new Render.Head(scene)
 
@@ -139,15 +138,6 @@ export function createStage(canvas, bridge, instruments = {}) {
             viewOffset = SE3.identity()
             controls.update()
             break
-        case 'snap': {
-            // ASK A FILE, NOT A KEEP (id:kc-p-join). Durability left this
-            // command: the keep is minted at the door owner's seat on the
-            // child's word. What remains is the download and its filename.
-            const p = payload[1] ?? {}
-            stage.renderstate.snapshot = { save: true, title: p.title }
-            stage.reflectChanged?.()
-            break
-        }
         case 'pan':
             camera.desire = (camera.desire !== "pan") ? "pan" : "track"
             break
@@ -287,11 +277,12 @@ export function createStage(canvas, bridge, instruments = {}) {
                                 }])
                             }
                             // The stage returns a PICTURE and world meta — never an
-                            // ask (id:kj-types). `full` is the file's; `trimmed` is
-                            // the one the keep and the clan share.
-                            stage.renderstate.meta.path = result.trimmed
+                            // ask (id:kj-types). Prefer trimmed for the keep; fall
+                            // back to full so an all-clear frame still photographs.
+                            const path = result.trimmed ?? result.full ?? null
+                            stage.renderstate.meta.path = path
                             bridge.pub(["hatchTurtle", { ...stage.renderstate.meta }])
-                            settle(result.trimmed ?? null)
+                            settle(path)
                             return
                         }
                     } catch {

@@ -6,10 +6,8 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
 import {
+    adoptWork,
     columnsOf,
-    lineOf,
-    linesOf,
-    meetOf,
     mirrorOf,
     namesOf,
     newerKeep,
@@ -23,8 +21,8 @@ const WORK = "w".repeat(64)
 const OTHER = "o".repeat(64)
 
 // A snap as authored: target is the work, prev absent until a fork mints it.
-function snap(tag, { work = WORK, t = 100, prev } = {}) {
-    const body = { source_id: name(tag), diagnostics: [], buffer_id: null }
+function snap(tag, { work = WORK, t = 100, prev, buffer } = {}) {
+    const body = { source_id: name(tag), diagnostics: [], buffer_id: buffer ?? null }
     if (prev !== undefined) body.prev = prev
     return write("snap", body, { root: ROOT, target: work, ts: { t, n: 0 } })
 }
@@ -63,11 +61,44 @@ describe("ofWork: the work's keeps among a page of the author's history", () => 
         assert.deepEqual(ofWork(["{not json", good], WORK), [good])
     })
 
+    test("origin keep (no target) belongs by its own name", () => {
+        const origin = write("snap", { source_id: name("o"), diagnostics: [] }, {
+            root: ROOT,
+            ts: { t: 1, n: 0 },
+        })
+        const child = snap("c", { work: name(origin), t: 2 })
+        const other = snap("x", { work: OTHER, t: 3 })
+        const listed = newestFirst(origin, child, other)
+        const id = name(origin)
+        assert.deepEqual(ofWork(listed, id), [child, origin])
+    })
+
     test("page honesty: the fold shows only what the page held (id:kb-8-page)", () => {
         // Ten keeps of this work exist; the page carried the newest three.
         const all = Array.from({ length: 10 }, (_, i) => snap(`k${i}`, { t: i }))
         const page = newestFirst(...all.slice(7))
         assert.equal(ofWork(page, WORK).length, 3)
+    })
+    
+    test("adoptWork keeps a work the cache still names", () => {
+        const listed = newestFirst(snap("a", { t: 1 }), snap("b", { work: OTHER, t: 2 }))
+        assert.equal(adoptWork(listed, "tab", WORK), WORK)
+    })
+
+    test("adoptWork recovers by buffer_id when the cache reminted", () => {
+        const listed = newestFirst(
+            snap("a", { t: 1, buffer: "tab" }),
+            snap("x", { work: OTHER, t: 2, buffer: "other" }),
+        )
+        const reminted = "z".repeat(64)
+        assert.equal(adoptWork(listed, "tab", reminted), WORK)
+        assert.equal(adoptWork(listed, "ghost", reminted), reminted, "unknown tab keeps the cache")
+        assert.equal(adoptWork(listed, "tab", null), WORK)
+    })
+
+    test("adoptWork does not steal another buffer's river", () => {
+        const listed = newestFirst(snap("x", { work: OTHER, t: 1, buffer: "theirs" }))
+        assert.equal(adoptWork(listed, "mine", WORK), WORK)
     })
 })
 
@@ -152,15 +183,16 @@ describe("newerKeep: author order, pure (id:kb-8)", () => {
 })
 
 describe("the lines: prev when minted, author order until then (id:kr-mirror)", () => {
+    // linesOf / meetOfIds are private; mirrorOf is the public sentence.
     test("with no prev anywhere the river is ONE line, newest at the head", () => {
         const a = snap("a", { t: 1 })
         const b = snap("b", { t: 2 })
         const c = snap("c", { t: 3 })
-        const versions = [c, b, a]
-
-        const { heads } = linesOf(versions)
-        assert.deepEqual(heads, [name(c)], "one head — the river un-forked")
-        assert.deepEqual(lineOf(versions, name(c)), [c, b, a])
+        const m = mirrorOf([c, b, a])
+        assert.equal(m.head, name(c), "one head — the river un-forked")
+        assert.deepEqual(m.line, [c, b, a])
+        assert.deepEqual(m.sibling, [])
+        assert.equal(m.meet, null)
     })
 
     test("a fork mints prev, and then two heads stand", () => {
@@ -173,10 +205,14 @@ describe("the lines: prev when minted, author order until then (id:kr-mirror)", 
         const e = snap("e", { t: 5, prev: name(d) })
         const versions = [e, d, c, b, a]
 
-        const { heads } = linesOf(versions)
-        assert.deepEqual(new Set(heads), new Set([name(c), name(e)]))
-        assert.deepEqual(lineOf(versions, name(c)), [c, b, a])
-        assert.deepEqual(lineOf(versions, name(e)), [e, d, b, a])
+        const fromC = mirrorOf(versions, name(c))
+        const fromE = mirrorOf(versions, name(e))
+        assert.deepEqual(fromC.line, [c, b, a])
+        assert.deepEqual(fromE.line, [e, d, b, a])
+        assert.equal(fromC.siblingHead, name(e))
+        assert.equal(fromE.siblingHead, name(c))
+        assert.equal(fromC.meet, name(b))
+        assert.equal(fromE.meet, name(b))
     })
 
     test("first fork on a still-linear river: prev on the new keep only", () => {
@@ -187,11 +223,12 @@ describe("the lines: prev when minted, author order until then (id:kr-mirror)", 
         const e = snap("e", { t: 4, prev: name(b) })
         const versions = [e, c, b, a]
 
-        const { heads } = linesOf(versions)
-        assert.deepEqual(new Set(heads), new Set([name(c), name(e)]))
-        assert.deepEqual(lineOf(versions, name(c)), [c, b, a], "old head walks by time")
-        assert.deepEqual(lineOf(versions, name(e)), [e, b, a], "fork walks prev then time")
-        assert.equal(meetOf(lineOf(versions, name(c)), lineOf(versions, name(e))), name(b))
+        const fromC = mirrorOf(versions, name(c))
+        const fromE = mirrorOf(versions, name(e))
+        assert.deepEqual(fromC.line, [c, b, a], "old head walks by time")
+        assert.deepEqual(fromE.line, [e, b, a], "fork walks prev then time")
+        assert.equal(fromC.meet, name(b))
+        assert.equal(fromE.meet, name(b))
     })
 
     test("a prev outside the page is a foot, not a broken link", () => {
@@ -199,16 +236,9 @@ describe("the lines: prev when minted, author order until then (id:kr-mirror)", 
         const gone = snap("gone", { t: 0, prev: null })
         const a = snap("a", { t: 1, prev: name(gone) })
         const b = snap("b", { t: 2, prev: name(a) })
-        assert.deepEqual(lineOf([b, a], name(b)), [b, a])
-    })
-
-    test("a cycle cannot hang the reader", () => {
-        // No honest mint makes one; a reader that trusts that hangs the frame.
-        const a = snap("a", { t: 1, prev: "self" })
-        const versions = [a]
-        const { parent } = linesOf(versions)
-        parent.set(name(a), name(a))
-        assert.equal(lineOf(versions, name(a)).length, 1)
+        const m = mirrorOf([b, a])
+        assert.deepEqual(m.line, [b, a])
+        assert.equal(m.head, name(b))
     })
 })
 
@@ -220,14 +250,19 @@ describe("the meet: derived at the reader, never stored", () => {
         const d = snap("d", { t: 4, prev: name(b) })
         const versions = [d, c, b, a]
 
-        const meet = meetOf(lineOf(versions, name(c)), lineOf(versions, name(d)))
-        assert.equal(meet, name(b), "the fork point, not the oldest ancestor")
+        const m = mirrorOf(versions, name(c))
+        assert.equal(m.meet, name(b), "the fork point, not the oldest ancestor")
+        assert.equal(m.siblingHead, name(d))
     })
 
     test("lines that never met have no meet", () => {
-        const a = snap("a", { t: 1, prev: null })
-        const z = snap("z", { t: 2, prev: null })
-        assert.equal(meetOf([a], [z]), null)
+        // Explicit out-of-page prevs — both heads, no shared ancestor on the page.
+        // (prev: null still chains by author order, so that path always meets.)
+        const a = snap("a", { t: 1, prev: "a".repeat(64) })
+        const z = snap("z", { t: 2, prev: "z".repeat(64) })
+        const m = mirrorOf([z, a], name(a))
+        assert.equal(m.siblingHead, name(z))
+        assert.equal(m.meet, null)
     })
 })
 
@@ -301,12 +336,10 @@ describe("the page is named once (id:ka-passes)", () => {
         assert.deepEqual(namesOf(v), v.map(name))
     })
 
-    test("precomputed ids change nothing — linesOf, lineOf, mirrorOf", () => {
+    test("precomputed ids change nothing — mirrorOf", () => {
         const v = page()
         const ids = namesOf(v)
-        assert.deepEqual(linesOf(v, ids), linesOf(v))
         assert.deepEqual(mirrorOf(v, undefined, ids), mirrorOf(v))
-        assert.deepEqual(lineOf(v, ids[0], ids), lineOf(v, ids[0]))
     })
 
     test("precomputed keys change nothing — columnsOf, one line and two", () => {

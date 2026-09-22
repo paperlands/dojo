@@ -14,7 +14,7 @@
 // lower — greppable by the absence of any storage API name.
 
 import { name } from "./entry.js"
-import { VERBS, VERB_SET } from "./verbs.js"
+import { VERB_SET } from "./verbs.js"
 
 /**
  * Open the durability door.
@@ -217,5 +217,3 @@ function workerTransport(opts) {
     }
 }
 
-/** Verbs the public surface names — re-export for greps and tests (id:kb-6). */
-export { VERBS as JOURNAL_VERBS }

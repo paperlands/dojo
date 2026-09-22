@@ -13,6 +13,7 @@ import { Terminal } from "../../terminal.js"
 import { computePosition, offset } from "../../../vendor/floating-ui.dom.umd.min";
 import { temporal } from "../../utils/temporal.js"
 import { outerDrafting } from "./term-cell.js"
+import { toBlob } from "../../keep/kinds/snap.js"
 
 // Module-level CM6 cache — loaded once on first Shell mount, reused thereafter.
 // The browser also caches the ES module natively by URL.
@@ -83,30 +84,43 @@ export const commands = {
     camera: (bridge) => (command, payload = {}) => bridge.pub([command, payload]),
 
     saveImage: () => async (url, title) => {
-        const filename = prompt('Enter filename:', title) || title;
-        if (!filename) return;
+        if (!url) { console.warn('No image available to save'); return; }
+        // Hatch finishes long after the click: prompt may be blocked, so the
+        // title (and a last-ditch default) must still name the file.
+        const fallback = (typeof title === 'string' && title.trim()) ? title.trim() : 'creation';
+        const filename = prompt('Enter filename:', fallback) || fallback;
         const finalName = filename.endsWith('.png') ? filename : `${filename}.png`;
         try {
-            const link = Object.assign(document.createElement('a'), { href: url, download: finalName });
+            // data: URLs lose the download attribute in modern browsers; blob:
+            // matches saveRecording and actually puts a file on disk.
+            let href = url;
+            let revoke = null;
+            const blob = toBlob(url);
+            if (blob) {
+                href = URL.createObjectURL(blob);
+                revoke = href;
+            }
+            const link = Object.assign(document.createElement('a'), { href, download: finalName });
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            if (revoke) setTimeout(() => URL.revokeObjectURL(revoke), 1000);
         } catch (error) {
             console.error('Canvas save failed:', error);
         }
     },
 
-    saveRecording: () => async (blob, _ext, title = "myPaperLand Movie") => {
+    saveRecording: () => async (blob, _ext, title) => {
         if (!blob) { console.warn('No recording available to save'); return; }
-        const filename = prompt('Enter filename:', title) || title;
-        if (!filename) return;
+        const fallback = (typeof title === 'string' && title.trim()) ? title.trim() : 'myPaperLand Movie';
+        const filename = prompt('Enter filename:', fallback) || fallback;
         try {
             const url = URL.createObjectURL(blob);
             const link = Object.assign(document.createElement('a'), { href: url, download: filename });
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            setTimeout(() => URL.revokeObjectURL(url), 100);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
         } catch (error) {
             console.error('Recording save failed:', error);
         }

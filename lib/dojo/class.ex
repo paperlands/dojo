@@ -18,12 +18,13 @@ defmodule Dojo.Class do
   # the cap only fires under pathological churn.
   @max_join_retries 3
 
-  def join(pid, book, %Dojo.Disciple{user_id: user_id} = disciple) when is_binary(user_id) do
+  def join(pid, book, %Dojo.Disciple{author_id: author_id} = disciple)
+      when is_binary(author_id) do
     topic_str = topic(book)
-    # One derivation: user_id comes from DojoWeb.Session.user_id/1 — the
-    # name fallback fork is gone (a join without identity should crash here,
-    # not register under a colliding display name).
-    reg_key = "#{topic_str}:#{user_id}"
+    # One derivation: author_id comes from DojoWeb.Session.author_id/1
+    # (id:ki-mint / id:ki-presence). A join without identity crashes here,
+    # not under a colliding display name. Tracker key is reg_key, never name.
+    reg_key = "#{topic_str}:#{author_id}"
 
     attach(pid, topic_str, disciple, reg_key, @max_join_retries)
   end
@@ -99,8 +100,8 @@ defmodule Dojo.Class do
 
   ## helper fns
 
-  def whereis(username, book) do
-    Dojo.Gate.get_by_key(topic(book), username)
+  def whereis(reg_key, book) when is_binary(reg_key) do
+    Dojo.Gate.get_by_key(topic(book), reg_key)
   end
 
   def list_disciples(book) do

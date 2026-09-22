@@ -10,31 +10,28 @@
 // local is 1|0, a number — a boolean index holds zero rows (measured).
 // list/local use openCursor(range, "prev") — getAll is ascending (measured).
 //
-// Indexed columns are ONE projection of the message with ONE writer
-// (id:kb-projection-fence). The rebuild IS the upgrade: bump the DB version
-// and onupgradeneeded re-projects every row from its message.
-//
-// Eviction is a fold over reasons at put, never a stored verdict (id:kc-evict).
-// At this step the fold has one term: shared blobs, oldest-first, under a cap.
-// Unshared is the only copy and is never evicted. Re-derivability licenses
-// the rest — not "the room surely holds the image" (id:kb-vet3 23).
+// Indexed columns are one projection of the message with one writer.
+// Never bump DB_VERSION: a bump is a rewrite. Envelope =v= is the keep's
+// own version; upcast is a fold, never written. Wipe of =log= is phase V,
+// explicit, after refill — not a schema number.
+
+// Eviction is a fold over reasons at put, never a stored verdict.
 
 import { stamp as ambientStamp } from "../utils/stamp.js"
 import { name, read, unshaped } from "./entry.js"
 import { genesisBytes } from "./genesis.js"
 
-/** Schema version = projection version. Bump ⇒ re-project every row. */
 export const DB_VERSION = 1
 
 /** Default hard cap on the image blob store (bytes). Shared only may yield. */
-export const DEFAULT_BLOB_CAP = 32 * 1024 * 1024
+const DEFAULT_BLOB_CAP = 32 * 1024 * 1024
 
 /**
  * A deliberate OVER-estimate of one image (measured ~17 KB, id:kc-evict), used
  * only to skip the fold when the cap provably cannot be reached. Over-estimating
  * is the safe direction: it folds too eagerly, never too late.
  */
-export const NOMINAL_IMAGE = 64 * 1024
+const NOMINAL_IMAGE = 64 * 1024
 
 const SELF_KEY = "genesis"
 

@@ -18,7 +18,6 @@ import { buildExtensions, reapplyCompartments } from "./terminal/extensions.js"
 import { revealAmbient } from "./nerve/reveal.js"
 import { defaultAttend } from "./editor/plang-mode.js"
 import { get } from "./hooks/shell/term-cell.js"
-import { nonce } from "./keep/genesis.js"
 import { temporal } from "./utils/temporal.js"
 
 const DEFAULT_OPTIONS = { theme: 'abbott', mode: 'plang' };
@@ -52,15 +51,10 @@ const DEFAULT_OPTIONS = { theme: 'abbott', mode: 'plang' };
 export const createTerminal = (element, cm6, options = {}) => {
     const opts = { ...DEFAULT_OPTIONS, ...options };
     const names = createNameGen();
-    // Every mint this terminal makes, in one bag — so the next continuant is a
-    // key here, not a fourth positional everywhere (id:kb-2a). ONE injection
-    // point: opts.mints replaces the whole bag or none of it.
-    // work is the second continuant (id:kb-work): the same draw as genesis's
-    // nonce, hex64 — the work's name IS the draw, not name(entry).
+    // Name and buffer id only. A work is the first keep's name, not a draw.
     const mints = opts.mints ?? {
         name: names,
         id: idGen,
-        work: () => nonce(globalThis.crypto.getRandomValues.bind(globalThis.crypto)),
     };
 
     const bridge = bridged("terminal");
@@ -247,12 +241,16 @@ export const createTerminal = (element, cm6, options = {}) => {
 
         currentBufferId() { return state.collection?.currentId; },
 
-        // The work the current tab is of — target on a keep (id:kb-work).
-        // Beside currentBufferId so the mint receives both without closing over
-        // pacedHatch (id:kb-vet2-work, id:kb-7).
+        // The origin keep this tab is of — null until the first put.
         currentWorkId() {
             if (!state.collection) return null;
             return buffers.currentBuffer(state.collection)?.work_id ?? null;
+        },
+
+        /** Peer-fork lineage on the standing tab — root + name for signature_of. */
+        currentOrigin() {
+            if (!state.collection) return null;
+            return buffers.currentBuffer(state.collection)?.origin ?? null;
         },
 
         currentBufferName() {
@@ -263,7 +261,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         getBufferInfo(id) {
             const buffer = state.collection?.items.get(id);
             if (!buffer) return null;
-            return { name: buffer.name, content: buffer.content };
+            return { name: buffer.name, content: buffer.content, origin: buffer.origin ?? null };
         },
 
         setTabActive(id) { tabs?.setActive(id) },
@@ -328,6 +326,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             state.collection = stored
                 ? buffers.loadCollection(stored, mints)
                 : buffers.createCollection(mints);
+            // work_id is the origin keep, once kept. A blank tab has none.
 
             // Create EditorState per buffer and populate tab UI
             for (const [id, buffer] of state.collection.items) {
@@ -340,6 +339,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             // here reads a half-built room. The mount announces birth when it
             // is whole.
             doSelectBuffer(state.collection.currentId, { announce: false });
+            saveToStorage();
 
             // Persist on tab hide / page unload — timer-based autosave alone is unreliable.
             // Fence pending (lvdx-6) tracks unfenced edits for leave guards.
@@ -517,8 +517,8 @@ export const createTerminal = (element, cm6, options = {}) => {
 
         createBuffer(name = '', content = '', origin = null, work_id = null) {
             const bufferName = name || mints.name();
-            // Blank tab = new river (id:kb-vet2-work); a caller passing
-            // work_id rejoins one (fork-from-keep, id:kb-2a).
+            // Blank tab = new river, no work until the first keep.
+            // A caller passing work_id rejoins an origin.
             const { collection, id } = buffers.addBuffer(
                 state.collection, { name: bufferName, content, origin, work_id }, mints
             );
@@ -526,6 +526,20 @@ export const createTerminal = (element, cm6, options = {}) => {
             state.docs.set(id, createDoc(content));
             tabs.addTab(id, bufferName);
             doSelectBuffer(id);
+            saveToStorage();
+            return id;
+        },
+
+        // Stash the origin keep the journal already named.
+        adoptWork(work_id) {
+            if (!work_id || !state.collection) return null;
+            const id = state.collection.currentId;
+            if (!id) return null;
+            const next = buffers.setWorkId(state.collection, id, work_id);
+            if (next === state.collection) return id;
+            state.collection = next;
+            saveToStorage();
+            triggerBridge();
             return id;
         },
 
@@ -536,8 +550,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             return null;
         },
 
-        // Fork-from-keep rejoins the river (id:kb-2a): a buffer already
-        // bearing the work IS the fork; otherwise the keep's source opens a
+        // Fork-from-keep rejoins the origin: a buffer already
         // new hand on it. Never creates without source — a fork with nothing
         // to fork is a find (id:la-fork).
         // land: a link open (id:la-fork-pull) writes the keep's source into
@@ -571,11 +584,14 @@ export const createTerminal = (element, cm6, options = {}) => {
         // A plain fork or ?fork= link must not light the diff (id:la-fork).
         // Same find-without-source law as forkKeep (id:kb-source-absence): a
         // tombstone still finds; it never creates.
-        forkBuffer({ source, name, addr, buffer_id, time, offset, land = false }) {
+        forkBuffer({ source, name, root, addr, buffer_id, time, offset, land = false }) {
             if (!addr || !state.collection) return null;
 
             const selectFork = (id) => doSelectBuffer(id, { offset });
             const hasSource = typeof source === 'string';
+            // Peer root rides for signature_of on the first keep (id:kc-sign).
+            const withRoot = (o) =>
+                typeof root === 'string' && root ? { ...o, root } : o;
 
             const existing = this.findFork(addr, buffer_id);
             if (existing) {
@@ -590,7 +606,14 @@ export const createTerminal = (element, cm6, options = {}) => {
                 // A link open lands the keep: show HEAD/pin even when a draft
                 // already stands on this lineage (id:la-fork-pull).
                 if (land) {
-                    const origin = { addr, buffer_id, source, time, name: name ?? existingBuffer.origin?.name };
+                    const origin = withRoot({
+                        addr,
+                        buffer_id,
+                        source,
+                        time,
+                        name: name ?? existingBuffer.origin?.name,
+                        root: existingBuffer.origin?.root,
+                    });
                     landContent(existing, source, origin);
                     selectFork(existing);
                     return existing;
@@ -601,9 +624,15 @@ export const createTerminal = (element, cm6, options = {}) => {
                     const forkContent = existingBuffer.content;
 
                     const bufferName = name ? `${name}'s fork (merge)` : 'fork (merge)';
-                    const origin = { addr, buffer_id, source, time, name };
-                    // Peer fork is a new river for this author — mint work_id.
-                    // Same-river continues via opts.work_id (keep rejoin / same hand).
+                    const origin = withRoot({
+                        addr,
+                        buffer_id,
+                        source,
+                        time,
+                        name,
+                        root: existingBuffer.origin?.root,
+                    });
+                    // Peer fork is a new river — no work until the first keep.
                     const { collection, id } = buffers.addBuffer(
                         state.collection, { name: bufferName, content: forkContent, origin }, mints
                     );
@@ -622,7 +651,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             if (!hasSource) return null;
 
             const bufferName = name ? `${name}'s fork` : 'fork';
-            const origin = { addr, buffer_id, source, time, name };
+            const origin = withRoot({ addr, buffer_id, source, time, name });
             const { collection, id } = buffers.addBuffer(
                 state.collection, { name: bufferName, content: source, origin }, mints
             );

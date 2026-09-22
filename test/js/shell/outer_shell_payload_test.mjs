@@ -15,7 +15,7 @@ describe("outerShellPayload — one shape, every key present", () => {
         const payload = outerShellPayload({ addr: "a1", source: "fw 10" })
         const keys = Object.keys(payload).sort()
         assert.deepEqual(keys, [...OUTER_SHELL_KEYS].sort())
-        assert.equal(keys.length, 12)
+        assert.equal(keys.length, 13)
     })
 
     test("library open fills path / attend / buffer_id as null, not absent", () => {
@@ -97,7 +97,7 @@ describe("dispatchPhx — the window door LiveView's handleEvent is", () => {
             assert.equal(seen.length, 1)
             assert.equal(seen[0].addr, "x")
             assert.equal(seen[0].source, "fd 1")
-            assert.equal(Object.keys(seen[0]).length, 12)
+            assert.equal(Object.keys(seen[0]).length, 13)
         } finally {
             door.uninstall()
         }

@@ -1,11 +1,8 @@
 // The journal names itself (id:kc-law 1, id:kb-3).
 //
 // We roll one die and write one message; that message's fingerprint is the
-// name of the whole journal (id:kc-feynman). The root is name(bytes) of this
-// entry — not hash(a bare nonce). Pattern 1: a continuant is minted; an
-// occurrent is derived. The author is the first continuant; work is the
-// second (id:kb-work) and reuses nonce() for its draw.
-//
+// name of the whole journal. The root is name(bytes) of this entry — not
+// hash(a bare nonce). A work is not this draw: it is the first keep's name.
 // This is the journal's name, kept in `self`. It is not a log row: identity
 // is not a moment the author kept, and the nonce never ships (id:kb-5-genesis-place).
 // Every log keep names this one as `root`.
@@ -21,10 +18,8 @@ import { write } from "./entry.js"
 /**
  * Pattern 1's mint side: one draw of 32 random bytes, as hex64.
  *
- * Continuants mint once through this draw. The journal's root is not this
- * value — it is the *name of the genesis entry that carries it*. A work_id is
- * this value directly — the terminal's `mints.work` (id:kb-2a).
- *
+ * The journal's root is not this value — it is the *name of the genesis
+ * entry that carries it*. A work is the first keep's name, not this draw.
  * `random` has the shape of crypto.getRandomValues: it fills the array it is
  * handed. Never crypto.randomUUID — that throws on the classroom path and
  * looks safe (id:kc-env).

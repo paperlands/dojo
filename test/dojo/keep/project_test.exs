@@ -48,11 +48,11 @@ defmodule Dojo.Keep.ProjectTest do
       assert {:ok, %{id: ^id}} = Keep.project(bytes, id)
     end
 
-    test "null target is unshaped — a keep is about something" do
+    test "null target is origin-shaped — absence is the law, null is stored as nil" do
       bytes = message(%{"target" => nil})
-      assert Keep.project(bytes, Keep.hash(bytes)) == {:error, :shape}
+      id = Keep.hash(bytes)
+      assert {:ok, %{id: ^id, target: nil}} = Keep.project(bytes, id)
     end
-
     test "unknown free fields pass — meaning is never judged" do
       bytes = message(%{"invented_today" => true})
       id = Keep.hash(bytes)
@@ -126,7 +126,7 @@ defmodule Dojo.Keep.ProjectTest do
       assert Keep.project(bytes, Keep.hash(bytes)) == {:error, :shape}
     end
 
-    test "missing target key → :shape (a keep is about something)" do
+    test "missing target key → origin keep (id is the work)" do
       bytes =
         Jason.encode!(%{
           "v" => 1,
@@ -135,9 +135,9 @@ defmodule Dojo.Keep.ProjectTest do
           "ts" => @ts
         })
 
-      assert Keep.project(bytes, Keep.hash(bytes)) == {:error, :shape}
+      id = Keep.hash(bytes)
+      assert {:ok, %{id: ^id, target: nil}} = Keep.project(bytes, id)
     end
-
     test "claimed id ≠ hash(message) → :name (anti-divergence)" do
       bytes = message()
       assert Keep.project(bytes, String.duplicate("0", 64)) == {:error, :name}
@@ -176,7 +176,7 @@ defmodule Dojo.Keep.ProjectTest do
       assert File.exists?(path)
       skeleton = path |> File.read!() |> Jason.decode!()
 
-      assert Enum.map(skeleton, & &1["field"]) == ~w(root kind target ts.t ts.n v)
+      assert Enum.map(skeleton, & &1["field"]) == ~w(root kind ts.t ts.n v)
 
       for row <- skeleton do
         assert is_binary(row["type"]) and row["type"] != ""
@@ -214,11 +214,10 @@ defmodule Dojo.Keep.ProjectTest do
     end
   end
 
-  describe "structural — five frozen fields, no others" do
-    test "the skeleton names the five catalog keys; project promotes four" do
-      # id:kc-verify / id:kb-11: the five frozen fields live in skeleton.json.
-      # project promotes root/kind/target/ts (as ts_t/ts_n); v is the fold
-      # skeleton, never a column. clan is a wire fact, never an entry field.
+  describe "structural — catalog and optional target" do
+    test "the skeleton names required fields; target is optional on the origin" do
+      # Required: root kind ts v. target is catalog when present, omitted on origin.
+      # project promotes root/kind/target/ts; v is the fold skeleton, never a column.
       skeleton = "priv/keep/skeleton.json" |> File.read!() |> Jason.decode!()
 
       fields =
@@ -227,18 +226,16 @@ defmodule Dojo.Keep.ProjectTest do
         |> Enum.map(&(String.split(&1, ".") |> hd()))
         |> Enum.uniq()
 
-      assert Enum.sort(fields) == Enum.sort(~w(kind root target ts v))
+      assert Enum.sort(fields) == Enum.sort(~w(kind root ts v))
 
       src = File.read!("lib/dojo/keep.ex")
 
-      # The promoted columns still read from the message map.
       for key <- ~w(kind root target) do
-        assert src =~ ~s["#{key}"], "expected frozen field #{key} to be projected"
+        assert src =~ ~s["#{key}"], "expected field #{key} to be projected"
       end
 
       assert src =~ ~s["ts"]
 
-      # clan must not be read from the message
       refute src =~ ~s|e["clan"]|, "clan is a wire fact, never an entry field"
       refute src =~ ~s|e["title"]|, "title is free body, never a promoted column"
       refute src =~ ~s|e["source"]|, "source is free body"

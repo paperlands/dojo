@@ -90,8 +90,8 @@ defmodule Dojo.Table do
   end
 
   def start_link(args) do
-    # Register using deterministic reg_key: "#{topic}:#{user_id}"
-    # This ensures singleton per user+clan with stable cache/presence keys
+    # Register using deterministic reg_key: "#{topic}:#{author_id}"
+    # (id:ki-presence). Singleton per person+clan with stable cache/presence keys.
     GenServer.start_link(__MODULE__, args, name: via_tuple(args.reg_key))
   end
 
@@ -191,10 +191,11 @@ defmodule Dojo.Table do
   def handle_call(
         {:change_meta, {_key, _value} = delta},
         _from,
-        %{topic: topic, disciple: %{name: name}} = state
+        %{topic: topic, reg_key: reg_key} = state
       ) do
-    # Route Gate.change through Table PID (which owns the presence entry)
-    Dojo.Gate.change(self(), topic, name, delta)
+    # Route Gate.change through Table PID (which owns the presence entry).
+    # Tracker key is reg_key (id:ki-presence), never the display name.
+    Dojo.Gate.change(self(), topic, reg_key, delta)
     {:reply, :ok, state}
   end
 
@@ -212,9 +213,9 @@ defmodule Dojo.Table do
 
   def handle_info(
         {:network_change, new_addr},
-        %{topic: topic, disciple: %{name: name}} = state
+        %{topic: topic, reg_key: reg_key} = state
       ) do
-    Dojo.Gate.change(self(), topic, name, {:addr, new_addr})
+    Dojo.Gate.change(self(), topic, reg_key, {:addr, new_addr})
     {:noreply, state}
   end
 

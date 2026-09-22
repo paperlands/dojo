@@ -53,16 +53,6 @@ let liveSocket = new LiveSocket("/live", Socket, {
 });
 
 
-window.addEventListener("phx:download-file", (event) => {
-  const a = document.createElement("a");
-  a.href = event.detail.href;
-  a.download = event.detail.filename;
-  a.style.display = "none";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-});
-
 // lvdx-7 · kc-p-fence: chrome flourishes only, capability closed HERE.
 // Free-form execJS keyed by bare selector is refused — every call site would
 // re-ask "is this chrome enough?" and accrete authority into the channel.

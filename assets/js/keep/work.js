@@ -1,5 +1,5 @@
-// The work fold — self, one work (id:kr-fold · id:kr-mirror).
-// Page honesty: the work among the newest n of the whole log (id:kb-8-page).
+// The work fold — self, one work (keep kernel).
+// Origin keep has no target: its id *is* the work. Later keeps name target.
 
 import { name, read } from "./entry.js"
 
@@ -15,23 +15,51 @@ export function namesOf(versions) {
 
 /**
  * The work's keeps among a page of the author's history.
+ * A keep belongs if it *is* the origin (name === work) or names it as target.
  *
  * @param {string[]} listed - bytes[] from list(root, n), newest-first
- * @param {string} work_id - the terminal's currentWorkId (id:kb-work)
+ * @param {string} work_id - origin keep id
  * @returns {string[]} bytes[], order preserved
  */
 export function ofWork(listed, work_id) {
     if (!work_id) return []
-    return listed.filter((bytes) => targetOf(bytes) === work_id)
+    return listed.filter((bytes) => ofWorkOne(bytes, work_id))
 }
 
-function targetOf(bytes) {
+function ofWorkOne(bytes, work_id) {
     try {
-        return read(bytes).target ?? null
+        if (name(bytes) === work_id) return true
+        return read(bytes).target === work_id
     } catch {
-        // Unreadable is not this work's (id:kb-8).
-        return null
+        // Unreadable is not this work's.
+        return false
     }
+}
+
+/**
+ * The work this buffer already kept, if the field was empty or stale.
+ * A keep names its tab in the body; that is enough to rejoin.
+ *
+ * @param {string[]} listed - bytes[] from list(root, n), newest-first
+ * @param {string | null | undefined} buffer_id
+ * @param {string | null | undefined} work_id - the field, if it still holds
+ * @returns {string | null}
+ */
+export function adoptWork(listed, buffer_id, work_id) {
+    if (work_id && listed.some((bytes) => ofWorkOne(bytes, work_id))) return work_id
+    if (!buffer_id) return work_id ?? null
+    for (const bytes of listed) {
+        try {
+            const v = read(bytes)
+            if (v?.buffer_id !== buffer_id) continue
+            // Origin: no target — the keep's name is the work.
+            if (v.target == null || v.target === undefined) return name(bytes)
+            if (typeof v.target === "string" && v.target) return v.target
+        } catch {
+            /* unreadable is not this buffer's */
+        }
+    }
+    return work_id ?? null
 }
 
 /**
@@ -68,7 +96,7 @@ export function newerKeep(a, b) {
  * @param {string[]} [ids] - the page's names, if the caller already holds them
  * @returns {{ids: string[], parent: Map<string,string|null>, byId: Map<string,string>, heads: string[]}}
  */
-export function linesOf(versions, ids = namesOf(versions)) {
+function linesOf(versions, ids = namesOf(versions)) {
     const byId = new Map()
     for (let i = 0; i < versions.length; i++) byId.set(ids[i], versions[i])
 
@@ -94,19 +122,6 @@ export function linesOf(versions, ids = namesOf(versions)) {
     return { ids, parent, byId, heads }
 }
 
-/**
- * One line: a head walked back through its parents. Newest-first, head first.
- *
- * @param {string[]} versions - ofWork output
- * @param {string} headId
- * @param {string[]} [ids] - the page's names, if the caller already holds them
- * @returns {string[]} bytes[]
- */
-export function lineOf(versions, headId, ids = namesOf(versions)) {
-    const { parent, byId } = linesOf(versions, ids)
-    return walk(parent, byId, headId).map((id) => byId.get(id))
-}
-
 // A cycle cannot arise from an honest mint; seen is the fence. Walks ids (id:ka-passes).
 function walk(parent, byId, headId) {
     const out = []
@@ -118,17 +133,6 @@ function walk(parent, byId, headId) {
         at = parent.get(at) ?? null
     }
     return out
-}
-
-/**
- * The meet — the latest keep two lines share. Derived, never stored.
- *
- * @param {string[]} lineA - newest-first
- * @param {string[]} lineB - newest-first
- * @returns {string|null} the meet's id
- */
-export function meetOf(lineA, lineB) {
-    return meetOfIds(lineA.map(name), lineB.map(name))
 }
 
 // Same sentence over ids already named (id:ka-passes).

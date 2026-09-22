@@ -38,6 +38,8 @@ defmodule DojoWeb.ShellLive.OuterShell do
 
   defstruct addr: nil,
             name: "friend",
+            # Device root of the hand being watched — letters' peer key (id:kc-sign).
+            root: nil,
             follow: true,
             active: false,
             origin: nil,
@@ -126,6 +128,7 @@ defmodule DojoWeb.ShellLive.OuterShell do
     :buffer_id,
     :addr,
     :origin_name,
+    :root,
     :view,
     :stream
   ]
@@ -143,6 +146,7 @@ defmodule DojoWeb.ShellLive.OuterShell do
     |> Map.merge(%{
       addr: shell.addr,
       origin_name: shell.name,
+      root: shell.root,
       view: shell.view,
       stream: shell.stream
     })

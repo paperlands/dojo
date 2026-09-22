@@ -138,15 +138,6 @@ export function createWire(opts = {}) {
         return announce()
     }
 
-    /** Socket connected? One legitimate caller: presence. */
-    function attached() {
-        try {
-            return !!hook?.liveSocket?.isConnected?.()
-        } catch {
-            return false
-        }
-    }
-
     function noteDrop(eventName, err) {
         try {
             onDrop?.(eventName, err)
@@ -171,7 +162,7 @@ export function createWire(opts = {}) {
         }
     }
 
-    return { say, announce, attached, reconnected }
+    return { say, announce, reconnected }
 }
 
 // ── pack one message for the wire ────────────────────────────────────
@@ -204,7 +195,7 @@ async function pack(door, id, bytes) {
             }
         }
     } catch {
-        // Ship what the mint held. A missing blob is a faceless keep, not a drop.
+        // Mint gates the picture; eviction may still drop it later. No blob → ship text.
     }
     return payload
 }

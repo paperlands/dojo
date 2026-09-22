@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
-import { shared, accept } from "../../../assets/js/keep/shared.js"
+import { sharedIds, accept } from "../../../assets/js/keep/shared.js"
 import { createEngine } from "../../../assets/js/keep/journal.store.js"
 import { write, name, read } from "../../../assets/js/keep/entry.js"
 import { createMemoryIDB } from "./idb_memory.mjs"
@@ -12,6 +12,15 @@ import { createMemoryIDB } from "./idb_memory.mjs"
 const fill = (b) => (arr) => {
     arr.fill(b)
     return arr
+}
+
+/** bytes fold via sharedIds — list order, answered names only. */
+function shared(listed, held) {
+    const ids = sharedIds(
+        listed.map(name),
+        new Set(held.map(name)),
+    )
+    return ids.map((id) => listed.find((b) => name(b) === id))
 }
 
 function snap(root, body, ts) {
@@ -396,7 +405,7 @@ describe("shared: structural greps (id:kb-8 NOT)", () => {
         assert.equal(/\bindexedDB\b/.test(src), false)
         assert.equal(/from\s+["']\.\/journal\.store\.js["']/.test(src), false)
         // The fold and the receive order — nothing else.
-        assert.match(src, /export function shared\b/)
+        assert.match(src, /export function sharedIds\b/)
         assert.match(src, /export async function accept\b/)
         // No stored count, no tally, no mode machine.
         for (const word of ["syncing", "pending", "online", "badge", "count"]) {

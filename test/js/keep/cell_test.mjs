@@ -6,6 +6,7 @@ import assert from "node:assert/strict"
 
 import {
     askKeep,
+    peerOf,
     registerKeeper,
     touched,
     watchTouched,
@@ -58,6 +59,31 @@ describe("askKeep: one value (kb-vet4 33)", () => {
         assert.deepEqual(seen, [{ title: "forked", prev: parent }])
     })
 
+    test("letters and peer ride the ask — signature_of inputs (id:kc-sign)", async () => {
+        const peerRoot = "b".repeat(64)
+        const { seen, un } = seatKeeper()
+        await askKeep("named", {
+            name: "bob",
+            peer: { root: peerRoot, name: "alice" },
+        })
+        un()
+        assert.deepEqual(seen, [
+            {
+                title: "named",
+                name: "bob",
+                peer: { root: peerRoot, name: "alice" },
+            },
+        ])
+    })
+
+    test("name is not invented — shell must pass letters", async () => {
+        const { seen, un } = seatKeeper()
+        await askKeep("quiet")
+        un()
+        assert.deepEqual(seen, [{ title: "quiet" }])
+        assert.equal(Object.hasOwn(seen[0], "name"), false)
+    })
+
     test("empty / non-string prev is omitted — not a side channel", async () => {
         const { seen, un } = seatKeeper()
         await askKeep("quiet", { prev: null })
@@ -68,6 +94,30 @@ describe("askKeep: one value (kb-vet4 33)", () => {
             assert.deepEqual(ask, { title: "quiet" })
             assert.equal(Object.hasOwn(ask, "prev"), false)
         }
+    })
+})
+
+describe("peerOf: outershell origin → ask.peer", () => {
+    test("live presence name wins; origin.name only when presence is gone", () => {
+        const root = "c".repeat(64)
+        const shell = {
+            currentOrigin: () => ({ root, name: "alice-stale", addr: "class:shell:x" }),
+        }
+        assert.deepEqual(
+            peerOf(shell, { presenceName: () => "alice-live" }),
+            { root, name: "alice-live" },
+        )
+        assert.deepEqual(
+            peerOf(shell, { presenceName: () => null }),
+            { root, name: "alice-stale" },
+        )
+        assert.deepEqual(
+            peerOf({ currentOrigin: () => ({ root, name: "alice", addr: "x" }) }),
+            { root, name: "alice" },
+        )
+        assert.equal(peerOf({ currentOrigin: () => ({ name: "alice" }) }), null)
+        assert.equal(peerOf({ currentOrigin: () => null }), null)
+        assert.equal(peerOf(null), null)
     })
 })
 

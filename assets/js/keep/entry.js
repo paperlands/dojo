@@ -8,8 +8,8 @@ import SKELETON from "../../../priv/keep/skeleton.json" with { type: "json" }
 /** Version this build authors. */
 export const V = 1
 
-// Top-level catalog keys, write order. The set is the skeleton's; the order is
-// the name (id:kb-2). A test refuses a key the skeleton does not name.
+// Envelope is v · kind · root · ts (keep kernel). target is catalog-when-present,
+// omitted on the origin. Write order is the name.
 const CATALOG = ["v", "kind", "root", "ts", "target"]
 
 /**

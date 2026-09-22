@@ -27,6 +27,8 @@ defmodule Dojo.Keep.PullTest do
     })
   end
 
+  @png "PNGBYTES"
+
   defp ship(bytes, opts \\ []) do
     payload = %{"id" => Keep.hash(bytes), "message" => bytes}
 
@@ -36,7 +38,17 @@ defmodule Dojo.Keep.PullTest do
         text -> Map.put(payload, "source", text)
       end
 
-    Keep.receive(payload, clan: @clan, author_id: @author)
+    payload =
+      case Keyword.get(opts, :image, @png) do
+        false -> payload
+        bin when is_binary(bin) -> Map.put(payload, "image", Base.encode64(bin))
+      end
+
+    Keep.receive(payload,
+      clan: @clan,
+      author_id: Keyword.get(opts, :author_id, @author),
+      name: Keyword.get(opts, :name)
+    )
   end
 
   test "a keep id answers the message, its source, and the row's fact" do
@@ -109,6 +121,28 @@ defmodule Dojo.Keep.PullTest do
       assert row.target == @target
       assert row.id == Keep.hash(newer), "the head, not the oldest"
       assert Jason.decode!(row.message)["title"] == "newer"
+      refute Map.has_key?(row, :name), "name belongs to the root fan, not every keep row"
+    end
+
+    test "except: my author id drops my own journals from the fan (id:ks-delta)" do
+      ship(snap("fw 10"))
+
+      assert {[%{root: @root}], _} = Keep.latest(@clan, of: :root)
+      assert {[], _} = Keep.latest(@clan, of: :root, except: @author)
+    end
+
+    test "of: :root does not mint letters — attach/remember withdrawn" do
+      uid = Ecto.UUID.generate()
+
+      ship(snap("fw 11"), author_id: uid, name: "alice")
+
+      assert {[%{name: nil, root: @root}], _} = Keep.latest(@clan, of: :root)
+    end
+
+    test "a missing name is nil — the lamp still lights (id:ks-name)" do
+      ship(snap("fw 12"))
+
+      assert {[%{name: nil, root: @root, face: true}], _} = Keep.latest(@clan, of: :root)
     end
 
     test "rivers are ordered by the ROOM's clock, never the author's" do
@@ -175,7 +209,12 @@ defmodule Dojo.Keep.PullTest do
       theirs = other_clan_snap(String.duplicate("8", 64), 6_000)
 
       assert %{id: _} =
-               Keep.receive(%{"id" => Keep.hash(theirs), "message" => theirs},
+               Keep.receive(
+                 %{
+                   "id" => Keep.hash(theirs),
+                   "message" => theirs,
+                   "image" => Base.encode64(@png)
+                 },
                  clan: "other-room",
                  author_id: "someone"
                )
@@ -191,12 +230,6 @@ defmodule Dojo.Keep.PullTest do
     test "face is a flag, never the bytes — and the message rides whole" do
       bytes = snap("pix", title: "has a face")
       ship(bytes, source: "pix")
-      id = Keep.hash(bytes)
-
-      assert {[%{face: false}], nil} = Keep.latest(@clan)
-
-      assert :ok =
-               Keep.image(%{"id" => id, "image" => Base.encode64(<<1, 2, 3>>)}, clan: @clan)
 
       assert {[row], nil} = Keep.latest(@clan)
       assert row.face == true
@@ -396,7 +429,12 @@ defmodule Dojo.Keep.PullTest do
         })
 
       assert %{why: :work} =
-               Keep.receive(%{"id" => Keep.hash(theirs), "message" => theirs},
+               Keep.receive(
+                 %{
+                   "id" => Keep.hash(theirs),
+                   "message" => theirs,
+                   "image" => Base.encode64(@png)
+                 },
                  clan: @clan,
                  author_id: "mallory"
                )
@@ -500,28 +538,16 @@ defmodule Dojo.Keep.PullTest do
   end
 
   describe "image_of — the picture comes back out (id:kb-13, id:ka-seat)" do
-    test "what image/2 wrote, image_of reads — byte-identical" do
-      # The write door shipped alone (id:kb-12a) and NOTHING read the column.
-      # The client's eviction is built on this door existing: a shared blob may
-      # be dropped because the room holds it — true about the bytes, and false
-      # about reachability while nothing served them.
+    test "what receive wrote, image_of reads — byte-identical" do
       bytes = snap("pix", title: "with a face")
-      ship(bytes, source: "pix")
-      id = Keep.hash(bytes)
-
       png = <<137, 80, 78, 71, 13, 10, 26, 10, 0, 1, 2, 3>>
-      assert :ok = Keep.image(%{"id" => id, "image" => Base.encode64(png)}, clan: @clan)
+      ship(bytes, source: "pix", image: png)
 
-      assert {:ok, ^png} = Keep.image_of(id)
+      assert {:ok, ^png} = Keep.image_of(Keep.hash(bytes))
     end
 
     test "absent is a NAMED state, not an error" do
-      # kc-e-missing-image: the keep renders whole; the picture may be absent
-      # and says so. A keep with no image and an id nobody minted answer alike.
-      bytes = snap("nopix")
-      ship(bytes, source: "nopix")
-
-      assert Keep.image_of(Keep.hash(bytes)) == :none
+      # Named absence is a missing id, or a row the mint held no picture for.
       assert Keep.image_of(String.duplicate("0", 64)) == :none
     end
 

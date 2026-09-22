@@ -80,10 +80,12 @@ projection (=async_cache_put=). Briefly diverged as WIP; reconciled by =1d19ad4=
 ** who is present — tracker, join/leave
 :PROPERTIES:
 :ID: nav-gate
-:KEYWORDS: presence tracker gate join leave online disciples metadata transport
+:KEYWORDS: presence tracker gate join leave online disciples metadata transport reg_key author_id ki-presence
 :PATH: lib/dojo/gate.ex
 :END:
-Decision 002: presence doubles as metadata transport.
+Decision 002: presence doubles as metadata transport. Tracker key is
+Law: =reg_key = "#{topic}:#{root}"= ([[file:specs/weave/keep-carve.org][keep-carve]]
+=kc-repro=). Door still keys =topic:author_id= until the occupancy cut.
 
 ** persistence — nebulex cache as primary store
 :PROPERTIES:
@@ -95,10 +97,12 @@ Decision 002: presence doubles as metadata transport.
 ** identity — disciple, address, reg key
 :PROPERTIES:
 :ID: nav-disciple
-:KEYWORDS: identity disciple table_address reg_key session name addr
+:KEYWORDS: identity disciple table_address reg_key session name addr author_id ki-mint
 :PATH: lib/dojo/disciple.ex::def table_address
 :END:
-Decisions 006/007: one ambient address, one user identity.
+Decisions 006/007 (amended 2026-08-18): one ambient address; occupancy
+is the hand (=root=). Session id is a cookie, not a person.
+([[file:specs/weave/keep-carve.org][keep-carve]] =kc-repro=).
 
 ** room state — shared class space
 :PROPERTIES:
@@ -155,7 +159,8 @@ entry is a string; there is nothing to canonicalize
 =nonce(random)= → hex64; =genesisBytes(random, ts)= → the entry whose =name= is
 the journal's root. Pure law — the BINDING (once, ever; find-or-create) lives
 in =self= ([[file:specs/weave/keep-build.org][keep-build]] =kb-3= ·
-=kb-5-genesis-place=). Not a log row. =work_id= reuses =nonce=.
+=kb-5-genesis-place=). Not a log row. The work is the origin keep
+([[file:specs/weave/keep-carve.org][keep-carve]] =kc-work-origin=); it does not reuse this mint.
 
 ** keep upcast — the fold exists before it is needed
 :PROPERTIES:
@@ -205,20 +210,16 @@ to ask who am I. Verbs from =verbs.js=. Hatch path never awaits
 :PATH: lib/dojo/keep.ex
 :END:
 =project(message, claimed_id)= → columns or =:unparseable|:shape|:name=.
-No schema, no changeset. Five frozen fields only. The name is derived; a
-mismatch is anti-divergence ([[file:specs/weave/keep-build.org][keep-build]] =kb-11= · =kb-11-derive=).
+No schema, no changeset. Name is derived ([[id:keep-kernel]]).
 
-** keep receive — bind · stamp · insert · the row's fact
+** keep receive — project · insert · hang
 :PROPERTIES:
 :ID: nav-keep-receive
-:KEYWORDS: keep receive share refuse bind TOFU stamp insert on_conflict root author clan wire
+:KEYWORDS: keep receive share refuse hang clan_works stamp insert on_conflict root clan wire
 :PATH: lib/dojo/keep.ex
 :END:
-=receive(payload, clan:, author_id:)= → one fact (shared or refused) or =nil=
-silence. Project is not a judgement; bind is the only decision. Permanent
-refusals are stamped so announce terminates. Reply is the row's fact, never
-the attempt's stamp ([[file:specs/weave/keep-build.org][keep-build]] =kb-12=).
-LiveView door: =shell_live= event ="keep"=.
+Pre-cut: =receive= still binds. Law is =put= then =share= then hang ([[id:keep-cut]] IV).
+Door still takes =author_id= until phase II. LiveView event ="keep"=.
 
 ** keep referents — what a keep points at
 :PROPERTIES:
@@ -229,12 +230,11 @@ LiveView door: =shell_live= event ="keep"=.
 A referent is what a keep *points at*; the message is what it *is*. =source=
 (key =hash(text)=, =sources= table, fans on announce, never evicted, **no
 fence** — it proves itself) and =image= (key = the message's id, so its home is
-=keeps.image=; rides the share; evictable; fenced by =clan= + =image IS NULL=,
-and the fence's subject is the *bind's* subject). One ceiling for both plus the
-message: =@max_text= / =@max_image= → =why: :too_big=. Client side ships the
-image from =keep/wire.js= after the share reply; LiveView door: =shell_live=
-event ="keep:image"= ([[file:specs/weave/keep-build.org][keep-build]]
-=kb-vet5-referent= · =kb-12a=).
+=keeps.image=). Image rides the same insert when the mint held one; a
+keep without a picture is a row, and =face= is the named absence. One
+ceiling for both plus the message: =@max_text= / =@max_image= → =why:
+:too_big=. LiveView door: =shell_live= event ="keep"=. Read: =GET
+/keeps/:id/image= · =image_of/1=.
 
 ** keep by-target — one index, three doors
 :PROPERTIES:
@@ -251,23 +251,17 @@ Plan asserted, not timed (=test/dojo/keep/repo_test.exs=)
 ([[file:specs/weave/keep-access.org][keep-access]] =ka-door-shape= ·
 =ka-capability=).
 
-** keep works bind — a river belongs to one hand
+** keep hang — the circle sees rivers
 :PROPERTIES:
 :ID: nav-keep-works
-:KEYWORDS: keep works bind target work_id TOFU hijack refuse why work head_of single-hand continuant backfill rowid kinds.json subquery
+:KEYWORDS: keep hang clan_works work origin target hijack
 :PATH: lib/dojo/keep.ex
 :END:
-=bind_work/1= — TOFU for the second continuant (id:ka-works-bind). Refuses
-=:work=, stamped and permanent, so =announce= terminates. Both binds live
-*inside* =Repo.transact= — =roots= and =works= are two more stores holding one
-fact. It reads =kind= against =keep/kinds.json= (what a target *names*; the
-=kinds/= directory is the other interpreter) and **fails open** on kinds it has
-not heard of — a node is owned by nobody. =head_of= fences with a *scalar
-subquery, never a join*: a join trades =keeps_head_idx= for
-=keeps_history_idx=. The migration backfills by *=rowid=* — arrival order, not
-=ts_t=, which is the wire the attacker writes. Signatures do not close this
-([[file:specs/weave/keep-hand.org][keep-hand]] ·
-[[file:specs/weave/keep-access.org][keep-access]] =ka-hijack= · =ka-vet=).
+Law: =clan_works (clan, work)= — hang, not a lock
+([[file:specs/weave/keep-carve.org][keep-carve]] =kc-hang=). A minted
+=work_id= made the hijack; the mint is gone. Door still has
+=bind_work/1= until the cut
+([[file:specs/weave/keep-access.org][keep-access]] =ka-hijack=).
 
 ** keep fold passes — derive once per fold
 :PROPERTIES:
@@ -304,12 +298,13 @@ Door and worker import the same set — no second list to drift.
 ** keep snap kind — first kind, the mint
 :PROPERTIES:
 :ID: nav-keep-snap
-:KEYWORDS: keep snap kind writeSnap keepSnap toBlob work_id target source_id title mint
+:KEYWORDS: keep snap kind writeSnap mintSnap toBlob work_id target source_id title mint photograph
 :PATH: assets/js/keep/kinds/snap.js
 :END:
-=writeSnap= · =toBlob= · =keepSnap=. =target= is =work_id=; source is a blob
-pointer; data URL dies at the mint. Called from =inner.js= *before* the pacer
-([[file:specs/weave/keep-build.org][keep-build]] =kb-7=).
+=writeSnap= · =toBlob= · =mintSnap=. Photograph or nothing — one put of message
++ picture. =target= is =work_id=; source is a blob pointer; =buffer_id= is
+tab-recovery residue; data URL dies at the mint
+([[file:specs/weave/keep-build.org][keep-build]] =kb-7= · [[file:specs/weave/keep-join.org][keep-join]] =kj-answer=).
 
 ** keep shared — the fold, not a field
 :PROPERTIES:
@@ -317,10 +312,10 @@ pointer; data URL dies at the mint. Called from =inner.js= *before* the pacer
 :KEYWORDS: keep shared fold list local name accept put-then-share clan history page depth source fan
 :PATH: assets/js/keep/shared.js
 :END:
-=shared(list, local)= by =name(bytes)= at the reader — **same depth on both
-reads** (=local(root, n)=; measured 462 ms → 1.2 ms). =accept= is put then share
-— never =put({shared})= — and the *source* rides it. Clan history lands =local:1=
-([[file:specs/weave/keep-build.org][keep-build]] =kb-8= · =kb-8-page=).
+=sharedIds(ids, heldIds)= — list minus local, over names a fold already derived
+— **same depth on both reads** (=local(root, n)=; measured 462 ms → 1.2 ms).
+=accept= is put then share — never =put({shared})= — and the *source* rides it.
+Clan history lands =local:1= ([[file:specs/weave/keep-build.org][keep-build]] =kb-8= · =kb-8-page=).
 
 ** keep river — ofWork fold, self per work
 :PROPERTIES:
@@ -340,15 +335,15 @@ rig in =_light.css=). ([[file:specs/weave/keep-river.org][keep-river]]).
 ** keep work — the fold that makes a river (and its lines)
 :PROPERTIES:
 :ID: nav-keep-work
-:KEYWORDS: keep work ofWork fold target versions line lines head meet mirror sibling prev parent columns trunk swap divergence page-honesty
+:KEYWORDS: keep work ofWork adoptWork fold target versions line lines head meet mirror sibling prev parent columns trunk swap divergence page-honesty
 :PATH: assets/js/keep/work.js
 :END:
-=ofWork(listed, work_id)= filters the page by =target=; =linesOf= / =lineOf=
-walk =prev= (author order IS the chain until a fork mints one); =meetOf= is
-derived at the reader; =mirrorOf= picks the nearest sibling by meet;
-=columnsOf= keys trunk columns by keep id and divergent ones by distance —
-*that keying is why a swap holds the trunk still*. Pure, synchronous, never
-written ([[file:specs/weave/keep-river.org][keep-river]] =kr-fold= · =kr-mirror=).
+=ofWork(listed, work_id)= filters the page by =target=; =adoptWork= rejoins a
+tab whose cache reminted (body =buffer_id= names the river); =mirrorOf= walks
+=prev= (author order IS the chain until a fork mints one) and picks the nearest
+sibling by meet; =columnsOf= keys trunk columns by keep id and divergent ones
+by distance — *that keying is why a swap holds the trunk still*. Pure,
+synchronous, never written ([[file:specs/weave/keep-river.org][keep-river]] =kr-fold= · =kr-mirror=).
 
 ** keep cell — one door, one empty fold breath
 :PROPERTIES:
@@ -367,7 +362,7 @@ is fold-derived (=fold.settling= / =sharedIds=) — not a wire callback.
 ** river surface — meridian, mirror, swap
 :PROPERTIES:
 :ID: nav-river-surface
-:KEYWORDS: river surface shell data-target meridian wheel mirror water swap seat ring mark shade sun mood rig ignite land paint atoms light scroll-snap detent present unkept drift title message keep-gesture setValue ready is-ready onTap commitKeep fold mode chrome applyMode refold reseat readPage reindex restKey perWork canon
+:KEYWORDS: river surface shell data-target meridian wheel mirror water swap seat ring mark shade sun mood rig ignite land paint atoms light scroll-snap detent present unkept drift title message keep-gesture setValue ready is-ready onTap commitKeep fold mode chrome applyMode refold reseat readPage reindex restKey perWork canon blush miss not-kept
 :PATH: assets/js/hooks/shell/river.js
 :END:
 Fourth Shell surface (=data-target="river"=), client-lazy like the weave.
@@ -411,7 +406,9 @@ word). One open atom (=open(which)=); =is-ready= / =is-keeping= light
 =river/fold.js=, =river/mode.js=, =river/chrome.js=, =river/memory.js=
 (work heads+drafts), =river/light.js=, =river/atoms.js=, =river/paint.js=,
 =river/wheel.js=, =utils/clipboard.js=, =kernel/motion.js=
-([[id:nav-kernel-motion]] — landing + flare). The surface shape this obeys,
+([[id:nav-kernel-motion]] — landing + flare). A refused keep restores the
+word, blushes the sun, and the nerve says /not kept — try again/ so the
+gesture can fire again. The surface shape this obeys,
 and the two laws it shares with the nerve: [[id:surface-shape]].
 Style:
 =assets/css/river.css= (@layer components; HEEx via =DojoWeb.RiverComponent=).
@@ -419,15 +416,15 @@ NAMES: =river-*= belongs to the atoms (=river-open= is the open seat's
 dotted circle); a surface's own state wears =is-*=. The share flag is
 =#river-state.is-open=, the same shape as =#outer-open.is-open=.
 
-** work_id on the buffer — the second continuant
+** work — the origin keep
 :PROPERTIES:
 :ID: nav-work-id
-:KEYWORDS: work_id work buffer target continuant mint river fork tab
+:KEYWORDS: work work_id buffer target origin keep river fork tab
 :PATH: assets/js/terminal/buffers.js
 :END:
-=work_id= on every buffer; blank tab mints, fork continues, fork-from-keep
-rejoins. =term.currentWorkId()= is the seam to the mint
-([[file:specs/weave/keep-build.org][keep-build]] =kb-2a= · =kb-work=).
+Law: the work *is* the first keep ([[file:specs/weave/keep-carve.org][keep-carve]]
+=kc-work-origin=). Door still mints =work_id= on the buffer until the cut.
+=term.currentWorkId()= is the seam.
 
 ** link actions — the address bar as a fact store
 :PROPERTIES:
@@ -577,9 +574,11 @@ the protocol lives in =codex/play.org=.
 ** session — mutation, not replacement
 :PROPERTIES:
 :ID: nav-session
-:KEYWORDS: session mutateSession reg_key sname connect_params
+:KEYWORDS: session mutateSession reg_key sname connect_params author_id ensure_author_id ki-mint ks-name BootLive
 :PATH: lib/dojo_web/session.ex
 :END:
+Session id is a cookie, not a person ([[file:specs/weave/keep-carve.org][keep-carve]]
+=kc-repro=). Display name is never a key (D007). Occupancy is =root()=.
 
 ** routes
 :PROPERTIES:
@@ -640,6 +639,14 @@ Verified syntax lives in =PAPERLANG.org= + =codex/refs/Library=.
 :KEYWORDS: hotSwapChild frame id frameAddress re-eval persistent state remount
 :PATH: assets/js/turtling/turtle.js::hotSwapChild
 :END:
+
+** host door — play a program on a canvas
+:PROPERTIES:
+:ID: nav-host-play
+:KEYWORDS: createHatch play finished host runtime paperlang package
+:PATH: assets/js/host.js::createHatch
+:END:
+The package door (D030). =play= accepts. =finished= is =scheduler.done=.
 
 ** become — the seed law: an unchanged seat is skipped whole
 :PROPERTIES:
@@ -1661,7 +1668,7 @@ still holds (a followed PROGRAM does not hatch its previews, D023).
 ** when the reflect is hatched — the one verdict
 :PROPERTIES:
 :ID: nav-hatch-verdict
-:KEYWORDS: hatch verdict hatchVerdict BEAT first-light alive settled owed reason floor cadence animation loop snapshot onFrame keepRendering firstDrawAt lastHatchAt reflectChanged stage hatchInFlight
+:KEYWORDS: hatch verdict hatchVerdict BEAT first-light alive settled owed reason floor cadence animation loop snapshot onFrame keepRendering firstDrawAt lastHatchAt reflectChanged stage hatchInFlight snap keep
 :PATH: assets/js/turtling/hatch.js::export function hatchVerdict
 :END:
 *One question a frame: would the watcher learn something new?* The policy is
@@ -1681,10 +1688,13 @@ Nothing re-arms while a figure walks;
 the run's END is the one change it speaks after starting (=onFrame= stamps the
 =_walking= edge), so a run that finishes still sends its final figure.
 
-Callers say =reflectChanged()= and nothing else — no second wire (D025 R4), no
-back door past =gate[self]= (D022/D023; witness-scoped), no second rate limiter. The
-=snap= camera command says it too (it used to clear the =hatched= sentinel to
-trick first light into firing).
+The *sampler* says =reflectChanged()= and nothing else — no second wire
+(D025 R4), no back door past =gate[self]= (D022/D023; witness-scoped), no
+second rate limiter. A *keep* is not a sample: =turtle.snap()= borrows
+=hatch()='s picture and starts the work after the next render — same
+GPU path, this frame's buffer. The =snap= camera command is the file
+download (it used to clear the =hatched= sentinel to trick first light
+into firing).
 
 ** attention's two carriers — arrival and movement (D025 R9)
 :PROPERTIES:
@@ -2164,12 +2174,8 @@ fixture import ≠ ownership; decides ≠ says ≠ carries ≠ inks.
 :KEYWORDS: keep latest fan room memory clan shared_at two clocks works roots river head of root page cursor room_cursor
 :PATH: lib/dojo/keep.ex
 :END:
-=latest/2= — each continuant's head, arranged by the ROOM's clock.
-=of: :target= (default) is last keep of each river; =of: :root= is last keep
-of each journal. **The author's clock picks the head; the room's clock
-arranges the heads** (=by_author/1= · =by_room/1=). Cursored by =at.id= —
-a cap without a cursor is a wall. Returns ={rows, next}=. Seat: =GET /keeps=.
-([[file:specs/weave/keep-access.org][keep-access]] =ka-latest= · =ka-surface=).
+Pre-cut room fan ([[id:keep-cut]] III). Not a kernel verb. Implementation still
+=latest/2= through =works=/=roots=. Seat: =GET /keeps=.
 
 ** keep history — one continuant, cursored
 :PROPERTIES:
@@ -2177,11 +2183,8 @@ a cap without a cursor is a wall. Returns ={rows, next}=. Seat: =GET /keeps=.
 :KEYWORDS: keep history river journal cursor after page work_id root target of range door
 :PATH: lib/dojo/keep.ex
 :END:
-=history/2= + =GET /keeps/:ref/history= — one handle opened. =of: :target=
-(default) is a river (work id, never a keep id); =of: :root= is a journal
-(a root owns itself). View door, not accept — no =source=. Cursor is the
-author's stamp; a cursor cannot cross a hop. Returns ={rows, next}=.
-([[file:specs/weave/keep-access.org][keep-access]] =ka-door-shape= · =ka-surface= · =ka-cursor=).
+Pre-cut depth page ([[id:keep-cut]] III). Open-work is a fold, not this door.
+=history/2= + =GET /keeps/:ref/history= still exist. Do not add callers.
 
 ** prodkeep — versioned prod backups
 :PROPERTIES:

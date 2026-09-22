@@ -8,7 +8,8 @@ import { bytesOf } from "./keeps.js"
 /** keep → land durations, one place. */
 export const BEAT = Object.freeze({
     IGNITE_MS: 700,
-    KEEP_GUARD_MS: 2400,
+    // Snap waits a frame + GPU readback; 2.4s named a live keep a miss.
+    KEEP_GUARD_MS: 8000,
     HOLD_MIN_MS: 320,
     LAND_MS: 800,
     COPIED_MS: 1100,

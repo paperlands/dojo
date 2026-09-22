@@ -6,8 +6,9 @@ import { attach } from "../../kernel/attach.js"
 import { link } from "../../link.js"
 import { name, read } from "../../keep/entry.js"
 import { REACH } from "../../keep/page.js"
-import { ofWork } from "../../keep/work.js"
-import { askKeep, doorSeat, getDoor, watchTouched } from "../../keep/cell.js"
+import { adoptWork, ofWork } from "../../keep/work.js"
+import { askKeep, doorSeat, getDoor, peerOf, watchTouched } from "../../keep/cell.js"
+import { sessionName } from "./session-name.js"
 import { nerve } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
 import { seatOf as termSeatOf } from "./term-cell.js"
@@ -91,6 +92,7 @@ function mountRiver(hook) {
 
     // Guards, not truths. landHold is a setTimeout (remaining HOLD_MIN).
     const sealGuard = temporal.quiet(() => {
+        // Only a still-open seal is a miss. A landed keep cancels this.
         if (seal) miss(seal.title)
     }, BEAT.KEEP_GUARD_MS)
     const flareOut = temporal.quiet(cool, BEAT.IGNITE_MS)
@@ -168,6 +170,7 @@ function mountRiver(hook) {
     /** The door's page, folded to this work. A shut or sour door is no page. */
     async function readPage(alive) {
         const door = getDoor()
+        const shell = term.get()
         if (!door || !work) return NO_PAGE
         try {
             const rootName = await door.root()
@@ -179,7 +182,17 @@ function mountRiver(hook) {
                 door.list(rootName, REACH),
                 door.local(rootName, REACH),
             ])
-            return { versions: ofWork(listed, work), held }
+            let versions = ofWork(listed, work)
+            // Journal owns the origin; recover onto the tab if the field is empty.
+            if (versions.length === 0) {
+                const recovered = adoptWork(listed, shell?.currentBufferId?.(), work)
+                if (recovered && recovered !== work) {
+                    work = recovered
+                    shell?.adoptWork?.(recovered)
+                    versions = ofWork(listed, recovered)
+                }
+            }
+            return { versions, held }
         } catch {
             return NO_PAGE
         }
@@ -491,8 +504,14 @@ function mountRiver(hook) {
         if (at.key === DRAFT && draft) setDraft({ ...draft, title: "" })
         beginSeal(title)
         const prev = at.key === DRAFT && draft?.from ? draft.from : null
-        void askKeep(title, { prev }).then((id) => {
+        // Self: session letters from the shell. Peer: live presence name, else origin.name.
+        void askKeep(title, {
+            prev,
+            name: sessionName(),
+            peer: peerOf(term.get()),
+        }).then((id) => {
             if (!id && seal) miss(title)
+            else if (id) sealGuard.cancel()
         })
         return true
     }
@@ -568,7 +587,7 @@ function mountRiver(hook) {
 
     arena.add(watchTouched(() => { void refold() }))
 
-    arena.add(attach(doorSeat, () => { void refold({ rest: PRESENT }) }))
+    arena.add(attach(doorSeat, () => { void refold() }))
     arena.add(attach(term, (shell) => {
         void refold({ rest: PRESENT })
         return shell.bridge.sub(() => {
@@ -580,7 +599,7 @@ function mountRiver(hook) {
     if (typeof IntersectionObserver !== "undefined") {
         const io = arena.observe(
             new IntersectionObserver((entries) => {
-                if (entries.some((e) => e.isIntersecting)) void refold({ rest: PRESENT })
+                if (entries.some((e) => e.isIntersecting)) void refold()
             }),
         )
         io.observe(root)
@@ -588,3 +607,4 @@ function mountRiver(hook) {
 
     return { events: {}, arena }
 }
+

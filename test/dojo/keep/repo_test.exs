@@ -272,10 +272,11 @@ defmodule Dojo.Keep.RepoTest do
         |> File.read!()
         |> String.replace(~r/^\s*#.*$/m, "")
 
-      # owner_of is the target fence — head_of and depth(:target) — never root.
-      # A join here is the wound id:ka-vet 65 named.
-      assert length(Regex.scan(~r/subquery\(owner_of\(/, src)) == 2,
-             "owner_of fences the two target reads, and only those"
+      # owner_query is the target fence — head_of and depth(:target) — never
+      # root. A join here is the wound id:ka-vet 65 named. (The value-returning
+      # `owner_of/1` wraps this same builder for the seat read.)
+      assert length(Regex.scan(~r/subquery\(owner_query\(/, src)) == 2,
+             "owner_query fences the two target reads, and only those"
 
       # TWO CLOCKS, EACH DECLARED ONCE (id:ka-latest). The author's is a named
       # function every one-hand door composes; the room's is the other.
@@ -344,6 +345,23 @@ defmodule Dojo.Keep.RepoTest do
   end
 
   describe "schemaless row — no schema, no changeset" do
+    test "authors has the three durable facts and no surrogate key" do
+      %{rows: rows} = Repo.query!("PRAGMA table_info(authors)")
+
+      columns =
+        Map.new(rows, fn [_cid, name, type, not_null, _default, pk] ->
+          {name, {type, not_null, pk}}
+        end)
+
+      # name is nullable after the device-hash rewrite (id:ki-rewrite):
+      # undecodable D007 / hash-parked roots may carry no letters yet.
+      assert columns == %{
+               "author_id" => {"TEXT", 1, 1},
+               "name" => {"TEXT", 0, 0},
+               "named_at" => {"INTEGER", 1, 0}
+             }
+    end
+
     test "row/4 keys are exactly the STRICT keeps columns — one list" do
       cols = %{
         id: String.duplicate("a", 64),

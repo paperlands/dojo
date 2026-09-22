@@ -180,10 +180,11 @@ function landMine(term, say, ref, { work, source, title }) {
 // Peer-fork by the river (origin.addr = work), not the moment — so a HEAD
 // reopen after the author kept again merges the same lineage. forkBuffer
 // itself finds without source (tombstone) and lands with it.
-function landForeign(term, say, ref, { work, bytes, source, title, ts }) {
+function landForeign(term, say, ref, { work, bytes, source, title, root, ts }) {
     const landed = term.forkBuffer({
         source,
         name: title ?? "kept",
+        root: typeof root === "string" && root ? root : undefined,
         addr: work ?? name(bytes),
         time: ts?.t ?? Date.now(),
         land: true,

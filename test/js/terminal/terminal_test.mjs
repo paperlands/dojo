@@ -635,6 +635,33 @@ describe("Terminal (CM6)", () => {
         localStorage.clear();
     });
 
+    test("a first boot has no work; remount does not invent one", () => {
+        const cm6 = makeMockCm6();
+        localStorage.clear();
+        const first = new Terminal(makeEditorStub(), cm6);
+        first.inner();
+        const id = first.currentBufferId();
+        assert.equal(first.currentWorkId(), null);
+        first.destroy();
+
+        const again = new Terminal(makeEditorStub(), cm6);
+        again.inner();
+        assert.equal(again.currentBufferId(), id);
+        assert.equal(again.currentWorkId(), null);
+        localStorage.clear();
+    });
+
+    test("adoptWork writes the recovered work_id onto the standing tab", () => {
+        const cm6 = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+        const recovered = "k".repeat(64);
+        assert.equal(term.adoptWork(recovered), id);
+        assert.equal(term.currentWorkId(), recovered);
+        assert.equal(term.adoptWork(recovered), id, "same work is no write");
+    });
+
     // forkKeep — fork-from-keep rejoins the river (id:kb-2a, id:la-fork)
     test("forkKeep selects the buffer already bearing the work", () => {
         const cm6  = makeMockCm6();
@@ -658,7 +685,7 @@ describe("Terminal (CM6)", () => {
         assert.equal(term.getValue(), "fw 99", "a link open lands HEAD/pin (id:la-fork-pull)");
     });
 
-    test("forkKeep creates carrying the keep's work_id, and the next mint differs", () => {
+    test("forkKeep carries the origin keep; a blank tab has none", () => {
         const cm6  = makeMockCm6();
         const term = new Terminal(makeEditorStub(), cm6);
         term.inner();
@@ -666,7 +693,7 @@ describe("Terminal (CM6)", () => {
         assert.equal(term.currentWorkId(), "a".repeat(64), "the fork rejoined the keep's river");
         const blank = term.createBuffer("blank", "");
         assert.notEqual(blank, id);
-        assert.notEqual(term.currentWorkId(), "a".repeat(64), "a blank tab is still a new river");
+        assert.equal(term.currentWorkId(), null, "a blank tab has no work until the first keep");
     });
 
     test("forkKeep never creates without source — a fork with nothing to fork is a find", () => {

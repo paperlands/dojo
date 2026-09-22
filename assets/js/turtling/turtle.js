@@ -20,6 +20,7 @@ const PROGRESS_FLOOR_MS = 100   // progress breath floor (~10/s)
 
 export class Turtle {
     constructor(canvas, options = {}) {
+        this._caps = options.caps ?? null
         this.bridge = bridged("turtle")
 
         const stage = createStage(canvas, this.bridge, options.instruments)
@@ -67,6 +68,7 @@ export class Turtle {
         this._lastHatchAt = 0
         this._firstDrawAt = 0
         this._walking = false   // last frame's phase, to catch the run's end
+        this._snapOwed = false  // keep asked: hatch after the next render
 
         this._heartbeatTimer = null
         this._onVisibilityChange = () => {
@@ -141,7 +143,7 @@ export class Turtle {
                 mathParser: new Parser(),
                 mathEvaluator: new Evaluator()
             }),
-            execOpts: { color: this.color },
+            execOpts: { ...(this._caps ?? {}), color: this.color },
             // onShout carries the emitter's name; routing is read-side.
             onShout: (sourceName, msg, payload) => {
                 this._onShout?.(sourceName, msg, payload)
@@ -211,12 +213,22 @@ export class Turtle {
             lastHatchAt: this._lastHatchAt,
             firstDrawAt: this._firstDrawAt,
         })
-        if (verdict.reason) this.hatch()
+        // A keep reads THIS frame's buffer — hatch after render, never
+        // from the click (drawing buffer is already presented and cleared).
+        if (this._snapOwed) {
+            this._snapOwed = false
+            this.hatch()
+        } else if (verdict.reason) {
+            this.hatch()
+        }
 
         // Keep loop while walking, recording, camera settling, or hatch owed.
         const recording = !!this.stage.recorder?.isRecording
         const controlsSettling = now < this._controlsActiveUntil
-        this._keepRendering = walking || recording || controlsChanged || controlsSettling || verdict.owed
+        // Snap and in-flight readback must keep the loop awake too — otherwise
+        // a quiet canvas can sleep before the owed hatch runs.
+        this._keepRendering = walking || recording || controlsChanged || controlsSettling
+            || verdict.owed || this._snapOwed || this.stage.hatching
 
         this._sayProgress(now)
     }
@@ -234,11 +246,21 @@ export class Turtle {
         this.onProgress(p)
     }
 
-    // false = readback in flight; retry next frame.
+    // The picture, when this capture finishes. In-flight joins; stamp only a start.
     hatch() {
-        if (this.stage.hatch(this.bridge) === false) return false
-        this._lastHatchAt = performance.now()
-        return true
+        const joining = this.stage.hatching
+        const pending = this.stage.hatch(this.bridge)
+        if (!joining) this._lastHatchAt = performance.now()
+        return pending
+    }
+
+    // A keep is intention, not a hatch beat. Same GPU path; the verdict
+    // does not gate it. Borrows hatch's picture; onFrame starts the work
+    // after render (drawing buffer is live only then).
+    snap() {
+        this._snapOwed = true
+        this.requestRender()
+        return this.stage.picture()
     }
 
     // Verdict alone hatches. (D025 R3/R4)

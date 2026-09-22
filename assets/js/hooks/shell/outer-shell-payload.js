@@ -16,6 +16,7 @@ export const OUTER_SHELL_KEYS = [
     "buffer_id",
     "addr",
     "origin_name",
+    "root",
     "view",
     "stream",
 ]
@@ -39,6 +40,7 @@ export function outerShellPayload(partial = {}) {
         buffer_id: partial.buffer_id ?? null,
         addr: partial.addr ?? null,
         origin_name: partial.origin_name ?? null,
+        root: partial.root ?? null,
         view: partial.view ?? "watch",
         stream: partial.stream ?? true,
     }

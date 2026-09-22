@@ -27,7 +27,10 @@ import { safePush } from "../../adapter.js"
 import { createJournal } from "../../keep/journal.js"
 import { createWire } from "../../keep/wire.js"
 import { mintSnap } from "../../keep/kinds/snap.js"
-import { askKeep, registerDoor, registerKeeper, touched } from "../../keep/cell.js"
+import { adoptWork } from "../../keep/work.js"
+import { REACH } from "../../keep/page.js"
+import { askKeep, peerOf, registerDoor, registerKeeper, touched } from "../../keep/cell.js"
+import { sessionName } from "./session-name.js"
 import { forkRef, link, pullKeep } from "../../link.js"
 import { fetchFragment, fragmentIndex } from "../../weave/fragments.js"
 import { transpile } from "../../weave/parse.js"
@@ -308,6 +311,8 @@ function mountInner(hook, { term, cm6 }) {
         const path = (await turtle.snap?.()) ?? null
         const id = await mintSnap(ask, seen, ids, journal, path)
         if (!id) return null
+        // First keep is the work. Stash its name; later snaps set target.
+        if (!ids.work_id) term.adoptWork?.(id)
         touched()
         void wire.announce()
         return id
@@ -316,8 +321,8 @@ function mountInner(hook, { term, cm6 }) {
     arena.add(turtle.bridge.sub(([event, payload]) => {
         switch (event) {
         case "saveRecord":
-            if (payload.type === "video") saveRecording(payload.snapshot);
-            if (payload.type === "image") saveImage(payload.snapshot);
+            if (payload.type === "video") saveRecording(payload.snapshot, null, payload.title);
+            if (payload.type === "image") saveImage(payload.snapshot, payload.title);
             break;
         case "hatchTurtle": {
             // D022: document from this surface; reflection wins over stale hatch fields.
@@ -482,10 +487,16 @@ function mountInner(hook, { term, cm6 }) {
 
     /** The aperture's gesture: keep the moment, and put a file on disk too. */
     const keepAndSave = (title) => {
-        void askKeep(title).then((id) => {
+        // turtle.snap sets _snapOwed; arming snapshot is for download on hatch finish.
+        if (turtle.renderstate) {
+            turtle.renderstate.snapshot = { save: true, title }
+        }
+        void askKeep(title, {
+            name: sessionName(),
+            peer: peerOf(term),
+        }).then((id) => {
             if (!id) nerve()?.push(S.system("not kept — try again"))
         })
-        cameraCommand("snap", { title })
     }
 
     return {
@@ -494,7 +505,11 @@ function mountInner(hook, { term, cm6 }) {
         // Lifecycle machine calls this; it is a phase, not a trailing line.
         // announce is the same sentence reconnected will say (id:kb-9).
         birth: () => {
-            term.triggerBridge();
+            // Rejoin before the first breath: the journal owns the origin id.
+            void reclaimWork(journal, term).then(() => {
+                if (!arena.alive) return
+                term.triggerBridge()
+            })
             // ?fork=<ref> forks the named thing or finds its buffer — after
             // birth, so every organ stands; idempotent, so a remount only
             // Mount is the whole enactment (id:la-law) — no nav listener race.
@@ -524,4 +539,18 @@ function mountInner(hook, { term, cm6 }) {
         },
         arena,
     };
+}
+
+// The log owns the origin id. Recover it onto the tab, or stay put.
+async function reclaimWork(door, term) {
+    try {
+        const work = term.currentWorkId()
+        const buf = term.currentBufferId()
+        if (!door || !buf) return
+        const listed = await door.list(await door.root(), REACH)
+        const recovered = adoptWork(listed, buf, work)
+        if (recovered && recovered !== work) term.adoptWork?.(recovered)
+    } catch {
+        /* a shut door leaves the field as it is */
+    }
 }

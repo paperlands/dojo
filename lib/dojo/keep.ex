@@ -1,26 +1,12 @@
 defmodule Dojo.Keep do
   @moduledoc """
-  Server half of the keep (id:kb-11 · id:kb-12). No Ecto schema/changeset.
+  Server half of the keep kernel. No Ecto schema/changeset.
 
-  * `project/2` — derive columns; accept none (id:kb-11-derive)
-  * `receive/2` — project → bind → stamp → insert → row fact (id:kb-12)
-  * `image/2` — referent after the fact (id:kb-12a)
+  `project/2` → columns. `receive/2` is not a verb (keep-cut). Pre-cut still
+  wears `roots` / `authors` / `works` / `keeps.clan`. Do not add callers.
 
-  Frozen entry fields: v · kind · root · ts · target. `clan` is wire fact.
-
-  Referents (id:kb-vet5-referent): source is hash(text) — verifiable, no fence;
-  image is the message id — fenced by the bind, first-write-wins.
-
-  ## Reads are open; writes are bound
-
-  Privacy is residence, not permission: a keep lives in the browser until
-  `announce` ships it, so everything the room holds is already published. There
-  is no third state, and therefore nothing for a read fence to guard.
-
-  What is defended is authorship. Two binds, one per continuant, each decided by
-  its primary key (id:ka-rule): a root belongs to one room (D017), a river to
-  one hand (id:ka-works-bind). `clan` scopes writes — it is a query parameter on
-  the way out, never a fence.
+  Name = hash(message). Shared = `{at, node}` beside the row.
+  `pull/1` is still overloaded — land keep-cut III (`get` is get).
   """
 
   import Ecto.Query
@@ -33,7 +19,7 @@ defmodule Dojo.Keep do
           id: String.t(),
           root: String.t(),
           kind: String.t(),
-          target: String.t(),
+          target: String.t() | nil,
           ts_t: integer(),
           ts_n: integer(),
           message: String.t()
@@ -97,9 +83,7 @@ defmodule Dojo.Keep do
   # ── receive (one ship) ───────────────────────────────────────────────
 
   @doc """
-  One ship (id:kb-12): project → bind (TOFU) → stamp → insert → row fact.
-  Permanent refusals are answers (stamped + why). Silence is nil.
-  Source lands in the same transaction; key is `hash(text)`, never the message.
+  Pre-cut ship. Not a kernel verb. Bind is frozen, not law (keep-cut).
   """
   @spec receive(map(), keyword()) :: reply()
   def receive(%{"id" => id, "message" => message} = payload, opts)
@@ -109,8 +93,9 @@ defmodule Dojo.Keep do
 
     with :ok <- within(message, @max_text),
          {:ok, source} <- referent(payload["source"]),
+         {:ok, image} <- picture(payload["image"]),
          {:ok, cols} <- project(message, id) do
-      admit(cols, source, clan, author_id)
+      admit(cols, source, image, clan, author_id)
     else
       {:error, why} -> refuse(id, why)
     end
@@ -121,19 +106,19 @@ defmodule Dojo.Keep do
 
   # ── private: receive path ────────────────────────────────────────────
 
-  # One judgement per continuant, by its primary key (id:ka-rule).
-  # :root — this root is another room's; :work — this river is another hand's.
-  defp admit(cols, source, clan, author_id) do
+  # Pre-cut binds (keep-cut IV). Frozen.
+  defp admit(cols, source, image, clan, author_id) do
     %{at: at, node: node} = stamp()
 
-    # One transaction holds all four stores (id:kb-source-keys) — a `works` or
-    # `roots` row outliving a failed keep would be authority the log never gave.
+    # One transaction holds the bindings and the log (id:kb-source-keys) — a
+    # `works` or `roots` row outliving a failed keep would be authority the
+    # log never gave.
     outcome =
       Repo.transact(fn ->
         with :ok <- bind(cols.root, clan, author_id, at),
              :ok <- bind_work(cols) do
           put_source(source)
-          put_keep(cols, clan, at, node)
+          put_keep(cols, clan, at, node, image)
           {:ok, :kept}
         end
       end)
@@ -152,8 +137,9 @@ defmodule Dojo.Keep do
     end
   end
 
-  # TOFU: a root belongs to one room. The primary key is the ACL (D017).
-  # author_id is recorded, never compared (id:kb-vet5-bind) — the name is not a continuant.
+  # Pre-cut TOFU: a root belongs to one room. Frozen — do not grow.
+  # author_id is recorded on first insert, never compared, never rewritten.
+  # attach/remember withdrawn (keep kernel 2026-09-06). Letters ride the keep.
   defp bind(root, clan, author_id, at) do
     Repo.insert_all(
       "roots",
@@ -168,22 +154,15 @@ defmodule Dojo.Keep do
     end
   end
 
-  # What each kind's `target` NAMES (id:ka-selectors). `target` carries more
-  # than one continuant — a work has one owner, a node has none — so the day a
-  # kind is born this table must answer "does its target have an owner?".
-  # A kind absent here binds nothing: enforcement fails open (id:kb-12), and
-  # the reads that need a binding then find none until the projection is
-  # rebuilt (id:kb-vet2-rebuild).
+  # Pre-cut. Do not grow (keep-cut IV).
   @owned_kinds %{"snap" => :work}
 
-  @doc "What each kind's `target` names (id:ka-selectors). Bijective with kinds/."
+  @doc "Pre-cut. Do not grow."
   @spec owned_kinds() :: %{String.t() => :work | :node}
   def owned_kinds, do: @owned_kinds
 
-  # TOFU for the second continuant: a river belongs to one hand
-  # (id:ka-works-bind). id:ka-hijack measured the cost of its absence — a
-  # clan-mate's keep became the river's HEAD for every `?fork=` visitor.
-  # A signature says who wrote these bytes; this says what is yours.
+  # Pre-cut: works table still fences writes. Retracted as law (keep-cut IV).
+  # Frozen — do not grow. Origin is the evidence; this is not it.
   defp bind_work(%{target: target, kind: kind, root: root}) do
     if is_binary(target) and @owned_kinds[kind] == :work do
       Repo.insert_all("works", [%{work_id: target, root: root}],
@@ -191,7 +170,7 @@ defmodule Dojo.Keep do
         conflict_target: :work_id
       )
 
-      case Repo.one(owner_of(target)) do
+      case Repo.one(owner_query(target)) do
         ^root -> :ok
         _ -> {:error, :work}
       end
@@ -218,8 +197,10 @@ defmodule Dojo.Keep do
   The keeps row for `insert_all` — columns only, not a schema (id:kb-11).
   Tests use the same builder so a second hand-written map cannot drift.
   """
-  @spec row(cols(), String.t(), integer() | nil, String.t() | nil) :: map()
-  def row(%{} = cols, clan, at, node) when is_binary(clan) do
+  @spec row(cols(), String.t(), integer() | nil, String.t() | nil, binary() | nil) :: map()
+  def row(cols, clan, at, node, image \\ nil)
+
+  def row(%{} = cols, clan, at, node, image) when is_binary(clan) do
     %{
       id: cols.id,
       clan: clan,
@@ -232,7 +213,8 @@ defmodule Dojo.Keep do
       shared_at: at,
       shared_node: node,
       inserted_at: DateTime.utc_now(:millisecond) |> DateTime.to_iso8601(),
-      image: nil
+      # Schemaless insert_all has no dumper — {:blob, _} is what STRICT wants.
+      image: dump_image(image)
     }
   end
 
@@ -240,16 +222,17 @@ defmodule Dojo.Keep do
   @spec keep_cols() :: [atom()]
   def keep_cols, do: @keep_cols
 
-  defp put_keep(cols, clan, at, node) do
-    Repo.insert_all("keeps", [row(cols, clan, at, node)],
+  defp put_keep(cols, clan, at, node, image) do
+    Repo.insert_all("keeps", [row(cols, clan, at, node, image)],
       on_conflict: :nothing,
       conflict_target: :id
     )
   end
 
-  # The reply is the row's fact (id:kb-vet3 26) — ship twice is once for the
-  # reply too, not only the disk. target rides so presence holds a continuant.
-  # Read pool: the insert already committed (id:kb-10).
+  defp dump_image(nil), do: nil
+  defp dump_image(bytes) when is_binary(bytes), do: {:blob, bytes}
+
+  # The reply is the row's share-fact. Read pool after commit.
   defp fact_of(id) do
     Reader.one(
       from(k in "keeps",
@@ -259,53 +242,12 @@ defmodule Dojo.Keep do
     )
   end
 
-  # ── image (the referent that follows the fact) ───────────────────────
-
-  @doc """
-  Fill a shared keep's picture, once (id:kb-12a). No reply: it lands or it
-  doesn't; a lost picture re-runs the turtle (id:kc-e-missing-image).
-  `image IS NULL` makes the first write final; `clan` is the fence (id:kb-vet5-bind).
-  """
-  @spec image(map(), keyword()) :: :ok | {:error, reason()}
-  def image(%{"id" => id, "image" => encoded}, opts)
-      when is_binary(id) and is_binary(encoded) do
-    clan = Keyword.fetch!(opts, :clan)
-
-    with :ok <- within(encoded, @max_image),
-         {:ok, bytes} <- decode64(encoded) do
-      # STRICT refuses TEXT in a BLOB column, and a schemaless query has no
-      # schema to infer from — so the type is said out loud. The disk holding
-      # us to it is the belt working (id:kb-11).
-      from(k in "keeps",
-        where: k.id == ^id and k.clan == ^clan and is_nil(k.image),
-        update: [set: [image: type(^bytes, :binary)]]
-      )
-      |> Repo.update_all([])
-
-      :ok
-    else
-      {:error, why} ->
-        note_refuse(id, why)
-        {:error, why}
-    end
-  end
-
-  def image(_, _), do: {:error, :shape}
-
-  # ── two doors, one lattice (id:ka-surface) ───────────────────────────
-  #
-  # selector × depth. latest is the fan (handles); history is one handle
-  # opened. `of:` is the selector — the only per-selector clause is which
-  # continuant, and for a target the ownership fence. A root owns itself.
-  #
-  # Two clocks, two codecs. Author orders within a hand; room orders the
-  # hands. A cursor cannot cross a hop, so a fan row never carries (t, n).
-
+  # Pre-cut read doors (keep-cut III). Selectors are not the contract.
   @selectors [:target, :root]
   @page 12
   @page_max 200
 
-  @doc "The declared continuant selectors (id:ka-selectors). A query names one."
+  @doc "Pre-cut selectors. Not a kernel verb."
   @spec selectors() :: [:target | :root, ...]
   def selectors, do: @selectors
 
@@ -321,17 +263,7 @@ defmodule Dojo.Keep do
   defp bound(opts), do: opts |> Keyword.get(:n, @page) |> min(@page_max) |> max(1)
 
   @doc """
-  The fan — each continuant's head, arranged by the room's clock (id:ka-latest).
-
-  `of: :target` (default) is last keep of each river; `of: :root` is last keep
-  of each journal. Last *word*, not last packet: the head is the author's
-  clock, the arrangement is the room's.
-
-  Cursored by `at.id`. A cap without a cursor is a wall; 200 is a page.
-  The pair is returned because only this function knows the bound.
-
-  `clan` names which room to show, and scopes through `roots` because the bind
-  is the reason and `keeps.clan` is the copy (id:kb-11-derive).
+  Pre-cut room fan (keep-cut III). Not a kernel verb.
   """
   @spec latest(String.t(), keyword()) :: {[map()], String.t() | nil}
   def latest(clan, opts \\ [])
@@ -339,20 +271,20 @@ defmodule Dojo.Keep do
   def latest(clan, opts) when is_binary(clan) do
     case of(opts) do
       nil -> {[], nil}
-      sel -> clan |> fan(sel) |> page(opts, :room)
+      sel -> clan |> fan(sel) |> except(sel, opts[:except]) |> page(opts, {:room, sel})
     end
   end
 
   def latest(_, _), do: {[], nil}
 
+  # Pre-cut skip-self by author_id (keep-cut II). Occupancy is root.
+  defp except(q, :root, uid) when is_binary(uid),
+    do: where(q, [author: r], r.author_id != ^uid)
+
+  defp except(q, _sel, _uid), do: q
+
   @doc """
-  One continuant, newest first — the page and the next cursor
-  (id:ka-door-shape, id:ka-cursor).
-
-  `of: :target` (default) is one river: a work id, never a keep id
-  (id:ka-capability). `of: :root` is one journal: a root owns itself.
-
-  Shows, never accepts — no `source` rides (id:kb-13-ground).
+  Pre-cut depth page (keep-cut III). Open-work is a fold, not this door.
   """
   @spec history(String.t(), keyword()) :: {[map()], String.t() | nil}
   def history(id, opts \\ [])
@@ -384,6 +316,9 @@ defmodule Dojo.Keep do
   defp fan(clan, :root) do
     from(r in "roots",
       as: :author,
+      left_join: a in "authors",
+      as: :named,
+      on: a.author_id == r.author_id,
       join: k in "keeps",
       on: true,
       where: r.clan == ^clan and k.id == subquery(head_id(:root))
@@ -408,9 +343,9 @@ defmodule Dojo.Keep do
     |> by_author()
   end
 
-  # A target is fenced by its owner (id:ka-works-bind); a root owns itself.
+  # Pre-cut fence through works (keep-cut IV). A root owns itself.
   defp depth(id, :target) do
-    from(k in "keeps", where: k.target == ^id and k.root == subquery(owner_of(id)))
+    from(k in "keeps", where: k.target == ^id and k.root == subquery(owner_query(id)))
   end
 
   defp depth(id, :root) do
@@ -434,7 +369,7 @@ defmodule Dojo.Keep do
     {rows, next_of(rows, n, &cursor/1)}
   end
 
-  defp page(q, opts, :room) do
+  defp page(q, opts, {:room, sel}) do
     n = bound(opts)
 
     rows =
@@ -443,6 +378,7 @@ defmodule Dojo.Keep do
       |> by_room()
       |> limit(^n)
       |> river_row()
+      |> named_row(sel)
       |> Reader.all()
 
     {rows, next_of(rows, n, &room_cursor/1)}
@@ -462,7 +398,14 @@ defmodule Dojo.Keep do
   # The hand a river belongs to — the fence id:ka-hijack exists for, asked once
   # by the bind and once by each target read. Scalar subquery, never a join,
   # so the target index survives (id:ka-vet 65).
-  defp owner_of(work_id), do: from(w in "works", where: w.work_id == ^work_id, select: w.root)
+  defp owner_query(work_id), do: from(w in "works", where: w.work_id == ^work_id, select: w.root)
+
+  @doc """
+  Pre-cut: journal of a river via the works table (keep-cut IV). Nil if never shared.
+  """
+  @spec owner_of(String.t()) :: String.t() | nil
+  def owner_of(work_id) when is_binary(work_id), do: Reader.one(owner_query(work_id))
+  def owner_of(_), do: nil
 
   # One row shape, two doors. The message rides whole so the reader derives
   # the name (id:kc-law 3); the picture is one immutable GET away (id:ka-seat).
@@ -482,6 +425,11 @@ defmodule Dojo.Keep do
   end
 
   defp stamp_row(q), do: select_merge(q, [..., k], %{t: k.ts_t, n: k.ts_n})
+
+  # The living name belongs to the journal fan only. History is one journal,
+  # and relight already holds the departing hand (id:ks-name, id:ks-delta).
+  defp named_row(q, :root), do: select_merge(q, [named: a], %{name: a.name})
+  defp named_row(q, :target), do: q
 
   @doc """
   A depth row's stamp — `"<t>.<n>"` (id:ka-cursor). Twin of `after_cursor/1`.
@@ -611,16 +559,13 @@ defmodule Dojo.Keep do
     )
   end
 
-  # Newest keep of one hand's river (id:ka-works-bind). Ordering by ts is sound
-  # only over a single hand, and the bind is what makes that a server fact.
-  # An unbound target answers nothing rather than guessing.
-  #
+  # Pre-cut HEAD via works (keep-cut III/IV). Not the contract — get is get.
   # [⚠] A scalar subquery, not a join — measured: a join drives from `works`
   # and discards `keeps_head_idx` (id:ka-vet 65).
   defp head_of(target) do
     Reader.one(
       from(k in "keeps",
-        where: k.target == ^target and k.root == subquery(owner_of(target)),
+        where: k.target == ^target and k.root == subquery(owner_query(target)),
         limit: 1,
         select: %{id: k.id, message: k.message, at: k.shared_at, node: k.shared_node}
       )
@@ -660,6 +605,18 @@ defmodule Dojo.Keep do
     do: with(:ok <- within(text, @max_text), do: {:ok, text})
 
   defp referent(_), do: {:error, :shape}
+
+  # Twin of referent/1 — the picture rides the same ship. Absent is nil.
+  defp picture(nil), do: {:ok, nil}
+
+  defp picture(encoded) when is_binary(encoded) do
+    with :ok <- within(encoded, @max_image),
+         {:ok, bytes} <- decode64(encoded) do
+      {:ok, bytes}
+    end
+  end
+
+  defp picture(_), do: {:error, :shape}
 
   defp refuse(id, why) do
     %{at: at, node: node} = stamp()

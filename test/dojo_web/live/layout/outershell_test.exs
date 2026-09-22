@@ -174,9 +174,10 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
       payload = OuterShell.payload(turtle, shell)
 
       assert Map.keys(payload) |> Enum.sort() == OuterShell.payload_keys() |> Enum.sort()
-      assert map_size(payload) == 12
+      assert map_size(payload) == 13
       assert payload.addr == "alice"
       assert payload.origin_name == "Alice"
+      assert Map.has_key?(payload, :root)
       assert payload.view == :watch
       assert payload.stream == true
       assert payload.source == "fw 10"

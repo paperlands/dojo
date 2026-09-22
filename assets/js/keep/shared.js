@@ -1,22 +1,9 @@
 // Shared is list minus local, by name(bytes) (id:kb-8 · id:kc-p-fold).
 // Fold pages of the same depth — measured 455 ms for n=50 against 36k held (id:kb-8-page).
 
-import { name } from "./entry.js"
-
 /**
- * List minus local. Same depth on both sides — a shallower `held` would lie.
- *
- * @param {string[]} listed - bytes[] from list(root, n)
- * @param {string[]} held   - bytes[] from local(root, n), the same n
- * @returns {string[]} bytes of messages the clan has permanently answered
- */
-export function shared(listed, held) {
-    const localIds = new Set(held.map(name))
-    return listed.filter((bytes) => !localIds.has(name(bytes)))
-}
-
-/**
- * The same sentence, over names a fold already derived (id:ka-passes).
+ * List minus local, over names a fold already derived (id:ka-passes · id:kc-p-fold).
+ * Same depth on both sides — a shallower `held` would lie.
  *
  * @param {string[]} ids - names of the listed page, in the author's order
  * @param {Set<string>} heldIds - names of the kept-local page, same depth

@@ -20,8 +20,8 @@ defmodule Dojo.BroadcastStormTest do
 
   # ── helpers ──────────────────────────────────────────────────────────────
 
-  defp make_disciple(name, user_id \\ nil) do
-    %Disciple{name: name, action: "active", user_id: user_id || name}
+  defp make_disciple(name, author_id \\ nil) do
+    %Disciple{name: name, action: "active", author_id: author_id || name}
   end
 
   defp spawn_watcher do
