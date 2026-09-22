@@ -12,7 +12,8 @@ root of =scripts/= except this map and =.gitignore=.
 
 | category | path | what it does |
 |----------|------|--------------|
-| *verify* | [[file:verify/][scripts/verify/]] | silent-when-green checks (nav hotpaths, vendor drift) |
+| *verify* | [[file:verify/][scripts/verify/]] | silent-when-green checks (nav hotpaths, vendor drift, specs pin) |
+| *githooks* | [[file:githooks/][scripts/githooks/]] | dojo↔specs branch mirror + pin (core.hooksPath; D029) |
 | *vendor* | [[file:vendor/][scripts/vendor/]] | build / refresh vendored assets (CM6, three fat-lines) |
 | *ops* | [[file:ops/][scripts/ops/]] | production ops (prod Keep backup + report book) |
 | *play* | [[file:play/][scripts/play/]] | live-shell play rig (raw CDP) |
@@ -29,8 +30,22 @@ root of =scripts/= except this map and =.gitignore=.
 |--------|---------|
 | nav hotpaths | =bash scripts/verify/nav_verify.sh= (Stop hook: =--stop-hook=) |
 | vendor drift | =bash scripts/verify/vendor_verify.sh= · restamp after upgrade: =--record= |
+| specs pin | =bash scripts/verify/specs_sync.sh= · =--install= once · =--status= / =--sync= / =--checkout= / =--record= (D029; daily path is githooks) |
 | reload stressors | =bash scripts/verify/reload_test.sh= (fresh VM per destructive tier) |
 | Partisan LAN E2E | =bash scripts/verify/lan_test.sh= (user + network namespace) |
+
+** githooks — dojo↔specs
+:PROPERTIES:
+:ID: scripts-githooks
+:END:
+
+Tracked under =scripts/githooks/=; enable with
+=bash scripts/verify/specs_sync.sh --install= (=core.hooksPath=).
+=post-checkout= / =post-merge= mirror the branch, then fast-forward to the
+pin SHA only when =specs.lock='s =branch== matches dojo (avoids a stale pin
+undoing the mirror); =pre-commit= restamps the pin. Hand =--checkout= still
+follows the lock's branch. Refuses conflict-marker locks. Hand-run the verify
+script when a hook refuses (dirty or diverged specs tree).
 
 ** vendor — build / drop
 :PROPERTIES:

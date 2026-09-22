@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Mirror specs branch + restore pin after a branch checkout.
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+exec bash "$ROOT/scripts/verify/specs_sync.sh" --hook-post-checkout "$@"

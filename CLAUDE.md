@@ -13,6 +13,8 @@ node --test test/js/*/*_test.mjs # JS tests (zero-npm, node:test; by contract cl
                                  # dir form `test/js/` is broken on Node 22+ (nodejs#64555)
 mix format                       # Before committing
 mix release                      # Production release (Burrito)
+bash scripts/verify/specs_sync.sh --install  # once: dojo↔specs githooks (D029)
+bash scripts/verify/specs_sync.sh --status   # pin/branch alignment
 
 # Dev server (with clustering)
 iex --sname dojo --cookie enterthedojo --dbg pry -S mix phx.server
@@ -46,7 +48,7 @@ Look up by intent; don't re-read whole files.
 
 - Partisan changes go to the fork at `/home/putra/Repos/partisan/`, never `deps/`. Dev workflow: `PARTISAN_PATH=/home/putra/Repos/partisan mix ...`
 - `mix format` before committing; `mix credo --strict` for static analysis.
-- Design/architecture work follows Kumite — invoke the **kumite** skill. `specs/` is its own git repo; commit reasoning there.
+- Design/architecture work follows Kumite — invoke the **kumite** skill. `specs/` is its own git repo; commit reasoning there. Branch names mirror dojo; `specs.lock` is the tip pin (D029 — hooks via `specs_sync.sh --install`).
 - Comments: take specs as given and cite the id a comment carries only the invariant to communicate meaningful intent, in ≤3 lines. 
 - The voice is childlike simplicity what Feynman would say out loud. Clear words, key ideas, to enlarge intent and realise larger coherence vision. Less noise more signal.
 - Plans, strategy, and architecture docs are org-mode in the constellation, anchored for the bridge: `:ID:` on major sections, `:MODULE:` on code sections, `:LENS:` on perspectives, `[[id:...]]` links between nodes.

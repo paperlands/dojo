@@ -53,3 +53,5 @@ npm-debug.log
 rel/packaging/resources/VC_redist.x64.exe
 # Stray npm caches (project is zero-npm; JS tests run on node:test)
 /node_modules/
+
+/specs/
