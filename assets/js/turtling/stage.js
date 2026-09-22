@@ -1,5 +1,5 @@
 // Stage — THREE.js scene infrastructure.
-// Owns scene, camera, renderer, controls, groups, head, recorder, renderLoop.
+// Owns scene, camera, renderer, controls, groups, head, instruments, renderLoop.
 // Extracted from turtle.js constructor + setupScene/Camera/Renderer.
 
 import {
@@ -12,14 +12,13 @@ import {
 } from '../utils/three-entry.js'
 import { DojoOrbitControls } from './orbit.js'
 import Render from "./render/index.js"
-import { Recorder } from "./export/recorder.js"
 import { createMaterialCache } from "./render/line/material-cache.js"
 import { cameraBridge } from "../bridged.js"
 // AXIS_Z is the camera's sight axis: E is in camera convention (view.js), where
 // the eye looks down local −Z, so a roll is a turn about local Z.
 import { SE3, AXIS_Z } from "./se3.js"
 
-export function createStage(canvas, bridge) {
+export function createStage(canvas, bridge, instruments = {}) {
     const ctx = canvas.getContext("webgl2") ?? canvas.getContext("webgl")
 
     // Material cache (spec A3) rides the WebGL lifetime. Owned here so
@@ -96,8 +95,27 @@ export function createStage(canvas, bridge) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.sortObjects = false
 
-    // Recorder
-    const recorder = new Recorder(canvas, {})
+    // INSTRUMENTS — video and stills are application machinery. A host
+    // supplies none, so mediabunny never enters its bundle. Built on the
+    // first record or snapshot, never on a status read, never at construction.
+    //
+    // Duck-typed: { isRecording, captureFrame(), takeSnapshot(),
+    // startRecording(), stopRecording() }. A snapshot-only duck is enough
+    // for a still; it need not be the video Recorder.
+    let recorder = null
+    let recorderResolved = false
+    function getRecorder() {
+        if (recorderResolved) return recorder
+        if (typeof instruments.recorder !== "function") {
+            recorderResolved = true
+            return null
+        }
+        // A throw leaves the seam unresolved, so the next ask may retry.
+        recorder = instruments.recorder(canvas) ?? null
+        recorderResolved = true
+        return recorder
+    }
+
 
     // Head
     const head = new Render.Head(scene)
@@ -145,12 +163,23 @@ export function createStage(canvas, bridge) {
         case 'endtrack':
             camera.desire = null
             break
-        case 'record':
-            recorder.startRecording()
+        case 'record': {
+            try {
+                const rec = getRecorder()
+                if (rec) await rec.startRecording()
+            } catch (err) {
+                console.error('record failed:', err)
+            }
             break
+        }
         case 'endrecord': {
-            const video = await recorder.stopRecording()
-            bridge.pub(["saveRecord", { snapshot: video.blob, type: "video" }])
+            // Peek. Stopping must not construct an encoder that never started.
+            try {
+                const video = recorder ? await recorder.stopRecording() : null
+                if (video) bridge.pub(["saveRecord", { snapshot: video.blob, type: "video" }])
+            } catch (err) {
+                console.error('endrecord failed:', err)
+            }
             break
         }
         }
@@ -192,7 +221,7 @@ export function createStage(canvas, bridge) {
         renderer,
         controls,
         head,
-        recorder,
+        get recorder() { return recorder },
         shapist,
         // LineMaterial cache (spec A3) — WebGL-lifetime owner; dispose() frees it.
         materials,
@@ -250,7 +279,8 @@ export function createStage(canvas, bridge) {
                 // (1920×993×4 ≈ 7.6MB) per tab for the life of the page.
                 queueMicrotask(async () => {
                     try {
-                        const result = await recorder.takeSnapshot({ pixels, width, height })
+                        const rec = getRecorder()
+                        const result = rec ? await rec.takeSnapshot({ pixels, width, height }) : null
                         if (result) {
                             // The file, if one was asked for — read the flag before
                             // the clear, and clear it whole (id:kb-7-stage).
@@ -328,6 +358,12 @@ export function createStage(canvas, bridge) {
         dispose() {
             disposed = true
             settle(null)
+            // Free the encoder only if one was built. Dispose must not construct one.
+            try {
+                if (recorderResolved) recorder?.destroy?.()
+            } catch (err) {
+                console.error('recorder destroy failed:', err)
+            }
             window.removeEventListener('resize', onResize)
             controls.removeEventListener('twist', onTwist)
             cameraUnsub()

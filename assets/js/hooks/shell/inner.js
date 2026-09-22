@@ -3,6 +3,7 @@
 // Adapters whole (S, scene/camera). bootShell + term-cell.register once.
 
 import { Turtle } from "../../turtling/turtle.js"
+import { Recorder } from "../../turtling/export/recorder.js"
 import { registerStage } from "../../turtling/stage-cell.js"
 import { cameraBridge, scene } from "../../bridged.js"
 import { temporal } from "../../utils/temporal.js"
@@ -46,7 +47,11 @@ function mountInner(hook, { term, cm6 }) {
 
     // BODIES — editor first and silent so organs below read a live term.shell.
     const canvas = document.getElementById('core-canvas');
-    const turtle = new Turtle(canvas);
+    // The shell is an application: the recorder (and its encoder) is an
+    // instrument it opts into. A host that supplies none never loads it.
+    const turtle = new Turtle(canvas, {
+        instruments: { recorder: (c) => new Recorder(c, {}) },
+    });
     arena.add(() => turtle.dispose());
     // Stage cell — the one address for the live turtle (gw-t-dom-registry).
     // Weave boot + revealAmbient read getStage(); no canvas.__turtle.

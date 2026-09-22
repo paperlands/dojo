@@ -19,10 +19,10 @@ import { SELF } from "../kernel/witness.js"
 const PROGRESS_FLOOR_MS = 100   // progress breath floor (~10/s)
 
 export class Turtle {
-    constructor(canvas) {
+    constructor(canvas, options = {}) {
         this.bridge = bridged("turtle")
 
-        const stage = createStage(canvas, this.bridge)
+        const stage = createStage(canvas, this.bridge, options.instruments)
         this.stage = stage
         this.renderstate = stage.renderstate
 
@@ -184,9 +184,8 @@ export class Turtle {
             controlsChanged = this.stage.controls.update()
             this.stage.renderer.render(this.stage.scene, this.stage.camera)
 
-            if (this.stage.recorder.isRecording) {
-                this.stage.recorder.captureFrame()
-            }
+            const rec = this.stage.recorder
+            if (rec?.isRecording) rec.captureFrame()
 
             this._firstDrawAt ||= now
             // Still-edge is hatch news; a never-done loop hatches once.
@@ -215,7 +214,7 @@ export class Turtle {
         if (verdict.reason) this.hatch()
 
         // Keep loop while walking, recording, camera settling, or hatch owed.
-        const recording = this.stage.recorder.isRecording
+        const recording = !!this.stage.recorder?.isRecording
         const controlsSettling = now < this._controlsActiveUntil
         this._keepRendering = walking || recording || controlsChanged || controlsSettling || verdict.owed
 
