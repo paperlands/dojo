@@ -52,6 +52,8 @@ export class Turtle {
         }
 
         this.color = '#e77808'
+        // Beat channel sink. Set by a host; read live at drain time. (id:host-beat)
+        this.onBeat = null
 
         // Unified scheduler + compositor (lazy — created on first upsertAmbient)
         this.scheduler = null
@@ -129,6 +131,7 @@ export class Turtle {
         this.compositor = null
         this.scheduler = null
         this.focus.bind(null)
+        this.onBeat = null
         this.stage.dispose()
     }
 
@@ -157,6 +160,7 @@ export class Turtle {
             this.stage,
             {
                 focus: this.focus,
+                onBeat: (beat) => this.onBeat?.(beat),
                 createHead: (parent) => new Render.Head(parent),
                 createShapist: (parent) => new Render.Shape(parent, {
                     layerMethod: 'renderOrder',

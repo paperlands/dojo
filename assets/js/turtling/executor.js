@@ -65,7 +65,16 @@ export function createActorState(opts = {}) {
         reductions: 0,
         breathEvery: opts.breathEvery ?? DEFAULT_BREATH_EVERY,
         strokeMax: opts.strokeMax ?? DEFAULT_STROKE_MAX,  // 0 = off
+        // LOCAL clock: this ambient's own waits, 0 at birth. Stable under
+        // re-parenting — the compositional coordinate. (id:host-beat)
         elapsedTime: 0,
+        // Birth on the shared axis: the parent's `birthtime + time` at spawn.
+        // Root: 0. `birthtime + time` is where this ambient stands on the
+        // axis, so timelines align without anyone reading a global now. (id:host-beat)
+        birthtime: opts.birthtime || 0,
+        // The beat ledger: source lines walked since the last temporal joint.
+        // One `beat` event per wait, not one per node. (id:host-beat)
+        beatLines: new Set(),
         loopCounter: opts.loopCounter || 0,
         mailbox: opts.mailbox || null,
     }
@@ -85,7 +94,11 @@ export function* execute(ast, deps, opts = {}) {
 
     // Lazy thunks — live values when read.
     const ec = deps.mathEvaluator.constants
+    // `time` is your own clock (0 at birth); `birthtime` is your birth on the
+    // shared axis. Two roots, one relation: `birthtime + time` is your place on
+    // the axis, and the difference a user wants is just `time`. (id:host-beat)
     ec['time'] = () => state.elapsedTime / 1000
+    ec['birthtime'] = () => state.birthtime / 1000
     ec['x'] = () => roundVec(state.transform.position[0])
     ec['y'] = () => roundVec(state.transform.position[1])
     ec['z'] = () => roundVec(state.transform.position[2])
@@ -111,6 +124,13 @@ export function* execute(ast, deps, opts = {}) {
     const pathEvent = strokeFlush(stroke)
     if (pathEvent) yield pathEvent
 
+    // Flush the last beat — commands walked after the final wait. (id:host-beat)
+    if (state.beatLines.size) {
+        const lines = [...state.beatLines]
+        yield { type: "beat", time: state.elapsedTime / 1000, birthtime: state.birthtime / 1000, line: lines[lines.length - 1], lines }
+        state.beatLines.clear()
+    }
+
     // Final head event — tells materializer where the turtle ended up
     yield {
         type: "head",
@@ -131,6 +151,13 @@ function* walkBody(body, scope, state, stroke) {
         state.reductions++
         if (state.breathEvery !== 0 && state.reductions % state.breathEvery === 0) {
             yield { type: "breath" }
+        }
+        // Record the line this node is walking. A Set, not an event: a loop
+        // may visit the same line many times between waits. The wait is the
+        // joint, not the ink: it stays out, so the beat's last line is the line
+        // that drew or turned. (id:host-beat)
+        if (node.span?.line != null && !(node.type === "Call" && node.value === "wait")) {
+            state.beatLines.add(node.span.line)
         }
         try {
         switch (node.type) {
@@ -268,7 +295,14 @@ function* walkBody(body, scope, state, stroke) {
                 origin: SE3.clone(state.transform),
                 style: { ...state.style },
                 code: { ast: node.children, functions: { ...state.functions } },
-                env: { userspace: new Map(state.deps.mathParser.userspace), loopCounter: state.loopCounter, scope: { ...scope } }
+                env: {
+                    userspace: new Map(state.deps.mathParser.userspace),
+                    loopCounter: state.loopCounter,
+                    scope: { ...scope },
+                    // The child's birth on the shared axis = `birthtime + time`
+                    // of this ambient now. The child's own clock starts at 0. (id:host-beat)
+                    birthtime: state.birthtime + state.elapsedTime,
+                }
             }
             break
         }
@@ -368,6 +402,13 @@ function* callCommand(name, args, state, stroke) {
     if (result.effects) {
         for (const event of result.effects) {
             if (event.type === "wait") {
+                // One beat per joint: the lines walked since the last wait, at
+                // the program time the joint closed. (id:host-beat)
+                if (state.beatLines.size) {
+                    const lines = [...state.beatLines]
+                    yield { type: "beat", time: state.elapsedTime / 1000, birthtime: state.birthtime / 1000, line: lines[lines.length - 1], lines }
+                    state.beatLines.clear()
+                }
                 state.elapsedTime += event.duration
             }
             yield event

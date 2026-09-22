@@ -395,9 +395,11 @@ const SPATIAL = {
     heading: (t) => roundVec(headingFromQuaternion(t.rotation)),
 }
 
-// Temporal properties — absolute projections of a frame's lifecycle state.
+// Temporal properties — lifecycle projections. `time` is local; `birthtime`
+// is birth on the shared axis, so `birthtime + time` is an axis position. (id:host-beat)
 const TEMPORAL = {
     time:     (frame) => roundVec(frame.elapsedTime || 0),
+    birthtime: (frame) => roundVec(frame.birthtime || 0),
     done:     (frame) => frame.done ? 1 : 0,
     commands: (frame) => frame.commandCount,
 }
@@ -420,8 +422,10 @@ const RELATIONAL = {
         return roundVec(toTarget - myHeading)
     },
     sync: (target, observer) => {
-        const dt = (target.elapsedTime || 0) - (observer.elapsedTime || 0)
-        return roundVec(Math.max(0, dt))
+        const tp = (target.birthtime || 0) + (target.elapsedTime || 0)
+        const op = (observer.birthtime || 0) + (observer.elapsedTime || 0)
+        // Signed: negative means the target is behind the observer.
+        return roundVec(tp - op)
     },
 }
 
@@ -572,6 +576,7 @@ function createChildGenerator(value, createDeps, execOpts) {
         strokeMax: execOpts.strokeMax,
         functions: value.code.functions,
         loopCounter: value.env?.loopCounter,
+        birthtime: value.env?.birthtime,
         scope: value.env?.scope,
         lens: isLensName(value.name),
         mailbox,
@@ -681,6 +686,7 @@ function attachMeta(frame, targetFrame, stock) {
     frame.isLens = isLensName(frame.name)
     frame.commandCount = 0    // walked across ALL runs — rewire does not zero it
     frame.elapsedTime = 0
+    frame.birthtime = 0       // birth on the shared axis (seconds)
     frame.actorState = null
     frame.maxMailbox = 8192
     frame.seed = null
@@ -896,6 +902,9 @@ function spawn(ctx, value, route, pump) {
             value.frame,
             pump.stock
         )
+        // The frame's clock is local (0 at birth); its birth on the shared
+        // axis is inherited. One axis, two roots per ambient. (id:host-beat)
+        child.birthtime = (value.env?.birthtime || 0) / 1000
         // Register under the name BEFORE wiring: wireChild stamps the
         // address, whose last segment is this children-map key.
         ctx.children.set(value.name, child)

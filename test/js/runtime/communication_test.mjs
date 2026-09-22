@@ -380,7 +380,7 @@ describe("Phase 2c: resolveBinding — relational observation", () => {
         assert.equal(resolveBinding(follower, 'leader.sync'), 2.5)
     })
 
-    test("leader.sync clamps to zero when observer is ahead", () => {
+    test("leader.sync is signed — negative when the target is behind", () => {
         const root = createFrame('root', (function*(){})(), { channelCapacity: 64 })
         const leader = createFrame('leader', (function*(){})(), { parent: root })
         leader.elapsedTime = 1.0
@@ -390,8 +390,8 @@ describe("Phase 2c: resolveBinding — relational observation", () => {
         follower.elapsedTime = 3.0
         root.children.set('follower', follower)
 
-        // follower is already ahead — no wait needed
-        assert.equal(resolveBinding(follower, 'leader.sync'), 0)
+        // follower is ahead, so the target is behind by 2 (signed axis)
+        assert.equal(resolveBinding(follower, 'leader.sync'), -2)
     })
 })
 

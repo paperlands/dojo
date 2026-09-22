@@ -142,7 +142,7 @@ describe("the hand decides the gesture (id:la-fork-hand)", () => {
         assert.equal(landed, "fork-buf")
         assert.equal(term.asked.forkKeep.length, 0, "a foreign hand never rejoins")
         assert.deepEqual(term.asked.forkBuffer,
-            [{ source: "fw 7", name: "theirs", addr: WORK, time: TS.t, land: true }])
+            [{ source: "fw 7", name: "theirs", root: OTHER, addr: WORK, time: TS.t, land: true }])
     })
 
     test("a pulled foreign keep is still kept, then peer-forked", async () => {

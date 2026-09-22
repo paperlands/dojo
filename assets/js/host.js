@@ -52,6 +52,12 @@ export function createHatch(canvas, { caps } = {}) {
             settle()
             return { finished, commandCount: result.commandCount }
         },
+        // The beat is a second milestone, never a constructor option (D030).
+        // `onLine` reads the line the walk is on, in logical time. (id:host-beat)
+        onLine(fn) {
+            turtle.onBeat = typeof fn === "function" ? fn : null
+        },
+
         dispose() {
             if (disposed) return
             disposed = true

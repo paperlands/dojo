@@ -72,6 +72,8 @@ export function createCompositor(scheduler, stage, opts = {}) {
     const createShapist = opts.createShapist || null
     // Orbit target for materializeHead; headless callers omit it.
     const controls = opts.controls ?? null
+    // The beat channel: one callback, emitted where the playhead consumes it.
+    const onBeat = opts.onBeat ?? null
     // Timeslice budget lives with the frame loop (AIMD quantum). (id:output-ledger-r2-pacer)
     const pacer = opts.pacer || createPacer()
     let frameStart = null
@@ -168,6 +170,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
 
             for (const event of events) {
                 if (event.type === 'error') continue
+                if (event.type === 'beat') { onBeat?.(event); continue }
                 if (event.type === 'clear') {
                     clearChildLayer(layer)
                 } else if (event.type === 'path') {

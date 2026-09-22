@@ -24,7 +24,7 @@ export function createFrame(name, generator, opts = {}) {
         _worldDirty: true,
 
         generator,            // JS generator = the green-thread body
-        resumeAt: 0,          // logical clock when a wait ends (D011)
+        resumeAt: 0,          // logical clock when a wait ends, ms (D011); `now` only reveals
         logicalBirth: opts.logicalBirth ?? null,  // parent clock at spawn; null at root
         done: false,
 

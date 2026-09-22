@@ -133,7 +133,7 @@ while (Date.now() < deadline) {
 ws.close()
 chrome.kill()
 console.log(text.trim())
-const missing = ["bad:", "(line 1)", "ok:", "rej:hatch disposed", "DONE"].filter((n) => !text.includes(n))
+const missing = ["bad:", "(line 1)", "ok:", "rej:hatch disposed", "beats:", "scored:true", "quiet:true", "morph:", "morphok:true", "nest:", "nestok:true", "DONE"].filter((n) => !text.includes(n))
 if (text.includes("FAIL ") || text.includes("bad:accepted") || missing.length) {
     console.error("runtime door failed", missing)
     process.exit(1)
