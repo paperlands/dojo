@@ -95,13 +95,8 @@ export function createStage(canvas, bridge, instruments = {}) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.sortObjects = false
 
-    // INSTRUMENTS — video and stills are application machinery. A host
-    // supplies none, so mediabunny never enters its bundle. Built on the
-    // first record or snapshot, never on a status read, never at construction.
-    //
-    // Duck-typed: { isRecording, captureFrame(), takeSnapshot(),
-    // startRecording(), stopRecording() }. A snapshot-only duck is enough
-    // for a still; it need not be the video Recorder.
+    // Video and stills are an instrument. Absent, the encoder stays out.
+    // Built on first record or snapshot, never on a status read.
     let recorder = null
     let recorderResolved = false
     function getRecorder() {
@@ -110,7 +105,6 @@ export function createStage(canvas, bridge, instruments = {}) {
             recorderResolved = true
             return null
         }
-        // A throw leaves the seam unresolved, so the next ask may retry.
         recorder = instruments.recorder(canvas) ?? null
         recorderResolved = true
         return recorder
@@ -173,7 +167,6 @@ export function createStage(canvas, bridge, instruments = {}) {
             break
         }
         case 'endrecord': {
-            // Peek. Stopping must not construct an encoder that never started.
             try {
                 const video = recorder ? await recorder.stopRecording() : null
                 if (video) bridge.pub(["saveRecord", { snapshot: video.blob, type: "video" }])
@@ -358,7 +351,6 @@ export function createStage(canvas, bridge, instruments = {}) {
         dispose() {
             disposed = true
             settle(null)
-            // Free the encoder only if one was built. Dispose must not construct one.
             try {
                 if (recorderResolved) recorder?.destroy?.()
             } catch (err) {

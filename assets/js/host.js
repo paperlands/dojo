@@ -1,29 +1,64 @@
-// host-v1 SPIKE — a program and a canvas, and nothing else.
-//
-// Disposable: this file exists to falsify or confirm the producer boundary (G1)
-// before any manifest, pin script, or fallback wiring is written. It is not v1.
-//
-// NOT here yet: the beat channel from playback (the runtime carries node.span.line,
-// so it is threadable), seat() resolution at the end of a finite performance,
-// manifest, conformance fixtures.
+// Play a PaperLang program on a canvas (D030)
 import { Turtle } from "./turtling/turtle.js"
 
-export function createHatch(canvas, { onBeat } = {}) {
-    const turtle = new Turtle(canvas)
+export function createHatch(canvas, { caps } = {}) {
+    const turtle = new Turtle(canvas, { caps })
     let disposed = false
+    let generation = 0
+    let finishReject = null
+
+    function supersede() {
+        const reject = finishReject
+        finishReject = null
+        reject?.(new Error("superseded"))
+    }
+
+    function refuse(wound) {
+        const line = wound?.span?.line
+        const message = wound
+            ? (line ? `${wound.message} (line ${line})` : wound.message)
+            : "program failed"
+        const err = new Error(message)
+        if (wound) err.wound = wound
+        return err
+    }
+
     return {
-        async seat(program) {
+        async play(program) {
             if (disposed) throw new Error("hatch disposed")
+            const gen = ++generation
+            supersede()
             const result = await turtle.upsertAmbient("host", "host", program, { hatch: true, fresh: true })
+            if (disposed || generation !== gen) throw new Error("hatch disposed")
             if (!result || result.success !== true) {
                 const wound = result && result.wounds && result.wounds[0]
-                throw new Error(wound ? wound.message : "program failed")
+                throw refuse(wound)
             }
-            return result
+            let resolve
+            let reject
+            const finished = new Promise((res, rej) => { resolve = res; reject = rej })
+            finishReject = reject
+            const settle = () => {
+                if (disposed || generation !== gen) return
+                if (!turtle.scheduler?.done) return
+                finishReject = null
+                resolve({ commandCount: turtle.scheduler.commandCount })
+            }
+            const prev = turtle.onProgress
+            turtle.onProgress = (p) => {
+                prev?.(p)
+                if (p?.phase === "settled") settle()
+            }
+            settle()
+            return { finished, commandCount: result.commandCount }
         },
         dispose() {
             if (disposed) return
             disposed = true
+            generation++
+            const reject = finishReject
+            finishReject = null
+            reject?.(new Error("hatch disposed"))
             turtle.dispose?.()
         },
     }
