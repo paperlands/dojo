@@ -16,7 +16,8 @@ import {
 export function createGesture(deps) {
     const {
         candidates,      // () => [{ name, frame }] — the places currently offered
-        worldOf,         // (frame) => world transform
+        anchorOf,        // (frame) => live world transform — where the point IS
+        birthOf,         // (frame) => birth frame — the plane the pointer maps through
         registered,      // (frame) => boolean
         requestMotion,   // (frame, pose, revision) => verdict
         revision,        // () => number
@@ -57,7 +58,7 @@ export function createGesture(deps) {
             for (const candidate of candidates()) {
                 // Behind the camera, clipped, or on a zero-sized canvas: not a target,
                 // and never a made-up hit. (id:laws-decl-handle)
-                const projected = project(worldOf(candidate.frame).position)
+                const projected = project(anchorOf(candidate.frame).position)
                 if (!projected) continue
                 if (!hitTest(here, projected, radius)) continue
                 const accepted = poseOf(candidate.frame)
@@ -75,9 +76,14 @@ export function createGesture(deps) {
                 }
                 const ray = rayAt(x, y)
                 if (!ray) return { claimed: false }
-                const hit = touchPlane(ray, birthPlane(worldOf(candidate.frame)))
+                // The mapping frame is the BIRTH frame, not the live transform: the
+                // live one moves with the point, so dividing the pointer by it feeds
+                // each accepted move back into the next request. That loop is the
+                // jitter — gain greater than one, chasing its own tail.
+                const birth = birthOf(candidate.frame)
+                const hit = touchPlane(ray, birthPlane(birth))
                 if (!hit) return { claimed: false }
-                const there = birthLocal(hit, worldOf(candidate.frame))
+                const there = birthLocal(hit, birth)
                 grab = {
                     pointerId,
                     name: candidate.name,
@@ -113,12 +119,12 @@ export function createGesture(deps) {
                 return { moved: false, cancelled: true }
             }
 
-            const world = worldOf(grab.frame)
+            const birth = birthOf(grab.frame)
             const ray = rayAt(x, y)
             if (!ray) return { moved: false }        // clipped: no target, no request
-            const hit = touchPlane(ray, birthPlane(world))
+            const hit = touchPlane(ray, birthPlane(birth))
             if (!hit) return { moved: false }        // off the plane: keep the pose
-            const there = birthLocal(hit, world)
+            const there = birthLocal(hit, birth)
             const requested = requestedPose(accepted, [
                 there[0] + grab.offset[0],
                 there[1] + grab.offset[1],

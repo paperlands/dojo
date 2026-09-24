@@ -7,7 +7,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { buildWorld, fork, drive } from "./harness.mjs"
 import { createGesture } from "../../../assets/js/turtling/laws/gesture.js"
-import { frameWorldTransform } from "../../../assets/js/turtling/scheduler.js"
+import { frameWorldTransform, worldTransform } from "../../../assets/js/turtling/scheduler.js"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
 
 const pass = ({ requested }) => ({ accepted: true, transform: requested })
@@ -29,7 +29,8 @@ const harness = (scheduler, frames, { controlsEnabled = true, requestMotion } = 
     const state = { captured: null, controls: { enabled: controlsEnabled }, woke: 0 }
     const gesture = createGesture({
         candidates: () => frames.map((frame) => ({ name: frame.name, frame })),
-        worldOf: (frame) => frameWorldTransform(frame),
+        anchorOf: (frame) => frameWorldTransform(frame),
+        birthOf: (frame) => worldTransform(frame),
         registered: (frame) => scheduler.registry.get(frame.id) === frame,
         requestMotion: (frame, pose, revision) => {
             requests.push({ frame, pose })
@@ -68,7 +69,9 @@ test("positive: an off-centre grab moves by the pointer's delta, never by a jump
     assert.deepEqual(a.transform.deref().position.slice(0, 2), [3, 0], "settled at (3,0)")
     const before = [...a.transform.deref().position]
     const heading = a.transform.deref().rotation
-    const worldAt = (pose) => SE3.compose(frameWorldTransform(a), pose).position
+    // The request is expressed in the place's BIRTH frame, so that is the frame it
+    // is read back through. (id:laws-decl-anchor)
+    const worldAt = (pose) => SE3.compose(worldTransform(a), pose).position
     const startWorld = worldAt({ rotation: heading, position: before })
 
     const h = harness(scheduler, [a])

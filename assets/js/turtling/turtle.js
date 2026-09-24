@@ -6,7 +6,7 @@ import { Evaluator } from "./mafs/evaluate.js"
 import Render from "./render/index.js"
 import { bridged } from "../bridged.js"
 import { createStage } from "./stage.js"
-import { createScheduler, metaRoot, sumCounts, frameWorldTransform } from "./scheduler.js"
+import { createScheduler, metaRoot, sumCounts, frameWorldTransform, worldTransform } from "./scheduler.js"
 import { createCompositor } from "./compositor.js"
 import { labInputs } from "./lab.js"
 import { createFocus, resolveAddress } from "./focus.js"
@@ -173,7 +173,11 @@ export class Turtle {
                 }
                 return out
             },
-            worldOf: (frame) => frameWorldTransform(frame),
+            // Two frames, two jobs: the anchor is the live effective position (where
+            // the point is drawn and hit), the birth frame is the plane the pointer
+            // maps through — stable while the point moves. (id:laws-decl-anchor)
+            anchorOf: (frame) => frameWorldTransform(frame),
+            birthOf: (frame) => worldTransform(frame),
             registered: (frame) => scheduler.registry.get(frame.id) === frame,
             requestMotion: (frame, requested, revision) => scheduler.requestMotion(frame, requested, revision),
             revision: () => scheduler.motionRevision,
