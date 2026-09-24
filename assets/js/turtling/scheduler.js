@@ -979,6 +979,9 @@ function seatPlace(parent, name, pump) {
     // No generator: nothing to run, nothing to emit, no clock, and no tick
     // required before the place counts as established. (id:laws-decl-join-repair)
     place.done = true
+    // A declared place is not an ordinary arrowhead: it is a point handle.
+    // (id:laws-decl-handle)
+    place.isPlace = true
     parent.children.set(name, place)
     bumpTree(parent)
     wireChild(place, pump.createDeps(), [], pump.registry, { ast: [], functions: {} }, null, null)

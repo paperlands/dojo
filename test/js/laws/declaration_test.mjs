@@ -94,6 +94,7 @@ test("acceptance: `let A` establishes an accepted place before any action runs",
     // in the declared domain — no tick, no output, no clock of its own.
     assert.ok(a, "the declaration established a place")
     assert.equal(a.done, true)
+    assert.equal(a.isPlace, true, "a declared place is a point handle, not an arrowhead")
     assert.deepEqual(a.transform.deref().position, [0, 0, 0])
     const q = a.transform.deref().rotation
     assert.deepEqual([q.x, q.y, q.z, q.w], [0, 0, 0, 1])
