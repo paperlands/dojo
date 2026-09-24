@@ -266,3 +266,97 @@ that every observer's whole multi-read evaluation uses one revision. A synchrono
 watcher on A's atom can in fact read new A with old B *inside* the commit; the
 watcher characterization keeps that publication leak visible until the read
 contract is chosen.
+
+* Phase 0n — hosted source-spawned pair (diagnostic, not an unlock)
+:PROPERTIES:
+:ID: laws-p0n-hosted-topology
+:END:
+
+Instrument: =test/js/laws/phase0n_hosted_topology_test.mjs=. A real source-seated
+=host= executes =jmpto 10=, spawns =a=, steps to 15, then spawns
+=b= declaring =a= as its drawing frame. Both children wait briefly so the
+analytic five-unit pair is present before either moves. A second seat has
+the same names but a different top-level key and origin 100.
+
+- =a= and =b= end at local poses 3 and 3; their birth origins are 10 and 15,
+  their world poses 13 and 18. World 14 maps to =a='s birth-local 4; in
+  the other seat world 114 maps to the same birth-local 4.
+- =b='s path is deposited in =a='s channel, tagged with =b.id=, at drawing-frame
+  points 6→8. =a='s own path is 0→1. =b='s channel carries no path; its
+  projected head is 8. The other host's =b.id= does not appear in this ink.
+- Addresses are =seat-left/a= and =seat-right/a=, not shared =a=. The injected
+  admission receives these separate frame addresses for source motion.
+- After completion, =requestMotion(a, local 4, revision)= accepts a pen-up
+  component: =a= ends at world 14, =b= at 19, while the other seat stays
+  unchanged. =b='s head is projected to 9 in =a='s declaring frame; neither
+  actor deposits new ink. The old motion revision becomes stale.
+
+The narrow hosted hand seam now admits settled siblings only within their
+shared parent; a missing or out-of-seat declaring target stays unresolved.
+=createHatch(canvas, {law})= supplies injected admission to =Turtle=. The
+browser door verifies an injected pair, fresh play, and disposal of a parked
+nested admission. This probe does not prove pointer hit testing, materialized
+head pixels, rotated frames, or a source-declared relation.
+
+* Phase 0o — one hosted analytic world, no source wait
+:PROPERTIES:
+:ID: laws-p0o-hosted-analytic
+:END:
+
+Instrument: =test/js/laws/phase0o_hosted_analytic_test.mjs=. Source seats =b=
+at birth x=5, then =a= at x=0 declaring =b= as drawing frame. Empty
+=b= is the initial realization: the responder asserts both frames exist and
+are five apart *before* =a='s first =fw=. No =wait= appears in the program.
+The injected responder moves both endpoints by one world displacement; an
+independent validator checks distance five and equal displacement.
+
+The trace below is the *fixture's source version 1*, not a new scheduler
+source-revision API. Address =seat/a= keeps one frame id through these rows;
+=seat/b= is the component. Initial birth poses are (0,5). World base is
+(30,7); in the rotated run the host first turns -90°. Coordinates are (x,y).
+
+| Source | Actor / request (birth) | Accepted A / B (birth) | Observed A / B (world, plain ; rotated) | A pose projected into B (plain ; rotated) |
+|--------+-------------------------+------------------------+------------------------------------------+---------------------------------------|
+| v1     | =seat/a= fw 0→1         | 2 / 2                  | (32,7)/(37,7) ; (30,5)/(35,5)          | (−3,0) ; (2,−5)                       |
+| v1     | =seat/a= fw 2→4         | 4 / 4                  | (34,7)/(39,7) ; (30,3)/(35,3)          | (−1,0) ; (4,−5)                       |
+| v1     | =seat/a= hand 4→5       | 5 / 5                  | (35,7)/(40,7) ; (30,2)/(35,2)          | (0,0) ; (5,−5)                        |
+
+
+Reproduce the single machine-readable exit line with
+=node --test test/js/laws/phase0o_hosted_analytic_test.mjs=:
+#+begin_src json
+{"sourceRevision":1,"identity":{"a":["seat/a",4],"b":["seat/b",3]},"requests":[{"requested":[1,0,0],"accepted":[2,0,0],"component":[2,0,0]},{"requested":[4,0,0],"accepted":[4,0,0],"component":[4,0,0]},{"requested":[5,0,0],"accepted":[5,0,0],"component":[5,0,0]}],"observed":{"a":[35,7,0],"b":[40,7,0],"witness":[34,7,0]},"visibleHead":{"frame":"seat/b","position":[0,0,0],"rotation":[1,0,0,0]},"motionRevision":3,"configurationRevision":17}
+#+end_src
+Frame IDs are run-local (4 and 3 only in the standalone invocation).
+=sourceRevision:1= is the probe's source-version label, *not* an engine token.
+The witness reads the final accepted =a.distance=4 and moves 4. =a='s ink
+lands in =b='s channel, tagged by =a.id=: in the plain world −5→−3→−1;
+with the rotated declaring frame (0,−5)→(2,−5)→(4,−5). Hand motion
+moves the finished actor's =takeSync= head to (0,0) or (5,−5), with no
+new path. Composing this *actual head slot* with B's world frame returns
+A's committed world position and orientation. Earlier projected poses in the
+table are coordinates, not a claim that every intermediate head was painted.
+
+The lifetime fence changes the source (new host and child IDs), then does a
+fresh seat of identical source (new IDs again), then removes the seat. Every
+late deferred verdict against the old nested actor is inert. A hand request
+against the removed identity is stale. The browser =host_play.sh= additionally
+confirms =createHatch.dispose()= closes a parked nested frame and rejects
+=finished=; resolving its old admission leaves its pose at zero. A hand
+component naming a different host seat is unresolved without committing.
+
+Limits: =b= is deliberately seated first; this does not prove order-independent
+initial realization for an =a=-first source. No pointer routes to the hand
+request. The printed source v1 is fixture provenance; =_configurationRevision=
+is not a dedicated source revision. An edit of another *dependency* can still
+outlive a delayed ordinary motion (P0k); P0l only fences opted-in pure
+=goto=. The shell has multiple ambient seats and edit-in-place lifetimes, not
+the host's =fresh= play path. Its own lifetime trace remains separate.
+
+Shell map (code path, not a shell motion test):
+=assets/js/hooks/shell/inner.js::perform= removes =ans.gone= and calls
+=turtle.upsertAmbient(r.slot, ...)= for each =ans.runs=, without =fresh=.
+=assets/js/host.js::play= instead calls =upsertAmbient("host", ...,
+{fresh:true})= for its single host seat. Thus the host lifetime trace
+must not be read as proof that editing one shell slot resets the other slots
+or that a shell has the host's injected =law= policy.

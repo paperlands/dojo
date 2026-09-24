@@ -148,6 +148,9 @@ export class Turtle {
         // Dispose compositor/stage on remount — canvas outlives the hook.
         // Light register dies with the turtle (not with the compositor).
         this.compositor?.dispose()
+        // Ending the canvas ends its pending admissions too. Dropping only the
+        // scheduler reference leaves a parked frame alive for a late Promise.
+        for (const key of this.scheduler?.root.children.keys() ?? []) this.scheduler.removeChild(key)
         this.compositor = null
         this.scheduler = null
         this.focus.bind(null)

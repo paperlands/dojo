@@ -154,6 +154,22 @@ try {
         && accepted[first - 1][0] === 3 && accepted[first - 1][1] === 8
         && repeated && disposedRefused
     say("laws:" + JSON.stringify(accepted))
+    // Disposal is stronger than dropping the hatch handle: a nested, delayed
+    // verdict cannot wake its old frame after the canvas is gone.
+    let answer6, parked6
+    const hatch6 = createHatch(canvas, { law: { motionAdmissionAsync: ({ frame, requested }) => {
+        if (frame.name !== "a") return { accepted: true, transform: requested }
+        parked6 = frame
+        return new Promise(resolve => { answer6 = resolve })
+    } } })
+    const run6 = await hatch6.play("as b do\nend\nas a do\n  fw 1\nend")
+    const ended6 = run6.finished.catch(e => e.message)
+    const parked = parked6?.suspension?.kind === "admission"
+    hatch6.dispose()
+    answer6?.({ accepted: true, transform: { ...parked6.transform.deref(), position: [50, 0, 0] } })
+    await Promise.resolve()
+    say("pendingdispose:" + (parked && parked6.done && parked6.channel.closed
+        && parked6.transform.deref().position[0] === 0 && await ended6 === "hatch disposed"))
     say("lawsok:" + lawsok)
     say("DONE")
 } catch (e) {

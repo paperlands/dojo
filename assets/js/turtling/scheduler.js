@@ -1531,8 +1531,9 @@ export function createScheduler(generator, opts = {}) {
             // (laws-transaction-d), and an outer publication must not overwrite it.
             if (root._publishing) return { kind: 'busy', message: 'publication in flight' }
             if (!frame.done || subtreeUnsettled(frame)) return { kind: 'busy' }
-            // The first probe supports only settled, unframed top-level points.
-            if (frame.parent !== root || frame.targetFrame || frame.isLens || frame.error ||
+            // A settled actor may live inside a hosted play. Keep the transaction
+            // inside one seating: a sibling's birth frame is not the root's frame.
+            if (!frame.parent || frame.isLens || frame.error ||
                 !pump.motionAdmission || pump.motionAdmissionAsync) return { kind: 'unresolved' }
             if (revision !== root._motionRevision) return { kind: 'stale' }
             const request = { command: 'hand', from: frame.transform.deref(), requested, frame }
@@ -1543,17 +1544,29 @@ export function createScheduler(generator, opts = {}) {
             const verdict = checkMotion(interpretReply(raw, execOpts.refusalStroke),
                 frame, registry, pump.motionValidate, request)
             if (verdict.kind !== 'accept') return verdict
-            if (verdict.component.some(({ frame: member }) =>
-                member.parent !== root || member.targetFrame || member.isLens)) return { kind: 'unresolved' }
+            const members = [{ frame, pose: verdict.pose }, ...verdict.component]
+            const targets = new Map()
+            for (const { frame: member } of members) {
+                if (member.parent !== frame.parent || member.isLens || member.error)
+                    return { kind: 'unresolved' }
+                const target = member.targetFrame ? findReferenceFrame(member, member.targetFrame) : null
+                if (member.targetFrame && target !== member.parent && target?.parent !== member.parent)
+                    return { kind: 'unresolved' }
+                targets.set(member, target)
+            }
             const conflict = commitTransaction(verdict, frame, registry)
             if (conflict) return { kind: 'busy', message: conflict }
-            // The hand is pen-up. Refresh the visible heads, never deposited ink.
-            for (const { frame: member, pose } of [{ frame, pose: verdict.pose }, ...verdict.component]) {
-                if (member.done) putSync(member, {
+            // A hand never repaints deposited ink. Its head uses the same
+            // declaring-frame projection as a program head (id:ft-d5-head).
+            for (const { frame: member, pose } of members) {
+                if (!member.done) continue
+                const head = {
                     type: 'head', position: pose.position, rotation: pose.rotation,
                     color: member.actorState?.style?.color,
                     headSize: member.actorState?.style?.showTurtle,
-                })
+                }
+                const target = targets.get(member)
+                putSync(member, target ? projectHead(head, target, relativeTransform(member, target)) : head)
             }
             return verdict
         },

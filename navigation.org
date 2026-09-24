@@ -653,7 +653,11 @@ checks every sampled tick boundary, including a finished pen-up hand request.
 Reasoning: =specs/compiler/laws-transaction.org=; trace: =probe/laws-phase0/RESULTS.org=.
 Hosted source-spawned topology probe: =test/js/laws/phase0n_hosted_topology_test.mjs=
 ([[id:laws-p0n-hosted-topology]]) pins birth/world conversion, declaring-frame
-deposits, scoped addresses and the still-unresolved finished hand request.
+deposits, scoped addresses and a settled pen-up nested hand commit.
+No-wait hosted analytic pair, rotated declaring-frame/head projection and pending
+edit/fresh/remove fences: =test/js/laws/phase0o_hosted_analytic_test.mjs=
+([[id:laws-p0o-hosted-analytic]]). Browser pending disposal:
+=scripts/verify/host_play.sh=. This still seats B before A and does not route a pointer.
 =test/js/laws/phase0j_spanning_read_test.mjs= pins a second gap: =resolveBinding=
 can read old A then new B across a commit. The proposed observation scope and
 deferred-notification/snapshot comparison live at [[id:laws-transaction-d]].
