@@ -457,14 +457,33 @@ export function createCompositor(scheduler, stage, opts = {}) {
         probeLayerFor(id) {
             const layer = ambientLayers.get(id)
             if (!layer) return null
+            const meshInfo = (c) => ({
+                type: c.type, visible: c.visible, renderOrder: c.renderOrder,
+                parentIsGroup: c.parent === layer.group,
+                groupInScene: stage.scene.children.includes(layer.group),
+                instanceCount: c.geometry?.instanceCount ?? null,
+                startCount: c.geometry?.attributes?.instanceStart?.count ?? null,
+                boundingSphere: c.geometry?.boundingSphere
+                    ? [c.geometry.boundingSphere.center.x, c.geometry.boundingSphere.center.y,
+                       c.geometry.boundingSphere.center.z, c.geometry.boundingSphere.radius] : null,
+                material: c.material ? {
+                    type: c.material.type, visible: c.material.visible,
+                    opacity: c.material.opacity, transparent: c.material.transparent,
+                    linewidth: c.material.linewidth, resolution: c.material.resolution
+                        ? [c.material.resolution.x, c.material.resolution.y] : null,
+                    color: c.material.color?.getHex?.() ?? null,
+                } : null,
+            })
             return {
-                children: layer.group.children.map((c) => ({
-                    type: c.type, visible: c.visible,
-                    source: c._sourceId ?? null,
-                    vertices: c.geometry?.attributes?.position?.count ?? null,
-                })),
+                groupInScene: stage.scene.children.includes(layer.group),
+                children: layer.group.children.map(meshInfo),
                 trails: [...layer.trails.keys()].map((k) => ({
-                    key: String(k), hasLine: !!layer.trails.get(k).line,
+                    key: String(k), segs: layer.trails.get(k).line?.segmentCount ?? null,
+                    synced: layer.trails.get(k).line?._synced ?? null,
+                    sameGeom: layer.trails.get(k).line
+                        ? layer.trails.get(k).line.mesh.geometry === layer.trails.get(k).line.geometry : null,
+                    geomInstanceCount: layer.trails.get(k).line?.geometry?.instanceCount ?? null,
+                    hasLine: !!layer.trails.get(k).line,
                     meshVisible: layer.trails.get(k).line?.mesh?.visible ?? null,
                     groupHas: layer.trails.get(k).line?.mesh
                         ? layer.group.children.includes(layer.trails.get(k).line.mesh) : null,

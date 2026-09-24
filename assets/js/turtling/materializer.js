@@ -174,10 +174,13 @@ function materializeHead(event, ctx) {
 
     if (event.headSize) {
         // Heading is layer-local (projectHead folds frame targeting in).
-        ctx.head.show()
-        ctx.head.update(pos, event.rotation, event.color, event.headSize)
+        // A layer may have no head at all — a declared place is drawn as a point,
+        // not an arrowhead. This must not throw: the throw aborted the rest of the
+        // materialize pass, so the trail was never flushed to the GPU.
+        ctx.head?.show?.()
+        ctx.head?.update?.(pos, event.rotation, event.color, event.headSize)
     } else {
-        ctx.head.hide()
+        ctx.head?.hide?.()
     }
 }
 
