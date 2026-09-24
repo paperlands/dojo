@@ -647,7 +647,7 @@ accepted pose or its head slots. Fence: =test/js/laws/phase0m_publication_test.m
 How a program obtains its first accepted world is still open: source order
 currently stands in for batch assembly, a missing endpoint reads as a refusal,
 and a replaced dependency is dropped only on the pure-=goto= read. Characterization:
-=test/js/laws/phase0n_activation_test.mjs=; reasoning: [[id:laws-activation-verdicts]].
+=test/js/laws/phase0_activation_test.mjs=; reasoning: [[id:laws-activation-verdicts]].
 =phase0d..0i= share =test/js/laws/harness.mjs=; the analytic pair acceptance
 checks every sampled tick boundary, including a finished pen-up hand request.
 Reasoning: =specs/compiler/laws-transaction.org=; trace: =probe/laws-phase0/RESULTS.org=.

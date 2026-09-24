@@ -14,7 +14,7 @@
 // admission policy and the identities are real seated frames. These probes are
 // characterization: each names the stage it attacks and records what the machine
 // answers today.
-// Run: node --test test/js/laws/phase0n_activation_test.mjs
+// Run: node --test test/js/laws/phase0_activation_test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { buildWorld, fork, at, drive, settle } from "./harness.mjs"
