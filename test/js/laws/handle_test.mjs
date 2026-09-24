@@ -7,7 +7,8 @@ import assert from "node:assert/strict"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
 import { Versor } from "../../../assets/js/turtling/mafs/versors.js"
 import {
-    birthPlane, touchPlane, birthLocal, requestedPose, hitTest, readout, inPlane, OUTCOME,
+    birthPlane, touchPlane, birthLocal, requestedPose, hitTest, readout, inPlane,
+    eligibility, outcomeOf, OUTCOME, GRAZE,
 } from "../../../assets/js/turtling/laws/handle.js"
 
 const Q90 = Versor.raw(Math.SQRT1_2, 0, 0, -Math.SQRT1_2)   // rt 90: +x → −y
@@ -65,9 +66,9 @@ test("the handle is hit only where it is drawn", () => {
     assert.equal(hitTest({ x: 105, y: 50 }, projected, 4), false)
 })
 
-test("the readout tells busy, unresolved and rejected apart", () => {
+test("a verdict becomes an outcome in one place", () => {
     const accepted = [1, 0, 0], requested = [2, 0, 0]
-    const line = (verdict) => readout({ point: "a", accepted, requested, verdict })
+    const line = (verdict) => readout({ point: "a", accepted, requested, outcome: outcomeOf(verdict) })
 
     assert.deepEqual(line({ kind: "accept" }), {
         point: "a", accepted, requested, outcome: "accepted",
@@ -77,8 +78,11 @@ test("the readout tells busy, unresolved and rejected apart", () => {
     assert.equal(line({ kind: "unresolved" }).outcome, "unresolved")
     assert.equal(line({ kind: "stale" }).outcome, "obsolete")
     assert.equal(line(undefined).outcome, "unknown")
-    // The three that matter must not collapse into one word.
-    assert.equal(new Set([OUTCOME.refuse, OUTCOME.busy, OUTCOME.unresolved]).size, 3)
+    // The words that matter must not collapse into one.
+    assert.equal(new Set([OUTCOME.rejected, OUTCOME.busy, OUTCOME.unresolved,
+        OUTCOME.unsupported, OUTCOME.obsolete, OUTCOME.cancelled]).size, 6)
+    // One outcome representation: no line can describe two contradictory answers.
+    assert.equal(Object.keys(readout({ point: "a", accepted, requested, outcome: OUTCOME.busy })).length, 4)
 })
 
 test("a touch from above maps onto a turned place's plane and back", () => {
@@ -123,9 +127,59 @@ test("the plane is a domain: a pose that left it is unsupported, not retargeted"
     assert.equal(inPlane(place([3, -1, 1e-12])), true, "float noise is not a departure")
 
     const accepted = [3, -1, -1]        // pitch 90, then fw 1: outside the plane
-    const line = readout({ point: "a", accepted, requested: null, verdict: undefined, unsupported: true })
+    const line = readout({ point: "a", accepted, requested: null, outcome: OUTCOME.unsupported })
     assert.equal(line.outcome, "unsupported")
     assert.notEqual(line.outcome, OUTCOME.busy)
     assert.notEqual(line.outcome, OUTCOME.unresolved)
-    assert.notEqual(line.outcome, OUTCOME.refuse)
+    assert.notEqual(line.outcome, OUTCOME.rejected)
+})
+
+test("scaling a ray cannot change its meaning", () => {
+    const flat = birthPlane(place([0, 0, 0]))
+    const ray = (direction, origin = [0, 0, 1]) => ({ origin, direction })
+    // The same grazing ray, written at two magnitudes, is refused both times.
+    assert.equal(touchPlane(ray([1, 0, -0.0005]), flat), null)
+    assert.equal(touchPlane(ray([10, 0, -0.005]), flat), null)
+    assert.equal(touchPlane(ray([1000, 0, -0.5]), flat), null)
+    // And the same ordinary ray at two magnitudes touches the same point.
+    const one = touchPlane(ray([0.2, 0, -1]), flat)
+    const ten = touchPlane(ray([2, 0, -10]), flat)
+    assert.deepEqual(one, ten)
+    assert.ok(Math.abs(one[0] - 0.2) < 1e-9 && Math.abs(one[2]) < 1e-9)
+    // A degenerate direction has no angle, so it is refused rather than guessed.
+    assert.equal(touchPlane(ray([0, 0, 0]), flat), null)
+    assert.equal(touchPlane({ origin: [0, 0, 1], direction: [0, 0, -1] },
+        { origin: [0, 0, 0], normal: [0, 0, 0] }), null)
+    assert.ok(GRAZE > 0)
+})
+
+test("missing geometry is not the domain origin", () => {
+    assert.equal(inPlane(place([3, 4, 0])), true)
+    assert.equal(inPlane(null), false, "an unknown pose is not supported")
+    assert.equal(inPlane({ position: [3, 4] }), false, "a malformed pose is not supported")
+    assert.equal(inPlane({ position: [3, 4, NaN] }), false)
+    assert.equal(inPlane({}), false)
+    assert.equal(inPlane(undefined), false)
+})
+
+test("eligibility asks liveness first: participation is not registration", () => {
+    const frame = { name: "a", parent: { declared: new Set(["a"]) } }
+    const accepted = place([1, 0, 0])
+
+    assert.deepEqual(eligibility({ frame, registered: true, accepted }), { ok: true, reason: null })
+
+    // A retained reference whose subtree was removed still holds its old parent's
+    // declaration set — so `exposed` alone would say yes while the frame is gone.
+    assert.deepEqual(eligibility({ frame, registered: false, accepted }),
+        { ok: false, reason: OUTCOME.obsolete })
+
+    const detached = { name: "a", parent: { declared: new Set() } }
+    assert.deepEqual(eligibility({ frame: detached, registered: true, accepted }),
+        { ok: false, reason: OUTCOME.unresolved })
+
+    assert.deepEqual(eligibility({ frame, registered: true, accepted: place([1, 0, -1]) }),
+        { ok: false, reason: OUTCOME.unsupported })
+
+    assert.deepEqual(eligibility({ frame: null, registered: true, accepted }),
+        { ok: false, reason: OUTCOME.obsolete })
 })
