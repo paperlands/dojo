@@ -37,4 +37,13 @@ describe("host door", () => {
         assert.match(src, /new Turtle\(canvas, \{ caps, law \}\)/)
         assert.equal(/motionAdmission|observePureGoto|motionValidate/.test(src), false)
     })
+
+    test("the laboratory seam is an allow-list, not a scheduler-option funnel", () => {
+        const turtle = readFileSync(new URL("../../../assets/js/turtling/turtle.js", import.meta.url), "utf8")
+        assert.match(turtle, /const LAB_INPUTS = \[/)
+        assert.match(turtle, /unknown laboratory input/)
+        // The funnel form is gone: only permitted inputs cross.
+        assert.equal(/\.\.\.\(this\._law \?\? \{\}\)/.test(turtle), false)
+        assert.match(turtle, /\.\.\.labInputs\(this\._law\)/)
+    })
 })

@@ -18,6 +18,23 @@ import { SELF } from "../kernel/witness.js"
 
 const PROGRESS_FLOOR_MS = 100   // progress breath floor (~10/s)
 
+
+// The laboratory seam is an allow-list, not a scheduler-option funnel. Only the
+// inputs a Phase 0/1 experiment needs cross; an unknown key is refused loudly, so
+// experimental injection cannot quietly become public meaning. (id:laws-decl-lab)
+const LAB_INPUTS = [
+    'motionAdmission', 'motionAdmissionAsync', 'motionValidate', 'refusalStroke', 'observePureGoto',
+]
+
+function labInputs(law) {
+    if (law == null) return {}
+    const inputs = {}
+    for (const key of Object.keys(law)) {
+        if (!LAB_INPUTS.includes(key)) throw new Error(`unknown laboratory input: ${key}`)
+        inputs[key] = law[key]
+    }
+    return inputs
+}
 export class Turtle {
     constructor(canvas, options = {}) {
         this._caps = options.caps ?? null
@@ -154,9 +171,9 @@ export class Turtle {
             onShout: (sourceName, msg, payload) => {
                 this._onShout?.(sourceName, msg, payload)
             },
-            // createScheduler reads the seam at the top level, not from execOpts:
-            // motionAdmission | motionAdmissionAsync | motionValidate | observePureGoto.
-            ...(this._law ?? {}),
+            // createScheduler reads the seam at the top level, not from execOpts;
+            // only the permitted laboratory inputs pass. (id:laws-decl-lab)
+            ...labInputs(this._law),
         })
         this.focus.bind(this.scheduler)
         // Live stage for STAGE_CONTRACT verbs; cadence + orbit target via opts
