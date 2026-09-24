@@ -175,15 +175,16 @@ test("acceptance: a fresh play inherits nothing", () => {
     assert.deepEqual(pose(scheduler, "a").local, [1, 0, 0])
 })
 
-// Pending, and shown as pending: the aggregate green count must not imply the
-// capability. This is the declared-joining acceptance, and it fails until
-// realization and joining land through the batch. (id:laws-decl-join-repair)
-test("todo: declared re-entry preserves placement and starts from the accepted pose", { todo: true }, () => {
+test("acceptance: declared re-entry preserves placement and starts from the accepted pose", () => {
     const scheduler = buildWorld({ admit: pass })
-    scheduler.hotSwapChild("host", fork("host", "let a\n" + program(entry)))
+    const host = scheduler.hotSwapChild("host", fork("host", "let a\n" + program(entry)))
     drive(scheduler)
     const again = pose(scheduler, "a")
     assert.deepEqual(again.origin, [0, 0, 0], "starting a body there does not move the place")
+    assert.deepEqual(again.originQuat, [0, 0, 0, 1], "nor does the caller's turn reach it")
     assert.deepEqual(again.local, [3, -1, 0], "the new execution begins from the accepted pose")
     assert.deepEqual(again.heading, H90, "and keeps the accepted orientation")
+    assert.deepEqual(again.axis, [0, -1, 0], "the fw axis still follows A's own heading")
+    assert.deepEqual(again.world, [3, -1, 0], "world names the same configuration")
+    assert.equal(host.declared.has("a"), true, "A participates in the host's batch")
 })

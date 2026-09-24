@@ -86,16 +86,50 @@ test("acceptance: a seated body declares its places and runs its actions", () =>
     assert.equal(host.unresolved, null, "its declaration was fulfilled by the action")
 })
 
-test("acceptance: an unfulfilled declaration is reported, never a silent success", () => {
-    // Parsing the declaration is legitimate progress. Running to completion while
-    // its existence requirement is unmet is not the finished contract, so the run
-    // says so instead. Realization lands next. (id:laws-decl-join-repair)
+test("acceptance: `let A` establishes an accepted place before any action runs", () => {
     const scheduler = buildWorld({ admit: ({ requested }) => ({ accepted: true, transform: requested }) })
     const host = scheduler.hotSwapChild("host", fork("host", "let A\nfw 1"))
+    const a = find(host, "A")
+    // The positive evidence: a place, established at seat, with default geometry
+    // in the declared domain — no tick, no output, no clock of its own.
+    assert.ok(a, "the declaration established a place")
+    assert.equal(a.done, true)
+    assert.deepEqual(a.transform.deref().position, [0, 0, 0])
+    const q = a.transform.deref().rotation
+    assert.deepEqual([q.x, q.y, q.z, q.w], [0, 0, 0, 1])
+    assert.equal(a.channel.length, 0, "a place emits nothing")
+    assert.equal(Object.keys(a.sync).length, 0, "and has nothing awaiting display")
+
     drive(scheduler)
-    assert.deepEqual([...host.declared], ['A'])
-    assert.equal(find(host, "A"), null, "no place was realized")
-    assert.match(host.unresolved?.reason ?? '', /existence not realized: A/)
+    assert.equal(host.unresolved, null, "its existence was realized, so there is nothing to report")
+    assert.equal(host.error, null)
+})
+
+test("acceptance: A resolves to the declared identity before any `as`", () => {
+    const scheduler = buildWorld({ admit: ({ requested }) => ({ accepted: true, transform: requested }) })
+    const host = scheduler.hotSwapChild("host", fork("host", "let a\nas a do\n  goto 3 0\nend"))
+    const declared = find(host, "a")
+    // Resolvable at seat, before any action: the identity is the place, and it is
+    // registered, so every resolver finds the same frame.
+    assert.ok(declared, "the declared identity resolves before the first as")
+    assert.equal(scheduler.registry.get(declared.id), declared)
+    drive(scheduler)
+    assert.equal(find(host, "a"), declared, "the later `as a` adopted it, never minted a second")
+    assert.deepEqual(declared.transform.deref().position.slice(0, 2), [3, 0])
+})
+
+// Found while writing the witness above: `findFrame` in its default `near` reach
+// searches siblings and ancestors, so a body cannot read its OWN declared child by
+// bare name (`goto a.x 0` wounds with "Undefined assistant"). The `as` door
+// resolves it because spawn looks in ctx.children. Coordinate reads from the
+// declaring body will need that scope question answered — it is not distance work.
+test("characterization: a body cannot read its own declared child by bare name", () => {
+    const scheduler = buildWorld({ admit: ({ requested }) => ({ accepted: true, transform: requested }) })
+    const host = scheduler.hotSwapChild("host", fork("host",
+        "let a\nas a do\n  goto 3 0\nend\ngoto a.x 0"))
+    drive(scheduler)
+    assert.equal(host.error?.kind, "walk")
+    assert.match(host.error?.message ?? '', /Undefined assistant: a/)
 })
 
 test("acceptance: participation is current source participation, not a stored flag", () => {

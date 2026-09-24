@@ -962,7 +962,41 @@ function reportUnrealizedPlaces(ctx) {
     }
 }
 
-function wireRun(child, deps, mailbox, executionState, code, relationshipBatch) {
+// A declared place with no body yet: the domain's origin, facing forward. That
+// is a realization choice, not a hidden pin. (id:laws-decl-anchor)
+function seatPlace(parent, name, pump) {
+    const place = attachMeta(
+        createFrame(name, null, {
+            parent,
+            origin: SE3.identity(),
+            ...pump.channelOpts,
+            logicalBirth: parent.resumeAt > 0 ? parent.resumeAt : (parent.logicalBirth ?? 0),
+        }),
+        null,
+        pump.stock
+    )
+    place.birthtime = parent.birthtime || 0
+    // No generator: nothing to run, nothing to emit, no clock, and no tick
+    // required before the place counts as established. (id:laws-decl-join-repair)
+    place.done = true
+    parent.children.set(name, place)
+    bumpTree(parent)
+    wireChild(place, pump.createDeps(), [], pump.registry, { ast: [], functions: {} }, null, null)
+    return place
+}
+
+// Establish every identity the source declares, before governed actions advance.
+// An identity already there is adopted, never reseated. Runs at the one wiring
+// boundary every seating door shares. (id:laws-decl-join-repair)
+function realizePlaces(parent, pump) {
+    if (!parent.declared || parent.declared.size === 0 || !pump?.createDeps) return
+    for (const name of parent.declared) {
+        if (parent.children.has(name)) continue
+        seatPlace(parent, name, pump)
+    }
+}
+
+function wireRun(child, deps, mailbox, executionState, code, relationshipBatch, pump = null) {
     child.deps = deps
     child.mailbox = mailbox
     // `child.batch` is mutable EXECUTOR state; the relationship batch is
@@ -973,13 +1007,15 @@ function wireRun(child, deps, mailbox, executionState, code, relationshipBatch) 
     child.declared = relationshipBatch?.declared ?? new Set()
     bindResolve(deps, child)
     setListensFor(child, code)
+    // After the parent is registered and its batch is known, before anything runs.
+    realizePlaces(child, pump)
 }
 
 // Wire child: run wiring, plus the things that belong to its place in the tree.
 // Frame must already be in the tree — the address reads its parent chain.
-function wireChild(child, deps, mailbox, registry, code, executionState = null, relationshipBatch = null) {
+function wireChild(child, deps, mailbox, registry, code, executionState = null, relationshipBatch = null, pump = null) {
     child.address = frameAddress(metaRootFrame(child), child)
-    wireRun(child, deps, mailbox, executionState, code, relationshipBatch)
+    wireRun(child, deps, mailbox, executionState, code, relationshipBatch, pump)
     wireWorldCacheInvalidation(child)
     registry.set(child.id, child)
 }
@@ -987,9 +1023,16 @@ function wireChild(child, deps, mailbox, registry, code, executionState = null, 
 // Fresh fork on an existing frame (keep id/tree/origin/address).
 function rewireChild(child, value, pump) {
     const re = createChildGenerator(value, pump.createDeps, pump.execOpts)
+    // A declared place keeps its accepted geometry: the new run begins where the
+    // place stands, orientation included, and its first segment starts there
+    // because the stroke takes its origin from the pose. (id:laws-decl-join-repair)
+    if (child.parent?.declared?.has(child.name)) {
+        const accepted = child.transform.deref()
+        re.batch.transform = { rotation: accepted.rotation, position: [...accepted.position] }
+    }
     child.generator = re.generator
     child.done = false
-    wireRun(child, re.deps, re.mailbox, re.batch, value.code, re.relationshipBatch)
+    wireRun(child, re.deps, re.mailbox, re.batch, value.code, re.relationshipBatch, pump)
     resetRunState(child, pump.stock)      // ink per RUN; park/sync/error never ride the new one
     // A NEW RUN IS A NEW CLOCK (D011), anchored at the parent's current instant:
     // resumeAt once it has waited, else its own birth. The old run's resumeAt is
@@ -1285,9 +1328,10 @@ function spawn(ctx, value, route, pump) {
     const deferredShouts = route.deferredShouts
 
     if (existing) {
-        // Always update origin so the compositor tracks the parent's pose;
-        // worldTransform reads origin → group repositions.
-        existing.origin = value.origin
+        // A declared place keeps its placement: starting a body there does not
+        // move it. An ordinary ambient keeps the origin refresh, so the
+        // compositor still tracks the parent's pose. (id:laws-decl-join-repair)
+        if (ctx.declared?.has(value.name) !== true) existing.origin = value.origin
         existing._worldDirty = true
         metaRootFrame(existing)._configurationRevision++
 
@@ -1335,7 +1379,7 @@ function seatChild(ctx, value, pump, route, deferredShouts) {
     // address, whose last segment is this children-map key.
     ctx.children.set(value.name, child)
     bumpTree(ctx)
-    wireChild(child, deps, mailbox, pump.registry, value.code, batch, relationshipBatch)
+    wireChild(child, deps, mailbox, pump.registry, value.code, batch, relationshipBatch, pump)
     if (deferredShouts) deliverDeferredToFrame(deferredShouts, child)
     return child
 }
@@ -1644,7 +1688,7 @@ export function createScheduler(generator, opts = {}) {
             // address, whose top segment is this registration key.
             root.children.set(key, child)
             bumpTree(root)
-            wireChild(child, deps, mailbox, registry, forkSpec.code, batch, relationshipBatch)
+            wireChild(child, deps, mailbox, registry, forkSpec.code, batch, relationshipBatch, pump)
             child.seed = seedOf(forkSpec)
 
             // The seat drain is a pump too. Its shouts must reach the tree, not
