@@ -1,3 +1,3 @@
 # Paired constellation tip. Hooks restamp on commit; hand: specs_sync.sh --record
 branch=feels/constraints
-sha=30b2d50c6e8db618ac24b56744cce42719dbcde9
+sha=6a97c0a47f1aff287631d549cea07ea59a686f13

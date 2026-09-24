@@ -1302,34 +1302,42 @@ function spawn(ctx, value, route, pump) {
     }
 
     if (pump.createDeps) {
-        const { generator: childGen, deps: childDeps, mailbox: childMailbox,
-                batch: childBatch, relationshipBatch: childDeclarations } =
-            createChildGenerator(value, pump.createDeps, pump.execOpts)
-        const child = attachMeta(
-            createFrame(value.name, childGen, {
-                parent: ctx,
-                origin: value.origin,
-                ...pump.channelOpts,
-                // Born at the parent's current logical instant: its `resumeAt` once it
-                // has waited, else its own birth. A frame that only spawns never waits;
-                // anchoring at its `resumeAt` of 0 sent children to the axis origin.
-                logicalBirth: ctx.resumeAt > 0 ? ctx.resumeAt : (ctx.logicalBirth ?? route.now),
-            }),
-            value.frame,
-            pump.stock
-        )
-        // The frame's clock is local (0 at birth); its birth on the shared
-        // axis is inherited. One axis, two roots per ambient. (id:host-beat)
-        child.birthtime = (value.env?.birthtime || 0) / 1000
-        // Register under the name BEFORE wiring: wireChild stamps the
-        // address, whose last segment is this children-map key.
-        ctx.children.set(value.name, child)
-        bumpTree(ctx)
-        wireChild(child, childDeps, childMailbox, pump.registry, value.code, childBatch, childDeclarations)
-        if (deferredShouts) deliverDeferredToFrame(deferredShouts, child)
+        const child = seatChild(ctx, value, pump, route, deferredShouts)
         return { verdict: 'spawned', spawned: child, produced: true }
     }
     return { verdict: 'continue', produced: true }
+}
+
+// Construct, register and wire a place under `ctx`. It does NOT advance the new
+// frame: advancement belongs to the caller, so inline spawn ordering is exactly
+// what it was. One door builds a place; realization will call it for identities
+// the source declares. (id:host-beat)
+function seatChild(ctx, value, pump, route, deferredShouts) {
+    const { generator, deps, mailbox, batch, relationshipBatch } =
+        createChildGenerator(value, pump.createDeps, pump.execOpts)
+    const child = attachMeta(
+        createFrame(value.name, generator, {
+            parent: ctx,
+            origin: value.origin,
+            ...pump.channelOpts,
+            // Born at the parent's current logical instant: its `resumeAt` once it
+            // has waited, else its own birth. A frame that only spawns never waits;
+            // anchoring at its `resumeAt` of 0 sent children to the axis origin.
+            logicalBirth: ctx.resumeAt > 0 ? ctx.resumeAt : (ctx.logicalBirth ?? route.now),
+        }),
+        value.frame,
+        pump.stock
+    )
+    // The frame's clock is local (0 at birth); its birth on the shared
+    // axis is inherited. One axis, two roots per ambient. (id:host-beat)
+    child.birthtime = (value.env?.birthtime || 0) / 1000
+    // Register under the name BEFORE wiring: wireChild stamps the
+    // address, whose last segment is this children-map key.
+    ctx.children.set(value.name, child)
+    bumpTree(ctx)
+    wireChild(child, deps, mailbox, pump.registry, value.code, batch, relationshipBatch)
+    if (deferredShouts) deliverDeferredToFrame(deferredShouts, child)
+    return child
 }
 
 // Output event — one offered deposit (head pose-swap + run tagging inside).
