@@ -633,6 +633,35 @@ Verified syntax lives in =PAPERLANG.org= + =codex/refs/Library=.
 :PATH: assets/js/turtling/executor.js
 :END:
 
+P0 motion seam instrument and opt-in accepted move: =test/js/laws/phase0_probe_test.mjs=
+and =test/js/laws/phase0b_motion_test.mjs=; traces/results in =probe/laws-phase0/RESULTS.org=.
+The admission membrane: =interpretReply= turns a raw reply into exactly =accept |
+refuse | fault=. A component (=accept= with sibling poses) is one transaction:
+=commitTransaction= checks members first — a mid-instant target conflicts; a
+completed member retains accepted frame geometry without a live worker. Running
+members receive =batch.rebase= for their executors to adopt at the next command.
+An atom watcher can read half the commit; tick samples are not reader snapshots.
+=phase0d..0i= share =test/js/laws/harness.mjs=; the analytic pair acceptance
+checks every sampled tick boundary, including a finished pen-up hand request.
+Reasoning: =specs/compiler/laws-transaction.org=; trace: =probe/laws-phase0/RESULTS.org=.
+=test/js/laws/phase0j_spanning_read_test.mjs= pins a second gap: =resolveBinding=
+can read old A then new B across a commit. The proposed observation scope and
+deferred-notification/snapshot comparison live at [[id:laws-transaction-d]].
+=test/js/laws/phase0k_readiness_freshness_test.mjs= pins two different edges:
+D011's missing dependency keeps an old argument (including a sampled
+=random=); a source edit leaves a dependent delayed request live. The
+lifetime/readiness/freshness study is
+[[id:laws-transaction-readiness]].
+Find =requestMotion= and =motionValidate= in =assets/js/turtling/scheduler.js=:
+the finished, unframed pen-up hand door uses the execution admission; no
+pointer routing or general solver is claimed.
+Refusal is itself an interaction decision: =refusalStroke= picks =break= (flush and
+split the figure, the default) or =continue= (hold the pose, join the trail and carry
+fill through). An admission fault is never a refusal: a throw, malformed reply or
+accidental Promise wounds with =kind:'motion'=. Delayed replies use
+=motionAdmissionAsync=; =run=/=seq=/=done= drop anything stale after rewire, removal or
+disposal. Fences: =phase0e_refusal_stroke_test.mjs=, =phase0f_admission_faults_test.mjs=,
+=phase0g_delayed_admission_test.mjs=.
 ** re-eval recreates frames — persistent state keys by frameAddress
 :PROPERTIES:
 :ID: nav-hotswap
@@ -682,6 +711,11 @@ Compositor consumes =now = t - epoch=: =assets/js/turtling/compositor.js=.
 (post-order tiebreak), so a wall-clock jump can't let a frame read a logically-later
 one. Decision 011 bullet 3. Head events for frame-targeted children are projected via
 =projectHead= so the cursor rides its deposited (re-projected) ink (spec ft-d5-head).
+=resumeAt= is logical, not wall-anchored: a frame's first =wait= anchors to its birth
+on the axis (spawn and rewire: the parent's frontier; fresh seat: the root's), never
+to =now=. Consumed ticks — admission parks included — must not drift a frame's
+frontier past a sibling's and let it read an earlier instant. Fence:
+=test/js/runtime/scheduler_determinism_test.mjs= and phase0c.
 
 ** ink credit — how a figure cannot be lost
 :PROPERTIES:
@@ -832,37 +866,43 @@ pump ticks up to 64× a frame. Timing lives on =frame.park.since= (see
 [[id:nav-park]]), never in =ink= — a tick counter there fired in ~2 frames under
 exactly the multi-ambient load it guards.
 
-** a park is a park — the cause names why
+** one suspension, one table — every way a frame stops
 :PROPERTIES:
 :ID: nav-park
-:KEYWORDS: park parked midInstant pending owed cause credit time residency instant law preempt breath sibling observe parkBreath parkOwing clearSpentPark
+:KEYWORDS: suspension suspend suspended midInstant owed kind credit residency dataflow admission breath instant law preempt sibling observe parkBreath parkOwing clearSpentPark SUSPENSIONS owns unwinds
 :PATH: assets/js/turtling/scheduler.js
 :END:
 
-=frame.park = null | { cause: 'credit' | 'time' | 'residency', owed, since }= —
-one field for the mid-instant stop no sibling may read across (D027 R2.5b, R3.3:
-"a breath is a park with no cause"). It replaced three encodings that every new
-cause had to be written into separately.
+=frame.suspension = null | { kind, owed, since, ... }= — one record for every stop.
+The =SUSPENSIONS= table answers what a kind means: =owns= (the instant law: no
+sibling reads across it) and =unwinds= (an inline spawn drain stops, so no sibling
+is born into a partial instant). Kinds: =breath= (preempted, owns nothing), =credit=
+/ =residency= (a held deposit), =dataflow= (a read not ready), =admission= (a motion
+verdict). =frame.midInstant= is the separate fact "an admission opened an instant not
+yet closed by wait/yield/done".
 
-*Two doors, so debt is answered by the call* — never by reading a field:
+*Doors, not field-poking* — debt answered by the call, never by reading a field:
 
-- =parkBreath(ctx)= — the pass ran out of time. Owes nothing; the generator
-  stands where it is. Re-breathing is a no-op on =cause: 'time'=.
-- =parkOwing(ctx, cause, deposit)= — a deposit was charged but refused. Held and
-  replayed FIRST next pass so emission order survives. Only ever called with a
-  FRESH deposit (standing debt is replayed by =stepOnce=, which reparks in place).
-- =clearSpentPark(ctx)= at the start of a pass — a park with nothing owed is
-  spent, but *a debt outlives the pass that made it*.
-- =frame.park !== null= is the "is this frame mid-instant" question; =advanceChild=
-  unwinds the whole spawn stack on it.
+- =suspend(frame, kind, parts)= / =clearSuspension(frame)= — the only writers.
+- =parkBreath(ctx)= — the pass ran out of time. Owes nothing; a held debt outranks it.
+- =parkOwing(ctx, kind, deposit)= — a deposit was charged but refused. Held and
+  replayed FIRST next pass; standing debt is reparked in place by =stepOnce=.
+- =clearSpentPark(ctx)= at pass start — breath is spent; *a debt outlives the pass*.
+- =ownsInstant= is =midInstant || SUSPENSIONS[kind].owns= — one table lookup.
+- =advanceChild= unwinds when =SUSPENSIONS[kind].unwinds=.
+- =resolveBinding= suspends a dotted read of an unsettled subtree as =dataflow= unless
+  the reader is inside it (=isAncestorOf=). Fence: =phase0c_instant_ownership_test.mjs=.
+- A wait-for cycle is read *synchronously*: =markCycle= pins every member's
+  pre-instant pose and =readLocal= serves it until the observation =_obsEpoch=
+  advances. Jacobi for the observable instant; Gauss-Seidel inside a hidden solve.
 
 Fences: =backpressure_spike_test.mjs= (C3, S6, P5, park doors for S16),
-=quantum_spike_test.mjs= (S7).
+=quantum_spike_test.mjs= (S7), =suspension_state_test.mjs= (the one-record shape).
 
 *** parkBreath — stop with no debt
 :PROPERTIES:
 :ID: nav-park-breath
-:KEYWORDS: parkBreath breath time preempt midInstant no-debt
+:KEYWORDS: parkBreath breath preempt midInstant no-debt
 :PATH: assets/js/turtling/scheduler.js::parkBreath
 :END:
 

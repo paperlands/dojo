@@ -321,6 +321,10 @@ export class Turtle {
                 this._parseMemo.set(key, { text: code, ast: instructions })
             }
             this._ensureScheduler()
+            // `fresh` is the NEW PLAY door (D011, id:cmp-become-seed): reset the reveal
+            // origin before seating, so an origin-anchored seat plays from its start.
+            // An edit (fresh=false) keeps the play's clock and re-seats in place.
+            if (fresh) this.compositor?.beginPlay()
 
             const ns = vocab ? this.rehearseVocab(vocab, vocabNodes) : null
             // Phase diagnostic under seat key, ancestor's span.

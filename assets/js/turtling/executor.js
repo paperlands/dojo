@@ -40,7 +40,9 @@ function* evalOrBlock(expr, scope, state, domain = "measure") {
             return evaluateExpr(expr, scope, state, domain)
         } catch (e) {
             if (e.blocked) {
-                yield { type: 'blocked' }
+                // The frame (or null when missing) the read waits on — the scheduler
+                // needs it to tell a dataflow suspension from a cycle. (D011)
+                yield { type: 'blocked', target: e.blockedFrame ?? null }
                 continue
             }
             throw e
@@ -77,6 +79,11 @@ export function createActorState(opts = {}) {
         beatLines: new Set(),
         loopCounter: opts.loopCounter || 0,
         mailbox: opts.mailbox || null,
+        motionProtocol: opts.motionProtocol === true,
+        observePureGoto: opts.observePureGoto === true,
+        // Rebase inbox: a component transaction posts a pose here; this worker adopts
+        // it at its next step. The scheduler never writes `transform` directly.
+        rebase: undefined,
     }
 }
 
@@ -107,6 +114,7 @@ export function* execute(ast, deps, opts = {}) {
     try {
         yield* walkBody(ast, opts.scope || {}, state, stroke)
     } catch (error) {
+        adoptRebase(state)
         // Flush accumulated path before crash propagates — valid geometry survives
         const pathEvent = strokeFlush(stroke)
         if (pathEvent) yield pathEvent
@@ -120,6 +128,9 @@ export function* execute(ast, deps, opts = {}) {
         throw error
     }
 
+    // A rebase that landed while the worker was between nodes is adopted before
+    // the final head, so publication never disagrees with the worker's pose.
+    adoptRebase(state)
     // Flush any open path at the end
     const pathEvent = strokeFlush(stroke)
     if (pathEvent) yield pathEvent
@@ -143,10 +154,40 @@ export function* execute(ast, deps, opts = {}) {
     return { commandCount: state.commandCount, actorState: state }
 }
 
+// A component transaction posts a pose to this worker's inbox; the worker adopts
+// it before the next command reads pose. The supervisor never writes `transform`.
+// (id:laws-build-solve-seam — communicate, do not share memory)
+function adoptRebase(state) {
+    if (state.rebase === undefined) return
+    state.transform = state.rebase
+    state.rebase = undefined
+}
+
+const PURE_POINT_READ = /^[A-Za-z_][A-Za-z0-9_]*\.(?:x|y|z)$/
+
+function* readGotoArgs(nodes, scope, state) {
+    while (true) {
+        const baseRevision = state.deps.mathEvaluator.beginObservation()
+        let blocked
+        try {
+            const args = nodes.map(node => evaluateExpr(node.value, scope, state))
+            return { args, baseRevision }
+        } catch (error) {
+            if (!error.blocked) throw error
+            blocked = error
+        } finally {
+            state.deps.mathEvaluator.endObservation()
+        }
+        // D011 owns the wait; no partial argument or capture survives it.
+        yield { type: 'blocked', target: blocked.blockedFrame ?? null }
+    }
+}
+
 function* walkBody(body, scope, state, stroke) {
     let matched = false
 
     for (const node of body) {
+        adoptRebase(state)   // a component rebase lands before this node reads pose
         // Offer preemption every breathEvery visits — work meter, not emits.
         state.reductions++
         if (state.breathEvery !== 0 && state.reductions % state.breathEvery === 0) {
@@ -199,6 +240,23 @@ function* walkBody(body, scope, state, stroke) {
                     if (!(key in fnScope)) fnScope[key] = ec[key]()
                 }
                 state.deps.mathParser.defineFunction(rawArgs[0], rawArgs[1] || 0, fnScope)
+                break
+            }
+
+            // Only two pure ambient-coordinate arguments may retry as one read.
+            if (state.observePureGoto && state.motionProtocol && node.value === 'goto' &&
+                !state.functions[scope.goto || 'goto']) {
+                if (node.children.length !== 2 ||
+                    !node.children.every(arg => PURE_POINT_READ.test(arg.value))) {
+                    yield { type: 'motionUnresolved', reason: 'unsupported goto arguments' }
+                    break
+                }
+                let settled = false
+                for (let retry = 0; retry < 2 && !settled; retry++) {
+                    const { args, baseRevision } = yield* readGotoArgs(node.children, scope, state)
+                    settled = (yield* callCommand('goto', args, state, stroke, baseRevision)) !== 'stale'
+                }
+                if (!settled) yield { type: 'motionUnresolved', reason: 'stale motion base' }
                 break
             }
 
@@ -338,7 +396,7 @@ export function drainNamespace(ast, deps, opts = {}) {
     }
 }
 
-function* callCommand(name, args, state, stroke) {
+function* callCommand(name, args, state, stroke, baseRevision) {
     const cmd = COMMANDS.get(name)
     if (!cmd) {
         throw new Error(`Function ${name} not defined`)
@@ -358,7 +416,32 @@ function* callCommand(name, args, state, stroke) {
     stroke.lastPos = [...state.transform.position]
 
     const result = cmd(ctx, ...args)
-
+    // Opt-in protocol: scheduler admits the proposed pose before state or stroke changes.
+    if (result.transform && state.motionProtocol) {
+        const admission = yield {
+            type: "motion",
+            command: name,
+            from: state.transform,
+            requested: result.transform,
+            baseRevision,
+        }
+        // The scheduler hands back a normalized verdict: accept | refuse. A fault
+        // never reaches here — the scheduler ends the frame instead.
+        if (admission.kind === 'stale') { state.commandCount--; return 'stale' }
+        if (admission.kind === "refuse") {
+            result.transform = state.transform
+            // Refusal is an interaction boundary: the verdict's ink says whether the
+            // figure breaks or the trail joins through the held point.
+            if (admission.ink === "continue" && result.stroke === "extend") {
+                result.point = [...state.transform.position]
+            } else if (result.stroke) {
+                result.stroke = "break"
+            }
+        } else {
+            result.transform = admission.pose
+            if (result.stroke === "extend") result.point = admission.pose.position
+        }
+    }
     // Apply transform changes
     if (result.transform) {
         state.transform = result.transform

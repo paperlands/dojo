@@ -32,11 +32,21 @@ function visitPostOrder(ctx, fn) {
     fn(ctx)
 }
 
+// An admitted writer owns the rest of its logical instant regardless of sibling
+// registration order. Other park causes keep the scheduler's original traversal.
+function visitPostOrderMotionFirst(ctx, fn) {
+    const children = [...ctx.children.values()].sort((a, b) =>
+        Number(!!b.midInstant) - Number(!!a.midInstant))
+    for (const child of children) visitPostOrderMotionFirst(child, fn)
+    fn(ctx)
+}
+
 function terminateAmbient(ctx) {
     for (const child of ctx.children.values()) {
         if (!child.done) terminateAmbient(child)
     }
     unwireWorldCache(ctx)
+    ctx.observation = null
     ctx.done = true
     ctx.channel.close()
 }
@@ -206,26 +216,52 @@ function offerDeposit(ctx, value, frameTarget, frameTransform, stock) {
     return deliverDeposit(ctx, value, frameTarget, frameTransform, stock)
 }
 
-// PARK — two doors, debt answers "does this park owe?" (id:output-ledger-r2-instant)
-// Prior: OS parks a thread mid-quantum; resume continues the same instant.
-// time/credit/residency are ONE park event; cause only names why.
-
-// Breath = preemption: slice spent, generator stays put, owes nothing.
-// Like a timeslice interrupt with no I/O wait — spent next pass start.
-export function parkBreath(ctx) {
-    if (ctx.park?.cause !== 'time') ctx.park = { cause: 'time', owed: null, since: null }
+// --- Suspension: every way a frame stops, as one table ---
+// `owns` is the instant law: no sibling observes past a frame that owns its
+// instant. `unwinds` stops an inline drain. (id:output-ledger-r2-instant)
+const SUSPENSIONS = {
+    breath:    { owns: false, unwinds: true },
+    credit:    { owns: true,  unwinds: true },
+    residency: { owns: true,  unwinds: true },
+    dataflow:  { owns: true,  unwinds: false },
+    admission: { owns: true,  unwinds: true },
 }
 
-// Owing = blocked on a full queue / full stage. Deposit held and replayed FIRST
-// so emission order survives (credit-based flow control + park). Fresh deposit only;
-// stepOnce reparks a standing debt in place.
+function suspend(frame, kind, parts) {
+    if (!SUSPENSIONS[kind]) throw new Error(`Unknown suspension: ${kind}`)
+    frame.suspension = { kind, owed: null, ...parts }   // owed stays null unless a debt is held
+}
+
+function clearSuspension(frame) {
+    frame.suspension = null
+}
+
+// An admission opens an instant that stays owned until a wait/yield/done.
+function openInstant(frame) { frame.midInstant = true }
+function closeInstant(frame) { frame.midInstant = false }
+
+// The frame a dataflow suspension waits on, or null. One reader for the wait-for graph.
+const dataflowTarget = (frame) =>
+    frame.suspension?.kind === 'dataflow' ? frame.suspension.on : null
+
+// Breath = preemption: slice spent, generator stays put, owes nothing.
+// A debt is not a breath: an outstanding deposit outranks it.
+export function parkBreath(ctx) {
+    if (ctx.suspension?.owed) return
+    if (ctx.suspension?.kind === 'breath') return
+    suspend(ctx, 'breath')
+}
+
+// Owing = blocked on a full queue / full stage. The deposit is held and replayed
+// FIRST so emission order survives. Fresh deposit only; stepOnce reparks a
+// standing debt in place. (id:output-ledger-r2-credit)
 export function parkOwing(ctx, cause, deposit) {
-    ctx.park = { cause, owed: deposit, since: null }
+    suspend(ctx, cause, { owed: deposit, since: null })
 }
 
 // Breath dies at pass start; a debt outlives the pass that made it.
 function clearSpentPark(ctx) {
-    if (ctx.park && ctx.park.owed === null) ctx.park = null
+    if (ctx.suspension?.kind === 'breath') clearSuspension(ctx)
 }
 
 // --- Binding resolution: observation + inheritance ---
@@ -308,6 +344,7 @@ function findFrame(frame, name, reach = 'near') {
 function bumpTree(frame) {
     const root = metaRootFrame(frame)
     root._treeGen = (root._treeGen || 0) + 1
+    root._configurationRevision = (root._configurationRevision || 0) + 1
 }
 
 // The frame a `as <name> <frame> do` names. One door, so the drain, the tick
@@ -327,6 +364,52 @@ function findReferenceFrame(ctx, name) {
     return frame
 }
 
+// P2 — ownership of a suspended instant. An admitted motion or a refusal park
+// (credit/residency) means the frame is inside an instant; the suspension is a
+// property of its whole spawn stack, so every ancestor owns it too. A read of a
+// frame whose subtree is unsettled suspends — unless the reader is itself inside
+// that instant, where the ancestor's committed pose is the reader's birth base
+// and is the only value that can ever settle. (id:output-ledger-r2-instant, R2.5b)
+function ownsInstant(frame) {
+    return frame.midInstant === true || SUSPENSIONS[frame.suspension?.kind]?.owns === true
+}
+
+function subtreeUnsettled(frame) {
+    if (ownsInstant(frame)) return true
+    if (frame.children.size === 0) return false   // hot path: a leaf target is O(1)
+    for (const child of frame.children.values()) {
+        if (subtreeUnsettled(child)) return true
+    }
+    return false
+}
+
+function isAncestorOf(ancestor, frame) {
+    let node = frame
+    while (node) {
+        if (node === ancestor) return true
+        node = node.parent
+    }
+    return false
+}
+
+// Wait-for graph: does any frame in `root`'s subtree already wait (transitively)
+// on `reader`? If so, blocking the reader would close a dataflow cycle; the read
+// falls back to the logically-prior committed pose instead. (D011)
+function waitsOn(root, reader) {
+    let node = dataflowTarget(root)
+    const seen = new Set()
+    while (node) {
+        if (node === reader) return true
+        if (seen.has(node)) break
+        seen.add(node)
+        node = dataflowTarget(node)
+    }
+    for (const child of root.children.values()) {
+        if (waitsOn(child, reader)) return true
+    }
+    return false
+}
+
 // Resolve a name against the ambient tree — unified for 0-arity (variables) and n-arity (functions).
 // Called from evaluator's resolveContext (args=undefined) and applyFunction (args=[...]).
 function resolveBinding(frame, name, args) {
@@ -338,7 +421,9 @@ function resolveBinding(frame, name, args) {
 
         const target = findFrame(frame, targetName)
         if (!target) {
-            if (frame.inlineAdvancing) {
+            // A missing name is a dataflow suspension while its parent can still
+            // spawn it; only a finished parent makes it a wound. (D011)
+            if (frame.inlineAdvancing || (frame.parent && !frame.parent.done)) {
                 // Dataflow suspension: dependency may arrive later
                 const err = new Error(`Blocked on assistant: ${targetName}`)
                 err.blocked = true
@@ -347,7 +432,34 @@ function resolveBinding(frame, name, args) {
             throw new Error(`Undefined assistant: ${targetName}`)
         }
 
-        return resolveProperty(target, property, args, frame)
+        // An observation is a synchronization point, not a peek at whatever
+        // committed pose is lying there. If the target's subtree is still inside
+        // an instant and the reader is outside it, suspend and retry.
+        // Settled target is the common case: the O(1) subtree check short-circuits
+        // before the O(depth) ancestor walk. Both operands are pure, so order is free.
+        if (subtreeUnsettled(target) && !isAncestorOf(target, frame)) {
+            // A wait-for cycle is synchronous: pin every member to its pre-instant
+            // pose (Jacobi) so no edge reads another's same-instant commit. A plain
+            // suspension propagates as a park.
+            if (waitsOn(target, frame)) {
+                markCycle(frame, target)
+            } else {
+                const err = new Error(`Blocked on assistant: ${targetName} (mid-instant)`)
+                err.blocked = true
+                err.blockedFrame = target
+                throw err
+            }
+        }
+
+        if (frame.suspension?.kind === 'dataflow') clearSuspension(frame)
+        // A sibling reads in the room's frame so faceto/goto compose; a containing
+        // ancestor reads world-space. `world` is always world-space (prim-world);
+        // `origin` stays observer-relative so `goto origin.x` composes. (prim-position)
+        const isWorld = targetName === 'world'
+        const isOrigin = targetName === 'origin'
+        const contains = target !== frame && isAncestorOf(target, frame)
+        const ground = isWorld ? false : (isOrigin ? true : !contains)
+        return resolveProperty(target, property, args, frame, ground)
     } else {
         // Unqualified: walk ancestor chain for fn binding
         const arity = args ? args.length : 0
@@ -378,16 +490,74 @@ function frameWorldTransform(frame) {
     return SE3.compose(world, local)
 }
 
+// A frame inside a detected wait-for cycle is read at its PRE-INSTANT pose for the
+// whole frontier. That is Jacobi: every edge of the cycle sees one snapshot, so the
+// result does not depend on which edge the scheduler resolved first. Acyclic reads
+// keep Gauss-Seidel — wait for the target's completed instant.
+// This is a read rule, not confluence for geometric relationships. (id:output-ledger-r2-instant)
+function readLocal(frame) {
+    const cyc = frame._cycleLocal
+    if (cyc !== undefined && frame._cycleEpoch === metaRootFrame(frame)._obsEpoch) return cyc
+    return frame.transform.deref()
+}
+
+function readWorldTransform(frame, observer) {
+    const capture = observer?.observation
+    if (capture) {
+        const entry = capture.poses.get(frame)
+        if (!entry) {
+            const error = new Error(`New ambient during observation: ${frame.name}`)
+            error.blocked = true
+            error.blockedFrame = frame
+            throw error
+        }
+        return entry.world
+    }
+    return SE3.compose(worldTransform(frame), readLocal(frame))
+}
+
+// Does `start` already wait, transitively, on `reader`? The edge we are about to
+// add would close a cycle, so the read must resolve against the snapshot.
+function reachesReader(start, reader) {
+    let node = dataflowTarget(start)
+    const seen = new Set()
+    while (node) {
+        if (node === reader) return true
+        if (seen.has(node)) break
+        seen.add(node)
+        node = dataflowTarget(node)
+    }
+    return false
+}
+
+// Pin every member of the cycle to the pose it held before the current observation
+// baseline began.
+function markCycle(reader, target) {
+    const epoch = metaRootFrame(reader)._obsEpoch
+    const mark = (frame) => {
+        if (frame._cycleEpoch !== epoch) {
+            frame._cycleLocal = frame.transform.deref()
+            frame._cycleEpoch = epoch
+        }
+    }
+    mark(reader)
+    const visit = (frame) => {
+        if (reachesReader(frame, reader)) mark(frame)
+        for (const child of frame.children.values()) visit(child)
+    }
+    visit(target)
+}
+
 // Target pose in the observer's birth frame — same numbers goto/faceto drink.
 // Root / missing observer → identity birth → world numbers (the tab floor).
 function poseInObserverBirth(target, observer) {
-    const world = frameWorldTransform(target)
+    const world = readWorldTransform(target, observer)
     if (!observer) return world
-    const birth = worldTransform(observer)
+    const birth = observer.observation?.poses.get(observer)?.birth || worldTransform(observer)
     return SE3.compose(SE3.invert(birth), world)
 }
 
-// Spatial properties — projections of a pose (birth-frame when read by a friend).
+// Spatial properties — projections of a pose, world-space unless ground is set.
 const SPATIAL = {
     x: (t) => roundVec(t.position[0]),
     y: (t) => roundVec(t.position[1]),
@@ -407,14 +577,14 @@ const TEMPORAL = {
 // Relational properties — computed from observer + target in world space.
 const RELATIONAL = {
     distance: (target, observer) => {
-        const tp = frameWorldTransform(target).position
-        const op = frameWorldTransform(observer).position
+        const tp = readWorldTransform(target, observer).position
+        const op = readWorldTransform(observer, observer).position
         const dx = tp[0] - op[0], dy = tp[1] - op[1], dz = tp[2] - op[2]
         return roundVec(Math.sqrt(dx * dx + dy * dy + dz * dz))
     },
     bearing: (target, observer) => {
-        const tp = frameWorldTransform(target).position
-        const ow = frameWorldTransform(observer)
+        const tp = readWorldTransform(target, observer).position
+        const ow = readWorldTransform(observer, observer)
         const op = ow.position
         const dx = tp[0] - op[0], dy = tp[1] - op[1]
         const toTarget = Math.atan2(dx, dy) * (180 / Math.PI)
@@ -430,9 +600,12 @@ const RELATIONAL = {
 }
 
 // Resolve a property on a target frame — spatial, temporal, relational, or fn.
-function resolveProperty(target, property, args, observer) {
+// `ground` = read in the observer's own frame, not shared world space: only a
+// sibling/stranger and `origin` (so goto composes). `world` and containing
+// ancestors answer world-space (prim-world, prim-position).
+function resolveProperty(target, property, args, observer, ground = false) {
     if (!args && SPATIAL[property]) {
-        return SPATIAL[property](poseInObserverBirth(target, observer))
+        return SPATIAL[property](ground ? poseInObserverBirth(target, observer) : readWorldTransform(target, observer))
     }
     if (!args && TEMPORAL[property]) {
         return TEMPORAL[property](target)
@@ -548,6 +721,17 @@ function interceptShout(frame, value, registry, deferredShouts, onShout) {
 
 // Mark dotted cross-ambient reads so loops auto-yield.
 function bindResolve(deps, frame) {
+    deps.mathEvaluator.beginObservation = () => {
+        const root = metaRootFrame(frame)
+        const poses = new Map()
+        visitPostOrder(root, member => {
+            const birth = worldTransform(member)
+            poses.set(member, { birth, world: SE3.compose(birth, member.transform.deref()) })
+        })
+        frame.observation = { poses, revision: root._configurationRevision }
+        return frame.observation.revision
+    }
+    deps.mathEvaluator.endObservation = () => { frame.observation = null }
     deps.mathEvaluator.resolveExternal = (v, a) => {
         const result = resolveBinding(frame, v, a)
         if (typeof v === 'string' && v.includes('.')) deps.mathEvaluator._observedSibling = true
@@ -574,6 +758,8 @@ function createChildGenerator(value, createDeps, execOpts) {
         maxCommands: execOpts.maxCommands,
         breathEvery: execOpts.breathEvery,
         strokeMax: execOpts.strokeMax,
+        motionProtocol: execOpts.motionProtocol,
+        observePureGoto: execOpts.observePureGoto,
         functions: value.code.functions,
         loopCounter: value.env?.loopCounter,
         birthtime: value.env?.birthtime,
@@ -666,10 +852,15 @@ let RUNS = 0
 
 // Run-ephemeral state shared by attachMeta and rewireChild. (id:output-ledger-r2-credit, id:output-ledger-r3-stock-flow)
 function resetRunState(frame, stock) {
-    frame.park = null
+    clearSuspension(frame)
+    frame.observation = null
     frame.error = null
+    frame.unresolved = null
     frame.sync = {}
     frame.run = ++RUNS
+    // A delayed admission reply belongs to the run that asked. Rewire reborns the
+    // run, so a stale resolver must be dropped, not applied. (id:laws-build-solve-seam)
+    frame.midInstant = false
     // Stroke joining is per run: BOTH halves of the join test must go, or the
     // next run's first path could continue the last one's. (id:ft-d7-deposit-runid)
     frame._strokeEnd = null
@@ -693,6 +884,7 @@ function attachMeta(frame, targetFrame, stock) {
     // Run state, but wireRun is a beat away; hold a safe value until it lands.
     frame.batch = null        // the running batch's state; null when nothing runs
     frame.listensFor = null   // null = deliver everything (unknown tree)
+    frame.motionSeq = 0        // monotonic per frame; stale async replies are dropped
     resetRunState(frame, stock)
     return frame
 }
@@ -725,6 +917,10 @@ function sameSeed(seed, spec) {
 function wireWorldCacheInvalidation(child) {
     // Invalidate when own transform changes
     child.transform.watch('worldCache', () => { child._worldDirty = true })
+    child.transform.watch('configurationRevision', () => {
+        const root = metaRootFrame(child)
+        root._configurationRevision = (root._configurationRevision || 0) + 1
+    })
     // Invalidate when parent moves (affects child's world position)
     if (child.parent) {
         child.parent.transform.watch(`child:${child.id}`, () => {
@@ -737,6 +933,7 @@ function wireWorldCacheInvalidation(child) {
 // Unwatch when frame is terminated or removed.
 function unwireWorldCache(child) {
     child.transform.unwatch('worldCache')
+    child.transform.unwatch('configurationRevision')
     if (child.parent) {
         child.parent.transform.unwatch(`child:${child.id}`)
     }
@@ -771,11 +968,13 @@ function rewireChild(child, value, pump) {
     child.done = false
     wireRun(child, re.deps, re.mailbox, re.batch, value.code)
     resetRunState(child, pump.stock)      // ink per RUN; park/sync/error never ride the new one
-    // A NEW RUN IS A NEW CLOCK, anchored where a first birth would be (D011).
-    // The old run's resumeAt lies in the past, so every wait of the new run
-    // would already be over: a half-second animation replayed in one tick.
+    // A NEW RUN IS A NEW CLOCK (D011), anchored at the parent's current instant:
+    // resumeAt once it has waited, else its own birth. The old run's resumeAt is
+    // past, so waiting would fast-forward the animation into one tick.
     child.resumeAt = 0
-    child.logicalBirth = child.parent ? (child.parent.resumeAt || null) : null
+    child.logicalBirth = child.parent
+        ? (child.parent.resumeAt > 0 ? child.parent.resumeAt : child.parent.logicalBirth)
+        : null
     child.channel.drain()
     child.channel.put({ type: 'clear' })
 }
@@ -795,7 +994,7 @@ function advanceChild(initialChild, now, pump, deferredShouts) {
             child.inlineAdvancing = false
             stack.pop()
             // Park mid-instant → unwind spawn stack; no sibling born into a partial instant.
-            if (child.park) {
+            if (child.suspension && SUSPENSIONS[child.suspension.kind].unwinds) {
                 for (const f of stack) f.inlineAdvancing = false
                 return true
             }
@@ -816,13 +1015,17 @@ function breath(ctx, _value, _route, pump) {
     return { verdict: 'continue' }
 }
 
-function blocked() {
-    // Cross-ambient read not ready — sleep, retry next tick (not a mid-instant park).
+function blocked(ctx, value) {
+    // Cross-ambient read not ready — sleep, retry next tick (not a mid-instant
+    // park). A suspension is part of the target's instant: record it so other
+    // readers propagate it and the wait-for graph can tell a cycle. (D011)
+    suspend(ctx, 'dataflow', { on: value?.target ?? null })
     return { verdict: 'paused' }
 }
 
 function wait(ctx, value, route) {
     // Logical sleep: first wait anchors to logicalBirth, not wall clock (D011).
+    closeInstant(ctx)
     const { now, frameTarget, frameTransform } = route
     ctx.resumeAt = (ctx.resumeAt > 0 ? ctx.resumeAt : (ctx.logicalBirth ?? now)) + value.duration
     ctx.elapsedTime += value.duration / 1000
@@ -845,12 +1048,16 @@ function wait(ctx, value, route) {
 // Language yield: voluntary give-up-turn (cooperative multitasking). Not a park —
 // instant is complete; siblings may advance. No sim-time cost.
 function yieldEffect(ctx, value) {
+    closeInstant(ctx)
     if (value.position) {
         ctx.transform.swap(() => ({
             rotation: value.rotation,
             position: [...value.position]
         }))
     }
+    // A yield is an explicit cooperation point: it republishes the pose, so the
+    // synchronous-cycle baseline advances with it (mice converge on it). (D011)
+    metaRootFrame(ctx)._obsEpoch++
     return { verdict: 'paused', produced: true }
 }
 
@@ -859,6 +1066,181 @@ function limitMailbox(ctx, value) {
     return { verdict: 'continue' }
 }
 
+const isThenable = (v) =>
+    v !== null && (typeof v === 'object' || typeof v === 'function') && typeof v.then === 'function'
+
+// The one membrane between a responder and the scheduler: a raw reply becomes
+// exactly one verdict — accept | refuse | fault — so no half-formed reply exists
+// downstream. (id:laws-build-solve-seam)
+function interpretReply(raw, refusalStroke) {
+    if (raw === null || typeof raw !== 'object') {
+        return { kind: 'fault', message: `motion responder returned ${raw === null ? 'null' : typeof raw}; expected a verdict object` }
+    }
+    if (raw.accepted === false) {
+        return { kind: 'refuse', ink: refusalStroke === 'continue' ? 'continue' : 'break' }
+    }
+    if (raw.accepted !== true) {
+        return { kind: 'fault', message: 'motion responder returned no boolean accepted verdict' }
+    }
+    if (!raw.transform || !Array.isArray(raw.transform.position)) {
+        return { kind: 'fault', message: 'accepted motion reply has no transform.position' }
+    }
+    const component = raw.component === undefined ? [] : raw.component
+    if (!Array.isArray(component)) {
+        return { kind: 'fault', message: 'motion reply component is not a list' }
+    }
+    const members = []
+    for (const member of component) {
+        if (!member?.frame || !member.transform || !Array.isArray(member.transform.position)) {
+            return { kind: 'fault', message: 'component member needs a frame and a transform.position' }
+        }
+        members.push({ frame: member.frame, pose: member.transform })
+    }
+    return { kind: 'accept', pose: raw.transform, component: members }
+}
+
+// Wound and end: the frame cannot honestly continue the command it asked about.
+function woundMotion(ctx, message) {
+    ctx.observation = null
+    ctx.done = true
+    ctx.generator = null
+    closeInstant(ctx)
+    clearSuspension(ctx)
+    ctx.error = { message, span: null, kind: 'motion' }
+    ctx.channel.put({ type: 'error', ...ctx.error, ambientId: ctx.id })
+    return { verdict: 'ended', produced: true }
+}
+
+// Accepted geometry lives on the frame after its executor finishes. Running
+// members also receive a rebase to adopt before their next command.
+function commitTransaction(verdict, writer, registry) {
+    const seen = new Set([writer])
+    for (const member of verdict.component) {
+        const frame = member.frame
+        if (seen.has(frame) || registry.get(frame?.id) !== frame) {
+            return `component target is duplicated or no longer in this world`
+        }
+        seen.add(frame)
+        if (!frame.done && ownsInstant(frame)) {
+            return `component target '${frame.name}' is mid-instant; the transaction cannot be atomic`
+        }
+    }
+    const notify = [writer.transform.swapDeferred(() => verdict.pose)]
+    for (const member of verdict.component) {
+        const frame = member.frame
+        notify.push(frame.transform.swapDeferred(() => member.pose))
+        if (!frame.done && frame.batch) frame.batch.rebase = member.pose
+    }
+    const root = metaRootFrame(writer)
+    root._motionRevision = (root._motionRevision || 0) + 1
+    for (const send of notify) send()
+    return null
+}
+
+// The responder proposes; a separate check decides whether it is publishable.
+// This opt-in check is synchronous: no guesses, partial component or async work
+// escapes while it runs. A failed check is a broken responder, not impossibility.
+function checkMotion(verdict, writer, registry, validate, request) {
+    if (verdict.kind !== 'accept') return verdict
+    const entries = [{ frame: writer, pose: verdict.pose }, ...verdict.component]
+    const seen = new Set()
+    for (const { frame, pose } of entries) {
+        if (seen.has(frame) || registry.get(frame?.id) !== frame ||
+            !Array.isArray(pose.position) || pose.position.length !== 3 ||
+            !pose.position.every(Number.isFinite) ||
+            !['x', 'y', 'z', 'w'].every(key => Number.isFinite(pose.rotation?.[key]))) {
+            return { kind: 'fault', message: 'accepted motion has a duplicate, stale or non-finite pose' }
+        }
+        seen.add(frame)
+    }
+    if (validate) {
+        try {
+            if (validate({ request, writer, entries }) !== true) {
+                return { kind: 'fault', message: 'motion responder proposed geometry that fails independent validation' }
+            }
+        } catch (error) {
+            return { kind: 'fault', message: `motion validation failed: ${error.message}` }
+        }
+    }
+    return verdict
+}
+
+// The writer has a verdict: apply the transaction, record it, and park so the
+// writer's instant owns the pass. (D027 instant law)
+const motionBaseChanged = (ctx, request) => request.baseRevision !== undefined &&
+    request.baseRevision !== metaRootFrame(ctx)._configurationRevision
+
+function parkOnVerdict(ctx, verdict, pump, request) {
+    if (motionBaseChanged(ctx, request)) verdict = { kind: 'stale' }
+    else verdict = checkMotion(verdict, ctx, pump.registry, pump.motionValidate, request)
+    if (verdict.kind === 'fault') return woundMotion(ctx, verdict.message)
+    if (verdict.kind === 'accept' && verdict.component.length > 0) {
+        const conflict = commitTransaction(verdict, ctx, pump.registry)
+        if (conflict) return woundMotion(ctx, conflict)
+    }
+    openInstant(ctx)
+    suspend(ctx, 'admission', { seq: ++ctx.motionSeq, verdict })
+    return { verdict: 'parked', produced: true }
+}
+
+function motion(ctx, value, _route, pump) {
+    if (pump.motionAdmissionAsync) return delayedMotion(ctx, value, pump)
+
+    const request = { command: value.command, from: value.from, requested: value.requested,
+        frame: ctx, baseRevision: value.baseRevision }
+    let raw
+    try {
+        raw = pump.motionAdmission ? pump.motionAdmission(request)
+            : { accepted: true, transform: value.requested }
+    } catch (error) {
+        return woundMotion(ctx, `motion responder failed: ${error.message}`)
+    }
+    if (isThenable(raw)) {
+        return woundMotion(ctx, 'motion responder returned a Promise; use motionAdmissionAsync for delayed replies')
+    }
+    return parkOnVerdict(ctx, interpretReply(raw, pump.execOpts.refusalStroke), pump, request)
+}
+
+// Controlled delayed admission: the responder may answer after the writer parks,
+// which keeps its instant until the verdict lands. A reply applies only while the
+// run that asked is still in the tree. (id:laws-build-solve-seam)
+function delayedMotion(ctx, value, pump) {
+    const run = ctx.run
+    const seq = ++ctx.motionSeq
+
+    const request = { command: value.command, from: value.from, requested: value.requested,
+        frame: ctx, baseRevision: value.baseRevision }
+    let raw
+    try {
+        raw = pump.motionAdmissionAsync(request)
+    } catch (error) {
+        return woundMotion(ctx, `motion responder failed: ${error.message}`)
+    }
+
+    // A responder that answers now is applied now; only a thenable parks.
+    if (!isThenable(raw)) return parkOnVerdict(ctx, interpretReply(raw, pump.execOpts.refusalStroke), pump, request)
+
+    openInstant(ctx)
+    suspend(ctx, 'admission', { seq, verdict: null })
+
+    const stale = () => ctx.done || ctx.run !== run || ctx.suspension?.kind !== 'admission' || ctx.suspension.seq !== seq
+    Promise.resolve(raw).then((resolved) => {
+        if (stale()) return
+        if (isThenable(resolved)) return void woundMotion(ctx, 'delayed motion responder resolved to another Promise')
+        const verdict = motionBaseChanged(ctx, request) ? { kind: 'stale' } :
+            checkMotion(interpretReply(resolved, pump.execOpts.refusalStroke),
+                ctx, pump.registry, pump.motionValidate, request)
+        if (verdict.kind === 'fault') return void woundMotion(ctx, verdict.message)
+        if (verdict.kind === 'accept' && verdict.component.length > 0) {
+            const conflict = commitTransaction(verdict, ctx, pump.registry)
+            if (conflict) return void woundMotion(ctx, conflict)
+        }
+        suspend(ctx, 'admission', { seq, verdict })
+    }, (error) => {
+        if (!stale()) woundMotion(ctx, `motion responder failed: ${error.message}`)
+    })
+    return { verdict: 'parked', produced: true }
+}
 function shout(ctx, value, route, pump) {
     interceptShout(ctx, value, pump.registry, route.deferredShouts, pump.onShout)
     return { verdict: 'continue', produced: true }
@@ -875,6 +1257,7 @@ function spawn(ctx, value, route, pump) {
         // worldTransform reads origin → group repositions.
         existing.origin = value.origin
         existing._worldDirty = true
+        metaRootFrame(existing)._configurationRevision++
 
         if (existing.done && pump.createDeps) {
             rewireChild(existing, value, pump)
@@ -895,9 +1278,10 @@ function spawn(ctx, value, route, pump) {
                 parent: ctx,
                 origin: value.origin,
                 ...pump.channelOpts,
-                // Born on the parent's logical clock, not now — see frame.js. (Fix A)
-                // 0 (parent hasn't waited) → null → live now.
-                logicalBirth: ctx.resumeAt || null,
+                // Born at the parent's current logical instant: its `resumeAt` once it
+                // has waited, else its own birth. A frame that only spawns never waits;
+                // anchoring at its `resumeAt` of 0 sent children to the axis origin.
+                logicalBirth: ctx.resumeAt > 0 ? ctx.resumeAt : (ctx.logicalBirth ?? route.now),
             }),
             value.frame,
             pump.stock
@@ -929,13 +1313,29 @@ function deposit(ctx, value, route, pump) {
     return { verdict: 'continue', produced: true }
 }
 
+function motionUnresolved(ctx, value) {
+    ctx.observation = null
+    ctx.unresolved = { reason: value.reason }
+    if (ctx.batch) {
+        ctx.actorState = ctx.batch
+        ctx.commandCount += ctx.batch.commandCount
+        ctx.batch = null
+    }
+    ctx.done = true
+    ctx.generator = null
+    closeInstant(ctx)
+    clearSuspension(ctx)
+    return { verdict: 'ended' }
+}
+
 const EFFECTS = {
-    breath, blocked, wait, yield: yieldEffect, shout, spawn, limitMailbox,
+    breath, blocked, wait, yield: yieldEffect, shout, spawn, limitMailbox, motion, motionUnresolved,
 }
 
 // Verdict for one yield. Pumps act; this only means. (id:output-ledger-r2-instant)
 function stepFrame(ctx, value, done, route, pump) {
     if (done) {
+        closeInstant(ctx)
         const result = value || {}
         if (result.actorState) {
             ctx.actorState = result.actorState
@@ -946,6 +1346,7 @@ function stepFrame(ctx, value, done, route, pump) {
         }
         // Folded — drop the live batch or commandsOf would count it twice.
         ctx.batch = null
+        ctx.observation = null
         ctx.done = true
         ctx.generator = null
         // Said at the end, so a frame of reference may still arrive late.
@@ -962,25 +1363,32 @@ function stepFrame(ctx, value, done, route, pump) {
 function stepOnce(ctx, route, pump) {
     const { frameTarget, frameTransform } = route
 
-    // Resume after park: replay owed deposit first (preserve emission order).
-    if (ctx.park?.owed) {
-        const refusal = deliverDeposit(ctx, ctx.park.owed, frameTarget, frameTransform, pump.stock)
+    // Resume after a suspension: replay an owed deposit first (emission order).
+    const sus = ctx.suspension
+    if (sus?.owed) {
+        const refusal = deliverDeposit(ctx, sus.owed, frameTarget, frameTransform, pump.stock)
         if (refusal) {
-            // Debt stays; only cause may change (credit→residency resets stall clock).
-            if (ctx.park.cause !== refusal) {
-                ctx.park.cause = refusal
-                ctx.park.since = null
+            // Debt stays; only the kind may change (credit→residency resets the stall clock).
+            if (sus.kind !== refusal) {
+                sus.kind = refusal
+                sus.since = null
             }
             return { verdict: 'parked' }
         }
-        ctx.park = null
+        clearSuspension(ctx)
         return { verdict: 'continue', produced: true }
     }
-
+    // Awaiting an async admission: hold the writer's instant and never advance it
+    // with an undefined verdict (undefined would read as a refusal). (id:laws-build-solve-seam)
+    const admission = sus?.kind === 'admission' ? sus : null
+    if (admission && !admission.verdict) return { verdict: 'parked' }
     let value, done
     try {
-        ({ value, done } = ctx.generator.next())
+        const input = admission ? admission.verdict : undefined
+        if (admission) clearSuspension(ctx)
+        ;({ value, done } = ctx.generator.next(input))
     } catch (error) {
+        ctx.observation = null
         ctx.done = true
         ctx.generator = null
         ctx.error = errorRecord(error)
@@ -1024,7 +1432,10 @@ export function createScheduler(generator, opts = {}) {
         lossless: opts.lossless !== false,
     }
     const createDeps = opts.createDeps || null
-    const execOpts = opts.execOpts || {}
+    const execOpts = { ...(opts.execOpts || {}) }
+    if (opts.motionAdmission || opts.motionAdmissionAsync) execOpts.motionProtocol = true
+    if (opts.observePureGoto) execOpts.observePureGoto = true
+    if (opts.refusalStroke !== undefined) execOpts.refusalStroke = opts.refusalStroke
     const onShout = opts.onShout || null
 
     // Null = unpaced. (id:output-ledger-r2-pacer)
@@ -1040,6 +1451,12 @@ export function createScheduler(generator, opts = {}) {
         stock
     )
     root.address = ROOT_NAME
+    // The logical instant reads resolve against; cycle snapshots are keyed to it.
+    root._frontier = 0
+    root._obsEpoch = 0
+    root._motionRevision = 0   // accepted motion commits in this play
+    root._configurationRevision = 0
+    root.transform.watch('configurationRevision', () => { root._configurationRevision++ })
     // Stage root has no when; rootHears opts in. (id:mailbox-listens-for)
     if (opts.rootHears !== undefined) root.listensFor = opts.rootHears
     // Wire shared mailbox — same array the root executor reads from
@@ -1056,6 +1473,9 @@ export function createScheduler(generator, opts = {}) {
     const pump = {
         createDeps,
         execOpts,
+        motionAdmission: opts.motionAdmission || null,
+        motionAdmissionAsync: opts.motionAdmissionAsync || null,
+        motionValidate: opts.motionValidate || null,
         channelOpts,
         registry,
         onShout,
@@ -1092,10 +1512,46 @@ export function createScheduler(generator, opts = {}) {
 
         // Mid-build: last tick let go with work left.
         get building() { return this._building === true },
+        // A finished drawing may accept a settled, pen-up hand request without
+        // reviving its coroutine. The same responder, check and component commit
+        // serve program motion. The caller supplies the last seen motion revision.
+        get motionRevision() { return root._motionRevision },
+        requestMotion(frame, requested, revision) {
+            if (registry.get(frame?.id) !== frame || frame === root) return { kind: 'stale' }
+            if (!frame.done || subtreeUnsettled(frame)) return { kind: 'busy' }
+            // The first probe supports only settled, unframed top-level points.
+            if (frame.parent !== root || frame.targetFrame || frame.isLens || frame.error ||
+                !pump.motionAdmission || pump.motionAdmissionAsync) return { kind: 'unresolved' }
+            if (revision !== root._motionRevision) return { kind: 'stale' }
+            const request = { command: 'hand', from: frame.transform.deref(), requested, frame }
+            let raw
+            try { raw = pump.motionAdmission(request) }
+            catch (error) { return { kind: 'fault', message: `motion responder failed: ${error.message}` } }
+            if (isThenable(raw)) return { kind: 'unresolved', message: 'hand admission must settle synchronously' }
+            const verdict = checkMotion(interpretReply(raw, execOpts.refusalStroke),
+                frame, registry, pump.motionValidate, request)
+            if (verdict.kind !== 'accept') return verdict
+            if (verdict.component.some(({ frame: member }) =>
+                member.parent !== root || member.targetFrame || member.isLens)) return { kind: 'unresolved' }
+            const conflict = commitTransaction(verdict, frame, registry)
+            if (conflict) return { kind: 'busy', message: conflict }
+            // The hand is pen-up. Refresh the visible heads, never deposited ink.
+            for (const { frame: member, pose } of [{ frame, pose: verdict.pose }, ...verdict.component]) {
+                if (member.done) putSync(member, {
+                    type: 'head', position: pose.position, rotation: pose.rotation,
+                    color: member.actorState?.style?.color,
+                    headSize: member.actorState?.style?.showTurtle,
+                })
+            }
+            return verdict
+        },
+
 
         // Same seed → skip; name may update in place. (id:cmp-become-seed)
         // Caller sees hold by identity: returned frame === the one already seated.
-        hotSwapChild(key, forkSpec, { fresh = false } = {}) {
+        // A prepared batch can seat all identities before any executor runs.
+        // The caller must finish seating the batch before calling tick().
+        hotSwapChild(key, forkSpec, { fresh = false, deferStart = false } = {}) {
             const existing = root.children.get(key)
             if (existing && !fresh && sameSeed(existing.seed, forkSpec)) {
                 const heldName = forkSpec.name || key
@@ -1118,7 +1574,10 @@ export function createScheduler(generator, opts = {}) {
                     parent: root,
                     origin: forkSpec.origin || SE3.identity(),
                     ...channelOpts,
-                    // null birth → first wait anchors to live now (D011).
+                    // Two seating doors, two clocks (D011, id:host-beat): `fresh` is a NEW
+                    // PLAY at the axis origin; an EDIT re-seats in the same play, joining at
+                    // its current reveal instant so its first wait lands in the future.
+                    logicalBirth: fresh ? 0 : (this.lastTickTime || 0),
                 }),
                 null,
                 stock
@@ -1130,7 +1589,11 @@ export function createScheduler(generator, opts = {}) {
             wireChild(child, deps, mailbox, registry, forkSpec.code, batch)
             child.seed = seedOf(forkSpec)
 
-            advanceChild(child, this.lastTickTime, pump, [])
+            // The seat drain is a pump too. Its shouts must reach the tree, not
+            // die in a throwaway buffer. (id:mailbox-listens-for)
+            const deferredShouts = []
+            if (!deferStart) advanceChild(child, this.lastTickTime, pump, deferredShouts)
+            if (deferredShouts.length > 0) flushDeferredShouts(deferredShouts, registry)
             this.done = false
             return child
         },
@@ -1173,11 +1636,13 @@ export function createScheduler(generator, opts = {}) {
                 if (this.done) this.commandCount = sumCounts(root)
                 return false
             }
+            // A new frontier is a new observation baseline for synchronous cycles.
+            if (frontier !== root._frontier) { root._frontier = frontier; root._obsEpoch++ }
 
             // Park mid-instant: stop the pass; resume first next tick. (id:output-ledger-r2-instant)
             let parked = false
 
-            visitPostOrder(root, (ctx) => {
+            visitPostOrderMotionFirst(root, (ctx) => {
                 if (parked || ctx.done || ctx.resumeAt > frontier) return
 
                 // Defer shouts until all siblings exist.

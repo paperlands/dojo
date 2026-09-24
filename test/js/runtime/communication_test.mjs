@@ -235,8 +235,21 @@ describe("Phase 2: resolveBinding — sibling observation", () => {
         assert.ok(Math.abs(heading - 90) < 0.001, `expected ~90, got ${heading}`)
     })
 
-    test("undefined sibling throws", () => {
+    test("undefined sibling suspends while its parent can still spawn it", () => {
         const root = createFrame('root', (function*(){})(), { channelCapacity: 64 })
+        const child = createFrame('child', (function*(){})(), { parent: root })
+        root.children.set('child', child)
+
+        assert.throws(
+            () => resolveBinding(child, 'ghost.x'),
+            (e) => e.blocked === true,
+            'a live parent may still spawn the name — dataflow suspension, not a wound'
+        )
+    })
+
+    test("undefined sibling throws once its parent is done", () => {
+        const root = createFrame('root', (function*(){})(), { channelCapacity: 64 })
+        root.done = true
         const child = createFrame('child', (function*(){})(), { parent: root })
         root.children.set('child', child)
 

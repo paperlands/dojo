@@ -1386,13 +1386,14 @@ describe("universe names: world vs origin", () => {
         assert.equal(resolveBinding(timer, 'world.time'), 5)
     })
 
-    test("world.x is the program pose in the observer's birth frame", () => {
+    test("world.x is the program pose in shared world space", () => {
         const { timer, program } = universe()
-        // Co-born under the program at 100 → world sits at birth origin.
-        assert.equal(resolveBinding(timer, 'world.x'), 0)
-        // Program walks further; birth stays put → world.x grows in timer coords.
+        // The program stands at 100; `world` answers in the ground everyone
+        // shares, not relative to where the reader was born (prim-world).
+        assert.equal(resolveBinding(timer, 'world.x'), 100)
+        // Program walks further → world.x tracks its turtle.
         program.transform.swap(() => ({ ...SE3.identity(), position: [150, 0, 0] }))
-        assert.equal(resolveBinding(timer, 'world.x'), 50)
+        assert.equal(resolveBinding(timer, 'world.x'), 150)
     })
 
     test("origin is the fixed datum, read in the observer's birth frame", () => {

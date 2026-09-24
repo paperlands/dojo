@@ -16,7 +16,7 @@ import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
 import { createScheduler, metaRoot } from "../../../assets/js/turtling/scheduler.js"
-import { parseProgram } from "../../../assets/js/turtling/parse.js"
+import { parseProgram, reparseProgram } from "../../../assets/js/turtling/parse.js"
 import { Parser } from "../../../assets/js/turtling/mafs/parse.js"
 import { Evaluator } from "../../../assets/js/turtling/mafs/evaluate.js"
 
@@ -88,5 +88,80 @@ end`
             assert.ok(runs[i][0] > runs[i - 1][runs[i - 1].length - 1],
                 "each run finishes before the next begins")
         }
+    })
+})
+
+// Two seating doors, two clocks (D011). `fresh` is a NEW PLAY at the axis origin;
+// an EDIT re-seats in the same play, joining at its current reveal instant so the
+// walk replays instead of draining through already-performed time.
+describe("seating doors — an edit joins the play, a new play starts at origin", () => {
+    const anim = `loop 5 do\n  wait 0.1\n  fw 1\nend`
+    const other = `loop 5 do\n  wait 0.1\n  fw 2\nend`
+    const seat = (ast) => ({ name: "w", code: { ast, functions: null }, style: { color: "#e77808" }, env: null })
+
+    // Warm the play to a mid-session instant without seating anything: the meta
+    // root completes, but the reveal frontier `lastTickTime` still advances.
+    function warmed(until = 2000, step = 10) {
+        const s = createScheduler(metaRoot(), { createDeps: realDeps, execOpts: { color: "#e77808" } })
+        for (let t = 0; t < until; t += step) s.tick(t)
+        return s
+    }
+
+    test("an edit re-seats at the play's instant, not the axis origin", () => {
+        const s = warmed()
+        const edited = s.hotSwapChild("buf", seat(parseProgram(other)))
+        assert.equal(edited.logicalBirth, s.lastTickTime,
+            "born at the play's current reveal instant")
+        assert.ok(edited.logicalBirth > 0, "the play had already moved")
+    })
+
+    test("the re-seated walk replays over its own time, not one burst", () => {
+        const s = warmed()
+        const seatFrame = s.hotSwapChild("buf", seat(parseProgram(anim)))
+        const start = s.lastTickTime
+        const ts = []
+        for (let t = start; t <= start + 700; t += 10) {
+            s.tick(t)
+            for (const e of seatFrame.channel.drain()) if (e.type === "path") ts.push(t)
+        }
+        assert.equal(ts.length, 5, "five strokes")
+        assert.equal(ts[ts.length - 1] - ts[0], 400,
+            "a 5×100ms walk spans 400ms, anchored to the play's instant")
+    })
+
+    test("a new play (fresh) seats at the axis origin", () => {
+        const s = warmed()
+        const play = s.hotSwapChild("buf", seat(parseProgram(anim)), { fresh: true })
+        assert.equal(play.logicalBirth, 0, "a new play starts at the axis origin")
+    })
+})
+
+// A frame whose whole body is `as name do … end` never waits, so its `resumeAt`
+// stays 0 while the play moves on. Its children must still be born at the play's
+// current instant, not at 0 (the "edit doesn't reset" report).
+describe("a parent that never waits still births on the play's clock", () => {
+    const A = "as outer do\n  loop 5 do\n    fw 1\n    wait 0.5\n  end\nend"
+    const B = A.replace("wait 0.5", "wait 0.4")
+    const seat = (ast) => ({ name: "w", code: { ast, functions: null }, style: { color: "#e77808" }, env: null })
+    // A scheduler warmed to a mid-session instant, nothing seated.
+    function warmed(until = 2000, step = 10) {
+        const s = createScheduler(metaRoot(), { createDeps: realDeps, execOpts: { color: "#e77808" } })
+        for (let t = 0; t < until; t += step) s.tick(t)
+        return s
+    }
+    test("the child anchors at the parent's instant, not at 0", () => {
+        const s = warmed()
+        const a1 = parseProgram(A)
+        s.hotSwapChild("buf", seat(a1))
+        for (let t = s.lastTickTime; t < 4000; t += 10) s.tick(t)
+        const a2 = reparseProgram(B, A, a1)
+        const top = s.hotSwapChild("buf", seat(a2))
+        const outer = [...s.registry.values()].find((f) => f.name === "outer")
+        assert.equal(top.resumeAt, 0, "the top frame never waits")
+        assert.ok(top.logicalBirth > 0, "the play had already moved")
+        assert.equal(outer.logicalBirth, top.logicalBirth,
+            "born at the parent's instant, not the axis origin")
+        assert.ok(outer.resumeAt > s.lastTickTime,
+            "the reborn child plays forward, not fast-forward")
     })
 })

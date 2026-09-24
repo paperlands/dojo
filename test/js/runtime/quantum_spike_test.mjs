@@ -303,7 +303,7 @@ end`
             scheduler.sliceFor(1)
             scheduler.tick(0)
             for (const f of scheduler.registry.values()) {
-                if (f !== scheduler.root && !f.done && f.park) sawMidInstant = true
+                if (f !== scheduler.root && !f.done && f.suspension) sawMidInstant = true
                 f.channel.drain()
             }
         }

@@ -70,7 +70,7 @@ export function enforceResidency(registry, clock, stock) {
 
     const now = clock()
     for (const f of registry.values()) {
-        const stall = f.park?.cause === 'residency' ? f.park : null
+        const stall = f.suspension?.kind === 'residency' ? f.suspension : null
         if (!stall) continue
         if (stall.since === null) { stall.since = now; continue }
         if (!f.done && now - stall.since > MAX_RESIDENCY_STALL_MS) {

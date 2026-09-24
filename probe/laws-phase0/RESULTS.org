@@ -1,0 +1,268 @@
+#+title: Laws Phase 0 — motion joint diagnostic
+#+FILETAGS: :compiler:probe:phase0:
+
+* Question
+:PROPERTIES:
+:ID: laws-p0-probe-question
+:END:
+
+Can program motion, hand intent, ink and sibling observation share one accepted
+point without violating the scheduler's instant law?
+
+* Instrument and observations
+:PROPERTIES:
+:ID: laws-p0-probe-observations
+:END:
+
+The repeatable headless instrument is =test/js/laws/phase0_probe_test.mjs=. It
+uses the real parser, executor, scheduler and frame transforms; relations are
+not child syntax, and there is no solver. Run it with:
+
+#+begin_src sh
+node --test test/js/laws/phase0_probe_test.mjs
+#+end_src
+
+| Probe | Measured fact | Consequence |
+|-------+---------------+-------------|
+| P0.1 | Two =fw= commands mutate executor-local pose to [20,0,0] before the first ink event is yielded. That event carries a two-step path. | A constraint hook after command execution is too late: actor pose and ink already agree on the *unconstrained* move. |
+| P0.2 | With ambient origin [100,7,0] and local =fw 5=, local pose is [5,0,0], while =frameWorldTransform= observes [105,7,0]. | Live observed position is composed placement + local pose; placement origin alone is not the point. Ink is separately carried on the channel. |
+| P0.3 (baseline) | Before Phase 0b there was no motion request/reply event; pose-bearing events were final/yield heads. | Source inspection motivated an intervention test. The new P0b regression now performs rejection; do not cite this historical baseline as a rejection test. |
+| P0.4 | Re-seating the same named child with the same AST reuses its frame; =fresh= replaces it and removal closes it. | Scheduler identity/fresh mechanics are distinct; this does not establish host-play routing, canvas touchability, or browser disposal. |
+
+The phase's three requested test groups are not all covered yet. In particular,
+this instrument has not exercised: local =fw= under a real distance/pin relation;
+a sibling's same-instant read; frame-targeted ink/materialization; pointer requests;
+hot re-evaluation versus host =fresh= play; or disposal. These are open probe
+work, not implied passes.
+
+* Phase 0b — one accepted move
+  :PROPERTIES:
+  :ID: laws-p0b-one-move
+  :END:
+
+Instrument: =test/js/laws/phase0b_motion_test.mjs= (real parser, executor and
+scheduler; deterministic test admission, no symbolic solver). It pins the decisive
+checks: clamp =fw 10= to 6; assert emitted stroke endpoints are 6 then
+8; verify the second =fw 2= starts from 6; sibling =fw writer.x= reads 8; refusal
+leaves no endpoint at 10; absence of admission still lands at 12.
+
+The adversarial same-instant case holds the writer at an admission yield, then
+tries the sibling read in both child-map orders, with channel capacities 1 and
+16, and with or without a two-step deterministic slice budget. The actual sibling pose is 8 in
+all eight combinations. A parked child is now visited before unparked siblings,
+so channel-credit and time parks cannot let a sibling overtake it.
+
+Protocol seam: opt-in =createScheduler({motionAdmission})= turns on
+=execOpts.motionProtocol=. Executor yields the requested transform *before*
+committing pose/stroke. Scheduler records the responder's verdict and parks the
+frame without advancing logical time; on resume the executor commits the
+accepted transform and uses it as the stroke endpoint. Rejection retains the
+old pose and breaks the stroke. No admission option means the existing direct
+command path is unchanged.
+
+This is a deterministic synchronous responder; response computation itself is
+not asynchronous or budgeted. The scheduler pause proves ordering after a reply,
+not a multi-tick solver suspension. Pointer input, real relations, frame-targeted
+materialization, host play, and canvas touch remain outside this slice.
+
+* Phase 0d — one accepted component update
+  :PROPERTIES:
+  :ID: laws-p0d-component
+  :END:
+
+Instrument: =test/js/laws/phase0d_component_test.mjs= (real parser, executor,
+scheduler and frame transforms; analytic distance fixture, no solver). Fixture:
+=A=(0,0)=, =B=(5,0)=, =AB=5=, request =A -> (1,0)=; hand-before-rest, minimal
+disturbance gives =A -> 1=, =B -> 6=.
+
+Protocol seam: a motion-admission reply may carry =component= — a list of
+={frame, transform}=. =commitComponent= (=assets/js/turtling/scheduler.js=)
+commits them synchronously in =motion()=: each member's live actor state
+(=frame.batch=) and its observed atom are rebased together, so a sibling's next
+command starts from the accepted pose. The responder returns data; it never
+writes a frame.
+
+| Probe | Measured fact | Consequence |
+|-------+---------------+-------------|
+| P0d.1 | B's next =fw 2= starts from local 1 (world 6), not 0. | The accepted component reaches B's executor, not only its observable. |
+| P0d.2 | Sampled world pairs go (B=5) then (A=1, B=6); no (1,5) or (0,6) snapshot. | One synchronous commit publishes both members; no half update escapes at a tick boundary. |
+| P0d.3 | B parked at its own proposal, then A's component commits B to world 6; on resume B's own reply overwrites it and B ends at world 8. | A component update to a sibling inside its own proposal is committed then silently clobbered — the pair is left 7 apart with no wound. |
+| P0d.4 | Traversal A-first: B's =fw= starts at world 6, ends at 8. B-first: starts at world 5, ends at 7, then its accepted pose is set to 6. | Traversal order decides the response; the relation needs activation before ordinary sibling action, or the hand needs instant ownership. |
+
+P0d.1 and P0d.2 answer the natural next abstraction: an accepted component update
+is representable and commits atomically. P0d.3 and P0d.4 are the open edges — a
+pending proposal and an unordered sibling are not yet reconciled with the
+component. No merge or compose rule is chosen here.
+
+* Phase 0e — refusal is an interaction decision on the figure
+  :PROPERTIES:
+  :ID: laws-p0e-refusal-stroke
+  :END:
+
+Instrument: =test/js/laws/phase0e_refusal_stroke_test.mjs=. Program: =fw 5= (accepted)
+-> =fw 5= (refused, 5->10) -> =fw 3= (accepted) -> =fill=, with the responder
+refusing only the over-long move.
+
+| Policy (=refusalStroke=) | Figure | Fill |
+|-------------------------+--------+------|
+| =break= (default) | _two_ path events: =[0,5]= unfilled, =[5,8]= filled | covers only the segment after the refusal |
+| =continue= | _one_ path =[0,5,5,8]= | covers both segments |
+
+Both policies agree on movement (the over-long move is prevented); they disagree
+on ink and fill. So refusal is not "a move that did not happen" — it is already a
+stroke-boundary interaction decision. The executor made it unilaterally when it
+forced =result.stroke = 'break'=. =refusalStroke= names the policy; the default
+preserves historical behaviour.
+
+* Phase 0f — an admission fault is not a refusal
+  :PROPERTIES:
+  :ID: laws-p0f-admission-faults
+  :END:
+
+Instrument: =test/js/laws/phase0f_admission_faults_test.mjs=. Before this fence:
+a throwing responder escaped =hotSwapChild=/=tick=; a Promise (and bare =undefined=)
+held the pose with =error= null — byte-for-byte the observable of ={accepted:false}=
+— and ={accepted:true}= without a transform died inside the generator with
+=Cannot read properties of undefined (reading 'position')=.
+
+Now the reply is normalized. Only an explicit ={accepted:false}= is mathematical
+refusal (silent, pose held, no error). Every other shape is a =kind:'motion'= wound
+that ends the frame: throw -> =motion responder failed: ...=; thenable on the sync
+seam -> a Promise is refused and the message names =motionAdmissionAsync=; =undefined=
+and malformed accepts -> their own message. A fault can no longer wear refusal's
+silence.
+
+* Phase 0g — controlled delayed admission and the staleness fence
+  :PROPERTIES:
+  :ID: laws-p0g-delayed-admission
+  :END:
+
+Instrument: =test/js/laws/phase0g_delayed_admission_test.mjs=. =motionAdmissionAsync=
+returns a thenable; no worker or solver. The writer parks with =motionPending= and
+holds its logical instant: nothing is published, siblings cannot read past it, and
+resolving ={accepted:false}= is still a clean refusal while a malformed/rejected
+resolution wounds. A responder that answers synchronously on this seam is applied
+synchronously (no needless park).
+
+Staleness fence: a reply carries the =run= and request =seq= that asked. Applied
+only while the frame is not done and both still match, so replacement, removal and
+=terminateAmbient= disposal drop a late reply inert. Not yet covered: a timeout or
+abort when a responder never resolves (the writer's instant would block forever),
+and per-member staleness for a delayed component update.
+
+* Phase 0h — the supervisor sends; the worker adopts
+  :PROPERTIES:
+  :ID: laws-p0h-supervisor-message
+  :END:
+
+Instrument: =test/js/laws/phase0h_supervisor_message_test.mjs=, on the shared
+=test/js/laws/harness.mjs=. The collapse that precedes it (one membrane, one
+transaction, one pose owner, one admission record) is reasoned in
+=specs/compiler/laws-transaction.org=.
+
+| Probe | Measured fact | Consequence |
+|-------+---------------+-------------|
+| P0h.1 | After a component commit, =b.batch.transform= is untouched and =b.batch.rebase= holds the accepted pose; =b.transform= is published. | The supervisor writes no worker state; it posts a rebase message. |
+| P0h.2 | The worker adopts the rebase at its next command; the inbox clears. | One pose owner: the executor adopts, not the scheduler. |
+| P0h.3 | A member replaced before adopting carries no rebase (a fresh run has none). | A stale rebase cannot act. |
+
+The reply membrane now yields exactly =accept | refuse | fault=; a component whose
+target is finished or mid-instant conflicts the transaction and the writer
+wounds visibly (P0d.3) instead of committing half and being clobbered.
+
+* Causal read
+:PROPERTIES:
+:ID: laws-p0-probe-cause
+:END:
+
+=callCommand= computes a command result before applying it. The default path still
+mutates pose and stroke eagerly; the opt-in P0b path yields a motion proposal
+before either mutation (=assets/js/turtling/executor.js=). Scheduler applies a
+test responder, parks the writer, then resumes it with the accepted pose. Pose
+becomes sibling-visible through the existing head/instant boundary, not from the
+proposal itself.
+
+P0b keeps the instant law in the tested scheduler path. Its remaining edge is that
+the admission callback answers synchronously before the executor parks. A future
+asynchronous numerical worker must preserve the same reply/park/resume ordering,
+including stale-request rejection; that is not demonstrated here.
+
+* Gaps / edges to probe next
+:PROPERTIES:
+:ID: laws-p0-probe-gaps
+:END:
+
+- **Command boundary:** only =fw= adjustment/refusal and a following =fw= are
+  pinned. =rt=, =jmp=, pen-up, =wait=, =yield=, command error, and arbitrary
+  stroke chunk flush remain edge cases. Is rejection atomic for pose, style, ink?
+- **Ink coordinates:** local trail versus nested placement, frame-targeted ink,
+  and parent movement after child completion. Compare endpoints before and after
+  composition; do not call a screen/render transform an accepted point.
+- **Instant:** one same-instant writer/sibling read is tested across two traversal
+  orders, two channel capacities and two slice modes. Inline spawn ordering, nested
+  frames, and stale asynchronous admission replies are not covered.
+- **Identity/lifetime:** hot source re-evaluation, unchanged named child reuse,
+  =fresh= host play, finished-but-touchable drawing, and disposal. A retained
+  child frame is not proof that a pointer can still reach it.
+- **Initial relations:** when does an initial batch become active relative to
+  first action? Does a relation affect a =fw= in the same source body without
+  writing =wait=? Current command execution provides no relational activation.
+- **Metric:** placement origin and live world pose differ after movement. Keep
+  translation and rotation, nested frames, non-origin spawn, and transformed
+  frame-target ink in the trace.
+- **Unsupported handling:** invalid/inconsistent relation must not make a broken
+  pose look accepted; decide whether it is wound, unresolved, or rejected before
+  exposing any interactive claim.
+
+* Ruling (provisional)
+:PROPERTIES:
+:ID: laws-p0-probe-ruling
+:END:
+
+Keep the instant law. The tested seam pairs executor pre-commit admission with
+scheduler coordination: the executor proposes, the scheduler replies and parks,
+and only the resumed executor applies pose and ink. The deterministic responder
+proves adjustment, refusal, next-command continuity and eventual sibling read;
+default behavior stays opt-out and unchanged. Parked frames resume before siblings,
+independent of child-map order, capacity, or slice budget in the tested cases.
+
+**No Phase 0 exit claim.** The motion seam now has a regression. Real spatial
+relationships, async-solver suspension, broader command/ink edges, host lifetimes,
+and human canvas play remain untested.
+
+* Phase 0i — authority for an analytic pair
+:PROPERTIES:
+:ID: laws-p0i-authority
+:END:
+
+Instrument: =test/js/laws/phase0i_authority_test.mjs=. This is an injected,
+one-dimensional five-unit pair, not a =let= implementation. Admission is active
+before either executor runs: a deferred seat prepares both identities, without
+a user-written =wait=. Every motion proposes a matching translation of the
+other end; an independent Euclidean check validates the complete reply before
+commit. This fixture also requires equal displacement of both ends, which
+proves its straight interpolated stroke stays valid throughout. A proposal with
+two valid endpoints but a chord through a broken pair is rejected. At each
+sampled tick boundary, both traversal orders preserve distance five. Different
+action histories end at (3,8) and (1,6); both are true. A well-shaped pair
+that moves only one end is also rejected.
+
+After both coroutines finish, =requestMotion= accepts a settled pen-up hand
+motion through that same responder, validator and component commit. Frame pose
+and visible head slots move; deposited ink does not. No worker stays running.
+A motion revision rejects an old hand request; removal rejects a stale frame;
+a fresh scheduler starts from (0,5). Busy running actors, stale identities,
+unresolved modes and invalid replies are different outcomes for this hand seam.
+
+The characterization tests also pin two non-implications: moving a parent's
+local pose does not move a child's stored birth origin; valid points on a circle
+do not validate a straight ink chord between them.
+
+*Not Phase 0 exit:* the analytic policy only translates an x-axis pair. No
+source-backed activation, pointer routing, nested/frame-targeted motion, host
+reset/disposal integration, bounded delayed admission, reader-spanning snapshot,
+or general path/ink contract has been demonstrated. Tick samples do not prove
+that every observer's whole multi-read evaluation uses one revision. A synchronous
+watcher on A's atom can in fact read new A with old B *inside* the commit; the
+watcher characterization keeps that publication leak visible until the read
+contract is chosen.

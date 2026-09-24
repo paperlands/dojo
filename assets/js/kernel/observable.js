@@ -46,6 +46,13 @@ export function createAtom(initial) {
             for (const watcher of watchers.values()) watcher(old, value)
             return value
         },
+        // Install now; let the caller notify only after related atoms are installed.
+        swapDeferred(fn) {
+            const old = value
+            const next = fn(old)
+            value = next
+            return () => { for (const watcher of watchers.values()) watcher(old, next) }
+        },
 
         watch(key, fn) {
             watchers.set(key, fn)

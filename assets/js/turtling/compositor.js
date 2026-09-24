@@ -394,6 +394,15 @@ export function createCompositor(scheduler, stage, opts = {}) {
             setOpacityByAddress(kindled, degree.kindled)
         },
 
+        // A NEW PLAY (D011): reset the reveal origin. `now = t − epoch` returns to 0
+        // and the scheduler frontier clears, so a fresh seat at the axis origin plays
+        // from its start. An EDIT must not call this — it re-seats in place.
+        beginPlay() {
+            epoch = null
+            lastWallT = null
+            scheduler.lastTickTime = 0
+        },
+
         // Own timeslice: never inherit a spent deadline (would park on first breath).
         flush() {
             scheduler.withSlice(pacer.budgetMs, driveToRest)
@@ -422,8 +431,9 @@ export function createCompositor(scheduler, stage, opts = {}) {
             frameStart = t
             if (!scheduler.done) {
                 scheduler.withSlice(pacer.budgetMs, () => driveOneFrame(now))
-                drainAndMaterialize()
             }
+            // A finished ambient can still receive accepted pen-up motion.
+            drainAndMaterialize()
             updateGroupPositions()
             cleanupOrphanedLayers()
             scaleChildHeads()

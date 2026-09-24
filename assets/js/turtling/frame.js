@@ -30,11 +30,13 @@ export function createFrame(name, generator, opts = {}) {
 
         ink: createInk(),  // bag; ledger owns the law (id:output-ledger-r3-stock-flow)
 
-        // PARK — suspend mid-instant, like parking a thread mid-quantum.
-        // Siblings must not advance past (instant law). cause: time|credit|residency.
-        // null | { cause, owed, since }. Breath = park with nothing owed.
-        // (id:output-ledger-r2-instant)
-        park: null,
+        // SUSPENSION — one record for every way a frame stops. The KIND table in
+        // scheduler.js says whether it owns the instant and how it resumes.
+        // null | { kind, ...detail }. (id:output-ledger-r2-instant)
+        suspension: null,
+
+        // An admission opens an instant that stays owned until a wait/yield/done.
+        midInstant: false,
 
         // Lossless channel ≈ blocking queue (CSP/Go); full → credit park.
         channel: createRingBuffer(opts.channelCapacity || 4096, { lossless: opts.lossless !== false }),

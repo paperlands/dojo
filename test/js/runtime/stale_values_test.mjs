@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 
 import { Evaluator } from "../../../assets/js/turtling/mafs/evaluate.js"
 import { Parser } from "../../../assets/js/turtling/mafs/parse.js"
-import { createScheduler, resolveBinding } from "../../../assets/js/turtling/scheduler.js"
+import { createScheduler, resolveBinding, frameWorldTransform } from "../../../assets/js/turtling/scheduler.js"
 import { execute } from "../../../assets/js/turtling/executor.js"
 import { parseProgram } from "../../../assets/js/turtling/parse.js"
 
@@ -105,6 +105,35 @@ describe("SPATIAL nests: friend coords match goto/faceto", () => {
         const sp = seeker.transform.deref().position
         assert.ok(Math.abs(sp[0] - 100) < 0.001, `seeker local x ~100, got ${sp[0]}`)
         assert.ok(Math.abs(sp[1] - 0) < 0.001, `seeker local y ~0, got ${sp[1]}`)
+    })
+
+    test("a frame that contains the reader answers from the world, not its birth delta", () => {
+        // The child is born AT outer, so outer.y in its birth frame is 0 — the
+        // failing shape from the spiral: `as name outer do jmp outer.y end`.
+        // Because outer contains the reader, the read is outer's place in the world.
+        const ast = parseProgram(
+            "as outer do\n" +
+            "  rt 90\n" +
+            "  jmp 30\n" +
+            "  as name outer do\n" +
+            "    jmp outer.y\n" +
+            "  end\n" +
+            "end"
+        )
+        const deps = realDeps()
+        const gen = execute(ast, deps, { color: '#fff' })
+        const sched = createScheduler(gen, {
+            createDeps: realDeps, execOpts: { color: '#fff' }, rootDeps: deps
+        })
+        for (let i = 0; i < 30; i++) { sched.tick(0); if (sched.done) break }
+
+        const outer = findChild(sched.root, 'outer')
+        const name = outer.children.get('name')
+        assert.ok(outer && name, 'outer and name should exist')
+        assert.ok(Math.abs(frameWorldTransform(outer).position[1] - (-30)) < 0.001,
+            `outer stands at world y -30, got ${frameWorldTransform(outer).position[1]}`)
+        const oy = resolveBinding(name, 'outer.y')
+        assert.ok(Math.abs(oy - (-30)) < 0.001, `outer.y from the child should be -30, got ${oy}`)
     })
 })
 
