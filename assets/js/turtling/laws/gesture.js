@@ -55,7 +55,11 @@ export function createGesture(deps) {
             if (grab) return { claimed: false }   // one pointer owns the hand
             const here = { x, y }
             for (const candidate of candidates()) {
-                if (!hitTest(here, project(worldOf(candidate.frame).position), radius)) continue
+                // Behind the camera, clipped, or on a zero-sized canvas: not a target,
+                // and never a made-up hit. (id:laws-decl-handle)
+                const projected = project(worldOf(candidate.frame).position)
+                if (!projected) continue
+                if (!hitTest(here, projected, radius)) continue
                 const accepted = poseOf(candidate.frame)
                 const gate = eligibility({
                     frame: candidate.frame,
@@ -69,7 +73,9 @@ export function createGesture(deps) {
                     }))
                     return { claimed: false }
                 }
-                const hit = touchPlane(rayAt(x, y), birthPlane(worldOf(candidate.frame)))
+                const ray = rayAt(x, y)
+                if (!ray) return { claimed: false }
+                const hit = touchPlane(ray, birthPlane(worldOf(candidate.frame)))
                 if (!hit) return { claimed: false }
                 const there = birthLocal(hit, worldOf(candidate.frame))
                 grab = {
@@ -84,7 +90,9 @@ export function createGesture(deps) {
                 }
                 capture({ pointerId })
                 setControls(false)
-                return { claimed: true, point: candidate.name }
+                // The frame travels back so a cue can be exact: names can repeat
+                // across scopes, a frame cannot.
+                return { claimed: true, point: candidate.name, frame: candidate.frame }
             }
             return { claimed: false }
         },
@@ -106,7 +114,9 @@ export function createGesture(deps) {
             }
 
             const world = worldOf(grab.frame)
-            const hit = touchPlane(rayAt(x, y), birthPlane(world))
+            const ray = rayAt(x, y)
+            if (!ray) return { moved: false }        // clipped: no target, no request
+            const hit = touchPlane(ray, birthPlane(world))
             if (!hit) return { moved: false }        // off the plane: keep the pose
             const there = birthLocal(hit, world)
             const requested = requestedPose(accepted, [

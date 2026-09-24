@@ -5,6 +5,7 @@ import {
     Vector3,
 } from '../utils/three-entry.js'
 import { materialize, accumulateTrail, flushTrail } from "./materializer.js"
+import { exposed } from "./laws/batch.js"
 import { worldTransform, frameWorldTransform, visitPostOrder, findReferenceFrame, takeSync } from "./scheduler.js"
 import { SE3 } from "./se3.js"
 import { eyeCameraPose } from "./view.js"
@@ -141,6 +142,30 @@ export function createCompositor(scheduler, stage, opts = {}) {
     // Focused subtree for view routing; head uses stricter name match.
     const inFocusedSubtree = (ambient) => focus.inFocusedSubtree(ambient)
 
+    // Which handle, if any, the hand currently owns — drawn differently so the
+    // interaction cue is not stale. (id:laws-decl-handle)
+    let highlighted = null
+
+    function materializePlace(ambient, layer) {
+        const local = ambient.transform.deref()
+        const camOn = focus.isFocused(ambient)
+        materialize({
+            type: 'head',
+            position: local.position,
+            rotation: local.rotation,
+            color: highlighted === ambient ? 0xffffff : (ambient.actorState?.style?.color ?? 0x000000),
+            headSize: highlighted === ambient ? 18 : 12,
+        }, { pathGroup: layer.group, gridGroup: layer.group, glyphGroup: layer.group }, {
+            materials: stage.materials,
+            shapist: layer.shapist,
+            head: layer.head,
+            camera: camOn ? stage.camera : null,
+            controls: camOn ? controls : null,
+            frame: ambient,
+            requestRender: stage.requestRender,
+        })
+    }
+
     function drainAndMaterialize() {
         let produced = false
         for (const [id, ambient] of scheduler.registry) {
@@ -148,6 +173,14 @@ export function createCompositor(scheduler, stage, opts = {}) {
             // Two disciplines, one drain each: the channel keeps every event,
             // the slot keeps only the newest pose. (id:output-ledger-r2-slot)
             const poses = takeSync(ambient)
+            // A declared place emits nothing: it is a handle, not a walker. Draw it
+            // from the same two facts the hit test uses — current participation and
+            // accepted geometry — so the affordance and the gesture cannot disagree.
+            if (ambient !== scheduler.root && exposed(ambient)) {
+                materializePlace(ambient, getOrCreateLayer(id, true))
+                produced = true
+                continue
+            }
             if (events.length === 0 && poses.length === 0) continue
 
             // Root world frame: ink only. (id:ft-d4-world-root)
@@ -342,6 +375,14 @@ export function createCompositor(scheduler, stage, opts = {}) {
 
     return {
         scheduler,
+
+        // The gesture tells the compositor which handle it owns, then asks for a
+        // paint: capture highlighting is feedback, not a side effect of acceptance.
+        setHandleHighlight(frame) {
+            if (highlighted === frame) return
+            highlighted = frame
+            stage.requestRender?.()
+        },
 
         get budgetMs() { return pacer.budgetMs },
 

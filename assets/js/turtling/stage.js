@@ -6,8 +6,11 @@ import {
     Group,
     MOUSE,
     PerspectiveCamera,
+    Raycaster,
     Scene,
     TOUCH,
+    Vector2,
+    Vector3,
     WebGLRenderer,
 } from '../utils/three-entry.js'
 import { DojoOrbitControls } from './orbit.js'
@@ -195,6 +198,15 @@ export function createStage(canvas, bridge, instruments = {}) {
         if (r) r(path)
     }
 
+    // One pixel convention for the whole door: client/CSS pixels against the
+    // canvas bounds and the current camera. Never device pixels — the device
+    // ratio belongs to the renderer, not to a hit radius. A point behind the
+    // camera, outside the visible region, or on a zero-sized canvas has no
+    // projection, and is refused rather than hit-tested at a made-up place.
+    const _project = new Vector3()
+    const _ndc = new Vector2()
+    const _raycaster = new Raycaster()
+
     // Assembled stage object
     const stage = {
         canvas,
@@ -203,6 +215,28 @@ export function createStage(canvas, bridge, instruments = {}) {
         camera,
         renderer,
         controls,
+
+        project(world) {
+            const rect = canvas.getBoundingClientRect()
+            if (!rect.width || !rect.height) return null
+            _project.set(world[0], world[1], world[2]).project(camera)
+            if (_project.z > 1) return null                     // behind the eye, or past the far plane
+            const x = rect.left + (_project.x * 0.5 + 0.5) * rect.width
+            const y = rect.top + (-_project.y * 0.5 + 0.5) * rect.height
+            if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null
+            return { x, y }
+        },
+
+        unproject(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect()
+            if (!rect.width || !rect.height) return null
+            const nx = ((clientX - rect.left) / rect.width) * 2 - 1
+            const ny = -((clientY - rect.top) / rect.height) * 2 + 1
+            if (nx < -1 || nx > 1 || ny < -1 || ny > 1) return null
+            _raycaster.setFromCamera(_ndc.set(nx, ny), camera)
+            const { origin, direction } = _raycaster.ray
+            return { origin: [origin.x, origin.y, origin.z], direction: [direction.x, direction.y, direction.z] }
+        },
         head,
         get recorder() { return recorder },
         shapist,

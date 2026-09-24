@@ -73,7 +73,10 @@ test("positive: an off-centre grab moves by the pointer's delta, never by a jump
 
     const h = harness(scheduler, [a])
     // The point is at pixel (300, 0). Grab 6 px right, 5 px down — off centre.
-    assert.deepEqual(h.down({ x: 306, y: 5 }), { claimed: true, point: "a" })
+    const grab = h.down({ x: 306, y: 5 })
+    assert.equal(grab.claimed, true)
+    assert.equal(grab.point, "a")
+    assert.equal(grab.frame, a, "the frame travels back, so a cue can be exact")
     assert.equal(h.state.captured, 1, "the pointer was captured")
     assert.equal(h.state.controls.enabled, false, "the hand owns the camera")
 
@@ -117,7 +120,7 @@ test("negative: an out-of-plane point is refused, and says why", () => {
 
     const h = harness(scheduler, [a])
     // The pointer lands exactly on the drawn point.
-    assert.deepEqual(h.down({ x: before[0] * 100, y: before[1] * 100 }), { claimed: false })
+    assert.equal(h.down({ x: before[0] * 100, y: before[1] * 100 }).claimed, false)
     assert.deepEqual(h.requests, [], "no motion request was submitted")
     assert.deepEqual(a.transform.deref().position, before, "accepted geometry is unchanged")
     assert.equal(h.state.captured, null, "nothing was captured")

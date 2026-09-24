@@ -6,11 +6,13 @@ import { Evaluator } from "./mafs/evaluate.js"
 import Render from "./render/index.js"
 import { bridged } from "../bridged.js"
 import { createStage } from "./stage.js"
-import { createScheduler, metaRoot, sumCounts } from "./scheduler.js"
+import { createScheduler, metaRoot, sumCounts, frameWorldTransform } from "./scheduler.js"
 import { createCompositor } from "./compositor.js"
 import { labInputs } from "./lab.js"
 import { createFocus, resolveAddress } from "./focus.js"
 import { hatchVerdict } from "./hatch.js"
+import { createGesture } from "./laws/gesture.js"
+import { exposed } from "./laws/batch.js"
 import { worldProgress } from "./vitals.js"
 
 // The witness whose gate this canvas keeps — one spelling, shared with the
@@ -130,6 +132,9 @@ export class Turtle {
         for (const ev of ['start', 'change', 'end']) {
             this.stage.controls.removeEventListener(ev, this._onControlsActive)
         }
+        // Give the pointer back before anything else goes away.
+        this._handle?.dispose()
+        this._handle = null
         // Dispose compositor/stage on remount — canvas outlives the hook.
         // Light register dies with the turtle (not with the compositor).
         this.compositor?.dispose()
@@ -145,6 +150,98 @@ export class Turtle {
 
     // Lazy init: one scheduler (meta-root) + one compositor for the lifetime.
     // Focus register is rebound (not recreated) so kindled/warm survive empty canvas.
+    // The gesture adapter. It owns pointer capture, the grab offset, eligibility and
+    // the camera handoff; the stage owns projection, the compositor owns the drawing,
+    // the scheduler owns admission. Arbitration happens BEFORE the camera sees
+    // pointerdown: our listener is on the window in the capture phase, so it runs
+    // ahead of the canvas's own, and stopping there leaves OrbitControls untouched
+    // rather than partly initialized.
+    _ensureHandle() {
+        if (this._handle || !this.scheduler) return
+        const stage = this.stage
+        const controls = stage.controls
+        const canvas = stage.canvas
+        const scheduler = this.scheduler
+        let capturedPointer = null
+        let damping = null
+
+        const handle = createGesture({
+            candidates: () => {
+                const out = []
+                for (const frame of scheduler.registry.values()) {
+                    if (frame !== scheduler.root && exposed(frame)) out.push({ name: frame.name, frame })
+                }
+                return out
+            },
+            worldOf: (frame) => frameWorldTransform(frame),
+            registered: (frame) => scheduler.registry.get(frame.id) === frame,
+            requestMotion: (frame, requested, revision) => scheduler.requestMotion(frame, requested, revision),
+            revision: () => scheduler.motionRevision,
+            wake: () => this.requestRender(),
+            project: (world) => stage.project(world),
+            rayAt: (x, y) => stage.unproject(x, y),
+            capture: ({ pointerId }) => {
+                capturedPointer = pointerId
+                canvas.setPointerCapture?.(pointerId)
+                // Freeze without moving the view: damping off stops residual drift,
+                // and nothing here calls update() or reset().
+                damping = controls.enableDamping
+                controls.enableDamping = false
+                this.compositor?.setHandleHighlight(null)
+            },
+            release: ({ pointerId }) => {
+                if (capturedPointer === pointerId) {
+                    canvas.releasePointerCapture?.(pointerId)
+                    capturedPointer = null
+                }
+                if (damping !== null) { controls.enableDamping = damping; damping = null }
+                this.compositor?.setHandleHighlight(null)
+            },
+            setControls: (enabled) => { controls.enabled = enabled },
+            controlsEnabled: () => controls.enabled,
+            // Feedback, not only acceptance: every line wakes the canvas, so a cue
+            // cannot go stale on an idle surface.
+            onReadout: (line) => { this.lastReadout = line; this.requestRender() },
+        })
+
+        const claimed = (event) => {
+            if (event.target !== canvas) return
+            const answer = handle.pointerDown({ pointerId: event.pointerId, x: event.clientX, y: event.clientY })
+            if (!answer.claimed) return
+            event.stopImmediatePropagation()
+            event.preventDefault()
+            this.compositor?.setHandleHighlight(answer.frame ?? null)
+        }
+        const moved = (event) => {
+            if (event.target !== canvas) return
+            handle.pointerMove({ pointerId: event.pointerId, x: event.clientX, y: event.clientY })
+        }
+        const ended = (event) => handle.pointerUp({ pointerId: event.pointerId })
+        const cancelled = (event) => handle.pointerCancel({ pointerId: event.pointerId })
+        const lost = (event) => handle.pointerCancel({ pointerId: event.pointerId })
+
+        window.addEventListener('pointerdown', claimed, { capture: true })
+        window.addEventListener('pointermove', moved, { capture: true })
+        window.addEventListener('pointerup', ended, { capture: true })
+        window.addEventListener('pointercancel', cancelled, { capture: true })
+        canvas.addEventListener('lostpointercapture', lost)
+
+        this._handle = {
+            gesture: handle,
+            // The handle the hand owns right now, for the compositor's cue.
+            highlight(frame) { this._highlight = frame },
+            get grabbed() { return handle.grabbed },
+            dispose: () => {
+                window.removeEventListener('pointerdown', claimed, { capture: true })
+                window.removeEventListener('pointermove', moved, { capture: true })
+                window.removeEventListener('pointerup', ended, { capture: true })
+                window.removeEventListener('pointercancel', cancelled, { capture: true })
+                canvas.removeEventListener('lostpointercapture', lost)
+                handle.dispose()
+            },
+        }
+    }
+
     _ensureScheduler() {
         if (this.scheduler) return
         this.scheduler = createScheduler(metaRoot(), {
@@ -167,6 +264,7 @@ export class Turtle {
         // Live stage for STAGE_CONTRACT verbs; cadence + orbit target via opts
         // (not stage fields — renderLoop used to leak frameInterval that way).
         // focus is turtle-owned — compositor only reads/projects it.
+        this._ensureHandle()
         this.compositor = createCompositor(this.scheduler,
             this.stage,
             {
