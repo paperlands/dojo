@@ -570,7 +570,16 @@ function parseArguments(tokens) {
 
 // A block's body, up to its `end`. On EOF without one the caller wraps the
 // block in an error node — children ride INSIDE it, never reparented to run (D020).
-function parseBlock(state) {
+function parseBlock(state, kind = null) {
+    // Which body are we inside? A declaration is supported in a source body and
+    // in an `as` body, refused in a loop, conditional or function body.
+    // (id:laws-decl-batch)
+    const prevKind = state.blockKind ?? null
+    state.blockKind = kind
+    try { return parseBlockLines(state) } finally { state.blockKind = prevKind }
+}
+
+function parseBlockLines(state) {
     const block = [];
 
     while (state.hasMore()) {
@@ -610,6 +619,19 @@ function parseStatement(tokens, state, rec) {
     const kw = tokens[0];
     const len = tokens.length;
 
+    // Existence declaration: `let A` states that A is here. A distance or pin is
+    // not yet supported, so it is refused locally with its span rather than
+    // silently ignored. (id:laws-decl-batch)
+    if (kw === 'let') {
+        if (len < 2) return errorNode(rec, "a name after 'let'", 'end of statement')
+        if (len > 2) return errorNode(rec, 'existence only so far — a distance or pin', tokens[2])
+        // One batch belongs to one supported body. A loop, conditional or function
+        // body is not one of them; an `as` body is.
+        const kind = state.blockKind ?? null
+        if (kind && kind !== 'as') return errorNode(rec, `a declaration cannot live inside '${kind}'`, kw)
+        return stamp(new ASTNode('Existence', tokens[1]), rec)
+    }
+
     // Most common case first: commands
     if (!BLOCK_KW[kw]) {
         return stamp(new ASTNode('Call', kw, parseArguments(tokens.slice(1))), rec);
@@ -624,7 +646,7 @@ function parseStatement(tokens, state, rec) {
 
     // The head is sound — walk the body, then close or contain.
     const blockNode = (make) => {
-        const { block, terminated, endComment } = parseBlock(state);
+        const { block, terminated, endComment } = parseBlock(state, kw);
         // The last record's FAR edge: a folded meadow spans several birth
         // lines; containment reaches its endLine, not its opening line.
         const endLine = state.last?.endLine ?? state.last?.line ?? rec.line;

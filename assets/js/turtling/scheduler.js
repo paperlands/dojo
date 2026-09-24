@@ -5,6 +5,7 @@
 import { createFrame } from "./frame.js"
 import { matchPattern } from "./match.js"
 import { execute, createActorState } from "./executor.js"
+import { deriveBatch } from "./laws/batch.js"
 import { SE3 } from "./se3.js"
 import { chargeInk, woundInk, enforceResidency, resetInk, createStock } from "./ledger.js"
 
@@ -770,8 +771,10 @@ function createChildGenerator(value, createDeps, execOpts) {
     // The batch's state is BORN HERE, not on the generator's first next(), so a
     // frame can be asked what it has done while it is still doing it (commandsOf).
     const batch = createActorState(opts)
+    // One parse, two meanings: the body executes, the declarations do not.
+    const { body } = deriveBatch(value.code.ast)
     return {
-        generator: execute(value.code.ast, childDeps, { ...opts, actorState: batch }),
+        generator: execute(body, childDeps, { ...opts, actorState: batch }),
         deps: childDeps,
         mailbox,
         batch,
@@ -948,6 +951,9 @@ function wireRun(child, deps, mailbox, batch, code) {
     child.deps = deps
     child.mailbox = mailbox
     child.batch = batch
+    // Participation is rebuilt from the current parse on every seat and rewire —
+    // derived, never a stored flag. (id:laws-decl-ownership)
+    child.declared = deriveBatch(code?.ast ?? []).declared
     bindResolve(deps, child)
     setListensFor(child, code)
 }
