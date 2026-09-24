@@ -2,6 +2,7 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
+import { labInputs } from "../../../assets/js/turtling/lab.js"
 
 const src = readFileSync(new URL("../../../assets/js/host.js", import.meta.url), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -38,12 +39,24 @@ describe("host door", () => {
         assert.equal(/motionAdmission|observePureGoto|motionValidate/.test(src), false)
     })
 
-    test("the laboratory seam is an allow-list, not a scheduler-option funnel", () => {
-        const turtle = readFileSync(new URL("../../../assets/js/turtling/turtle.js", import.meta.url), "utf8")
-        assert.match(turtle, /const LAB_INPUTS = \[/)
-        assert.match(turtle, /unknown laboratory input/)
-        // The funnel form is gone: only permitted inputs cross.
-        assert.equal(/\.\.\.\(this\._law \?\? \{\}\)/.test(turtle), false)
-        assert.match(turtle, /\.\.\.labInputs\(this\._law\)/)
+    test("an unknown laboratory key is refused, not dropped", () => {
+        assert.throws(() => labInputs({ motionAdmission: () => ({}), almostRight: 1 }),
+            /unknown laboratory input: almostRight/)
+    })
+
+    test("the permitted laboratory inputs pass through unchanged", () => {
+        const admit = () => ({ accepted: true })
+        const inputs = labInputs({ motionAdmission: admit, observePureGoto: true })
+        assert.equal(inputs.motionAdmission, admit)
+        assert.equal(inputs.observePureGoto, true)
+        assert.deepEqual(Object.keys(labInputs({})), [])
+        assert.deepEqual(labInputs(null), {})
+    })
+
+    test("unrelated scheduler configuration cannot ride in through the law seam", () => {
+        for (const key of ["execOpts", "createDeps", "channelCapacity", "rootHears", "onShout", "lossless"]) {
+            assert.throws(() => labInputs({ [key]: 1 }), /unknown laboratory input/,
+                `${key} must not reach createScheduler through the door`)
+        }
     })
 })

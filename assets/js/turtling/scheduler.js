@@ -771,13 +771,16 @@ function createChildGenerator(value, createDeps, execOpts) {
     // The batch's state is BORN HERE, not on the generator's first next(), so a
     // frame can be asked what it has done while it is still doing it (commandsOf).
     const batch = createActorState(opts)
-    // One parse, two meanings: the body executes, the declarations do not.
-    const { body } = deriveBatch(value.code.ast)
+    // One parse, two meanings: the relationship batch is what the body declares,
+    // the executable body is what it does. Derived ONCE, carried through wiring —
+    // never re-interpreted downstream. (id:laws-decl-two-meanings)
+    const relationshipBatch = deriveBatch(value.code.ast)
     return {
-        generator: execute(body, childDeps, { ...opts, actorState: batch }),
+        generator: execute(relationshipBatch.body, childDeps, { ...opts, actorState: batch }),
         deps: childDeps,
         mailbox,
         batch,
+        relationshipBatch,
     }
 }
 
@@ -947,22 +950,36 @@ function unwireWorldCache(child) {
 // What a fresh generator needs to be driven. ONE place, because both births use
 // it — first (wireChild) and re-run (rewireChild) — and a field wired in only
 // one of them is a bug that shows up a whole run later.
-function wireRun(child, deps, mailbox, batch, code) {
+// A declaration whose place was never created is an unfulfilled requirement.
+// Realization lands next (id:laws-decl-join-repair); until it does, the run says
+// so rather than reporting success. This is the channel the toy already uses for
+// "supported, but not by this slice".
+function reportUnrealizedPlaces(ctx) {
+    if (!ctx.declared || ctx.declared.size === 0) return
+    const missing = [...ctx.declared].filter((name) => !ctx.children.has(name))
+    if (missing.length > 0) {
+        ctx.unresolved = { reason: `existence not realized: ${missing.join(', ')}` }
+    }
+}
+
+function wireRun(child, deps, mailbox, executionState, code, relationshipBatch) {
     child.deps = deps
     child.mailbox = mailbox
-    child.batch = batch
-    // Participation is rebuilt from the current parse on every seat and rewire —
+    // `child.batch` is mutable EXECUTOR state; the relationship batch is
+    // source-owned declarations. Two meanings, two names. (id:laws-decl-two-meanings)
+    child.batch = executionState
+    // Participation is carried from the current parse at every seat and rewire —
     // derived, never a stored flag. (id:laws-decl-ownership)
-    child.declared = deriveBatch(code?.ast ?? []).declared
+    child.declared = relationshipBatch?.declared ?? new Set()
     bindResolve(deps, child)
     setListensFor(child, code)
 }
 
 // Wire child: run wiring, plus the things that belong to its place in the tree.
 // Frame must already be in the tree — the address reads its parent chain.
-function wireChild(child, deps, mailbox, registry, code, batch = null) {
+function wireChild(child, deps, mailbox, registry, code, executionState = null, relationshipBatch = null) {
     child.address = frameAddress(metaRootFrame(child), child)
-    wireRun(child, deps, mailbox, batch, code)
+    wireRun(child, deps, mailbox, executionState, code, relationshipBatch)
     wireWorldCacheInvalidation(child)
     registry.set(child.id, child)
 }
@@ -972,7 +989,7 @@ function rewireChild(child, value, pump) {
     const re = createChildGenerator(value, pump.createDeps, pump.execOpts)
     child.generator = re.generator
     child.done = false
-    wireRun(child, re.deps, re.mailbox, re.batch, value.code)
+    wireRun(child, re.deps, re.mailbox, re.batch, value.code, re.relationshipBatch)
     resetRunState(child, pump.stock)      // ink per RUN; park/sync/error never ride the new one
     // A NEW RUN IS A NEW CLOCK (D011), anchored at the parent's current instant:
     // resumeAt once it has waited, else its own birth. The old run's resumeAt is
@@ -1139,14 +1156,15 @@ function commitTransaction(verdict, writer, registry) {
     }
     const root = metaRootFrame(writer)
     root._motionRevision = (root._motionRevision || 0) + 1
-    // Publication is a critical section: installs are done, notifications are not.
-    // A request raised from a notifier must not interleave with this one. (id:laws-p0m-publication)
-    const wasPublishing = root._publishing === true
-    root._publishing = true
+    // Notifying a commit: installs are done, the notification fan is open. This
+    // guards that fan, not every runtime mutation — a request raised from a
+    // notifier must not interleave with it. (id:laws-p0m-publication)
+    const wasNotifying = root.notifyingCommit === true
+    root.notifyingCommit = true
     try {
         for (const send of notify) send()
     } finally {
-        root._publishing = wasPublishing
+        root.notifyingCommit = wasNotifying
     }
     return null
 }
@@ -1285,7 +1303,7 @@ function spawn(ctx, value, route, pump) {
 
     if (pump.createDeps) {
         const { generator: childGen, deps: childDeps, mailbox: childMailbox,
-                batch: childBatch } =
+                batch: childBatch, relationshipBatch: childDeclarations } =
             createChildGenerator(value, pump.createDeps, pump.execOpts)
         const child = attachMeta(
             createFrame(value.name, childGen, {
@@ -1307,7 +1325,7 @@ function spawn(ctx, value, route, pump) {
         // address, whose last segment is this children-map key.
         ctx.children.set(value.name, child)
         bumpTree(ctx)
-        wireChild(child, childDeps, childMailbox, pump.registry, value.code, childBatch)
+        wireChild(child, childDeps, childMailbox, pump.registry, value.code, childBatch, childDeclarations)
         if (deferredShouts) deliverDeferredToFrame(deferredShouts, child)
         return { verdict: 'spawned', spawned: child, produced: true }
     }
@@ -1358,6 +1376,7 @@ function stepFrame(ctx, value, done, route, pump) {
         } else {
             ctx.commandCount += (typeof result === 'number' ? result : (result.commandCount || 0))
         }
+        reportUnrealizedPlaces(ctx)
         // Folded — drop the live batch or commandsOf would count it twice.
         ctx.batch = null
         ctx.observation = null
@@ -1535,7 +1554,7 @@ export function createScheduler(generator, opts = {}) {
             // A publication's notifications are on the stack; a request raised from one
             // is refused for retry, never interleaved — the watcher's commit is later
             // (laws-transaction-d), and an outer publication must not overwrite it.
-            if (root._publishing) return { kind: 'busy', message: 'publication in flight' }
+            if (root.notifyingCommit) return { kind: 'busy', message: 'publication in flight' }
             if (!frame.done || subtreeUnsettled(frame)) return { kind: 'busy' }
             // A settled actor may live inside a hosted play. Keep the transaction
             // inside one seating: a sibling's birth frame is not the root's frame.
@@ -1599,7 +1618,7 @@ export function createScheduler(generator, opts = {}) {
             }
 
             const displayName = forkSpec.name || key
-            const { generator, deps, mailbox, batch } = createChildGenerator(forkSpec, createDeps, execOpts)
+            const { generator, deps, mailbox, batch, relationshipBatch } = createChildGenerator(forkSpec, createDeps, execOpts)
             const child = attachMeta(
                 createFrame(displayName, generator, {
                     parent: root,
@@ -1617,7 +1636,7 @@ export function createScheduler(generator, opts = {}) {
             // address, whose top segment is this registration key.
             root.children.set(key, child)
             bumpTree(root)
-            wireChild(child, deps, mailbox, registry, forkSpec.code, batch)
+            wireChild(child, deps, mailbox, registry, forkSpec.code, batch, relationshipBatch)
             child.seed = seedOf(forkSpec)
 
             // The seat drain is a pump too. Its shouts must reach the tree, not

@@ -11,7 +11,7 @@
 // Run: node --test test/js/laws/declaration_test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { parseProgram } from "../../../assets/js/turtling/parse.js"
+import { parseProgram, collectErrors } from "../../../assets/js/turtling/parse.js"
 import { deriveBatch } from "../../../assets/js/turtling/laws/batch.js"
 import { buildWorld, fork, drive } from "./harness.mjs"
 
@@ -37,10 +37,12 @@ test("acceptance: `let A` states existence and carries its span", () => {
 
 test("acceptance: a distance or pin is refused locally, not silently ignored", () => {
     for (const src of ["let AB = 5", "let A = [0,0]", "let A = origin"]) {
-        const node = first(src)
-        assert.ok(isError(node), `${src} should be a located refusal`)
-        assert.equal(node.span.line, 1)
-        assert.match(node.meta.expected, /distance or pin/)
+        // The structured diagnostic, not a message field that can drift from it.
+        const [wound] = collectErrors(parseProgram(src))
+        assert.ok(wound, `${src} should be a located refusal`)
+        assert.equal(wound.span.line, 1)
+        assert.match(wound.expected, /distance or pin/)
+        assert.equal(wound.found, "=")
     }
 })
 
@@ -51,11 +53,10 @@ test("acceptance: a declaration is refused inside a loop, conditional or functio
         "def f do\n  let A\nend",
     ]
     for (const src of nested) {
-        const block = first(src)
-        const inner = block.children?.[0]
-        assert.ok(isError(inner), `${src.split("\n")[0]} should refuse the declaration`)
-        assert.equal(inner.span.line, 2, "the diagnostic is located at the declaration")
-        assert.match(inner.meta.expected, /cannot live inside/)
+        const [wound] = collectErrors(parseProgram(src))
+        assert.ok(wound, `${src.split("\n")[0]} should refuse the declaration`)
+        assert.equal(wound.span.line, 2, "the diagnostic is located at the declaration")
+        assert.match(wound.expected, /cannot live inside/)
     }
     // An `as` body is a supported source body, so its declaration belongs there.
     const ambient = first("as child do\n  let A\nend")
@@ -82,6 +83,19 @@ test("acceptance: a seated body declares its places and runs its actions", () =>
     const a = find(host, "A")
     assert.ok(a, "the action still seats its ambient")
     assert.deepEqual(a.transform.deref().position.slice(0, 2), [1, 0])
+    assert.equal(host.unresolved, null, "its declaration was fulfilled by the action")
+})
+
+test("acceptance: an unfulfilled declaration is reported, never a silent success", () => {
+    // Parsing the declaration is legitimate progress. Running to completion while
+    // its existence requirement is unmet is not the finished contract, so the run
+    // says so instead. Realization lands next. (id:laws-decl-join-repair)
+    const scheduler = buildWorld({ admit: ({ requested }) => ({ accepted: true, transform: requested }) })
+    const host = scheduler.hotSwapChild("host", fork("host", "let A\nfw 1"))
+    drive(scheduler)
+    assert.deepEqual([...host.declared], ['A'])
+    assert.equal(find(host, "A"), null, "no place was realized")
+    assert.match(host.unresolved?.reason ?? '', /existence not realized: A/)
 })
 
 test("acceptance: participation is current source participation, not a stored flag", () => {
