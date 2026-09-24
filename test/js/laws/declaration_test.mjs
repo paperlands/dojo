@@ -12,7 +12,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { parseProgram, collectErrors } from "../../../assets/js/turtling/parse.js"
-import { deriveBatch } from "../../../assets/js/turtling/laws/batch.js"
+import { deriveBatch, exposed } from "../../../assets/js/turtling/laws/batch.js"
 import { buildWorld, fork, drive } from "./harness.mjs"
 
 const find = (frame, name) => {
@@ -145,4 +145,38 @@ test("acceptance: participation is current source participation, not a stored fl
     drive(scheduler)
     assert.deepEqual([...host.declared], [])
     assert.ok(find(host, "A"), "an undeclared action still runs — participation is not required to act")
+})
+
+test("acceptance: exposure follows the current batch, never the frame's history", () => {
+    const pass = ({ requested }) => ({ accepted: true, transform: requested })
+
+    // Declared, then the scope is rewired without the declaration. The frame
+    // survives — frame identity is not eligibility.
+    const dropped = buildWorld({ admit: pass })
+    const dHost = dropped.hotSwapChild("host", fork("host", [
+        "as s do", "  let a", "end",
+        "wait 1",
+        "as s do", "end",
+    ].join("\n")))
+    drive(dropped)
+    const dS = find(dHost, "s")
+    const dA = find(dS, "a")
+    assert.ok(dS.declared instanceof Set)
+    assert.deepEqual([...dS.declared], [], "the declaration is gone")
+    assert.equal(exposed(dA), false, "so it is not exposed for manipulation")
+    assert.equal(dA.isPlace, true, "though it was, historically, seated as a place")
+
+    // Ordinary ambient, then the scope is rewired WITH the declaration. It was
+    // never an empty place, and it is eligible now.
+    const gained = buildWorld({ admit: pass })
+    const gHost = gained.hotSwapChild("host", fork("host", [
+        "as s do", "  as a do", "    fw 1", "  end", "end",
+        "wait 1",
+        "as s do", "  let a", "end",
+    ].join("\n")))
+    drive(gained)
+    const gA = find(find(gHost, "s"), "a")
+    assert.equal(gA.isPlace, undefined, "it was seated as an ordinary ambient")
+    assert.equal(exposed(gA), true, "but the current batch exposes it")
+    assert.deepEqual(gA.transform.deref().position.slice(0, 2), [1, 0], "and it was not reseated")
 })

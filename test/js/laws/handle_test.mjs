@@ -7,7 +7,7 @@ import assert from "node:assert/strict"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
 import { Versor } from "../../../assets/js/turtling/mafs/versors.js"
 import {
-    birthPlane, touchPlane, birthLocal, requestedPose, hitTest, readout, OUTCOME,
+    birthPlane, touchPlane, birthLocal, requestedPose, hitTest, readout, inPlane, OUTCOME,
 } from "../../../assets/js/turtling/laws/handle.js"
 
 const Q90 = Versor.raw(Math.SQRT1_2, 0, 0, -Math.SQRT1_2)   // rt 90: +x → −y
@@ -89,4 +89,43 @@ test("a touch from above maps onto a turned place's plane and back", () => {
     const local = birthLocal(hit, placed)
     assert.deepEqual(nz(local), [-3, 0, 0])
     assert.equal(nz(local)[2], 0, "the plane is where it says it is")
+})
+
+test("a genuinely tilted plane is not world z", () => {
+    // A tilt about x actually moves the normal; the rotated-plane cases above turn
+    // about z, which leaves it alone.
+    const QX90 = Versor.raw(Math.SQRT1_2, Math.SQRT1_2, 0, 0)
+    const tilted = birthPlane(place([0, 0, 0], QX90))
+    assert.notDeepEqual(nz(tilted.normal), [0, 0, 1], "the normal moved")
+    assert.ok(Math.abs(Math.hypot(...tilted.normal) - 1) < 1e-9, "and it is still a unit normal")
+
+    // Straight down the normal lands on the origin, whatever the plane's tilt.
+    const n = tilted.normal
+    const hit = touchPlane({ origin: n.map((v) => v * 5), direction: n.map((v) => -v) }, tilted)
+    hit.forEach((v) => assert.ok(Math.abs(v) < 1e-9, `${hit} is not the origin`))
+})
+
+test("a near-parallel ray is refused, not stretched into a touch", () => {
+    const flat = birthPlane(place([0, 0, 0]))
+    // Exactly parallel, and near-parallel: at 1e-7 the intersection lands 10,000
+    // units away, which is not a touch on this plane.
+    assert.equal(touchPlane({ origin: [0, 0, 0.001], direction: [1, 0, -1e-12] }, flat), null)
+    assert.equal(touchPlane({ origin: [0, 0, 0.001], direction: [1, 0, -1e-7] }, flat), null)
+    assert.equal(touchPlane({ origin: [0, 0, 0.001], direction: [1, 0, -1e-4] }, flat), null)
+    // An ordinary oblique ray still touches: the guard is an angle, not a mood.
+    const oblique = touchPlane({ origin: [0, 0, 1], direction: [0.2, 0, -1] }, flat)
+    assert.ok(oblique && Math.abs(oblique[0] - 0.2) < 1e-9, `${oblique}`)
+})
+
+test("the plane is a domain: a pose that left it is unsupported, not retargeted", () => {
+    assert.equal(inPlane(place([3, -1, 0])), true)
+    assert.equal(inPlane(place([3, -1, 0.5])), false)
+    assert.equal(inPlane(place([3, -1, 1e-12])), true, "float noise is not a departure")
+
+    const accepted = [3, -1, -1]        // pitch 90, then fw 1: outside the plane
+    const line = readout({ point: "a", accepted, requested: null, verdict: undefined, unsupported: true })
+    assert.equal(line.outcome, "unsupported")
+    assert.notEqual(line.outcome, OUTCOME.busy)
+    assert.notEqual(line.outcome, OUTCOME.unresolved)
+    assert.notEqual(line.outcome, OUTCOME.refuse)
 })

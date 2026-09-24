@@ -15,14 +15,19 @@ export function birthPlane(worldTransform) {
     return { origin: [...worldTransform.position], normal: [nx, ny, nz] }
 }
 
-// Ray ∩ plane. Null when the ray runs parallel, or the plane is behind the eye.
+// A ray that grazes the plane would "touch" it kilometres away. Refusing only an
+// exactly parallel ray is not enough, so the guard is an angle: sin θ below this
+// is not a touch, however far the intersection would land.
+export const GRAZE = 1e-3
+
+// Ray ∩ plane. Null when the ray grazes, or the plane is behind the eye.
 export function touchPlane(ray, plane) {
     const [ox, oy, oz] = ray.origin
     const [dx, dy, dz] = ray.direction
     const [px, py, pz] = plane.origin
     const [nx, ny, nz] = plane.normal
     const denom = dx * nx + dy * ny + dz * nz
-    if (Math.abs(denom) < 1e-9) return null
+    if (Math.abs(denom) < GRAZE) return null
     const t = ((px - ox) * nx + (py - oy) * ny + (pz - oz) * nz) / denom
     if (t <= 0) return null
     return [ox + dx * t, oy + dy * t, oz + dz * t]
@@ -41,6 +46,14 @@ export function requestedPose(accepted, localPoint) {
     return { rotation: accepted.rotation, position: [...localPoint] }
 }
 
+// The toy's plane is a *domain*, not only a pointer target. A place whose
+// accepted pose has left it cannot be dragged without silently changing depth,
+// so it is reported unsupported rather than retargeted onto z = 0.
+// (id:laws-decl-plane)
+export function inPlane(accepted, tolerance = 1e-9) {
+    return Math.abs(accepted?.position?.[2] ?? 0) <= tolerance
+}
+
 // Screen-space hit test against the handle's projected point.
 export function hitTest(pointer, projected, radius = 18) {
     return Math.hypot(pointer.x - projected.x, pointer.y - projected.y) <= radius
@@ -55,13 +68,16 @@ export const OUTCOME = {
     unresolved: 'unresolved',
     stale: 'obsolete',
     fault: 'fault',
+    // The toy cannot express this yet — distinct from busy (another hand has it)
+    // and from rejected (a truth verdict).
+    unsupported: 'unsupported',
 }
 
-export function readout({ point, accepted, requested, verdict }) {
+export function readout({ point, accepted, requested, verdict, unsupported = false }) {
     return {
         point,
         accepted: accepted ? [...accepted] : null,
         requested: requested ? [...requested] : null,
-        outcome: OUTCOME[verdict?.kind] ?? 'unknown',
+        outcome: unsupported ? OUTCOME.unsupported : (OUTCOME[verdict?.kind] ?? 'unknown'),
     }
 }

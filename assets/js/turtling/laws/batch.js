@@ -23,3 +23,12 @@ export function deriveBatch(body = []) {
     }
     return { declared, body: executable }
 }
+
+// Whether a frame is *exposed* for manipulation is a query about the current
+// batch, not a stored fact. A frame outlives the declaration that named it, so
+// `isPlace` (an empty place was seated here) and "currently exposed" are two
+// different statements. Scoped: the declaring body is the frame's own parent.
+// (id:laws-decl-exposure)
+export function exposed(frame) {
+    return frame?.parent?.declared?.has(frame.name) === true
+}
