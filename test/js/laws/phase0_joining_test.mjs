@@ -1,26 +1,23 @@
-// Phase 0 — the joining experiment (first slice of Phase 1).
+// Phase 0 — the joining experiment.
 //
 // Three operations are not interchangeable ways to restart a generator:
 //   new play      — discard the previous realization, initialize again
 //   source edit   — replace authored meaning, reconcile affected state
 //   as A          — act through a place that already belongs to this world
 //
-// The ruling under test:
-//   Within one play, `as A` addresses the existing declared place. Starting a
-//   body there does not itself move that place. A new execution begins from its
-//   current accepted pose.
+// SCOPE. The re-entry case below is *ordinary, undeclared* re-entry: it records
+// the behaviour that must be preserved for an actor that does not participate in
+// a batch. It becomes a failing *declared* joining acceptance test only when the
+// batch actually identifies A ([[id:laws-decl-join-repair]]). Until then it is
+// characterization, and the risk it guards is the cheapest wrong fix — changing
+// ordinary `as` globally.
 //
-// Today the re-entry door does neither: it overwrites the place with the
-// caller's pose AND seeds the new executor at identity. Both failures are kept
-// visible below, with the paths that must not change pinned alongside.
-//
-// `let` has no parser form yet, so the declared place is established the way a
-// declaration will: a settled ambient with a non-origin pose and heading.
 // Run: node --test test/js/laws/phase0_joining_test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { buildWorld, fork, drive } from "./harness.mjs"
 import { frameWorldTransform } from "../../../assets/js/turtling/scheduler.js"
+import { reparseProgram } from "../../../assets/js/turtling/parse.js"
 
 const find = (frame, name) => {
     if (frame.name === name) return frame
@@ -30,20 +27,30 @@ const find = (frame, name) => {
     }
     return null
 }
+const quat = (rotation) => [rotation.x, rotation.y, rotation.z, rotation.w].map((n) => +n.toFixed(6))
+// The direction `fw` advances along: the frame's own x axis, read in its frame.
+const fwAxis = (rotation) => [
+    1 - 2 * (rotation.y * rotation.y + rotation.z * rotation.z),
+    2 * (rotation.x * rotation.y + rotation.w * rotation.z),
+    2 * (rotation.x * rotation.z - rotation.w * rotation.y),
+].map((n) => +n.toFixed(6))
 const pose = (scheduler, name) => {
     const frame = find(scheduler.root, name)
+    const { position, rotation } = frame.transform.deref()
     return {
         id: frame.id,
-        local: frame.transform.deref().position.map((n) => +n.toFixed(6)),
-        heading: +frame.transform.deref().rotation.w.toFixed(6),
+        local: position.map((n) => +n.toFixed(6)),
+        heading: quat(rotation),
+        axis: fwAxis(rotation),
         origin: frame.origin.position.map((n) => +n.toFixed(6)),
+        originQuat: quat(frame.origin.rotation),
         world: frameWorldTransform(frame).position.map((n) => +n.toFixed(6)),
         run: frame.run,
     }
 }
 const pass = ({ requested }) => ({ accepted: true, transform: requested })
 
-// A settled place A at local (3,0), turned 90°; then the caller moves to 20 and
+// A settled place at local (3,0) turned 90°; then the caller moves to 20 and
 // turns 45°. `tail` is what happens next.
 const program = (tail) => [
     "as a do",
@@ -56,7 +63,8 @@ const program = (tail) => [
 ].join("\n")
 const entry = ["as a do", "  fw 1", "end"].join("\n")
 
-const W90 = Math.SQRT1_2   // the quaternion w of a 90° turn
+const H90 = [0, 0, -0.707107, 0.707107]     // rt 90 about z
+const H45 = [0, 0, -0.382683, 0.92388]      // rt 45 about z
 
 const established = () => {
     const scheduler = buildWorld({ admit: pass })
@@ -64,7 +72,6 @@ const established = () => {
     drive(scheduler)
     return pose(scheduler, "a")
 }
-
 const reentered = () => {
     const scheduler = buildWorld({ admit: pass })
     scheduler.hotSwapChild("host", fork("host", program(entry)))
@@ -72,20 +79,29 @@ const reentered = () => {
     return pose(scheduler, "a")
 }
 
-test("characterization: re-entry moves the place and restarts its body at identity", () => {
+test("characterization: ordinary re-entry moves the place and restarts its body", () => {
     const first = established()
-    assert.deepEqual(first.local.slice(0, 2), [3, 0], "A settled at (3,0)")
-    assert.equal(first.heading, +W90.toFixed(6), "A settled at heading 90°")
-    assert.deepEqual(first.origin.slice(0, 2), [0, 0], "A's placement is the caller's pose at birth")
-    assert.deepEqual(first.world.slice(0, 2), [3, 0], "the frame own turn does not rotate its own position")
+    assert.deepEqual(first.local, [3, 0, 0], "settled at local (3,0)")
+    assert.deepEqual(first.heading, H90, "settled at heading 90°")
+    assert.deepEqual(first.axis, [0, -1, 0], "fw advances along -y at 90°")
+    assert.deepEqual(first.origin, [0, 0, 0], "placement is the caller's pose at birth")
+    assert.deepEqual(first.world, [3, 0, 0], "identity placement: world names local")
 
     const again = reentered()
-    // 1. the place was overwritten by the caller's new pose (20, turned 45°)
-    assert.deepEqual(again.origin.slice(0, 2), [20, 0], "origin should not move on entry")
-    // 2. the body restarted at identity instead of continuing from (3,0)
-    assert.deepEqual(again.local.slice(0, 2), [1, 0], "a new execution must begin from the accepted pose")
-    // 3. the accepted heading was reset, not preserved
-    assert.equal(again.heading, 1, "a positional truth does not constrain orientation; keep it")
+    // The ruling, for a *declared* place, is local (3,-1) at heading 90° with the
+    // placement unmoved — world (3,-1). Today:
+    assert.deepEqual(again.origin, [20, 0, 0],
+        "ordinary re-entry re-places the actor at the caller (originQuat = the caller's 45°)")
+    assert.deepEqual(again.originQuat, H45, "the caller's turn travelled into the placement too")
+    assert.deepEqual(again.local, [1, 0, 0],
+        "the body restarted at identity; fw 1 makes (1,0), not the continue-from-(3,0) step")
+    assert.deepEqual(again.heading, [0, 0, 0, 1],
+        "the accepted heading was reset; a positional truth does not constrain orientation")
+    assert.deepEqual(again.world, [20.707107, -0.707107, 0],
+        "world = caller placement ⊕ an identity-headed local body")
+    // The unseen cost, in one line: the actor's whole world-space explanation
+    // changed, though nothing was admitted to it.
+    assert.notDeepEqual(again.world, [3, -1, 0])
 })
 
 test("acceptance: a first entry still places the ambient at the caller", () => {
@@ -94,9 +110,9 @@ test("acceptance: a first entry still places the ambient at the caller", () => {
     drive(scheduler)
     const b = pose(scheduler, "b")
     // Fresh identity: born at the caller's pose, walking from its own origin.
-    assert.deepEqual(b.origin.slice(0, 2), [0, 0])
-    assert.deepEqual(b.local.slice(0, 2), [5, 0])
-    assert.deepEqual(b.world.slice(0, 2), [5, 0])
+    assert.deepEqual(b.origin, [0, 0, 0])
+    assert.deepEqual(b.local, [5, 0, 0])
+    assert.deepEqual(b.world, [5, 0, 0])
 })
 
 test("acceptance: the ordinary undeclared counterpart is unchanged", () => {
@@ -110,38 +126,40 @@ test("acceptance: the ordinary undeclared counterpart is unchanged", () => {
     drive(scheduler)
     const b = pose(scheduler, "b")
     // A body that meets no existing place still starts where the caller stands.
-    assert.deepEqual(b.origin.slice(0, 2), [7, 0])
-    assert.deepEqual(b.local.slice(0, 2), [1, 0])
-    assert.deepEqual(b.world.slice(0, 2), [8, 0])
+    assert.deepEqual(b.origin, [7, 0, 0])
+    assert.deepEqual(b.local, [1, 0, 0])
+    assert.deepEqual(b.world, [8, 0, 0])
 })
 
-test("characterization: an unchanged body is retained, a reparsed one is destroyed", () => {
+test("acceptance: an unchanged execution seed retains, a newly allocated one replaces", () => {
     const source = program(entry)
-
-    // Same AST object: the seed matches, the place keeps its identity.
-    const kept = buildWorld({ admit: pass })
     const spec = fork("host", source)
-    const host = kept.hotSwapChild("host", spec)
-    drive(kept)
-    const before = pose(kept, "a")
-    assert.equal(kept.hotSwapChild("host", spec), host, "an unchanged body reuses its frame")
-    assert.equal(pose(kept, "a").id, before.id)
-    assert.equal(pose(kept, "a").run, before.run, "unchanged execution was not restarted")
+    const scheduler = buildWorld({ admit: pass })
+    const host = scheduler.hotSwapChild("host", spec)
+    drive(scheduler)
+    const before = pose(scheduler, "a")
 
-    // Reparsed text — even byte-identical — is a different AST, so the seed
-    // differs and the whole subtree is replaced. There is no relationship-only
-    // edit: every authored change takes this door, taking declaration, accepted
-    // pose and identity with it.
-    const edited = buildWorld({ admit: pass })
-    edited.hotSwapChild("host", fork("host", source))
-    drive(edited)
-    const gone = pose(edited, "a")
-    edited.hotSwapChild("host", fork("host", source))
-    drive(edited)
-    const after = pose(edited, "a")
-    assert.notEqual(after.id, gone.id, "a reparsed edit destroys the declared identity")
-    assert.notEqual(after.run, gone.run, "the execution is a new run")
-    assert.notDeepEqual(after.local.slice(0, 2), [3, 0], "the accepted pose did not survive")
+    // The same seed object reuses the frame; no execution restarts.
+    assert.equal(scheduler.hotSwapChild("host", spec), host)
+    assert.equal(pose(scheduler, "a").id, before.id)
+    assert.equal(pose(scheduler, "a").run, before.run, "unchanged execution was not restarted")
+
+    // Green-tree reuse: an indentation-only edit keeps the top-level node, and
+    // with the function and userspace identities held constant the seat too.
+    const indented = reparseProgram(program(entry).replace("  goto 3 0", "    goto 3 0"), source, spec.code.ast)
+    assert.equal(indented[0], spec.code.ast[0], "reparseProgram reused the node")
+    const green = scheduler.hotSwapChild("host", { ...spec, code: { ...spec.code, ast: indented } })
+    assert.equal(green, host, "an indentation-only edit retained the seat")
+    assert.equal(pose(scheduler, "a").id, before.id)
+
+    // A newly allocated execution seed replaces the subtree — declaration,
+    // accepted pose and identity. Relationship-only edits must update the batch
+    // independently of whether the executable seed changes.
+    const changed = reparseProgram(source.replace("goto 3 0", "goto 4 0"), source, spec.code.ast)
+    assert.notEqual(changed[0], spec.code.ast[0], "a changed body allocates a node")
+    const replaced = scheduler.hotSwapChild("host", { ...spec, code: { ...spec.code, ast: changed } })
+    assert.notEqual(replaced, host)
+    assert.notEqual(pose(scheduler, "a").id, before.id, "a new execution seed destroys the identity")
 })
 
 test("acceptance: a fresh play inherits nothing", () => {
@@ -153,7 +171,6 @@ test("acceptance: a fresh play inherits nothing", () => {
 
     scheduler.hotSwapChild("host", fork("host", ["as a do", "  fw 1", "end"].join("\n")), { fresh: true })
     drive(scheduler)
-    const after = find(scheduler.root, "a")
-    assert.notEqual(after, before, "a fresh play realizes anew")
-    assert.deepEqual(pose(scheduler, "a").local.slice(0, 2), [1, 0])
+    assert.notEqual(find(scheduler.root, "a"), before, "a fresh play realizes anew")
+    assert.deepEqual(pose(scheduler, "a").local, [1, 0, 0])
 })
