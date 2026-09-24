@@ -13,6 +13,9 @@ import { createFocus, resolveAddress } from "./focus.js"
 import { hatchVerdict } from "./hatch.js"
 import { createGesture } from "./laws/gesture.js"
 import { exposed } from "./laws/batch.js"
+import { eligibility, hitTest } from "./laws/handle.js"
+import { drawPin } from "./laws/pin.js"
+import { createOverlay } from "./overlay.js"
 import { worldProgress } from "./vitals.js"
 
 // The witness whose gate this canvas keeps — one spelling, shared with the
@@ -135,6 +138,8 @@ export class Turtle {
         // Give the pointer back before anything else goes away.
         this._handle?.dispose()
         this._handle = null
+        this._overlay?.dispose()
+        this._overlay = null
         // Dispose compositor/stage on remount — canvas outlives the hook.
         // Light register dies with the turtle (not with the compositor).
         this.compositor?.dispose()
@@ -146,6 +151,48 @@ export class Turtle {
         this.focus.bind(null)
         this.onBeat = null
         this.stage.dispose()
+    }
+
+    // The pin, drawn from the same queries the gesture uses: the anchor is the live
+    // effective position — where it is, and where it is touched — the birth frame is
+    // where the source placed it, and eligibility says whether it can be taken.
+    // (id:laws-decl-handle)
+    _drawPins() {
+        const overlay = this._overlay
+        if (!overlay) return
+        overlay.begin()
+        const scheduler = this.scheduler
+        if (!scheduler) return
+        const ctx = overlay.ctx
+        const pointer = this._pointer
+        for (const frame of scheduler.registry.values()) {
+            if (frame === scheduler.root || !exposed(frame)) continue
+            const at = this.stage.project(frameWorldTransform(frame).position)
+            if (!at) continue
+            const accepted = frame.transform.deref()
+            const gate = eligibility({
+                frame,
+                registered: scheduler.registry.get(frame.id) === frame,
+                accepted,
+            })
+            const held = this._heldFrame === frame
+            const hover = !held && pointer && hitTest(pointer, at)
+            const birth = this.stage.project(worldTransform(frame).position)
+            const gap = birth ? Math.hypot(birth.x - at.x, birth.y - at.y) : 0
+            drawPin(ctx, {
+                cx: at.x,
+                cy: at.y,
+                width: overlay.width,
+                state: !gate.ok ? 'hollow' : held ? 'held' : hover ? 'hover' : 'rest',
+                from: gap > 1 ? birth : null,
+                name: frame.name,
+                accepted: accepted.position,
+                requested: held && this.lastReadout?.point === frame.name
+                    ? this.lastReadout.requested : null,
+                outcome: !gate.ok ? gate.reason
+                    : (held && this.lastReadout?.point === frame.name ? this.lastReadout.outcome : null),
+            })
+        }
     }
 
     // Lazy init: one scheduler (meta-root) + one compositor for the lifetime.
@@ -186,7 +233,11 @@ export class Turtle {
             rayAt: (x, y) => stage.unproject(x, y),
             capture: ({ pointerId }) => {
                 capturedPointer = pointerId
-                canvas.setPointerCapture?.(pointerId)
+                // Capture keeps the drag alive when the pointer leaves the canvas. It
+                // is an optimisation, not a precondition: a browser with no active
+                // pointer throws, and the gesture must survive that rather than be
+                // left half-grabbed. (id:laws-decl-handle)
+                try { canvas.setPointerCapture?.(pointerId) } catch { /* moves still arrive */ }
                 // Freeze without moving the view: damping off stops residual drift,
                 // and nothing here calls update() or reset().
                 damping = controls.enableDamping
@@ -195,7 +246,7 @@ export class Turtle {
             },
             release: ({ pointerId }) => {
                 if (capturedPointer === pointerId) {
-                    canvas.releasePointerCapture?.(pointerId)
+                    try { canvas.releasePointerCapture?.(pointerId) } catch { /* never held */ }
                     capturedPointer = null
                 }
                 if (damping !== null) { controls.enableDamping = damping; damping = null }
@@ -214,16 +265,23 @@ export class Turtle {
             if (!answer.claimed) return
             event.stopImmediatePropagation()
             event.preventDefault()
-            this.compositor?.setHandleHighlight(answer.frame ?? null)
+            this._heldFrame = answer.frame ?? null
+            this._pointer = { x: event.clientX, y: event.clientY }
+            this.compositor?.setHandleHighlight(null)
         }
         const moved = (event) => {
             if (event.target !== canvas) return
+            this._pointer = { x: event.clientX, y: event.clientY }
             handle.pointerMove({ pointerId: event.pointerId, x: event.clientX, y: event.clientY })
+            // A hover is a state too: the pin must answer the pointer even when
+            // nothing is being dragged.
+            this.requestRender()
         }
-        const ended = (event) => handle.pointerUp({ pointerId: event.pointerId })
-        const cancelled = (event) => handle.pointerCancel({ pointerId: event.pointerId })
-        const lost = (event) => handle.pointerCancel({ pointerId: event.pointerId })
+        const ended = (event) => { this._heldFrame = null; handle.pointerUp({ pointerId: event.pointerId }) }
+        const cancelled = (event) => { this._heldFrame = null; handle.pointerCancel({ pointerId: event.pointerId }) }
+        const lost = (event) => { this._heldFrame = null; handle.pointerCancel({ pointerId: event.pointerId }) }
 
+        this._overlay ||= createOverlay()
         window.addEventListener('pointerdown', claimed, { capture: true })
         window.addEventListener('pointermove', moved, { capture: true })
         window.addEventListener('pointerup', ended, { capture: true })
@@ -318,6 +376,8 @@ export class Turtle {
             controlsChanged = controls.update()
             renderer.render(scene, camera)
         }
+
+        this._drawPins()
 
         // Only hatchVerdict decides hatch; owed keeps the loop awake.
         // mine = gate[self] — foreign witness cells never answer here.

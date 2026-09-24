@@ -1,17 +1,11 @@
 // Drain ambient channels into per-layer groups each frame.
 
 import {
-    BufferGeometry,
-    DoubleSide,
-    Float32BufferAttribute,
     Group,
-    Mesh,
-    MeshBasicMaterial,
     Vector3,
 } from '../utils/three-entry.js'
 import { materialize, accumulateTrail, flushTrail } from "./materializer.js"
 import { exposed } from "./laws/batch.js"
-import { inPlane } from "./laws/handle.js"
 import { worldTransform, frameWorldTransform, visitPostOrder, findReferenceFrame, takeSync } from "./scheduler.js"
 import { SE3 } from "./se3.js"
 import { eyeCameraPose } from "./view.js"
@@ -155,68 +149,6 @@ export function createCompositor(scheduler, stage, opts = {}) {
     // interaction cue is not stale. (id:laws-decl-handle)
     let highlighted = null
 
-    // A point handle is NOT a turtle head. Reusing the arrowhead made a declared
-    // place read as a turtle that would not move — and, with no actor style to
-    // borrow, it was drawn black on a dark canvas: visible only for the instant the
-    // capture highlight tinted it. So: a camera-facing quad, one colour of its own,
-    // distinct from the arrowhead, always visible while the source exposes it.
-    const HANDLE_COLOR = 0x2dd4bf
-    const HANDLE_HELD = 0xffffff
-    const HANDLE_OUT_OF_DOMAIN = 0x6b7280
-    const HANDLE_HALF = 6          // world units before the per-frame distance scale
-
-    // One group per place, added to the SCENE — not to the ambient's content group.
-    // A place's point is not content: it must survive clear, reclaim and trail
-    // churn, and a group of its own makes that structural rather than a keep-list
-    // that has to be right every time it changes.
-    const handleLayers = new Map()   // ambient id → { group, mesh }
-
-    function getOrCreateHandle(id) {
-        const existing = handleLayers.get(id)
-        if (existing) return existing
-        const group = new Group()
-        group.renderOrder = 10000
-        stage.scene.add(group)
-        const geometry = new BufferGeometry()
-        geometry.setAttribute('position', new Float32BufferAttribute([
-            -HANDLE_HALF, -HANDLE_HALF, 0,
-            HANDLE_HALF, -HANDLE_HALF, 0,
-            HANDLE_HALF, HANDLE_HALF, 0,
-            -HANDLE_HALF, HANDLE_HALF, 0,
-        ], 3))
-        geometry.setIndex([0, 1, 2, 0, 2, 3])
-        const material = new MeshBasicMaterial({
-            color: HANDLE_COLOR, side: DoubleSide, depthTest: false, transparent: true, opacity: 0.9,
-        })
-        const mesh = new Mesh(geometry, material)
-        mesh.frustumCulled = false
-        group.add(mesh)
-        const made = { group, mesh }
-        handleLayers.set(id, made)
-        return made
-    }
-
-    function discardHandle(id) {
-        const made = handleLayers.get(id)
-        if (!made) return
-        stage.scene.remove(made.group)
-        disposeMesh(made.mesh)
-        handleLayers.delete(id)
-    }
-
-    function materializePlace(ambient) {
-        const { group, mesh } = getOrCreateHandle(ambient.id)
-        const world = frameWorldTransform(ambient)
-        // The group carries position, scale and facing; the mesh sits at its origin.
-        group.position.set(...world.position)
-        group.visible = true
-        mesh.visible = true
-        const draggable = inPlane(ambient.transform.deref())
-        mesh.material.color.set(highlighted === ambient
-            ? HANDLE_HELD : (draggable ? HANDLE_COLOR : HANDLE_OUT_OF_DOMAIN))
-        mesh.material.opacity = highlighted === ambient ? 1 : (draggable ? 0.9 : 0.45)
-    }
-
     function drainAndMaterialize() {
         let produced = false
         for (const [id, ambient] of scheduler.registry) {
@@ -229,12 +161,11 @@ export function createCompositor(scheduler, stage, opts = {}) {
             // point you can see is a point you can grab. One marker per place: the
             // arrowhead is suppressed while the point is its affordance, and any ink
             // it deposits still draws below. (id:laws-decl-handle)
+            // A declared place draws no arrowhead: its affordance is the 2D pin, which
+            // is drawn over the canvas from the same projection the hit test uses. What
+            // stays here is its ink, and the head it must NOT draw. (id:laws-decl-handle)
             const isRoot = ambient === scheduler.root
             const isPlace = !isRoot && exposed(ambient)
-            if (isPlace) {
-                materializePlace(ambient)
-                produced = true
-            }
             if (events.length === 0 && poses.length === 0) continue
 
             // Root world frame: ink only. (id:ft-d4-world-root)
@@ -246,7 +177,6 @@ export function createCompositor(scheduler, stage, opts = {}) {
                 materials: stage.materials,
                 shapist: layer.shapist,
                 head: layer.head,
-                handle: layer.handle ?? null,
                 camera: camOn ? stage.camera : null,
                 controls: camOn ? controls : null,
                 frame: ambient,
@@ -382,7 +312,6 @@ export function createCompositor(scheduler, stage, opts = {}) {
             if (!scheduler.registry.has(id)) {
                 (deadIds ||= new Set()).add(id)
                 disposeLayer(id, layer)
-                discardHandle(id)
             }
         }
         if (!deadIds) return
@@ -397,11 +326,6 @@ export function createCompositor(scheduler, stage, opts = {}) {
             const gp = layer.group.position
             // A point handle keeps a constant on-screen size and faces the eye,
             // exactly as a head does — the same distance scale, the same frame.
-            if (handleLayers.has(id)) {
-                const { group } = handleLayers.get(id)
-                group.scale.setScalar(stage.camera.position.distanceTo(group.position) / 250)
-                group.quaternion.copy(stage.camera.quaternion)
-            }
             if (!layer.head) continue
             const headPos = layer.head.position()
 
@@ -508,12 +432,6 @@ export function createCompositor(scheduler, stage, opts = {}) {
                     id,
                     address: ambient?.address ?? null,
                     name: ambient?.name ?? null,
-                    handle: handleLayers.has(id) ? {
-                        visible: handleLayers.get(id).mesh.visible,
-                        inScene: stage.scene.children.includes(handleLayers.get(id).group),
-                        pos: [handleLayers.get(id).group.position.x, handleLayers.get(id).group.position.y, handleLayers.get(id).group.position.z],
-                        color: handleLayers.get(id).mesh.material.color.getHex(),
-                    } : null,
                     group: {
                         pos: [layer.group.position.x, layer.group.position.y, layer.group.position.z],
                         quat: {

@@ -78,8 +78,13 @@ export function eligibility({ frame, registered, accepted }) {
     return { ok: true, reason: null }
 }
 
+// The hit radius, in CSS pixels. ONE constant: the gesture tests with it and the
+// pin draws its ring at it, so the drawn ring is the touchable disc.
+// (id:laws-decl-handle)
+export const HIT_RADIUS = 18
+
 // Screen-space hit test against the handle's projected point.
-export function hitTest(pointer, projected, radius = 18) {
+export function hitTest(pointer, projected, radius = HIT_RADIUS) {
     return Math.hypot(pointer.x - projected.x, pointer.y - projected.y) <= radius
 }
 

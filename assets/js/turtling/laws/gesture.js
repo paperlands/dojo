@@ -10,7 +10,7 @@
 // than disabling the controls after they have already started a gesture.
 import {
     birthPlane, touchPlane, birthLocal, requestedPose, hitTest, eligibility,
-    outcomeOf, readout, OUTCOME,
+    outcomeOf, readout, OUTCOME, HIT_RADIUS,
 } from "./handle.js"
 
 export function createGesture(deps) {
@@ -29,7 +29,7 @@ export function createGesture(deps) {
         setControls,     // (enabled) => void
         controlsEnabled, // () => boolean — the camera's OWN current state
         onReadout,       // (line) => void
-        radius = 18,
+        radius = HIT_RADIUS,
     } = deps
 
     const poseOf = (frame) => frame.transform.deref()
