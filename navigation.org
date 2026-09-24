@@ -644,11 +644,15 @@ An atom watcher can read half the commit; tick samples are not reader snapshots.
 Publication is a critical section: while a notifier stack is open, =requestMotion=
 refuses =busy= for retry, so an outer publication can never overwrite a newer
 accepted pose or its head slots. Fence: =test/js/laws/phase0m_publication_test.mjs=.
+How a program obtains its first accepted world is still open: source order
+currently stands in for batch assembly, a missing endpoint reads as a refusal,
+and a replaced dependency is dropped only on the pure-=goto= read. Characterization:
+=test/js/laws/phase0n_activation_test.mjs=; reasoning: [[id:laws-activation-verdicts]].
 =phase0d..0i= share =test/js/laws/harness.mjs=; the analytic pair acceptance
 checks every sampled tick boundary, including a finished pen-up hand request.
 Reasoning: =specs/compiler/laws-transaction.org=; trace: =probe/laws-phase0/RESULTS.org=.
-Hosted source-spawned topology probe: =test/js/laws/phase0m_hosted_topology_test.mjs=
-([[id:laws-p0m-hosted-topology]]) pins birth/world conversion, declaring-frame
+Hosted source-spawned topology probe: =test/js/laws/phase0n_hosted_topology_test.mjs=
+([[id:laws-p0n-hosted-topology]]) pins birth/world conversion, declaring-frame
 deposits, scoped addresses and the still-unresolved finished hand request.
 =test/js/laws/phase0j_spanning_read_test.mjs= pins a second gap: =resolveBinding=
 can read old A then new B across a commit. The proposed observation scope and
