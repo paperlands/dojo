@@ -1133,7 +1133,15 @@ function commitTransaction(verdict, writer, registry) {
     }
     const root = metaRootFrame(writer)
     root._motionRevision = (root._motionRevision || 0) + 1
-    for (const send of notify) send()
+    // Publication is a critical section: installs are done, notifications are not.
+    // A request raised from a notifier must not interleave with this one. (id:laws-p0m-publication)
+    const wasPublishing = root._publishing === true
+    root._publishing = true
+    try {
+        for (const send of notify) send()
+    } finally {
+        root._publishing = wasPublishing
+    }
     return null
 }
 
@@ -1518,6 +1526,10 @@ export function createScheduler(generator, opts = {}) {
         get motionRevision() { return root._motionRevision },
         requestMotion(frame, requested, revision) {
             if (registry.get(frame?.id) !== frame || frame === root) return { kind: 'stale' }
+            // A publication's notifications are on the stack; a request raised from one
+            // is refused for retry, never interleaved — the watcher's commit is later
+            // (laws-transaction-d), and an outer publication must not overwrite it.
+            if (root._publishing) return { kind: 'busy', message: 'publication in flight' }
             if (!frame.done || subtreeUnsettled(frame)) return { kind: 'busy' }
             // The first probe supports only settled, unframed top-level points.
             if (frame.parent !== root || frame.targetFrame || frame.isLens || frame.error ||

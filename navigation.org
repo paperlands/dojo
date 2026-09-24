@@ -641,6 +641,9 @@ refuse | fault=. A component (=accept= with sibling poses) is one transaction:
 completed member retains accepted frame geometry without a live worker. Running
 members receive =batch.rebase= for their executors to adopt at the next command.
 An atom watcher can read half the commit; tick samples are not reader snapshots.
+Publication is a critical section: while a notifier stack is open, =requestMotion=
+refuses =busy= for retry, so an outer publication can never overwrite a newer
+accepted pose or its head slots. Fence: =test/js/laws/phase0m_publication_test.mjs=.
 =phase0d..0i= share =test/js/laws/harness.mjs=; the analytic pair acceptance
 checks every sampled tick boundary, including a finished pen-up hand request.
 Reasoning: =specs/compiler/laws-transaction.org=; trace: =probe/laws-phase0/RESULTS.org=.
