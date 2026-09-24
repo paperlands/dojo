@@ -9,7 +9,7 @@ const src = readFileSync(new URL("../../../assets/js/host.js", import.meta.url),
 
 describe("host door", () => {
     test("play is the verb, and onBeat is not a parameter", () => {
-        assert.match(src, /export function createHatch\(canvas, \{ caps \} = \{\}\)/)
+        assert.match(src, /export function createHatch\(canvas, \{ caps, law \} = \{\}\)/)
         assert.match(src, /async play\(program\)/)
         assert.equal(/function createHatch\([^)]*onBeat/.test(src), false)
         assert.equal(/\bseat\(/.test(src), false)
@@ -28,7 +28,13 @@ describe("host door", () => {
     })
 
     test("caps ride into the turtle, the recorder does not", () => {
-        assert.match(src, /new Turtle\(canvas, \{ caps \}\)/)
+        assert.match(src, /new Turtle\(canvas, \{ caps, law \}\)/)
         assert.equal(/recorder/.test(src), false)
+    })
+
+    test("the law seam is an option the door carries, not a policy it owns", () => {
+        assert.match(src, /createHatch\(canvas, \{ caps, law \} = \{\}\)/)
+        assert.match(src, /new Turtle\(canvas, \{ caps, law \}\)/)
+        assert.equal(/motionAdmission|observePureGoto|motionValidate/.test(src), false)
     })
 })

@@ -647,6 +647,9 @@ accepted pose or its head slots. Fence: =test/js/laws/phase0m_publication_test.m
 =phase0d..0i= share =test/js/laws/harness.mjs=; the analytic pair acceptance
 checks every sampled tick boundary, including a finished pen-up hand request.
 Reasoning: =specs/compiler/laws-transaction.org=; trace: =probe/laws-phase0/RESULTS.org=.
+Hosted source-spawned topology probe: =test/js/laws/phase0m_hosted_topology_test.mjs=
+([[id:laws-p0m-hosted-topology]]) pins birth/world conversion, declaring-frame
+deposits, scoped addresses and the still-unresolved finished hand request.
 =test/js/laws/phase0j_spanning_read_test.mjs= pins a second gap: =resolveBinding=
 can read old A then new B across a commit. The proposed observation scope and
 deferred-notification/snapshot comparison live at [[id:laws-transaction-d]].
@@ -679,6 +682,9 @@ disposal. Fences: =phase0e_refusal_stroke_test.mjs=, =phase0f_admission_faults_t
 :PATH: assets/js/host.js::createHatch
 :END:
 The package door (D030). =play= accepts. =finished= is =scheduler.done=.
+The lab seam rides the door: =createHatch(canvas, {caps, law})= carries an injected
+=motionAdmission | validate | observePureGoto= into =createScheduler= via =Turtle=
+— policy stays in the caller, the door owns no law. Live walk: =host_play.sh=.
 
 ** become — the seed law: an unchanged seat is skipped whole
 :PROPERTIES:

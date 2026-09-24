@@ -1,8 +1,9 @@
 // Play a PaperLang program on a canvas (D030)
 import { Turtle } from "./turtling/turtle.js"
 
-export function createHatch(canvas, { caps } = {}) {
-    const turtle = new Turtle(canvas, { caps })
+export function createHatch(canvas, { caps, law } = {}) {
+    // `law` is the lab seam (id:laws-build-p0); the door itself stays play/finished.
+    const turtle = new Turtle(canvas, { caps, law })
     let disposed = false
     let generation = 0
     let finishReject = null

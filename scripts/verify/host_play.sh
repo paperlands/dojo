@@ -113,6 +113,48 @@ try {
         && beatsN.some((b) => Math.abs(b.time - 1 / 24) < 1e-9 && Math.abs(b.birthtime - 0.2) < 1e-9)
     hatchN.dispose()
     say("nestok:" + nestok)
+
+    // The law seam: an injected relationship governs real host motion. One valid
+    // configuration must be established through the package door and survive
+    // `finished`. Lab-only — the responder lives in the page, not in the language.
+    const accepted = []
+    const pair = ({ command, requested, frame }) => {
+        if (frame.name !== "a") return { accepted: true, transform: requested }
+        const other = frame.parent.children.get("b")
+        if (!other) return { accepted: false }
+        const current = frame.transform.deref()
+        const delta = requested.position[0] - current.position[0]
+        const pose = { ...other.transform.deref(), position: [other.transform.deref().position[0] + delta, 0, 0] }
+        accepted.push([requested.position[0], pose.position[0]])
+        return { accepted: true, transform: requested, component: [{ frame: other, transform: pose }] }
+    }
+    const hatch5 = createHatch(canvas, { law: { motionAdmission: pair } })
+    const prog5 = [
+        "as b do",
+        "  goto 5 0",
+        "end",
+        "as a do",
+        "  goto 1 0",
+        "  wait 0.05",
+        "  goto 3 0",
+        "end",
+    ].join("\n")
+    const run5 = await hatch5.play(prog5)
+    await run5.finished
+    const first = accepted.length
+    const run5b = await hatch5.play(prog5)   // a fresh play re-establishes, never inherits
+    await run5b.finished
+    const repeated = accepted.length === first * 2
+        && accepted.slice(first).every((p, i) => p[0] === accepted[i][0] && p[1] === accepted[i][1])
+    hatch5.dispose()
+    let disposedRefused = false
+    try { await hatch5.play(prog5) } catch (e) { disposedRefused = e.message === "hatch disposed" }
+    const lawsok = first === 2
+        && accepted.slice(0, first).every(([x, y]) => Math.abs(Math.abs(x - y) - 5) < 1e-9)
+        && accepted[first - 1][0] === 3 && accepted[first - 1][1] === 8
+        && repeated && disposedRefused
+    say("laws:" + JSON.stringify(accepted))
+    say("lawsok:" + lawsok)
     say("DONE")
 } catch (e) {
     say("FAIL " + (e && e.stack || e))

@@ -21,6 +21,9 @@ const PROGRESS_FLOOR_MS = 100   // progress breath floor (~10/s)
 export class Turtle {
     constructor(canvas, options = {}) {
         this._caps = options.caps ?? null
+        // The law seam: an injected admission/observation policy for this play.
+        // Lab-only — no child-facing syntax, no second API. (id:laws-build-p0)
+        this._law = options.law ?? null
         this.bridge = bridged("turtle")
 
         const stage = createStage(canvas, this.bridge, options.instruments)
@@ -150,7 +153,10 @@ export class Turtle {
             // onShout carries the emitter's name; routing is read-side.
             onShout: (sourceName, msg, payload) => {
                 this._onShout?.(sourceName, msg, payload)
-            }
+            },
+            // createScheduler reads the seam at the top level, not from execOpts:
+            // motionAdmission | motionAdmissionAsync | motionValidate | observePureGoto.
+            ...(this._law ?? {}),
         })
         this.focus.bind(this.scheduler)
         // Live stage for STAGE_CONTRACT verbs; cadence + orbit target via opts
