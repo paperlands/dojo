@@ -13,7 +13,7 @@ import { createFocus, resolveAddress } from "./focus.js"
 import { hatchVerdict } from "./hatch.js"
 import { createGesture } from "./laws/gesture.js"
 import { exposed } from "./laws/batch.js"
-import { eligibility, hitTest } from "./laws/handle.js"
+import { eligibility, hitTest, HIT_RADIUS } from "./laws/handle.js"
 import { drawPin } from "./laws/pin.js"
 import { createOverlay } from "./overlay.js"
 import { worldProgress } from "./vitals.js"
@@ -157,6 +157,15 @@ export class Turtle {
     // effective position — where it is, and where it is touched — the birth frame is
     // where the source placed it, and eligibility says whether it can be taken.
     // (id:laws-decl-handle)
+    // Is the pointer anywhere near a pin? Cheap, from the last frame's screen
+    // positions, so a move across empty canvas does not wake the renderer.
+    _nearPin(x, y) {
+        for (const pin of this._pinScreens ?? []) {
+            if (Math.hypot(x - pin.x, y - pin.y) <= HIT_RADIUS * 3) return true
+        }
+        return false
+    }
+
     _drawPins() {
         const overlay = this._overlay
         if (!overlay) return
@@ -165,6 +174,8 @@ export class Turtle {
         if (!scheduler) return
         const ctx = overlay.ctx
         const pointer = this._pointer
+        const screens = []
+        this._hoveredFrame = null
         for (const frame of scheduler.registry.values()) {
             if (frame === scheduler.root || !exposed(frame)) continue
             const at = this.stage.project(frameWorldTransform(frame).position)
@@ -175,8 +186,10 @@ export class Turtle {
                 registered: scheduler.registry.get(frame.id) === frame,
                 accepted,
             })
+            screens.push(at)
             const held = this._heldFrame === frame
             const hover = !held && pointer && hitTest(pointer, at)
+            if (hover || held) this._hoveredFrame = this._hoveredFrame ?? frame
             const birth = this.stage.project(worldTransform(frame).position)
             const gap = birth ? Math.hypot(birth.x - at.x, birth.y - at.y) : 0
             drawPin(ctx, {
@@ -184,7 +197,7 @@ export class Turtle {
                 cy: at.y,
                 width: overlay.width,
                 state: !gate.ok ? 'hollow' : held ? 'held' : hover ? 'hover' : 'rest',
-                from: gap > 1 ? birth : null,
+                from: birth && gap > 0 ? birth : null,
                 name: frame.name,
                 accepted: accepted.position,
                 requested: held && this.lastReadout?.point === frame.name
@@ -193,6 +206,7 @@ export class Turtle {
                     : (held && this.lastReadout?.point === frame.name ? this.lastReadout.outcome : null),
             })
         }
+        this._pinScreens = screens
     }
 
     // Lazy init: one scheduler (meta-root) + one compositor for the lifetime.
@@ -242,7 +256,6 @@ export class Turtle {
                 // and nothing here calls update() or reset().
                 damping = controls.enableDamping
                 controls.enableDamping = false
-                this.compositor?.setHandleHighlight(null)
             },
             release: ({ pointerId }) => {
                 if (capturedPointer === pointerId) {
@@ -250,7 +263,6 @@ export class Turtle {
                     capturedPointer = null
                 }
                 if (damping !== null) { controls.enableDamping = damping; damping = null }
-                this.compositor?.setHandleHighlight(null)
             },
             setControls: (enabled) => { controls.enabled = enabled },
             controlsEnabled: () => controls.enabled,
@@ -267,31 +279,35 @@ export class Turtle {
             event.preventDefault()
             this._heldFrame = answer.frame ?? null
             this._pointer = { x: event.clientX, y: event.clientY }
-            this.compositor?.setHandleHighlight(null)
         }
         const moved = (event) => {
             if (event.target !== canvas) return
             this._pointer = { x: event.clientX, y: event.clientY }
             handle.pointerMove({ pointerId: event.pointerId, x: event.clientX, y: event.clientY })
-            // A hover is a state too: the pin must answer the pointer even when
-            // nothing is being dragged.
-            this.requestRender()
+            // A hover is a state too, but waking on every move across the canvas
+            // would defeat render-on-demand. Wake while the pointer is near a pin,
+            // or while one is already hovered and must be released.
+            if (this._hoveredFrame || this._nearPin(event.clientX, event.clientY)) this.requestRender()
         }
+        // Leaving the canvas is leaving the pin: a hover must not outlive the
+        // pointer that caused it.
+        const left = () => { this._pointer = null; this.requestRender() }
         const ended = (event) => { this._heldFrame = null; handle.pointerUp({ pointerId: event.pointerId }) }
         const cancelled = (event) => { this._heldFrame = null; handle.pointerCancel({ pointerId: event.pointerId }) }
         const lost = (event) => { this._heldFrame = null; handle.pointerCancel({ pointerId: event.pointerId }) }
 
-        this._overlay ||= createOverlay()
+        // A resize clears the overlay, so it must ask for a frame or the pin is
+        // erased until something unrelated wakes the loop.
+        this._overlay ||= createOverlay({ onResize: () => this.requestRender() })
         window.addEventListener('pointerdown', claimed, { capture: true })
         window.addEventListener('pointermove', moved, { capture: true })
         window.addEventListener('pointerup', ended, { capture: true })
         window.addEventListener('pointercancel', cancelled, { capture: true })
         canvas.addEventListener('lostpointercapture', lost)
+        canvas.addEventListener('pointerleave', left)
 
         this._handle = {
             gesture: handle,
-            // The handle the hand owns right now, for the compositor's cue.
-            highlight(frame) { this._highlight = frame },
             get grabbed() { return handle.grabbed },
             dispose: () => {
                 window.removeEventListener('pointerdown', claimed, { capture: true })
@@ -299,6 +315,7 @@ export class Turtle {
                 window.removeEventListener('pointerup', ended, { capture: true })
                 window.removeEventListener('pointercancel', cancelled, { capture: true })
                 canvas.removeEventListener('lostpointercapture', lost)
+                canvas.removeEventListener('pointerleave', left)
                 handle.dispose()
             },
         }

@@ -145,10 +145,6 @@ export function createCompositor(scheduler, stage, opts = {}) {
     // Focused subtree for view routing; head uses stricter name match.
     const inFocusedSubtree = (ambient) => focus.inFocusedSubtree(ambient)
 
-    // Which handle, if any, the hand currently owns — drawn differently so the
-    // interaction cue is not stale. (id:laws-decl-handle)
-    let highlighted = null
-
     function drainAndMaterialize() {
         let produced = false
         for (const [id, ambient] of scheduler.registry) {
@@ -361,14 +357,6 @@ export function createCompositor(scheduler, stage, opts = {}) {
 
     return {
         scheduler,
-
-        // The gesture tells the compositor which handle it owns, then asks for a
-        // paint: capture highlighting is feedback, not a side effect of acceptance.
-        setHandleHighlight(frame) {
-            if (highlighted === frame) return
-            highlighted = frame
-            stage.requestRender?.()
-        },
 
         get budgetMs() { return pacer.budgetMs },
 

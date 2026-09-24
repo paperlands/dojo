@@ -25,6 +25,8 @@ const stub = () => {
         setLineDash(d) { calls.push(['dash', d.join(' ')]) },
         fillText(text) { calls.push(['text', text, ctx.textAlign]) },
         createRadialGradient() { calls.push(['bead']); return { addColorStop() {} } },
+        // 6px per character, enough to tell a short name from a long one.
+        measureText(text) { return { width: String(text).length * 6 } },
     }
     return { ctx, calls }
 }
@@ -87,8 +89,13 @@ test("the birth hairline appears only when there is a gap to show", () => {
 })
 
 test("the annotation stays inside the field it annotates", () => {
-    const left = texts(draw({ state: 'rest', cx: 200 }))[0]
-    const right = texts(draw({ state: 'rest', cx: 560 }))[0]
-    assert.equal(left[2], 'left')
-    assert.equal(right[2], 'right', "a label near the edge flips rather than leaving")
+    const align = (state) => texts(draw(state))[0][2]
+    assert.equal(align({ state: 'rest', cx: 200 }), 'left')
+    // Near the edge the decision is MEASURED, not a fixed guess: a short label at
+    // 560 in a 600-wide field genuinely fits (560 + 30 + 6 = 596), so it is left
+    // alone; a longer one does not, and flips.
+    assert.equal(align({ state: 'rest', cx: 560, name: 'a' }), 'left')
+    assert.equal(align({ state: 'rest', cx: 560, name: 'ambient' }), 'right')
+    assert.equal(align({ state: 'rest', cx: 470, name: 'averylongambientname' }), 'right')
+    assert.equal(align({ state: 'rest', cx: 470, name: 'a' }), 'left')
 })

@@ -8,7 +8,7 @@
 // Fixed to the viewport and transparent to pointers, so it needs no knowledge
 // of the canvas's position, scrolling or the page around it.
 
-export function createOverlay() {
+export function createOverlay({ onResize } = {}) {
     const canvas = document.createElement('canvas')
     Object.assign(canvas.style, {
         position: 'fixed',
@@ -38,6 +38,9 @@ export function createOverlay() {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
         ctx.lineCap = 'round'
         ctx.lineJoin = 'round'
+        // A resize clears the backing store: whoever draws on this layer must be
+        // told, or the marks are erased until something else wakes the frame.
+        onResize?.()
     }
     resize()
     window.addEventListener('resize', resize)

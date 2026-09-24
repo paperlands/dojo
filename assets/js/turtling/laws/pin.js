@@ -18,7 +18,9 @@ const rgba = (rgb, a) => `rgba(${rgb},${a})`
 // the field it annotates.
 function annotate(ctx, { cx, cy, lines, width }) {
     const gap = HIT_RADIUS + 12
-    const flip = cx + gap + 92 > width
+    // Measured, not guessed: a long name must not leave the field either.
+    const widest = Math.max(0, ...lines.map((line) => ctx.measureText(line).width))
+    const flip = cx + gap + widest > width
     ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace'
     ctx.textAlign = flip ? 'right' : 'left'
     ctx.textBaseline = 'alphabetic'
