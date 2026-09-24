@@ -41,7 +41,7 @@ export function materialize(event, groups, ctx) {
         break
 
     case "clear":
-        clearGroups(groups, ctx.head)
+        clearGroups(groups, ctx.head, ctx.handle)
         break
 
     case "wait":
@@ -236,17 +236,30 @@ function materializeGrid(event, gridGroup) {
     gridGroup.add(gridHelper)
 }
 
-function clearGroups(groups, head) {
-    // Remove drawn content from pathGroup but preserve the head mesh.
-    // hd (hide) is the intentional way to hide the head — erase should not.
-    const headGroup = head?.turtleGroup
+function clearGroups(groups, head, handle) {
+    // Remove drawn content, but preserve what is not content: the turtle head mesh
+    // and a declared place's point handle. hd (hide) is the intentional way to hide
+    // either — erase should not.
+    //
+    // An ambient layer uses ONE group for paths, grids and glyphs, so clearing
+    // gridGroup/glyphGroup separately would take the head and the point with it.
+    // The keep set is therefore applied to the single group they all are.
+    const keep = new Set()
+    if (head?.turtleGroup) keep.add(head.turtleGroup)
+    if (handle) keep.add(handle)
+
+    const oneGroup = groups.gridGroup === groups.pathGroup && groups.glyphGroup === groups.pathGroup
     for (const child of [...groups.pathGroup.children]) {
-        if (child !== headGroup) groups.pathGroup.remove(child)
+        if (!keep.has(child)) groups.pathGroup.remove(child)
     }
-    groups.gridGroup.clear()
-    if (groups.glyphGroup.elements) {
-        groups.glyphGroup.elements.forEach(text => text.dispose())
+    if (!oneGroup) {
+        groups.gridGroup.clear()
+        if (groups.glyphGroup.elements) {
+            groups.glyphGroup.elements.forEach(text => text.dispose())
+            groups.glyphGroup.elements = []
+        }
+        groups.glyphGroup.clear()
+    } else if (groups.glyphGroup.elements) {
         groups.glyphGroup.elements = []
     }
-    groups.glyphGroup.clear()
 }
