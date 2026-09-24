@@ -5,7 +5,7 @@
 import { createFrame } from "./frame.js"
 import { matchPattern } from "./match.js"
 import { execute, createActorState } from "./executor.js"
-import { deriveBatch } from "./laws/batch.js"
+import { deriveBatch, exposed } from "./laws/batch.js"
 import { SE3 } from "./se3.js"
 import { chargeInk, woundInk, enforceResidency, resetInk, createStock } from "./ledger.js"
 
@@ -1613,14 +1613,30 @@ export function createScheduler(generator, opts = {}) {
             if (!frame.done || subtreeUnsettled(frame)) return { kind: 'busy' }
             // A settled actor may live inside a hosted play. Keep the transaction
             // inside one seating: a sibling's birth frame is not the root's frame.
-            if (!frame.parent || frame.isLens || frame.error ||
-                !pump.motionAdmission || pump.motionAdmissionAsync) return { kind: 'unresolved' }
+            if (!frame.parent || frame.isLens || frame.error) return { kind: 'unresolved' }
             if (revision !== root._motionRevision) return { kind: 'stale' }
             const request = { command: 'hand', from: frame.transform.deref(), requested, frame }
+
+            // Who decides the verdict? An installed responder, always. Failing that,
+            // an existence-only declaration decides nothing, so its own admission is
+            // the identity: the point moves where it is asked. That is source-backed,
+            // not a default for a missing responder — a frame the source does not
+            // expose is still unresolved, and an installed responder is never
+            // bypassed. (id:laws-decl-ownership)
             let raw
-            try { raw = pump.motionAdmission(request) }
-            catch (error) { return { kind: 'fault', message: `motion responder failed: ${error.message}` } }
-            if (isThenable(raw)) return { kind: 'unresolved', message: 'hand admission must settle synchronously' }
+            if (pump.motionAdmission) {
+                try { raw = pump.motionAdmission(request) }
+                catch (error) { return { kind: 'fault', message: `motion responder failed: ${error.message}` } }
+                if (isThenable(raw)) {
+                    return { kind: 'unresolved', message: 'hand admission must settle synchronously' }
+                }
+            } else if (pump.motionAdmissionAsync) {
+                return { kind: 'unresolved' }
+            } else if (exposed(frame)) {
+                raw = { accepted: true, transform: requested }
+            } else {
+                return { kind: 'unresolved' }
+            }
             const verdict = checkMotion(interpretReply(raw, execOpts.refusalStroke),
                 frame, registry, pump.motionValidate, request)
             if (verdict.kind !== 'accept') return verdict

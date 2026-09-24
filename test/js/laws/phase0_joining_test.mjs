@@ -15,7 +15,8 @@
 // Run: node --test test/js/laws/phase0_joining_test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { buildWorld, fork, drive } from "./harness.mjs"
+import { buildWorld, fork, at, drive } from "./harness.mjs"
+import { exposed } from "../../../assets/js/turtling/laws/batch.js"
 import { frameWorldTransform } from "../../../assets/js/turtling/scheduler.js"
 import { reparseProgram } from "../../../assets/js/turtling/parse.js"
 
@@ -187,4 +188,60 @@ test("acceptance: declared re-entry preserves placement and starts from the acce
     assert.deepEqual(again.axis, [0, -1, 0], "the fw axis still follows A's own heading")
     assert.deepEqual(again.world, [3, -1, 0], "world names the same configuration")
     assert.equal(host.declared.has("a"), true, "A participates in the host's batch")
+})
+
+// The hand door's admission, for a place the source declares. (id:laws-decl-ownership)
+test("acceptance: an existence-only declaration admits its own motion", () => {
+    // No responder installed: an existence declaration constrains nothing, so its
+    // own admission IS the identity — the point moves where it is asked.
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host", "let a\nas a do\n  goto 3 0\nend"))
+    drive(scheduler)
+    const a = find(host, "a")
+    assert.equal(a.done, true)
+    const verdict = scheduler.requestMotion(a, at(7), scheduler.motionRevision)
+    assert.equal(verdict.kind, "accept")
+    assert.deepEqual(a.transform.deref().position.slice(0, 2), [7, 0])
+})
+
+test("acceptance: a missing responder is not a licence to move anything", () => {
+    // The same scheduler, the same absent responder — but this frame is not
+    // exposed by any declaration, so nothing admits it.
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host", "as a do\n  goto 3 0\nend"))
+    drive(scheduler)
+    const a = find(host, "a")
+    assert.equal(exposed(a), false)
+    assert.equal(scheduler.requestMotion(a, at(7), scheduler.motionRevision).kind, "unresolved")
+    assert.deepEqual(a.transform.deref().position.slice(0, 2), [3, 0], "and it did not move")
+})
+
+test("acceptance: an installed responder is never bypassed by the identity rule", () => {
+    // The responder governs program motion too, so it accepts `goto` and refuses
+    // only the hand — otherwise the place could never reach its settled pose.
+    const scheduler = buildWorld({ admit: ({ command, requested }) =>
+        command === 'hand' ? { accepted: false } : { accepted: true, transform: requested } })
+    const host = scheduler.hotSwapChild("host", fork("host", "let a\nas a do\n  goto 3 0\nend"))
+    drive(scheduler)
+    const a = find(host, "a")
+    assert.equal(exposed(a), true)
+    // Declared, and still refused: the responder decides, not the declaration.
+    assert.equal(scheduler.requestMotion(a, at(7), scheduler.motionRevision).kind, "refuse")
+    assert.deepEqual(a.transform.deref().position.slice(0, 2), [3, 0])
+})
+
+test("acceptance: removing the declaration withdraws the admission with it", () => {
+    const scheduler = buildWorld({})
+    // The DECLARING scope is what gets rewired — re-entering `a` would not touch
+    // the batch that exposes it.
+    const host = scheduler.hotSwapChild("host", fork("host", [
+        "as s do", "  let a", "  as a do", "    goto 3 0", "  end", "end",
+        "wait 1",
+        "as s do", "end",
+    ].join("\n")))
+    drive(scheduler)
+    const a = find(host, "a")
+    assert.equal(exposed(a), false, "the scope was rewired without the declaration")
+    assert.equal(scheduler.requestMotion(a, at(7), scheduler.motionRevision).kind, "unresolved")
+    assert.deepEqual(a.transform.deref().position.slice(0, 2), [3, 0])
 })
