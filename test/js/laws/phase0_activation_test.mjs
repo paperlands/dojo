@@ -17,7 +17,10 @@
 // Run: node --test test/js/laws/phase0_activation_test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { buildWorld, fork, at, drive, settle } from "./harness.mjs"
+import { buildWorld as baseWorld, fork, at, drive, settle } from "./harness.mjs"
+// This file characterizes the inherited concurrent component base, a capability
+// that is now gated off by default. It opts in explicitly. (id:laws-activation-order)
+const buildWorld = (opts = {}) => baseWorld({ ...opts, settledOnly: false })
 import { takeSync, worldTransform, frameWorldTransform } from "../../../assets/js/turtling/scheduler.js"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
 

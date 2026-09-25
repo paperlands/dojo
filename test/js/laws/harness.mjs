@@ -19,16 +19,17 @@ export function fork(name, src, origin = IDENT) {
     }
 }
 
-export function buildWorld({ admit, admitAsync, validate, observeGoto = false, refusalStroke, capacity = 64, strokeMax = 1 } = {}) {
+export function buildWorld({ admit, admitAsync, validate, observeGoto = false, refusalStroke, capacity = 64, strokeMax = 1, breathEvery = 1, settledOnly = true } = {}) {
     return createScheduler(metaRoot(), {
         createDeps: deps,
-        execOpts: { color: "#000000", strokeMax, breathEvery: 1 },
+        execOpts: { color: "#000000", strokeMax, breathEvery },
         channelCapacity: capacity,
         motionAdmission: admit,
         motionAdmissionAsync: admitAsync,
         motionValidate: validate,
         observePureGoto: observeGoto,
         refusalStroke,
+        settledOnly,
         onShout: () => {},
     })
 }

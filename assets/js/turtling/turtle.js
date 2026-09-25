@@ -12,9 +12,10 @@ import { labInputs } from "./lab.js"
 import { createFocus, resolveAddress } from "./focus.js"
 import { hatchVerdict } from "./hatch.js"
 import { createGesture } from "./laws/gesture.js"
-import { exposed } from "./laws/batch.js"
-import { eligibility, hitTest, HIT_RADIUS } from "./laws/handle.js"
-import { drawPin } from "./laws/pin.js"
+import { exposed, pointCandidates } from "./laws/batch.js"
+import { verdictFade, VERDICT_DECAY_MS, viewMapping } from "./laws/handle.js"
+import { drawPin, drawGhost, drawAxis, drawCurve } from "./laws/pin.js"
+import { stateOf, silhouette, axesOf, sphereCurves } from "./laws/constraints.js"
 import { createOverlay } from "./overlay.js"
 import { worldProgress } from "./vitals.js"
 
@@ -51,6 +52,8 @@ export class Turtle {
         this._renderRequested = false    // one-shot: render at least one more frame
         this._keepRendering = false      // set each frame: is there ongoing work?
         this._controlsActiveUntil = 0    // ms timestamp: keep rendering until damping settles
+        this._lastRefusal = null
+        this._ghost = null
 
         // Wake loop on camera interaction; settle window after release.
         this._onControlsActive = () => {
@@ -135,7 +138,6 @@ export class Turtle {
         for (const ev of ['start', 'change', 'end']) {
             this.stage.controls.removeEventListener(ev, this._onControlsActive)
         }
-        // Give the pointer back before anything else goes away.
         this._handle?.dispose()
         this._handle = null
         this._overlay?.dispose()
@@ -153,169 +155,219 @@ export class Turtle {
         this.stage.dispose()
     }
 
-    // The pin, drawn from the same queries the gesture uses: the anchor is the live
-    // effective position — where it is, and where it is touched — the birth frame is
-    // where the source placed it, and eligibility says whether it can be taken.
-    // (id:laws-decl-handle)
-    // Is the pointer anywhere near a pin? Cheap, from the last frame's screen
-    // positions, so a move across empty canvas does not wake the renderer.
-    _nearPin(x, y) {
-        for (const pin of this._pinScreens ?? []) {
-            if (Math.hypot(x - pin.x, y - pin.y) <= HIT_RADIUS * 3) return true
-        }
-        return false
+    // Compose the compositor's reframe with the stage's camera once, so the
+    // drawn mark and the gesture's ray/plane share one frame.
+    // (id:laws-decl-interface)
+    _view() {
+        return viewMapping(this.compositor?.viewReframe?.() ?? null, this.stage)
     }
 
+    // The one description of a point: free / headed / pinned / unresolved, with
+    // its normals, degrees of freedom and the exact locus. (id:laws-decl-point-agent)
+    _stateOf(frame) {
+        const scheduler = this.scheduler
+        const headed = frame.generator != null || frame.actorState != null
+        const constraints = []
+        for (const law of scheduler.laws.active()) {
+            if (law.feature === 'distance' && (law.endpoints[0] === frame.id || law.endpoints[1] === frame.id)) {
+                const otherId = law.endpoints[0] === frame.id ? law.endpoints[1] : law.endpoints[0]
+                const other = scheduler.registry.get(otherId)
+                if (other) constraints.push({ feature: 'distance',
+                    other: frameWorldTransform(other).position, radius: law.predicate })
+            } else if (law.feature === 'position' && law.endpoints[0] === frame.id) {
+                constraints.push({ pinned: true })
+            }
+        }
+        return stateOf({
+            at: frameWorldTransform(frame).position,
+            headed,
+            exposed: exposed(frame),
+            isPlace: frame.isPlace === true,
+            error: frame.error ?? null,
+            // A failed attempt's hold is not an offer. The pin still draws (its
+            // previous state), but it is not touchable until an edit releases it.
+            // (id:laws-activation-verdicts)
+            unresolved: frame.unresolved ?? frame.held ?? null,
+            constraints,
+        })
+    }
+
+    // The gesture's one question, answered by the same state the view draws.
+    _touchable(frame) {
+        return this._stateOf(frame).tag === 'free'
+    }
+
+    // An unanchored `let A` can be touched. Once A has a walking head, the
+    // marker observes its accepted position but never takes the pointer.
+    // (id:laws-place-head-frame)
     _drawPins() {
         const overlay = this._overlay
         if (!overlay) return
         overlay.begin()
+        const view = this._view()
         const scheduler = this.scheduler
         if (!scheduler) return
-        const ctx = overlay.ctx
-        const pointer = this._pointer
-        const screens = []
-        this._hoveredFrame = null
+        // A run can attach a head or remove a point without another pointer move.
+        if (this._heldFrame && (!this._touchable(this._heldFrame)
+            || scheduler.registry.get(this._heldFrame.id) !== this._heldFrame)) {
+            this._handle?.cancel()
+        }
+        const now = performance.now()
+        if (this._ghost && now - this._ghost.at >= VERDICT_DECAY_MS) this._ghost = null
+        // Where a constrained point MAY go — its locus, the axis it rests on, and
+        // the surface's coordinate curves through it. All world geometry, so a
+        // camera turn carries them with the world. (id:laws-freedom)
+        const facing = this.stage.facing()
+        const cp = this.stage.camera.position
         for (const frame of scheduler.registry.values()) {
             if (frame === scheduler.root || !exposed(frame)) continue
-            const at = this.stage.project(frameWorldTransform(frame).position)
+            const state = this._stateOf(frame)
+            if (state.tag !== 'free') continue
+            const at = state.at
+            // the locus outline, when one is named
+            const ring = silhouette(state.locus, facing)
+            if (ring) drawGhost(overlay.ctx, ring.map((p) => view.project(p)))
+            // the resting axis: the constraint normal, through the point
+            const axes = axesOf(state)
+            if (axes) {
+                const scale = state.locus?.radius ? state.locus.radius * 0.5 : 20
+                const along = (d) => [at[0] + d[0] * scale, at[1] + d[1] * scale, at[2] + d[2] * scale]
+                drawAxis(overlay.ctx, view.project(along(axes.normal.map((n) => -n))),
+                    view.project(along(axes.normal)), { strong: true })
+            }
+            // the surface's coordinate curves through the point, depth-faded
+            const curves = sphereCurves(state.locus, at)
+            if (!curves) continue
+            const shade = (worlds) => {
+                const pts = worlds.map((p) => {
+                    const s = view.project(p)
+                    return s ? { x: s.x, y: s.y,
+                        depth: Math.hypot(p[0] - cp.x, p[1] - cp.y, p[2] - cp.z) } : null
+                })
+                const ds = pts.filter(Boolean).map((p) => p.depth)
+                const min = Math.min(...ds), max = Math.max(...ds)
+                for (const p of pts) if (p) p.t = max > min ? (p.depth - min) / (max - min) : 0
+                return pts
+            }
+            drawCurve(overlay.ctx, shade(curves.parallel))
+            drawCurve(overlay.ctx, shade(curves.meridian))
+        }
+        for (const frame of scheduler.registry.values()) {
+            if (frame === scheduler.root || !exposed(frame)) continue
+            const at = view.project(frameWorldTransform(frame).position)
             if (!at) continue
-            const accepted = frame.transform.deref()
-            const gate = eligibility({
-                frame,
-                registered: scheduler.registry.get(frame.id) === frame,
-                accepted,
-            })
-            screens.push(at)
-            const held = this._heldFrame === frame
-            const hover = !held && pointer && hitTest(pointer, at)
-            if (hover || held) this._hoveredFrame = this._hoveredFrame ?? frame
-            const birth = this.stage.project(worldTransform(frame).position)
-            const gap = birth ? Math.hypot(birth.x - at.x, birth.y - at.y) : 0
-            drawPin(ctx, {
-                cx: at.x,
-                cy: at.y,
-                width: overlay.width,
-                state: !gate.ok ? 'hollow' : held ? 'held' : hover ? 'hover' : 'rest',
-                from: birth && gap > 0 ? birth : null,
-                name: frame.name,
-                accepted: accepted.position,
-                requested: held && this.lastReadout?.point === frame.name
-                    ? this.lastReadout.requested : null,
-                outcome: !gate.ok ? gate.reason
-                    : (held && this.lastReadout?.point === frame.name ? this.lastReadout.outcome : null),
+            const touchable = this._touchable(frame)
+            const held = touchable && this._heldFrame === frame
+            const readout = held && this.lastReadout?.point === frame.name ? this.lastReadout : null
+            const ghost = this._ghost?.point === frame.name
+                ? { text: this._ghost.text, fade: verdictFade(now - this._ghost.at) } : null
+            drawPin(overlay.ctx, {
+                cx: at.x, cy: at.y, width: overlay.width, name: frame.name,
+                withHead: this.compositor?.visibleHeadFor(frame.id) ?? false,
+                touchable, held, accepted: frame.transform.deref().position,
+                requested: readout?.requested, outcome: readout?.outcome,
+                ghost: held ? null : ghost,
             })
         }
-        this._pinScreens = screens
     }
 
-    // Lazy init: one scheduler (meta-root) + one compositor for the lifetime.
-    // Focus register is rebound (not recreated) so kindled/warm survive empty canvas.
-    // The gesture adapter. It owns pointer capture, the grab offset, eligibility and
-    // the camera handoff; the stage owns projection, the compositor owns the drawing,
-    // the scheduler owns admission. Arbitration happens BEFORE the camera sees
-    // pointerdown: our listener is on the window in the capture phase, so it runs
-    // ahead of the canvas's own, and stopping there leaves OrbitControls untouched
-    // rather than partly initialized.
     _ensureHandle() {
         if (this._handle || !this.scheduler) return
-        const stage = this.stage
-        const controls = stage.controls
-        const canvas = stage.canvas
         const scheduler = this.scheduler
-        let capturedPointer = null
+        const stage = this.stage
+        const canvas = stage.canvas
+        const controls = stage.controls
+        let captured = null
         let damping = null
-
         const handle = createGesture({
-            candidates: () => {
-                const out = []
-                for (const frame of scheduler.registry.values()) {
-                    if (frame !== scheduler.root && exposed(frame)) out.push({ name: frame.name, frame })
-                }
-                return out
-            },
-            // Two frames, two jobs: the anchor is the live effective position (where
-            // the point is drawn and hit), the birth frame is the plane the pointer
-            // maps through — stable while the point moves. (id:laws-decl-anchor)
-            anchorOf: (frame) => frameWorldTransform(frame),
-            birthOf: (frame) => worldTransform(frame),
-            registered: (frame) => scheduler.registry.get(frame.id) === frame,
-            requestMotion: (frame, requested, revision) => scheduler.requestMotion(frame, requested, revision),
+            candidates: () => pointCandidates(scheduler.registry.values(), frame => this._touchable(frame))
+                .map(frame => ({ name: frame.name, frame })),
+            canTouch: frame => this._touchable(frame),
+            anchorOf: frame => frameWorldTransform(frame),
+            birthOf: frame => worldTransform(frame),
+            registered: frame => scheduler.registry.get(frame.id) === frame,
+            requestMotion: (frame, pose, revision) => scheduler.requestMotion(frame, pose, revision),
             revision: () => scheduler.motionRevision,
             wake: () => this.requestRender(),
-            project: (world) => stage.project(world),
-            rayAt: (x, y) => stage.unproject(x, y),
+            project: world => this._view().project(world),
+            rayAt: (x, y) => this._view().rayAt(x, y),
+            facing: () => this._view().facing(),
             capture: ({ pointerId }) => {
-                capturedPointer = pointerId
-                // Capture keeps the drag alive when the pointer leaves the canvas. It
-                // is an optimisation, not a precondition: a browser with no active
-                // pointer throws, and the gesture must survive that rather than be
-                // left half-grabbed. (id:laws-decl-handle)
-                try { canvas.setPointerCapture?.(pointerId) } catch { /* moves still arrive */ }
-                // Freeze without moving the view: damping off stops residual drift,
-                // and nothing here calls update() or reset().
+                captured = pointerId
+                try { canvas.setPointerCapture?.(pointerId) } catch { /* browser may not own it */ }
                 damping = controls.enableDamping
                 controls.enableDamping = false
             },
             release: ({ pointerId }) => {
-                if (capturedPointer === pointerId) {
+                if (captured === pointerId) {
                     try { canvas.releasePointerCapture?.(pointerId) } catch { /* never held */ }
-                    capturedPointer = null
+                    captured = null
                 }
                 if (damping !== null) { controls.enableDamping = damping; damping = null }
             },
-            setControls: (enabled) => { controls.enabled = enabled },
+            setControls: enabled => { controls.enabled = enabled },
             controlsEnabled: () => controls.enabled,
-            // Feedback, not only acceptance: every line wakes the canvas, so a cue
-            // cannot go stale on an idle surface.
-            onReadout: (line) => { this.lastReadout = line; this.requestRender() },
+            onReadout: line => {
+                this.lastReadout = line
+                if (line.outcome === 'accepted') {
+                    this._lastRefusal = null
+                    this._ghost = null
+                } else if (line.outcome && this._heldFrame) {
+                    this._lastRefusal = { point: line.point, text: line.outcome }
+                }
+                this.requestRender()
+            },
         })
-
-        const claimed = (event) => {
+        const down = event => {
             if (event.target !== canvas) return
             const answer = handle.pointerDown({ pointerId: event.pointerId, x: event.clientX, y: event.clientY })
             if (!answer.claimed) return
             event.stopImmediatePropagation()
             event.preventDefault()
-            this._heldFrame = answer.frame ?? null
-            this._pointer = { x: event.clientX, y: event.clientY }
+            this._heldFrame = answer.frame
+            this._lastRefusal = null
+            this._ghost = null
+            this.requestRender()
         }
-        const moved = (event) => {
-            if (event.target !== canvas) return
-            this._pointer = { x: event.clientX, y: event.clientY }
-            handle.pointerMove({ pointerId: event.pointerId, x: event.clientX, y: event.clientY })
-            // A hover is a state too, but waking on every move across the canvas
-            // would defeat render-on-demand. Wake while the pointer is near a pin,
-            // or while one is already hovered and must be released.
-            if (this._hoveredFrame || this._nearPin(event.clientX, event.clientY)) this.requestRender()
+        const move = event => {
+            if (event.target !== canvas && captured !== event.pointerId) return
+            const answer = handle.pointerMove({ pointerId: event.pointerId, x: event.clientX, y: event.clientY })
+            if (answer.cancelled) this._heldFrame = null
         }
-        // Leaving the canvas is leaving the pin: a hover must not outlive the
-        // pointer that caused it.
-        const left = () => { this._pointer = null; this.requestRender() }
-        const ended = (event) => { this._heldFrame = null; handle.pointerUp({ pointerId: event.pointerId }) }
-        const cancelled = (event) => { this._heldFrame = null; handle.pointerCancel({ pointerId: event.pointerId }) }
-        const lost = (event) => { this._heldFrame = null; handle.pointerCancel({ pointerId: event.pointerId }) }
-
-        // A resize clears the overlay, so it must ask for a frame or the pin is
-        // erased until something unrelated wakes the loop.
-        this._overlay ||= createOverlay({ onResize: () => this.requestRender() })
-        window.addEventListener('pointerdown', claimed, { capture: true })
-        window.addEventListener('pointermove', moved, { capture: true })
-        window.addEventListener('pointerup', ended, { capture: true })
-        window.addEventListener('pointercancel', cancelled, { capture: true })
-        canvas.addEventListener('lostpointercapture', lost)
-        canvas.addEventListener('pointerleave', left)
-
+        const end = event => {
+            if (captured !== event.pointerId) return
+            handle.pointerUp({ pointerId: event.pointerId })
+            this._heldFrame = null
+            if (this._lastRefusal) {
+                this._ghost = { ...this._lastRefusal, at: performance.now() }
+                this._lastRefusal = null
+            }
+            this.requestRender()
+        }
+        const cancel = event => {
+            if (captured !== event.pointerId) return
+            handle.pointerCancel({ pointerId: event.pointerId })
+            this._heldFrame = null
+            this.requestRender()
+        }
+        window.addEventListener('pointerdown', down, { capture: true })
+        window.addEventListener('pointermove', move, { capture: true })
+        window.addEventListener('pointerup', end, { capture: true })
+        window.addEventListener('pointercancel', cancel, { capture: true })
+        canvas.addEventListener('lostpointercapture', cancel)
         this._handle = {
-            gesture: handle,
-            get grabbed() { return handle.grabbed },
+            cancel: () => {
+                if (captured !== null) handle.pointerCancel({ pointerId: captured })
+                this._heldFrame = null
+                this._lastRefusal = null
+                this._ghost = null
+            },
             dispose: () => {
-                window.removeEventListener('pointerdown', claimed, { capture: true })
-                window.removeEventListener('pointermove', moved, { capture: true })
-                window.removeEventListener('pointerup', ended, { capture: true })
-                window.removeEventListener('pointercancel', cancelled, { capture: true })
-                canvas.removeEventListener('lostpointercapture', lost)
-                canvas.removeEventListener('pointerleave', left)
+                window.removeEventListener('pointerdown', down, { capture: true })
+                window.removeEventListener('pointermove', move, { capture: true })
+                window.removeEventListener('pointerup', end, { capture: true })
+                window.removeEventListener('pointercancel', cancel, { capture: true })
+                canvas.removeEventListener('lostpointercapture', cancel)
                 handle.dispose()
             },
         }
@@ -343,6 +395,8 @@ export class Turtle {
         // Live stage for STAGE_CONTRACT verbs; cadence + orbit target via opts
         // (not stage fields — renderLoop used to leak frameInterval that way).
         // focus is turtle-owned — compositor only reads/projects it.
+        // The overlay never takes input; only a free point claims a canvas touch.
+        this._overlay ||= createOverlay({ onResize: () => this.requestRender(), space: this.stage.space })
         this._ensureHandle()
         this.compositor = createCompositor(this.scheduler,
             this.stage,
@@ -394,7 +448,12 @@ export class Turtle {
             renderer.render(scene, camera)
         }
 
-        this._drawPins()
+        // The overlay is an instrument: a draw fault must not freeze the world.
+        try {
+            this._drawPins()
+        } catch (error) {
+            console.error('overlay draw error:', error)
+        }
 
         // Only hatchVerdict decides hatch; owed keeps the loop awake.
         // mine = gate[self] — foreign witness cells never answer here.
@@ -422,7 +481,7 @@ export class Turtle {
         // Snap and in-flight readback must keep the loop awake too — otherwise
         // a quiet canvas can sleep before the owed hatch runs.
         this._keepRendering = walking || recording || controlsChanged || controlsSettling
-            || verdict.owed || this._snapOwed || this.stage.hatching
+            || verdict.owed || this._snapOwed || this.stage.hatching || !!this._ghost
 
         this._sayProgress(now)
     }
@@ -609,6 +668,11 @@ export class Turtle {
         // If no children left, tear down compositor/scheduler and show idle head.
         // Light register (kindled + warm) survives — rebound on next seat.
         if (this.scheduler.root.children.size === 0) {
+            this._handle?.dispose()
+            this._handle = null
+            this._heldFrame = null
+            this._lastRefusal = null
+            this._ghost = null
             this.compositor.dispose()
             this.compositor = null
             this.scheduler = null
@@ -657,6 +721,11 @@ export class Turtle {
 
     reset() {
         if (this.scheduler) {
+            this._handle?.dispose()
+            this._handle = null
+            this._heldFrame = null
+            this._lastRefusal = null
+            this._ghost = null
             // Remove all children
             for (const name of [...this.scheduler.root.children.keys()]) {
                 this.scheduler.removeChild(name)

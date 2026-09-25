@@ -626,6 +626,146 @@ Session id is a cookie, not a person ([[file:specs/weave/keep-carve.org][keep-ca
 :END:
 Verified syntax lives in =PAPERLANG.org= + =codex/refs/Library=.
 
+
+** place and walking head — one visible A
+:PROPERTIES:
+:ID: nav-place-head
+:KEYWORDS: place free point anchored arrowhead ring let as freePoint visibleHeadFor
+:PATH: assets/js/turtling/compositor.js::getOrCreateLayer
+:END:
+The compositor materializes A's head when a visible pose arrives. The overlay
+draws the point at that same accepted position; =laws/pin.js= leaves room for
+the head. =laws/batch.js::freePoint= gates touch to an unanchored =let A=,
+including mid-capture attachment. [[id:laws-place-head-frame]] ·
+[[id:laws-decl-point-agent]]. Fences: =test/js/laws/place_head_test.mjs= and
+=gesture_test.mjs=.
+
+** view boundary — one world-to-screen mapping
+:PROPERTIES:
+:ID: nav-view-boundary
+:KEYWORDS: viewReframe viewMapping reframe eye twist viewOffset project unproject facing rayAt
+:PATH: assets/js/turtling/laws/handle.js::viewMapping
+:END:
+The compositor owns the effective eye/manual reframe =viewReframe=; the stage
+owns =project=/=unproject=/=facing=; =viewMapping= folds them, so a drawn mark
+and the gesture's ray, plane and facing share one frame. [[id:laws-decl-interface]].
+Fence: =test/js/laws/handle_test.mjs=.
+
+** ordered birth — a reached let is the birth site
+:PROPERTIES:
+:ID: nav-ordered-birth
+:KEYWORDS: let Existence deriveBatch birth seatPlace reached ordered birth use before introduction forward use
+:PATH: assets/js/turtling/scheduler.js::birth
+:END:
+=deriveBatch= keeps =Existence= in the executable stream; =executor.js= yields a
+=birth= effect carrying the executor's post-command pose; =scheduler.js::birth=
+seats a new identity or revises an existing one to that state, synchronously. [[id:laws-ordered-birth]] ·
+[[id:laws-build-p1a-verdict]] · [[id:laws-build-p1b-verdict]] · [[id:laws-build-p1c-verdict]] · [[id:laws-build-p1d-verdict]]. A read of a
+declared-but-unreached local name is a located =Use before introduction=. Fence:
+=declaration_test.mjs= ordered-birth tests.
+
+** law address and owner — what a line replaces
+:PROPERTIES:
+:ID: nav-law-address
+:KEYWORDS: address addressOf law store owner replacement retract edit conjoin
+:PATH: assets/js/turtling/laws/replacement.js::createLawStore
+:END:
+The address (feature + canonical endpoint identities + scope/frame) decides what a
+reached statement replaces; the source owner decides who supplies it. [[id:laws-ordered-replacement]] ·
+[[id:laws-build-p2a-verdict]]. Fence: =replacement_test.mjs=.
+
+** a distance relation — state, realize, refuse
+:PROPERTIES:
+:ID: nav-relation-distance
+:KEYWORDS: relation distance realize validate project continue A.distance
+:PATH: assets/js/turtling/laws/realize.js::realizeDistance
+:END:
+=let A.distance = <expr>= reaches the declaring frame as observer, realizes exactly,
+validates independently, then publishes law + geometry. A hand drag is projected
+onto the law (=continueLaws=, touched endpoint only); the program walker is
+refused. [[id:laws-build-p2b-verdict]] · [[id:laws-build-p2d-verdict]]. Fence:
+=phase2_distance_test.mjs=.
+
+** an affected component — two distances respond
+:PROPERTIES:
+:ID: nav-law-component
+:KEYWORDS: component componentOf realizeDistanceTree joint candidate tree distance
+:PATH: assets/js/turtling/laws/component.js::componentOf
+:END:
+A law revision derives the connected set of laws sharing an endpoint, realizes the
+tree jointly from one held anchor (each edge keeps its original direction and takes
+its new length), validates every distance, and publishes the component together. A
+cycle or a non-distance law is unsupported, never approximated. [[id:laws-build-p3]].
+Fence: =phase3_component_test.mjs=.
+
+** typed payload — kind, guard, bounds
+:PROPERTIES:
+:ID: nav-law-expression
+:KEYWORDS: expression kind guard domain bounds scalar length predicateOk bindLaw
+:PATH: assets/js/turtling/laws/expression.js::predicateOk
+:END:
+A lowered predicate carries one relation from the evaluator's vocabulary, one
+payload kind, one domain guard and its source ownership. The value is not part of
+the address; a slider's bounds and the guard it must satisfy are data.
+[[id:laws-build-p3a]] · [[id:eval-relational]]. Fence: =expression_test.mjs=.
+
+** derived values — commit-driven readout
+:PROPERTIES:
+:ID: nav-live-readout
+:KEYWORDS: readout derived live label recompute early cutoff source-owned readouts
+:PATH: assets/js/turtling/laws/readout.js::createReadouts
+:END:
+Source-owned derived values recomputed once at the publication boundary, with
+value-equality cutoff and release on rewire/removal. No reactive runtime, no
+command replay. [[id:laws-build-p3-readout-built]]. Fence: =readout_test.mjs=.
+
+** derived display — a polygon follows the drag
+:PROPERTIES:
+:ID: nav-live-display
+:KEYWORDS: display polygon polygonSides live view projection replace side count
+:PATH: assets/js/turtling/laws/display.js::polygon
+:END:
+A committed scalar projected to geometry (a polygon whose side count follows the
+scalar), replaced on commit — no append, no command replay. [[id:laws-build-p3-display-built]].
+Fence: =display_test.mjs=.
+
+** relational vocabulary — one measurement
+:PROPERTIES:
+:ID: nav-eval-relational
+:KEYWORDS: relational distance bearing sync measure worldReading headingOf reading
+:PATH: assets/js/turtling/laws/relations.js::measure
+:END:
+RELATIONAL (distance, bearing, sync) and SPATIAL (x, y, z, heading) are one
+definition. A live read and a proposed configuration supply the same
+{ position, rotation, time } reading, so a source read and a legality check
+cannot disagree. [[id:eval-relational]]. Fence: =relations_test.mjs=.
+
+** laws — one address, one pipeline
+:PROPERTIES:
+:ID: nav-law-pipeline
+:KEYWORDS: law distance position pin realize propose validate applyLaw pipeline
+:PATH: assets/js/turtling/scheduler.js::applyLaw
+:END:
+=let A.distance = …= and =let A = origin= are one noun: a law at an address. The
+pipeline is address → propose → validate → publish → store; a new form is a row in
+=PROPOSE=/=VALIDATE=, not a new effect. [[id:laws-build-solve-seam]] ·
+[[id:laws-build-p2c-verdict]]. Fence: =phase2_distance_test.mjs= / =phase2_failure_test.mjs=.
+
+** a point's state — what it is, where it may go
+:PROPERTIES:
+:ID: nav-point-state
+:KEYWORDS: state stateOf locus sphere silhouette project ghost dof normals
+:PATH: assets/js/turtling/laws/constraints.js::stateOf
+:END:
+One query: tag (free / headed / pinned / unresolved), normals, degrees of freedom, and
+gives the exact locus when the form names one. =project= resolves a target onto it;
+=axesOf= gives the resting normal and =sphereCurves= the parallel/meridian through the
+point (depth-faded by =drawCurve=); the overlay draws them as world geometry.
+[[id:laws-decl-point-agent]] · [[id:laws-freedom]]. The tag also gates touchability:
+=turtle._touchable= is =tag === 'free'=. Fence: =constraints_test.mjs=.
+
+
+
 ** evaluation — run, re-eval, frame swap
 :PROPERTIES:
 :ID: nav-executor

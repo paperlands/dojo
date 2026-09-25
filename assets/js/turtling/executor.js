@@ -365,6 +365,41 @@ function* walkBody(body, scope, state, stroke) {
             break
         }
 
+        case 'Existence': {
+            // A reached declaration is the birth site. It carries the executor's
+            // post-command pose and source span; the scheduler seats or adopts the
+            // identity before the next statement reads it. (id:laws-ordered-birth)
+            yield {
+                type: 'birth',
+                name: node.value,
+                origin: SE3.clone(state.transform),
+                owner: node.span ?? null,
+            }
+            break
+        }
+
+        case 'Law': {
+            // A reached law: one feature, one evaluated value. The declaring
+            // frame is the observer. (id:laws-ordered-replacement)
+            const feature = node.value
+            const value = feature === 'distance'
+                ? yield* evalOrBlock(node.meta.expr, scope, state)
+                : node.meta.coords
+            yield { type: 'law', feature, target: node.meta.target, value, owner: node.span ?? null }
+            break
+        }
+
+        case 'Scalar': {
+            // A scalar derived value: `let s = A.x`. The value is source-owned and
+            // recomputed at the commit; a read of `s` is still a snapshot.
+            // (id:laws-build-p3-readout-built)
+            yield {
+                type: 'scalar', name: node.value, owner: node.span ?? null,
+                read: () => evaluateExpr(node.meta.expr, scope, state, 'measure'),
+            }
+            break
+        }
+
         case 'Empty':
             break
 

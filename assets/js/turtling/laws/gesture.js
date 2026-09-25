@@ -9,7 +9,7 @@
 // answers `claimed`, and the DOM layer stops propagation on that answer rather
 // than disabling the controls after they have already started a gesture.
 import {
-    birthPlane, touchPlane, birthLocal, requestedPose, hitTest, eligibility,
+    facingPlane, touchPlane, birthLocal, requestedPose, hitTest, eligibility,
     outcomeOf, readout, OUTCOME, HIT_RADIUS,
 } from "./handle.js"
 
@@ -17,13 +17,15 @@ export function createGesture(deps) {
     const {
         candidates,      // () => [{ name, frame }] — the places currently offered
         anchorOf,        // (frame) => live world transform — where the point IS
-        birthOf,         // (frame) => birth frame — the plane the pointer maps through
+        birthOf,         // (frame) => birth frame — the frame the request is expressed in
         registered,      // (frame) => boolean
+        canTouch = () => true, // an empty point may be touched; a walking head owns its point
         requestMotion,   // (frame, pose, revision) => verdict
         revision,        // () => number
         wake,            // () => void — an idle canvas must paint an accepted move
         project,         // (worldPosition) => { x, y } in CSS pixels
         rayAt,           // (x, y) => { origin, direction }
+        facing,          // () => the camera's world viewing direction
         capture,         // ({ pointerId }) => void
         release,         // ({ pointerId }) => void
         setControls,     // (enabled) => void
@@ -56,9 +58,11 @@ export function createGesture(deps) {
             if (grab) return { claimed: false }   // one pointer owns the hand
             const here = { x, y }
             for (const candidate of candidates()) {
+                if (!canTouch(candidate.frame)) continue
                 // Behind the camera, clipped, or on a zero-sized canvas: not a target,
                 // and never a made-up hit. (id:laws-decl-handle)
-                const projected = project(anchorOf(candidate.frame).position)
+                const anchor = anchorOf(candidate.frame).position
+                const projected = project(anchor)
                 if (!projected) continue
                 if (!hitTest(here, projected, radius)) continue
                 const accepted = poseOf(candidate.frame)
@@ -76,21 +80,20 @@ export function createGesture(deps) {
                 }
                 const ray = rayAt(x, y)
                 if (!ray) return { claimed: false }
-                // The mapping frame is the BIRTH frame, not the live transform: the
-                // live one moves with the point, so dividing the pointer by it feeds
-                // each accepted move back into the next request. That loop is the
-                // jitter — gain greater than one, chasing its own tail.
-                const birth = birthOf(candidate.frame)
-                const hit = touchPlane(ray, birthPlane(birth))
+                // The drag plane is THE CAMERA'S plane through the point at
+                // POINTER-DOWN — parallel to the image plane — frozen until release:
+                // the reference must not move with the point. (id:laws-decl-anchor)
+                const plane = facingPlane(anchor, facing())
+                const hit = touchPlane(ray, plane)
                 if (!hit) return { claimed: false }
-                const there = birthLocal(hit, birth)
                 grab = {
                     pointerId,
                     name: candidate.name,
                     frame: candidate.frame,
+                    plane,
                     // Grabbing slightly off centre keeps what the pointer grabbed:
                     // the point follows the pointer's delta instead of snapping to it.
-                    offset: [accepted.position[0] - there[0], accepted.position[1] - there[1]],
+                    offset: [anchor[0] - hit[0], anchor[1] - hit[1], anchor[2] - hit[2]],
                     // Read, not told: a caller cannot hand over the wrong 'previous'.
                     controlsWasEnabled: controlsEnabled(),
                 }
@@ -114,22 +117,26 @@ export function createGesture(deps) {
             })
             // The declaration can go while the pointer is down, and the frame
             // survives it. Liveness first, then the capture ends.
-            if (!gate.ok) {
-                endCapture(gate.reason, accepted.position ?? null)
+            // The point may gain a walking body while it is held. Release before
+            // another pointer move can become head motion.
+            if (!gate.ok || !canTouch(grab.frame)) {
+                endCapture(gate.ok ? OUTCOME.cancelled : gate.reason, accepted.position ?? null)
                 return { moved: false, cancelled: true }
             }
 
             const birth = birthOf(grab.frame)
             const ray = rayAt(x, y)
             if (!ray) return { moved: false }        // clipped: no target, no request
-            const hit = touchPlane(ray, birthPlane(birth))
-            if (!hit) return { moved: false }        // off the plane: keep the pose
-            const there = birthLocal(hit, birth)
-            const requested = requestedPose(accepted, [
-                there[0] + grab.offset[0],
-                there[1] + grab.offset[1],
-                accepted.position[2],
-            ])
+            // The plane FROZEN at pointer-down: a look mid-drag never retargets
+            // the drag, and the accepted pose never feeds the next request. (id:laws-decl-anchor)
+            const hit = touchPlane(ray, grab.plane)
+            if (!hit) return { moved: false }        // off the frozen plane: keep the pose
+            const world = [
+                hit[0] + grab.offset[0],
+                hit[1] + grab.offset[1],
+                hit[2] + grab.offset[2],
+            ]
+            const requested = requestedPose(accepted, birthLocal(world, birth))
             const verdict = requestMotion(grab.frame, requested, revision())
             const outcome = verdict.kind === 'accept' ? OUTCOME.accepted : outcomeOf(verdict)
             onReadout(readout({

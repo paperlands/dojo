@@ -1,117 +1,114 @@
-// The pin: how a declared place is drawn. (id:laws-decl-handle)
-//
-// One affordance, four states, and no state told by tint alone. The pin is
-// stamped — a bead with a knockout rim and a second ring a hair wider, because a
-// printed circle is never vector-perfect — and the ring IS the hit radius, so
-// what you see is what you can hit.
-//
-// Pure drawing: it takes a 2d context and a state, and touches nothing else.
-import { HIT_RADIUS } from "./handle.js"
+// A free `let A` is a point one can touch; `as A` gives that same A a head.
+// Then the point is a reading, not another handle. (id:laws-place-head-frame)
 
 const TAU = Math.PI * 2
-const PAPER = '243,237,223'      // the ink we write with, on the dark ground
-const GROUND = '16,20,24'        // the canvas it is stamped into
+const PAPER = '243,237,223'
+const BEADS = new WeakMap()
 
-const rgba = (rgb, a) => `rgba(${rgb},${a})`
+function beadOf(ctx) {
+    let bead = BEADS.get(ctx)
+    if (!bead) {
+        bead = ctx.createRadialGradient(-1.75, -2, 0.75, 0, 0, 5)
+        bead.addColorStop(0, `rgba(${PAPER},0.98)`)
+        bead.addColorStop(0.55, `rgba(${PAPER},0.82)`)
+        bead.addColorStop(1, `rgba(${PAPER},0.56)`)
+        BEADS.set(ctx, bead)
+    }
+    return bead
+}
 
-// Up and to the right, or flipped left near the edge, so a label never leaves
-// the field it annotates.
-function annotate(ctx, { cx, cy, lines, width }) {
-    const gap = HIT_RADIUS + 12
-    // Measured, not guessed: a long name must not leave the field either.
-    const widest = Math.max(0, ...lines.map((line) => ctx.measureText(line).width))
-    const flip = cx + gap + widest > width
+export function drawPin(ctx, { cx, cy, name = '', width = 0, withHead = false,
+    touchable = false, held = false, accepted = null, requested = null, outcome = null, ghost = null }) {
+    // A free point has a touch-sized ring. A headed point has a ring only to
+    // couple it visibly to the arrow; neither steals the other's centre.
+    const radius = touchable || withHead ? 18 : 9
+    ctx.beginPath()
+    ctx.arc(cx, cy, radius, 0, TAU)
+    ctx.strokeStyle = `rgba(${PAPER},${touchable ? held ? 0.85 : 0.5 : 0.28})`
+    ctx.lineWidth = touchable && held ? 1.6 : 1
+    ctx.stroke()
+
+    if (!withHead) {
+        ctx.save()
+        ctx.translate(cx, cy)
+        ctx.beginPath()
+        ctx.arc(0, 0, 5, 0, TAU)
+        ctx.fillStyle = beadOf(ctx)
+        ctx.fill()
+        ctx.restore()
+    }
+
+    const lines = [name]
+    if (held && accepted) lines.push(`${accepted[0].toFixed(2)}, ${accepted[1].toFixed(2)}`)
+    if (held && outcome && outcome !== 'accepted') lines.push(outcome)
+    else if (held && requested) lines.push(`→ ${requested[0].toFixed(2)}, ${requested[1].toFixed(2)}`)
+    else if (!held && touchable && ghost?.fade > 0) lines.push(ghost.text)
     ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace'
+    const gap = radius + 12
+    const flip = cx + gap + Math.max(...lines.map(s => ctx.measureText(s).width)) > width
     ctx.textAlign = flip ? 'right' : 'left'
     ctx.textBaseline = 'alphabetic'
-    const x = cx + (flip ? -gap : gap)
-    const y = cy - HIT_RADIUS + 2
-    lines.forEach((line, i) => {
-        ctx.fillStyle = rgba(PAPER, i === 0 ? 0.52 : 0.34)
-        ctx.fillText(line, x, y + i * 13)
+    lines.forEach((line, index) => {
+        const fade = !held && index > 0 ? ghost?.fade ?? 1 : 1
+        ctx.fillStyle = `rgba(${PAPER},${(index === 0 ? 0.52 : 0.34) * fade})`
+        ctx.fillText(line, cx + (flip ? -gap : gap), cy - radius + 2 + index * 13)
     })
     ctx.textAlign = 'left'
 }
 
-export function drawPin(ctx, state) {
-    const {
-        cx, cy, state: phase = 'rest', from = null, width = 0,
-        name = '', accepted = null, requested = null, outcome = 'accepted',
-    } = state
-
-    const held = phase === 'held'
-    const hover = phase === 'hover'
-    const hollow = phase === 'hollow'      // outside the supported domain
-
-    // The birth → live hairline. Not decoration: it is the distance between where
-    // the source placed the point and where it now stands.
-    if (from) {
-        const dx = cx - from.x
-        const dy = cy - from.y
-        if (Math.hypot(dx, dy) > 2.5) {
-            ctx.save()
-            ctx.setLineDash([2, 5])
-            ctx.strokeStyle = rgba(PAPER, 0.20)
-            ctx.lineWidth = 1
-            ctx.beginPath()
-            ctx.moveTo(from.x, from.y)
-            ctx.lineTo(cx, cy)
-            ctx.stroke()
-            ctx.restore()
-        }
-    }
-
-    // The stamped edge: one hair wider, at a whisper.
+// A ghost locus: where a constrained point MAY go, dashed, never the point
+// itself. The display names its question; it does not prove the whole locus.
+// (id:laws-freedom)
+const GHOST_DASH = [4, 5]
+export function drawGhost(ctx, screenPoints) {
+    if (!screenPoints || screenPoints.length < 2) return
+    ctx.save()
     ctx.beginPath()
-    ctx.arc(cx, cy, HIT_RADIUS + 0.6, 0, TAU)
-    ctx.strokeStyle = rgba(PAPER, 0.09)
+    let pen = false
+    for (const p of screenPoints) {
+        if (!p) { pen = false; continue }
+        if (pen) ctx.lineTo(p.x, p.y)
+        else ctx.moveTo(p.x, p.y)
+        pen = true
+    }
+    ctx.setLineDash(GHOST_DASH)
+    ctx.strokeStyle = `rgba(${PAPER},0.22)`
     ctx.lineWidth = 1
     ctx.stroke()
+    ctx.restore()
+}
 
-    // The ring is the hit radius, drawn true.
+// One axis, projected: a world segment between two screen points. The camera
+// gives the direction; the world gives the axis. (id:laws-freedom)
+export function drawAxis(ctx, a, b, { strong = false } = {}) {
+    if (!a || !b) return
+    ctx.save()
     ctx.beginPath()
-    ctx.arc(cx, cy, HIT_RADIUS, 0, TAU)
-    ctx.strokeStyle = rgba(PAPER, hollow ? 0.34 : held ? 0.85 : hover ? 0.52 : 0.28)
-    ctx.lineWidth = held ? 1.6 : 1
-    if (hollow) ctx.setLineDash([2, 4])
+    ctx.moveTo(a.x, a.y)
+    ctx.lineTo(b.x, b.y)
+    ctx.strokeStyle = `rgba(${PAPER},${strong ? 0.5 : 0.26})`
+    ctx.lineWidth = strong ? 1.4 : 1
+    if (!strong) ctx.setLineDash([2, 3])
     ctx.stroke()
-    ctx.setLineDash([])
+    ctx.restore()
+}
 
-    // A dial, not ornament: every third tick longer, every sixth longest.
-    const tickAlpha = hollow ? 0.18 : held ? 0.58 : hover ? 0.42 : 0.24
-    ctx.strokeStyle = rgba(PAPER, tickAlpha)
-    ctx.lineWidth = 0.65
-    for (let i = 0; i < 24; i++) {
-        const a = (i / 24) * TAU - Math.PI / 2
-        const len = i % 6 === 0 ? 7 : i % 3 === 0 ? 5 : 3
-        const r0 = HIT_RADIUS - 1
+// One surface curve, depth-faded: near brighter, far fainter — the surface reads
+// as a volume without transparency. Points carry `t` in [0,1], near to far.
+// (id:laws-freedom)
+export function drawCurve(ctx, points, { near = 0.5, far = 0.14 } = {}) {
+    if (!points) return
+    ctx.save()
+    ctx.lineWidth = 1
+    for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1], b = points[i]
+        if (!a || !b) continue
+        const t = ((a.t ?? 0) + (b.t ?? 0)) / 2
         ctx.beginPath()
-        ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0)
-        ctx.lineTo(cx + Math.cos(a) * (r0 - len), cy + Math.sin(a) * (r0 - len))
+        ctx.moveTo(a.x, a.y)
+        ctx.lineTo(b.x, b.y)
+        ctx.strokeStyle = `rgba(${PAPER},${(near + (far - near) * t).toFixed(3)})`
         ctx.stroke()
     }
-
-    if (!hollow) {
-        const r = held ? 5.6 : 5
-        // The knockout first, so the bead sits ON the drawing rather than in it.
-        ctx.beginPath()
-        ctx.arc(cx, cy, r + 1.2, 0, TAU)
-        ctx.fillStyle = rgba(GROUND, 0.92)
-        ctx.fill()
-        // A bead pressed into the surface, lit from the upper left.
-        const bead = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.15, cx, cy, r)
-        bead.addColorStop(0, rgba(PAPER, 0.98))
-        bead.addColorStop(0.55, rgba(PAPER, 0.82))
-        bead.addColorStop(1, rgba(PAPER, held ? 0.72 : 0.56))
-        ctx.beginPath()
-        ctx.arc(cx, cy, r, 0, TAU)
-        ctx.fillStyle = bead
-        ctx.fill()
-    }
-
-    const lines = [name]
-    if (accepted) lines.push(`${accepted[0].toFixed(2)}, ${accepted[1].toFixed(2)}`)
-    if (outcome && outcome !== 'accepted') lines.push(outcome)
-    else if (held && requested) lines.push(`→ ${requested[0].toFixed(2)}, ${requested[1].toFixed(2)}`)
-    annotate(ctx, { cx, cy, lines, width })
+    ctx.restore()
 }

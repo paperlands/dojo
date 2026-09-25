@@ -7,6 +7,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { buildWorld, fork, drive } from "./harness.mjs"
 import { createGesture } from "../../../assets/js/turtling/laws/gesture.js"
+import { freePoint } from "../../../assets/js/turtling/laws/batch.js"
 import { frameWorldTransform, worldTransform } from "../../../assets/js/turtling/scheduler.js"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
 
@@ -23,7 +24,7 @@ const find = (frame, name) => {
 
 // A screen whose world-to-pixel scale is 100, and a ray that falls straight down
 // on the pixel it is given — so a witness can name a world point in pixels.
-const harness = (scheduler, frames, { controlsEnabled = true, requestMotion } = {}) => {
+const harness = (scheduler, frames, { controlsEnabled = true, requestMotion, canTouch } = {}) => {
     const requests = []
     const readouts = []
     const state = { captured: null, controls: { enabled: controlsEnabled }, woke: 0 }
@@ -32,6 +33,7 @@ const harness = (scheduler, frames, { controlsEnabled = true, requestMotion } = 
         anchorOf: (frame) => frameWorldTransform(frame),
         birthOf: (frame) => worldTransform(frame),
         registered: (frame) => scheduler.registry.get(frame.id) === frame,
+        canTouch,
         requestMotion: (frame, pose, revision) => {
             requests.push({ frame, pose })
             return requestMotion ? requestMotion(frame, pose, revision) : { kind: "accept" }
@@ -40,6 +42,7 @@ const harness = (scheduler, frames, { controlsEnabled = true, requestMotion } = 
         wake: () => { state.woke++ },
         project: (world) => ({ x: world[0] * 100, y: world[1] * 100 }),
         rayAt: (x, y) => ({ origin: [x / 100, y / 100, 5], direction: [0, 0, -1] }),
+        facing: () => [0, 0, -1],
         capture: ({ pointerId }) => { state.captured = pointerId },
         release: () => { state.captured = null },
         setControls: (enabled) => { state.controls.enabled = enabled },
@@ -56,6 +59,28 @@ const harness = (scheduler, frames, { controlsEnabled = true, requestMotion } = 
     }
 }
 
+
+test("only a free point can be touched; attaching as A cancels an ongoing grab", () => {
+    const scheduler = buildWorld()
+    const host = scheduler.hotSwapChild("host", fork("host", "let a"))
+    const a = host.children.get("a")
+    const h = harness(scheduler, [a], {
+        canTouch: freePoint,
+        requestMotion: (frame, pose, revision) => scheduler.requestMotion(frame, pose, revision),
+    })
+    assert.equal(h.down({ x: 0, y: 0 }).claimed, true)
+    assert.equal(h.move({ x: 100, y: 0 }).outcome, "accepted")
+    assert.deepEqual(a.transform.deref().position.slice(0, 2), [1, 0])
+
+    // A body arriving mid-capture withdraws the free-point privilege before
+    // another pointer move. Joining through `as` is fenced in declaration_test.
+    a.actorState = { style: { showTurtle: 10 } }
+    assert.equal(h.move({ x: 200, y: 0 }).cancelled, true)
+    assert.deepEqual(a.transform.deref().position.slice(0, 2), [1, 0],
+        "the last accepted point stays; the head gets no pointer request")
+    assert.equal(h.state.captured, null)
+    assert.equal(h.down({ x: 100, y: 0 }).claimed, false)
+})
 // A settled, finished play with one declared place at (3,0), turned 90°.
 const seated = (source = "let a\nas a do\n  goto 3 0\n  rt 90\nend") => {
     const scheduler = buildWorld({ admit: pass })
@@ -115,20 +140,23 @@ test("positive: the camera's own previous state comes back, not an unconditional
     assert.equal(h.state.controls.enabled, false, "restored to what it was, not forced on")
 })
 
-test("negative: an out-of-plane point is refused, and says why", () => {
-    // The program itself moves the place out of its plane. Nothing errors.
+test("an off-plane point composes like any other: the view plane decides", () => {
+    // The program itself moves the place out of its birth plane. Nothing errors —
+    // and the drag is not refused: the frozen view plane says where it goes.
     const { scheduler, a } = seated("let a\nas a do\n  pitch 90\n  fw 1\nend")
     const before = [...a.transform.deref().position]
     assert.notEqual(before[2], 0, "the place really left the plane")
 
-    const h = harness(scheduler, [a])
-    // The pointer lands exactly on the drawn point.
-    assert.equal(h.down({ x: before[0] * 100, y: before[1] * 100 }).claimed, false)
-    assert.deepEqual(h.requests, [], "no motion request was submitted")
-    assert.deepEqual(a.transform.deref().position, before, "accepted geometry is unchanged")
-    assert.equal(h.state.captured, null, "nothing was captured")
-    assert.equal(h.state.controls.enabled, true, "the camera was never taken")
-    assert.equal(h.last().outcome, "unsupported", "and the explanation is visible")
+    const h = harness(scheduler, [a], {
+        requestMotion: (frame, pose, revision) => scheduler.requestMotion(frame, pose, revision),
+    })
+    assert.equal(h.down({ x: before[0] * 100, y: before[1] * 100 }).claimed, true,
+        "an out-of-plane point is a point")
+    assert.deepEqual(h.move({ x: before[0] * 100 + 20, y: before[1] * 100 }), { moved: true, outcome: "accepted" })
+    assert.deepEqual(a.transform.deref().position.map((n) => +n.toFixed(6)),
+        [before[0] + 0.2, before[1], before[2]].map((n) => +n.toFixed(6)), "the drag moved on the view plane — z included")
+    h.up()
+    assert.equal(h.state.controls.enabled, true, "the camera was handed back")
 })
 
 test("lifetime: removing the declaration mid-drag ends the capture and frees the camera", () => {

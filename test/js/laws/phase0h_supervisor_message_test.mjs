@@ -10,7 +10,9 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 
-import { buildWorld, fork, at, nz, drive, ends, componentResponder } from "./harness.mjs"
+import { buildWorld as baseWorld, fork, at, nz, drive, ends, componentResponder } from "./harness.mjs"
+// Inherited concurrent component base, gated off by default; opt in explicitly.
+const buildWorld = (opts = {}) => baseWorld({ ...opts, settledOnly: false })
 
 const TWO_STEP = "wait 1\nfw 2\nwait 1"
 

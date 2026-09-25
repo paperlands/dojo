@@ -2,7 +2,9 @@
 // Run: node --test test/js/laws/phase0n_hosted_topology_test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { buildWorld, fork, at, nz } from "./harness.mjs"
+import { buildWorld as baseWorld, fork, at, nz } from "./harness.mjs"
+// Inherited concurrent component base, gated off by default; opt in explicitly.
+const buildWorld = (opts = {}) => baseWorld({ ...opts, settledOnly: false })
 import { frameWorldTransform, worldTransform, takeSync } from "../../../assets/js/turtling/scheduler.js"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
 

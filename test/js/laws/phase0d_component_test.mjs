@@ -45,6 +45,7 @@ function buildWorld({ admit, capacity = 64 } = {}) {
         execOpts: { color: "#000000", strokeMax: 1, breathEvery: 1 },
         channelCapacity: capacity,
         motionAdmission: admit,
+        settledOnly: false,   // inherited concurrent component base, opted in
         onShout: () => {},
     })
 }

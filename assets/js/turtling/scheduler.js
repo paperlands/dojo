@@ -5,7 +5,13 @@
 import { createFrame } from "./frame.js"
 import { matchPattern } from "./match.js"
 import { execute, createActorState } from "./executor.js"
-import { deriveBatch, exposed } from "./laws/batch.js"
+import { deriveBatch, exposed, freePoint } from "./laws/batch.js"
+import { createLawStore, addressOf, bindLaw } from "./laws/replacement.js"
+import { componentOf, realizeDistanceTree } from "./laws/component.js"
+import { predicateOk } from "./laws/expression.js"
+import { measure, headingOf } from "./laws/relations.js"
+import { createReadouts } from "./laws/readout.js"
+import { realizeDistance, validateDistance, ACCEPT_TOL } from "./laws/realize.js"
 import { SE3 } from "./se3.js"
 import { chargeInk, woundInk, enforceResidency, resetInk, createStock } from "./ledger.js"
 
@@ -303,7 +309,7 @@ function findInTree(node, name, self) {
 
 // Resolve a name to a frame. `reach` says how far the caller may look:
 //
-//   'near'   siblings, then ancestors — a reader's lexical neighbourhood.
+//   'near'   own children, siblings, then ancestors — the local neighbourhood.
 //   'world'  anywhere in the tree. A FRAME OF REFERENCE need not be kin: any
 //            frame can be one, so an ancestors-only walk made `as b a do`
 //            silently draw in b's own frame whenever a was a sibling.
@@ -314,13 +320,11 @@ function findFrame(frame, name, reach = 'near') {
     const reserved = resolveReserved(frame, name)
     if (reserved) return reserved
 
-    // Own children come first for a frame of reference: nearest means nearest by
-    // TREE DISTANCE, so kin outrank a stranger's frame of the same name — names
-    // collide across tabs, and the wide search below is only ordered by walk.
-    if (reach === 'world') {
-        for (const child of frame.children.values()) {
-            if (child.name === name) return child
-        }
+    // Own children are the nearest kin of all: a declaring body reads the place
+    // it declared by bare name. Names collide across tabs, so proximity decides
+    // before the wide walk below. (id:laws-decl-point-agent)
+    for (const child of frame.children.values()) {
+        if (child.name === name) return child
     }
 
     // Siblings (parent's children, or own children if root)
@@ -419,6 +423,13 @@ function resolveBinding(frame, name, args) {
         const dot = name.indexOf('.')
         const targetName = name.slice(0, dot)
         const property = name.slice(dot + 1)
+        // A declared-but-unreached name owns this scope from the start. Reading it
+        // before its `let` is a located use-before-introduction — never an outer
+        // namesake fallback, never a wait on this same continuation.
+        // (id:laws-ordered-birth)
+        if (frame.declared?.has(targetName) && !frame.children.has(targetName)) {
+            throw new Error(`Use before introduction: ${targetName}`)
+        }
 
         const target = findFrame(frame, targetName)
         if (!target) {
@@ -463,6 +474,15 @@ function resolveBinding(frame, name, args) {
         return resolveProperty(target, property, args, frame, ground)
     } else {
         // Unqualified: walk ancestor chain for fn binding
+        // A scalar introduced by `let s = expr` is a value, not a frame. Its
+        // declaring frame and its ancestors own the binding; between commits it
+        // computes on demand. (id:laws-build-p3-readout-built)
+        for (let node = frame; node; node = node.parent) {
+            const id = node.scalars?.get(name)
+            if (id === undefined) continue
+            const value = metaRootFrame(frame)._readouts?.value(id)
+            if (value !== undefined) return value
+        }
         const arity = args ? args.length : 0
         let ancestor = frame.parent
         while (ancestor) {
@@ -476,12 +496,7 @@ function resolveBinding(frame, name, args) {
 
 const roundVec = (v) => Math.abs(v) < 1e-10 ? 0 : Math.round(v * 1e9) / 1e9
 
-function headingFromQuaternion(q) {
-    return Math.atan2(
-        2 * (q.w * q.y - q.x * q.z),
-        1 - 2 * (q.y * q.y + q.z * q.z)
-    ) * (180 / Math.PI)
-}
+const headingFromQuaternion = headingOf
 
 // World-space transform: compose ancestor origins with local transform.
 // Gives the frame's position/rotation in the global coordinate system.
@@ -577,27 +592,9 @@ const TEMPORAL = {
 
 // Relational properties — computed from observer + target in world space.
 const RELATIONAL = {
-    distance: (target, observer) => {
-        const tp = readWorldTransform(target, observer).position
-        const op = readWorldTransform(observer, observer).position
-        const dx = tp[0] - op[0], dy = tp[1] - op[1], dz = tp[2] - op[2]
-        return roundVec(Math.sqrt(dx * dx + dy * dy + dz * dz))
-    },
-    bearing: (target, observer) => {
-        const tp = readWorldTransform(target, observer).position
-        const ow = readWorldTransform(observer, observer)
-        const op = ow.position
-        const dx = tp[0] - op[0], dy = tp[1] - op[1]
-        const toTarget = Math.atan2(dx, dy) * (180 / Math.PI)
-        const myHeading = headingFromQuaternion(ow.rotation)
-        return roundVec(toTarget - myHeading)
-    },
-    sync: (target, observer) => {
-        const tp = (target.birthtime || 0) + (target.elapsedTime || 0)
-        const op = (observer.birthtime || 0) + (observer.elapsedTime || 0)
-        // Signed: negative means the target is behind the observer.
-        return roundVec(tp - op)
-    },
+    distance: (target, observer) => roundVec(measure("distance", target, observer, (f) => worldReading(f, observer, null))),
+    bearing: (target, observer) => roundVec(measure("bearing", target, observer, (f) => worldReading(f, observer, null))),
+    sync: (target, observer) => roundVec(measure("sync", target, observer, (f) => worldReading(f, observer, null))),
 }
 
 // Resolve a property on a target frame — spatial, temporal, relational, or fn.
@@ -605,6 +602,12 @@ const RELATIONAL = {
 // sibling/stranger and `origin` (so goto composes). `world` and containing
 // ancestors answer world-space (prim-world, prim-position).
 function resolveProperty(target, property, args, observer, ground = false) {
+    // A free spatial point is a position, not a walker: it was seated with no
+    // body, so reading a heading would invent a yaw nobody stated. Bearing to
+    // it is a real reading; its own heading is not. (id:laws-affordance)
+    if (!args && property === 'heading' && freePoint(target)) {
+        throw new Error(`No heading: ${target.name} is a free point`)
+    }
     if (!args && SPATIAL[property]) {
         return SPATIAL[property](ground ? poseInObserverBirth(target, observer) : readWorldTransform(target, observer))
     }
@@ -950,10 +953,9 @@ function unwireWorldCache(child) {
 // What a fresh generator needs to be driven. ONE place, because both births use
 // it — first (wireChild) and re-run (rewireChild) — and a field wired in only
 // one of them is a bug that shows up a whole run later.
-// A declaration whose place was never created is an unfulfilled requirement.
-// Realization lands next (id:laws-decl-join-repair); until it does, the run says
-// so rather than reporting success. This is the channel the toy already uses for
-// "supported, but not by this slice".
+// A declaration whose place was never reached is an unfulfilled requirement: a
+// clean end seats every declared name through its birth effect, so a missing one
+// is reported rather than counted as success. (id:laws-decl-join-repair)
 function reportUnrealizedPlaces(ctx) {
     if (!ctx.declared || ctx.declared.size === 0) return
     const missing = [...ctx.declared].filter((name) => !ctx.children.has(name))
@@ -962,13 +964,15 @@ function reportUnrealizedPlaces(ctx) {
     }
 }
 
-// A declared place with no body yet: the domain's origin, facing forward. That
-// is a realization choice, not a hidden pin. (id:laws-decl-anchor)
-function seatPlace(parent, name, pump) {
+// A declared place with no body yet: the walk's reached pose, facing forward.
+// That is the birth site, not a hidden pin and not a parse-time seat.
+// (id:laws-ordered-birth, id:laws-decl-anchor)
+function seatPlace(parent, name, pump, pose = null) {
     const place = attachMeta(
         createFrame(name, null, {
             parent,
             origin: SE3.identity(),
+            ...(pose ? { transform: SE3.clone(pose) } : {}),
             ...pump.channelOpts,
             logicalBirth: parent.resumeAt > 0 ? parent.resumeAt : (parent.logicalBirth ?? 0),
         }),
@@ -979,24 +983,13 @@ function seatPlace(parent, name, pump) {
     // No generator: nothing to run, nothing to emit, no clock, and no tick
     // required before the place counts as established. (id:laws-decl-join-repair)
     place.done = true
-    // A declared place is not an ordinary arrowhead: it is a point handle.
-    // (id:laws-decl-handle)
+    // The empty place has a point handle; `as A` may later give this same
+    // identity a walking head. (id:laws-decl-handle)
     place.isPlace = true
     parent.children.set(name, place)
     bumpTree(parent)
     wireChild(place, pump.createDeps(), [], pump.registry, { ast: [], functions: {} }, null, null)
     return place
-}
-
-// Establish every identity the source declares, before governed actions advance.
-// An identity already there is adopted, never reseated. Runs at the one wiring
-// boundary every seating door shares. (id:laws-decl-join-repair)
-function realizePlaces(parent, pump) {
-    if (!parent.declared || parent.declared.size === 0 || !pump?.createDeps) return
-    for (const name of parent.declared) {
-        if (parent.children.has(name)) continue
-        seatPlace(parent, name, pump)
-    }
 }
 
 function wireRun(child, deps, mailbox, executionState, code, relationshipBatch, pump = null) {
@@ -1008,10 +1001,14 @@ function wireRun(child, deps, mailbox, executionState, code, relationshipBatch, 
     // Participation is carried from the current parse at every seat and rewire —
     // derived, never a stored flag. (id:laws-decl-ownership)
     child.declared = relationshipBatch?.declared ?? new Set()
+    // Reached participation: the same source ownership, but only after the walk
+    // has run the declaration. Exposure is a query about this set, not the parse.
+    // (id:laws-decl-exposure)
+    child.reached = new Set()
     bindResolve(deps, child)
     setListensFor(child, code)
-    // After the parent is registered and its batch is known, before anything runs.
-    realizePlaces(child, pump)
+    // A declaration is reached in the stream; the batch only names what the body
+    // declares. Nothing is seated here. (id:laws-ordered-birth)
 }
 
 // Wire child: run wiring, plus the things that belong to its place in the tree.
@@ -1025,6 +1022,13 @@ function wireChild(child, deps, mailbox, registry, code, executionState = null, 
 
 // Fresh fork on an existing frame (keep id/tree/origin/address).
 function rewireChild(child, value, pump) {
+    // A rewired scope is a new source: its old statement sites are gone, so their
+    // laws are retracted before the new body states its own. (id:laws-build-p2c)
+    if (pump.laws) pump.laws.retractFrame(child.id)
+    // An edit repairs the attempt: release the component its failure held.
+    // (id:laws-activation-verdicts)
+    releaseSourceAttempts(metaRootFrame(child), subtreeIds(child))
+    metaRootFrame(child)._readouts?.release(child.id)
     const re = createChildGenerator(value, pump.createDeps, pump.execOpts)
     // A declared place keeps its accepted geometry: the new run begins where the
     // place stands, orientation included, and its first segment starts there
@@ -1182,25 +1186,43 @@ function woundMotion(ctx, message) {
 
 // Accepted geometry lives on the frame after its executor finishes. Running
 // members also receive a rebase to adopt before their next command.
-function commitTransaction(verdict, writer, registry) {
-    const seen = new Set([writer])
-    for (const member of verdict.component) {
-        const frame = member.frame
-        if (seen.has(frame) || registry.get(frame?.id) !== frame) {
-            return `component target is duplicated or no longer in this world`
+// One publication boundary: install every pose, notify the fan once, bump the
+// revision once, seed a running member's rebase. Truths and requests share it, so
+// no accepted change has a private door. (id:laws-build-solve-seam)
+function publish(writer, entries, registry, install = null) {
+    const seen = new Set()
+    // Running-member correction is a gated capability, off by default: this slice
+    // solves settled configurations only. (id:laws-activation-order)
+    const settledOnly = metaRootFrame(writer)._settledOnly !== false
+    for (const { frame, pose } of entries) {
+        if (!frame || seen.has(frame) || registry.get(frame.id) !== frame) {
+            return { kind: 'conflict', message: 'a publication target is duplicated or no longer in this world' }
         }
         seen.add(frame)
-        if (!frame.done && ownsInstant(frame)) {
-            return `component target '${frame.name}' is mid-instant; the transaction cannot be atomic`
+        // The writer's own instant is the one being committed. Every other target
+        // must be settled: a mid-instant member breaks atomicity, and (unless the
+        // running-member capability is on) any running member is unsupported.
+        // (id:laws-activation-order)
+        if (frame !== writer && !frame.done) {
+            if (ownsInstant(frame)) {
+                return { kind: 'conflict', message: `publication target '${frame.name}' is mid-instant; the transaction cannot be atomic` }
+            }
+            if (settledOnly) {
+                return { kind: 'unsupported', message: `publication target '${frame.name}' is a running member; settled configurations only` }
+            }
         }
+        if (!pose || !Array.isArray(pose.position)) return { kind: 'conflict', message: 'a publication entry needs a pose' }
     }
-    const notify = [writer.transform.swapDeferred(() => verdict.pose)]
-    for (const member of verdict.component) {
-        const frame = member.frame
-        notify.push(frame.transform.swapDeferred(() => member.pose))
-        if (!frame.done && frame.batch) frame.batch.rebase = member.pose
-    }
+    const notify = entries.map(({ frame, pose }) => frame.transform.swapDeferred(() => pose))
+    for (const { frame, pose } of entries) if (!frame.done && frame.batch) frame.batch.rebase = pose
+    // Install laws, ownership and accepted geometry before any notification:
+    // no watcher may see new geometry beside an old law. (id:laws-activation-order)
+    if (install) install()
     const root = metaRootFrame(writer)
+    // Derived values recompute from THE committed configuration, once, with early
+    // cutoff. No command is re-run and no subscription is created.
+    // (id:laws-build-p3-slider)
+    if (root._readouts?.size > 0) root._readouts.recompute(committedSnapshot())
     root._motionRevision = (root._motionRevision || 0) + 1
     // Notifying a commit: installs are done, the notification fan is open. This
     // guards that fan, not every runtime mutation — a request raised from a
@@ -1213,6 +1235,14 @@ function commitTransaction(verdict, writer, registry) {
         root.notifyingCommit = wasNotifying
     }
     return null
+}
+
+// A verdict as publication entries: the writer, then its component members.
+const verdictEntries = (writer, verdict) =>
+    [{ frame: writer, pose: verdict.pose }, ...verdict.component.map((m) => ({ frame: m.frame, pose: m.pose }))]
+
+function commitTransaction(verdict, writer, registry) {
+    return publish(writer, verdictEntries(writer, verdict), registry)
 }
 
 // The responder proposes; a separate check decides whether it is publishable.
@@ -1248,13 +1278,269 @@ function checkMotion(verdict, writer, registry, validate, request) {
 const motionBaseChanged = (ctx, request) => request.baseRevision !== undefined &&
     request.baseRevision !== metaRootFrame(ctx)._configurationRevision
 
+// Hard laws outrank requests: does a proposed configuration break an active law?
+// Continuation (moving the other endpoint) is Phase 3. (id:laws-activation-order)
+// The one reading a relation measures from: the evaluator's live read, or a proposed
+// configuration through overrides. Reads, legality and continuation share it, so a
+// source read and a check cannot disagree. (id:eval-relational)
+function worldReading(frame, observer, overrides) {
+    const time = (frame.birthtime || 0) + (frame.elapsedTime || 0)
+    if (overrides?.has(frame)) {
+        const world = SE3.compose(worldTransform(frame), overrides.get(frame))
+        return { position: world.position, rotation: world.rotation, time }
+    }
+    const world = readWorldTransform(frame, observer)
+    return { position: world.position, rotation: world.rotation, time }
+}
+
+// The one committed configuration a readout recomputes from.
+function committedSnapshot() {
+    const read = (frame) => worldReading(frame, null, null)
+    return {
+        read,
+        world: (frame) => read(frame).position,
+        measure: (relation, a, b) => measure(relation, a, b, read),
+    }
+}
+
+// A source is gone: every derived value it owned goes with it.
+function releaseReadouts(root, ids) {
+    if (!root?._readouts) return
+    for (const id of ids) root._readouts.release(id)
+}
+
+// Hard laws outrank requests: does a proposed configuration break an active law?
+// ONE validator for every path — birth, revision, program motion, hand motion and
+// delayed replies — so no path grows its own legality rule. (id:laws-activation-order)
+function lawViolation(activeLaws, overrides, registry) {
+    if (!activeLaws || activeLaws.length === 0) return null
+    const world = (frame) => worldReading(frame, null, overrides).position
+    for (const law of activeLaws) {
+        if (law.feature === 'position') {
+            const f = registry.get(law.endpoints[0])
+            // The predicate was authored in the declaring scope's stable
+            // birth/placement frame, never its live head. (id:laws-decl-frame)
+            const frame = registry.get(law.frame)
+            if (!f || !frame) continue
+            const w = world(f)
+            const p = SE3.apply(worldTransform(frame), law.predicate)
+            if (Math.hypot(w[0] - p[0], w[1] - p[1], w[2] - p[2]) > ACCEPT_TOL) return law
+            continue
+        }
+        if (law.feature !== 'distance') continue
+        const a = registry.get(law.endpoints[0])
+        const b = registry.get(law.endpoints[1])
+        if (!a || !b) continue
+        const d = measure("distance", a, b, (f) => worldReading(f, null, overrides))
+        if (Math.abs(d - law.predicate) > ACCEPT_TOL) return law
+    }
+    return null
+}
+
+function brokenLaw(overrides, registry, laws) {
+    return lawViolation(laws?.active(), overrides, registry)
+}
+
+const ownerLabel = (law) => law?.owner?.line != null ? `line ${law.owner.line}` : 'source'
+
+// A located conflict: which two owners disagree, never just "a conflict".
+function conflictMessage(violation, candidate) {
+    return `the ${violation.feature} at ${ownerLabel(violation)} conflicts with the ${candidate.feature} at ${ownerLabel(candidate)}`
+}
+
+// --- Attempt lifetime ---
+//
+// A failed declaration is an *attempt*: it owns the set of frames it held,
+// wherever they live. Proposal and validation return evidence; only the settlement
+// boundary below acquires a hold, so no future branch can quietly skip one. An
+// edit of any frame the attempt touched releases the whole attempt.
+// (id:laws-activation-verdicts)
+
+const heldFrame = (frame) => (frame?.heldAttempts?.size ?? 0) > 0
+
+function subtreeIds(frame) {
+    const ids = new Set()
+    visitPostOrder(frame, (c) => ids.add(c.id))
+    return ids
+}
+
+function registerAttempt(root, info) {
+    if (!root._attempts) { root._attempts = new Map(); root._attemptSeq = 0 }
+    const id = ++root._attemptSeq
+    const record = { id, source: info.source ?? null, kind: info.kind, message: info.message,
+        span: info.span ?? null, members: [] }
+    for (const frame of info.members) {
+        if (!frame) continue
+        if (!frame.heldAttempts) frame.heldAttempts = new Set()
+        frame.heldAttempts.add(id)
+        frame.held = { attemptId: id, kind: record.kind, message: record.message,
+            span: record.span, source: record.source }
+        record.members.push(frame)
+    }
+    root._attempts.set(id, record)
+    return id
+}
+
+function releaseAttempt(root, id) {
+    const attempt = root?._attempts?.get(id)
+    if (!attempt) return false
+    root._attempts.delete(id)
+    for (const frame of attempt.members) {
+        frame.heldAttempts?.delete(id)
+        if (!frame.heldAttempts || frame.heldAttempts.size === 0) {
+            frame.heldAttempts = null
+            frame.held = null
+        } else {
+            // Another attempt still holds it: keep THAT attempt's face, not this one's.
+            const next = root._attempts.get([...frame.heldAttempts][0])
+            frame.held = next
+                ? { attemptId: next.id, kind: next.kind, message: next.message, span: next.span, source: next.source }
+                : null
+        }
+    }
+    return true
+}
+
+// Repair of one scope releases the attempt that scope authored. Removal releases
+// every attempt whose source or member vanished. (id:laws-activation-verdicts)
+function releaseSourceAttempts(root, ids) {
+    if (!root?._attempts) return
+    const set = ids instanceof Set ? ids : new Set(ids)
+    for (const id of [...root._attempts.keys()]) {
+        if (set.has(root._attempts.get(id).source)) releaseAttempt(root, id)
+    }
+}
+
+// Removal of any frame in `ids` releases every attempt that named it as source or
+// member — including sibling members outside the edit. (id:laws-activation-verdicts)
+function releaseAttemptsFor(root, ids) {
+    if (!root?._attempts) return
+    const set = ids instanceof Set ? ids : new Set(ids)
+    for (const id of [...root._attempts.keys()]) {
+        const attempt = root._attempts.get(id)
+        if (set.has(attempt.source) || attempt.members.some((f) => set.has(f.id))) releaseAttempt(root, id)
+    }
+}
+
+// The complete affected set: the union of the old and proposed laws' connected
+// component, not just the first conflicting pair. A hold that stops at the pair
+// lets the rest of the component move as if the failure were not there.
+// (id:laws-activation-verdicts)
+function affectedMembers(registry, laws, seeds, extra = []) {
+    const ids = new Set(componentOf(laws, seeds).frames)
+    for (const frame of extra) if (frame?.id !== undefined) ids.add(frame.id)
+    const frames = []
+    for (const id of ids) {
+        const frame = registry.get(id)
+        if (frame) frames.push(frame)
+    }
+    return frames
+}
+
+// One settlement boundary. Proposal and validation return outcomes and never touch
+// a frame; this is the only place that commits or takes a hold. Every outcome kind
+// keeps its meaning. (id:laws-activation-order, id:laws-activation-verdicts)
+function settleAttempt(ctx, pump, outcome) {
+    if (outcome.kind === 'commit') {
+        const conflict = publish(ctx, outcome.poses, pump.registry, outcome.install ?? null)
+        if (conflict) return woundRelation(ctx, conflict.message, conflict.kind === 'unsupported' ? 'unsupported' : 'relation', outcome.span ?? null)
+        if (outcome.head) emitHead(outcome.head.frame, outcome.head.pose)
+        for (const h of outcome.heads ?? []) emitHead(h.frame, h.pose)
+        return null
+    }
+    if (outcome.kind === 'contradiction' || outcome.kind === 'obstructed') {
+        // A demonstrated impossibility and a policy obstruction both hold the
+        // affected component, but they are not the same claim. Stale work cannot
+        // restore a hold — the writer must still be this world's writer.
+        // (id:laws-activation-verdicts)
+        if (pump.registry.get(ctx.id) !== ctx || ctx.done) return { verdict: 'continue', produced: true }
+        registerAttempt(metaRootFrame(ctx), {
+            source: ctx.id, kind: outcome.kind, message: outcome.message,
+            span: outcome.span ?? null, members: outcome.members,
+        })
+        return woundRelation(ctx, outcome.message, outcome.kind, outcome.span ?? null)
+    }
+    if (outcome.kind === 'unresolved' || outcome.kind === 'stale' || outcome.kind === 'busy') {
+        // Not proof of impossibility, and not a silent advance: end the governed
+        // continuation unresolved, keeping the last accepted prefix.
+        return endUnresolved(ctx, outcome.message ?? outcome.kind)
+    }
+    // Unsupported or malformed: a located wound, never a held component.
+    return woundRelation(ctx, outcome.message, outcome.kind ?? 'relation', outcome.span ?? null)
+}
+
+function proposedOverrides(writer, verdict) {
+    return new Map([[writer, verdict.pose], ...verdict.component.map((m) => [m.frame, m.pose])])
+}
+
+// The hand's continuation: keep every untouched coordinate still and move the
+// touched endpoint to the nearest admissible position under the active laws.
+// Hand-first, conserving untouched points. (id:laws-build-p2d, id:laws-activation-order)
+function continueLaws(verdict, writer, registry, laws) {
+    if (!laws || verdict.kind !== 'accept') return verdict
+    const active = laws.active()
+    if (active.length === 0) return verdict
+    const poses = new Map([[writer, verdict.pose], ...verdict.component.map((m) => [m.frame, m.pose])])
+    for (const law of active) {
+        if (law.feature !== 'distance') continue
+        const a = registry.get(law.endpoints[0])
+        const b = registry.get(law.endpoints[1])
+        if (!a || !b) continue
+        const moved = poses.has(a) ? a : (poses.has(b) ? b : null)
+        if (!moved) continue
+        const other = moved === a ? b : a
+        const proposed = poses.get(moved)
+        const pWorld = worldReading(moved, null, poses).position
+        const oWorld = worldReading(other, null, null).position
+        const projected = realizeDistance(pWorld, oWorld, law.predicate)
+        if (!projected.ok) continue
+        const local = SE3.unapply(worldTransform(moved), projected.pose)
+        poses.set(moved, { rotation: proposed.rotation, position: local })
+    }
+    verdict.pose = poses.get(writer)
+    for (const member of verdict.component) member.pose = poses.get(member.frame)
+    return verdict
+}
+
+// Is `target` at `worldPos` consistent with every active distance on it?
+function conflictAt(target, worldPos, laws, registry) {
+    for (const law of laws.active()) {
+        if (law.feature !== 'distance') continue
+        const a = registry.get(law.endpoints[0])
+        const b = registry.get(law.endpoints[1])
+        if (!a || !b) continue
+        const other = a === target ? b : (b === target ? a : null)
+        if (!other) continue
+        // One measurement: the proposed target position against the other's live read.
+        const d = measure("distance", target, other, (f) => f === target
+            ? { position: worldPos }
+            : { position: worldReading(f, null, null).position })
+        if (Math.abs(d - law.predicate) > ACCEPT_TOL) return law
+    }
+    return null
+}
+
+// The position law that fixes a frame, or null. Its predicate is authored in
+// the law's own frame, so the caller must interpret it there. (id:laws-decl-frame)
+function pinnedLaw(laws, frameId) {
+    for (const law of laws.active()) {
+        if (law.feature === 'position' && law.endpoints[0] === frameId) return law
+    }
+    return null
+}
+
 function parkOnVerdict(ctx, verdict, pump, request) {
     if (motionBaseChanged(ctx, request)) verdict = { kind: 'stale' }
     else verdict = checkMotion(verdict, ctx, pump.registry, pump.motionValidate, request)
+    // A proposed configuration that breaks an active law is refused, never shown
+    // as accepted. (id:laws-activation-order)
+    if (verdict.kind === 'accept' && (heldFrame(ctx) || brokenLaw(proposedOverrides(ctx, verdict), pump.registry, pump.laws))) {
+        verdict = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
+    }
     if (verdict.kind === 'fault') return woundMotion(ctx, verdict.message)
     if (verdict.kind === 'accept' && verdict.component.length > 0) {
         const conflict = commitTransaction(verdict, ctx, pump.registry)
-        if (conflict) return woundMotion(ctx, conflict)
+        if (conflict) return woundMotion(ctx, conflict.message)
     }
     openInstant(ctx)
     suspend(ctx, 'admission', { seq: ++ctx.motionSeq, verdict })
@@ -1305,15 +1591,21 @@ function delayedMotion(ctx, value, pump) {
     Promise.resolve(raw).then((resolved) => {
         if (stale()) return
         if (isThenable(resolved)) return void woundMotion(ctx, 'delayed motion responder resolved to another Promise')
-        const verdict = motionBaseChanged(ctx, request) ? { kind: 'stale' } :
+        // The delayed reply is still a motion path: active laws govern it, exactly
+        // as they govern a synchronous reply. (id:laws-activation-order)
+        const checked = motionBaseChanged(ctx, request) ? { kind: 'stale' } :
             checkMotion(interpretReply(resolved, pump.execOpts.refusalStroke),
                 ctx, pump.registry, pump.motionValidate, request)
-        if (verdict.kind === 'fault') return void woundMotion(ctx, verdict.message)
-        if (verdict.kind === 'accept' && verdict.component.length > 0) {
-            const conflict = commitTransaction(verdict, ctx, pump.registry)
-            if (conflict) return void woundMotion(ctx, conflict)
+        let ruling = checked
+        if (ruling.kind === 'accept' && brokenLaw(proposedOverrides(ctx, ruling), pump.registry, pump.laws)) {
+            ruling = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
         }
-        suspend(ctx, 'admission', { seq, verdict })
+        if (ruling.kind === 'fault') return void woundMotion(ctx, ruling.message)
+        if (ruling.kind === 'accept' && ruling.component.length > 0) {
+            const conflict = commitTransaction(ruling, ctx, pump.registry)
+            if (conflict) return void woundMotion(ctx, conflict.message)
+        }
+        suspend(ctx, 'admission', { seq, verdict: ruling })
     }, (error) => {
         if (!stale()) woundMotion(ctx, `motion responder failed: ${error.message}`)
     })
@@ -1322,6 +1614,232 @@ function delayedMotion(ctx, value, pump) {
 function shout(ctx, value, route, pump) {
     interceptShout(ctx, value, pump.registry, route.deferredShouts, pump.onShout)
     return { verdict: 'continue', produced: true }
+}
+
+// A reached `let` is a being act: a new identity seats at the walk's state, and
+// an existing one adopts that state without resetting its body or its laws.
+// Synchronous — the executor reads it on its next step. (id:laws-ordered-birth)
+function birth(ctx, value, _route, pump) {
+    const existing = ctx.children.get(value.name)
+    if (existing) {
+        // The being adopts the current head's state; identity and body stay.
+        // Bind the pose once: express the declaring frame's world in the child's
+        // own coordinate frame, so a child born through `as` is not double-counted.
+        // The being act is a proposal and may not break an active law.
+        // (id:laws-ordered-birth, id:laws-build-p2c, id:laws-decl-frame)
+        // The cursor world is the declaring frame's chain times the executor's
+        // here; express it once in the child's own frame. (id:laws-decl-frame)
+        const here = SE3.compose(worldTransform(ctx), value.origin)
+        const next = SE3.compose(SE3.invert(worldTransform(existing)), here)
+        const violation = lawViolation(pump.laws.active(), new Map([[existing, next]]), pump.registry)
+        const outcome = violation
+            ? { kind: 'obstructed', span: value.owner,
+                message: conflictMessage(violation, { feature: 'being act', owner: value.owner }),
+                members: affectedMembers(pump.registry, pump.laws.active(), violation.endpoints, [existing, ctx]) }
+            : { kind: 'commit', poses: [{ frame: existing, pose: next }], span: value.owner }
+        const settled = settleAttempt(ctx, pump, outcome)
+        if (settled) return settled
+        ctx.reached?.add(value.name)
+        return { verdict: 'continue', produced: true }
+    }
+    if (!pump?.createDeps) return { verdict: 'continue' }
+    seatPlace(ctx, value.name, pump, value.origin)
+    ctx.reached?.add(value.name)
+    return { verdict: 'continue', produced: true }
+}
+
+// One noun: a law is an address, a predicate and an owner. One pipeline: the
+// feature's propose row names the target's world pose under the active laws, the
+// original predicate validates it independently, one publish installs it, and one
+// store records it. A new form is a row, not a new effect. (id:laws-build-solve-seam)
+const ENDPOINTS = {
+    distance: ({ target, observer }) => [target.id, observer.id],
+    position: ({ target }) => [target.id],
+}
+
+const PROPOSE = {
+    distance({ target, observer, value, laws, registry }) {
+        const o = worldReading(observer, observer, null).position
+        const pin = pinnedLaw(laws, target.id)
+        const pinFrame = pin ? registry.get(pin.frame) : null
+        if (pinFrame) {
+            const p = SE3.apply(worldTransform(pinFrame), pin.predicate)
+            return validateDistance(p, o, value).ok
+                ? { ok: true, world: p }
+                : { ok: false, reason: 'the pinned position conflicts with the distance', kind: 'obstructed' }
+        }
+        const r = realizeDistance(worldReading(target, observer, null).position, o, value)
+        return r.ok ? { ok: true, world: r.pose } : { ok: false, reason: r.reason }
+    },
+    position({ target, observer, value, laws, registry }) {
+        if (!Array.isArray(value) || value.length !== 3 || !value.every(Number.isFinite)) {
+            return { ok: false, reason: 'a position needs three finite coordinates' }
+        }
+        // The pin names a point in the declaring frame's stable placement frame,
+        // never its live head. (id:laws-decl-frame)
+        const world = SE3.apply(worldTransform(observer), value)
+        const conflict = conflictAt(target, world, laws, registry)
+        return conflict
+            ? { ok: false, reason: `the pin conflicts with the ${conflict.feature} at ${ownerLabel(conflict)}`, kind: 'obstructed', conflict }
+            : { ok: true, world }
+    },
+}
+
+const VALIDATE = {
+    distance({ target, observer, value, world }) {
+        return validateDistance(world, worldReading(observer, observer, null).position, value)
+    },
+    position({ world }) {
+        return Array.isArray(world) && world.every(Number.isFinite)
+            ? { ok: true }
+            : { ok: false, reason: 'non-finite position' }
+    },
+}
+
+// Refresh one member's display projection from its accepted pose. The published
+// pose is the truth; the head event is how a parked or headed member shows it.
+// (id:laws-transaction-d)
+function emitHead(member, pose) {
+    if (!member.done) return
+    const head = {
+        type: 'head', position: pose.position, rotation: pose.rotation,
+        color: member.actorState?.style?.color,
+        headSize: member.actorState?.style?.showTurtle,
+    }
+    const target = member.targetFrame ? findReferenceFrame(member, member.targetFrame) : null
+    putSync(member, target ? projectHead(head, target, relativeTransform(member, target)) : head)
+}
+
+// A bounded analytic realization for a connected set of distance laws with one
+// held anchor: when moving the designated target alone would break a surviving
+// law, realize the whole tree jointly, validate it, and publish it together.
+// Outside that case it returns null and the attempt stays a located rejection.
+// (id:laws-build-p3, id:laws-build-solve-seam)
+function componentCandidate(spec, candidate, pump) {
+    const active = [...pump.laws.active().filter((law) => addressOf(law) !== addressOf(candidate)), candidate]
+    const comp = componentOf(active, candidate.endpoints)
+    if (comp.laws.length < 2) return null
+    if (comp.laws.some((law) => law.feature !== 'distance')) return null
+    if (!comp.frames.has(spec.observer.id)) return null
+    for (const id of comp.frames) {
+        if (id === spec.observer.id) continue   // the declaring frame is the held anchor
+        const frame = pump.registry.get(id)
+        // Only settled, unpinned, unheld frames may be reconfigured.
+        if (!frame || !frame.done || heldFrame(frame) || pinnedLaw(pump.laws, id)) return null
+    }
+    const world = (id) => {
+        const frame = pump.registry.get(id)
+        return frame ? worldReading(frame, null, null).position : null
+    }
+    const positions = realizeDistanceTree(comp.laws, spec.observer.id, world, (law) => law.predicate)
+    if (!positions) return null
+    const poses = []
+    const heads = []
+    for (const id of comp.frames) {
+        if (id === spec.observer.id) continue
+        const frame = pump.registry.get(id)
+        const target = positions.get(id)
+        if (!frame || !target) return null
+        const pose = { rotation: frame.transform.deref().rotation, position: SE3.unapply(worldTransform(frame), target) }
+        poses.push({ frame, pose })
+        heads.push({ frame, pose })
+    }
+    const overrides = new Map(poses.map(({ frame, pose }) => [frame, pose]))
+    if (lawViolation(comp.laws, overrides, pump.registry)) return null
+    return { kind: 'commit', poses, install: () => pump.laws.apply(candidate), heads, span: spec.owner }
+}
+
+// A proposal returns an outcome; it never mutates a frame's lifetime. The caller
+// hands that outcome to the one settlement boundary. (id:laws-activation-order)
+function applyLaw(spec, pump) {
+    const propose = PROPOSE[spec.feature]
+    const validate = VALIDATE[spec.feature]
+    if (!propose || !validate) return { kind: 'unsupported', message: `Unsupported law: ${spec.feature}`, span: spec.owner }
+    const candidate = bindLaw({
+        feature: spec.feature,
+        endpoints: ENDPOINTS[spec.feature](spec),
+        scope: spec.observer.id,
+        frame: spec.observer.id,
+        predicate: spec.value,
+        owner: spec.owner,
+    })
+    // The bound domain guard, preserved through lowering: a negative length is a
+    // domain error, never permission to drop a positive law. (id:laws-build-p3a)
+    if (!predicateOk(candidate.feature, candidate.predicate)) {
+        return { kind: 'relation', span: spec.owner,
+            message: `a ${candidate.feature} payload must be finite${candidate.guards?.nonNegative ? ' and non-negative' : ''}` }
+    }
+    const placed = propose({ ...spec, laws: pump.laws, registry: pump.registry })
+    if (!placed.ok) {
+        if (placed.kind === 'obstructed' || placed.kind === 'contradiction') {
+            return { kind: placed.kind, message: placed.reason, span: spec.owner,
+                members: affectedMembers(pump.registry,
+                    [...pump.laws.active().filter((law) => addressOf(law) !== addressOf(candidate)), candidate],
+                    candidate.endpoints, [spec.target, spec.observer]) }
+        }
+        return { kind: placed.kind ?? 'relation', message: placed.reason, span: spec.owner }
+    }
+    const check = validate({ ...spec, world: placed.world })
+    if (!check.ok) return { kind: check.kind ?? 'relation', message: check.reason, span: spec.owner }
+
+    const local = SE3.unapply(worldTransform(spec.target), placed.world)
+    const pose = { rotation: spec.target.transform.deref().rotation, position: local }
+    // Validate every surviving predicate, not only the proposed one. A new
+    // declaration may not publish a law its geometry violates.
+    const surviving = pump.laws.active().filter((law) => addressOf(law) !== addressOf(candidate))
+    const violation = lawViolation([...surviving, candidate], new Map([[spec.target, pose]]), pump.registry)
+    if (violation) {
+        // Two lawful distances can move together: a connected distance tree
+        // responds jointly before the candidate is called a failure.
+        // (id:laws-build-p3)
+        const joint = componentCandidate(spec, candidate, pump)
+        if (joint) return joint
+        return { kind: 'obstructed', message: conflictMessage(violation, candidate), span: spec.owner,
+            members: affectedMembers(pump.registry, [...surviving, candidate], candidate.endpoints,
+                [spec.target, spec.observer]) }
+    }
+    // Laws, owner and accepted geometry commit in one publication, before notify.
+    return { kind: 'commit', poses: [{ frame: spec.target, pose }],
+        install: () => pump.laws.apply(candidate), heads: [{ frame: spec.target, pose }], span: spec.owner }
+}
+
+// A reached law, one form or another: resolve its target, then the one pipeline.
+// A scalar declaration: one source-owned derived value bound to its name. A read of
+// the name is still a snapshot; the value recomputes at the commit.
+// (id:laws-build-p3-readout-built)
+function scalarReadout(ctx, value, _route, pump) {
+    const id = pump.readouts.register(ctx.id, value.owner ?? value.name, value.read)
+    if (!ctx.scalars) ctx.scalars = new Map()
+    ctx.scalars.set(value.name, id)
+    return { verdict: 'continue', produced: true }
+}
+
+function law(ctx, value, _route, pump) {
+    const targetName = value.target
+    // One binding rule for reads and laws: a name this scope declares but has
+    // not reached is a located use-before-introduction, never an outer namesake.
+    // (id:laws-ordered-birth)
+    if (ctx.declared?.has(targetName) && !ctx.children.has(targetName)) {
+        return woundRelation(ctx, `Use before introduction: ${targetName}`, 'relation', value.owner)
+    }
+    const target = findFrame(ctx, targetName, 'world')
+    if (!target || target === ctx) {
+        return woundRelation(ctx, `Unknown target: ${targetName}`, 'relation', value.owner)
+    }
+    const outcome = applyLaw({ feature: value.feature, target, observer: ctx,
+        value: value.value, owner: value.owner }, pump)
+    return settleAttempt(ctx, pump, outcome) ?? { verdict: 'continue', produced: true }
+}
+
+function woundRelation(ctx, message, kind = 'relation', span = null) {
+    ctx.observation = null
+    ctx.done = true
+    ctx.generator = null
+    closeInstant(ctx)
+    clearSuspension(ctx)
+    ctx.error = { message, span, kind }
+    ctx.channel.put({ type: 'error', ...ctx.error, ambientId: ctx.id })
+    return { verdict: 'ended', produced: true }
 }
 
 function spawn(ctx, value, route, pump) {
@@ -1400,9 +1918,10 @@ function deposit(ctx, value, route, pump) {
     return { verdict: 'continue', produced: true }
 }
 
-function motionUnresolved(ctx, value) {
+// Unresolved stops the governed continuation without inventing a conclusion.
+function endUnresolved(ctx, reason) {
     ctx.observation = null
-    ctx.unresolved = { reason: value.reason }
+    ctx.unresolved = { reason }
     if (ctx.batch) {
         ctx.actorState = ctx.batch
         ctx.commandCount += ctx.batch.commandCount
@@ -1415,8 +1934,12 @@ function motionUnresolved(ctx, value) {
     return { verdict: 'ended' }
 }
 
+function motionUnresolved(ctx, value) {
+    return endUnresolved(ctx, value.reason)
+}
+
 const EFFECTS = {
-    breath, blocked, wait, yield: yieldEffect, shout, spawn, limitMailbox, motion, motionUnresolved,
+    breath, blocked, wait, yield: yieldEffect, shout, spawn, limitMailbox, motion, motionUnresolved, birth, law, scalar: scalarReadout,
 }
 
 // Verdict for one yield. Pumps act; this only means. (id:output-ledger-r2-instant)
@@ -1471,6 +1994,12 @@ function stepOnce(ctx, route, pump) {
     const admission = sus?.kind === 'admission' ? sus : null
     if (admission && !admission.verdict) return { verdict: 'parked' }
     let value, done
+    // Source-active laws must govern every motion path, including the ordinary
+    // program walk with no laboratory responder. The executor asks for admission
+    // whenever a law is live; with none, the unconstrained fast path stays.
+    // (id:laws-activation-order)
+    if (ctx.batch) ctx.batch.motionProtocol = pump.motionAdmission != null ||
+        pump.motionAdmissionAsync != null || pump.laws.count() > 0
     try {
         const input = admission ? admission.verdict : undefined
         if (admission) clearSuspension(ctx)
@@ -1532,6 +2061,10 @@ export function createScheduler(generator, opts = {}) {
 
     // One stage stock for the whole tree. (id:carving-todo-ledger-stock)
     const stock = createStock()
+    // The play's active laws: one address → one predicate + owner. (id:laws-ordered-replacement)
+    const laws = createLawStore()
+    // Source-owned derived values, recomputed once per commit. (id:laws-build-p3-slider)
+    const readouts = createReadouts()
 
     const root = attachMeta(
         createFrame(ROOT_NAME, generator, channelOpts),
@@ -1543,6 +2076,13 @@ export function createScheduler(generator, opts = {}) {
     root._frontier = 0
     root._obsEpoch = 0
     root._motionRevision = 0   // accepted motion commits in this play
+    // Capability gate: running-member correction is off by default. Enabling it is
+    // an explicit act, not an accident. (id:laws-activation-order)
+    root._settledOnly = opts.settledOnly !== false
+    // Failed declaration attempts own their holds; repair releases across scopes.
+    root._attempts = new Map()
+    root._attemptSeq = 0
+    root._readouts = readouts
     root._configurationRevision = 0
     root.transform.watch('configurationRevision', () => { root._configurationRevision++ })
     // Stage root has no when; rootHears opts in. (id:mailbox-listens-for)
@@ -1566,6 +2106,8 @@ export function createScheduler(generator, opts = {}) {
         motionValidate: opts.motionValidate || null,
         channelOpts,
         registry,
+        laws,
+        readouts,
         onShout,
         stock,
         // Inline drain asks too — unpaced hang is real.
@@ -1604,6 +2146,10 @@ export function createScheduler(generator, opts = {}) {
         // reviving its coroutine. The same responder, check and component commit
         // serve program motion. The caller supplies the last seen motion revision.
         get motionRevision() { return root._motionRevision },
+        // The play's active laws (address → predicate, owner). Read-only seam.
+        get laws() { return laws },
+        // Source-owned derived values (id:laws-build-p3-slider). Read-only seam.
+        get readouts() { return readouts },
         requestMotion(frame, requested, revision) {
             if (registry.get(frame?.id) !== frame || frame === root) return { kind: 'stale' }
             // A publication's notifications are on the stack; a request raised from one
@@ -1614,6 +2160,8 @@ export function createScheduler(generator, opts = {}) {
             // A settled actor may live inside a hosted play. Keep the transaction
             // inside one seating: a sibling's birth frame is not the root's frame.
             if (!frame.parent || frame.isLens || frame.error) return { kind: 'unresolved' }
+            // A failed attempt holds its component until an edit releases it.
+            if (heldFrame(frame)) return { kind: 'refuse', ink: execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
             if (revision !== root._motionRevision) return { kind: 'stale' }
             const request = { command: 'hand', from: frame.transform.deref(), requested, frame }
 
@@ -1640,6 +2188,19 @@ export function createScheduler(generator, opts = {}) {
             const verdict = checkMotion(interpretReply(raw, execOpts.refusalStroke),
                 frame, registry, pump.motionValidate, request)
             if (verdict.kind !== 'accept') return verdict
+            // Continue along the active laws: the touched endpoint moves to the
+            // nearest admissible position, every other coordinate stays.
+            // (id:laws-build-p2d)
+            // One candidate producer. An installed responder owns the component it
+            // returns; only when none is installed does the built-in continuation
+            // policy choose geometry. The two never run in series.
+            // (id:laws-build-solve-seam)
+            if (!pump.motionAdmission && !pump.motionAdmissionAsync) {
+                continueLaws(verdict, frame, registry, laws)
+            }
+            if (brokenLaw(proposedOverrides(frame, verdict), registry, laws)) {
+                return { kind: 'refuse', ink: execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
+            }
             const members = [{ frame, pose: verdict.pose }, ...verdict.component]
             const targets = new Map()
             for (const { frame: member } of members) {
@@ -1651,7 +2212,7 @@ export function createScheduler(generator, opts = {}) {
                 targets.set(member, target)
             }
             const conflict = commitTransaction(verdict, frame, registry)
-            if (conflict) return { kind: 'busy', message: conflict }
+            if (conflict) return { kind: conflict.kind === 'unsupported' ? 'unresolved' : 'busy', message: conflict.message }
             // A hand never repaints deposited ink. Its head uses the same
             // declaring-frame projection as a program head (id:ft-d5-head).
             for (const { frame: member, pose } of members) {
@@ -1681,9 +2242,13 @@ export function createScheduler(generator, opts = {}) {
                 return existing
             }
             if (existing) {
+                // A changed seed is a fresh play: a relationship-only edit does not
+                // yet carry statement ownership across a reparse. (id:laws-build-p2-recut)
                 terminateAmbient(existing)
                 // Leaving the tree frees its share of the stage stock.
-                visitPostOrder(existing, (c) => { resetInk(c, stock); registry.delete(c.id) })
+                releaseAttemptsFor(root, subtreeIds(existing))
+                releaseReadouts(root, subtreeIds(existing))
+                visitPostOrder(existing, (c) => { resetInk(c, stock); registry.delete(c.id); laws.retractFrame(c.id) })
                 root.children.delete(key)
                 bumpTree(root)
             }
@@ -1724,7 +2289,9 @@ export function createScheduler(generator, opts = {}) {
             const child = root.children.get(key)
             if (!child) return
             terminateAmbient(child)
-            visitPostOrder(child, (c) => { resetInk(c, stock); registry.delete(c.id) })
+            releaseAttemptsFor(root, subtreeIds(child))
+            releaseReadouts(root, subtreeIds(child))
+            visitPostOrder(child, (c) => { resetInk(c, stock); registry.delete(c.id); laws.retractFrame(c.id) })
             root.children.delete(key)
             bumpTree(root)
             this.done = allDone(root)

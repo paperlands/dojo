@@ -1,6 +1,6 @@
 // One visible handle: a declared place you can touch. (id:laws-decl-handle)
 //
-// Screen → the declared plane → the actor's birth coordinates → requestMotion.
+// Screen → the frozen view plane → the actor's birth coordinates → requestMotion.
 // Only accepted geometry is drawn: this never moves the actor itself, it submits
 // a request and reports what came back.
 //
@@ -9,11 +9,11 @@
 import { SE3 } from "../se3.js"
 import { exposed } from "./batch.js"
 
-// The declared plane is the place's own birth plane: its world origin and the
-// world direction of its local z. The camera never chooses it. (id:laws-decl-anchor)
-export function birthPlane(worldTransform) {
-    const [nx, ny, nz] = worldTransform.rotation.rotateVec(0, 0, 1)
-    return { origin: [...worldTransform.position], normal: [nx, ny, nz] }
+// The drag plane is the camera's plane through the point at pointer-down —
+// parallel to the image plane: its normal is the camera's viewing direction, not
+// the point's line of sight. Frozen until release. (id:laws-decl-anchor)
+export function facingPlane(point, facing) {
+    return { origin: [...point], normal: [...facing] }
 }
 
 // A ray that grazes the plane would "touch" it kilometres away. Refusing only an
@@ -52,18 +52,13 @@ export function requestedPose(accepted, localPoint) {
     return { rotation: accepted.rotation, position: [...localPoint] }
 }
 
-// The toy's *supported manipulation domain* — not an enforced planar invariant.
-// Program motion can still leave the plane; refusing to drag that result is
-// honest, claiming all accepted geometry is planar would not be.
-//
-// A supported pose is a KNOWN pose: absent or malformed geometry is not the
-// domain origin, so a lifecycle gap cannot become a drag-eligibility decision.
-// (id:laws-decl-plane)
-export function inPlane(accepted, tolerance = 1e-9) {
+// A drag anchors its frozen plane at the accepted world position, so the pose
+// must be KNOWN: malformed geometry cannot anchor a plane. No planar domain —
+// a point off its birth plane is still a point. (id:laws-decl-plane)
+export function knownPose(accepted) {
     const position = accepted?.position
     if (!Array.isArray(position) || position.length !== 3) return false
-    if (!position.every(Number.isFinite)) return false
-    return Math.abs(position[2]) <= tolerance
+    return position.every(Number.isFinite)
 }
 
 // The one query the affordance and the hit test share. Participation alone is
@@ -74,7 +69,7 @@ export function inPlane(accepted, tolerance = 1e-9) {
 export function eligibility({ frame, registered, accepted }) {
     if (!frame || !registered) return { ok: false, reason: OUTCOME.obsolete }
     if (!exposed(frame)) return { ok: false, reason: OUTCOME.unresolved }
-    if (!inPlane(accepted)) return { ok: false, reason: OUTCOME.unsupported }
+    if (!knownPose(accepted)) return { ok: false, reason: OUTCOME.unsupported }
     return { ok: true, reason: null }
 }
 
@@ -82,6 +77,33 @@ export function eligibility({ frame, registered, accepted }) {
 // pin draws its ring at it, so the drawn ring is the touchable disc.
 // (id:laws-decl-handle)
 export const HIT_RADIUS = 18
+
+// The screen space the seam shares, by name: client/CSS pixels, viewport origin —
+// what a pointer carries and a projection returns. One name because the projection
+// and the layer over it must agree. (id:laws-decl-interface)
+export const CLIENT_SPACE = 'client'
+
+// The one world↔screen mapping: the compositor's reframe (eye and hand) folded
+// with the stage's camera. `reframe` maps world → the scene the camera draws;
+// null is identity. project applies it forward; ray and facing apply its inverse,
+// so the drag plane and the pointer ray share one frame. (id:laws-decl-interface)
+export function viewMapping(reframe, stage) {
+    const toWorld = reframe ? SE3.invert(reframe) : null
+    return {
+        project: (world) => stage.project(reframe ? SE3.apply(reframe, world) : world),
+        rayAt: (x, y) => {
+            const ray = stage.unproject(x, y)
+            if (!ray || !toWorld) return ray
+            const d = toWorld.rotation.rotateVec(ray.direction[0], ray.direction[1], ray.direction[2])
+            return { origin: SE3.apply(toWorld, ray.origin), direction: d }
+        },
+        facing: () => {
+            const f = stage.facing()
+            if (!toWorld) return f
+            return toWorld.rotation.rotateVec(f[0], f[1], f[2])
+        },
+    }
+}
 
 // Screen-space hit test against the handle's projected point.
 export function hitTest(pointer, projected, radius = HIT_RADIUS) {
@@ -98,8 +120,9 @@ export const OUTCOME = {
     obsolete: 'obsolete',      // the identity is no longer in this play
     cancelled: 'cancelled',    // the gesture ended without a verdict
     fault: 'fault',
-    // Outside the toy's supported manipulation domain — distinct from busy
-    // (another hand has it) and from rejected (a truth verdict).
+    // A pose that cannot anchor the drag plane — missing or malformed geometry,
+    // never a planar domain. Distinct from busy (another hand has it) and from
+    // rejected (a truth verdict).
     unsupported: 'unsupported',
 }
 
@@ -119,7 +142,7 @@ export function outcomeOf(verdict) {
 }
 
 // One outcome, supplied by the caller — it has already decided between a verdict,
-// an unsupported domain and a cancelled gesture.
+// an unanchorable pose and a cancelled gesture.
 export function readout({ point, accepted, requested, outcome }) {
     return {
         point,
@@ -127,4 +150,14 @@ export function readout({ point, accepted, requested, outcome }) {
         requested: requested ? [...requested] : null,
         outcome,
     }
+}
+
+// A refusal changes no geometry, so its text is the only trace: it fades after the
+// hand lets go, while the affordance is at rest the moment the pointer lifts. A
+// scalar over the readout, never a state transition. (id:laws-decl-interface)
+export const VERDICT_DECAY_MS = 360
+
+export function verdictFade(age, span = VERDICT_DECAY_MS) {
+    if (!(age >= 0) || age >= span) return 0
+    return 1 - age / span
 }

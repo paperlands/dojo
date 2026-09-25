@@ -615,6 +615,15 @@ function parseBlockLines(state) {
 
 // Total (id:cmp-resilient): a malformed statement becomes an error node in
 // place, and the healthy statements around it still parse and run (D020).
+// A three-coordinate literal `[x, y, z]` (commas or spaces). Null unless it is
+// exactly three finite numbers. (id:laws-ordered-replacement)
+function parseCoords(expr) {
+    const m = /^\[\s*([^,\]\s]+)[,\s]+([^,\]\s]+)[,\s]+([^,\]\s]+)\s*\]$/.exec(expr)
+    if (!m) return null
+    const n = [m[1], m[2], m[3]].map(Number)
+    return n.every(Number.isFinite) ? n : null
+}
+
 function parseStatement(tokens, state, rec) {
     const kw = tokens[0];
     const len = tokens.length;
@@ -624,13 +633,56 @@ function parseStatement(tokens, state, rec) {
     // silently ignored. (id:laws-decl-batch)
     if (kw === 'let') {
         if (len < 2) return errorNode(rec, "a name after 'let'", 'end of statement')
-        if (len > 2) return errorNode(rec, 'existence only so far — a distance or pin', tokens[2])
-        // One batch belongs to one supported body. A loop, conditional or function
-        // body is not one of them; an `as` body is.
+        // A spatial identity declaration belongs to one supported body — an `as`
+        // body or the straight-line body. A scalar derived value is not an identity
+        // and may be introduced where the body re-reaches it (a loop), because its
+        // node is keyed by (source, site). (id:laws-decl-batch, id:laws-build-p3-readout-built)
         const kind = state.blockKind ?? null
-        if (kind && kind !== 'as') return errorNode(rec, `a declaration cannot live inside '${kind}'`, kw)
-        return stamp(new ASTNode('Existence', tokens[1]), rec)
+        const introduced = () => (kind && kind !== 'as')
+            ? errorNode(rec, `a declaration cannot live inside '${kind}'`, kw)
+            : null
+        // `let A` — existence. `let A.distance = 5` (or glued) — a dotted relation.
+        // The declaring frame is the observer; the address matches the function
+        // spelling. (id:laws-ordered-replacement)
+        let lhs = tokens[1]
+        let rest = tokens.slice(2)
+        let expr = null
+        const eqAt = lhs.indexOf('=')
+        if (eqAt > 0) {
+            expr = [lhs.slice(eqAt + 1), ...rest].join(' ').trim()
+            lhs = lhs.slice(0, eqAt)
+        } else if (rest[0] === '=') {
+            expr = rest.slice(1).join(' ').trim()
+        } else if (rest.length > 0) {
+            return errorNode(rec, "'=' after a name", rest[0])
+        }
+        if (expr === null) return introduced() ?? stamp(new ASTNode('Existence', lhs), rec)
+        if (!expr) return errorNode(rec, 'a value after =', 'end of statement')
+        const dot = lhs.indexOf('.')
+        if (dot > 0) {
+            const target = lhs.slice(0, dot)
+            const property = lhs.slice(dot + 1)
+            if (property !== 'distance') return errorNode(rec, 'a supported relation (distance so far)', lhs)
+            return introduced() ?? stamp(new ASTNode('Law', 'distance', [], { target, expr }), rec)
+        }
+        // A position law: `let A = origin` or a three-coordinate literal.
+        // (id:laws-ordered-replacement)
+        if (expr === 'origin') return introduced() ?? stamp(new ASTNode('Law', 'position', [], { target: lhs, coords: [0, 0, 0] }), rec)
+        const coords = parseCoords(expr)
+        if (coords) return introduced() ?? stamp(new ASTNode('Law', 'position', [], { target: lhs, coords }), rec)
+        // A scalar derived value: `let s = A.x`. Its kind is fixed at introduction;
+        // the value is a source-owned derived node. A bare identifier stays refused
+        // (reserved for coincidence). (id:laws-build-p3-readout-built)
+        // A malformed coordinate literal is a position error, not a scalar.
+        if (/^\[/.test(expr)) {
+            return errorNode(rec, 'a property (A.distance) or a position (origin or [x, y, z])', expr)
+        }
+        if (/^[A-Za-z_][\w-]*$/.test(expr)) {
+            return errorNode(rec, 'a property (A.distance) or a position (origin or [x, y, z])', expr)
+        }
+        return stamp(new ASTNode('Scalar', lhs, [], { expr }), rec)
     }
+
 
     // Most common case first: commands
     if (!BLOCK_KW[kw]) {
