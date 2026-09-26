@@ -25,6 +25,10 @@ import { SELF } from "../kernel/witness.js"
 
 const PROGRESS_FLOOR_MS = 100   // progress breath floor (~10/s)
 
+// A world step for a projected direction. The facing gives the direction; this is
+// only its yardstick, the same 20 the resting axes of a constraint use.
+const FACING_STEP = 20
+
 
 export class Turtle {
     constructor(canvas, options = {}) {
@@ -254,8 +258,19 @@ export class Turtle {
         }
         for (const frame of scheduler.registry.values()) {
             if (frame === scheduler.root || !exposed(frame)) continue
-            const at = view.project(frameWorldTransform(frame).position)
+            const world = frameWorldTransform(frame)
+            const at = view.project(world.position)
             if (!at) continue
+            // The place's inherited heading: a declaration is seated at the walk's
+            // reached pose, facing forward (seatPlace), and a world transform is frozen
+            // at the parent's birth origin, so this arm is the facing the place was
+            // born with — any direction in space, not the paper's north. Forward is
+            // the turtle's +X, turned by the place's own world rotation; the
+            // projection is what makes it a screen direction.
+            const [fx, fy, fz] = world.rotation.rotateVec(FACING_STEP, 0, 0)
+            const facing = view.project([
+                world.position[0] + fx, world.position[1] + fy, world.position[2] + fz,
+            ])
             const touchable = this._touchable(frame)
             const held = touchable && this._heldFrame === frame
             const readout = held && this.lastReadout?.point === frame.name ? this.lastReadout : null
@@ -263,9 +278,11 @@ export class Turtle {
                 ? { text: this._ghost.text, fade: verdictFade(now - this._ghost.at) } : null
             drawPin(overlay.ctx, {
                 cx: at.x, cy: at.y, width: overlay.width, name: frame.name,
+                ink: this.color,
                 withHead: this.compositor?.visibleHeadFor(frame.id) ?? false,
                 touchable, held, accepted: frame.transform.deref().position,
-                requested: readout?.requested, outcome: readout?.outcome,
+                facing: facing ? { x: facing.x - at.x, y: facing.y - at.y } : null,
+                outcome: readout?.outcome,
                 ghost: held ? null : ghost,
             })
         }

@@ -3,7 +3,6 @@
 // Extracted from turtle.js constructor + setupScene/Camera/Renderer.
 
 import {
-    Group,
     MOUSE,
     PerspectiveCamera,
     Raycaster,
@@ -31,22 +30,6 @@ export function createStage(canvas, bridge, instruments = {}) {
 
     // Scene
     const scene = new Scene()
-
-    // Groups
-    const pathGroup = new Group()
-    const gridGroup = new Group()
-    const glyphGroup = new Group()
-    glyphGroup.elements = []
-
-    scene.add(pathGroup)
-    scene.add(gridGroup)
-    scene.add(glyphGroup)
-
-    // Shapist — polygon fill renderer
-    const shapist = new Render.Shape(pathGroup, {
-        layerMethod: 'renderOrder',
-        polygonOffset: { factor: -0.1, units: -1 }
-    })
 
     // Camera
     const aspect = window.innerWidth / window.innerHeight
@@ -250,15 +233,8 @@ export function createStage(canvas, bridge, instruments = {}) {
 
         head,
         get recorder() { return recorder },
-        shapist,
         // LineMaterial cache (spec A3) — WebGL-lifetime owner; dispose() frees it.
         materials,
-
-        // Root groups — used only by stage.head idle rendering.
-        // Per-ambient groups are created dynamically by turtle.js.
-        pathGroup,
-        gridGroup,
-        glyphGroup,
 
         renderstate: {
             // `save` alone: whether the next hatch is also kept to disk. WHEN to
@@ -401,7 +377,6 @@ export function createStage(canvas, bridge, instruments = {}) {
             materials.dispose()
             head.dispose()
             renderer.dispose()
-            shapist.dispose()
         }
     }
 

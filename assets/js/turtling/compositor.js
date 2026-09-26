@@ -4,7 +4,7 @@ import {
     Group,
     Vector3,
 } from '../utils/three-entry.js'
-import { materialize, accumulateTrail, flushTrail } from "./materializer.js"
+import { materialize, accumulateTrail, flushTrail, createLabels } from "./materializer.js"
 import { exposed } from "./laws/batch.js"
 import { worldTransform, frameWorldTransform, visitPostOrder, findReferenceFrame, takeSync } from "./scheduler.js"
 import { SE3 } from "./se3.js"
@@ -97,7 +97,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         }
 
         const group = new Group()
-        group.elements = []   // for text disposal (materializeLabel)
+        const labels = createLabels(group)   // pooled Texts; erase hides, never disposes
         stage.scene.add(group)
 
         // The world/root layer is a render surface for deposited ink only — no pen,
@@ -105,7 +105,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         const head = (createHead && makeHead) ? createHead(group) : null
         const shapist = createShapist ? createShapist(group) : null
         // trails: per-source consolidated polyline runs (materializer-owned state)
-        const layer = { group, head, shapist, trails: new Map() }
+        const layer = { group, head, shapist, labels, trails: new Map() }
         ambientLayers.set(id, layer)
         return layer
     }
@@ -120,14 +120,13 @@ export function createCompositor(scheduler, stage, opts = {}) {
     function clearChildLayer(layer) {
         const headGroup = layer.head?.turtleGroup
         for (const child of [...layer.group.children]) {
-            if (child === headGroup) continue
+            if (child === headGroup || child._label) continue
             child.traverse(disposeMesh)
             layer.group.remove(child)
         }
-        if (layer.group.elements) {
-            layer.group.elements.forEach(text => text.dispose?.())
-            layer.group.elements = []
-        }
+        // Erase hides labels; it never disposes them. The pool keeps their built
+        // glyph geometry, so the next write draws without an async rebuild gap.
+        layer.labels.hide()
         // The runs' meshes were just disposed with the group children.
         layer.trails.clear()
     }
@@ -136,10 +135,8 @@ export function createCompositor(scheduler, stage, opts = {}) {
     function disposeLayer(id, layer) {
         if (layer.head) layer.head.hide()
         if (layer.shapist) layer.shapist.dispose()
+        layer.labels.dispose()          // pooled Text geometry + materials
         layer.group.traverse(disposeMesh)
-        if (layer.group.elements) {
-            layer.group.elements.forEach(t => t.dispose?.())
-        }
         stage.scene.remove(layer.group)
         ambientLayers.delete(id)
     }
@@ -174,6 +171,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
             const childCtx = {
                 materials: stage.materials,
                 shapist: layer.shapist,
+                labels: layer.labels,
                 head: layer.head,
                 camera: camOn ? stage.camera : null,
                 controls: camOn ? controls : null,
@@ -181,7 +179,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
                 // Wake render-on-demand when async geometry lands.
                 requestRender: stage.requestRender
             }
-            const childGroups = { pathGroup: layer.group, gridGroup: layer.group, glyphGroup: layer.group }
+            const childGroups = { pathGroup: layer.group, gridGroup: layer.group }
 
             for (const event of events) {
                 if (event.type === 'error') continue
