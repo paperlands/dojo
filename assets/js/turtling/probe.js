@@ -22,6 +22,13 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                         done: !!ambient.done,
                         transform: snapSE3(ambient.transform?.deref?.() ?? ambient.transform),
                         origin: snapSE3(ambient.origin),
+                        isPlace: !!ambient.isPlace,
+                        error: ambient.error ?? null,
+                        unresolved: ambient.unresolved ?? null,
+                        state: turtle._stateOf?.(ambient) ?? null,
+                        resumeAt: ambient.resumeAt,
+                        logicalBirth: ambient.logicalBirth,
+                        elapsedTime: ambient.elapsedTime,
                     })
                 }
             }
@@ -31,6 +38,9 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                 warm:       focus?.warm ?? [],
                 authored:   authoredOf?.() ?? null,
                 mine:       turtle._hatchMine,
+                held:       turtle._heldFrame?.name ?? null,
+                simMs:      turtle.scheduler?.lastTickTime ?? null,
+                done:       !!turtle.scheduler?.done,
                 lastHatchAt:      turtle._lastHatchAt,
                 lastReflectChange: turtle._lastReflectChange,
                 ambients,
@@ -39,6 +49,13 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                     coreshell: law?.orderOf?.("coreshell") ?? null,
                     outershell: law?.orderOf?.("outershell") ?? null,
                 },
+                // The frame the marks are drawn in: the compositor's reframe and the
+                // live camera. A mark and its hit target share this. (id:laws-decl-interface)
+                view: snapSE3(compositor?.viewReframe?.()),
+                camera: snapCamera(turtle.stage),
+                // The play's active laws: address → predicate + owner.
+                // (id:laws-ordered-replacement)
+                laws: sch?.laws?.active?.() ?? [],
             }
         },
         law,
@@ -82,5 +99,17 @@ function snapSE3(t) {
     return {
         pos: Array.isArray(p) ? [...p] : [p.x ?? p[0], p.y ?? p[1], p.z ?? p[2]],
         rot: r ? { w: r.w, x: r.x, y: r.y, z: r.z } : null,
+    }
+}
+
+function snapCamera(stage) {
+    const cam = stage?.camera
+    if (!cam) return null
+    const t = stage.controls?.target
+    return {
+        pos: [cam.position.x, cam.position.y, cam.position.z],
+        quat: { x: cam.quaternion.x, y: cam.quaternion.y, z: cam.quaternion.z, w: cam.quaternion.w },
+        target: t ? [t.x, t.y, t.z] : null,
+        fov: cam.fov ?? null,
     }
 }

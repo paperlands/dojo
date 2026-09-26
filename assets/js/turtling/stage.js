@@ -20,6 +20,7 @@ import { cameraBridge } from "../bridged.js"
 // AXIS_Z is the camera's sight axis: E is in camera convention (view.js), where
 // the eye looks down local −Z, so a roll is a turn about local Z.
 import { SE3, AXIS_Z } from "./se3.js"
+import { CLIENT_SPACE } from "./laws/handle.js"
 
 export function createStage(canvas, bridge, instruments = {}) {
     const ctx = canvas.getContext("webgl2") ?? canvas.getContext("webgl")
@@ -98,8 +99,9 @@ export function createStage(canvas, bridge, instruments = {}) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.sortObjects = false
 
-    // Video and stills are an instrument. Absent, the encoder stays out.
-    // Built on first record or snapshot, never on a status read.
+    // Video and stills are an instrument, not paper: absent, the encoder stays out.
+    // Built on first record or snapshot, never on a status read. It records the
+    // Canvas alone; a recording has no pointer. (id:laws-decl-interface)
     let recorder = null
     let recorderResolved = false
     function getRecorder() {
@@ -198,18 +200,19 @@ export function createStage(canvas, bridge, instruments = {}) {
         if (r) r(path)
     }
 
-    // One pixel convention for the whole door: client/CSS pixels against the
-    // canvas bounds and the current camera. Never device pixels — the device
-    // ratio belongs to the renderer, not to a hit radius. A point behind the
-    // camera, outside the visible region, or on a zero-sized canvas has no
-    // projection, and is refused rather than hit-tested at a made-up place.
+    // Points project into client/CSS pixels against the canvas bounds and the
+    // current camera. Invisible points have no marker or hit target.
     const _project = new Vector3()
     const _ndc = new Vector2()
     const _raycaster = new Raycaster()
+    const _facing = new Vector3()
 
     // Assembled stage object
     const stage = {
         canvas,
+        // The space this stage projects into, named once. The overlay is built to
+        // occupy the same space, so nothing has to assume they agree.
+        space: CLIENT_SPACE,
         ctx,
         scene,
         camera,
@@ -227,6 +230,13 @@ export function createStage(canvas, bridge, instruments = {}) {
             return { x, y }
         },
 
+        // The camera's world viewing direction. The drag plane faces it — the
+        // camera's plane through a point, never the point's line of sight.
+        facing() {
+            camera.getWorldDirection(_facing)
+            return [_facing.x, _facing.y, _facing.z]
+        },
+
         unproject(clientX, clientY) {
             const rect = canvas.getBoundingClientRect()
             if (!rect.width || !rect.height) return null
@@ -237,6 +247,7 @@ export function createStage(canvas, bridge, instruments = {}) {
             const { origin, direction } = _raycaster.ray
             return { origin: [origin.x, origin.y, origin.z], direction: [direction.x, direction.y, direction.z] }
         },
+
         head,
         get recorder() { return recorder },
         shapist,

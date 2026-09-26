@@ -90,7 +90,9 @@ export function createCompositor(scheduler, stage, opts = {}) {
     function getOrCreateLayer(id, makeHead = true) {
         const existing = ambientLayers.get(id)
         if (existing) {
-            if (!makeHead && existing.head) existing.head.hide()
+            // A place may have been painted before `as A` gave it a walking head.
+            // Add that head when its first visible pose arrives, without replacing ink.
+            if (makeHead && !existing.head && createHead) existing.head = createHead(existing.group)
             return existing
         }
 
@@ -152,20 +154,20 @@ export function createCompositor(scheduler, stage, opts = {}) {
             // Two disciplines, one drain each: the channel keeps every event,
             // the slot keeps only the newest pose. (id:output-ledger-r2-slot)
             const poses = takeSync(ambient)
-            // A declared place is offered as a POINT, drawn from the same two facts
-            // the gesture tests — current participation and accepted geometry — so a
-            // point you can see is a point you can grab. One marker per place: the
-            // arrowhead is suppressed while the point is its affordance, and any ink
-            // it deposits still draws below. (id:laws-decl-handle)
-            // A declared place draws no arrowhead: its affordance is the 2D pin, which
-            // is drawn over the canvas from the same projection the hit test uses. What
-            // stays here is its ink, and the head it must NOT draw. (id:laws-decl-handle)
+            // A place is the positional view of this ambient, not a substitute for
+            // its head. The pin is projected by Turtle; a body that emits a visible
+            // head keeps its heading cue and its ink in this very same layer.
+            // An empty `let A` has only the pin until `as A` gives it a body.
+            // (id:laws-affordance)
             const isRoot = ambient === scheduler.root
             const isPlace = !isRoot && exposed(ambient)
             if (events.length === 0 && poses.length === 0) continue
 
-            // Root world frame: ink only. (id:ft-d4-world-root)
-            const layer = getOrCreateLayer(id, !isRoot && !isPlace)
+            // Root world frame: ink only. Existing ordinary heads stay ordinary;
+            // a declared place earns its head when an actual visible pose arrives.
+            const visibleHead = poses.some(p => p.type === 'head' && p.headSize)
+                || events.some(e => e.type === 'head' && e.headSize)
+            const layer = getOrCreateLayer(id, !isRoot && (!isPlace || visibleHead))
 
             // Lens tracks in focused subtree; pose is E⁻¹·world. (id:eye-coordinates)
             const camOn = ambient.isLens ? inFocusedSubtree(ambient) : focus.isFocused(ambient)
@@ -362,6 +364,14 @@ export function createCompositor(scheduler, stage, opts = {}) {
 
         // The shared register itself (kindled + warm). Read-only seam.
         get light() { return focus },
+
+    // The pin shares the actual rendered head, not a guess from execution state.
+    // An empty place keeps its bead; once A walks, the ring leaves its centre open.
+    visibleHeadFor(id) { return !!ambientLayers.get(id)?.head?.turtleGroup?.visible },
+        // The one world→scene mapping: eye and hand compose here, and the camera
+        // draws the result. Markers and gestures both read it, so a drawn point
+        // and its hit target cannot live in different frames. (id:laws-decl-interface)
+        viewReframe,
 
         // Play-gauge: layer poses + head local + first mesh opacity (probe only).
         // Diagnostic: what the place's own layer holds, and whether each child is

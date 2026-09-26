@@ -1,14 +1,19 @@
-// A 2D layer over the canvas, for pencil marks. (id:laws-decl-handle)
-//
-// Paper stays WebGL; the interface is drawn here — at viewport coordinates, in
-// CSS pixels, through the SAME projection the hit test uses. What is drawn and
-// what is touchable therefore cannot disagree, which is the one failure this
-// whole seam has repeatedly produced.
+// The 2D observer layer over WebGL: place marks share stage.project's
+// client/CSS pixel coordinates. It never receives pointer input.
+// (id:laws-place-head-frame)
 //
 // Fixed to the viewport and transparent to pointers, so it needs no knowledge
 // of the canvas's position, scrolling or the page around it.
+import { CLIENT_SPACE } from "./laws/handle.js"
 
-export function createOverlay({ onResize } = {}) {
+// Just above the canvas, below page chrome; pointer-events:none means the layer
+// never takes input, so stacking only decides what it is drawn over.
+const Z_ABOVE_CANVAS = 2
+
+// The layer occupies the projection's space, so the mark stays with its
+// walking head when the camera moves.
+export function createOverlay({ onResize, space = CLIENT_SPACE } = {}) {
+    if (space !== CLIENT_SPACE) throw new Error(`overlay: no placement for space "${space}"`)
     const canvas = document.createElement('canvas')
     Object.assign(canvas.style, {
         position: 'fixed',
@@ -16,7 +21,7 @@ export function createOverlay({ onResize } = {}) {
         width: '100%',
         height: '100%',
         pointerEvents: 'none',
-        zIndex: '2',
+        zIndex: String(Z_ABOVE_CANVAS),
     })
     canvas.setAttribute('aria-hidden', 'true')
     document.body.appendChild(canvas)
