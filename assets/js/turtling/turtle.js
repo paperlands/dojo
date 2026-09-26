@@ -16,6 +16,7 @@ import { exposed, pointCandidates } from "./laws/batch.js"
 import { verdictFade, VERDICT_DECAY_MS, viewMapping } from "./laws/handle.js"
 import { drawPin, drawGhost, drawAxis, drawCurve } from "./laws/pin.js"
 import { stateOf, silhouette, axesOf, sphereCurves } from "./laws/constraints.js"
+import { hintsVisible, normalizeReveal, revealedBy } from "./laws/reveal.js"
 import { createOverlay } from "./overlay.js"
 import { worldProgress } from "./vitals.js"
 
@@ -37,6 +38,10 @@ export class Turtle {
         // Lab-only — no child-facing syntax, no second API. (id:laws-build-p0)
         this._law = options.law ?? null
         this.bridge = bridged("turtle")
+        // View-only reveal state (id:laws-experiment-3-possibility). Reset on a
+        // fresh play, a mode change and reset(); it never touches the world.
+        this._reveal = normalizeReveal(options.reveal)
+        this._hintsRevealed = false
 
         const stage = createStage(canvas, this.bridge, options.instruments)
         this.stage = stage
@@ -171,13 +176,33 @@ export class Turtle {
     _stateOf(frame) {
         const scheduler = this.scheduler
         const headed = frame.generator != null || frame.actorState != null
+        // A point is held when a hand cannot move it: it carries a body, a position
+        // pin fixes it, or it coincides with something already held. Coincidence
+        // alone is not a pin — two movable points keep their common translation.
+        // (id:laws-freedom)
+        const heldBy = (candidate, seen = new Set()) => {
+            if (!candidate) return true
+            if (seen.has(candidate.id)) return false   // a cycle has no anchor
+            if (candidate.generator != null || candidate.actorState != null) return true
+            seen.add(candidate.id)
+            for (const law of scheduler.laws.active()) {
+                if (law.feature === 'position' && law.endpoints[0] === candidate.id) return true
+                if (law.feature === 'distance' && law.predicate === 0 &&
+                    (law.endpoints[0] === candidate.id || law.endpoints[1] === candidate.id)) {
+                    const otherId = law.endpoints[0] === candidate.id ? law.endpoints[1] : law.endpoints[0]
+                    if (heldBy(scheduler.registry.get(otherId), seen)) return true
+                }
+            }
+            return false
+        }
         const constraints = []
         for (const law of scheduler.laws.active()) {
             if (law.feature === 'distance' && (law.endpoints[0] === frame.id || law.endpoints[1] === frame.id)) {
                 const otherId = law.endpoints[0] === frame.id ? law.endpoints[1] : law.endpoints[0]
                 const other = scheduler.registry.get(otherId)
                 if (other) constraints.push({ feature: 'distance',
-                    other: frameWorldTransform(other).position, radius: law.predicate })
+                    other: frameWorldTransform(other).position, radius: law.predicate,
+                    otherHeld: heldBy(other) })
             } else if (law.feature === 'position' && law.endpoints[0] === frame.id) {
                 constraints.push({ pinned: true })
             }
@@ -198,7 +223,7 @@ export class Turtle {
 
     // The gesture's one question, answered by the same state the view draws.
     _touchable(frame) {
-        return this._stateOf(frame).tag === 'free'
+        return this._stateOf(frame).interaction.offered
     }
 
     // An unanchored `let A` can be touched. Once A has a walking head, the
@@ -223,8 +248,10 @@ export class Turtle {
         // camera turn carries them with the world. (id:laws-freedom)
         const facing = this.stage.facing()
         const cp = this.stage.camera.position
+        // Every law-derived hint is drawn only when the reveal control allows.
+        const showHints = this._hintsVisible()
         for (const frame of scheduler.registry.values()) {
-            if (frame === scheduler.root || !exposed(frame)) continue
+            if (!showHints || frame === scheduler.root || !exposed(frame)) continue
             const state = this._stateOf(frame)
             if (state.tag !== 'free') continue
             const at = state.at
@@ -304,6 +331,7 @@ export class Turtle {
             birthOf: frame => worldTransform(frame),
             registered: frame => scheduler.registry.get(frame.id) === frame,
             requestMotion: (frame, pose, revision) => scheduler.requestMotion(frame, pose, revision),
+            onAccepted: ({ from, to }) => this._noteAcceptedHandMove(from, to),
             revision: () => scheduler.motionRevision,
             wake: () => this.requestRender(),
             project: world => this._view().project(world),
@@ -590,7 +618,10 @@ export class Turtle {
             // `fresh` is the NEW PLAY door (D011, id:cmp-become-seed): reset the reveal
             // origin before seating, so an origin-anchored seat plays from its start.
             // An edit (fresh=false) keeps the play's clock and re-seats in place.
-            if (fresh) this.compositor?.beginPlay()
+            if (fresh) {
+                this.compositor?.beginPlay()
+                this._hintsRevealed = false   // a new play starts hidden
+            }
 
             const ns = vocab ? this.rehearseVocab(vocab, vocabNodes) : null
             // Phase diagnostic under seat key, ancestor's span.
@@ -736,12 +767,45 @@ export class Turtle {
         return null
     }
 
+    // View-only reveal control (id:laws-experiment-3-possibility). Visible shows
+    // every law-derived hint at once; Delayed withholds them together until one
+    // accepted hand move has landed. Drawing only — no geometry, no law, no
+    // eligibility and no motion revision.
+    get reveal() {
+        return this._reveal
+    }
+
+    setReveal(mode) {
+        const next = normalizeReveal(mode)
+        if (next !== this._reveal) {
+            this._reveal = next
+            this._hintsRevealed = false
+            this.requestRender()
+        }
+        return this._reveal
+    }
+
+    _hintsVisible() {
+        return hintsVisible(this._reveal, this._hintsRevealed)
+    }
+
+    // One accepted hand move may reveal, and only a real displacement does: a
+    // request the law absorbs in place changes nothing and leaves the hints
+    // hidden. REVEAL_MOVE_TOL is the declared floor.
+    _noteAcceptedHandMove(from, to) {
+        if (this._reveal !== "delayed" || this._hintsRevealed) return
+        if (!revealedBy({ mode: this._reveal, revealed: false, from, to })) return
+        this._hintsRevealed = true
+        this.requestRender()
+    }
+
     reset() {
         if (this.scheduler) {
             this._handle?.dispose()
             this._handle = null
             this._heldFrame = null
             this._lastRefusal = null
+            this._hintsRevealed = false
             this._ghost = null
             // Remove all children
             for (const name of [...this.scheduler.root.children.keys()]) {

@@ -4,15 +4,15 @@
 //   ▪ `let B` makes a free spatial point. `as B do` gives that same identity a
 //     head; its point then follows the head and is no longer independently
 //     draggable.
-//   ▪ A free B has x/y/z, not heading. Bearing to B is different from B's own
-//     heading.
+//   ▪ A free B has x/y/z, no aim: heading and elevation both invent an
+//     orientation it never stated. Bearing to B is different from B's own aim.
 //   ▪ Looking never changes geometry. A drag is a motion request; a relationship
 //     is a truth. Neither is an assignment nor an identity alias.
 //   ▪ Publish only accepted geometry. A failed calculation is unresolved, not
 //     proof that the truths are impossible.
 //
 // Phase 0 pinned the boundary; its two known gaps are now acceptance (a
-// declaring body reads its own point; a free point has no invented heading).
+// declaring body reads its own point; a free point has no invented aim).
 // Phase 1 makes the drag 3D: for a free B, the camera-facing plane through B
 // at pointer-down is frozen until release; the grab offset is kept; existing
 // admission accepts or refuses the proposed world position.
@@ -170,7 +170,7 @@ test("acceptance: a declaring body reads its own declared point", () => {
         "b.x is b's accepted position")
 })
 
-test("acceptance: a free point exposes no invented heading (bearing ≠ heading)", () => {
+test("acceptance: a free point exposes no invented orientation (bearing ≠ heading)", () => {
     const { scheduler, b, m } = freeB()
     const revision = scheduler.motionRevision
     assert.equal(scheduler.requestMotion(b, {
@@ -185,9 +185,17 @@ test("acceptance: a free point exposes no invented heading (bearing ≠ heading)
     try { resolveBinding(m, "b.heading") } catch (e) { threw = e }
     assert.ok(threw, "b.heading must wound or stay unresolved — a free point has no heading to read")
 
-    // Bearing TO B is a real reading and is not B's own heading.
+    // Elevation is that same orientation through the other door: a free point has
+    // none, so answering 0 would invent "level" exactly as heading invents a yaw.
+    threw = null
+    try { resolveBinding(m, "b.elevation") } catch (e) { threw = e }
+    assert.ok(threw, "b.elevation must wound too — one door shut is not a boundary")
+
+    // Bearing TO B is a real reading and is not B's own heading: it is the compass
+    // to b LESS the observer's own facing. m stands at [4,0] facing +x (east, 90),
+    // and b lies to its north-west, so the turn is negative — a left turn.
     const bearing = resolveBinding(m, "b.bearing")
-    const expected = Math.atan2(3 - 4, 2 - 0) * (180 / Math.PI)
+    const expected = Math.atan2(3 - 4, 2 - 0) * (180 / Math.PI) - 90
     assert.ok(Math.abs(bearing - expected) < 1e-6,
         `bearing to b is ${expected}, not b's heading`)
 })

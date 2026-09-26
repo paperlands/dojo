@@ -53,8 +53,12 @@ test("contract: a pin that fails at proposal holds the pair and locates the faul
 })
 
 // Failure origin 2 — the proposal succeeds, but the surviving set cannot be
-// realized with the current policy (a pinned component member): rejected, held.
-test("contract: an unsupported composition is rejected, held and located", () => {
+// Failure origin 2 — the proposal succeeds, but the realization the analytic
+// backend would need (a pinned member inside the component) is outside it. That is
+// a solver limitation, not a demonstrated contradiction: the declaring scope ends
+// unresolved, the accepted prefix stands, and nothing is held as if impossible.
+// (id:laws-contradiction, id:laws-activation-verdicts)
+test("contract: an unsupported composition ends unresolved, never a false impossibility", () => {
     const scheduler = buildWorld({})
     const host = scheduler.hotSwapChild("host", fork("host", [
         "let A",
@@ -78,17 +82,18 @@ test("contract: an unsupported composition is rejected, held and located", () =>
     const B = find(host, "B")
     const C = find(host, "C")
     const D = find(host, "D")
-    assert.equal(A.error?.kind, "obstructed", "the anchored component cannot be solved")
-    assert.equal(A.error?.span?.line, 11, "located at the revision")
+    assert.equal(A.error, null, "a solver limitation is not a wound")
+    assert.ok(A.unresolved, "the declaring scope ends unresolved about the pin")
     assert.deepEqual(world(B), [5, 0, 0], "the accepted prefix stands")
     assert.deepEqual(world(C), [10, 0, 0], "the pinned member is not moved")
     assert.equal(scheduler.laws.active().length, 3, "no lie was published")
-    assert.ok(holds(A) > 0 && holds(B) > 0, "the affected component is held")
+    assert.ok(holds(A) === 0 && holds(B) === 0, "an unsupported component is not held as impossible")
     assert.equal(drag(scheduler, D, 3), "accept", "an unrelated point stays playable")
 })
 
-// The hold must cover the whole component, not just the first conflicting pair.
-test("hold: a far component member is held too, not only the conflicting pair", () => {
+// Membership is reported, not silently frozen: the declaring scope ends unresolved
+// and no member of the unsupported component is held as if the world were impossible.
+test("unresolved: a far component member is reported, not falsely held", () => {
     const scheduler = buildWorld({})
     const host = scheduler.hotSwapChild("host", fork("host", [
         "let A",
@@ -115,9 +120,9 @@ test("hold: a far component member is held too, not only the conflicting pair", 
     const B = find(host, "B")
     const C = find(host, "C")
     const E = find(host, "E")
-    assert.equal(A.error?.kind, "obstructed", "the revision is obstructed")
-    assert.ok([A, B, C, E].every((f) => holds(f) > 0), "the complete component is held")
-    assert.equal(drag(scheduler, E, 3), "refuse", "a far member is not free to move")
+    assert.ok(A.unresolved, "the revision is reported unresolved, not obstructed")
+    assert.equal(A.error, null, "no false impossibility")
+    assert.ok([A, B, C, E].every((f) => holds(f) === 0), "no member is held on a backend limit")
 })
 
 // Failure origin 3 — the being act conflicts with an active pin.

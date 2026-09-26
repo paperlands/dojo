@@ -7,6 +7,22 @@ import { recenterPose } from "./view.js"
 import { createStroke, extend as strokeExtend, flush as strokeFlush, fill as strokeFill } from "./stroke.js"
 import { matchPattern } from "./match.js"
 
+// A hole demands something. A reading that has NO answer — a heading at the paper's
+// pole — arrives here as null, which is a truth, not a wound; but a command argument
+// or a condition cannot BE nothing, and `null + 1` is 1 in JavaScript, so a null
+// taken for a measure is how a figure gets drawn from an answer that does not exist.
+// So the refusal lives at the demand, and names the hole instead of blaming a name.
+//
+// One exception, and it is the whole exception: a rehearsal with no world to ask.
+// There nothing means "no world", not "the world answered nothing", and the walk
+// must carry on so the words past it still register. (id:eval-relational)
+function demanded(value, expr, domain, state) {
+    if (value === null && state.deps?.mathEvaluator?.resolveExternal) {
+        throw new Error(`No ${domain}: ${expr} is nothing`)
+    }
+    return value
+}
+
 const roundVec = (v) => Math.abs(v) < 1e-10 ? 0 : Math.round(v * 1e9) / 1e9
 
 // typeof guard: bare process?.env throws on undeclared process in the browser.
@@ -37,7 +53,7 @@ const holeDomain = (domains, i) => (domains?.[i] === "word" ? "word" : "measure"
 function* evalOrBlock(expr, scope, state, domain = "measure") {
     while (true) {
         try {
-            return evaluateExpr(expr, scope, state, domain)
+            return demanded(evaluateExpr(expr, scope, state, domain), expr, domain, state)
         } catch (e) {
             if (e.blocked) {
                 // The frame (or null when missing) the read waits on — the scheduler
@@ -381,6 +397,12 @@ function* walkBody(body, scope, state, stroke) {
         case 'Law': {
             // A reached law: one feature, one evaluated value. The declaring
             // frame is the observer. (id:laws-ordered-replacement)
+            // The distance payload is sampled when reached. Later changes to its source
+            // value do not revise this law.
+            // A dependency-driven law revision (externally determined r) and a
+            // relational unknown (r chosen jointly with positions) are different
+            // capabilities; the former does not require the latter.
+            // (id:eval-relational)
             const feature = node.value
             const value = feature === 'distance'
                 ? yield* evalOrBlock(node.meta.expr, scope, state)
@@ -390,12 +412,30 @@ function* walkBody(body, scope, state, stroke) {
         }
 
         case 'Scalar': {
-            // A scalar derived value: `let s = A.x`. The value is source-owned and
-            // recomputed at the commit; a read of `s` is still a snapshot.
-            // (id:laws-build-p3-readout-built)
+            // A `let s = <expr>` names one of three things, and the spelling must
+            // not decide which by accident. A deferred (stochastic) primitive is a
+            // PARAMETER: sampled once here, then a stable input — an unrelated commit
+            // must not resample it. Everything else is a DERIVED value: a pure
+            // reading of accepted state, recomputed at the commit. A value chosen
+            // subject to relationships (an UNKNOWN) has no spelling yet and is not
+            // this case. (id:eval-relational, id:laws-build-p3-readout-built)
+            const expr = node.meta.expr
+            const deferred = state.deps?.mathEvaluator?.deferred
+            let stochastic = false
+            if (deferred && typeof expr === 'string') {
+                try { stochastic = readsDeferred(parseMemo(state.deps.mathParser, expr), deferred) } catch { stochastic = false }
+            }
+            if (stochastic) {
+                // Sampled here, once. `random` is an input, not a reading.
+                yield {
+                    type: 'parameter', name: node.value, owner: node.span ?? null,
+                    value: evaluateExpr(expr, scope, state, 'measure'),
+                }
+                break
+            }
             yield {
                 type: 'scalar', name: node.value, owner: node.span ?? null,
-                read: () => evaluateExpr(node.meta.expr, scope, state, 'measure'),
+                read: () => evaluateExpr(expr, scope, state, 'measure'),
             }
             break
         }
@@ -562,6 +602,16 @@ function parseMemo(mathParser, expr) {
     return tree
 }
 
+// Does an expression name a deferred (stochastic) primitive? Used to keep a
+// sampled input a parameter, not a value recomputed by an unrelated commit.
+// (id:eval-relational)
+function readsDeferred(tree, names) {
+    if (!tree) return false
+    if (tree.type === 'operand' && names.has(tree.value)) return true
+    for (const child of tree.children ?? []) if (readsDeferred(child, names)) return true
+    return false
+}
+
 // Residual after shared resolve: measure → wound; word → string costume.
 // Math ops / quote interpolation stay measure. Not a numerical tower.
 function evaluateExpr(expr, scope, state, domain = "measure") {
@@ -600,7 +650,9 @@ function evaluateExpr(expr, scope, state, domain = "measure") {
     }
 
     if (mathParser.isNumeric(expr)) return parseFloat(expr)
-    if (scope[expr] != null) return scope[expr]
+    // A name bound to NOTHING is still a name: `!= null` would fall through to the
+    // identifier path and report a bound null as "Undefined variable".
+    if (scope[expr] !== undefined) return scope[expr]
     const tree = parseMemo(mathParser, expr)
 
     // Expression or known namespace — always evaluate (ops already strict on leaves).

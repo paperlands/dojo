@@ -29,6 +29,8 @@ export const RELATION = {
     y: row("y", KIND.scalar, { finite: true }, null),
     z: row("z", KIND.scalar, { finite: true }, null),
     heading: row("heading", KIND.angle, { finite: true }, null),
+    // Elevation is bounded by its meaning, not by policy: ±90 IS the paper's normal.
+    elevation: row("elevation", KIND.angle, { finite: true }, { min: -90, max: 90 }),
     position: { family: "spatial", kind: KIND.point, guard: { finite3: true }, bounds: null },
 }
 

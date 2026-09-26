@@ -12,7 +12,7 @@
 //   3. an explicit rule for callbacks requesting another move;
 //   4. unchanged unconstrained execution.
 //
-// The witness for the repair is requirement 2: with `root._publishing` never
+// The witness for the repair is requirement 2: with `root.notifyingCommit` never
 // set, it reports accepted geometry (2,7) against visible heads (1,6).
 // Run: node --test test/js/laws/phase0m_publication_test.mjs
 import { test } from "node:test"
@@ -104,11 +104,86 @@ test("4. acceptance: unconstrained execution is unchanged", () => {
     const scheduler = buildWorld({})
     const a = scheduler.hotSwapChild("a", fork("a", "goto 1 0\nfw 2"))
     drive(scheduler)
-    assert.equal(scheduler.root._publishing, undefined,
+    assert.equal(scheduler.root.notifyingCommit, undefined,
         "publication is a law-seam affair; the default path never opens one")
     assert.equal(scheduler.motionRevision, 0, "no acceptance, no revision")
     assert.equal(a.error, null)
     // The unconstrained path still lands exactly where it always did.
     assert.equal(world("a", scheduler)[0], 3)
     assert.deepEqual(takeSync(a)?.find((e) => e.type === "head")?.position[0], 3)
+})
+
+// The readout recompute is a notification, not an install. It runs inside the
+// publication gate, so a readout subscriber that requests motion is refused and
+// retried — it cannot overwrite the commit whose values it is reading.
+// (id:laws-p0m-publication, id:laws-build-p3-slider)
+test("5. acceptance: a readout subscriber cannot re-enter publication", () => {
+    const { scheduler, a, b } = setup()
+    let nested
+    let armed = true
+    scheduler.readouts.watch(() => {
+        if (!armed) return
+        armed = false
+        nested = scheduler.requestMotion(a, at(9), scheduler.motionRevision)
+    })
+    scheduler.readouts.register(a, "x", (snapshot) => snapshot.world(a)[0])
+
+    assert.equal(scheduler.requestMotion(a, at(7), scheduler.motionRevision).kind, "accept")
+    assert.equal(nested?.kind, "busy", "a request raised from a readout is refused")
+    assert.match(nested.message, /publication/)
+    // The outer publication is whole: accepted geometry, displayed head and the
+    // revision all name the same configuration.
+    assert.deepEqual([world("a", scheduler)[0], world("b", scheduler)[0]], [7, 12])
+    assert.equal(headX(a), 7, "A's head names A's accepted pose")
+    assert.equal(headX(b), 12, "B's head names B's accepted pose")
+    assert.equal(scheduler.motionRevision, 1, "one commit, one revision")
+    // Refused is not dropped: the retry lands whole.
+    assert.equal(scheduler.requestMotion(a, at(9), scheduler.motionRevision).kind, "accept")
+    assert.deepEqual([world("a", scheduler)[0], world("b", scheduler)[0]], [9, 14])
+    assert.equal(headX(a), 9)
+})
+
+// One failing subscriber must not silence the fan or leave the commit half-made:
+// every subscriber is invited, the gate is restored, and the failure is re-raised.
+// (id:laws-p0m-publication)
+test("6. acceptance: a failing subscriber never leaves a half-finished publication", () => {
+    const { scheduler, a, b } = setup()
+    const seen = []
+    a.transform.watch("p0m-throw", () => { throw new Error("subscriber fault") })
+    b.transform.watch("p0m-after", () => seen.push([world("a", scheduler)[0], world("b", scheduler)[0]]))
+
+    assert.throws(() => scheduler.requestMotion(a, at(3), scheduler.motionRevision), /subscriber fault/)
+    assert.deepEqual([world("a", scheduler)[0], world("b", scheduler)[0]], [3, 8], "the commit is whole")
+    assert.ok(seen.length > 0, "the sibling after the throwing watcher still heard it")
+    assert.ok(seen.every(([x, y]) => Math.abs(y - x) === 5), "and saw a complete pair")
+    assert.equal(scheduler.root.notifyingCommit, false, "the gate is restored")
+    a.transform.unwatch("p0m-throw")   // the fault is heard once; a later request is free
+    assert.equal(scheduler.requestMotion(a, at(4), scheduler.motionRevision).kind, "accept",
+        "a later request is not blocked by the restored gate")
+})
+
+test("7. acceptance: a throwing readout never silences the display fan", () => {
+    const { scheduler, a, b } = setup()
+    const seen = []
+    scheduler.readouts.watch(() => { throw new Error("readout fault") })
+    a.transform.watch("p0m-display", () => seen.push([world("a", scheduler)[0], world("b", scheduler)[0]]))
+    scheduler.readouts.register(a, "x", (snapshot) => snapshot.world(a)[0])
+
+    assert.throws(() => scheduler.requestMotion(a, at(4), scheduler.motionRevision), /readout fault/)
+    assert.deepEqual([world("a", scheduler)[0], world("b", scheduler)[0]], [4, 9], "the commit is whole")
+    assert.ok(seen.length > 0, "the display fan ran despite the readout failure")
+})
+
+// The display projection is part of the commit, not a later courtesy: a subscriber
+// failure is reported only after geometry AND its head have landed together.
+// (id:laws-p0m-publication)
+test("8. acceptance: a subscriber failure never strands the head behind the geometry", () => {
+    const { scheduler, a, b } = setup()
+    scheduler.readouts.watch(() => { throw new Error("readout fault") })
+    scheduler.readouts.register(a, "x", (snapshot) => snapshot.world(a)[0])
+
+    assert.throws(() => scheduler.requestMotion(a, at(7), scheduler.motionRevision), /readout fault/)
+    assert.deepEqual([world("a", scheduler)[0], world("b", scheduler)[0]], [7, 12], "the commit is whole")
+    assert.equal(headX(a), 7, "A's head names the accepted pose even though a subscriber failed")
+    assert.equal(headX(b), 12, "B's head too")
 })

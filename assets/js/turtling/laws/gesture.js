@@ -21,6 +21,7 @@ export function createGesture(deps) {
         registered,      // (frame) => boolean
         canTouch = () => true, // an empty point may be touched; a walking head owns its point
         requestMotion,   // (frame, pose, revision) => verdict
+        onAccepted = null, // ({ frame, from, to }) => void — one accepted hand move
         revision,        // () => number
         wake,            // () => void — an idle canvas must paint an accepted move
         project,         // (worldPosition) => { x, y } in CSS pixels
@@ -139,6 +140,11 @@ export function createGesture(deps) {
             const requested = requestedPose(accepted, birthLocal(world, birth))
             const verdict = requestMotion(grab.frame, requested, revision())
             const outcome = verdict.kind === 'accept' ? OUTCOME.accepted : outcomeOf(verdict)
+            // The move the scheduler actually accepted, not the one requested:
+            // a reveal follows a landed displacement, never a proposal.
+            if (verdict.kind === 'accept' && onAccepted) {
+                onAccepted({ frame: grab.frame, from: accepted.position, to: verdict.pose.position })
+            }
             onReadout(readout({
                 point: grab.name, accepted: accepted.position,
                 requested: requested.position, outcome,

@@ -20,8 +20,14 @@ export function createReadouts() {
     const watchers = new Set()
     let seq = 0
 
+    // Every watcher is invited before any failure is re-raised: one throwing
+    // subscriber must not silence its siblings or leave a commit half-announced.
     const announce = (change) => {
-        for (const fn of [...watchers]) fn(change)
+        const failures = []
+        for (const fn of [...watchers]) {
+            try { fn(change) } catch (error) { failures.push(error) }
+        }
+        return failures
     }
 
     return {
@@ -33,7 +39,10 @@ export function createReadouts() {
             const owned = keys.get(key)
             if (owned !== undefined) {
                 const node = nodes.get(owned)
-                if (node) node.compute = compute
+                // A replaced computation makes the cache stale: the number was
+                // not computed by this function. Nothing is announced here — the
+                // next commit recomputes and announces. (id:laws-build-p3-readout-built)
+                if (node) { node.compute = compute; node.value = undefined; node.hasValue = false }
                 return owned
             }
             const id = ++seq
@@ -61,18 +70,34 @@ export function createReadouts() {
         recompute(snapshot) {
             const changed = []
             for (const node of nodes.values()) {
-                let value
+                let value, answered = true
                 try {
                     value = node.compute(snapshot)
                 } catch {
-                    continue   // a read that cannot answer yet is not a value
+                    answered = false
+                }
+                // A read that cannot answer is NOTHING, never the old answer: a
+                // cached 7 behind a failed read is a number the source no longer
+                // holds, and keeping it would draw a stale figure. A change to
+                // nothing still reaches subscribers, so no watcher is left believing
+                // the previous value. (id:eval-relational)
+                if (!answered || value === undefined) {
+                    if (node.hasValue) {
+                        node.value = undefined
+                        node.hasValue = false
+                        changed.push({ id: node.id, source: node.source, value: undefined })
+                    }
+                    continue
                 }
                 const fresh = !node.hasValue || !same(node.value, value)
                 node.value = value
                 node.hasValue = true
                 if (fresh) changed.push({ id: node.id, source: node.source, value })
             }
-            for (const change of changed) announce(change)
+            const failures = []
+            for (const change of changed) failures.push(...announce(change))
+            if (failures.length === 1) throw failures[0]
+            if (failures.length > 1) throw new AggregateError(failures, 'readout subscribers failed')
             return changed
         },
 
@@ -82,12 +107,15 @@ export function createReadouts() {
             const node = nodes.get(id)
             if (!node) return undefined
             if (!node.hasValue) {
+                let value
                 try {
-                    node.value = node.compute()
-                    node.hasValue = true
+                    value = node.compute()
                 } catch {
                     return undefined   // not ready is not a value
                 }
+                if (value === undefined) return undefined
+                node.value = value
+                node.hasValue = true
             }
             return node.value
         },

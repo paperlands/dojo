@@ -54,6 +54,8 @@ function mountInner(hook, { term, cm6 }) {
     // instrument it opts into. A host that supplies none never loads it.
     const turtle = new Turtle(canvas, {
         instruments: { recorder: (c) => new Recorder(c, {}) },
+        // View-only: ?reveal=delayed withholds the law hints until a move.
+        reveal: link.read('reveal'),
     });
     arena.add(() => turtle.dispose());
     // Stage cell — the one address for the live turtle (gw-t-dom-registry).

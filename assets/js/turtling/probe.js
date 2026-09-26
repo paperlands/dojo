@@ -39,6 +39,7 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                 authored:   authoredOf?.() ?? null,
                 mine:       turtle._hatchMine,
                 held:       turtle._heldFrame?.name ?? null,
+                reveal:     turtle.reveal ? { mode: turtle.reveal, hints: turtle._hintsVisible?.() ?? null } : null,
                 simMs:      turtle.scheduler?.lastTickTime ?? null,
                 done:       !!turtle.scheduler?.done,
                 lastHatchAt:      turtle._lastHatchAt,
@@ -58,6 +59,9 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                 laws: sch?.laws?.active?.() ?? [],
             }
         },
+        // Read-only projection of a world point into CSS pixels — the same
+        // mapping the marks and the hit test use. (id:codex-play-eyes)
+        project: (world) => turtle._view?.()?.project(world) ?? null,
         law,
         // Pure-shape seating poke for live-shell tests.
         seat: (addr, { name, doc, own = false, place, attention = null } = {}) => {

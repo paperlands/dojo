@@ -16,7 +16,7 @@ const finite3 = (p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFi
 
 // Realize |target − observer| = want by moving the target, holding the observer.
 // A repeatable direction is chosen when the two coincide, because the choice is
-// policy, not a truth. (id:laws-decl-anchor, id:laws-freedoms)
+// policy, not a truth. (id:laws-decl-anchor, id:laws-freedom)
 export function realizeDistance(target, observer, want) {
     if (!Array.isArray(observer) || !observer.every(Number.isFinite)) {
         return { ok: false, reason: 'observer position is unknown' }

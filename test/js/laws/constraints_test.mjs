@@ -103,10 +103,51 @@ test("curves: parallel shares A's latitude; the meridian passes through A", () =
 })
 
 test("zero radius: the held endpoint fixes one point, not two degrees", () => {
-    const s = stateOf({ at: [0, 0, 0], constraints: [{ feature: "distance", other: [3, 0, 0], radius: 0 }] })
+    const s = stateOf({ at: [0, 0, 0], constraints: [{ feature: "distance", other: [3, 0, 0], radius: 0, otherHeld: true }] })
     assert.equal(s.tag, "pinned")
     assert.equal(s.dof, 0)
     assert.deepEqual(s.locus, { kind: "point", at: [3, 0, 0] })
+    assert.equal(s.truth.pinned, true)
+    assert.equal(s.interaction.offered, false)
+})
+
+// Coincidence is a shared translation, not a pin, unless the other point is
+// held. Two movable coincident points keep their common freedom. (id:laws-freedom)
+test("coincidence: a movable other leaves the pair's common translation", () => {
+    const s = stateOf({ at: [0, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 0 }] })
+    assert.equal(s.truth.pinned, false, "a movable other does not pin")
+    assert.equal(s.truth.coincident, true)
+    assert.equal(s.dof, 3, "the pair translates as one")
+    assert.equal(s.locus, null, "no sphere and no point is named")
+    assert.equal(s.interaction.movable, "coupled")
+    assert.deepEqual(s.interaction.partners, [[0, 0, 0]])
+    assert.equal(s.interaction.offered, true, "the point is still offered")
+    assert.equal(s.tag, "free")
+})
+
+// One query returns role, truth, status and interaction as separate facts; the
+// tag is only the view's derived label. (id:laws-decl-point-agent)
+test("separation: role, truth, status and interaction are distinct", () => {
+    const headed = stateOf({ at: [1, 2, 3], headed: true, constraints: [{ pinned: true }] })
+    assert.equal(headed.role, "headed")
+    assert.equal(headed.truth.pinned, true)
+    assert.equal(headed.status, "accepted")
+    assert.equal(headed.interaction.offered, false, "a headed identity is not a hand's target")
+    const previous = stateOf({ at: [1, 2, 3], unresolved: { reason: "hold" } })
+    assert.equal(previous.role, "point")
+    assert.equal(previous.status, "previous", "the geometry is known but not offered")
+    assert.equal(previous.interaction.offered, false)
+    assert.equal(previous.tag, "unresolved")
+})
+
+// A pin is known even when the position is not, but geometry is never invented
+// from an absent position. (id:laws-decl-point-agent)
+test("unresolved: a known pin names no locus without an accepted position", () => {
+    const s = stateOf({ at: null, constraints: [{ pinned: true }] })
+    assert.equal(s.status, "unresolved")
+    assert.equal(s.truth.pinned, true, "the pin is still known")
+    assert.equal(s.locus, null, "no point is named from nothing")
+    assert.equal(s.at, null)
 })
 
 test("headed and pinned are separate facts, not one exclusive tag", () => {

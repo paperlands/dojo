@@ -114,7 +114,7 @@ test("acceptance: a relation never introduces a missing endpoint", () => {
     assert.match(find(host, "B").error?.message ?? "", /Unknown target: C/)
 })
 
-// Phase 2d — the hand's policy: hand-first, conserving untouched points.
+// Phase 2d — the hand's policy: target-only projection; conserve untouched points.
 // (id:laws-build-p2d)
 
 test("acceptance: a tangential drag follows the circle", () => {

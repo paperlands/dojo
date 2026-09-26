@@ -9,7 +9,7 @@ import { deriveBatch, exposed, freePoint } from "./laws/batch.js"
 import { createLawStore, addressOf, bindLaw } from "./laws/replacement.js"
 import { componentOf, realizeDistanceTree } from "./laws/component.js"
 import { predicateOk } from "./laws/expression.js"
-import { measure, headingOf } from "./laws/relations.js"
+import { measure, headingOf, elevationOf } from "./laws/relations.js"
 import { createReadouts } from "./laws/readout.js"
 import { realizeDistance, validateDistance, ACCEPT_TOL } from "./laws/realize.js"
 import { SE3 } from "./se3.js"
@@ -478,6 +478,10 @@ function resolveBinding(frame, name, args) {
         // declaring frame and its ancestors own the binding; between commits it
         // computes on demand. (id:laws-build-p3-readout-built)
         for (let node = frame; node; node = node.parent) {
+            // A parameter is a sampled input: it has one value, fixed when its
+            // declaration was reached. It is not a reading and never recomputes.
+            // (id:eval-relational)
+            if (node.params?.has(name)) return node.params.get(name)
             const id = node.scalars?.get(name)
             if (id === undefined) continue
             const value = metaRootFrame(frame)._readouts?.value(id)
@@ -495,6 +499,10 @@ function resolveBinding(frame, name, args) {
 }
 
 const roundVec = (v) => Math.abs(v) < 1e-10 ? 0 : Math.round(v * 1e9) / 1e9
+
+// A reading with no answer stays NOTHING. `roundVec(null)` would faithfully turn
+// nothing into zero — the lie this convention exists to prevent. (id:eval-relational)
+const roundOrNothing = (v) => v === null ? null : roundVec(v)
 
 const headingFromQuaternion = headingOf
 
@@ -578,7 +586,8 @@ const SPATIAL = {
     x: (t) => roundVec(t.position[0]),
     y: (t) => roundVec(t.position[1]),
     z: (t) => roundVec(t.position[2]),
-    heading: (t) => roundVec(headingFromQuaternion(t.rotation)),
+    heading: (t) => roundOrNothing(headingFromQuaternion(t.rotation)),
+    elevation: (t) => roundVec(elevationOf(t.rotation)),
 }
 
 // Temporal properties — lifecycle projections. `time` is local; `birthtime`
@@ -593,7 +602,7 @@ const TEMPORAL = {
 // Relational properties — computed from observer + target in world space.
 const RELATIONAL = {
     distance: (target, observer) => roundVec(measure("distance", target, observer, (f) => worldReading(f, observer, null))),
-    bearing: (target, observer) => roundVec(measure("bearing", target, observer, (f) => worldReading(f, observer, null))),
+    bearing: (target, observer) => roundOrNothing(measure("bearing", target, observer, (f) => worldReading(f, observer, null))),
     sync: (target, observer) => roundVec(measure("sync", target, observer, (f) => worldReading(f, observer, null))),
 }
 
@@ -601,21 +610,35 @@ const RELATIONAL = {
 // `ground` = read in the observer's own frame, not shared world space: only a
 // sibling/stranger and `origin` (so goto composes). `world` and containing
 // ancestors answer world-space (prim-world, prim-position).
+// A reading outside its guard's domain is a wound, never a number. The domain is
+// the row's own, so a read and a law refuse the same values for the same reason.
+// Measured 2026-09-26: a heading with no compass bearing answered NaN, a program
+// turned by it (`rt A.heading`), and every coordinate of the host went NaN with no
+// error anywhere — silent corruption of the figure. (id:eval-relational)
+function readable(property, value, target) {
+    // Nothing is an answer, a number we cannot honour is a fault.
+    if (value === null) return null
+    if (predicateOk(property, value)) return value
+    throw new Error(`No ${property}: ${target.name} answers outside its domain`)
+}
+
 function resolveProperty(target, property, args, observer, ground = false) {
-    // A free spatial point is a position, not a walker: it was seated with no
-    // body, so reading a heading would invent a yaw nobody stated. Bearing to
-    // it is a real reading; its own heading is not. (id:laws-affordance)
-    if (!args && property === 'heading' && freePoint(target)) {
-        throw new Error(`No heading: ${target.name} is a free point`)
+    // A free spatial point is a position, not a walker: it was seated with no body,
+    // so an aim reading would invent an orientation nobody stated — a yaw through
+    // `heading`, a level through `elevation`. Bearing to it is a real reading; its
+    // own aim is not. (id:laws-affordance)
+    if (!args && (property === 'heading' || property === 'elevation') && freePoint(target)) {
+        throw new Error(`No ${property}: ${target.name} is a free point`)
     }
     if (!args && SPATIAL[property]) {
-        return SPATIAL[property](ground ? poseInObserverBirth(target, observer) : readWorldTransform(target, observer))
+        return readable(property, SPATIAL[property](ground
+            ? poseInObserverBirth(target, observer) : readWorldTransform(target, observer)), target)
     }
     if (!args && TEMPORAL[property]) {
         return TEMPORAL[property](target)
     }
     if (!args && observer && RELATIONAL[property]) {
-        return RELATIONAL[property](target, observer)
+        return readable(property, RELATIONAL[property](target, observer), target)
     }
 
     // fn binding — any arity
@@ -1189,7 +1212,7 @@ function woundMotion(ctx, message) {
 // One publication boundary: install every pose, notify the fan once, bump the
 // revision once, seed a running member's rebase. Truths and requests share it, so
 // no accepted change has a private door. (id:laws-build-solve-seam)
-function publish(writer, entries, registry, install = null) {
+function publish(writer, entries, registry, install = null, project = null) {
     const seen = new Set()
     // Running-member correction is a gated capability, off by default: this slice
     // solves settled configurations only. (id:laws-activation-order)
@@ -1219,21 +1242,39 @@ function publish(writer, entries, registry, install = null) {
     // no watcher may see new geometry beside an old law. (id:laws-activation-order)
     if (install) install()
     const root = metaRootFrame(writer)
-    // Derived values recompute from THE committed configuration, once, with early
-    // cutoff. No command is re-run and no subscription is created.
-    // (id:laws-build-p3-slider)
-    if (root._readouts?.size > 0) root._readouts.recompute(committedSnapshot())
+    // Establish the revision and close the gate BEFORE any subscriber runs. The
+    // accepted state is already installed; the revision names the commit; a
+    // readout recompute is a notification, not an install. A subscriber that
+    // requests motion meets the gate open, never a half-named commit.
+    // (id:laws-p0m-publication, id:laws-build-solve-seam)
     root._motionRevision = (root._motionRevision || 0) + 1
-    // Notifying a commit: installs are done, the notification fan is open. This
-    // guards that fan, not every runtime mutation — a request raised from a
-    // notifier must not interleave with it. (id:laws-p0m-publication)
     const wasNotifying = root.notifyingCommit === true
     root.notifyingCommit = true
+    // One failing subscriber never leaves the gate set nor the fan half-run: every
+    // subscriber is invited, then the failures are re-raised together.
+    const failures = []
     try {
-        for (const send of notify) send()
+        // Derived values recompute from THE committed configuration, once, with
+        // early cutoff. No command is re-run and no subscription is created.
+        // (id:laws-build-p3-slider)
+        if (root._readouts?.size > 0) {
+            try { root._readouts.recompute(committedSnapshot()) } catch (error) { failures.push(error) }
+        }
+        for (const send of notify) {
+            try { send() } catch (error) { failures.push(error) }
+        }
+        // The display projection is part of the accepted commit, not a later
+        // courtesy: it runs before a subscriber failure is reported, so accepted
+        // geometry and its head never disagree. A projection that throws is
+        // collected like any other subscriber. (id:laws-p0m-publication)
+        if (project) {
+            try { project() } catch (error) { failures.push(error) }
+        }
     } finally {
         root.notifyingCommit = wasNotifying
     }
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'publication subscribers failed')
     return null
 }
 
@@ -1241,8 +1282,8 @@ function publish(writer, entries, registry, install = null) {
 const verdictEntries = (writer, verdict) =>
     [{ frame: writer, pose: verdict.pose }, ...verdict.component.map((m) => ({ frame: m.frame, pose: m.pose }))]
 
-function commitTransaction(verdict, writer, registry) {
-    return publish(writer, verdictEntries(writer, verdict), registry)
+function commitTransaction(verdict, writer, registry, project = null) {
+    return publish(writer, verdictEntries(writer, verdict), registry, null, project)
 }
 
 // The responder proposes; a separate check decides whether it is publishable.
@@ -1312,6 +1353,12 @@ function releaseReadouts(root, ids) {
 // Hard laws outrank requests: does a proposed configuration break an active law?
 // ONE validator for every path — birth, revision, program motion, hand motion and
 // delayed replies — so no path grows its own legality rule. (id:laws-activation-order)
+// A reading outside its domain is not a satisfied law, and it is not a demonstrated
+// contradiction either: both the law and the flag travel, so the settlement boundary
+// can report a failure to measure instead of teaching an impossibility.
+// (id:eval-relational, id:laws-contradiction)
+const finite3 = (v) => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite)
+const domainFailure = (law) => ({ ...law, domain: true })
 function lawViolation(activeLaws, overrides, registry) {
     if (!activeLaws || activeLaws.length === 0) return null
     const world = (frame) => worldReading(frame, null, overrides).position
@@ -1324,6 +1371,7 @@ function lawViolation(activeLaws, overrides, registry) {
             if (!f || !frame) continue
             const w = world(f)
             const p = SE3.apply(worldTransform(frame), law.predicate)
+            if (!finite3(w) || !finite3(p)) return domainFailure(law)
             if (Math.hypot(w[0] - p[0], w[1] - p[1], w[2] - p[2]) > ACCEPT_TOL) return law
             continue
         }
@@ -1332,6 +1380,7 @@ function lawViolation(activeLaws, overrides, registry) {
         const b = registry.get(law.endpoints[1])
         if (!a || !b) continue
         const d = measure("distance", a, b, (f) => worldReading(f, null, overrides))
+        if (!Number.isFinite(d)) return domainFailure(law)
         if (Math.abs(d - law.predicate) > ACCEPT_TOL) return law
     }
     return null
@@ -1442,10 +1491,11 @@ function affectedMembers(registry, laws, seeds, extra = []) {
 // keeps its meaning. (id:laws-activation-order, id:laws-activation-verdicts)
 function settleAttempt(ctx, pump, outcome) {
     if (outcome.kind === 'commit') {
-        const conflict = publish(ctx, outcome.poses, pump.registry, outcome.install ?? null)
+        const conflict = publish(ctx, outcome.poses, pump.registry, outcome.install ?? null, () => {
+            if (outcome.head) emitHead(outcome.head.frame, outcome.head.pose)
+            for (const h of outcome.heads ?? []) emitHead(h.frame, h.pose)
+        })
         if (conflict) return woundRelation(ctx, conflict.message, conflict.kind === 'unsupported' ? 'unsupported' : 'relation', outcome.span ?? null)
-        if (outcome.head) emitHead(outcome.head.frame, outcome.head.pose)
-        for (const h of outcome.heads ?? []) emitHead(h.frame, h.pose)
         return null
     }
     if (outcome.kind === 'contradiction' || outcome.kind === 'obstructed') {
@@ -1475,45 +1525,46 @@ function proposedOverrides(writer, verdict) {
 
 // The hand's continuation: keep every untouched coordinate still and move the
 // touched endpoint to the nearest admissible position under the active laws.
-// Hand-first, conserving untouched points. (id:laws-build-p2d, id:laws-activation-order)
+// Target-only projection; conserve untouched points. (id:laws-build-p2d, id:laws-activation-order)
+//
+// A distance is undirected. Which end this request moved is read from the
+// request's own poses, never from the order the law stored its ends in: the moved
+// end is projected back onto the law and the untouched end is conserved. When
+// both ends moved, the request is the proposal and `brokenLaw` decides — the
+// continuation never picks one by spelling. Following is an installed policy, not
+// a secret of the address. (id:laws-build-p2d, id:laws-names)
 function continueLaws(verdict, writer, registry, laws) {
     if (!laws || verdict.kind !== 'accept') return verdict
-    const active = laws.active()
+    const active = laws.active().filter((law) => law.feature === 'distance')
     if (active.length === 0) return verdict
     const poses = new Map([[writer, verdict.pose], ...verdict.component.map((m) => [m.frame, m.pose])])
-    const commit = (frame, pose) => {
-        poses.set(frame, pose)
-        if (frame !== writer && !verdict.component.some((m) => m.frame === frame)) {
-            verdict.component.push({ frame, pose })
+    // A bounded sweep over the connected laws: projecting onto one circle may
+    // disturb another. The bound stops a cycle from spinning; brokenLaw still
+    // refuses any sweep that does not close, so a non-confluent cycle is never
+    // published. (id:laws-build-p3, id:laws-contradiction)
+    let changed = true
+    for (let sweep = 0; changed && sweep <= active.length; sweep++) {
+        changed = false
+        for (const law of active) {
+            const a = registry.get(law.endpoints[0])
+            const b = registry.get(law.endpoints[1])
+            if (!a || !b) continue
+            const aMoved = poses.has(a)
+            const bMoved = poses.has(b)
+            // A hand that moved neither end has nothing to say to this law.
+            if (!aMoved && !bMoved) continue
+            // Both ends moved: the request proposed the pair. Its legality is
+            // brokenLaw's question; the continuation must not move either silently.
+            if (aMoved && bMoved) continue
+            const moved = aMoved ? a : b
+            const other = aMoved ? b : a
+            const proposed = poses.get(moved)
+            const r = realizeDistance(worldReading(moved, null, poses).position,
+                worldReading(other, null, poses).position, law.predicate)
+            if (!r.ok || !r.moved) continue
+            poses.set(moved, { rotation: proposed.rotation, position: SE3.unapply(worldTransform(moved), r.pose) })
+            changed = true
         }
-    }
-    for (const law of active) {
-        if (law.feature !== 'distance') continue
-        // One address has a direction: the observer is the reference, the target
-        // is the dependent. Dragging the target projects it (hand-first); dragging
-        // the observer moves the target to keep the law (the follower).
-        // (id:laws-build-p2d, id:laws-build-p3-slider)
-        const target = registry.get(law.endpoints[0])
-        const observer = registry.get(law.endpoints[1])
-        if (!target || !observer) continue
-        const targetMoved = poses.has(target)
-        const observerMoved = poses.has(observer)
-        if (!targetMoved && !observerMoved) continue
-        if (observerMoved && !targetMoved) {
-            const oWorld = worldReading(observer, null, poses).position
-            const r = realizeDistance(worldReading(target, null, poses).position, oWorld, law.predicate)
-            if (!r.ok) continue
-            commit(target, { rotation: target.transform.deref().rotation,
-                position: SE3.unapply(worldTransform(target), r.pose) })
-            continue
-        }
-        const moved = targetMoved ? target : observer
-        const other = moved === target ? observer : target
-        const proposed = poses.get(moved)
-        const r = realizeDistance(worldReading(moved, null, poses).position,
-            worldReading(other, null, null).position, law.predicate)
-        if (!r.ok) continue
-        poses.set(moved, { rotation: proposed.rotation, position: SE3.unapply(worldTransform(moved), r.pose) })
     }
     verdict.pose = poses.get(writer)
     for (const member of verdict.component) member.pose = poses.get(member.frame)
@@ -1533,6 +1584,7 @@ function conflictAt(target, worldPos, laws, registry) {
         const d = measure("distance", target, other, (f) => f === target
             ? { position: worldPos }
             : { position: worldReading(f, null, null).position })
+        if (!Number.isFinite(d)) return domainFailure(law)
         if (Math.abs(d - law.predicate) > ACCEPT_TOL) return law
     }
     return null
@@ -1552,8 +1604,12 @@ function parkOnVerdict(ctx, verdict, pump, request) {
     else verdict = checkMotion(verdict, ctx, pump.registry, pump.motionValidate, request)
     // A proposed configuration that breaks an active law is refused, never shown
     // as accepted. (id:laws-activation-order)
-    if (verdict.kind === 'accept' && (heldFrame(ctx) || brokenLaw(proposedOverrides(ctx, verdict), pump.registry, pump.laws))) {
-        verdict = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
+    if (verdict.kind === 'accept') {
+        const broken = brokenLaw(proposedOverrides(ctx, verdict), pump.registry, pump.laws)
+        if (broken?.domain) verdict = { kind: 'unresolved', message: `cannot measure the ${broken.feature}` }
+        else if (heldFrame(ctx) || broken) {
+            verdict = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
+        }
     }
     if (verdict.kind === 'fault') return woundMotion(ctx, verdict.message)
     if (verdict.kind === 'accept' && verdict.component.length > 0) {
@@ -1615,9 +1671,9 @@ function delayedMotion(ctx, value, pump) {
             checkMotion(interpretReply(resolved, pump.execOpts.refusalStroke),
                 ctx, pump.registry, pump.motionValidate, request)
         let ruling = checked
-        if (ruling.kind === 'accept' && brokenLaw(proposedOverrides(ctx, ruling), pump.registry, pump.laws)) {
-            ruling = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
-        }
+        const broken = ruling.kind === 'accept' ? brokenLaw(proposedOverrides(ctx, ruling), pump.registry, pump.laws) : null
+        if (broken?.domain) ruling = { kind: 'unresolved', message: `cannot measure the ${broken.feature}` }
+        else if (broken) ruling = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
         if (ruling.kind === 'fault') return void woundMotion(ctx, ruling.message)
         if (ruling.kind === 'accept' && ruling.component.length > 0) {
             const conflict = commitTransaction(ruling, ctx, pump.registry)
@@ -1698,7 +1754,9 @@ const PROPOSE = {
         const world = SE3.apply(worldTransform(observer), value)
         const conflict = conflictAt(target, world, laws, registry)
         return conflict
-            ? { ok: false, reason: `the pin conflicts with the ${conflict.feature} at ${ownerLabel(conflict)}`, kind: 'obstructed', conflict }
+            ? (conflict.domain
+                ? { ok: false, reason: `cannot measure the pin against the ${conflict.feature} at ${ownerLabel(conflict)}`, kind: 'unresolved' }
+                : { ok: false, reason: `the pin conflicts with the ${conflict.feature} at ${ownerLabel(conflict)}`, kind: 'obstructed', conflict })
             : { ok: true, world }
     },
 }
@@ -1733,31 +1791,40 @@ function emitHead(member, pose) {
 // law, realize the whole tree jointly, validate it, and publish it together.
 // Outside that case it returns null and the attempt stays a located rejection.
 // (id:laws-build-p3, id:laws-build-solve-seam)
+// The analytic tree backend is deliberately narrow. When a component is outside it,
+// that is a limitation of the solver, not a demonstrated impossibility: report it
+// unresolved and let the settlement boundary keep the accepted prefix.
+// (id:laws-contradiction, id:laws-activation-verdicts)
+const unsupported = (spec, reason) => ({ kind: 'unresolved', message: reason, span: spec.owner })
 function componentCandidate(spec, candidate, pump) {
     const active = [...pump.laws.active().filter((law) => addressOf(law) !== addressOf(candidate)), candidate]
     const comp = componentOf(active, candidate.endpoints)
     if (comp.laws.length < 2) return null
-    if (comp.laws.some((law) => law.feature !== 'distance')) return null
-    if (!comp.frames.has(spec.observer.id)) return null
+    if (comp.laws.some((law) => law.feature !== 'distance')) return unsupported(spec, 'a component with a pin or a non-distance relation')
+    if (!comp.frames.has(spec.observer.id)) return unsupported(spec, 'a component outside the declaring frame')
     for (const id of comp.frames) {
         if (id === spec.observer.id) continue   // the declaring frame is the held anchor
         const frame = pump.registry.get(id)
         // Only settled, unpinned, unheld frames may be reconfigured.
-        if (!frame || !frame.done || heldFrame(frame) || pinnedLaw(pump.laws, id)) return null
+        // A held member is a prior attempt's hold, so a further failure re-holds it;
+        // an unsettled or pinned member is outside the analytic tree and is unresolved.
+        if (!frame || !frame.done) return unsupported(spec, 'a component member is not settled')
+        if (heldFrame(frame)) return null
+        if (pinnedLaw(pump.laws, id)) return unsupported(spec, 'a pinned component member cannot be reconfigured yet')
     }
     const world = (id) => {
         const frame = pump.registry.get(id)
         return frame ? worldReading(frame, null, null).position : null
     }
     const positions = realizeDistanceTree(comp.laws, spec.observer.id, world, (law) => law.predicate)
-    if (!positions) return null
+    if (!positions) return unsupported(spec, 'a cyclic or unanchored component')
     const poses = []
     const heads = []
     for (const id of comp.frames) {
         if (id === spec.observer.id) continue
         const frame = pump.registry.get(id)
         const target = positions.get(id)
-        if (!frame || !target) return null
+        if (!frame || !target) return unsupported(spec, 'a component member left the registry')
         const pose = { rotation: frame.transform.deref().rotation, position: SE3.unapply(worldTransform(frame), target) }
         poses.push({ frame, pose })
         heads.push({ frame, pose })
@@ -1773,6 +1840,11 @@ function applyLaw(spec, pump) {
     const propose = PROPOSE[spec.feature]
     const validate = VALIDATE[spec.feature]
     if (!propose || !validate) return { kind: 'unsupported', message: `Unsupported law: ${spec.feature}`, span: spec.owner }
+    // One declaration form reaches through one declaring scope: that scope is the
+    // observer, the reference frame and the address's scope at once. A relation whose
+    // reference is neither the declaring scope nor an endpoint, and a second anchor
+    // (pins inside a solved component), need a richer spelling; until then this
+    // collapse is the whole address. (id:laws-ordered-replacement)
     const candidate = bindLaw({
         feature: spec.feature,
         endpoints: ENDPOINTS[spec.feature](spec),
@@ -1807,6 +1879,9 @@ function applyLaw(spec, pump) {
     const surviving = pump.laws.active().filter((law) => addressOf(law) !== addressOf(candidate))
     const violation = lawViolation([...surviving, candidate], new Map([[spec.target, pose]]), pump.registry)
     if (violation) {
+        if (violation.domain) {
+            return { kind: 'unresolved', message: `cannot measure the ${violation.feature} at ${ownerLabel(violation)}`, span: spec.owner }
+        }
         // Two lawful distances can move together: a connected distance tree
         // responds jointly before the candidate is called a failure.
         // (id:laws-build-p3)
@@ -1829,6 +1904,15 @@ function scalarReadout(ctx, value, _route, pump) {
     const id = pump.readouts.register(ctx.id, value.owner ?? value.name, value.read)
     if (!ctx.scalars) ctx.scalars = new Map()
     ctx.scalars.set(value.name, id)
+    return { verdict: 'continue', produced: true }
+}
+
+// A parameter: sampled once at its declaration, then a stable input. It is bound
+// on the frame and read through `resolveBinding`; it owns no recomputation and no
+// node, so an unrelated commit cannot resample it. (id:eval-relational)
+function parameterReadout(ctx, value, _route, _pump) {
+    if (!ctx.params) ctx.params = new Map()
+    ctx.params.set(value.name, value.value)
     return { verdict: 'continue', produced: true }
 }
 
@@ -1957,7 +2041,7 @@ function motionUnresolved(ctx, value) {
 }
 
 const EFFECTS = {
-    breath, blocked, wait, yield: yieldEffect, shout, spawn, limitMailbox, motion, motionUnresolved, birth, law, scalar: scalarReadout,
+    breath, blocked, wait, yield: yieldEffect, shout, spawn, limitMailbox, motion, motionUnresolved, birth, law, scalar: scalarReadout, parameter: parameterReadout,
 }
 
 // Verdict for one yield. Pumps act; this only means. (id:output-ledger-r2-instant)
@@ -2216,9 +2300,9 @@ export function createScheduler(generator, opts = {}) {
             if (!pump.motionAdmission && !pump.motionAdmissionAsync) {
                 continueLaws(verdict, frame, registry, laws)
             }
-            if (brokenLaw(proposedOverrides(frame, verdict), registry, laws)) {
-                return { kind: 'refuse', ink: execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
-            }
+            const broken = brokenLaw(proposedOverrides(frame, verdict), registry, laws)
+            if (broken?.domain) return { kind: 'unresolved', message: `cannot measure the ${broken.feature}` }
+            if (broken) return { kind: 'refuse', ink: execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
             const members = [{ frame, pose: verdict.pose }, ...verdict.component]
             const targets = new Map()
             for (const { frame: member } of members) {
@@ -2229,20 +2313,21 @@ export function createScheduler(generator, opts = {}) {
                     return { kind: 'unresolved' }
                 targets.set(member, target)
             }
-            const conflict = commitTransaction(verdict, frame, registry)
-            if (conflict) return { kind: conflict.kind === 'unsupported' ? 'unresolved' : 'busy', message: conflict.message }
-            // A hand never repaints deposited ink. Its head uses the same
-            // declaring-frame projection as a program head (id:ft-d5-head).
-            for (const { frame: member, pose } of members) {
-                if (!member.done) continue
-                const head = {
-                    type: 'head', position: pose.position, rotation: pose.rotation,
-                    color: member.actorState?.style?.color,
-                    headSize: member.actorState?.style?.showTurtle,
+            const conflict = commitTransaction(verdict, frame, registry, () => {
+                // A hand never repaints deposited ink. Its head uses the same
+                // declaring-frame projection as a program head (id:ft-d5-head).
+                for (const { frame: member, pose } of members) {
+                    if (!member.done) continue
+                    const head = {
+                        type: 'head', position: pose.position, rotation: pose.rotation,
+                        color: member.actorState?.style?.color,
+                        headSize: member.actorState?.style?.showTurtle,
+                    }
+                    const target = targets.get(member)
+                    putSync(member, target ? projectHead(head, target, relativeTransform(member, target)) : head)
                 }
-                const target = targets.get(member)
-                putSync(member, target ? projectHead(head, target, relativeTransform(member, target)) : head)
-            }
+            })
+            if (conflict) return { kind: conflict.kind === 'unsupported' ? 'unresolved' : 'busy', message: conflict.message }
             return verdict
         },
 
@@ -2266,7 +2351,7 @@ export function createScheduler(generator, opts = {}) {
                 // Leaving the tree frees its share of the stage stock.
                 releaseAttemptsFor(root, subtreeIds(existing))
                 releaseReadouts(root, subtreeIds(existing))
-                visitPostOrder(existing, (c) => { resetInk(c, stock); registry.delete(c.id); laws.retractFrame(c.id) })
+                visitPostOrder(existing, (c) => { resetInk(c, stock); registry.delete(c.id); laws.retractIdentity(c.id) })
                 root.children.delete(key)
                 bumpTree(root)
             }
@@ -2309,7 +2394,7 @@ export function createScheduler(generator, opts = {}) {
             terminateAmbient(child)
             releaseAttemptsFor(root, subtreeIds(child))
             releaseReadouts(root, subtreeIds(child))
-            visitPostOrder(child, (c) => { resetInk(c, stock); registry.delete(c.id); laws.retractFrame(c.id) })
+            visitPostOrder(child, (c) => { resetInk(c, stock); registry.delete(c.id); laws.retractIdentity(c.id) })
             root.children.delete(key)
             bumpTree(root)
             this.done = allDone(root)

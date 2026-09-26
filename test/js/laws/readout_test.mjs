@@ -170,3 +170,27 @@ test("constraint: a law revision propagates to a scalar at the commit", () => {
     assert.equal(resolveBinding(host, "s"), 10, "the revision propagated to the scalar")
     assert.equal(scheduler.readouts.size, 1, "still one source-owned node")
 })
+
+// A `let` names its kind by what it reads, not by its spelling. `random` is a
+// parameter: sampled once, then a stable input, and it owns no recomputing node.
+// A pure read is a derived value: it owns a node and recomputes at the commit.
+// (id:eval-relational)
+test("parameter vs derived: `random` is sampled once; `A.x` recomputes", () => {
+    const sampled = buildWorld({})
+    const sampledHost = sampled.hotSwapChild("host", fork("host", "let A\njmp 100\nlet s = random + 0\nwait 1"))
+    drive(sampled)
+    const sampledA = find(sampledHost, "A")
+    const before = sampledHost.params?.get("s")
+    assert.equal(typeof before, "number", "the parameter has a sampled value")
+    assert.equal(sampled.readouts.size, 0, "a parameter owns no recomputing node")
+    assert.equal(drag(sampled, sampledA, 3), "accept", "an unrelated commit lands")
+    assert.equal(sampledHost.params.get("s"), before, "and does not resample the parameter")
+
+    const derived = buildWorld({})
+    const derivedHost = derived.hotSwapChild("host", fork("host", "let A\njmp 100\nlet s = A.x\nwait 1"))
+    const derivedA = find(derivedHost, "A")
+    assert.equal(derived.readouts.size, 1, "a derived value owns one node")
+    assert.equal(drag(derived, derivedA, 7), "accept")
+    drive(derived)
+    assert.equal(resolveBinding(derivedHost, "s"), 7, "the derived value recomputes at the commit")
+})

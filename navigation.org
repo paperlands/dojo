@@ -630,7 +630,7 @@ Verified syntax lives in =PAPERLANG.org= + =codex/refs/Library=.
 ** place and walking head — one visible A
 :PROPERTIES:
 :ID: nav-place-head
-:KEYWORDS: place free point anchored arrowhead ring let as freePoint visibleHeadFor
+:KEYWORDS: place free point anchored arrowhead ring dot facing heading arm birth inherits spawn let as freePoint visibleHeadFor coordinate z held label readout
 :PATH: assets/js/turtling/compositor.js::getOrCreateLayer
 :END:
 The compositor materializes A's head when a visible pose arrives. The overlay
@@ -667,12 +667,15 @@ declared-but-unreached local name is a located =Use before introduction=. Fence:
 ** law address and owner — what a line replaces
 :PROPERTIES:
 :ID: nav-law-address
-:KEYWORDS: address addressOf law store owner replacement retract edit conjoin
+:KEYWORDS: address addressOf law store owner replacement retract retractFrame retractIdentity identity edit conjoin
 :PATH: assets/js/turtling/laws/replacement.js::createLawStore
 :END:
 The address (feature + canonical endpoint identities + scope/frame) decides what a
 reached statement replaces; the source owner decides who supplies it. [[id:laws-ordered-replacement]] ·
 [[id:laws-build-p2a-verdict]]. Fence: =replacement_test.mjs=.
+A source edit retracts the laws the edited scope declared (=retractFrame=); an
+identity leaving the play retracts every law naming it (=retractIdentity=), so a law
+never outlives a participant. [[id:laws-activation-verdicts]].
 
 ** a distance relation — state, realize, refuse
 :PROPERTIES:
@@ -682,8 +685,10 @@ reached statement replaces; the source owner decides who supplies it. [[id:laws-
 :END:
 =let A.distance = <expr>= reaches the declaring frame as observer, realizes exactly,
 validates independently, then publishes law + geometry. A hand drag is projected
-onto the law (=continueLaws=, touched endpoint only); the program walker is
-refused. [[id:laws-build-p2b-verdict]] · [[id:laws-build-p2d-verdict]]. Fence:
+onto the law (=continueLaws=: the target is projected, the observer drives its
+target, and the whole continuation is a fixed point, so statement order cannot
+change the verdict); the program walker is refused. [[id:laws-build-p2b-verdict]] ·
+[[id:laws-build-p2d-verdict]]. Fence:
 =phase2_distance_test.mjs=.
 
 ** an affected component — two distances respond
@@ -736,19 +741,23 @@ Fence: =display_test.mjs=.
 :PATH: assets/js/turtling/laws/path.js::pathOk
 :END:
 Samples the represented path and checks every active distance along it. The straight
-chord across a circle leaves the locus; a fine arc stays. Prerequisite for running
-continuation. [[id:laws-build-p4-path-built]]. Fence: =path_test.mjs=.
+chord across a circle leaves the locus; a fine arc stays. PURE PREREQUISITE, not
+wired: the commit boundary validates endpoints only and the hand step is discrete,
+so a chord is not yet refused in play. Earned with Phase 4 running continuation.
+[[id:laws-build-p4-path-built]]. Fence: =path_test.mjs=.
 
 ** relational vocabulary — one measurement
 :PROPERTIES:
 :ID: nav-eval-relational
-:KEYWORDS: relational distance bearing sync measure worldReading headingOf reading
+:KEYWORDS: relational distance bearing sync measure worldReading headingOf elevationOf forwardOf compass compassOf heading elevation aim null nothing north facing reading
 :PATH: assets/js/turtling/laws/relations.js::measure
 :END:
-RELATIONAL (distance, bearing, sync) and SPATIAL (x, y, z, heading) are one
-definition. A live read and a proposed configuration supply the same
-{ position, rotation, time } reading, so a source read and a legality check
-cannot disagree. [[id:eval-relational]]. Fence: =relations_test.mjs=.
+RELATIONAL (distance, bearing, sync) and SPATIAL (x, y, z, heading, elevation) are
+one definition. A live read and a proposed configuration supply the same
+{ position, rotation, time } reading, so a source read and a legality check cannot
+disagree. A direction in 3D is two aim readings of one =forwardOf=, and a facing off
+the paper's plane answers =null= rather than a number: the demand refuses it, not the
+read. [[id:eval-relational]]. Fence: =relations_test.mjs=.
 
 ** laws — one address, one pipeline
 :PROPERTIES:
@@ -1195,6 +1204,20 @@ stage is still passed in, never mirrored. Pinned by
 =test/js/seams/compositor_stage_test.mjs=, which reads SOURCE: the compositor
 cannot be imported headless (materializer → vendored =threetext.js=, whose
 =from "./three.core.min"= has no extension and is immutable).
+
+** labels — pooled Text, so erase does not rebuild
+:PROPERTIES:
+:ID: nav-labels
+:KEYWORDS: label text troika Text pool erase clear blink materializeLabel createLabels label-pool reuse
+:PATH: assets/js/turtling/render/label-pool.js::createLabelPool
+:END:
+A layer keeps its troika =Text=s. Erase hides; the next =label= reuses, so an
+unchanged rewrite dirties nothing and draws with no async =sync= gap — the
+=label x 10= / =wait= / =erase= blink. =materializer.createLabels= wires the
+vendored Text in; the pool takes it injected, so it is importable headless.
+An erase trims to =freeCap= free Texts (the burst peak is freed); layer
+teardown disposes geometry, material and detaches.
+Tested: =test/js/render/label_pool_test.mjs=.
 
 ** math expressions — lex, parse, evaluate, typeset
 :PROPERTIES:

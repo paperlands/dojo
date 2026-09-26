@@ -14,6 +14,7 @@ export const WORDS = Object.freeze({
     action: "hooks/shell/river.js",
     weave: "hooks/shell/weave.js",
     perf: "hooks/shell/inner.js",
+    reveal: "hooks/shell/inner.js",
 })
 
 // Prefer live location; preserve LV history.state on carry (id:la-law).

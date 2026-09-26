@@ -5,7 +5,6 @@
 // A constraint contributes its gradient (a normal) at the point; freedom is the
 // null space. Resolution is projection onto the locus, never a solve.
 
-const AXES = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const len = (v) => Math.hypot(v[0], v[1], v[2])
@@ -32,48 +31,63 @@ function rankOf(normals) {
 export function stateOf({ at = null, headed = false, exposed = true, isPlace = true,
     error = null, unresolved = null, constraints = [] } = {}) {
     const known = finite3(at)
-    // Not a place, not in the current batch, no accepted pose, or faulted: not
-    // offered — one tag, so the view and the gesture agree. (id:laws-decl-exposure)
-    // Not a place, not in the current batch, no accepted pose, or faulted: not
-    // offered — one tag, so the view and the gesture agree. A body is 'headed'
-    if (!known || error || unresolved) {
-        return { tag: 'unresolved', at: known ? [...at] : null, headed, pinned: false, normals: [], dof: 0, locus: null }
-    }
-    // Role, geometry and status are separate facts. A headed point can also be
-    // pinned; the exclusive tag is for the view, the booleans keep the truth.
-    const pinned = constraints.some((c) => c.pinned) ||
-        constraints.some((c) => c.feature === 'distance' && c.radius === 0 && finite3(c.other))
-    if (headed) return { tag: 'headed', at: [...at], headed: true, pinned, normals: [], dof: 0, locus: null }
-    if (!exposed || !isPlace) {
-        return { tag: 'unresolved', at: [...at], headed, pinned, normals: [], dof: 0, locus: null }
-    }
-    const resolved = []
-    for (const c of constraints) {
-        if (c.pinned) return { tag: 'pinned', at: [...at], headed, pinned: true, normals: AXES, dof: 0, locus: { kind: 'point', at: [...at] } }
-        // A zero radius is not a differentiable sphere: the target is fixed at
-        // the held endpoint, so it has one point of freedom and none of motion.
-        if (c.feature === 'distance' && c.radius === 0 && finite3(c.other)) {
-            return { tag: 'pinned', at: [...at], headed, pinned: true, normals: AXES, dof: 0, locus: { kind: 'point', at: [...c.other] } }
-        }
-        if (c.feature === 'distance' && finite3(c.other) && Number.isFinite(c.radius)) {
-            resolved.push({
-                normal: unit(sub(at, c.other)) ?? [1, 0, 0],   // coincident: a stated direction
-                locus: { kind: 'sphere', center: [...c.other], radius: c.radius },
-            })
-        }
-    }
+
+    // role — what it is. Free point or headed identity; independent of whether
+    // its answer is usable. (id:laws-decl-point-agent)
+    const role = headed ? 'headed' : 'point'
+
+    // status — where the answer stands. `previous` keeps the last accepted
+    // geometry as an observation but is not an offer; `unresolved` has no answer.
+    const status = (!known || error) ? 'unresolved'
+        : (unresolved || !exposed || !isPlace) ? 'previous'
+            : 'accepted'
+
+    // truth — what holds it. A zero radius is a PIN only when the other point is
+    // held; two coincident movable points keep their common translation, so the
+    // pair is coincident, not pinned. (id:laws-freedom)
+    const distances = constraints
+        .filter((c) => c.feature === 'distance' && Number.isFinite(c.radius) && finite3(c.other))
+        .map((c) => ({ other: [...c.other], radius: c.radius, held: c.otherHeld === true }))
+    const pinned = constraints.some((c) => c.pinned) || distances.some((c) => c.radius === 0 && c.held)
+    const coincident = distances.some((c) => c.radius === 0 && !c.held)
+    const truth = { pinned, coincident, distances }
+
+    // interaction — what a request here may move. A coupled point moves with its
+    // coincident partner; a pinned or headed one does not move at all.
+    const resolved = pinned || status !== 'accepted' || role === 'headed' ? [] : distances
+        .filter((c) => c.radius > 0)
+        .map((c) => ({
+            normal: unit(sub(at, c.other)) ?? [1, 0, 0],   // coincident: a stated direction
+            locus: { kind: 'sphere', center: [...c.other], radius: c.radius },
+        }))
     const normals = resolved.map((r) => r.normal)
-    return {
-        tag: 'free',
-        headed: false,
-        pinned: false,
-        at: [...at],
-        normals,
-        dof: Math.max(0, 3 - rankOf(normals)),
-        // The exact locus only when one form names it; two constraints would be a
-        // circle, which is not modelled yet — a tangent hint, never a false whole.
-        locus: resolved.length === 1 ? resolved[0].locus : null,
+    const coupled = coincident && !pinned
+    const dof = !known || role === 'headed' || status !== 'accepted' ? 0
+        : pinned ? 0
+            : coupled ? 3
+                : Math.max(0, 3 - rankOf(normals))
+    // Geometry is only named when there is an accepted position to name it from.
+    const pointLocus = !known ? null
+        : pinned
+            ? (constraints.some((c) => c.pinned) ? { kind: 'point', at: [...at] }
+                : { kind: 'point', at: [...distances.find((c) => c.radius === 0 && c.held).other] })
+            : (resolved.length === 1 ? resolved[0].locus : null)
+    const locus = pointLocus
+    const offered = status === 'accepted' && role === 'point' && !pinned
+    const interaction = {
+        offered,
+        movable: !offered ? 'none' : (coupled ? 'coupled' : (dof === 0 ? 'none' : 'point')),
+        partners: coupled ? distances.filter((c) => c.radius === 0 && !c.held).map((c) => [...c.other]) : [],
+        normals, dof, locus,
     }
+
+    // The tag is a derived view label for the affordance, never the truth itself.
+    const tag = status !== 'accepted' ? 'unresolved'
+        : role === 'headed' ? 'headed'
+            : pinned ? 'pinned' : 'free'
+
+    return { role, truth, status, interaction, tag,
+        at: known ? [...at] : null, headed, pinned, normals, dof, locus }
 }
 
 // Project a desired world point onto the state's locus. One distance is closed
@@ -83,7 +97,9 @@ export function stateOf({ at = null, headed = false, exposed = true, isPlace = t
 // that scalar names. (id:laws-build-p3-slider)
 export function slider({ at, other, value, min = 0, max = Infinity }) {
     const radius = Math.min(max, Math.max(min, Number.isFinite(value) ? value : min))
-    const state = stateOf({ at, constraints: [{ feature: 'distance', other, radius }] })
+    // A slider's reference is held: its zero is the reference point, not a
+    // coincident pair that could translate. (id:laws-build-p3-slider)
+    const state = stateOf({ at, constraints: [{ feature: 'distance', other, radius, otherHeld: true }] })
     return { value: radius, bounds: { min, max }, locus: state.locus, tag: state.tag }
 }
 

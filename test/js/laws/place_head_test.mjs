@@ -38,11 +38,34 @@ test("let A + as A: one place and one headed walker, at the same position", () =
     assert.equal(host.children.get("A"), a, "the place and the walking head are one ambient")
 })
 
+// The arm a bodyless place wears is read from here: a declaration is seated at the
+// walk's reached pose, facing forward, and a world transform is frozen at the
+// parent's birth origin — so the heading is heritable and does not follow the
+// walker on. (id:laws-decl-interface, id:laws-ordered-birth)
+test("a place inherits the heading it was born with, and keeps it when the head walks on", () => {
+    const scheduler = buildWorld()
+    const host = scheduler.hotSwapChild("host", fork("host", [
+        "rt 90",        // the head faces −y when the declaration is reached
+        "let A",
+        "rt 90",        // the head turns on; the place does not
+        "fw 100",
+    ].join("\n")))
+    const a = host.children.get("A")
+    drive(scheduler)
+    const forward = (frame) => frameWorldTransform(frame).rotation.rotateVec(1, 0, 0)
+    close(forward(a), [0, -1, 0])
+    close(a.transform.deref().position, [0, 0, 0])
+    close(forward(host), [-1, 0, 0])
+})
+
 test("the canvas offers a hand only to an unanchored place", () => {
     const turtle = readFileSync(new URL("../../../assets/js/turtling/turtle.js", import.meta.url), "utf8")
-    assert.match(turtle, /frameWorldTransform\(frame\)\.position/, "both marks read the accepted position")
+    assert.match(turtle, /const world = frameWorldTransform\(frame\)/, "both marks read one accepted world pose")
+    assert.match(turtle, /world\.rotation\.rotateVec\(FACING_STEP, 0, 0\)/,
+        "the arm is the place's own heading, not the paper's north")
     assert.match(turtle, /pointCandidates\(scheduler\.registry\.values\(\), frame => this\._touchable\(frame\)\)/,
         "the state query gates the pointer gesture, topmost first")
     assert.match(turtle, /canTouch: frame => this\._touchable\(frame\)/, "a point gaining a head releases an existing capture")
     assert.doesNotMatch(turtle, /\bfreePoint\(/, "the pin loop reads the state, not a second predicate")
 })
+

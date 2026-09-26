@@ -10,7 +10,7 @@ test("vocabulary: the law relations are the evaluator's RELATIONAL and SPATIAL",
     assert.equal(RELATION.distance.family, "relational")
     assert.equal(RELATION.bearing.family, "relational")
     assert.equal(RELATION.sync.family, "relational")
-    for (const property of ["x", "y", "z", "heading", "position"]) {
+    for (const property of ["x", "y", "z", "heading", "elevation", "position"]) {
         assert.equal(RELATION[property].family, "spatial", `${property} is a spatial property`)
     }
 })

@@ -86,11 +86,25 @@ export function createLawStore() {
             return hit ? 'retracted' : 'noop'
         },
 
-        // Remove a whole scope/frame's laws (identity removal, fresh seat).
+        // A source edit of a scope (a rewire) retracts the laws that scope declared.
+        // The declaring frame is the law's `frame`; a law merely targeting the scope
+        // survives, because the target identity did not leave the play.
+        // (id:laws-build-p2c)
         retractFrame(frameId) {
             let hit = false
             for (const [key, law] of byAddress) {
                 if (law.frame === frameId) { byAddress.delete(key); hit = true }
+            }
+            return hit ? 'retracted' : 'noop'
+        },
+
+        // An identity leaving the play retracts every law that names it, wherever
+        // that law was declared: a law survives only while both participants exist.
+        // (id:laws-activation.org "Remove a scope/identity")
+        retractIdentity(frameId) {
+            let hit = false
+            for (const [key, law] of byAddress) {
+                if (law.frame === frameId || law.endpoints?.includes(frameId)) { byAddress.delete(key); hit = true }
             }
             return hit ? 'retracted' : 'noop'
         },
