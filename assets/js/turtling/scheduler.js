@@ -1481,21 +1481,39 @@ function continueLaws(verdict, writer, registry, laws) {
     const active = laws.active()
     if (active.length === 0) return verdict
     const poses = new Map([[writer, verdict.pose], ...verdict.component.map((m) => [m.frame, m.pose])])
+    const commit = (frame, pose) => {
+        poses.set(frame, pose)
+        if (frame !== writer && !verdict.component.some((m) => m.frame === frame)) {
+            verdict.component.push({ frame, pose })
+        }
+    }
     for (const law of active) {
         if (law.feature !== 'distance') continue
-        const a = registry.get(law.endpoints[0])
-        const b = registry.get(law.endpoints[1])
-        if (!a || !b) continue
-        const moved = poses.has(a) ? a : (poses.has(b) ? b : null)
-        if (!moved) continue
-        const other = moved === a ? b : a
+        // One address has a direction: the observer is the reference, the target
+        // is the dependent. Dragging the target projects it (hand-first); dragging
+        // the observer moves the target to keep the law (the follower).
+        // (id:laws-build-p2d, id:laws-build-p3-slider)
+        const target = registry.get(law.endpoints[0])
+        const observer = registry.get(law.endpoints[1])
+        if (!target || !observer) continue
+        const targetMoved = poses.has(target)
+        const observerMoved = poses.has(observer)
+        if (!targetMoved && !observerMoved) continue
+        if (observerMoved && !targetMoved) {
+            const oWorld = worldReading(observer, null, poses).position
+            const r = realizeDistance(worldReading(target, null, poses).position, oWorld, law.predicate)
+            if (!r.ok) continue
+            commit(target, { rotation: target.transform.deref().rotation,
+                position: SE3.unapply(worldTransform(target), r.pose) })
+            continue
+        }
+        const moved = targetMoved ? target : observer
+        const other = moved === target ? observer : target
         const proposed = poses.get(moved)
-        const pWorld = worldReading(moved, null, poses).position
-        const oWorld = worldReading(other, null, null).position
-        const projected = realizeDistance(pWorld, oWorld, law.predicate)
-        if (!projected.ok) continue
-        const local = SE3.unapply(worldTransform(moved), projected.pose)
-        poses.set(moved, { rotation: proposed.rotation, position: local })
+        const r = realizeDistance(worldReading(moved, null, poses).position,
+            worldReading(other, null, null).position, law.predicate)
+        if (!r.ok) continue
+        poses.set(moved, { rotation: proposed.rotation, position: SE3.unapply(worldTransform(moved), r.pose) })
     }
     verdict.pose = poses.get(writer)
     for (const member of verdict.component) member.pose = poses.get(member.frame)
