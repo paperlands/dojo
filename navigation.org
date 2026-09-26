@@ -729,6 +729,16 @@ A committed scalar projected to geometry (a polygon whose side count follows the
 scalar), replaced on commit — no append, no command replay. [[id:laws-build-p3-display-built]].
 Fence: =display_test.mjs=.
 
+** trajectory — a legal endpoint is not a legal path
+:PROPERTIES:
+:ID: nav-law-path
+:KEYWORDS: path trajectory chord arc segmentResidual pathOk continuous motion diameter
+:PATH: assets/js/turtling/laws/path.js::pathOk
+:END:
+Samples the represented path and checks every active distance along it. The straight
+chord across a circle leaves the locus; a fine arc stays. Prerequisite for running
+continuation. [[id:laws-build-p4-path-built]]. Fence: =path_test.mjs=.
+
 ** relational vocabulary — one measurement
 :PROPERTIES:
 :ID: nav-eval-relational
