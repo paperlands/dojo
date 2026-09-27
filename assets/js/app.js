@@ -54,15 +54,33 @@ let liveSocket = new LiveSocket("/live", Socket, {
 
 
 window.addEventListener("phx:download-file", (event) => {
-       console.log("Event received:", event);
-       var element = document.createElement('a');
-       element.setAttribute('href', event.detail.href);
-       element.setAttribute('download', event.detail.filename);
+  const a = document.createElement("a");
+  a.href = event.detail.href;
+  a.download = event.detail.filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+});
 
-       element.style.display = 'none';
-       document.body.appendChild(element);
-       element.click();
-       document.body.removeChild(element);
+// lvdx-7 · kc-p-fence: chrome flourishes only, capability closed HERE.
+// Free-form execJS keyed by bare selector is refused — every call site would
+// re-ask "is this chrome enough?" and accrete authority into the channel.
+// First real flourish: add a *named* entry below; server pushes {name, …}.
+// Forbidden as flourish targets: buffer content, nerve signals, outer authority.
+const FLOURISHES = Object.freeze({
+  // name: (el, detail) => { … }
+});
+
+window.addEventListener("phx:flourish", (event) => {
+  const name = event.detail?.name;
+  const run = name != null ? FLOURISHES[name] : null;
+  if (typeof run !== "function") return;
+  const el = event.detail?.to
+    ? document.querySelector(event.detail.to)
+    : document.body;
+  if (!el) return;
+  run(el, event.detail);
 });
 
 window.addEventListener("dojo:yoink", (event) => {

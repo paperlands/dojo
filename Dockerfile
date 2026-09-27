@@ -21,6 +21,8 @@ ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}"
 FROM ${BUILDER_IMAGE} as builder
 
 # install build dependencies
+# No node: tailwind and esbuild are standalone binaries, and press.codex
+# skips itself where codex/ isn't shipped.
 RUN apt-get update -y && apt-get install -y build-essential git \
     && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
@@ -47,12 +49,17 @@ RUN mix deps.compile
 
 COPY priv priv
 
+# keep.ex loads priv/keep/skeleton.json at compile time (id:kb-5-skeleton).
+# It arrives with priv above. The rest of assets stays after compile.
+
 COPY lib lib
 
-COPY assets assets
-
-# Compile the release
+# Compile the release. Before assets: LiveView writes colocated hooks into
+# _build, which esbuild resolves through NODE_PATH.
 RUN mix compile
+
+# assets come last so a JS/CSS-only change reuses the compile layer
+COPY assets assets
 
 # compile assets
 RUN mix assets.deploy
@@ -87,11 +94,10 @@ ENV MIX_ENV="prod"
 # Only copy the final release from the build stage
 COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/dojo ./
 
-USER nobody
+# Starts as root only to take ownership of the mounted volume; the entrypoint
+# execs the release as nobody. See rel/overlays/bin/docker-entrypoint.
+USER root
+RUN chmod +x /app/bin/docker-entrypoint /app/bin/server /app/bin/migrate
 
-# If using an environment that doesn't automatically reap zombie processes, it is
-# advised to add an init process such as tini via `apt-get install`
-# above and adding an entrypoint. See https://github.com/krallin/tini for details
-# ENTRYPOINT ["/tini", "--"]
-
+ENTRYPOINT ["/app/bin/docker-entrypoint"]
 CMD ["/app/bin/server"]

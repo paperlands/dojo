@@ -1,0 +1,32 @@
+[
+  {
+    "field": "root",
+    "type": "string",
+    "means": "whose journal this is — the author's name"
+  },
+  {
+    "field": "kind",
+    "type": "string",
+    "means": "what sort of keep this is, such as a snap"
+  },
+  {
+    "field": "target",
+    "type": "string",
+    "means": "what this keep is about — the work it belongs to"
+  },
+  {
+    "field": "ts.t",
+    "type": "nonneg_int",
+    "means": "when the author wrote it, in milliseconds"
+  },
+  {
+    "field": "ts.n",
+    "type": "nonneg_int",
+    "means": "which keep came first, when two share a millisecond"
+  },
+  {
+    "field": "v",
+    "type": "int>=1",
+    "means": "how to read this keep if the shape later grows"
+  }
+]

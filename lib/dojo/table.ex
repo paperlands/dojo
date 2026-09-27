@@ -126,10 +126,13 @@ defmodule Dojo.Table do
   end
 
   def handle_cast(
-        {:publish, {_source, _msg, %{state: :error} = store}, :hatch},
+        {:publish, {_source, _msg, %{state: :error, commands: []} = store}, :hatch},
         %{last: %{hatch: %{commands: [_ | _] = cmds}}} = state
       ) do
-    # check if previously active turtle — hydrate error with previous commands
+    # A faulting turtle that carried no tree of its own — hydrate from the last
+    # good hatch so the watcher still sees code. The `commands: []` guard is
+    # load-bearing: now that the reflect carries the DOCUMENT (D022) an error
+    # store normally arrives whole, and hydrating over it would lose the page.
     hydrated_store = %{store | commands: cmds}
 
     {:noreply,
@@ -250,7 +253,9 @@ defmodule Dojo.Table do
   end
 
   defp broadcast_hatch(topic, reg_key, store) do
-    meta = Map.take(store, [:path, :state, :time])
+    # `attend` rides the meta: a reader who moves and does not type must not
+    # cost a document — the watcher reads it here, with no fetch (D025 R3).
+    meta = Map.take(store, [:path, :state, :time, :attend])
 
     # The hatch dual layer is the ESSENTIAL divergence kept and named
     # (rad-message Pole B / groundwork Phase 3): 2b is a DECLARED lightweight

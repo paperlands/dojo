@@ -1,4 +1,5 @@
-# fly.toml app configuration file generated for thedojo on 2024-05-17T06:49:22+08:00
+# fly.toml app configuration file for the production app (thedojo).
+# Deployed by .github/workflows/ci.yml when a PR targets the "release" branch.
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
@@ -6,6 +7,9 @@
 app = 'thedojo'
 primary_region = 'sin'
 kill_signal = 'SIGTERM'
+# Room for the BEAM to stop and SQLite to checkpoint its WAL. Fly's default 5s
+# can SIGKILL mid-write.
+kill_timeout = '30s'
 
 [build]
 
@@ -17,7 +21,17 @@ kill_signal = 'SIGTERM'
   PORT = '8080'
   DNS_CLUSTER_QUERY = 'thedojo.internal'
   PARTISAN_PORT = '9090'
+  # Keep journal (SQLite) on the mounted volume — runtime.exs: KEEP_PATH (id:keep-ms-sqlite-path)
+  KEEP_PATH = '/data/keep.db'
 
+# Durable Keep store. initial_size lets `fly deploy` create the volume itself.
+# One volume per machine, and SQLite has one writer, so this app stays at
+# `fly scale count 1`. Keep.pull/1 reads the local file only (id:kb-10) —
+# scale past one and the read door 404s nondeterministically.
+[mounts]
+  source = 'keep_data'
+  destination = '/data'
+  initial_size = '1gb'
 
 [http_service]
   internal_port = 8080

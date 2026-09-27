@@ -1,0 +1,87 @@
+[
+  {
+    "note": "an honest snap — every column projects",
+    "why": null,
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": "bbbb"}
+  },
+  {
+    "note": "root null — a log keep names its journal; null is not a name",
+    "why": "root",
+    "value": {"v": 1, "kind": "snap", "root": null, "ts": {"t": 1, "n": 0}, "target": "bbbb"}
+  },
+  {
+    "note": "root a number — a valid key of the wrong type is still invisible",
+    "why": "root",
+    "value": {"v": 1, "kind": "snap", "root": 42, "ts": {"t": 1, "n": 0}, "target": "bbbb"}
+  },
+  {
+    "note": "root absent — a log keep always names its journal",
+    "why": "root",
+    "value": {"v": 1, "kind": "snap", "ts": {"t": 1, "n": 0}, "target": "bbbb"}
+  },
+  {
+    "note": "kind absent — the server indexes it",
+    "why": "kind",
+    "value": {"v": 1, "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": "bbbb"}
+  },
+  {
+    "note": "kind a number — never interpreted, always indexed",
+    "why": "kind",
+    "value": {"v": 1, "kind": 7, "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": "bbbb"}
+  },
+  {
+    "note": "target null — a keep is about something",
+    "why": "target",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": null}
+  },
+  {
+    "note": "target a number — a work's name is a string",
+    "why": "target",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": 9}
+  },
+  {
+    "note": "target absent — a keep is about something",
+    "why": "target",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}}
+  },
+  {
+    "note": "ts absent — the row lands in neither index",
+    "why": "ts",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "target": "bbbb"}
+  },
+  {
+    "note": "ts null",
+    "why": "ts",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": null, "target": "bbbb"}
+  },
+  {
+    "note": "ts.t a string — a valid IDB key, outside every numeric range",
+    "why": "ts",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": "1", "n": 0}, "target": "bbbb"}
+  },
+  {
+    "note": "ts.n absent",
+    "why": "ts",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1}, "target": "bbbb"}
+  },
+  {
+    "note": "ts.t fractional — the client stored it, the clan refused it forever",
+    "why": "ts",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1.5, "n": 0}, "target": "bbbb"}
+  },
+  {
+    "note": "ts.t negative — a clock before the epoch orders nothing",
+    "why": "ts",
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": -1, "n": 0}, "target": "bbbb"}
+  },
+  {
+    "note": "v absent — the fold has no skeleton to stand on",
+    "why": "v",
+    "value": {"kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": "bbbb"}
+  },
+  {
+    "note": "v zero — every entry we author starts at V >= 1",
+    "why": "v",
+    "value": {"v": 0, "kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": "bbbb"}
+  }
+]

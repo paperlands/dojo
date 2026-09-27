@@ -1,11 +1,20 @@
-import * as THREE from '../../utils/three.core.min.js';
+import {
+    BufferGeometry,
+    DoubleSide,
+    Float32BufferAttribute,
+    FrontSide,
+    Mesh,
+    MeshBasicMaterial,
+    Plane,
+    Vector3,
+} from '../../utils/three-entry.js'
 import earcut from '../../utils/earcut.js';
 
 // Engine primitives - reusable computation pools
-const TEMP_VEC3_A = new THREE.Vector3();
-const TEMP_VEC3_B = new THREE.Vector3();
-const TEMP_VEC3_C = new THREE.Vector3();
-const TEMP_PLANE = new THREE.Plane();
+const TEMP_VEC3_A = new Vector3();
+const TEMP_VEC3_B = new Vector3();
+const TEMP_VEC3_C = new Vector3();
+const TEMP_PLANE = new Plane();
 
 /**
  * Core geometric utilities - zero-allocation where possible
@@ -23,12 +32,12 @@ class GeometryUtils {
 
         // Find first 3 non-collinear vertices to define plane
         let planeSet = false;
-        let normal = new THREE.Vector3();
+        let normal = new Vector3();
         let planePoint = vertices[0];
 
         for (let i = 2; i < vertices.length && !planeSet; i++) {
-            const v1 = new THREE.Vector3().subVectors(vertices[1], vertices[0]);
-            const v2 = new THREE.Vector3().subVectors(vertices[i], vertices[0]);
+            const v1 = new Vector3().subVectors(vertices[1], vertices[0]);
+            const v2 = new Vector3().subVectors(vertices[i], vertices[0]);
             normal.crossVectors(v1, v2);
 
             if (normal.lengthSq() > this.MIN_AREA_THRESHOLD) {
@@ -41,7 +50,7 @@ class GeometryUtils {
 
         // Test all vertices against the plane
         for (const vertex of vertices) {
-            const distance = Math.abs(normal.dot(new THREE.Vector3().subVectors(vertex, planePoint)));
+            const distance = Math.abs(normal.dot(new Vector3().subVectors(vertex, planePoint)));
             if (distance > epsilon) return false;
         }
 
@@ -73,7 +82,7 @@ class GeometryUtils {
         if (vertices.length < 3) return { coords: [], indices: [] };
 
         // Calculate polygon normal
-        const normal = new THREE.Vector3();
+        const normal = new Vector3();
         for (let i = 0; i < vertices.length; i++) {
             const current = vertices[i];
             const next = vertices[(i + 1) % vertices.length];
@@ -84,7 +93,7 @@ class GeometryUtils {
         normal.normalize();
 
         // Choose best projection plane based on largest normal component
-        const absNormal = new THREE.Vector3(Math.abs(normal.x), Math.abs(normal.y), Math.abs(normal.z));
+        const absNormal = new Vector3(Math.abs(normal.x), Math.abs(normal.y), Math.abs(normal.z));
         let coords = [];
 
         if (absNormal.z >= absNormal.x && absNormal.z >= absNormal.y) {
@@ -140,7 +149,7 @@ class GeometryUtils {
      * Calculate polygon normal using Newell's method
      */
     static calculatePolygonNormal(vertices) {
-        const normal = new THREE.Vector3();
+        const normal = new Vector3();
         const n = vertices.length;
 
         for (let i = 0; i < n; i++) {
@@ -252,12 +261,12 @@ class GeometryBuilder {
 
     // Create final geometry
     createGeometry() {
-        const geometry = new THREE.BufferGeometry();
+        const geometry = new BufferGeometry();
 
         geometry.setAttribute('position',
-            new THREE.Float32BufferAttribute(this.vertexBuffer, 3));
+            new Float32BufferAttribute(this.vertexBuffer, 3));
         geometry.setAttribute('normal',
-            new THREE.Float32BufferAttribute(this.normalBuffer, 3));
+            new Float32BufferAttribute(this.normalBuffer, 3));
         geometry.setIndex(this.indexBuffer);
 
         return geometry;
@@ -266,9 +275,9 @@ class GeometryBuilder {
     buildGeometry() {
         if (this.vertexBuffer.length === 0) return null;
 
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(this.vertexBuffer, 3));
-        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(this.normalBuffer, 3));
+        const geometry = new BufferGeometry();
+        geometry.setAttribute('position', new Float32BufferAttribute(this.vertexBuffer, 3));
+        geometry.setAttribute('normal', new Float32BufferAttribute(this.normalBuffer, 3));
         geometry.setIndex(this.indexBuffer);
         geometry.computeBoundingSphere();
 
@@ -284,7 +293,7 @@ class MaterialSystem {
         const materialProps = {
             color: options.color || 0x4a90e2,
             wireframe: options.wireframe || false,
-            side: true ? THREE.DoubleSide : THREE.FrontSide,
+            side: true ? DoubleSide : FrontSide,
             transparent: options.transparent || false,
             opacity: options.opacity || 1.0,
             depthTest: true,
@@ -298,7 +307,7 @@ class MaterialSystem {
             materialProps.polygonOffsetUnits = layerSettings.polygonOffset.units;
         }
 
-        return new THREE.MeshBasicMaterial(materialProps);
+        return new MeshBasicMaterial(materialProps);
     }
 }
 
@@ -352,7 +361,7 @@ export default class Shape {
 
         // Convert to Vector3 if needed
         const processedVertices = vertices.map(v =>
-            v instanceof THREE.Vector3 ? v : new THREE.Vector3(v.x, v.y, v.z)
+            v instanceof Vector3 ? v : new Vector3(v.x, v.y, v.z)
         );
 
         // Validate polygon planarity
@@ -375,7 +384,7 @@ export default class Shape {
 
         // Create material with layer-specific settings
         const material = MaterialSystem.createMaterial(options, layerSettings);
-        const mesh = new THREE.Mesh(geometry, material);
+        const mesh = new Mesh(geometry, material);
 
         // Apply render order for sorting
         if (this.layerMethod === 'renderOrder' || this.layerMethod === 'polygonOffset') {

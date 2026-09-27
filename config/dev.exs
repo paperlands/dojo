@@ -10,6 +10,29 @@ import Config
 #   show_sensitive_data_on_connection_error: true,
 #   pool_size: 10
 
+# Keep journal — SQLite, one writer + WAL read pool (id:kb-10, keep-ms-sqlite-path).
+# priv: "priv/keep" is load-bearing: default derives the last segment (Repo)
+# and would collide with Dojo.Repo's directory.
+keep_dev = Path.expand("../priv/keep/keep_dev.db", __DIR__)
+
+keep_opts = [
+  database: keep_dev,
+  priv: "priv/keep",
+  journal_mode: :wal,
+  busy_timeout: 5_000
+]
+
+config :dojo,
+       Dojo.Keep.Repo,
+       keep_opts ++
+         [
+           pool_size: 1,
+           stacktrace: true,
+           show_sensitive_data_on_connection_error: true
+         ]
+
+config :dojo, Dojo.Keep.Repo.Reader, keep_opts ++ [pool_size: 10]
+
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #

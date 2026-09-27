@@ -108,6 +108,8 @@ defmodule DojoWeb.HotspotLive do
       <button
         :if={@status in [:starting, :stopping]}
         class="flex items-center justify-center w-9 h-9 border-1 border-amber-400/50 backdrop-blur-xxs lg:w-8 lg:h-8 rounded-sm touch-manipulation"
+        title="switch on hotspot"
+        aria-label="switch on hotspot"
         phx-click={JS.toggle(to: "##{@id}-panel", in: "fade-in-scale", out: "fade-out-scale")}
         phx-target={@myself}
       >
@@ -119,6 +121,8 @@ defmodule DojoWeb.HotspotLive do
         :if={@status not in [:active, :loading, :starting, :stopping]}
         id={"#{@id}-inactive"}
         class="flex items-center justify-center w-9 h-9 border-1 border-accent backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:rotate-0 lg:w-8 lg:h-8 rounded-sm hover:fill-primary active:border-amber-500 touch-manipulation"
+        title="switch on hotspot"
+        aria-label="switch on hotspot"
         phx-click={JS.toggle(to: "##{@id}-panel", in: "fade-in-scale", out: "fade-out-scale")}
         phx-target={@myself}
         disabled={@status == :unsupported}
@@ -134,6 +138,8 @@ defmodule DojoWeb.HotspotLive do
         :if={@status == :active}
         id={"#{@id}-active"}
         class="flex items-center justify-center w-9 h-9 border-2 border-primary/50 backdrop-blur-sm transform transition-all duration-300 hover:scale-110 hover:rotate-[15deg] lg:w-8 lg:h-8 rounded-sm active:border-amber-500 touch-manipulation"
+        title="switch on hotspot"
+        aria-label="switch on hotspot"
         phx-click={JS.toggle(to: "##{@id}-panel", in: "fade-in-scale", out: "fade-out-scale")}
         phx-target={@myself}
       >

@@ -1,3 +1,161 @@
+<style :type={DojoWeb.ColocatedCSS}>
+  .container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: #fff;
+  }
+
+  #logo {
+    width: 66dvw;
+    height: 66dvh;
+  }
+
+  /* Base columns animation */
+  #pAACLOnr9, #p1AwsLrXpS, #pWuIj6C5c, #p1F6cuHqs0, #pvoyvKgx2 {
+    opacity: 0;
+    transform-origin: bottom;
+    animation: buildUp 1s ease-out forwards;
+  }
+
+  /* Stagger the column animations */
+  #pAACLOnr9 { animation-delay: 0.2s; }
+  #p1AwsLrXpS { animation-delay: 0.4s; }
+  #pWuIj6C5c { animation-delay: 0.5s; }
+  #p1F6cuHqs0 { animation-delay: 0.4s; }
+  #pvoyvKgx2 { animation-delay: 0.2s; }
+
+  /* Center connector piece */
+  #p10VNjL5vf {
+    opacity: 0;
+    animation: fadeIn 0.8s ease-out 1.2s forwards;
+  }
+
+  /* Circular elements spiral in */
+  #pvFImyXDn, #p5iyLG4gS, #pDmVo2rkS {
+    opacity: 0;
+    transform-origin: center;
+    animation: spiralIn 1.5s ease-out forwards;
+  }
+
+  #pvFImyXDn { animation-delay: 1.4s; }
+  #p5iyLG4gS { animation-delay: 1.6s; }
+  #pDmVo2rkS { animation-delay: 1.8s; }
+
+  /* Rays fade and rotate in */
+  #p16CCKk7d8-6, #p1AA96coGd, #p16CCKk7d8-6-5, #p10eejDqeS, #p16CCKk7d8 {
+    opacity: 0;
+    transform-origin: center;
+    animation: rayRotate 1s ease-out forwards;
+  }
+
+  #p16CCKk7d8-6 { animation-delay: 2s; }
+  #p1AA96coGd { animation-delay: 2.1s; }
+  #p16CCKk7d8-6-5 { animation-delay: 2.2s; }
+  #p10eejDqeS { animation-delay: 2.3s; }
+  #p16CCKk7d8 { animation-delay: 2.4s; }
+
+  /* Golden ratio-based spiral animation for circular elements */
+  #pvFImyXDn, #p5iyLG4gS, #pDmVo2rkS {
+    opacity: 0;
+    transform-origin: center;
+    animation: heliosSpiral 2.5s cubic-bezier(0.645, 0.045, 0.355, 1) forwards;
+  }
+
+  /* Stagger the animations with golden ratio timing */
+  #pvFImyXDn { animation-delay: 0.4s; }
+  #p5iyLG4gS { animation-delay: 0.618s; }
+  #pDmVo2rkS { animation-delay: 0.7s; }
+
+  /* Add radiation glow effect */
+  #pvFImyXDn, #p5iyLG4gS, #pDmVo2rkS {
+    filter: drop-shadow(5px 5px 2px rgba(255, 153, 51, 0.6));
+  }
+
+  /* 0%/30% carry only opacity + brightness — the unitless rotate()s on
+     those stops never painted (parse drop). Prod's lived feel is fade +
+     warm-up, then the late scale bloom from 60%. */
+  @keyframes heliosSpiral {
+    0% {
+      opacity: 0;
+      filter: brightness(0.5);
+    }
+    30% {
+      opacity: 0.6;
+      filter: brightness(1.1);
+    }
+    60% {
+      opacity: 0.8;
+      transform: translateY(0) scale(1);
+      filter: brightness(1.15);
+    }
+    80% {
+      opacity: 1;
+      transform: scale(1.118);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+      filter: brightness(1);
+    }
+  }
+
+  /* Add pulsing radiation effect */
+  .sun-radiation {
+    animation: radiate 2s ease-in-out infinite;
+  }
+
+  @keyframes radiate {
+    0% {
+      filter: drop-shadow(0 0 5px rgba(255, 153, 51, 0.4));
+    }
+    50% {
+      filter: drop-shadow(0 0 15px rgba(255, 153, 51, 0.8));
+    }
+    100% {
+      filter: drop-shadow(0 0 5px rgba(255, 153, 51, 0.4));
+    }
+  }
+
+  @keyframes buildUp {
+    from {
+      opacity: 0;
+      transform: scaleY(0);
+    }
+    to {
+      opacity: 1;
+      transform: scaleY(1);
+    }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes spiralIn {
+    0% {
+      opacity: 0;
+      transform: scale(0) rotate(-180deg);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+    }
+  }
+
+  @keyframes rayRotate {
+    0% {
+      opacity: 0;
+      transform: rotate(-45deg) scale(0.8);
+    }
+    100% {
+      opacity: 1;
+      transform: rotate(0deg) scale(1);
+    }
+  }
+</style>
 <div class="fixed inset-0 bg-secondary min-h-dvh  flex flex-col  items-center justify-center z-50">
   <svg id="logo" class="pt-16" viewBox="0 0  3000 2400" xmlns="http://www.w3.org/2000/svg">
     <g
@@ -30,8 +188,8 @@
         id="p10VNjL5vf"
         d="m 1192,1199 3,-42 153,-42 153,-43 152,43 152,42 3,41 3,41 -68,-19 c -37,-11 -107,-30 -155,-43 l -87,-24 -133,37 c -74,20 -144,41 -156,44 l -23,8 z"
       />
-      
-<!-- Circles -->
+
+      <!-- Circles -->
       <path
         id="pvFImyXDn"
         d="m 1464.7946,899.21816 c -2.1574,0.50131 -7.5284,1.6182 -10.3684,2.73278 -15.8552,6.22252 -18.785,5.9602 10.0886,-27.54842 23.8465,-27.67459 56.7421,-21.08396 87.123,1.20624 39.8151,29.21203 35.8007,32.8021 24.7384,29.6042 -12.9353,-3.73935 -16.5143,-5.34207 -23.6537,-6.24143 0,0 -42.3496,-11.85771 -42.6553,-11.75285 -0.306,0.1049 -26.3264,7.59693 -45.2726,11.99948 z"
@@ -44,8 +202,8 @@
         id="pDmVo2rkS"
         d="m 1922.5795,993.66787 c -24,-6 -31.2905,-12.9453 -38.5795,-41.66787 -4,-15 -15,-38 -24,-52 -10,-14 -27,-43 -38,-65 -27,-54 -107,-135 -160,-163 -86,-44 -315,-17 -383,45 -14,12 -29,23 -33,23 -10,0 -56,48 -56,57 0,3 -12,22 -26,40 -17,22 -29,53 -33,86 l -7.4774,64.30224 -28.1227,5.93452 c -18.7131,8.42974 -54.6735,17.79734 -58.4469,14.53434 C 1020.953,990.7711 1058,843 1094,787 c 47,-70 53,-77 111,-118 60,-42 111,-64 184,-79 30,-6 60,-15 66,-20 23,-19 230,14 280,45 59,36 133,123 169,197 38,79 72.1664,179.60411 61.1664,185.60411 -4.2466,3.39829 -25.5869,1.06376 -42.5869,-3.93624 z"
       />
-      
-<!-- Rays -->
+
+      <!-- Rays -->
       <path
         id="p16CCKk7d8-6"
         d="m 720.59485,876.95285 c 3.02283,13.08321 15.09414,35.30636 75.50652,35.30636 h 78.53607 l 26.1787,29.16327 c 14.09622,15.99277 26.1787,37.63005 26.1787,47.97827 v 19.75575 l -48.3299,-7.526 c -26.17871,-2.82224 -77.52923,-9.40749 -113.77663,-12.22975 -85.58421,-8.46672 -119.81789,-31.04475 -119.81789,-79.9638 0,0 -6.71555,-53.14855 -6.3129,-60.07558 1.23322,-21.21318 38.10461,-7.26213 38.10461,-7.26213 26.24173,5.00085 41.72773,16.20821 43.73272,34.85361 z"
@@ -124,8 +282,8 @@
         </div>
       </div>
     </form>
-    
-<!-- Decorative corners -->
+
+    <!-- Decorative corners -->
     <div class="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-primary-content">
     </div>
     <div class="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-primary-content">
@@ -136,161 +294,3 @@
     </div>
   </div>
 </div>
-
-<style>
-  .container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    background: #fff;
-  }
-
-  #logo {
-    width: 66dvw;
-    height: 66dvh;
-  }
-
-  /* Base columns animation */
-  #pAACLOnr9, #p1AwsLrXpS, #pWuIj6C5c, #p1F6cuHqs0, #pvoyvKgx2 {
-    opacity: 0;
-    transform-origin: bottom;
-    animation: buildUp 1s ease-out forwards;
-  }
-
-  /* Stagger the column animations */
-  #pAACLOnr9 { animation-delay: 0.2s; }
-  #p1AwsLrXpS { animation-delay: 0.4s; }
-  #pWuIj6C5c { animation-delay: 0.5s; }
-  #p1F6cuHqs0 { animation-delay: 0.4s; }
-  #pvoyvKgx2 { animation-delay: 0.2s; }
-
-  /* Center connector piece */
-  #p10VNjL5vf {
-    opacity: 0;
-    animation: fadeIn 0.8s ease-out 1.2s forwards;
-  }
-
-  /* Circular elements spiral in */
-  #pvFImyXDn, #p5iyLG4gS, #pDmVo2rkS {
-    opacity: 0;
-    transform-origin: center;
-    animation: spiralIn 1.5s ease-out forwards;
-  }
-
-  #pvFImyXDn { animation-delay: 1.4s; }
-  #p5iyLG4gS { animation-delay: 1.6s; }
-  #pDmVo2rkS { animation-delay: 1.8s; }
-
-  /* Rays fade and rotate in */
-  #p16CCKk7d8-6, #p1AA96coGd, #p16CCKk7d8-6-5, #p10eejDqeS, #p16CCKk7d8 {
-    opacity: 0;
-    transform-origin: center;
-    animation: rayRotate 1s ease-out forwards;
-  }
-
-  #p16CCKk7d8-6 { animation-delay: 2s; }
-  #p1AA96coGd { animation-delay: 2.1s; }
-  #p16CCKk7d8-6-5 { animation-delay: 2.2s; }
-  #p10eejDqeS { animation-delay: 2.3s; }
-  #p16CCKk7d8 { animation-delay: 2.4s; }
-
-  /* Golden ratio-based spiral animation for circular elements */
-  #pvFImyXDn, #p5iyLG4gS, #pDmVo2rkS {
-    opacity: 0;
-    transform-origin: center;
-    animation: heliosSpiral 2.5s cubic-bezier(0.645, 0.045, 0.355, 1) forwards;
-  }
-
-  /* Stagger the animations with golden ratio timing */
-  #pvFImyXDn { animation-delay: 0.4s; }
-  #p5iyLG4gS { animation-delay: 0.618s; }
-  #pDmVo2rkS { animation-delay: 0.7s; }
-
-  /* Add radiation glow effect */
-  #pvFImyXDn, #p5iyLG4gS, #pDmVo2rkS {
-    filter: drop-shadow(5px 5px 2px rgba(255, 153, 51, 0.6));
-  }
-
-  @keyframes heliosSpiral {
-    0% {
-      opacity: 0;
-      transform: translateY(2px) scale(0.1) rotate(100);
-      filter: brightness(0.5);
-    }
-    30% {
-      opacity: 0.6;
-      transform: translateY(5px) scale(0.618) rotate(50) ;
-      filter: brightness(1.1);
-    }
-    60% {
-      opacity: 0.8;
-      transform: translateY(0) scale(1) ;
-      filter: brightness(1.15);
-    }
-    80% {
-      opacity: 1;
-      transform: scale(1.118) ;
-    }
-    100% {
-      opacity: 1;
-      transform: scale(1) rotate(0);
-      filter: brightness(1);
-    }
-  }
-
-  /* Add pulsing radiation effect */
-  .sun-radiation {
-    animation: radiate 2s ease-in-out infinite;
-  }
-
-  @keyframes radiate {
-    0% {
-      filter: drop-shadow(0 0 5px rgba(255, 153, 51, 0.4));
-    }
-    50% {
-      filter: drop-shadow(0 0 15px rgba(255, 153, 51, 0.8));
-    }
-    100% {
-      filter: drop-shadow(0 0 5px rgba(255, 153, 51, 0.4));
-    }
-  }
-
-  @keyframes buildUp {
-    from {
-      opacity: 0;
-      transform: scaleY(0);
-    }
-    to {
-      opacity: 1;
-      transform: scaleY(1);
-    }
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  @keyframes spiralIn {
-    0% {
-      opacity: 0;
-      transform: scale(0) rotate(-180deg);
-    }
-    100% {
-      opacity: 1;
-      transform: scale(1) rotate(0deg);
-    }
-  }
-
-  @keyframes rayRotate {
-    0% {
-      opacity: 0;
-      transform: rotate(-45deg) scale(0.8);
-    }
-    100% {
-      opacity: 1;
-      transform: rotate(0deg) scale(1);
-    }
-  }
-</style>
