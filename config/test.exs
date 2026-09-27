@@ -13,6 +13,28 @@ import Config
 #   pool: Ecto.Adapters.SQL.Sandbox,
 #   pool_size: System.schedulers_online() * 2
 
+# Keep journal — one file per partition, never :memory: (each connection
+# would otherwise get its own database) (id:keep-ms-sqlite-path, id:kb-10).
+# Same file for both; DataCase points Reader at Repo so sandbox writes are
+# visible to the read path (id:kb-10). Writer pool is 1 in every env —
+# the one-writer law is not a prod-only truth (id:kb-10 GREEN).
+keep_test =
+  Path.expand(
+    "../priv/keep/keep_test#{System.get_env("MIX_TEST_PARTITION")}.db",
+    __DIR__
+  )
+
+keep_opts = [
+  database: keep_test,
+  priv: "priv/keep",
+  pool: Ecto.Adapters.SQL.Sandbox,
+  journal_mode: :wal,
+  busy_timeout: 5_000
+]
+
+config :dojo, Dojo.Keep.Repo, keep_opts ++ [pool_size: 1]
+config :dojo, Dojo.Keep.Repo.Reader, keep_opts ++ [pool_size: System.schedulers_online() * 2]
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :dojo, DojoWeb.Endpoint,

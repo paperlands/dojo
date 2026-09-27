@@ -34,11 +34,9 @@ export default class Loop {
             this.state.currentTime = timestamp - this.state.baseTimestamp;
             this.state.lastTimestamp = this.state.currentTime;
 
-            // Render every RAF callback. RAF is already vsync-locked to the
-            // display's refresh rate, so no manual frame-interval gate is needed
-            // — and gating on `deltaTime >= 1000/60` actually drops to ~40fps on a
-            // 60Hz display because RAF timestamps jitter just under the interval.
-            // The render-on-demand stopCondition is what idles the loop out.
+            // Render every RAF callback — RAF is already vsync-locked, so no
+            // manual frame-interval gate is needed (gating on deltaTime>=1000/60
+            // undercounts: RAF timestamps jitter just under the interval).
             if (this.state.needsClear) {
                 this.clear();
                 this.state.needsClear = false;

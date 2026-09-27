@@ -14,23 +14,15 @@ defmodule DojoWeb.OuterShellLive do
   end
 
   def handle_event("followTurtle", _, socket) do
-    # Pure projection: emit intent, let the LiveView (single authority) decide.
     send(self(), {:outer_shell, :toggle_follow})
     {:noreply, socket}
   end
 
-  def handle_event("closeTurtle", _, socket) do
-    send(self(), {:outer_shell, :close})
-    {:noreply, socket}
-  end
-
-  # Liveness chip while drafting — frozen baseline ⟷ live rebase.
   def handle_event("toggleStream", _, socket) do
     send(self(), {:outer_shell, :toggle_stream})
     {:noreply, socket}
   end
 
-  # Look back at the last known-good code, then return to the live view.
   def handle_event("recall", _, socket) do
     send(self(), {:outer_shell, :recall})
     {:noreply, socket}
@@ -39,6 +31,13 @@ defmodule DojoWeb.OuterShellLive do
   def handle_event("watchLive", _, socket) do
     send(self(), {:outer_shell, :watch})
     {:noreply, socket}
+  end
+
+  # Deck pattern: flag → cleanup → inform. Offline: first two steps need no socket.
+  def close_js do
+    JS.remove_class("is-open", to: "#outer-open")
+    |> JS.dispatch("phx:outerClose", to: "body")
+    |> JS.push("closeTurtle")
   end
 
   def render(assigns) do
@@ -88,13 +87,10 @@ defmodule DojoWeb.OuterShellLive do
             </svg>
           </button>
 
-          <%!-- Future: "propose" (inverse of fork — merge your draft back to its
-                author, riding Dojo.Nerve). Omitted until the send path exists,
-                rather than shipping a disabled stub. --%>
-
           <button
-            phx-click="closeTurtle"
-            phx-target={@myself}
+            id="outer-close"
+            type="button"
+            phx-click={close_js()}
             title="Close"
             class="flex items-center justify-center w-6 h-6 transition-all duration-300 transform pointer-events-auto backdrop-blur-sm hover:scale-110 group focus-within:border-none"
           >
@@ -129,8 +125,7 @@ defmodule DojoWeb.OuterShellLive do
             <span class={[
               "absolute inline-flex h-full w-full rounded-full opacity-75",
               mode_indicator_class(@outershell)
-            ]}>
-            </span>
+            ]}></span>
             <span class="relative inline-flex rounded-full h-2 w-2 bg-primaryAccent"></span>
           </span>
         </div>
@@ -138,6 +133,7 @@ defmodule DojoWeb.OuterShellLive do
         <div
           id="outerenv"
           phx-update="ignore"
+          phx-mounted={JS.ignore_attributes(["data-outer-state"])}
           data-outer-state="ok"
           class="overflow-y-scroll relative border pointer-events-auto rounded-lg h-[calc(100dvh-18rem)] lg:h-[60vh] border-amber-600/20 dark-scrollbar backdrop-blur-xs scrollbar-hide cursor-text"
         >
@@ -146,7 +142,7 @@ defmodule DojoWeb.OuterShellLive do
             id="outershell"
             phx-hook="Shell"
             class="relative z-40 rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full"
-            data-target="outer"
+            data-target="outershell"
           />
         </div>
 

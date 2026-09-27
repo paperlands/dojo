@@ -18,6 +18,9 @@
       {assigns[:page_title] || "PaperLand"}
     </.live_title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
+    <%!-- keep journal worker — digested path for the durability door (id:kb-6).
+         IIFE cannot resolve import.meta.url; the door reads this meta. --%>
+    <meta name="keep-journal-worker" content={~p"/assets/js/keep/journal.worker.js"} />
     <script
       defer
       fetchpriority="high"

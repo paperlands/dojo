@@ -1,10 +1,21 @@
-import * as THREE from '../../utils/three.core.min.js';
+import {
+    BufferAttribute,
+    BufferGeometry,
+    DoubleSide,
+    Group,
+    LineBasicMaterial,
+    LineSegments,
+    Mesh,
+    MeshBasicMaterial,
+    Quaternion,
+    Vector3,
+} from '../../utils/three-entry.js'
 import {ColorConverter} from '../../utils/color.js'
 
 // Scratch for world-velocity orientation of frame-targeted heads (reused per frame).
-const _hdDir = new THREE.Vector3();
-const _hdWorld = new THREE.Quaternion();
-const _hdFwd = new THREE.Vector3(1, 0, 0);   // head's nose points +x
+const _hdDir = new Vector3();
+const _hdWorld = new Quaternion();
+const _hdFwd = new Vector3(1, 0, 0);   // head's nose points +x
 
 
 export default class Head {
@@ -25,7 +36,7 @@ export default class Head {
 
         this.current = {scale: 1, size: 10};
         this.scene = scene;
-        this.turtleGroup = new THREE.Group();
+        this.turtleGroup = new Group();
 
         this.createTurtleMesh();
         
@@ -40,28 +51,28 @@ export default class Head {
         // Single unified geometry - no overlapping meshes
         const headGeometry = new HeadGeometry(this.colors);
         
-        const headMaterial = new THREE.MeshBasicMaterial({
+        const headMaterial = new MeshBasicMaterial({
             vertexColors: true,
             wireframe: false,
-            side: THREE.DoubleSide,
+            side: DoubleSide,
             depthTest: true,
             depthWrite: true
         });
         
-        this.turtleMesh = new THREE.Mesh(headGeometry, headMaterial);
+        this.turtleMesh = new Mesh(headGeometry, headMaterial);
         this.turtleMesh.renderOrder = 10001;
         this.turtleGroup.add(this.turtleMesh);
 
         // Wireframe as separate layer - renders AFTER solid
         const edgeGeometry = new EdgeGeometry(this.colors);
-        const edgeMaterial = new THREE.LineBasicMaterial({
+        const edgeMaterial = new LineBasicMaterial({
             color: this.colors.wireframe,
             linewidth: 1,
             depthTest: true,
             depthWrite: false // Don't write depth for lines
         });
 
-        this.wireframeMesh = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+        this.wireframeMesh = new LineSegments(edgeGeometry, edgeMaterial);
         this.wireframeMesh.renderOrder = 10002;
         this.turtleGroup.add(this.wireframeMesh);
     }
@@ -119,14 +130,14 @@ export default class Head {
     // frame, so the world look quaternion maps back via groupQuat⁻¹. Eased per-RAF.
     // (spec id:ft-d5-head)
     orientToWorld(worldPos, groupQuat, alpha = 0.35) {
-        if (!this._prevWP) { this._prevWP = new THREE.Vector3().copy(worldPos); return; }
+        if (!this._prevWP) { this._prevWP = new Vector3().copy(worldPos); return; }
         const dx = worldPos.x - this._prevWP.x, dy = worldPos.y - this._prevWP.y, dz = worldPos.z - this._prevWP.z;
         this._prevWP.set(worldPos.x, worldPos.y, worldPos.z);
         const len = Math.sqrt(dx*dx + dy*dy + dz*dz);
         if (len < 1e-4) return;
         _hdDir.set(dx/len, dy/len, dz/len);
         _hdWorld.setFromUnitVectors(_hdFwd, _hdDir);   // +x → world velocity
-        if (!this._targetQuat) this._targetQuat = new THREE.Quaternion();
+        if (!this._targetQuat) this._targetQuat = new Quaternion();
         this._targetQuat.copy(groupQuat).invert().multiply(_hdWorld);   // → layer-local
         this.turtleGroup.quaternion.slerp(this._targetQuat, alpha);
     }
@@ -169,7 +180,7 @@ export default class Head {
     }
 }
 
-class HeadGeometry extends THREE.BufferGeometry {
+class HeadGeometry extends BufferGeometry {
     constructor(colors = {}) {
         super();
 
@@ -272,8 +283,8 @@ class HeadGeometry extends THREE.BufferGeometry {
         );
 
 
-        this.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
-        this.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vertexColors), 3));
+        this.setAttribute('position', new BufferAttribute(new Float32Array(vertices), 3));
+        this.setAttribute('color', new BufferAttribute(new Float32Array(vertexColors), 3));
         this.computeVertexNormals();
     }
 
@@ -289,7 +300,7 @@ class HeadGeometry extends THREE.BufferGeometry {
 }
 
 // Edge geometry for crisp outlines without z-fighting
-class EdgeGeometry extends THREE.BufferGeometry {
+class EdgeGeometry extends BufferGeometry {
     constructor(colors = {}) {
         super();
 
@@ -304,6 +315,6 @@ class EdgeGeometry extends THREE.BufferGeometry {
 ];
         vertices.push(...outline.flat());
 
-        this.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+        this.setAttribute('position', new BufferAttribute(new Float32Array(vertices), 3));
     }
 }

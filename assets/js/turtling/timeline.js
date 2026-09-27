@@ -1,14 +1,6 @@
-// Render-clock timeline — pure rebasing for the render-on-demand loop.
-//
-// The compositor maps wall-clock RAF timestamps to a 0-based sim time via
-// `now = t - epoch`. Because the loop idles itself out when nothing changes
-// (Render.Loop stopCondition), the wall clock can jump arbitrarily between two
-// advance() calls. Left alone, the next advance computes a huge `now` and the
-// scheduler's catch-up loop fast-forwards the animation — the "rerun starts
-// halfway, converges to zero over 2-4 reruns" lifecycle bug.
-//
-// This is the SEQUENTIAL half of the compositor, split out from the rendering
-// (concurrent) half so it can be tested without THREE. (specs/eye-ambient.org)
+// Rebases the render epoch so a wall-clock jump after an idle-out (RAF
+// throttling) folds into epoch instead of fast-forwarding the animation.
+// Split from compositor.js so it's testable without THREE. (specs/eye-ambient.org)
 
 // Decide the epoch for this frame. When the gap since the previous advance
 // exceeds the idle floor, the loop actually stopped (an idle-out, not a slow

@@ -7,7 +7,8 @@
 ```bash
 mix setup                        # Install deps and compile assets
 mix test                         # All Elixir tests (path:line for one)
-node --test test/js/<file>.mjs   # JS tests (zero-npm, node:test)
+node --test test/js/*/*_test.mjs # JS tests (zero-npm, node:test; by contract cluster)
+                                 # dir form `test/js/` is broken on Node 22+ (nodejs#64555)
 mix format                       # Before committing
 mix release                      # Production release (Burrito)
 
@@ -32,10 +33,10 @@ Look up by intent; don't re-read whole files.
 | Symbol → definition / references / type / file outline | `LSP` tool: goToDefinition, findReferences, hover, documentSymbol |
 | Find symbol across workspace | `LSP` workspaceSymbol — scope the query (`Dojo.`); `experiments/` pollutes results; on `:noconnection` (Expert cold boot) retry once |
 | What a module is *for* — architecture, lenses, ids | `emacsclient --eval '(dojo/section-for-module "Dojo.Table")'` · `(dojo/list-modules)` · `(dojo/list-lenses)` · `(dojo/list-ids)` · `(dojo/heading-body "id")` — spans root `*.org` + `specs/**/*.org` |
-| Runtime state, eval, logs, Ecto schemas | Tidewave MCP (live when phx.server is up) |
+| Runtime state, eval, logs, Ecto schemas | IEx on the running node (`iex -S mix phx.server`); or `mix run -e '...'` |
 | Browser/JS runtime, live shell play | chrome-devtools MCP — read `codex/play.org` first |
 | JS performance | `test/js/profile/` rig (its README.org explains) |
-| Dependency docs | Tidewave `get_docs` / `search_package_docs`; offline: `mix usage_rules.docs Mod.fun` |
+| Dependency docs | `mix usage_rules.docs Mod.fun` / `mix usage_rules.search_docs "..."` |
 | Strings, HEEx templates, config, comments | Grep / Glob |
 | Partisan internals | Grep `/home/putra/Repos/partisan/src/` — custom fork, LSP won't index it |
 
@@ -43,7 +44,9 @@ Look up by intent; don't re-read whole files.
 
 - Partisan changes go to the fork at `/home/putra/Repos/partisan/`, never `deps/`. Dev workflow: `PARTISAN_PATH=/home/putra/Repos/partisan mix ...`
 - `mix format` before committing; `mix credo --strict` for static analysis.
-- Design/architecture work follows Kumite — invoke the **kumite** skill; commit reasoning as `kumite(<phase>): <what happened>`.
+- Design/architecture work follows Kumite — invoke the **kumite** skill. `specs/` is its own git repo; commit reasoning there.
+- Comments: take specs as given and cite the id a comment carries only the invariant to communicate meaningful intent, in ≤3 lines. 
+- The voice is childlike simplicity what Feynman would say out loud. Clear words, key ideas, to enlarge intent and realise larger coherence vision. Less noise more signal.
 - Plans, strategy, and architecture docs are org-mode in the constellation, anchored for the bridge: `:ID:` on major sections, `:MODULE:` on code sections, `:LENS:` on perspectives, `[[id:...]]` links between nodes.
 
 ## Spawning Agents
@@ -54,9 +57,9 @@ Subagents do **not** inherit this file. Spawn project work as the `kohai` agent
 
 ## The Constellation
 
-- `navigation.org` — code lookup hotpaths (`:KEYWORDS:` + `:PATH:`); when you add code worth finding, add its hotpath in the same change; `scripts/nav_verify.sh` / `(dojo/nav-verify)` keep it vital
+- `navigation.org` — code lookup hotpaths (`:KEYWORDS:` + `:PATH:`); when you add code worth finding, add its hotpath in the same change; `scripts/verify/nav_verify.sh` / `(dojo/nav-verify)` keep it vital
 - `ARCHITECTURE_NEUE.org` — what Dojo is, how we think, module anatomy (`:MODULE:`-anchored)
-- `specs/` — Kumite reasoning: `decisions/` (check before designing), `tensions/` (active forces), `_meta/` (framework + lenses)
+- `specs/` — Kumite reasoning; its own git repo, enter via `specs/ATLAS.org` (map + live census). Domains `turtle/` `compiler/` `weave/` `papertiger/`; `decisions/` (check before designing), `tensions/` (active forces), `_meta/` (framework + lenses)
 - `codex/` — PaperLang pattern language; `codex/play.org` is the live-shell play protocol
 
 Env vars: `PORT` (4000), `PARTISAN_NAME`, `PARTISAN_PORT` (9090).

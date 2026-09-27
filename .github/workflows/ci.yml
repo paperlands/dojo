@@ -1,0 +1,177 @@
+name: CI
+
+# One pipeline per ask: test, then ship when the PR targets a deploy trunk.
+#
+#   elixir ──┐
+#            ├── CI gate          (branch protection; always reports)
+#   js     ──┘
+#            └── Deploy           (staging → paperland, release → thedojo)
+#
+# No cross-workflow waiting. Re-run this workflow and everything re-runs.
+# Desktop installers still live on push → release.yml (calls this for tests).
+on:
+  pull_request:
+    branches: [master, staging, release]
+  workflow_call:
+
+concurrency:
+  # Per-PR so a dual open (staging + release) from the same head never
+  # cancels the other. workflow_call has no PR number → fall back to ref.
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  ELIXIR_VERSION: "1.20.1"
+  OTP_VERSION: "29.0.2"
+
+jobs:
+  # ── Leaves (parallel) ───────────────────────────────────────────────────
+  elixir:
+    name: Elixir tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MIX_ENV: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Erlang & Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          version-type: strict
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            ~/.hex
+          key: deps-${{ runner.os }}-otp${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}
+          restore-keys: deps-${{ runner.os }}-otp${{ env.OTP_VERSION }}-
+
+      - name: Cache build
+        uses: actions/cache@v4
+        with:
+          path: _build/test
+          key: build-test-${{ runner.os }}-otp${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}-${{ github.sha }}
+          restore-keys: |
+            build-test-${{ runner.os }}-otp${{ env.OTP_VERSION }}-${{ hashFiles('mix.lock') }}-
+            build-test-${{ runner.os }}-otp${{ env.OTP_VERSION }}-
+
+      - name: Install dependencies
+        run: |
+          mix local.hex --if-missing --force
+          mix local.rebar --if-missing --force
+          mix deps.get --only $MIX_ENV
+
+      # Each check reports on its own line, so a red run says which question failed.
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Compile
+        run: mix compile --warnings-as-errors
+
+      # --exclude clustered: those spawn a real BEAM peer mesh over multicast
+      # UDP, which a hosted runner cannot offer. ClusterCase already documents
+      # them as opt-in; run them on a machine with a LAN.
+      - name: Test
+        run: mix test --exclude clustered
+
+      # Advisory until the existing findings are cleared — see the note in the
+      # PR. Flip to a gate by deleting continue-on-error.
+      - name: Credo
+        continue-on-error: true
+        run: mix credo --strict
+
+  js:
+    name: JS tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Zero-npm by design: node:test only, nothing to install or cache.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Node 22+ regression: a directory arg is executed as a single file
+      # (MODULE_NOT_FOUND) instead of being walked. Shell-expand the test
+      # files so both Node 20 and 22 run the suite. Layout is
+      # test/js/<cluster>/*_test.mjs (profile/ benches stay out).
+      # See https://github.com/nodejs/node/issues/64555
+      - name: Test
+        run: node --test test/js/*/*_test.mjs
+
+  # ── Fan-in: branch protection ───────────────────────────────────────────
+  # if: always() so a red leaf does not leave this check "skipped" (which
+  # would look like permission to merge under required checks).
+  gate:
+    name: CI gate
+    runs-on: ubuntu-latest
+    needs: [elixir, js]
+    if: always()
+    steps:
+      - name: Both suites green
+        run: |
+          echo "elixir=${{ needs.elixir.result }}"
+          echo "js=${{ needs.js.result }}"
+          test "${{ needs.elixir.result }}" = "success"
+          test "${{ needs.js.result }}" = "success"
+
+  # ── Fan-in: ship web when the PR targets a deploy trunk ─────────────────
+  # Same needs as the gate — deploy starts the moment both suites are green,
+  # no second workflow, no poll. Skipped on master PRs and on workflow_call
+  # (release.yml installer cut). Red leaf → this job is skipped automatically.
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [elixir, js]
+    if: |
+      github.event_name == 'pull_request' &&
+      (github.base_ref == 'staging' || github.base_ref == 'release')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
+
+      # --remote-only: build on Fly's builder (layer cache lives with the app).
+      # Staging is one machine → immediate. Prod → default rolling handover.
+      - name: Deploy to Fly (paperland)
+        if: github.base_ref == 'staging'
+        run: |
+          flyctl deploy --remote-only \
+            --strategy immediate \
+            --wait-timeout 600 \
+            -c fly.staging.toml -a paperland
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_STAGING_API_TOKEN }}
+
+      - name: Deploy to Fly (thedojo)
+        if: github.base_ref == 'release'
+        run: |
+          flyctl deploy --remote-only \
+            --wait-timeout 600 \
+            -c fly.toml -a thedojo
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_PROD_API_TOKEN }}

@@ -2,7 +2,13 @@
 // rests on either. Uses pure depth counting (same algorithm as a stack-based
 // bracket matcher) so nested blocks are handled correctly.
 //
-// Zero static imports — receives cm6 at call time (same pattern as theme.js).
+// Depth comes from blockDelta (turtling/parse.js) — the one table — so
+// `label 'do it' 10` no longer opens a phantom block, and if/while (not in
+// the language) are never counted.
+//
+// Zero static imports of CM6 — receives cm6 at call time (same pattern as theme.js).
+
+import { blockDelta, DO, END } from "../turtling/parse.js"
 
 export const createDoEndMatchingExtension = (cm6) => {
     const { StateField, Decoration, EditorView, RangeSetBuilder } = cm6;
@@ -27,7 +33,7 @@ export const createDoEndMatchingExtension = (cm6) => {
         while (end < text.length && isWord(text[end])) end++;
 
         const word = text.slice(start, end);
-        if (word !== 'do' && word !== 'end') return null;
+        if (word !== DO && word !== END) return null;
         return { word, from: line.from + start, to: line.from + end, lineNum: line.number };
     };
 
@@ -45,9 +51,6 @@ export const createDoEndMatchingExtension = (cm6) => {
         const { word, from, to, lineNum } = at;
         const lines = state.doc.lines;
 
-        // Keywords that open a new block (must end with `end`)
-        const OPENER = /\b(do|if|while|loop|def|when)\b/;
-
         // Helper: build decorations for a matched do/end pair, including
         // block-line markers on every line between them for indent guide glow.
         const buildMatch = (doFrom, doTo, endFrom, endTo, doLineNum, endLineNum) => {
@@ -63,33 +66,30 @@ export const createDoEndMatchingExtension = (cm6) => {
             return b.finish();
         };
 
-        if (word === 'do') {
+        if (word === DO) {
             let depth = 1;
             for (let ln = lineNum + 1; ln <= lines; ln++) {
                 const next = state.doc.line(ln);
-                const t = next.text.trim();
-                if (!t) continue;
-                if (OPENER.test(t)) depth++;
-                if (/^end\b/.test(t)) {
-                    if (--depth === 0) {
-                        const endIndent = next.text.search(/\S/);
-                        return buildMatch(from, to, next.from + endIndent, next.from + endIndent + 3, lineNum, ln);
-                    }
+                const d = blockDelta(next.text);
+                if (d === 0) continue;
+                depth += d;
+                if (depth === 0) {
+                    const endIndent = next.text.search(/\S/);
+                    return buildMatch(from, to, next.from + endIndent, next.from + endIndent + END.length, lineNum, ln);
                 }
             }
-        } else { // 'end'
+        } else { // end
             let depth = 1;
             for (let ln = lineNum - 1; ln >= 1; ln--) {
                 const prev = state.doc.line(ln);
-                const t = prev.text.trim();
-                if (!t) continue;
-                if (/^end\b/.test(t)) depth++;
-                if (OPENER.test(t)) {
-                    if (--depth === 0) {
-                        const doPos = lastDoOffset(prev.text);
-                        if (doPos < 0) continue;
-                        return buildMatch(prev.from + doPos, prev.from + doPos + 2, from, to, ln, lineNum);
-                    }
+                const d = blockDelta(prev.text);
+                if (d === 0) continue;
+                // Walking upward: an end deepens the nest; a do closes one level.
+                depth -= d;
+                if (depth === 0) {
+                    const doPos = lastDoOffset(prev.text);
+                    if (doPos < 0) continue;
+                    return buildMatch(prev.from + doPos, prev.from + doPos + DO.length, from, to, ln, lineNum);
                 }
             }
         }

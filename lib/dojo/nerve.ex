@@ -23,7 +23,9 @@ defmodule Dojo.Nerve do
   stamps its own clock as `ts`.
   """
   def signal(clan, msg, payload, target, source, kind, ts \\ nil) do
-    now = System.monotonic_time(:millisecond)
+    # Wall clock (epoch ms): crosses peers and the JS store; monotonic is
+    # local to one VM and incomparable to the client's Date.now() / epoch-ms.
+    now = System.os_time(:millisecond)
 
     %{
       msg: msg,

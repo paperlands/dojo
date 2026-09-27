@@ -9,12 +9,7 @@
 //   output:  effects[]           (events for the renderer/scheduler)
 
 import { Versor } from "./mafs/versors.js"
-import { SE3 } from "./se3.js"
-
-// Axes — avoid allocation in hot loops
-const AXIS_X = { x: 1, y: 0, z: 0 }
-const AXIS_Y = { x: 0, y: 1, z: 0 }
-const AXIS_Z = { x: 0, y: 0, z: 1 }
+import { SE3, AXIS_X, AXIS_Y, AXIS_Z } from "./se3.js"
 
 // --- Movement commands ---
 
@@ -173,6 +168,7 @@ function wait(ctx, duration = 1) {
     }
 }
 
+// Language yield — voluntary give-up-turn (coop multitasking). Instant completes.
 function yieldCmd(ctx) {
     return {
         effects: [{
