@@ -10,10 +10,19 @@
 export const REALIZE_TOL = 1e-9
 export const ACCEPT_TOL = 1e-6
 
+// The arm a direction-only law takes when the point sits on the observer: one
+// declared paper step, so a direction-only placement is visible at the default eye.
+// A policy number, not a truth.
+export const DEFAULT_ARM = 100
+
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const len = (v) => Math.hypot(v[0], v[1], v[2])
 const finite3 = (p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite)
 
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+const scale = (v, s) => [v[0] * s, v[1] * s, v[2] * s]
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+const unit = (v) => { const n = len(v); return n > REALIZE_TOL ? scale(v, 1 / n) : null }
 // Realize |target − observer| = want by moving the target, holding the observer.
 // A repeatable direction is chosen when the two coincide, because the choice is
 // policy, not a truth. (id:laws-decl-anchor, id:laws-freedom)
@@ -33,6 +42,34 @@ export function realizeDistance(target, observer, want) {
     }
     const pose = [observer[0] + ux * want, observer[1] + uy * want, observer[2] + uz * want]
     return { ok: true, pose, moved: true }
+}
+
+// Realize a point on a cone: `want` from the observer's nose at the point's own
+// radius. On the apex the point has no direction, so the frame's own up gives the
+// generator and `arm` the length — policy, not truth. (id:laws-freedom)
+export function realizeTilt(apex, nose, up, target, want, arm = DEFAULT_ARM) {
+    if (!finite3(apex) || !finite3(nose) || !finite3(up)) return { ok: false, reason: 'observer pose is unknown' }
+    if (!Number.isFinite(want)) return { ok: false, reason: 'the tilt must be a finite number' }
+    const axis = unit(nose)
+    if (!axis) return { ok: false, reason: 'the observer has no nose' }
+    const d = finite3(target) ? sub(target, apex) : [0, 0, 0]
+    const r = len(d)
+    const apart = r > REALIZE_TOL
+    // The nappe nearest the point, so a proposal agrees with nearest(cone).
+    const side = apart && dot(d, axis) < 0 ? -1 : 1
+    // The generator's lateral: the point's own when it has one, else the frame's up
+    // projected off the nose — so the default turns with the frame, never a world axis.
+    let lateral = apart ? sub(d, scale(axis, dot(d, axis))) : [0, 0, 0]
+    if (len(lateral) <= REALIZE_TOL) {
+        const u = unit(up) ?? [0, 0, 1]
+        lateral = sub(u, scale(axis, dot(u, axis)))
+    }
+    const across = unit(lateral)
+    if (!across) return { ok: false, reason: 'the cone has no generator' }
+    const rad = (want * Math.PI) / 180
+    const dir = add(scale(axis, side * Math.cos(rad)), scale(across, Math.sin(rad)))
+    const pose = add(apex, scale(dir, apart ? r : arm))
+    return { ok: true, pose, moved: !finite3(target) || len(sub(pose, target)) > REALIZE_TOL }
 }
 
 // The original predicate, checked independently of however the candidate was

@@ -43,6 +43,14 @@ export function headingOf(rotation) {
     return compassOrNull(fx, fy)
 }
 
+// The frame's own up: the direction its +Z turns to. With forwardOf it is an
+// orthonormal pair, so a generator built from them turns with the frame and never
+// reaches for a world axis. (id:laws-freedom)
+export function upOf(rotation) {
+    const { x, y, z, w } = rotation
+    return [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)]
+}
+
 export function elevationOf(rotation) {
     const fz = forwardOf(rotation)[2]
     return Math.asin(Math.max(-1, Math.min(1, fz))) * DEG

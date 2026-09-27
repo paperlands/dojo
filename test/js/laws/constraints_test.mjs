@@ -3,7 +3,7 @@
 // Run: node --test test/js/laws/constraints_test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { stateOf, project, silhouette, axesOf, sphereCurves, slider } from "../../../assets/js/turtling/laws/constraints.js"
+import { stateOf, project, silhouette, axesOf, sphereCurves, slider, marksOf } from "../../../assets/js/turtling/laws/constraints.js"
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps
 const dist = (a, b) => Math.hypot(...a.map((n, i) => n - b[i]))
@@ -82,6 +82,31 @@ test("silhouette: a circle about the centre in the plane ⟂ the sight", () => {
     }
 })
 
+
+test("with an eye, the silhouette is the tangent rim, not the equator", () => {
+    const ring = silhouette({ kind: "sphere", center: [0, 0, 0], radius: 1 }, [0, 0, -1], 8, [0, 0, 5])
+    const z = ring[0][2]
+    const rho = Math.hypot(ring[0][0], ring[0][1])
+    assert.ok(z > 0 && z < 1, "the rim sits in front of the centre")
+    assert.ok(rho < 1, "and is smaller than the equator")
+    for (const p of ring) {
+        assert.ok(near(p[2], z), "one plane")
+        assert.ok(near(Math.hypot(p[0], p[1]), rho), "one radius")
+    }
+})
+
+test("a rim is a contour: drawn off the shell's axis, dropped on it", () => {
+    const sphere = { kind: "sphere", center: [0, 0, 0], radius: 5 }
+    const at = [5, 0, 0]
+    const down = marksOf(sphere, { at, viewDir: [0, 0, -1], eye: [0, 0, 150] })
+    assert.deepEqual(down.rings, [],
+        "down the pole a second circumference would only overstate the radius")
+    const tilted = marksOf(sphere, { at, viewDir: [-0.5, -0.4, -0.8], eye: [50, 40, 80] })
+    assert.equal(tilted.rings.length, 1, "off the pole the rim is the ball's outline")
+    assert.equal(marksOf(sphere, { at, viewDir: [0, 0, -1] }).rings.length, 1,
+        "without an eye the rim is exact, so the gate does not apply")
+})
+
 test("axes: the normal rests, the tangent moves, and no camera enters", () => {
     const s = stateOf({ at: [5, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 5 }] })
     const ax = axesOf(s)
@@ -111,18 +136,33 @@ test("zero radius: the held endpoint fixes one point, not two degrees", () => {
     assert.equal(s.interaction.offered, false)
 })
 
-// Coincidence is a shared translation, not a pin, unless the other point is
-// held. Two movable coincident points keep their common freedom. (id:laws-freedom)
-test("coincidence: a movable other leaves the pair's common translation", () => {
+// Coincidence is a shared truth, not a pin, unless the other point is held. The
+// query holds the other participants, so the pair's common translation is not
+// this point's independent freedom — the request method conserves the partner.
+// (id:laws-freedom, id:laws-experiment-7-ruling)
+test("coincidence names the coupling without offering the pair's translation", () => {
     const s = stateOf({ at: [0, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 0 }] })
     assert.equal(s.truth.pinned, false, "a movable other does not pin")
-    assert.equal(s.truth.coincident, true)
-    assert.equal(s.dof, 3, "the pair translates as one")
-    assert.equal(s.locus, null, "no sphere and no point is named")
-    assert.equal(s.interaction.movable, "coupled")
-    assert.deepEqual(s.interaction.partners, [[0, 0, 0]])
-    assert.equal(s.interaction.offered, true, "the point is still offered")
+    assert.equal(s.truth.coincident, true, "the coupling is named")
+    assert.equal(s.dof, 0, "with the partner held there is no independent freedom")
+    assert.deepEqual(s.locus, { kind: "point", at: [0, 0, 0] }, "the zero distance names the existing point")
+    assert.equal(s.interaction.movable, "none", "no freedom the door cannot honor is offered")
+    assert.deepEqual(s.interaction.partners, [[0, 0, 0]], "the coupling is still disclosed")
+    assert.equal(s.interaction.offered, true, "the point is still touchable; the refusal is the answer")
     assert.equal(s.tag, "free")
+})
+
+// Zero freedom still answers geometry: the coincidence is a point set, so the
+// locus and the projection come from the same meet as the freedom. (id:laws-freedom)
+test("a zero distance composes: locus and projection read the one set", () => {
+    const s = stateOf({ at: [0, 0, 0], constraints: [
+        { feature: "distance", other: [0, 0, 0], radius: 0, otherHeld: false },
+        { feature: "distance", other: [5, 0, 0], radius: 5, otherHeld: true },
+    ] })
+    assert.equal(s.dof, 0)
+    assert.equal(s.interaction.movable, "none")
+    assert.deepEqual(s.locus, { kind: "point", at: [0, 0, 0] }, "the existing point is on the sphere")
+    assert.deepEqual(project(s, [5, 5, 0]), [0, 0, 0], "projection reads the same set, not the sphere alone")
 })
 
 // One query returns role, truth, status and interaction as separate facts; the
@@ -171,4 +211,13 @@ test("slider: a bounded scalar and the exact locus it names, from one query", ()
     assert.deepEqual(seven.locus, { kind: "sphere", center: [0, 0, 0], radius: 7 })
     assert.equal(slider({ at: [5, 0, 0], other: [0, 0, 0], value: 99, max: 10 }).value, 10,
         "an over-range input is clamped to the declared bound")
+})
+
+test("a distance marks as a radius spoke from the point to its centre", () => {
+    const sphere = { kind: "sphere", center: [0, 0, 0], radius: 5 }
+    const marks = marksOf(sphere, { at: [5, 0, 0] })
+    assert.equal(marks.curves.length, 2, "latitude and meridian")
+    assert.deepEqual(marks.spokes, [[[0, 0, 0], [5, 0, 0]]], "the radius, not the normal")
+    assert.deepEqual(marksOf({ kind: "circle", center: [0, 0, 0], radius: 3, normal: [0, 0, 1] },
+        { at: [3, 0, 0] }).spokes, [[[0, 0, 0], [3, 0, 0]]])
 })

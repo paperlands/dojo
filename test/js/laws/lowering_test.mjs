@@ -87,15 +87,16 @@ test("W2 zero radius: the relative freedom is zero and the common translation su
     const t = [10, -4, 1]
     assert.ok(ordinary.accepts([a[0] + t[0], a[1] + t[1], a[2] + t[2]],
         [b[0] + t[0], b[1] + t[1], b[2] + t[2]], 0, tol))
-    // The shipped state query reads the same truth: coincident, not pinned, dof 3.
+    // The shipped state query reads the same truth: coincident, not pinned. With
+    // the partner held by the query there is no independent freedom to offer.
     const state = stateOf({
         at: a,
         constraints: [{ feature: "distance", other: b, radius: 0, otherHeld: false }],
     })
     assert.equal(state.truth.pinned, false, "two movable coincident points are not a pin")
     assert.equal(state.truth.coincident, true)
-    assert.equal(state.interaction.dof, 3, "coincidence removes the 3 relative dof, not the 3 translation dof")
-    assert.equal(state.interaction.movable, "coupled")
+    assert.equal(state.interaction.dof, 0, "the pair's translation is not this point's freedom")
+    assert.equal(state.interaction.movable, "none")
     assert.deepEqual(state.interaction.partners, [b])
     // Held reference: the same zero radius becomes a pin (dof 0), no translation.
     const pinned = stateOf({

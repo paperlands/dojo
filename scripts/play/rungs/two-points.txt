@@ -1,0 +1,7 @@
+let X
+let B
+let X.y = 0
+let X.z = 0
+as B do
+  let X.distance = 5
+end

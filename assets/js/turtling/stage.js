@@ -20,6 +20,7 @@ import { cameraBridge } from "../bridged.js"
 // the eye looks down local −Z, so a roll is a turn about local Z.
 import { SE3, AXIS_Z } from "./se3.js"
 import { CLIENT_SPACE } from "./laws/handle.js"
+import { fitPose } from "./laws/fit.js"
 
 export function createStage(canvas, bridge, instruments = {}) {
     const ctx = canvas.getContext("webgl2") ?? canvas.getContext("webgl")
@@ -126,6 +127,13 @@ export function createStage(canvas, bridge, instruments = {}) {
             viewOffset = SE3.identity()
             controls.update()
             break
+        case 'fit': {
+            // The turtle supplies the figure's world extents; the stage only
+            // moves the eye. A view change, never a geometry change.
+            const framed = stage.fitTargets?.()
+            if (framed?.bounds) stage.fitTo(framed.bounds, { dir: framed.dir })
+            break
+        }
         case 'pan':
             camera.desire = (camera.desire !== "pan") ? "pan" : "track"
             break
@@ -211,6 +219,27 @@ export function createStage(canvas, bridge, instruments = {}) {
             const y = rect.top + (-_project.y * 0.5 + 0.5) * rect.height
             if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null
             return { x, y }
+        },
+
+        // Frame a figure from its world extents. A view change only — no
+        // geometry, no law, no revision; the mark keeps its true size.
+        // (id:laws-freedom)
+        fitTargets: null,
+        fitTo(bounds, { dir = null, margin = 1.12 } = {}) {
+            const pose = fitPose(bounds, {
+                dir: dir ?? undefined,
+                fovDeg: camera.fov,
+                aspect: camera.aspect,
+                floor: controls.dollyStandoff,
+                margin,
+            })
+            if (!pose) return null
+            camera.position.set(pose.position[0], pose.position[1], pose.position[2])
+            controls.target.set(pose.target[0], pose.target[1], pose.target[2])
+            camera.updateProjectionMatrix?.()
+            controls.update()
+            stage.requestRender?.()
+            return pose
         },
 
         // The camera's world viewing direction. The drag plane faces it — the

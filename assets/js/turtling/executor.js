@@ -6,7 +6,7 @@ import { SE3 } from "./se3.js"
 import { recenterPose } from "./view.js"
 import { createStroke, extend as strokeExtend, flush as strokeFlush, fill as strokeFill } from "./stroke.js"
 import { matchPattern } from "./match.js"
-
+import { payloadOf } from "./laws/authored.js"
 // A hole demands something. A reading that has NO answer — a heading at the paper's
 // pole — arrives here as null, which is a truth, not a wound; but a command argument
 // or a condition cannot BE nothing, and `null + 1` is 1 in JavaScript, so a null
@@ -404,10 +404,10 @@ function* walkBody(body, scope, state, stroke) {
             // capabilities; the former does not require the latter.
             // (id:eval-relational)
             const feature = node.value
-            const value = feature === 'distance'
+            const value = payloadOf(feature) === 'expr'
                 ? yield* evalOrBlock(node.meta.expr, scope, state)
                 : node.meta.coords
-            yield { type: 'law', feature, target: node.meta.target, value, owner: node.span ?? null }
+            yield { type: 'law', feature, target: node.meta.target, value, axis: node.meta.axis ?? null, owner: node.span ?? null }
             break
         }
 

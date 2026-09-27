@@ -31,6 +31,25 @@ test("acceptance: pinning over a distance is a located obstruction, no lie", () 
     assert.equal(scheduler.laws.active()[0].feature, "distance")
 })
 
+test("acceptance: a definition introduces its subject — `let V = origin` needs no `let V`", () => {
+    const scheduler = buildWorld({ admit: pass })
+    const host = scheduler.hotSwapChild("host", fork("host", "let V = origin"))
+    drive(scheduler)
+    const V = host.children.get("V")
+    assert.ok(V, "V is seated by its own definition")
+    assert.deepEqual(pos(V), [0, 0, 0])
+    assert.equal(scheduler.laws.active().length, 1, "and the pin is stored")
+    assert.equal(scheduler.laws.active()[0].feature, "position")
+})
+
+test("acceptance: a relation still refuses to invent its endpoint", () => {
+    const scheduler = buildWorld({ admit: pass })
+    const host = scheduler.hotSwapChild("host", fork("host", "let AA.distance = 5"))
+    drive(scheduler)
+    assert.equal(host.children.get("AA"), undefined, "a typo is not a silent new identity")
+    assert.equal(host.error?.message, "Unknown target: AA")
+})
+
 test("acceptance: a distance over a pin is a located obstruction, no lie", () => {
     const scheduler = buildWorld({ admit: pass })
     const host = scheduler.hotSwapChild("host", fork("host", source(

@@ -39,6 +39,87 @@ export function touchPlane(ray, plane) {
     return [ox + dx * t, oy + dy * t, oz + dz * t]
 }
 
+// The outward direction a push is answered least on: the surface normal laid flat into
+// the drag plane. Null when the normal is already ⟂ that plane (there is nothing to
+// gear) or the point sits at the centre. (id:laws-decl-anchor)
+export function outwardIn(center, point, planeNormal) {
+    const f = Array.isArray(planeNormal) ? planeNormal : null
+    const fn = f ? Math.hypot(f[0], f[1], f[2]) : 0
+    if (!(fn > 1e-12)) return null
+    const fh = [f[0] / fn, f[1] / fn, f[2] / fn]
+    const n = [point[0] - center[0], point[1] - center[1], point[2] - center[2]]
+    const r = Math.hypot(n[0], n[1], n[2])
+    if (!(r > 1e-12)) return null
+    const u = [n[0] / r, n[1] / r, n[2] / r]
+    const k = u[0] * fh[0] + u[1] * fh[1] + u[2] * fh[2]
+    const g = [u[0] - k * fh[0], u[1] - k * fh[1], u[2] - k * fh[2]]
+    const gm = Math.hypot(g[0], g[1], g[2])
+    return gm > 1e-9 ? g.map((v) => v / gm) : null
+}
+
+// The figure's own screen size, in pixels: the radius a sphere of `radius` centred at
+// `center` draws as, seen along `sight`. The gear's knee is this and not a constant — a
+// pull inside the figure must stay 1:1, or the hand loses the point before it has even
+// left the ball. Null when the geometry cannot name a size. (id:laws-decl-anchor)
+export function figureRadius(project, center, radius, sight) {
+    const f = Array.isArray(sight) ? sight : null
+    const fn = f ? Math.hypot(f[0], f[1], f[2]) : 0
+    if (!project || !(radius > 0) || !(fn > 1e-12) || !Array.isArray(center)) return null
+    const fh = [f[0] / fn, f[1] / fn, f[2] / fn]
+    const a = Math.abs(fh[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]
+    const e = [fh[1] * a[2] - fh[2] * a[1], fh[2] * a[0] - fh[0] * a[2], fh[0] * a[1] - fh[1] * a[0]]
+    const el = Math.hypot(e[0], e[1], e[2])
+    if (!(el > 1e-12)) return null
+    const u = e.map((v) => v / el)
+    const rim = project([center[0] + radius * u[0], center[1] + radius * u[1], center[2] + radius * u[2]])
+    const hub = project([center[0], center[1], center[2]])
+    if (!rim || !hub) return null
+    const px = Math.hypot(rim.x - hub.x, rim.y - hub.y)
+    return px > 1 ? px : null
+}
+// The direction across the pole, laid flat into the drag plane. Together with the outward
+// direction it splits a hand step into a dial and a reach. Null at the pole, where no
+// azimuth exists. (id:laws-decl-anchor)
+export function acrossIn(center, point, planeNormal) {
+    const f = Array.isArray(planeNormal) ? planeNormal : null
+    const fn = f ? Math.hypot(f[0], f[1], f[2]) : 0
+    if (!(fn > 1e-12)) return null
+    const fh = [f[0] / fn, f[1] / fn, f[2] / fn]
+    const dx = point[0] - center[0], dy = point[1] - center[1]
+    const rho = Math.hypot(dx, dy)
+    if (!(rho > 1e-12)) return null
+    const ac = [-dy / rho, dx / rho, 0]
+    const k = ac[0] * fh[0] + ac[1] * fh[1] + ac[2] * fh[2]
+    const g = [ac[0] - k * fh[0], ac[1] - k * fh[1], ac[2] - k * fh[2]]
+    const gm = Math.hypot(g[0], g[1], g[2])
+    return gm > 1e-9 ? g.map((v) => v / gm) : null
+}
+
+// The sphere's own coordinates, in the paper's frame: an azimuth around the +z pole
+// through the centre, a latitude from its equator, and the horizontal radius that
+// azimuth rides on. Null at the pole, where no azimuth exists. (id:laws-decl-anchor)
+export function polarOf(center, point) {
+    const d = [point[0] - center[0], point[1] - center[1], point[2] - center[2]]
+    const r = Math.hypot(d[0], d[1], d[2])
+    if (!(r > 1e-12)) return null
+    return {
+        az: Math.atan2(d[1], d[0]),
+        lat: Math.asin(Math.max(-1, Math.min(1, d[2] / r))),
+        rho: Math.hypot(d[0], d[1]),
+    }
+}
+
+// A point of a sphere named by its own coordinates. (id:laws-decl-anchor)
+export function polarPoint(center, radius, az, lat) {
+    const c = Math.cos(lat)
+    return [
+        center[0] + radius * c * Math.cos(az),
+        center[1] + radius * c * Math.sin(az),
+        center[2] + radius * Math.sin(lat),
+    ]
+}
+
+
 // A world point in the place's birth coordinates — the same frame the actor's
 // accepted pose lives in, so the request needs no second meaning of "where".
 export function birthLocal(worldPoint, worldTransform) {
@@ -101,6 +182,11 @@ export function viewMapping(reframe, stage) {
             const f = stage.facing()
             if (!toWorld) return f
             return toWorld.rotation.rotateVec(f[0], f[1], f[2])
+        },
+        eye: () => {
+            const p = stage.camera.position
+            const c = [p.x, p.y, p.z]
+            return toWorld ? SE3.apply(toWorld, c) : c
         },
     }
 }

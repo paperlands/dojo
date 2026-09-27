@@ -7,7 +7,8 @@ import assert from "node:assert/strict"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
 import { Versor } from "../../../assets/js/turtling/mafs/versors.js"
 import {
-    facingPlane, touchPlane, birthLocal, requestedPose, hitTest, readout, knownPose,
+    facingPlane, touchPlane, outwardIn, acrossIn, figureRadius, polarOf, polarPoint,
+    birthLocal, requestedPose, hitTest, readout, knownPose,
     eligibility, outcomeOf, OUTCOME, GRAZE,
     CLIENT_SPACE, verdictFade, VERDICT_DECAY_MS, viewMapping,
 } from "../../../assets/js/turtling/laws/handle.js"
@@ -239,4 +240,41 @@ test("viewMapping: the drawn mark and the hand share one world frame", () => {
         "the ray through a projected point passes through that point")
     assert.deepEqual(nz(view.facing()), [0, 0, -1],
         "the sight axis, expressed in world coordinates")
+})
+
+
+
+
+
+// The gear: nothing inside the figure, then a tapered geometric growth past it.
+test("figureRadius measures the ball's own screen size", () => {
+    const project = (p) => ({ x: p[0] * 100, y: p[1] * 100 })
+    assert.equal(figureRadius(project, [0, 0, 0], 5, [0, 0, -1]), 500)
+    assert.equal(figureRadius(project, [0, 0, 0], 5, null), null, "no sight, no size")
+    assert.equal(figureRadius(null, [0, 0, 0], 5, [0, 0, -1]), null, "no projection, no size")
+    assert.equal(figureRadius(project, [0, 0, 0], 0, [0, 0, -1]), null, "a point draws no figure")
+})
+
+test("outwardIn lays the surface normal flat into the drag plane", () => {
+    assert.deepEqual(nz(outwardIn([0, 0, 0], [3, 0, 4], [0, 0, -1])), [1, 0, 0],
+        "the radial, flattened onto the paper")
+    assert.equal(outwardIn([0, 0, 0], [0, 0, 4], [0, 0, -1]), null,
+        "a normal already ⟂ the plane has nothing to gear")
+    assert.equal(outwardIn([0, 0, 0], [0, 0, 0], [0, 0, -1]), null, "no normal at the centre")
+})
+
+test("acrossIn is the pole-crossing direction, ⟂ the outward one", () => {
+    assert.deepEqual(nz(acrossIn([0, 0, 0], [3, 0, 4], [0, 0, -1])), [0, 1, 0],
+        "across the x radial in the paper's plane")
+    const r = outwardIn([0, 0, 0], [3, 0, 4], [0, 0, -1])
+    const a = acrossIn([0, 0, 0], [3, 0, 4], [0, 0, -1])
+    assert.ok(Math.abs(r[0] * a[0] + r[1] * a[1] + r[2] * a[2]) < 1e-12, "the two are ⟂")
+    assert.equal(acrossIn([0, 0, 0], [0, 0, 4], [0, 0, -1]), null, "no azimuth at the pole")
+})
+
+test("polarOf and polarPoint are one sphere's own coordinates", () => {
+    const p = polarOf([0, 0, 0], [3, 0, 4])
+    assert.ok(Math.abs(p.az) < 1e-12 && Math.abs(p.lat - Math.asin(0.8)) < 1e-12 && Math.abs(p.rho - 3) < 1e-12)
+    assert.deepEqual(nz(polarPoint([0, 0, 0], 5, p.az, p.lat)), [3, 0, 4], "and they name the point back")
+    assert.equal(polarOf([0, 0, 0], [0, 0, 0]), null, "the centre has no azimuth")
 })

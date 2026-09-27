@@ -1,0 +1,4 @@
+fw 100
+let A
+fw 100
+let B

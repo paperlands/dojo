@@ -96,11 +96,11 @@ export function drawPin(ctx, { cx, cy, name = '', width = 0, withHead = false,
     ctx.textAlign = 'left'
 }
 
-// A ghost locus: where a constrained point MAY go, dashed, never the point
-// itself. The display names its question; it does not prove the whole locus.
+// A dashed mark: one polyline, one stroke, so the dash reads as a cadence and not
+// as per-segment dots. One cadence for the dashed ink; only the alphas differ.
 // (id:laws-freedom)
 const GHOST_DASH = [4, 5]
-export function drawGhost(ctx, screenPoints) {
+function strokeDashed(ctx, screenPoints, alpha) {
     if (!screenPoints || screenPoints.length < 2) return
     ctx.save()
     ctx.beginPath()
@@ -112,14 +112,100 @@ export function drawGhost(ctx, screenPoints) {
         pen = true
     }
     ctx.setLineDash(GHOST_DASH)
-    ctx.strokeStyle = `rgba(${PAPER},0.22)`
+    ctx.strokeStyle = `rgba(${PAPER},${alpha})`
     ctx.lineWidth = 1
+    ctx.stroke()
+    ctx.restore()
+}
+
+
+// A trace: a locus the play only ever SAMPLES — motion along it is a walk of
+// samples, not the exact curve. Dashed, so the mark never claims the locus it
+// samples; an exact continuation is earned only when play asks for one.
+// (id:laws-freedom)
+export function drawTrace(ctx, screenPoints) {
+    strokeDashed(ctx, screenPoints, 0.26)
+}
+
+// A bounded shell's contour: the rim the eye sees. Every point of it is really on
+// the surface at the stated distance, so it is no guess — but it is a fact about
+// the eye as much as the world, so it never borrows the dashed cadence that means
+// "where the point may go". A plain faint outline: the figure's edge, not a locus.
+// (id:laws-freedom)
+const RIM_ALPHA = 0.18
+export function drawRim(ctx, screenPoints) {
+    if (!screenPoints || screenPoints.length < 2) return
+    ctx.save()
+    ctx.beginPath()
+    let pen = false
+    for (const p of screenPoints) {
+        if (!p) { pen = false; continue }
+        if (pen) ctx.lineTo(p.x, p.y)
+        else ctx.moveTo(p.x, p.y)
+        pen = true
+    }
+    ctx.strokeStyle = `rgba(${PAPER},${RIM_ALPHA})`
+    ctx.lineWidth = 1
+    ctx.stroke()
+    ctx.restore()
+}
+
+// One alternative solution, as a dotted ghost: the branch not taken is offered,
+// never hidden. (id:laws-freedom)
+export function drawGhostMark(ctx, x, y, r = 3.5) {
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.setLineDash(GHOST_DASH)
+    ctx.strokeStyle = `rgba(${PAPER},0.4)`
+    ctx.lineWidth = 1
+    ctx.stroke()
+    ctx.restore()
+}
+
+// The wish and where it landed: a light tether from the accepted point to the
+// pointer's target when the projection absorbed part of the wish. A projection
+// is a lawful response, so this is ink, never a refusal. Only drawn when the two
+// differ on screen — a satisfied wish needs no tether. (id:laws-freedom)
+const WISH_DASH = [1, 3]
+export function drawWish(ctx, from, to) {
+    if (!from || !to) return
+    if (Math.hypot(from.x - to.x, from.y - to.y) < 1) return
+    ctx.save()
+    ctx.beginPath()
+    ctx.moveTo(from.x, from.y)
+    ctx.lineTo(to.x, to.y)
+    ctx.setLineDash(WISH_DASH)
+    ctx.strokeStyle = `rgba(${PAPER},0.32)`
+    ctx.lineWidth = 1
+    ctx.stroke()
+    ctx.setLineDash([])
+    ctx.beginPath()
+    ctx.arc(to.x, to.y, 3, 0, TAU)
+    ctx.strokeStyle = `rgba(${PAPER},0.5)`
     ctx.stroke()
     ctx.restore()
 }
 
 // One axis, projected: a world segment between two screen points. The camera
 // gives the direction; the world gives the axis. (id:laws-freedom)
+// A radius spoke: the distance itself, drawn from the point to its centre — the
+// quantity a distance names, not the normal it rests on. Dotted, like a trace.
+// (id:laws-freedom)
+const SPOKE_DASH = [1, 3]
+export function drawSpoke(ctx, from, to) {
+    if (!from || !to) return
+    ctx.save()
+    ctx.beginPath()
+    ctx.moveTo(from.x, from.y)
+    ctx.lineTo(to.x, to.y)
+    ctx.setLineDash(SPOKE_DASH)
+    ctx.strokeStyle = `rgba(${PAPER},0.34)`
+    ctx.lineWidth = 1
+    ctx.stroke()
+    ctx.restore()
+}
+
 export function drawAxis(ctx, a, b, { strong = false } = {}) {
     if (!a || !b) return
     ctx.save()

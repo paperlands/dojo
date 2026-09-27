@@ -7,6 +7,7 @@ import { GridHelper } from '../utils/three-entry.js'
 import { followPosition } from './view.js'
 import { ColorConverter } from '../utils/color.js'
 import { Text } from '../utils/threetext.js'
+import { createLabelPool } from './render/label-pool.js'
 import { Line2 } from '../utils/three-addons/lines/Line2.js'
 import { LineGeometry } from '../utils/three-addons/lines/LineGeometry.js'
 import { GrowLine } from './render/line/GrowLine.js'
@@ -14,9 +15,17 @@ import { GrowLine } from './render/line/GrowLine.js'
 // Re-export so callers that already import materializer keep one door.
 export { createMaterialCache } from './render/line/material-cache.js'
 
+const LABEL_FONT = '/fonts/paperLang.ttf'
+
+// A layer's label pool, wired to the vendored troika Text. The compositor owns
+// one per layer and never imports the troika bundle itself. (id:label-reuse)
+export function createLabels(group) {
+    return createLabelPool(group, { createText: () => new Text(), font: LABEL_FONT })
+}
+
 // Materialize a single event into the scene.
-// groups = { pathGroup, gridGroup, glyphGroup }
-// ctx    = { materials, shapist, head, camera, controls }
+// groups = { pathGroup, gridGroup }
+// ctx    = { materials, shapist, labels, head, camera, controls, requestRender }
 export function materialize(event, groups, ctx) {
     switch (event.type) {
 
@@ -33,29 +42,17 @@ export function materialize(event, groups, ctx) {
         break
 
     case "label":
-        materializeLabel(event, groups.glyphGroup, ctx)
+        materializeLabel(event, ctx)
         break
 
     case "grid":
         materializeGrid(event, groups.gridGroup)
         break
 
-    case "clear":
-        clearGroups(groups, ctx.head)
-        break
-
     case "wait":
         // Wait events are temporal markers — handled by the scheduler/compositor,
         // not the materializer. Head snapshot for wait is emitted separately.
         break
-    }
-}
-
-// Materialize all events from a drained executor (batch mode).
-// For programs without waits — direct pipe, zero intermediate allocation.
-export function materializeAll(events, groups, ctx) {
-    for (const event of events) {
-        materialize(event, groups, ctx)
     }
 }
 
@@ -199,28 +196,12 @@ function materializeView(event, ctx) {
     }
 }
 
-function materializeLabel(event, glyphGroup, ctx) {
+// A label is a write into the layer's pool, never a fresh Text: a rebuilt Text
+// is blank until its async sync lands, so a label/erase cycle would blink at
+// every transition. Reuse keeps the built geometry. (id:label-reuse)
+function materializeLabel(event, ctx) {
     try {
-        const newText = new Text()
-        glyphGroup.add(newText)
-
-        newText.text = event.text
-        newText.fontSize = event.textSize
-        newText.textAlign = 'center'
-        newText.anchorX = 'center'
-        newText.anchorY = '45%'
-        newText.font = '/fonts/paperLang.ttf'
-        newText.position.x = event.position[0]
-        newText.position.y = event.position[1]
-        newText.position.z = event.position[2]
-        newText.quaternion.copy(event.rotation)
-        newText.color = event.color
-        // sync() builds glyph geometry off-thread (and fetches the font on first
-        // load). The completion callback wakes the render-on-demand loop, which
-        // has usually idled out by the time the text is ready — without it a
-        // freshly-built label never gets a frame to draw into.
-        newText.sync(() => ctx?.requestRender?.())
-        glyphGroup.elements.push(newText)
+        ctx.labels?.write(event, ctx.requestRender)
     } catch (error) {
         console.warn('Error writing text:', error)
     }
@@ -236,30 +217,4 @@ function materializeGrid(event, gridGroup) {
     gridHelper.position.set(event.position[0], event.position[1], event.position[2])
     gridHelper.quaternion.copy(event.rotation)
     gridGroup.add(gridHelper)
-}
-
-function clearGroups(groups, head) {
-    // Remove drawn content, but preserve what is not content: the turtle head mesh.
-    // hd (hide) is the intentional way to hide it — erase should not.
-    //
-    // An ambient layer uses ONE group for paths, grids and glyphs, so clearing
-    // gridGroup/glyphGroup separately would take the head with it. The keep set is
-    // therefore applied to the single group they all are.
-    const keep = new Set()
-    if (head?.turtleGroup) keep.add(head.turtleGroup)
-
-    const oneGroup = groups.gridGroup === groups.pathGroup && groups.glyphGroup === groups.pathGroup
-    for (const child of [...groups.pathGroup.children]) {
-        if (!keep.has(child)) groups.pathGroup.remove(child)
-    }
-    if (!oneGroup) {
-        groups.gridGroup.clear()
-        if (groups.glyphGroup.elements) {
-            groups.glyphGroup.elements.forEach(text => text.dispose())
-            groups.glyphGroup.elements = []
-        }
-        groups.glyphGroup.clear()
-    } else if (groups.glyphGroup.elements) {
-        groups.glyphGroup.elements = []
-    }
 }

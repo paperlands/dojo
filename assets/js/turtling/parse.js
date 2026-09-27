@@ -1,4 +1,5 @@
 import { ASTNode } from "./ast.js"
+import { parseProperty, parseSupport } from "./laws/authored.js"
 
 
 //manage state
@@ -662,8 +663,11 @@ function parseStatement(tokens, state, rec) {
         if (dot > 0) {
             const target = lhs.slice(0, dot)
             const property = lhs.slice(dot + 1)
-            if (property !== 'distance') return errorNode(rec, 'a supported relation (distance so far)', lhs)
-            return introduced() ?? stamp(new ASTNode('Law', 'distance', [], { target, expr }), rec)
+            const parsed = parseProperty(property)
+            if (parsed) {
+                return introduced() ?? stamp(new ASTNode('Law', parsed.feature, [], { target, expr, ...parsed }), rec)
+            }
+            return errorNode(rec, parseSupport(), lhs)
         }
         // A position law: `let A = origin` or a three-coordinate literal.
         // (id:laws-ordered-replacement)
@@ -679,6 +683,13 @@ function parseStatement(tokens, state, rec) {
         }
         if (/^[A-Za-z_][\w-]*$/.test(expr)) {
             return errorNode(rec, 'a property (A.distance) or a position (origin or [x, y, z])', expr)
+        }
+        // A scalar binder must be a plain name. A function-looking binder
+        // (`let distance(A, B) = 5`) is an unsupported spelling: it is refused
+        // here, with its span, rather than stored as a scalar with that name.
+        // (id:laws-names)
+        if (!/^[A-Za-z_][\w-]*$/.test(lhs)) {
+            return errorNode(rec, "a name after 'let'", lhs)
         }
         return stamp(new ASTNode('Scalar', lhs, [], { expr }), rec)
     }

@@ -1,16 +1,15 @@
-// Attempt lifetime: one settlement boundary, and the release it owes.
-//
-// A failed declaration is an attempt that owns its held set wherever its members
-// live. These witnesses exercise every failure origin through the same contract:
-// accepted geometry and laws unchanged; the correct affected set held; unrelated
-// points playable; source-located evidence; repair releases across scopes; one
-// repair does not clear another attempt's hold.
+// The read-only attempt record: what was attempted, against what, with which gate
+// result. It observes publication; it never decides or mutates it.
+// (id:codex-play-eyes, id:laws-activation-verdicts)
 //
 // Run: node --test test/js/laws/attempt_test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { buildWorld, fork, drive } from "./harness.mjs"
 import { frameWorldTransform } from "../../../assets/js/turtling/scheduler.js"
+
+const pass = ({ requested }) => ({ accepted: true, transform: requested })
+const last = (scheduler) => scheduler.root._lastAttempt
 
 const find = (frame, name) => {
     if (frame.name === name) return frame
@@ -24,6 +23,65 @@ const world = (frame) => frameWorldTransform(frame).position.map((n) => +n.toFix
 const holds = (frame) => frame.heldAttempts?.size ?? 0
 const drag = (scheduler, frame, x) => scheduler.requestMotion(frame,
     { rotation: frame.transform.deref().rotation, position: [x, 0, 0] }, scheduler.motionRevision).kind
+
+// --- The record witnesses ---
+
+test("a refused reach records the candidate and the residual", () => {
+    const scheduler = buildWorld({ admit: pass })
+    scheduler.hotSwapChild("host", fork("host",
+        "let A\nlet B\nas B do\n  let A.distance = 5\n  wait 1\n  let A = origin\nend"))
+    drive(scheduler)
+    const a = last(scheduler)
+    assert.equal(a.path, "reach")
+    assert.equal(a.outcome, "obstructed")
+    assert.match(a.message, /the pin conflicts with the distance/)
+    assert.ok(Number.isFinite(a.residual) && a.residual < 0, "the residual is the missing length")
+    assert.deepEqual(a.candidate.world.map((n) => +n.toFixed(6)), [0, 0, 0])
+})
+
+test("an accepted reach records the committed candidate", () => {
+    const scheduler = buildWorld({ admit: pass })
+    scheduler.hotSwapChild("host", fork("host", "let A\nlet B\nas B do\n  let A.distance = 5\nend"))
+    drive(scheduler)
+    const a = last(scheduler)
+    assert.equal(a.path, "reach")
+    assert.equal(a.outcome, "commit")
+    assert.ok(Array.isArray(a.candidate) && a.candidate.length === 1)
+})
+
+test("a refused hand records the gate and never publishes", () => {
+    const scheduler = buildWorld({ admit: pass })
+    const host = scheduler.hotSwapChild("host", fork("host", "let A\nlet B\nas B do\n  let A.distance = 5\nend"))
+    drive(scheduler)
+    const A = host.children.get("A")
+    const before = [...A.transform.deref().position]
+    const r = scheduler.requestMotion(A, { rotation: A.transform.deref().rotation, position: [0, 1, 0] }, scheduler.motionRevision)
+    drive(scheduler, { maxTicks: 3 })
+    const a = last(scheduler)
+    assert.equal(r.kind, "refuse")
+    assert.equal(a.path, "hand-settled")
+    assert.equal(a.gate.status, "violation")
+    assert.ok(Math.abs(a.gate.residual) > 1e-6, "the residual is recorded")
+    assert.deepEqual([...A.transform.deref().position], before, "the record observed; it did not move the world")
+})
+
+test("the record names the final outcome, not the proposal", () => {
+    const scheduler = buildWorld({})
+    // The being act proposes a commit, but publication refuses a running target.
+    const host = scheduler.hotSwapChild("host", fork("host", "let A\nas A do\n  wait 5\nend\nlet A"))
+    drive(scheduler, { maxTicks: 3 })
+    assert.equal(host.children.get("A").done, false, "A is a running member")
+    assert.equal(host.error?.kind, "unsupported", "the publication refused")
+    assert.equal(last(scheduler).outcome, "unsupported", "the record did not keep the proposed commit")
+    assert.match(last(scheduler).message, /running member/)
+})
+// --- The lifetime fences ---
+//
+// A failed declaration is an attempt that owns its held set wherever its members
+// live. These witnesses exercise every failure origin through the same contract:
+// accepted geometry and laws unchanged; the correct affected set held; unrelated
+// points playable; source-located evidence; repair releases across scopes; one
+// repair does not clear another attempt's hold. (id:laws-activation-verdicts)
 
 // Failure origin 1 — the proposal refuses before the surviving-predicate check.
 test("contract: a pin that fails at proposal holds the pair and locates the fault", () => {
@@ -52,7 +110,6 @@ test("contract: a pin that fails at proposal holds the pair and locates the faul
     assert.equal(drag(scheduler, D, 3), "accept", "an unrelated point stays playable")
 })
 
-// Failure origin 2 — the proposal succeeds, but the surviving set cannot be
 // Failure origin 2 — the proposal succeeds, but the realization the analytic
 // backend would need (a pinned member inside the component) is outside it. That is
 // a solver limitation, not a demonstrated contradiction: the declaring scope ends

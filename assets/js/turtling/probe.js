@@ -39,7 +39,9 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                 authored:   authoredOf?.() ?? null,
                 mine:       turtle._hatchMine,
                 held:       turtle._heldFrame?.name ?? null,
-                reveal:     turtle.reveal ? { mode: turtle.reveal, hints: turtle._hintsVisible?.() ?? null } : null,
+                reveal:     turtle.reveal ? { condition: turtle.reveal, revealed: turtle.hintsRevealed === true, hints: turtle._hintsVisible?.() ?? null } : null,
+                handMoves:  turtle.handMoves ?? null,
+                revision:   turtle.scheduler?.motionRevision ?? null,
                 simMs:      turtle.scheduler?.lastTickTime ?? null,
                 done:       !!turtle.scheduler?.done,
                 lastHatchAt:      turtle._lastHatchAt,
@@ -57,11 +59,37 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                 // The play's active laws: address → predicate + owner.
                 // (id:laws-ordered-replacement)
                 laws: sch?.laws?.active?.() ?? [],
+                // The last decision, read-only: what was attempted, against what,
+                // with which gate result. Records only when the probe is attached.
+                attempt: sch?.root?._lastAttempt ?? null,
             }
         },
         // Read-only projection of a world point into CSS pixels — the same
         // mapping the marks and the hit test use. (id:codex-play-eyes)
         project: (world) => turtle._view?.()?.project(world) ?? null,
+        // Facilitator view: set the camera and its target, then repaint. A view
+        // change only — no geometry, no law, no eligibility, no revision.
+        // The two conditions save the same position/target for comparability.
+        look: ({ position, target } = {}) => {
+            const st = turtle.stage
+            if (position) st.camera.position.set(position[0], position[1], position[2])
+            if (target) st.controls.target.set(target[0], target[1], target[2])
+            st.camera.updateProjectionMatrix?.()
+            st.controls.update()
+            turtle.requestRender()
+            return snapCamera(st)
+        },
+        // A legible frame for a BOUNDED figure: an oblique view sized to its
+        // bounding sphere, so a circle reads as a curve and not a point. A view
+        // change only — no geometry, no law, no revision. (id:laws-freedom)
+        fit: ({ dir = null } = {}) => {
+            turtle.fit({ dir })
+            return snapCamera(turtle.stage)
+        },
+        // The facilitator's explicit reveal, at the recorded checkpoint. A view
+        // change only: it never resolves, moves or re-seats anything. Delayed
+        // keeps the hints hidden until this call; the condition stays 'delayed'.
+        revealNow: () => turtle.revealNow(),
         law,
         // Pure-shape seating poke for live-shell tests.
         seat: (addr, { name, doc, own = false, place, attention = null } = {}) => {

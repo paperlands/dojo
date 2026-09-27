@@ -11,12 +11,10 @@
 // Only the declared symmetries are canonicalized. Nothing algebraic.
 
 import { kindOf, guardsOf, boundsOf } from "./expression.js"
+import { addressShape } from "./authored.js"
 const FEATURES = {
-    // distance and coincidence read their endpoints as an unordered pair.
-    distance: (endpoints) => [...endpoints],
+    // coincidence is not an authored runtime law; its address is still an unordered pair.
     coincidence: (endpoints) => [...endpoints],
-    // a position pin is addressed by its one identity.
-    position: (endpoints) => [endpoints[0]],
 }
 
 // The canonical address key for a law. Endpoints are identity tokens, never
@@ -25,9 +23,9 @@ const FEATURES = {
 export function addressOf(law) {
     if (law?.address) return law.address   // bound once; consumers do not rebuild it
     const { feature, endpoints = [], scope = null, frame = null } = law
-    const shape = FEATURES[feature]
+    const shape = addressShape(feature) ?? FEATURES[feature]
     if (!shape) throw new Error(`Unknown law feature: ${feature}`)
-    const ids = shape(endpoints).map(String).sort()
+    const ids = shape(endpoints, law).map(String).sort()
     return [feature, ...ids, String(scope), frame == null ? '-' : String(frame)].join('|')
 }
 
@@ -35,8 +33,9 @@ export function addressOf(law) {
 // and domain guard fixed once. The address is derived here and reused; proposal,
 // validation and display read the record rather than rebuilding it.
 // (id:laws-build-p3, id:laws-build-p3a)
-export function bindLaw({ feature, endpoints, scope, frame, predicate, owner = null, guards = null, bounds = null, sourceIds = [] }) {
+export function bindLaw({ feature, endpoints, scope, frame, predicate, owner = null, axis = null, guards = null, bounds = null, sourceIds = [] }) {
     const law = { feature, relation: feature, endpoints: [...endpoints], scope, frame, predicate, owner,
+        ...(axis == null ? {} : { axis }),
         kind: kindOf(feature),
         guards: guards ?? guardsOf(feature),
         bounds: bounds ?? boundsOf(feature),

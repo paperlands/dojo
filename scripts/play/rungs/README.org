@@ -1,0 +1,27 @@
+#+title: Rung reproducers — one program, one instrument read
+
+Each rung's canvas evidence is two commands, with no source edit and no dunder:
+
+#+begin_src sh
+node scripts/play/play_cdp.mjs run scripts/play/rungs/<name>.txt [waitMs]
+node scripts/play/play_cdp.mjs probe
+#+end_src
+
+=probe= prints the instrumented world read ([[file:../../../assets/js/turtling/probe.js]]):
+=ambients=, =layers=, =view= (the compositor's reframe), =camera=, and =laws= (the
+play's active addresses). A mark and its hit target are read in one frame; a law is
+read from the same store the scheduler committed it to. (id:laws-decl-interface,
+id:laws-ordered-replacement)
+
+* Programs, by rung
+| file                | rung | proves                                            |
+|---------------------+------+---------------------------------------------------|
+| =view.txt=          | 0    | head and ring coincide under an active eye        |
+| =birth.txt=         | 1a   | ordered birth: A at 100, B at 200                 |
+| =distance.txt=      | 2b   | =let A.distance = 5= realizes A at [5,0,0]        |
+| =contradiction.txt= | 2c   | a pin over a distance faults, A keeps [5,0,0]     |
+| =joystick.txt=      | play | drag the pad: =pad.x= steers, =pad.y= throttles; the walker draws |
+| =protractor.txt=    | play | drag an arm tip: radial sets its length, around sets the angle |
+
+A rung's *fence* is its headless suite; this directory is the second eye — the
+actual canvas. Keep both, and keep them small.

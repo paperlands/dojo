@@ -1,0 +1,6 @@
+let A
+let B
+as B do
+  let A.y = 0
+  let A.distance = 5
+end

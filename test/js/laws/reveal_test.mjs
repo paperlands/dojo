@@ -3,9 +3,9 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 
-import { hintsVisible, revealedBy, normalizeReveal, REVEAL_MOVE_TOL } from "../../../assets/js/turtling/laws/reveal.js"
+import { hintsVisible, movedEnough, normalizeReveal, REVEAL_MOVE_TOL } from "../../../assets/js/turtling/laws/reveal.js"
 
-test("Visible shows the law hints at once; Delayed withholds them together", () => {
+test("Visible shows the law hints at once; Delayed waits for an explicit reveal", () => {
     assert.equal(hintsVisible("visible", false), true)
     assert.equal(hintsVisible("delayed", false), false)
     assert.equal(hintsVisible("delayed", true), true)
@@ -15,18 +15,24 @@ test("Visible shows the law hints at once; Delayed withholds them together", () 
     assert.equal(normalizeReveal("delayed"), "delayed")
 })
 
-test("one accepted hand move reveals, but only a real displacement", () => {
-    const move = (from, to) => revealedBy({ mode: "delayed", revealed: false, from, to })
-    assert.equal(move([0, 0, 0], [1, 0, 0]), true)
-    assert.equal(move([0, 0, 0], [0, 0, 0]), false, "an accepted-but-unchanged request is not a move")
-    assert.equal(move([0, 0, 0], [REVEAL_MOVE_TOL / 2, 0, 0]), false, "below the declared floor")
-    assert.equal(move([0, 0, 0], [REVEAL_MOVE_TOL * 2, 0, 0]), true, "above the declared floor")
+// The discriminating witness: movement is recorded, but it can never open the
+// gate. Only the explicit reveal does, and the condition stays Delayed after.
+test("accepted movement never opens the gate; only an explicit reveal does", () => {
+    let revealed = false
+    for (let i = 0; i < 5; i++) {
+        assert.equal(movedEnough([i, 0, 0], [i + 1, 0, 0]), true, "a real displacement was recorded")
+        assert.equal(hintsVisible("delayed", revealed), false, "and the hints stayed hidden")
+    }
+    revealed = true                       // the facilitator's reveal-now, and nothing else
+    assert.equal(hintsVisible("delayed", revealed), true)
+    assert.equal(normalizeReveal("delayed"), "delayed", "the condition is unchanged by revealing")
 })
 
-test("bad geometry never reveals, and Visible is already revealed", () => {
-    assert.equal(revealedBy({ mode: "delayed", revealed: false, from: null, to: [1, 0, 0] }), false)
-    assert.equal(revealedBy({ mode: "delayed", revealed: false, from: [0, 0], to: [1, 0, 0] }), false)
-    assert.equal(revealedBy({ mode: "delayed", revealed: false, from: [NaN, 0, 0], to: [1, 0, 0] }), false)
-    assert.equal(revealedBy({ mode: "visible", revealed: false, from: null, to: null }), true)
-    assert.equal(revealedBy({ mode: "delayed", revealed: true, from: null, to: null }), true)
+test("an accepted-but-unchanged request is not a move, and bad geometry is not either", () => {
+    assert.equal(movedEnough([5, 0, 0], [5, 0, 0]), false)
+    assert.equal(movedEnough([5, 0, 0], [5, REVEAL_MOVE_TOL / 2, 0]), false)
+    assert.equal(movedEnough([5, 0, 0], [5, REVEAL_MOVE_TOL * 2, 0]), true)
+    assert.equal(movedEnough(null, [1, 0, 0]), false)
+    assert.equal(movedEnough([0, 0], [1, 0, 0]), false)
+    assert.equal(movedEnough([NaN, 0, 0], [1, 0, 0]), false)
 })

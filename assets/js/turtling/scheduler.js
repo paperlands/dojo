@@ -10,8 +10,10 @@ import { createLawStore, addressOf, bindLaw } from "./laws/replacement.js"
 import { componentOf, realizeDistanceTree } from "./laws/component.js"
 import { predicateOk } from "./laws/expression.js"
 import { measure, headingOf, elevationOf } from "./laws/relations.js"
+import { AUTHORED, bindWorld } from "./laws/authored.js"
+import { meetAll, nearest as meetNearest } from "./laws/meet.js"
 import { createReadouts } from "./laws/readout.js"
-import { realizeDistance, validateDistance, ACCEPT_TOL } from "./laws/realize.js"
+import { realizeDistance, ACCEPT_TOL } from "./laws/realize.js"
 import { SE3 } from "./se3.js"
 import { chargeInk, woundInk, enforceResidency, resetInk, createStock } from "./ledger.js"
 
@@ -1015,6 +1017,21 @@ function seatPlace(parent, name, pump, pose = null) {
     return place
 }
 
+// A definition seat is provisional until its statement commits. A pin that fails
+// validation (or cannot publish) must leave no identity, no exposure and no hold
+// behind: one failed statement changes nothing. (id:laws-names, id:laws-activation-verdicts)
+function withdrawPlace(parent, place, pump) {
+    const root = metaRootFrame(parent)
+    releaseAttemptsFor(root, new Set([place.id]))
+    root._readouts?.release(place.id)
+    // Seating registered lifecycle watchers (the parent's child:<id> among them);
+    // undoing the seat means undoing every effect of it. (id:laws-names)
+    unwireWorldCache(place)
+    pump.registry.delete(place.id)
+    parent.children.delete(place.name)
+    bumpTree(parent)
+}
+
 function wireRun(child, deps, mailbox, executionState, code, relationshipBatch, pump = null) {
     child.deps = deps
     child.mailbox = mailbox
@@ -1056,7 +1073,7 @@ function rewireChild(child, value, pump) {
     // A declared place keeps its accepted geometry: the new run begins where the
     // place stands, orientation included, and its first segment starts there
     // because the stroke takes its origin from the pose. (id:laws-decl-join-repair)
-    if (child.parent?.declared?.has(child.name)) {
+    if (child.isPlace === true) {
         const accepted = child.transform.deref()
         re.batch.transform = { rotation: accepted.rotation, position: [...accepted.position] }
     }
@@ -1357,33 +1374,44 @@ function releaseReadouts(root, ids) {
 // contradiction either: both the law and the flag travel, so the settlement boundary
 // can report a failure to measure instead of teaching an impossibility.
 // (id:eval-relational, id:laws-contradiction)
-const finite3 = (v) => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite)
 const domainFailure = (law) => ({ ...law, domain: true })
+// The whole-law gate is typed: `valid`, a `violation` (a known law whose original
+// predicate a candidate breaks), or `cannot-measure` (an active law this gate does
+// not recognize, or a missing/unreadable bound reference). An unknown AUTHORED
+// form is refused earlier, at binding. `cannot-measure` is unresolved — never a
+// silent pass, never proof of contradiction. (id:laws-activation-order)
+const LAWFUL = Object.freeze({ status: 'valid' })
+const cannotMeasure = (law, reason) => ({ status: 'cannot-measure', law, reason })
+function lawCtx(registry, overrides, extras = {}) {
+    return bindWorld((id) => registry.get(id), {
+        positionOf: (f) => worldReading(f, null, overrides).position,
+        poseOf: (f) => worldTransform(f),
+        ...extras,
+    })
+}
+
+// A read-only record of the last decision, for the opt-in probe. It observes
+// publication — it never decides, mutates or delays one. (id:codex-play-eyes)
+function recordAttempt(root, entry) {
+    if (!root) return
+    root._lastAttempt = { ...entry, revision: root._motionRevision ?? 0 }
+}
+
+// A live frame is circular; the record must be plain data a probe can serialize.
+const plainPoses = (x) => (Array.isArray(x)
+    ? x.map((p) => ({ frame: p.frame?.id ?? p.frame, pose: p.pose }))
+    : (x ?? null))
 function lawViolation(activeLaws, overrides, registry) {
-    if (!activeLaws || activeLaws.length === 0) return null
-    const world = (frame) => worldReading(frame, null, overrides).position
+    if (!activeLaws || activeLaws.length === 0) return LAWFUL
+    const ctx = lawCtx(registry, overrides)
     for (const law of activeLaws) {
-        if (law.feature === 'position') {
-            const f = registry.get(law.endpoints[0])
-            // The predicate was authored in the declaring scope's stable
-            // birth/placement frame, never its live head. (id:laws-decl-frame)
-            const frame = registry.get(law.frame)
-            if (!f || !frame) continue
-            const w = world(f)
-            const p = SE3.apply(worldTransform(frame), law.predicate)
-            if (!finite3(w) || !finite3(p)) return domainFailure(law)
-            if (Math.hypot(w[0] - p[0], w[1] - p[1], w[2] - p[2]) > ACCEPT_TOL) return law
-            continue
-        }
-        if (law.feature !== 'distance') continue
-        const a = registry.get(law.endpoints[0])
-        const b = registry.get(law.endpoints[1])
-        if (!a || !b) continue
-        const d = measure("distance", a, b, (f) => worldReading(f, null, overrides))
-        if (!Number.isFinite(d)) return domainFailure(law)
-        if (Math.abs(d - law.predicate) > ACCEPT_TOL) return law
+        const row = AUTHORED[law.feature]
+        if (!row?.measure) return cannotMeasure(law, `the whole-law gate does not recognize '${law.feature}'`)
+        const check = row.measure(law, ctx)
+        if (check.status === 'cannot-measure') return cannotMeasure(law, check.reason)
+        if (check.status === 'violation') return { status: 'violation', law, residual: check.residual }
     }
-    return null
+    return LAWFUL
 }
 
 function brokenLaw(overrides, registry, laws) {
@@ -1490,14 +1518,27 @@ function affectedMembers(registry, laws, seeds, extra = []) {
 // a frame; this is the only place that commits or takes a hold. Every outcome kind
 // keeps its meaning. (id:laws-activation-order, id:laws-activation-verdicts)
 function settleAttempt(ctx, pump, outcome) {
+    // The record names the FINAL outcome: a proposal is not an acceptance until
+    // publication has refused nothing. (id:codex-play-eyes)
+    const record = (kind, message = outcome.message ?? null) => recordAttempt(metaRootFrame(ctx), {
+        path: 'reach', owner: ctx.id, outcome: kind,
+        span: outcome.span ?? null, message,
+        candidate: plainPoses(outcome.candidate ?? outcome.poses), residual: outcome.residual ?? null,
+    })
     if (outcome.kind === 'commit') {
         const conflict = publish(ctx, outcome.poses, pump.registry, outcome.install ?? null, () => {
             if (outcome.head) emitHead(outcome.head.frame, outcome.head.pose)
             for (const h of outcome.heads ?? []) emitHead(h.frame, h.pose)
         })
-        if (conflict) return woundRelation(ctx, conflict.message, conflict.kind === 'unsupported' ? 'unsupported' : 'relation', outcome.span ?? null)
+        if (conflict) {
+            const kind = conflict.kind === 'unsupported' ? 'unsupported' : 'relation'
+            record(kind, conflict.message)
+            return woundRelation(ctx, conflict.message, kind, outcome.span ?? null)
+        }
+        record('commit')
         return null
     }
+    record(outcome.kind)
     if (outcome.kind === 'contradiction' || outcome.kind === 'obstructed') {
         // A demonstrated impossibility and a policy obstruction both hold the
         // affected component, but they are not the same claim. Stale work cannot
@@ -1535,9 +1576,27 @@ function proposedOverrides(writer, verdict) {
 // a secret of the address. (id:laws-build-p2d, id:laws-names)
 function continueLaws(verdict, writer, registry, laws) {
     if (!laws || verdict.kind !== 'accept') return verdict
+    const poses = new Map([[writer, verdict.pose], ...verdict.component.map((m) => [m.frame, m.pose])])
+    // The writer's own truths meet as one named set. (id:laws-freedom)
+    const comp = componentOf(laws.active(), [writer.id]).laws
+    const meeters = comp.filter((law) => AUTHORED[law.feature]?.meet && AUTHORED[law.feature].touches(law, writer.id))
+    if (meeters.length >= 1) {
+        const ctx = lawCtx(registry, poses, { writerId: writer.id })
+        const parts = comp.filter((law) => AUTHORED[law.feature]?.set && AUTHORED[law.feature].touches(law, writer.id))
+        const sets = parts.map((law) => AUTHORED[law.feature].set(law, ctx))
+        if (sets.every(Boolean)) {
+            const wish = worldReading(writer, null, poses).position
+            const accepted = worldReading(writer, null, null).position
+            const near = meetNearest(meetAll(sets), wish, { keep: accepted })
+            if (near.ok) {
+                poses.set(writer, { rotation: verdict.pose.rotation, position: SE3.unapply(worldTransform(writer), near.at) })
+                verdict.pose = poses.get(writer)
+                return verdict
+            }
+        }
+    }
     const active = laws.active().filter((law) => law.feature === 'distance')
     if (active.length === 0) return verdict
-    const poses = new Map([[writer, verdict.pose], ...verdict.component.map((m) => [m.frame, m.pose])])
     // A bounded sweep over the connected laws: projecting onto one circle may
     // disturb another. The bound stops a cycle from spinning; brokenLaw still
     // refuses any sweep that does not close, so a non-confluent cycle is never
@@ -1584,8 +1643,8 @@ function conflictAt(target, worldPos, laws, registry) {
         const d = measure("distance", target, other, (f) => f === target
             ? { position: worldPos }
             : { position: worldReading(f, null, null).position })
-        if (!Number.isFinite(d)) return domainFailure(law)
-        if (Math.abs(d - law.predicate) > ACCEPT_TOL) return law
+        if (!Number.isFinite(d)) return { law, domain: true }
+        if (Math.abs(d - law.predicate) > ACCEPT_TOL) return { law, residual: d - law.predicate }
     }
     return null
 }
@@ -1604,13 +1663,21 @@ function parkOnVerdict(ctx, verdict, pump, request) {
     else verdict = checkMotion(verdict, ctx, pump.registry, pump.motionValidate, request)
     // A proposed configuration that breaks an active law is refused, never shown
     // as accepted. (id:laws-activation-order)
+    let gate = null
     if (verdict.kind === 'accept') {
-        const broken = brokenLaw(proposedOverrides(ctx, verdict), pump.registry, pump.laws)
-        if (broken?.domain) verdict = { kind: 'unresolved', message: `cannot measure the ${broken.feature}` }
-        else if (heldFrame(ctx) || broken) {
+        gate = brokenLaw(proposedOverrides(ctx, verdict), pump.registry, pump.laws)
+        if (gate.status === 'cannot-measure') verdict = { kind: 'unresolved', message: gate.reason }
+        else if (heldFrame(ctx) || gate.status === 'violation') {
             verdict = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
         }
     }
+    recordAttempt(metaRootFrame(ctx), {
+        path: 'hand', owner: ctx.id,
+        from: request?.from?.position ?? null, requested: request?.requested?.position ?? null,
+        candidate: verdict.pose?.position ?? null, verdict: verdict.kind,
+        gate: gate ? { status: gate.status, law: gate.law?.address ?? null, residual: gate.residual ?? null, reason: gate.reason ?? null } : null,
+        baseRevision: request?.baseRevision ?? null,
+    })
     if (verdict.kind === 'fault') return woundMotion(ctx, verdict.message)
     if (verdict.kind === 'accept' && verdict.component.length > 0) {
         const conflict = commitTransaction(verdict, ctx, pump.registry)
@@ -1671,9 +1738,9 @@ function delayedMotion(ctx, value, pump) {
             checkMotion(interpretReply(resolved, pump.execOpts.refusalStroke),
                 ctx, pump.registry, pump.motionValidate, request)
         let ruling = checked
-        const broken = ruling.kind === 'accept' ? brokenLaw(proposedOverrides(ctx, ruling), pump.registry, pump.laws) : null
-        if (broken?.domain) ruling = { kind: 'unresolved', message: `cannot measure the ${broken.feature}` }
-        else if (broken) ruling = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
+        const check = ruling.kind === 'accept' ? brokenLaw(proposedOverrides(ctx, ruling), pump.registry, pump.laws) : null
+        if (check?.status === 'cannot-measure') ruling = { kind: 'unresolved', message: check.reason }
+        else if (check?.status === 'violation') ruling = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
         if (ruling.kind === 'fault') return void woundMotion(ctx, ruling.message)
         if (ruling.kind === 'accept' && ruling.component.length > 0) {
             const conflict = commitTransaction(ruling, ctx, pump.registry)
@@ -1705,12 +1772,18 @@ function birth(ctx, value, _route, pump) {
         // here; express it once in the child's own frame. (id:laws-decl-frame)
         const here = SE3.compose(worldTransform(ctx), value.origin)
         const next = SE3.compose(SE3.invert(worldTransform(existing)), here)
-        const violation = lawViolation(pump.laws.active(), new Map([[existing, next]]), pump.registry)
-        const outcome = violation
-            ? { kind: 'obstructed', span: value.owner,
-                message: conflictMessage(violation, { feature: 'being act', owner: value.owner }),
-                members: affectedMembers(pump.registry, pump.laws.active(), violation.endpoints, [existing, ctx]) }
-            : { kind: 'commit', poses: [{ frame: existing, pose: next }], span: value.owner }
+        const check = lawViolation(pump.laws.active(), new Map([[existing, next]]), pump.registry)
+        const outcome = check.status === 'cannot-measure'
+            ? { kind: 'unresolved', message: check.reason, span: value.owner }
+            : check.status === 'violation'
+                ? { kind: 'obstructed', span: value.owner,
+                    message: conflictMessage(check.law, { feature: 'being act', owner: value.owner }),
+                    members: affectedMembers(pump.registry, pump.laws.active(), check.law.endpoints, [existing, ctx]) }
+                // The adopted pose is the being's new truth: its display projection
+                // rides the same commit, so the point and its head never disagree.
+                // (id:laws-p0m-publication)
+                : { kind: 'commit', poses: [{ frame: existing, pose: next }],
+                    heads: [{ frame: existing, pose: next }], span: value.owner }
         const settled = settleAttempt(ctx, pump, outcome)
         if (settled) return settled
         ctx.reached?.add(value.name)
@@ -1726,51 +1799,6 @@ function birth(ctx, value, _route, pump) {
 // feature's propose row names the target's world pose under the active laws, the
 // original predicate validates it independently, one publish installs it, and one
 // store records it. A new form is a row, not a new effect. (id:laws-build-solve-seam)
-const ENDPOINTS = {
-    distance: ({ target, observer }) => [target.id, observer.id],
-    position: ({ target }) => [target.id],
-}
-
-const PROPOSE = {
-    distance({ target, observer, value, laws, registry }) {
-        const o = worldReading(observer, observer, null).position
-        const pin = pinnedLaw(laws, target.id)
-        const pinFrame = pin ? registry.get(pin.frame) : null
-        if (pinFrame) {
-            const p = SE3.apply(worldTransform(pinFrame), pin.predicate)
-            return validateDistance(p, o, value).ok
-                ? { ok: true, world: p }
-                : { ok: false, reason: 'the pinned position conflicts with the distance', kind: 'obstructed' }
-        }
-        const r = realizeDistance(worldReading(target, observer, null).position, o, value)
-        return r.ok ? { ok: true, world: r.pose } : { ok: false, reason: r.reason }
-    },
-    position({ target, observer, value, laws, registry }) {
-        if (!Array.isArray(value) || value.length !== 3 || !value.every(Number.isFinite)) {
-            return { ok: false, reason: 'a position needs three finite coordinates' }
-        }
-        // The pin names a point in the declaring frame's stable placement frame,
-        // never its live head. (id:laws-decl-frame)
-        const world = SE3.apply(worldTransform(observer), value)
-        const conflict = conflictAt(target, world, laws, registry)
-        return conflict
-            ? (conflict.domain
-                ? { ok: false, reason: `cannot measure the pin against the ${conflict.feature} at ${ownerLabel(conflict)}`, kind: 'unresolved' }
-                : { ok: false, reason: `the pin conflicts with the ${conflict.feature} at ${ownerLabel(conflict)}`, kind: 'obstructed', conflict })
-            : { ok: true, world }
-    },
-}
-
-const VALIDATE = {
-    distance({ target, observer, value, world }) {
-        return validateDistance(world, worldReading(observer, observer, null).position, value)
-    },
-    position({ world }) {
-        return Array.isArray(world) && world.every(Number.isFinite)
-            ? { ok: true }
-            : { ok: false, reason: 'non-finite position' }
-    },
-}
 
 // Refresh one member's display projection from its accepted pose. The published
 // pose is the truth; the head event is how a parked or headed member shows it.
@@ -1796,10 +1824,74 @@ function emitHead(member, pose) {
 // unresolved and let the settlement boundary keep the accepted prefix.
 // (id:laws-contradiction, id:laws-activation-verdicts)
 const unsupported = (spec, reason) => ({ kind: 'unresolved', message: reason, span: spec.owner })
-function componentCandidate(spec, candidate, pump) {
+// A bounded analytic meet for one coordinate and one distance that share a point:
+// the reach realizes the shared point onto their circle. (id:relationships-todo-plane-authored)
+function componentMeetCandidate(spec, candidate, comp, pump, scope) {
+    const meeters = comp.laws.filter((law) => AUTHORED[law.feature]?.meet)
+    if (meeters.length === 0) return null
+    const p = meeters[0].endpoints[0]
+    if (!meeters.every((law) => law.endpoints[0] === p)) return unsupported(spec, 'a relation names another point')
+    const point = pump.registry.get(p)
+    if (!point) return unsupported(spec, 'the point is not seated')
+    const ctx = lawCtx(pump.registry, null, { writerId: p })
+    const parts = comp.laws.filter((law) => AUTHORED[law.feature]?.set && AUTHORED[law.feature].touches(law, p))
+    const sets = []
+    for (const law of parts) {
+        const s = AUTHORED[law.feature].set(law, ctx)
+        if (!s) return unsupported(spec, `cannot form the ${law.feature}`)
+        sets.push(s)
+    }
+    const met = meetAll(sets)
+    if (met.kind === 'empty') {
+        // Features, not identities. A distance set is anchored to the other
+        // endpoint's LIVE position; a coordinate/tilt/bearing/position set is
+        // anchored to its declaring scope's PLACEMENT frame. One identity can
+        // carry both, and they move apart: the head walks, the placement stays.
+        // So the emptiness is a contradiction only when no permitted mover can
+        // change any set — no movable live anchor exists. Otherwise it is a
+        // policy obstruction. Counting identities is not that proof.
+        // (id:laws-decl-frame, id:laws-experiment-7-ruling)
+        const movers = new Map()
+        for (const law of parts) {
+            if (law.feature !== 'distance') continue
+            const other = law.endpoints.find((id) => id !== p)
+            const frame = other != null ? pump.registry.get(other) : null
+            // A live position is a permitted mover unless a pin fixes it.
+            if (frame && !pinnedLaw(pump.laws, frame.id)) movers.set(frame.id, frame)
+        }
+        if (movers.size > 0) {
+            const held = [...movers.values()]
+            return { kind: 'obstructed',
+                message: `the truths have no point in common while ${held.map((f) => `'${f.name}'`).join(', ')} hold their places`,
+                span: spec.owner,
+                members: affectedMembers(pump.registry, comp.laws, [p, ...held.map((f) => f.id)]) }
+        }
+        return { kind: 'contradiction', message: 'the truths have no point in common', span: spec.owner,
+            members: affectedMembers(pump.registry, comp.laws, [p]) }
+    }
+    if (met.kind === 'uncertain' || met.kind === 'unresolved') return unsupported(spec, 'the meet is not a named set')
+    const near = meetNearest(met, worldReading(point, null, null).position)
+    if (!near.ok) return unsupported(spec, 'the meet has no nearest point')
+    const pose = { rotation: point.transform.deref().rotation, position: SE3.unapply(worldTransform(point), near.at) }
+    const overrides = new Map([[point, pose]])
+    // Every candidate producer exits through the same whole-law boundary:
+    // a fallback may not certify itself against a narrower set. (id:laws-activation-order)
+    const check = lawViolation(scope, overrides, pump.registry)
+    if (check.status === 'cannot-measure') return unsupported(spec, check.reason)
+    if (check.status !== 'valid') return null
+    return { kind: 'commit', poses: [{ frame: point, pose }], install: () => pump.laws.apply(candidate),
+        heads: [{ frame: point, pose }], span: spec.owner }
+}
+
+function componentCandidate(spec, candidate, pump, scope) {
     const active = [...pump.laws.active().filter((law) => addressOf(law) !== addressOf(candidate)), candidate]
     const comp = componentOf(active, candidate.endpoints)
     if (comp.laws.length < 2) return null
+    // A component that names one point: meet its truths as one set.
+    // (id:laws-freedom, id:relationships-todo-coordinate-authoring)
+    if (comp.laws.some((law) => AUTHORED[law.feature]?.meet)) {
+        return componentMeetCandidate(spec, candidate, comp, pump, scope)
+    }
     if (comp.laws.some((law) => law.feature !== 'distance')) return unsupported(spec, 'a component with a pin or a non-distance relation')
     if (!comp.frames.has(spec.observer.id)) return unsupported(spec, 'a component outside the declaring frame')
     for (const id of comp.frames) {
@@ -1830,16 +1922,20 @@ function componentCandidate(spec, candidate, pump) {
         heads.push({ frame, pose })
     }
     const overrides = new Map(poses.map(({ frame, pose }) => [frame, pose]))
-    if (lawViolation(comp.laws, overrides, pump.registry)) return null
+    // The same final boundary as every other producer: the joint candidate is
+    // checked over the whole declared validation scope, not only its component.
+    // (id:laws-activation-order)
+    const check = lawViolation(scope, overrides, pump.registry)
+    if (check.status === 'cannot-measure') return { kind: 'unresolved', message: check.reason, span: spec.owner }
+    if (check.status === 'violation') return null
     return { kind: 'commit', poses, install: () => pump.laws.apply(candidate), heads, span: spec.owner }
 }
 
 // A proposal returns an outcome; it never mutates a frame's lifetime. The caller
 // hands that outcome to the one settlement boundary. (id:laws-activation-order)
 function applyLaw(spec, pump) {
-    const propose = PROPOSE[spec.feature]
-    const validate = VALIDATE[spec.feature]
-    if (!propose || !validate) return { kind: 'unsupported', message: `Unsupported law: ${spec.feature}`, span: spec.owner }
+    const row = AUTHORED[spec.feature]
+    if (!row?.propose || !row?.validate) return { kind: 'unsupported', message: `Unsupported law: ${spec.feature}`, span: spec.owner }
     // One declaration form reaches through one declaring scope: that scope is the
     // observer, the reference frame and the address's scope at once. A relation whose
     // reference is neither the declaring scope nor an endpoint, and a second anchor
@@ -1847,11 +1943,12 @@ function applyLaw(spec, pump) {
     // collapse is the whole address. (id:laws-ordered-replacement)
     const candidate = bindLaw({
         feature: spec.feature,
-        endpoints: ENDPOINTS[spec.feature](spec),
+        endpoints: row.endpoints(spec),
         scope: spec.observer.id,
         frame: spec.observer.id,
         predicate: spec.value,
         owner: spec.owner,
+        axis: spec.axis,
     })
     // The bound domain guard, preserved through lowering: a negative length is a
     // domain error, never permission to drop a positive law. (id:laws-build-p3a)
@@ -1859,17 +1956,28 @@ function applyLaw(spec, pump) {
         return { kind: 'relation', span: spec.owner,
             message: `a ${candidate.feature} payload must be finite${candidate.guards?.nonNegative ? ' and non-negative' : ''}` }
     }
-    const placed = propose({ ...spec, laws: pump.laws, registry: pump.registry })
+    const ctx = lawCtx(pump.registry, null, {
+        pinWorld: (target) => {
+            const pin = pinnedLaw(pump.laws, target.id)
+            const pinFrame = pin ? pump.registry.get(pin.frame) : null
+            return pinFrame ? SE3.apply(worldTransform(pinFrame), pin.predicate) : null
+        },
+        conflictAt: (target, world) => conflictAt(target, world, pump.laws, pump.registry),
+        ownerOf: ownerLabel,
+    })
+    const placed = row.propose({ ...spec, ...ctx })
     if (!placed.ok) {
         if (placed.kind === 'obstructed' || placed.kind === 'contradiction') {
             return { kind: placed.kind, message: placed.reason, span: spec.owner,
+                candidate: placed.world ? { frame: spec.target.id, world: placed.world } : null,
+                residual: placed.residual ?? null,
                 members: affectedMembers(pump.registry,
                     [...pump.laws.active().filter((law) => addressOf(law) !== addressOf(candidate)), candidate],
                     candidate.endpoints, [spec.target, spec.observer]) }
         }
         return { kind: placed.kind ?? 'relation', message: placed.reason, span: spec.owner }
     }
-    const check = validate({ ...spec, world: placed.world })
+    const check = row.validate({ ...spec, world: placed.world, ...ctx })
     if (!check.ok) return { kind: check.kind ?? 'relation', message: check.reason, span: spec.owner }
 
     const local = SE3.unapply(worldTransform(spec.target), placed.world)
@@ -1877,17 +1985,22 @@ function applyLaw(spec, pump) {
     // Validate every surviving predicate, not only the proposed one. A new
     // declaration may not publish a law its geometry violates.
     const surviving = pump.laws.active().filter((law) => addressOf(law) !== addressOf(candidate))
-    const violation = lawViolation([...surviving, candidate], new Map([[spec.target, pose]]), pump.registry)
-    if (violation) {
-        if (violation.domain) {
-            return { kind: 'unresolved', message: `cannot measure the ${violation.feature} at ${ownerLabel(violation)}`, span: spec.owner }
-        }
+    // ONE declared validation scope for every candidate producer: the single-target
+    // proposal, the joint fallback, and any future producer re-check the same set.
+    // (id:laws-activation-order)
+    const scope = [...surviving, candidate]
+    const gate = lawViolation(scope, new Map([[spec.target, pose]]), pump.registry)
+    if (gate.status === 'cannot-measure') {
+        return { kind: 'unresolved', message: gate.reason, span: spec.owner }
+    }
+    if (gate.status === 'violation') {
         // Two lawful distances can move together: a connected distance tree
         // responds jointly before the candidate is called a failure.
         // (id:laws-build-p3)
-        const joint = componentCandidate(spec, candidate, pump)
+        const joint = componentCandidate(spec, candidate, pump, scope)
         if (joint) return joint
-        return { kind: 'obstructed', message: conflictMessage(violation, candidate), span: spec.owner,
+        return { kind: 'obstructed', message: conflictMessage(gate.law, candidate), span: spec.owner,
+            candidate: [{ frame: spec.target.id, pose }], residual: gate.residual,
             members: affectedMembers(pump.registry, [...surviving, candidate], candidate.endpoints,
                 [spec.target, spec.observer]) }
     }
@@ -1918,19 +2031,49 @@ function parameterReadout(ctx, value, _route, _pump) {
 
 function law(ctx, value, _route, pump) {
     const targetName = value.target
-    // One binding rule for reads and laws: a name this scope declares but has
+    // One binding rule for reads and relations: a name this scope declares but has
     // not reached is a located use-before-introduction, never an outer namesake.
+    // A position definition is the exception — it is a definition, never a use.
     // (id:laws-ordered-birth)
-    if (ctx.declared?.has(targetName) && !ctx.children.has(targetName)) {
+    const visible = findFrame(ctx, targetName, 'world')
+    const declaredHere = ctx.declared?.has(targetName) === true
+    if (value.feature !== 'position' && declaredHere && !ctx.children.has(targetName)) {
         return woundRelation(ctx, `Use before introduction: ${targetName}`, 'relation', value.owner)
     }
+    // A definition introduces its subject in the declaring scope when no local
+    // name has been reached and either the scope declares it or nothing is
+    // visible. Otherwise it revises the visible identity — the SAME target rule
+    // as a relation, so an outer namesake never changes a definition's legality.
+    // (id:laws-names, id:laws-decl-frame)
+    const introduces = value.feature === 'position'
+        && !ctx.children.has(targetName)
+        && (declaredHere || !visible)
+    // The seat is provisional: a statement that does not commit withdraws it, so
+    // one failed statement leaves no identity, no exposure and no hold behind.
+    const born = introduces ? seatPlace(ctx, targetName, pump, SE3.clone(ctx.transform.deref())) : null
     const target = findFrame(ctx, targetName, 'world')
     if (!target || target === ctx) {
+        if (born) withdrawPlace(ctx, born, pump)
         return woundRelation(ctx, `Unknown target: ${targetName}`, 'relation', value.owner)
     }
     const outcome = applyLaw({ feature: value.feature, target, observer: ctx,
-        value: value.value, owner: value.owner }, pump)
-    return settleAttempt(ctx, pump, outcome) ?? { verdict: 'continue', produced: true }
+        value: value.value, axis: value.axis ?? null, owner: value.owner }, pump)
+    if (born && outcome.kind === 'commit') {
+        // Exposure is part of the commit, installed with the law before any
+        // notification: no subscriber may see an installed pin it cannot touch.
+        // (id:laws-decl-exposure, id:laws-decl-ownership)
+        const install = outcome.install
+        outcome.install = () => {
+            if (install) install()
+            ctx.reached?.add(targetName)
+        }
+    }
+    const settled = settleAttempt(ctx, pump, outcome)
+    if (settled) {
+        if (born) withdrawPlace(ctx, born, pump)
+        return settled
+    }
+    return { verdict: 'continue', produced: true }
 }
 
 function woundRelation(ctx, message, kind = 'relation', span = null) {
@@ -1954,7 +2097,7 @@ function spawn(ctx, value, route, pump) {
         // A declared place keeps its placement: starting a body there does not
         // move it. An ordinary ambient keeps the origin refresh, so the
         // compositor still tracks the parent's pose. (id:laws-decl-join-repair)
-        if (ctx.declared?.has(value.name) !== true) existing.origin = value.origin
+        if (existing.isPlace !== true) existing.origin = value.origin
         existing._worldDirty = true
         metaRootFrame(existing)._configurationRevision++
 
@@ -2300,9 +2443,16 @@ export function createScheduler(generator, opts = {}) {
             if (!pump.motionAdmission && !pump.motionAdmissionAsync) {
                 continueLaws(verdict, frame, registry, laws)
             }
-            const broken = brokenLaw(proposedOverrides(frame, verdict), registry, laws)
-            if (broken?.domain) return { kind: 'unresolved', message: `cannot measure the ${broken.feature}` }
-            if (broken) return { kind: 'refuse', ink: execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
+            const check = brokenLaw(proposedOverrides(frame, verdict), registry, laws)
+            recordAttempt(root, {
+                path: 'hand-settled', owner: frame.id,
+                from: frame.transform.deref().position, requested: verdict.pose?.position ?? null,
+                candidate: verdict.pose?.position ?? null,
+                gate: { status: check.status, law: check.law?.address ?? null, residual: check.residual ?? null, reason: check.reason ?? null },
+                baseRevision: revision,
+            })
+            if (check.status === 'cannot-measure') return { kind: 'unresolved', message: check.reason }
+            if (check.status === 'violation') return { kind: 'refuse', ink: execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
             const members = [{ frame, pose: verdict.pose }, ...verdict.component]
             const targets = new Map()
             for (const { frame: member } of members) {

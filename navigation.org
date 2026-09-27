@@ -643,12 +643,19 @@ including mid-capture attachment. [[id:laws-place-head-frame]] ·
 ** view boundary — one world-to-screen mapping
 :PROPERTIES:
 :ID: nav-view-boundary
-:KEYWORDS: viewReframe viewMapping reframe eye twist viewOffset project unproject facing rayAt
+:KEYWORDS: viewReframe viewMapping reframe eye twist viewOffset project unproject facing rayAt depth latitude polarOf polarPoint figureRadius dial reach
 :PATH: assets/js/turtling/laws/handle.js::viewMapping
 :END:
 The compositor owns the effective eye/manual reframe =viewReframe=; the stage
 owns =project=/=unproject=/=facing=; =viewMapping= folds them, so a drawn mark
-and the gesture's ray, plane and facing share one frame. [[id:laws-decl-interface]].
+and the gesture's ray, plane and facing share one frame. The plane names no depth, so a
+latitude is changed by the view — and a *sphere* has its own hand: `polarOf`/`polarPoint` read
+and write the ball's azimuth and latitude, `figureRadius` measures the ball's drawn size, and
+the gesture dials the azimuth with the hand's angle about the pole while the hand's reach
+spends latitude (one drawn radius = 57°, the paper an exact floor
+([[file:specs/decisions/035-the-hand-dials-the-reach-spends-latitude.decision.md][D035]]), sliding always 1:1
+([[file:specs/decisions/033-the-view-carries-depth.decision.md][D033]]).
+[[id:laws-decl-interface]].
 Fence: =test/js/laws/handle_test.mjs=.
 
 ** ordered birth — a reached let is the birth site
@@ -714,6 +721,17 @@ payload kind, one domain guard and its source ownership. The value is not part o
 the address; a slider's bounds and the guard it must satisfy are data.
 [[id:laws-build-p3a]] · [[id:eval-relational]]. Fence: =expression_test.mjs=.
 
+** authored relation — one row, uniform wiring
+:PROPERTIES:
+:ID: nav-law-authored
+:KEYWORDS: authored relation descriptor tilt coordinate distance propose validate parseProperty marksOf
+:PATH: assets/js/turtling/laws/authored.js::export const AUTHORED
+:END:
+A new authored relation is one explicit descriptor (name, kind, guard, address,
+predicate, propose, validate). Parse, replacement, scheduler and display read it;
+the entries stay explicit. Display marks come from the locus (=marksOf=).
+[[id:relationships-row-contract]]. Fence: =authored_test.mjs=.
+
 ** derived values — commit-driven readout
 :PROPERTIES:
 :ID: nav-live-readout
@@ -773,15 +791,30 @@ pipeline is address → propose → validate → publish → store; a new form i
 ** a point's state — what it is, where it may go
 :PROPERTIES:
 :ID: nav-point-state
-:KEYWORDS: state stateOf locus sphere silhouette project ghost dof normals
+:KEYWORDS: state stateOf locus sphere silhouette rim contour envelope project ghost dof normals
 :PATH: assets/js/turtling/laws/constraints.js::stateOf
 :END:
 One query: tag (free / headed / pinned / unresolved), normals, degrees of freedom, and
 gives the exact locus when the form names one. =project= resolves a target onto it;
 =axesOf= gives the resting normal and =sphereCurves= the parallel/meridian through the
-point (depth-faded by =drawCurve=); the overlay draws them as world geometry.
-[[id:laws-decl-point-agent]] · [[id:laws-freedom]]. The tag also gates touchability:
-=turtle._touchable= is =tag === 'free'=. Fence: =constraints_test.mjs=.
+point (depth-faded by =drawCurve=); the overlay draws them as world geometry. The rim
+the eye sees is one contour (=drawRim=), drawn only off the shell's axis, never a
+second circumference ([[file:specs/decisions/031-the-rim-is-a-contour.decision.md][D031]]).
+[[id:laws-decl-point-agent]] · [[id:laws-freedom]]. Touchability comes from the same
+query: =turtle._touchable= reads =interaction.offered=. Fence: =constraints_test.mjs=.
+Closure: [[id:laws-build-p1-p2-closure]]; regressions: =first_two_review_test.mjs=.
+
+** the reveal control — when the possibility display appears
+:PROPERTIES:
+:ID: nav-reveal
+:KEYWORDS: reveal hints visible delayed possibility locus overlay show hide experiment
+:PATH: assets/js/turtling/laws/reveal.js::hintsVisible
+:END:
+View-only: Visible draws every law-derived hint at once; Delayed withholds them
+together until an explicit =turtle.revealNow()= — accepted movement is recorded,
+never a trigger. =turtle._drawPins= gates the hint loop; =?reveal=delayed= sets
+the condition; a new seat hides again. Fence: =reveal_test.mjs=.
+Experiment: [[id:laws-experiment-3-possibility]].
 
 
 

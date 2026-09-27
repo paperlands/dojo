@@ -9,6 +9,8 @@
 export const KIND = { length: "length", angle: "angle", duration: "duration", scalar: "scalar", point: "point" }
 
 import { RELATIONAL_NAMES, SPATIAL_NAMES } from "./relations.js"
+import { AXES } from "./relationships.js"
+import { AUTHORED } from "./authored.js"
 
 // The family is the evaluator's, derived from its own name lists — not a second
 // classification. A law and a read therefore see the same relations.
@@ -18,12 +20,15 @@ const familyOf = (name) =>
 
 const row = (name, kind, guard, bounds) => ({ family: familyOf(name), kind, guard, bounds })
 
-// One row per relation/property: family, payload kind, domain guard and bounds.
-// `relational` rows are computed from target + observer in world space; `spatial`
-// rows are projections of a pose. A new relation is a row here, not a new system.
+// The axis is part of a coordinate law's meaning, so it carries its own domain
+// guard: a framed coordinate names one of the declaring frame's own axes.
+export const axisOk = (axis) => AXES.includes(axis)
+
+// One table: authored rows are the same objects as AUTHORED. Reads (bearing, x, …)
+// live here only. (id:relationships-row-contract)
 export const RELATION = {
-    distance: row("distance", KIND.length, { finite: true, nonNegative: true }, { min: 0, max: Infinity }),
-    bearing: row("bearing", KIND.angle, { finite: true }, null),
+    distance: AUTHORED.distance,
+    bearing: AUTHORED.bearing,
     sync: row("sync", KIND.duration, { finite: true }, null),
     x: row("x", KIND.scalar, { finite: true }, null),
     y: row("y", KIND.scalar, { finite: true }, null),
@@ -31,7 +36,9 @@ export const RELATION = {
     heading: row("heading", KIND.angle, { finite: true }, null),
     // Elevation is bounded by its meaning, not by policy: ±90 IS the paper's normal.
     elevation: row("elevation", KIND.angle, { finite: true }, { min: -90, max: 90 }),
-    position: { family: "spatial", kind: KIND.point, guard: { finite3: true }, bounds: null },
+    position: AUTHORED.position,
+    coordinate: AUTHORED.coordinate,
+    tilt: AUTHORED.tilt,
 }
 
 export function relationOf(feature) {

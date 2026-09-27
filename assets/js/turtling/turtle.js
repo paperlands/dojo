@@ -6,17 +6,20 @@ import { Evaluator } from "./mafs/evaluate.js"
 import Render from "./render/index.js"
 import { bridged } from "../bridged.js"
 import { createStage } from "./stage.js"
+import { SE3 } from "./se3.js"
 import { createScheduler, metaRoot, sumCounts, frameWorldTransform, worldTransform } from "./scheduler.js"
+import { bindWorld, constraintsOn } from "./laws/authored.js"
 import { createCompositor } from "./compositor.js"
 import { labInputs } from "./lab.js"
 import { createFocus, resolveAddress } from "./focus.js"
 import { hatchVerdict } from "./hatch.js"
 import { createGesture } from "./laws/gesture.js"
 import { exposed, pointCandidates } from "./laws/batch.js"
-import { verdictFade, VERDICT_DECAY_MS, viewMapping } from "./laws/handle.js"
-import { drawPin, drawGhost, drawAxis, drawCurve } from "./laws/pin.js"
-import { stateOf, silhouette, axesOf, sphereCurves } from "./laws/constraints.js"
-import { hintsVisible, normalizeReveal, revealedBy } from "./laws/reveal.js"
+import { verdictFade, VERDICT_DECAY_MS, viewMapping, OUTCOME } from "./laws/handle.js"
+import { drawPin, drawTrace, drawRim, drawGhostMark, drawAxis, drawCurve, drawWish, drawSpoke } from "./laws/pin.js"
+import { stateOf, axesOf, marksOf, heldIdentity, boundsOf } from "./laws/constraints.js"
+import { unionBounds, viewDirection } from "./laws/fit.js"
+import { hintsVisible, normalizeReveal, movedEnough } from "./laws/reveal.js"
 import { createOverlay } from "./overlay.js"
 import { worldProgress } from "./vitals.js"
 
@@ -42,9 +45,14 @@ export class Turtle {
         // fresh play, a mode change and reset(); it never touches the world.
         this._reveal = normalizeReveal(options.reveal)
         this._hintsRevealed = false
+        // Behaviour record only — never a reveal trigger.
+        this._handMoves = { accepted: 0, displaced: 0 }
 
         const stage = createStage(canvas, this.bridge, options.instruments)
         this.stage = stage
+        // The fit verb asks the turtle for the figure's extents; the stage
+        // only moves the eye. One framing path for the shell and the probe.
+        stage.fitTargets = () => this._fitTargets()
         this.renderstate = stage.renderstate
 
         // Render-on-demand: wake via requestRender, else stop.
@@ -176,37 +184,13 @@ export class Turtle {
     _stateOf(frame) {
         const scheduler = this.scheduler
         const headed = frame.generator != null || frame.actorState != null
-        // A point is held when a hand cannot move it: it carries a body, a position
-        // pin fixes it, or it coincides with something already held. Coincidence
-        // alone is not a pin — two movable points keep their common translation.
-        // (id:laws-freedom)
-        const heldBy = (candidate, seen = new Set()) => {
-            if (!candidate) return true
-            if (seen.has(candidate.id)) return false   // a cycle has no anchor
-            if (candidate.generator != null || candidate.actorState != null) return true
-            seen.add(candidate.id)
-            for (const law of scheduler.laws.active()) {
-                if (law.feature === 'position' && law.endpoints[0] === candidate.id) return true
-                if (law.feature === 'distance' && law.predicate === 0 &&
-                    (law.endpoints[0] === candidate.id || law.endpoints[1] === candidate.id)) {
-                    const otherId = law.endpoints[0] === candidate.id ? law.endpoints[1] : law.endpoints[0]
-                    if (heldBy(scheduler.registry.get(otherId), seen)) return true
-                }
-            }
-            return false
-        }
-        const constraints = []
-        for (const law of scheduler.laws.active()) {
-            if (law.feature === 'distance' && (law.endpoints[0] === frame.id || law.endpoints[1] === frame.id)) {
-                const otherId = law.endpoints[0] === frame.id ? law.endpoints[1] : law.endpoints[0]
-                const other = scheduler.registry.get(otherId)
-                if (other) constraints.push({ feature: 'distance',
-                    other: frameWorldTransform(other).position, radius: law.predicate,
-                    otherHeld: heldBy(other) })
-            } else if (law.feature === 'position' && law.endpoints[0] === frame.id) {
-                constraints.push({ pinned: true })
-            }
-        }
+        const laws = scheduler.laws.active()
+        const ctx = bindWorld((id) => scheduler.registry.get(id), {
+            writerId: frame.id,
+            positionOf: (f) => frameWorldTransform(f).position,
+            poseOf: (f) => worldTransform(f),
+            heldOf: (id) => heldIdentity(scheduler.registry.get(id), laws, scheduler.registry),
+        })
         return stateOf({
             at: frameWorldTransform(frame).position,
             headed,
@@ -217,8 +201,39 @@ export class Turtle {
             // previous state), but it is not touchable until an edit releases it.
             // (id:laws-activation-verdicts)
             unresolved: frame.unresolved ?? frame.held ?? null,
-            constraints,
+            constraints: constraintsOn(frame.id, laws, ctx),
         })
+    }
+
+    // Frame the figure: every exposed place, plus the true radius of each
+    // bounded locus it names. A bounded mark is framed by the eye, never
+    // enlarged for it. (id:laws-freedom)
+    _fitTargets() {
+        const scheduler = this.scheduler
+        if (!scheduler) return null
+        const spheres = []
+        let primary = null
+        for (const frame of scheduler.registry.values()) {
+            if (frame === scheduler.root || frame.isLens || !exposed(frame)) continue
+            spheres.push({ center: frameWorldTransform(frame).position, radius: 0 })
+            const state = this._stateOf(frame)
+            const bounds = boundsOf(state.locus, state.at)
+            if (bounds) spheres.push(bounds)
+            // The direction comes from the largest bounded mark, so a circle reads
+            // as a curve rather than a point on the sight line.
+            if (bounds && state.locus?.normal && bounds.radius > (primary?.radius ?? -1)) {
+                primary = { normal: state.locus.normal, radius: bounds.radius }
+            }
+        }
+        const bounds = unionBounds(spheres)
+        return bounds ? { bounds, dir: viewDirection(primary?.normal ?? null) } : null
+    }
+
+    // The shell verb and the probe call share this one path: frame, don't enlarge.
+    fit({ dir = null } = {}) {
+        const target = this._fitTargets()
+        if (!target) return null
+        return this.stage.fitTo(target.bounds, { dir: dir ?? target.dir })
     }
 
     // The gesture's one question, answered by the same state the view draws.
@@ -246,8 +261,9 @@ export class Turtle {
         // Where a constrained point MAY go — its locus, the axis it rests on, and
         // the surface's coordinate curves through it. All world geometry, so a
         // camera turn carries them with the world. (id:laws-freedom)
-        const facing = this.stage.facing()
-        const cp = this.stage.camera.position
+        const facing = view.facing()
+        const eye = view.eye()
+        const cp = { x: eye[0], y: eye[1], z: eye[2] }
         // Every law-derived hint is drawn only when the reveal control allows.
         const showHints = this._hintsVisible()
         for (const frame of scheduler.registry.values()) {
@@ -255,20 +271,12 @@ export class Turtle {
             const state = this._stateOf(frame)
             if (state.tag !== 'free') continue
             const at = state.at
-            // the locus outline, when one is named
-            const ring = silhouette(state.locus, facing)
-            if (ring) drawGhost(overlay.ctx, ring.map((p) => view.project(p)))
-            // the resting axis: the constraint normal, through the point
-            const axes = axesOf(state)
-            if (axes) {
-                const scale = state.locus?.radius ? state.locus.radius * 0.5 : 20
-                const along = (d) => [at[0] + d[0] * scale, at[1] + d[1] * scale, at[2] + d[2] * scale]
-                drawAxis(overlay.ctx, view.project(along(axes.normal.map((n) => -n))),
-                    view.project(along(axes.normal)), { strong: true })
-            }
-            // the surface's coordinate curves through the point, depth-faded
-            const curves = sphereCurves(state.locus, at)
-            if (!curves) continue
+            // Display scale: world units per pixel at this point's depth. The pitch
+            // of an UNBOUNDED mark (a plane patch, an axis) follows the camera; a
+            // BOUNDED locus (a circle, a sphere) never does. (id:laws-freedom)
+            const dist = Math.hypot(at[0] - cp.x, at[1] - cp.y, at[2] - cp.z)
+            const fov = ((this.stage.camera?.fov ?? 60) * Math.PI) / 180
+            const perPixel = (2 * dist * Math.tan(fov / 2)) / (overlay.height || 600)
             const shade = (worlds) => {
                 const pts = worlds.map((p) => {
                     const s = view.project(p)
@@ -280,8 +288,28 @@ export class Turtle {
                 for (const p of pts) if (p) p.t = max > min ? (p.depth - min) / (max - min) : 0
                 return pts
             }
-            drawCurve(overlay.ctx, shade(curves.parallel))
-            drawCurve(overlay.ctx, shade(curves.meridian))
+            // The named freedom, derived from the locus. (id:laws-freedom)
+            const marks = marksOf(state.locus, { at, size: perPixel * 90, viewDir: facing, eye })
+            for (const c of marks.curves) drawCurve(overlay.ctx, shade(c))
+            for (const tr of marks.traces) drawTrace(overlay.ctx, tr.map((p) => view.project(p)))
+            for (const [a, b] of marks.axes) drawAxis(overlay.ctx, view.project(a), view.project(b), { strong: false })
+            for (const p of marks.ghosts) {
+                if (Math.hypot(p[0] - at[0], p[1] - at[1], p[2] - at[2]) <= 1e-6) continue
+                const s = view.project(p)
+                if (s) drawGhostMark(overlay.ctx, s.x, s.y)
+            }
+            for (const ring of marks.rings) drawRim(overlay.ctx, ring.map((p) => view.project(p)))
+            for (const [a, b] of marks.spokes) drawSpoke(overlay.ctx, view.project(a), view.project(b))
+            // the resting axis: the constraint normal, through the point
+            const axes = axesOf(state)
+            // A radius spoke already names the direction; only a locus without one
+            // (a plane, a line) needs the resting normal drawn. (id:laws-freedom)
+            if (axes && marks.spokes.length === 0) {
+                const scale = perPixel * 60
+                const along = (d) => [at[0] + d[0] * scale, at[1] + d[1] * scale, at[2] + d[2] * scale]
+                drawAxis(overlay.ctx, view.project(along(axes.normal.map((n) => -n))),
+                    view.project(along(axes.normal)), { strong: true })
+            }
         }
         for (const frame of scheduler.registry.values()) {
             if (frame === scheduler.root || !exposed(frame)) continue
@@ -312,6 +340,13 @@ export class Turtle {
                 outcome: readout?.outcome,
                 ghost: held ? null : ghost,
             })
+            // The wish and where it landed: a light tether when the projection
+            // absorbed part of the pointer's wish. A projection is a lawful
+            // response; only an obstruction earns refusal language. (id:laws-freedom)
+            if (held && readout && readout.requested && readout.outcome === OUTCOME.accepted) {
+                const wish = view.project(SE3.apply(worldTransform(frame), readout.requested))
+                if (wish) drawWish(overlay.ctx, at, wish)
+            }
         }
     }
 
@@ -331,12 +366,15 @@ export class Turtle {
             birthOf: frame => worldTransform(frame),
             registered: frame => scheduler.registry.get(frame.id) === frame,
             requestMotion: (frame, pose, revision) => scheduler.requestMotion(frame, pose, revision),
-            onAccepted: ({ from, to }) => this._noteAcceptedHandMove(from, to),
+            onAccepted: ({ from, to }) => this._recordAcceptedHandMove(from, to),
             revision: () => scheduler.motionRevision,
             wake: () => this.requestRender(),
             project: world => this._view().project(world),
             rayAt: (x, y) => this._view().rayAt(x, y),
             facing: () => this._view().facing(),
+            // The locus, never the camera, names what the law eats: a closed surface's
+            // outward push is geared with the hand's pull. (id:laws-decl-anchor)
+            locusOf: frame => this._stateOf(frame).locus,
             capture: ({ pointerId }) => {
                 captured = pointerId
                 try { canvas.setPointerCapture?.(pointerId) } catch { /* browser may not own it */ }
@@ -618,10 +656,7 @@ export class Turtle {
             // `fresh` is the NEW PLAY door (D011, id:cmp-become-seed): reset the reveal
             // origin before seating, so an origin-anchored seat plays from its start.
             // An edit (fresh=false) keeps the play's clock and re-seats in place.
-            if (fresh) {
-                this.compositor?.beginPlay()
-                this._hintsRevealed = false   // a new play starts hidden
-            }
+            if (fresh) this.compositor?.beginPlay()
 
             const ns = vocab ? this.rehearseVocab(vocab, vocabNodes) : null
             // Phase diagnostic under seat key, ancestor's span.
@@ -644,6 +679,9 @@ export class Turtle {
                     style: { color: this.color },
                     env: ns?.userspace?.size ? { userspace: ns.userspace } : null
                 }, { fresh }))
+            // A new play is a new seat: the reveal starts hidden again. A
+            // green-tree reuse (seat === before) keeps what this play revealed.
+            if (seat !== before) this._hintsRevealed = false
 
             if (hatch) this._hatchMine = true
             this._seatFaults?.delete(key)
@@ -789,14 +827,32 @@ export class Turtle {
         return hintsVisible(this._reveal, this._hintsRevealed)
     }
 
-    // One accepted hand move may reveal, and only a real displacement does: a
-    // request the law absorbs in place changes nothing and leaves the hints
-    // hidden. REVEAL_MOVE_TOL is the declared floor.
-    _noteAcceptedHandMove(from, to) {
-        if (this._reveal !== "delayed" || this._hintsRevealed) return
-        if (!revealedBy({ mode: this._reveal, revealed: false, from, to })) return
-        this._hintsRevealed = true
-        this.requestRender()
+    // The facilitator's view-only reveal. Delayed keeps the hints hidden no
+    // matter how many moves land; this one action shows them, and nothing else
+    // changes. The condition stays 'delayed' — visibility and condition are
+    // different facts.
+    revealNow() {
+        if (!this._hintsRevealed) {
+            this._hintsRevealed = true
+            this.requestRender()
+        }
+        return this._hintsVisible()
+    }
+
+    get hintsRevealed() {
+        return this._hintsRevealed
+    }
+
+    get handMoves() {
+        return { ...this._handMoves }
+    }
+
+    // Behaviour recording only. An accepted move is counted, and a real
+    // displacement is told from a request the law absorbs in place; neither
+    // opens the reveal gate. Visibility opens only through revealNow().
+    _recordAcceptedHandMove(from, to) {
+        this._handMoves.accepted += 1
+        if (movedEnough(from, to)) this._handMoves.displaced += 1
     }
 
     reset() {
