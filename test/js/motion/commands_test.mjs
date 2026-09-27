@@ -137,6 +137,18 @@ describe("home", () => {
         assert.ok(near(result.transform.position[1], 0))
         assert.ok(near(result.transform.position[2], 0))
     })
+
+    test("returns to the default facing, not the banked heading", () => {
+        const turned = SE3.rotateLocal(identity(), { x: 0, y: 0, z: 1 }, 90)
+        const result = home(mkCtx(turned))
+        assert.ok(near(result.transform.rotation.w, 1))
+        assert.ok(near(result.transform.rotation.z, 0))
+        // a following fw walks right (+x), not the heading it arrived with
+        const fw = COMMANDS.get("fw")
+        const moved = fw(mkCtx(result.transform), 50)
+        assert.ok(near(moved.transform.position[0], 50))
+        assert.ok(near(moved.transform.position[1], 0))
+    })
 })
 
 // ---------------------------------------------------------------------------

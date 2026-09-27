@@ -204,8 +204,11 @@ function hide(ctx) {
 }
 
 function home(ctx) {
+    // Home is the default pose, not the origin with the heading still banked:
+    // position back to the birth frame's origin and the facing back to right
+    // (+x). One way back — the same principle as the camera's recenter.
     return {
-        transform: { rotation: ctx.transform.rotation, position: [0, 0, 0] },
+        transform: { rotation: SE3.identity().rotation, position: [0, 0, 0] },
         stroke: "break"
     }
 }
