@@ -5,13 +5,11 @@
 // Pure: numbers in, a camera pose out. The stage applies it; no DOM, no THREE.
 
 import { basisOf } from "./meet.js"
+import { len, unit, finite3 } from "./vec3.js"
 
 const RAD = Math.PI / 180
 const DEFAULT_DIR = [0.6, 0.5, 0.8]
 
-const len = (v) => Math.hypot(v[0], v[1], v[2])
-const unit = (v) => { if (!Array.isArray(v)) return null; const n = len(v); return n > 1e-12 ? [v[0] / n, v[1] / n, v[2] / n] : null }
-const finite3 = (p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite)
 
 // The smallest sphere enclosing a set of spheres, grown one at a time. Exact for
 // a single bounded mark; a figure's extents are only ever an envelope.

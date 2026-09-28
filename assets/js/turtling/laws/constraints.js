@@ -7,12 +7,9 @@
 
 import { meetAll, dofOf, nearest, plane as planeSet, point as pointSet, sphere as sphereSet, cone as coneSet, conicSamples, basisOf, ringOf } from "./meet.js"
 import { unionBounds } from "./fit.js"
+import { sub, dot, len, unit, finite3 } from "./vec3.js"
+import { openAngle, coneLateral } from "./cone.js"
 
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-const len = (v) => Math.hypot(v[0], v[1], v[2])
-const unit = (v) => { const n = len(v); return n > 1e-12 ? [v[0] / n, v[1] / n, v[2] / n] : null }
-const finite3 = (p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite)
 
 // First-order rank of a set of normals (Gram–Schmidt). In free 3-space the
 // degrees of freedom are 3 − rank.
@@ -252,7 +249,7 @@ export function coneCurve(cone, at, segments = 48) {
     if (!axis || !finite3(cone.apex) || !finite3(at)) return null
     const h = dot(sub(at, cone.apex), axis)
     // The double nappe means θ and 180 − θ are one opening; draw the narrow one.
-    const open = Math.min(cone.halfAngle, 180 - cone.halfAngle)
+    const open = openAngle(cone.halfAngle)
     // A closed (0) or fully open (180) opening is the axis itself: the line, not a
     // surface. One generator, so the mark is a dotted line rather than blank.
     // (id:laws-freedom)
@@ -262,7 +259,7 @@ export function coneCurve(cone, at, segments = 48) {
         return { ring: null, generators: [[[...cone.apex], tip]] }
     }
     if (!(open < 90) || Math.abs(h) <= 1e-9) return null
-    const radius = Math.abs(h) * Math.tan(open * (Math.PI / 180))
+    const radius = coneLateral(h, open)
     const centre = [0, 1, 2].map((k) => cone.apex[k] + axis[k] * h)
     // The window is the circle the locus names at this height.
     const ring = circleCurve({ kind: 'circle', center: centre, normal: axis, radius }, segments)
@@ -325,6 +322,16 @@ export function marksOf(locus, { at = null, size = 3.5, viewDir = null, eye = nu
             return c && c.length > 1 ? { ...empty, curves: [c], spokes } : { ...empty, spokes }
         }
         case 'cone': {
+            // A half-angle of 90° is not a line: the locus is the plane through the
+            // apex perpendicular to the axis (dof 2). Mark it as the plane it is.
+            // (id:laws-freedom)
+            const open = openAngle(locus.halfAngle)
+            if (open >= 90 - 1e-9) {
+                const patch = planePatch({ kind: 'plane', point: locus.apex, normal: locus.axis }, at, size)
+                return patch
+                    ? { ...empty, curves: [patch.corners], axes: patch.axes.map((ax) => [ax.from, ax.to]) }
+                    : empty
+            }
             const cc = coneCurve(locus, at, segments ?? 48)
             return cc ? { ...empty, curves: cc.ring ? [cc.ring] : [], axes: cc.generators } : empty
         }
@@ -396,7 +403,7 @@ export function boundsOf(locus, at = null) {
                 return finite3(locus.apex) ? { center: [...locus.apex], radius: 0 } : null
             }
             const h = at ? dot(sub(at, locus.apex), axis) : 0
-            const radius = Math.abs(h) * Math.tan(locus.halfAngle * (Math.PI / 180))
+            const radius = coneLateral(h, locus.halfAngle)
             return { center: locus.apex.map((a, k) => a + axis[k] * h), radius }
         }
         case 'conic': {

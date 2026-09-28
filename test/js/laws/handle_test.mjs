@@ -7,15 +7,25 @@ import assert from "node:assert/strict"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
 import { Versor } from "../../../assets/js/turtling/mafs/versors.js"
 import {
-    facingPlane, touchPlane, outwardIn, acrossIn, figureRadius, polarOf, polarPoint,
-    birthLocal, requestedPose, hitTest, readout, knownPose,
-    eligibility, outcomeOf, OUTCOME, GRAZE,
-    CLIENT_SPACE, verdictFade, VERDICT_DECAY_MS, viewMapping,
+    facingPlane, touchPlane, birthLocal, requestedPose, hitTest, knownPose,
+    eligibility, GRAZE,
+    CLIENT_SPACE, viewMapping,
 } from "../../../assets/js/turtling/laws/handle.js"
+import { touchCone } from "../../../assets/js/turtling/laws/cone.js"
+import { coneRig, coneTurn, magnet } from "../../../assets/js/turtling/laws/hand.js"
+import { readout, outcomeOf, OUTCOME, verdictFade } from "../../../assets/js/turtling/laws/outcome.js"
+import { CONE_RATE, CONE_EASE, DETENT_BAND, DETENT_HOLD, VERDICT_DECAY_MS } from "../../../assets/js/turtling/laws/feel.js"
 
 const Q90 = Versor.raw(Math.SQRT1_2, 0, 0, -Math.SQRT1_2)   // rt 90: +x → −y
 const place = (position, rotation = SE3.identity().rotation) => ({ rotation, position })
 const nz = (v) => v.map((n) => { const r = +n.toFixed(6); return r === 0 ? 0 : r })  // fold -0
+
+// A point of a sphere by its own coordinates, for the magnet witnesses.
+const spherePoint = (center, radius, az, lat) => [
+    center[0] + radius * Math.cos(lat) * Math.cos(az),
+    center[1] + radius * Math.cos(lat) * Math.sin(az),
+    center[2] + radius * Math.sin(lat),
+]
 
 test("the drag plane is the camera-facing plane through the point, and nothing more", () => {
     const plane = facingPlane([10, 4, 0], [0, 0.5, -0.8660254])
@@ -32,6 +42,90 @@ test("a pointer ray meets the plane, and refuses to invent one", () => {
     assert.equal(touchPlane({ origin: [0, 0, 5], direction: [1, 0, 0] }, flat), null)
     // The plane is behind the eye: no touch.
     assert.equal(touchPlane({ origin: [0, 0, 5], direction: [0, 0, 1] }, flat), null)
+})
+
+test("a ray meets a cone, keeps its nappe, and a miss lands on the cone", () => {
+    const c = { apex: [0, 0, 0], axis: [1, 0, 0], halfAngle: 30 }
+    const cc2 = Math.cos(Math.PI / 6) ** 2
+    const on = (p) => Math.abs(p[0] ** 2 - cc2 * (p[0] ** 2 + p[1] ** 2 + p[2] ** 2)) < 1e-6
+    const near = touchCone({ origin: [86.6, 0, 200], direction: [0, 0, -1] }, c)
+    assert.ok(near && on(near) && near[2] > 0, `the near hit is on +z, got ${near}`)
+    const far = touchCone({ origin: [86.6, 0, 200], direction: [0, 0, -1] }, c, [86.6, 0, -50])
+    assert.ok(far && far[2] < 0, `prefer keeps the nappe, got ${far}`)
+    const miss = touchCone({ origin: [86.6, 0, 400], direction: [0, 1, 0] }, c)
+    assert.ok(miss && on(miss), `a miss rides the cone, got ${miss}`)
+})
+
+// A real perspective camera: the drawn cone the hand must answer.
+const pinhole = (eye, { width = 800, height = 800, fov = 60 } = {}) => {
+    const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+    const unit = (a) => { const n = Math.hypot(...a) || 1; return a.map((v) => v / n) }
+    const f = unit([-eye[0], -eye[1], -eye[2]])
+    const r = unit(cross(f, [0, 1, 0]))
+    const u = cross(r, f)
+    const half = Math.tan((fov * Math.PI) / 360)
+    return (world) => {
+        const v = sub(world, eye)
+        const z = dot(v, f)
+        if (z <= 0) return null
+        return { x: width / 2 + (dot(v, r) / (z * half)) * (width / 2), y: height / 2 - (dot(v, u) / (z * half)) * (height / 2) }
+    }
+}
+
+// The cone's hand is the cone's own polar, forward: a screen circle about the
+// apex's projection is a pure turn that holds the height, and a pull spends the
+// height at a drawn-scale rate, eased. (id:laws-decl-anchor)
+test("a cone's hand is its own polar: a circle holds the height, a pull spends it at the rate", () => {
+    const cone = { apex: [0, 0, 0], axis: [1, 0, 0], halfAngle: 30 }
+    const anchor = [86.60254037844388, 0, 50]
+    const project = pinhole([150, -450, 600])
+    const hub = project(cone.apex)
+    const p0 = project(anchor)
+    const r0 = Math.hypot(p0.x - hub.x, p0.y - hub.y)
+    const psi0 = Math.atan2(p0.y - hub.y, p0.x - hub.x)
+    const height = (p) => p[0]                       // the axis is +x
+    const azimuth = (p) => Math.atan2(p[2], p[1])
+    const at = (f, psi = psi0) => {
+        const rig = coneRig(cone, anchor, p0.x, p0.y, project)
+        const r = f * r0
+        return coneTurn(rig, hub.x + r * Math.cos(psi), hub.y + r * Math.sin(psi))
+    }
+
+    assert.deepEqual(nz(at(1)), nz(anchor), "a zero-delta pointer returns the grab exactly")
+
+    // A circle about the hub is a pure dial: the height is held exactly, the
+    // azimuth turns a full turn, and the point comes home.
+    const rig = coneRig(cone, anchor, p0.x, p0.y, project)
+    let turned = 0, previous = null
+    for (let i = 0; i <= 12; i++) {
+        const psi = psi0 + (i * Math.PI) / 6
+        const p = coneTurn(rig, hub.x + r0 * Math.cos(psi), hub.y + r0 * Math.sin(psi))
+        assert.ok(Math.abs(height(p) - 86.60254037844388) < 1e-6, `a circle holds the height, got ${height(p)}`)
+        assert.ok(Math.abs(Math.hypot(...p) - 100) < 1e-6, "and stays on the cone")
+        const az = azimuth(p)
+        if (previous !== null) turned += Math.atan2(Math.sin(az - previous), Math.cos(az - previous))
+        previous = az
+    }
+    assert.ok(Math.abs(Math.abs(turned) - 2 * Math.PI) < 1e-6, `a full circle is a full turn, got ${turned}`)
+
+    // A pull spends the height toward the rate's target, eased: the height rises
+    // monotonically and stays between the grab and the target. (id:laws-decl-anchor)
+    const pull = coneRig(cone, anchor, p0.x, p0.y, project)
+    const rOut = 2 * r0
+    const first = coneTurn(pull, hub.x + rOut * Math.cos(psi0), hub.y + rOut * Math.sin(psi0))
+    const second = coneTurn(pull, hub.x + rOut * Math.cos(psi0), hub.y + rOut * Math.sin(psi0))
+    const target = anchor[0] + ((rOut - r0) / pull.scale) * CONE_RATE
+    assert.ok(first[0] > anchor[0], `an outward pull raises the height, got ${first[0]}`)
+    assert.ok(second[0] > first[0] && second[0] <= target + 1e-9, `it eases toward the rate's target, got ${second[0]}`)
+})
+
+test("a cone's hand refuses what is not an open cone", () => {
+    const project = pinhole([0, 0, 60])
+    assert.equal(coneRig({ apex: [0, 0, 0], axis: [1, 0, 0], halfAngle: 90 }, [10, 0, 0], 0, 0, project), null, "90° is a plane")
+    assert.equal(coneRig({ apex: [0, 0, 0], axis: [1, 0, 0], halfAngle: 0 }, [10, 0, 0], 0, 0, project), null, "0° is a line")
+    assert.equal(coneRig({ apex: [0, 0, 0], axis: [1, 0, 0], halfAngle: 30 }, [10, 0, 0], 0, 0, () => null), null, "a hidden apex has no hand")
 })
 
 test("a world touch becomes the actor's birth coordinates", () => {
@@ -242,39 +336,38 @@ test("viewMapping: the drawn mark and the hand share one world frame", () => {
         "the sight axis, expressed in world coordinates")
 })
 
-
-
-
-
-// The gear: nothing inside the figure, then a tapered geometric growth past it.
-test("figureRadius measures the ball's own screen size", () => {
-    const project = (p) => ({ x: p[0] * 100, y: p[1] * 100 })
-    assert.equal(figureRadius(project, [0, 0, 0], 5, [0, 0, -1]), 500)
-    assert.equal(figureRadius(project, [0, 0, 0], 5, null), null, "no sight, no size")
-    assert.equal(figureRadius(null, [0, 0, 0], 5, [0, 0, -1]), null, "no projection, no size")
-    assert.equal(figureRadius(project, [0, 0, 0], 0, [0, 0, -1]), null, "a point draws no figure")
+test("the magnet holds inside the hold and releases by the band", () => {
+    const center = [0, 0, 0], radius = 5
+    const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
+    const held = spherePoint(center, radius, 0.3, DETENT_HOLD * 0.5)
+    const onPaper = magnet(center, radius, held, { paper: true })
+    assert.ok(Math.abs(dist(onPaper, center) - radius) < 1e-9, "still on the sphere")
+    assert.ok(Math.abs(onPaper[2]) < 1e-9, `inside the hold the point sits on the paper, got z = ${onPaper[2]}`)
+    assert.ok(Math.abs(Math.atan2(onPaper[1], onPaper[0]) - Math.atan2(held[1], held[0])) < 1e-9, "azimuth held")
+    const mid = spherePoint(center, radius, 0.3, (DETENT_HOLD + DETENT_BAND) / 2)
+    const pulled = magnet(center, radius, mid, { paper: true })
+    assert.ok(pulled[2] < mid[2] && pulled[2] > 0, `the release band pulls it down, got z = ${pulled[2]}`)
+    const far = spherePoint(center, radius, 0.3, DETENT_BAND * 1.5)
+    assert.deepEqual(magnet(center, radius, far, { paper: true }), far, "outside the band is untouched")
+    assert.deepEqual(magnet(center, radius, mid, {}), mid, "no detents armed, no bend")
 })
 
-test("outwardIn lays the surface normal flat into the drag plane", () => {
-    assert.deepEqual(nz(outwardIn([0, 0, 0], [3, 0, 4], [0, 0, -1])), [1, 0, 0],
-        "the radial, flattened onto the paper")
-    assert.equal(outwardIn([0, 0, 0], [0, 0, 4], [0, 0, -1]), null,
-        "a normal already ⟂ the plane has nothing to gear")
-    assert.equal(outwardIn([0, 0, 0], [0, 0, 0], [0, 0, -1]), null, "no normal at the centre")
+test("the magnet never folds: the bent z is monotone through the band", () => {
+    const center = [0, 0, 0], radius = 5
+    let last = -Infinity
+    for (let i = 0; i <= 40; i++) {
+        const lat = (i / 40) * DETENT_BAND
+        const bent = magnet(center, radius, spherePoint(center, radius, 0.2, lat), { paper: true })
+        assert.ok(bent[2] >= last - 1e-12, `monotone at lat = ${lat}: ${bent[2]} after ${last}`)
+        last = bent[2]
+    }
 })
 
-test("acrossIn is the pole-crossing direction, ⟂ the outward one", () => {
-    assert.deepEqual(nz(acrossIn([0, 0, 0], [3, 0, 4], [0, 0, -1])), [0, 1, 0],
-        "across the x radial in the paper's plane")
-    const r = outwardIn([0, 0, 0], [3, 0, 4], [0, 0, -1])
-    const a = acrossIn([0, 0, 0], [3, 0, 4], [0, 0, -1])
-    assert.ok(Math.abs(r[0] * a[0] + r[1] * a[1] + r[2] * a[2]) < 1e-12, "the two are ⟂")
-    assert.equal(acrossIn([0, 0, 0], [0, 0, 4], [0, 0, -1]), null, "no azimuth at the pole")
-})
-
-test("polarOf and polarPoint are one sphere's own coordinates", () => {
-    const p = polarOf([0, 0, 0], [3, 0, 4])
-    assert.ok(Math.abs(p.az) < 1e-12 && Math.abs(p.lat - Math.asin(0.8)) < 1e-12 && Math.abs(p.rho - 3) < 1e-12)
-    assert.deepEqual(nz(polarPoint([0, 0, 0], 5, p.az, p.lat)), [3, 0, 4], "and they name the point back")
-    assert.equal(polarOf([0, 0, 0], [0, 0, 0]), null, "the centre has no azimuth")
+test("the poles are a detent behind a flag", () => {
+    const center = [0, 0, 0], radius = 5
+    const near = spherePoint(center, radius, 0.3, Math.PI / 2 - 0.02)
+    assert.deepEqual(magnet(center, radius, near, { paper: true }), near, "no pole detent armed")
+    const up = magnet(center, radius, near, { poles: true })
+    assert.ok(Math.abs(Math.hypot(...up.map((v, i) => v - center[i])) - radius) < 1e-9, "still on the sphere")
+    assert.ok(up[2] > near[2], `the pole pulls it up, got z = ${up[2]}`)
 })

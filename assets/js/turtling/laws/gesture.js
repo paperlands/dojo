@@ -9,10 +9,12 @@
 // answers `claimed`, and the DOM layer stops propagation on that answer rather
 // than disabling the controls after they have already started a gesture.
 import {
-    facingPlane, touchPlane, figureRadius, polarOf, polarPoint,
+    facingPlane, touchPlane,
     birthLocal, requestedPose, hitTest, eligibility,
-    outcomeOf, readout, OUTCOME, HIT_RADIUS,
 } from "./handle.js"
+import { outcomeOf, readout, OUTCOME } from "./outcome.js"
+import { HIT_RADIUS, DRAG_SLOP } from "./feel.js"
+import { handFor } from "./hand.js"
 export function createGesture(deps) {
     const {
         candidates,      // () => [{ name, frame }] — the places currently offered
@@ -33,37 +35,14 @@ export function createGesture(deps) {
         controlsEnabled, // () => boolean — the camera's OWN current state
         onReadout,       // (line) => void
         radius = HIT_RADIUS,
-        locusOf = null,      // (frame) => named locus — a closed surface's outward push is geared
+        slop = DRAG_SLOP,
+        locusOf = null,      // (frame) => named locus — a sphere's hand is its camera-plane disk
+        detents = null,      // { paper, poles, band, hold } — slight stickiness at the ball's landmarks
     } = deps
 
     const poseOf = (frame) => frame.transform.deref()
     let grab = null
 
-    // A sphere's hand, in the ball's own polar frame about the paper's z. The hand's angle
-    // around the pole turns the azimuth — a dial is a dial, exact and with no drift from the
-    // hand's step size — and its horizontal reach, measured against the ball's drawn radius,
-    // spends latitude: outward walks toward the paper and the paper is a floor, inward climbs
-    // toward the pole. Nothing is hyperbolic, so no gear is needed; the frame is frozen at
-    // the grab, so an identical pixel is an identical point. (id:laws-decl-anchor)
-    const polarLat = (drag) => {
-        const mag = Math.max(0, Math.min(Math.PI / 2, Math.abs(drag.polar.lat0) - drag.polar.f))
-        return (drag.polar.lat0 < 0 ? -1 : 1) * mag
-    }
-    const polarMove = (drag, hit) => {
-        const { center, radius } = drag.sphere
-        const dx = hit[0] - center[0], dy = hit[1] - center[1]
-        const rho = Math.hypot(dx, dy)
-        if (Math.hypot(hit[0] - drag.downHit[0], hit[1] - drag.downHit[1], hit[2] - drag.downHit[2]) < 1e-9) {
-            return [...drag.origin]                 // an identical pixel is an identical point
-        }
-        if (rho > 1e-9 * radius && drag.polar.rho0 > 1e-9 * radius) {
-            const ang = Math.atan2(dy, dx)
-            drag.polar.az += Math.atan2(Math.sin(ang - drag.polar.ang), Math.cos(ang - drag.polar.ang))
-            drag.polar.ang = ang
-            drag.polar.f = (rho - drag.polar.rho0) / drag.reach
-        }
-        return polarPoint(center, radius, drag.polar.az, polarLat(drag))
-    }
 
     // Every way a capture ends goes through here, so ownership is never left
     // behind: the pointer is released and the CAMERA'S OWN previous state — not an
@@ -108,49 +87,35 @@ export function createGesture(deps) {
                 }
                 const ray = rayAt(x, y)
                 if (!ray) return { claimed: false }
-                // Frozen camera plane through the accepted point, until release.
-                // One rule for every locus: the anchor and the whole grab offset are
-                // kept, so no camera angle classifies the interaction and no depth
-                // falls out of the grab. A zero-delta pointer moves nothing.
-                // (id:laws-decl-anchor)
                 const face = facing()
                 const plane = facingPlane(anchor, face)
                 const hit = touchPlane(ray, plane)
                 if (!hit) return { claimed: false }
-                // A sphere's hand is its own coordinates: the pole is +z through the centre,
-                // so the hand dials an azimuth and spends reach on a latitude. Freeze the
-                // frame, the drawn size that one radius of reach is measured against, and the
-                // point's own azimuth and latitude at the grab.
+                // A hand is chosen by the locus's own data: a sphere's camera-plane
+                // disk, a cone's polar, and the frozen camera plane for everything
+                // else. The plane is always frozen, so a hand only overrides it.
+                // (id:laws-decl-anchor)
                 const locus = locusOf?.(candidate.frame)
-                const sphere = locus?.kind === 'sphere' && locus.radius > 0 && Array.isArray(locus.center)
-                    ? { center: [...locus.center], radius: locus.radius }
-                    : null
-                const polar = sphere ? polarOf(sphere.center, anchor) : null
-                const drawn = sphere ? figureRadius(project, sphere.center, sphere.radius, plane.normal) : null
-                const beside = touchPlane(rayAt(x + 1, y), plane)
-                const perPx = beside ? Math.hypot(beside[0] - hit[0], beside[1] - hit[1], beside[2] - hit[2]) : 0
-                // One drawn radius out in world units: the finger at the figure's edge.
-                const reach = drawn && perPx > 1e-9 ? drawn * perPx : sphere?.radius ?? null
+                let hand = handFor(locus)
+                let handState = null
+                if (hand) {
+                    handState = hand.freeze({ anchor, ray, facing: face, pointer: { x, y }, project, locus })
+                    if (!handState) {
+                        if (hand.rejects) return { claimed: false }
+                        hand = null
+                    }
+                }
                 grab = {
                     pointerId,
                     name: candidate.name,
                     frame: candidate.frame,
                     plane,
-                    planeNormal: [...plane.normal],
-                    sphere,
-                    reach,
-                    polar: polar ? {
-                        az: polar.az,
-                        lat0: polar.lat,
-                        ang: Math.atan2(anchor[1] - sphere.center[1], anchor[0] - sphere.center[0]),
-                        rho0: Math.hypot(anchor[0] - sphere.center[0], anchor[1] - sphere.center[1]),
-                        f: 0,
-                    } : null,
-                    downHit: [...hit],
+                    hand,
+                    handState,
                     origin: [...anchor],
-                    // Grabbing slightly off centre keeps what the pointer grabbed.
                     offset: [anchor[0] - hit[0], anchor[1] - hit[1], anchor[2] - hit[2]],
-                    // Read, not told: a caller cannot hand over the wrong 'previous'.
+                    down: { x, y },
+                    armed: false,
                     controlsWasEnabled: controlsEnabled(),
                 }
                 capture({ pointerId })
@@ -180,18 +145,23 @@ export function createGesture(deps) {
                 return { moved: false, cancelled: true }
             }
 
+            if (!grab.armed) {
+                if (Math.hypot(x - grab.down.x, y - grab.down.y) <= slop) return { moved: false }
+                grab.armed = true
+            }
+
             const birth = birthOf(grab.frame)
             const ray = rayAt(x, y)
-            if (!ray) return { moved: false }        // clipped: no target, no request
-            // The plane FROZEN at pointer-down: a look mid-drag never retargets
-            // the drag, and the accepted pose never feeds the next request. (id:laws-decl-anchor)
-            const hit = touchPlane(ray, grab.plane)
-            if (!hit) return { moved: false }        // off the frozen plane: keep the pose
-            // The plane names the request for every locus but a sphere, whose own
-            // coordinates take over. (id:laws-decl-anchor)
-            const request = grab.polar
-                ? polarMove(grab, hit)
-                : [hit[0] + grab.offset[0], hit[1] + grab.offset[1], hit[2] + grab.offset[2]]
+            if (!ray) return { moved: false }
+            // The hand's own point, or the frozen camera plane every locus falls back
+            // to. (id:laws-decl-anchor)
+            const placed = grab.hand ? grab.hand.place(grab.handState, { ray, pointer: { x, y }, project, detents }) : null
+            let request = placed
+            if (!request) {
+                const hit = touchPlane(ray, grab.plane)
+                if (!hit) return { moved: false }        // off the frozen plane: keep the pose
+                request = [hit[0] + grab.offset[0], hit[1] + grab.offset[1], hit[2] + grab.offset[2]]
+            }
             const requested = requestedPose(accepted, birthLocal(request, birth))
             const verdict = requestMotion(grab.frame, requested, revision())
             const outcome = verdict.kind === 'accept' ? OUTCOME.accepted : outcomeOf(verdict)

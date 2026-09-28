@@ -75,6 +75,25 @@ test("nearest follows the set, and a finite set keeps its branch", () => {
     assert.equal(nearest(UNCERTAIN, [0, 0, 0]).kind, "unresolved")
 })
 
+test("nearest on a wide cone stays on the nappe nearest the target", () => {
+    // A double nappe: 100° and 80° are one surface, so a +side target must not
+    // flip to the far nappe as the tilt passes 90°. (id:laws-freedom)
+    const wide = cone([0, 0, 0], [1, 0, 0], 100)
+    const plus = nearest(wide, [80, 0, 20]).at
+    const minus = nearest(wide, [-80, 0, 20]).at
+    assert.ok(plus[0] > 0, `a +side target lands on the +nappe, got ${at3(plus)}`)
+    assert.ok(minus[0] < 0, `a -side target lands on the -nappe, got ${at3(minus)}`)
+})
+
+test("a held cone point passes through the apex, never teleporting", () => {
+    const c = cone([0, 0, 0], [1, 0, 0], 30)
+    const held = nearest(c, [43.3, 0, 25]).at          // the point, on the +nappe
+    const at = (x) => nearest(c, [x, 0, 25], { keep: held }).at
+    assert.ok(at(43)[0] > 0 && at(43)[2] > 0, "it starts on the +nappe")
+    assert.ok(Math.hypot(...at(0)) < 1e-9, `at the crossing it is the apex, got ${at3(at(0))}`)
+    assert.ok(at(-43)[0] < 0 && at(-43)[2] > 0, "and it comes out on the −nappe")
+})
+
 test("a line and a circle meet in 0, 1 or 2 points; so do circle cuts", () => {
     const ci = circle([0, 0, 0], [0, 1, 0], 5)
     const through = meet(line([0, 0, 0], [1, 0, 0]), ci)

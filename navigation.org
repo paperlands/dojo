@@ -643,19 +643,46 @@ including mid-capture attachment. [[id:laws-place-head-frame]] ·
 ** view boundary — one world-to-screen mapping
 :PROPERTIES:
 :ID: nav-view-boundary
-:KEYWORDS: viewReframe viewMapping reframe eye twist viewOffset project unproject facing rayAt depth latitude polarOf polarPoint figureRadius dial reach
+:KEYWORDS: viewReframe viewMapping reframe eye twist viewOffset project unproject facing rayAt depth latitude paper disk DRAG_SLOP slop HIT_RADIUS CLIENT_SPACE birthLocal requestedPose eligibility
 :PATH: assets/js/turtling/laws/handle.js::viewMapping
 :END:
 The compositor owns the effective eye/manual reframe =viewReframe=; the stage
 owns =project=/=unproject=/=facing=; =viewMapping= folds them, so a drawn mark
-and the gesture's ray, plane and facing share one frame. The plane names no depth, so a
-latitude is changed by the view — and a *sphere* has its own hand: `polarOf`/`polarPoint` read
-and write the ball's azimuth and latitude, `figureRadius` measures the ball's drawn size, and
-the gesture dials the azimuth with the hand's angle about the pole while the hand's reach
-spends latitude (one drawn radius = 57°, the paper an exact floor
-([[file:specs/decisions/035-the-hand-dials-the-reach-spends-latitude.decision.md][D035]]), sliding always 1:1
-([[file:specs/decisions/033-the-view-carries-depth.decision.md][D033]]).
+and the gesture's ray, plane and facing share one frame. A still press is a click.
+The frozen camera plane through the anchor is the base every locus moves on; how a
+curved locus spends the pointer is the hand's business ([[id:nav-hand]]). The verb a
+request answers with, and the fade of a refusal, is =laws/outcome.js=.
 [[id:laws-decl-interface]].
+Fence: =test/js/laws/handle_test.mjs=.
+
+** hands — one lifecycle per locus
+:PROPERTIES:
+:ID: nav-hand
+:KEYWORDS: hand handFor sphereHand coneHand coneRig coneTurn magnet detent paper disk cone polar apex hub halfAngle nappe touchCone coneFrame openAngle coneLateral feel tune
+:PATH: assets/js/turtling/laws/hand.js::handFor
+:END:
+One lifecycle for every locus: freeze a frame at pointer-down, then project each
+move into a world request. =handFor= picks the hand from the locus's own data, so
+the gesture routes instead of branching on kind. A *sphere* rides its camera-plane
+disk (D036) with a small =magnet= (D037) at its landmarks; an open *cone* speaks its
+own polar (D038, D039) — the pointer's screen angle dials the azimuth so a circle
+holds the height, the screen radius spends it at a drawn-scale rate, eased. The
+cone's geometry (=coneFrame=, =touchCone=) is =laws/cone.js=; the tuning numbers are
+=laws/feel.js=.
+Fence: =test/js/laws/handle_test.mjs= and =gesture_test.mjs=.
+
+** geometry kernel — one arithmetic, one cone frame
+:PROPERTIES:
+:ID: nav-geometry-kernel
+:KEYWORDS: vec3 vector unit cross dot sub add scale len finite3 cone openAngle coneLateral coneFrame conePointOn touchCone open nappe halfAngle
+:PATH: assets/js/turtling/laws/vec3.js::unit
+:END:
+One arithmetic for every law module (=vec3.js=: =sub=, =add=, =scale=, =dot=, =cross=,
+=len=, =unit=, =finite3=), one degenerate contract, and the policy tolerances passed
+where they mean something. A cone's own frame is =cone.js=: =openAngle= (the narrow
+reading of the double nappe), =coneLateral=, =coneFrame= and =touchCone=, so the hand,
+the display, =meet= and =realize= read one cone instead of re-deriving =min(half,
+180 − half)= and =|h|·tan=.
 Fence: =test/js/laws/handle_test.mjs=.
 
 ** ordered birth — a reached let is the birth site

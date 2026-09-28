@@ -104,6 +104,7 @@ const harness = (scheduler, frames, { controlsEnabled = true, requestMotion, can
         project: (world) => state.view.project(world),
         rayAt: (x, y) => state.view.rayAt(x, y),
         facing: () => state.view.dir,        // the camera's viewing direction
+        slop: 0,
         capture: ({ pointerId }) => { state.captured = pointerId },
         release: () => { state.captured = null },
         setControls: (enabled) => { state.controls.enabled = enabled },
@@ -418,7 +419,7 @@ test("characterization (not law): the pixel→plane mapping follows the live cam
     h.down(at)
     const anchor = [...accepted(b)]
     h.look(view({ dir: TILT }))
-    h.move({ x: at.x, y: at.y })                       // the very pixel it was grabbed on
+    h.move({ x: at.x + 1, y: at.y })                       // past a still finger, onto the live ray
     const world = SE3.compose(worldTransform(b), h.requests[0].pose).position
     assert.ok(Math.hypot(...sub(world, anchor)) > 0.5,
         "the point left its grab position while the finger returned to its pixel")

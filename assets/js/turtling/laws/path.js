@@ -28,13 +28,9 @@
 //
 // Pure: positions in, a verdict out.
 
+import { sub, cross, dot, len, unit, finite3 } from "./vec3.js"
+
 const round = (v) => Math.abs(v) < 1e-12 ? 0 : v
-const finite3 = (p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite)
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-const len = (v) => Math.hypot(v[0], v[1], v[2])
-const unit = (v) => { const n = len(v); return n > 1e-12 ? [v[0] / n, v[1] / n, v[2] / n] : null }
 
 export function sampleSegment(from, to, samples = 16) {
     const out = []

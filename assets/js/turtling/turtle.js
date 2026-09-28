@@ -15,7 +15,9 @@ import { createFocus, resolveAddress } from "./focus.js"
 import { hatchVerdict } from "./hatch.js"
 import { createGesture } from "./laws/gesture.js"
 import { exposed, pointCandidates } from "./laws/batch.js"
-import { verdictFade, VERDICT_DECAY_MS, viewMapping, OUTCOME } from "./laws/handle.js"
+import { viewMapping } from "./laws/handle.js"
+import { verdictFade, OUTCOME } from "./laws/outcome.js"
+import { VERDICT_DECAY_MS } from "./laws/feel.js"
 import { drawPin, drawTrace, drawRim, drawGhostMark, drawAxis, drawCurve, drawWish, drawSpoke } from "./laws/pin.js"
 import { stateOf, axesOf, marksOf, heldIdentity, boundsOf } from "./laws/constraints.js"
 import { unionBounds, viewDirection } from "./laws/fit.js"
@@ -372,9 +374,12 @@ export class Turtle {
             project: world => this._view().project(world),
             rayAt: (x, y) => this._view().rayAt(x, y),
             facing: () => this._view().facing(),
-            // The locus, never the camera, names what the law eats: a closed surface's
-            // outward push is geared with the hand's pull. (id:laws-decl-anchor)
+            // A sphere's hand rides its camera-plane disk; a cone its own polar.
+            // (id:laws-decl-anchor)
             locusOf: frame => this._stateOf(frame).locus,
+            // Slight stickiness at the ball's own landmarks: the paper it rests on.
+            // (id:laws-decl-anchor)
+            detents: { paper: true, poles: true },
             capture: ({ pointerId }) => {
                 captured = pointerId
                 try { canvas.setPointerCapture?.(pointerId) } catch { /* browser may not own it */ }

@@ -11,15 +11,12 @@
 // and the three honest non-answers: empty · uncertain · unresolved.
 
 import { meetPlaneSphere, REL_TOL, ACCEPT_TOL } from "./relationships.js"
+import { sub, add, scale, dot, cross, len, finite3, unit as unitKernel } from "./vec3.js"
+import { openAngle, coneLateral } from "./cone.js"
 
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-const scale = (v, s) => [v[0] * s, v[1] * s, v[2] * s]
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-const len = (v) => Math.hypot(v[0], v[1], v[2])
-const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-const finite3 = (p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite)
-const unit = (v) => { const n = len(v); return n > REL_TOL ? scale(v, 1 / n) : null }
+// A direction below meet's conditioning threshold is not one; the tolerance is
+// meet's policy, so it is passed, not defaulted. (id:laws-contradiction)
+const unit = (v) => unitKernel(v, REL_TOL)
 
 
 // An orthonormal frame for a plane: n and a tangent pair, without the camera.
@@ -311,7 +308,7 @@ function meetCircleSphere(ci, sp) {
 // quadric here — its plane sections are the conics. (id:laws-freedom)
 const RAD = Math.PI / 180
 const DEG = 180 / Math.PI
-const coneCos = (c) => Math.cos(c.halfAngle * RAD)
+const coneCos = (c) => Math.cos(openAngle(c.halfAngle) * RAD)
 
 function meetsCone(pt, c) {
     const d = sub(pt.at, c.apex)
@@ -345,7 +342,7 @@ function meetPlaneCone(pl, c) {
         const h = dot(c.axis, sub(pl.point, c.apex))
         if (Math.abs(h) <= ACCEPT_TOL) return point([...c.apex])
         if (c.halfAngle >= 90 - 1e-9) return UNRESOLVED
-        return circle(add(c.apex, scale(c.axis, h)), c.axis, Math.abs(h) * Math.tan(c.halfAngle * RAD))
+        return circle(add(c.apex, scale(c.axis, h)), c.axis, coneLateral(h, c.halfAngle))
     }
     return coneSection(pl, c)
 }
@@ -541,15 +538,33 @@ export function nearest(set, target, { keep = null, margin = 0 } = {}) {
             const d = sub(target, set.apex)
             const r = len(d)
             if (r <= REL_TOL) return { ok: true, at: [...set.apex] }
-            const axial = dot(d, set.axis) / r
-            const ax = scale(set.axis, axial < 0 ? -1 : 1)
-            let perp = sub(scale(d, 1 / r), scale(set.axis, axial))
-            if (len(perp) <= REL_TOL) {
-                const seed = Math.abs(set.axis[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]
-                perp = cross(set.axis, seed)
+            const open = openAngle(set.halfAngle)
+            const held = Array.isArray(keep) && finite3(keep)
+            const h = dot(d, set.axis)
+            const perpRaw = sub(d, scale(set.axis, h))
+            let dir = perpRaw
+            if (len(dir) <= REL_TOL) {
+                const kd = held ? sub(keep, set.apex) : null
+                const kp = kd ? sub(kd, scale(set.axis, dot(kd, set.axis))) : null
+                dir = kp && len(kp) > REL_TOL
+                    ? kp
+                    : cross(set.axis, Math.abs(set.axis[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0])
             }
-            const p = unit(perp) ?? [1, 0, 0]
-            const u = add(scale(ax, coneCos(set)), scale(p, Math.sin(set.halfAngle * RAD)))
+            const p = unit(dir) ?? [1, 0, 0]
+            if (held) {
+                // A held point speaks the cone's own coordinates: its height rides the
+                // wish and its azimuth is the wish's, so crossing the apex plane passes
+                // through the apex and out the other nappe — continuous, no teleport.
+                // (id:laws-freedom)
+                if (!(open < 90 - 1e-9)) return { ok: true, at: add(set.apex, perpRaw) }
+                const lateral = coneLateral(h, open)
+                return { ok: true, at: add(set.apex, add(scale(set.axis, h), scale(p, lateral))) }
+            }
+            // A plain projection keeps the radius and sets the angle, on the nappe the
+            // folded opening and the wish's side name. (id:laws-freedom)
+            const axial = h / r
+            const ax = scale(set.axis, axial < 0 ? -1 : 1)
+            const u = add(scale(ax, Math.cos(open * RAD)), scale(p, Math.sin(open * RAD)))
             return { ok: true, at: add(set.apex, scale(u, r)) }
         }
         case "conic": {

@@ -12,14 +12,10 @@
 
 import { compassOf } from "./relations.js"
 import { DEFAULT_ARM } from "./realize.js"
+import { sub, dot, len, finite3 } from "./vec3.js"
 
 export const REL_TOL = 1e-9
 export const ACCEPT_TOL = 1e-6
-
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-const len = (v) => Math.hypot(v[0], v[1], v[2])
-const finite3 = (p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite)
 
 // Degrees in (-180, 180]. The angular display boundary is not a geometric
 // discontinuity: 179 and -179 are two degrees apart, and this says so.

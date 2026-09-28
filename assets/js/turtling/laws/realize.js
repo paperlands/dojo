@@ -7,6 +7,9 @@
 //   REALIZE_TOL — exact placement (floating noise only)
 //   ACCEPT_TOL  — the independent check's absolute tolerance, display scale
 
+import { sub, add, scale, dot, len, finite3, unit as unitKernel } from "./vec3.js"
+import { openAngle, RAD } from "./cone.js"
+
 export const REALIZE_TOL = 1e-9
 export const ACCEPT_TOL = 1e-6
 
@@ -15,14 +18,8 @@ export const ACCEPT_TOL = 1e-6
 // A policy number, not a truth.
 export const DEFAULT_ARM = 100
 
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-const len = (v) => Math.hypot(v[0], v[1], v[2])
-const finite3 = (p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite)
-
-const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-const scale = (v, s) => [v[0] * s, v[1] * s, v[2] * s]
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-const unit = (v) => { const n = len(v); return n > REALIZE_TOL ? scale(v, 1 / n) : null }
+// A direction below the exact-placement tolerance is not one. (id:laws-build-solve-seam)
+const unit = (v) => unitKernel(v, REALIZE_TOL)
 // Realize |target − observer| = want by moving the target, holding the observer.
 // A repeatable direction is chosen when the two coincide, because the choice is
 // policy, not a truth. (id:laws-decl-anchor, id:laws-freedom)
@@ -66,7 +63,11 @@ export function realizeTilt(apex, nose, up, target, want, arm = DEFAULT_ARM) {
     }
     const across = unit(lateral)
     if (!across) return { ok: false, reason: 'the cone has no generator' }
-    const rad = (want * Math.PI) / 180
+    // The double nappe means θ and 180 − θ are one surface: take the narrow reading,
+    // so the point stays on the nappe nearest the target instead of flipping across
+    // the apex as the tilt passes 90°. (id:laws-freedom)
+    const w = Math.min(Math.max(want, 0), 180)
+    const rad = openAngle(w) * RAD
     const dir = add(scale(axis, side * Math.cos(rad)), scale(across, Math.sin(rad)))
     const pose = add(apex, scale(dir, apart ? r : arm))
     return { ok: true, pose, moved: !finite3(target) || len(sub(pose, target)) > REALIZE_TOL }

@@ -7,6 +7,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { buildWorld, fork, drive } from "./harness.mjs"
 import { createGesture } from "../../../assets/js/turtling/laws/gesture.js"
+import { DRAG_SLOP } from "../../../assets/js/turtling/laws/feel.js"
 import { exposed, freePoint } from "../../../assets/js/turtling/laws/batch.js"
 import { stateOf, heldIdentity } from "../../../assets/js/turtling/laws/constraints.js"
 import { constraintsOn, bindWorld } from "../../../assets/js/turtling/laws/authored.js"
@@ -26,7 +27,7 @@ const find = (frame, name) => {
 
 // A screen whose world-to-pixel scale is 100, and a ray that falls straight down
 // on the pixel it is given — so a witness can name a world point in pixels.
-const harness = (scheduler, frames, { controlsEnabled = true, requestMotion, canTouch, locusOf, facing = [0, 0, -1] } = {}) => {
+const harness = (scheduler, frames, { controlsEnabled = true, requestMotion, canTouch, locusOf, facing = [0, 0, -1], slop = 0, view = null, detents = null } = {}) => {
     const requests = []
     const readouts = []
     const state = { captured: null, controls: { enabled: controlsEnabled }, woke: 0 }
@@ -42,15 +43,17 @@ const harness = (scheduler, frames, { controlsEnabled = true, requestMotion, can
         },
         revision: () => scheduler.motionRevision,
         wake: () => { state.woke++ },
-        project: (world) => ({ x: world[0] * 100, y: world[1] * 100 }),
-        rayAt: (x, y) => ({ origin: [x / 100, y / 100, 5], direction: [...facing] }),
-        facing: () => facing,
+        project: view ? (world) => view.project(world) : (world) => ({ x: world[0] * 100, y: world[1] * 100 }),
+        rayAt: view ? (x, y) => view.rayAt(x, y) : (x, y) => ({ origin: [x / 100, y / 100, 5], direction: [...facing] }),
+        facing: view ? () => view.facing() : () => facing,
         capture: ({ pointerId }) => { state.captured = pointerId },
         release: () => { state.captured = null },
         setControls: (enabled) => { state.controls.enabled = enabled },
         controlsEnabled: () => state.controls.enabled,
         onReadout: (line) => readouts.push(line),
         locusOf,
+        detents,
+        slop,
     })
     return {
         gesture, requests, readouts, state,
@@ -256,6 +259,44 @@ const same = (a, b, eps = 1e-9) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b
 const realMotion = (scheduler) => (frame, pose, revision) => scheduler.requestMotion(frame, pose, revision)
 const pixel = (world) => ({ x: world[0] * 100, y: world[1] * 100 })
 
+// A real perspective camera, so a witness names a direction in pixels and the
+// ball answers the geometry the shell draws. The flat world×100 ray could not
+// see the far side at all. (id:laws-decl-interface)
+const pinhole = (eye, { width = 800, height = 800, fov = 60, up = [0, 1, 0] } = {}) => {
+    const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+    const unit = (a) => { const n = Math.hypot(...a) || 1; return [a[0] / n, a[1] / n, a[2] / n] }
+    const f = unit([-eye[0], -eye[1], -eye[2]])
+    const r = unit(cross(f, up))
+    const u = cross(r, f)
+    const half = Math.tan(fov * Math.PI / 360)
+    return {
+        facing: () => [...f],
+        project(world) {
+            const v = sub(world, eye)
+            const z = dot(v, f)
+            if (z <= 0) return null
+            return {
+                x: width / 2 + (dot(v, r) / (z * half)) * (width / 2),
+                y: height / 2 - (dot(v, u) / (z * half)) * (height / 2),
+            }
+        },
+        rayAt(x, y) {
+            const nx = ((x - width / 2) / (width / 2)) * half
+            const ny = -((y - height / 2) / (height / 2)) * half
+            return {
+                origin: [...eye],
+                direction: unit([
+                    f[0] + nx * r[0] + ny * u[0],
+                    f[1] + nx * r[1] + ny * u[1],
+                    f[2] + nx * r[2] + ny * u[2],
+                ]),
+            }
+        },
+    }
+}
+
 // The locus the turtle reads: the same query `_stateOf` makes, on the same store —
 // never a description a test injected. (id:laws-decl-point-agent)
 const locusOfWorld = (scheduler) => (frame) => {
@@ -277,118 +318,259 @@ const locusOfWorld = (scheduler) => (frame) => {
     }).locus
 }
 
-// The old rule read the camera: inside ~18° of the paper's Z the drag plane became the
-// sphere-centre XY plane and the anchor's z was dropped from the grab. Crossing that
-// angle must now change nothing at all.
+// The ball's hand is its own surface under the pointer: the grabbed point follows
+// the finger, the mirrored back included. (id:laws-decl-anchor)
 test("a zero-delta grab moves nothing, at every camera angle", () => {
-    const facings = [[0, 0, -1], [0, 0.3, -1], [0, 1, -Math.sqrt(3)], [0, 1, -1], [1, 0, 0]]
-    for (const facing of facings) {
+    const eyes = [[0, 0, 60], [0, 18, 60], [0, 52, 30], [60, 0, 0], [-60, 0, 0]]
+    for (const eye of eyes) {
         const { scheduler, A, world } = onSphere([3, 0, 4])
         const before = [...A.transform.deref().position]
-        const h = harness(scheduler, [A], { facing, canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler) })
-        // A press inside the hit radius, nudged a few pixels against the sight so
-        // the frozen plane lies ahead of the ray rather than on it.
-        const su = Math.hypot(facing[0], facing[1])
-        const px = {
-            x: world[0] * 100 - (su > 1e-9 ? 8 * facing[0] / su : 0),
-            y: world[1] * 100 - (su > 1e-9 ? 8 * facing[1] / su : 0),
-        }
-        assert.equal(h.down(px).claimed, true, `claimed at ${facing}`)
-        assert.equal(h.move(px).outcome, "accepted", `accepted at ${facing}`)
-        assert.deepEqual(A.transform.deref().position, before,
-            `an identical pixel is an identical point at ${facing}`)
+        const view = pinhole(eye)
+        const h = harness(scheduler, [A], {
+            view, canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
+        })
+        const px = view.project(world)
+        assert.equal(h.down(px).claimed, true, `claimed at ${eye}`)
+        h.move(px)
+        assert.ok(same(A.transform.deref().position, before, 1e-9),
+            `an identical pixel is an identical point at ${eye}`)
     }
 })
 
 test("a zero-delta grab at the pole moves nothing", () => {
     const { scheduler, A } = onSphere([0, 0, 5])
     const before = [...A.transform.deref().position]
+    const view = pinhole([0, 40, 40])
     const h = harness(scheduler, [A], {
-        facing: [0, 1, -1], canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
+        view, canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
     })
-    const px = { x: 0, y: -8 }        // inside the ring, clear of the frozen plane
+    const px = view.project([0, 0, 5])
     assert.equal(h.down(px).claimed, true)
-    assert.equal(h.move(px).outcome, "accepted")
-    assert.deepEqual(A.transform.deref().position, before, "the pole holds where the pointer holds")
+    h.move(px)
+    assert.ok(same(A.transform.deref().position, before, 1e-9), "the pole holds where the pointer holds")
     assert.ok(Math.abs(Math.hypot(...A.transform.deref().position) - 5) < 1e-9, "still on the sphere")
 })
 
-test("a dial holds the latitude in a tilted view too", () => {
-    const { scheduler, A } = onSphere([5, 0, 0])
-    const h = harness(scheduler, [A], {
-        facing: [0, 1, -Math.sqrt(3)], canTouch: freePoint, locusOf: locusOfWorld(scheduler),
-        requestMotion: realMotion(scheduler),
-    })
-    assert.equal(h.down({ x: 500, y: 0 }).claimed, true)
-    assert.equal(h.move({ x: 500, y: 40 }).outcome, "accepted")
-    const landed = A.transform.deref().position
-    assert.ok(Math.abs(landed[2]) < 1e-9, `a dial leaves z alone, tilted or not, got ${landed}`)
-    assert.ok(Math.abs(landed[1]) > 0.1, "and it did turn")
+// The bug that started this: a point seen from the far side used to pull the
+// other way. The mirrored back must turn with the finger. (id:laws-decl-anchor)
+test("a grab follows the pointer, on the near face and the far one", () => {
+    const cases = [
+        { eye: [0, 30, 60], at: [3, 0, 4], where: "near" },
+        { eye: [-60, 0, 20], at: [3, 0, 4], where: "far" },
+        { eye: [0, 30, -60], at: [3, 0, 4], where: "under" },
+    ]
+    for (const { eye, at, where } of cases) {
+        const { scheduler, A } = onSphere(at)
+        const view = pinhole(eye)
+        const h = harness(scheduler, [A], {
+            view, canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
+        })
+        const s0 = view.project(at)
+        assert.equal(h.down(s0).claimed, true, `claimed ${where}`)
+        const d = { x: 24, y: 8 }
+        h.move({ x: s0.x + d.x, y: s0.y + d.y })
+        const s1 = view.project(A.transform.deref().position)
+        const moved = Math.hypot(s1.x - s0.x, s1.y - s0.y)
+        const cos = ((s1.x - s0.x) * d.x + (s1.y - s0.y) * d.y) / (moved * Math.hypot(d.x, d.y))
+        assert.ok(cos > 0.5, `the point follows the pointer ${where}, cos = ${cos.toFixed(2)}`)
+    }
 })
 
-
-// The user's report: from lat −12° at R = 100 in the paper view, coming back to the
-// plane took four full-width pulls, and the dial spiralled off its own parallel. Both
-// are the law's radial projection of a plane request. A sphere's hand is its own
-// coordinates instead, so a dial is a dial and one drawn radius of reach is the paper.
-test("a dial turns the azimuth and leaves the latitude alone", () => {
+test("a full circular hand path comes home on the ball", () => {
     const { scheduler, A } = onSphere([5 * Math.cos(Math.PI / 15), 0, 5 * Math.sin(Math.PI / 15)])
+    const view = pinhole([0, 0, 60])
     const h = harness(scheduler, [A], {
-        canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
+        view, canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
     })
-    const z0 = A.transform.deref().position[2]
-    assert.equal(h.down({ x: 489, y: 0 }).claimed, true)
-    // A dial is the hand's angle around the pole: a circular path, not a straight one.
     const start = [...A.transform.deref().position]
-    const r = Math.hypot(start[0], start[1]) * 100         // the pole's own circle, in pixels
-    for (let i = 1; i <= 3; i++) {
-        const a = (i / 12) * Math.PI * 2
-        h.move({ x: r * Math.cos(a), y: r * Math.sin(a) })
-    }
-    assert.ok(A.transform.deref().position[1] > 1, "a quarter turn moves the azimuth")
-    for (let i = 4; i <= 12; i++) {
-        const a = (i / 12) * Math.PI * 2
-        h.move({ x: r * Math.cos(a), y: r * Math.sin(a) })
-    }
+    const s0 = view.project(start)
+    const hub = view.project([0, 0, 0])
+    const r = Math.hypot(s0.x - hub.x, s0.y - hub.y)
+    const a0 = Math.atan2(s0.y - hub.y, s0.x - hub.x)
+    const at = (frac) => ({ x: hub.x + r * Math.cos(a0 + frac * Math.PI * 2), y: hub.y + r * Math.sin(a0 + frac * Math.PI * 2) })
+    assert.equal(h.down(s0).claimed, true)
+    for (let i = 1; i <= 3; i++) h.move(at(i / 12))
+    assert.ok(Math.abs(A.transform.deref().position[1]) > 1, "a quarter turn moves the azimuth")
+    for (let i = 4; i <= 12; i++) h.move(at(i / 12))
     const landed = A.transform.deref().position
-    assert.ok(Math.abs(landed[2] - z0) < 1e-9, `a dial keeps the latitude, got z = ${landed[2]}, wanted ${z0}`)
     assert.ok(Math.abs(Math.hypot(...landed) - 5) < 1e-9, "and stays on the sphere")
-    assert.ok(same(landed, start), `and a full turn comes home, got ${landed}`)
+    assert.ok(same(landed, start, 1e-6), `and a full turn comes home, got ${landed}`)
 })
 
-test("one drawn radius of reach lands on the paper circle", () => {
+test("stretching out reaches the paper; pulling in lifts off it", () => {
     const { scheduler, A } = onSphere([5 * Math.cos(Math.PI / 15), 0, 5 * Math.sin(Math.PI / 15)])
+    const view = pinhole([0, 0, 60])
     const h = harness(scheduler, [A], {
-        canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
+        view, canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
     })
-    assert.equal(h.down({ x: 489, y: 0 }).claimed, true)
-    // lat 12° is 0.209 rad, so a fifth of the drawn radius (~105 px here) reaches the paper,
-    // and the rest of the reach holds it there: the paper is a floor.
-    h.move({ x: 489 + 120, y: 0 })
-    assert.ok(Math.abs(A.transform.deref().position[2]) < 1e-9,
-        `the equator is reached and held, got z = ${A.transform.deref().position[2]}`)
-    h.move({ x: 989, y: 0 })
-    assert.ok(Math.abs(A.transform.deref().position[2]) < 1e-9, "and a full drawn radius holds it")
+    const rho0 = Math.hypot(A.transform.deref().position[0], A.transform.deref().position[1])
+    const s0 = view.project(A.transform.deref().position)
+    const hub = view.project([0, 0, 0])
+    const n = Math.hypot(s0.x - hub.x, s0.y - hub.y)
+    assert.equal(h.down(s0).claimed, true)
+    h.move({ x: hub.x + ((s0.x - hub.x) / n) * 80, y: hub.y + ((s0.y - hub.y) / n) * 80 })
+    const landed = A.transform.deref().position
+    assert.ok(Math.abs(landed[2]) < 1e-6, `out lands on the paper circle, got z = ${landed[2]}`)
+    const rho = Math.hypot(landed[0], landed[1])
+    assert.ok(rho + 1e-9 >= rho0, `out grows the parallel, ${rho0} → ${rho}`)
 
-    // Inward, the hand lifts it off the paper again.
     const { scheduler: s2, A: B } = onSphere([5, 0, 0])
     const h2 = harness(s2, [B], {
-        canTouch: freePoint, locusOf: locusOfWorld(s2), requestMotion: realMotion(s2),
+        view, canTouch: freePoint, locusOf: locusOfWorld(s2), requestMotion: realMotion(s2),
     })
-    h2.down({ x: 500, y: 0 })
-    h2.move({ x: 400, y: 0 })            // a fifth of a drawn radius inward
+    h2.down(view.project([5, 0, 0]))
+    h2.move(hub)
     assert.ok(B.transform.deref().position[2] > 0.9,
-        `an inward reach lifts the point off the paper, got ${B.transform.deref().position}`)
+        `inward lifts off the paper, got ${B.transform.deref().position}`)
 })
 
-test("a short pull is still fine control", () => {
-    const { scheduler, A } = onSphere([5 * Math.cos(Math.PI / 15), 0, 5 * Math.sin(Math.PI / 15)])  // lat 12°, R = 5
+test("an off-centre grab on a sphere does not snap to the pointer", () => {
+    const { scheduler, A } = onSphere([3, 0, 4])
+    const view = pinhole([0, 30, 60])
     const h = harness(scheduler, [A], {
-        canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
+        view, canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
     })
-    h.down({ x: 489, y: 0 })
-    h.move({ x: 509, y: 0 })
-    const moved = 1.0396 - A.transform.deref().position[2]
-    assert.ok(moved < 0.25, `a 20 px pull moves z by under a quarter, got ${moved}`)
-    assert.ok(moved > 0, "and it does move")
+    const before = [...A.transform.deref().position]
+    const s0 = view.project(before)
+    assert.equal(h.down({ x: s0.x + 6, y: s0.y + 5 }).claimed, true)
+    assert.equal(h.move({ x: s0.x + 8, y: s0.y + 7 }).outcome, "accepted")
+    const landed = A.transform.deref().position
+    assert.ok(Math.abs(Math.hypot(...landed) - 5) < 1e-6, "still on the sphere")
+    const s1 = view.project(landed)
+    const step = Math.hypot(s1.x - s0.x, s1.y - s0.y)
+    assert.ok(step < 12, `a tiny step is a tiny move, got ${step.toFixed(1)} px`)
+    assert.ok(Math.hypot(s1.x - (s0.x + 8), s1.y - (s0.y + 7)) > 3, `snapped to the pointer: ${landed}`)
+})
+
+test("a click inside slop does not move the point", () => {
+    const { scheduler, a } = seated()
+    const before = [...a.transform.deref().position]
+    const h = harness(scheduler, [a], { slop: DRAG_SLOP })
+    assert.equal(h.down({ x: 300, y: 0 }).claimed, true)
+    assert.deepEqual(h.move({ x: 301, y: 0 }), { moved: false })
+    h.up()
+    assert.deepEqual(a.transform.deref().position, before, "a click is not a drag")
+    assert.equal(h.requests.length, 0)
+})
+
+test("a short pull moves the point with the finger", () => {
+    const { scheduler, A } = onSphere([5 * Math.cos(Math.PI / 15), 0, 5 * Math.sin(Math.PI / 15)])
+    const view = pinhole([0, 0, 60])
+    const h = harness(scheduler, [A], {
+        view, canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
+    })
+    const s0 = view.project(A.transform.deref().position)
+    assert.equal(h.down(s0).claimed, true)
+    h.move({ x: s0.x - 20, y: s0.y })
+    const s1 = view.project(A.transform.deref().position)
+    const moved = Math.hypot(s1.x - s0.x, s1.y - s0.y)
+    assert.ok(moved > 12 && moved < 24, `a 20 px pull moves the point by about 20 px, got ${moved}`)
+})
+
+test("dragging in to the centre climbs to the pole without spinning", () => {
+    const { scheduler, A } = onSphere([5, 0, 0])
+    const view = pinhole([0, 0, 60])
+    const h = harness(scheduler, [A], {
+        view, canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
+    })
+    const hub = view.project([0, 0, 0])
+    assert.equal(h.down(view.project([5, 0, 0])).claimed, true)
+    h.move(hub)
+    const landed = A.transform.deref().position
+    assert.ok(landed[2] > 4, `the centre is the pole, got ${landed}`)
+    assert.ok(Math.abs(landed[1]) < 0.3, `and it did not spin, got ${landed}`)
+})
+
+test("at the pole, a left pull and an up pull leave at a like pace", () => {
+    const go = (d) => {
+        const { scheduler, A } = onSphere([0, 0, 5])
+        const view = pinhole([0, 40, 40])
+        const h = harness(scheduler, [A], {
+            view, canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
+        })
+        const s0 = view.project([0, 0, 5])
+        assert.equal(h.down(s0).claimed, true)
+        h.move({ x: s0.x + d.x, y: s0.y + d.y })
+        const p = A.transform.deref().position
+        return Math.hypot(p[0], p[1], p[2] - 5)
+    }
+    const left = go({ x: 40, y: 0 })
+    const along = go({ x: 0, y: 40 })
+    assert.ok(left > 0.2 && along > 0.2, `both pulls leave the pole, left ${left} along ${along}`)
+    assert.ok(Math.max(left, along) / Math.min(left, along) < 4,
+        `left/right must not explode beside the other axis: left ${left} along ${along}`)
+})
+
+// Slight stickiness: a grab that starts on a landmark is held there a little.
+// (id:laws-decl-anchor)
+test("the paper detent holds a grab that starts on the paper", () => {
+    const at = [0, 5, 0]
+    const view = pinhole([0, 30, 60])
+    const run = (detents) => {
+        const { scheduler, A } = onSphere(at)
+        const h = harness(scheduler, [A], {
+            view, detents, canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
+        })
+        const s0 = view.project(at)
+        assert.equal(h.down(s0).claimed, true)
+        h.move({ x: s0.x, y: s0.y + 0.5 })
+        return A.transform.deref().position[2]
+    }
+    const raw = run(null)
+    const stuck = run({ paper: true })
+    assert.ok(Math.abs(raw) > 0.02, `the raw grab leaves the paper, got z = ${raw}`)
+    assert.ok(Math.abs(stuck) < Math.abs(raw) / 2, `the detent holds it near the paper, ${raw} → ${stuck}`)
+})
+
+test("the pole detent holds a grab that starts on the pole", () => {
+    const at = [0, 0, 5]
+    const view = pinhole([0, 40, 40])
+    const run = (detents) => {
+        const { scheduler, A } = onSphere(at)
+        const h = harness(scheduler, [A], {
+            view, detents, canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
+        })
+        const s0 = view.project(at)
+        assert.equal(h.down(s0).claimed, true)
+        h.move({ x: s0.x + 0.5, y: s0.y })
+        const p = A.transform.deref().position
+        return Math.hypot(p[0], p[1], p[2] - 5)
+    }
+    const raw = run(null)
+    const stuck = run({ poles: true })
+    assert.ok(raw > 0.01, `the raw grab leaves the pole, got ${raw}`)
+    assert.ok(stuck < raw / 2, `the detent holds it near the pole, ${raw} → ${stuck}`)
+})
+
+// A cone is a 2-DOF surface: its hand is the cone's own polar about the apex, and
+// the ball's detents must not fire on it. (id:laws-decl-anchor)
+test("a cone point circles without jumping the height, and the detents never bend it", () => {
+    const scheduler = buildWorld()
+    const host = scheduler.hotSwapChild("host", fork("host", "let B = [0, 0, 0]\nlet P\nas B do\n  let P.tilt = 30\nend"))
+    drive(scheduler)
+    const P = find(host, "P")
+    const before = [...frameWorldTransform(P).position]
+    const view = pinhole([150, -450, 600])
+    const h = harness(scheduler, [P], {
+        view, detents: { paper: true, poles: true }, canTouch: freePoint,
+        locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
+    })
+    const s0 = view.project(before)
+    const hub = view.project([0, 0, 0])               // B, the apex
+    const r0 = Math.hypot(s0.x - hub.x, s0.y - hub.y)
+    const psi0 = Math.atan2(s0.y - hub.y, s0.x - hub.x)
+    const tiltOf = (p) => { const r = Math.hypot(...p); return r < 1e-9 ? 0 : (Math.acos(p[0] / r) * 180) / Math.PI }
+    assert.equal(h.down(s0).claimed, true)
+    // Circling the apex's projection is a pure turn: the height — the tilt — is
+    // held on every step, so a circle never jumps the height, and the ball's
+    // detents never bend it. (id:laws-freedom)
+    let spread = 0
+    for (let i = 1; i <= 8; i++) {
+        const psi = psi0 + (i * Math.PI) / 12
+        h.move({ x: hub.x + r0 * Math.cos(psi), y: hub.y + r0 * Math.sin(psi) })
+        const p = [...frameWorldTransform(P).position]
+        assert.ok(Math.abs(tiltOf(p) - 30) < 1e-3, `a circle holds the tilt, got ${tiltOf(p)} at step ${i}`)
+        spread = Math.max(spread, Math.hypot(p[0] - before[0], p[1] - before[1], p[2] - before[2]))
+    }
+    assert.ok(spread > 0.5, `the point circles, got ${spread.toFixed(2)}`)
 })

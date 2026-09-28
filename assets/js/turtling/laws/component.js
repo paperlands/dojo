@@ -10,10 +10,8 @@
 // law's radius from its parent along the current direction. That is enough to make
 // two connected distances respond to one requested change, analytically.
 
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-const len = (v) => Math.hypot(v[0], v[1], v[2])
-const unit = (v) => { const n = len(v); return n > 1e-12 ? [v[0] / n, v[1] / n, v[2] / n] : null }
-const finite3 = (p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite)
+import { sub, len, unit, finite3 } from "./vec3.js"
+
 
 // The connected component of `laws` that shares a frame with any seed identity.
 // Nodes are frame ids, edges are law endpoints. (id:laws-build-p3)

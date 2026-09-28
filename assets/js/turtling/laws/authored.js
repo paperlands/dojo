@@ -6,11 +6,8 @@ import { forwardOf, DEG, headingOf, compassOf, upOf } from "./relations.js"
 import { realizeDistance, validateDistance, realizeTilt, ACCEPT_TOL } from "./realize.js"
 import { nearest as meetNearest, plane as planeSet, sphere as sphereSet, point as pointSet, cone as coneSet, halfplane as halfplaneSet } from "./meet.js"
 import { SE3 } from "../se3.js"
+import { sub, dot, len, finite3 } from "./vec3.js"
 
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-const len = (v) => Math.hypot(v[0], v[1], v[2])
-const finite3 = (p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite)
 const AXIS_IDX = { x: 0, y: 1, z: 2 }
 const axisOk = (axis) => AXES.includes(axis)
 

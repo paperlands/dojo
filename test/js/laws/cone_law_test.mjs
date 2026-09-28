@@ -7,7 +7,7 @@ import assert from "node:assert/strict"
 import { buildWorld, fork, drive } from "./harness.mjs"
 import { frameWorldTransform } from "../../../assets/js/turtling/scheduler.js"
 import { stateOf, coneCurve, marksOf } from "../../../assets/js/turtling/laws/constraints.js"
-import { DEFAULT_ARM } from "../../../assets/js/turtling/laws/realize.js"
+import { DEFAULT_ARM, realizeTilt } from "../../../assets/js/turtling/laws/realize.js"
 import { parseProgram } from "../../../assets/js/turtling/parse.js"
 
 const pass = ({ requested }) => ({ accepted: true, transform: requested })
@@ -36,12 +36,12 @@ test("a hand request composes onto the cone", () => {
     const host = scheduler.hotSwapChild("host", fork("host", SOURCE))
     drive(scheduler)
     const P = host.children.get("P")
-    const r = scheduler.requestMotion(P, { rotation: P.transform.deref().rotation, position: [0, 5, 0] }, scheduler.motionRevision)
+    const r = scheduler.requestMotion(P, { rotation: P.transform.deref().rotation, position: [10, 5, 0] }, scheduler.motionRevision)
     drive(scheduler, { maxTicks: 5 })
     assert.equal(r.kind, "accept")
     const p = [...frameWorldTransform(P).position]
     assert.ok(Math.abs(tiltOf(p) - 30) < 1e-6, "the opening holds")
-    assert.ok(Math.abs(Math.hypot(...p) - 5) < 1e-6, "the wish's radius is kept")
+    assert.ok(Math.abs(p[0] - 10) < 1e-6, `the wish's height rides, got x = ${p[0]}`)
 })
 
 test("the freedom display names the cone and samples its window", () => {
@@ -87,7 +87,19 @@ test("a tilt outside [0, 180] folds to the same cone, never a domain error", () 
     const P = host.children.get("P")
     const p = [...frameWorldTransform(P).position]
     assert.ok(scheduler.laws.active().some((l) => l.feature === "tilt"), "190 resolves")
-    assert.ok(Math.abs(tiltOf(p) - 170) < 1e-6, `190 folds to 170, got ${tiltOf(p)}`)
+    // 190 folds to the 170 cone; its narrow reading is 10, and the point realizes
+    // there — on the nappe nearest the frame, never the far one. (id:laws-freedom)
+    assert.ok(Math.abs(tiltOf(p) - 10) < 1e-6, `190 folds to the 170/10 cone, got ${tiltOf(p)}`)
+})
+
+test("a tilt past 90 stays on the nappe nearest the target", () => {
+    const target = [80, 0, 20]                      // clearly on the +x side of the apex
+    const at = (tilt) => realizeTilt([0, 0, 0], [1, 0, 0], [0, 0, 1], target, tilt).pose
+    const before = at(89)
+    const after = at(91)
+    assert.ok(before[0] > 0, `89 stays on the +nappe, got x = ${before[0]}`)
+    assert.ok(after[0] > 0, `91 stays on the +nappe too, got x = ${after[0]}`)
+    assert.ok(Math.abs(Math.hypot(...after) - Math.hypot(...target)) < 1e-6, "the radius is the target's")
 })
 
 test("tilt 360 is tilt 0: the axis, and it has a mark", () => {
@@ -106,4 +118,16 @@ test("tilt 360 is tilt 0: the axis, and it has a mark", () => {
     const marks = marksOf(state.locus, { at: p })
     assert.equal(marks.curves.length, 0, "no window")
     assert.equal(marks.axes.length, 1, "the axis is the dotted mark")
+})
+
+test("a half-angle of 90 is a plane, and it is marked as one", () => {
+    const state = stateOf({ at: [0, 0, 3], constraints: [
+        { feature: "tilt", apex: [0, 0, 0], axis: [1, 0, 0], halfAngle: 90 },
+    ] })
+    assert.equal(state.locus.kind, "cone")
+    assert.equal(state.dof, 2, "an open cone is a plane, two degrees")
+    const marks = marksOf(state.locus, { at: state.at })
+    assert.equal(marks.traces.length, 0, "not a trace")
+    assert.equal(marks.curves.length, 1, "a patch, not a lone line")
+    assert.equal(marks.axes.length, 2, "and the plane's two axes")
 })
