@@ -315,7 +315,13 @@ export class Turtle {
         }
         for (const frame of scheduler.registry.values()) {
             if (frame === scheduler.root || !exposed(frame)) continue
-            const world = frameWorldTransform(frame)
+            // A derived figure's pin marks its BIRTH — the definition's origin. An
+            // ordinary place's pin marks where it walks. The membrane again: a value
+            // has an origin to return to; a process owns its position.
+            // (id:laws-figure-protocol)
+            const world = (frame.profile === 'derived' && frame.birthPose)
+                ? SE3.compose(worldTransform(frame), frame.birthPose)
+                : frameWorldTransform(frame)
             const at = view.project(world.position)
             if (!at) continue
             // The place's inherited heading: a declaration is seated at the walk's
@@ -496,12 +502,15 @@ export class Turtle {
                     layerMethod: 'renderOrder',
                     polygonOffset: { factor: -0.1, units: -1 }
                 }),
+                createText: () => new Render.Text(),
                 frameMs: this.renderLoop.frameInterval,
                 controls: this.stage.controls,
             }
         )
         // kindled left as register holds — set by first draw() / focusAmbient
         this.stage.head.hide()
+        // A figure-valued let is a closed child ambient; it shows through its own
+        // layer, so no separate mount wiring is needed. (id:turtle-ambient-calculus)
     }
 
     onFrame(t) {

@@ -187,7 +187,7 @@ function beColour(ctx, color = "silver") {
     let resolved = color
     if (color === "invisible") resolved = "#00000000"
     if (Number.isFinite(color)) resolved = `hsla(${~~(360 * color)}, 70%,  72%)`
-    if (color === "random") resolved = `hsla(${~~(360 * Math.random())}, 70%,  72%)`
+    if (color === "random") resolved = `hsla(${~~(360 * (ctx.random ?? Math.random)())}, 70%,  72%)`
     if (/^([0-9a-f]{3}){1,2}$/i.test(color)) resolved = "#" + color
     return {
         style: { color: resolved },

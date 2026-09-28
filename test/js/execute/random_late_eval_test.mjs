@@ -11,6 +11,7 @@ import assert from "node:assert/strict"
 
 import { drainEvents } from "../../../assets/js/turtling/executor.js"
 import { ASTNode } from "../../../assets/js/turtling/ast.js"
+import { parseProgram } from "../../../assets/js/turtling/parse.js"
 import { Parser } from "../../../assets/js/turtling/mafs/parse.js"
 import { Evaluator } from "../../../assets/js/turtling/mafs/evaluate.js"
 
@@ -62,5 +63,25 @@ describe("deferred constants (numerical tower)", () => {
 
         // count was 2 at the final definition; freezing means every read returns 2.
         assert.equal(draw(deps, "frozen"), 2)
+    })
+
+    test("a look (X.x) is bottled at fn, not a window", () => {
+        const deps = realDeps()
+        let x = 10
+        deps.mathEvaluator.resolveExternal = (name) => name === "X.x" ? x : undefined
+        drainEvents(parseProgram("fn last X.x"), deps)
+        assert.equal(draw(deps, "last"), 10)
+        x = 99
+        assert.equal(draw(deps, "last"), 10, "last set down 10; later X.x is someone else's")
+    })
+
+    test("a recipe still looks live — only 0-arity bottles", () => {
+        const deps = realDeps()
+        let x = 10
+        deps.mathEvaluator.resolveExternal = (name) => name === "X.x" ? x : undefined
+        drainEvents(parseProgram("fn addx[n] n+X.x"), deps)
+        assert.equal(draw(deps, "addx[0]"), 10)
+        x = 99
+        assert.equal(draw(deps, "addx[0]"), 99, "holes stay a recipe")
     })
 })

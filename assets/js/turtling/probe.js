@@ -48,6 +48,8 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                 lastReflectChange: turtle._lastReflectChange,
                 ambients,
                 layers: compositor?.probeLayers?.() ?? [],
+                readout: sch?.readouts?.stats?.() ?? null,
+                nodes: sch?.readouts?.list?.() ?? [],
                 order: {
                     coreshell: law?.orderOf?.("coreshell") ?? null,
                     outershell: law?.orderOf?.("outershell") ?? null,

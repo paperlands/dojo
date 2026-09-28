@@ -38,3 +38,30 @@ test("a drag before a command is read; a drag after it is history, not a subscri
     assert.equal(host.transform.deref().position[0], 7, "the turtle is not a subscription")
     assert.equal(resolveBinding(host, "A.x"), 3, "but the current read is the accepted state")
 })
+
+test("fn last A.x bottles, so when last != bucket fires again after a later drag", () => {
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host", `
+fn round(no, nearest) (no - (no // nearest))
+let A
+fn last 0
+loop 20 do
+  wait 1/5
+  when last != round[A.x, 25]/25 do
+    label last 100
+    fn last round[A.x, 25]/25
+  end
+end
+`))
+    const A = find(host, "A")
+    const trace = drive(scheduler, {
+        maxTicks: 12,
+        after: (i) => {
+            if (i === 1) assert.equal(drag(scheduler, A, 40), "accept")
+            if (i === 5) assert.equal(drag(scheduler, A, 80), "accept")
+        },
+    })
+    const labels = [...trace.values()].flat().filter((e) => e.type === "label")
+    assert.deepEqual(labels.map((l) => l.text), ["0", "1"], "each new bucket fires once; label still sees the old last")
+    assert.equal(scheduler.errors.length, 0)
+})

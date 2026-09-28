@@ -749,6 +749,35 @@ function interceptShout(frame, value, registry, deferredShouts, onShout) {
 }
 
 // Mark dotted cross-ambient reads so loops auto-yield.
+// A derived figure is closed: it may read its ancestors' params and scalars —
+// the captured inputs — and nothing else. No sibling frame, no dotted world
+// read, no randomness. This is the closure profile on the child door, so a
+// figure IS an ambient without becoming an effectful one. (id:laws-figure-eidos-cell)
+const DERIVED_BUDGET = 200_000
+
+function resolveScopeValue(frame, name) {
+    for (let node = frame; node; node = node.parent) {
+        if (node.params?.has(name)) return node.params.get(name)
+        const id = node.scalars?.get(name)
+        if (id !== undefined) return metaRootFrame(frame)._readouts?.value(id)
+    }
+    return undefined
+}
+
+function closeDerivedDeps(deps, frame) {
+    deps.mathEvaluator.resolveExternal = (name) => {
+        if (typeof name === 'string' && name.includes('.')) {
+            throw new Error(`derived figure has no world read: ${name}`)
+        }
+        return resolveScopeValue(frame, name)
+    }
+    if (deps.mathEvaluator.constants) {
+        deps.mathEvaluator.constants.random = () => {
+            throw new Error('derived figure is deterministic: random is not a figure input')
+        }
+    }
+}
+
 function bindResolve(deps, frame) {
     deps.mathEvaluator.beginObservation = () => {
         const root = metaRootFrame(frame)
@@ -794,6 +823,14 @@ function createChildGenerator(value, createDeps, execOpts) {
         birthtime: value.env?.birthtime,
         scope: value.env?.scope,
         lens: isLensName(value.name),
+        // A derived figure is a CLOSED cell: strict walk, hard budget, no
+        // truncation. Ordinary ambients keep their effectful semantics.
+        // (id:laws-figure-protocol)
+        strict: value.profile === 'derived',
+        ...(value.profile === 'derived' ? {
+            maxReductions: DERIVED_BUDGET, maxRecurseDepth: DERIVED_BUDGET,
+            maxRecurses: DERIVED_BUDGET, breathEvery: 256,
+        } : {}),
         mailbox,
     }
     // The batch's state is BORN HERE, not on the generator's first next(), so a
@@ -1011,6 +1048,9 @@ function seatPlace(parent, name, pump, pose = null) {
     // The empty place has a point handle; `as A` may later give this same
     // identity a walking head. (id:laws-decl-handle)
     place.isPlace = true
+    // The place's birth pose: the anchor a derived figure's pin marks. It stays
+    // fixed while the walking head drifts. (id:laws-figure-protocol)
+    place.birthPose = SE3.clone(pose ?? SE3.identity())
     parent.children.set(name, place)
     bumpTree(parent)
     wireChild(place, pump.createDeps(), [], pump.registry, { ast: [], functions: {} }, null, null)
@@ -1045,7 +1085,8 @@ function wireRun(child, deps, mailbox, executionState, code, relationshipBatch, 
     // has run the declaration. Exposure is a query about this set, not the parse.
     // (id:laws-decl-exposure)
     child.reached = new Set()
-    bindResolve(deps, child)
+    if (child.profile === 'derived') closeDerivedDeps(deps, child)
+    else bindResolve(deps, child)
     setListensFor(child, code)
     // A declaration is reached in the stream; the batch only names what the body
     // declares. Nothing is seated here. (id:laws-ordered-birth)
@@ -1074,9 +1115,15 @@ function rewireChild(child, value, pump) {
     // place stands, orientation included, and its first segment starts there
     // because the stroke takes its origin from the pose. (id:laws-decl-join-repair)
     if (child.isPlace === true) {
-        const accepted = child.transform.deref()
-        re.batch.transform = { rotation: accepted.rotation, position: [...accepted.position] }
+        // A place keeps its accepted geometry — a process stays where it walks.
+        // A DERIVED figure is a value: a rebuild restarts the walk at its birth
+        // pose, never at the last head, or every preemption drifts. The distinction
+        // is the membrane again: a process owns its position, a value is rebuilt
+        // from its definition. (id:laws-figure-protocol)
+        const start = value.profile === 'derived' ? value.origin : child.transform.deref()
+        re.batch.transform = { rotation: start.rotation, position: [...start.position] }
     }
+    child.profile = value.profile ?? null
     child.generator = re.generator
     child.done = false
     wireRun(child, re.deps, re.mailbox, re.batch, value.code, re.relationshipBatch, pump)
@@ -1364,7 +1411,9 @@ function committedSnapshot() {
 // A source is gone: every derived value it owned goes with it.
 function releaseReadouts(root, ids) {
     if (!root?._readouts) return
-    for (const id of ids) root._readouts.release(id)
+    // Release first: a mount's onRelease sees its figure record before it goes.
+    const released = new Set(ids)
+    for (const id of released) root._readouts.release(id)
 }
 
 // Hard laws outrank requests: does a proposed configuration break an active law?
@@ -1772,6 +1821,8 @@ function birth(ctx, value, _route, pump) {
         // here; express it once in the child's own frame. (id:laws-decl-frame)
         const here = SE3.compose(worldTransform(ctx), value.origin)
         const next = SE3.compose(SE3.invert(worldTransform(existing)), here)
+        // A re-declared place re-anchors its birth. (id:laws-figure-protocol)
+        existing.birthPose = SE3.clone(next)
         const check = lawViolation(pump.laws.active(), new Map([[existing, next]]), pump.registry)
         const outcome = check.status === 'cannot-measure'
             ? { kind: 'unresolved', message: check.reason, span: value.owner }
@@ -2020,6 +2071,17 @@ function scalarReadout(ctx, value, _route, pump) {
     return { verdict: 'continue', produced: true }
 }
 
+
+// A captured input is a number or a bound scalar name. A compound expression has
+// no single captured value yet; it resolves to undefined and the build refuses.
+function captureArg(frame, expr) {
+    const text = String(expr).trim()
+    if (text === "") return undefined
+    const n = Number(text)
+    if (Number.isFinite(n)) return n
+    try { return resolveBinding(frame, text) } catch { return undefined }
+}
+
 // A parameter: sampled once at its declaration, then a stable input. It is bound
 // on the frame and read through `resolveBinding`; it owns no recomputation and no
 // node, so an unrelated commit cannot resample it. (id:eval-relational)
@@ -2087,9 +2149,39 @@ function woundRelation(ctx, message, kind = 'relation', span = null) {
     return { verdict: 'ended', produced: true }
 }
 
+// The figure protocol — owner ↔ cell, four messages. A derived figure is a cell:
+// a membrane (closed reads), local retention (its own ink and clock), and a hidden
+// process. The owner may ask and supersede; it never reaches inside.
+//   ask(question)        capture()  — the captured tuple; freshness is its equality
+//   supersede(question)  build()    — abandon the run, clear ink, anchor the new one
+//   answer(figure)       the child's ink at the cut
+//   drop(stale)          a reply whose question is no longer current is never shown
+// The generation is the question itself, not a counter. (id:laws-figure-protocol)
+function registerFigureCell(ctx, value, pump) {
+    if (!pump.readouts || !value.question?.length) return
+    const question = () => value.question.map((arg) => captureArg(ctx, arg))
+    pump.readouts.register(ctx.id, value.name, {
+        capture: question,
+        // The spawn already ran the child with this question; seed it so the first
+        // commit compares instead of always looking new.
+        seed: question(),
+        build: () => { supersedeFigure(ctx, value, pump); return value.name },
+    })
+}
+
+// supersede: the newest question wins. A running build is abandoned, not left to
+// finish — a value is preempted; an ordinary ambient process is not (D011/D028).
+function supersedeFigure(ctx, value, pump) {
+    const child = ctx.children.get(value.name)
+    if (!child) return
+    rewireChild(child, value, pump)
+    pump.wake?.()
+}
+
 function spawn(ctx, value, route, pump) {
     // Keep parent transform atom current between head events.
     ctx.transform.swap(() => value.origin)
+    if (value.profile === 'derived') registerFigureCell(ctx, value, pump)
     const existing = ctx.children.get(value.name)
     const deferredShouts = route.deferredShouts
 
@@ -2141,6 +2233,7 @@ function seatChild(ctx, value, pump, route, deferredShouts) {
     // The frame's clock is local (0 at birth); its birth on the shared
     // axis is inherited. One axis, two roots per ambient. (id:host-beat)
     child.birthtime = (value.env?.birthtime || 0) / 1000
+    child.profile = value.profile ?? null
     // Register under the name BEFORE wiring: wireChild stamps the
     // address, whose last segment is this children-map key.
     ctx.children.set(value.name, child)
@@ -2358,6 +2451,10 @@ export function createScheduler(generator, opts = {}) {
         // Inline drain asks too — unpaced hang is real.
         outOfTime: () => deadline !== null && clock() > deadline,
     }
+    // A drain can re-seat a derived figure after a pass was marked done; the
+    // pump's wake clears the cached flag so the next tick advances it.
+    // (id:laws-figure-eidos-cell)
+    pump.wake = () => { root._done = false }
 
     return {
         root,
@@ -2368,7 +2465,9 @@ export function createScheduler(generator, opts = {}) {
         get resumeAt() { return root.resumeAt },
         set resumeAt(v) { root.resumeAt = v },
 
-        done: false,
+        // Backed by the root so a drain-time re-seat can wake the scheduler.
+        get done() { return root._done === true },
+        set done(v) { root._done = v },
         commandCount: 0,
         lastTickTime: 0,
 
@@ -2561,7 +2660,13 @@ export function createScheduler(generator, opts = {}) {
         // Earliest resumeAt only; post-order within an instant. (D011 #3)
         tick(now) {
             this.lastTickTime = now
-            if (this.done) return false
+            // A drain may re-seat a derived figure after the pass was marked done
+            // (rewireChild resets the child, not this cache). Recompute before
+            // trusting it, so a re-seated figure is advanced. (id:laws-figure-eidos-cell)
+            if (this.done) {
+                this.done = allDone(root)
+                if (this.done) return false
+            }
 
             let produced = false
 
@@ -2628,6 +2733,12 @@ export function createScheduler(generator, opts = {}) {
             })
 
             // Stall wound only; full is stock.full. (id:output-ledger-r2-residency, id:carving-todo-ledger-stock)
+            // Derived values settle once per instant, whatever caused it: a
+            // program declaration, a law, a wait or a hand. `publish` covers
+            // motion commits; this covers ordinary program instants, where a
+            // `let s = ...` (or a figure cell) gets its first value.
+            // (id:laws-build-p3-readout-built, id:laws-figure-eidos-cell)
+            if (root._readouts?.size > 0) root._readouts.recompute(committedSnapshot())
             enforceResidency(registry, clock, stock)
             // Let go with work outstanding = the world is still building.
             this._building = parked

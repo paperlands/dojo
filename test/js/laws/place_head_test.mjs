@@ -60,7 +60,10 @@ test("a place inherits the heading it was born with, and keeps it when the head 
 
 test("the canvas offers a hand only to an unanchored place", () => {
     const turtle = readFileSync(new URL("../../../assets/js/turtling/turtle.js", import.meta.url), "utf8")
-    assert.match(turtle, /const world = frameWorldTransform\(frame\)/, "both marks read one accepted world pose")
+    assert.match(turtle, /SE3\.compose\(worldTransform\(frame\), frame\.birthPose\)/,
+        "a derived figure's pin marks its accepted birth")
+    assert.match(turtle, /: frameWorldTransform\(frame\)/,
+        "an ordinary place's pin marks its accepted world pose")
     assert.match(turtle, /world\.rotation\.rotateVec\(FACING_STEP, 0, 0\)/,
         "the arm is the place's own heading, not the paper's north")
     assert.match(turtle, /pointCandidates\(scheduler\.registry\.values\(\), frame => this\._touchable\(frame\)\)/,

@@ -6,7 +6,9 @@
 import { GridHelper } from '../utils/three-entry.js'
 import { followPosition } from './view.js'
 import { ColorConverter } from '../utils/color.js'
-import { Text } from '../utils/threetext.js'
+// troika is imported by the browser entry (render/index.js) and injected as a
+// factory; this module stays importable without the vendored bundle so the
+// compositor can be held by `node --test`. (id:label-reuse, compositor_stage_test)
 import { createLabelPool } from './render/label-pool.js'
 import { Line2 } from '../utils/three-addons/lines/Line2.js'
 import { LineGeometry } from '../utils/three-addons/lines/LineGeometry.js'
@@ -19,8 +21,11 @@ const LABEL_FONT = '/fonts/paperLang.ttf'
 
 // A layer's label pool, wired to the vendored troika Text. The compositor owns
 // one per layer and never imports the troika bundle itself. (id:label-reuse)
-export function createLabels(group) {
-    return createLabelPool(group, { createText: () => new Text(), font: LABEL_FONT })
+export function createLabels(group, opts = {}) {
+    if (typeof opts.createText !== "function") {
+        throw new TypeError("createLabels: opts.createText is required (the stage owns the Text constructor)")
+    }
+    return createLabelPool(group, { createText: opts.createText, font: opts.font ?? LABEL_FONT })
 }
 
 // Materialize a single event into the scene.

@@ -1261,9 +1261,10 @@ Five real verbs, checked at birth: =scene=, =camera=, =requestRender=,
 =viewOffset=, =materials=. Cadence (=frameMs=) and orbit (=controls=) ride
 =opts= — not stage interface — so a headless caller can omit them. The LIVE
 stage is still passed in, never mirrored. Pinned by
-=test/js/seams/compositor_stage_test.mjs=, which reads SOURCE: the compositor
-cannot be imported headless (materializer → vendored =threetext.js=, whose
-=from "./three.core.min"= has no extension and is immutable).
+=test/js/seams/compositor_stage_test.mjs=. It is now importable headless: the
+stage owns the Text constructor (=opts.createText=), so =materializer= no longer
+eagerly imports the vendored =threetext.js=. The real object is held by
+=test/js/render/figure_slot_test.mjs=.
 
 ** labels — pooled Text, so erase does not rebuild
 :PROPERTIES:
@@ -1273,8 +1274,9 @@ cannot be imported headless (materializer → vendored =threetext.js=, whose
 :END:
 A layer keeps its troika =Text=s. Erase hides; the next =label= reuses, so an
 unchanged rewrite dirties nothing and draws with no async =sync= gap — the
-=label x 10= / =wait= / =erase= blink. =materializer.createLabels= wires the
-vendored Text in; the pool takes it injected, so it is importable headless.
+=materializer.createLabels= takes the injected factory; the browser entry
+(=render/index.js=) wires the vendored Text in, so both the pool and the
+compositor are importable headless.
 An erase trims to =freeCap= free Texts (the burst peak is freed); layer
 teardown disposes geometry, material and detaches.
 Tested: =test/js/render/label_pool_test.mjs=.

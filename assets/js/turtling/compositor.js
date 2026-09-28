@@ -71,6 +71,8 @@ export function createCompositor(scheduler, stage, opts = {}) {
     }
     const createHead = opts.createHead || null
     const createShapist = opts.createShapist || null
+    // The stage owns the Text constructor; the compositor never imports troika,
+    // so `node --test` can hold the real object. (id:label-reuse)
     // Orbit target for materializeHead; headless callers omit it.
     const controls = opts.controls ?? null
     // The beat channel: one callback, emitted where the playhead consumes it.
@@ -97,7 +99,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         }
 
         const group = new Group()
-        const labels = createLabels(group)   // pooled Texts; erase hides, never disposes
+        const labels = createLabels(group, { createText: opts.createText })   // pooled Texts; erase hides, never disposes
         stage.scene.add(group)
 
         // The world/root layer is a render surface for deposited ink only — no pen,
@@ -140,6 +142,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         stage.scene.remove(layer.group)
         ambientLayers.delete(id)
     }
+
 
     // Focused subtree for view routing; head uses stricter name match.
     const inFocusedSubtree = (ambient) => focus.inFocusedSubtree(ambient)
@@ -371,9 +374,11 @@ export function createCompositor(scheduler, stage, opts = {}) {
         // and its hit target cannot live in different frames. (id:laws-decl-interface)
         viewReframe,
 
+
         // Play-gauge: layer poses + head local + first mesh opacity (probe only).
         // Diagnostic: what the place's own layer holds, and whether each child is
         // actually visible. (id:laws-decl-handle)
+
         probeLayerFor(id) {
             const layer = ambientLayers.get(id)
             if (!layer) return null
@@ -469,6 +474,9 @@ export function createCompositor(scheduler, stage, opts = {}) {
         // Own timeslice: never inherit a spent deadline (would park on first breath).
         flush() {
             scheduler.withSlice(pacer.budgetMs, driveToRest)
+            // Settle keyed cells OUTSIDE publication: capture happened in the
+            // commit, construction happens here. (id:laws-figure-eidos-cell)
+            scheduler.readouts.drain()
             drainAndMaterialize()  // one materialize pass after all ticks
             updateGroupPositions()
             cleanupOrphanedLayers()  // background tabs get no rAF
@@ -496,6 +504,8 @@ export function createCompositor(scheduler, stage, opts = {}) {
                 scheduler.withSlice(pacer.budgetMs, () => driveOneFrame(now))
             }
             // A finished ambient can still receive accepted pen-up motion.
+            // Settle keyed figures outside publication, before materializing.
+            scheduler.readouts.drain()
             drainAndMaterialize()
             updateGroupPositions()
             cleanupOrphanedLayers()

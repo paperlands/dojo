@@ -2,6 +2,7 @@
 // Math deps injected.
 
 import { COMMANDS, DEFAULT_STYLE } from "./commands.js"
+import { parseProgram } from "./parse.js"
 import { SE3 } from "./se3.js"
 import { recenterPose } from "./view.js"
 import { createStroke, extend as strokeExtend, flush as strokeFlush, fill as strokeFill } from "./stroke.js"
@@ -36,6 +37,16 @@ const envNum = (name) => {
 const DEFAULT_BREATH_EVERY = envNum("DOJO_BREATH") || 512
 // Self-break long strokes so the meter can see them (rate, not truth).
 const DEFAULT_STROKE_MAX = envNum("DOJO_STROKE_MAX") || 512
+// Charge one reduction. A construction budget refuses exhaustion rather than
+// returning a shortened answer. (id:laws-living-figures-review-next)
+function chargeReductions(state) {
+    state.reductions++
+    if (state.maxReductions && state.reductions > state.maxReductions) {
+        const error = new Error(`Maximum reductions of ${state.maxReductions} reached`)
+        error.kind = 'budget'
+        throw error
+    }
+}
 
 // Per-hole residual domain {word, measure}. Missing verb → all measure.
 // Word = name costume (ink, label text, shout name). Default measure is
@@ -72,20 +83,32 @@ export function createActorState(opts = {}) {
         // Empty eye seeds to recenterPose. (id:eye-view-pipeline)
         transform: opts.lens ? recenterPose() : SE3.identity(),
         // Lens is pen-up: Output is the viewport. (id:eye-lens-primitive)
-        style: { ...DEFAULT_STYLE, color: opts.color || DEFAULT_STYLE.color, ...(opts.lens ? { down: false } : {}) },
+        style: { ...DEFAULT_STYLE, ...(opts.style || {}), ...(opts.color ? { color: opts.color } : {}), ...(opts.lens ? { down: false } : {}) },
         functions: opts.functions ? { ...opts.functions } : {},
+        // The actor's randomness capability. A construction installs a refusing
+        // source so a command cannot reach the process RNG. (id:laws-living-figures-capability-review)
+        random: opts.random || Math.random,
         commandCount: 0,
         recurseCount: 0,
         maxRecurseDepth: opts.maxRecurseDepth || 360,
         maxRecurses: opts.maxRecurses || 888888,
+        // A recursion cap that stopped the walk: construction refuses rather than
+        // passing off a shortened drawing under the requested depth's name.
+        truncated: false,
+        // Strict construction: an inert Error node is refused, so a recipe reached
+        // through dynamic dispatch cannot execute a parse-error body silently.
+        strict: opts.strict === true,
         maxCommands: opts.maxCommands || 88888888,
         // Reductions: preemption meter (not language-visible commandCount). (D027 R3)
         reductions: 0,
+        maxReductions: opts.maxReductions ?? 0,   // 0 = unbounded (ordinary walks)
         breathEvery: opts.breathEvery ?? DEFAULT_BREATH_EVERY,
         strokeMax: opts.strokeMax ?? DEFAULT_STROKE_MAX,  // 0 = off
         // LOCAL clock: this ambient's own waits, 0 at birth. Stable under
         // re-parenting — the compositional coordinate. (id:host-beat)
-        elapsedTime: 0,
+        // A construction inherits the declaring frame's logical clock; ordinary
+        // frames start at 0 and advance on `wait`. (id:host-beat)
+        elapsedTime: opts.elapsedTime || 0,
         // Birth on the shared axis: the parent's `birthtime + time` at spawn.
         // Root: 0. `birthtime + time` is where this ambient stands on the
         // axis, so timelines align without anyone reading a global now. (id:host-beat)
@@ -205,7 +228,7 @@ function* walkBody(body, scope, state, stroke) {
     for (const node of body) {
         adoptRebase(state)   // a component rebase lands before this node reads pose
         // Offer preemption every breathEvery visits — work meter, not emits.
-        state.reductions++
+        chargeReductions(state)
         if (state.breathEvery !== 0 && state.reductions % state.breathEvery === 0) {
             yield { type: "breath" }
         }
@@ -233,7 +256,7 @@ function* walkBody(body, scope, state, stroke) {
                     }
                 }
                 // Empty body still burns a reduction (when-loop freeze fence).
-                state.reductions++
+                chargeReductions(state)
                 if (state.breathEvery !== 0 && state.reductions % state.breathEvery === 0) {
                     yield { type: "breath" }
                 }
@@ -245,9 +268,13 @@ function* walkBody(body, scope, state, stroke) {
         }
 
         case 'Call': {
-            // Capture foldable constants at def; deferred (random) stay symbolic.
+            // 0-arity is a value set down, not a window. Looks (X.x) bottle
+            // like time; recipes keep their holes; deferred (random) stay
+            // symbolic. (id:prim-fn)
             if (node.value === "fn" || node.value === "func") {
                 const rawArgs = node.children.map(arg => arg.value)
+                const signature = rawArgs[0]
+                let expression = rawArgs[1] || 0
                 const fnScope = { ...scope }
                 const ec = state.deps.mathEvaluator.constants
                 const deferred = state.deps.mathEvaluator.deferred
@@ -255,7 +282,20 @@ function* walkBody(body, scope, state, stroke) {
                     if (deferred?.has(key)) continue   // late-evaluated: keep symbolic
                     if (!(key in fnScope)) fnScope[key] = ec[key]()
                 }
-                state.deps.mathParser.defineFunction(rawArgs[0], rawArgs[1] || 0, fnScope)
+                const parser = state.deps.mathParser
+                if (typeof parser.parseSignature === "function") {
+                    const { params } = parser.extractSignature(parser.parseSignature(signature))
+                    if (params.length === 0) {
+                        const tree = parseMemo(parser, String(expression))
+                        if (!readsDeferred(tree, deferred ?? new Set())) {
+                            const value = yield* evalOrBlock(String(expression), scope, state)
+                            if (typeof value === "number" && Number.isFinite(value)) {
+                                expression = String(value)
+                            }
+                        }
+                    }
+                }
+                parser.defineFunction(signature, expression, fnScope)
                 break
             }
 
@@ -297,7 +337,7 @@ function* walkBody(body, scope, state, stroke) {
                 if (state.recurseCount >= state.maxRecurses) {
                     throw new Error(`Maximum recurse limit of ${state.maxRecurses} reached`)
                 }
-                if (currDepth + 1 > state.maxRecurseDepth) break
+                if (currDepth + 1 > state.maxRecurseDepth) { state.truncated = true; break }
 
                 // Build child scope with parameter bindings
                 const childScope = {}
@@ -361,23 +401,7 @@ function* walkBody(body, scope, state, stroke) {
         case 'Ambient': {
             // Grammar hole: ambient name is word (seeker, mice[count] after interp).
             const ambientName = String(yield* evalOrBlock(node.value, scope, state, "word"))
-            yield {
-                type: 'spawn',
-                name: ambientName,
-                frame: node.meta?.frame || null,
-                // Fork spec — three groups: spatial, code, environment
-                origin: SE3.clone(state.transform),
-                style: { ...state.style },
-                code: { ast: node.children, functions: { ...state.functions } },
-                env: {
-                    userspace: new Map(state.deps.mathParser.userspace),
-                    loopCounter: state.loopCounter,
-                    scope: { ...scope },
-                    // The child's birth on the shared axis = `birthtime + time`
-                    // of this ambient now. The child's own clock starts at 0. (id:host-beat)
-                    birthtime: state.birthtime + state.elapsedTime,
-                }
-            }
+            yield spawnEvent(state, scope, ambientName, node.children, state.functions, { frame: node.meta?.frame || null })
             break
         }
 
@@ -420,6 +444,18 @@ function* walkBody(body, scope, state, stroke) {
             // subject to relationships (an UNKNOWN) has no spelling yet and is not
             // this case. (id:eval-relational, id:laws-build-p3-readout-built)
             const expr = node.meta.expr
+            // A recipe call is a figure, not a number: emit the construction
+            // intent; the scheduler owns the cell and its lifetime.
+            const figureCall = figureCallOf(expr, state)
+            if (figureCall) {
+                const body = parseProgram(`${figureCall.recipe} ${figureCall.args.join(" ")}`)
+                // A proper `let`: a place (identity and name) whose body is the
+                // recipe. A rebuild restarts the walk at this birth pose, not at the
+                // last head — see rewireChild's derived branch. (id:laws-figure-protocol)
+                yield { type: 'birth', name: node.value, origin: SE3.clone(state.transform), owner: node.span ?? null }
+                yield spawnEvent(state, scope, node.value, body, state.functions, { profile: 'derived', question: figureCall.args })
+                break
+            }
             const deferred = state.deps?.mathEvaluator?.deferred
             let stochastic = false
             if (deferred && typeof expr === 'string') {
@@ -445,13 +481,20 @@ function* walkBody(body, scope, state, stroke) {
 
         // Error node inert at walk; crash path still kills. (D020, id:cmp-resilient)
         case 'Error':
+            if (state.strict) {
+                const strict = new Error(`construction refused: '${node.value}' did not parse`)
+                strict.kind = 'strict'
+                strict.span = node.span
+                throw strict
+            }
             break
         }
         } catch (error) {
             // Innermost span wins; do not overwrite. (id:cmp-runtime-provenance)
             if (error instanceof Error && !error.span && node.span) {
                 error.span = node.span
-                error.kind = 'walk'
+                // A deliberate kind (a work budget) outranks the walk label.
+                if (!error.kind) error.kind = 'walk'
             }
             throw error
         }
@@ -484,7 +527,8 @@ function* callCommand(name, args, state, stroke, baseRevision) {
 
     const ctx = {
         transform: state.transform,
-        style: state.style
+        style: state.style,
+        random: state.random
     }
 
     // Snapshot position before command mutates transform
@@ -605,6 +649,63 @@ function parseMemo(mathParser, expr) {
 // Does an expression name a deferred (stochastic) primitive? Used to keep a
 // sampled input a parameter, not a value recomputed by an unrelated commit.
 // (id:eval-relational)
+// A figure-valued binding: `let flake = recipe[args]` where `recipe` is a turtle
+// procedure (a `def`), not a math function. Recognized at walk so the math
+// evaluator never sees it. The captured args are the question; construction is
+// the answer, and runs outside publication. (id:laws-figure-eidos-naming)
+const FIGURE_CALL = /^([A-Za-z_][A-Za-z0-9_]*)\s*\[([\s\S]*)\]$/
+const FIGURE_SPACE = /^([A-Za-z_][A-Za-z0-9_]*)\s+(.+)$/s
+
+function splitTopLevel(s) {
+    const out = []
+    let depth = 0, start = 0
+    for (let i = 0; i < s.length; i++) {
+        const c = s[i]
+        if (c === '[' || c === '(') depth++
+        else if (c === ']' || c === ')') depth--
+        else if (c === ',' && depth === 0) { out.push(s.slice(start, i)); start = i + 1 }
+    }
+    out.push(s.slice(start))
+    return out
+}
+
+// The spawn payload — the ONE door a child inherits through: space (origin),
+// colour (style), vocabulary (code + userspace), captured scope, and logical
+// birth on the shared axis. `as … do` and a figure binding share it, so a figure
+// IS a child ambient, not a parallel construction. (id:turtle-ambient-calculus)
+function spawnEvent(state, scope, name, body, functions, extra = {}) {
+    return {
+        type: 'spawn',
+        name,
+        frame: extra.frame ?? null,
+        profile: extra.profile ?? null,
+        question: extra.question ?? null,
+        origin: SE3.clone(state.transform),
+        style: { ...state.style },
+        code: { ast: body, functions: { ...(functions ?? state.functions) } },
+        env: {
+            userspace: new Map(state.deps.mathParser.userspace),
+            loopCounter: state.loopCounter,
+            scope: { ...scope },
+            birthtime: state.birthtime + state.elapsedTime,
+        },
+    }
+}
+
+function figureCallOf(expr, state) {
+    if (typeof expr !== 'string') return null
+    // The author's natural spelling: `recipe arg arg`, no brackets. Recognized
+    // only when the head is a turtle procedure, so a math expression is untouched.
+    const spaced = expr.match(FIGURE_SPACE)
+    if (spaced && state.functions?.[spaced[1]]) {
+        return { recipe: spaced[1], args: spaced[2].trim().split(/\s+/).filter(Boolean) }
+    }
+    const match = expr.match(FIGURE_CALL)
+    if (!match || !state.functions?.[match[1]]) return null
+    const inner = match[2].trim()
+    return { recipe: match[1], args: inner === '' ? [] : splitTopLevel(inner).map((a) => a.trim()) }
+}
+
 function readsDeferred(tree, names) {
     if (!tree) return false
     if (tree.type === 'operand' && names.has(tree.value)) return true

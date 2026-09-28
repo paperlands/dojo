@@ -21,6 +21,9 @@ import { connect } from "node:net";
 import { randomBytes } from "node:crypto";
 
 const DEBUG_HTTP = "http://localhost:9222";
+// The shell page to drive. Override when the dev server is not on 4000 (the
+// rig's assumption, not a contract): DOJO_SHELL=localhost:4001/shell
+const SHELL_MATCH = process.env.DOJO_SHELL || "localhost:4000/shell";
 
 // --- minimal WebSocket client (client frames masked, fragments reassembled) ---
 function wsConnect(url) {
@@ -116,7 +119,7 @@ function wsConnect(url) {
 async function shellSession() {
   const targets = await (await fetch(`${DEBUG_HTTP}/json`)).json();
   const page = targets.find(
-    (t) => t.type === "page" && t.url.includes("localhost:4000/shell"),
+    (t) => t.type === "page" && t.url.includes(SHELL_MATCH),
   );
   if (!page)
     throw new Error(
@@ -206,17 +209,23 @@ try {
     let held = "NO EDITOR";
     for (let i = 0; i < 80 && held === "NO EDITOR"; i++) {
       held = await s.evalJs(`(() => {
-      const content = document.querySelector('.cm-content');
-      if (!content) return 'NO EDITOR';
-      content.focus();
+      const box = document.querySelector('.cm-content') || document.querySelector('textarea');
+      if (!box) return 'NO EDITOR';
+      box.focus();
+      if (box.tagName === 'TEXTAREA') {
+        box.value = ${JSON.stringify(program)};
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+        box.dispatchEvent(new Event('change', { bubbles: true }));
+        return box.value.slice(0, 200);
+      }
       document.execCommand('selectAll');
       document.execCommand('insertText', false, ${JSON.stringify(program)});
-      return content.innerText.slice(0, 200);
+      return box.innerText.slice(0, 200);
     })()`);
       if (held === "NO EDITOR") await new Promise((r) => setTimeout(r, 250));
     }
     if (held === "NO EDITOR") {
-      console.error("play_cdp: editor never mounted (.cm-content absent); injection did NOT occur");
+      console.error("play_cdp: editor never mounted (.cm-content / textarea absent); injection did NOT occur");
       process.exit(2);
     }
     console.log("editor holds:", JSON.stringify(held));

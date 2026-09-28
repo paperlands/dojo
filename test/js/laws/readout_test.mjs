@@ -194,3 +194,30 @@ test("parameter vs derived: `random` is sampled once; `A.x` recomputes", () => {
     drive(derived)
     assert.equal(resolveBinding(derivedHost, "s"), 7, "the derived value recomputes at the commit")
 })
+
+// A source's release is an event its owner can subscribe to: rewire, removal,
+// fresh play. A figure binding uses it to lose its right to publish when its run
+// ends, not merely when its ambient dies. (id:laws-living-figures-review-next)
+test("onRelease: removing the owner tells the source's subscribers", () => {
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host", "let A\nlet s = A.x\nwait 1"))
+    const released = []
+    scheduler.readouts.onRelease((source) => released.push(source))
+    assert.equal(scheduler.readouts.size, 1)
+    scheduler.removeChild("host")
+    assert.deepEqual(released, [host.id], "removal released the source")
+    assert.equal(scheduler.readouts.size, 0)
+})
+
+test("releaseAll carries the same lifetime notification as release", () => {
+    const store = createReadouts()
+    store.register("a", "site", () => 1)
+    store.register("b", "site", () => 2)
+    const released = []
+    store.onRelease((source) => released.push(source))
+    store.releaseAll()
+    assert.equal(store.size, 0)
+    assert.deepEqual(released.sort(), ["a", "b"])
+    store.releaseAll()
+    assert.deepEqual(released.sort(), ["a", "b"], "no duplicate releases")
+})
