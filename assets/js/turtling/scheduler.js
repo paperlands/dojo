@@ -15,6 +15,7 @@ import { meetAll, nearest as meetNearest } from "./laws/meet.js"
 import { createReadouts } from "./laws/readout.js"
 import { realizeDistance, ACCEPT_TOL } from "./laws/realize.js"
 import { SE3 } from "./se3.js"
+import { keyedSeed, keyedStream } from "./mafs/keyed_stream.js"
 import { chargeInk, woundInk, enforceResidency, resetInk, createStock } from "./ledger.js"
 
 // Lens: viewport Output, not scene. Name `eye`. (id:eye-lens-primitive)
@@ -208,6 +209,9 @@ function deliverDeposit(ctx, value, frameTarget, frameTransform, stock) {
     const sink = frameTarget ? frameTarget.channel : ctx.channel
     if (sink.full) return 'credit'
 
+    // The held clear lands WITH the new ink: one step, so the swap is atomic to the view.
+    // (id:laws-figures-phase34-inplace)
+    if (ctx.pendingClear) { ctx.channel.put({ type: 'clear' }); ctx.pendingClear = false }
     tagRun(ctx, value)
     if (frameTarget) {
         sink.put(transformEvent(value, frameTransform, ctx.id))
@@ -352,6 +356,38 @@ function bumpTree(frame) {
     const root = metaRootFrame(frame)
     root._treeGen = (root._treeGen || 0) + 1
     root._configurationRevision = (root._configurationRevision || 0) + 1
+}
+
+// Changing a frame's ORIGIN moves everything under it: the transform watcher covers
+// motion, and origin is a plain field, so the subtree's cached world poses go stale
+// unless they are told. (id:laws-figures-phase34-hand-frame)
+function dirtyWorldSubtree(frame) {
+    visitPostOrder(frame, (c) => { c._worldDirty = true })
+    bumpTree(frame)
+}
+
+// A statement's pose is expressed in a REFERENCE FRAME, and the door converts it to a
+// world position before deciding the field. Three names cover everything today, and a
+// fourth (`<named frame>`, an attachment point) is the same mechanism:
+//   own    - the frame's own chain, where its motion lives (what the walk speaks)
+//   parent - the parent's chain, where its origin lives (what a place's position is)
+//   world  - the root's frame (what a pointer picks: 'be there')
+// (id:laws-figures-phase34-hand-frame)
+function expressPose(frame, ref, pose) {
+    if (ref === 'world') return pose
+    if (ref === 'parent') {
+        const base = frame.parent ? worldTransform(frame.parent) : SE3.identity()
+        return SE3.compose(base, pose)
+    }
+    if (ref === 'own' || ref == null) return SE3.compose(worldTransform(frame), pose)
+    // A NAMED frame, resolved by the SAME door an ambient's frame of reference uses —
+    // findReferenceFrame, the wide reach with its generation memo. The language already
+    // says it: "a FRAME OF REFERENCE need not be kin, any frame can be one". So an
+    // attachment reaches what a reference reaches, and nothing new is invented for it.
+    // (id:laws-figures-phase34-attach)
+    const anchor = findReferenceFrame(frame, ref)
+    if (!anchor) return null
+    return SE3.compose(frameWorldTransform(anchor), pose)
 }
 
 // The frame a `as <name> <frame> do` names. One door, so the drain, the tick
@@ -711,6 +747,11 @@ export function deliverShout(shout, target) {
     const addr = addrOf(target)
     const fromAddr = shout.from ? addrOf(shout.from) : null
     if (target === shout.from || addr === fromAddr) return
+    // A letter crosses a construction boundary in neither direction: out, it cannot
+    // be retracted by the answer that follows; in, it would change the answer
+    // without changing the question. Local mail still composes inside the region.
+    // (id:laws-figures-phase34-review)
+    if (shout.from && !sameRegion(shout.from, target)) return
     if (!shout._delivered) shout._delivered = new Set()
     if (shout._delivered.has(addr)) return
     shout._delivered.add(addr)
@@ -734,48 +775,168 @@ function flushDeferredShouts(shouts, registry) {
     shouts.length = 0
 }
 
+// The boundary is transitive: closure is inherited by every descendant of a
+// construction, and KIND is not — a nested `as` stays an ambient, a contained one.
+// Mail crosses it in neither direction. (id:laws-figures-phase34-review)
+function closedRoot(frame) {
+    let root = null
+    for (let node = frame; node; node = node.parent) if (node.closed) root = node
+    return root
+}
+const sameRegion = (a, b) => closedRoot(a) === closedRoot(b)
+
 // Shout at push: self now; others deferred (or registry if no buffer).
 function interceptShout(frame, value, registry, deferredShouts, onShout) {
     pushMailbox(frame, { name: value.name, payload: value.payload })
     if (deferredShouts) {
         deferredShouts.push({ from: frame, name: value.name, payload: value.payload })
     } else {
-        for (const [id, t] of registry) {
-            if (t === frame) continue  // already delivered to self
-            pushMailbox(t, { name: value.name, payload: value.payload })
-        }
+        // One predicate for both paths, so the boundary is not a special case.
+        const letter = { from: frame, name: value.name, payload: value.payload }
+        for (const [id, t] of registry) deliverShout(letter, t)
     }
-    if (onShout) onShout(frame.name, value.name, value.payload)
+    // The world hears open ambients only: a construction's letter stays inside.
+    if (onShout && !closedRoot(frame)) onShout(frame.name, value.name, value.payload)
 }
 
 // Mark dotted cross-ambient reads so loops auto-yield.
 // A derived figure is closed: it may read its ancestors' params and scalars —
 // the captured inputs — and nothing else. No sibling frame, no dotted world
-// read, no randomness. This is the closure profile on the child door, so a
-// figure IS an ambient without becoming an effectful one. (id:laws-figure-eidos-cell)
+// read. Its randomness is a stream keyed to its place, so the closure is total.
+// This is the closure profile on the child door, so a figure IS an ambient
+// without becoming an effectful one. (id:laws-figure-eidos-cell, id:laws-figure-protocol-flake)
 const DERIVED_BUDGET = 200_000
 
-function resolveScopeValue(frame, name) {
+// Every external input a construction's free reads may resolve to, frozen at the
+// question: the ancestors' parameters and scalars, nearest first. A derived cell
+// reads from this and from its own parameters, and from nowhere else — so the
+// question names every input, which is what licenses reuse. Conservative on
+// purpose: fine-grained invalidation comes after the sound version is measured.
+// (id:laws-figures-phase34-review)
+function captureEnvironment(frame) {
+    const captured = new Map()
     for (let node = frame; node; node = node.parent) {
-        if (node.params?.has(name)) return node.params.get(name)
-        const id = node.scalars?.get(name)
-        if (id !== undefined) return metaRootFrame(frame)._readouts?.value(id)
+        if (node.params) {
+            for (const [name, value] of node.params) if (!captured.has(name)) captured.set(name, value)
+        }
+        if (node.scalars) {
+            for (const [name, id] of node.scalars) {
+                if (!captured.has(name)) captured.set(name, metaRootFrame(node)._readouts?.value(id))
+            }
+        }
     }
-    return undefined
+    return captured
 }
 
+// The DECLARING SCOPE's own bindings — a call's parameters, and whatever else was bound
+// where the declaration stood — are inputs too. They arrive with the payload as a
+// snapshot, so they belong to that declaration and cannot leak past the call that made
+// them. Engine bookkeeping (`__depth__`) is not an author's name and stays out.
+// (id:turtle-ambient-calculus, id:laws-figures-phase34-input)
+function declaredInputs(value) {
+    const bound = new Map()
+    for (const [name, held] of Object.entries(value.env?.scope ?? {})) {
+        if (name.startsWith('__')) continue
+        bound.set(name, held)
+    }
+    return bound
+}
+
+// Everything a construction may read: its ancestors' parameters and scalars, then the
+// names bound at the declaration site, nearest last so the site wins.
+function captureFor(frame, value) {
+    return new Map([...captureEnvironment(frame), ...declaredInputs(value)])
+}
+
+function resolveScopeValue(frame, name) {
+    if (frame.params?.has(name)) return frame.params.get(name)
+    // The region's own derived values are its private state, not an outside read:
+    // a body-local `let s` stays readable inside the cell that declared it.
+    // (id:laws-figures-phase34-review)
+    const local = frame.scalars?.get(name)
+    if (local !== undefined) return metaRootFrame(frame)._readouts?.value(local)
+    return frame.capture?.get(name)
+}
+
+// The outermost closed frame the reader belongs to: the region the boundary governs.
+function regionRoot(frame) {
+    let root = frame
+    for (let node = frame.parent; node && node.closed; node = node.parent) root = node
+    return root
+}
+
+// Is the named target inside the reader's own region? A local point answers yes; a
+// sibling outside the construction, or `world`/`origin`, answers no.
+// (id:laws-figures-phase34-review)
+// CAPTURE, for arguments: read each bound expression afresh in the DECLARING frame.
+// Names resolve there, so an inline argument means what the same expression bound at
+// the site would mean — and because this runs again for every question, a moved input
+// reaches the next answer instead of freezing the first.
+// (id:laws-figures-phase34-input)
+function evaluateArgs(frame, exprs, declared) {
+    if (!exprs?.length) return []
+    const { mathParser, mathEvaluator } = frame.deps ?? {}
+    if (!mathParser || !mathEvaluator) return exprs.map(() => undefined)
+    // The names in an argument belong to the DECLARING SCOPE: a call's parameters are not
+    // on the walking frame, they arrived with the payload. Read them there first, then fall
+    // back to the frame's own resolution — so both halves of a question are read where the
+    // names are bound, and neither holds a silent undefined.
+    const outer = mathEvaluator.resolveExternal
+    if (declared?.size) {
+        mathEvaluator.resolveExternal = (name, args) =>
+            (declared.has(name) ? declared.get(name) : outer?.(name, args))
+    }
+    try {
+        // The argument EXPRESSION does not change between questions; only its value does.
+        // Parsing is pure, so parse each expression ONCE per frame and re-run the tree — the
+        // same memo the executor keeps for hot lines. This is the one third of the churn that
+        // was pure waste in the allocation profile. (id:laws-figures-phase34-inplace)
+        const parses = frame._argParses ?? (frame._argParses = new Map())
+        return exprs.map((expr) => {
+            try {
+                let tree = parses.get(expr)
+                if (tree === undefined) { tree = mathParser.parse(expr); parses.set(expr, tree) }
+                return mathEvaluator.run(tree, {})
+            } catch { return undefined }
+        })
+    } finally {
+        mathEvaluator.resolveExternal = outer
+    }
+}
+
+function ownsRead(frame, targetName) {
+    const root = regionRoot(frame)
+    const target = findFrame(frame, targetName)
+    if (!target) return false
+    for (let node = target; node; node = node.parent) if (node === root) return true
+    return false
+}
 function closeDerivedDeps(deps, frame) {
+    frame.capture = deps.capture ?? captureEnvironment(frame.parent ?? frame)
     deps.mathEvaluator.resolveExternal = (name) => {
+        // A dotted read is not automatically an outside observation. A place inside the
+        // reader's own region is the region's business — a construction may contain
+        // local points and read them. Only a read of something the construction does
+        // NOT own is refused. (id:laws-figures-phase34-review)
         if (typeof name === 'string' && name.includes('.')) {
-            throw new Error(`derived figure has no world read: ${name}`)
+            if (ownsRead(frame, name.slice(0, name.indexOf('.')))) return resolveBinding(frame, name)
+            throw new Error(`closed region has no world read: ${name}`)
         }
         return resolveScopeValue(frame, name)
     }
     if (deps.mathEvaluator.constants) {
-        deps.mathEvaluator.constants.random = () => {
-            throw new Error('derived figure is deterministic: random is not a figure input')
-        }
+        // The same stream the command door reads, so a figure has one randomness.
+        // Entropy is an input from the figure's place, never the process RNG.
+        // (id:cmp-become-seed, id:laws-figure-protocol)
+        deps.mathEvaluator.constants.random =
+            deps.figureRandom ?? keyedStream(keyedSeed(frame.address ?? frame.name))
     }
+    // A closed cell has no observation to begin. The pure-goto retry asks for one
+    // (executor.js::readGotoArgs), and an absent method would speak with its own
+    // TypeError instead of the membrane. Answer as an empty observation, so the
+    // world read is what refuses. (id:laws-figure-protocol)
+    deps.mathEvaluator.beginObservation = () => metaRootFrame(frame)._configurationRevision ?? 0
+    deps.mathEvaluator.endObservation = () => {}
 }
 
 function bindResolve(deps, frame) {
@@ -807,10 +968,29 @@ function createChildGenerator(value, createDeps, execOpts) {
             childDeps.mathParser.userspace.set(k, v)
         }
     }
+    // One stream per figure-run, keyed to its place. Both doors read it — the
+    // evaluator constant and the command — so a figure has one randomness.
+    // (id:cmp-become-seed, id:laws-figure-protocol)
+    // Closure is inherited: a descendant of a construction is inside the boundary —
+    // the same frozen environment, the same keyed stream, the same budgets. KIND is
+    // not inherited: a nested `as` is still an ambient. (id:laws-figures-phase34-review)
+    const closed = value.closed === true
+    let figureRandom = null
+    if (closed) {
+        figureRandom = keyedStream(keyedSeed(value.figureSeed ?? value.name))
+        childDeps.figureRandom = figureRandom
+        // The environment this run will read, frozen at the question. A rebuild
+        // re-snapshots it before the body is attached. (id:laws-figures-phase34-review)
+        childDeps.capture = value.capture
+    }
     // One actor mailbox: scheduler pushes, executor drains (same array).
     const mailbox = []
     const opts = {
+        // The whole declaration context crosses this door, not just its colour: the
+        // spawn payload already carries it, and colour alone left thickness and the
+        // hidden head behind. (id:laws-figures-phase34-review)
         color: value.style?.color || execOpts.color,
+        style: value.style,
         maxRecurseDepth: execOpts.maxRecurseDepth,
         maxRecurses: execOpts.maxRecurses,
         maxCommands: execOpts.maxCommands,
@@ -826,10 +1006,11 @@ function createChildGenerator(value, createDeps, execOpts) {
         // A derived figure is a CLOSED cell: strict walk, hard budget, no
         // truncation. Ordinary ambients keep their effectful semantics.
         // (id:laws-figure-protocol)
-        strict: value.profile === 'derived',
-        ...(value.profile === 'derived' ? {
+        strict: closed,
+        ...(closed ? {
             maxReductions: DERIVED_BUDGET, maxRecurseDepth: DERIVED_BUDGET,
             maxRecurses: DERIVED_BUDGET, breathEvery: 256,
+            random: figureRandom,
         } : {}),
         mailbox,
     }
@@ -1033,8 +1214,12 @@ function seatPlace(parent, name, pump, pose = null) {
     const place = attachMeta(
         createFrame(name, null, {
             parent,
-            origin: SE3.identity(),
-            ...(pose ? { transform: SE3.clone(pose) } : {}),
+            // ONE meaning per field: this is where the place was BORN, and `transform`
+            // is the motion it accumulates afterwards. Seating the pose in `transform`
+            // made motion overwrite the birth, so a nested read asking "where am I
+            // relative to my birth?" had nothing to measure against.
+            // (id:laws-figures-phase34-ground)
+            origin: pose ? SE3.clone(pose) : SE3.identity(),
             ...pump.channelOpts,
             logicalBirth: parent.resumeAt > 0 ? parent.resumeAt : (parent.logicalBirth ?? 0),
         }),
@@ -1074,6 +1259,11 @@ function withdrawPlace(parent, place, pump) {
 
 function wireRun(child, deps, mailbox, executionState, code, relationshipBatch, pump = null) {
     child.deps = deps
+    // The run incarnation: how many times this frame has been given a BODY to run.
+    // A `birth`-seated identity carries no run state, so this tells an attach from a
+    // rebuild, and a later outcome can tell which run may still publish.
+    // (id:laws-figures-phase34-oracle, id:cmp-become-seed)
+    if (executionState) child.runIncarnation = (child.runIncarnation ?? 0) + 1
     child.mailbox = mailbox
     // `child.batch` is mutable EXECUTOR state; the relationship batch is
     // source-owned declarations. Two meanings, two names. (id:laws-decl-two-meanings)
@@ -1085,7 +1275,7 @@ function wireRun(child, deps, mailbox, executionState, code, relationshipBatch, 
     // has run the declaration. Exposure is a query about this set, not the parse.
     // (id:laws-decl-exposure)
     child.reached = new Set()
-    if (child.profile === 'derived') closeDerivedDeps(deps, child)
+    if (child.closed) closeDerivedDeps(deps, child)
     else bindResolve(deps, child)
     setListensFor(child, code)
     // A declaration is reached in the stream; the batch only names what the body
@@ -1110,6 +1300,13 @@ function rewireChild(child, value, pump) {
     // (id:laws-activation-verdicts)
     releaseSourceAttempts(metaRootFrame(child), subtreeIds(child))
     metaRootFrame(child)._readouts?.release(child.id)
+    // A closed region is replaced whole: the answer that follows owns the subtree,
+    // so a child it does not declare is withdrawn with the previous answer.
+    // (id:laws-figures-phase34-review)
+    if (child.closed) releaseRegion(child, pump)
+    // A rebuild keeps the frame, so it keeps the key: the same figure re-walks
+    // the same stream and lands on the same drawing. (id:cmp-become-seed)
+    if (value.closed) value.figureSeed = child.address ?? value.figureSeed
     const re = createChildGenerator(value, pump.createDeps, pump.execOpts)
     // A declared place keeps its accepted geometry: the new run begins where the
     // place stands, orientation included, and its first segment starts there
@@ -1120,10 +1317,19 @@ function rewireChild(child, value, pump) {
         // pose, never at the last head, or every preemption drifts. The distinction
         // is the membrane again: a process owns its position, a value is rebuilt
         // from its definition. (id:laws-figure-protocol)
-        const start = value.profile === 'derived' ? value.origin : child.transform.deref()
-        re.batch.transform = { rotation: start.rotation, position: [...start.position] }
+        // The rebuild re-anchors at the declaring pose and starts with NO motion of its
+        // own — the same fact in the same slot an ambient uses. Writing the pose into
+        // `transform` would put it in the field motion overwrites, which is how a place
+        // came to lose its birth the moment it moved. (id:laws-figures-phase34-ground)
+        if (value.profile === 'derived') {
+            child.origin = SE3.clone(value.origin)
+            re.batch.transform = SE3.identity()
+        } else {
+            re.batch.transform = child.transform.deref()
+        }
     }
     child.profile = value.profile ?? null
+    child.closed = value.closed === true
     child.generator = re.generator
     child.done = false
     wireRun(child, re.deps, re.mailbox, re.batch, value.code, re.relationshipBatch, pump)
@@ -1136,7 +1342,12 @@ function rewireChild(child, value, pump) {
         ? (child.parent.resumeAt > 0 ? child.parent.resumeAt : child.parent.logicalBirth)
         : null
     child.channel.drain()
-    child.channel.put({ type: 'clear' })
+    // RE-DERIVE IN PLACE: the cell and its show persist across a question, so the old answer
+    // is not retracted HERE. It is replaced when the new one lands — the clear is discharged
+    // immediately before the new run's first ink, which puts both in ONE publication step,
+    // and a run that ends with nothing still empties the show. No frame is ever empty.
+    // (id:laws-figures-phase34-inplace)
+    child.pendingClear = true
 }
 
 // --- Inline child drain ---
@@ -1300,7 +1511,33 @@ function publish(writer, entries, registry, install = null, project = null) {
         }
         if (!pose || !Array.isArray(pose.position)) return { kind: 'conflict', message: 'a publication entry needs a pose' }
     }
-    const notify = entries.map(({ frame, pose }) => frame.transform.swapDeferred(() => pose))
+    // A STATED pose is a POSITION, for EVERY frame — ambient or place, value or process. It
+    // lands in the slot that means "where this thing is" (origin) and the frame's own motion
+    // is cleared, so the whole show moves and nothing is redrawn. The source's re-reach, the
+    // hand's wish and a law's configuration are all statements; the newest one wins.
+    // (id:laws-figures-phase34-invariants)
+    // (id:laws-figures-phase34-hand-frame)
+    const write = ({ frame, pose, stated, ref }) => {
+        if (!stated) return frame.transform.swapDeferred(() => pose)
+        const world = expressPose(frame, ref ?? 'own', pose)
+        // A STATED pose TRANSLATES the cell: the motion is KEPT and the chain moves, so the
+        // whole thing — head, ink, children — shifts rigidly. Clearing the motion instead
+        // re-anchors a walker at its BASE while its ink still extends beyond it, so head and
+        // drawn end disagree (measured on the encounter's walked stem). For a value the
+        // motion is identity and this is exactly the old write.
+        // (id:laws-figures-phase34-encounter)
+        //
+        // `chainTarget` is the CHAIN that puts the head at the asked world. A frame's world
+        // is compose(chain, motion) with the motion innermost — pinned by measurement, not
+        // derivation (compose(a, b) applies b first).
+        const motion = frame.transform.deref()
+        const chainTarget = SE3.compose(world, SE3.invert(motion))
+        const base = frame.parent ? worldTransform(frame.parent) : SE3.identity()
+        frame.origin = SE3.compose(SE3.invert(base), chainTarget)
+        dirtyWorldSubtree(frame)
+        return frame.transform.swapDeferred(() => motion)
+    }
+    const notify = entries.map(write)
     for (const { frame, pose } of entries) if (!frame.done && frame.batch) frame.batch.rebase = pose
     // Install laws, ownership and accepted geometry before any notification:
     // no watcher may see new geometry beside an old law. (id:laws-activation-order)
@@ -1344,7 +1581,10 @@ function publish(writer, entries, registry, install = null, project = null) {
 
 // A verdict as publication entries: the writer, then its component members.
 const verdictEntries = (writer, verdict) =>
-    [{ frame: writer, pose: verdict.pose }, ...verdict.component.map((m) => ({ frame: m.frame, pose: m.pose }))]
+    // Poses arrive normalized to the frame's own chain (the hand's door converts), so the
+    // entries carry only WHICH FIELD the accepted pose belongs in and whether it was stated.
+    [{ frame: writer, pose: verdict.pose, stated: verdict.stated === true },
+        ...verdict.component.map((m) => ({ frame: m.frame, pose: m.pose, stated: verdict.stated === true }))]
 
 function commitTransaction(verdict, writer, registry, project = null) {
     return publish(writer, verdictEntries(writer, verdict), registry, null, project)
@@ -1373,6 +1613,36 @@ function checkMotion(verdict, writer, registry, validate, request) {
             }
         } catch (error) {
             return { kind: 'fault', message: `motion validation failed: ${error.message}` }
+        }
+    }
+    // The door NAMES the frame its pose is expressed in. A hand picks a point and says be
+    // there — a world position; the walk asks to move, in its own frame. The datum rides on
+    // the verdict so the checker, the continuation and the write all see one meaning.
+    // (id:laws-figures-phase34-hand-frame)
+    // ONE datum decides both: a caller that NAMES the frame is stating a position; a caller
+    // that names nothing is making its own motion (what the walk and today's pointer do).
+    // (id:laws-figures-phase34-hand-frame)
+    verdict.ref = request?.ref ?? null
+    verdict.stated = verdict.ref !== null
+    // NORMALIZED here, at the door: the whole verdict — the writer and every component the
+    // policy moved — is converted out of the declared frame into the frame's own chain, so
+    // the law checker, the continuation and the write all see one meaning.
+    // (id:laws-figures-phase34-hand-frame)
+    if (verdict.stated && verdict.ref !== 'own') {
+        // A name that resolves to nothing, or a resolution that blocks, is a fact about the
+        // world — an unresolved wish, never a crash and never a silent zero.
+        // (id:laws-figures-phase34-ref)
+        let toOwn = null
+        try {
+            toOwn = (frame, pose) => {
+                const world = expressPose(frame, verdict.ref, pose)
+                if (!world) throw new Error(`no frame named '${verdict.ref}' to state a position against`)
+                return SE3.compose(SE3.invert(worldTransform(frame)), world)
+            }
+            verdict.pose = toOwn(writer, verdict.pose)
+            verdict.component = verdict.component.map((m) => ({ ...m, pose: toOwn(m.frame, m.pose) }))
+        } catch (error) {
+            return { kind: 'unresolved', message: error.message }
         }
     }
     return verdict
@@ -1414,6 +1684,27 @@ function releaseReadouts(root, ids) {
     // Release first: a mount's onRelease sees its figure record before it goes.
     const released = new Set(ids)
     for (const id of released) root._readouts.release(id)
+}
+
+// A closed region's answer owns its subtree. A rebuild replaces that subtree, so a
+// child the new answer never declares cannot survive it — whole-region replacement
+// first; preserving selected descendants is a later policy, not a reason to keep
+// obsolete children by accident. (id:laws-figures-phase34-review)
+function releaseRegion(frame, pump) {
+    if (frame.children.size === 0) return
+    const root = metaRootFrame(frame)
+    const ids = subtreeIds(frame)
+    ids.delete(frame.id)
+    releaseAttemptsFor(root, ids)
+    releaseReadouts(root, ids)
+    for (const child of [...frame.children.values()]) terminateAmbient(child)
+    visitPostOrder(frame, (c) => {
+        if (c === frame) return
+        pump.registry.delete(c.id)
+        if (pump.laws) pump.laws.retractIdentity(c.id)
+        resetInk(c, pump.stock)
+    })
+    frame.children.clear()
 }
 
 // Hard laws outrank requests: does a proposed configuration break an active law?
@@ -2072,16 +2363,6 @@ function scalarReadout(ctx, value, _route, pump) {
 }
 
 
-// A captured input is a number or a bound scalar name. A compound expression has
-// no single captured value yet; it resolves to undefined and the build refuses.
-function captureArg(frame, expr) {
-    const text = String(expr).trim()
-    if (text === "") return undefined
-    const n = Number(text)
-    if (Number.isFinite(n)) return n
-    try { return resolveBinding(frame, text) } catch { return undefined }
-}
-
 // A parameter: sampled once at its declaration, then a stable input. It is bound
 // on the frame and read through `resolveBinding`; it owns no recomputation and no
 // node, so an unrelated commit cannot resample it. (id:eval-relational)
@@ -2158,14 +2439,25 @@ function woundRelation(ctx, message, kind = 'relation', span = null) {
 //   drop(stale)          a reply whose question is no longer current is never shown
 // The generation is the question itself, not a counter. (id:laws-figure-protocol)
 function registerFigureCell(ctx, value, pump) {
-    if (!pump.readouts || !value.question?.length) return
-    const question = () => value.question.map((arg) => captureArg(ctx, arg))
+    if (!pump.readouts) return
+    // The question is the whole input: the argument values and every external input
+    // the run may read, frozen. Equality of this tuple is what licenses reuse.
+    // (id:laws-figures-phase34-review, id:cmp-become-seed)
+    // The question is the whole input: the bound argument expressions read afresh in the
+    // declaring frame, plus every external input the run may read. Equality of this
+    // tuple is what licenses reuse. (id:laws-figures-phase34-input)
+    const question = () => [...evaluateArgs(ctx, value.argExprs, declaredInputs(value)), ...[...captureFor(ctx, value)].sort(([a], [b]) => (a < b ? -1 : 1))]
     pump.readouts.register(ctx.id, value.name, {
         capture: question,
         // The spawn already ran the child with this question; seed it so the first
         // commit compares instead of always looking new.
         seed: question(),
-        build: () => { supersedeFigure(ctx, value, pump); return value.name },
+        // This record is an invalidation subscription, NOT an answer: its build
+        // requests a restart, and the run's outcome lives on the frame, where a wound
+        // already carries provenance. Returning the name made a restart read as
+        // completed construction — a refused figure settled as its own success.
+        // (id:laws-figures-phase34-review)
+        build: () => { supersedeFigure(ctx, value, pump) },
     })
 }
 
@@ -2174,6 +2466,17 @@ function registerFigureCell(ctx, value, pump) {
 function supersedeFigure(ctx, value, pump) {
     const child = ctx.children.get(value.name)
     if (!child) return
+    // The run reads the environment as it stood at this question, not live.
+    // A rebuild is a new question, so it is a new snapshot. (id:laws-figures-phase34-review)
+    value.capture = captureFor(ctx, value)
+    // EXECUTION, refreshed: the same bound expressions read again for THIS question, so
+    // the new run builds against current values rather than the first ones. Keeping the
+    // expressions is exactly what separates this from baking a value once.
+    if (value.argExprs) {
+        value.question = evaluateArgs(ctx, value.argExprs, declaredInputs(value))
+        const args = value.code?.ast?.[0]?.children ?? []
+        value.question.forEach((input, i) => { if (args[i]) args[i].value = String(input) })
+    }
     rewireChild(child, value, pump)
     pump.wake?.()
 }
@@ -2181,6 +2484,14 @@ function supersedeFigure(ctx, value, pump) {
 function spawn(ctx, value, route, pump) {
     // Keep parent transform atom current between head events.
     ctx.transform.swap(() => value.origin)
+    // Freeze the environment before the question is registered, so the run and the
+    // A figure is a construction; a child of a construction is inside it. Closure is
+    // inherited down the subtree, so no descendant acquires an authority the owner
+    // lacks. (id:laws-figures-phase34-review)
+    const closed = value.profile === 'derived' || ctx.closed === true
+    value.closed = closed
+    // question that licenses it are one snapshot. (id:laws-figures-phase34-review)
+    if (closed) value.capture = captureFor(ctx, value)
     if (value.profile === 'derived') registerFigureCell(ctx, value, pump)
     const existing = ctx.children.get(value.name)
     const deferredShouts = route.deferredShouts
@@ -2194,6 +2505,13 @@ function spawn(ctx, value, route, pump) {
         metaRootFrame(existing)._configurationRevision++
 
         if (existing.done && pump.createDeps) {
+            // A `birth` seats the identity first, so this door attaches a body when the
+            // frame has none — but a frame that has already run is a REBUILD decision,
+            // and a value's rebuild belongs to the readout, the door that knows the
+            // question. Re-reaching a declaration is an ambient's liveness, not a
+            // reason to rebuild a value. (id:cmp-become-seed, id:laws-ordered-birth)
+            const derived = existing.profile === 'derived' || value.profile === 'derived'
+            if (derived && existing.runIncarnation) return { verdict: 'continue' }
             rewireChild(existing, value, pump)
             if (deferredShouts) deliverDeferredToFrame(deferredShouts, existing)
             // Caller must drain — rewire alone does not advance.
@@ -2215,6 +2533,11 @@ function spawn(ctx, value, route, pump) {
 // what it was. One door builds a place; realization will call it for identities
 // the source declares. (id:host-beat)
 function seatChild(ctx, value, pump, route, deferredShouts) {
+    // The figure's key is its place in the tree — a derived answer is memoized by
+    // this, so its entropy must live inside it. (id:cmp-become-seed)
+    if (value.closed) {
+        value.figureSeed = `${ctx.address ?? frameAddress(metaRootFrame(ctx), ctx)}/${value.name}`
+    }
     const { generator, deps, mailbox, batch, relationshipBatch } =
         createChildGenerator(value, pump.createDeps, pump.execOpts)
     const child = attachMeta(
@@ -2234,6 +2557,7 @@ function seatChild(ctx, value, pump, route, deferredShouts) {
     // axis is inherited. One axis, two roots per ambient. (id:host-beat)
     child.birthtime = (value.env?.birthtime || 0) / 1000
     child.profile = value.profile ?? null
+    child.closed = value.closed === true
     // Register under the name BEFORE wiring: wireChild stamps the
     // address, whose last segment is this children-map key.
     ctx.children.set(value.name, child)
@@ -2276,13 +2600,30 @@ function motionUnresolved(ctx, value) {
     return endUnresolved(ctx, value.reason)
 }
 
+// A refused statement in an ordinary walk does not end the run and does not vanish:
+// the report rides the frame's channel, located, beside the siblings that ran.
+// (id:cmp-resilient, id:laws-figures-phase34-capabilities)
+function incomplete(ctx, value) {
+    ctx.channel.put({
+        type: 'incomplete',
+        expected: value.expected,
+        found: value.found,
+        span: value.span,
+        ambientId: ctx.id,
+    })
+    return { verdict: 'continue', produced: true }
+}
+
 const EFFECTS = {
-    breath, blocked, wait, yield: yieldEffect, shout, spawn, limitMailbox, motion, motionUnresolved, birth, law, scalar: scalarReadout, parameter: parameterReadout,
+    breath, blocked, wait, yield: yieldEffect, shout, spawn, limitMailbox, motion, motionUnresolved, incomplete, birth, law, scalar: scalarReadout, parameter: parameterReadout,
 }
 
 // Verdict for one yield. Pumps act; this only means. (id:output-ledger-r2-instant)
 function stepFrame(ctx, value, done, route, pump) {
     if (done) {
+        // An answer that ended without ink still empties the show: discharge the held clear.
+        // (id:laws-figures-phase34-inplace)
+        if (ctx.pendingClear) { ctx.channel.put({ type: 'clear' }); ctx.pendingClear = false }
         closeInstant(ctx)
         const result = value || {}
         if (result.actorState) {
@@ -2494,7 +2835,10 @@ export function createScheduler(generator, opts = {}) {
         get laws() { return laws },
         // Source-owned derived values (id:laws-build-p3-slider). Read-only seam.
         get readouts() { return readouts },
-        requestMotion(frame, requested, revision) {
+        // `ref` names the frame `requested` is expressed in — 'world', 'parent', or a named
+        // frame. Naming one makes this a STATEMENT (a position); naming none is a motion.
+        // (id:laws-figures-phase34-hand-frame)
+        requestMotion(frame, requested, revision, ref = null) {
             if (registry.get(frame?.id) !== frame || frame === root) return { kind: 'stale' }
             // A publication's notifications are on the stack; a request raised from one
             // is refused for retry, never interleaved — the watcher's commit is later
@@ -2507,7 +2851,7 @@ export function createScheduler(generator, opts = {}) {
             // A failed attempt holds its component until an edit releases it.
             if (heldFrame(frame)) return { kind: 'refuse', ink: execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
             if (revision !== root._motionRevision) return { kind: 'stale' }
-            const request = { command: 'hand', from: frame.transform.deref(), requested, frame }
+            const request = { command: 'hand', from: frame.transform.deref(), requested, frame, ref }
 
             // Who decides the verdict? An installed responder, always. Failing that,
             // an existence-only declaration decides nothing, so its own admission is

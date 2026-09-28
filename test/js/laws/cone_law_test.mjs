@@ -36,7 +36,9 @@ test("a hand request composes onto the cone", () => {
     const host = scheduler.hotSwapChild("host", fork("host", SOURCE))
     drive(scheduler)
     const P = host.children.get("P")
-    const r = scheduler.requestMotion(P, { rotation: P.transform.deref().rotation, position: [10, 5, 0] }, scheduler.motionRevision)
+    // The wish is a world position: a hand picks a point and says be there.
+    // (id:laws-figures-phase34-hand-frame)
+    const r = scheduler.requestMotion(P, { rotation: P.transform.deref().rotation, position: [10, 5, 0] }, scheduler.motionRevision, 'world')
     drive(scheduler, { maxTicks: 5 })
     assert.equal(r.kind, "accept")
     const p = [...frameWorldTransform(P).position]

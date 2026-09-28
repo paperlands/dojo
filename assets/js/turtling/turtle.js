@@ -13,7 +13,7 @@ import { createCompositor } from "./compositor.js"
 import { labInputs } from "./lab.js"
 import { createFocus, resolveAddress } from "./focus.js"
 import { hatchVerdict } from "./hatch.js"
-import { createGesture } from "./laws/gesture.js"
+import { createGesture, moveGesture } from "./laws/gesture.js"
 import { exposed, pointCandidates } from "./laws/batch.js"
 import { viewMapping } from "./laws/handle.js"
 import { verdictFade, OUTCOME } from "./laws/outcome.js"
@@ -423,10 +423,12 @@ export class Turtle {
             this._ghost = null
             this.requestRender()
         }
+        // A move is every sample it carries — the gesture owns that meaning, so the DOM
+        // layer only forwards the event and drops the held frame if the batch cancelled.
+        // (id:laws-figures-phase34-intent)
         const move = event => {
             if (event.target !== canvas && captured !== event.pointerId) return
-            const answer = handle.pointerMove({ pointerId: event.pointerId, x: event.clientX, y: event.clientY })
-            if (answer.cancelled) this._heldFrame = null
+            if (moveGesture(handle, event)) this._heldFrame = null
         }
         const end = event => {
             if (captured !== event.pointerId) return

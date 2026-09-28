@@ -22,7 +22,8 @@ const find = (frame, name) => {
 }
 const pos = (frame) => frameWorldTransform(frame).position.map((n) => +n.toFixed(2))
 const drag = (scheduler, frame, x) => scheduler.requestMotion(frame,
-    { rotation: frame.transform.deref().rotation, position: [x, 0, 0] }, scheduler.motionRevision).kind
+    // The drag speaks world positions; the door converts to the frame it must write.
+    { rotation: frame.transform.deref().rotation, position: [x, 0, 0] }, scheduler.motionRevision, 'world').kind
 
 // The offer rule, in one place for the fence: role, truth and status decide
 // interaction. It is the same rule `turtle._stateOf` runs; kept here so the witness

@@ -85,6 +85,12 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "Make a Function"
 msgstr ""
+#: lib/dojo_web/components/deck.ex:24
+#, elixir-autogen, elixir-format
+msgid "Give a Law"
+msgstr ""
+
+
 
 #: lib/dojo_web/components/deck.ex:24
 #, elixir-autogen, elixir-format

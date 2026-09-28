@@ -2,7 +2,7 @@
 // Math deps injected.
 
 import { COMMANDS, DEFAULT_STYLE } from "./commands.js"
-import { parseProgram } from "./parse.js"
+import { ASTNode } from "./ast.js"
 import { SE3 } from "./se3.js"
 import { recenterPose } from "./view.js"
 import { createStroke, extend as strokeExtend, flush as strokeFlush, fill as strokeFill } from "./stroke.js"
@@ -339,7 +339,11 @@ function* walkBody(body, scope, state, stroke) {
                 }
                 if (currDepth + 1 > state.maxRecurseDepth) { state.truncated = true; break }
 
-                // Build child scope with parameter bindings
+                // Build child scope with parameter bindings. These do NOT go on the frame:
+                // a frame-scoped binding would leak past the call (measured: `fw size` after
+                // two calls read the second call's argument). They cross to a child through
+                // the payload's captured scope instead, which is a snapshot per declaration.
+                // (id:turtle-ambient-calculus)
                 const childScope = {}
                 userFn.parameters.forEach((param, i) => {
                     childScope[param] = args[i] || 0
@@ -448,12 +452,28 @@ function* walkBody(body, scope, state, stroke) {
             // intent; the scheduler owns the cell and its lifetime.
             const figureCall = figureCallOf(expr, state)
             if (figureCall) {
-                const body = parseProgram(`${figureCall.recipe} ${figureCall.args.join(" ")}`)
+                const arity = state.functions?.[figureCall.recipe]?.parameters?.length ?? 0
+                // An input the recipe asks for and does not get is a located fault.
+                // Filling it with 0 is the silent-zero lie refused everywhere else.
+                // (id:eval-relational)
+                if (figureCall.args.length < arity) {
+                    throw new Error(`figure '${figureCall.recipe}' asks for ${arity} input(s), got ${figureCall.args.length}`)
+                }
+                // BINDING: the argument expressions belong to the declaring scope, and the
+                // recipe to the resolved definition. They are kept, not consumed, so a
+                // rebuild can read them again. (id:laws-figures-phase34-input)
+                const inputs = []
+                for (const arg of figureCall.args) {
+                    inputs.push(yield* evalOrBlock(arg, scope, state, 'measure'))
+                }
+                const call = new ASTNode('Call', figureCall.recipe,
+                    inputs.map((input) => new ASTNode('Argument', String(input))))
+                call.span = node.span ?? null
                 // A proper `let`: a place (identity and name) whose body is the
                 // recipe. A rebuild restarts the walk at this birth pose, not at the
                 // last head — see rewireChild's derived branch. (id:laws-figure-protocol)
                 yield { type: 'birth', name: node.value, origin: SE3.clone(state.transform), owner: node.span ?? null }
-                yield spawnEvent(state, scope, node.value, body, state.functions, { profile: 'derived', question: figureCall.args })
+                yield spawnEvent(state, scope, node.value, [call], state.functions, { profile: 'derived', question: inputs, recipe: figureCall.recipe, argExprs: figureCall.args })
                 break
             }
             const deferred = state.deps?.mathEvaluator?.deferred
@@ -479,13 +499,22 @@ function* walkBody(body, scope, state, stroke) {
         case 'Empty':
             break
 
-        // Error node inert at walk; crash path still kills. (D020, id:cmp-resilient)
+        // A malformed statement is inert at the walk — the healthy siblings still
+        // run (D020) — but inert is not silent: the incompleteness is reported where
+        // it is located. A construction is strict: there it refuses instead.
+        // (id:cmp-resilient, id:laws-figures-phase34-capabilities)
         case 'Error':
             if (state.strict) {
                 const strict = new Error(`construction refused: '${node.value}' did not parse`)
                 strict.kind = 'strict'
                 strict.span = node.span
                 throw strict
+            }
+            yield {
+                type: 'incomplete',
+                expected: node.meta?.expected ?? null,
+                found: node.meta?.found ?? null,
+                span: node.span ?? null,
             }
             break
         }
@@ -653,9 +682,8 @@ function parseMemo(mathParser, expr) {
 // procedure (a `def`), not a math function. Recognized at walk so the math
 // evaluator never sees it. The captured args are the question; construction is
 // the answer, and runs outside publication. (id:laws-figure-eidos-naming)
-const FIGURE_CALL = /^([A-Za-z_][A-Za-z0-9_]*)\s*\[([\s\S]*)\]$/
-const FIGURE_SPACE = /^([A-Za-z_][A-Za-z0-9_]*)\s+(.+)$/s
-
+// One argument list, however the call is written: top-level commas and brackets
+// group, nesting is respected. (id:laws-figures-phase34-review)
 function splitTopLevel(s) {
     const out = []
     let depth = 0, start = 0
@@ -677,6 +705,10 @@ function spawnEvent(state, scope, name, body, functions, extra = {}) {
     return {
         type: 'spawn',
         name,
+        // What the caller BOUND crosses with the child: a whitelist here silently
+        // dropped a field once, and the child's question went empty. The named
+        // fields below neutralise only the undefineds.
+        ...extra,
         frame: extra.frame ?? null,
         profile: extra.profile ?? null,
         question: extra.question ?? null,
@@ -692,18 +724,33 @@ function spawnEvent(state, scope, name, body, functions, extra = {}) {
     }
 }
 
+// A recipe call is ONE call, however it is written: `recipe a b` and
+// `recipe[a, b]` reach the same argument list, and `recipe` alone is a call with
+// no inputs. The recipe's OWN signature decides where an input ends — never a
+// splitter, because no splitter can know that `r 2 + 3` is one input to a
+// one-input recipe and three tokens to nothing else.
+// (id:laws-figure-eidos-naming, id:laws-figures-phase34-review)
 function figureCallOf(expr, state) {
     if (typeof expr !== 'string') return null
-    // The author's natural spelling: `recipe arg arg`, no brackets. Recognized
-    // only when the head is a turtle procedure, so a math expression is untouched.
-    const spaced = expr.match(FIGURE_SPACE)
-    if (spaced && state.functions?.[spaced[1]]) {
-        return { recipe: spaced[1], args: spaced[2].trim().split(/\s+/).filter(Boolean) }
+    const head = /^\s*([A-Za-z_][A-Za-z0-9_]*)/.exec(expr)
+    const signature = head && state.functions?.[head[1]]
+    if (!signature) return null
+    const rest = expr.slice(head[0].length).trim()
+    return { recipe: head[1], args: splitFigureArgs(rest, signature.parameters?.length ?? 0) }
+}
+
+function splitFigureArgs(rest, arity) {
+    if (rest === '') return []
+    if (rest.startsWith('[') && rest.endsWith(']')) {
+        const inner = rest.slice(1, -1).trim()
+        return inner === '' ? [] : splitTopLevel(inner).map((a) => a.trim())
     }
-    const match = expr.match(FIGURE_CALL)
-    if (!match || !state.functions?.[match[1]]) return null
-    const inner = match[2].trim()
-    return { recipe: match[1], args: inner === '' ? [] : splitTopLevel(inner).map((a) => a.trim()) }
+    // Spaced spelling: whitespace separates inputs only when that is exactly the
+    // recipe's arity; otherwise the whole remainder is one expression.
+    const groups = splitTopLevel(rest).map((a) => a.trim())
+    if (groups.length === arity) return groups
+    const spaced = rest.split(/\s+/).filter(Boolean)
+    return spaced.length === arity ? spaced : [rest]
 }
 
 function readsDeferred(tree, names) {

@@ -1,5 +1,9 @@
 import { ASTNode } from "./ast.js"
 import { parseProperty, parseSupport } from "./laws/authored.js"
+import { OPERATORS } from "./mafs/lexer.js"
+
+// An argument expression is joined by these; a plain neighbour ends it.
+const OPERATOR_SET = new Set(OPERATORS)
 
 
 //manage state
@@ -480,8 +484,18 @@ function parseArguments(tokens) {
             const match = CLOSERS[firstCh];
             
             if (!match) {
-                // Regular arg - fast path
-                args.push(new ASTNode('Argument', token));
+                // An argument expression does not end at a space: `fw 2 + 3` is ONE
+                // measure, not three tokens. A run continues while an operator joins it,
+                // reading the same vocabulary the math lexer reads. `goto 1 2` is
+                // untouched, because plain neighbours are not joined.
+                // (id:gw-grammar)
+                let joined = token
+                let last = token
+                while (i + 1 < len && (OPERATOR_SET.has(last) || OPERATOR_SET.has(tokens[i + 1]))) {
+                    last = tokens[++i]
+                    joined += ' ' + last
+                }
+                args.push(new ASTNode('Argument', joined));
                 continue;
             }
             
@@ -634,12 +648,15 @@ function parseStatement(tokens, state, rec) {
     // silently ignored. (id:laws-decl-batch)
     if (kw === 'let') {
         if (len < 2) return errorNode(rec, "a name after 'let'", 'end of statement')
-        // A spatial identity declaration belongs to one supported body — an `as`
-        // body or the straight-line body. A scalar derived value is not an identity
-        // and may be introduced where the body re-reaches it (a loop), because its
-        // node is keyed by (source, site). (id:laws-decl-batch, id:laws-build-p3-readout-built)
+        // A declaration belongs to ONE body. A recipe or conditional body is walked at
+        // most once per activation, so the enclosing activation frame already scopes
+        // the identity — and an answer that later omits it is a rebuild, which region
+        // replacement withdraws. A LOOP body re-reaches one site, so its identity would
+        // need an instance key this has not earned: there it stays refused. A scalar
+        // derived value is not an identity at all and may be introduced anywhere.
+        // (id:laws-decl-batch, id:laws-build-p3-readout-built)
         const kind = state.blockKind ?? null
-        const introduced = () => (kind && kind !== 'as')
+        const introduced = () => (kind === 'loop' || kind === 'for')
             ? errorNode(rec, `a declaration cannot live inside '${kind}'`, kw)
             : null
         // `let A` — existence. `let A.distance = 5` (or glued) — a dotted relation.
@@ -674,14 +691,14 @@ function parseStatement(tokens, state, rec) {
         if (expr === 'origin') return introduced() ?? stamp(new ASTNode('Law', 'position', [], { target: lhs, coords: [0, 0, 0] }), rec)
         const coords = parseCoords(expr)
         if (coords) return introduced() ?? stamp(new ASTNode('Law', 'position', [], { target: lhs, coords }), rec)
-        // A scalar derived value: `let s = A.x`. Its kind is fixed at introduction;
-        // the value is a source-owned derived node. A bare identifier stays refused
-        // (reserved for coincidence). (id:laws-build-p3-readout-built)
-        // A malformed coordinate literal is a position error, not a scalar.
+        // A scalar derived value: `let s = <expr>`. Its kind is fixed at
+        // introduction; the value is a source-owned derived node. A bare name is not
+        // refused here — its kind is resolved where the namespace is known, at the
+        // walk: a zero-input recipe is a figure, a deferred primitive is a parameter,
+        // anything else is a derived value, and a name that means nothing wounds where
+        // a measure is demanded. A malformed coordinate literal is still a position
+        // error, not a scalar. (id:laws-build-p3-readout-built, id:eval-relational)
         if (/^\[/.test(expr)) {
-            return errorNode(rec, 'a property (A.distance) or a position (origin or [x, y, z])', expr)
-        }
-        if (/^[A-Za-z_][\w-]*$/.test(expr)) {
             return errorNode(rec, 'a property (A.distance) or a position (origin or [x, y, z])', expr)
         }
         // A scalar binder must be a plain name. A function-looking binder

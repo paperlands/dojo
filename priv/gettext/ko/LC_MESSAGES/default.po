@@ -80,6 +80,12 @@ msgstr "오른쪽으로 기우뚱"
 #, elixir-autogen, elixir-format
 msgid "Make a Function"
 msgstr "요술 상자를 만들어"
+#: lib/dojo_web/components/deck.ex:24
+#, elixir-autogen, elixir-format
+msgid "Give a Law"
+msgstr "법칙을 내려"
+
+
 
 #: lib/dojo_web/components/deck.ex:24
 #, elixir-autogen, elixir-format

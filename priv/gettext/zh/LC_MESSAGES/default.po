@@ -80,6 +80,12 @@ msgstr "向右歪"
 #, elixir-autogen, elixir-format
 msgid "Make a Function"
 msgstr "造小机器"
+#: lib/dojo_web/components/deck.ex:24
+#, elixir-autogen, elixir-format
+msgid "Give a Law"
+msgstr "立下法则"
+
+
 
 #: lib/dojo_web/components/deck.ex:24
 #, elixir-autogen, elixir-format

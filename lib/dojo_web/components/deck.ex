@@ -5,6 +5,8 @@ defmodule DojoWeb.DeckLive do
 
   alias DojoWeb.Session
 
+  @law_attrs ~w(distance x y z tilt bearing)
+
   @primitives %{
     command: [
       {"fw", "Move Forward", [length: 50]},
@@ -21,6 +23,7 @@ defmodule DojoWeb.DeckLive do
       {"roll", "Tilt Right", [angle: 45]},
       {"faceto", "Face a Point", ["→": 0, "↑": 0]},
       {"fn", "Make a Function", [shape: "avg[x,y]", output: "[x+y]/2"]},
+      {"let", "Give a Law", [name: "A", attr: "distance", eq: "=", number: 50]},
       {"beColour", "Change Colour to", [colour: "'red'"]},
       {"hide", "Hide your Head", nil},
       {"show", "Show your Head", [size: 10]},
@@ -54,7 +57,7 @@ defmodule DojoWeb.DeckLive do
         {key, translated}
       end)
 
-    {:ok, assign(socket, locale: locale, primitive: primitive)}
+    {:ok, assign(socket, locale: locale, primitive: primitive, law_attrs: @law_attrs)}
   end
 
   def render(assigns) do
@@ -181,35 +184,106 @@ defmodule DojoWeb.DeckLive do
                     <%!-- Sample code --%>
                     <p class="text-xs text-lint-commands flex items-baseline flex-wrap">
                       {cmd}
-                      <span :if={vals} class="relative grid-cols-3  ">
-                        <input
-                          :for={{arg, val} <- vals}
-                          type="text"
-                          id={"cmdparam-#{cmd}-#{arg}"}
-                          value={val}
-                          defaulted={val}
-                          class="ml-[1ch] bg-base-200/50 caret-accent-content hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none text-xs px-0 py-0 min-w-[2ch] max-w-[8ch]"
-                          placeholder={arg}
-                          phx-update="ignore"
-                          phx-keydown={
-                            JS.dispatch("phx:writeShell",
-                              detail: %{key => cmd, "args" => Keyword.keys(vals)}
-                            )
-                            |> JS.add_class(
-                              "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",
-                              to: "#cmdicon-#{cmd}"
-                            )
-                            |> JS.remove_class(
-                              "fill-secondary-content drop-shadow-md drop-shadow-secondary-content",
-                              to: "#cmdicon-#{cmd}",
-                              transition: "ease-out duration-200",
-                              time: 200
-                            )
-                          }
-                          phx-key="Enter"
-                          onclick="event.stopPropagation()"
-                        />
-                      </span>
+                      <%= if cmd == "let" and vals do %>
+                        <% write =
+                          JS.dispatch("phx:writeShell",
+                            detail: %{key => cmd, "args" => Keyword.keys(vals)}
+                          )
+                          |> JS.add_class(
+                            "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",
+                            to: "#cmdicon-#{cmd}"
+                          )
+                          |> JS.remove_class(
+                            "fill-secondary-content drop-shadow-md drop-shadow-secondary-content",
+                            to: "#cmdicon-#{cmd}",
+                            transition: "ease-out duration-200",
+                            time: 200
+                          ) %>
+                        <span class="ml-[1ch] inline-flex items-baseline">
+                          <input
+                            type="text"
+                            id={"cmdparam-#{cmd}-name"}
+                            value={vals[:name]}
+                            defaulted={vals[:name]}
+                            class={"#{well_class()} min-w-[1ch] max-w-[6ch]"}
+                            placeholder="name"
+                            phx-update="ignore"
+                            phx-keydown={write}
+                            phx-key="Enter"
+                            onclick="event.stopPropagation()"
+                          />
+                          <span>.</span>
+                          <select
+                            id={"cmdparam-#{cmd}-attr"}
+                            defaulted={vals[:attr]}
+                            class={"#{well_class()} w-[8ch] appearance-none bg-none pr-0"}
+                            phx-update="ignore"
+                            onclick="event.stopPropagation()"
+                          >
+                            <option
+                              :for={prop <- @law_attrs}
+                              value={prop}
+                              selected={prop == to_string(vals[:attr])}
+                            >
+                              {prop}
+                            </option>
+                          </select>
+                          <input
+                            type="text"
+                            id={"cmdparam-#{cmd}-eq"}
+                            value={vals[:eq]}
+                            defaulted={vals[:eq]}
+                            class={"#{well_class()} min-w-[1ch] max-w-[3ch]"}
+                            placeholder="eq"
+                            phx-update="ignore"
+                            phx-keydown={write}
+                            phx-key="Enter"
+                            onclick="event.stopPropagation()"
+                          />
+                          <input
+                            type="text"
+                            id={"cmdparam-#{cmd}-number"}
+                            value={vals[:number]}
+                            defaulted={vals[:number]}
+                            class={"#{well_class()} min-w-[2ch] max-w-[6ch]"}
+                            placeholder="number"
+                            phx-update="ignore"
+                            phx-keydown={write}
+                            phx-key="Enter"
+                            onclick="event.stopPropagation()"
+                          />
+                        </span>
+                      <% else %>
+                        <span :if={vals} class="relative flex items-baseline flex-wrap">
+                          <input
+                            :for={{arg, val} <- vals}
+                            type="text"
+                            id={"cmdparam-#{cmd}-#{arg}"}
+                            value={val}
+                            defaulted={val}
+                            class={"ml-[1ch] #{well_class()} min-w-[2ch] max-w-[8ch]"}
+                            placeholder={arg}
+                            phx-update="ignore"
+                            phx-keydown={
+                              JS.dispatch("phx:writeShell",
+                                detail: %{key => cmd, "args" => Keyword.keys(vals)}
+                              )
+                              |> JS.add_class(
+                                "fill-secondary-content drop-shadow-md drop-shadow-secondary-content ",
+                                to: "#cmdicon-#{cmd}"
+                              )
+                              |> JS.remove_class(
+                                "fill-secondary-content drop-shadow-md drop-shadow-secondary-content",
+                                to: "#cmdicon-#{cmd}",
+                                transition: "ease-out duration-200",
+                                time: 200
+                              )
+                            }
+                            phx-key="Enter"
+                            onclick="event.stopPropagation()"
+                          />
+                        </span>
+                      <% end %>
                     </p>
                   </div>
                 </div>
@@ -228,6 +302,10 @@ defmodule DojoWeb.DeckLive do
       </div>
     </div>
     """
+  end
+
+  defp well_class do
+    "bg-base-200/50 caret-accent-content hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none text-xs px-0 py-0"
   end
 
   defp to_titlecase(snek) when is_binary(snek) do

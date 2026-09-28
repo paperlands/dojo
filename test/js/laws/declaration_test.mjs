@@ -15,6 +15,9 @@ import assert from "node:assert/strict"
 import { parseProgram, collectErrors } from "../../../assets/js/turtling/parse.js"
 import { deriveBatch, exposed, freePoint } from "../../../assets/js/turtling/laws/batch.js"
 import { buildWorld, fork, drive } from "./harness.mjs"
+// A declared place is where it was born composed with its own motion. Reading the
+// composed world pose says what these tests mean; reading one field only says which
+// slot the form happens to use. (id:laws-figures-phase34-ground)
 import { frameWorldTransform } from "../../../assets/js/turtling/scheduler.js"
 
 const find = (frame, name) => {
@@ -37,14 +40,24 @@ test("acceptance: `let A` states existence and carries its span", () => {
     assert.deepEqual(node.children, [])
 })
 
-test("acceptance: unsupported declaration forms are refused locally", () => {
-    for (const src of ["let A = [0,0]", "let A = B"]) {
+test("acceptance: a malformed position literal is refused locally", () => {
+    for (const src of ["let A = [0,0]"]) {
         // The structured diagnostic, not a message field that can drift from it.
         const [wound] = collectErrors(parseProgram(src))
         assert.ok(wound, `${src} should be a located refusal`)
         assert.equal(wound.span.line, 1)
         assert.match(wound.expected, /property|relation|position/)
     }
+})
+
+test("acceptance: a bare name is a scalar, and the walk resolves its kind", () => {
+    // `let A = B` is not a declaration form, it is an expression: a zero-input
+    // recipe is a figure, a constant or a 0-arity fn is a value, and a name that
+    // means nothing wounds where a measure is demanded. The namespace is known at
+    // the walk, so that is where the kind is decided. (id:eval-relational)
+    const node = first("let A = B")
+    assert.equal(node.type, "Scalar")
+    assert.equal(node.meta.expr, "B")
 })
 
 test("acceptance: a position pin parses (`origin` and a coordinate literal)", () => {
@@ -67,11 +80,13 @@ test("acceptance: `let A.distance = 5` is a dotted relation with its span", () =
     assert.equal(node.span.line, 1)
 })
 
-test("acceptance: a declaration is refused inside a loop, conditional or function body", () => {
+test("acceptance: a declaration is refused inside a LOOP body only", () => {
+    // A recipe or conditional body is walked at most once per activation, so the
+    // activation frame scopes the identity. A loop body re-reaches ONE site, so its
+    // identity would need an instance key that has not been earned: there it stays
+    // refused. (id:laws-decl-batch)
     const nested = [
         "loop 3 do\n  let A\nend",
-        "when 1 do\n  let A\nend",
-        "def f do\n  let A\nend",
     ]
     for (const src of nested) {
         const [wound] = collectErrors(parseProgram(src))
@@ -83,6 +98,18 @@ test("acceptance: a declaration is refused inside a loop, conditional or functio
     const ambient = first("as child do\n  let A\nend")
     assert.equal(ambient.type, 'Ambient')
     assert.equal(ambient.children[0].type, 'Existence')
+})
+
+test("acceptance: a recipe or conditional body scopes its own declaration", () => {
+    // The activation frame IS the identity's owner, so a declaration inside a body
+    // walked once per activation needs no instance key — a later answer that omits
+    // it is a rebuild, which region replacement withdraws. (id:laws-decl-batch)
+    for (const src of ["def f do\n  let A\nend", "when 1 do\n  let A\nend"]) {
+        const [wound] = collectErrors(parseProgram(src))
+        assert.equal(wound, undefined, `${src.split("\n")[0]} accepts a local declaration`)
+    }
+    const recipe = first("def f do\n  let A\nend")
+    assert.equal(recipe.children[0].type, 'Existence')
 })
 
 test("acceptance: one parse, two meanings — declarations stay in the executable stream", () => {
@@ -233,9 +260,9 @@ test("acceptance: ordered birth — A begins where the walk reached it", () => {
     const a = find(host, "A")
     const b = find(host, "B")
     assert.equal(host.error, null, "reaching a declaration is not an error")
-    assert.deepEqual(a.transform.deref().position.map((n) => +n.toFixed(6)), [100, 0, 0],
+    assert.deepEqual(frameWorldTransform(a).position.map((n) => +n.toFixed(6)), [100, 0, 0],
         "A begins at the walk's reached pose, not the frame origin")
-    assert.deepEqual(b.transform.deref().position.map((n) => +n.toFixed(6)), [200, 0, 0],
+    assert.deepEqual(frameWorldTransform(b).position.map((n) => +n.toFixed(6)), [200, 0, 0],
         "B begins at its own reached pose")
     assert.equal(a.isPlace, true)
     assert.equal(freePoint(a), true, "a reached declaration is a free point")
@@ -249,7 +276,7 @@ test("acceptance: ordered birth — a not-yet-reached declaration has no point",
     drive(scheduler)
     const a = find(host, "A")
     assert.ok(a, "A is born when the walk reaches its declaration")
-    assert.deepEqual(a.transform.deref().position.map((n) => +n.toFixed(6)), [100, 0, 0],
+    assert.deepEqual(frameWorldTransform(a).position.map((n) => +n.toFixed(6)), [100, 0, 0],
         "born at the pose the walk held at the declaration")
 })
 
@@ -267,14 +294,14 @@ test("acceptance: ordered birth — a re-reached let revises to the current head
     const host = scheduler.hotSwapChild("host", fork("host", "fw 50\nlet a\nwait 1\nfw 50\nlet a"))
     const a = host.children.get("a")
     assert.equal(freePoint(a), true)
-    assert.deepEqual(a.transform.deref().position.map((n) => +n.toFixed(6)), [50, 0, 0],
+    assert.deepEqual(frameWorldTransform(a).position.map((n) => +n.toFixed(6)), [50, 0, 0],
         "a began at the walk's reached pose")
     const revision = scheduler.motionRevision
     assert.equal(scheduler.requestMotion(a, { rotation: a.transform.deref().rotation,
         position: [3, 0, 0] }, revision).kind, "accept")
     drive(scheduler)
     assert.equal(host.children.get("a"), a, "the same identity throughout")
-    assert.deepEqual(a.transform.deref().position.map((n) => +n.toFixed(6)), [100, 0, 0],
+    assert.deepEqual(frameWorldTransform(a).position.map((n) => +n.toFixed(6)), [100, 0, 0],
         "the re-reached let adopts the current head's state")
 })
 
@@ -328,7 +355,7 @@ test("acceptance: a child's read of a parent's later let waits, then reads it", 
     assert.equal(host.error, null)
     const a = find(host, "A")
     const s = find(host, "s")
-    assert.deepEqual(a.transform.deref().position.map((n) => +n.toFixed(6)), [7, 0, 0],
+    assert.deepEqual(frameWorldTransform(a).position.map((n) => +n.toFixed(6)), [7, 0, 0],
         "the parent introduced A at its reached pose")
     assert.deepEqual(s.transform.deref().position.map((n) => +n.toFixed(6)), [7, 0, 0],
         "the child's fw A.x waited (D011), then read 7")
@@ -341,8 +368,8 @@ test("acceptance: ordered birth is invariant under breath and channel budget", (
         const host = scheduler.hotSwapChild("host", fork("host", "fw 100\nlet A\nfw 100\nlet B"))
         drive(scheduler)
         return {
-            a: find(host, "A").transform.deref().position.map((n) => +n.toFixed(6)),
-            b: find(host, "B").transform.deref().position.map((n) => +n.toFixed(6)),
+            a: frameWorldTransform(find(host, "A")).position.map((n) => +n.toFixed(6)),
+            b: frameWorldTransform(find(host, "B")).position.map((n) => +n.toFixed(6)),
         }
     }
     const base = run(1, 64)

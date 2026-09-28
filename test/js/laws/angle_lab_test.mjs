@@ -84,7 +84,8 @@ const angleValidator = (getWant) => ({ request, writer, entries }) => {
 const drag = (scheduler, host, name, position) => {
     const frame = host.children.get(name)
     return scheduler.requestMotion(frame,
-        { rotation: frame.transform.deref().rotation, position }, scheduler.motionRevision)
+        // The lab drags in WORLD coordinates: the request names its frame.
+        { rotation: frame.transform.deref().rotation, position }, scheduler.motionRevision, 'world')
 }
 
 test("either arm can drive; the other rotates and the opening holds", () => {

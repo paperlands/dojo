@@ -7,15 +7,20 @@ class Token {
 }
 
 
+// One operator vocabulary, two readers: the math lexer tokenizes with it, and the
+// PaperLang splitter uses it to know where an argument expression ends. Longest
+// first, so a multi-character operator never splits into two.
+// (id:gw-grammar)
+export const OPERATORS = [
+    '===', '!==', '&&', '||',
+    '>=', '<=', '==', '!=', '//',
+    '+', '-', '*', '/', '^',
+    '>', '<', '&', '|', '!'
+]
+
 export class Lexer {
     constructor() {
-        // Multi-character operators must be checked in order of length (longest first)
-        this.operators = [
-            '===', '!==', '&&', '||',
-            '>=', '<=', '==', '!=', '//',
-            '+', '-', '*', '/', '^',
-            '>', '<', '&', '|', '!'
-        ];
+        this.operators = OPERATORS
 
         this.operatorRegex = new RegExp(
             this.operators.map(op => this.escapeRegex(op)).join('|')

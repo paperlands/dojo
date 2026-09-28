@@ -80,6 +80,12 @@ msgstr "مِل يَمينًا"
 #, elixir-autogen, elixir-format
 msgid "Make a Function"
 msgstr "اِصنَع آلة صَغيرة"
+#: lib/dojo_web/components/deck.ex:24
+#, elixir-autogen, elixir-format
+msgid "Give a Law"
+msgstr "أَعطِ قانونًا"
+
+
 
 #: lib/dojo_web/components/deck.ex:24
 #, elixir-autogen, elixir-format

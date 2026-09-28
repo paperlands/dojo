@@ -15,6 +15,27 @@ import {
 import { outcomeOf, readout, OUTCOME } from "./outcome.js"
 import { HIT_RADIUS, DRAG_SLOP } from "./feel.js"
 import { handFor } from "./hand.js"
+// A move means EVERY sample it carries. A browser coalesces the real sub-frame pointer
+// path into one `pointermove`, so a handler reading only clientX/clientY samples the
+// display rate and a fast circle becomes a polygon. Both the expansion and the feed
+// loop live here, in the pure state machine, so they are testable without a browser.
+// (id:laws-figures-phase34-intent)
+export function pointerSamples(event) {
+    const coalesced = typeof event?.getCoalescedEvents === "function" ? event.getCoalescedEvents() : null
+    return coalesced && coalesced.length ? coalesced : [event]
+}
+
+// Feed one DOM move — all of it — to the gesture. True when the gesture was cancelled,
+// so the DOM layer drops its held frame once for the batch, not once per sample.
+export function moveGesture(handle, event) {
+    let cancelled = false
+    for (const sample of pointerSamples(event)) {
+        const answer = handle.pointerMove({ pointerId: sample.pointerId, x: sample.clientX, y: sample.clientY })
+        if (answer?.cancelled) cancelled = true
+    }
+    return cancelled
+}
+
 export function createGesture(deps) {
     const {
         candidates,      // () => [{ name, frame }] — the places currently offered

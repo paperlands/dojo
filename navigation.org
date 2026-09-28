@@ -927,6 +927,21 @@ cells stop blinking. =fresh:true= is the explicit restart door
 second machine for it and is gone). Pins: =test/js/runtime/become_test.mjs=;
 seam lint: =test/js/document/check_tree.mjs=.
 
+** derived cell — the flake is keyed to its place
+:PROPERTIES:
+:ID: nav-keyed-stream
+:KEYWORDS: random keyed seed flake stochastic derived figure rebuild determinism
+:PATH: assets/js/turtling/mafs/keyed_stream.js::keyedStream
+:END:
+A derived figure is memoized by its key: =sameSeed= refuses the rebuild and the
+readout refuses an equal question — both memos decide by equality, so the answer
+must be a function of the key. =keyedStream(keyedSeed(address))= gives one stream
+per run, read by both doors: the evaluator's =random= constant and =ctx.random= for
+=beColour random=. Same figure, same flake; a rebuild does not re-roll. An ordinary
+ambient reads the world, so a position in a stream is not its to promise — it keeps
+=Math.random=. Pins: =test/js/execute/keyed_stream_test.mjs=,
+=test/js/laws/figure_binding_test.mjs=.
+
 ** render clock — epoch rebase, idle fast-forward
 :PROPERTIES:
 :ID: nav-timeline
