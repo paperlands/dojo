@@ -456,19 +456,13 @@ function* walkBody(body, scope, state, stroke) {
             const figureCall = figureCallOf(expr, state)
             if (figureCall) {
                 const arity = state.functions?.[figureCall.recipe]?.parameters?.length ?? 0
-                // An input the recipe asks for and does not get is a located fault.
-                // Filling it with 0 is the silent-zero lie refused everywhere else.
-                // (id:eval-relational)
-                if (figureCall.args.length < arity) {
-                    throw new Error(`figure '${figureCall.recipe}' asks for ${arity} input(s), got ${figureCall.args.length}`)
-                }
-                // BINDING: the argument expressions belong to the declaring scope, and the
-                // recipe to the resolved definition. They are kept, not consumed, so a
-                // rebuild can read them again. (id:laws-figures-phase34-input)
+                // A missing hole is the command's own default, or 0 for a def.
+                // Not a wound. (id:eval-relational)
                 const inputs = []
                 for (const arg of figureCall.args) {
                     inputs.push(yield* evalOrBlock(arg, scope, state, 'reading'))
                 }
+                while (inputs.length < arity) inputs.push(0)
                 const call = new ASTNode('Call', figureCall.recipe,
                     inputs.map((input) => new ASTNode('Argument', String(input))))
                 call.span = node.span ?? null

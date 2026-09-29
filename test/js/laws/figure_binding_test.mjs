@@ -303,3 +303,49 @@ wait 1
     assert.ok(got.some((t) => Number(t) === 270), `the label follows the bearing (saw ${got})`)
     assert.equal(scheduler.errors.length, 0)
 })
+
+test("a new question inks on the drain's tick — same cadence as the pose", () => {
+    // The hand already moved P. Construction stays off the pointer; the walk
+    // of the seated answer is this tick, not the next. (id:laws-figure-eidos-cell)
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host", `
+let X
+def step s do
+  fw s
+end
+let art = step X.x
+wait 1
+`))
+    drive(scheduler)
+    const X = find(host, "X")
+    const art = find(host, "art")
+    drag(scheduler, X, 40)
+    scheduler.readouts.drain()
+    assert.equal(art.done, false, "the cell is walking the new question")
+    scheduler.tick((scheduler.lastTickTime || 0) + 16)
+    const ink = art.channel.drain().filter((e) => e.type === "path")
+    assert.ok(ink.length > 0, "the new stroke landed with this tick")
+    assert.equal(scheduler.errors.length, 0)
+})
+
+test("a short call is forgiven — missing holes are 0, not a wound", () => {
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host", `
+def turn s a do
+  fw s
+  rt a
+end
+let art = turn 40
+wait 1
+`))
+    const seen = []
+    for (let r = 0; r < 4; r++) {
+        const trace = drive(scheduler, { maxTicks: 8 })
+        for (const e of trace.get("art") ?? []) seen.push(e)
+        scheduler.readouts.drain()
+    }
+    const path = seen.find((e) => e.type === "path")
+    assert.ok(path, "turn 40 draws — the missing angle is 0")
+    assert.equal(scheduler.errors.length, 0)
+    assert.ok(find(host, "art"))
+})

@@ -479,12 +479,14 @@ export function createCompositor(scheduler, stage, opts = {}) {
         // Own timeslice: never inherit a spent deadline (would park on first breath).
         flush() {
             scheduler.withSlice(pacer.budgetMs, driveToRest)
-            // Settle keyed cells OUTSIDE publication: capture happened in the
-            // commit, construction happens here. (id:laws-figure-eidos-cell)
+            // Capture is in the commit; build is here. Walk the seated answer
+            // in this same pump so the show is not a frame behind the pose.
+            // (id:laws-figure-eidos-cell, id:laws-figures-phase34-inplace)
             scheduler.readouts.drain()
-            drainAndMaterialize()  // one materialize pass after all ticks
+            scheduler.withSlice(pacer.budgetMs, driveToRest)
+            drainAndMaterialize()
             updateGroupPositions()
-            cleanupOrphanedLayers()  // background tabs get no rAF
+            cleanupOrphanedLayers()
             return scheduler.done
         },
 
@@ -505,12 +507,11 @@ export function createCompositor(scheduler, stage, opts = {}) {
                 else pacer.observe(t - frameStart)
             }
             frameStart = t
-            if (!scheduler.done) {
-                scheduler.withSlice(pacer.budgetMs, () => driveOneFrame(now))
-            }
-            // A finished ambient can still receive accepted pen-up motion.
-            // Settle keyed figures outside publication, before materializing.
+            // Drain first: a hand commit already captured the question. The walk
+            // of that answer belongs in THIS frame, with the pose, not the next.
+            // Construction stays outside publication. (id:laws-figure-eidos-cell)
             scheduler.readouts.drain()
+            scheduler.withSlice(pacer.budgetMs, () => driveOneFrame(now))
             drainAndMaterialize()
             updateGroupPositions()
             cleanupOrphanedLayers()

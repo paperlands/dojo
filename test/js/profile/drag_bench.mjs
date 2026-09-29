@@ -132,11 +132,10 @@ function drag({ frames = 240, eventsPerFrame = 8, frameMs = 16 } = {}) {
                 scheduler.motionRevision, "world")
             if (verdict.kind === "accept") accepted++
         }
-        // --- one commit for the whole flood
         now += frameMs
+        scheduler.readouts.drain()
         scheduler.tick(now)
         drainAll(scheduler, events)
-        scheduler.readouts.drain()
         ms.push(performance.now() - t0)
     }
 
@@ -165,13 +164,11 @@ function arrival() {
     const events = []
     let now = scheduler.lastTickTime || 0, tick = 0
     const one = () => {
-        if (!scheduler.done) scheduler.tick(now)
-        now += 16; tick++
         scheduler.readouts.drain()
+        scheduler.tick(now)
+        now += 16; tick++
         const n = events.length
         const drained = drainAll(scheduler, events)
-        // Tag by FRAME, not by array position: the array index of the clear and the ink
-        // differ by one even when they land in the same frame — the label used to lie.
         for (let i = n; i < events.length; i++) events[i].tick = tick
         return drained
     }
