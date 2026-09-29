@@ -95,6 +95,18 @@ describe("word domain (ink / label)", () => {
         assert.equal(paths[1].color, "silver")
     })
 
+    test("color and colour accept the same bare word as beColour", () => {
+        for (const verb of ["color", "colour"]) {
+            const events = drainEvents(
+                [call("fw", 10), call(verb, "silver"), call("fw", 10)],
+                realDeps(),
+            )
+            const paths = eventsOfType(events, "path")
+            assert.equal(paths.length, 2, verb)
+            assert.equal(paths[1].color, "silver", verb)
+        }
+    })
+
     test("beColour ff2d55 accepts bare hex", () => {
         const events = drainEvents(
             [call("beColour", "ff2d55"), call("fw", 5)],

@@ -412,6 +412,17 @@ describe("style commands", () => {
         const r2 = hd(mkCtx(identity()))
         assert.deepEqual(r1, r2)
     })
+    
+    test("forward/fd/right/left/jump/jumpto/color/colour alias the canonical verbs", () => {
+        assert.equal(COMMANDS.get("forward"), COMMANDS.get("fw"))
+        assert.equal(COMMANDS.get("fd"), COMMANDS.get("fw"))
+        assert.equal(COMMANDS.get("right"), COMMANDS.get("rt"))
+        assert.equal(COMMANDS.get("left"), COMMANDS.get("lt"))
+        assert.equal(COMMANDS.get("jump"), COMMANDS.get("jmp"))
+        assert.equal(COMMANDS.get("jumpto"), COMMANDS.get("jmpto"))
+        assert.equal(COMMANDS.get("color"), COMMANDS.get("beColour"))
+        assert.equal(COMMANDS.get("colour"), COMMANDS.get("beColour"))
+    })
 })
 
 // ---------------------------------------------------------------------------
@@ -451,11 +462,11 @@ describe("limit commands", () => {
 
 describe("COMMANDS map", () => {
     const expected = [
-        "fw", "rt", "lt", "yaw", "pitch", "dive", "roll",
-        "show", "hide", "hd", "jmp", "bold", "grid",
-        "goto", "faceto", "jmpto", "label", "erase", "home",
+        "fw", "forward", "fd", "rt", "right", "lt", "left", "yaw", "pitch", "dive", "roll",
+        "show", "hide", "hd", "jmp", "jump", "bold", "grid",
+        "goto", "faceto", "jmpto", "jumpto", "label", "erase", "home",
         "fill", "wait", "limitRecurse", "limitCommand",
-        "limitMessage", "beColour"
+        "limitMessage", "beColour", "color", "colour"
     ]
 
     test("contains all expected commands", () => {
@@ -470,8 +481,8 @@ describe("COMMANDS map", () => {
         }
     })
 
-    test("matches expected command count (26)", () => {
-        assert.equal(COMMANDS.size, 26)
+    test("matches expected command count (34)", () => {
+        assert.equal(COMMANDS.size, 34)
     })
 })
 

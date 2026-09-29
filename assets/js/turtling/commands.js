@@ -233,8 +233,12 @@ function limitMessage(ctx, limit = 8192) {
 
 export const COMMANDS = new Map([
     ["fw", fw],
+    ["forward", fw],
+    ["fd", fw],
     ["rt", right],
+    ["right", right],
     ["lt", left],
+    ["left", left],
     ["yaw", yaw],
     ["pitch", pitch],
     ["dive", pitch],
@@ -243,11 +247,13 @@ export const COMMANDS = new Map([
     ["hide", hide],
     ["hd", hide],
     ["jmp", jmp],
+    ["jump", jmp],
     ["bold", bold],
     ["grid", grid],
     ["goto", goTo],
     ["faceto", faceto],
     ["jmpto", jmpto],
+    ["jumpto", jmpto],
     ["label", label],
     ["erase", erase],
     ["home", home],
@@ -257,7 +263,9 @@ export const COMMANDS = new Map([
     ["limitRecurse", limitRecurse],
     ["limitCommand", limitCommand],
     ["limitMessage", limitMessage],
-    ["beColour", beColour]
+    ["beColour", beColour],
+    ["color", beColour],
+    ["colour", beColour]
 ])
 
 // Default style — used by executor to initialize context

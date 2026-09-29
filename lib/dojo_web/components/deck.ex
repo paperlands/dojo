@@ -24,7 +24,7 @@ defmodule DojoWeb.DeckLive do
       {"faceto", "Face a Point", ["→": 0, "↑": 0]},
       {"fn", "Make a Function", [shape: "avg[x,y]", output: "[x+y]/2"]},
       {"let", "Give a Law", [name: "A", attr: "distance", eq: "=", number: 50]},
-      {"beColour", "Change Colour to", [colour: "'red'"]},
+      {"color", "Change Color to", [color: "'red'"]},
       {"hide", "Hide your Head", nil},
       {"show", "Show your Head", [size: 10]},
       {"erase", "Wipe Everything", nil}

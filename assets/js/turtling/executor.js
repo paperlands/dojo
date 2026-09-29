@@ -56,6 +56,8 @@ function chargeReductions(state) {
 // strict: bare unknown idents wound — never silent strings that NaN SE(3).
 const ARG_DOMAINS = {
     beColour: ["word"],
+    color: ["word"],
+    colour: ["word"],
     label: ["word", "measure"],
     shout: ["word", "measure"],
 }
