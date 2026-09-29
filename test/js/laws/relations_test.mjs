@@ -19,16 +19,16 @@ test("measure: distance reads two positions", () => {
     assert.equal(measure("distance", "b", "a", read), 5)
 })
 
-test("measure: bearing is the turn to the target, signed by the observer's facing", () => {
+test("measure: bearing is the clockwise turn to the target, from 0 to 360", () => {
     // The compass is the paper's: 0 is +y (north), +x is due east. An identity
     // frame faces +x, so it faces EAST — a target due its nose reads zero turn.
     const ahead = readings({ a: [0, 0, 0], b: [1, 0, 0] })
     assert.equal(measure("bearing", "b", "a", ahead), 0, "due +x is dead ahead when facing east")
     const behind = readings({ a: [0, 0, 0], b: [-1, 0, 0] })
     assert.equal(Math.abs(measure("bearing", "b", "a", behind)), 180, "due west is a half turn, either way")
-    // north is to the LEFT of an east-facing observer: 90 west of north, i.e. −90.
+    // north is to the LEFT of an east-facing observer: a three-quarter turn clockwise.
     const left = readings({ a: [0, 0, 0], b: [0, 1, 0] })
-    assert.equal(measure("bearing", "b", "a", left), -90, "due +y is a quarter turn left")
+    assert.equal(measure("bearing", "b", "a", left), 270, "due +y is 270, never −90")
     // Facing north (a quarter turn left), the same target is dead ahead.
     const facingNorth = readings({ a: [0, 0, 0], b: [0, 1, 0] },
         { a: { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 } })

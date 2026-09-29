@@ -193,10 +193,11 @@ test("acceptance: a free point exposes no invented orientation (bearing ≠ head
     assert.ok(threw, "b.elevation must wound too — one door shut is not a boundary")
 
     // Bearing TO B is a real reading and is not B's own heading: it is the compass
-    // to b LESS the observer's own facing. m stands at [4,0] facing +x (east, 90),
-    // and b lies to its north-west, so the turn is negative — a left turn.
+    // to b LESS the observer's own facing, in [0, 360). m stands at [4,0] facing +x
+    // (east, 90), and b lies to its north-west, so the turn is clockwise past north.
     const bearing = resolveBinding(m, "b.bearing")
-    const expected = Math.atan2(3 - 4, 2 - 0) * (180 / Math.PI) - 90
+    const raw = Math.atan2(3 - 4, 2 - 0) * (180 / Math.PI) - 90
+    const expected = ((raw % 360) + 360) % 360
     assert.ok(Math.abs(bearing - expected) < 1e-6,
         `bearing to b is ${expected}, not b's heading`)
 })

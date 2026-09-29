@@ -123,6 +123,30 @@ describe("createLabelPool", () => {
         assert.equal(group.children.length, 1)
     })
 
+    test("a rewrite keeps the glyphs on screen — a drag does not blink", () => {
+        const { pool, made } = poolFor()
+        pool.write(label("270"), () => {})
+        pool.rewrite()
+        assert.equal(made[0].visible, true, "rewrite does not hide")
+        pool.write(label("271"), () => {})
+        pool.trim()
+        assert.equal(made.length, 1)
+        assert.equal(made[0].visible, true)
+        assert.equal(made[0].text, "271")
+    })
+
+    test("trim hides leftovers of a shorter pass", () => {
+        const { pool, made } = poolFor()
+        pool.write(label("a", 1), () => {})
+        pool.write(label("b", 2), () => {})
+        pool.rewrite()
+        pool.write(label("c", 3), () => {})
+        pool.trim()
+        assert.equal(made[0].visible, true)
+        assert.equal(made[1].visible, false)
+        assert.equal(pool.live, 1)
+    })
+
     test("an unchanged rewrite does not request a render", () => {
         const { pool } = poolFor()
         let renders = 0

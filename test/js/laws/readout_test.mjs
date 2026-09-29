@@ -16,8 +16,8 @@ const find = (frame, name) => {
     }
     return null
 }
-const drag = (scheduler, frame, x) => scheduler.requestMotion(frame,
-    { rotation: frame.transform.deref().rotation, position: [x, 0, 0] }, scheduler.motionRevision).kind
+const drag = (scheduler, frame, x, y = 0) => scheduler.requestMotion(frame,
+    { rotation: frame.transform.deref().rotation, position: [x, y, 0] }, scheduler.motionRevision).kind
 
 test("store: an unchanged value is not re-announced; a source release takes its nodes", () => {
     const store = createReadouts()
@@ -48,6 +48,49 @@ test("store: a read that cannot answer yet is not a value", () => {
     store.register("s", "site", () => { throw new Error("not ready") })
     assert.deepEqual(store.recompute({}), [])
     assert.deepEqual(seen, [])
+})
+
+test("store: an on-demand failed compute is a wound, not a missing value", () => {
+    const store = createReadouts()
+    const id = store.register("s", "site", () => { throw new Error("blocked") })
+    assert.throws(() => store.value(id), /blocked/)
+})
+
+test("express: an indeterminate bearing is play, and moving makes the figure", () => {
+    // X sits on the observer: X.bearing is nothing, size is nothing, art waits.
+    // A later pose that names a bearing rebuilds. (id:eval-relational)
+    const src = [
+        "let X",
+        "def petal s do",
+        "  fw s",
+        "end",
+        "let A",
+        "let A.distance = 50",
+        "let size = A.bearing-X.bearing",
+        "let art = petal size",
+        "wait 1",
+    ].join("\n")
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host", src))
+    drive(scheduler)
+    scheduler.readouts.drain()
+    assert.equal(scheduler.errors.length, 0, "nothing is not a wound")
+    assert.equal(resolveBinding(host, "size"), null, "size holds the indeterminate reading")
+    const art = find(host, "art")
+    assert.ok(art, "the figure cell is born")
+    assert.equal(art.error, null)
+
+    const X = find(host, "X")
+    assert.equal(drag(scheduler, X, 0, 10), "accept")
+    const seen = []
+    for (let r = 0; r < 4; r++) {
+        const trace = drive(scheduler, { maxTicks: 8 })
+        for (const e of trace.get("art") ?? []) seen.push(e)
+        scheduler.readouts.drain()
+    }
+    assert.equal(scheduler.errors.length, 0)
+    assert.equal(typeof resolveBinding(host, "size"), "number", "a named bearing is a size")
+    assert.ok(seen.some((e) => e.type === "path"), "petal draws once the bearing exists")
 })
 
 const CHAIN = [

@@ -18,6 +18,9 @@ import { payloadOf } from "./laws/authored.js"
 // There nothing means "no world", not "the world answered nothing", and the walk
 // must carry on so the words past it still register. (id:eval-relational)
 function demanded(value, expr, domain, state) {
+    // A derived reading may be nothing; the play stays open. A command hole
+    // still cannot BE nothing. (id:eval-relational)
+    if (domain === "reading") return value
     if (value === null && state.deps?.mathEvaluator?.resolveExternal) {
         throw new Error(`No ${domain}: ${expr} is nothing`)
     }
@@ -464,7 +467,7 @@ function* walkBody(body, scope, state, stroke) {
                 // rebuild can read them again. (id:laws-figures-phase34-input)
                 const inputs = []
                 for (const arg of figureCall.args) {
-                    inputs.push(yield* evalOrBlock(arg, scope, state, 'measure'))
+                    inputs.push(yield* evalOrBlock(arg, scope, state, 'reading'))
                 }
                 const call = new ASTNode('Call', figureCall.recipe,
                     inputs.map((input) => new ASTNode('Argument', String(input))))
@@ -697,6 +700,23 @@ function splitTopLevel(s) {
     return out
 }
 
+function splitCommandArgs(rest) {
+    if (rest === '') return []
+    const out = []
+    let depth = 0, start = 0
+    for (let i = 0; i < rest.length; i++) {
+        const c = rest[i]
+        if (c === '[' || c === '(') depth++
+        else if (c === ']' || c === ')') depth--
+        else if ((c === ' ' || c === '\t') && depth === 0) {
+            if (i > start) out.push(rest.slice(start, i))
+            start = i + 1
+        }
+    }
+    if (start < rest.length) out.push(rest.slice(start))
+    return out.filter(Boolean)
+}
+
 // The spawn payload — the ONE door a child inherits through: space (origin),
 // colour (style), vocabulary (code + userspace), captured scope, and logical
 // birth on the shared axis. `as … do` and a figure binding share it, so a figure
@@ -733,10 +753,17 @@ function spawnEvent(state, scope, name, body, functions, extra = {}) {
 function figureCallOf(expr, state) {
     if (typeof expr !== 'string') return null
     const head = /^\s*([A-Za-z_][A-Za-z0-9_]*)/.exec(expr)
-    const signature = head && state.functions?.[head[1]]
-    if (!signature) return null
+    if (!head) return null
+    const name = head[1]
+    const signature = state.functions?.[name]
+    const cmd = signature ? null : COMMANDS.get(name)
+    if (!signature && !cmd) return null
     const rest = expr.slice(head[0].length).trim()
-    return { recipe: head[1], args: splitFigureArgs(rest, signature.parameters?.length ?? 0) }
+    // A command splits like a command line (space). A `def` still owns its arity.
+    if (signature) {
+        return { recipe: name, args: splitFigureArgs(rest, signature.parameters?.length ?? 0) }
+    }
+    return { recipe: name, args: splitCommandArgs(rest) }
 }
 
 function splitFigureArgs(rest, arity) {

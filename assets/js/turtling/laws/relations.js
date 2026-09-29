@@ -13,8 +13,9 @@ export const DEG = 180 / Math.PI
 // angle grows clockwise, so +x is due east and a right turn adds. ONE definition,
 // read twice: a frame's heading is the compass bearing of its forward, and a
 // bearing is the compass of a target less the observer's heading — so a bearing of
-// zero is dead ahead, positive is to the right. (id:eval-relational)
+// zero is dead ahead, a left is 270, never a negative. (id:eval-relational)
 export const compassOf = (dx, dy) => Math.atan2(dx, dy) * DEG
+export const wrapPositive = (degrees) => ((degrees % 360) + 360) % 360
 
 // The one definition both aim readings project: the turtle's forward, +x turned by
 // the rotation. Components rather than a Versor call — a rotation is a plain
@@ -36,7 +37,7 @@ const PLANE_MIN = 1e-9
 // atan2(0, 0) is a number, and it is a lie. `null` is the honest answer, whether the
 // projection is a nose along the normal or a sight line with no direction to name:
 // coincident endpoints, or one straight above the other. (id:eval-relational)
-const compassOrNull = (dx, dy) => Math.hypot(dx, dy) <= PLANE_MIN ? null : compassOf(dx, dy)
+const compassOrNull = (dx, dy) => Math.hypot(dx, dy) <= PLANE_MIN ? null : wrapPositive(compassOf(dx, dy))
 
 export function headingOf(rotation) {
     const [fx, fy] = forwardOf(rotation)
@@ -76,7 +77,7 @@ export function measure(relation, target, observer, read) {
             // And so is a turn toward a target that projects no direction at all:
             // the coincident case names no way to turn, only an angle atan2 invents.
             const c = compassOrNull(dx, dy)
-            return c === null ? null : c - h
+            return c === null ? null : wrapPositive(c - h)
         }
         case "sync":
             return (t.time ?? 0) - (read(observer).time ?? 0)

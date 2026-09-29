@@ -278,3 +278,28 @@ wait 1
     assert.deepEqual([...child.transform.deref().position], [10, 0, 0], "the head walked")
     assert.equal(scheduler.errors.length, 0)
 })
+
+test("a command is a figure: `let name = label …`", () => {
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host", `
+let P
+let Pbear = label P.bearing 10
+wait 1
+`))
+    const texts = () => {
+        const seen = []
+        for (let r = 0; r < 4; r++) {
+            const trace = drive(scheduler, { maxTicks: 8 })
+            for (const e of trace.get("Pbear") ?? []) if (e.type === "label") seen.push(e.text)
+            scheduler.readouts.drain()
+        }
+        return seen
+    }
+    assert.deepEqual(texts(), [], "no compass yet — the figure waits")
+    assert.equal(scheduler.errors.length, 0)
+    const P = find(host, "P")
+    scheduler.requestMotion(P, { rotation: P.transform.deref().rotation, position: [0, 10, 0] }, scheduler.motionRevision)
+    const got = texts()
+    assert.ok(got.some((t) => Number(t) === 270), `the label follows the bearing (saw ${got})`)
+    assert.equal(scheduler.errors.length, 0)
+})

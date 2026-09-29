@@ -162,12 +162,9 @@ export function createReadouts() {
                 return node.value
             }
             if (!node.hasValue) {
-                let value
-                try {
-                    value = node.compute()
-                } catch {
-                    return undefined   // not ready is not a value
-                }
+                // On demand a failed compute is a wound, not a missing name.
+                // Commit-time recompute still treats unreadiness as nothing.
+                const value = node.compute()
                 if (value === undefined) return undefined
                 node.value = value
                 node.hasValue = true

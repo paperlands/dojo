@@ -2,7 +2,7 @@
 // A descriptor is not a registry that hides branches. (id:relationships-row-contract)
 
 import { planeOfAxis, AXES, wrapDegrees, realizeBearing } from "./relationships.js"
-import { forwardOf, DEG, headingOf, compassOf, upOf } from "./relations.js"
+import { forwardOf, DEG, headingOf, compassOf, wrapPositive, upOf } from "./relations.js"
 import { realizeDistance, validateDistance, realizeTilt, ACCEPT_TOL } from "./realize.js"
 import { nearest as meetNearest, plane as planeSet, sphere as sphereSet, point as pointSet, cone as coneSet, halfplane as halfplaneSet } from "./meet.js"
 import { SE3 } from "../se3.js"
@@ -96,7 +96,7 @@ function bearingOf(at, pose) {
     const d = sub(at, pose.position)
     const h = headingOf(pose.rotation)
     if (h === null || Math.hypot(d[0], d[1]) <= 1e-9) return null
-    return wrapDegrees(compassOf(d[0], d[1]) - h)
+    return wrapPositive(compassOf(d[0], d[1]) - h)
 }
 
 function bearingHalf(pose, value) {

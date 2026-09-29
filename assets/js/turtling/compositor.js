@@ -119,17 +119,17 @@ export function createCompositor(scheduler, stage, opts = {}) {
     }
 
     // Clear a child layer's geometry/materials but preserve its head mesh.
-    function clearChildLayer(layer) {
+    function clearChildLayer(layer, { keepLabels = false } = {}) {
         const headGroup = layer.head?.turtleGroup
         for (const child of [...layer.group.children]) {
             if (child === headGroup || child._label) continue
             child.traverse(disposeMesh)
             layer.group.remove(child)
         }
-        // Erase hides labels; it never disposes them. The pool keeps their built
-        // glyph geometry, so the next write draws without an async rebuild gap.
-        layer.labels.hide()
-        // The runs' meshes were just disposed with the group children.
+        // A print that is about to be rewritten must not blink: hide() blanks
+        // the glyphs for a frame, rewrite() keeps them. (id:label-reuse)
+        if (keepLabels) layer.labels.rewrite()
+        else layer.labels.hide()
         layer.trails.clear()
     }
 
@@ -184,19 +184,24 @@ export function createCompositor(scheduler, stage, opts = {}) {
             }
             const childGroups = { pathGroup: layer.group, gridGroup: layer.group }
 
+            const willPrint = events.some((e) => e.type === 'label')
+            let printing = false
             for (const event of events) {
                 if (event.type === 'error') continue
                 if (event.type === 'beat') { onBeat?.(event); continue }
                 if (event.type === 'clear') {
-                    clearChildLayer(layer)
+                    clearChildLayer(layer, { keepLabels: willPrint })
+                } else if (event.type === 'label') {
+                    if (!printing && !events.some((e) => e.type === 'clear')) layer.labels.rewrite()
+                    printing = true
+                    materialize(event, childGroups, childCtx)
                 } else if (event.type === 'path') {
-                    // Consolidate contiguous segments into one growing mesh
-                    // instead of one mesh per event (draw-call collapse).
                     accumulateTrail(event, layer, stage.materials)
                 } else {
                     materialize(event, childGroups, childCtx)
                 }
             }
+            if (printing || willPrint) layer.labels.trim()
             // Poses land after the batch: the newest is where the turtle IS.
             for (const pose of poses) materialize(pose, childGroups, childCtx)
             // Rebuild the trail mesh once per frame, not per event.

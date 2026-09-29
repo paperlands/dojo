@@ -27,7 +27,7 @@ test("guard: the domain is bound to the relation, and a negative length is out",
     assert.equal(predicateOk("distance", 5), true)
     assert.equal(predicateOk("distance", -5), false)
     assert.equal(predicateOk("distance", NaN), false)
-    assert.equal(predicateOk("bearing", -90), true, "a bearing is signed")
+    assert.equal(predicateOk("bearing", -90), true, "a written turn may still be signed")
     assert.equal(predicateOk("sync", -3), true, "sync is signed")
     assert.equal(predicateOk("position", [1, 2, 3]), true)
     assert.equal(predicateOk("position", [1, 2]), false)

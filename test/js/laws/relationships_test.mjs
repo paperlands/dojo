@@ -31,11 +31,11 @@ const read = (f) => ({ position: f.position, rotation: f.rotation, time: f.time 
 // ---------------------------------------------------------------------------
 test("the signed angle and the reading measure the same thing", () => {
     const V = [0, 0, 0], A = [5, 0, 0], B = [0, 4, 0]
-    // A bearing is compass(target) − heading(observer); from one observer the
-    // heading cancels, so the bearing difference IS the signed angle, negated.
+    // A bearing is compass(target) − heading(observer), in [0, 360). From one
+    // observer the heading cancels; the shortest signed opening is the wrapped difference.
     const bearingA = measure("bearing", frame(A), frame(V), read)
     const bearingB = measure("bearing", frame(B), frame(V), read)
-    near(signedAngle(V, A, B), -(bearingA - bearingB), 1e-9)
+    near(signedAngle(V, A, B), wrapDegrees(bearingB - bearingA), 1e-9)
 })
 
 // ---------------------------------------------------------------------------

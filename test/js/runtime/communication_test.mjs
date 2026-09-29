@@ -372,14 +372,14 @@ describe("Phase 2c: resolveBinding — relational observation", () => {
 
         const follower = createFrame('follower', (function*(){})(), { parent: root })
         // Identity faces +x, which the paper's compass calls east (90): a target due
-        // +x is dead ahead, and a target due +y (north) is a quarter turn to the LEFT.
+        // +x is dead ahead, and a target due +y (north) is 270 — a left, never −90.
         follower.transform.swap(() => ({ position: [0, 0, 0], rotation: { w: 1, x: 0, y: 0, z: 0 } }))
         root.children.set('follower', follower)
 
         assert.ok(Math.abs(resolveBinding(follower, 'leader.bearing')) < 0.001, "dead ahead is zero")
         leader.transform.swap(() => ({ position: [0, 100, 0], rotation: { w: 1, x: 0, y: 0, z: 0 } }))
-        assert.ok(Math.abs(resolveBinding(follower, 'leader.bearing') + 90) < 0.001,
-            "north is a quarter turn left of an east-facing observer")
+        assert.ok(Math.abs(resolveBinding(follower, 'leader.bearing') - 270) < 0.001,
+            "north is 270 from an east-facing observer")
     })
 
     test("leader.sync resolves wait delta needed to catch up", () => {

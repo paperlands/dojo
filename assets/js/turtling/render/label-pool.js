@@ -56,6 +56,17 @@ export function createLabelPool(group, opts = {}) {
             text.sync(() => { if (!disposed && text.visible) requestRender?.() })
         },
 
+        // A rebuild of the same print: keep the glyphs on screen while the
+        // next writes reuse them. hide() blanks a frame; this does not.
+        rewrite() {
+            live = 0
+        },
+
+        // After a rewrite pass, spare Texts from a longer previous pass go away.
+        trim() {
+            for (let i = live; i < pool.length; i++) pool[i].visible = false
+        },
+
         // Erase: hide, never dispose. The built geometry is what the next write
         // reuses. (id:label-reuse)
         hide() {

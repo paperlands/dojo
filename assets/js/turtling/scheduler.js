@@ -520,10 +520,11 @@ function resolveBinding(frame, name, args) {
             // declaration was reached. It is not a reading and never recomputes.
             // (id:eval-relational)
             if (node.params?.has(name)) return node.params.get(name)
-            const id = node.scalars?.get(name)
-            if (id === undefined) continue
-            const value = metaRootFrame(frame)._readouts?.value(id)
-            if (value !== undefined) return value
+            if (node.scalars?.has(name)) {
+                // This scope owns the name. A failed reading is a wound, not
+                // an outer namesake or an unbound variable. (id:eval-relational)
+                return metaRootFrame(frame)._readouts?.value(node.scalars.get(name))
+            }
         }
         const arity = args ? args.length : 0
         let ancestor = frame.parent
@@ -821,7 +822,12 @@ function captureEnvironment(frame) {
         }
         if (node.scalars) {
             for (const [name, id] of node.scalars) {
-                if (!captured.has(name)) captured.set(name, metaRootFrame(node)._readouts?.value(id))
+                if (captured.has(name)) continue
+                try {
+                    captured.set(name, metaRootFrame(node)._readouts?.value(id))
+                } catch {
+                    captured.set(name, undefined)
+                }
             }
         }
     }
@@ -1021,8 +1027,14 @@ function createChildGenerator(value, createDeps, execOpts) {
     // the executable body is what it does. Derived ONCE, carried through wiring —
     // never re-interpreted downstream. (id:laws-decl-two-meanings)
     const relationshipBatch = deriveBatch(value.code.ast)
+    // A figure whose question still holds nothing has no drawing yet — not a
+    // wound. The cell stays; a later determined question rebuilds.
+    // (id:eval-relational)
+    const body = Array.isArray(value.question) && value.question.some((v) => v == null)
+        ? []
+        : relationshipBatch.body
     return {
-        generator: execute(relationshipBatch.body, childDeps, { ...opts, actorState: batch }),
+        generator: execute(body, childDeps, { ...opts, actorState: batch }),
         deps: childDeps,
         mailbox,
         batch,

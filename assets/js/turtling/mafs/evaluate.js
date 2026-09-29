@@ -1,12 +1,8 @@
-// Nothing is not a measure. `null + 1` is 1 in JavaScript, so a read that had no
-// answer would quietly become a quantity and the figure would be drawn from it.
-// Every operator and function refuses it where it is used, by name. (id:eval-relational)
-function noNothing(what, ...values) {
-    for (const value of values) {
-        if (value === null || value === undefined) {
-            throw new Error(`No measure: \`${what}\` cannot take nothing`)
-        }
-    }
+// Nothing is not a measure. `null + 1` is 1 in JavaScript, so a read that had
+// no answer must not become a quantity. Arithmetic yields nothing instead;
+// a command still refuses at the demand. (id:eval-relational)
+function hasNothing(...values) {
+    return values.some((value) => value === null || value === undefined)
 }
 
 export class Evaluator {
@@ -92,7 +88,7 @@ export class Evaluator {
     }
 
     applyFunction(func, args, context) {
-        noNothing(func, ...args)
+        if (hasNothing(...args)) return null
         if (func in this.functions) {
             const evals = this.functions[func](args[0])
             if (Number.isSafeInteger(evals)) return evals
@@ -129,7 +125,7 @@ export class Evaluator {
 
 
     applyUnaryOperator(operator, operand) {
-        noNothing(operator, operand)
+        if (hasNothing(operand)) return null
         switch(operator) {
         case '!':
             return !operand;
@@ -143,7 +139,7 @@ export class Evaluator {
     }
 
     applyOperator(operator, left, right) {
-        noNothing(operator, left, right)
+        if (hasNothing(left, right)) return null
 
         if (!Number.isSafeInteger(left) || !Number.isSafeInteger(right)){
             const precision = 100000000000000;
