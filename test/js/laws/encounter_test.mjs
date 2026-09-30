@@ -150,10 +150,13 @@ test("VALUE: a flower whose question is the stem's tip re-derives to stay on it"
 def stem len do
   fw len
 end
+def flowerAt size x y do
+  let left = petal size
+  rt 120
+  let right = petal size
+end
 let s = stem 40
-let tx = s.x
-let ty = s.y
-let bloom = flower 20
+let bloom = flowerAt[20, s.x, s.y]
 wait 30
 `)
     w.pump(60)

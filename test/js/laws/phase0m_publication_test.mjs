@@ -187,3 +187,20 @@ test("8. acceptance: a subscriber failure never strands the head behind the geom
     assert.equal(headX(a), 7, "A's head names the accepted pose even though a subscriber failed")
     assert.equal(headX(b), 12, "B's head too")
 })
+
+test("9. a pose that is already there does not dirty the configuration", () => {
+    const { scheduler, a } = setup()
+    assert.equal(scheduler.requestMotion(a, at(2), scheduler.motionRevision).kind, "accept")
+    const rev = scheduler.root._configurationRevision
+    const motion = scheduler.motionRevision
+    let heard = 0
+    scheduler.readouts.watch(() => heard++)
+    scheduler.readouts.register(a, "x", (snapshot) => snapshot.world(a)[0])
+    const recomputes = scheduler.readouts.stats().recomputes
+    assert.equal(scheduler.requestMotion(a, at(2), scheduler.motionRevision).kind, "accept")
+    assert.equal(scheduler.root._configurationRevision, rev,
+        "an identity statement is not a new configuration")
+    assert.equal(scheduler.motionRevision, motion, "and it does not name a new commit")
+    assert.equal(scheduler.readouts.stats().recomputes, recomputes, "and derived values are not asked again")
+    assert.equal(heard, 0, "no readout breath from a pose that did not move")
+})

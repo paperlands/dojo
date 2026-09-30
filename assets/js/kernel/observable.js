@@ -42,15 +42,20 @@ export function createAtom(initial) {
 
         swap(fn) {
             const old = value
-            value = fn(old)
-            for (const watcher of watchers.values()) watcher(old, value)
-            return value
+            const next = fn(old)
+            value = next
+            if (!Object.is(old, next)) {
+                for (const watcher of watchers.values()) watcher(old, next)
+            }
+            return next
         },
         // Install now; let the caller notify only after related atoms are installed.
+        // Identity is not news: a stated pose keeps motion and must not fan.
         swapDeferred(fn) {
             const old = value
             const next = fn(old)
             value = next
+            if (Object.is(old, next)) return () => {}
             return () => { for (const watcher of watchers.values()) watcher(old, next) }
         },
 

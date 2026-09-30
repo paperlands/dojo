@@ -283,11 +283,12 @@ export function createCompositor(scheduler, stage, opts = {}) {
                 if (target) wt = worldTransform(target)
             }
             if (eyeInv && !ambient.isLens) wt = SE3.compose(eyeInv, wt)
-            layer.group.position.set(wt.position[0], wt.position[1], wt.position[2])
-            layer.group.quaternion.set(
-                wt.rotation.x, wt.rotation.y,
-                wt.rotation.z, wt.rotation.w
-            )
+            const p = layer.group.position, q = layer.group.quaternion
+            const pos = wt.position, r = wt.rotation
+            if (p.x === pos[0] && p.y === pos[1] && p.z === pos[2]
+                && q.x === r.x && q.y === r.y && q.z === r.z && q.w === r.w) continue
+            p.set(pos[0], pos[1], pos[2])
+            q.set(r.x, r.y, r.z, r.w)
         }
     }
 

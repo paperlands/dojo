@@ -147,6 +147,10 @@ function transformEvent(event, t, sourceId) {
 
 const _samePt = (a, b) =>
     a && b && Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6 && Math.abs(a[2] - b[2]) < 1e-6
+const _sameRot = (a, b) =>
+    a && b && Math.abs(a.w - b.w) < 1e-6 && Math.abs(a.x - b.x) < 1e-6
+    && Math.abs(a.y - b.y) < 1e-6 && Math.abs(a.z - b.z) < 1e-6
+const samePose = (a, b) => a && b && _samePt(a.position, b.position) && _sameRot(a.rotation, b.rotation)
 
 // Stroke-run id from source geometry+width; colour does not break. (id:child-ink, id:ft-d7-deposit-runid)
 function tagRun(ctx, value) {
@@ -854,6 +858,7 @@ function captureFor(frame, value) {
     return new Map([...captureEnvironment(frame), ...declaredInputs(value)])
 }
 
+
 function resolveScopeValue(frame, name) {
     if (frame.params?.has(name)) return frame.params.get(name)
     // The region's own derived values are its private state, not an outside read:
@@ -1530,7 +1535,10 @@ function publish(writer, entries, registry, install = null, project = null) {
     // (id:laws-figures-phase34-invariants)
     // (id:laws-figures-phase34-hand-frame)
     const write = ({ frame, pose, stated, ref }) => {
-        if (!stated) return frame.transform.swapDeferred(() => pose)
+        if (!stated) {
+            if (samePose(frame.transform.deref(), pose)) return null
+            return frame.transform.swapDeferred(() => pose)
+        }
         const world = expressPose(frame, ref ?? 'own', pose)
         // A STATED pose TRANSLATES the cell: the motion is KEPT and the chain moves, so the
         // whole thing — head, ink, children — shifts rigidly. Clearing the motion instead
@@ -1545,15 +1553,23 @@ function publish(writer, entries, registry, install = null, project = null) {
         const motion = frame.transform.deref()
         const chainTarget = SE3.compose(world, SE3.invert(motion))
         const base = frame.parent ? worldTransform(frame.parent) : SE3.identity()
-        frame.origin = SE3.compose(SE3.invert(base), chainTarget)
+        const origin = SE3.compose(SE3.invert(base), chainTarget)
+        if (samePose(frame.origin, origin)) return null
+        frame.origin = origin
         dirtyWorldSubtree(frame)
         return frame.transform.swapDeferred(() => motion)
     }
     const notify = entries.map(write)
-    for (const { frame, pose } of entries) if (!frame.done && frame.batch) frame.batch.rebase = pose
+    const changed = notify.some(Boolean)
+    if (changed) {
+        for (const { frame, pose } of entries) if (!frame.done && frame.batch) frame.batch.rebase = pose
+    }
     // Install laws, ownership and accepted geometry before any notification:
     // no watcher may see new geometry beside an old law. (id:laws-activation-order)
     if (install) install()
+    // Nothing landed: do not name a commit or recompute from a configuration
+    // that did not move. A law install without a pose write is still a commit.
+    if (!changed && !install) return null
     const root = metaRootFrame(writer)
     // Establish the revision and close the gate BEFORE any subscriber runs. The
     // accepted state is already installed; the revision names the commit; a
@@ -1574,6 +1590,7 @@ function publish(writer, entries, registry, install = null, project = null) {
             try { root._readouts.recompute(committedSnapshot()) } catch (error) { failures.push(error) }
         }
         for (const send of notify) {
+            if (!send) continue
             try { send() } catch (error) { failures.push(error) }
         }
         // The display projection is part of the accepted commit, not a later
@@ -2452,13 +2469,10 @@ function woundRelation(ctx, message, kind = 'relation', span = null) {
 // The generation is the question itself, not a counter. (id:laws-figure-protocol)
 function registerFigureCell(ctx, value, pump) {
     if (!pump.readouts) return
-    // The question is the whole input: the argument values and every external input
-    // the run may read, frozen. Equality of this tuple is what licenses reuse.
-    // (id:laws-figures-phase34-review, id:cmp-become-seed)
-    // The question is the whole input: the bound argument expressions read afresh in the
-    // declaring frame, plus every external input the run may read. Equality of this
-    // tuple is what licenses reuse. (id:laws-figures-phase34-input)
-    const question = () => [...evaluateArgs(ctx, value.argExprs, declaredInputs(value)), ...[...captureFor(ctx, value)].sort(([a], [b]) => (a < b ? -1 : 1))]
+    // The question is the arguments, re-read in the declaring frame. A live
+    // name is a port (`let art = hello X.x`), not a free `let` in the body.
+    // The membrane stays captureFor. (id:laws-figures-phase34-input)
+    const question = () => evaluateArgs(ctx, value.argExprs, declaredInputs(value))
     pump.readouts.register(ctx.id, value.name, {
         capture: question,
         // The spawn already ran the child with this question; seed it so the first

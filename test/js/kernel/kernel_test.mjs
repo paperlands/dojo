@@ -94,6 +94,21 @@ describe("createAtom — value over the one observable", () => {
         assert.deepEqual(order, ["first again", "second"],
             "the key is the identity; re-watching must not move it to the back")
     })
+
+
+    test("an identity swap is not news — watchers do not hear it", () => {
+        const held = { n: 1 }
+        const atom = createAtom(held)
+        const seen = []
+        atom.watch("k", (old, next) => seen.push([old, next]))
+        assert.equal(atom.swap(() => held), held)
+        assert.deepEqual(seen, [])
+        const send = atom.swapDeferred(() => held)
+        send()
+        assert.deepEqual(seen, [])
+        atom.swap(() => ({ n: 2 }))
+        assert.equal(seen.length, 1)
+    })
 })
 
 describe("createCell — registry-of-one", () => {

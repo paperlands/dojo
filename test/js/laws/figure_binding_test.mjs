@@ -76,6 +76,79 @@ wait 1
     assert.equal(scheduler.errors.length, 0)
 })
 
+
+test("an unused sibling scalar is not the question — same bucket does not rebuild", () => {
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host", `${SIERPINSKI}
+let X
+fn round(no, nearest) (no - (no // nearest))
+let input = X.x
+let depth = round[X.x, 50]/50
+let flake = sierpinski 400 depth
+wait 1
+`))
+    const X = find(host, "X")
+    drag(scheduler, X, 60)
+    settle(scheduler)
+    const run = find(host, "flake").runIncarnation
+
+    drag(scheduler, X, 99)
+    settle(scheduler)
+    assert.equal(find(host, "flake").runIncarnation, run,
+        "input twitched; depth stayed 1; the figure is the same question")
+    const questions = scheduler.readouts.list().filter((n) => n.keyed).map((n) => n.question)
+    assert.ok(questions.every((q) => !JSON.stringify(q).includes("input")),
+        `the unused sibling is not in the key: ${JSON.stringify(questions)}`)
+
+    drag(scheduler, X, 100)
+    settle(scheduler)
+    assert.ok(find(host, "flake").runIncarnation > run,
+        "crossing the bucket is a new question")
+    assert.equal(scheduler.errors.length, 0)
+})
+
+test("a figure's question is its arguments — a free ancestor let does not rebuild", () => {
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host", `
+def peek d do
+  fw depth
+end
+let X
+let depth = X.x
+let flake = peek 0
+wait 1
+`))
+    const X = find(host, "X")
+    settle(scheduler)
+    const run = find(host, "flake").runIncarnation
+    drag(scheduler, X, 5)
+    settle(scheduler)
+    assert.equal(find(host, "flake").runIncarnation, run,
+        "peek 0 is not peek depth — pass the live name at the call")
+    assert.equal(scheduler.errors.length, 0)
+})
+
+test("passing a live argument is the question", () => {
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host", `
+def peek d do
+  fw d
+end
+let X
+let depth = X.x
+let flake = peek depth
+wait 1
+`))
+    const X = find(host, "X")
+    settle(scheduler)
+    const run = find(host, "flake").runIncarnation
+    drag(scheduler, X, 5)
+    settle(scheduler)
+    assert.ok(find(host, "flake").runIncarnation > run,
+        "peek depth rebuilds when depth moves")
+    assert.equal(scheduler.errors.length, 0)
+})
+
 test("a derived child inherits the declaration's space, colour and logical birth", () => {
     const scheduler = buildWorld({})
     const host = scheduler.hotSwapChild("host", fork("host", `

@@ -942,6 +942,17 @@ ambient reads the world, so a position in a stream is not its to promise — it 
 =Math.random=. Pins: =test/js/execute/keyed_stream_test.mjs=,
 =test/js/laws/figure_binding_test.mjs=.
 
+
+** figure question — the arguments, not the parent let list
+:PROPERTIES:
+:ID: nav-figure-question
+:KEYWORDS: evaluateArgs figure key readout arguments captureFor same-bucket
+:PATH: assets/js/turtling/scheduler.js::function evaluateArgs
+:END:
+A derived figure's key is =evaluateArgs= in the declaring frame. Live names are
+ports at the call (=let art = hello X.x=). The membrane stays =captureFor=.
+Pins: =test/js/laws/figure_binding_test.mjs=.
+
 ** render clock — epoch rebase, idle fast-forward
 :PROPERTIES:
 :ID: nav-timeline
@@ -1500,7 +1511,7 @@ terminals all sit on this.
 ** kernel observable — one watch/notify
 :PROPERTIES:
 :ID: nav-kernel-observable
-:KEYWORDS: kernel observable createObservable createAtom watch notify swap deref
+:KEYWORDS: kernel observable createObservable createAtom watch notify swap deref identity Object.is
 :PATH: assets/js/kernel/observable.js::export function createObservable
 :END:
 The breath every half-adopted list reimplemented. Atom is a value over it.
