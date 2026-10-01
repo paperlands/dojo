@@ -24,6 +24,7 @@ export class Evaluator {
             'log': Math.log,
             'exp': Math.exp,
             'abs': Math.abs,
+            'atan2': (y, x) => this.toDegrees(Math.atan2(y, x)),
             'round': (x, to = 1) => Math.round(x / to) * to
         };
 

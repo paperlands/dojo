@@ -23,7 +23,7 @@ export class Parser {
             ['sin', 1], ['cos', 1], ['tan', 1],
             ['asin', 1], ['acos', 1], ['atan', 1],
             ['sqrt', 1], ['log', 1], ['exp', 1],
-            ['abs', 1], ['floor', 1], ['ceil', 1], ['round', [1, 2]]
+            ['abs', 1], ['atan2', 2], ['round', [1, 2]]
         ]);
 
         // User-defined functions keys by [name, arity]: [ast, params]
