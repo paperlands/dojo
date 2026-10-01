@@ -30,6 +30,8 @@ node --expose-gc test/js/profile/typing_path_bench.mjs   # coreshell/CM keystrok
 node --expose-gc test/js/profile/linter_bench.mjs        # CM decoration / tokenize
 node test/js/profile/command_cost_bench.mjs             # cost spread across the command table
 node test/js/profile/breath_cost_bench.mjs              # what the preemption boundary costs
+node test/js/profile/frontend_bench.mjs                # reader · parser · lexer · evaluator
+node test/js/profile/live_loop_bench.mjs               # the user loops, against a frame budget
 #+END_SRC
 
 - =harness.mjs= — =profileProgram(src, { ticks, frameMs })=: builds a real
@@ -73,6 +75,101 @@ CPU + memory growth to the render layer* — measured by the overlay below.
 (Aside surfaced while authoring the suite: =fw leader.x - x= — a spec example —
 fails the turtle arg-parser, which splits on spaces into separate args. Parser
 concern, not perf; noted for follow-up.)
+
+** Baseline re-captured [2026-10-02]
+
+#+BEGIN_EXAMPLE
+program              flushMs  animTk  ms/p50   ms/p95   ΔheapKB   Δheap/tk(B)  reg  frames  err
+batch-throughput     0.52     1       0.005    0.005    -16.5    —             2    2       0
+steady-animation     0.06     600     0.015    0.034    242.2    413           2    2       0
+spawn-rewire-churn   0.11     600     0.038    0.055    408.0    696           3    3       0
+communication        0.05     600     0.032    0.049    279.4    477           5    5       0
+#+END_EXAMPLE
+
+All thresholds pass. =command_cost= spread 3.0x across the COMMANDS table (was
+4x); the worst-case body stays well inside the 4ms slice to K=2048. =breath_cost=:
+the breath is below this rig's noise floor (±12%) — unmeasurable, so negligible.
+
+*Fixed while re-capturing*
+
+- =command_cost_bench.mjs= used =count % 7=, which the lexer no longer accepts
+  (=% / //= became =mod=), so the bench *crashed* instead of measuring. Now =count mod 7=.
+- =evaluateExpr= built and ran two RegExp matches (quote, computed-dot) on *every*
+  expression — including plain numbers. Guarded by first character and hoisted the
+  patterns: ~89% less regex work per evaluation (measured in isolation; it was ~2% of
+  executor time, below the end-to-end rig's noise).
+- =parse.js= fence predicates (=isMeadowFence/isCellOpen/isCellClose=) ran a RegExp on *every*
+  line, and =pushCode= ran a =\bend\b= replace on every line. A substring =includes= is a
+  cheap superset (a fence line must contain its mark), so the RegExp now runs only when it can
+  match. Measured: =parseProgram= 13 lines *22.1 → 10.9 µs* (2.0×); a 200k-parse loop with a
+  =fn= + =label= *5683 → 1892 ms* (3.0×). Remaining top: =pushCode= (per-line allocations),
+  =tokenizeLine= (char walk), =parseStatement=.
+
+*Known cost accepted — and unguarded*
+
+- =readArguments= (the shared command-argument reader) is *2.1×* the dumb split it replaced
+  (13.0 vs 6.3 µs per held invocation): it lexes + parses where the old code split on
+  whitespace. It runs on the *program-execution* path (a =let= figure declaration), not the
+  animation path, so it stays bounded — but **the boundary reader has no bench in this rig**,
+  which is the gap that let the change land unmeasured.
+
+** Front-end and live-loop benches [2026-10-02]
+
+Two benches for the FRONT of the user loop — the paths that run on every keystroke,
+every flush, every expression. =frontend_bench.mjs= (reader · parser · lexer ·
+evaluator) and =live_loop_bench.mjs= (keystroke · run · edit-live · held-figure,
+each against the user's budget). Both guard only machine-independent ratios and
+generous gross fences, so a busy machine cannot fail them.
+
+*Front-end* (µs unless noted):
+
+| path                          | cost        | note |
+|-------------------------------+-------------+------|
+| =readArguments= (1 held invocation) | *~1.1 µs* | ~9.5× the splitter it replaced — the cost of one contract |
+| =parseProgram=                | 0.76 µs/line | flat across 4× size |
+| =Lexer.tokenize= (=count mod 7 + 1=) | 1.42 µs | within 2× plain arithmetic |
+| eval =round(x, n)=            | 1.66× =sin(1)= | builtins within 3× a stock builtin |
+
+*Live loop* (fraction of the user's budget):
+
+| loop                       | typical (p50) | budget        | floor   |
+|----------------------------+---------------+---------------+---------|
+| keystroke 8 cells          | 1.04 ms       | 6% of a frame | 0.89 ms |
+| keystroke 40 cells         | 4.92 ms       | 30%           | 4.14 ms |
+| keystroke 80 cells         | 9.88 ms       | *59%*         | 8.34 ms |
+| run: first ink             | 0.62 ms       | instant       | —       |
+| run: full flush (20k cmds) | ~25 ms        | batched — the breath preempts | — |
+| edit-live (20-cell)        | ~1.1 ms       | 7%            | —       |
+| 50 held figures            | ~0.45 ms      | 2.7% (reader share ~49%) | — |
+
+Reads: the *keystroke* path is the reactivity ceiling — 80 cells ≈ 59% of a frame —
+and it is **not GC** (measured 0.074 ms/keystroke = 0.8%, and =--max-semi-space-size=64=
+did not move it; an earlier "GC-bound" read here was wrong, caused by a no-op edit
+poisoning the floor with a fake-fast sample). It is *stable compute*: floor ≈ typical.
+
+**The deeper lever [2026-10-02].** A CPU profile puts =contentKey= (=JSON.stringify= with
+a replacer) at *~64%* of the keystroke path, and the reason is structural: the same
+buffer is parsed **twice per edit** — the turtle runs =reparseProgram= (turtle.js:668)
+and the weave seats with another =reparseProgram= (=asTree=, page.js:318), each with its
+own held tree. Ablation at 80 cells:
+
+#+BEGIN_EXAMPLE
+reparse + contentKey + observe(doc: string)   8.77 ms   ← live path
+reparse + contentKey + observe(doc: ast)      5.21 ms   ← −3.56 ms, −41%
+reparse + observe(doc: string)                7.40 ms   (contentKey loop = 1.37 ms)
+parseProgram + contentKey + observe(string)   5.88 ms   (adoption costs +2.9 ms over a plain parse)
+#+END_EXAMPLE
+
+=asTree= already accepts a pre-parsed tree (its =Array.isArray(doc)= branch); threading the
+caller's tree through =observe= removes the second parse. Applied: the =contentKey= replacer
+is now hoisted (stable identity — measured ~6%, free). The *reader* is ~49% of a
+figure-heavy flush and ~10× the splitter — the price of one contract, now visible and
+guarded so it cannot grow silently.
+
+*CPU profile of the executor* (=--cpu-prof=, 100k× =fw/rt/label=, ~3.8k samples):
+=walkBody= 35.6% self (the generator statement walk), =callCommand= 15.1% (a =ctx=
+object plus a =[...position]= snapshot per command), GC 12.1%, =evaluateExpr= 8.7%.
+The generator walk is the structural cost; the per-command allocations are the GC load.
 
 * IN-BROWSER OVERLAY
 :PROPERTIES:
