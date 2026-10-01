@@ -23,7 +23,8 @@ export class Evaluator {
             'sqrt': Math.sqrt,
             'log': Math.log,
             'exp': Math.exp,
-            'abs': Math.abs
+            'abs': Math.abs,
+            'round': (x, to = 1) => Math.round(x / to) * to
         };
 
         // Deferred = stochastic/streaming primitives that must re-evaluate at
@@ -90,7 +91,7 @@ export class Evaluator {
     applyFunction(func, args, context) {
         if (hasNothing(...args)) return null
         if (func in this.functions) {
-            const evals = this.functions[func](args[0])
+            const evals = this.functions[func](...args)
             if (Number.isSafeInteger(evals)) return evals
             const precision = 100000000000000;
             return Math.round((evals)*precision)/precision

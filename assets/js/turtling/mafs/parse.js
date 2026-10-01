@@ -23,7 +23,7 @@ export class Parser {
             ['sin', 1], ['cos', 1], ['tan', 1],
             ['asin', 1], ['acos', 1], ['atan', 1],
             ['sqrt', 1], ['log', 1], ['exp', 1],
-            ['abs', 1], ['floor', 1], ['ceil', 1]
+            ['abs', 1], ['floor', 1], ['ceil', 1], ['round', [1, 2]]
         ]);
 
         // User-defined functions keys by [name, arity]: [ast, params]
@@ -297,8 +297,11 @@ export class Parser {
     }
 
     functionExists(name, arity) {
-        return this.builtins.has(name) && this.builtins.get(name) === arity ||
-               this.userspace.has(this.makeKey(name, arity));
+        if (this.builtins.has(name)) {
+            const arities = this.builtins.get(name)
+            if (Array.isArray(arities) ? arities.includes(arity) : arities === arity) return true
+        }
+        return this.userspace.has(this.makeKey(name, arity))
     }
 
     getUserFunction(name, arity) {
