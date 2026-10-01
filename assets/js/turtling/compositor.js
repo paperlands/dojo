@@ -185,15 +185,14 @@ export function createCompositor(scheduler, stage, opts = {}) {
             const childGroups = { pathGroup: layer.group, gridGroup: layer.group }
 
             const willPrint = events.some((e) => e.type === 'label')
-            let printing = false
             for (const event of events) {
                 if (event.type === 'error') continue
                 if (event.type === 'beat') { onBeat?.(event); continue }
                 if (event.type === 'clear') {
                     clearChildLayer(layer, { keepLabels: willPrint })
                 } else if (event.type === 'label') {
-                    if (!printing && !events.some((e) => e.type === 'clear')) layer.labels.rewrite()
-                    printing = true
+                    // `label` is ink that persists: a frame's labels APPEND to the
+                    // layer's live set. They are replaced only by an explicit clear
                     materialize(event, childGroups, childCtx)
                 } else if (event.type === 'path') {
                     accumulateTrail(event, layer, stage.materials)
@@ -201,7 +200,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
                     materialize(event, childGroups, childCtx)
                 }
             }
-            if (printing || willPrint) layer.labels.trim()
+            if (willPrint) layer.labels.trim()
             // Poses land after the batch: the newest is where the turtle IS.
             for (const pose of poses) materialize(pose, childGroups, childCtx)
             // Rebuild the trail mesh once per frame, not per event.

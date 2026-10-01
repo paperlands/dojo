@@ -185,6 +185,17 @@ describe("createLabelPool", () => {
         assert.equal(made.length, 2)
     })
 
+    test("labels written in later frames without an erase accumulate", () => {
+        // The compositor writes one label per frame in `loop … label … wait`
+        // with no erase. The layer's label set only grows, so each frame's
+        // write must take a NEW slot — not reuse the previous frame's. (id:label-reuse)
+        const { pool, made } = poolFor()
+        for (const word of ["1", "2", "3"]) pool.write(label(word), () => {})
+        assert.equal(pool.live, 3)
+        assert.equal(made.length, 3)
+        assert.deepEqual(made.map((t) => t.text), ["1", "2", "3"])
+    })
+
     test("position, rotation, colour and type are applied", () => {
         const { pool, made } = poolFor()
         const event = label("hi", 7)

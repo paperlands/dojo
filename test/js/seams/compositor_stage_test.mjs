@@ -112,4 +112,17 @@ describe("the compositor's stage contract", () => {
                 `\`${name}:\` is being mirrored into a bag at the call site again`)
         }
     })
+
+    test("labels append across frames; only an explicit clear replaces them", () => {
+        // `label` is ink: it persists until `erase` (a clear event). Resetting
+        // the pool cursor in the per-frame label branch made each frame
+        // overwrite slot 0, so a `label … wait` loop showed only its last word
+        // (no-wait showed all — the whole loop rode one frame). rewrite() is the
+        // replace path and belongs ONLY to clearChildLayer's keepLabels arm.
+        const rewrites = [...CODE.matchAll(/\.labels\.rewrite\(\)/g)]
+        assert.equal(rewrites.length, 1,
+            "rewrite() belongs to the replace path alone, not the per-frame label branch")
+        assert.match(CODE, /if \(keepLabels\) layer\.labels\.rewrite\(\)/)
+        assert.match(CODE, /clearChildLayer\(layer, \{ keepLabels: willPrint \}\)/)
+    })
 })
