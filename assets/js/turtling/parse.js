@@ -1,9 +1,7 @@
 import { ASTNode } from "./ast.js"
 import { parseProperty, parseSupport } from "./laws/authored.js"
-import { OPERATORS } from "./mafs/lexer.js"
-
-// An argument expression is joined by these; a plain neighbour ends it.
-const OPERATOR_SET = new Set(OPERATORS)
+import { getOperator } from "./mafs/operators.js"
+import { Lexer } from "./mafs/lexer.js"
 
 
 //manage state
@@ -50,9 +48,12 @@ export const CELL_OPEN = /^[ \t]*```/;              // an info word may ride the
 export const CELL_CLOSE = /^[ \t]*```[ \t]*$/;      // a bare ``` is only ever a closer
 export const CELL_PROBE = /^[ \t]*```/m;            // cheap multi-line gate (page.js)
 
-export const isMeadowFence = (s) => MEADOW_FENCE.test(s ?? '');
-export const isCellOpen = (s) => CELL_OPEN.test(s ?? '');
-export const isCellClose = (s) => CELL_CLOSE.test(s ?? '');
+// A substring include is a cheap SUPERSET of each fence match (a fence line must
+// contain its mark), and it lets a RegExp test be skipped for every ordinary code
+// line. (profile: these ran a regex per line, twice per meadow scan.)
+export const isMeadowFence = (s) => s != null && s.includes(MEADOW_MARK) && MEADOW_FENCE.test(s);
+export const isCellOpen = (s) => s != null && s.includes(CELL_MARK) && CELL_OPEN.test(s);
+export const isCellClose = (s) => s != null && s.includes(CELL_MARK) && CELL_CLOSE.test(s);
 
 // The one place code and comment part. Everything after `#` rides verbatim —
 // the author's whitespace is theirs. A bare `#` still yields a comment, not undefined.
@@ -261,7 +262,11 @@ export function parseProgram(program) {
 // Same key ⇒ same meaning. Stays COARSE on purpose: drift costs a missed reuse,
 // never a wrong tree, because the fresh parse is always the answer.
 const OVERLAY = new Set(['span', 'comment', 'endComment', 'lit']);
-const contentKey = (node) => JSON.stringify(node, (k, v) => (OVERLAY.has(k) ? undefined : v));
+// Hoisted so the replacer has a STABLE identity — a fresh closure per call hands the
+// JSON.stringify call site a new callee every time. (profile: contentKey is the single
+// hottest frame on the keystroke path.) Measured ~6%; free, never worse.
+const stripOverlay = (k, v) => (OVERLAY.has(k) ? undefined : v);
+const contentKey = (node) => JSON.stringify(node, stripOverlay);
 
 // Span mutates the EXISTING object, so standing captures (frame.error) stay live.
 // Trivia is rebuilt in a fresh parse's key ORDER so adopted meta serializes alike.
@@ -324,7 +329,9 @@ function tokenize(program) {
     // `end`. The comment rides the LAST record; split parts share a birth line.
     const pushCode = (raw, out, line) => {
         const [code, comment] = splitComment(raw);
-        const parts = code.replace(/\bend\b(?!$)/g, 'end\n')
+        // The mid-line `end` split is a regex replace; skip it when the line has no
+        // `end` at all (a superset guard — most lines never do). (profile: pushCode)
+        const parts = (code.includes('end') ? code.replace(/\bend\b(?!$)/g, 'end\n') : code)
             .split('\n').map((p) => p.trim()).filter(Boolean);
         const recs = (parts.length ? parts : ['']).map((text) => ({ text, line }));
         if (comment !== undefined) recs[recs.length - 1].comment = comment;
@@ -410,55 +417,35 @@ function tokenizeLine(code) {
     const len = code.length;
     let start = 0;
     let i = 0;
-    let inGroup = null;  // Track quote/bracket context
-    let depth = 0;       // Track bracket nesting
-    
+    // A stack of pending closers: brackets nest, and a quote closes only with its
+    // own kind — a `)` inside a string is not a structural close. One quote or group
+    // is one chunk, so its interior whitespace never separates arguments.
+    // (id:gw-grammar)
+    const stack = [];
     while (i < len) {
         const ch = code[i];
-        
-        // Not in a group - check for delimiters and group starts
-        if (!inGroup) {
-            // Whitespace - token boundary
+        if (stack.length === 0) {
             if (ch === ' ' || ch === '\t') {
                 if (i > start) tokens.push(code.slice(start, i));
                 start = i + 1;
                 i++;
                 continue;
             }
-            
-            // Check if starting a grouped context
             const closer = CLOSERS[ch];
-            if (closer) {
-                inGroup = closer;
-                if (OPENS_BRACKET[ch]) depth = 1;
-            }
-            
+            if (closer) stack.push(closer);
             i++;
-        }
-        // In a group - look for closing delimiter
-        else {
-            // Bracket - track nesting
-            if (OPENS_BRACKET[inGroup === ']' ? '[' : inGroup === ')' ? '(' : null]) {
-                const opener = inGroup === ']' ? '[' : '(';
-                if (ch === opener) {
-                    depth++;
-                } else if (ch === inGroup) {
-                    depth--;
-                    if (depth === 0) inGroup = null;
-                }
+        } else {
+            const closer = stack[stack.length - 1];
+            if (ch === closer) {
+                stack.pop();
+            } else if (CLOSERS[ch] && closer !== '"' && closer !== "'") {
+                // Inside brackets a nested group or quote opens; inside a quote nothing nests.
+                stack.push(CLOSERS[ch]);
             }
-            // Quote - simple close check
-            else if (ch === inGroup) {
-                inGroup = null;
-            }
-            
             i++;
         }
     }
-    
-    // Flush final token
     if (i > start) tokens.push(code.slice(start, i));
-
     return tokens;
 }
 
@@ -466,121 +453,80 @@ function tokenizeLine(code) {
 // Argument Parser - Single Pass 
 // ============================================================================
 
-function parseArguments(tokens) {
-    const len = tokens.length;
-    if (len === 0) return [];
-    
-    const args = [];
-    let bufStart = -1;
-    let closer = null;
-    let depth = 0;
-    
-    for (let i = 0; i < len; i++) {
-        const token = tokens[i];
-        const firstCh = token[0];
-        
-        // Not in grouped context
-        if (bufStart === -1) {
-            const match = CLOSERS[firstCh];
-            
-            if (!match) {
-                // An argument expression does not end at a space: `fw 2 + 3` is ONE
-                // measure, not three tokens. A run continues while an operator joins it,
-                // reading the same vocabulary the math lexer reads. `goto 1 2` is
-                // untouched, because plain neighbours are not joined.
-                // (id:gw-grammar)
-                let joined = token
-                let last = token
-                while (i + 1 < len && (OPERATOR_SET.has(last) || OPERATOR_SET.has(tokens[i + 1]))) {
-                    last = tokens[++i]
-                    joined += ' ' + last
-                }
-                args.push(new ASTNode('Argument', joined));
-                continue;
-            }
-            
-            closer = match;
-            const lastCh = token[token.length - 1];
-            
-            // Bracket type - needs depth tracking
-            if (OPENS_BRACKET[firstCh]) {
-                depth = 1;
-                const tLen = token.length;
-                
-                // Count depth in single pass
-                for (let j = 1; j < tLen; j++) {
-                    const ch = token[j];
-                    if (ch === firstCh) depth++;
-                    else if (ch === closer) depth--;
-                }
-                
-                if (depth === 0) {
-                    // Complete in single token
-                    args.push(new ASTNode('Argument', token));
-                    closer = null;
-                } else {
-                    bufStart = i;
-                }
-            } else {
-                // Quote type - check if quote closes within the token
-                // "mice1".x has closing " at index 6 even though lastCh is 'x'
-                const closeIdx = token.indexOf(closer, 1);
-                if (closeIdx !== -1) {
-                    args.push(new ASTNode('Argument', token));
-                    closer = null;
-                } else {
-                    bufStart = i;
-                }
-            }
-        } 
-        // In grouped context - accumulate
-        else {
-            // Bracket depth tracking
-            if (OPENS_BRACKET[closer === ']' ? '[' : '(']) {
-                const opener = closer === ']' ? '[' : '(';
-                const tLen = token.length;
-                
-                for (let j = 0; j < tLen; j++) {
-                    const ch = token[j];
-                    if (ch === opener) depth++;
-                    else if (ch === closer) depth--;
-                }
-                
-                if (depth === 0) {
-                    // Build from buffer
-                    let joined = tokens[bufStart];
-                    for (let k = bufStart + 1; k <= i; k++) {
-                        joined += ' ' + tokens[k];
-                    }
-                    args.push(new ASTNode('Argument', joined));
-                    bufStart = -1;
-                    closer = null;
-                }
-            } else {
-                // Quote - check last char
-                if (token[token.length - 1] === closer) {
-                    let joined = tokens[bufStart];
-                    for (let k = bufStart + 1; k <= i; k++) {
-                        joined += ' ' + tokens[k];
-                    }
-                    args.push(new ASTNode('Argument', joined));
-                    bufStart = -1;
-                    closer = null;
-                }
-            }
-        }
+// A chunk is classified by the ROLE of its boundary token, read from the shared
+// lexer — not by its spelling. The lexer already knows where a word operator ends
+// (`mod3` is `mod` then `3`, `model` is a name) and which operators can stand
+// prefix; the boundary just asks it. (id:gw-grammar)
+const chunkLexer = new Lexer()
+function chunkTokens(chunk) {
+    try { return chunkLexer.tokenize(chunk) } catch { return null }  // unsupported ink: an opaque operand
+}
+// Bridges the gap BEFORE the chunk when its first token is an operator in INFIX
+// position. A `+`/`-` followed by an operand is a prefix SIGN, not a bridge:
+// `goto 1 -2`, `1 -(2)` and `1 -pi` are each two coordinates.
+function startsWithOperator(chunk) {
+    const toks = chunkTokens(chunk)
+    if (!toks || toks.length === 0 || toks[0].type !== 'OPERATOR') return false
+    if (toks.length > 1 && getOperator(toks[0].value, 'prefix')) return false
+    return true
+}
+// Bridges the gap AFTER the chunk when its last token is an operator that still
+// wants a right operand (`2+`).
+function endsWithOperator(chunk) {
+    const toks = chunkTokens(chunk)
+    if (!toks || toks.length === 0) return false
+    return toks[toks.length - 1].type === 'OPERATOR'
+}
+
+// A gap bridges only where an operator binds across it. The SCOPE of the boundary
+// rule is a command line: outside an explicit expression region, whitespace separates
+// command arguments; inside one (a group `(...)`/`[...]`, a quote, or a whole
+// expression), the expression grammar owns whitespace.
+//   · `fw sin (20)`  → `sin` and `(20)` are two arguments (one is surplus, refused)
+//   · `fw (sin (20))` → one region, so the expression grammar reads the call
+//   · a bare `sin (20)` → a whole expression, so also a call
+// Application is glued at the boundary; it is not "not a call anywhere". (id:gw-grammar)
+function bridgesAcross(left, right) {
+    return endsWithOperator(left) || startsWithOperator(right)
+}
+
+// ONE boundary rule for every route: whitespace separates arguments, EXCEPT where
+// an operator (or application) binds across the gap. The argument's text is the
+// ORIGINAL source span, so internal spacing — and every diagnostic offset — is
+// preserved. (id:gw-grammar)
+function parseArguments(chunks, source) {
+    const args = []
+    let cursor = 0
+    const locate = (text) => {
+        if (source == null) return -1
+        const at = source.indexOf(text, cursor)
+        if (at >= 0) cursor = at + text.length
+        return at
     }
-    
-    // Unclosed group - flush buffer
-    if (bufStart !== -1) {
-        let joined = tokens[bufStart];
-        for (let k = bufStart + 1; k < len; k++) {
-            joined += ' ' + tokens[k];
+    let i = 0
+    while (i < chunks.length) {
+        const runStart = i
+        const startAt = locate(chunks[i])
+        let endAt = startAt < 0 ? -1 : startAt + chunks[i].length
+        while (i + 1 < chunks.length && bridgesAcross(chunks[i], chunks[i + 1])) {
+            i++
+            const at = locate(chunks[i])
+            if (at >= 0) endAt = at + chunks[i].length
         }
-        args.push(new ASTNode('Argument', joined));
+        const value = startAt >= 0 ? source.slice(startAt, endAt) : chunks.slice(runStart, i + 1).join(' ')
+        const node = new ASTNode('Argument', value)
+        args.push(node)
+        i++
     }
-    
-    return args;
+    return args
+}
+
+// The shared command-argument reader, exposed for a caller that must read an argument
+// list from source it holds — a held figure's invocation. Same contract as a command
+// line, so holding a construction cannot re-read its arguments. It is NOT a second
+// grammar: the math parser still owns binding inside an expression. (id:gw-grammar)
+export function readArguments(source) {
+    return parseArguments(tokenizeLine(source), source).map((node) => node.value)
 }
 
 // A block's body, up to its `end`. On EOF without one the caller wraps the
@@ -714,7 +660,7 @@ function parseStatement(tokens, state, rec) {
 
     // Most common case first: commands
     if (!BLOCK_KW[kw]) {
-        return stamp(new ASTNode('Call', kw, parseArguments(tokens.slice(1))), rec);
+        return stamp(new ASTNode('Call', kw, parseArguments(tokens.slice(1), rec.text)), rec);
     }
 
     // Block constructs - validate the head BEFORE opening a block: a broken

@@ -59,14 +59,13 @@ describe("measure domain (strict bare idents)", () => {
         assert.ok(Number.isFinite(paths[0].points[1][0]))
     })
 
-    test("jmp 0/0 still runs (NaN from arithmetic — separate belt)", () => {
-        // Domain gate only covers bare unknown names, not non-finite math.
-        // Non-finite deposit hygiene is not this change's job.
-        const events = drainEvents(
-            [call("jmp", "0/0"), call("fw", 1)],
-            realDeps(),
+    test("jmp 0/0 wounds — a non-finite distance cannot enter geometry", () => {
+        // Phase 1: the demand is finite-or-refuse. Non-finite math is no longer
+        // waved through to the deposit; it wounds where the measure is asked for.
+        assert.throws(
+            () => drainEvents([call("jmp", "0/0"), call("fw", 1)], realDeps()),
+            /not a finite number/,
         )
-        assert.ok(events.some((e) => e.type === "head" || e.type === "path"))
     })
 
     test("program text: jmp ran then loop does not mint path storm", () => {

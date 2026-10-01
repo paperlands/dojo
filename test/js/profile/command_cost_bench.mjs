@@ -27,7 +27,7 @@ const FIXTURES = {
     "rt (pure rotation)":       `loop ${N} do\n  rt 1\nend`,
     "fw (transform + stroke)":  `loop ${N} do\n  fw 1\nend`,
     "fw + rt (the baseline)":   `loop ${N} do\n  fw 1\n  rt 0.01\nend`,
-    "fw [expr]":                `loop ${N} do\n  fw [count % 7 + 1]\nend`,
+    "fw [expr]":                `loop ${N} do\n  fw [count mod 7 + 1]\nend`,
     "goto (world resolve)":     `loop ${N} do\n  goto 1 2 3\nend`,
     "faceto (world resolve)":   `loop ${N} do\n  faceto 1 2 3\nend`,
     "jmp (stroke break)":       `loop ${N} do\n  jmp 1\nend`,

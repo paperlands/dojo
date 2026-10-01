@@ -104,7 +104,7 @@ test("undirected: one request lands one way whichever end the law stored first",
 // is claimed. (id:laws-decl-point-agent)
 test("gesture: the hand is offered only what the point's state offers", () => {
     const sphere = buildWorld({})
-    const sphereHost = sphere.hotSwapChild("host", fork("host", "let H\njmp 5 0\nlet A\nas A do\n  let H.distance = 5\nend"))
+    const sphereHost = sphere.hotSwapChild("host", fork("host", "let H\njmp 5\nlet A\nas A do\n  let H.distance = 5\nend"))
     drive(sphere)
     const sphereH = find(sphereHost, "H")
     const sphereA = find(sphereHost, "A")
@@ -115,7 +115,7 @@ test("gesture: the hand is offered only what the point's state offers", () => {
     assert.equal(down.claimed, true, "the gesture claims the offered point, not the headed one")
 
     const pin = buildWorld({})
-    const pinHost = pin.hotSwapChild("host", fork("host", "let H\njmp 5 0\nlet A\nas A do\n  let H.distance = 0\nend"))
+    const pinHost = pin.hotSwapChild("host", fork("host", "let H\njmp 5\nlet A\nas A do\n  let H.distance = 0\nend"))
     drive(pin)
     const pinH = find(pinHost, "H")
     const pinA = find(pinHost, "A")

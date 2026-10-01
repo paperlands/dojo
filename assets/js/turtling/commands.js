@@ -10,12 +10,28 @@
 import { Versor } from "./mafs/versors.js"
 import { SE3, AXIS_X, AXIS_Y, AXIS_Z } from "./se3.js"
 
+// A command may not propose an invalid pose. Two failures differ:
+//   - a NOTHING component (no world to consult) — a wound live, but a rehearsal
+//     tolerates it so vocabulary past an absent-world step still registers;
+//   - a NON-FINITE number (the arithmetic overflowed) — invalid on every route,
+//     because even a rehearsal's simulated state can be inherited.
+// A finite step can still overflow, so admission at the argument is not enough.
+// (phase 1: valid resulting state)
+function requireFinite(ctx, pos, command) {
+    const nonFinite = pos.some((v) => v !== null && v !== undefined && !Number.isFinite(v))
+    const nothing = pos.some((v) => v === null || v === undefined)
+    if (nonFinite || (nothing && !ctx.rehearsal)) {
+        throw new Error(`${command} would leave the figure at a non-finite position`)
+    }
+}
+
 // --- Movement commands ---
 
 function fw(ctx, distance = 0) {
     const t = ctx.transform
     const [wx, wy, wz] = t.rotation.rotateVec(distance, 0, 0)
     const newPos = [t.position[0] + wx, t.position[1] + wy, t.position[2] + wz]
+    requireFinite(ctx, newPos, "fw")
     const transform = { rotation: t.rotation, position: newPos }
 
     if (ctx.style.down) {
@@ -27,6 +43,7 @@ function fw(ctx, distance = 0) {
 // Absolute in the frame that created this ambient (same space as home).
 function goTo(ctx, x = 0, y = 0, z = null) {
     const pos = [x, y, z ?? ctx.transform.position[2]]
+    requireFinite(ctx, pos, "goto")
     const transform = { rotation: ctx.transform.rotation, position: pos }
     if (ctx.style.down) {
         return { transform, stroke: "extend", point: pos }
@@ -36,6 +53,7 @@ function goTo(ctx, x = 0, y = 0, z = null) {
 
 function jmpto(ctx, x = 0, y = 0, z = null) {
     const pos = [x, y, z ?? ctx.transform.position[2]]
+    requireFinite(ctx, pos, "jmpto")
     return {
         transform: { rotation: ctx.transform.rotation, position: pos },
         stroke: "break"
@@ -46,6 +64,7 @@ function jmp(ctx, distance = 0) {
     const t = ctx.transform
     const [wx, wy, wz] = t.rotation.rotateVec(distance, 0, 0)
     const newPos = [t.position[0] + wx, t.position[1] + wy, t.position[2] + wz]
+    requireFinite(ctx, newPos, "jmp")
     const transform = { rotation: t.rotation, position: newPos }
     // jmp always breaks the path (pen up, move, pen down)
     return { transform, stroke: "break" }
@@ -231,42 +250,54 @@ function limitMessage(ctx, limit = 8192) {
 
 // --- Command table ---
 
-export const COMMANDS = new Map([
-    ["fw", fw],
-    ["forward", fw],
-    ["fd", fw],
-    ["rt", right],
-    ["right", right],
-    ["lt", left],
-    ["left", left],
-    ["yaw", yaw],
-    ["pitch", pitch],
-    ["dive", pitch],
-    ["roll", roll],
-    ["show", show],
-    ["hide", hide],
-    ["hd", hide],
-    ["jmp", jmp],
-    ["jump", jmp],
-    ["bold", bold],
-    ["grid", grid],
-    ["goto", goTo],
-    ["faceto", faceto],
-    ["jmpto", jmpto],
-    ["jumpto", jmpto],
-    ["label", label],
-    ["erase", erase],
-    ["home", home],
-    ["fill", fill],
-    ["wait", wait],
-    ["yield", yieldCmd],
-    ["limitRecurse", limitRecurse],
-    ["limitCommand", limitCommand],
-    ["limitMessage", limitMessage],
-    ["beColour", beColour],
-    ["color", beColour],
-    ["colour", beColour]
-])
+// --- Command table ---
+//
+// ONE source: a spec per callable — its implementation, every name it answers to,
+// and its HOLES (the contract for "how many expressions this place contains, and of
+// what kind"). `COMMANDS` (name → implementation) and `contractOf` (name → spec) are
+// two views of this one list, so a name, an arity, and a hole kind cannot disagree,
+// and a surplus argument is refused — never silently dropped. (id:gw-grammar)
+//
+// Hole kinds: "word" a name costume; "measure" any scalar reading; "finite" a finite number.
+const def = (fn, names, ...holes) => ({ fn, names, holes: Object.freeze(holes) })
+
+const SPECS = [
+    def(fw, ["fw", "forward", "fd"], "finite"),
+    def(right, ["rt", "right"], "finite"),
+    def(left, ["lt", "left"], "finite"),
+    def(yaw, ["yaw"], "finite"),
+    def(pitch, ["pitch", "dive"], "finite"),
+    def(roll, ["roll"], "finite"),
+    def(show, ["show"], "measure"),
+    def(hide, ["hide", "hd"]),
+    def(jmp, ["jmp", "jump"], "finite"),
+    def(bold, ["bold"], "measure"),
+    def(grid, ["grid"], "measure", "measure"),
+    def(goTo, ["goto"], "finite", "finite", "finite"),
+    def(faceto, ["faceto"], "finite", "finite", "finite"),
+    def(jmpto, ["jmpto", "jumpto"], "finite", "finite", "finite"),
+    def(label, ["label"], "word", "measure"),
+    def(erase, ["erase"]),
+    def(home, ["home"]),
+    def(fill, ["fill"]),
+    def(wait, ["wait"], "measure"),
+    def(yieldCmd, ["yield"]),
+    def(limitRecurse, ["limitRecurse"], "measure"),
+    def(limitCommand, ["limitCommand"], "measure"),
+    def(limitMessage, ["limitMessage"], "measure"),
+    def(beColour, ["beColour", "color", "colour"], "word"),
+    def(null, ["shout"], "word", "measure"),   // a directive the executor answers itself
+]
+
+export const COMMANDS = new Map()
+export const CONTRACTS = new Map()
+for (const spec of SPECS) {
+    for (const name of spec.names) {
+        if (spec.fn) COMMANDS.set(name, spec.fn)   // a directive (fn: null) owns holes, not an implementation
+        CONTRACTS.set(name, spec)
+    }
+}
+export const contractOf = (name) => CONTRACTS.get(name)
 
 // Default style — used by executor to initialize context
 export const DEFAULT_STYLE = Object.freeze({

@@ -1,13 +1,15 @@
 // AST walker as a generator coroutine — yields effects; scheduler is the OS.
 // Math deps injected.
 
-import { COMMANDS, DEFAULT_STYLE } from "./commands.js"
+import { COMMANDS, DEFAULT_STYLE, contractOf } from "./commands.js"
+import { readArguments } from "./parse.js"
 import { ASTNode } from "./ast.js"
 import { SE3 } from "./se3.js"
 import { recenterPose } from "./view.js"
 import { createStroke, extend as strokeExtend, flush as strokeFlush, fill as strokeFill } from "./stroke.js"
 import { matchPattern } from "./match.js"
 import { payloadOf } from "./laws/authored.js"
+import { isNumericLiteral } from "./mafs/number.js"
 // A hole demands something. A reading that has NO answer — a heading at the paper's
 // pole — arrives here as null, which is a truth, not a wound; but a command argument
 // or a condition cannot BE nothing, and `null + 1` is 1 in JavaScript, so a null
@@ -22,7 +24,15 @@ function demanded(value, expr, domain, state) {
     // still cannot BE nothing. (id:eval-relational)
     if (domain === "reading") return value
     if (value === null && state.deps?.mathEvaluator?.resolveExternal) {
-        throw new Error(`No ${domain}: ${expr} is nothing`)
+        // A finite hole is still a measure hole: name it as one.
+        throw new Error(`No ${domain === "finite" ? "measure" : domain}: ${expr} is nothing`)
+    }
+    // Explicit admission is PER HOLE: a movement/rotation hole accepts a finite
+    // number and nothing else — a demand that will accept more must be taught to
+    // accept more. `null` (nothing) is handled above, and a headless rehearsal
+    // passes it so words past it still register. (phase 1: explicit admission)
+    if (domain === "finite" && value !== null && !(typeof value === "number" && Number.isFinite(value))) {
+        throw new Error(`No measure: ${expr} is not a finite number`);
     }
     return value
 }
@@ -51,19 +61,20 @@ function chargeReductions(state) {
     }
 }
 
-// Per-hole residual domain {word, measure}. Missing verb → all measure.
-// Word = name costume (ink, label text, shout name). Default measure is
-// strict: bare unknown idents wound — never silent strings that NaN SE(3).
-const ARG_DOMAINS = {
-    beColour: ["word"],
-    color: ["word"],
-    colour: ["word"],
-    label: ["word", "measure"],
-    shout: ["word", "measure"],
-}
+// Hole kinds and arity live WITH the command (commands.js `COMMANDS`), so the
+// contract follows the resolved callable and cannot disagree with itself. (id:gw-grammar)
 
-const holeDomain = (domains, i) => (domains?.[i] === "word" ? "word" : "measure")
+const holeDomain = (holes, i) => holes?.[i] ?? "measure"
 
+
+// A computed value has no source spelling; render one for a diagnostic. (id:eval-relational)
+const spellingOf = (v) => typeof v === "string" ? `'${v}'` : String(v)
+
+// Hoisted: building a RegExp per evaluation is churn, and only a quoted spelling can
+// begin a string literal or a computed dotted access. (profile: evaluateExpr)
+const QUOTE_RE = /^(['"])(.*?)\1$/
+const COMPUTED_DOT_RE = /^(['"])(.*?)\1\.(.+)$/
+const IDENT_HEAD_RE = /^[a-zA-Z]/
 // Retry evaluateExpr; yield blocked on cross-ambient read failure only.
 // domain: "measure" (default) | "word"
 function* evalOrBlock(expr, scope, state, domain = "measure") {
@@ -93,6 +104,9 @@ export function createActorState(opts = {}) {
         // The actor's randomness capability. A construction installs a refusing
         // source so a command cannot reach the process RNG. (id:laws-living-figures-capability-review)
         random: opts.random || Math.random,
+        // A headless rehearsal publishes nothing, so a nothing pose there is not a
+        // wound; `drainNamespace` sets this. (phase 1: rehearsal behavior)
+        rehearsal: opts.rehearsal === true,
         commandCount: 0,
         recurseCount: 0,
         maxRecurseDepth: opts.maxRecurseDepth || 360,
@@ -278,6 +292,11 @@ function* walkBody(body, scope, state, stroke) {
             // symbolic. (id:prim-fn)
             if (node.value === "fn" || node.value === "func") {
                 const rawArgs = node.children.map(arg => arg.value)
+                // A recipe is a signature and ONE body expression. A third piece
+                // of ink would be dropped silently — refuse it. (id:gw-grammar)
+                if (rawArgs.length > 2) {
+                    throw new Error(`fn takes a signature and a body, but ${rawArgs.length} arguments were given`)
+                }
                 const signature = rawArgs[0]
                 let expression = rawArgs[1] || 0
                 const fnScope = { ...scope }
@@ -321,21 +340,37 @@ function* walkBody(body, scope, state, stroke) {
                 break
             }
 
-            // Zip each arg with its hole domain (default measure).
-            const domains = ARG_DOMAINS[node.value]
+            // Resolve the recipient FIRST: a user definition brings its own contract.
+            // The holes (arity + kinds) follow the resolved callable, not the spelling.
+            const userFn = state.functions[scope[node.value] || node.value]
+            const holes = userFn
+                ? userFn.parameters.map(() => "measure")
+                : (contractOf(node.value)?.holes ?? [])
+            // The callable's own contract. Extra arguments were authored, so dropping
+            // them silently would answer a different question — refuse instead.
+            // (id:gw-grammar)
+            if (node.children.length > holes.length) {
+                throw new Error(`${node.value} takes ${holes.length} argument${holes.length === 1 ? "" : "s"}, but ${node.children.length} were given`)
+            }
             const args = []
             for (let i = 0; i < node.children.length; i++) {
-                args.push(yield* evalOrBlock(node.children[i].value, scope, state, holeDomain(domains, i)))
+                const child = node.children[i]
+                // A computed argument is already EVALUATED, but not thereby ADMITTED:
+                // it crosses the SAME admission as a source argument. Source or value,
+                // one authority decides whether the callable can use it.
+                // Already evaluated ≠ already admitted. (id:eval-relational)
+                if (child.type === 'Value') {
+                    args.push(demanded(child.value, spellingOf(child.value), holeDomain(holes, i), state))
+                    continue
+                }
+                args.push(yield* evalOrBlock(child.value, scope, state, holeDomain(holes, i)))
             }
 
-            // shout is a directive, not a COMMANDS entry — domain still from ARG_DOMAINS.
-            if (node.value === "shout") {
+            // shout is a directive, not a COMMANDS entry — and not a user fn.
+            if (node.value === "shout" && !userFn) {
                 yield { type: 'shout', name: args[0], payload: args[1] }
                 break
             }
-
-            // Check user-defined function first, then built-in command
-            const userFn = state.functions[scope[node.value] || node.value]
             if (userFn) {
                 const currDepth = scope['__depth__'] || 0
                 if (currDepth > 1) state.recurseCount++
@@ -466,7 +501,7 @@ function* walkBody(body, scope, state, stroke) {
                 }
                 while (inputs.length < arity) inputs.push(0)
                 const call = new ASTNode('Call', figureCall.recipe,
-                    inputs.map((input) => new ASTNode('Argument', String(input))))
+                    inputs.map((input) => new ASTNode('Value', input)))
                 call.span = node.span ?? null
                 // A proper `let`: a place (identity and name) whose body is the
                 // recipe. A rebuild restarts the walk at this birth pose, not at the
@@ -533,6 +568,7 @@ function* walkBody(body, scope, state, stroke) {
 export function drainNamespace(ast, deps, opts = {}) {
     // Fault mid-phase keeps earlier defs. (D020)
     const actorState = opts.actorState ?? createActorState({ maxCommands: 200_000, ...opts })
+    actorState.rehearsal = true   // headless: nothing publishes, so a nothing pose is not a wound
     try {
         const gen = execute(ast, deps, { maxCommands: 200_000, ...opts, actorState })
         while (!gen.next().done) { /* events discarded */ }
@@ -548,6 +584,7 @@ function* callCommand(name, args, state, stroke, baseRevision) {
         throw new Error(`Function ${name} not defined`)
     }
 
+
     if (state.commandCount >= state.maxCommands) {
         throw new Error(`Maximum command limit of ${state.maxCommands} reached`)
     }
@@ -556,7 +593,8 @@ function* callCommand(name, args, state, stroke, baseRevision) {
     const ctx = {
         transform: state.transform,
         style: state.style,
-        random: state.random
+        random: state.random,
+        rehearsal: state.rehearsal
     }
 
     // Snapshot position before command mutates transform
@@ -696,22 +734,6 @@ function splitTopLevel(s) {
     return out
 }
 
-function splitCommandArgs(rest) {
-    if (rest === '') return []
-    const out = []
-    let depth = 0, start = 0
-    for (let i = 0; i < rest.length; i++) {
-        const c = rest[i]
-        if (c === '[' || c === '(') depth++
-        else if (c === ']' || c === ')') depth--
-        else if ((c === ' ' || c === '\t') && depth === 0) {
-            if (i > start) out.push(rest.slice(start, i))
-            start = i + 1
-        }
-    }
-    if (start < rest.length) out.push(rest.slice(start))
-    return out.filter(Boolean)
-}
 
 // The spawn payload — the ONE door a child inherits through: space (origin),
 // colour (style), vocabulary (code + userspace), captured scope, and logical
@@ -755,26 +777,16 @@ function figureCallOf(expr, state) {
     const cmd = signature ? null : COMMANDS.get(name)
     if (!signature && !cmd) return null
     const rest = expr.slice(head[0].length).trim()
-    // A command splits like a command line (space). A `def` still owns its arity.
-    if (signature) {
-        return { recipe: name, args: splitFigureArgs(rest, signature.parameters?.length ?? 0) }
-    }
-    return { recipe: name, args: splitCommandArgs(rest) }
-}
-
-function splitFigureArgs(rest, arity) {
-    if (rest === '') return []
+    // The invocation reads its arguments with the SAME boundary contract as a command
+    // line — holding a figure must not re-read its arguments. A bracketed `[a, b]`
+    // spelling is its own explicit list. (id:gw-grammar)
     if (rest.startsWith('[') && rest.endsWith(']')) {
         const inner = rest.slice(1, -1).trim()
-        return inner === '' ? [] : splitTopLevel(inner).map((a) => a.trim())
+        return { recipe: name, args: inner === '' ? [] : splitTopLevel(inner).map((a) => a.trim()) }
     }
-    // Spaced spelling: whitespace separates inputs only when that is exactly the
-    // recipe's arity; otherwise the whole remainder is one expression.
-    const groups = splitTopLevel(rest).map((a) => a.trim())
-    if (groups.length === arity) return groups
-    const spaced = rest.split(/\s+/).filter(Boolean)
-    return spaced.length === arity ? spaced : [rest]
+    return { recipe: name, args: readArguments(rest) }
 }
+
 
 function readsDeferred(tree, names) {
     if (!tree) return false
@@ -785,46 +797,58 @@ function readsDeferred(tree, names) {
 
 // Residual after shared resolve: measure → wound; word → string costume.
 // Math ops / quote interpolation stay measure. Not a numerical tower.
+// A quoted run is ONE primitive: a literal whose `[…]` slots are interpolation.
+// Interpolation happens wherever the run is evaluated — as argument text or as a
+// lowered string value — so a literal and a template never disagree by route.
+// (phase 1: coherent meaning)
+function interpolate(text, scope, state) {
+    let processed = text
+    let previous
+    do {
+        previous = processed
+        processed = processed.replace(
+            /\[([^[\]](?:[^[\]]|\[(?:\\.|[^[\]])*\])*)\]/g,
+            (match, innerExpr) => {
+                if (innerExpr.trim().match(/^`.*`$/)) {
+                    return match
+                }
+                // Interpolation slots are always measure (count, x, …).
+                const value = evaluateExpr(innerExpr.trim(), scope, state, "measure")
+                return value !== undefined ? String(value) : match
+            }
+        )
+    } while (processed !== previous)
+    return processed
+}
+
 function evaluateExpr(expr, scope, state, domain = "measure") {
     const { mathParser, mathEvaluator } = state.deps
 
-    // String literal support
-    const quoteRegex = /^(['"])(.*?)\1$/
-    const quoteMatch = expr.match(quoteRegex)
-    if (quoteMatch) {
-        const stringContent = quoteMatch[2]
-        let processed = stringContent
-        let previous
-        do {
-            previous = processed
-            processed = processed.replace(
-                /\[([^[\]](?:[^[\]]|\[(?:\\.|[^[\]])*\])*)\]/g,
-                (match, innerExpr) => {
-                    if (innerExpr.trim().match(/^`.*`$/)) {
-                        return match
-                    }
-                    // Interpolation slots are always measure (count, x, …).
-                    const value = evaluateExpr(innerExpr.trim(), scope, state, "measure")
-                    return value !== undefined ? String(value) : match
-                }
-            )
-        } while (processed !== previous)
-        return processed
+    // Only a quoted spelling can be a string literal or a computed dotted access
+    // ('interp'.rest). Every other expression — numbers, names, operators — skips
+    // both matches. (profile: this ran two regexes on every evaluation.)
+    const head = expr[0]
+    if (head === "'" || head === '"') {
+        const quoteMatch = expr.match(QUOTE_RE)
+        if (quoteMatch) return interpolate(quoteMatch[2], scope, state)
+
+        // 'interp'.rest — interpolate the quoted name, then access the property.
+        // e.g. 'mice[follow]'.x → 'mice1.x' → dotted access
+        const computedDot = expr.match(COMPUTED_DOT_RE)
+        if (computedDot) {
+            const name = evaluateExpr(computedDot[1] + computedDot[2] + computedDot[1], scope, state, domain)
+            return evaluateExpr(name + '.' + computedDot[3], scope, state, domain)
+        }
     }
 
-    // Computed dotted access: 'interp'.rest — interpolate the quoted name, then access property.
-    // e.g. 'mice[follow]'.x → interpolate → mice1.x → dotted access
-    const computedDot = expr.match(/^(['"])(.*?)\1\.(.+)$/)
-    if (computedDot) {
-        const name = evaluateExpr(computedDot[1] + computedDot[2] + computedDot[1], scope, state, domain)
-        return evaluateExpr(name + '.' + computedDot[3], scope, state, domain)
-    }
-
-    if (mathParser.isNumeric(expr)) return parseFloat(expr)
+    if (isNumericLiteral(expr)) return parseFloat(expr)
     // A name bound to NOTHING is still a name: `!= null` would fall through to the
     // identifier path and report a bound null as "Undefined variable".
     if (scope[expr] !== undefined) return scope[expr]
     const tree = parseMemo(mathParser, expr)
+
+    // A LITERAL is not a reference: its word is returned as-is, never resolved.
+    if (tree.type === 'string') return interpolate(tree.value, scope, state)
 
     // Expression or known namespace — always evaluate (ops already strict on leaves).
     if (tree.children.length > 0 || mathEvaluator.namespace_check(tree.value)) {
@@ -832,7 +856,7 @@ function evaluateExpr(expr, scope, state, domain = "measure") {
     }
 
     // Bare identifier — resolveExternal, then hole residual domain.
-    if (typeof tree.value === 'string' && /^[a-zA-Z]/.test(tree.value)) {
+    if (typeof tree.value === 'string' && IDENT_HEAD_RE.test(tree.value)) {
         if (mathEvaluator.resolveExternal) {
             const resolved = mathEvaluator.resolveExternal(tree.value)
             if (resolved !== undefined) return resolved

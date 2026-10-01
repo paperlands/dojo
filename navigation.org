@@ -1310,9 +1310,21 @@ Tested: =test/js/render/label_pool_test.mjs=.
 ** math expressions — lex, parse, evaluate, typeset
 :PROPERTIES:
 :ID: nav-mafs
-:KEYWORDS: mafs math expression lexer parse evaluate typeset versor
-:PATH: assets/js/turtling/mafs/evaluate.js
+:KEYWORDS: mafs math expression operator vocabulary fixity precedence associativity mod lexer parse evaluate typeset versor
+:PATH: assets/js/turtling/mafs/operators.js
 :END:
+The fixed operator rows feed the math lexer, expression parser, evaluator and
+PaperLang argument splitter. Surface contract: [[id:tower-surface]]. Scalar
+meanings still live in =mafs/evaluate.js=; pair-dispatch is tower rung 0.
+
+** notation inquiry — expression papercuts and tower horizons
+:PROPERTIES:
+:ID: nav-notation-inquiry
+:KEYWORDS: notation papercut bracket accessor implicit multiplication dot fidelity domain tower priors adversarial
+:PATH: probe/notation-inquiry/probe.mjs
+:END:
+Run the headless falsifier battery; =observations.jsonl= preserves the reading.
+Diagnosis, verified priors and open forces: [[id:notation-inquiry]].
 
 * NERVE & TERMINAL (JS) — signals and surfaces
 :PROPERTIES:

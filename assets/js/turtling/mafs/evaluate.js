@@ -1,8 +1,42 @@
+import { getOperator } from "./operators.js"
+
+import { isNumericLiteral } from "./number.js"
 // Nothing is not a measure. `null + 1` is 1 in JavaScript, so a read that had
 // no answer must not become a quantity. Arithmetic yields nothing instead;
 // a command still refuses at the demand. (id:eval-relational)
 function hasNothing(...values) {
     return values.some((value) => value === null || value === undefined)
+}
+
+// Integer division and remainder. For SAFE INTEGERS with a nonzero divisor the
+// quotient and remainder are exact, so `(a // b) * b + a mod b = a` holds — as a
+// statement about the operands, NOT a promise that the language's own * and +
+// stay exact outside the safe range (that is a Phase 3 rounding question). The
+// remainder is computed directly (a % b is exact for integers) and rebased only
+// when its sign disagrees with the divisor — an add that cannot overflow because
+// |a % b| < |b|; division is then the exact inverse. Non-integers keep their
+// floating approximation, unchanged until Phase 3. (phase 1: safe-integer behaviour)
+function integerMod(a, b) {
+    // Exact only for integer pairs; the floating branch is left as it was, so this
+    // is an integer repair — not a silent change to floating remainder (Phase 3 rules).
+    if (Number.isSafeInteger(a) && Number.isSafeInteger(b) && b !== 0) {
+        const m = a % b
+        if (m !== 0 && (m < 0) !== (b < 0)) return m + b
+        return m === 0 ? 0 : m   // normalize the -0 `a % b` can leave
+    }
+    return ((a % b) + b) % b
+}
+function integerDiv(a, b) {
+    if (Number.isSafeInteger(a) && Number.isSafeInteger(b) && b !== 0) {
+        // Truncated quotient without the overflow of `(a - flooredRemainder)`.
+        // `a % b` is exact for integers and carries a's sign, so `a - (a % b)`
+        // moves toward zero and always stays a safe integer.
+        const m = a % b
+        const qt = (a - m) / b
+        const q = (m !== 0 && (m < 0) !== (b < 0)) ? qt - 1 : qt
+        return q === 0 ? 0 : q   // normalize the -0 a negative divisor would leave
+    }
+    return Math.floor(a / b)
 }
 
 export class Evaluator {
@@ -52,11 +86,14 @@ export class Evaluator {
     run(ast, context) {
         if (!ast) return 0;
 
+        // A literal evaluates to itself — never resolved as a name.
+        if (ast.type === 'string') return ast.value;
+
         if (ast.type === 'operand') {
             // Function/constant folding may leave a number in the AST. Keep it
             // numeric; routing it through name resolution breaks on exponents.
             if (typeof ast.value === 'number') return ast.value;
-            if (/^-?\d+\.?\d*(?:[eE][+-]?\d+)?$/.test(ast.value)) {
+            if (isNumericLiteral(ast.value)) {
                 return parseFloat(ast.value);
             }
             else if (context && ast.value in context) {
@@ -128,7 +165,9 @@ export class Evaluator {
 
     applyUnaryOperator(operator, operand) {
         if (hasNothing(operand)) return null
-        switch(operator) {
+        const row = getOperator(operator, 'prefix');
+        if (!row) throw new Error('Unsupported operator');
+        switch(row.lexeme) {
         case '!':
             return !operand;
         case '+':
@@ -142,27 +181,20 @@ export class Evaluator {
 
     applyOperator(operator, left, right) {
         if (hasNothing(left, right)) return null
+        const row = getOperator(operator, 'infix');
+        if (!row) throw new Error(`Unknown operator: ${operator}`);
 
         if (!Number.isSafeInteger(left) || !Number.isSafeInteger(right)){
             const precision = 100000000000000;
-            switch (operator) {
+            switch (row.lexeme) {
                 // Arithmetic operators
             case '+': return Math.round((left + right)*precision)/precision;
-            case '--': return Math.round((left + right)*precision)/precision;
-            case '+-': return Math.round((left - right)*precision)/precision;
             case '-': return Math.round((left - right)*precision)/precision;
             default: break
             }
         }
 
-        if(operator == "-") return left - right
-
-        // account of negative numbers
-        if (operator[operator.length - 1] == "-") {
-            right = -right
-            operator = operator.slice(0, -1)
-        }
-        switch (operator) {
+        switch (row.lexeme) {
             // Logical operators
         case '&&': return left && right;
         case '||': return left || right;
@@ -180,7 +212,8 @@ export class Evaluator {
         case '<': return left < right ? 1 : 0;
 
         case '^': return Math.pow(left, right);
-        case '//': return left % right;
+        case '//': return integerDiv(left, right);
+        case 'mod': return integerMod(left, right);
         case '*': return left * right;
         case '/': return left / right;
         case '+': return left + right;

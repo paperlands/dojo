@@ -1,24 +1,11 @@
 import { ASTNode } from "../ast.js"
 import { Lexer } from "./lexer.js"
+import { getOperator } from "./operators.js"
+import { isOpenType, isCloseType, closerTypeFor, glyphOf } from "./delimiters.js"
+import { isNumericLiteral } from "./number.js"
 
 export class Parser {
     constructor() {
-        // Clean precedence table - only binary operators and their precedence
-        this.precedence = {
-            '||': 1,
-            '&&': 2,
-            '|': 3,
-            '&': 4,
-            '===': 5, '!==': 5, '==': 5, '!=': 5,
-            '>=': 6, '>': 6, '<=': 6, '<': 6,
-            '+': 7, '-': 7,
-            '*': 8, '/': 8, '//': 8,
-            '^': 9
-        };
-
-        this.rightAssociative = new Set(['^']);
-        this.unaryOperators = new Set(['+', '-', '!']);
-
         this.builtins = new Map([
             ['sin', 1], ['cos', 1], ['tan', 1],
             ['asin', 1], ['acos', 1], ['atan', 1],
@@ -58,22 +45,23 @@ export class Parser {
     }
 
     // Precedence climbing parser
-    parseExpression(minPrec, options = {}) {
+    parseExpression(minPrec, options = {}, includeEqual = true) {
         let left = this.parsePrimary(options);
 
         while (this.hasMoreTokens()) {
             const token = this.currentToken();
 
-            if (!this.isBinaryOperator(token)) break;
+            const row = token.type === 'OPERATOR' && getOperator(token.value, 'infix');
+            if (!row) break;
 
-            const prec = this.precedence[token.value];
-            if (prec < minPrec) break;
+            const prec = row.prec;
+            if (prec < minPrec || (prec === minPrec && !includeEqual)) break;
 
             const op = token.value;
             this.advance();
 
-            const nextMinPrec = this.rightAssociative.has(op) ? prec : prec + 1;
-            const right = this.parseExpression(nextMinPrec, options);
+            // Strict binding for left association also admits fractional precedences.
+            const right = this.parseExpression(prec, options, row.assoc === 'right');
 
             left = new ASTNode('operator', op, [left, right]);
         }
@@ -89,10 +77,11 @@ export class Parser {
         }
 
         // Unary operators
-        if (this.isUnaryOperator(token)) {
+        const row = token.type === 'OPERATOR' && getOperator(token.value, 'prefix');
+        if (row) {
             const op = token.value;
             this.advance();
-            const operand = this.parsePrimary(options);
+            const operand = this.parseExpression(row.prec, options);
             return new ASTNode('unary_operator', op, [operand]);
         }
 
@@ -107,11 +96,17 @@ export class Parser {
             return this.parseIdentifier(options);
         }
 
-        // Parentheses
-        if (token.type === 'LPAREN') {
-            return this.parseParentheses(options);
+        // Groups — ( … ) and [ … ], each closed only by its own kind
+        if (isOpenType(token.type)) {
+            return this.parseGroup(options);
         }
 
+        // String literal — a LITERAL, not a reference. It keeps its own node so
+        // evaluation can never mistake the word 'pi' for the constant pi.
+        if (token.type === 'STRING') {
+            this.advance();
+            return new ASTNode('string', token.value);
+        }
         throw new Error(`Unexpected token: ${token.value}`);
     }
 
@@ -120,7 +115,7 @@ export class Parser {
         this.advance();
 
         // Function call
-        if (this.hasMoreTokens() && this.currentToken().type === 'LPAREN') {
+        if (this.hasMoreTokens() && isOpenType(this.currentToken().type)) {
             return this.parseFunctionCall(name, options);
         }
 
@@ -134,11 +129,13 @@ export class Parser {
     }
 
     parseFunctionCall(name, options = {}) {
-        this.advance(); // consume '('
-        const args = this.parseArgumentList(options);
+        const openType = this.currentToken().type;
+        const closeType = closerTypeFor(openType);
+        this.advance(); // consume the opener
+        const args = this.parseArgumentList(closeType, options);
 
-        if (!this.currentToken() || this.currentToken().type !== 'RPAREN') {
-            throw new Error('Missing closing parenthesis in function call');
+        if (!this.currentToken() || this.currentToken().type !== closeType) {
+            throw this.closingError(openType);
         }
         this.advance(); // consume ')'
 
@@ -153,11 +150,11 @@ export class Parser {
         return new ASTNode('function', name, args);
     }
 
-    parseArgumentList(options) {
+    parseArgumentList(closeType, options) {
         const args = [];
 
         // Empty argument list
-        if (this.currentToken()?.type === 'RPAREN') {
+        if (this.currentToken()?.type === closeType) {
             return args;
         }
 
@@ -175,16 +172,28 @@ export class Parser {
         return args;
     }
 
-    parseParentheses(options) {
-        this.advance(); // consume '('
+    parseGroup(options = {}) {
+        const openType = this.currentToken().type;
+        const closeType = closerTypeFor(openType);
+        this.advance(); // consume the opener
         const expr = this.parseExpression(0, options);
 
-        if (!this.currentToken() || this.currentToken().type !== 'RPAREN') {
-            throw new Error('Missing closing brackets');
+        if (!this.currentToken() || this.currentToken().type !== closeType) {
+            throw this.closingError(openType);
         }
-        this.advance(); // consume ')'
+        this.advance(); // consume the closer
 
         return expr;
+    }
+
+    // A close of the wrong kind is a mismatched pair; no close at all is missing.
+    closingError(openType) {
+        const found = this.currentToken();
+        const expected = closerTypeFor(openType);
+        if (found && isCloseType(found.type)) {
+            return new Error(`Mismatched delimiters: '${glyphOf(openType)}' must close with '${glyphOf(expected)}', not '${found.value}'`);
+        }
+        return new Error(`Missing closing '${glyphOf(expected)}'`);
     }
 
     // User-defined function management
@@ -325,14 +334,6 @@ export class Parser {
         return this.position < this.tokens.length;
     }
 
-    isBinaryOperator(token) {
-        return token?.type === 'OPERATOR' && this.precedence.hasOwnProperty(token.value);
-    }
-
-    isUnaryOperator(token) {
-        return token?.type === 'OPERATOR' && this.unaryOperators.has(token.value);
-    }
-
     isConstant(name) {
         return this.userspace.has(this.makeKey(name, 0));
     }
@@ -343,7 +344,7 @@ export class Parser {
 
     isNumeric(str) {
         if (typeof str !== "string") return false;
-        return /^-?\d+\.?\d*(?:[eE][+-]?\d+)?$/.test(str);
+        return isNumericLiteral(str);
     }
 
     reset() {

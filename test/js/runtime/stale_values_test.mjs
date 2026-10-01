@@ -178,11 +178,11 @@ describe("fn captures evaluator constants at definition time", () => {
         assert.equal(resolveBinding(sched.root, 'c1.myid'), 1, 'c1 should capture count=1')
     })
 
-    test("fn follow [count+1]//2 is stable across inner loop iterations", () => {
+    test("fn follow [[count+1] mod 2] is stable across inner loop iterations", () => {
         const ast = parseProgram(
             "loop 2 do\n" +
             "  as 'mice[count]' do\n" +
-            "    fn follow [count+1]//2\n" +
+            "    fn follow [[count+1] mod 2]\n" +
             "    loop 3 do\n" +
             "      wait 0\n" +
             "    end\n" +
@@ -211,7 +211,7 @@ describe("parse memo drops when userspace changes", () => {
             "fn out 0\n" +
             "as a do\n" +
             "  label 'k[out]'\n" +           // evaluates + memos out → 0
-            "  fn out [out+1]//4\n" +        // out body becomes 1
+            "  fn out [[out+1] mod 4]\n" +        // out body becomes 1
             "  fn saw [out]\n" +             // must see 1, not the memoized 0
             "  wait 0\n" +
             "end"
@@ -369,7 +369,7 @@ describe("auto-yield on cross-ambient observation", () => {
             "  fw 100\n" +
             "  rt 90\n" +
             "  as 'mice[count]' do\n" +
-            "    fn follow [count+1]//4\n" +
+            "    fn follow [[count+1] mod 4]\n" +
             "    loop 50 do\n" +
             "      fw 1\n" +
             "      faceto 'mice[follow]'.x 'mice[follow]'.y\n" +
@@ -410,7 +410,7 @@ describe("mice program: floor values update across ticks", () => {
             "  fw 1000\n" +
             "  rt 90\n" +
             "  as 'mice[count]' do\n" +
-            "    fn follow [count+1]//2\n" +
+            "    fn follow [[count+1] mod 2]\n" +
             "    loop 5 do\n" +
             "      wait 1\n" +
             "      fw 10\n" +

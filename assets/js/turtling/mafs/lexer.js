@@ -1,3 +1,23 @@
+import { isOperatorLexeme, WORD_OPERATOR_PATTERN, SYMBOL_OPERATOR_PATTERN } from "./operators.js"
+import { TYPE_OF_GLYPH, isOpenType, isCloseType } from "./delimiters.js"
+import { NUMBER_PATTERN } from "./number.js"
+export { OPERATOR_LEXEMES as OPERATORS } from "./operators.js"
+
+// Compile once per lexer, not once per expression. Numbers claim decimal dots
+// and exponent signs; dotted identifiers remain whole. (id:tower-surface)
+const TOKEN_PATTERN = [
+    NUMBER_PATTERN,
+    // Quoted strings — read as one token (its residual is the word's content), so a
+    // `fn` body like 'ping' is lossless instead of silently stripped. The executor's
+    // quote path handles whole quoted args; this covers the rest that reach a parser.
+    '\'[^\']*\'|"[^"]*"',
+    WORD_OPERATOR_PATTERN,
+    '[a-zA-Z][a-zA-Z0-9_]*(?:\\.[a-zA-Z][a-zA-Z0-9_]*)*',
+    SYMBOL_OPERATOR_PATTERN,
+    '[\\[\\],\\(\\)]',
+    '\\s+'
+].join('|')
+
 class Token {
     constructor(type, value, position = 0) {
         this.type = type;
@@ -6,56 +26,29 @@ class Token {
     }
 }
 
-
-// One operator vocabulary, two readers: the math lexer tokenizes with it, and the
-// PaperLang splitter uses it to know where an argument expression ends. Longest
-// first, so a multi-character operator never splits into two.
-// (id:gw-grammar)
-export const OPERATORS = [
-    '===', '!==', '&&', '||',
-    '>=', '<=', '==', '!=', '//',
-    '+', '-', '*', '/', '^',
-    '>', '<', '&', '|', '!'
-]
-
 export class Lexer {
     constructor() {
-        this.operators = OPERATORS
-
-        this.operatorRegex = new RegExp(
-            this.operators.map(op => this.escapeRegex(op)).join('|')
-        );
-    }
-
-    escapeRegex(str) {
-        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        this.pattern = new RegExp(TOKEN_PATTERN, 'g');
     }
 
     tokenize(expression) {
         const tokens = [];
-        let position = 0;
-
-        //tokenization pattern
-        const pattern = new RegExp([
-            // Numbers first — claims the dot in `1.5` and an optional exponent
-            // before operators can split them into identifiers and signs.
-            '\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?',
-            // Dotted identifiers before operators — atomically consumes `mice1.x` as one token
-            // This is the guarantee that prevents implicit mult from ever seeing it split
-            '[a-zA-Z][a-zA-Z0-9_]*(?:\\.[a-zA-Z][a-zA-Z0-9_]*)*',
-            // Operators grouped — inner | doesn't bleed into outer alternation
-            `(?:${this.operators.map(op => this.escapeRegex(op)).join('|')})`,
-            // Brackets, parens, comma
-            '[\\[\\],\\(\\)]',
-            // Whitespace
-            '\\s+'
-        ].join('|'), 'g');
-
+        const pattern = this.pattern;
+        pattern.lastIndex = 0;
+        let cursor = 0;
         let match;
         while ((match = pattern.exec(expression)) !== null) {
+            // Exhaustive coverage: every source character must be claimed by a
+            // token. A gap means the pattern skipped ink it cannot read — that
+            // must refuse where it occurs, not vanish behind the child's back.
+            // (phase 1: lossless reading)
+            if (match.index !== cursor) {
+                throw new Error(`Unknown token: ${expression[cursor]} at position ${cursor}`);
+            }
+            cursor = match.index + match[0].length;
             const value = match[0];
 
-            // Skip whitespace
+            // Skip whitespace (already consumed by the coverage check).
             if (/^\s+$/.test(value)) {
                 continue;
             }
@@ -63,21 +56,25 @@ export class Lexer {
             let type;
             if (/^\d/.test(value)) {
                 type = 'NUMBER';
-            } else if (this.operators.includes(value)) {
+            } else if (isOperatorLexeme(value)) {
                 type = 'OPERATOR';
             } else if (/^[a-zA-Z]/.test(value)) {
                 type = 'IDENTIFIER';
-            } else if (value === '[' || value === '(') {
-                type = 'LPAREN';
-            } else if (value === ']' || value === ')') {
-                type = 'RPAREN';
+            } else if (TYPE_OF_GLYPH[value]) {
+                type = TYPE_OF_GLYPH[value];
             } else if (value === ',') {
                 type = 'COMMA';
+            } else if (/^['"]/.test(value)) {
+                type = 'STRING';
             } else {
                 throw new Error(`Unknown token: ${value} at position ${match.index}`);
             }
 
-            tokens.push(new Token(type, value, match.index));
+            tokens.push(new Token(type, type === 'STRING' ? value.slice(1, -1) : value, match.index));
+        }
+
+        if (cursor < expression.length) {
+            throw new Error(`Unknown token: ${expression[cursor]} at position ${cursor}`);
         }
 
         return this.insertImplicitMultiplication(tokens);
@@ -96,18 +93,18 @@ export class Lexer {
                 const shouldInsertMult = (
                     // number identifier: 2x, 2sin
                     (current.type === 'NUMBER' && next.type === 'IDENTIFIER') ||
-                    // number paren: 2(x)
-                    (current.type === 'NUMBER' && next.type === 'LPAREN') ||
-                    // paren identifier: (x)y, (x)sin
-                    (current.type === 'RPAREN' && next.type === 'IDENTIFIER') ||
-                    // paren paren: (x)(y)
-                    (current.type === 'RPAREN' && next.type === 'LPAREN') ||
+                    // number group: 2(x), 2[x]
+                    (current.type === 'NUMBER' && isOpenType(next.type)) ||
+                    // group identifier: (x)y, (x)sin
+                    (isCloseType(current.type) && next.type === 'IDENTIFIER') ||
+                    // group group: (x)(y), (x)[y], [x](y)
+                    (isCloseType(current.type) && isOpenType(next.type)) ||
                     // identifier identifier: xy (if not functions with explicit args)
                     (current.type === 'IDENTIFIER' && next.type === 'IDENTIFIER') ||
                     // identifier number: x2
                     (current.type === 'IDENTIFIER' && next.type === 'NUMBER') ||
-                    // identifier paren: x(y), sin(x) is handled separately
-                    (current.type === 'IDENTIFIER' && next.type === 'LPAREN' && !this.couldBeFunction(current, next, i, tokens))
+                    // identifier call/group: x(y), sin(x) is handled separately
+                    (current.type === 'IDENTIFIER' && isOpenType(next.type) && !this.couldBeFunction(current, next, i, tokens))
                 );
 
                 if (shouldInsertMult) {

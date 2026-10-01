@@ -2501,7 +2501,9 @@ function supersedeFigure(ctx, value, pump) {
     if (value.argExprs) {
         value.question = evaluateArgs(ctx, value.argExprs, declaredInputs(value))
         const args = value.code?.ast?.[0]?.children ?? []
-        value.question.forEach((input, i) => { if (args[i]) args[i].value = String(input) })
+        // The rebind refreshes the answers as VALUES, never as source (a captured
+        // string is not a name to re-resolve). (id:eval-relational)
+        value.question.forEach((input, i) => { if (args[i]) args[i].value = input })
     }
     rewireChild(child, value, pump)
     pump.wake?.()
