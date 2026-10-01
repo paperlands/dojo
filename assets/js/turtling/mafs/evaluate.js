@@ -1,42 +1,12 @@
 import { getOperator } from "./operators.js"
-
 import { isNumericLiteral } from "./number.js"
+import { createTower, installScalarFloor } from "./tower.js"
+
 // Nothing is not a measure. `null + 1` is 1 in JavaScript, so a read that had
 // no answer must not become a quantity. Arithmetic yields nothing instead;
 // a command still refuses at the demand. (id:eval-relational)
 function hasNothing(...values) {
     return values.some((value) => value === null || value === undefined)
-}
-
-// Integer division and remainder. For SAFE INTEGERS with a nonzero divisor the
-// quotient and remainder are exact, so `(a // b) * b + a mod b = a` holds — as a
-// statement about the operands, NOT a promise that the language's own * and +
-// stay exact outside the safe range (that is a Phase 3 rounding question). The
-// remainder is computed directly (a % b is exact for integers) and rebased only
-// when its sign disagrees with the divisor — an add that cannot overflow because
-// |a % b| < |b|; division is then the exact inverse. Non-integers keep their
-// floating approximation, unchanged until Phase 3. (phase 1: safe-integer behaviour)
-function integerMod(a, b) {
-    // Exact only for integer pairs; the floating branch is left as it was, so this
-    // is an integer repair — not a silent change to floating remainder (Phase 3 rules).
-    if (Number.isSafeInteger(a) && Number.isSafeInteger(b) && b !== 0) {
-        const m = a % b
-        if (m !== 0 && (m < 0) !== (b < 0)) return m + b
-        return m === 0 ? 0 : m   // normalize the -0 `a % b` can leave
-    }
-    return ((a % b) + b) % b
-}
-function integerDiv(a, b) {
-    if (Number.isSafeInteger(a) && Number.isSafeInteger(b) && b !== 0) {
-        // Truncated quotient without the overflow of `(a - flooredRemainder)`.
-        // `a % b` is exact for integers and carries a's sign, so `a - (a % b)`
-        // moves toward zero and always stays a safe integer.
-        const m = a % b
-        const qt = (a - m) / b
-        const q = (m !== 0 && (m < 0) !== (b < 0)) ? qt - 1 : qt
-        return q === 0 ? 0 : q   // normalize the -0 a negative divisor would leave
-    }
-    return Math.floor(a / b)
 }
 
 export class Evaluator {
@@ -47,32 +17,18 @@ export class Evaluator {
             'random': () => Math.random(),
         };
 
-        this.functions = {
-            'sin': (x) => Math.sin(this.toRadians(x)),
-            'cos': (x) => Math.cos(this.toRadians(x)),
-            'tan': (x) => Math.tan(this.toRadians(x)),
-            'asin': (x) => this.toDegrees(Math.asin(x)),
-            'acos': (x) => this.toDegrees(Math.acos(x)),
-            'atan': (x) => this.toDegrees(Math.atan(x)),
-            'sqrt': Math.sqrt,
-            'log': Math.log,
-            'exp': Math.exp,
-            'abs': Math.abs,
-            'atan2': (y, x) => this.toDegrees(Math.atan2(y, x)),
-            'round': (x, to = 1) => Math.round(x / to) * to
-        };
+        // Scalar meanings now live in the center (mafs/tower.js): operators and
+        // builtins are registrations, not a switch. Installation ends here and the
+        // registry is sealed, so no later define reinterprets a computation already
+        // in flight. (id:tower-center-boundaries)
+        this.tower = installScalarFloor(createTower())
+        this.tower.seal()
 
         // Deferred = stochastic/streaming primitives that must re-evaluate at
         // each use, never folded into an fn body at definition time. Foldable
         // literals (pi, e) and context snapshots (x,y,z,count,time) may fold eagerly.
         this.deferred = new Set(['random']);
 
-        // TODO: Numerical Tower extensible hierarchy of generic mathematical operations that
-        // transparently handles type promotion and combinations
-        // The hierarchy might follow this standard nesting:
-        // Integers Rationals Reals Complex Numbers (deal w up/down tuples, vectors, and differential forms)
-
-        
         this.userFunctions = null;
     }
 
@@ -118,22 +74,15 @@ export class Evaluator {
         }
     }
 
-    toRadians(degrees) {
-        return degrees * (Math.PI / 180);
-    }
-
-    toDegrees(radians) {
-        return radians * (180 / Math.PI);
-    }
-
     applyFunction(func, args, context) {
         if (hasNothing(...args)) return null
-        if (func in this.functions) {
-            const evals = this.functions[func](...args)
-            if (Number.isSafeInteger(evals)) return evals
-            const precision = 100000000000000;
-            return Math.round((evals)*precision)/precision
-        }
+        // A scalar builtin is a center registration now; the same door the
+        // operators use. Anything else falls through to user functions and
+        // ambient resolution, which stay outside the algebra.
+        // Identify the callable before testing applicability: a known builtin
+        // owns its name even when its operands are unsupported, so it refuses
+        // through the center instead of leaking to another resolver.
+        if (this.tower.known(func)) return this.tower.apply(func, ...args)
         if (this.userFunctions) {
             const key = `${func}:${args.length}`;
             const entry = this.userFunctions.get(key);
@@ -162,64 +111,17 @@ export class Evaluator {
         throw new Error(`Undefined variable: ${variable}`);
     }
 
-
     applyUnaryOperator(operator, operand) {
         if (hasNothing(operand)) return null
         const row = getOperator(operator, 'prefix');
         if (!row) throw new Error('Unsupported operator');
-        switch(row.lexeme) {
-        case '!':
-            return !operand;
-        case '+':
-            return +operand;
-        case '-':
-            return -operand;
-        default:
-            throw new Error('Unsupported operator');
-        }
+        return this.tower.apply(row.lexeme, operand)
     }
 
     applyOperator(operator, left, right) {
         if (hasNothing(left, right)) return null
         const row = getOperator(operator, 'infix');
         if (!row) throw new Error(`Unknown operator: ${operator}`);
-
-        if (!Number.isSafeInteger(left) || !Number.isSafeInteger(right)){
-            const precision = 100000000000000;
-            switch (row.lexeme) {
-                // Arithmetic operators
-            case '+': return Math.round((left + right)*precision)/precision;
-            case '-': return Math.round((left - right)*precision)/precision;
-            default: break
-            }
-        }
-
-        switch (row.lexeme) {
-            // Logical operators
-        case '&&': return left && right;
-        case '||': return left || right;
-        case '&': return left & right;  // Bitwise AND
-        case '|': return left | right;  // Bitwise OR
-
-            // Comparison operators
-        case '===': return left === right ? 1 : 0;
-        case '!==': return left !== right ? 1 : 0;
-        case '==': return left == right ? 1 : 0;
-        case '!=': return left != right ? 1 : 0;
-        case '>=': return left >= right ? 1 : 0;
-        case '>': return left > right ? 1 : 0;
-        case '<=': return left <= right ? 1 : 0;
-        case '<': return left < right ? 1 : 0;
-
-        case '^': return Math.pow(left, right);
-        case '//': return integerDiv(left, right);
-        case 'mod': return integerMod(left, right);
-        case '*': return left * right;
-        case '/': return left / right;
-        case '+': return left + right;
-        case '-': return left - right;
-
-        default: throw new Error(`Unknown operator: ${operator}`);
-        }
+        return this.tower.apply(row.lexeme, left, right)
     }
 }

@@ -3,15 +3,15 @@ import { Lexer } from "./lexer.js"
 import { getOperator } from "./operators.js"
 import { isOpenType, isCloseType, closerTypeFor, glyphOf } from "./delimiters.js"
 import { isNumericLiteral } from "./number.js"
+import { SCALAR_BUILTINS } from "./tower.js"
 
 export class Parser {
     constructor() {
-        this.builtins = new Map([
-            ['sin', 1], ['cos', 1], ['tan', 1],
-            ['asin', 1], ['acos', 1], ['atan', 1],
-            ['sqrt', 1], ['log', 1], ['exp', 1],
-            ['abs', 1], ['atan2', 2], ['round', [1, 2]]
-        ]);
+        // One owner for the builtin signatures: the center's own description. The
+        // parser reserves these names and checks their arity from the same list the
+        // evaluator dispatches from, so the two can never disagree.
+        // (id:notation-phase-center)
+        this.builtins = new Map(SCALAR_BUILTINS.map((builtin) => [builtin.name, builtin.arity]));
 
         // User-defined functions keys by [name, arity]: [ast, params]
         this.userspace = new Map();

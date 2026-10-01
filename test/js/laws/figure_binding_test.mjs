@@ -55,8 +55,8 @@ test("a figure-valued let is a closed child ambient that follows its question", 
     const scheduler = buildWorld({})
     const host = scheduler.hotSwapChild("host", fork("host", `${SIERPINSKI}
 let X
-fn round(no, nearest) (no - (no // nearest))
-let depth = round[X.x, 50]/50
+fn bucketRound(no, nearest) ((no // nearest) * nearest)
+let depth = bucketRound[X.x, 50]/50
 let flake = sierpinski 400 depth
 wait 1
 `))
@@ -81,9 +81,9 @@ test("an unused sibling scalar is not the question — same bucket does not rebu
     const scheduler = buildWorld({})
     const host = scheduler.hotSwapChild("host", fork("host", `${SIERPINSKI}
 let X
-fn round(no, nearest) (no - (no // nearest))
+fn bucketRound(no, nearest) ((no // nearest) * nearest)
 let input = X.x
-let depth = round[X.x, 50]/50
+let depth = bucketRound[X.x, 50]/50
 let flake = sierpinski 400 depth
 wait 1
 `))
@@ -218,8 +218,8 @@ def slow d do
   fw d
 end
 let X
-fn round(no, nearest) (no - (no // nearest))
-let depth = round[X.x, 50]/50
+fn bucketRound(no, nearest) ((no // nearest) * nearest)
+let depth = bucketRound[X.x, 50]/50
 let flake = slow depth
 wait 1
 `))
@@ -265,8 +265,8 @@ def step d do
   fw 10
 end
 let X
-fn round(no, nearest) (no - (no // nearest))
-let depth = round[X.x, 50]/50
+fn bucketRound(no, nearest) ((no // nearest) * nearest)
+let depth = bucketRound[X.x, 50]/50
 let flake = step depth
 wait 1
 `))
@@ -313,8 +313,8 @@ def step d do
   fw 10
 end
 let X
-fn round(no, nearest) (no - (no // nearest))
-let depth = round[X.x, 50]/50
+fn bucketRound(no, nearest) ((no // nearest) * nearest)
+let depth = bucketRound[X.x, 50]/50
 let flake = step depth
 wait 1
 `))
@@ -421,4 +421,43 @@ wait 1
     assert.ok(path, "turn 40 draws — the missing angle is 0")
     assert.equal(scheduler.errors.length, 0)
     assert.ok(find(host, "art"))
+})
+
+test("a rebuild's new ink rides a clear — replace in place, so pooled labels are reused", () => {
+    // The label pool resets its cursor only on an explicit clear (id:label-reuse).
+    // A rebuild must therefore carry one, immediately before the new word, or a
+    // live figure would append a fresh label every frame instead of replacing
+    // the one on screen. (id:laws-figures-phase34-inplace)
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host", `
+def stamp d do
+  label d 10
+end
+let X
+let bucket = X.x // 50
+let flake = stamp bucket
+wait 1
+`))
+    const X = find(host, "X")
+    const collect = () => {
+        const seen = []
+        for (let r = 0; r < 6; r++) {
+            const trace = drive(scheduler, { maxTicks: 8 })
+            for (const e of trace.get("flake") ?? []) seen.push(e)
+            scheduler.readouts.drain()
+        }
+        return seen
+    }
+    collect()
+    drag(scheduler, X, 100)
+    const rebuilt = collect()
+    const clear = rebuilt.findIndex((e) => e.type === "clear")
+    const label = rebuilt.findIndex((e) => e.type === "label")
+    assert.ok(clear >= 0 && label >= 0, "the rebuild re-emits its word")
+    assert.ok(clear < label, "the clear rides immediately before the new label")
+    // A same-bucket drag re-runs nothing: no clear, no label — nothing to append.
+    drag(scheduler, X, 110)
+    assert.equal(collect().filter((e) => e.type === "label").length, 0,
+        "an unchanged question re-emits nothing")
+    assert.equal(scheduler.errors.length, 0)
 })

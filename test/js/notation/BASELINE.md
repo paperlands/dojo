@@ -7,15 +7,22 @@ the witnesses live beside it as `*_test.mjs`.
 
 ## Baseline (full JS suite, before Phase 1)
 
-`node --test test/js/*/*_test.mjs` → **2356 tests, 7 pre-existing red.** None touch notation;
-recorded so Phase 1's "the corpus still walks" is not charged for them:
+`node --test test/js/*/*_test.mjs` -> at Phase 0, **2356 tests, 7 red** in `laws/`, recorded so
+Phase 1's "the corpus still walks" was not charged for them:
 
 - `laws/display_test.mjs:35` — display: the side count follows the drag at the commit
 - `laws/figure_binding_test.mjs:54,80,211,260,309` — figure-valued let / unused sibling / newest question / derived randomness / derived let
 - `laws/read_snapshot_test.mjs:42` — `fn last A.x` bottles after a later drag
 
-These are figure/ambient rebuild behaviours (a separate line of work). They are **not** guards
-for this sequence and were untouched.
+**Correction (later).** These seven were **fixture faults, not figure failures**. Each
+fixture defined a helper named `round` — reserved as a builtin after the surface pass — and
+read `//` as its old remainder meaning, so the walk stopped at
+`Cannot override built-in function round` before reaching the behaviour under test.
+Renaming the helper and restoring floor-to-multiple under the new `//`
+(`(no // nearest) * nearest`) turned all 22 tests in the three files green with production
+code and assertions untouched; the suite now walks clean. A separate rebuilt-ink witness
+(`id:laws-figures-phase34-inplace`) is retained. This repair does **not** certify
+figure/ambient rebuild behaviour.
 
 ## Classification — one authority per question
 

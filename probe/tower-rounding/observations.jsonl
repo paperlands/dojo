@@ -1,0 +1,18 @@
+{"label":"0 + 1e-15","value":"0","comment":"below the floor: snaps to zero"}
+{"label":"0 + 1e-15 (plain JS)","value":"1e-15","comment":"JavaScript keeps it — the gap is policy"}
+{"label":"0 + 1e-14","value":"1e-14","comment":"at the floor"}
+{"label":"1e-15 + 1e-15","value":"0","comment":"two tiny terms still vanish"}
+{"label":"1e-15 * 1","value":"1e-15","comment":"an existing value, product: ungated"}
+{"label":"1e-15 + 0","value":"0","comment":"the same value, sum: gated — additive identity fails"}
+{"label":"authored: 1e-15 added 1000 times","value":"0","comment":"model of accumulation, not a measured walk"}
+{"label":"authored: 1000 * 1e-15","value":"1e-12","comment":"the product is not gated"}
+{"label":"measured: fw 1e-15 x 1000","value":"1.0000000000000052e-12","comment":"ordinary addition — the walk moves"}
+{"label":"the seam","value":"authored + is gated; geometric accumulation is not","comment":"two approximation policies, one language"}
+{"label":"sin(30) current","value":"0.5","comment":"rounded to 0.5"}
+{"label":"sin(30) unquantized","value":"0.49999999999999994","comment":"exactly Math.sin(pi/6)"}
+{"label":"sin(30) == 0.5 current","value":"1","comment":"familiar equality holds"}
+{"label":"sin(30) == 0.5 unquantized","value":"0","comment":"equality would CHANGE"}
+{"label":"sin(180) == 0 current","value":"1","comment":"holds"}
+{"label":"sin(180) == 0 unquantized","value":"0","comment":"equality would CHANGE"}
+{"label":"abs(1e-15) == 1e-15 current","value":"0","comment":"destroyed by rounding"}
+{"label":"abs(1e-15) == 1e-15 unquantized","value":"1","comment":"restored"}

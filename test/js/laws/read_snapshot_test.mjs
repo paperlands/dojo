@@ -42,14 +42,14 @@ test("a drag before a command is read; a drag after it is history, not a subscri
 test("fn last A.x bottles, so when last != bucket fires again after a later drag", () => {
     const scheduler = buildWorld({})
     const host = scheduler.hotSwapChild("host", fork("host", `
-fn round(no, nearest) (no - (no // nearest))
+fn bucketRound(no, nearest) ((no // nearest) * nearest)
 let A
 fn last 0
 loop 20 do
   wait 1/5
-  when last != round[A.x, 25]/25 do
+  when last != bucketRound[A.x, 25]/25 do
     label last 100
-    fn last round[A.x, 25]/25
+    fn last bucketRound[A.x, 25]/25
   end
 end
 `))

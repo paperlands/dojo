@@ -1315,7 +1315,27 @@ Tested: =test/js/render/label_pool_test.mjs=.
 :END:
 The fixed operator rows feed the math lexer, expression parser, evaluator and
 PaperLang argument splitter. Surface contract: [[id:tower-surface]]. Scalar
-meanings still live in =mafs/evaluate.js=; pair-dispatch is tower rung 0.
+meanings and builtin signatures live in =mafs/tower.js=; the evaluator delegates.
+
+** the semantic center — one door for every operation
+:PROPERTIES:
+:ID: nav-tower-center
+:MODULE: mafs/tower.js
+:KEYWORDS: tower center dispatch register kind typeOf seal operation generic coefficient
+:PATH: assets/js/turtling/mafs/tower.js
+:END:
+One operation, ordered values, one value or an honest refusal. Operators and
+scalar builtins register here; the evaluator is sealed over it and never
+switches. Boundary, witness and ladder: [[id:tower-center]].
+
+** tower rounding — the tiny-signal probe
+:PROPERTIES:
+:ID: nav-tower-rounding
+:KEYWORDS: tower rounding precision 1e14 tiny signal approximation policy probe
+:PATH: probe/tower-rounding/probe.mjs
+:END:
+Records where the rounding policy becomes visible (1e-15 summed 1000 times is 0;
+1000 * 1e-15 is 1e-12). Diagnosis: [[id:tower-center-contract]].
 
 ** notation inquiry — expression papercuts and tower horizons
 :PROPERTIES:
