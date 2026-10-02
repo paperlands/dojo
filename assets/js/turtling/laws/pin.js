@@ -189,46 +189,31 @@ export function drawGhostMark(ctx, x, y, r = 3.5) {
     ctx.restore()
 }
 
-// The wish and where it landed: a light tether from the accepted point to the
-// pointer's target when the projection absorbed part of the wish. A projection
-// is a lawful response, so this is ink, never a refusal. Only drawn when the two
-// differ on screen — a satisfied wish needs no tether. (id:laws-freedom)
-const WISH_DASH = [1, 3]
-export function drawWish(ctx, from, to) {
+// One dotted segment between two screen points, at the weight the caller names: a
+// spoke is the distance itself, a wish is where the pointer asked to land, a held
+// point's span is where it came from. (id:laws-freedom)
+const SPAN_DASH = [1, 3]
+export function drawSpan(ctx, from, to, { alpha, mark = false } = {}) {
     if (!from || !to) return
+    if (!Number.isFinite(alpha)) return
     if (Math.hypot(from.x - to.x, from.y - to.y) < 1) return
     ctx.save()
     ctx.beginPath()
     ctx.moveTo(from.x, from.y)
     ctx.lineTo(to.x, to.y)
-    ctx.setLineDash(WISH_DASH)
-    ctx.strokeStyle = `rgba(${PAPER},0.32)`
+    ctx.setLineDash(SPAN_DASH)
+    ctx.strokeStyle = `rgba(${PAPER},${alpha})`
     ctx.lineWidth = 1
     ctx.stroke()
-    ctx.setLineDash([])
-    ctx.beginPath()
-    ctx.arc(to.x, to.y, 3, 0, TAU)
-    ctx.strokeStyle = `rgba(${PAPER},0.5)`
-    ctx.stroke()
-    ctx.restore()
-}
-
-// One axis, projected: a world segment between two screen points. The camera
-// gives the direction; the world gives the axis. (id:laws-freedom)
-// A radius spoke: the distance itself, drawn from the point to its centre — the
-// quantity a distance names, not the normal it rests on. Dotted, like a trace.
-// (id:laws-freedom)
-const SPOKE_DASH = [1, 3]
-export function drawSpoke(ctx, from, to) {
-    if (!from || !to) return
-    ctx.save()
-    ctx.beginPath()
-    ctx.moveTo(from.x, from.y)
-    ctx.lineTo(to.x, to.y)
-    ctx.setLineDash(SPOKE_DASH)
-    ctx.strokeStyle = `rgba(${PAPER},0.34)`
-    ctx.lineWidth = 1
-    ctx.stroke()
+    // A far-end mark is a place, not a stroke: solid, or a dotted ring would read
+    // as another segment's end. (id:laws-freedom)
+    if (mark) {
+        ctx.setLineDash([])
+        ctx.beginPath()
+        ctx.arc(to.x, to.y, 3, 0, TAU)
+        ctx.strokeStyle = `rgba(${PAPER},0.5)`
+        ctx.stroke()
+    }
     ctx.restore()
 }
 

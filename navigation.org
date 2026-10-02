@@ -630,7 +630,7 @@ Verified syntax lives in =PAPERLANG.org= + =codex/refs/Library=.
 ** place and walking head — one visible A
 :PROPERTIES:
 :ID: nav-place-head
-:KEYWORDS: place free point anchored arrowhead ring dot facing heading arm birth inherits spawn let as freePoint visibleHeadFor coordinate z held label readout vectorNames nameAnchor drawVectorName retractVector removeVector
+:KEYWORDS: place free point anchored arrowhead ring dot facing heading arm birth inherits spawn let as freePoint visibleHeadFor coordinate z held label readout vectorNames nameAnchor drawVectorName retractVector removeVector drawSpan dotted span spoke wish origin displacement
 :PATH: assets/js/turtling/compositor.js::getOrCreateLayer
 :END:
 The compositor materializes A's head when a visible pose arrives. The overlay
@@ -638,7 +638,9 @@ draws the point at that same accepted position; =laws/pin.js= leaves room for
 the head. =laws/batch.js::freePoint= gates touch to an unanchored =let A=,
 including mid-capture attachment. [[id:laws-place-head-frame]] ·
 [[id:laws-decl-point-agent]]. Fences: =test/js/laws/place_head_test.mjs= and
-=gesture_test.mjs=.
+=gesture_test.mjs=. A held free point also spans its origin: =laws/pin.js::drawSpan= joins
+the declaring scope's birth/placement frame origin to the pin on that same canvas — where
+=origin= reads, not the cursor that seated it. Fence: =span_test.mjs=. (id:laws-decl-interface)
 A declared object's NAME is the overlay's too: =compositor.vectorNames= hands it a
 vector's world segment and =laws/pin.js nameAnchor/drawVectorName= draw the name beside
 a pin's — screen-space and viewport-invariant — while the arrow stays world geometry.
@@ -767,15 +769,34 @@ the entries stay explicit. Display marks come from the locus (=marksOf=).
 ** derived values — commit-driven readout
 :PROPERTIES:
 :ID: nav-live-readout
-:KEYWORDS: readout derived live label recompute early cutoff source-owned readouts
+:KEYWORDS: readout derived live label recompute early cutoff source-owned readouts dependency order cycle acyclic readsink produces graph neighbours SCC iterative stack-safe topology-cache reachability oracle probe observational dependsOnFrame refusal validity recovery
 :PATH: assets/js/turtling/laws/readout.js::createReadouts
 :END:
-Source-owned derived values recomputed once at the publication boundary, with
-value-equality cutoff — KIND included, so a point and a vector with equal components
-differ (D051) — and release on rewire/removal. =register= replaces the whole definition
-(=drives= included); =retire(source,key)= retires one node when its site replaces a live
-law with a fixed one. No reactive runtime, no command replay.
-[[id:laws-build-p3-readout-built]]. Fence: =readout_test.mjs=.
+Source-owned derived values with kind-aware equality and release on rewire/removal.
+=register= replaces computation, =drives= and producer associations; =retire= removes one
+driver. Scalar dependencies are fresh within a publication; keyed builds remain deferred.
+Node and preflight-root reads share =reading=. =readsink= reports frame references;
+=produces= closes frame-mediated cycles. =dependsOnFrame= refuses target-dependent
+replacement before commitment and restores what it touches.
+Presence derives from the answer (=value !== undefined=); =list().hasValue= is a view,
+not stored truth. The store owns outcomes; the law pipeline still accepts geometry.
+Contract: [[id:tower-laws-readout-outcomes]]; cycle scope: [[id:tower-laws-cycle-contracts]].
+Fences: =readout_test.mjs=, =readout_dependency_test.mjs=, =readout_contract_test.mjs=.
+=neighbours= is the shared derived edge view for SCC diagnosis and target reachability;
+The SCC and the target-reachability walk are iterative, so a deep graph cannot overflow the
+call stack; membership on the compute path is a Set, not a scan. Discovery and the
+invalidity closure are cached under one topology generation (an exact edge comparison, so a
+value change that re-routes a read is seen), while enforcement — suppress, cancel keyed
+work, clear the refusal flag — still runs every publication. A cancelled keyed answer is
+RE-REQUESTED on recovery, since its question is unchanged and would otherwise look settled.
+Reuse discovery, continue enforcement, reevaluate values. The graph BOOKKEEPING is reduced,
+not change-proportional: every publication still evaluates all nodes, allocates their
+dependency sets, and compares topology. O(N+E) names the bookkeeping only; total publication
+cost also includes each node's computation and its equality checks. Two limits stay explicit:
+evaluation is not input-driven, and eager evaluation remains recursive despite the stack-safe
+SCC and preflight. Performance rig: =probe/readout-bench/=.
+=readout_graph_test.mjs= compares both with independent closure across 768 topologies.
+[[id:laws-build-p3-readout-built]]. No reactive runtime, no command replay.
 
 ** derived display — a polygon follows the drag
 :PROPERTIES:

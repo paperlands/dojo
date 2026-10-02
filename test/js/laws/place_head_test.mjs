@@ -70,5 +70,9 @@ test("the canvas offers a hand only to an unanchored place", () => {
         "the state query gates the pointer gesture, topmost first")
     assert.match(turtle, /canTouch: frame => this\._touchable\(frame\)/, "a point gaining a head releases an existing capture")
     assert.doesNotMatch(turtle, /\bfreePoint\(/, "the pin loop reads the state, not a second predicate")
+    // The span starts at the declaring scope's frame origin — where `origin` reads,
+    // never the cursor that seated the place and never the pin. (id:laws-decl-interface)
+    assert.match(turtle, /if \(held\) drawSpan\(overlay\.ctx, view\.project\(worldTransform\(frame\.parent\)\.position\), at, \{ alpha: 0\.45 \}\)/,
+        "a held place spans its origin to the pin, and no read moves with it")
 })
 

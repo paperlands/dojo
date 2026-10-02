@@ -291,9 +291,17 @@ function clearSpentPark(ctx) {
 
 // Ambient name resolve: siblings then ancestors, by display name.
 function metaRootFrame(frame) {
-    let node = frame
-    while (node.parent) node = node.parent
-    return node
+    const cached = frame._root
+    if (cached) return cached
+    // A rewind builds a fresh frame, so a frame never reparents: the root is stable and
+    // worth caching along the path. A detached frame is its own root. (id:laws-living-figures-review-next)
+    let root = frame
+    while (root.parent) root = root.parent
+    for (let node = frame; node; node = node.parent) {
+        node._root = root
+        if (node === root) break
+    }
+    return root
 }
 
 // world = observer's root-child (or self if observer is root).
@@ -551,8 +559,9 @@ function resolveBinding(frame, name, args) {
 // reads about another place is what that place IS. The eye's rounding is the
 // display's business and never feeds back. (ruling 3: a reading is exact)
 //
-// A reading with no answer stays NOTHING (id:eval-relational)
-const orNothing = (v) => v === null ? null : v
+// A reading with no answer stays NOTHING — decided once, at `readable`, where every
+// reading crosses the boundary. Projections return the value or nothing; they do not
+// wrap themselves. (id:eval-relational)
 
 const headingFromQuaternion = headingOf
 
@@ -633,28 +642,28 @@ function poseInObserverBirth(target, observer) {
 
 // Spatial properties — projections of a pose, world-space unless ground is set.
 const SPATIAL = {
-    x: (t) => orNothing(t.position[0]),
-    y: (t) => orNothing(t.position[1]),
-    z: (t) => orNothing(t.position[2]),
-    position: (t) => orNothing(t.position),
-    heading: (t) => orNothing(headingFromQuaternion(t.rotation)),
-    elevation: (t) => orNothing(elevationOf(t.rotation)),
+    x: (t) => t.position[0],
+    y: (t) => t.position[1],
+    z: (t) => t.position[2],
+    position: (t) => t.position,
+    heading: (t) => headingFromQuaternion(t.rotation),
+    elevation: (t) => elevationOf(t.rotation),
 }
 
 // Temporal properties — lifecycle projections. `time` is local; `birthtime`
 // is birth on the shared axis, so `birthtime + time` is an axis position. (id:host-beat)
 const TEMPORAL = {
-    time:     (frame) => orNothing(frame.elapsedTime || 0),
-    birthtime: (frame) => orNothing(frame.birthtime || 0),
+    time:     (frame) => frame.elapsedTime || 0,
+    birthtime: (frame) => frame.birthtime || 0,
     done:     (frame) => frame.done ? 1 : 0,
     commands: (frame) => frame.commandCount,
 }
 
 // Relational properties — computed from observer + target in world space.
 const RELATIONAL = {
-    distance: (target, observer) => orNothing(measure("distance", target, observer, (f) => worldReading(f, observer, null))),
-    bearing: (target, observer) => orNothing(measure("bearing", target, observer, (f) => worldReading(f, observer, null))),
-    sync: (target, observer) => orNothing(measure("sync", target, observer, (f) => worldReading(f, observer, null))),
+    distance: (target, observer) => measure("distance", target, observer, (f) => worldReading(f, observer, null)),
+    bearing: (target, observer) => measure("bearing", target, observer, (f) => worldReading(f, observer, null)),
+    sync: (target, observer) => measure("sync", target, observer, (f) => worldReading(f, observer, null)),
 }
 
 // Resolve a property on a target frame — spatial, temporal, relational, or fn.
@@ -667,13 +676,18 @@ const RELATIONAL = {
 // turned by it (`rt A.heading`), and every coordinate of the host went NaN with no
 // error anywhere — silent corruption of the figure. (id:eval-relational)
 function readable(property, value, target) {
-    // Nothing is an answer, a number we cannot honour is a fault.
-    if (value === null) return null
+    // NOTHING is null OR undefined — a row may say "no answer" either way, and the
+    // boundary turns it into one NOTHING before the domain guard sees it. A number we
+    // cannot honour is a fault.
+    if (value == null) return null
     if (predicateOk(property, value)) return value
     throw new Error(`No ${property}: ${target.name} answers outside its domain`)
 }
 
 function resolveProperty(target, property, args, observer, ground = false) {
+    // Report the frame to the readout graph: while a derived node computes, this frame is
+    // a reference it stands on. A no-op outside a compute. (id:laws-dependency-driven-place)
+    metaRootFrame(observer ?? target)._readouts?.readsink?.(target)
     // A free spatial point is a position, not a walker: it was seated with no body,
     // so an aim reading would invent an orientation nobody stated — a yaw through
     // `heading`, a level through `elevation`. Bearing to it is a real reading; its
@@ -686,7 +700,7 @@ function resolveProperty(target, property, args, observer, ground = false) {
             ? poseInObserverBirth(target, observer) : readWorldTransform(target, observer)), target)
     }
     if (!args && TEMPORAL[property]) {
-        return TEMPORAL[property](target)
+        return readable(property, TEMPORAL[property](target), target)
     }
     if (!args && observer && RELATIONAL[property]) {
         return readable(property, RELATIONAL[property](target, observer), target)
@@ -2553,7 +2567,8 @@ function law(ctx, value, _route, pump) {
     // D054 refuses detected own-target reads as a definition policy, even if stable.
     // This is not a fixed-point test or a ban on cyclic relational obligations.
     // (id:tower-laws-cycle-contracts)
-    if (value.feature === 'position' && value.read && value.reads?.includes(target.id)) {
+    if (value.feature === 'position' && value.read &&
+        pump.readouts.dependsOnFrame?.(value.read, target)) {
         if (born) withdrawPlace(ctx, born, pump)
         return woundRelation(ctx,
             `'${targetName}' cannot be defined by itself — a dependent place must stand on another`,
@@ -2573,9 +2588,13 @@ function law(ctx, value, _route, pump) {
         retractIfVector(ctx, targetName, pump)
         const placeKey = `place:${targetName}`
         if (value.read) {
-            pump.readouts.register(ctx.id, placeKey, value.read,
+            const placeNode = pump.readouts.register(ctx.id, placeKey, value.read,
                 { kind: 'place', source: ctx.id,
                     spec: { observer: ctx, target, owner: value.owner, address: outcome.address } })
+            // The place's position is PRODUCED by this node: the frame depends on it, so
+            // a reader of the frame can be detected standing on its own output.
+            // (id:laws-dependency-driven-place)
+            pump.readouts.produces(placeNode, target)
         } else {
             pump.readouts.retire(ctx.id, placeKey)
         }
@@ -2989,6 +3008,24 @@ export function createScheduler(generator, opts = {}) {
     // fires — "fixed" is a derived value that simply does not move.
     // (id:notation-coordinate-vector, id:laws-dependency-driven-place)
     readouts.watch((change) => {
+        // A derived value standing on itself, indirectly — through a scalar or through a
+        // frame it drives. Refuse the definition, as the direct case does (D054).
+        // (id:laws-dependency-driven-place)
+        if (change.cycle) {
+            // A cycle is attributed to the SOURCE that declared it, never to display
+            // metadata. A non-destructive diagnostic: the walk in flight is not torn down.
+            const frame = registry.get(change.source)
+            const spec = change.drives?.spec
+            const name = spec?.target?.name
+            if (frame && !frame.error) {
+                frame.error = report({ kind: 'relation', span: spec?.owner ?? null,
+                    message: name
+                        ? `'${name}' cannot be defined by itself — a dependent value stands on it`
+                        : 'a derived value cannot be defined by itself — it stands on its own answer' })
+                frame.channel.put({ type: 'error', ...frame.error, ambientId: frame.id })
+            }
+            return
+        }
         const redraw = change.drives
         if (redraw) REDRAWN[redraw.kind](redraw.spec, change.value)
     })

@@ -261,7 +261,7 @@ function* readGotoArgs(nodes, scope, state) {
 function* emitPoint(name, expr, owner, scope, state, sampled) {
     if (sampled !== undefined) {
         yield { type: 'law', feature: 'position', target: name, value: toSpace(sampled) ?? sampled,
-            axis: null, owner, read: null, reads: null }
+            axis: null, owner, read: null }
         return
     }
     const raw = yield* evalOrBlock(expr, scope, state, 'measure', true)
@@ -269,10 +269,7 @@ function* emitPoint(name, expr, owner, scope, state, sampled) {
     yield { type: 'law', feature: 'position', target: name, value: toSpace(raw) ?? raw,
         axis: null, owner,
         // A coordinate that RESOLVED a reference tracks it; a literal owns no readout.
-        read: reads?.live ? (() => evaluateExpr(expr, scope, state)) : null,
-        // The frames the read resolved — a place standing on itself is refused without
-        // a syntactic scan. (id:laws-dependency-driven-place)
-        reads: reads ? [...reads.frames].map((f) => f.id) : null }
+        read: reads?.live ? (() => evaluateExpr(expr, scope, state)) : null }
 }
 
 // A declared vector's pose and style, captured at its declaration. The display is

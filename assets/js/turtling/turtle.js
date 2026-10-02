@@ -18,7 +18,7 @@ import { exposed, pointCandidates } from "./laws/batch.js"
 import { viewMapping } from "./laws/handle.js"
 import { verdictFade, OUTCOME } from "./laws/outcome.js"
 import { VERDICT_DECAY_MS } from "./laws/feel.js"
-import { drawPin, drawTrace, drawRim, drawGhostMark, drawAxis, drawCurve, drawWish, drawSpoke, nameAnchor, drawVectorName } from "./laws/pin.js"
+import { drawPin, drawTrace, drawRim, drawGhostMark, drawAxis, drawCurve, drawSpan, nameAnchor, drawVectorName } from "./laws/pin.js"
 import { stateOf, axesOf, marksOf, heldIdentity, boundsOf } from "./laws/constraints.js"
 import { unionBounds, viewDirection } from "./laws/fit.js"
 import { hintsVisible, normalizeReveal, movedEnough } from "./laws/reveal.js"
@@ -301,7 +301,8 @@ export class Turtle {
                 if (s) drawGhostMark(overlay.ctx, s.x, s.y)
             }
             for (const ring of marks.rings) drawRim(overlay.ctx, ring.map((p) => view.project(p)))
-            for (const [a, b] of marks.spokes) drawSpoke(overlay.ctx, view.project(a), view.project(b))
+            // A radius spoke is the distance itself: from the point to its centre.
+            for (const [a, b] of marks.spokes) drawSpan(overlay.ctx, view.project(a), view.project(b), { alpha: 0.34 })
             // the resting axis: the constraint normal, through the point
             const axes = axesOf(state)
             // A radius spoke already names the direction; only a locus without one
@@ -339,6 +340,10 @@ export class Turtle {
             const readout = held && this.lastReadout?.point === frame.name ? this.lastReadout : null
             const ghost = this._ghost?.point === frame.name
                 ? { text: this._ghost.text, fade: verdictFade(now - this._ghost.at) } : null
+            // While a hand holds a free point, a dotted line joins its origin to the pin:
+            // the declaring scope's birth/placement frame origin — where `origin` reads,
+            // not the cursor that seated it — shown, never spoken. (id:laws-decl-interface)
+            if (held) drawSpan(overlay.ctx, view.project(worldTransform(frame.parent).position), at, { alpha: 0.45 })
             drawPin(overlay.ctx, {
                 cx: at.x, cy: at.y, width: overlay.width, name: frame.name,
                 ink: this.color,
@@ -353,7 +358,7 @@ export class Turtle {
             // response; only an obstruction earns refusal language. (id:laws-freedom)
             if (held && readout && readout.requested && readout.outcome === OUTCOME.accepted) {
                 const wish = view.project(SE3.apply(worldTransform(frame), readout.requested))
-                if (wish) drawWish(overlay.ctx, at, wish)
+                if (wish) drawSpan(overlay.ctx, at, wish, { alpha: 0.32, mark: true })
             }
         }
         // A declared object's NAME rides the overlay with the pins: screen-space and

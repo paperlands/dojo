@@ -14,6 +14,7 @@ export function createFrame(name, generator, opts = {}) {
         name,
 
         parent: opts.parent || null,
+        _root: null,           // lazy cache: top of this frame's tree (frames never reparent)
         children: new Map(),
 
         origin: opts.origin || null,  // parent's SE3 at birth (immutable)
