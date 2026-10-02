@@ -22,7 +22,7 @@ const examples = [
     ['<=', '2 <= 2', 1], ['<', '2 < 3', 1],
     ['+', '2 + 3', 5], ['-', '2 - 3', -1],
     ['*', '2 * 3', 6], ['/', '3 / 2', 1.5],
-    ['//', '7 // 3', 2], ['mod', '7 mod 3', 1], ['^', '2 ^ 3', 8],
+    ['//', '7 // 3', 2], ['^', '2 ^ 3', 8],
 ]
 
 describe('one fixed operator surface', () => {
@@ -34,7 +34,6 @@ describe('one fixed operator surface', () => {
         for (const row of OPERATOR_ROWS) {
             assert.ok(Object.isFrozen(row))
             assert.equal(getOperator(row.lexeme, row.fixity), row)
-            assert.equal(row.word, /^[a-zA-Z]+$/.test(row.lexeme))
         }
         assert.equal(OPERATORS, OPERATOR_LEXEMES) // compatibility export, not another list
         assert.equal(new Set(OPERATORS).size, OPERATORS.length)
@@ -84,7 +83,6 @@ describe('one fixed operator surface', () => {
             ['1 < 2 < 3', ['<', ['<', 1, 2], 3]],
             ['-2 ^ 2', ['^', ['-', 2], 2]],
             ['2 ^ -3', ['^', 2, ['-', 3]]],
-            ['2 * 7 mod 3', ['mod', ['*', 2, 7], 3]],
         ]
         for (const [source, expected] of trees) {
             assert.deepEqual(shape(parser.parse(source)), expected, source)
@@ -95,46 +93,50 @@ describe('one fixed operator surface', () => {
 
     test('adjacent signs compose; they are not special operator spellings', () => {
         for (const [source, expected] of [
-            ['5--2', 7], ['5+-2', 3], ['5-+2', 3], ['5++2', 7],
-            ['0.1--0.2', 0.3], ['0.3+-0.2', 0.1], ['---2', -2],
+            ['5--2', 7], ['5+-2', 3], ['5-+2', 3], ['5++2', 7], ['---2', -2],
         ]) assert.equal(ev(source), expected, source)
+        // The tenths compose by the same rule; the residue is the substrate's, and what
+        // a learner SEES is the display's business. (numerics:format)
+        assert.ok(Math.abs(ev('0.1--0.2') - 0.3) < 1e-15)
+        assert.ok(Math.abs(ev('0.3+-0.2') - 0.1) < 1e-15)
         assert.deepEqual(shape(parser.parse('5--2')), ['-', 5, ['-', 2]])
         assert.deepEqual(new Lexer().tokenize('5--2').map((t) => t.value), ['5', '-', '-', '2'])
     })
 
-    test('a word row never bites a longer name or a dotted path', () => {
+    test('a word is never bitten apart — mod is an ordinary name now', () => {
         const lexer = new Lexer()
-        for (const word of ['model', 'mode', 'mod_x', 'mod.x', 'mod3.x', 'world.mod']) {
+        for (const word of ['model', 'mode', 'mod_x', 'mod.x', 'mod3.x', 'world.mod', 'mod']) {
             const tokens = lexer.tokenize(word)
             assert.equal(tokens.length, 1, word)
             assert.equal(tokens[0].type, 'IDENTIFIER', word)
             assert.equal(tokens[0].value, word)
         }
         assert.equal(ev('mod.x + mod3.x', { 'mod.x': 2, 'mod3.x': 3 }), 5)
-        assert.equal(ev('7mod3'), 1)
-        assert.equal(ev('7mod(3)'), 1)
-        assert.equal(ev('(7)mod3'), 1)
-        assert.equal(ev('7mod3.5'), 0)
-        assert.deepEqual(lexer.tokenize('1e-3mod2').map((t) => t.value), ['1e-3', 'mod', '2'])
+        // The glued spelling is gone: `7mod3` is `7 * mod3`, an undeclared name.
+        assert.throws(() => ev('7mod3'), /Undefined variable: mod3/)
+        assert.equal(ev('mod(7, 3)'), 1)
     })
 
     test('cached lexer pattern resets for successive expressions', () => {
         const lexer = new Lexer()
         const pattern = lexer.pattern
-        for (const source of ['2^3', '7mod3', '', 'model', '1e-3+2', '7mod3']) {
+        for (const source of ['2^3', '7//3', '', 'model', '1e-3+2', '7//3']) {
             assert.deepEqual(lexer.tokenize(source), new Lexer().tokenize(source))
             assert.equal(lexer.pattern, pattern)
         }
-        assert.equal(ev('0.1 + 0.2'), 0.3)
-        assert.equal(ev('0.3 - 0.2'), 0.1)
+        // Same door, same answer, on every visit — and the answer is the substrate's.
+        // (The rounding gate that once made these read as 0.3 is gone: numerics:format
+        // cleans the eye, not the arithmetic.)
+        assert.ok(Math.abs(ev('0.1 + 0.2') - 0.3) < 1e-15)
+        assert.ok(Math.abs(ev('0.3 - 0.2') - 0.1) < 1e-15)
         assert.equal(ev('2(3 + 4)'), 14)
     })
 
-    test('PaperLang joins a word operator into one argument', () => {
-        const ast = parseProgram('fw 7 mod 3\nrt 90')
+    test('PaperLang keeps a call together — mod(7, 3) is one argument', () => {
+        const ast = parseProgram('fw mod(7, 3)\nrt 90')
         assert.equal(ast.length, 2)
         assert.equal(ast[0].children.length, 1)
-        assert.equal(ast[0].children[0].value, '7 mod 3')
+        assert.equal(ast[0].children[0].value, 'mod(7, 3)')
     })
 
     test('nothing propagates and evaluation refuses undeclared spellings', () => {

@@ -121,18 +121,6 @@ describe("8 · a sign belongs to an expression, not a spelling", () => {
     })
 })
 
-describe("9 · word operators bridge at a chunk edge", () => {
-    test("the table's recognition, not a guess", () => {
-        assert.deepEqual(argsOf("fw 7mod 3"), ["7mod 3"])
-        assert.deepEqual(argsOf("fw 7 mod3"), ["7 mod3"])
-        assert.deepEqual(argsOf("fw 7mod3"), ["7mod3"])
-        assert.deepEqual(argsOf("fw 7 mod 3"), ["7 mod 3"])
-    })
-    test("a name that merely starts with mod is untouched", () => {
-        assert.deepEqual(argsOf("label model"), ["model"])
-    })
-})
-
 describe("10 · nested quotation keeps its context", () => {
     test("a closing bracket inside a quoted string is not structural", () => {
         assert.deepEqual(argsOf("label ('a) b')"), ["('a) b')"])

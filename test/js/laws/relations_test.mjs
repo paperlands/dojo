@@ -6,6 +6,7 @@ import assert from "node:assert/strict"
 import { measure, headingOf, elevationOf } from "../../../assets/js/turtling/laws/relations.js"
 import { buildWorld, fork, drive } from "./harness.mjs"
 import { resolveBinding, frameWorldTransform } from "../../../assets/js/turtling/scheduler.js"
+import { format } from "../../../assets/js/turtling/numerics.js"
 
 const identity = { x: 0, y: 0, z: 0, w: 1 }
 const readings = (positions, rotations = {}, times = {}) => (frame) => ({
@@ -105,8 +106,13 @@ test("a read with no answer is null, and a healthy one still answers", () => {
     const healthy = buildWorld()
     const walker = healthy.hotSwapChild("host", fork("host", "as A do\n  rt 90\nend"))
     drive(healthy)
-    assert.equal(resolveBinding(walker, "A.heading"), 180, "the compass read answers")
-    assert.equal(resolveBinding(walker, "A.elevation"), 0, "and so does the elevation")
+    // A reading is the value, EXACTLY (ruling 3): the compass answers to the
+    // substrate's precision, and the display is what reads 180. A comparison that
+    // wants the familiar 180 asks for it: `round(A.heading) == 180`.
+    const heading = resolveBinding(walker, "A.heading")
+    assert.ok(Math.abs(heading - 180) < 1e-9, "the compass read answers")
+    assert.equal(format(heading), "180", "and the eye reads 180")
+    assert.ok(Math.abs(resolveBinding(walker, "A.elevation")) < 1e-9, "and so does the elevation")
 
     // A nose up the paper normal has no compass bearing at all: null, no wound, and
     // the elevation still names the pole — nothing is not the same as no answer.
@@ -114,7 +120,7 @@ test("a read with no answer is null, and a healthy one still answers", () => {
     const host = degenerate.hotSwapChild("host", fork("host", "let A\nas A do\n  pitch 90\nend"))
     drive(degenerate)
     assert.equal(resolveBinding(host, "A.heading"), null, "no bearing is nothing, and that is an answer")
-    assert.equal(resolveBinding(host, "A.elevation"), -90, "elevation names which pole")
+    assert.ok(Math.abs(resolveBinding(host, "A.elevation") + 90) < 1e-9, "elevation names which pole")
 
     // Coincident endpoints: the same nothing through the evaluator's own read. A
     // target at the reader's own position names no direction, so no turn can be
@@ -127,17 +133,17 @@ test("a read with no answer is null, and a healthy one still answers", () => {
         "a bearing with no projected direction is nothing — not −the observer's facing")
 })
 
-test("nothing taken for a measure wounds at the hole, and poisons no pose", () => {
+test("nothing taken for a measure is not a number, and poisons no pose", () => {
     // Measured 2026-09-26, before the guards: the NaN propagated — `rt A.heading`
-    // left every host coordinate NaN, and no error surfaced anywhere. `null + 1` is
-    // 1 in JavaScript, so nothing taken for a measure is the same corruption a step
-    // further out. The refusal is at the demand, and it names the hole.
+    // left every host coordinate NaN. Nothing is not a number because `null + 1` is
+    // 1 in JavaScript; the hole takes the callable's own default, and for a turn that
+    // default IS the identity — so the pose is untouched and the walk carries on.
+    // (ruling: absent-is-zero)
     const scheduler = buildWorld()
     const host = scheduler.hotSwapChild("host", fork("host",
         "let A\nas A do\n  pitch 90\nend\nrt A.heading\nfw 10"))
     drive(scheduler)
-    assert.equal(scheduler.errors.length, 1, "exactly one located wound, not a silent walk")
-    assert.match(scheduler.errors[0].message, /rt|No measure/)
+    assert.equal(scheduler.errors.length, 0, "an absent reading is not the author's wound")
     const pose = frameWorldTransform(host)
     assert.ok(pose.position.every(Number.isFinite) && Number.isFinite(pose.rotation.w),
         "the host's pose is untouched by a reading that could not answer")

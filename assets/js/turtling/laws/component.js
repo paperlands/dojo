@@ -10,7 +10,7 @@
 // law's radius from its parent along the current direction. That is enough to make
 // two connected distances respond to one requested change, analytically.
 
-import { sub, len, unit, finite3 } from "./vec3.js"
+import { sub, len, unit, finite3, directionBetween, INVALID } from "./vec3.js"
 
 
 // The connected component of `laws` that shares a frame with any seed identity.
@@ -76,8 +76,11 @@ export function realizeDistanceTree(laws, anchorId, world, radiusOf) {
             const from = positions.get(parent)
             const parentOrigin = origins.get(parent)
             const childOrigin = world(other)
-            // A coincident pair takes the +x policy, disclosed as policy.
-            const dir = (finite3(childOrigin) ? unit(sub(childOrigin, parentOrigin)) : null) ?? [1, 0, 0]
+            // A coincident pair takes the +x policy, disclosed as policy; an INVALID
+            // question is not a coincidence and fails the rebuild instead. (P2)
+            const ask = directionBetween(parentOrigin, childOrigin)
+            if (ask === INVALID) return null
+            const dir = ask ?? [1, 0, 0]
             const r = radiusOf(law)
             if (!Number.isFinite(r) || r < 0) return null
             positions.set(other, [from[0] + dir[0] * r, from[1] + dir[1] * r, from[2] + dir[2] * r])

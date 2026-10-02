@@ -61,7 +61,7 @@ function oldSplitCommandArgs(rest) {
     if (start < rest.length) out.push(rest.slice(start)); return out.filter(Boolean)
 }
 // One entry = one held invocation (`let F = <cmd> <args>`).
-const INVOCATIONS = ["2 + 3", "(1 + 2) 4", "90", "'pi'", "count mod 7", "sin(30) + 1"]
+const INVOCATIONS = ["2 + 3", "(1 + 2) 4", "90", "'pi'", "mod(count, 7)", "sin(30) + 1"]
 const rNew = bench("readArguments", 400000, (i) => readArguments(INVOCATIONS[i % INVOCATIONS.length]))
 const rOld = bench("old split (reference)", 400000, (i) => oldSplitCommandArgs(INVOCATIONS[i % INVOCATIONS.length]))
 console.log("READER — one held invocation (`let F = <args>`)")
@@ -89,19 +89,19 @@ guard("per-line cost flat across 4× size", perLineGrowth <= 1.6,
     `per line grew ${perLineGrowth.toFixed(2)}× from ${parseRows[0].lines}→${parseRows[2].lines} lines (supralinear, or GC-bound)`)
 console.log("")
 
-// ── 3. Lexer — the char walk and the `mod` word-operator rule ───────────────
+// ── 3. Lexer — the char walk over operators, names and calls ────────────────
 const lexer = new Lexer()
-const LEX = ["count mod 7 + 1", "1 + 2 * 3 - 4/5", "sin(30) + [x+1]"]
+const LEX = ["mod(count, 7) + 1", "1 + 2 * 3 - 4/5", "sin(30) + [x+1]"]
 console.log("LEXER")
 const lexRows = LEX.map((src) => bench(src, 400000, () => lexer.tokenize(src)))
 for (const r of lexRows) console.log("  " + pad(r.name, 34) + pad(us(r.us), 12) + "/tokenize")
-guard("a word-operator lexes within 2× plain arithmetic", lexRows[0].us <= 2 * lexRows[1].us,
-    `'count mod 7 + 1' ${us(lexRows[0].us)} vs '1 + 2 * 3' ${us(lexRows[1].us)}`)
+guard("a call lexes within 2× plain arithmetic", lexRows[0].us <= 2 * lexRows[1].us,
+    `'mod(count, 7) + 1' ${us(lexRows[0].us)} vs '1 + 2 * 3' ${us(lexRows[1].us)}`)
 console.log("")
 
 // ── 4. Evaluator — the builtins the notation work touched ───────────────────
 const parser = new Parser(), evaluator = new Evaluator()
-const EXPRS = ["1 + 2 * 3", "round(2.7)", "round(2.7, 5)", "atan2(1, 2)", "7 mod 3", "sin(1)"]
+const EXPRS = ["1 + 2 * 3", "round(2.7)", "round(2.7, 5)", "atan2(1, 2)", "mod(7, 3)", "sin(1)"]
 const trees = Object.fromEntries(EXPRS.map((e) => [e, parser.parse(e)]))
 console.log("EVALUATOR")
 const evalRows = EXPRS.map((e) => ({ e, r: bench(e, 300000, () => evaluator.run(trees[e], {})) }))

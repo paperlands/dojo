@@ -7,7 +7,7 @@
 
 import { meetAll, dofOf, nearest, plane as planeSet, point as pointSet, sphere as sphereSet, cone as coneSet, conicSamples, basisOf, ringOf } from "./meet.js"
 import { unionBounds } from "./fit.js"
-import { sub, dot, len, unit, finite3 } from "./vec3.js"
+import { sub, dot, len, unit, finite3, directionBetween } from "./vec3.js"
 import { openAngle, coneLateral } from "./cone.js"
 
 
@@ -67,7 +67,7 @@ export function stateOf({ at = null, headed = false, exposed = true, isPlace = t
     const resolved = pinned || status !== 'accepted' || role === 'headed' ? [] : distances
         .filter((c) => c.radius > 0)
         .map((c) => ({
-            normal: unit(sub(at, c.other)) ?? [1, 0, 0],   // coincident: a stated direction
+            normal: directionBetween(c.other, at) ?? [1, 0, 0],   // coincident: a stated direction
             locus: { kind: 'sphere', center: [...c.other], radius: c.radius },
         }))
     const normals = resolved.map((r) => r.normal)

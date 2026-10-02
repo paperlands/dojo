@@ -31,6 +31,8 @@ test("guard: the domain is bound to the relation, and a negative length is out",
     assert.equal(predicateOk("sync", -3), true, "sync is signed")
     assert.equal(predicateOk("position", [1, 2, 3]), true)
     assert.equal(predicateOk("position", [1, 2]), false)
+    assert.equal(predicateOk("position", new Array(3)), false, "a hole is not a coordinate")
+    assert.equal(predicateOk("position", [1, NaN, 3]), false)
 })
 
 test("bounds: a length slider is lower-bounded at zero; a bearing is unbounded", () => {

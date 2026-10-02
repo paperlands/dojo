@@ -330,6 +330,32 @@ describe("when (conditional)", () => {
         // First when matches, second skipped
         assert.ok(near(heads[0].position[0], 10))
     })
+
+    test("an unconsidered branch is never evaluated", () => {
+        // The first-match guard is around EVALUATION itself: a later condition
+        // with no answer must not kill a walk that already has its branch.
+        // (id:numeric-boundaries-adversarial-followup)
+        const ast = [
+            when("1", [call("fw", 1)]),
+            when("missing", [call("fw", 2)]),
+            call("fw", 3)
+        ]
+        const events = drainEvents(ast, mockDeps())
+        assert.deepEqual(eventsOfType(events, "head")[0].position, [4, 0, 0])
+    })
+
+    test("an unconsidered branch says nothing", () => {
+        // Never asked, never told: a condition on a non-answer owes no notice
+        // once the level has matched. (id:numeric-boundaries-adversarial-followup)
+        const ast = [
+            when("1", [call("fw", 1)]),
+            when("nan", [call("fw", 2)]),
+            call("fw", 3)
+        ]
+        const events = drainEvents(ast, mockDeps(), { scope: { nan: NaN } })
+        assert.equal(eventsOfType(events, "notice").length, 0, "the branch was never asked")
+        assert.deepEqual(eventsOfType(events, "head")[0].position, [4, 0, 0])
+    })
 })
 
 // ---------------------------------------------------------------------------

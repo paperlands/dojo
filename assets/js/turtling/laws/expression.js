@@ -11,6 +11,7 @@ export const KIND = { length: "length", angle: "angle", duration: "duration", sc
 import { RELATIONAL_NAMES, SPATIAL_NAMES } from "./relations.js"
 import { AXES } from "./relationships.js"
 import { AUTHORED } from "./authored.js"
+import { finite3 } from "./vec3.js"
 
 // The family is the evaluator's, derived from its own name lists — not a second
 // classification. A law and a read therefore see the same relations.
@@ -64,7 +65,10 @@ export function boundsOf(feature) {
 export function predicateOk(feature, value) {
     const guard = relationOf(feature)?.guard
     if (!guard) return true
-    if (guard.finite3) return Array.isArray(value) && value.length === 3 && value.every(Number.isFinite)
+    // The tuple predicate, not a second one: `.every` skips a hole, so a sparse
+    // Array(3) would be admitted and then read as NaN.
+    // (id:tower-laws-numerical-geometry)
+    if (guard.finite3) return finite3(value)
     if (guard.finite && !Number.isFinite(value)) return false
     if (guard.nonNegative && value < 0) return false
     return true

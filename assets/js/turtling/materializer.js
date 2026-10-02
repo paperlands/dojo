@@ -28,37 +28,28 @@ export function createLabels(group, opts = {}) {
     return createLabelPool(group, { createText: opts.createText, font: opts.font ?? LABEL_FONT })
 }
 
+// WHAT THE RENDERER DRAWS — one row per kind, so the vocabulary is a LIST a reader (and
+// a witness) can see, not a switch body. A kind absent here is deliberately not drawn:
+// `error`, `beat`, `notice`, `clear` and the temporal markers are the compositor's or
+// the scheduler's business, and the compositor's own drain says so. Adding a drawn kind
+// is an edit HERE. (See test/js/notation/event_vocabulary_test.mjs.)
+// A row takes (event, groups, ctx, frame) and answers nothing.
+export const MATERIALIZERS = {
+    path: (event, groups, ctx) => materializePath(event, groups.pathGroup, ctx.shapist, undefined, ctx.materials),
+    head: (event, _groups, ctx) => materializeHead(event, ctx),
+    view: (event, _groups, ctx) => materializeView(event, ctx),
+    label: (event, _groups, ctx) => materializeLabel(event, ctx),
+    grid: (event, groups) => materializeGrid(event, groups.gridGroup),
+    // A temporal marker: the scheduler advances the clock and the compositor takes the
+    // beat. Drawing nothing is the row's whole content.
+    wait: () => {},
+}
+
 // Materialize a single event into the scene.
 // groups = { pathGroup, gridGroup }
 // ctx    = { materials, shapist, labels, head, camera, controls, requestRender }
-export function materialize(event, groups, ctx) {
-    switch (event.type) {
-
-    case "path":
-        materializePath(event, groups.pathGroup, ctx.shapist, undefined, ctx.materials)
-        break
-
-    case "head":
-        materializeHead(event, ctx)
-        break
-
-    case "view":
-        materializeView(event, ctx)
-        break
-
-    case "label":
-        materializeLabel(event, ctx)
-        break
-
-    case "grid":
-        materializeGrid(event, groups.gridGroup)
-        break
-
-    case "wait":
-        // Wait events are temporal markers — handled by the scheduler/compositor,
-        // not the materializer. Head snapshot for wait is emitted separately.
-        break
-    }
+export function materialize(event, groups, ctx, frame = null) {
+    MATERIALIZERS[event.type]?.(event, groups, ctx, frame)
 }
 
 // --- Internal materializers ---

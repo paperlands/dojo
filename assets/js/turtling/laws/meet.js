@@ -11,7 +11,7 @@
 // and the three honest non-answers: empty · uncertain · unresolved.
 
 import { meetPlaneSphere, REL_TOL, ACCEPT_TOL } from "./relationships.js"
-import { sub, add, scale, dot, cross, len, finite3, unit as unitKernel } from "./vec3.js"
+import { sub, add, scale, dot, cross, len, finite3, unit as unitKernel, directionBetween, INVALID } from "./vec3.js"
 import { openAngle, coneLateral } from "./cone.js"
 
 // A direction below meet's conditioning threshold is not one; the tolerance is
@@ -163,9 +163,17 @@ function meetLineSphere(ln, sp) {
 }
 
 function meetSphereSphere(a, b) {
+    // Valid operands BEFORE any geometric early return: coerced arithmetic (null,
+    // numeric strings) looks finite for a malformed coordinate, and a finite
+    // result establishes nothing about its operands. Never a guess.
+    if (!finite3(a.center) || !finite3(b.center)) return UNRESOLVED
     const d = len(sub(b.center, a.center))
+    // A separation that is not a finite number is neither a coincidence nor a named
+    // meet: an unanswerable question shares no answer with a coincidence. (P2)
+    if (!Number.isFinite(d)) return UNRESOLVED
     if (d <= REL_TOL) return Math.abs(a.radius - b.radius) <= ACCEPT_TOL ? a : EMPTY
-    const u = unit(sub(b.center, a.center))
+    const u = directionBetween(a.center, b.center)
+    if (u === INVALID) return UNRESOLVED   // handled before any geometry consumes it
     const x = (a.radius * a.radius - b.radius * b.radius + d * d) / (2 * d)
     const h2 = a.radius * a.radius - x * x
     if (h2 < -ACCEPT_TOL) return EMPTY
@@ -268,15 +276,21 @@ function meetLineCircle(ln, ci) {
 
 // Two circles: named only when they share a plane; then a 2-D two-circle meet.
 function meetCircleCircle(a, b) {
+    // Valid operands BEFORE any geometric early return — including the coincidence
+    // branch below, which must never answer with a malformed locus.
+    if (!finite3(a.center) || !finite3(b.center)) return UNRESOLVED
     if (len(cross(a.normal, b.normal)) > REL_TOL) return UNRESOLVED
     if (Math.abs(dot(a.normal, sub(b.center, a.center))) > ACCEPT_TOL) return UNRESOLVED
     const d = len(sub(b.center, a.center))
+    if (!Number.isFinite(d)) return UNRESOLVED   // an unaskable separation names no meet (P2)
     if (d <= REL_TOL) return Math.abs(a.radius - b.radius) <= ACCEPT_TOL ? a : EMPTY
     if (d > a.radius + b.radius + ACCEPT_TOL) return EMPTY
     if (d < Math.abs(a.radius - b.radius) - ACCEPT_TOL) return EMPTY
     const x = (a.radius * a.radius - b.radius * b.radius + d * d) / (2 * d)
     const h2 = a.radius * a.radius - x * x
-    const foot = add(a.center, scale(unit(sub(b.center, a.center)), x))
+    const u = directionBetween(a.center, b.center)
+    if (u === INVALID) return UNRESOLVED   // invalid input is not the coincident pair (P2)
+    const foot = add(a.center, scale(u ?? [1, 0, 0], x))
     if (h2 <= ACCEPT_TOL) return point(foot)
     const perp = unit(cross(a.normal, sub(b.center, a.center)))
     const s = Math.sqrt(Math.max(0, h2))
@@ -517,8 +531,9 @@ export function nearest(set, target, { keep = null, margin = 0 } = {}) {
             return { ok: true, at: add(set.point, scale(set.dir, t)) }
         }
         case "sphere": {
-            const u = unit(sub(target, set.center)) ?? [1, 0, 0]
-            return { ok: true, at: add(set.center, scale(u, set.radius)) }
+            const u = directionBetween(set.center, target)
+            if (u === INVALID) return { ok: false, kind: "unresolved" }   // not the coincident answer (P2)
+            return { ok: true, at: add(set.center, scale(u ?? [1, 0, 0], set.radius)) }   // coincident: a stated direction
         }
         case "circle": {
             const n = set.normal

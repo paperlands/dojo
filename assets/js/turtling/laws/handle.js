@@ -9,6 +9,7 @@
 // How a curved locus spends the pointer is hand.js; the verb it answers with is
 // outcome.js; the numbers a play tunes are feel.js.
 import { SE3 } from "../se3.js"
+import { finite3 } from "./vec3.js"
 import { exposed } from "./batch.js"
 import { OUTCOME } from "./outcome.js"
 import { HIT_RADIUS } from "./feel.js"
@@ -63,8 +64,7 @@ export function requestedPose(accepted, localPoint) {
 // a point off its birth plane is still a point. (id:laws-decl-plane)
 export function knownPose(accepted) {
     const position = accepted?.position
-    if (!Array.isArray(position) || position.length !== 3) return false
-    return position.every(Number.isFinite)
+    return finite3(position)
 }
 
 // The one query the affordance and the hit test share. Participation alone is

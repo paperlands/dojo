@@ -16,6 +16,8 @@ import assert from "node:assert/strict"
 import { parseProgram, reparseProgram } from "../../../assets/js/turtling/parse.js"
 import { nodeDiagnostics, diagnostics, ailmentsFor, verdict, primaryWound, announcements, standingAilments, fingerprint, severityOf, KINDS, everyWound } from "../../../assets/js/weave/queries.js"
 import { describe as sayOf, sayWound } from "../../../assets/js/weave/wound-view.js"
+import { execute } from "../../../assets/js/turtling/executor.js"
+import { createScheduler } from "../../../assets/js/turtling/scheduler.js"
 
 describe("the memo law — identity at the reuse grain", () => {
     test("asking twice answers the ===-same array (the memo-hit proof)", () => {
@@ -90,6 +92,108 @@ describe("the memo law — identity at the reuse grain", () => {
         // A parse error has no frame; its address is the document's key and
         // its true place is the span.
         assert.equal(answer[0].address, "buf1")
+    })
+})
+
+// ONE STRAY `end`, ONE WOUND (id:cmp-resilient): the tree reports every malformed
+// line; the executor echoes the same node as a notice. Fold the echo only when it
+// is provably that fault — same buffer, same exact span. A shared starting line,
+// or an unlocated report, is a different fact and stands.
+describe("a parse fault is the tree's — the runtime notice is its echo", () => {
+    // The shape the scheduler actually puts in a frame's standing list (scheduler.js
+    // `errors`): a parse notice, located, addressed to the frame that walked the line.
+    const notice = (span, address = "b1") => ({
+        type: "notice",
+        kind: "parse",
+        message: "this line did not parse — expected an open block to close, found 'end'",
+        span,
+        expr: null,
+        ambientId: 1,
+        name: "main",
+        address,
+    })
+
+    test("one stray end, one wound — the tree's sentence stands", () => {
+        const ast = parseProgram("fw 100\nend")
+        const found = diagnostics(ast, [notice({ line: 2, endLine: 2 })], "b1")
+        assert.equal(found.length, 1, "the notice did not double the tree's fault")
+        assert.equal(found[0].kind, "parse")
+        assert.match(found[0].message, /looking for .*found 'end'/)
+    })
+
+    test("an unlocated parse report is never folded — unknown place is not identity", () => {
+        // The regression a line-only fold had: null matched null. Both sides must
+        // be unlocated to exercise it — a located tree fault versus a placeless
+        // report was already preserved under the old rule.
+        const placeless = parseProgram("end")
+        placeless[0].span = null
+        assert.equal(diagnostics(placeless, [notice(null)], "b1").length, 2,
+            "two unknown places are not one shared place")
+
+        const missing = parseProgram("end")
+        delete missing[0].span
+        assert.equal(diagnostics(missing, [notice(undefined)], "b1").length, 2,
+            "a missing span on both sides is still two place-less faults")
+
+        const zeroed = parseProgram("end")
+        zeroed[0].span = { line: 0, endLine: 0 }
+        assert.equal(diagnostics(zeroed, [notice({ line: 0, endLine: 0 })], "b1").length, 2,
+            "line 0 is unlocated, not a place two faults share")
+
+        const located = parseProgram("fw 100\nend")
+        assert.equal(diagnostics(located, [notice(null)], "b1").length, 2,
+            "a located tree fault and a placeless report are two facts")
+    })
+
+    test("same start, different extent is not the same fault", () => {
+        const ast = parseProgram("fw 100\nend")
+        const found = diagnostics(ast, [notice({ line: 2, endLine: 8 })], "b1")
+        assert.equal(found.length, 2, "a report spanning 2–8 is not the tree's single line 2")
+    })
+
+    test("a parse report owned by another buffer is not this tree's echo", () => {
+        const ast = parseProgram("fw 100\nend")
+        const found = diagnostics(ast, [notice({ line: 2, endLine: 2 }, "b2")], "b1")
+        assert.equal(found.length, 2, "provenance: b2's fault never folds into b1's tree")
+    })
+
+    test("a parse notice the tree does not hold still stands — never silently lost", () => {
+        const ast = parseProgram("fw 100")
+        const found = diagnostics(ast, [notice({ line: 9, endLine: 9 })], "b1")
+        assert.equal(found.length, 1, "the run's own parse fault is not dropped")
+        assert.match(found[0].message, /did not parse/)
+    })
+
+    test("another kind on the same line is untouched — only the echo folds", () => {
+        const ast = parseProgram("for do")
+        const nan = { message: "no measure", span: { line: 1 }, kind: "nan", address: "b1" }
+        const found = diagnostics(ast, [nan], "b1")
+        assert.equal(found.length, 2, "a warning at the line is not the parse echo")
+    })
+
+    // THE REAL SEAM, not a handcrafted notice: run the executor through the
+    // scheduler and read the standing list exactly as the reflect does.
+    test("the actual scheduler-to-diagnostics echo folds to one", () => {
+        const deps = {
+            mathParser: {
+                isNumeric: (e) => /^-?\d+\.?\d*$/.test(e),
+                parse: (e) => ({ value: e, children: [] }),
+                defineFunction() {}, reset() {}, userspace: new Map(),
+            },
+            mathEvaluator: {
+                constants: {}, namespace_check() { return false },
+                run: (t) => parseFloat(t.value) || 0,
+            },
+        }
+        const ast = parseProgram("fd 100\nend\n")
+        const scheduler = createScheduler(execute(ast, deps, { color: "#e77808" }))
+        scheduler.tick(0)
+        const standing = ailmentsFor(scheduler.errors, "origin", "b1")
+        assert.equal(standing.length, 1, "the scheduler stands the runtime parse notice")
+        assert.equal(standing[0].kind, "parse")
+        const found = diagnostics(ast, standing, "b1")
+        assert.equal(found.length, 1, "tree ⊕ runtime is one wound, not two")
+        assert.match(found[0].message, /looking for .*found 'end'/)
     })
 })
 
@@ -549,11 +653,27 @@ describe("the wound vocabulary — one row per kind", () => {
     })
 
     test("what breaks the run is an error; what stands beside it is a warning", () => {
-        assert.equal(severityOf({ kind: "parse" }), "error")
-        assert.equal(severityOf({ kind: "walk" }), "error")
-        assert.equal(severityOf({ kind: "rehearsal" }), "error")
-        assert.equal(severityOf({ kind: "name" }), "warning")
-        assert.equal(severityOf({ kind: "dependent" }), "warning")
+        for (const kind of ["parse", "walk", "rehearsal", "ink", "motion", "relation"]) {
+            assert.equal(severityOf({ kind }), "error", kind)
+        }
+        for (const kind of ["name", "dependent"]) {
+            assert.equal(severityOf({ kind }), "warning", kind)
+        }
+    })
+
+    // A WORD WHERE A MEASURE BELONGS is the source's fault: the figure says something
+    // its text does not, so the document is not well. Arithmetic that ran out of road
+    // is the data's: the step is not taken, the figure still draws, and the author —
+    // not a watching friend — is owed the word. (numerics: POLICY.walk)
+    test("a wrong kind is an error; a non-answer is a warning", () => {
+        assert.equal(severityOf({ kind: "not-a-number" }), "error")
+        assert.equal(severityOf({ kind: "nan" }), "warning")
+        assert.equal(severityOf({ kind: "infinite" }), "warning")
+    })
+
+    test("a malformed line is a parse, and it is announced", () => {
+        const found = [{ kind: "parse" }]
+        assert.deepEqual(announcements(found), found)
     })
 
     // A hurt we cannot name must not be quietly downgraded to a warning.
@@ -566,7 +686,9 @@ describe("the wound vocabulary — one row per kind", () => {
     test("announcements IS the severity filter — there is no second list", () => {
         const wounds = Object.keys(KINDS).map((kind) => ({ kind }))
         const said = announcements(wounds).map((w) => w.kind)
-        assert.deepEqual(said, ["parse", "walk", "rehearsal"])
+        assert.deepEqual(said, ["parse", "walk", "rehearsal", "ink", "motion", "relation",
+            "unsupported", "unresolved", "contradiction", "obstructed", "stale", "busy",
+            "not-a-number"])
         for (const w of announcements(wounds)) assert.equal(severityOf(w), "error")
     })
 })

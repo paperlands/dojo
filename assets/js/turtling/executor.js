@@ -10,34 +10,29 @@ import { createStroke, extend as strokeExtend, flush as strokeFlush, fill as str
 import { matchPattern } from "./match.js"
 import { payloadOf } from "./laws/authored.js"
 import { isNumericLiteral } from "./mafs/number.js"
-// A hole demands something. A reading that has NO answer — a heading at the paper's
-// pole — arrives here as null, which is a truth, not a wound; but a command argument
-// or a condition cannot BE nothing, and `null + 1` is 1 in JavaScript, so a null
-// taken for a measure is how a figure gets drawn from an answer that does not exist.
-// So the refusal lives at the demand, and names the hole instead of blaming a name.
+import { demand, measure, spellingOf, conditionOf, FINITE } from "./numerics.js"
+import { notice } from "./report.js"
+// A HOLE DEMANDS A MEASURE, and the answer belongs to the numerics surface: what the
+// value IS (a fact, `conditionOf`) apart from what this consumer may DO about it (a
+// verdict, `POLICY`). This file holds no epsilon and no rule of its own — only the
+// name of the consumer asking. (id:tower-center-approximation, ruling: absent-is-zero)
 //
-// One exception, and it is the whole exception: a rehearsal with no world to ask.
-// There nothing means "no world", not "the world answered nothing", and the walk
-// must carry on so the words past it still register. (id:eval-relational)
-function demanded(value, expr, domain, state) {
-    // A derived reading may be nothing; the play stays open. A command hole
-    // still cannot BE nothing. (id:eval-relational)
-    if (domain === "reading") return value
-    if (value === null && state.deps?.mathEvaluator?.resolveExternal) {
-        // A finite hole is still a measure hole: name it as one.
-        throw new Error(`No ${domain === "finite" ? "measure" : domain}: ${expr} is nothing`)
-    }
-    // Explicit admission is PER HOLE: a movement/rotation hole accepts a finite
-    // number and nothing else — a demand that will accept more must be taught to
-    // accept more. `null` (nothing) is handled above, and a headless rehearsal
-    // passes it so words past it still register. (phase 1: explicit admission)
-    if (domain === "finite" && value !== null && !(typeof value === "number" && Number.isFinite(value))) {
-        throw new Error(`No measure: ${expr} is not a finite number`);
-    }
-    return value
-}
+// The two passes that judge VOCABULARY rather than ink — the headless rehearsal (where
+// a seat's diagnostics come from) and a closed construction — refuse a value of the
+// wrong kind outright. A live walk is told and carries on: a refusal drops the ONE
+// statement, never the figure (D020).
+const consumerOf = (state) => state.strict ? "construction" : state.rehearsal ? "vocabulary" : "walk"
 
-const roundVec = (v) => Math.abs(v) < 1e-10 ? 0 : Math.round(v * 1e9) / 1e9
+// The door, and a PLAIN call. `yield*` on every argument costs more than the check it
+// wraps — measured 162 ns of delegation per argument, and no profile can see it, because
+// the cost lands in the CALLER's self time. So: the value comes back, or a refusal is
+// thrown and the walk's own catch yields what the author is owed, where the statement is.
+// The common path returns before any verdict object exists.
+function admit(value, expr, domain, state) {
+    if (domain !== "finite") return value
+    if (conditionOf(value) === FINITE) return value
+    return measure(value, { as: consumerOf(state), expr })
+}
 
 // typeof guard: bare process?.env throws on undeclared process in the browser.
 const envNum = (name) => {
@@ -66,10 +61,6 @@ function chargeReductions(state) {
 
 const holeDomain = (holes, i) => holes?.[i] ?? "measure"
 
-
-// A computed value has no source spelling; render one for a diagnostic. (id:eval-relational)
-const spellingOf = (v) => typeof v === "string" ? `'${v}'` : String(v)
-
 // Hoisted: building a RegExp per evaluation is churn, and only a quoted spelling can
 // begin a string literal or a computed dotted access. (profile: evaluateExpr)
 const QUOTE_RE = /^(['"])(.*?)\1$/
@@ -80,7 +71,7 @@ const IDENT_HEAD_RE = /^[a-zA-Z]/
 function* evalOrBlock(expr, scope, state, domain = "measure") {
     while (true) {
         try {
-            return demanded(evaluateExpr(expr, scope, state, domain), expr, domain, state)
+            return admit(evaluateExpr(expr, scope, state, domain), expr, domain, state)
         } catch (e) {
             if (e.blocked) {
                 // The frame (or null when missing) the read waits on — the scheduler
@@ -164,9 +155,12 @@ export function* execute(ast, deps, opts = {}) {
     // the axis, and the difference a user wants is just `time`. (id:host-beat)
     ec['time'] = () => state.elapsedTime / 1000
     ec['birthtime'] = () => state.birthtime / 1000
-    ec['x'] = () => roundVec(state.transform.position[0])
-    ec['y'] = () => roundVec(state.transform.position[1])
-    ec['z'] = () => roundVec(state.transform.position[2])
+    // A place reads its own coordinate, exactly. No floor, no decimal snapping: a
+    // figure must be able to see the ink it just laid down. What the eye sees is the
+    // display's business, and it never feeds back. (ruling 3)
+    ec['x'] = () => state.transform.position[0]
+    ec['y'] = () => state.transform.position[1]
+    ec['z'] = () => state.transform.position[2]
     ec['count'] = () => state.loopCounter
 
     try {
@@ -262,7 +256,13 @@ function* walkBody(body, scope, state, stroke) {
         switch (node.type) {
 
         case 'Loop': {
-            const times = yield* evalOrBlock(node.value, scope, state)
+            // A count is a decision too: a count that is not a finite number is not a
+            // count, so the loop is not taken — and the author is told why.
+            const asked = demand(yield* evalOrBlock(node.value, scope, state),
+                { as: "count", expr: node.value, span: node.span ?? null })
+            if (asked.notice) yield asked.notice
+            if (asked.verdict !== "take") continue
+            const times = asked.value
             const prevCount = state.loopCounter
             for (let i = 0; i < times; i++) {
                 // Observed a sibling → voluntary yield so ambients lockstep (coop MT).
@@ -360,7 +360,7 @@ function* walkBody(body, scope, state, stroke) {
                 // one authority decides whether the callable can use it.
                 // Already evaluated ≠ already admitted. (id:eval-relational)
                 if (child.type === 'Value') {
-                    args.push(demanded(child.value, spellingOf(child.value), holeDomain(holes, i), state))
+                    args.push(admit(child.value, spellingOf(child.value), holeDomain(holes, i), state))
                     continue
                 }
                 args.push(yield* evalOrBlock(child.value, scope, state, holeDomain(holes, i)))
@@ -433,10 +433,20 @@ function* walkBody(body, scope, state, stroke) {
                     }
                 }
             } else {
-                // Conditional mode: first-match-wins via matched flag
-                if (!matched && (yield* evalOrBlock(node.value, scope, state)) !== 0) {
-                    matched = true
-                    yield* walkBody(node.children, scope, state, stroke)
+                // Conditional mode: first-match-wins via matched flag — the guard wraps
+                // EVALUATION itself, so an unconsidered branch is never asked and cannot
+                // throw, notice, or suspend. Admission must not reorder evaluation.
+                if (!matched) {
+                    // A branch is a DECISION. A condition that has no answer takes no branch,
+                    // and says so: ordering a figure by a non-answer is how it goes wrong with
+                    // no ink to show for it. (numerics: conditionOf, POLICY.condition)
+                    const asked = demand(yield* evalOrBlock(node.value, scope, state),
+                        { as: "condition", expr: node.value, span: node.span ?? null })
+                    if (asked.notice) yield asked.notice
+                    if (asked.verdict === "take" && asked.value !== 0) {
+                        matched = true
+                        yield* walkBody(node.children, scope, state, stroke)
+                    }
                 }
             }
             break
@@ -533,9 +543,10 @@ function* walkBody(body, scope, state, stroke) {
         case 'Empty':
             break
 
-        // A malformed statement is inert at the walk — the healthy siblings still
-        // run (D020) — but inert is not silent: the incompleteness is reported where
-        // it is located. A construction is strict: there it refuses instead.
+        // A malformed statement is inert at the walk — the healthy siblings still run
+        // (D020) — but inert is not silent: the incompleteness rides the SAME notice shape
+        // as a refused measure, so the author reads one kind of report. A construction is
+        // strict: there it refuses instead.
         // (id:cmp-resilient, id:laws-figures-phase34-capabilities)
         case 'Error':
             if (state.strict) {
@@ -544,12 +555,11 @@ function* walkBody(body, scope, state, stroke) {
                 strict.span = node.span
                 throw strict
             }
-            yield {
-                type: 'incomplete',
-                expected: node.meta?.expected ?? null,
-                found: node.meta?.found ?? null,
+            yield notice({
+                kind: 'parse',   // the house's own kind for a tree that would not build
+                message: `this line did not parse — expected ${node.meta?.expected ?? 'a statement'}, found ${node.meta?.found ?? `'${node.value}'`}`,
                 span: node.span ?? null,
-            }
+            })
             break
         }
         } catch (error) {
@@ -558,6 +568,19 @@ function* walkBody(body, scope, state, stroke) {
                 error.span = node.span
                 // A deliberate kind (a work budget) outranks the walk label.
                 if (!error.kind) error.kind = 'walk'
+            }
+            // A refusal carries the numerics verdict: what the author is owed is YIELDED
+            // where it is located, and only a pass that judges vocabulary stops for it.
+            // A refused statement drops the ONE statement, never the figure (D020).
+            if (error.refusal) {
+                // A refusal that STOPS the pass is carried by the frame's error alone: the
+                // same fact said twice is a reader's problem, not a richer record.
+                if (error.refusal.stops) throw error
+                if (error.refusal.notice) {
+                    error.refusal.notice.span ??= error.span ?? null
+                    yield error.refusal.notice
+                }
+                continue
             }
             throw error
         }
@@ -594,13 +617,21 @@ function* callCommand(name, args, state, stroke, baseRevision) {
         transform: state.transform,
         style: state.style,
         random: state.random,
-        rehearsal: state.rehearsal
+        as: consumerOf(state)
     }
 
     // Snapshot position before command mutates transform
     stroke.lastPos = [...state.transform.position]
 
     const result = cmd(ctx, ...args)
+    // Admit the accumulated clock before a wait flushes ink or changes run state.
+    if (result.effects) {
+        for (const event of result.effects) {
+            if (event.type === "wait") {
+                measure(state.elapsedTime + event.duration, { as: consumerOf(state), expr: "elapsed time" })
+            }
+        }
+    }
     // Opt-in protocol: scheduler admits the proposed pose before state or stroke changes.
     if (result.transform && state.motionProtocol) {
         const admission = yield {
@@ -814,6 +845,9 @@ function interpolate(text, scope, state) {
                 }
                 // Interpolation slots are always measure (count, x, …).
                 const value = evaluateExpr(innerExpr.trim(), scope, state, "measure")
+                // A lowered value is SEMANTIC: it may mint a name, address a sibling,
+                // or store a string — so it keeps every bit. Rounding for the eye is the
+                // display gate at the consumer (numerics:format), never here. (id:tower-center-approximation-ruling)
                 return value !== undefined ? String(value) : match
             }
         )
@@ -849,6 +883,9 @@ function evaluateExpr(expr, scope, state, domain = "measure") {
 
     // A LITERAL is not a reference: its word is returned as-is, never resolved.
     if (tree.type === 'string') return interpolate(tree.value, scope, state)
+    // A held value is the value itself: never interpolated, resolved, or read as
+    // a namespace. (id:tower-tension-repr)
+    if (tree.type === 'literal') return tree.value
 
     // Expression or known namespace — always evaluate (ops already strict on leaves).
     if (tree.children.length > 0 || mathEvaluator.namespace_check(tree.value)) {

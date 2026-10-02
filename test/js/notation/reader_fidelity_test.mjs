@@ -33,7 +33,7 @@ describe("lossless reading — an unsupported glyph is refused where it occurs",
     test("well-formed ink is untouched", () => {
         assert.deepEqual(types("9.7e-7"), ["NUMBER"])
         assert.deepEqual(types("mice1.x"), ["IDENTIFIER"])
-        assert.deepEqual(types("7 mod 3"), ["NUMBER", "OPERATOR", "NUMBER"])
+        assert.deepEqual(types("mod(7, 3)"), ["IDENTIFIER", "LPAREN", "NUMBER", "COMMA", "NUMBER", "RPAREN"])
         assert.deepEqual(types("2x"), ["NUMBER", "OPERATOR", "IDENTIFIER"])
     })
 })
@@ -55,15 +55,19 @@ describe("delimiters keep their kind — a pair must match", () => {
         assert.equal(ev("[2]"), 2)
         assert.equal(ev("(2+3)"), 5)
         assert.equal(ev("[2+3]"), 5)
-        assert.equal(ev("[[1+1] mod 2]"), 0)
+        assert.equal(ev("mod([1+1], 2)"), 0)
     })
 })
 
 describe("the codex corpus still reads (preserved, green)", () => {
     test("brackets still group and still call", () => {
-        assert.equal(ev("sin[30]"), 0.5)      // waves.org uses sin[x]
-        assert.equal(ev("sin(30)"), 0.5)
-        assert.equal(ev("[[3 + 1] mod 4]"), 0) // the whirlpool's rule shape
+        // The ROUTE is what is under test: a bracket call and a paren call are the same
+        // call, down to the bit. (waves.org uses sin[x]. `sin[30] === 0.5` held only
+        // because the old rounding gate cleaned the trig residue; the display is where
+        // a learner reads 0.5 now. numerics:format)
+        assert.equal(ev("sin[30]"), ev("sin(30)"))
+        assert.ok(Math.abs(ev("sin[30]") - 0.5) < 1e-15)
+        assert.equal(ev("mod([3 + 1], 4)"), 0) // the whirlpool's rule shape
     })
 
     test("juxtaposition still multiplies", () => {

@@ -9,6 +9,7 @@ import { addressOf, bindLaw } from "../../../assets/js/turtling/laws/replacement
 import { parseProgram } from "../../../assets/js/turtling/parse.js"
 import { marksOf, circleCurve, coneCurve, planePatch } from "../../../assets/js/turtling/laws/constraints.js"
 import { conic } from "../../../assets/js/turtling/laws/meet.js"
+import { SE3 } from "../../../assets/js/turtling/se3.js"
 
 const FIELDS = ["name", "kind", "guard", "address", "endpoints", "measure", "propose", "validate"]
 
@@ -71,4 +72,17 @@ test("a conic marks as a trace, never as an exact curve", () => {
     const marks = marksOf(ellipse)
     assert.equal(marks.curves.length, 0, "no exact curve is claimed")
     assert.ok(marks.traces.length >= 1 && marks.traces[0].length > 8, "a bounded trace is offered")
+
+// A place is admitted by the same tuple predicate its guard names, so a sparse
+// array cannot be read past it as three NaNs. (id:relationships-row-contract)
+test("propose: a place is three finite coordinates, judged by the guard's predicate", () => {
+    const poseOf = () => SE3.identity()
+    const asked = (value) => AUTHORED.position.propose({
+        target: "t", observer: "o", value, poseOf, conflictAt: () => null, ownerOf: () => null,
+    })
+    assert.equal(asked(new Array(3)).ok, false, "a sparse array is not three coordinates")
+    assert.equal(asked([0, NaN, 0]).ok, false)
+    assert.equal(asked([1, 2]).ok, false)
+    assert.deepEqual(asked([1, 2, 3]).world, [1, 2, 3], "a real triple still passes")
+})
 })

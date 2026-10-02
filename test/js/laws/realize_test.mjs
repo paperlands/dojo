@@ -100,4 +100,18 @@ test("realizeTilt: the default generator turns with the frame, not a world axis"
 test("realizeTilt: an explicit arm sets the apex default length", () => {
     const r = realizeTilt([0, 0, 0], [1, 0, 0], [0, 0, 1], [0, 0, 0], 30, 7)
     assert.ok(close(Math.hypot(...r.pose), 7), "the arm, not the unit default")
+
+// A proposal algorithm is a proposal, not a truth — and a repaired direction
+// kernel does not repair every one of them. realizeDistance divides a displacement
+// by a length that can run off the number line, so its candidate can be non-finite;
+// the independent check is what refuses it. Both halves stay stated here, so
+// neither the limit nor the check can go quiet. (id:laws-build-solve-seam)
+test("the seam: an overflowing proposal is refused by the independent check", () => {
+    const target = [-1e308, 0, 0]
+    const observer = [1e308, 0, 0]
+    const r = realizeDistance(target, observer, 5)
+    assert.equal(r.ok, true, "the algorithm still proposes, honestly reported")
+    assert.ok(r.pose.some((n) => !Number.isFinite(n)), "with an overflowing component")
+    assert.equal(validateDistance(target, observer, 5).ok, false, "the checker refuses it")
+})
 })

@@ -24,6 +24,10 @@ code and assertions untouched; the suite now walks clean. A separate rebuilt-ink
 (`id:laws-figures-phase34-inplace`) is retained. This repair does **not** certify
 figure/ambient rebuild behaviour.
 
+**Later (D042).** `round` and `mod` are now shadowable: a child fn at the same name
+and arity owns the name over the builtin, so the helper named `round` would no longer
+stop the walk at `Cannot override built-in function round`.
+
 ## Classification — one authority per question
 
 | Falsifier (probe) | Kind | Authority / disposition |
@@ -37,7 +41,7 @@ figure/ambient rebuild behaviour.
 | `sin(1e-15)`→0 after rounding | **Choice** — rounding policy | **Phase 3** (probe rounding separately) |
 | `mod` loses a safe integer at the boundary | **Bug** — safe-integer intermediate | Phase 1 — **repaired** (`integerMod`/`integerDiv`) |
 | `+` at −2⁵³ corrupts an exact sum | **Choice** — rounding policy | **Phase 3** (found this pass) |
-| `mod3` stolen; `mod(7,3)` has no callable form | **Tension** — namespace | D019 / Phase 5 (scoped declaration visibility) |
+| `mod3` stolen; `mod(7,3)` had no callable form | **Tension** — namespace | **resolved** — D041: `mod(a, b)` is canonical, the word carve-out is culled |
 
 ## The three primitives Phase 1 protects
 
@@ -62,10 +66,12 @@ figure/ambient rebuild behaviour.
   the corpus survives; the strong split (indexing/vector) stays deferred to tower rung 1.
 - **Literal vs reference** (`mafs/parse.js`, `mafs/evaluate.js`, `turtling/executor.js`): a
   string literal is its own node and is never resolved as a name.
-- **Explicit admission** (`turtling/executor.js`): `demanded` refuses a non-finite or
-  non-number for a `finite` hole, per hole; a headless rehearsal still passes a nothing.
-- **Valid resulting state** (`turtling/commands.js`): `requireFinite` rejects a non-finite
-  proposed pose before it becomes state or an event.
+- **Explicit admission** (`turtling/executor.js`): `demanded` answers by what the value
+  IS — *superseded by the ruling below* (Phase 1 refused a non-finite or non-number for
+  a `finite` hole; that reversal is recorded at the end of this file).
+- **Valid resulting state** (`turtling/commands.js`): a non-finite proposed pose never
+  becomes state or an event — *superseded by the ruling below* (`requireFinite` threw;
+  the pose is now dropped, not the figure).
 - **Coherent numerics** (new `mafs/number.js`, `mafs/evaluate.js`): one number grammar; exact
   `//`/`mod` via `a - (a % b)` (moves toward zero, always safe) with `-0` normalized.
 
@@ -117,7 +123,7 @@ figure/ambient rebuild behaviour.
   the gap ends with an operator, or the next chunk begins with one;
 - a `+`/`-` glued to an operand is a **prefix sign** (a new argument), whatever the magnitude:
   `goto 1 -2`, `1 -(2)` and `1 -pi` are each two coordinates;
-- a word operator is recognized from the table (`7mod 3`, `7 mod3`), never re-approximated, so
+- a chunk edge is classified by the shared lexer's token roles, never re-approximated, so
   `model` stays a name;
 - the argument text is the **original source span**, so internal spacing — and diagnostic
   offsets — are preserved.
@@ -132,7 +138,7 @@ refused, never silently run. The math lexer is whitespace-blind, so a *bare* `si
 reads as a call inside one expression; that is left alone deliberately — nobody writes it, and
 a whitespace-sensitive call rule is not worth its cost.
 
-**Witnesses**: `boundary_test.mjs` — the four proofs, signs, word operators, nested quotes,
+**Witnesses**: `boundary_test.mjs` — the four proofs, signs, nested quotes,
 source spans, substitution, and surplus refusal.
 
 ## Scorecard — what the audit cut (this pass)
@@ -147,8 +153,8 @@ source spans, substitution, and surplus refusal.
 - **The boundary is decided by role, not spelling.** `startsWithOperator`/`endsWithOperator`
   lex the chunk with the shared lexer and ask for token *roles* (an operator in infix
   position bridges; a `+`/`-` followed by an operand is a prefix sign). The chunk-edge regexes
-  and the duplicated word-operator recognition are gone — one recognition, in `operators.js`
-  and the lexer.
+  and every duplicated chunk-edge spelling test are gone — one recognition, in
+  `operators.js` and the lexer.
 
 **Still open (the honest remaining gap):** meaning is still a switch (`applyOperator` /
 `applyFunction`), so D018's dispatch table is unbuilt and the language is not yet extensible
@@ -201,3 +207,122 @@ which needs the caller's contract to read expressions. Those are the next cuts.
   The admission fix applies there too (same Call dispatch), but the *evaluation* authority is
   still two: names, strings, failures and binding freshness must agree across a question. A
   `todo` witness pins the obligation; the figure lifecycle reds (7) cover the wake.
+
+## Superseded and LANDED — a measure is answered by what the value IS (ruling: absent-is-zero)
+
+Phase 1 made a non-finite or non-number movement measure *refuse* at the demand, and a
+non-finite resulting pose *throw*. Measured cost: the reported shape
+
+#+begin_example
+def polygon n do
+  loop 5 do
+    fw 100
+    rt 360/n
+  end
+  polygon n+1
+end
+polygon
+#+end_example
+
+walked one `fw 100` and then died — `No measure: 360/n is not a finite number` —
+because a bare call binds the missing parameter to 0 and `360/0` is Infinity. A figure
+that draws nothing is not thereby a safer figure. The rule is now three doors, one per
+question, and both doors drop the ONE statement rather than the figure (D020):
+
+| What arrives | What it is | What happens |
+|---|---|---|
+| nothing (absent) | no answer at all | the callable's own default — the identity (`fw` 0, `rt` 0, `goto` the origin). Quiet. |
+| a non-finite number | the arithmetic ran out of road | the step is NOT TAKEN. Quiet. Never geometry. |
+| a word where a measure belongs | the author's mistake | `refused` on the frame's channel, located; the siblings still run. In a closed construction (`state.strict`) it refuses instead. |
+
+A `loop` count is guarded the same way: a count that is not a finite number is not
+taken. Budgets are unchanged, and are still the honest stop for a runaway program — a
+program fact, not a number fact. The tower's inherited outcomes are untouched:
+`sqrt(-1)` is NaN, `1/0` is Infinity, and both stay numbers everywhere except where a
+measure is asked for ([[id:tower-center-contract]]).
+
+Witnesses: `three_doors_test.mjs` (a live walk), `finite_measure_test.mjs` (batch, plus
+the program above), `primitives_test.mjs`, `contracts_test.mjs`,
+`word_measure_domain_test.mjs`, `laws/relations_test.mjs`. This supersedes the
+classification row `sqrt(-1)`, `1/0` → non-finite geometry.
+
+### Landed — the arithmetic ruling, and what it cost
+
+`[[id:tower-center-approximation-ruling]]` (Phase 3's proposal) is now implemented, and
+with it the four cuts it needed:
+
+1. **Arithmetic is the substrate's.** `+`, `-` and every builtin result stopped snapping
+   to 1e14; `plus`/`minus` lost the safe-integer branch they only needed to dodge the
+   snapping. Measured cost across the suite: **6 tests**, and four of them were
+   `0.1 + 0.2 → 0.30000000000000004` — display residue, nothing else. The fifth was
+   `sin(30) == 0.5`. The sixth *wanted* the change (`abs(1e-15) == 1e-15`).
+2. **A reading is exact.** Both reading gates are gone — the executor's `x`/`y`/`z`
+   constants and the scheduler's `SPATIAL`/`TEMPORAL`/`RELATIONAL` tables. Measured
+   before: a 1000-step `fw 1e-14` walk left ink at 1e-11 and read back as `0`, so
+   `when x > 0` was false — a figure could not see its own ink. It can now.
+3. **The display is the only place that rounds for the eye.** `numerics:format`, ~12
+   significant digits, never feeding back: `0.1 + 0.2` reads `0.3`, `sin(30)` reads
+   `0.5`, `sin(180)` reads its actual `1.22e-16` (*shown as it is* — the display does
+   not invent a zero), and a non-number is *named*, never printed as a numeral.
+4. **A tolerance carries its scale.** `vec3.unit`'s degeneracy and `faceto`'s aim are
+   now `eps × magnitude` — a tiny vector still has a direction, and a tiny figure
+   still has a scale.
+
+**The cost a learner must be told.** Two equalities changed and will not come back:
+`sin(30) == 0.5` and `sin(180) == 0` are false. The idiom is to ask: `round(x, to)`
+or a closeness test. Every reading is likewise exact now, so `A.heading == 180` after
+a clean quarter turn is `179.99…` — `round(A.heading) == 180` reads true, and the
+*display* reads `180` unchanged.
+
+### Second pass — cohesion, footprint, and the fixtures that were missing
+
+Separating concerns, and shrinking the surface while doing it:
+
+- **One report shape, one severity home.** `turtling/report.js` mints what a hurt is
+  (`report` for a fault, `notice` for the wire form); five hand-built shapes moved to
+  it. Severity left the notice entirely: `weave/queries.js::KINDS` is the ONE authority,
+  and its rows now cover every kind the code mints — `ink`, `motion`, `relation`,
+  `unsupported`, `unresolved`, `contradiction`, `obstructed`, `stale`, `busy` had been
+  answering through the unknown-kind default, i.e. by accident. My own second severity
+  axis (quiet/notice/wound) is gone: a policy cell now says `told` and `stops`.
+- **One health verdict.** A seat's health and the document's now come from the same
+  `verdict()`, so they cannot disagree — which is the lesson `KINDS` documents, applied
+  one level up. A warning is carried without calling the document unwell.
+- **A malformed line is a `parse`,** the house's own kind, not a synonym for it.
+- **One normalizer, two questions.** `unit(v)` answers "normalize this, or null" (an
+  absolute length floor); `directionBetween(a, b)` answers "do these coincide", asked at
+  the scale of the points. The sites that wrote `unit(sub(a, b)) ?? [1, 0, 0]` — with
+  *"coincident: a stated direction"* in the comment — now say what they meant.
+- **A run's fields are one list.** `RUN_SEED` names what dies with a run, so a new
+  per-run fact cannot be left standing by a rewire, and the two lifetimes are visible
+  side by side.
+- **The wire's vocabulary is inspectable.** The renderer's switch became
+  `MATERIALIZERS`; `EFFECTS` is exported; and `event_vocabulary_test.mjs` pins both —
+  including the contract that an *undrawn* kind is ignored rather than fatal.
+- **The fixtures the suite was missing** (`numeric_scale_test.mjs`): a reading at five
+  scales, a direction at three, coincident pairs, the display budget, and the one door
+  still silent (a compared NaN) *characterized* so fixing it is a deliberate edit. Every
+  earlier numeric witness sat at scale 1 with clean values — which is exactly why a real
+  regression in `unit` passed all 2434 of them.
+
+Suite after: **2457 tests, 0 fail, 1 pre-existing todo** (+23 witnesses).
+
+**Recorded open** (not this cut): `REALIZE_TOL` / `ACCEPT_TOL` / `REL_TOL` and
+`Versor.EPSILON` are still absolute, awaiting their scale; and the **comparison door**
+still erases a non-answer silently (`0/0 > 0` answers `0` with no word — the value is
+gone before any consumer sees it). Readings, before and after:
+`probe/tower-rounding/probe.mjs`; what is said, and where:
+`probe/tower-rounding/composition.mjs`. Surface: `assets/js/turtling/numerics.js`
+([[id:nav-numerics]]).
+
+### Boundary follow-up — admission, rigidity, and fill
+
+See `specs/weave/numeric-boundaries-review.org` for causes, repairs, costs and limits.
+Added 41 witnesses: explicit absent defaults, converted/accumulated overflow, located
+notices, malformed poses/directions, tiny turns, long walks, and indexed fill area
+across scales (including the evaluated walk → fill route). The long-walk closing
+gap at unit step size fell from about `3.85e-7` to `1.52e-10` without snapping points.
+
+Final suite: **2498 tests, 2497 pass, 0 fail, 1 pre-existing TODO**. This is not
+Phase 3 closure: compared NaN, invalid-input rebuild, world-publication overflow
+and GPU float32 feature loss remain distinct obligations.

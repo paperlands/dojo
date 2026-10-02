@@ -29,6 +29,7 @@ node --expose-gc test/js/profile/run.mjs
 node --expose-gc test/js/profile/typing_path_bench.mjs   # coreshell/CM keystroke spine
 node --expose-gc test/js/profile/linter_bench.mjs        # CM decoration / tokenize
 node test/js/profile/command_cost_bench.mjs             # cost spread across the command table
+node test/js/profile/numeric_cost_bench.mjs             # the numerics units, per call
 node test/js/profile/breath_cost_bench.mjs              # what the preemption boundary costs
 node test/js/profile/frontend_bench.mjs                # reader · parser · lexer · evaluator
 node test/js/profile/live_loop_bench.mjs               # the user loops, against a frame budget
@@ -47,6 +48,30 @@ node test/js/profile/live_loop_bench.mjs               # the user loops, against
   preemption quantum (D027 R3) is denominated in node visits, so it is only
   meaningful if a visit is roughly a visit: this reports the spread. It is what
   found =evaluateExpr= re-parsing on every evaluation (25x spread → 4x).
+- =numeric_cost_bench.mjs= — ns/call for the numerics units (=conditionOf=, =demand=,
+  =format= by value class) with =String= as a reference. Add it to the family because a
+  whole COMMAND cannot resolve a unit: a 162 ns door inside a 3 000 ns command is inside
+  the machine's resolution, and a CPU profile charges =yield*= delegation to the
+  CALLER's self time, so neither instrument can see it. Multiply a unit by its calls per
+  command to price a change.
+
+** The estimator, and the noise floor it was chosen against
+:PROPERTIES:
+:TYPE: reference
+:END:
+
+Both command benches report *MIN of N* with each row's own *jitter* (=max/min=).
+Measured 2026-10-02 on this machine: three same-tree runs of =command_cost_bench= spread
+*1.3x–2.3x* per fixture, so the previous median-of-3 could not resolve a real change —
+an A/B of a landed change read as ±30% of pure noise. GC inside the timed region is the
+usual culprit and it only ever ADDS time, hence the minimum. MIN-of-5 brought the
+same-tree spread to 1.1x–1.6x, which is tighter but still leaves *±10–15%* on a
+whole-command A/B.
+
+So: a whole-command delta under ~15% is not evidence. For a small change, use a unit
+bench (deterministic per call), a CPU profile (attribution by self time), and the
+*deterministic* allocation proxy — =node --trace-gc= scavenge counts over a fixed
+workload, which is an integer and repeats to within ~1%.
 - =breath_cost_bench.mjs= — what the breath costs, round-robin across quanta with
   an explicit noise gate, *and* worst-block-under-slice for the three B1 shapes.
   *It reports; it does not assert.* It began as asserting tests in
@@ -93,7 +118,7 @@ the breath is below this rig's noise floor (±12%) — unmeasurable, so negligib
 *Fixed while re-capturing*
 
 - =command_cost_bench.mjs= used =count % 7=, which the lexer no longer accepts
-  (=% / //= became =mod=), so the bench *crashed* instead of measuring. Now =count mod 7=.
+  (=% / //= became =mod=), so the bench *crashed* instead of measuring. Now =[mod(count, 7) + 1]=.
 - =evaluateExpr= built and ran two RegExp matches (quote, computed-dot) on *every*
   expression — including plain numbers. Guarded by first character and hoisted the
   patterns: ~89% less regex work per evaluation (measured in isolation; it was ~2% of
@@ -127,7 +152,7 @@ generous gross fences, so a busy machine cannot fail them.
 |-------------------------------+-------------+------|
 | =readArguments= (1 held invocation) | *~1.1 µs* | ~9.5× the splitter it replaced — the cost of one contract |
 | =parseProgram=                | 0.76 µs/line | flat across 4× size |
-| =Lexer.tokenize= (=count mod 7 + 1=) | 1.42 µs | within 2× plain arithmetic |
+| =Lexer.tokenize= (=mod(count, 7) + 1=) | 1.42 µs | within 2× plain arithmetic |
 | eval =round(x, n)=            | 1.66× =sin(1)= | builtins within 3× a stock builtin |
 
 *Live loop* (fraction of the user's budget):

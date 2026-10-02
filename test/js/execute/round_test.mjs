@@ -9,6 +9,7 @@ import assert from "node:assert/strict"
 
 import { Parser } from "../../../assets/js/turtling/mafs/parse.js"
 import { Evaluator } from "../../../assets/js/turtling/mafs/evaluate.js"
+import { format } from "../../../assets/js/turtling/numerics.js"
 
 const ev = (expr) => new Evaluator().run(new Parser().parse(expr), {})
 
@@ -25,8 +26,13 @@ describe("round builtin", () => {
         assert.equal(ev("round(2.3, 0.5)"), 2.5)
     })
 
-    test("floating residue is cleaned (0.3, not 0.30000000000000004)", () => {
-        assert.equal(ev("round(0.3, 0.1)"), 0.3)
+    test("round snaps when asked, and the display is what cleans the residue", () => {
+        // `round` is the intentional snapping, not a way to make a number pretty: the
+        // step is a multiple of the substrate's own 0.1.
+        assert.ok(Math.abs(ev("round(0.3, 0.1)") - 0.3) < 1e-15)
+        // What a learner READS is 0.3, and reading it changes nothing. (numerics:format)
+        assert.equal(format(ev("round(0.3, 0.1)")), "0.3")
+        assert.equal(format(ev("0.1 + 0.2")), "0.3")
     })
 
     test("composes with other builtins and expressions", () => {

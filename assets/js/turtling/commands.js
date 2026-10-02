@@ -9,20 +9,23 @@
 
 import { Versor } from "./mafs/versors.js"
 import { SE3, AXIS_X, AXIS_Y, AXIS_Z } from "./se3.js"
+import { conditionOf, demand, measure, format, FINITE } from "./numerics.js"
+import { directionBetween } from "./laws/vec3.js"
 
-// A command may not propose an invalid pose. Two failures differ:
-//   - a NOTHING component (no world to consult) — a wound live, but a rehearsal
-//     tolerates it so vocabulary past an absent-world step still registers;
-//   - a NON-FINITE number (the arithmetic overflowed) — invalid on every route,
-//     because even a rehearsal's simulated state can be inherited.
-// A finite step can still overflow, so admission at the argument is not enough.
-// (phase 1: valid resulting state)
-function requireFinite(ctx, pos, command) {
-    const nonFinite = pos.some((v) => v !== null && v !== undefined && !Number.isFinite(v))
-    const nothing = pos.some((v) => v === null || v === undefined)
-    if (nonFinite || (nothing && !ctx.rehearsal)) {
-        throw new Error(`${command} would leave the figure at a non-finite position`)
-    }
+// A command may not propose an invalid pose. The RESULTING pose is admitted, not
+// assumed: a step whose arithmetic overflowed is NOT TAKEN, so a non-finite
+// coordinate never becomes state, ink or an event. The command is dropped, never the
+// figure, and the preceding valid walk stands. A finite step can still overflow, so
+// admission at the argument is not enough. (phase 1: valid resulting state)
+//
+// The same rule guards whatever else will become geometry — a size, a thickness, a
+// duration. A value that cannot be drawn is not drawn.
+// The predicate is the numerics surface's, not this file's. (conditionOf)
+const admitted = (v) => conditionOf(v) === FINITE
+const poseAdmitted = (pos) => pos.every(admitted)
+const resultMeasure = (ctx, value, expr) => admitted(value) ? value : measure(value, { as: ctx.as, expr })
+const requirePose = (ctx, pos, expr) => {
+    if (!poseAdmitted(pos)) resultMeasure(ctx, pos.find(v => !admitted(v)), expr)
 }
 
 // --- Movement commands ---
@@ -31,7 +34,7 @@ function fw(ctx, distance = 0) {
     const t = ctx.transform
     const [wx, wy, wz] = t.rotation.rotateVec(distance, 0, 0)
     const newPos = [t.position[0] + wx, t.position[1] + wy, t.position[2] + wz]
-    requireFinite(ctx, newPos, "fw")
+    requirePose(ctx, newPos, "fw position")
     const transform = { rotation: t.rotation, position: newPos }
 
     if (ctx.style.down) {
@@ -43,7 +46,7 @@ function fw(ctx, distance = 0) {
 // Absolute in the frame that created this ambient (same space as home).
 function goTo(ctx, x = 0, y = 0, z = null) {
     const pos = [x, y, z ?? ctx.transform.position[2]]
-    requireFinite(ctx, pos, "goto")
+    requirePose(ctx, pos, "goto position")
     const transform = { rotation: ctx.transform.rotation, position: pos }
     if (ctx.style.down) {
         return { transform, stroke: "extend", point: pos }
@@ -53,7 +56,7 @@ function goTo(ctx, x = 0, y = 0, z = null) {
 
 function jmpto(ctx, x = 0, y = 0, z = null) {
     const pos = [x, y, z ?? ctx.transform.position[2]]
-    requireFinite(ctx, pos, "jmpto")
+    requirePose(ctx, pos, "jmpto position")
     return {
         transform: { rotation: ctx.transform.rotation, position: pos },
         stroke: "break"
@@ -64,7 +67,7 @@ function jmp(ctx, distance = 0) {
     const t = ctx.transform
     const [wx, wy, wz] = t.rotation.rotateVec(distance, 0, 0)
     const newPos = [t.position[0] + wx, t.position[1] + wy, t.position[2] + wz]
-    requireFinite(ctx, newPos, "jmp")
+    requirePose(ctx, newPos, "jmp position")
     const transform = { rotation: t.rotation, position: newPos }
     // jmp always breaks the path (pen up, move, pen down)
     return { transform, stroke: "break" }
@@ -103,19 +106,18 @@ function left(ctx, angle = 0) {
 function faceto(ctx, x = 0, y = 0, z = null) {
     // Aim at a birth-frame point — same coordinate noun as goto/jmpto/home.
     const pos = ctx.transform.position
-    const dx = x - pos[0]
-    const dy = y - pos[1]
-    const dz = (z ?? pos[2]) - pos[2]
-
-    const distXY = Math.sqrt(dx * dx + dy * dy)
-    const distTotal = Math.sqrt(dx * dx + dy * dy + dz * dz)
-
-    if (distTotal < Versor.EPSILON) {
-        return {}
-    }
-
-    const yawAngle = Math.atan2(dy, dx) * (180 / Math.PI)
-    const pitchAngle = -Math.atan2(dz, distXY) * (180 / Math.PI)
+    const target = [x, y, z ?? pos[2]]
+    // The displacement is admitted BEFORE it is asked: a step whose arithmetic
+    // overflowed is not taken, and the author is told. (phase 1: valid resulting state)
+    requirePose(ctx, [target[0] - pos[0], target[1] - pos[1], target[2] - pos[2]], "faceto direction")
+    // Then the question is the kernel's, judged on the displacement alone: where the
+    // figure stands is not a policy, so a resolvable separation aims at every placement
+    // and the same figure keeps its bearing in every frame. null is exactly the
+    // coincident pair — there is nothing to aim at, and no bearing is invented. (P1)
+    const dir = directionBetween(pos, target)
+    if (dir === null) return {}
+    const yawAngle = Math.atan2(dir[1], dir[0]) * (180 / Math.PI)
+    const pitchAngle = -Math.atan2(dir[2], Math.hypot(dir[0], dir[1])) * (180 / Math.PI)
 
     const yawRotation = Versor.fromAxisAngle(AXIS_Z, yawAngle)
     const pitchRotation = Versor.fromAxisAngle(AXIS_Y, pitchAngle)
@@ -130,20 +132,25 @@ function faceto(ctx, x = 0, y = 0, z = null) {
 
 function label(ctx, text = ".", size = 1) {
     const pos = ctx.transform.position
-    return {
-        effects: [{
-            type: "label",
-            position: [pos[0], pos[1], pos[2]],
-            color: ctx.style.color,
-            text: String(text),
-            textSize: size * 5,
-            rotation: ctx.transform.rotation
-        }]
+    const textSize = resultMeasure(ctx, size * 5, "label size")
+    // A value lowered into text is DISPLAY: it rounds for the eye, and a non-number is
+    // NAMED rather than printed as a numeral — with the author told, since a label is
+    // how a figure speaks. (ruling 5)
+    const shown = demand(text, { as: "display", expr: "label" })
+    const printing = {
+        type: "label",
+        position: [pos[0], pos[1], pos[2]],
+        color: ctx.style.color,
+        text: format(text),
+        textSize,
+        rotation: ctx.transform.rotation
     }
+    return { effects: shown.notice ? [shown.notice, printing] : [printing] }
 }
 
 function grid(ctx, divisions = 100, unit = 10) {
     const pos = ctx.transform.position
+    const size = resultMeasure(ctx, unit * divisions, "grid size")
     const gridRotation = ctx.transform.rotation.multiply(
         Versor.fromAxisAngle(AXIS_X, 90)
     )
@@ -152,7 +159,7 @@ function grid(ctx, divisions = 100, unit = 10) {
             type: "grid",
             position: [pos[0], pos[1], pos[2]],
             color: ctx.style.color,
-            size: unit * divisions,
+            size,
             divisions: divisions,
             rotation: gridRotation
         }]
@@ -171,12 +178,13 @@ function fill(ctx) {
 }
 
 function wait(ctx, duration = 1) {
+    const milliseconds = resultMeasure(ctx, duration * 1000, "wait duration")
     return {
         // Flush current path before temporal boundary
         stroke: "break",
         effects: [{
             type: "wait",
-            duration: duration * 1000,
+            duration: milliseconds,
             position: [ctx.transform.position[0], ctx.transform.position[1], ctx.transform.position[2]],
             color: ctx.style.color,
             rotation: ctx.transform.rotation,
@@ -199,7 +207,7 @@ function yieldCmd(ctx) {
 // --- Style commands ---
 
 function bold(ctx, x = 1) {
-    return { style: { thickness: x * 2 } }
+    return { style: { thickness: resultMeasure(ctx, x * 2, "bold thickness") } }
 }
 
 function beColour(ctx, color = "silver") {
@@ -215,7 +223,7 @@ function beColour(ctx, color = "silver") {
 }
 
 function show(ctx, size = 10) {
-    return { style: { showTurtle: size } }
+    return { style: { showTurtle: resultMeasure(ctx, size, "show size") } }
 }
 
 function hide(ctx) {
@@ -268,19 +276,19 @@ const SPECS = [
     def(yaw, ["yaw"], "finite"),
     def(pitch, ["pitch", "dive"], "finite"),
     def(roll, ["roll"], "finite"),
-    def(show, ["show"], "measure"),
+    def(show, ["show"], "finite"),
     def(hide, ["hide", "hd"]),
     def(jmp, ["jmp", "jump"], "finite"),
-    def(bold, ["bold"], "measure"),
-    def(grid, ["grid"], "measure", "measure"),
+    def(bold, ["bold"], "finite"),
+    def(grid, ["grid"], "finite", "finite"),
     def(goTo, ["goto"], "finite", "finite", "finite"),
     def(faceto, ["faceto"], "finite", "finite", "finite"),
     def(jmpto, ["jmpto", "jumpto"], "finite", "finite", "finite"),
-    def(label, ["label"], "word", "measure"),
+    def(label, ["label"], "word", "finite"),
     def(erase, ["erase"]),
     def(home, ["home"]),
     def(fill, ["fill"]),
-    def(wait, ["wait"], "measure"),
+    def(wait, ["wait"], "finite"),
     def(yieldCmd, ["yield"]),
     def(limitRecurse, ["limitRecurse"], "measure"),
     def(limitCommand, ["limitCommand"], "measure"),

@@ -2,7 +2,7 @@
 // including the measured safe-integer boundary. Run:
 //   node --test test/js/notation/integer_domain_test.mjs
 //
-// a = (a // b) * b + a mod b  holds across the STATED domain: safe integers whose
+// a = (a // b) * b + mod(a, b)  holds across the STATED domain: safe integers whose
 // intermediates (notably b * (a // b)) stay safe. Outside it, the reconstruction's
 // `+` is corrupted by the scalar rounding policy — a Phase-3 concern, not this one.
 
@@ -16,14 +16,14 @@ const ev = (s) => new Evaluator().run(new Parser().parse(s), {})
 
 describe("integer division and remainder", () => {
     test("the measured boundary case no longer overflows", () => {
-        assert.equal(ev("9007199254740990 mod 9007199254740991"), 9007199254740990)
+        assert.equal(ev("mod(9007199254740990, 9007199254740991)"), 9007199254740990)
     })
 
-    test("the remainder follows the divisor (a ring operator)", () => {
-        assert.equal(ev("-7 mod 3"), 2)
-        assert.equal(ev("7 mod -3"), -2)
-        assert.equal(ev("-1 mod 4"), 3)
-        assert.equal(ev("7 mod 4"), 3)
+    test("the remainder follows the divisor (a ring remainder)", () => {
+        assert.equal(ev("mod(-7, 3)"), 2)
+        assert.equal(ev("mod(7, -3)"), -2)
+        assert.equal(ev("mod(-1, 4)"), 3)
+        assert.equal(ev("mod(7, 4)"), 3)
     })
 
     test("division floors toward minus infinity", () => {
@@ -35,13 +35,13 @@ describe("integer division and remainder", () => {
     test("the identity holds across the safe domain", () => {
         for (const a of [-5000, -1000, -7, -1, 0, 1, 7, 999, 5000]) {
             for (const b of [-9, -3, 4, 7]) {
-                assert.equal(ev(`${a} // ${b} * ${b} + ${a} mod ${b}`), a, `${a} // ${b}`)
+                assert.equal(ev(`(${a} // ${b}) * ${b} + mod(${a}, ${b})`), a, `${a} // ${b}`)
             }
         }
     })
 
     test("the identity holds at the boundary pair (zero quotient)", () => {
-        assert.equal(ev("9007199254740990 // 9007199254740991 * 9007199254740991 + 9007199254740990 mod 9007199254740991"), 9007199254740990)
+        assert.equal(ev("9007199254740990 // 9007199254740991 * 9007199254740991 + mod(9007199254740990, 9007199254740991)"), 9007199254740990)
     })
 
     // An oracle OUTSIDE our arithmetic: BigInt is exact, so quotient and remainder
@@ -65,7 +65,7 @@ describe("integer division and remainder", () => {
         for (const a of values) {
             for (const b of divisors) {
                 assert.equal(ev(`${a} // ${b}`), floorDiv(a, b), `${a} // ${b}`)
-                assert.equal(ev(`${a} mod ${b}`), floorMod(a, b), `${a} mod ${b}`)
+                assert.equal(ev(`mod(${a}, ${b})`), floorMod(a, b), `mod(${a}, ${b})`)
             }
         }
     })

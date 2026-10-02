@@ -1,6 +1,6 @@
 import { Parser } from "./mafs/parse.js"
 import { parseProgram, reparseProgram } from "./parse.js"
-import { ailmentsFor, standingAilments } from "../weave/queries.js"  // buffer ailments (D022)
+import { ailmentsFor, standingAilments, verdict } from "../weave/queries.js"  // buffer ailments (D022)
 import { drainNamespace } from "./executor.js"
 import { Evaluator } from "./mafs/evaluate.js"
 import Render from "./render/index.js"
@@ -710,14 +710,13 @@ export class Turtle {
             this._lastReflectChange = performance.now()
 
             const wounds = ailmentsFor(this.scheduler.errors, key)
-            if (wounds.length > 0) {
-                this.renderstate.meta = { state: "error", message: null, diagnostics: wounds }
-                this.requestRender()
-                return { success: false, wounds }
-            }
-
-            this.renderstate.meta = { state: "success", message: null, diagnostics: [] }
+            // ONE authority for health: the same `verdict` the document reflects, so a
+            // seat and a friend cannot disagree about whether the document is well — and
+            // a WARNING is still carried, because the author is owed it even then.
+            const health = verdict(wounds, key)
+            this.renderstate.meta = { state: health.state, message: null, diagnostics: wounds }
             this.requestRender()
+            if (health.wound) return { success: false, wounds }
             // This seat's count — not the world's sum across places.
             return { success: true, commandCount: seat ? sumCounts(seat) : 0 }
         } catch (error) {

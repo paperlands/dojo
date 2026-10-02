@@ -3,12 +3,14 @@
 // Instant law: no sibling advances past a parked mid-instant. (id:output-ledger-r2-instant)
 
 import { createFrame } from "./frame.js"
+import { report, notice as noticeWire } from "./report.js"
 import { matchPattern } from "./match.js"
 import { execute, createActorState } from "./executor.js"
 import { deriveBatch, exposed, freePoint } from "./laws/batch.js"
 import { createLawStore, addressOf, bindLaw } from "./laws/replacement.js"
 import { componentOf, realizeDistanceTree } from "./laws/component.js"
 import { predicateOk } from "./laws/expression.js"
+import { finite3 } from "./laws/vec3.js"
 import { measure, headingOf, elevationOf } from "./laws/relations.js"
 import { AUTHORED, bindWorld } from "./laws/authored.js"
 import { meetAll, nearest as meetNearest } from "./laws/meet.js"
@@ -541,11 +543,13 @@ function resolveBinding(frame, name, args) {
     }
 }
 
-const roundVec = (v) => Math.abs(v) < 1e-10 ? 0 : Math.round(v * 1e9) / 1e9
-
-// A reading with no answer stays NOTHING. `roundVec(null)` would faithfully turn
-// nothing into zero — the lie this convention exists to prevent. (id:eval-relational)
-const roundOrNothing = (v) => v === null ? null : roundVec(v)
+// A reading is the value, exactly. No floor and no decimal snapping: what a figure
+// reads about another place is what that place IS. The eye's rounding is the
+// display's business and never feeds back. (ruling 3: a reading is exact)
+//
+// A reading with no answer stays NOTHING — a floor would faithfully turn nothing into
+// zero, the lie this convention exists to prevent. (id:eval-relational)
+const orNothing = (v) => v === null ? null : v
 
 const headingFromQuaternion = headingOf
 
@@ -626,27 +630,27 @@ function poseInObserverBirth(target, observer) {
 
 // Spatial properties — projections of a pose, world-space unless ground is set.
 const SPATIAL = {
-    x: (t) => roundVec(t.position[0]),
-    y: (t) => roundVec(t.position[1]),
-    z: (t) => roundVec(t.position[2]),
-    heading: (t) => roundOrNothing(headingFromQuaternion(t.rotation)),
-    elevation: (t) => roundVec(elevationOf(t.rotation)),
+    x: (t) => orNothing(t.position[0]),
+    y: (t) => orNothing(t.position[1]),
+    z: (t) => orNothing(t.position[2]),
+    heading: (t) => orNothing(headingFromQuaternion(t.rotation)),
+    elevation: (t) => orNothing(elevationOf(t.rotation)),
 }
 
 // Temporal properties — lifecycle projections. `time` is local; `birthtime`
 // is birth on the shared axis, so `birthtime + time` is an axis position. (id:host-beat)
 const TEMPORAL = {
-    time:     (frame) => roundVec(frame.elapsedTime || 0),
-    birthtime: (frame) => roundVec(frame.birthtime || 0),
+    time:     (frame) => orNothing(frame.elapsedTime || 0),
+    birthtime: (frame) => orNothing(frame.birthtime || 0),
     done:     (frame) => frame.done ? 1 : 0,
     commands: (frame) => frame.commandCount,
 }
 
 // Relational properties — computed from observer + target in world space.
 const RELATIONAL = {
-    distance: (target, observer) => roundVec(measure("distance", target, observer, (f) => worldReading(f, observer, null))),
-    bearing: (target, observer) => roundOrNothing(measure("bearing", target, observer, (f) => worldReading(f, observer, null))),
-    sync: (target, observer) => roundVec(measure("sync", target, observer, (f) => worldReading(f, observer, null))),
+    distance: (target, observer) => orNothing(measure("distance", target, observer, (f) => worldReading(f, observer, null))),
+    bearing: (target, observer) => orNothing(measure("bearing", target, observer, (f) => worldReading(f, observer, null))),
+    sync: (target, observer) => orNothing(measure("sync", target, observer, (f) => worldReading(f, observer, null))),
 }
 
 // Resolve a property on a target frame — spatial, temporal, relational, or fn.
@@ -732,20 +736,16 @@ const addrOf = (frame) => frame.address ?? frame.id
 // where the author asked. Silence here draws the right figure in the wrong place.
 function woundMissingReference(ctx) {
     if (ctx.error) return
-    ctx.error = {
-        message: `there is no '${ctx.targetFrame}' to draw in — this one drew in its own frame`,
-        span: null,
+    ctx.error = report({
         kind: 'walk',
-    }
+        message: `there is no '${ctx.targetFrame}' to draw in — this one drew in its own frame`,
+    })
     ctx.channel.put({ type: 'error', ...ctx.error, ambientId: ctx.id })
 }
 
 // Walk error is a record: message, span, kind. (id:cmp-runtime-provenance)
-const errorRecord = (error) => ({
-    message: error.message,
-    span: error.span ?? null,
-    kind: error.kind ?? 'walk',
-})
+const errorRecord = (error) =>
+    report({ kind: error.kind ?? 'walk', message: error.message, span: error.span ?? null })
 
 // Deliver once per address; never back to the emitter.
 export function deliverShout(shout, target) {
@@ -1120,20 +1120,28 @@ function setListensFor(child, code) {
 let RUNS = 0
 
 // Run-ephemeral state shared by attachMeta and rewireChild. (id:output-ledger-r2-credit, id:output-ledger-r3-stock-flow)
+// WHAT DIES WITH A RUN — one list. A new per-run fact is added HERE, so a rewire cannot
+// leave it standing, and a reader can see every run-scoped field at once. The frame
+// also carries fields that OUTLIVE a run (its identity, its place in the tree, its
+// command count); those are seeded once at attachMeta and are deliberately absent here.
+// Two lifetimes, one place each. (id:eye-view-pipeline, id:laws-build-solve-seam)
+const RUN_SEED = {
+    observation: null,   // this run's frozen reads
+    error: null,         // the wound that ended it, if any
+    notices: () => [],   // what the author is owed of a figure that still draws
+    unresolved: null,    // a question the world could not answer
+    sync: () => ({}),    // the conflating head slot
+    midInstant: false,   // a delayed admission reply belongs to the run that asked
+    _strokeEnd: null,    // BOTH halves of the join test must go, or the next run's
+    _strokeStyle: null,  // first path could continue the last one's (id:ft-d7-deposit-runid)
+}
+
 function resetRunState(frame, stock) {
     clearSuspension(frame)
-    frame.observation = null
-    frame.error = null
-    frame.unresolved = null
-    frame.sync = {}
+    for (const [field, seed] of Object.entries(RUN_SEED)) {
+        frame[field] = typeof seed === "function" ? seed() : seed
+    }
     frame.run = ++RUNS
-    // A delayed admission reply belongs to the run that asked. Rewire reborns the
-    // run, so a stale resolver must be dropped, not applied. (id:laws-build-solve-seam)
-    frame.midInstant = false
-    // Stroke joining is per run: BOTH halves of the join test must go, or the
-    // next run's first path could continue the last one's. (id:ft-d7-deposit-runid)
-    frame._strokeEnd = null
-    frame._strokeStyle = null
     resetInk(frame, stock)
 }
 
@@ -1494,7 +1502,7 @@ function woundMotion(ctx, message) {
     ctx.generator = null
     closeInstant(ctx)
     clearSuspension(ctx)
-    ctx.error = { message, span: null, kind: 'motion' }
+    ctx.error = report({ kind: 'motion', message })
     ctx.channel.put({ type: 'error', ...ctx.error, ambientId: ctx.id })
     return { verdict: 'ended', produced: true }
 }
@@ -1628,8 +1636,7 @@ function checkMotion(verdict, writer, registry, validate, request) {
     const seen = new Set()
     for (const { frame, pose } of entries) {
         if (seen.has(frame) || registry.get(frame?.id) !== frame ||
-            !Array.isArray(pose.position) || pose.position.length !== 3 ||
-            !pose.position.every(Number.isFinite) ||
+            !finite3(pose.position) ||
             !['x', 'y', 'z', 'w'].every(key => Number.isFinite(pose.rotation?.[key]))) {
             return { kind: 'fault', message: 'accepted motion has a duplicate, stale or non-finite pose' }
         }
@@ -2454,7 +2461,7 @@ function woundRelation(ctx, message, kind = 'relation', span = null) {
     ctx.generator = null
     closeInstant(ctx)
     clearSuspension(ctx)
-    ctx.error = { message, span, kind }
+    ctx.error = report({ kind, message, span })
     ctx.channel.put({ type: 'error', ...ctx.error, ambientId: ctx.id })
     return { verdict: 'ended', produced: true }
 }
@@ -2631,19 +2638,25 @@ function motionUnresolved(ctx, value) {
 // A refused statement in an ordinary walk does not end the run and does not vanish:
 // the report rides the frame's channel, located, beside the siblings that ran.
 // (id:cmp-resilient, id:laws-figures-phase34-capabilities)
-function incomplete(ctx, value) {
-    ctx.channel.put({
-        type: 'incomplete',
-        expected: value.expected,
-        found: value.found,
-        span: value.span,
-        ambientId: ctx.id,
-    })
+// A statement that did not run — a line that would not parse, or a measure the numerics
+// door refused — is dropped, never the figure: it rides the frame's channel AND its
+// standing notice list, located, beside the siblings that ran. One shape, one sink, so
+// a reader asks ailments instead of learning a second pipe. (id:cmp-resilient)
+// A refusal that STOPS the pass never reaches here: the frame's error carries it.
+function noticeEffect(ctx, value) {
+    const said = noticeWire({ kind: value.kind ?? 'walk', message: value.message, span: value.span, expr: value.expr })
+    ctx.channel.put({ ...said, ambientId: ctx.id })
+    const standing = (ctx.notices ??= [])
+    if (!standing.some((n) => n.message === said.message && (n.span?.line ?? null) === (said.span?.line ?? null))) {
+        standing.push(said)
+    }
     return { verdict: 'continue', produced: true }
 }
-
-const EFFECTS = {
-    breath, blocked, wait, yield: yieldEffect, shout, spawn, limitMailbox, motion, motionUnresolved, incomplete, birth, law, scalar: scalarReadout, parameter: parameterReadout,
+// WHAT THE SCHEDULER ROUTES — one row per kind it must ACT on. Everything else a walk
+// yields is DEPOSITED: the ledger takes credit and the frame's channel carries it out.
+// So this list, plus the deposit default, is the whole routing vocabulary.
+export const EFFECTS = {
+    breath, blocked, wait, yield: yieldEffect, shout, spawn, limitMailbox, motion, motionUnresolved, notice: noticeEffect, birth, law, scalar: scalarReadout, parameter: parameterReadout,
 }
 
 // Verdict for one yield. Pumps act; this only means. (id:output-ledger-r2-instant)
@@ -3025,6 +3038,11 @@ export function createScheduler(generator, opts = {}) {
             const errs = []
             for (const [id, ctx] of registry) {
                 if (ctx.error) errs.push({ ambientId: id, name: ctx.name, address: addrOf(ctx), ...ctx.error })
+                // A standing NOTICE is an ailment too: the figure drew, and lost something
+                // on the way. One list, so a reader asks one question. (id:cmp-resilient)
+                for (const said of ctx.notices ?? []) {
+                    errs.push({ ambientId: id, name: ctx.name, address: addrOf(ctx), ...said })
+                }
             }
             return errs
         },

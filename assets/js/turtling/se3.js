@@ -87,11 +87,13 @@ export const SE3 = {
     },
 
     isValid(t) {
-        const r = t.rotation
+        const r = t?.rotation
+        if (!r || ![r.w, r.x, r.y, r.z].every(Number.isFinite)) return false
         const lenSq = r.w * r.w + r.x * r.x + r.y * r.y + r.z * r.z
         if (Math.abs(lenSq - 1) > 1e-6) return false
         const p = t.position
-        if (isNaN(p[0]) || isNaN(p[1]) || isNaN(p[2])) return false
+        if (!Array.isArray(p) || p.length !== 3 ||
+            !Number.isFinite(p[0]) || !Number.isFinite(p[1]) || !Number.isFinite(p[2])) return false
         return true
     }
 }

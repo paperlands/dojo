@@ -253,6 +253,7 @@ test("missing geometry is not a known pose", () => {
     assert.equal(knownPose(null), false, "an unknown pose cannot anchor a plane")
     assert.equal(knownPose({ position: [3, 4] }), false, "a malformed pose cannot anchor a plane")
     assert.equal(knownPose({ position: [3, 4, NaN] }), false)
+    assert.equal(knownPose({ position: new Array(3) }), false, "a hole is not a coordinate")
     assert.equal(knownPose({}), false)
     assert.equal(knownPose(undefined), false)
 })

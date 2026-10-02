@@ -59,13 +59,15 @@ describe("measure domain (strict bare idents)", () => {
         assert.ok(Number.isFinite(paths[0].points[1][0]))
     })
 
-    test("jmp 0/0 wounds — a non-finite distance cannot enter geometry", () => {
-        // Phase 1: the demand is finite-or-refuse. Non-finite math is no longer
-        // waved through to the deposit; it wounds where the measure is asked for.
-        assert.throws(
-            () => drainEvents([call("jmp", "0/0"), call("fw", 1)], realDeps()),
-            /not a finite number/,
-        )
+    test("jmp 0/0 is not taken — a non-finite distance cannot enter geometry", () => {
+        // The demand is finite-or-skip: non-finite math is never waved through to the
+        // deposit, and the walk carries on. (ruling: absent-is-zero)
+        const events = drainEvents([call("jmp", "0/0"), call("fw", 1)], realDeps())
+        const told = events.filter((e) => e.type === "notice")
+        assert.equal(told.length, 1, "the step is not taken, and the author hears why")
+        assert.equal(told[0].kind, "nan")
+        assert.match(told[0].message, /No measure/)
+        assert.ok(eventsOfType(events, "path").every((p) => p.points.every((pt) => pt.every(Number.isFinite))))
     })
 
     test("program text: jmp ran then loop does not mint path storm", () => {

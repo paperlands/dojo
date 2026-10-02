@@ -59,3 +59,36 @@ test("a cross-ambient read of a mid-instant frame suspends as dataflow", () => {
     assert.equal(reader.suspension?.kind, "dataflow", "a not-ready read is the one dataflow kind")
     assert.equal(reader.suspension.on, writer, "and it names the frame it waits on")
 })
+
+// The suspension boundary has two sides: a read that is ASKED parks, and a branch
+// that was never considered cannot. First-match guards EVALUATION, so after a match
+// the poisoned sibling read is never asked at all. (id:numeric-boundaries-adversarial-followup)
+test("a condition asked of an absent sibling parks as dataflow", () => {
+    const scheduler = createScheduler(metaRoot(), {
+        createDeps: deps,
+        execOpts: { color: "#000000", strokeMax: 1, breathEvery: 1 },
+        channelCapacity: 64,
+        motionAdmission: ({ requested }) => ({ accepted: true, transform: requested }),
+        onShout: () => {},
+    })
+    scheduler.hotSwapChild("reader", fork("reader", "when 0 do\n fw 1\nend\nwhen ghost.x do\n fw 2\nend\nfw 3"))
+    const reader = scheduler.root.children.get("reader")
+    assert.equal(reader.suspension?.kind, "dataflow", "the unanswerable read suspends the walk")
+})
+
+test("a matched when never asks, so a poisoned read cannot park the walk", () => {
+    const scheduler = createScheduler(metaRoot(), {
+        createDeps: deps,
+        execOpts: { color: "#000000", strokeMax: 1, breathEvery: 1 },
+        channelCapacity: 64,
+        motionAdmission: ({ requested }) => ({ accepted: true, transform: requested }),
+        onShout: () => {},
+    })
+    scheduler.hotSwapChild("reader", fork("reader", "when 1 do\n fw 1\nend\nwhen ghost.x do\n fw 2\nend\nfw 3"))
+    const reader = scheduler.root.children.get("reader")
+    for (let i = 0; i < 20 && !reader.done; i++) scheduler.tick(i * 1000)
+    assert.equal(reader.done, true, "the walk completes: the branch was never considered")
+    assert.equal(reader.suspension?.kind ?? null, null, "and never parks as dataflow")
+    const ends = reader.channel.drain().filter((e) => e.type === "path").map((p) => p.points.at(-1))
+    assert.deepEqual(ends, [[1, 0, 0], [4, 0, 0]], "the poison drew nothing: fw 1 then fw 3")
+})

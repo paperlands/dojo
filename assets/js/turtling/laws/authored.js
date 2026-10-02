@@ -171,7 +171,8 @@ const position = {
         return residual > ACCEPT_TOL ? violation(law, residual) : { status: "valid" }
     },
     propose({ target, observer, value, poseOf, conflictAt, ownerOf }) {
-        if (!Array.isArray(value) || value.length !== 3 || !value.every(Number.isFinite)) {
+        // The guard's own predicate: a hole in a sparse array is not a coordinate.
+        if (!finite3(value)) {
             return { ok: false, reason: "a position needs three finite coordinates" }
         }
         const world = SE3.apply(poseOf(observer), value)

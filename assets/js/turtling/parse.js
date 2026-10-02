@@ -454,8 +454,7 @@ function tokenizeLine(code) {
 // ============================================================================
 
 // A chunk is classified by the ROLE of its boundary token, read from the shared
-// lexer — not by its spelling. The lexer already knows where a word operator ends
-// (`mod3` is `mod` then `3`, `model` is a name) and which operators can stand
+// lexer — not by its spelling. The lexer knows which operators can stand
 // prefix; the boundary just asks it. (id:gw-grammar)
 const chunkLexer = new Lexer()
 function chunkTokens(chunk) {

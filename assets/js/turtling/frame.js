@@ -41,6 +41,9 @@ export function createFrame(name, generator, opts = {}) {
         // Lossless channel ≈ blocking queue (CSP/Go); full → credit park.
         channel: createRingBuffer(opts.channelCapacity || 4096, { lossless: opts.lossless !== false }),
         sync: {},      // conflating head/view slot — last-write-wins, no credit (D027 R2.5)
+        // What the author is owed about a walk that still DRAWS: a step not taken, a
+        // measure that had no answer. Cleared with the run, like `error`. (id:cmp-resilient)
+        notices: [],
         mailbox: [],   // actor inbox (Hewitt/Erlang); see listensFor
     }
 }

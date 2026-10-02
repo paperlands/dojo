@@ -3,7 +3,18 @@ import { Lexer } from "./lexer.js"
 import { getOperator } from "./operators.js"
 import { isOpenType, isCloseType, closerTypeFor, glyphOf } from "./delimiters.js"
 import { isNumericLiteral } from "./number.js"
-import { SCALAR_BUILTINS } from "./tower.js"
+import { SCALAR_BUILTINS, SHADOWABLE_BUILTINS } from "./tower.js"
+
+// A held value is not a name: it gets its own node, exactly as a string literal
+// does, so no evaluation can resolve a capture as a reference. Plain data is copied,
+// so a held value is never an alias to a live pose. (id:tower-tension-repr)
+export function heldValue(value) {
+    if (Array.isArray(value)) return value.map(heldValue)
+    if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+        return Object.fromEntries(Object.entries(value).map(([key, v]) => [key, heldValue(v)]))
+    }
+    return value
+}
 
 export class Parser {
     constructor() {
@@ -12,6 +23,8 @@ export class Parser {
         // evaluator dispatches from, so the two can never disagree.
         // (id:notation-phase-center)
         this.builtins = new Map(SCALAR_BUILTINS.map((builtin) => [builtin.name, builtin.arity]));
+        // Which of those names yield to the child's own fn. (id:tower-center-shadowable)
+        this.shadowable = new Set(SHADOWABLE_BUILTINS);
 
         // User-defined functions keys by [name, arity]: [ast, params]
         this.userspace = new Map();
@@ -88,7 +101,9 @@ export class Parser {
         // Numbers
         if (token.type === 'NUMBER') {
             this.advance();
-            return new ASTNode('operand', parseFloat(token.value));
+            // A literal is a VALUE, not a name — its own node, exactly as a string
+            // literal has its own. (id:tower-synth-literal)
+            return new ASTNode('literal', parseFloat(token.value));
         }
 
         // Identifiers (variables, constants, functions)
@@ -201,7 +216,9 @@ export class Parser {
         const signatureAST = this.parseSignature(signature);
         const { name, params } = this.extractSignature(signatureAST);
 
-        if (this.builtins.has(name)) {
+        // A shadowable builtin (round, mod) yields to the child's own definition;
+        // the rest stay reserved. (id:tower-center-shadowable)
+        if (this.builtins.has(name) && !this.shadowable.has(name)) {
             throw new Error(`Cannot override built-in function ${name}`);
         }
 
@@ -212,7 +229,9 @@ export class Parser {
         for (const key of Object.keys(ctx)) {
             // Don't substitute parameter names — they stay symbolic
             if (!params.includes(key)) {
-                substitutions.set(key, new ASTNode('operand', ctx[key]));
+                // A captured value is held, never referenced: its own node and a copy,
+                // so the body reads the snapshot it was declared with. (id:tower-tension-repr)
+                substitutions.set(key, new ASTNode('literal', heldValue(ctx[key])));
             }
         }
 
@@ -293,7 +312,10 @@ export class Parser {
     }
 
     cloneAST(ast) {
-        const cloned = new ASTNode(ast.type, ast.value, [], { ...ast.meta });
+        // A literal's payload is copied here too: two instantiations of one body
+        // must not share one array. (id:tower-tension-repr)
+        const value = ast.type === 'literal' ? heldValue(ast.value) : ast.value
+        const cloned = new ASTNode(ast.type, value, [], { ...ast.meta });
         if (ast.children) {
             cloned.children = ast.children.map(child => this.cloneAST(child));
         }

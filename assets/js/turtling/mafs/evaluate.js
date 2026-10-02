@@ -1,6 +1,5 @@
 import { getOperator } from "./operators.js"
-import { isNumericLiteral } from "./number.js"
-import { createTower, installScalarFloor } from "./tower.js"
+import { createTower, installScalarFloor, SHADOWABLE_BUILTINS } from "./tower.js"
 
 // Nothing is not a measure. `null + 1` is 1 in JavaScript, so a read that had
 // no answer must not become a quantity. Arithmetic yields nothing instead;
@@ -30,6 +29,8 @@ export class Evaluator {
         this.deferred = new Set(['random']);
 
         this.userFunctions = null;
+        // Which builtin names a child fn may take over. (id:tower-center-shadowable)
+        this.shadowable = new Set(SHADOWABLE_BUILTINS);
     }
 
     namespace_check(val) {
@@ -42,17 +43,13 @@ export class Evaluator {
     run(ast, context) {
         if (!ast) return 0;
 
-        // A literal evaluates to itself — never resolved as a name.
-        if (ast.type === 'string') return ast.value;
+        // A literal is a value, never a name: it evaluates to itself, exactly as a
+        // string literal does. Only an operand names something to resolve.
+        // (id:tower-tension-repr)
+        if (ast.type === 'string' || ast.type === 'literal') return ast.value;
 
         if (ast.type === 'operand') {
-            // Function/constant folding may leave a number in the AST. Keep it
-            // numeric; routing it through name resolution breaks on exponents.
-            if (typeof ast.value === 'number') return ast.value;
-            if (isNumericLiteral(ast.value)) {
-                return parseFloat(ast.value);
-            }
-            else if (context && ast.value in context) {
+            if (context && ast.value in context) {
                 return context[ast.value];
             }
             else if (ast.value in this.constants) {
@@ -76,23 +73,25 @@ export class Evaluator {
 
     applyFunction(func, args, context) {
         if (hasNothing(...args)) return null
-        // A scalar builtin is a center registration now; the same door the
-        // operators use. Anything else falls through to user functions and
-        // ambient resolution, which stay outside the algebra.
-        // Identify the callable before testing applicability: a known builtin
-        // owns its name even when its operands are unsupported, so it refuses
-        // through the center instead of leaking to another resolver.
-        if (this.tower.known(func)) return this.tower.apply(func, ...args)
+        // The child's own word wins where the surface lets it be shadowed: a user fn
+        // at this exact arity owns a shadowable builtin's name (round, mod).
+        // Otherwise a scalar builtin is a center registration — the same door the
+        // operators use — and the rest falls through to ambient resolution, which
+        // stays outside the algebra. (id:tower-center-shadowable)
         if (this.userFunctions) {
             const key = `${func}:${args.length}`;
             const entry = this.userFunctions.get(key);
-            if (entry) {
+            if (entry && (this.shadowable.has(func) || !this.tower.known(func))) {
                 const [body, params] = entry;
                 const childContext = { ...context };
                 params.forEach((p, i) => { childContext[p] = args[i]; });
                 return this.run(body, childContext);
             }
         }
+        // Identify the callable before testing applicability: a known builtin
+        // owns its name even when its operands are unsupported, so it refuses
+        // through the center instead of leaking to another resolver.
+        if (this.tower.known(func)) return this.tower.apply(func, ...args)
         if (this.resolveExternal) {
             const result = this.resolveExternal(func, args);
             if (result !== undefined) return result;

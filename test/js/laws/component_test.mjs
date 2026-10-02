@@ -37,6 +37,15 @@ test("realize: a cycle, a non-distance law or a missing anchor is unsupported", 
         "a missing anchor is unsupported")
 })
 
+test("realize: an invalid origin is unsupported, not a +x placement", () => {
+    // A question that cannot be asked must not borrow the coincident pair's stated
+    // fallback. (P2)
+    const world = worldOf({ 1: [0, 0, 0], 2: [NaN, 0, 0] })
+    assert.equal(realizeDistanceTree([law(1, 2, 5)], 1, world, (l) => l.predicate), null)
+    const other = worldOf({ 1: [Infinity, 0, 0], 2: [5, 0, 0] })
+    assert.equal(realizeDistanceTree([law(1, 2, 5)], 1, other, (l) => l.predicate), null)
+})
+
 test("realize: a negative or non-finite radius is refused", () => {
     const world = worldOf({ 1: [0, 0, 0], 2: [5, 0, 0] })
     assert.equal(realizeDistanceTree([law(1, 2, -1)], 1, world, (l) => l.predicate), null)

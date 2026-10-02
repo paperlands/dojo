@@ -24,7 +24,7 @@ const unit = (v) => unitKernel(v, REALIZE_TOL)
 // A repeatable direction is chosen when the two coincide, because the choice is
 // policy, not a truth. (id:laws-decl-anchor, id:laws-freedom)
 export function realizeDistance(target, observer, want) {
-    if (!Array.isArray(observer) || !observer.every(Number.isFinite)) {
+    if (!finite3(observer)) {
         return { ok: false, reason: 'observer position is unknown' }
     }
     if (!Number.isFinite(want) || want < 0) {

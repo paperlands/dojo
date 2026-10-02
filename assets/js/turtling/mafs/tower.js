@@ -8,19 +8,19 @@
 // reach the same door, so a vector keeps working when its components stop being
 // JavaScript numbers. (id:tower-sota, L6 kingdon)
 
-const PRECISION = 1e14
 
 export const toRadians = (degrees) => degrees * (Math.PI / 180)
 export const toDegrees = (radians) => radians * (180 / Math.PI)
 
-// Rounding is a policy still held open (id:tower-tension-exact), carried here
-// verbatim from the evaluator: a safe integer is already exact, everything else
-// snaps to 1e14. Relocating it belongs to a later ruling, not this one.
-const roundResult = (x) => Number.isSafeInteger(x) ? x : Math.round(x * PRECISION) / PRECISION
+// Arithmetic is the substrate's, and nothing else. The center once snapped every sum
+// and every builtin result to 1e14, which made the arithmetic incoherent on its own
+// terms — `1e-15 * 1` survived while `1e-15 + 0` vanished, and `1 + 1e-15` lost a tail
+// double precision held. What a learner SEES is the display's business
+// (numerics:format), which never feeds back. (id:tower-center-approximation-ruling)
 
 // Integer division and remainder, moved verbatim. For SAFE INTEGERS with a
 // nonzero divisor the quotient and remainder are exact, so
-// `(a // b) * b + a mod b = a` holds — a statement about the operands, NOT a
+// `(a // b) * b + mod(a, b) = a` holds — a statement about the operands, NOT a
 // promise that the language's own * and + stay exact outside the safe range.
 function integerMod(a, b) {
     if (Number.isSafeInteger(a) && Number.isSafeInteger(b) && b !== 0) {
@@ -165,10 +165,11 @@ export function createTower() {
 
 // A frozen descriptor — the record and any nested arity list are immutable, so no
 // caller can edit the shared authority after the fact. (id:tower-center-authority)
-const builtin = (name, arity, fn) => Object.freeze({
+const builtin = (name, arity, fn, shadowable = false) => Object.freeze({
     name,
     arity: Array.isArray(arity) ? Object.freeze([...arity]) : arity,
     fn,
+    shadowable,
 })
 
 // The authoritative scalar builtin signatures: name, accepted arity, meaning.
@@ -187,8 +188,17 @@ export const SCALAR_BUILTINS = Object.freeze([
     builtin('exp', 1, (x) => Math.exp(x)),
     builtin('abs', 1, (x) => Math.abs(x)),
     builtin('atan2', 2, (y, x) => toDegrees(Math.atan2(y, x))),
-    builtin('round', [1, 2], (x, to = 1) => Math.round(x / to) * to),
+    builtin('round', [1, 2], (x, to = 1) => Math.round(x / to) * to, true),
+    builtin('mod', 2, (a, b) => integerMod(a, b), true),
 ])
+
+// A builtin the child may shadow: define your own fn at the same arity and it owns
+// that name+arity over the center's. =round= and =mod= are conveniences of policy
+// and spelling, so they yield to the child's own word; the rest stay reserved, so
+// the surface cannot be redefined by accident. (id:tower-center-shadowable)
+export const SHADOWABLE_BUILTINS = Object.freeze(
+    SCALAR_BUILTINS.filter((b) => b.shadowable).map((b) => b.name)
+)
 
 // ── The scalar species and text ─────────────────────────────────────────────
 // `number` and `boolean` are the scalar kinds; `string` is text. A boolean is a
@@ -203,10 +213,10 @@ const SCALAR_KINDS = ['number', 'boolean']
 const VALUE_KINDS = ['number', 'boolean', 'string']
 const TEXT_KINDS = ['string']
 const asNum = (value) => typeof value === 'boolean' ? (value ? 1 : 0) : value
-const plus = (a, b) =>
-    Number.isSafeInteger(a) && Number.isSafeInteger(b) ? a + b : Math.round((a + b) * PRECISION) / PRECISION
-const minus = (a, b) =>
-    Number.isSafeInteger(a) && Number.isSafeInteger(b) ? a - b : Math.round((a - b) * PRECISION) / PRECISION
+// Safe integers need no branch: the substrate's + and - are exact there, and nowhere
+// else does this center claim exactness more than double precision already gives.
+const plus = (a, b) => a + b
+const minus = (a, b) => a - b
 
 // Every ordered tuple of the given arity over a kind set — the explicit closure of
 // an operator over its species, never an implicit fallback.
@@ -232,7 +242,6 @@ export function installScalarFloor(tower) {
     across(tower, '/', SCALAR_KINDS, (a, b) => asNum(a) / asNum(b))
     across(tower, '^', SCALAR_KINDS, (a, b) => Math.pow(asNum(a), asNum(b)))
     across(tower, '//', SCALAR_KINDS, (a, b) => integerDiv(asNum(a), asNum(b)))
-    across(tower, 'mod', SCALAR_KINDS, (a, b) => integerMod(asNum(a), asNum(b)))
 
     // Logical selection ranges over every value kind; bitwise stays numeric.
     across(tower, '&&', VALUE_KINDS, (a, b) => a && b)
@@ -270,7 +279,7 @@ export function installScalarFloor(tower) {
     for (const { name, arity, fn } of SCALAR_BUILTINS) {
         for (const n of (Array.isArray(arity) ? arity : [arity])) {
             for (const types of tuplesOf(SCALAR_KINDS, n)) {
-                tower.define(name, types, (...args) => roundResult(fn(...args.map(asNum))))
+                tower.define(name, types, (...args) => fn(...args.map(asNum)))
             }
         }
     }

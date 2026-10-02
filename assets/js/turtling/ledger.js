@@ -2,6 +2,8 @@
 // charge/release like refcount on resident geometry. (id:output-ledger-r3-stock-flow)
 // enforceResidency still reads park.cause; woundInk kills frames (id:carving-todo-ledger-stock).
 
+import { report } from "./report.js"
+
 export const MAX_RUN_SEGMENTS = 1_000_000      // per-run truth: "program too big" (id:output-ledger-r2-ceiling)
 export const MAX_STAGE_SEGMENTS = 3_000_000    // stage residency: "device out of ink" (id:output-ledger-r2-residency)
 export const MAX_RESIDENCY_STALL_MS = 2000     // wait on full stage before wound (id:output-ledger-r3-addressee)
@@ -37,7 +39,7 @@ export function setResident(frame, stock, n) {
 export function woundInk(ctx, message, span = null) {
     ctx.done = true
     ctx.generator = null
-    ctx.error = { message, span: span ?? null, kind: 'ink' }
+    ctx.error = report({ kind: 'ink', message, span })
     ctx.channel.put({ type: 'error', ...ctx.error, ambientId: ctx.id })
 }
 

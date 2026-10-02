@@ -1,4 +1,4 @@
-import { isOperatorLexeme, WORD_OPERATOR_PATTERN, SYMBOL_OPERATOR_PATTERN } from "./operators.js"
+import { isOperatorLexeme, OPERATOR_PATTERN } from "./operators.js"
 import { TYPE_OF_GLYPH, isOpenType, isCloseType } from "./delimiters.js"
 import { NUMBER_PATTERN } from "./number.js"
 export { OPERATOR_LEXEMES as OPERATORS } from "./operators.js"
@@ -11,9 +11,8 @@ const TOKEN_PATTERN = [
     // `fn` body like 'ping' is lossless instead of silently stripped. The executor's
     // quote path handles whole quoted args; this covers the rest that reach a parser.
     '\'[^\']*\'|"[^"]*"',
-    WORD_OPERATOR_PATTERN,
     '[a-zA-Z][a-zA-Z0-9_]*(?:\\.[a-zA-Z][a-zA-Z0-9_]*)*',
-    SYMBOL_OPERATOR_PATTERN,
+    OPERATOR_PATTERN,
     '[\\[\\],\\(\\)]',
     '\\s+'
 ].join('|')

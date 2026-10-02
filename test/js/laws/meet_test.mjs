@@ -75,6 +75,36 @@ test("nearest follows the set, and a finite set keeps its branch", () => {
     assert.equal(nearest(UNCERTAIN, [0, 0, 0]).kind, "unresolved")
 })
 
+test("a projection cannot borrow the coincident fallback when the question is invalid", () => {
+    // Toward [1.7e308 x 3] the sphere projection used to report success along +x —
+    // a failed normalization reported as coincidence. And an unaskable pair shares
+    // no answer with a coincident one. (P2)
+    const diag = nearest(sphere([0, 0, 0], 1), [1.7e308, 1.7e308, 1.7e308])
+    assert.ok(diag.ok)
+    for (const i of [0, 1, 2]) {
+        assert.ok(Math.abs(diag.at[i] - 1 / Math.sqrt(3)) < 1e-15, `component ${i} of ${at3(diag.at)}`)
+    }
+    assert.deepEqual(nearest(sphere([NaN, 0, 0], 1), [1, 2, 3]), { ok: false, kind: "unresolved" },
+        "an invalid center is not a coincidence")
+    assert.equal(meet(sphere([NaN, 0, 0], 1), sphere([0, 0, 0], 1)).kind, "unresolved",
+        "and no meet is named from one")
+    assert.equal(meet(circle([NaN, 0, 0], [0, 1, 0], 5), circle([5, 0, 0], [0, 1, 0], 5)).kind, "unresolved",
+        "the circle foot may not borrow +x either")
+})
+
+test("a coerced operand is not a valid one: meet answers unresolved, never a malformed locus", () => {
+    // null coerces to 0 in subtraction, so a finite difference proves nothing about
+    // the operands. Valid centers precede every geometric early return.
+    assert.equal(meet(sphere([null, 0, 0], 1), sphere([1, 0, 0], 1)).kind, "unresolved",
+        "a finite difference does not establish valid centers")
+    assert.equal(meet(sphere([null, 0, 0], 1), sphere([0, 0, 0], 1)).kind, "unresolved",
+        "the coincidence branch may not answer with a malformed locus")
+    assert.equal(meet(circle([null, 0, 0], [0, 1, 0], 5), circle([0, 0, 0], [0, 1, 0], 5)).kind, "unresolved",
+        "and neither may the circle's")
+    assert.equal(meet(sphere(["1", 0, 0], 1), sphere([0, 0, 0], 1)).kind, "unresolved",
+        "a coercible string is no more a coordinate")
+})
+
 test("nearest on a wide cone stays on the nappe nearest the target", () => {
     // A double nappe: 100° and 80° are one surface, so a +side target must not
     // flip to the far nappe as the tilt passes 90°. (id:laws-freedom)

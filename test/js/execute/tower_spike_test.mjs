@@ -180,8 +180,11 @@ describe('the semantic center — one door, composition as depth', () => {
     test('the evaluator computes through its sealed center', () => {
         const evaluator = new Evaluator()
         assert.equal(evaluator.tower.sealed, true)
-        assert.equal(evaluator.applyOperator('+', 0.1, 0.2), 0.3)     // rounding preserved
-        assert.equal(evaluator.applyOperator('mod', -7, 3), 2)        // integer behaviour preserved
+        // The center's answer IS the substrate's: one door, no shortcut past it, and no
+        // second approximation layered on top. (id:tower-center-approximation-ruling)
+        assert.equal(evaluator.applyOperator('+', 0.1, 0.2), evaluator.tower.apply('+', 0.1, 0.2))
+        assert.equal(evaluator.applyOperator('+', 0.1, 0.2), 0.1 + 0.2)
+        assert.equal(evaluator.applyFunction('mod', [-7, 3]), 2)   // integer behaviour preserved
         assert.equal(evaluator.applyUnaryOperator('-', 5), -5)
         assert.equal(evaluator.applyFunction('sqrt', [4]), 2)
     })
@@ -311,10 +314,13 @@ describe('the scalar contract', () => {
             const q = tower.apply('//', a, b)
             assert.equal(tower.apply('+', tower.apply('*', q, b), tower.apply('mod', a, b)), a)
         }
-        // The rounding gate is policy, stated so it is not mistaken for exact
-        // arithmetic: below ~1e-14 a sum snaps to zero, and a product does not.
-        assert.equal(tower.apply('+', 0, 1e-15), 0)
+        // The additive identity holds on every representable value, and the tail double
+        // precision can hold is KEPT — the incoherence the old gate made is gone:
+        // `1e-15 * 1` survived while `1e-15 + 0` vanished, and `1 + 1e-15` lost its tail.
+        assert.equal(tower.apply('+', 0, 1e-15), 1e-15)
+        assert.equal(tower.apply('+', 1e-15, 0), 1e-15)
         assert.equal(tower.apply('*', 1000, 1e-15), 1e-12)
+        assert.equal(tower.apply('+', 1, 1e-15), 1 + 1e-15)
     })
 
     test('a scalar meaning survives the command boundary', () => {
@@ -325,7 +331,7 @@ describe('the scalar contract', () => {
         // An unsupported question refuses; the refusal survives the enclosing command.
         assert.throws(() => run("fw ('a' + 'b')"), /no meaning for \+ over string and string/)
         // A non-finite *value* is not a center refusal — the command's finite demand
-        // is what refuses it, at the point it is asked for.
-        assert.throws(() => run('fw sqrt(-1)'), /No measure/)
+        // is what drops it, where it is asked for: the step is not taken.
+        assert.ok(!run('fw sqrt(-1)').some((e) => e.type === 'path'))
     })
 })

@@ -895,6 +895,88 @@ accidental Promise wounds with =kind:'motion'=. Delayed replies use
 =motionAdmissionAsync=; =run=/=seq=/=done= drop anything stale after rewire, removal or
 disposal. Fences: =phase0e_refusal_stroke_test.mjs=, =phase0f_admission_faults_test.mjs=,
 =phase0g_delayed_admission_test.mjs=.
+
+*A measure is answered by what the value IS* (ruling: absent-is-zero)
+:PROPERTIES:
+:ID: nav-three-doors
+:KEYWORDS: finite measure hole demand absent nothing identity skip wound refused nan infinity overflow
+:PATH: assets/js/turtling/numerics.js::demand
+:END:
+
+The door is =numerics.js::demand= ([[id:nav-numerics]]): this file holds no epsilon
+and no rule of its own, only the CONSUMER's name. ABSENT takes the callable's own
+default — the identity — so =fw= walks nothing and =goto= lands at the origin, quietly.
+A NON-FINITE number is a step NOT TAKEN, and the author is TOLD (a =notice= with
+severity =notice=). A value of the WRONG KIND is the author's, so it is reported where
+it is located while the siblings still run; the headless vocabulary pass (and a closed
+construction) refuses instead — that pass is where a seat's diagnostics come from, so
+the author is told while the seats still draw. A refusal drops the ONE statement,
+never the figure (D020). A =when= and a =loop= count are consumers too. This REVERSES
+the Phase 1 =finite-or-refuse= rule recorded in =test/js/notation/BASELINE.md=, and
+[[id:tower-center-approximation-ruling]] is now landed: arithmetic is the substrate's,
+the tower holds no epsilon, and the display (=numerics:format=) is where the eye gets
+a clean answer. =sqrt(-1)= / =1/0= still stay numbers at the tower
+([[id:tower-center-contract]]).
+Fences: =test/js/notation/three_doors_test.mjs=, =finite_measure_test.mjs=,
+=primitives_test.mjs=, =contracts_test.mjs=, =word_measure_domain_test.mjs=,
+=laws/relations_test.mjs=, =execute/round_test.mjs=, =laws/free_point_test.mjs=;
+readings: =probe/tower-rounding/probe.mjs= (before/after) and =composition.mjs=.
+
+** the numeric surface — one condition, one policy table, one report
+:PROPERTIES:
+:ID: nav-numerics
+:KEYWORDS: numerics condition finite infinite nan nothing not-a-number demand policy notice quiet wound tol within format display scale tolerance approximate rounding
+:PATH: assets/js/turtling/numerics.js
+:END:
+
+One leaf (only =report.js= imported), so =mafs/=, =laws/= and =turtling/= all reach it.
+Two axes kept apart: =conditionOf(value)= names the FACT (nothing | finite | infinite |
+nan | not-a-number) and =demand(value, {as})= returns the VERDICT (take | refuse) plus
+the notice the author is owed — the consumer names itself ONCE in =POLICY= (walk |
+vocabulary | construction | condition | count | display), so no call site carries its
+own epsilon or its own idea of nothing. =tol(eps, of)= + =within= make a tolerance
+eps times a SCALE (a bare epsilon is a different policy at every figure size);
+=format= is the ONE display gate (~12 significant digits, never feeding back, and a
+non-number named rather than printed as a numeral). ONE report shape, minted in
+=turtling/report.js= (=report= for a fault, =notice= for the wire form) and handed to
+five places that used to build it by hand — and NO severity of its own, because
+severity has one home: =weave/queries.js::KINDS=, whose rows now cover every kind the
+code mints (previously =ink=/=motion=/=relation= and the law outcomes answered by the
+unknown-kind default, which is a decision made by accident). The same =verdict= judges
+the document AND a seat, so a warning is shown without calling the document unwell.
+A notice rides the frame’s channel AND its standing =notices= list, which
+=scheduler.errors= includes, so a reader asks =ailments= instead of learning a second
+pipe; =kind:’parse’= carries a malformed line (the house’s own kind, not a synonym).
+Adopted at: =executor.js= (a hole, a =when=, a =loop= count, =x/y/z= exact, the label),
+=commands.js= (a pose, =label=’s display, =faceto=’s relative aim — it HOLDS its inputs),
+=laws/vec3.js= (=finite3=; =unit= keeps an ABSOLUTE floor because it sees only the
+result, and a tolerance needs the scale of the inputs — making it relative was tried
+and reverted: =unit(sub(a,b))= would name a direction from rounding noise.
+=directionBetween(a, b)= is the question those callers were reaching for: coincidence
+asked at the scale of the POINTS, so a coincident pair is null and the caller’s
+stated =?? [1, 0, 0]= fallback stands, while the same offset against a smaller figure
+is a real direction). Still absolute, recorded open: =REALIZE_TOL= /
+=ACCEPT_TOL= / =REL_TOL=, and the COMPARISON door (=0/0 > 0= answers 0
+with no word — the non-answer is erased before a consumer sees it; characterized in
+=test/js/notation/numeric_scale_test.mjs= so fixing it is a deliberate edit).
+=measure= returns a value/default or the shared statement refusal; converted command
+results and elapsed time are admitted before publication. =mafs/versors.js= repairs
+unit-norm drift without snapping angles. =render/shape.js= closes rings by topology,
+not an absolute endpoint epsilon. Adversarial witnesses:
+=test/js/notation/numeric_boundary_test.mjs=, =test/js/motion/numeric_stability_test.mjs=,
+=test/js/render/shape_test.mjs=. Evidence and unclosed boundaries:
+[[id:numeric-boundaries-review][numeric boundaries review]].
+Readings: =probe/tower-rounding/composition.mjs= (its =said= column is read back out of
+the events, not asserted by hand). Fences: =notation/{three_doors,finite_measure,
+numeric_scale,event_vocabulary}_test.mjs=, =wound/queries_test.mjs= (the severity axis).
+MEASURED, per call (test/js/profile/numeric_cost_bench.mjs): =conditionOf= 5 ns,
+=demand= taken 12 ns, the argument door =admit= a plain call since =yield*= delegation
+cost 162 ns of an argument and is invisible to a profile (it lands in the caller’s self
+time); =format= 21 ns for a round value and ~370 ns for a residue — a spelling that
+already fits the 12-digit BUDGET is the answer, and the SEARCH it replaced cost 450 ns
+on 42 but *3 665 ns* on =1/3=, a cost that grew with the number. Churn after both
+fixes: 201 scavenges per fixed workload against the pre-session baseline’s 203
+(=node --trace-gc=).
 ** re-eval recreates frames — persistent state keys by frameAddress
 :PROPERTIES:
 :ID: nav-hotswap
@@ -1310,18 +1392,21 @@ Tested: =test/js/render/label_pool_test.mjs=.
 ** math expressions — lex, parse, evaluate, typeset
 :PROPERTIES:
 :ID: nav-mafs
-:KEYWORDS: mafs math expression operator vocabulary fixity precedence associativity mod lexer parse evaluate typeset versor
+:KEYWORDS: mafs math expression operator vocabulary fixity precedence associativity mod lexer parse evaluate typeset versor literal held operand reference
 :PATH: assets/js/turtling/mafs/operators.js
 :END:
 The fixed operator rows feed the math lexer, expression parser, evaluator and
 PaperLang argument splitter. Surface contract: [[id:tower-surface]]. Scalar
 meanings and builtin signatures live in =mafs/tower.js=; the evaluator delegates.
+A node's KIND tells a name from a value: =operand= names something to resolve,
+=literal= holds a value as itself (=string= stays text). A capture is held through
+=heldValue=, a copy, never an alias. [[id:tower-tension-repr]]. Fence: =primitives_test.mjs=.
 
 ** the semantic center — one door for every operation
 :PROPERTIES:
 :ID: nav-tower-center
 :MODULE: mafs/tower.js
-:KEYWORDS: tower center dispatch register kind typeOf seal operation generic coefficient
+:KEYWORDS: tower center dispatch register kind typeOf seal operation generic coefficient shadow shadowable override reserved builtin round mod
 :PATH: assets/js/turtling/mafs/tower.js
 :END:
 One operation, ordered values, one value or an honest refusal. Operators and

@@ -41,7 +41,7 @@ export class Versor {
     }
 
     // Fast constructor — skips normalization for known-unit inputs.
-    // Used by fromAxisAngle (sin²+cos²=1) and multiply (unit×unit=unit).
+    // Used by fromAxisAngle and products still inside the unit-norm error budget.
     static raw(w, x, y, z) {
         const v = Object.create(Versor.prototype);
         v.w = w; v.x = x; v.y = y; v.z = z;
@@ -54,26 +54,41 @@ export class Versor {
         const halfAngle = (angle * Math.PI) / 360;
 
         // Handle identity rotation precisely
-        if (Math.abs(angle) < Versor.EPSILON) {
+        if (angle === 0) {
             return Versor.raw(1, 0, 0, 0);
         }
 
         const sinHalfAngle = Math.sin(halfAngle);
         const cosHalfAngle = Math.cos(halfAngle);
 
-        // Normalize axis
-        const length = Math.sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
-        if (length < Versor.EPSILON) {
+        // Normalize axis. A shared unit axis is every ordinary turtle turn: its raw
+        // squared length is exactly 1 — the correctly-rounded norm is 1 — so the
+        // common case pays neither scaling nor hypot.
+        const lengthSq = axis.x * axis.x + axis.y * axis.y + axis.z * axis.z;
+        if (lengthSq === 1) {
+            return Versor.raw(
+                cosHalfAngle,
+                axis.x * sinHalfAngle,
+                axis.y * sinHalfAngle,
+                axis.z * sinHalfAngle
+            );
+        }
+        // At the edges of the number line the raw norm cannot be taken: scale the
+        // largest component out first — a finite axis has a direction at any
+        // magnitude. A zero axis has no turn. (P2: scale before norm)
+        const m = Math.max(Math.abs(axis.x), Math.abs(axis.y), Math.abs(axis.z));
+        if (m === 0) {
             return Versor.raw(1, 0, 0, 0);
         }
+        const ux = axis.x / m, uy = axis.y / m, uz = axis.z / m;
+        const length = Math.hypot(ux, uy, uz);
 
-        const scale = sinHalfAngle / length;
         // sin²(θ/2) + cos²(θ/2) = 1 by construction — skip normalize
         return Versor.raw(
             cosHalfAngle,
-            axis.x * scale,
-            axis.y * scale,
-            axis.z * scale
+            (ux / length) * sinHalfAngle,
+            (uy / length) * sinHalfAngle,
+            (uz / length) * sinHalfAngle
         );
     }
 
@@ -82,16 +97,19 @@ export class Versor {
         const x = this.w * q.x + this.x * q.w + this.y * q.z - this.z * q.y;
         const y = this.w * q.y - this.x * q.z + this.y * q.w + this.z * q.x;
         const z = this.w * q.z + this.x * q.y - this.y * q.x + this.z * q.w;
-        // unit × unit = unit by quaternion algebra — skip normalize
+        // Unit × unit is unit in algebra, not after a long floating-point walk.
+        // Repair norm drift, never a small component or an authored angle. (id:nav-numerics)
+        const normSq = w * w + x * x + y * y + z * z;
+        if (Math.abs(normSq - 1) > 8 * Number.EPSILON) {
+            const norm = Math.sqrt(normSq);
+            return Versor.raw(w / norm, x / norm, y / norm, z / norm);
+        }
         return Versor.raw(w, x, y, z);
     }
 
     rotate(v) {
         // Optimize identity quaternion case
-        if (Math.abs(this.w - 1) < Versor.EPSILON &&
-            Math.abs(this.x) < Versor.EPSILON &&
-            Math.abs(this.y) < Versor.EPSILON &&
-            Math.abs(this.z) < Versor.EPSILON) {
+        if (this.w === 1 && this.x === 0 && this.y === 0 && this.z === 0) {
             return {
                 x: Number(v.x),
                 y: Number(v.y),

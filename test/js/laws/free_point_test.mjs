@@ -353,10 +353,10 @@ test("the accepted z is published: a reader in another ambient sees one instant"
     h.move({ x: at.x, y: at.y + 100 })
     const stood = [...accepted(b)]
 
-    // The same play's reader sees the same accepted geometry — no second store.
-    const round = (n) => Math.round(n * 1e9) / 1e9   // readings round to 1e-9
-    assert.equal(resolveBinding(m, "b.z"), round(stood[2]), "reader and point agree")
-    assert.equal(resolveBinding(m, "b.y"), round(stood[1]))
+    // The same play's reader sees the same accepted geometry — no second store, and no
+    // reading gate in between: the reader gets the coordinate itself. (ruling 3)
+    assert.equal(resolveBinding(m, "b.z"), stood[2], "reader and point agree")
+    assert.equal(resolveBinding(m, "b.y"), stood[1])
 })
 
 test("a fresh play inherits no hand state", () => {
