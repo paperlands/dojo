@@ -31,7 +31,7 @@ const FIXTURES = {
     "rt (pure rotation)":       `loop ${N} do\n  rt 1\nend`,
     "fw (transform + stroke)":  `loop ${N} do\n  fw 1\nend`,
     "fw + rt (the baseline)":   `loop ${N} do\n  fw 1\n  rt 0.01\nend`,
-    "fw [expr]":                `loop ${N} do\n  fw [mod(count, 7) + 1]\nend`,
+    "fw [expr]":                `loop ${N} do\n  fw (mod(count, 7) + 1)\nend`,
     "goto (world resolve)":     `loop ${N} do\n  goto 1 2 3\nend`,
     "faceto (world resolve)":   `loop ${N} do\n  faceto 1 2 3\nend`,
     "jmp (stroke break)":       `loop ${N} do\n  jmp 1\nend`,
@@ -43,8 +43,8 @@ const FIXTURES = {
     // command — which is the unbudgeted-BIF problem one level down. These probe
     // how fast the tail grows, because if it grows without bound then no choice
     // of K is safe and the charge must become proportional.
-    "fw [nested x3]":           `loop ${N} do\n  fw [[[count+1]*[count+2]]+1]\nend`,
-    "fw [nested x6]":           `loop ${N} do\n  fw [[[[[count+1]*[count+2]]+[count+3]]*[count+4]]+1]\nend`,
+    "fw [nested x3]":           `loop ${N} do\n  fw (((count+1)*(count+2))+1)\nend`,
+    "fw [nested x6]":           `loop ${N} do\n  fw (((((count+1)*(count+2))+(count+3))*(count+4))+1)\nend`,
 }
 
 function measure(src) {

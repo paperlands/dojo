@@ -26,7 +26,11 @@ export const conditionOf = (value) => {
     return Number.isNaN(value) ? NAN : INFINITE
 }
 
-export const spellingOf = (v) => typeof v === "string" ? `'${v}'` : String(v)
+// A message names what it refused. A vector is shown by its STRUCTURE, not by
+// JavaScript's lossy String — which renders [null] as '' and a hole as ''. The
+// display is a projection for the eye, never a claim of value equality.
+// (id:notation-array-growth)
+export const spellingOf = (v) => typeof v === "string" ? `'${v}'` : Array.isArray(v) ? format(v) : String(v)
 
 
 // ── The policy table: the doctrine, in one place ────────────────────────────
@@ -131,6 +135,10 @@ const BUDGET = 12
 
 // A non-number is never printed as a numeral: it is NAMED.
 export function format(value) {
+    // A vector has structure; printing it as its components' text would erase that.
+    // A singleton carries the terminal comma it was written with, so the display
+    // reads back as the vector and not as grouping. (id:notation-array-growth)
+    if (Array.isArray(value)) return `[${value.map(format).join(", ")}${value.length === 1 ? "," : ""}]`
     if (typeof value !== "number") return String(value)
     if (!Number.isFinite(value)) return Number.isNaN(value) ? "not a number" : value < 0 ? "-infinity" : "infinity"
     const text = String(value)

@@ -7,6 +7,7 @@ import assert from "node:assert/strict"
 import { buildWorld, fork, drive } from "./harness.mjs"
 import { frameWorldTransform, resolveBinding } from "../../../assets/js/turtling/scheduler.js"
 import { createReadouts } from "../../../assets/js/turtling/laws/readout.js"
+import { asKind, kindOf } from "../../../assets/js/turtling/mafs/tower.js"
 
 const find = (frame, name) => {
     if (frame.name === name) return frame
@@ -39,6 +40,37 @@ test("store: an unchanged value is not re-announced; a source release takes its 
     assert.equal(store.release("source"), true)
     assert.equal(store.size, 1, "only the other source's node remains")
     assert.equal(store.release("source"), false, "release is idempotent")
+})
+
+test("store: re-registering a site replaces its whole definition, meaning included", () => {
+    // The store owns the node; the subscriber owns what its value MEANS. A replaced
+    // computation must not wear the previous purpose or display effect.
+    // (id:laws-ordered-replacement)
+    const store = createReadouts()
+    const changes = []
+    store.watch((change) => changes.push(change.drives))
+    store.register("source", "site", () => 1, { kind: "old" })
+    store.recompute()
+    store.register("source", "site", () => 2, { kind: "new" })
+    store.recompute()
+    assert.deepEqual(changes.at(-1), { kind: "new" })
+    store.register("source", "site", () => 3, null)
+    store.recompute()
+    assert.ok(changes.at(-1) == null, "a plain value keeps no former display effect")
+})
+
+test("store: early cutoff sees the kind, not only the components", () => {
+    // Kind is part of the value (D051): a point and a vector with equal components
+    // are different values. (id:notation-coordinate-vector)
+    const store = createReadouts()
+    let value = asKind([1, 2], "point")
+    const changes = []
+    store.watch((change) => changes.push(kindOf(change.value)))
+    store.register("source", "site", () => value)
+    store.recompute()
+    value = asKind([1, 2], "vector")
+    store.recompute()
+    assert.deepEqual(changes, ["point", "vector"])
 })
 
 test("store: a read that cannot answer yet is not a value", () => {

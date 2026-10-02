@@ -3,7 +3,15 @@
 // Material cache (spec A3): one LineMaterial per (color, thickness) key —
 // owned by the stage via createMaterialCache (render/line/material-cache.js).
 
-import { GridHelper } from '../utils/three-entry.js'
+import {
+    BufferGeometry,
+    Float32BufferAttribute,
+    GridHelper,
+    Group,
+    Mesh,
+    MeshBasicMaterial,
+    Vector3,
+} from '../utils/three-entry.js'
 import { followPosition } from './view.js'
 import { ColorConverter } from '../utils/color.js'
 // troika is imported by the browser entry (render/index.js) and injected as a
@@ -37,6 +45,7 @@ export function createLabels(group, opts = {}) {
 export const MATERIALIZERS = {
     path: (event, groups, ctx) => materializePath(event, groups.pathGroup, ctx.shapist, undefined, ctx.materials),
     head: (event, _groups, ctx) => materializeHead(event, ctx),
+    vector: (event, _groups, ctx) => materializeVector(event, _groups, ctx),
     view: (event, _groups, ctx) => materializeView(event, ctx),
     label: (event, _groups, ctx) => materializeLabel(event, ctx),
     grid: (event, groups) => materializeGrid(event, groups.gridGroup),
@@ -148,19 +157,26 @@ export function flushTrail(layer) {
 function materializeHead(event, ctx) {
     const pos = event.position
 
-    if (ctx.camera) {
+    // A camera is only followed when there is something to follow THROUGH. `controls`
+    // may be absent (no stage controls, a targetless stub, a headless rehearsal), and a
+    // missing target must cost the follow, never the whole compositor pass — this threw
+    // `can't access property "x", … is undefined` out of `advance`, froze the figure and
+    // left one console line. (Fixed 2026-10-02; reproduced: a targetless controls +
+    // `desire: 'track'`.)
+    const eye = ctx.camera?.position ?? null
+    const target = ctx.controls?.target ?? null
+    if (ctx.camera && eye && target) {
         switch (ctx.camera.desire) {
         case 'track': {
             // Follow off the target, not the head mesh — the head respawns on
             // every re-eval, which walked the camera per edit. (view.js followPosition)
-            const c = ctx.camera.position, t = ctx.controls.target
-            const next = followPosition([c.x, c.y, c.z], [t.x, t.y, t.z], pos)
-            c.set(next[0], next[1], next[2])
-            t.set(pos[0], pos[1], pos[2])
+            const next = followPosition([eye.x, eye.y, eye.z], [target.x, target.y, target.z], pos)
+            eye.set(next[0], next[1], next[2])
+            target.set(pos[0], pos[1], pos[2])
             break
         }
         case 'pan':
-            ctx.controls.target.set(pos[0], pos[1], pos[2])
+            target.set(pos[0], pos[1], pos[2])
             break
         }
     }
@@ -174,6 +190,74 @@ function materializeHead(event, ctx) {
     } else {
         ctx.head?.hide?.()
     }
+}
+
+// A VECTOR is an object, not deposited ink: a straight line from the frame it was
+// declared in to the point it reaches, with an ARROWHEAD at the tip. Keyed, so an
+// update REPLACES the line — the vector is what it is now. (id:notation-coordinate-vector)
+const ARROW_SEGMENTS = 12
+const ARROW_RADIUS = 0.45
+const _up = new Vector3(0, 1, 0)
+const _dir = new Vector3()
+
+// A unit cone, tip at +y — built by hand like the head's own geometry, because the
+// three entry's export list is deliberate. (id:notation-coordinate-vector)
+function arrowGeometry() {
+    const positions = []
+    for (let i = 0; i < ARROW_SEGMENTS; i++) {
+        const a = (i / ARROW_SEGMENTS) * Math.PI * 2
+        const b = ((i + 1) / ARROW_SEGMENTS) * Math.PI * 2
+        positions.push(0, 0.5, 0,
+            ARROW_RADIUS * Math.cos(a), -0.5, ARROW_RADIUS * Math.sin(a),
+            ARROW_RADIUS * Math.cos(b), -0.5, ARROW_RADIUS * Math.sin(b))
+    }
+    const geometry = new BufferGeometry()
+    geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
+    return geometry
+}
+
+// The arrowhead sits at the tip and points along the segment. The compositor scales it
+// per frame, exactly as it scales a head, so its on-screen size is invariant.
+function placeArrow(head, from, to) {
+    if (!head) return
+    const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2]
+    const len = Math.hypot(dx, dy, dz)
+    head.visible = len > 1e-9
+    if (!head.visible) return
+    head.position.set(to[0], to[1], to[2])
+    head.quaternion.setFromUnitVectors(_up, _dir.set(dx / len, dy / len, dz / len))
+}
+
+function materializeVector(event, groups, ctx) {
+    const store = ctx.vectors
+    if (!store || !event.from || !event.to) return
+    const geometry = new LineGeometry()
+    geometry.setPositions(new Float32Array([...event.from, ...event.to]))
+    let entry = store.get(event.name)
+    if (!entry) {
+        const line = new Line2(geometry, ctx.materials?.get(event.color, event.thickness))
+        line.computeLineDistances()
+        groups.pathGroup?.add?.(line)
+        const head = new Group()
+        const cone = new Mesh(arrowGeometry(), new MeshBasicMaterial({ color: event.color }))
+        cone.position.y = -0.5          // the cone's tip lands on the group's origin
+        head.add(cone)
+        groups.pathGroup?.add?.(head)
+        entry = { line, head, event }
+        store.set(event.name, entry)
+    } else {
+        const stale = entry.line.geometry
+        entry.line.geometry = geometry
+        entry.line.computeLineDistances()
+        stale?.dispose?.()
+        entry.event = event
+    }
+    placeArrow(entry.head, event.from, event.to)
+    // The NAME is not deposited ink and not layer geometry: a declared object's
+    // identifying name is screen-space, drawn by the overlay beside the pin's own
+    // (id:laws-decl-interface). The entry keeps the event so the overlay can project
+    // the tip; the arrow stays world geometry. (id:notation-coordinate-vector)
+    ctx.requestRender?.()
 }
 
 // A Lens emits no mesh and never drives the camera — pose reframing happens at

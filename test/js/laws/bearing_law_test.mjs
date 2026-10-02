@@ -20,7 +20,7 @@ const bearingOf = (origin, heading, p) => {
     return wrap(compassOf(dx, dy) - heading)
 }
 
-const SOURCE = "let B = [0, 0, 0]\ngoto 5 1 0\nlet P\nas B do\n  let P.bearing = 30\nend"
+const SOURCE = "let B.position = [0, 0, 0]\ngoto 5 1 0\nlet P\nas B do\n  let P.bearing = 30\nend"
 
 test("the read and the law are the same bearing row", () => {
     assert.equal(RELATION.bearing, AUTHORED.bearing)
@@ -83,7 +83,7 @@ test("the freedom display names the half-plane, and a height law meets in a ray"
 test("a bearing declared at the vertex resolves to a repeatable unit arm", () => {
     const scheduler = buildWorld({ admit: pass })
     const host = scheduler.hotSwapChild("host", fork("host",
-        "let B = [0, 0, 0]\nlet P\nas B do\n  let P.bearing = 30\nend"))
+        "let B.position = [0, 0, 0]\nlet P\nas B do\n  let P.bearing = 30\nend"))
     drive(scheduler)
     const B = host.children.get("B")
     const P = host.children.get("P")

@@ -25,6 +25,20 @@ test("realize: a chain responds jointly, preserving each edge's original directi
     assert.deepEqual(out.get(3), [5, 0, 0], "the child stays on the side it was on")
 })
 
+test("a feasible relation loop can be outside the tree candidate method", () => {
+    // Topology is not consistency: these three independently checked lengths hold.
+    // (id:tower-laws-cycle-contracts)
+    const world = worldOf({ 1: [0, 0, 0], 2: [3, 0, 0], 3: [0, 4, 0] })
+    const loop = [law(1, 2, 3), law(2, 3, 5), law(3, 1, 4)]
+    for (const { endpoints: [a, b], predicate } of loop) {
+        const distance = Math.hypot(...world(a).map((x, i) => x - world(b)[i]))
+        assert.equal(distance, predicate, "the candidate configuration satisfies this edge")
+    }
+    assert.equal(componentOf(loop, [1]).laws.length, 3, "incidence retains the whole loop")
+    assert.equal(realizeDistanceTree(loop, 1, world, (l) => l.predicate), null,
+        "the bounded method declines; it has not proved a contradiction")
+})
+
 test("realize: a cycle, a non-distance law or a missing anchor is unsupported", () => {
     const world = worldOf({ 1: [0, 0, 0], 2: [1, 0, 0], 3: [2, 0, 0] })
     assert.equal(realizeDistanceTree(

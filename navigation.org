@@ -630,7 +630,7 @@ Verified syntax lives in =PAPERLANG.org= + =codex/refs/Library=.
 ** place and walking head — one visible A
 :PROPERTIES:
 :ID: nav-place-head
-:KEYWORDS: place free point anchored arrowhead ring dot facing heading arm birth inherits spawn let as freePoint visibleHeadFor coordinate z held label readout
+:KEYWORDS: place free point anchored arrowhead ring dot facing heading arm birth inherits spawn let as freePoint visibleHeadFor coordinate z held label readout vectorNames nameAnchor drawVectorName retractVector removeVector
 :PATH: assets/js/turtling/compositor.js::getOrCreateLayer
 :END:
 The compositor materializes A's head when a visible pose arrives. The overlay
@@ -639,6 +639,11 @@ the head. =laws/batch.js::freePoint= gates touch to an unanchored =let A=,
 including mid-capture attachment. [[id:laws-place-head-frame]] ·
 [[id:laws-decl-point-agent]]. Fences: =test/js/laws/place_head_test.mjs= and
 =gesture_test.mjs=.
+A declared object's NAME is the overlay's too: =compositor.vectorNames= hands it a
+vector's world segment and =laws/pin.js nameAnchor/drawVectorName= draw the name beside
+a pin's — screen-space and viewport-invariant — while the arrow stays world geometry.
+Its lifetime is the binding's: =retractVector= / =removeVector= take geometry and name
+together. (id:notation-coordinate-vector, D055)
 
 ** view boundary — one world-to-screen mapping
 :PROPERTIES:
@@ -766,8 +771,11 @@ the entries stay explicit. Display marks come from the locus (=marksOf=).
 :PATH: assets/js/turtling/laws/readout.js::createReadouts
 :END:
 Source-owned derived values recomputed once at the publication boundary, with
-value-equality cutoff and release on rewire/removal. No reactive runtime, no
-command replay. [[id:laws-build-p3-readout-built]]. Fence: =readout_test.mjs=.
+value-equality cutoff — KIND included, so a point and a vector with equal components
+differ (D051) — and release on rewire/removal. =register= replaces the whole definition
+(=drives= included); =retire(source,key)= retires one node when its site replaces a live
+law with a fixed one. No reactive runtime, no command replay.
+[[id:laws-build-p3-readout-built]]. Fence: =readout_test.mjs=.
 
 ** derived display — a polygon follows the drag
 :PROPERTIES:
@@ -1083,6 +1091,10 @@ livelocks — =drainAndMaterialize= walks the whole registry. =full= means "put
 would refuse", closed or open. Fences: =test/js/runtime/backpressure_spike_test.mjs=,
 =test/js/runtime/ring_buffer_test.mjs=.
 
+=put(value, key)= CONFLATES a keyed value in place when the ring is full: a displayed
+object (a vector arrow) is what it is now, so a newer same-key event replaces the older
+one, while unkeyed ink still refuses and parks. (D027 R2.5, id:notation-coordinate-vector)
+
 ** a letter — who hears a shout, and what a full box means
 :PROPERTIES:
 :ID: nav-mailbox
@@ -1385,6 +1397,8 @@ unchanged rewrite dirties nothing and draws with no async =sync= gap — the
 =materializer.createLabels= takes the injected factory; the browser entry
 (=render/index.js=) wires the vendored Text in, so both the pool and the
 compositor are importable headless.
+The pool serves DEPOSITED label ink only. A declared object's name is not a label:
+it is screen-space and viewport-invariant, drawn by the overlay. (id:laws-decl-interface)
 An erase trims to =freeCap= free Texts (the burst peak is freed); layer
 teardown disposes geometry, material and detaches.
 Tested: =test/js/render/label_pool_test.mjs=.
@@ -1402,15 +1416,64 @@ A node's KIND tells a name from a value: =operand= names something to resolve,
 =literal= holds a value as itself (=string= stays text). A capture is held through
 =heldValue=, a copy, never an alias. [[id:tower-tension-repr]]. Fence: =primitives_test.mjs=.
 
+** the grammar — a comma-list is a quantity, the delimiter names its kind
+:PROPERTIES:
+:ID: nav-notation-grammar
+:MODULE: mafs/parse.js
+:KEYWORDS: grammar parse group bracket paren point coordinate vector delimiter comma declaration displacement pin literal shape narray dimension projection space toSpace
+:PATH: assets/js/turtling/mafs/parse.js
+:END:
+=parseGroup= reads `(a, b, c)` as a coordinate (a point) and `[a, b, c]` as a vector (a
+displacement); without a comma `(e)` groups and `[e]` is the singleton vector. A
+declaration reads that kind =let A = (c)= pins a fixed point, =let A = [v]= draws a
+displacement. The engine's space is three; a value is an n-array, and =space.js=
+=toSpace= is the one projection (n < 3 embeds, n > 3 truncates).
+ONE DECLARATION CENTER (D046, D051–D053): the parser validates the bracketed forms and the
+VALUE decides the kind — a POINT is a place (a pin, no ink), a VECTOR is an OBJECT (an
+arrow) and a VALUE (=isPlace: false=), anything else a derived value; the algebra is typed
+(=(p) + (q)= refused, =(p) - (q)= a vector). [[id:notation-coordinate-vector]].
+
+** value lifetimes — adversarial boundary witnesses
+:PROPERTIES:
+:ID: nav-notation-lifecycle
+:KEYWORDS: declaration vector redraw label replacement ownership readout drives kind equality sampling cycle resolved-reference dependency retract self-dependent overlay current-state
+:PATH: test/js/laws/value_lifecycle_test.mjs
+:END:
+=node --test test/js/laws/value_lifecycle_test.mjs= follows a declared value through
+change → replace → refuse → release: ONE current-state display lifetime per object
+(initial, update, removal owned by its readout), a collection of arrows each keeping its
+own newest value, an overlay name, a retired driver, a refused replacement, kind-aware
+equality, once-only sampling, a nested frame's own slot, and dependency read from the
+frames a read RESOLVED — never a syntactic name scan. The refused self-dependent place
+is D054; the display contract is D055. Reproducers: =probe/notation-review/lifecycle.mjs=;
+the causal record is [[id:value-lifecycle-review]].
+
+** relationship boundary — a relationship is not a callback
+:PROPERTIES:
+:ID: nav-relationship-boundary
+:KEYWORDS: relationship assignment feedback callback authority relational geometry cycle unresolved bindLaw guards ownership resolved references self-dependent
+:PATH: test/js/laws/relationship_boundary_test.mjs
+:END:
+A dependent position is assignment feedback (D049/D054) and may not stand on itself. A
+RELATIONSHIP is its own authority — expression and resolved references, coordinate frame
+and domain guards, source ownership, independent evaluation and final acceptance (D056).
+A cycle in legitimate relational geometry is a solver limitation (the scope ends
+=unresolved=), never the assignment refusal. The change callback triggers; the pipeline
+certifies.
+Cycle scope: [[id:tower-laws-cycle-contracts]] distinguishes a derived definition, a
+relation loop, and D011's wait-for snapshot. D054 is not a fixed-point theorem;
+=test/js/laws/component_test.mjs= witnesses a feasible loop outside the tree method.
+
 ** the semantic center — one door for every operation
 :PROPERTIES:
 :ID: nav-tower-center
 :MODULE: mafs/tower.js
-:KEYWORDS: tower center dispatch register kind typeOf seal operation generic coefficient shadow shadowable override reserved builtin round mod
+:KEYWORDS: tower center dispatch register kind typeOf seal operation generic coefficient shadow shadowable override reserved builtin round mod vector literal bracket rank-one scale add installVectorFloor
 :PATH: assets/js/turtling/mafs/tower.js
 :END:
 One operation, ordered values, one value or an honest refusal. Operators and
-scalar builtins register here; the evaluator is sealed over it and never
+scalar builtins and the vector floor (=installVectorFloor=: scalar·vector scale,
+vector + vector add) register here; the evaluator is sealed over it and never
 switches. Boundary, witness and ladder: [[id:tower-center]].
 
 ** tower rounding — the tiny-signal probe

@@ -114,7 +114,7 @@ test("C. fence: non-finite geometry never admits a move", () => {
 // ---------------------------------------------------------------------------
 const PINNED_CHAIN = [
     "let A", "let B", "let C",
-    "as O do\n  let C = [1, 0, 0]\nend",
+    "as O do\n  let C.position = [1, 0, 0]\nend",
     "as A do\n  let B.distance = 6\n  wait 1\n  let B.distance = 5\nend",
     "as B do\n  let C.distance = 5\nend",
 ].join("\n")
@@ -133,7 +133,7 @@ test("D. fence: a pinned member ends unresolved, never a false impossibility", (
 test("D2. fence: the same pin is reported the same way on anchor and member", () => {
     const src = [
         "let A", "let B", "let C",
-        "as O do\n  let A = [0, 0, 0]\nend",
+        "as O do\n  let A.position = [0, 0, 0]\nend",
         "as A do\n  let B.distance = 6\n  wait 1\n  let B.distance = 5\nend",
         "as B do\n  let C.distance = 5\nend",
     ].join("\n")

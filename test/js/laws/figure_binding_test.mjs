@@ -246,7 +246,7 @@ wait 1
 test("a derived cell is strict: a body that cannot parse is refused", () => {
     const scheduler = buildWorld({})
     const host = scheduler.hotSwapChild("host", fork("host", `def r d do
-  let Q = [0,0]
+  let Q = [0,,0]
   fw 1
 end
 let f = r 0

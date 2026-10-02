@@ -19,6 +19,7 @@ import { realizeDistance, ACCEPT_TOL } from "./laws/realize.js"
 import { SE3 } from "./se3.js"
 import { keyedSeed, keyedStream } from "./mafs/keyed_stream.js"
 import { chargeInk, woundInk, enforceResidency, resetInk, createStock } from "./ledger.js"
+import { toSpace } from "./space.js"
 
 // Lens: viewport Output, not scene. Name `eye`. (id:eye-lens-primitive)
 const LENS_NAMES = new Set(["eye"])
@@ -180,8 +181,11 @@ function projectHead(headEvent, frameTarget, frameTransform) {
 // SLOT vs CHANNEL — two queue disciplines (classic: mailbox vs latest-value).
 // Channel: lossless; full refuses → park owing. Slot: conflates; newest wins; never owes.
 // A pose that never painted was not lost — it was superseded. (id:output-ledger-r2-slot)
-function putSync(ctx, event) {
-    ctx.sync[event.type] = event
+function putSync(ctx, event, key = event.type) {
+    // The key is the identity of a displayed thing: a single head per frame keys by
+    // kind, a declared object keys by its name so a COLLECTION of arrows coexists
+    // and each conflates only with itself. (id:notation-coordinate-vector)
+    ctx.sync[key] = event
 }
 
 // Reader empties the slot (conflation's other half). One owner — not the compositor.
@@ -547,8 +551,7 @@ function resolveBinding(frame, name, args) {
 // reads about another place is what that place IS. The eye's rounding is the
 // display's business and never feeds back. (ruling 3: a reading is exact)
 //
-// A reading with no answer stays NOTHING — a floor would faithfully turn nothing into
-// zero, the lie this convention exists to prevent. (id:eval-relational)
+// A reading with no answer stays NOTHING (id:eval-relational)
 const orNothing = (v) => v === null ? null : v
 
 const headingFromQuaternion = headingOf
@@ -633,6 +636,7 @@ const SPATIAL = {
     x: (t) => orNothing(t.position[0]),
     y: (t) => orNothing(t.position[1]),
     z: (t) => orNothing(t.position[2]),
+    position: (t) => orNothing(t.position),
     heading: (t) => orNothing(headingFromQuaternion(t.rotation)),
     elevation: (t) => orNothing(elevationOf(t.rotation)),
 }
@@ -925,6 +929,7 @@ function ownsRead(frame, targetName) {
 function closeDerivedDeps(deps, frame) {
     frame.capture = deps.capture ?? captureEnvironment(frame.parent ?? frame)
     deps.mathEvaluator.resolveExternal = (name) => {
+        recordRead(deps.mathEvaluator, frame, name)
         // A dotted read is not automatically an outside observation. A place inside the
         // reader's own region is the region's business — a construction may contain
         // local points and read them. Only a read of something the construction does
@@ -950,6 +955,19 @@ function closeDerivedDeps(deps, frame) {
     deps.mathEvaluator.endObservation = () => {}
 }
 
+// The resolver NAMES what it reached: a dotted read records the frame it resolved, so
+// a dependency is a REFERENCE, never a spelling. This is the whole dependency exposure
+// — no syntactic scan of the expression by a consumer. (id:laws-dependency-driven-place)
+function recordRead(evaluator, frame, name) {
+    const reads = evaluator.reads
+    if (!reads) return
+    reads.live = true
+    if (typeof name === 'string' && name.includes('.')) {
+        const target = findFrame(frame, name.slice(0, name.indexOf('.')))
+        if (target) reads.frames.add(target)
+    }
+}
+
 function bindResolve(deps, frame) {
     deps.mathEvaluator.beginObservation = () => {
         const root = metaRootFrame(frame)
@@ -964,6 +982,7 @@ function bindResolve(deps, frame) {
     deps.mathEvaluator.endObservation = () => { frame.observation = null }
     deps.mathEvaluator.resolveExternal = (v, a) => {
         const result = resolveBinding(frame, v, a)
+        recordRead(deps.mathEvaluator, frame, v)
         if (typeof v === 'string' && v.includes('.')) deps.mathEvaluator._observedSibling = true
         return result
     }
@@ -1717,9 +1736,16 @@ function committedSnapshot() {
 // A source is gone: every derived value it owned goes with it.
 function releaseReadouts(root, ids) {
     if (!root?._readouts) return
-    // Release first: a mount's onRelease sees its figure record before it goes.
+    // A displayed object the source owned leaves with it: the retraction is written
+    // before the nodes go, so the frame that declared it can still receive it.
+    // (id:notation-coordinate-vector, id:laws-ordered-replacement)
     const released = new Set(ids)
-    for (const id of released) root._readouts.release(id)
+    for (const id of released) {
+        for (const drives of root._readouts.drivesForSource(id)) {
+            if (drives.kind === 'vector') retractVector(drives.spec.frame, drives.spec.name)
+        }
+        root._readouts.release(id)
+    }
 }
 
 // A closed region's answer owns its subtree. A rebuild replaces that subtree, so a
@@ -2257,8 +2283,8 @@ function componentMeetCandidate(spec, candidate, comp, pump, scope) {
     const check = lawViolation(scope, overrides, pump.registry)
     if (check.status === 'cannot-measure') return unsupported(spec, check.reason)
     if (check.status !== 'valid') return null
-    return { kind: 'commit', poses: [{ frame: point, pose }], install: () => pump.laws.apply(candidate),
-        heads: [{ frame: point, pose }], span: spec.owner }
+    return { kind: 'commit', poses: [{ frame: point, pose }], address: candidate.address,
+        install: () => pump.laws.apply(candidate), heads: [{ frame: point, pose }], span: spec.owner }
 }
 
 function componentCandidate(spec, candidate, pump, scope) {
@@ -2306,7 +2332,7 @@ function componentCandidate(spec, candidate, pump, scope) {
     const check = lawViolation(scope, overrides, pump.registry)
     if (check.status === 'cannot-measure') return { kind: 'unresolved', message: check.reason, span: spec.owner }
     if (check.status === 'violation') return null
-    return { kind: 'commit', poses, install: () => pump.laws.apply(candidate), heads, span: spec.owner }
+    return { kind: 'commit', poses, address: candidate.address, install: () => pump.laws.apply(candidate), heads, span: spec.owner }
 }
 
 // A proposal returns an outcome; it never mutates a frame's lifetime. The caller
@@ -2383,7 +2409,7 @@ function applyLaw(spec, pump) {
                 [spec.target, spec.observer]) }
     }
     // Laws, owner and accepted geometry commit in one publication, before notify.
-    return { kind: 'commit', poses: [{ frame: spec.target, pose }],
+    return { kind: 'commit', poses: [{ frame: spec.target, pose }], address: candidate.address,
         install: () => pump.laws.apply(candidate), heads: [{ frame: spec.target, pose }], span: spec.owner }
 }
 
@@ -2391,18 +2417,107 @@ function applyLaw(spec, pump) {
 // A scalar declaration: one source-owned derived value bound to its name. A read of
 // the name is still a snapshot; the value recomputes at the commit.
 // (id:laws-build-p3-readout-built)
+// A vector's line follows its value: the SAME key, so the materializer REPLACES the line
+// rather than stacking another. The line is a display of the displacement, not a stroke.
+// (id:notation-coordinate-vector)
+// What a derived value's change DOES, by the kind of the datum its owner registered —
+// one row per kind of redraw, never a branch at the watcher.
+// (id:notation-coordinate-vector, id:laws-dependency-driven-place)
+const REDRAWN = { vector: redrawVector, place: queuePlace }
+
+// A derived place whose coordinate changed: queue the re-application. A commit must not
+// nest inside the publication that caused it, so the scheduler drains this at its next
+// boundary. A value that cannot land leaves the place at its last accepted pose.
+// (id:laws-dependency-driven-place)
+function queuePlace(spec, raw) {
+    const next = toSpace(raw)
+    if (next === null) return
+    metaRootFrame(spec.observer)._derivedMoves.push({ spec, value: next })
+}
+function redrawVector(spec, raw) {
+    const d = toSpace(raw)
+    if (!d) return
+    const frame = spec.frame
+    if (!frame?.sync) return
+    const [dx, dy, dz] = spec.rotation.rotateVec(d[0], d[1], d[2])
+    const to = [spec.from[0] + dx, spec.from[1] + dy, spec.from[2] + dz]
+    // ONE complete contract for birth and redraw: rotation rides with the event, so
+    // the overlay can place the name without a partial pose. (id:notation-coordinate-vector)
+    const event = { type: 'vector', name: spec.name, from: spec.from, rotation: spec.rotation,
+        color: spec.color, thickness: spec.thickness, textSize: spec.textSize, to }
+    putSync(frame, event, `vector:${spec.name}`)
+}
+
+// The owner's replacement or release transition retracts the WHOLE displayed object:
+// the arrow and its name leave together, under one identity. (id:notation-coordinate-vector,
+// id:laws-ordered-replacement)
+function retractVector(frame, name) {
+    if (!frame?.sync || !name) return
+    putSync(frame, { type: 'vector', name, removed: true }, `vector:${name}`)
+}
+
+// A name re-declared as something that is NOT a vector retracts the vector's WHOLE
+// displayed object, at the owner's transition — a parameter, a figure, a place.
+// (id:notation-coordinate-vector, id:laws-ordered-replacement)
+function retractIfVector(ctx, name, pump) {
+    const prior = pump.readouts?.drivesOf(ctx.id, name)
+    if (prior?.kind !== 'vector') return
+    retractVector(prior.spec.frame, prior.spec.name)
+    pump.readouts.retire(ctx.id, name)
+}
+
 function scalarReadout(ctx, value, _route, pump) {
-    const id = pump.readouts.register(ctx.id, value.owner ?? value.name, value.read)
+    // A VECTOR is drawn. The readout carries WHAT its change means, so one registry
+    // holds the node and its purpose together. (id:notation-coordinate-vector)
+    // The name is the identity in its scope: a re-declaration REPLACES the node, so a
+    // former display effect (a vector's arrow) cannot outlive the value that owned it.
+    // A plain value re-registers with no `drives`, and the arrow stops being redrawn.
+    // (id:notation-coordinate-vector, id:laws-ordered-replacement)
+    const drives = value.vector
+        ? { kind: 'vector', source: ctx.id, spec: { frame: ctx, ...value.vector } } : null
+    const before = pump.readouts.drivesOf(ctx.id, value.name)
+    // A replacement is WHOLE: if the name no longer names a vector, the arrow and its
+    // name leave now, at the owner's transition. A refused replacement never reaches
+    // this readout. (id:notation-coordinate-vector, id:laws-ordered-replacement)
+    if (before?.kind === 'vector' && drives == null) retractVector(before.spec.frame, before.spec.name)
+    const id = pump.readouts.register(ctx.id, value.name, value.read, drives)
+    // The readout owns the arrow's WHOLE lifetime: it draws the value just read here,
+    // redraws on change through the driver, and is retracted when the binding goes.
+    // (id:notation-coordinate-vector)
+    if (drives) redrawVector(drives.spec, value.initial)
     if (!ctx.scalars) ctx.scalars = new Map()
     ctx.scalars.set(value.name, id)
     return { verdict: 'continue', produced: true }
+}
+
+// A derived place's coordinate changed: re-run the ONE law pipeline and publish the
+// move. A refusal is not a wound — there is no reach to tell — so the place keeps its
+// last accepted pose. (id:laws-dependency-driven-place)
+function redrawDerivedPlace(move, pump) {
+    const { spec, value } = move
+    const { observer, target, owner } = spec
+    if (!target || target.error || !target.done) return
+    if (pump.registry.get(observer?.id) !== observer) return
+    // A retired site's work must lose the right to publish: the accepted law at this
+    // address must still be the one that queued the move. A newer fixed or live
+    // declaration retires the older driver, and its already-queued move is dropped.
+    // (id:laws-ordered-replacement)
+    if (spec.address != null && pump.laws.ownerOf(spec.address) !== owner) return
+    const outcome = applyLaw({ feature: 'position', target, observer, value, axis: null, owner }, pump)
+    if (outcome.kind !== 'commit') return
+    publish(observer, outcome.poses, pump.registry, outcome.install, () => {
+        for (const h of outcome.heads ?? []) emitHead(h.frame, h.pose)
+    })
 }
 
 
 // A parameter: sampled once at its declaration, then a stable input. It is bound
 // on the frame and read through `resolveBinding`; it owns no recomputation and no
 // node, so an unrelated commit cannot resample it. (id:eval-relational)
-function parameterReadout(ctx, value, _route, _pump) {
+function parameterReadout(ctx, value, _route, pump) {
+    // A parameter is not a displayed object; if the name was a vector, it leaves.
+    // (id:notation-coordinate-vector, id:laws-ordered-replacement)
+    retractIfVector(ctx, value.name, pump)
     if (!ctx.params) ctx.params = new Map()
     ctx.params.set(value.name, value.value)
     return { verdict: 'continue', produced: true }
@@ -2435,8 +2550,36 @@ function law(ctx, value, _route, pump) {
         if (born) withdrawPlace(ctx, born, pump)
         return woundRelation(ctx, `Unknown target: ${targetName}`, 'relation', value.owner)
     }
+    // D054 refuses detected own-target reads as a definition policy, even if stable.
+    // This is not a fixed-point test or a ban on cyclic relational obligations.
+    // (id:tower-laws-cycle-contracts)
+    if (value.feature === 'position' && value.read && value.reads?.includes(target.id)) {
+        if (born) withdrawPlace(ctx, born, pump)
+        return woundRelation(ctx,
+            `'${targetName}' cannot be defined by itself — a dependent place must stand on another`,
+            'relation', value.owner)
+    }
     const outcome = applyLaw({ feature: value.feature, target, observer: ctx,
         value: value.value, axis: value.axis ?? null, owner: value.owner }, pump)
+    // A dependent coordinate is a derived value: recompute it at each commit and
+    // re-apply the law when it changes. A literal coordinate registers nothing and
+    // RETIRES the place's previous driver, so an older live declaration cannot outlive
+    // its replacement. A refused replacement keeps the old accepted driver.
+    // (id:laws-dependency-driven-place, id:laws-ordered-replacement)
+    if (value.feature === 'position' && outcome.kind === 'commit') {
+        // A place replaces any vector of the same name: the name now marks a point,
+        // so the arrow and its name leave with the binding.
+        // (id:notation-coordinate-vector, id:laws-ordered-replacement)
+        retractIfVector(ctx, targetName, pump)
+        const placeKey = `place:${targetName}`
+        if (value.read) {
+            pump.readouts.register(ctx.id, placeKey, value.read,
+                { kind: 'place', source: ctx.id,
+                    spec: { observer: ctx, target, owner: value.owner, address: outcome.address } })
+        } else {
+            pump.readouts.retire(ctx.id, placeKey)
+        }
+    }
     if (born && outcome.kind === 'commit') {
         // Exposure is part of the commit, installed with the law before any
         // notification: no subscriber may see an installed pin it cannot touch.
@@ -2476,6 +2619,7 @@ function woundRelation(ctx, message, kind = 'relation', span = null) {
 // The generation is the question itself, not a counter. (id:laws-figure-protocol)
 function registerFigureCell(ctx, value, pump) {
     if (!pump.readouts) return
+    retractIfVector(ctx, value.name, pump)   // a figure is not a vector; the arrow leaves
     // The question is the arguments, re-read in the declaring frame. A live
     // name is a port (`let art = hello X.x`), not a free `let` in the body.
     // The membrane stays captureFor. (id:laws-figures-phase34-input)
@@ -2803,6 +2947,7 @@ export function createScheduler(generator, opts = {}) {
     root._attempts = new Map()
     root._attemptSeq = 0
     root._readouts = readouts
+    root._derivedMoves = []
     root._configurationRevision = 0
     root.transform.watch('configurationRevision', () => { root._configurationRevision++ })
     // Stage root has no when; rootHears opts in. (id:mailbox-listens-for)
@@ -2837,6 +2982,16 @@ export function createScheduler(generator, opts = {}) {
     // pump's wake clears the cached flag so the next tick advances it.
     // (id:laws-figure-eidos-cell)
     pump.wake = () => { root._done = false }
+    // A derived value changed. What that MEANS depends on its kind: a place re-applies
+    // its law (a commit, which must not nest inside the publication that caused it, so
+    // it is queued for the scheduler to drain), a vector re-places its arrow (a display
+    // put, which may happen at once). A fixed value's readout never changes, so it never
+    // fires — "fixed" is a derived value that simply does not move.
+    // (id:notation-coordinate-vector, id:laws-dependency-driven-place)
+    readouts.watch((change) => {
+        const redraw = change.drives
+        if (redraw) REDRAWN[redraw.kind](redraw.spec, change.value)
+    })
 
     return {
         root,
@@ -2848,7 +3003,7 @@ export function createScheduler(generator, opts = {}) {
         set resumeAt(v) { root.resumeAt = v },
 
         // Backed by the root so a drain-time re-seat can wake the scheduler.
-        get done() { return root._done === true },
+        get done() { return root._done === true && root._derivedMoves.length === 0 },
         set done(v) { root._done = v },
         commandCount: 0,
         lastTickTime: 0,
@@ -3050,6 +3205,17 @@ export function createScheduler(generator, opts = {}) {
         // Earliest resumeAt only; post-order within an instant. (D011 #3)
         tick(now) {
             this.lastTickTime = now
+            // A derived place whose coordinate changed commits its move here, OUTSIDE
+            // any publication and before any early return: a queued move is not work
+            // the frontier knows about. A move that cannot land keeps the last pose.
+            // (id:laws-dependency-driven-place)
+            if (root._derivedMoves.length > 0) {
+                const moves = root._derivedMoves
+                root._derivedMoves = []
+                for (const move of moves) {
+                    try { redrawDerivedPlace(move, pump) } catch { /* keep the last pose */ }
+                }
+            }
             // A drain may re-seat a derived figure after the pass was marked done
             // (rewireChild resets the child, not this cache). Recompute before
             // trusting it, so a re-seated figure is advanced. (id:laws-figure-eidos-cell)

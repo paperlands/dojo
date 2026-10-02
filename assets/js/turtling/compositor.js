@@ -73,7 +73,9 @@ export function createCompositor(scheduler, stage, opts = {}) {
     const createShapist = opts.createShapist || null
     // The stage owns the Text constructor; the compositor never imports troika,
     // so `node --test` can hold the real object. (id:label-reuse)
-    // Orbit target for materializeHead; headless callers omit it.
+    // Orbit target for materializeHead, handed in by the turtle as `opts.controls`; a
+    // headless caller omits it. A missing target now costs the camera follow, not the
+    // pass. (id:label-reuse, corrected 2026-10-02)
     const controls = opts.controls ?? null
     // The beat channel: one callback, emitted where the playhead consumes it.
     const onBeat = opts.onBeat ?? null
@@ -107,7 +109,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         const head = (createHead && makeHead) ? createHead(group) : null
         const shapist = createShapist ? createShapist(group) : null
         // trails: per-source consolidated polyline runs (materializer-owned state)
-        const layer = { group, head, shapist, labels, trails: new Map() }
+        const layer = { group, head, shapist, labels, trails: new Map(), vectors: new Map() }
         ambientLayers.set(id, layer)
         return layer
     }
@@ -131,6 +133,21 @@ export function createCompositor(scheduler, stage, opts = {}) {
         if (keepLabels) layer.labels.rewrite()
         else layer.labels.hide()
         layer.trails.clear()
+        layer.vectors.clear()
+    }
+
+    // Retract one displayed object: its geometry AND its name leave together. The
+    // name is not a pooled label, so nothing else holds it; the layer's vector map
+    // is the only owner. (id:notation-coordinate-vector, id:laws-ordered-replacement)
+    function removeVector(layer, name) {
+        const entry = layer.vectors?.get(name)
+        if (!entry) return
+        for (const obj of [entry.line, entry.head]) {
+            if (!obj) continue
+            obj.traverse?.(disposeMesh)
+            obj.parent?.remove?.(obj)
+        }
+        layer.vectors.delete(name)
     }
 
     // Dispose a layer entirely: hide head, dispose shapist, remove from scene.
@@ -176,6 +193,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
                 shapist: layer.shapist,
                 labels: layer.labels,
                 head: layer.head,
+                vectors: layer.vectors,
                 camera: camOn ? stage.camera : null,
                 controls: camOn ? controls : null,
                 frame: ambient,
@@ -184,6 +202,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
             }
             const childGroups = { pathGroup: layer.group, gridGroup: layer.group }
 
+            // Only `label` is deposited ink; a vector's name lives in the overlay.
             const willPrint = events.some((e) => e.type === 'label')
             for (const event of events) {
                 if (event.type === 'error') continue
@@ -202,7 +221,13 @@ export function createCompositor(scheduler, stage, opts = {}) {
             }
             if (willPrint) layer.labels.trim()
             // Poses land after the batch: the newest is where the turtle IS.
-            for (const pose of poses) materialize(pose, childGroups, childCtx)
+            for (const pose of poses) {
+                // The owner's retraction removes the WHOLE object, geometry and name,
+                // at the same transition that retired the binding.
+                // (id:notation-coordinate-vector, id:laws-ordered-replacement)
+                if (pose.type === 'vector' && pose.removed) { removeVector(layer, pose.name); continue }
+                materialize(pose, childGroups, childCtx)
+            }
             // Rebuild the trail mesh once per frame, not per event.
             flushTrail(layer)
             produced = true
@@ -267,6 +292,18 @@ export function createCompositor(scheduler, stage, opts = {}) {
     }
 
     // Seat groups at worldTransform; skip the driving eye's layer.
+    // A layer's seat in the scene world: the frame's own world pose, or the target's
+    // when the frame is head-targeted. The eye reframe is applied separately, so the
+    // WebGL layer and the overlay's projection agree by construction. (id:laws-decl-interface)
+    function seatedWorld(ambient) {
+        let wt = worldTransform(ambient)
+        if (ambient.targetFrame) {
+            const target = findReferenceFrame(ambient, ambient.targetFrame)
+            if (target) wt = worldTransform(target)
+        }
+        return wt
+    }
+
     function updateGroupPositions() {
         const eyeInv = viewReframe()
         for (const [id, ambient] of scheduler.registry) {
@@ -275,12 +312,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
             const layer = ambientLayers.get(id)
             if (!layer) continue
 
-            // Frame-targeted head seats at target worldTransform. (id:ft-d5-head)
-            let wt = worldTransform(ambient)
-            if (ambient.targetFrame) {
-                const target = findReferenceFrame(ambient, ambient.targetFrame)
-                if (target) wt = worldTransform(target)
-            }
+            let wt = seatedWorld(ambient)
             if (eyeInv && !ambient.isLens) wt = SE3.compose(eyeInv, wt)
             const p = layer.group.position, q = layer.group.quaternion
             const pos = wt.position, r = wt.rotation
@@ -324,19 +356,25 @@ export function createCompositor(scheduler, stage, opts = {}) {
         }
     }
 
+    // A vector's arrowhead: how big it stands on screen, in the head's own units.
+    // (id:notation-coordinate-vector)
+    const ARROW_ON_SCREEN = 8
     const _scratchHeadPos = new Vector3()
     function scaleChildHeads() {
         for (const [id, layer] of ambientLayers) {
             const gp = layer.group.position
             // A point handle keeps a constant on-screen size and faces the eye,
-            // exactly as a head does — the same distance scale, the same frame.
-            if (!layer.head) continue
-            const headPos = layer.head.position()
-
-            // Heading comes from the head event (projected if frame-targeted).
-            // Reuse one scratch vector — this runs per head per frame.
+            // exactly as a head does — the same distance scale, the same frame. A
+            // vector's arrowhead shares that scale, and gets it whether or not this
+            // layer has a head: a layer without one still draws its vectors.
+            // (id:notation-coordinate-vector)
+            const headPos = layer.head?.position?.() ?? gp
             _scratchHeadPos.set(gp.x + headPos.x, gp.y + headPos.y, gp.z + headPos.z)
             const dist = stage.camera.position.distanceTo(_scratchHeadPos)
+            for (const entry of layer.vectors?.values?.() ?? []) {
+                entry.head?.scale?.setScalar(dist / 250 * ARROW_ON_SCREEN)
+            }
+            if (!layer.head) continue
             layer.head.scale(dist / 250)
         }
     }
@@ -374,6 +412,26 @@ export function createCompositor(scheduler, stage, opts = {}) {
     // The pin shares the actual rendered head, not a guess from execution state.
     // An empty place keeps its bead; once A walks, the ring leaves its centre open.
     visibleHeadFor(id) { return !!ambientLayers.get(id)?.head?.turtleGroup?.visible },
+
+        // Vector marks for the invariant overlay: a declared object's world segment, so
+        // the overlay can place its NAME beyond the tip on screen while the arrow stays
+        // world geometry. (id:notation-coordinate-vector, id:laws-decl-interface)
+        vectorNames() {
+            const out = []
+            for (const [id, layer] of ambientLayers) {
+                if (!layer.vectors || layer.vectors.size === 0) continue
+                const ambient = scheduler.registry.get(id)
+                if (!ambient) continue
+                const wt = seatedWorld(ambient)
+                for (const entry of layer.vectors.values()) {
+                    const e = entry.event
+                    if (!e?.from || !e?.to) continue
+                    out.push({ name: e.name, color: e.color,
+                        from: SE3.apply(wt, e.from), to: SE3.apply(wt, e.to) })
+                }
+            }
+            return out
+        },
         // The one world→scene mapping: eye and hand compose here, and the camera
         // draws the result. Markers and gestures both read it, so a drawn point
         // and its hit target cannot live in different frames. (id:laws-decl-interface)

@@ -37,7 +37,7 @@ test("display: the side count follows the drag at the commit, with no replay", (
     const host = scheduler.hotSwapChild("host", fork("host", [
         "let A",
         "jmp 100",
-        "fn bucketRound(no) [no // 1]",
+        "fn bucketRound(no) (no // 1)",
         "let n = bucketRound(A.x/10)",
         "wait 1",
     ].join("\n")))

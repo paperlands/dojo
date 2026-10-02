@@ -77,7 +77,7 @@ test("P1.2 a second declaration reconfigures the component, never a lie", () => 
 
 test("P1.2 a re-reached let does not move a pinned point", () => {
     const scheduler = buildWorld({})
-    const host = scheduler.hotSwapChild("host", fork("host", "let A\nlet A = origin\nfw 10\nlet A"))
+    const host = scheduler.hotSwapChild("host", fork("host", "let A\nlet A.position = origin\nfw 10\nlet A"))
     drive(scheduler)
     const A = find(host, "A")
     assert.deepEqual(world(A), [0, 0, 0], "the pin held through the being act")
@@ -120,7 +120,7 @@ test("P1.3 a pin is realized and checked in the frame it was authored in", () =>
         "let A",
         "goto 10 0",
         "as B do",
-        "  let A = origin",
+        "  let A.position = origin",
         "end",
     ].join("\n")))
     drive(scheduler)
@@ -211,7 +211,7 @@ test("P5 a relationship-only edit is a fresh play, not a hot delete", () => {
 test("P3 a pin is authored in the placement frame, not the live head", () => {
     const scheduler = buildWorld({})
     const host = scheduler.hotSwapChild("host", fork("host",
-        "let A\nas B do\n  let A = origin\n  fw 10\nend"))
+        "let A\nas B do\n  let A.position = origin\n  fw 10\nend"))
     drive(scheduler)
     const A = find(host, "A")
     const B = find(host, "B")
@@ -223,7 +223,7 @@ test("P3 a pin is authored in the placement frame, not the live head", () => {
 test("P3 a pin authored after the head walked still names the placement origin", () => {
     const scheduler = buildWorld({})
     const host = scheduler.hotSwapChild("host", fork("host",
-        "let A\nas B do\n  fw 10\n  let A = origin\nend"))
+        "let A\nas B do\n  fw 10\n  let A.position = origin\nend"))
     drive(scheduler)
     const A = find(host, "A")
     assert.deepEqual(world(A), [0, 0, 0],
@@ -239,7 +239,7 @@ test("P7 an incompatible pin holds the component even when PROPOSE refuses first
         "  let A.distance = 5",
         "end",
         "as C do",
-        "  let A = [1, 0, 0]",
+        "  let A.position = [1, 0, 0]",
         "end",
     ].join("\n")))
     drive(scheduler)

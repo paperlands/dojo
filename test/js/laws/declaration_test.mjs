@@ -40,13 +40,13 @@ test("acceptance: `let A` states existence and carries its span", () => {
     assert.deepEqual(node.children, [])
 })
 
-test("acceptance: a malformed position literal is refused locally", () => {
-    for (const src of ["let A = [0,0]"]) {
+test("acceptance: a malformed bracketed value is refused locally", () => {
+    for (const src of ["let A = [0,,0]"]) {
         // The structured diagnostic, not a message field that can drift from it.
         const [wound] = collectErrors(parseProgram(src))
         assert.ok(wound, `${src} should be a located refusal`)
         assert.equal(wound.span.line, 1)
-        assert.match(wound.expected, /property|relation|position/)
+        assert.match(wound.expected, /vector|property|relation|position/)
     }
 })
 
@@ -54,21 +54,32 @@ test("acceptance: a bare name is a scalar, and the walk resolves its kind", () =
     // `let A = B` is not a declaration form, it is an expression: a zero-input
     // recipe is a figure, a constant or a 0-arity fn is a value, and a name that
     // means nothing wounds where a measure is demanded. The namespace is known at
-    // the walk, so that is where the kind is decided. (id:eval-relational)
+    // the walk, so that is where the kind is decided — the parser does not read it.
+    // (id:eval-relational, id:notation-coordinate-vector)
     const node = first("let A = B")
-    assert.equal(node.type, "Scalar")
+    assert.equal(node.type, "Declaration")
     assert.equal(node.meta.expr, "B")
 })
 
-test("acceptance: a position pin parses (`origin` and a coordinate literal)", () => {
-    const o = first("let A = origin")
-    assert.equal(o.type, "Law")
-    assert.equal(o.value, "position")
-    assert.deepEqual(o.meta.coords, [0, 0, 0])
-    const l = first("let A = [1, 2, 3]")
-    assert.equal(l.type, "Law")
-    assert.equal(l.value, "position")
-    assert.deepEqual(l.meta.coords, [1, 2, 3])
+test("acceptance: a coordinate pins a fixed point; a vector is an object and a value", () => {
+    // ONE declaration node: the KIND is the value's, read at the walk. A dotted
+    // property is a relation, and stays a relation node.
+    // (id:notation-coordinate-vector)
+    for (const src of ["let A = (1, 2, 3)", "let A = origin"]) {
+        const n = first(src)
+        assert.equal(n.type, "Declaration", src)
+    }
+    const dotted = first("let A.position = (1, 2, 3)")
+    assert.equal(dotted.type, "Law", "a dotted property is a relation")
+    assert.equal(dotted.value, "position")
+    assert.equal(first("let A = origin").meta.expr, "(0, 0, 0)")   // origin normalizes to a coordinate
+    // A vector `[…]` is the same declaration: an object and a value, not a place.
+    // (id:notation-coordinate-vector)
+    const d = first("let A = [1, 2, 3]")
+    assert.equal(d.type, "Declaration")
+    assert.equal(d.meta.expr, "[1, 2, 3]")
+    // A scalar expression reaches the same node.
+    assert.equal(first("let s = 5").type, "Declaration")
 })
 
 test("acceptance: `let A.distance = 5` is a dotted relation with its span", () => {

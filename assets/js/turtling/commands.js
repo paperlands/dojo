@@ -132,7 +132,8 @@ function faceto(ctx, x = 0, y = 0, z = null) {
 
 function label(ctx, text = ".", size = 1) {
     const pos = ctx.transform.position
-    const textSize = resultMeasure(ctx, size * 5, "label size")
+    // One home for how big a name prints: the style. (id:notation-coordinate-vector)
+    const textSize = resultMeasure(ctx, size * (ctx.style.label ?? 5), "label size")
     // A value lowered into text is DISPLAY: it rounds for the eye, and a non-number is
     // NAMED rather than printed as a numeral — with the author told, since a label is
     // how a figure speaks. (ruling 5)
@@ -257,9 +258,6 @@ function limitMessage(ctx, limit = 8192) {
 }
 
 // --- Command table ---
-
-// --- Command table ---
-//
 // ONE source: a spec per callable — its implementation, every name it answers to,
 // and its HOLES (the contract for "how many expressions this place contains, and of
 // what kind"). `COMMANDS` (name → implementation) and `contractOf` (name → spec) are
@@ -311,6 +309,9 @@ export const contractOf = (name) => CONTRACTS.get(name)
 export const DEFAULT_STYLE = Object.freeze({
     down: true,
     color: "silver",
+    // How big a NAME prints, in the head's own units. Display policy lives with the
+    // style, not with the walk that happens to want a label. (id:notation-coordinate-vector)
+    label: 5,
     thickness: 2,
     showTurtle: 10
 })

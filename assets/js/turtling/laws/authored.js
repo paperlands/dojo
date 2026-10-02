@@ -113,7 +113,6 @@ const distance = {
     family: "relational", kind: "length",
     guard: { finite: true, nonNegative: true }, bounds: { min: 0, max: Infinity },
     properties: ["distance"],
-    payload: "expr",
     address: pair,
     endpoints: targetObserver,
     measure(law, { worldOf }) {
@@ -157,8 +156,7 @@ const position = {
     name: "position",
     family: "spatial", kind: "point",
     guard: { finite3: true }, bounds: null,
-    properties: [],
-    payload: "coords",
+    properties: ["position"],
     address: one,
     endpoints: targetOnly,
     measure(law, { worldOf, poseOf }) {
@@ -200,7 +198,6 @@ const coordinate = defaults({
     family: null, kind: "scalar",
     guard: { finite: true }, bounds: null,
     properties: ["x", "y", "z"],
-    payload: "expr",
     form: (property) => ({ feature: "coordinate", axis: property }),
     address: oneAxis,
     endpoints: targetOnly,
@@ -240,7 +237,6 @@ const tilt = defaults({
     family: null, kind: "angle",
     guard: { finite: true }, bounds: { min: 0, max: 180 },
     properties: ["tilt"],
-    payload: "expr",
     address: one,
     endpoints: targetOnly,
     meet: true,
@@ -282,7 +278,6 @@ const bearing = defaults({
     family: "relational", kind: "angle",
     guard: { finite: true }, bounds: null,
     properties: ["bearing"],
-    payload: "expr",
     address: one,
     endpoints: targetOnly,
     meet: true,
@@ -330,9 +325,6 @@ export function parseSupport() {
     return `a supported relation (${names.slice(0, -1).join(", ")} or ${names[names.length - 1]})`
 }
 
-export function payloadOf(feature) {
-    return AUTHORED[feature]?.payload ?? null
-}
 
 export function addressShape(feature) {
     return AUTHORED[feature]?.address ?? null

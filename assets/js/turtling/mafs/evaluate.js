@@ -1,5 +1,5 @@
 import { getOperator } from "./operators.js"
-import { createTower, installScalarFloor, SHADOWABLE_BUILTINS } from "./tower.js"
+import { createTower, installScalarFloor, installVectorFloor, SHADOWABLE_BUILTINS, asKind } from "./tower.js"
 
 // Nothing is not a measure. `null + 1` is 1 in JavaScript, so a read that had
 // no answer must not become a quantity. Arithmetic yields nothing instead;
@@ -20,7 +20,7 @@ export class Evaluator {
         // builtins are registrations, not a switch. Installation ends here and the
         // registry is sealed, so no later define reinterprets a computation already
         // in flight. (id:tower-center-boundaries)
-        this.tower = installScalarFloor(createTower())
+        this.tower = installVectorFloor(installScalarFloor(createTower()))
         this.tower.seal()
 
         // Deferred = stochastic/streaming primitives that must re-evaluate at
@@ -31,6 +31,19 @@ export class Evaluator {
         this.userFunctions = null;
         // Which builtin names a child fn may take over. (id:tower-center-shadowable)
         this.shadowable = new Set(SHADOWABLE_BUILTINS);
+
+        // What a read RESOLVED to, not what its spelling looked like: the resolver
+        // records every external read here, so a declaration can ask its real
+        // dependencies instead of scanning the expression for a name.
+        // (id:laws-dependency-driven-place)
+        this.reads = null
+    }
+
+    // Start a fresh dependency record for one evaluation. The resolver fills it as it
+    // reaches values; the caller reads `reads` after the evaluation succeeds.
+    beginReads() {
+        this.reads = { live: false, frames: new Set() }
+        return this.reads
     }
 
     namespace_check(val) {
@@ -47,6 +60,15 @@ export class Evaluator {
         // string literal does. Only an operand names something to resolve.
         // (id:tower-tension-repr)
         if (ast.type === 'string' || ast.type === 'literal') return ast.value;
+
+        // A list literal evaluates its elements in order and TAGS the result with the
+        // kind its delimiter names: `(…)` a point, `[…]` a vector. The kind then rides
+        // the value through every operation, so a consumer reads what the value IS,
+        // not how it was spelled. (id:notation-coordinate-vector)
+
+        if (ast.type === 'vector' || ast.type === 'point') {
+            return asKind(ast.children.map((element) => this.run(element, context)), ast.type)
+        }
 
         if (ast.type === 'operand') {
             if (context && ast.value in context) {

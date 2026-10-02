@@ -96,6 +96,32 @@ export function drawPin(ctx, { cx, cy, name = '', width = 0, withHead = false,
     ctx.textAlign = 'left'
 }
 
+// Screen anchor for a name that reads beyond an object's tip: pad along the object's
+// OWN screen direction, so the arrowhead never swallows it. Pure and testable.
+// (id:notation-coordinate-vector, id:laws-decl-interface)
+export function nameAnchor(from, to, pad = 12) {
+    if (!to) return null
+    if (!from) return { x: to.x + pad, y: to.y }
+    const dx = to.x - from.x, dy = to.y - from.y
+    const len = Math.hypot(dx, dy)
+    if (len < 1e-6) return { x: to.x + pad, y: to.y }
+    return { x: to.x + dx / len * pad, y: to.y + dy / len * pad }
+}
+
+// A declared object's NAME, at a screen point: the same paper ink and monospace face
+// a pin's name uses, so a name reads the same wherever it marks a thing — and it is
+// invariant to the camera because the overlay is. (id:notation-coordinate-vector)
+export function drawVectorName(ctx, { cx, cy, width = 0, name = '', ink = null }) {
+    if (!name) return
+    ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'alphabetic'
+    const w = ctx.measureText(name).width
+    const flip = cx + w > width
+    ctx.fillStyle = ink || `rgba(${PAPER},0.52)`
+    ctx.fillText(name, flip ? cx - w : cx, cy)
+}
+
 // A dashed mark: one polyline, one stroke, so the dash reads as a cadence and not
 // as per-segment dots. One cadence for the dashed ink; only the alphas differ.
 // (id:laws-freedom)

@@ -105,7 +105,7 @@ test("the parser authors a framed coordinate", () => {
 test("a definition place keeps its pinned geometry when its body starts", () => {
     const scheduler = buildWorld({ admit: pass })
     const host = scheduler.hotSwapChild("host", fork("host",
-        "let B = [0, 200, 5]\nas B do\n  as D do\n    fw 100\n  end\nend"))
+        "let B.position = [0, 200, 5]\nas B do\n  as D do\n    fw 100\n  end\nend"))
     drive(scheduler, { maxTicks: 60 })
     const B = host.children.get("B")
     const D = [...B.children.values()].find((c) => c.name === "D")

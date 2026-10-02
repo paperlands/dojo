@@ -328,7 +328,7 @@ test("a mutual-read cycle is mode-independent (admission and credit)", () => {
     const specs = [{
         key: "main",
         name: "main",
-        src: "as a do\n  loop 10 do\n    fw 2\n    fw [b.x * 0.5]\n    wait 1\n  end\nend\nas b do\n  loop 10 do\n    fw 1\n    fw [a.x * 0.5]\n    wait 1\n  end\nend",
+        src: "as a do\n  loop 10 do\n    fw 2\n    fw (b.x * 0.5)\n    wait 1\n  end\nend\nas b do\n  loop 10 do\n    fw 1\n    fw (a.x * 0.5)\n    wait 1\n  end\nend",
     }]
     const without = canonical(observe(specs, { admit: undefined, capacity: 4096 }))
     const withAdmit = canonical(observe(specs, { admit: acceptAll, capacity: 4096 }))

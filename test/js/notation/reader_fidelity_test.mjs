@@ -2,9 +2,10 @@
 // keep their kind. Expected answers are language rules, not implementation output.
 // Run: node --test test/js/notation/reader_fidelity_test.mjs
 //
-// Preserved (green) witnesses guard the corpus: `[ ]` still groups and still
-// calls, `2(x)`/`2[x]` still multiply, dotted names stay whole. The strong split
-// (indexing, vector literals) is a later rung — deliberately NOT asserted here.
+// Preserved (green) witnesses guard the corpus: `( )` groups, `[ ]` CONSTRUCTS
+// (the singleton included), a suffix `f[…]` after a name still calls, `2(x)` still
+// multiplies, dotted names stay whole. The deliberate change: brackets carry their
+// own job, so the comma is a plain separator. (id:notation-array-growth)
 
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
@@ -50,32 +51,38 @@ describe("delimiters keep their kind — a pair must match", () => {
         assert.throws(() => ev("[2"), /Missing closing/)
     })
 
-    test("a matched pair reads, either kind", () => {
+    test("a matched pair reads — `( )` groups, `[ ]` constructs", () => {
         assert.equal(ev("(2)"), 2)
-        assert.equal(ev("[2]"), 2)
+        assert.deepEqual(ev("[2]"), [2])
         assert.equal(ev("(2+3)"), 5)
-        assert.equal(ev("[2+3]"), 5)
-        assert.equal(ev("mod([1+1], 2)"), 0)
+        assert.deepEqual(ev("[2+3]"), [5])
+        assert.equal(ev("mod((1+1), 2)"), 0)
     })
 })
 
 describe("the codex corpus still reads (preserved, green)", () => {
-    test("brackets still group and still call", () => {
+    test("a suffix bracket still calls; a paren still groups", () => {
         // The ROUTE is what is under test: a bracket call and a paren call are the same
         // call, down to the bit. (waves.org uses sin[x]. `sin[30] === 0.5` held only
         // because the old rounding gate cleaned the trig residue; the display is where
         // a learner reads 0.5 now. numerics:format)
         assert.equal(ev("sin[30]"), ev("sin(30)"))
         assert.ok(Math.abs(ev("sin[30]") - 0.5) < 1e-15)
-        assert.equal(ev("mod([3 + 1], 4)"), 0) // the whirlpool's rule shape
+        assert.equal(ev("mod((3 + 1), 4)"), 0) // the whirlpool's rule shape, grouped
     })
 
     test("juxtaposition still multiplies", () => {
-        assert.equal(ev("2*[3]"), 6)
+        assert.equal(ev("2(3)"), 6)
         assert.equal(ev("(2)(3)"), 6)
+        assert.deepEqual(ev("2*[3]"), [6])   // the bracket constructs, then scales
     })
 
-    test("no vector syntax was added", () => {
-        assert.throws(() => ev("[1,2]"))
+    test("a bracket constructs; the comma is a separator", () => {
+        assert.deepEqual(ev("[1,2]"), [1, 2])
+        assert.deepEqual(ev("[1, 2, 3]"), [1, 2, 3])
+        assert.deepEqual(ev("[1+2, 4]"), [3, 4])
+        assert.deepEqual(ev("[[1,2],[3,4]]"), [[1, 2], [3, 4]])
+        // Application is untouched: a suffix bracket is still a call.
+        assert.equal(ev("sin[30]"), ev("sin(30)"))
     })
 })

@@ -18,7 +18,7 @@ import { exposed, pointCandidates } from "./laws/batch.js"
 import { viewMapping } from "./laws/handle.js"
 import { verdictFade, OUTCOME } from "./laws/outcome.js"
 import { VERDICT_DECAY_MS } from "./laws/feel.js"
-import { drawPin, drawTrace, drawRim, drawGhostMark, drawAxis, drawCurve, drawWish, drawSpoke } from "./laws/pin.js"
+import { drawPin, drawTrace, drawRim, drawGhostMark, drawAxis, drawCurve, drawWish, drawSpoke, nameAnchor, drawVectorName } from "./laws/pin.js"
 import { stateOf, axesOf, marksOf, heldIdentity, boundsOf } from "./laws/constraints.js"
 import { unionBounds, viewDirection } from "./laws/fit.js"
 import { hintsVisible, normalizeReveal, movedEnough } from "./laws/reveal.js"
@@ -355,6 +355,16 @@ export class Turtle {
                 const wish = view.project(SE3.apply(worldTransform(frame), readout.requested))
                 if (wish) drawWish(overlay.ctx, at, wish)
             }
+        }
+        // A declared object's NAME rides the overlay with the pins: screen-space and
+        // viewport-invariant, projected by the one view. The arrow stays world geometry
+        // in the layer. (id:notation-coordinate-vector, id:laws-decl-interface)
+        for (const mark of this.compositor?.vectorNames?.() ?? []) {
+            const tip = view.project(mark.to)
+            if (!tip) continue
+            const anchor = nameAnchor(view.project(mark.from), tip)
+            drawVectorName(overlay.ctx, { cx: anchor.x, cy: anchor.y,
+                width: overlay.width, name: mark.name, ink: this.color })
         }
     }
 

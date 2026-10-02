@@ -546,7 +546,7 @@ test("the pole detent holds a grab that starts on the pole", () => {
 // the ball's detents must not fire on it. (id:laws-decl-anchor)
 test("a cone point circles without jumping the height, and the detents never bend it", () => {
     const scheduler = buildWorld()
-    const host = scheduler.hotSwapChild("host", fork("host", "let B = [0, 0, 0]\nlet P\nas B do\n  let P.tilt = 30\nend"))
+    const host = scheduler.hotSwapChild("host", fork("host", "let B.position = [0, 0, 0]\nlet P\nas B do\n  let P.tilt = 30\nend"))
     drive(scheduler)
     const P = find(host, "P")
     const before = [...frameWorldTransform(P).position]

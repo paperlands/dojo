@@ -51,6 +51,17 @@ export function baseTypeOf(value) {
     return 'unknown'
 }
 
+// A value's KIND is part of the value, not the spelling that built it. Both a point
+// and a vector are arrays; the kind rides as a non-enumerable own property, so every
+// existing reader of a plain array is untouched. The price is exact and known: a copy
+// that forgets the tag (`[...v]`) IS a vector, whatever it was — a silent wrong kind,
+// with no error. That is the debt of sharing the engine's array primitive; a typed
+// value projected at the boundary is what would clear it. (id:notation-coordinate-vector)
+export const KIND = 'kind'
+export const asKind = (components, kind) =>
+    Object.defineProperty([...components], KIND, { value: kind, enumerable: false })
+export const kindOf = (value) => Array.isArray(value) ? (value[KIND] ?? 'vector') : baseTypeOf(value)
+
 // Applicability and failure have one authority, but the failures stay classified:
 // a missing meaning is not a broken domain, and neither is a value of two kinds.
 export class TowerRefusal extends Error {
@@ -284,5 +295,51 @@ export function installScalarFloor(tower) {
         }
     }
 
+    return tower
+}
+
+// ── The vector floor: the first values the scalar center cannot see ──────────
+// A vector is a plain array; its components are whatever kinds the tower already
+// knows. Every component operation re-enters the one door, so an alternate
+// coefficient kind is answered by its own registrations, never by JavaScript
+// coercion. The cut is bounded on purpose: scaling a displacement, adding two
+// displacements, and the affine moves a location admits. A point is a location and
+// a vector a displacement — the same storage, two kinds — and the kind rides the
+// VALUE, so the algebra is typed by construction: `+` is registered for the pairs
+// that mean something and refuses the rest BY NAME. Two locations do not add; a
+// location has no scale; the displacement between two locations is a vector.
+// (id:notation-vector-value, id:notation-coordinate-vector)
+export function installVectorFloor(tower) {
+    tower.kind('point', (value) => Array.isArray(value) && value[KIND] === 'point')
+    const rankOne = (op, v) => {
+        if (!Array.isArray(v)) throw new DomainRefusal(op, 'a vector', tower.typeOf(v))
+        if (v.length === 0) throw new DomainRefusal(op, 'a nonempty vector', 'an empty vector')
+        if (v.some(Array.isArray)) throw new DomainRefusal(op, 'rank-one vectors', 'a vector element')
+    }
+    const scale = (v, s) => {
+        rankOne('*', v)
+        return v.map((x) => tower.apply('*', x, s))
+    }
+    const zip = (op, a, b) => {
+        rankOne(op, a)
+        rankOne(op, b)
+        if (a.length !== b.length) {
+            throw new DomainRefusal(op, 'equal lengths', `${a.length} and ${b.length}`)
+        }
+        return a.map((x, i) => tower.apply(op, x, b[i]))
+    }
+    // A displacement scales; a location has no scale.
+    tower.define('*', ['number', 'vector'], (s, v) => scale(v, s))
+    tower.define('*', ['vector', 'number'], (v, s) => scale(v, s))
+    // Displacements add; a location moved by a displacement is a location; two
+    // locations do not add.
+    tower.define('+', ['vector', 'vector'], (a, b) => zip('+', a, b))
+    tower.define('+', ['point', 'vector'], (p, v) => asKind(zip('+', p, v), 'point'))
+    tower.define('+', ['vector', 'point'], (v, p) => asKind(zip('+', v, p), 'point'))
+    // The displacement between two locations is a vector; a location moved back by a
+    // displacement is a location; a displacement minus a location means nothing.
+    tower.define('-', ['vector', 'vector'], (a, b) => zip('-', a, b))
+    tower.define('-', ['point', 'point'], (a, b) => asKind(zip('-', a, b), 'vector'))
+    tower.define('-', ['point', 'vector'], (p, v) => asKind(zip('-', p, v), 'point'))
     return tower
 }

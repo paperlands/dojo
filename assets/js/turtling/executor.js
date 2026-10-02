@@ -8,8 +8,9 @@ import { SE3 } from "./se3.js"
 import { recenterPose } from "./view.js"
 import { createStroke, extend as strokeExtend, flush as strokeFlush, fill as strokeFill } from "./stroke.js"
 import { matchPattern } from "./match.js"
-import { payloadOf } from "./laws/authored.js"
+import { toSpace } from "./space.js"
 import { isNumericLiteral } from "./mafs/number.js"
+import { kindOf } from "./mafs/tower.js"
 import { demand, measure, spellingOf, conditionOf, FINITE } from "./numerics.js"
 import { notice } from "./report.js"
 // A HOLE DEMANDS A MEASURE, and the answer belongs to the numerics surface: what the
@@ -30,6 +31,20 @@ const consumerOf = (state) => state.strict ? "construction" : state.rehearsal ? 
 // The common path returns before any verdict object exists.
 function admit(value, expr, domain, state) {
     if (domain !== "finite") return value
+    // A scalar-command hole admits a rank-one, length-one vector by SELECTING its
+    // sole component — but only when that component is PRESENT and finite. A hole
+    // (`Array(1)`), an explicit nothing, a non-finite value, a longer vector and a
+    // rank-two value are each malformed for a scalar hole: every one is refused as
+    // the VECTOR it is, never unwrapped into an unanswered scalar that borrows a
+    // default. The command is a narrow consumer; the value keeps its shape
+    // everywhere else. (id:notation-array-growth)
+    if (Array.isArray(value)) {
+        const lone = value.length === 1 && (0 in value) && !Array.isArray(value[0])
+        if (!lone || conditionOf(value[0]) !== FINITE) {
+            return measure(value, { as: consumerOf(state), expr })
+        }
+        value = value[0]
+    }
     if (conditionOf(value) === FINITE) return value
     return measure(value, { as: consumerOf(state), expr })
 }
@@ -68,9 +83,13 @@ const COMPUTED_DOT_RE = /^(['"])(.*?)\1\.(.+)$/
 const IDENT_HEAD_RE = /^[a-zA-Z]/
 // Retry evaluateExpr; yield blocked on cross-ambient read failure only.
 // domain: "measure" (default) | "word"
-function* evalOrBlock(expr, scope, state, domain = "measure") {
+function* evalOrBlock(expr, scope, state, domain = "measure", trackReads = false) {
     while (true) {
         try {
+            // Dependencies are what the READ reached, recorded by the resolver — a fresh
+            // record per attempt, since a blocked read is retried.
+            // (id:laws-dependency-driven-place)
+            if (trackReads) state.deps.mathEvaluator.beginReads()
             return admit(evaluateExpr(expr, scope, state, domain), expr, domain, state)
         } catch (e) {
             if (e.blocked) {
@@ -235,8 +254,77 @@ function* readGotoArgs(nodes, scope, state) {
     }
 }
 
+// The two declaration pipelines, reachable from every spelling that means them: a point
+// pins, a vector is an OBJECT and a VALUE — a straight line to the point it reaches, and
+// a name that HOLDS the displacement. The walker neither moves nor lays ink, because a
+// declaration is not an act. (id:notation-coordinate-vector)
+function* emitPoint(name, expr, owner, scope, state, sampled) {
+    if (sampled !== undefined) {
+        yield { type: 'law', feature: 'position', target: name, value: toSpace(sampled) ?? sampled,
+            axis: null, owner, read: null, reads: null }
+        return
+    }
+    const raw = yield* evalOrBlock(expr, scope, state, 'measure', true)
+    const reads = state.deps.mathEvaluator.reads
+    yield { type: 'law', feature: 'position', target: name, value: toSpace(raw) ?? raw,
+        axis: null, owner,
+        // A coordinate that RESOLVED a reference tracks it; a literal owns no readout.
+        read: reads?.live ? (() => evaluateExpr(expr, scope, state)) : null,
+        // The frames the read resolved — a place standing on itself is refused without
+        // a syntactic scan. (id:laws-dependency-driven-place)
+        reads: reads ? [...reads.frames].map((f) => f.id) : null }
+}
+
+// A declared vector's pose and style, captured at its declaration. The display is
+// re-derived from these plus the current value, so birth and every redraw share ONE
+// event contract. (id:notation-coordinate-vector)
+function vectorMeta(name, state) {
+    const t = state.transform
+    return { name, from: [...t.position], rotation: t.rotation, color: state.style.color,
+        thickness: state.style.thickness, textSize: state.style.label ?? 5 }
+}
+
+// A vector is an OBJECT and a VALUE. The name binds the displacement (a scalar readout
+// whose drive is the arrow), and the DISPLAY is owned by that one readout — initial,
+// update and removal. No separate vector event rides the ink channel.
+// (id:notation-coordinate-vector)
+function* emitVector(name, expr, owner, scope, state, sampled) {
+    const v = sampled === undefined ? (yield* evalOrBlock(expr, scope, state)) : sampled
+    const d = toSpace(v)
+    if (!d) {
+        yield notice({ kind: 'vector',
+            message: `a displacement needs at least one finite component, not ${spellingOf(v)}`,
+            span: owner })
+        return
+    }
+    yield { type: 'scalar', name, owner, initial: d, vector: vectorMeta(name, state),
+        read: sampled === undefined ? (() => evaluateExpr(expr, scope, state, 'measure')) : (() => sampled) }
+}
+
+// A SAMPLED declaration samples its value ONCE, then routes it through the SAME kind
+// behavior the live path uses: a sampled point is still a place, a sampled vector still
+// a visible object and a value. Sampling answers *when* a value is read; the kind
+// answers *what* is declared. They are independent. (id:eval-relational,
+// id:notation-coordinate-vector)
+function* declareSampled(name, value, owner, state) {
+    const row = DECLARED[kindOf(value)]
+    if (row) return yield* row.emit(name, null, owner, null, state, value)
+    yield { type: 'parameter', name, owner, value }
+}
+
+// What a declared VALUE becomes, by its KIND — a row per kind, and a kind with no row
+// is a derived value. `place` is the fact a loop cannot hold. A new kind is NOT one
+// row: its delimiting form is the parser's, its algebra is a tower row, its shape is the
+// renderer's. What it never needs is a BRANCH here — which is the point of a table.
+// (id:notation-coordinate-vector)
+const DECLARED = {
+    point: { place: true, emit: emitPoint },
+    vector: { place: false, emit: emitVector },
+}
+
 function* walkBody(body, scope, state, stroke) {
     let matched = false
+
 
     for (const node of body) {
         adoptRebase(state)   // a component rebase lands before this node reads pose
@@ -472,31 +560,35 @@ function* walkBody(body, scope, state, stroke) {
             break
         }
 
+
         case 'Law': {
             // A reached law: one feature, one evaluated value. The declaring
             // frame is the observer. (id:laws-ordered-replacement)
-            // The distance payload is sampled when reached. Later changes to its source
-            // value do not revise this law.
-            // A dependency-driven law revision (externally determined r) and a
-            // relational unknown (r chosen jointly with positions) are different
-            // capabilities; the former does not require the latter.
-            // (id:eval-relational)
+            // A distance or bearing payload is sampled when reached: later changes to
+            // its source value do not revise the law. A POSITION payload that reads live
+            // state is different — it is a derived value (a readout), so the place
+            // tracks its source. A dependency-driven revision and a relational unknown
+            // (r chosen jointly with positions) are different capabilities; the former
+            // does not require the latter. (id:eval-relational, id:laws-dependency-driven-place)
             const feature = node.value
-            const value = payloadOf(feature) === 'expr'
-                ? yield* evalOrBlock(node.meta.expr, scope, state)
-                : node.meta.coords
-            yield { type: 'law', feature, target: node.meta.target, value, axis: node.meta.axis ?? null, owner: node.span ?? null }
+            // A position is a pin: the ONE pipeline every point-kind declaration reaches.
+            if (feature === 'position') {
+                yield* emitPoint(node.meta.target, node.meta.expr, node.span ?? null, scope, state)
+                break
+            }
+            const raw = yield* evalOrBlock(node.meta.expr, scope, state)
+            yield { type: 'law', feature, target: node.meta.target, value: raw,
+                axis: node.meta.axis ?? null, owner: node.span ?? null, read: null }
             break
         }
 
-        case 'Scalar': {
-            // A `let s = <expr>` names one of three things, and the spelling must
-            // not decide which by accident. A deferred (stochastic) primitive is a
-            // PARAMETER: sampled once here, then a stable input — an unrelated commit
-            // must not resample it. Everything else is a DERIVED value: a pure
-            // reading of accepted state, recomputed at the commit. A value chosen
-            // subject to relationships (an UNKNOWN) has no spelling yet and is not
-            // this case. (id:eval-relational, id:laws-build-p3-readout-built)
+        case 'Declaration': {
+            // ONE declaration, ONE reading: `let NAME = <expr>`. The VALUE decides what
+            // the name is — a point is a place, a vector an object and a value, anything
+            // else a derived value — so no spelling has to be known in advance.
+            // A recipe call is a figure, not a number. A deferred (stochastic)
+            // primitive is a PARAMETER: sampled once, never resampled by an unrelated
+            // commit. (id:notation-coordinate-vector, id:eval-relational)
             const expr = node.meta.expr
             // A recipe call is a figure, not a number: emit the construction
             // intent; the scheduler owns the cell and its lifetime.
@@ -526,11 +618,26 @@ function* walkBody(body, scope, state, stroke) {
                 try { stochastic = readsDeferred(parseMemo(state.deps.mathParser, expr), deferred) } catch { stochastic = false }
             }
             if (stochastic) {
-                // Sampled here, once. `random` is an input, not a reading.
-                yield {
-                    type: 'parameter', name: node.value, owner: node.span ?? null,
-                    value: evaluateExpr(expr, scope, state, 'measure'),
+                // Sampled once here, then routed by the kind of the value it sampled
+                // through the SAME declaration behavior the live path uses. `random` is an
+                // input, not a reading. (id:eval-relational, id:notation-coordinate-vector)
+                yield* declareSampled(node.value,
+                    evaluateExpr(expr, scope, state, 'measure'), node.span ?? null, state)
+                break
+            }
+            // The value's KIND chooses a ROW, never a branch.
+            // (id:notation-coordinate-vector)
+            const row = DECLARED[shapedKind(expr, scope, state)]
+            if (row) {
+                if (row.place && node.meta.inLoop) {
+                    // An identity cannot live in a loop: its instance key is not earned.
+                    // (id:laws-decl-batch)
+                    yield notice({ kind: 'declaration',
+                        message: "a declaration cannot live inside a loop",
+                        span: node.span ?? null })
+                    break
                 }
+                yield* row.emit(node.value, expr, node.span ?? null, scope, state)
                 break
             }
             yield {
@@ -824,6 +931,26 @@ function readsDeferred(tree, names) {
     if (tree.type === 'operand' && names.has(tree.value)) return true
     for (const child of tree.children ?? []) if (readsDeferred(child, names)) return true
     return false
+}
+
+
+
+// The kind a readable declaration RHS would have, without admitting it: a pure read,
+// so an expression that is not ready does not block a declaration that may be a value.
+// (id:notation-coordinate-vector)
+function shapedKind(expr, scope, state) {
+    // Malformed ink is the author's to see, never a silent derived value: the parse
+    // must succeed before the read is asked for its kind.
+    parseMemo(state.deps.mathParser, expr)
+    try {
+        return kindOf(evaluateExpr(expr, scope, state, 'measure'))
+    } catch (error) {
+        // A domain refusal is the author's too — `(p) + (q)` has no meaning. A read
+        // that is not ready, or names something absent, leaves the declaration the
+        // derived value it already was. (id:notation-coordinate-vector)
+        if (error?.name === 'TowerRefusal' || error?.name === 'DomainRefusal') throw error
+        return null
+    }
 }
 
 // Residual after shared resolve: measure → wound; word → string costume.

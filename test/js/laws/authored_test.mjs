@@ -3,7 +3,7 @@
 // Run: node --test test/js/laws/authored_test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { AUTHORED, parseProperty, parseSupport, payloadOf, addressShape } from "../../../assets/js/turtling/laws/authored.js"
+import { AUTHORED, parseProperty, parseSupport, addressShape } from "../../../assets/js/turtling/laws/authored.js"
 import { RELATION, KIND } from "../../../assets/js/turtling/laws/expression.js"
 import { addressOf, bindLaw } from "../../../assets/js/turtling/laws/replacement.js"
 import { parseProgram } from "../../../assets/js/turtling/parse.js"
@@ -35,8 +35,6 @@ test("parse, address and payload read the same table", () => {
     assert.deepEqual(parseProperty("tilt"), { feature: "tilt" })
     assert.equal(parseProperty("heading"), null)
     assert.match(parseSupport(), /tilt/)
-    assert.equal(payloadOf("tilt"), "expr")
-    assert.equal(payloadOf("position"), "coords")
     const d = bindLaw({ feature: "distance", endpoints: ["B", "A"], scope: "s", frame: "s", predicate: 5 })
     const r = bindLaw({ feature: "distance", endpoints: ["A", "B"], scope: "s", frame: "s", predicate: 9 })
     assert.equal(addressOf(d), addressOf(r), "distance address is an unordered pair")

@@ -187,18 +187,38 @@ export class Parser {
         return args;
     }
 
+    // A comma-list is a QUANTITY; the delimiter names its kind. `(a, b, c)` is a
+    // coordinate (a point — where), `[a, b, c]` a vector (a displacement — which
+    // way, how far). Without a comma `(e)` still groups and `[e]` is the singleton
+    // vector. A suffix `f[…]/f(…)` after a name is still application.
+    // (id:notation-coordinate-vector)
     parseGroup(options = {}) {
         const openType = this.currentToken().type;
         const closeType = closerTypeFor(openType);
+        const isBracket = openType === 'LBRACKET';
         this.advance(); // consume the opener
-        const expr = this.parseExpression(0, options);
 
-        if (!this.currentToken() || this.currentToken().type !== closeType) {
+        if (isBracket && this.currentToken()?.type === closeType) {
+            throw new Error('An empty vector literal has no components');
+        }
+
+        const elements = [this.parseExpression(0, options)];
+        let listed = isBracket;   // a bracket is always a list, even the singleton
+        while (this.currentToken()?.type === 'COMMA') {
+            this.advance(); // consume the comma
+            listed = true;   // a comma marks a list, even a terminal one
+            // A terminal comma contributes no component; the empty slot is still
+            // refused — `[x,,y]`, `[x,,]`, `(x,,y)` do not parse.
+            if (this.currentToken()?.type === closeType) break;
+            elements.push(this.parseExpression(0, options));
+        }
+        if (this.currentToken()?.type !== closeType) {
             throw this.closingError(openType);
         }
         this.advance(); // consume the closer
 
-        return expr;
+        if (!listed) return elements[0];   // `(e)` groups
+        return new ASTNode(isBracket ? 'vector' : 'point', null, elements);
     }
 
     // A close of the wrong kind is a mismatched pair; no close at all is missing.

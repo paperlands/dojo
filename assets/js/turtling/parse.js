@@ -2,6 +2,7 @@ import { ASTNode } from "./ast.js"
 import { parseProperty, parseSupport } from "./laws/authored.js"
 import { getOperator } from "./mafs/operators.js"
 import { Lexer } from "./mafs/lexer.js"
+import { Parser as ExprParser } from "./mafs/parse.js"
 
 
 //manage state
@@ -575,14 +576,21 @@ function parseBlockLines(state) {
 
 // Total (id:cmp-resilient): a malformed statement becomes an error node in
 // place, and the healthy statements around it still parse and run (D020).
-// A three-coordinate literal `[x, y, z]` (commas or spaces). Null unless it is
-// exactly three finite numbers. (id:laws-ordered-replacement)
-function parseCoords(expr) {
-    const m = /^\[\s*([^,\]\s]+)[,\s]+([^,\]\s]+)[,\s]+([^,\]\s]+)\s*\]$/.exec(expr)
-    if (!m) return null
-    const n = [m[1], m[2], m[3]].map(Number)
-    return n.every(Number.isFinite) ? n : null
+
+
+// One shared expression reader. It answers ONE question — does this ink parse? — so a
+// malformed right-hand side is a located error in place and the healthy statements
+// around it still run (D020), never a runtime surprise. It does NOT read the
+// expression's KIND: that is the value's business, at the walk.
+// (id:notation-coordinate-vector, id:cmp-resilient)
+const syntaxReader = new ExprParser()
+const parses = (expr) => {
+    try { return syntaxReader.parse(expr, { skipValidation: true }) !== null } catch { return false }
 }
+// A bracketed form is a QUANTITY literal — `(…)` a point, `[…]` a vector. That is a
+// grammar fact, so the parser validates it here. Everything else is the executor's
+// reader (quotes, figures, dotted names), and is not this one's to judge.
+const listed = (expr) => expr[0] === '[' || expr[0] === '('
 
 function parseStatement(tokens, state, rec) {
     const kw = tokens[0];
@@ -621,6 +629,10 @@ function parseStatement(tokens, state, rec) {
         }
         if (expr === null) return introduced() ?? stamp(new ASTNode('Existence', lhs), rec)
         if (!expr) return errorNode(rec, 'a value after =', 'end of statement')
+        // `origin` is this frame's zero in a declaration RHS — not a tower name, and
+        // not a value. The declaring frame supplies the world location.
+        // (id:notation-coordinate-vector)
+        if (expr === 'origin') expr = '(0, 0, 0)'
         const dot = lhs.indexOf('.')
         if (dot > 0) {
             const target = lhs.slice(0, dot)
@@ -631,29 +643,22 @@ function parseStatement(tokens, state, rec) {
             }
             return errorNode(rec, parseSupport(), lhs)
         }
-        // A position law: `let A = origin` or a three-coordinate literal.
-        // (id:laws-ordered-replacement)
-        if (expr === 'origin') return introduced() ?? stamp(new ASTNode('Law', 'position', [], { target: lhs, coords: [0, 0, 0] }), rec)
-        const coords = parseCoords(expr)
-        if (coords) return introduced() ?? stamp(new ASTNode('Law', 'position', [], { target: lhs, coords }), rec)
-        // A scalar derived value: `let s = <expr>`. Its kind is fixed at
-        // introduction; the value is a source-owned derived node. A bare name is not
-        // refused here — its kind is resolved where the namespace is known, at the
-        // walk: a zero-input recipe is a figure, a deferred primitive is a parameter,
-        // anything else is a derived value, and a name that means nothing wounds where
-        // a measure is demanded. A malformed coordinate literal is still a position
-        // error, not a scalar. (id:laws-build-p3-readout-built, id:eval-relational)
-        if (/^\[/.test(expr)) {
-            return errorNode(rec, 'a property (A.distance) or a position (origin or [x, y, z])', expr)
-        }
-        // A scalar binder must be a plain name. A function-looking binder
+        // ONE declaration, ONE reading: `let NAME = <expr>`. The parser does not read
+        // the expression to learn its KIND — what the VALUE is decides what the name
+        // is: a point is a place, a vector an object and a value, anything else a
+        // derived value. The walk that reads it knows. (id:notation-coordinate-vector)
+        //
+        // A value binder must be a plain name. A function-looking binder
         // (`let distance(A, B) = 5`) is an unsupported spelling: it is refused
-        // here, with its span, rather than stored as a scalar with that name.
+        // here, with its span, rather than stored as a value with that name.
         // (id:laws-names)
         if (!/^[A-Za-z_][\w-]*$/.test(lhs)) {
             return errorNode(rec, "a name after 'let'", lhs)
         }
-        return stamp(new ASTNode('Scalar', lhs, [], { expr }), rec)
+        if (listed(expr) && !parses(expr)) {
+            return errorNode(rec, 'a quantity — (…) a coordinate or […] a vector', expr)
+        }
+        return stamp(new ASTNode('Declaration', lhs, [], { expr, inLoop: kind === 'loop' || kind === 'for' }), rec)
     }
 
 

@@ -14,7 +14,7 @@ const pass = ({ requested }) => ({ accepted: true, transform: requested })
 const pos = (f) => frameWorldTransform(f).position.map((n) => +n.toFixed(4))
 const tiltOf = (p) => { const r = Math.hypot(...p); return r < 1e-9 ? null : (Math.acos(p[0] / r) * 180) / Math.PI }
 
-const SOURCE = "let B = [0, 0, 0]\ngoto 5 1 0\nlet P\nas B do\n  let P.tilt = 30\nend"
+const SOURCE = "let B.position = [0, 0, 0]\ngoto 5 1 0\nlet P\nas B do\n  let P.tilt = 30\nend"
 
 test("the parser authors a tilt", () => {
     const law = parseProgram("let P\nlet P.tilt = 30").find((n) => n.type === "Law")
@@ -72,7 +72,7 @@ test("a tilt and a plane meet in a section: circle or conic", () => {
 test("a tilt declared at the apex resolves to a repeatable generator", () => {
     const scheduler = buildWorld({ admit: pass })
     const host = scheduler.hotSwapChild("host", fork("host",
-        "let B = [0, 0, 0]\nlet P\nas B do\n  let P.tilt = 30\nend"))
+        "let B.position = [0, 0, 0]\nlet P\nas B do\n  let P.tilt = 30\nend"))
     drive(scheduler)
     const P = host.children.get("P")
     const p = [...frameWorldTransform(P).position]
@@ -84,7 +84,7 @@ test("a tilt declared at the apex resolves to a repeatable generator", () => {
 test("a tilt outside [0, 180] folds to the same cone, never a domain error", () => {
     const scheduler = buildWorld({ admit: pass })
     const host = scheduler.hotSwapChild("host", fork("host",
-        "let B = [0, 0, 0]\nlet P\nas B do\n  let P.tilt = 190\nend"))
+        "let B.position = [0, 0, 0]\nlet P\nas B do\n  let P.tilt = 190\nend"))
     drive(scheduler)
     const P = host.children.get("P")
     const p = [...frameWorldTransform(P).position]
@@ -107,7 +107,7 @@ test("a tilt past 90 stays on the nappe nearest the target", () => {
 test("tilt 360 is tilt 0: the axis, and it has a mark", () => {
     const scheduler = buildWorld({ admit: pass })
     const host = scheduler.hotSwapChild("host", fork("host",
-        "let B = [0, 0, 0]\nlet P\nas B do\n  let P.tilt = 360\nend"))
+        "let B.position = [0, 0, 0]\nlet P\nas B do\n  let P.tilt = 360\nend"))
     drive(scheduler)
     const P = host.children.get("P")
     const p = [...frameWorldTransform(P).position]

@@ -48,7 +48,7 @@ test("a re-reached being publishes its point and head together", () => {
 // (id:laws-first-two-pin-birth)
 test("a definition introduces even when a later bare let declares the name", () => {
     const scheduler = buildWorld({ admit: pass })
-    const host = scheduler.hotSwapChild("host", fork("host", "let V = origin\nlet V"))
+    const host = scheduler.hotSwapChild("host", fork("host", "let V.position = origin\nlet V"))
     drive(scheduler)
     const V = host.children.get("V")
     assert.equal(host.error, null, "the definition is not use-before-introduction")
@@ -64,7 +64,7 @@ test("a failed introduction leaves no identity, no exposure and no hold", () => 
     drive(scheduler)
     const A = host.children.get("A")
     scheduler.laws.apply(ghostDistance(host, A))
-    const s2 = scheduler.hotSwapChild("s2", fork("s2", "as B do\n  let V = origin\nend"))
+    const s2 = scheduler.hotSwapChild("s2", fork("s2", "as B do\n  let V.position = origin\nend"))
     drive(scheduler)
     const B = s2.children.get("B")
     assert.ok(B.unresolved, "the unmeasurable whole-law gate ends the statement unresolved")
@@ -81,7 +81,7 @@ test("a definition's exposure is installed before any commit notification", () =
         const V = host?.children.get("V")
         if (V) seen.push(exposed(V))
     })
-    const host = scheduler.hotSwapChild("host", fork("host", "let V = origin"))
+    const host = scheduler.hotSwapChild("host", fork("host", "let V.position = origin"))
     drive(scheduler)
     assert.ok(seen.length > 0, "the commit invited a subscriber")
     assert.ok(seen.every((x) => x === true), "no subscriber sees an installed pin it cannot touch")
@@ -90,7 +90,7 @@ test("a definition's exposure is installed before any commit notification", () =
 
 test("a definition's legality does not depend on an outer namesake", () => {
     const bare = buildWorld({ admit: pass })
-    const h1 = bare.hotSwapChild("host", fork("host", "let V = origin\nlet V"))
+    const h1 = bare.hotSwapChild("host", fork("host", "let V.position = origin\nlet V"))
     drive(bare)
     assert.equal(h1.error, null, "no outer namesake")
     assert.ok(h1.children.get("V"))
@@ -99,7 +99,7 @@ test("a definition's legality does not depend on an outer namesake", () => {
     const h2 = outer.hotSwapChild("host", fork("host", [
         "let V",
         "as B do",
-        "  let V = origin",
+        "  let V.position = origin",
         "  let V",
         "end",
     ].join("\n")))
@@ -115,7 +115,7 @@ test("a position definition reaches the visible identity, it does not shadow it"
         "let V",
         "goto 9 0",
         "as B do",
-        "  let V = origin",
+        "  let V.position = origin",
         "end",
     ].join("\n")))
     drive(scheduler)
@@ -134,7 +134,7 @@ test("an unsupported scalar binder is a located refusal, not a scalar", () => {
         assert.match(refusal.meta.found, /^distance\(A,? ?B\)$/, "and points at the offending binder")
     }
     // The supported scalar spelling still parses.
-    assert.equal(parseProgram("let A\nlet s = A.x").at(-1).type, "Scalar")
+    assert.equal(parseProgram("let A\nlet s = A.x").at(-1).type, "Declaration")
 })
 
 // R5 — a conditional empty locus called a contradiction. (id:laws-first-two-policy)
@@ -158,7 +158,7 @@ test("an empty meet with no movable live anchor is a contradiction", () => {
     const scheduler = buildWorld({ admit: pass })
     // A pin point and a coordinate plane, both in the declaring host's PLACEMENT
     // frame: no permitted mover can separate them, so this is authored contradiction.
-    scheduler.hotSwapChild("host", fork("host", "let A = [0,0,0]\nlet A.y = 5"))
+    scheduler.hotSwapChild("host", fork("host", "let A.position = [0,0,0]\nlet A.y = 5"))
     drive(scheduler)
     const a = attempt(scheduler)
     assert.equal(a.outcome, "contradiction", "no live anchor exists to free")

@@ -21,7 +21,7 @@ const source = (body) => "let A\nlet B\n" + body
 test("acceptance: pinning over a distance is a located obstruction, no lie", () => {
     const scheduler = buildWorld({ admit: pass })
     const host = scheduler.hotSwapChild("host", fork("host", source(
-        "as B do\n  let A.distance = 5\n  wait 1\n  let A = origin\nend")))
+        "as B do\n  let A.distance = 5\n  wait 1\n  let A.position = origin\nend")))
     drive(scheduler)
     const A = host.children.get("A")
     const B = host.children.get("B")
@@ -31,9 +31,9 @@ test("acceptance: pinning over a distance is a located obstruction, no lie", () 
     assert.equal(scheduler.laws.active()[0].feature, "distance")
 })
 
-test("acceptance: a definition introduces its subject — `let V = origin` needs no `let V`", () => {
+test("acceptance: a definition introduces its subject — `let V.position = origin` needs no `let V`", () => {
     const scheduler = buildWorld({ admit: pass })
-    const host = scheduler.hotSwapChild("host", fork("host", "let V = origin"))
+    const host = scheduler.hotSwapChild("host", fork("host", "let V.position = origin"))
     drive(scheduler)
     const V = host.children.get("V")
     assert.ok(V, "V is seated by its own definition")
@@ -53,7 +53,7 @@ test("acceptance: a relation still refuses to invent its endpoint", () => {
 test("acceptance: a distance over a pin is a located obstruction, no lie", () => {
     const scheduler = buildWorld({ admit: pass })
     const host = scheduler.hotSwapChild("host", fork("host", source(
-        "as B do\n  let A = origin\n  wait 1\n  let A.distance = 5\nend")))
+        "as B do\n  let A.position = origin\n  wait 1\n  let A.distance = 5\nend")))
     drive(scheduler)
     const A = host.children.get("A")
     const B = host.children.get("B")
@@ -66,7 +66,7 @@ test("acceptance: a distance over a pin is a located obstruction, no lie", () =>
 test("acceptance: an unrelated point keeps moving beside the faulted pair", () => {
     const scheduler = buildWorld({ admit: pass })
     const host = scheduler.hotSwapChild("host", fork("host",
-        "let A\nlet B\nlet C\nas B do\n  let A.distance = 5\n  let A = origin\nend"))
+        "let A\nlet B\nlet C\nas B do\n  let A.distance = 5\n  let A.position = origin\nend"))
     drive(scheduler)
     const C = host.children.get("C")
     const revision = scheduler.motionRevision

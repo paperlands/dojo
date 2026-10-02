@@ -21,9 +21,14 @@
 // A question is settled with its outcome atomically: a refused question never
 // wears the preceding answer as current. (id:laws-figure-composition-equality)
 
+import { kindOf } from "../mafs/tower.js"
+
+// Kind is part of the value (D051): equal components of different kinds are different
+// values. An untagged array reads as a vector, so a copy that forgot its tag degrades
+// to a vector rather than becoming a lie. (id:notation-coordinate-vector)
 const same = (a, b) => {
     if (Array.isArray(a) && Array.isArray(b)) {
-        return a.length === b.length && a.every((v, i) => same(v, b[i]))
+        return kindOf(a) === kindOf(b) && a.length === b.length && a.every((v, i) => same(v, b[i]))
     }
     return Object.is(a, b)
 }
@@ -44,10 +49,16 @@ export function createReadouts() {
 
     // Every watcher is invited before any failure is re-raised: one throwing
     // subscriber must not silence its siblings or leave a commit half-announced.
+    // A change is announced WITH the opaque datum its owner registered it under. The
+    // store owns the node; the subscriber owns what the node's value MEANS — so the
+    // meaning rides the node instead of living in a parallel table keyed by its id.
+    // (id:notation-coordinate-vector, id:laws-dependency-driven-place)
     const announce = (change) => {
+        const drives = nodes.get(change.id)?.drives
+        const event = drives ? { ...change, drives } : change
         const failures = []
         for (const fn of [...watchers]) {
-            try { fn(change) } catch (error) { failures.push(error) }
+            try { fn(event) } catch (error) { failures.push(error) }
         }
         return failures
     }
@@ -61,7 +72,9 @@ export function createReadouts() {
         // One derived value per (source, site). A loop re-reaching the same
         // statement updates the node; it does not multiply subscriptions.
         // `spec` is either a pure function (scalar kind) or { capture, build }.
-        register(source, key, spec) {
+        // `spec` is either a pure function (scalar kind) or { capture, build }. `drives`
+        // is the registrant's own datum, relayed back on every announced change.
+        register(source, key, spec, drives = null) {
             let keys = bySource.get(source)
             if (!keys) { keys = new Map(); bySource.set(source, keys) }
             const owned = keys.get(key)
@@ -69,12 +82,14 @@ export function createReadouts() {
                 const node = nodes.get(owned)
                 // A replaced computation makes the cache stale: the value was not
                 // computed by this function. Nothing is announced here — the next
-                // commit recomputes and announces. (id:laws-build-p3-readout-built)
-                if (node) resetNode(node, spec)
+                // commit recomputes and announces. The WHOLE definition is replaced,
+                // meaning included: a new computation must not wear the previous
+                // purpose or display effect. (id:laws-build-p3-readout-built, id:laws-ordered-replacement)
+                if (node) { resetNode(node, spec); node.drives = drives }
                 return owned
             }
             const id = ++seq
-            nodes.set(id, makeNode(id, source, key, spec))
+            nodes.set(id, makeNode(id, source, key, spec, drives))
             keys.set(key, id)
             return id
         },
@@ -89,6 +104,37 @@ export function createReadouts() {
                 try { fn(source) } catch { /* a release never throws */ }
             }
             return true
+        },
+
+        // One node retires when its site replaces a live law with a fixed one: the
+        // retired driver loses the right to publish. A refused replacement never
+        // reaches here, so it keeps the old accepted driver. (id:laws-ordered-replacement)
+        retire(source, key) {
+            const keys = bySource.get(source)
+            if (!keys) return false
+            const id = keys.get(key)
+            if (id === undefined) return false
+            keys.delete(key)
+            nodes.delete(id)
+            return true
+        },
+
+        // The opaque datum a site registered under, read back so an OWNER can compare
+        // its own meaning across a replacement. The store hands it back uninterpreted.
+        // (id:laws-ordered-replacement)
+        drivesOf(source, key) {
+            const id = bySource.get(source)?.get(key)
+            return id === undefined ? undefined : nodes.get(id)?.drives
+        },
+        drivesForSource(source) {
+            const keys = bySource.get(source)
+            if (!keys) return []
+            const out = []
+            for (const id of keys.values()) {
+                const drives = nodes.get(id)?.drives
+                if (drives) out.push(drives)
+            }
+            return out
         },
 
         // Bulk release carries the same per-source lifetime meaning as release:
@@ -202,8 +248,8 @@ export function createReadouts() {
 
 // --- node lifecycle ----------------------------------------------------------
 
-function makeNode(id, source, key, spec) {
-    const base = { id, source, key, value: undefined, hasValue: false }
+function makeNode(id, source, key, spec, drives = null) {
+    const base = { id, source, key, drives, value: undefined, hasValue: false }
     return resetNode(base, spec)
 }
 

@@ -29,7 +29,7 @@ const drag = (scheduler, frame, x) => scheduler.requestMotion(frame,
 test("a refused reach records the candidate and the residual", () => {
     const scheduler = buildWorld({ admit: pass })
     scheduler.hotSwapChild("host", fork("host",
-        "let A\nlet B\nas B do\n  let A.distance = 5\n  wait 1\n  let A = origin\nend"))
+        "let A\nlet B\nas B do\n  let A.distance = 5\n  wait 1\n  let A.position = origin\nend"))
     drive(scheduler)
     const a = last(scheduler)
     assert.equal(a.path, "reach")
@@ -93,7 +93,7 @@ test("contract: a pin that fails at proposal holds the pair and locates the faul
         "  let A.distance = 5",
         "end",
         "as C do",
-        "  let A = [1, 0, 0]",
+        "  let A.position = [1, 0, 0]",
         "end",
     ].join("\n")))
     drive(scheduler)
@@ -123,7 +123,7 @@ test("contract: an unsupported composition ends unresolved, never a false imposs
         "let C",
         "let D",
         "as O do",
-        "  let C = [10, 0, 0]",
+        "  let C.position = [10, 0, 0]",
         "end",
         "as A do",
         "  let B.distance = 5",
@@ -158,7 +158,7 @@ test("unresolved: a far component member is reported, not falsely held", () => {
         "let C",
         "let E",
         "as O do",
-        "  let C = [10, 0, 0]",
+        "  let C.position = [10, 0, 0]",
         "end",
         "as A do",
         "  let B.distance = 5",
@@ -186,7 +186,7 @@ test("unresolved: a far component member is reported, not falsely held", () => {
 test("contract: a birth conflict holds the being and its declaring frame", () => {
     const scheduler = buildWorld({})
     const host = scheduler.hotSwapChild("host", fork("host",
-        "let A\nlet A = origin\nfw 10\nlet A"))
+        "let A\nlet A.position = origin\nfw 10\nlet A"))
     drive(scheduler)
     const A = find(host, "A")
     assert.deepEqual(world(A), [0, 0, 0], "the pin's geometry stands")
@@ -203,7 +203,7 @@ test("release: repairing the faulted scope frees its sibling members", () => {
         "let D",
         "as B do",
         "  let A.distance = 5",
-        "  let A = [1, 0, 0]",
+        "  let A.position = [1, 0, 0]",
         "end",
         "wait 1",
         "as B do",
@@ -228,7 +228,7 @@ test("overlap: releasing one attempt leaves another attempt's hold intact", () =
         "let A",
         "as B do",
         "  let A.distance = 5",
-        "  let A = [1, 0, 0]",
+        "  let A.position = [1, 0, 0]",
         "end",
         "as C do",
         "  let A.distance = 7",
@@ -254,7 +254,7 @@ test("overlap: releasing one attempt leaves another attempt's hold intact", () =
 test("removal: removing the faulted scope frees a sibling member", () => {
     const scheduler = buildWorld({})
     scheduler.hotSwapChild("A", fork("A", ""))
-    scheduler.hotSwapChild("s", fork("s", "let A.distance = 5\nlet A = origin"))
+    scheduler.hotSwapChild("s", fork("s", "let A.distance = 5\nlet A.position = origin"))
     const A = find(scheduler.root, "A")
     assert.equal(holds(A), 1, "a faults the pin and holds the sibling A")
     scheduler.removeChild("s")
@@ -265,7 +265,7 @@ test("removal: removing the faulted scope frees a sibling member", () => {
 test("removal: removing a held member releases the attempt", () => {
     const scheduler = buildWorld({})
     scheduler.hotSwapChild("A", fork("A", ""))
-    scheduler.hotSwapChild("s", fork("s", "let A.distance = 5\nlet A = origin"))
+    scheduler.hotSwapChild("s", fork("s", "let A.distance = 5\nlet A.position = origin"))
     assert.equal(scheduler.root._attempts.size, 1)
     scheduler.removeChild("A")
     assert.equal(scheduler.root._attempts.size, 0, "the vanished member released the attempt")

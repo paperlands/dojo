@@ -5,13 +5,16 @@
 // compositor checks STAGE_CONTRACT at birth (loud in the browser on the first
 // draw), and this test pins the list against the module's actual stage reads.
 //
-// It reads SOURCE rather than importing, which is not the shape we'd choose:
-// compositor.js → materializer.js → utils/threetext.js, and that vendored troika
-// bundle says `from "./three.core.min"` with no extension. Bundlers resolve it;
-// node cannot, and the file is hashed immutable in VENDOR.org. So the compositor
-// — carrying the reframe fold — is unreachable from `node --test` over one
-// missing `.js` in a file we may not touch. Lifting troika's import out of the
-// materializer's eager path is what would let this test hold the real object.
+// Why SOURCE and not an import: this test asks about DECLARATIONS — members nobody
+// reads riding along (`renderer`, `recorder`, `renderstate`, `hatch`), and stage fields
+// that used to smuggle cadence (`renderLoop.frameInterval`). An import cannot see a member
+// nobody reads; only the text can.
+//
+// The import is NOT blocked. troika reaches neither the compositor nor the materializer
+// as a bundle import — both take it as a stage-injected factory — so the compositor
+// resolves under `node --test`, and `the compositor is still reachable` below keeps it so.
+// (Corrected 2026-10-02: this header claimed the compositor was unreachable over troika's
+// extensionless import. That dependency chain no longer exists — checked, not assumed.)
 //
 // What the source check still buys: members nobody reads riding along declared
 // (`renderer`, `recorder`, `renderstate`, `hatch`), and stage fields that used
@@ -125,4 +128,11 @@ describe("the compositor's stage contract", () => {
         assert.match(CODE, /if \(keepLabels\) layer\.labels\.rewrite\(\)/)
         assert.match(CODE, /clearChildLayer\(layer, \{ keepLabels: willPrint \}\)/)
     })
+})
+
+// The header's claim, CHECKED rather than asserted. If troika ever reaches the
+// compositor's eager path again, this fails here instead of surprising a future reader.
+// (id:cmp-resilient)
+test("the compositor is still reachable from `node --test`", async () => {
+    await assert.doesNotReject(() => import("../../../assets/js/turtling/compositor.js"))
 })
