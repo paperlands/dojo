@@ -52,6 +52,14 @@ describe("scaling and addition — ordered pairs through the one door", () => {
         assert.deepEqual(ev("2[1,2,3]"), [2, 4, 6])   // implicit multiplication
     })
 
+    test("division by a scalar is the same shape — v/s scales the vector", () => {
+        assert.deepEqual(ev("[1,2,3]/2"), [0.5, 1, 1.5])
+        assert.deepEqual(ev("[7,8]/2"), [3.5, 4])
+        // s/v and vector/vector have no meaning yet; they refuse by name.
+        assert.throws(() => ev("2/[1,2]"), (e) => e instanceof TowerRefusal)
+        assert.throws(() => ev("[1,2]/[3,4]"), (e) => e instanceof TowerRefusal)
+    })
+
     test("two vectors add pointwise, and compose", () => {
         assert.deepEqual(ev("[1,2,3]+[4,5,6]"), [5, 7, 9])
         assert.deepEqual(ev("2*[1,2]+[0,1]"), [2, 5])
@@ -66,6 +74,50 @@ describe("scaling and addition — ordered pairs through the one door", () => {
         assert.throws(() => ev("2+[1,2]"),
             (e) => e instanceof TowerRefusal && !(e instanceof DomainRefusal)
                 && e.types.join(":") === "number:vector")
+    })
+})
+
+describe("scalar-function pervasion — a builtin applies pointwise (D018)", () => {
+    test("a scalar builtin broadcasts over a vector; vectors zip", () => {
+        assert.deepEqual(ev("mod([1+1],4)"), [2])          // the singleton is a vector
+        assert.deepEqual(ev("mod([7,8,9],3)"), [1, 2, 0])
+        assert.deepEqual(ev("mod(7,[3,4,5])"), [1, 3, 2])   // the scalar broadcasts
+        assert.deepEqual(ev("mod([7,8],[3,4])"), [1, 0])     // equal lengths zip
+        assert.deepEqual(ev("sqrt([4,9])"), [2, 3])
+        assert.deepEqual(ev("sin([0,90])"), [0, 1])
+        assert.deepEqual(ev("atan2([0,1],[1,0])"), [0, 90])
+        assert.deepEqual(ev("round([1.4,2.6])"), [1, 3])
+        assert.deepEqual(ev("round([1.25,2.75],0.5)"), [1.5, 3])
+    })
+
+    test("the result is a vector: structure survives, a singleton is not a scalar", () => {
+        assert.ok(Array.isArray(ev("mod([1+1],4)")))
+        assert.deepEqual(ev("mod([1+1],4)"), [2])
+    })
+
+    test("the shape domain refuses structurally", () => {
+        assert.throws(() => ev("mod([1,2,3],[1,2])"),
+            (e) => e instanceof DomainRefusal && /equal lengths/.test(e.message))
+        assert.throws(() => ev("sqrt([[4]])"),
+            (e) => e instanceof DomainRefusal && /rank-one/.test(e.message))
+        // One shape path, so scale, add and a builtin refuse a nested or ragged
+        // shape the same way.
+        assert.throws(() => ev("2*[[1,2],[3,4]]"),
+            (e) => e instanceof DomainRefusal && /rank-one/.test(e.message))
+        assert.throws(() => ev("mod([[1],[2]],2)"),
+            (e) => e instanceof DomainRefusal && /rank-one/.test(e.message))
+        assert.throws(() => ev("[1,2,3]+[1,2]"),
+            (e) => e instanceof DomainRefusal && /equal lengths/.test(e.message))
+    })
+
+    test("the child's word still wins over the center's (D042)", () => {
+        const parser = new Parser()
+        const evaluator = new Evaluator()
+        parser.defineFunction("mod(a, b)", "a", {})
+        evaluator.userFunctions = parser.userspace
+        // The shadow gate runs before the tower: the child's word takes the vector
+        // as it is, unpervaded.
+        assert.deepEqual(evaluator.run(parser.parse("mod([7,8],3)"), {}), [7, 8])
     })
 })
 

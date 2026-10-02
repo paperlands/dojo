@@ -316,30 +316,47 @@ export function installVectorFloor(tower) {
         if (v.length === 0) throw new DomainRefusal(op, 'a nonempty vector', 'an empty vector')
         if (v.some(Array.isArray)) throw new DomainRefusal(op, 'rank-one vectors', 'a vector element')
     }
-    const scale = (v, s) => {
-        rankOne('*', v)
-        return v.map((x) => tower.apply('*', x, s))
-    }
-    const zip = (op, a, b) => {
-        rankOne(op, a)
-        rankOne(op, b)
-        if (a.length !== b.length) {
-            throw new DomainRefusal(op, 'equal lengths', `${a.length} and ${b.length}`)
+    // One shape mechanism for every vector meaning: a scalar broadcasts, vectors
+    // zip, a ragged or nested shape refuses, and each component step re-enters the
+    // door. (id:tower-synth-dispatch, D018)
+    const pervade = (op, args, kind = 'vector') => {
+        for (const arg of args) if (Array.isArray(arg)) rankOne(op, arg)
+        const shape = args.find(Array.isArray)
+        for (const arg of args) {
+            if (Array.isArray(arg) && arg.length !== shape.length) {
+                throw new DomainRefusal(op, 'equal lengths', `${shape.length} and ${arg.length}`)
+            }
         }
-        return a.map((x, i) => tower.apply(op, x, b[i]))
+        const result = shape.map((_, i) =>
+            tower.apply(op, ...args.map((arg) => Array.isArray(arg) ? arg[i] : arg)))
+        // A vector needs no tag — an untagged array IS a vector (kindOf's default),
+        // so only a point pays for the copy. (id:notation-coordinate-vector)
+        return kind === 'vector' ? result : asKind(result, kind)
     }
-    // A displacement scales; a location has no scale.
-    tower.define('*', ['number', 'vector'], (s, v) => scale(v, s))
-    tower.define('*', ['vector', 'number'], (v, s) => scale(v, s))
+    // A displacement scales; a location has no scale. Division by a scalar is the
+    // same shape — =v/s= scales the vector; vector∘vector stays deferred (D018).
+    tower.define('*', ['number', 'vector'], (s, v) => pervade('*', [s, v]))
+    tower.define('*', ['vector', 'number'], (v, s) => pervade('*', [v, s]))
+    tower.define('/', ['vector', 'number'], (v, s) => pervade('/', [v, s]))
     // Displacements add; a location moved by a displacement is a location; two
     // locations do not add.
-    tower.define('+', ['vector', 'vector'], (a, b) => zip('+', a, b))
-    tower.define('+', ['point', 'vector'], (p, v) => asKind(zip('+', p, v), 'point'))
-    tower.define('+', ['vector', 'point'], (v, p) => asKind(zip('+', v, p), 'point'))
+    tower.define('+', ['vector', 'vector'], (a, b) => pervade('+', [a, b]))
+    tower.define('+', ['point', 'vector'], (p, v) => pervade('+', [p, v], 'point'))
+    tower.define('+', ['vector', 'point'], (v, p) => pervade('+', [v, p], 'point'))
     // The displacement between two locations is a vector; a location moved back by a
     // displacement is a location; a displacement minus a location means nothing.
-    tower.define('-', ['vector', 'vector'], (a, b) => zip('-', a, b))
-    tower.define('-', ['point', 'point'], (a, b) => asKind(zip('-', a, b), 'vector'))
-    tower.define('-', ['point', 'vector'], (p, v) => asKind(zip('-', p, v), 'point'))
+    tower.define('-', ['vector', 'vector'], (a, b) => pervade('-', [a, b]))
+    tower.define('-', ['point', 'point'], (a, b) => pervade('-', [a, b]))
+    tower.define('-', ['point', 'vector'], (p, v) => pervade('-', [p, v], 'point'))
+    // A scalar builtin pervades the same shape.
+    for (const { name, arity } of SCALAR_BUILTINS) {
+        for (const n of (Array.isArray(arity) ? arity : [arity])) {
+            for (const types of tuplesOf([...SCALAR_KINDS, 'vector'], n)) {
+                if (!types.includes('vector')) continue   // the scalar rows stand
+                tower.define(name, types, (...args) => pervade(name, args))
+            }
+        }
+    }
+
     return tower
 }

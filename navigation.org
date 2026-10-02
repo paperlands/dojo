@@ -1489,12 +1489,13 @@ relation loop, and D011's wait-for snapshot. D054 is not a fixed-point theorem;
 :PROPERTIES:
 :ID: nav-tower-center
 :MODULE: mafs/tower.js
-:KEYWORDS: tower center dispatch register kind typeOf seal operation generic coefficient shadow shadowable override reserved builtin round mod vector literal bracket rank-one scale add installVectorFloor
+:KEYWORDS: tower center dispatch register kind typeOf seal operation generic coefficient shadow shadowable override reserved builtin round mod vector literal bracket rank-one scale add installVectorFloor pervade pervasion broadcast pointwise zip
 :PATH: assets/js/turtling/mafs/tower.js
 :END:
 One operation, ordered values, one value or an honest refusal. Operators and
 scalar builtins and the vector floor (=installVectorFloor=: scalar·vector scale,
-vector + vector add) register here; the evaluator is sealed over it and never
+vector + vector add, scalar-function pervasion — a builtin applies pointwise, a
+scalar broadcasts and equal lengths zip) register here; the evaluator is sealed over it and never
 switches. Boundary, witness and ladder: [[id:tower-center]].
 
 ** tower rounding — the tiny-signal probe
