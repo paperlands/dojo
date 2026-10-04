@@ -1064,6 +1064,58 @@ A derived figure's key is =evaluateArgs= in the declaring frame. Live names are
 ports at the call (=let art = hello X.x=). The membrane stays =captureFor=.
 Pins: =test/js/laws/figure_binding_test.mjs=.
 
+** constructed figure display — incremental drawing, time-bounded pump
+:PROPERTIES:
+:ID: nav-construction-display
+:KEYWORDS: flicker unit circle sine bearing wait incremental render cadence figure restart time slice admission
+:PATH: assets/js/turtling/compositor.js::createCompositor
+:END:
+Each display frame drains ambient channels and materializes directly. The experience
+contract prefers completed macro/drawable prefixes; replacement staging remains open.
+=withSlice= supplies the pump's deadline; the finite overrun ceiling is not a latency
+guarantee. =scheduler.isSettledThrough(H)= supplies the separate live-clock gate.
+[[id:render-construction-cadence]] records the cadence and its restart regression.
+Pins: =test/js/runtime/compositor_budget_test.mjs=, =test/js/runtime/figure_cadence_test.mjs=.
+Performance evidence and graphics-engine priors: [[id:runtime-intention-performance]].
+Draft experience contract and controlled falsifiers: [[id:live-rendering-contract]].
+Baseline instrument: =probe/live-rendering/diagnose.mjs=; findings: [[id:live-rendering-results]].
+Readiness/horizon reference bench: =probe/live-rendering/p1.mjs=; plan: [[id:live-rendering-p1-plan]].
+Repeated finite/prefix comparisons agree; promotion rejected: [[id:live-rendering-p1-verdict]].
+Stop/wake isolation at existing scheduler seams: =probe/live-rendering/stopwake.mjs=;
+preregistration [[id:live-rendering-stopwake-plan]]; reading [[id:live-rendering-stopwake-results]].
+Owner census of stop/eligibility facts: =probe/live-rendering/owners.mjs=;
+reading [[id:live-rendering-owner-census-results]].
+Phase walk P2–P7 (controls and gates): =probe/live-rendering/phases.mjs=;
+reading [[id:live-rendering-phase-walk-results]].
+P4/P7 rigor (manipulation checks): =probe/live-rendering/rigor.mjs=;
+reading [[id:live-rendering-rigor-results]].
+Driver-pause cause witness: =probe/live-rendering/driver.mjs=;
+reading [[id:live-rendering-driver-pause-results]].
+P4 ink release (erase / replacement): =probe/live-rendering/p4.mjs=;
+reading [[id:live-rendering-p4-release-results]].
+P4 endless-drawing memory: =probe/live-rendering/p4-endless.mjs=;
+reading [[id:live-rendering-p4-endless-results]].
+Machinery cost (measure before minting): =probe/live-rendering/machinery.mjs=;
+reading [[id:live-rendering-machinery-results]] and [[id:live-rendering-reasoning-corrections]].
+Display-cut repair (=atCut= descends through done bodies), regression + controls:
+test/js/runtime/construction_cut_test.mjs; reading [[id:live-rendering-cut-repair-results]].
+Gauge repair (facet-wise oracle): =probe/live-rendering/gauge.mjs=;
+P3 identity repair (both frames): =probe/live-rendering/identity.mjs=;
+readings [[id:live-rendering-gauge-results]] and [[id:live-rendering-identity-results]].
+Shared reveal timing in the real compositor: =probe/live-rendering/compositor.mjs=;
+reading [[id:live-rendering-compositor-reveal-results]]; versioning [[id:live-rendering-versioning]].
+Driver retries under the real pump: =probe/live-rendering/retries.mjs=;
+Equivalent readiness readers: =probe/live-rendering/readers.mjs=;
+readings [[id:live-rendering-driver-retries-results]] and [[id:live-rendering-equivalent-readers-results]];
+compositor limits [[id:live-rendering-compositor-limits]].
+Pump repair (redundant overrun; driveToRest no-progress/no-drain exit):
+test/js/runtime/pump_overrun_test.mjs; reading [[id:live-rendering-pump-repair-results]].
+Split clocks (wall / reveal / pump stopping): =probe/live-rendering/clocks.mjs=;
+reading [[id:live-rendering-split-clocks-results]].
+Integrated seam: [[id:live-rendering-seam-integration]]; C06 is adopted, not the
+whole experience contract. =test/js/runtime/settlement_test.mjs= pins settlement,
+readout drain-before-spend and new-play/edit/flush lifecycle.
+
 ** render clock — epoch rebase, idle fast-forward
 :PROPERTIES:
 :ID: nav-timeline
@@ -1089,6 +1141,14 @@ on the axis (spawn and rewire: the parent's frontier; fresh seat: the root's), n
 to =now=. Consumed ticks — admission parks included — must not drift a frame's
 frontier past a sibling's and let it read an earlier instant. Fence:
 =test/js/runtime/scheduler_determinism_test.mjs= and phase0c.
+
+=scheduler.atCut= reads instant closure; it is not the live horizon gate.
+=scheduler.isSettledThrough(H)= also sees due work, queued derived moves and pending
+keyed builds. =advance(t)= drains readouts at H before spending normalized wall
+allowance; a held allowance is discarded, while wall observation continues.
+=driveToRest= stops on no progress/no drain even without a cut. Its overrun ceiling
+does not guarantee closure or wall-time latency. Fences: =settlement_test.mjs=,
+=pump_overrun_test.mjs=, =construction_cut_test.mjs=; [[id:live-rendering-reveal]].
 
 ** ink credit — how a figure cannot be lost
 :PROPERTIES:

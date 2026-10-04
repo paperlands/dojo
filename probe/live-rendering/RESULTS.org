@@ -1,0 +1,895 @@
+#+title: Live rendering — P0 baseline and P1 gate readings
+#+PROBE-STATUS: concluded
+#+STATUS: reference
+#+date: 2026-10-04
+
+* Observation seat and provenance
+:PROPERTIES:
+:ID: live-rendering-results
+:LENS: empiricist adversarial
+:END:
+
+Target: [[id:live-rendering-contract]]. Instrument: [[file:diagnose.mjs][diagnose.mjs]].
+These are observations of the current working tree, not a successful treatment.
+
+- Dojo HEAD: =2595c6da642bbf8889b48df55db45dced90632fc=.
+- Specs HEAD: =6810c1821150e0c431ad9b1e3231eab18bae95a3=.
+- Runtime: Node =v26.10.0=, Linux x64.
+- Dirty source manifest SHA-256:
+  =e8426b100ea74e16334dcd184fc7fb1ddbeef3e787ae45a9ea7e0ff939bfa20a=.
+- Final raw JSONL SHA-256:
+  =7805dddfaf73d10f7b9263c89d21aad543a5cee05d7f0d5e230a3503faf052a9=.
+- Two final independent process runs produced byte-identical JSONL.
+  This establishes repeatability of this diagnostic, not general determinism.
+- Extended existing regression floor: *69 tests passed, 0 failed*.
+  Tests were run separately from the diagnostic. No browser trial was run.
+
+Records:
+- [[file:records/p0-pilot.jsonl][Pilot]]: initial 600-motion compositor fixture; original instrument hash
+  is recorded, but that earlier script version is not separately retained.
+- [[file:records/p0-baseline.jsonl][Baseline]] and [[file:records/p0-repeat.jsonl][repeat]]: expanded diagnostic, full source-hash manifests,
+  fixture text, configuration and individual frame-state observations.
+- [[file:records/regression-baseline.jsonl][Regression output]]: exact command and raw test stdout.
+
+HEADs alone do not reproduce this dirty checkout. The manifest detects source
+drift; reproduction still requires matching source versions. No timings here
+measure browser responsiveness: admitted motions charge synthetic work units,
+and Three geometry is built without a GPU.
+
+* Predictions, readings, limits
+:PROPERTIES:
+:ID: live-rendering-p0-readings
+:LENS: empiricist
+:END:
+
+** Healthy waiting is not construction pressure
+:PROPERTIES:
+:ID: live-rendering-wait-reading
+:END:
+
+At H=50, a figure waiting until logical 100 reported:
+=tickReturn=false=, =done=false=, =building=false=, =atCut=true=,
+but =worldProgress.phase='building'=; no suspension and no open instant.
+At H=100 its second path appeared and the scheduler completed.
+
+Supports: feedback phase and whole-program completion cannot be pause gates.
+It does not prove that =building= alone is sufficient for every other case.
+
+** No-progress is ambiguous
+:PROPERTIES:
+:ID: live-rendering-stall-reading
+:END:
+
+A controlled pending admission reported =tickReturn=false= too, but with
+=building=true=, =atCut=false= and the figure's
+=midInstant=true / suspension='admission'=. After the identity reply, the same
+question completed. The capacity-one fixture repeatedly reported credit
+suspension; returning credit let all three paths and the final beat drain.
+
+Supports: a false tick return cannot distinguish healthy sleep from unresolved
+admission. The credit fixture shows this finite case progresses after draining,
+not universal bounded memory or capacity invariance.
+
+** The overrun cap exposes prefixes and does not constrain work in time
+:PROPERTIES:
+:ID: live-rendering-overrun-reading
+:END:
+
+The small pilot was inconveniently informative: all 600 motions finished in
+the first opportunity (7 ticks), despite an allowance of four synthetic units.
+It did NOT provide an unfinished-construction/horizon witness. We retained it,
+then expanded the diagnostic with a larger construction rather than declaring
+the first intended observation proved.
+
+The larger fixture exposed:
+
+| Opportunity timestamp | H | Work units this opportunity | Ticks | Visible segments | building | atCut |
+|-----------------------+---+-----------------------------+-------+------------------+----------+-------|
+| 0 | 0 | 5630 | 64 | 5630 | true | false |
+| 16 | 16 | 5632 | 64 | 11262 | true | false |
+| 32 | 32 | 738 | 8 | 12000 | false | true |
+| 112 | 112 | 1 | 1 | 12001 | false | true |
+
+Its logical frontier remained 0 during the first construction; its wait
+scheduled the next motion at logical 100. H advanced from 0 to 16 while
+construction was still parked, and the real materializer showed a prefix while
+=atCut=false=. The last motion appeared at the first tested opportunity after 100.
+
+Supports: cooperative execution exists, but normal construction does not pause
+the current driver horizon. The 64-tick cap is not a never-prefix guarantee.
+Synthetic units greatly exceed the allowance; this demonstrates control behavior,
+not that 5630 ms elapsed or a browser was blocked for any particular duration.
+
+** A done ancestor can mask a living open descendant in atCut
+:PROPERTIES:
+:ID: live-rendering-ended-owner-reading
+:LENS: adversarial
+:END:
+
+The new contained-child fixture lets its owners finish while its child waits.
+After logical 100 the child starts a 12,000-motion construction.
+
+| Timestamp | H | Visible segments | building | atCut | Child midInstant | Child suspension |
+|-----------+---+------------------+----------+-------+------------------+------------------|
+| 0 | 0 | 1 | false | true | false | none |
+| 112 | 112 | 127 | true | true | true | breath |
+| 128 | 128 | 255 | true | true | true | breath |
+
+The root, host and enclosing figure are done; the contained child is not.
+The child remained unfinished at the end of this deliberate observation window:
+the termination record is *censored*, not a claim that completion fails.
+
+Source diagnosis: =atCut(frame)= descends only into children whose bodies are
+not done. It can therefore skip an ended intermediate body that still owns a
+living descendant. That contradicts the reader's whole-subtree comment.
+
+Falsifies: "atCut true always certifies every live descendant is closed" in
+this checkout. It is a diagnostic finding, not a runtime repair. Do not build
+the reveal gate on that unqualified assumption. Preserve the witness before
+deciding whether traversal repair alone supplies the required fact.
+
+* Status of the experimental path
+:PROPERTIES:
+:ID: live-rendering-evidence-status
+:END:
+
+| Experiment | Evidence status | Consequence |
+|------------+-----------------+-------------|
+| P0 | Done; repeated; supports clock separation and falsifies unqualified cut premise | Preserve ended-owner witness |
+| P1 | Done; model and corrected stop/wake trials repeated; promotion rejected | [[id:live-rendering-learnings]]; no live slowdown approved |
+| P2 | Not run | No macro marker or drawable transaction implemented |
+| P3 | Not run | Region/lifetime/stale interaction contract still needs witnesses |
+| P4 | Not run | No new staging/memory policy approved |
+| P5 | Not run | No controller gain or refresh estimate established |
+| P6 | Not run | No browser or viewer-experience claim |
+| P7 | Full existing JS suite run; candidate lifecycle treatments not run | 2756 pass, 0 fail, 1 existing TODO; not target coverage |
+
+No runtime policy was modified. P1 changed only a probe-local driver model.
+Replay, workers and per-figure scheduling remain deferred. The next question is
+which existing scheduler transition can report an authoritative stop and wake,
+without duplicating the dependency graph or scanning the world on every opportunity.
+
+* P1 — reason panel and isolated shared-H model
+:PROPERTIES:
+:ID: live-rendering-p1-results
+:LENS: empiricist adversarial
+:END:
+
+Plan: [[file:P1-PLAN.org][P1-PLAN.org]]. Instrument: [[file:p1.mjs][p1.mjs]]. The source manifest's
+runtime/harness hashes match P0 exactly. The intervention is a reference registry
+reader plus a probe-local accumulator, NOT a patch to the scheduler/compositor.
+
+** Provenance and replication
+:PROPERTIES:
+:ID: live-rendering-p1-provenance
+:END:
+
+- Runtime: Node =v26.10.0=, Linux x64; repository HEADs unchanged from P0.
+- Manifest SHA-256: =44be8aaa78c81f32351eb0551064ed1624fe376b53e68ea62a5cc12c933590eb=.
+- [[file:records/p1-run.jsonl][Run]] and [[file:records/p1-repeat.jsonl][repeat]] are byte-identical independent process runs.
+  Each has 350 records: 62 reason-panel states, 198 paired opportunities,
+  44 explicit evidence assertions and the manifest/fixtures/comparisons/terminations.
+- Raw digest: =49709dc1086c0b38c76eb2cea4c4d8effcf341558488d5c433c23a9af3b317dc=.
+- [[file:records/p1-instrument.jsonl][Final instrument and preregistration snapshots]] retain source as well as hashes.
+  Each failed pilot has raw output, an error record and an instrument snapshot.
+
+Four pilots were retained, not selected away:
+1. [[file:records/p1-pilot.jsonl][Pilot 1]]: allowance 0 at frozen clock 0 is NOT spent: runtime uses
+   =clock() > deadline=. Repaired the instrument to request -1.
+2. [[file:records/p1-pilot-2.jsonl][Pilot 2]]: a closed figure overrides requested breathEvery with 256.
+   64 motions never breathed. Increased only this workload to 600.
+3. [[file:records/p1-pilot-3.jsonl][Pilot 3]]: the assumed permanent missing-name block actually wounds
+   when the parent closes. Kept that falsifier; used an explicitly withheld
+   admission reply for the permanent external-wait case.
+4. [[file:records/p1-pilot-4.jsonl][Pilot 4]]: zero-time recursion eventually hits a host stack fault.
+   Kept the fault instead of insisting the process must remain censored.
+
+** Discrete readiness observations
+:PROPERTIES:
+:ID: live-rendering-p1-reasons
+:END:
+
+| Isolated cause | Observation | What it earns |
+|----------------+-------------+---------------|
+| Closed, due, not yet executed | referenceCut true, gate hold before first tick | Closure alone does not certify the next transition drained |
+| Future wait | No due live frame; advance at H=0,50,99; finish at 100 | Healthy sleep must not freeze H |
+| Ended ancestor, building child | atCut true, referenceCut false, breath at H=100 | P0 traversal defect replicated with 600 motions |
+| Full capacity-one channel | Owed credit event; credit return permits completion at fixed H | Credit pressure is not authored sleep |
+| Pending admission | verdict absent; controlled reply makes it present before next tick | Same suspension kind has distinct pending/ready states |
+| Forward reference | Dataflow suspension resolves at unchanged H | Dataflow kind is not proof of a permanent stall |
+| Mutual cycle | Done, no errors; no indefinite block | Do not turn the existing cycle semantics into a new wake graph |
+| Absent name | First dataflow, then Undefined assistant wound | Falsifies our permanent-missing-name premise |
+| Reply deliberately withheld | Eight post-drain snapshots unchanged at H=0 | Blind due-frame retry has no wake/progress basis |
+| Explicit done / responder failure / derived cycle | Terminal state distinguished by errors | Completion must not disguise failure |
+| Derived move after cached done | cachedDone true, done false, both cuts true, queued move | Traversal repair alone still cannot be the horizon gate |
+| Zero-time recursion | Nine nonterminal returned slices, tenth tick wounds at 1158 motions | Not healthy sleeping, not a completion/censoring claim |
+
+The withheld reply is censored: eight observations do not prove it will never
+arrive. They do establish that the driver candidate recommends redundant retries
+without a wake. A frozen synthetic clock does not exercise residency deadlines.
+
+** Horizon pairs — change H policy only
+:PROPERTIES:
+:ID: live-rendering-p1-horizon
+:END:
+
+Same source/captured question, channel 512, requested breathEvery 4, identity
+admission, one already-spent-slice tick and full post-tick drain per opportunity.
+Opportunities are 10 units apart. W counts admitted motions, not milliseconds.
+Control uses absolute opportunity time; treatment adds an interval only if the
+previous post-tick reason panel allowed advance. Neither changes resumeAt/birth.
+
+| Fixed question | Canonical equality | Control/candidate opportunities | Control/candidate reference frame visits |
+|----------------+--------------------+---------------------------------+------------------------------------------|
+| 24 motions then wait 0.1 | Exact | 39 / 48 | 78 / 96 |
+| Ended owner; child waits, builds 600, waits | Exact | 21 / 25 | 84 / 100 |
+| Finite 24-step recursion without wait | Exact | 1 / 1 | 3 / 3 |
+| Waited recursion through closed H=30 prefix | Exact | 4 / 4 | 12 / 12 |
+| Sibling semantic read with finite work/wait | Exact | 23 / 32 | 74 / 110 |
+
+Equality compares per-address ordered path segments with style (not transport
+batch boundaries), logical motion requests, errors and terminal committed poses,
+birth and resumeAt. It is NOT equality of all visible/current-state transitions.
+The waited infinite fixture closes the declared logical prefix; both runs are
+explicitly censored for whole-program completion. Finite recursion is a no-pressure
+negative control, not proof that expensive recursion always returns within a budget.
+
+In the 24-motion candidate, construction reaches its wait at wall=370, H=0,
+W=24; the next motion starts at wall=470, H=100, W=25. Exactly 100 opportunity
+units of authored distance remain after closure. Control closes construction at
+wall=370, H=370 and executes the overdue logical-100 motion at wall=380.
+Every candidate interval has an exact no-debt assertion. The ended-child pair
+closes construction at wall=140, H=100 and resumes at wall=240, H=200.
+
+These are scheduling/model results, not a measured 370 ms stall or latency win.
+The scan-visit counts expose extra reference work; they are not timing estimates.
+
+** Verdict, remaining work, and stopping rule
+:PROPERTIES:
+:ID: live-rendering-p1-verdict
+:END:
+
+Supports: existing facts can describe these distinct states; a probe-only H
+accumulator preserves meaning and healthy waits for five fixed model questions.
+Falsifies: atCut alone, repaired traversal alone, and blind due-frame retries as
+a complete readiness/liveness policy. Reject promotion, not the finite evidence.
+
+Alternative explanations retained: the missing name is a legal error after parent
+closure; a closed body's actual breath cadence differs from the requested one;
+no-time recursion is limited here by host stack, not by a chosen reveal policy.
+These are not reasons to revise causal time or hide a resource fault.
+
+P1 is concluded as a diagnostic/model inquiry, with promotion rejected. There is
+still no authoritative scheduler stop/eligibility summary, scan-cost benchmark,
+residency experiment, full idle/new-play driver integration, or general endless-process
+guarantee. These are unearned claims, not successes implied by closing the experiment.
+[[id:live-rendering-learnings]] records the narrow next work; no second graph is earned.
+
+P2/P3/P4 treatments remain *not run*, gated on that result. P5/P6 remain *not run*:
+there is no controller candidate or browser/viewer evidence. P7 candidate lifecycle
+validation is *not run*. This follows the contract's stop-on-ambiguous-gate rule.
+Do not describe this work as completion of P1–P7.
+
+** Existing regression floor
+:PROPERTIES:
+:ID: live-rendering-p1-regression
+:END:
+
+[[file:records/p1-regression.jsonl][Exact command and raw output]]: all 206 =test/js/*/*_test.mjs= files,
+run after the experiments, not alongside them. Node reports 2757 tests:
+*2756 pass, 0 fail, 0 cancelled/skipped, 1 TODO*, exit 0.
+The TODO is the already-marked invalid-input-after-drag case in
+=test/js/notation/figures_test.mjs=; its failing diagnostic is retained, not counted
+as a new pass. This expands the regression floor, not the target-policy coverage.
+Navigation verification passes. Local file/ID links and all raw P1 JSONL validate;
+all four failed-pilot instrument snapshots match their manifests. The Emacs citation
+bridge is unavailable (no server socket), so IDs were checked against the org files.
+Probe verification still reports only the three pre-existing laws-living stale citations.
+
+Instrument exit: P0/P1 are concluded. Keep =diagnose.mjs=, =p1.mjs= and =stopwake.mjs=
+as cited reproducers. [[file:records/closure-instruments.jsonl][Pre-closure snapshots]] preserve their source and the shared
+plan as read before closure. Only the three instrument lifecycle headers changed;
+the shared plan and separately added follow-up work are not closed by this note.
+Historical measurements and runtime policy are untouched. Fold stable falsifiers
+into runtime regressions with the corresponding repair.
+
+* Stop/wake isolation at existing seams
+:PROPERTIES:
+:ID: live-rendering-stopwake-results
+:LENS: empiricist adversarial
+:END:
+
+Question and preregistration: [[id:live-rendering-stopwake-plan]] (with its retained
+instrument correction). Instrument: [[file:stopwake.mjs][stopwake.mjs]]. It edits no
+runtime source: it wraps the exported =EFFECTS= values and the =tick= boundary, with one
+phase-tagged collection window per controlled wake, then asks whether the runtime reports
+an authoritative stop/wake a driver could read in O(transitions).
+
+- Node =v26.10.0=. The 178 =assets/js/= + harness hashes match P1 exactly; only the
+  probe and plan sources differ.
+- Manifest source hash =0e3447b4c01749d028a09fa36220ecddc07c5c24303eb0262808c9479e4ef2ea=.
+- [[file:records/stopwake-run.jsonl][Run]] and [[file:records/stopwake-repeat.jsonl][repeat]] are
+  byte-identical independent processes: 57 records, 30 assertions, raw digest
+  =667f302e993146dbd4b272f3b7255d9de620ed7c488d0ae42f5abed4bd7eedef=.
+- [[file:records/stopwake-instrument.jsonl][Instrument snapshot]] source hashes match the
+  run manifest for =stopwake.mjs= and =P1-PLAN.org=.
+
+** Correction retained from the first pass
+
+The first run collected transitions only while =tick= ran, so its reply, drain and
+hand-input zero counts measured windows where collection was *off*. They could not show
+that no handler ran. The re-run opens a phase-tagged window across each controlled wake; a
+zero inside the window is the falsifier, a zero outside it is nothing.
+The zero is certified, not assumed. A positive control forces a breath through the same
+window machinery: a sync and an async window each record it, while an idle async window
+records nothing. EFFECTS is reachable only from =stepFrame= via =stepOnce=, i.e. only
+inside a tick; a wake window with no tick is structurally empty. A wake zero therefore
+says "no pump step", not "no handler ran" — the eligibility fact still lives in frame
+state.
+
+** What an existing transition does report
+
+| Fact | Seam observed | Reading |
+|------+---------------+---------|
+| terminal done | =tick= returns false, =done= true, =building= false | authoritative |
+| next wake after a wait | =wait= transition carries =resumeAt= | authoritative |
+| breath preemption | =breath= transition, verdict =parked= | authoritative, per-kind |
+| dataflow block | =blocked= transition, suspension =dataflow= | authoritative, per-kind |
+| admission install | =motion= transition, suspension =admission= pending | authoritative |
+| terminal failure | =motion= transition, verdict =ended= | authoritative |
+
+** What an existing transition does not report
+
+- Credit debt: the frame holds =owed= / suspension =credit=, yet the parked tick's only
+  routed transitions are =breath/continue=. The debt is raised by the deposit fallback,
+  which is not a routed verb. Residency shares that fallback and was not exercised:
+  recorded, not bounded.
+- Every controlled wake opens with *zero* routed transitions, collection live:
+  admission reply =0=, admission fault =0=, credit return =0=, derived-move input =0=.
+- Wake is not a suspension clear. The window facts separate them:
+  - admission readiness arrives with the =admission= suspension *retained* (verdict set,
+    same run); it is not a clear.
+  - credit availability arrives with the =owed= debt *retained*; the replay and clear are
+    later and internal to the next pass, and leave no routed transition.
+  - a derived move queues with *no* suspension at all.
+  - an admission *fault* clears the suspension as the run dies (suspension to null,
+    =done= to true). A blanket clear notification would join a wake to a death.
+- Drained is not committed. The queued derived move is consumed and, in this fixture, the
+  pose commits ([0,0,0] to [7,0,0]); the two are reported as separate facts. The
+  =redrawDerivedPlace= guards (=scheduler.js:2227-2232=) consume the entry and keep the
+  last pose when the target is not done, the observer is not live, the law owner changed,
+  or =applyLaw= does not commit. A failed redraw is not exercised here.
+- The =tick= boundary collapses breath, debt and pending admission into one =building=
+  boolean.
+
+** Verdict
+
+The two observed seams expose no complete stop/eligibility account: stops are partly
+visible, wakes are not, and a "wake" would be three unlike things (an admission verdict, a
+returned credit, a queued place) plus a termination clear. *This does not rule out an
+O(transitions) account* — only this pair of seams. Promotion rejected; no runtime source
+was changed. The leap from "these seams do not report readiness" to "each owner must gain a
+reporting mechanism" is architectural, not earned: existing state may suffice, a scan may be
+inexpensive, and a small pump-boundary summary may suffice. The cost of those alternatives is
+unmeasured (see [[id:live-rendering-machinery-results]]). Do not mint reporting obligations
+before measuring.
+
+* Owner census — who reports what
+:PROPERTIES:
+:ID: live-rendering-owner-census-results
+:LENS: empiricist adversarial
+:END:
+
+Plan: [[id:live-rendering-owner-census-plan]]. Instrument: [[file:owners.mjs][owners.mjs]].
+It asks, for each natural owner, whether its *stop* and its *eligibility change* are
+routed by an existing transition or only read off state. Positive control first; the
+residency case stopwake censored is earned here.
+
+- Node =v26.10.0=. Run digest =a5f4fec1eea9e5f7ee9621480f06851948f4f4813260ccae74d9c06484e8d727=;
+  manifest =8f107c1a235d715153d5eabcbc88c1ea62d516ce5c5ad21b2c61a348db1dedd4=; 32 records,
+  12 assertions, 0 fail. [[file:records/owners-run.jsonl][Run]] and
+  [[file:records/owners-repeat.jsonl][repeat]] are byte-identical; the
+  [[file:records/owners-instrument.jsonl][snapshot]] matches the manifest.
+
+| Owner | Owns | Stop routed | Eligibility routed | State |
+|-------+------+-------------+--------------------+-------|
+| pacer | slice spent | yes (=breath=) | no | suspension |
+| dependency | wait-on | yes (=blocked=) | no | suspension |
+| admission | verdict | yes (=motion=) | no | verdict set |
+| channel | credit available | no | no | =owed= |
+| stage | room available | no | no | =owed= |
+| place | queued / committed | no | no | flag / pose |
+| run | liveness | yes (=ended=) | no | =done=/=error= |
+
+Reading: stops and installs are sometimes routed; *no* owner routes its eligibility
+change. Residency is now exercised (it was censored): a full stage parks on the deposit
+fallback with no routed transition, exactly as credit. So the "wake" half of an account
+must be added per owner, not as one class.
+
+Narrow conclusion: seven owners, under the model fixtures; this does not bound every
+owner and does not rule out an O(transitions) account. Promotion rejected; runtime
+unchanged. Stopping rule met: one verdict per owner.
+
+* Phase walk — P2 to P7, control by control
+:PROPERTIES:
+:ID: live-rendering-phase-walk-results
+:LENS: empiricist adversarial
+:END:
+
+No new plan (the P1 plan is concluded); predictions are emitted before the observations in
+the record. Instrument: [[file:phases.mjs][phases.mjs]]. Each remaining phase is run as far as
+the stopping rule and a headless bench allow: earn the *control*, mark the *treatment* gated
+with its reason. P5/P6 lack a CONFIGURED browser harness — Chromium and Firefox are
+installed and chromedriver is present, but playwright/puppeteer are unresolved — so they are
+not necessarily impossible here.
+
+- Run digest =9c5311d81a03c0f5bee68801227ef9f172a1cc09a14a6152963ed211ed3ac7e1=; manifest
+  =34f0501bc584db7346a6fcf6e6614cbe04c117255466b377a1e80a1354f6c800=; 31 records, 15
+  assertions, 0 fail; [[file:records/phases-run.jsonl][run]] and
+  [[file:records/phases-repeat.jsonl][repeat]] byte-identical;
+  [[file:records/phases-instrument.jsonl][snapshot]] matches. A comparator positive control
+  is included (different geometry differs; the same geometry repeats).
+
+| Phase | Control earned | Treatment |
+|-------+----------------+-----------|
+| prep: idle/new-play | idle ≠ sleep ≠ new play on existing seams; driver-pause cause not separable | — |
+| P2 drawable atomicity | straight/loop/helper/recursion same geometry | gated: no macro layer |
+| P3 ownership / cancel | late reply left the newest pose intact, but the run token was unchanged: inconclusive | gated: no cancellation |
+| P4 credit / memory | canonical geometry equal at capacities 1/2/16/512 | gated: no staging policy |
+| P5 attribution | not run | not configured: no browser harness (Chromium/Firefox installed) |
+| P6 experience | not run | not configured: no browser harness or viewers |
+| P7 invariance | canonical geometry equal under budget null vs spent | gated: no candidate policy |
+
+Narrow conclusion: P2/P4/P7 now have earned same-geometry controls; the prerequisite is
+partial (a driver-pause *cause* still needs a witness); P3 needs a dedicated supersession
+rig; P5/P6 need a browser. No treatment promoted; runtime unchanged.
+
+* Rigor pass — manipulation checks for P4/P7
+:PROPERTIES:
+:ID: live-rendering-rigor-results
+:LENS: empiricist adversarial
+:END:
+
+The phase walk's P4/P7 equalities could be the equality of "the varied cause never engaged
+the mechanism". [[file:rigor.mjs][rigor.mjs]] re-tests each with a manipulation check.
+Hypotheses are emitted before the observations.
+
+- Run digest =a3a77738d7c324f6599932eea33a392422e683f1adaa5b00f5fdaaecf9a4f7bb=; manifest
+  =bea76ab061669d3e081aa71e924f74e6fff8d4db57f16a1396e7c895032a8140=; 16 records, 10
+  assertions, 0 fail; run/repeat byte-identical; snapshot matches. A shape control shows the
+  comparator separates same-length different geometry.
+
+| Test | Manipulation: the cause engaged | Meaning: the invariant held |
+|------+---------------------------------+----------------------------|
+| P4 capacity | debt at 1 and 2; none at 16/512; ticks 4/2/1/1 | canonical geometry and stock equal; stock = surviving segments |
+| P7 allowance | spent 14 ticks + a breath park; unpaced 1 tick, no breath | canonical geometry and stock equal |
+
+Reading: P4/P7 invariance is now non-vacuous on these fixtures. Still open: the model bench
+is not the browser runtime; P4 exercises debt, not replacement/clear leaks; one process run
+on small fixtures, no variance study. Promotion rejected; runtime unchanged.
+
+* Driver-pause cause witness
+:PROPERTIES:
+:ID: live-rendering-driver-pause-results
+:LENS: empiricist adversarial
+:END:
+
+The phase walk's prerequisite: can the bench report *why* the driver stopped, or only that
+it stopped? The owner is the epoch rebase (=timeline.js=: =rebaseEpoch=/=idleFloorMs=),
+consumed by =compositor.advance=. Instrument: [[file:driver.mjs][driver.mjs]]. Hypotheses first.
+
+- Run digest =a84b2ca150a5b472398d34a47b388786d50d80d0e6511131732e93eaa1f1ac98=; manifest
+  =330b9e4d2b6769d092552a253459d94237d9c67d077599b26e71690c81482f8c=; 20 records, 13
+  assertions, 0 fail; run/repeat byte-identical; snapshot matches.
+
+| Fact | Reading |
+|------+---------|
+| loop stopped vs ran at cadence | exact: gap ≤ 1000ms does not rebase; gap > 1000ms rebases by (gap − one frame) |
+| consumption | a 3917ms pause advanced the reveal horizon from 83 to 100 (one frame), not by the gap; the pacer skipped exactly that frame |
+| cause | the owner decides from the gap alone; a hidden-tab pause and an equal blocking call present identically |
+
+Narrow conclusion: the existing epoch owner earns the *driver-pause witness* — "the loop
+stopped", folded to a single frame, pacer skipped — but not the *cause*. Hidden-tab versus a
+long blocking call is not separated here and is not claimed. The prerequisite is met for the
+witness and open for the cause. Runtime unchanged.
+
+* P4 ink release — erase and replacement
+:PROPERTIES:
+:ID: live-rendering-p4-release-results
+:LENS: empiricist adversarial
+:END:
+
+The phase walk's P4 tested debt; the accounting claim bites where ink is *released*.
+Instrument: [[file:p4.mjs][p4.mjs]]. Hypotheses and manipulation checks first.
+
+- Run digest =3a48462a2757152485df1d4e5921d3498b2789a7ba45f83f7b8eaa1a7f1ee0d1=; manifest
+  =6c5d0987bfb6962a4612e315f3a52371777f348be8f1e04b93679da3d5185b8b=; 19 records, 11
+  assertions, 0 fail; run/repeat byte-identical; snapshot matches. The comparator control
+  separates geometry.
+
+| Sub-test | Manipulation: the cause engaged | Meaning / accounting |
+|----------+---------------------------------+----------------------|
+| erase | stock 3 without erase vs 2 with; a clear event in the stream | retained stock = surviving segments (2) |
+| erase × capacity | debt at 1 and 2; none at 16/512; ticks 7/4/1/1 | surviving geometry and stock equal at 1/2/16/512 |
+| replacement | a re-seat changes 3 -> 5 segments | stock = the newest geometry (5), not the sum (8); no error |
+
+Narrow conclusion: erase and replacement release resident ink to the surviving geometry,
+accounted, and invariant to capacity while capacity binds. Still open: the real
+compositor/GPU residency is a separate witness; an endless drawing is not tested, so total
+memory is not shown to plateau. Runtime unchanged.
+
+* P4 endless-drawing memory
+:PROPERTIES:
+:ID: live-rendering-p4-endless-results
+:LENS: empiricist adversarial
+:END:
+
+P4's own untested edge: total art, not just queues. The contract says total memory cannot
+plateau unless the truth policy faults or output is withdrawn. Instrument:
+[[file:p4-endless.mjs][p4-endless.mjs]]. Hypotheses and manipulation checks first; the endless
+programs are censored at a 14-opportunity instrument ceiling.
+
+- Run digest =1575897d4eafe6074caa66f183ec88406b83b8a054595ffee991f43860a88df9=; manifest
+  =53ee835d87050cc1219ff23e29be503e6eba7d54ec4bc76b07257cfee0f0f7b0=; 16 records, 8
+  assertions, 0 fail; run/repeat byte-identical; snapshot matches.
+
+| Sub-test | Manipulation: the cause engaged | Reading |
+|----------+---------------------------------+---------|
+| finite control | 3 segments then complete | stock plateaus at 3 |
+| endless grow | 14 paths for 14 opportunities | stock 1..14, strictly increasing, no plateau; censored |
+| endless withdraw | 14 paths, 15 clears | stock stays 0 (bounded): the only plateau |
+| run ceiling | pre-load at 1,000,000, then draw | run wounds "more than 1000000 lines"; stock 1,000,001 |
+
+Narrow conclusion: bounded queues are not bounded total art — an endless drawing grows
+linearly and faults only at the declared run ceiling; it plateaus only when output is
+withdrawn. Still open: a censored prefix does not prove unboundedness, and real
+compositor/GPU residency is a separate witness. Runtime unchanged.
+
+* Machinery cost — measure before minting obligations
+:PROPERTIES:
+:ID: live-rendering-machinery-results
+:LENS: empiricist adversarial
+:END:
+
+The census said the seams do not report eligibility; that does *not* establish that owners need
+new reporting. Instrument: [[file:machinery.mjs][machinery.mjs]]. Counts are the deterministic
+record; wall time is a supplementary host measurement printed to stderr only.
+
+- Run digest =8a5f453a0b2e5ce7879efe2cdeac27feacb029448fb135f8b7efe05eced8da63=; manifest
+  =3c434f28b0756590dd68ac0b70af2db145fec0d4b45f424893d2e5c838080d82=; 13 records, 5
+  assertions, 0 fail; run/repeat byte-identical (stderr timing varies by design and is not
+  recorded); snapshot matches.
+
+| Measure | Reading |
+|---------+---------|
+| scan work | one scan visits the whole registry: 66 and 258 frames; shape O(frames) |
+| scan vs tick (host) | scan 0.57-1.94us, tick 1.43-5.48us at 66/258 frames; scan is 0.35-0.40 of a tick |
+| retry | a withheld reply gives exactly one no-progress tick per opportunity, one admission call, zero motions, no spin |
+
+Reading: the O(frames) scan is inexpensive on this host and the tick already traverses the tree
+once, so a summary could piggyback on that pass (unmeasured). Neither the scan shape nor the
+bounded retry rules the alternatives in or out. The leap from "not reported" to "each owner
+must report" is not justified by these data. Runtime unchanged.
+
+* Reasoning corrections
+:PROPERTIES:
+:ID: live-rendering-reasoning-corrections
+:LENS: empiricist
+:END:
+
+Four tightenings retained as corrections rather than edited away:
+
+1. Missing routed notifications do not require new notifications. The census recommendation is
+   narrowed; the cost of a scan, of existing state, and of a pump-boundary summary is
+   unmeasured. See [[id:live-rendering-machinery-results]].
+2. An unchanged retry is not a performance failure by itself. Measured: one no-progress tick per
+   opportunity, no spin. Actual work and response age must be measured before any wake machinery.
+3. Some comparisons are intentionally weak and must not be enlarged by passing assertions:
+   - P2 equivalence is simple geometry only, not fills, labels, placement or asynchronous geometry.
+   - P3 remains inconclusive; its incarnation check does not separate old and new frame identity.
+   - P4 release/endless cover stock accounting, not retained old/new DISPLAY memory or
+     cancellation leaks.
+   - The rigor comparator flattens and rounds points; it is not a general oracle for ownership,
+     style or logical observations.
+4. "No browser" is not a blocker. Chromium and Firefox are installed and chromedriver is
+   present; playwright/puppeteer are unresolved. P5/P6 are unconfigured, not impossible; launch
+   permissions and an isolated harness still need checking.
+
+* Repair — display cut descends through done bodies
+:PROPERTIES:
+:ID: live-rendering-cut-repair-results
+:LENS: empirical
+:END:
+
+The P0 ended-owner counterexample is folded into a runtime regression and the false reader is
+repaired, independently of the larger contract. Source: =assets/js/turtling/scheduler.js=
+=atCut= — the loop skipped a done child, so a living descendant under an ended owner was never
+inspected. Minimal change: descend through every child regardless of =done=.
+
+- Regression: =test/js/runtime/construction_cut_test.mjs= — fails on the old reader
+  (=atCut= true for a breath-parked descendant under an ended owner), passes on the repair.
+  Controls: a healthy wait is a cut; a wholly finished tree is a cut.
+- Relevant floor (README rig + the new test): 72 pass, 0 fail.
+- Full JS floor: 2760 tests, 2759 pass, 0 fail, 1 existing TODO (was 2757/2756/0/1; +3 new).
+- No reveal timing, pacing or publication changed; =specs/= untouched.
+
+The runtime change makes every earlier probe manifest read as drift on =scheduler.js=; that is the
+manifest doing its job, and the pre-fix records are kept as provenance.
+
+* Gauge repair — a facet-wise geometry oracle
+:PROPERTIES:
+:ID: live-rendering-gauge-results
+:LENS: empiricist adversarial
+:END:
+
+The flattened, rounded point list used by phases/rigor/p4 is blind to style, ownership and
+transport. Instrument: [[file:gauge.mjs][gauge.mjs]]; it reproduces the blind spot it repairs.
+
+- Run digest =7ce1017ab9470837414e5d6e4ffeca9b143db0a11e8ce12c3e51aafedd7407d0=; manifest
+  =84a045e46257d548c52b24dca32928cc2a210b237e061a299081fb21cdd6e3de=; 12 records, 5
+  assertions, 0 fail; run/repeat byte-identical.
+
+| Fixture pair | Flattened oracle | Facet oracle |
+|--------------+------------------+--------------|
+| =fw 1;fw 1= vs =fw 1;beColour red;fw 1= | equal (blind) | style differs |
+| =fw 1= vs =as a do fw 1 end= | equal (blind) | ownership differs |
+| =fw 2= vs =fw 1;fw 1= | differ | transport and segments differ |
+
+Reading: the earlier P2/P4/P7 equalities hold only as plain-stroke facet equality. Different
+spellings and same-question semantic invariance must be requested separately; rounding is gone.
+The weak oracle must not be reused for the next trials.
+
+* P3 identity repair — both frames, the real guard
+:PROPERTIES:
+:ID: live-rendering-identity-results
+:LENS: empiricist adversarial
+:END:
+
+phases.mjs inspected =runIncarnation=, which does not distinguish the replacement. Instrument:
+[[file:identity.mjs][identity.mjs]] captures both frames and the guard inputs.
+
+- Run digest =4364f9484a6ce8463159d1e60d1b2be29d701285a00313579704d07dbe923aef=; manifest
+  =951dcaa50f38eda11247698ec00d0bb7c7ba8158ec75915e3e032dc3ebc9c3a1=; 12 records, 6
+  assertions, 0 fail; run/repeat byte-identical.
+
+| | Old frame | Replacement |
+|--+-----------+-------------|
+| id | 2 | 3 |
+| run | 2 | 3 |
+| runIncarnation | 1 | 1 |
+
+- An obsolete reply carrying [100,0,0] left the new answer at [0,0,0]; the old frame had left
+  the registry. A fresh reply on the replacement applied ([50,0,0]) — the fence is causal, not a
+  blanket refusal. No new identity framework is needed.
+- Still open: coherent display replacement and newest-pending coalescing are not tested.
+
+* Shared reveal timing in the real compositor
+:PROPERTIES:
+:ID: live-rendering-compositor-reveal-results
+:LENS: empiricist adversarial
+:END:
+
+Move beyond the one-tick driver model. Control: the repaired compositor driven at wall
+opportunities. Treatment: the SAME compositor with only the construction-paced horizon changed
+(the driver holds the supplied timestamp while the last opportunity left the world building).
+Everything else — program, capacity 512, budget, opportunity sequence, admission,
+materialization — is held. Instrument: [[file:compositor.mjs][compositor.mjs]].
+
+- Run digest =ada7d5b74e26e7595f331dad5be3962f4a84d6dcd72ce26c3a55efb717a0a2c1=; manifest
+  =644c0ce4d47d70db13fa838b69977861f5262c5c91fa647e03163f5246d99818=; 26 records, 18
+  assertions, 0 fail; run/repeat byte-identical; snapshot matches. Reference-scan cost is
+  retained on stderr (provisional).
+
+| Fixture | Control | Treatment | Canonical | No debt |
+|---------+---------+-----------+-----------+---------|
+| heavy construction then wait | 8 steps, 64 ticks | 10 steps (2 held), 64 ticks | equal | yes |
+| ended owner, living child after a wait | 8 steps, 7 ticks | 8 steps, 7 ticks | equal | yes |
+| healthy wait, cheap construction | 8 steps, 4 ticks | 8 steps, 4 ticks | equal | yes |
+| withheld admission, controlled reply | 1 step, 1 tick, 1 request | 1 step, 1 tick, 1 request | equal | — |
+
+Reading: a construction-paced horizon preserves canonical logical results, advances healthy
+waits, creates no catch-up debt, keeps the withheld admission at no re-request (bounded ticks),
+and adds no mid-instant publication boundary. The reference scan is used provisionally: its
+visits are recorded per fixture and its host cost is retained on stderr, not outlawed by class.
+Macro grouping, replacement staging and controller tuning remain separate experiments.
+
+* Versioning — pre-repair records and versioned expectations
+:PROPERTIES:
+:ID: live-rendering-versioning
+:LENS: empirical
+:END:
+
+The atCut repair ([[id:live-rendering-cut-repair-results]]) broke the one probe that encoded the
+defect. History is preserved, not rewritten:
+
+- Pre-repair p1 records kept at [[file:records/p1-pre-repair-run.jsonl][run]] /
+  [[file:records/p1-pre-repair-repeat.jsonl][repeat]] (digest
+  =49709dc1086c0b38c76eb2cea4c4d8effcf341558488d5c433c23a9af3b317dc=, the original citation).
+- =p1.mjs= now carries an explicit VERSIONED expectation: post-repair =atCut= is false; the
+  regression is =test/js/runtime/construction_cut_test.mjs=. Its new record is
+  =records/p1-run.jsonl= (digest =b7cf6ebcfa3a9890be7cc64a8df1bea0f27e29555f57713c402e8d04c67a5c96=).
+- Every probe manifest now reads as drift on =scheduler.js=; that is the change being detected.
+
+* Driver retries under the real pump
+:PROPERTIES:
+:ID: live-rendering-driver-retries-results
+:LENS: empiricist adversarial
+:END:
+
+The scheduler bench cannot price a retry; the driver does. A parked admission through the
+real compositor, with budget remaining vs exhausted, then a controlled reply. Instrument:
+[[file:retries.mjs][retries.mjs]].
+
+- Run digest =553e09747e9eba5d3687f3e7d62da5b740ac8c6309b48380adff3980ce9876f2=; manifest
+  =c8a4c392dbab29f9db21befa2ce1c1ae6cc9d2708e177e551bbd8a5745c79302=; 13 records, 6
+  assertions, 0 fail; run/repeat byte-identical.
+
+| Condition | Ticks per opportunity | Notes |
+|-----------+-----------------------+-------|
+| budget remaining (1000) | 2, 1, 1, 1 | one no-progress tick, not the ceiling |
+| budget exhausted (-1) | 2, 1, 1, 1 (pre-repair 64) | driveToRest stops on no progress and no drain |
+| controlled reply | — | resumes in 1 opportunity and finishes |
+
+Still open: the synthetic work clock does not advance while admission is pending, so budget
+expiry during the wait is exercised only via the spent allowance. The 1-vs-64 countercheck is
+confirmed and attributed to =driveToRest=.
+
+* Equivalent readiness readers
+:PROPERTIES:
+:ID: live-rendering-equivalent-readers-results
+:LENS: empiricist adversarial
+:END:
+
+Candidates must return the same classification as an explicit oracle before cost is compared.
+Instrument: [[file:readers.mjs][readers.mjs]].
+
+- Run digest =69e47e1f3123f9b57c830ca48e8e47a85632f2eb73d33fbc9ae0456c2c4dae75=; manifest
+  =2a29cbe00b2bc7fd3bb16ede979e6a4621b3680f5cfc660e0c27f128a1b94be3=; 27 records, 12
+  assertions, 0 fail; run/repeat byte-identical.
+
+| State | Oracle | O(frames) reader | O(1) flags reader |
+|-------+--------+------------------+-------------------|
+| healthy future wait | advance | advance | advance |
+| breath-parked construction | hold:breath | hold:breath | hold:flags (cause) |
+| closed-but-due body | hold:due | hold:due | advance (DECISION) |
+| queued derived move | hold:derived | hold:derived | hold:derived |
+| admission pending | hold:admission | hold:admission | hold:flags (cause) |
+| admission ready | hold:admission-ready | hold:admission-ready | hold:flags (cause) |
+
+DECISION equivalence: the flags reader is wrong ONLY on the closed-but-due body (it says
+advance where the horizon must hold) — decisive for horizon control. DIAGNOSTIC equivalence:
+it also cannot name the cause for breath, pending admission or ready admission, which are all
+still holds, so not decision failures. "Hold" is not "retry": pending and ready admission both
+hold but permit different useful actions. The O(frames) reader matches both. Cost: full visits
+66/258/1026 frames at n=64/256/1024 (~2/7/37 us on stderr); flags is O(1). A cheaper reader
+giving a different answer is not an alternative; scan versus pump-summary stays open.
+
+* Pump repair — redundant overrun stopped (red to green)
+:PROPERTIES:
+:ID: live-rendering-pump-repair-results
+:LENS: empiricist
+:END:
+
+An unchanged, admission-parked opportunity paid 64 ticks and 128 channel drains under an
+exhausted allowance; the extra attempts cannot produce the missing reply. Repair: apply the
+existing no-progress/no-drain exit in the exhausted-budget branch of =driveToRest=. Stopping
+need not declare a display cut, advance reveal time, or publish a value.
+
+- Regression: =test/js/runtime/pump_overrun_test.mjs= — red on the old branch (64 ticks), green
+  after the repair (<= 1 tick).
+- Controls pinned: pending admission (<= 1 tick); controlled reply (one request, finishes);
+  debt (draining permits resumption); breath (construction continues); a runnable sibling
+  seated before the park survives; a declaration after a parked motion waits for the reply; a
+  positive allowance genuinely consumed before parking.
+- Relevant floor (README rig + the new test): 76 pass, 0 fail. Full JS floor: 2767 tests, 2766
+  pass, 0 fail, 1 existing TODO (was 2760/2759; +7 new).
+- =retries-pre-repair-*.jsonl= retained; =retries.mjs= versioned. No notifications or readiness
+  scan were added.
+- Test tightenings: the positive-allowance control now asserts bounded retries on the
+  =advance(0)= where the allowance actually expires (5 ticks), not a later call with a fresh
+  allowance. Two already-seated siblings are compared in both insertion orders: seated first,
+  the runnable one is serviced; a pending admission seated first owns its instant and never
+  services the later runnable sibling (an instant-ownership finding, independent of the pump).
+
+* Split clocks — wall, reveal and pump stopping
+:PROPERTIES:
+:ID: live-rendering-split-clocks-results
+:LENS: empiricist adversarial
+:END:
+
+Separate the clocks inside the real driver: the WALL timestamp keeps feeding idle-gap detection
+and pacer observation, while the REVEAL horizon (substituted into =scheduler.tick=) alone
+controls eligibility and is held; pump stopping stays independent of both. Instrument:
+[[file:clocks.mjs][clocks.mjs]]; the split is a probe-local seam, the runtime is unchanged.
+
+- Run digest =6a230a3c64f21892c80a9341617edad699f0ba7cb34640d90688ff838b3f6df1=; manifest
+  =1c384d1d74e4d8488cf3e9ce2ec4de1775848a31de9565083653107ea51978fa=; 33 records, 21
+  assertions, 0 fail; run/repeat byte-identical; snapshot matches.
+
+| Fixture | Reading |
+|---------+---------|
+| reader gate | closed-but-due and queued-derived both hold the reveal clock (the reader gates, not atCut) |
+| heavy construction | reader-gated reveal held 3 opportunities; canonical = coupled control |
+| idle gap **in construction** | one wall-side pacer skip while reveal is held (gate hold:due, advanceBy 0) |
+| idle gap **in a healthy wait** (counterexample) | pacer skip + gate advance, yet reveal advances only the normalized frame (16.67), NOT the 5000ms gap; the wait does not resume |
+| irregular opportunities | reveal follows the normalized allowance; the 100ms wait resumes at reveal=100 (wallClock=100), no debt |
+| pending admission | reader holds; pump stopped (1 tick); wall observed |
+| ready admission | reader names hold:admission-ready; reply finishes |
+
+Reading: the reader gates reveal; reveal advances by the normalized elapsed allowance (idle time
+during construction (including an idle gap inside the hold) and for closed-due/derived work,
+replays no withheld time as debt, and preserves authored tempo under irregular opportunities. The
+full reader is provisional. Scan versus pump-summary remains open; no runtime seam chosen.
+
+Flake: =test/js/runtime/figure_cadence_test.mjs= now injects a deterministic work clock, so
+logical cadence is not decided by wall time. Attribution of the earlier flake stays open until
+reproduced on the old branch.
+
+* Integration — the seam landed
+:PROPERTIES:
+:ID: live-rendering-seam-integration
+:LENS: empirical
+:END:
+
+The split is now runtime, not probe-local:
+
+- =scheduler.isSettledThrough(H)= — a fact, not a policy: no unfinished or unserviced logical
+  obligation remains through H (a live descendant under a done owner, a due body, a retained
+  admission, breath/debt/block, a queued derived move). Future authored waits settle. Scan
+  implementation; may become a pump-maintained summary without changing the question.
+- =compositor.advance(t)= — normalizes the wall allowance (timeline.js), spends it on H only
+  when settled and discards it otherwise (never debt); pumps at H; =lastTickTime= reports H.
+  =beginPlay= resets H with its baseline; replacement and =flush= do not.
+- Tests: =test/js/runtime/settlement_test.mjs= (11) plus the repaired =pump_overrun_test.mjs= (8),
+  =figure_cadence_test.mjs= and =compositor_budget_test.mjs=. No notifications, no public
+  readiness protocol.
+
+The earlier =compositor.mjs= control/treatment split is superseded: the control now holds H too.
+
+Composition fix (review): =advance= now drains at the current H **before** spending the
+allowance, and =isSettledThrough= consults the readout's existing pending-keyed state
+(=readouts.hasPending()=), so a swapped input that queues a keyed rebuild holds H. Regression:
+=settlement_test= "the gate drains before it spends: a queued keyed build holds H".
+* Compositor limits — four corrections
+:PROPERTIES:
+:ID: live-rendering-compositor-limits
+:LENS: empiricist
+:END:
+
+1. The treatment is CLOSURE-paced: it advances when =scheduler.atCut= is true (the display cut),
+   not when =building= is false or eligible work is serviced. =building= is a distinct fact.
+2. The compositor's =referenceScan= counts visits and touches fields but returns no
+   classification; its cost cannot price a decision procedure. [[id:live-rendering-equivalent-readers-results]]
+   supplies readers that return a classification.
+3. Pending retry traces were discarded and the work clock froze while parking; both are
+   addressed in [[id:live-rendering-driver-retries-results]].
+4. The compositor's "canonical" is segment count plus final poses, not complete paths, styles,
+   ownership or sibling observations; materialization monotonicity was described, not asserted.
+   Keep these claims narrow.
+
+* Close-out — scoped commit, not whole-contract promotion
+:PROPERTIES:
+:ID: live-rendering-closeout
+:LENS: empiricist pragmatist
+:END:
+
+C06 in [[id:live-rendering-contract]] now adopts the settlement fact, normalized
+allowance, drain-before-spend composition and play/edit/flush lifecycle. The original
+P0/P1 counterexamples and rejected treatments remain historical evidence. The whole
+experience contract stays draft: drawable/macro presentation, coherent replacement
+and browser responsiveness are not certified by the live-clock seam.
+
+Commit scope excludes the concurrent law/parser refactors and other staged work.
+An independently exported rendering-only tree passed the integration floor (35/35)
+and the full available JS suite: 2651 tests, 2650 pass, 0 fail, 1 existing TODO.
+This is the isolated commit floor, not the larger mixed-checkout floor reported above.
+
+Archived probe manifests describe the source checkout actually measured, including
+its dirty source hashes. They are provenance, not a promise that an isolated commit
+or a later documentation edit produces the same digest. Do not rewrite historical
+records to manufacture alignment. Runtime changes after that observation here only
+shorten comments; no further timing policy is introduced.
+
+The next work is P2/P3 presentation and replacement, with browser evidence after
+semantic/ownership controls. Reopen clock machinery only for measured scan cost,
+an actual second driving mode, or a violated invariant; replay stays deferred.

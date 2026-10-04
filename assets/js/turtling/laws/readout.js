@@ -517,6 +517,8 @@ export function createReadouts() {
 
 
         stats() { return { size: nodes.size, recomputes, drains, builds } },
+        // Existing state, not a second queue: is any keyed answer waiting to build?
+        hasPending() { for (const node of nodes.values()) if (node.pending) return true; return false },
         list() {
             return [...nodes.values()].map((n) => ({
                 id: n.id, keyed: !!n.build, hasValue: n.value !== undefined,

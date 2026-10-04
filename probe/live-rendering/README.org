@@ -1,0 +1,210 @@
+#+title: Live rendering — an experimental bench, not a new runtime
+
+* Purpose and scope
+:PROPERTIES:
+:ID: probe-live-rendering
+:END:
+
+Contract: [[file:../../specs/turtle/live-rendering-contract.org][live-rendering-contract.org]].
+Standing observations: [[file:RESULTS.org][RESULTS.org]].
+
+P0 and the original P1 reference/driver-model bench remain historical evidence;
+promotion of those treatments was rejected. Later isolated repairs and split-clock
+trials earned the runtime seam: [[id:live-rendering-seam-integration]]. C06 now names
+the settlement fact, normalized allowance, drain-before-spend composition and lifecycle.
+The complete experience contract remains draft: macro/drawable presentation, coherent
+replacement and browser experience are not certified by the clock integration.
+Do not add a collector, controller, notification protocol or replay mechanism without
+new evidence. Scan optimization waits for measured cost; replay remains deferred.
+Run-end check before any reading: [[id:probe-experimentalist-credo]].
+
+* Run the diagnostic
+:PROPERTIES:
+:ID: probe-live-rendering-run
+:END:
+
+From the repository root:
+
+#+begin_src sh
+node --check probe/live-rendering/diagnose.mjs
+node probe/live-rendering/diagnose.mjs > /tmp/live-rendering.jsonl
+node probe/live-rendering/diagnose.mjs > /tmp/live-rendering-repeat.jsonl
+cmp /tmp/live-rendering.jsonl /tmp/live-rendering-repeat.jsonl
+#+end_src
+
+The script uses the real parser, scheduler, law/admission path, and headless
+compositor/materializer. It records:
+- A healthy authored wait before and at its due time.
+- An ended figure with a living waited child.
+- Capacity-one credit pressure before/after draining.
+- A controlled delayed admission before and after its reply.
+- Finite constructions with 600 and 12,000 admitted motions.
+- An ended-owner child constructing after a wait.
+
+The compositor fixtures use a fixed allowance of four synthetic clock units.
+Each identity-admitted motion charges one synthetic unit. This deliberately
+models cost; it measures neither actual milliseconds nor browser/GPU latency.
+Opportunity timestamps are an independent declared sequence. No random inputs,
+browser, new packages or network services are involved.
+
+A state record is a snapshot before its following drain unless the phase explicitly
+says after-credit-return. Read the frame records, not only top-level booleans.
+Termination records mark unfinished fixtures as censored; the observation window
+is not a truth ceiling. A censored long-lived fixture is not automatically a failure.
+
+The manifest hashes JS sources, the shared harness and the instrument, and records
+both repository HEADs plus dirty runtime paths. The checkout is dirty: HEAD alone
+does not identify the program observed. Full file-hash manifests detect drift;
+reproducing a historical dirty state still requires those source versions.
+Raw records carry fixture text and settings.
+
+* Run the P1 model bench
+:PROPERTIES:
+:ID: probe-live-rendering-p1-run
+:END:
+
+Read [[file:P1-PLAN.org][the preregistration and retained pilot corrections]] first.
+Findings: [[id:live-rendering-p1-results]]. Each process uses fixed inputs.
+
+#+begin_src sh
+node --check probe/live-rendering/p1.mjs
+node probe/live-rendering/p1.mjs > /tmp/live-rendering-p1.jsonl
+node probe/live-rendering/p1.mjs > /tmp/live-rendering-p1-repeat.jsonl
+cmp /tmp/live-rendering-p1.jsonl /tmp/live-rendering-p1-repeat.jsonl
+node --test test/js/*/*_test.mjs
+#+end_src
+
+The panel changes one pressure cause at a time. Five pairs vary only H policy,
+using one tick per opportunity and a normalized model sink, not the compositor.
+An already-spent allowance -1 is deliberate: frozen clock 0 and allowance 0
+do not expire because the scheduler tests >, not >=. Closed figures use their
+existing 256-breath cadence even when the harness requested 4.
+Raw records retain failed pilots, snapshots, final repeated runs and regression
+stdout. Do not convert fake-clock distances into human latency claims.
+
+* Regression floor
+:PROPERTIES:
+:ID: probe-live-rendering-regression
+:END:
+
+#+begin_src sh
+node --test \
+  test/js/runtime/compositor_budget_test.mjs \
+  test/js/runtime/figure_cadence_test.mjs \
+  test/js/runtime/scheduler_determinism_test.mjs \
+  test/js/stage/timeline_test.mjs \
+  test/js/runtime/backpressure_spike_test.mjs \
+  test/js/runtime/pacer_test.mjs
+#+end_src
+
+These preserve existing behavior. Passing them does not validate the new target.
+Before promoting a treatment, extend with the existing residency, figure/readout,
+instant-ownership and display-lifecycle tests, then the complete JS suite.
+Performance trials run alone, not alongside tests.
+
+For actual model-cost attribution reuse the surviving family in
+=test/js/profile/= (README, command_cost_bench, breath_cost_bench,
+live_loop_bench and drag_bench). Do not revive superseded instruments or turn the
+P0 fake clock into a performance benchmark. Browser spans and visible-state traces
+remain necessary for materialization, GPU, input and user-experience claims.
+
+* Experiment register and exit
+:PROPERTIES:
+:ID: probe-live-rendering-register
+:END:
+
+| Experiment | Status | Earned output |
+|------------+--------+---------------|
+| P0 current-state diagnostic | Done; repeated | [[id:live-rendering-results]] |
+| P1 state classifier and shared-horizon spike | Done; model repeated, promotion rejected | [[id:live-rendering-p1-verdict]] |
+| P1 stop/wake isolation at existing seams | Done; corrected instrument repeated, promotion rejected | [[id:live-rendering-stopwake-results]] |
+| P1 owner census of stop/eligibility facts | Done; repeated; residency earned | [[id:live-rendering-owner-census-results]] |
+| P2–P7 phase walk (controls) | P2/P4/P7 controls earned; P3/P5/P6 blocked or gated | [[id:live-rendering-phase-walk-results]] |
+| P4/P7 rigor pass (manipulation checks) | Invariance non-vacuous; controls held | [[id:live-rendering-rigor-results]] |
+| Driver-pause cause witness | Witness earned (loop stopped, folded); cause not separable | [[id:live-rendering-driver-pause-results]] |
+| P4 ink release (erase / replacement) | Release accounted; invariant when binding | [[id:live-rendering-p4-release-results]] |
+| P4 endless-drawing memory | Grows with no plateau; withdraw-only plateau; run ceiling faults | [[id:live-rendering-p4-endless-results]] |
+| Machinery cost (scan vs retry) | Scan inexpensive; retry one tick/opportunity, no spin | [[id:live-rendering-machinery-results]] |
+| Gauge repair (facet-wise oracle) | Style/ownership/transport separated; blind spot reproduced | [[id:live-rendering-gauge-results]] |
+| P3 identity repair (both frames) | Fence keys on run; obsolete dropped, fresh applies | [[id:live-rendering-identity-results]] |
+| Shared reveal timing (real compositor) | Closure-paced horizon preserved meaning across 4 fixtures | [[id:live-rendering-compositor-reveal-results]] |
+| Pre/post-repair versioning | Pre-repair p1 records kept; p1 expectation versioned | [[id:live-rendering-versioning]] |
+| Driver retries (real pump) | Post-repair both budgets stop <=2/opp (pre-repair exhausted 64) | [[id:live-rendering-driver-retries-results]] |
+| Equivalent readers (oracle) | O(frames) correct; O(1) flags not equivalent | [[id:live-rendering-equivalent-readers-results]] |
+| Pump repair (redundant overrun) | Red→green; controls pinned; 2767 tests | [[id:live-rendering-pump-repair-results]] |
+| Split clocks (wall / reveal / pump) | Wall observed while reveal held; no debt | [[id:live-rendering-split-clocks-results]] |
+| P2 macro/drawable boundaries | Not run | Coherent drawable unit and grouping cost |
+| P3 ownership and newest-wins cancellation | Not run | No mixed identities, stale callbacks or stale hit-targets |
+| P4 credit and retained-memory conservation | Not run | Bounded accounted staging, no lost ink |
+| P5 attribution and controller comparisons | Not run | Measurements before controller choice |
+| P6 browser experience and ensemble slowdown | Not run | Answer age, input delay, feedback intelligibility |
+| P7 semantic/lifecycle adversary | Full existing regression floor run; treatments not run | 2756 pass, 0 fail, 1 existing TODO |
+
+Exact hypotheses, controls, falsifiers, trial replication and stopping rules live
+in [[id:live-rendering-experiments]] and [[id:live-rendering-trials]].
+Do not invent parallel planning documents for each treatment unless needed.
+
+P0 and P1 are concluded experiments, not an approved runtime treatment.
+The three completed instruments remain here as cited reproducers. This note does
+not close the shared plan or separately added follow-up work.
+The owner census ([[id:live-rendering-owner-census-results]]) is a fourth instrument, added
+by the follow-up step; the closure snapshot predates it.
+[[file:records/closure-instruments.jsonl][Pre-closure source snapshots]] preserve the instruments and plan as read before
+closure. Only the three instrument lifecycle headers changed; historical run/repeat
+records are untouched. Retain failures/censoring and promote falsifiers with repairs.
+
+* P0/P1 learnings — what to do
+:PROPERTIES:
+:ID: live-rendering-learnings
+:LENS: experimentalist
+:END:
+
+P0 and P1 are done. Their result is a rejected gate and a narrower next intervention,
+not permission to ship slowdown. Evidence: [[id:live-rendering-p1-results]] and
+[[id:live-rendering-stopwake-results]].
+
+1. *Repair the narrow false premise.* Preserve the ended-owner witness as a regression;
+   traverse through ended ancestors in =atCut=. Do not equate that repair with readiness:
+   a closed due body or queued derived move can still require work.
+2. *Carve by authority, not vocabulary.* Ask existing owners for their own facts:
+   admission pending/ready; channel credit and owed-deposit repayment; derived move
+   queued/consumed/committed; run live/failed/retired. Wake is not suspension-clear;
+   clearing can mean death. Queue consumption is not proof of a commit.
+3. *Earn the gauge first.* Collect across the actual transition window, prove detection
+   with a positive control, and read the resulting pose. Getter names, absent verbs
+   and zeros outside collection are not observations of eligibility.
+4. *Keep the reference reader, not its architecture.* Use the O(frames) scan as an
+   experimental oracle. The observed seams are incomplete; an O(transitions) account
+   is not disproved. No second dependency graph or universal wake class is earned.
+5. *Re-test one exposed fact at a time before changing H.* Then repeat fixed-question
+   pairs: same work allowance and sink, canonical meaning equal, healthy waits advance,
+   held intervals create no catch-up debt. Synthetic work is not browser latency.
+6. *Respect the remaining boundary.* Residency and driver idle/new-play need separate
+   witnesses before live integration. After a trustworthy gate, test drawable coherence
+   (P2), replacement lifetime (P3), accounting (P4), then candidate invariance (P7)
+   before browser attribution and viewer trials (P5/P6). Replay stays deferred.
+
+Method to keep: predict first; change one cause; retain contrary and censored results;
+repeat; conclude only what the instrument can establish. Existing green tests are a
+regression floor, not evidence that an unimplemented policy works.
+
+* First next action
+:PROPERTIES:
+:ID: probe-live-rendering-next
+:END:
+
+The reference traversal catches the ended-owner defect, but closure alone also
+misses a queued derived move and a due closed body. The due-frame gate passes
+finite horizon pairs yet retries unanswered admission without a wake and requires
+O(frames) scanning. [[id:live-rendering-p1-verdict]] rejects promotion.
+
+The stop/wake isolation reads the existing seams: stops are partly visible, wakes are not,
+and a "wake" is not one thing ([[id:live-rendering-stopwake-results]]). This does not rule
+out an O(transitions) account of other seams. Before any runtime change, have each owner
+report the fact it owns — admission verdict, channel capacity/credit, place commit, run
+liveness. Residency and true driver idle/new-play still need witnesses. Do not rescue an
+ambiguous gate with another graph.
+The owner census reports each owner's stop and eligibility: no owner routes its eligibility
+change, and the residency witness is now earned ([[id:live-rendering-owner-census-results]]).
+Driver idle/new-play still needs a witness.
+P2–P7 treatment work is explicitly gated, not silently declared complete.

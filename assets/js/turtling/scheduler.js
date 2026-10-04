@@ -435,6 +435,40 @@ function ownsInstant(frame) {
     return frame.midInstant === true || SUSPENSIONS[frame.suspension?.kind]?.owns === true
 }
 
+// A display cut closes every live instant, including descendants under ended owners.
+// Closure neither certifies all due work serviced nor authorizes publication.
+// (id:render-construction-cadence-wait-regression)
+function atCut(frame) {
+    // An ended body is closed, but its own children are still this region's ink —
+    // closing the owner is not enough. (id:render-construction-cadence)
+    if (!frame.done) {
+        if (frame.midInstant) return false
+        if (frame.suspension) return false
+    }
+    for (const child of frame.children.values()) {
+        // A done child may still own a living descendant — descend regardless.
+        // (id:render-construction-cadence)
+        if (!atCut(child)) return false
+    }
+    return true
+}
+
+// No unfinished or unserviced logical obligation remains through H.
+// Future waits settle; pending frames, derived moves and keyed builds do not.
+// (id:live-rendering-reveal)
+function settledThrough(registry, root, H) {
+    if (root._derivedMoves.length > 0) return false
+    // A keyed readout answer waiting to build is an unserviced obligation (owner's own state).
+    if (root._readouts?.hasPending?.()) return false
+    for (const frame of registry.values()) {
+        if (frame === root || frame.done) continue
+        if (frame.suspension) return false
+        if (frame.midInstant) return false
+        if (frame.resumeAt <= H) return false
+    }
+    return true
+}
+
 function subtreeUnsettled(frame) {
     if (ownsInstant(frame)) return true
     if (frame.children.size === 0) return false   // hot path: a leaf target is O(1)
@@ -2101,6 +2135,10 @@ function parkOnVerdict(ctx, verdict, pump, request) {
     }
     openInstant(ctx)
     suspend(ctx, 'admission', { seq: ++ctx.motionSeq, verdict })
+    // A closed construction has no outside reader of these internal steps.
+    // Consume a synchronous reply in this pump; breaths still yield on spent time.
+    // (id:render-construction-cadence)
+    if (ctx.closed) return { verdict: 'continue', produced: true }
     return { verdict: 'parked', produced: true }
 }
 
@@ -3055,11 +3093,18 @@ export function createScheduler(generator, opts = {}) {
         // Outside a slice the pump is unpaced (batch/headless complete in one call).
         withSlice(ms, drive) {
             deadline = ms == null ? null : clock() + ms
-            try { return drive() } finally { deadline = null }
+            try { return drive(pump.outOfTime) } finally { deadline = null }
         },
 
         // Mid-build: last tick let go with work left.
         get building() { return this._building === true },
+        // Is the world at a logical display cut? The display driver's one boundary
+        // question. Where a `wait` is a cut, a breath, a debt or a block is not.
+        get atCut() { return atCut(root) },
+        // Settlement through H is a fact, not a retry or publication instruction.
+        // It does not certify complete display geometry or ready visual resources.
+        // (id:live-rendering-reveal)
+        isSettledThrough(H) { return settledThrough(registry, root, H) },
         // A finished drawing may accept a settled, pen-up hand request without
         // reviving its coroutine. The same responder, check and component commit
         // serve program motion. The caller supplies the last seen motion revision.
