@@ -30,6 +30,7 @@ const world = (frame) => frameWorldTransform(frame).position.map((n) => +n.toFix
 const lastHead = (frame) => (takeSync(frame) ?? []).filter((e) => e.type === "head").at(-1)?.position.map((n) => +n.toFixed(6))
 const ghostDistance = (host, a) => ({
     feature: "distance", address: "ghost|A", endpoints: [a.id, "GHOST"], scope: host.id, frame: host.id, predicate: 999,
+    expression: { type: "distance", references: [a.id, "GHOST"], radius: 999 },
 })
 const attempt = (scheduler) => scheduler.root._lastAttempt
 
@@ -125,14 +126,15 @@ test("a position definition reaches the visible identity, it does not shadow it"
 })
 
 // R4 — the opening relationship silently becomes a scalar. (id:laws-first-two-spelling)
-test("an unsupported scalar binder is a located refusal, not a scalar", () => {
-    for (const src of ["let A\nlet B\nlet distance(A, B) = 5", "let A\nlet B\nlet distance(A,B)=5"]) {
-        const ast = parseProgram(src)
-        const refusal = ast.at(-1)
+test("unsupported function binders refuse; explicit distance binds a law, never a scalar", () => {
+    for (const src of ["let angle(A,B)=5", "let norm(A)=5"]) {
+        const refusal = parseProgram(src).at(-1)
         assert.equal(refusal.type, "Error", src)
-        assert.match(refusal.meta.expected, /name after 'let'/, "the refusal names the binder")
-        assert.match(refusal.meta.found, /^distance\(A,? ?B\)$/, "and points at the offending binder")
+        assert.match(refusal.meta.expected, /name after 'let'/)
     }
+    const pair = parseProgram("let A\nlet B\nlet distance(A,B)=5").at(-1)
+    assert.equal(pair.type, 'Law')
+    assert.deepEqual(pair.meta.subjects, ['A', 'B'])
     // The supported scalar spelling still parses.
     assert.equal(parseProgram("let A\nlet s = A.x").at(-1).type, "Declaration")
 })
@@ -190,7 +192,8 @@ test("a poisoned store stops the fallback candidate too", () => {
     // A ghost distance on another component, injected after the valid distance:
     // the single-target gate stops at the valid distance, so the fallback must
     // still re-check the whole validation scope before it may commit.
-    scheduler.laws.apply({ feature: "distance", address: "ghost|C", endpoints: [C.id, "GHOST"], scope: host.id, frame: host.id, predicate: 999 })
+    scheduler.laws.apply({ feature: "distance", address: "ghost|C", endpoints: [C.id, "GHOST"], scope: host.id, frame: host.id, predicate: 999,
+        expression: { type: "distance", references: [C.id, "GHOST"], radius: 999 } })
     drive(scheduler, { maxTicks: 30 })
     assert.deepEqual(world(A), [5, 0, 0], "the fallback did not commit a check it could not make")
     assert.deepEqual(scheduler.laws.active().map((l) => l.feature), ["distance", "distance"], "no coordinate installed")
@@ -208,8 +211,8 @@ const runtimeState = (scheduler, frame) => {
     const laws = scheduler.laws.active()
     const ctx = bindWorld((id) => scheduler.registry.get(id), {
         writerId: frame.id,
-        positionOf: (f) => frameWorldTransform(f).position,
-        poseOf: (f) => worldTransform(f),
+        live: (f) => frameWorldTransform(f),
+        placement: (f) => worldTransform(f),
         heldOf: (id) => heldIdentity(scheduler.registry.get(id), laws, scheduler.registry),
     })
     return stateOf({
@@ -251,7 +254,8 @@ test("a genuinely free pair: the coincidence is named and reads one set", () => 
     drive(scheduler)
     const A = find(host, "A")
     const B = find(host, "B")
-    scheduler.laws.apply({ feature: "distance", address: "free|A|B", endpoints: [A.id, B.id], scope: host.id, frame: B.id, predicate: 0 })
+    scheduler.laws.apply({ feature: "distance", address: "free|A|B", endpoints: [A.id, B.id], scope: host.id, frame: B.id, predicate: 0,
+        expression: { type: "distance", references: [A.id, B.id], radius: 0 } })
     const view = runtimeState(scheduler, A)
     assert.equal(view.truth.coincident, true, "the coincidence is named")
     assert.equal(view.dof, 0, "holding B, A has no independent freedom")

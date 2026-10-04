@@ -592,42 +592,78 @@ const parses = (expr) => {
 // reader (quotes, figures, dotted names), and is not this one's to judge.
 const listed = (expr) => expr[0] === '[' || expr[0] === '('
 
+// The assignment delimiter is outside every group/quote. (id:laws-free-relations-f1)
+function declarationEquals(source) {
+    const stack = []
+    for (let i = 0; i < source.length; i++) {
+        const ch = source[i], closer = stack.at(-1)
+        if (ch === '=' && stack.length === 0) return i
+        if (ch === closer) stack.pop()
+        else if (CLOSERS[ch] && closer !== '"' && closer !== "'") stack.push(CLOSERS[ch])
+    }
+    return -1
+}
+
 function parseStatement(tokens, state, rec) {
     const kw = tokens[0];
     const len = tokens.length;
 
-    // Existence declaration: `let A` states that A is here. A distance or pin is
-    // not yet supported, so it is refused locally with its span rather than
-    // silently ignored. (id:laws-decl-batch)
+    // A name identifies a slot in its declaring scope; repetition revisits it.
+    // Distinct names/scopes construct distinct things. (id:laws-generative-experiments)
     if (kw === 'let') {
         if (len < 2) return errorNode(rec, "a name after 'let'", 'end of statement')
-        // A declaration belongs to ONE body. A recipe or conditional body is walked at
-        // most once per activation, so the enclosing activation frame already scopes
-        // the identity — and an answer that later omits it is a rebuild, which region
-        // replacement withdraws. A LOOP body re-reaches one site, so its identity would
-        // need an instance key this has not earned: there it stays refused. A scalar
-        // derived value is not an identity at all and may be introduced anywhere.
-        // (id:laws-decl-batch, id:laws-build-p3-readout-built)
-        const kind = state.blockKind ?? null
-        const introduced = () => (kind === 'loop' || kind === 'for')
-            ? errorNode(rec, `a declaration cannot live inside '${kind}'`, kw)
-            : null
         // `let A` — existence. `let A.distance = 5` (or glued) — a dotted relation.
         // The declaring frame is the observer; the address matches the function
         // spelling. (id:laws-ordered-replacement)
-        let lhs = tokens[1]
-        let rest = tokens.slice(2)
-        let expr = null
-        const eqAt = lhs.indexOf('=')
-        if (eqAt > 0) {
-            expr = [lhs.slice(eqAt + 1), ...rest].join(' ').trim()
-            lhs = lhs.slice(0, eqAt)
-        } else if (rest[0] === '=') {
-            expr = rest.slice(1).join(' ').trim()
-        } else if (rest.length > 0) {
-            return errorNode(rec, "'=' after a name", rest[0])
+        const source = tokens.slice(1).join(' ')
+        const eqAt = declarationEquals(source)
+        const lhs = (eqAt < 0 ? source : source.slice(0, eqAt)).trim()
+        let expr = eqAt < 0 ? null : source.slice(eqAt + 1).trim()
+        if (/^distance\s*\(/.test(lhs)) {
+            let head
+            try { head = syntaxReader.parse(lhs, { skipValidation: true }) } catch {}
+            // A distance subject is a live name, `origin`, a coordinate literal `(x,y)`,
+            // or a vector literal `[x,y]`. A coordinate is an absolute point in the
+            // declaring placement; a vector is a displacement from the declaring frame's
+            // live head. (id:laws-distance-literal-address)
+            const coordOf = (c) => {
+                // Optionally signed — a unary operator on a literal only, never an
+                // arbitrary expression. Negative zero normalizes to zero.
+                if (c.type === 'literal' && Number.isFinite(c.value)) return c.value
+                if (c.type === 'unary_operator' && (c.value === '-' || c.value === '+') &&
+                    c.children.length === 1 && c.children[0].type === 'literal' &&
+                    Number.isFinite(c.children[0].value)) {
+                    const v = c.value === '-' ? -c.children[0].value : c.children[0].value
+                    return v === 0 ? 0 : v
+                }
+                return null
+            }
+            const tupleOf = (n) => {
+                const coords = n.children.map(coordOf)
+                if (coords.some((c) => c === null)) return null
+                if (coords.length === 2) return [coords[0], coords[1], 0]
+                return coords.length === 3 ? coords : null
+            }
+            const subjectOf = (n) => {
+                if (n.type === 'string') return JSON.stringify(n.value)
+                if (n.type === 'operand') {
+                    if (n.value === 'origin') return { framed: [0, 0, 0] }
+                    return /^[A-Za-z_][\w-]*$/.test(n.value) ? n.value : null
+                }
+                if (n.type === 'point') { const t = tupleOf(n); return t ? { framed: t } : null }
+                if (n.type === 'vector') { const t = tupleOf(n); return t ? { relative: t } : null }
+                return null
+            }
+            const subjects = head?.type === 'function' && head.value === 'distance' && head.children.length === 2
+                ? head.children.map(subjectOf) : null
+            if (!subjects || subjects.some((s) => s == null)) {
+                return errorNode(rec, 'distance(name, name) or a framed point', lhs)
+            }
+            if (!expr || !parses(expr)) return errorNode(rec, 'a radius expression after =', expr ?? 'end of statement')
+            return stamp(new ASTNode('Law', 'distance', [], { subjects, expr }), rec)
         }
-        if (expr === null) return introduced() ?? stamp(new ASTNode('Existence', lhs), rec)
+        if (eqAt < 0 && tokens.length > 2) return errorNode(rec, "'=' after a name", tokens[2])
+        if (expr === null) return stamp(new ASTNode('Existence', lhs), rec)
         if (!expr) return errorNode(rec, 'a value after =', 'end of statement')
         // `origin` is this frame's zero in a declaration RHS — not a tower name, and
         // not a value. The declaring frame supplies the world location.
@@ -639,7 +675,7 @@ function parseStatement(tokens, state, rec) {
             const property = lhs.slice(dot + 1)
             const parsed = parseProperty(property)
             if (parsed) {
-                return introduced() ?? stamp(new ASTNode('Law', parsed.feature, [], { target, expr, ...parsed }), rec)
+                return stamp(new ASTNode('Law', parsed.feature, [], { target, expr, ...parsed }), rec)
             }
             return errorNode(rec, parseSupport(), lhs)
         }
@@ -648,17 +684,14 @@ function parseStatement(tokens, state, rec) {
         // is: a point is a place, a vector an object and a value, anything else a
         // derived value. The walk that reads it knows. (id:notation-coordinate-vector)
         //
-        // A value binder must be a plain name. A function-looking binder
-        // (`let distance(A, B) = 5`) is an unsupported spelling: it is refused
-        // here, with its span, rather than stored as a value with that name.
-        // (id:laws-names)
+        // Other function-looking binders are not declarations. (id:laws-names)
         if (!/^[A-Za-z_][\w-]*$/.test(lhs)) {
             return errorNode(rec, "a name after 'let'", lhs)
         }
         if (listed(expr) && !parses(expr)) {
             return errorNode(rec, 'a quantity — (…) a coordinate or […] a vector', expr)
         }
-        return stamp(new ASTNode('Declaration', lhs, [], { expr, inLoop: kind === 'loop' || kind === 'for' }), rec)
+        return stamp(new ASTNode('Declaration', lhs, [], { expr }), rec)
     }
 
 

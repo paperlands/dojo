@@ -7,6 +7,7 @@ import assert from "node:assert/strict"
 import { buildWorld, fork, drive } from "./harness.mjs"
 import { frameWorldTransform } from "../../../assets/js/turtling/scheduler.js"
 import { stateOf, coneCurve, marksOf } from "../../../assets/js/turtling/laws/constraints.js"
+import { cone as coneSet, plane as planeSet } from "../../../assets/js/turtling/laws/meet.js"
 import { DEFAULT_ARM, realizeTilt } from "../../../assets/js/turtling/laws/realize.js"
 import { parseProgram } from "../../../assets/js/turtling/parse.js"
 
@@ -48,7 +49,7 @@ test("a hand request composes onto the cone", () => {
 
 test("the freedom display names the cone and samples its window", () => {
     const state = stateOf({ at: [4, 2, 0], constraints: [
-        { feature: "tilt", apex: [0, 0, 0], axis: [1, 0, 0], halfAngle: 30 },
+        { feature: "tilt", apex: [0, 0, 0], axis: [1, 0, 0], halfAngle: 30, set: coneSet([0, 0, 0], [1, 0, 0], 30) },
     ] })
     assert.equal(state.locus.kind, "cone")
     assert.equal(state.dof, 2)
@@ -58,8 +59,8 @@ test("the freedom display names the cone and samples its window", () => {
 })
 
 test("a tilt and a plane meet in a section: circle or conic", () => {
-    const base = { feature: "tilt", apex: [0, 0, 0], axis: [0, 1, 0], halfAngle: 45 }
-    const cut = (normal) => ({ feature: "coordinate", axis: "y", value: 1, plane: { point: [0, 1, 0], normal } })
+    const base = { feature: "tilt", apex: [0, 0, 0], axis: [0, 1, 0], halfAngle: 45, set: coneSet([0, 0, 0], [0, 1, 0], 45) }
+    const cut = (normal) => ({ feature: "coordinate", axis: "y", value: 1, plane: { point: [0, 1, 0], normal }, set: planeSet([0, 1, 0], normal) })
     const circle = stateOf({ at: [1, 1, 0], constraints: [base, cut([0, 1, 0])] })
     assert.equal(circle.locus.kind, "circle")
     const n = Math.hypot(1, 1.732)
@@ -114,7 +115,7 @@ test("tilt 360 is tilt 0: the axis, and it has a mark", () => {
     assert.ok(scheduler.laws.active().some((l) => l.feature === "tilt"), "360 resolves")
     assert.ok(tiltOf(p) < 1e-6, `the axis, got ${tiltOf(p)}`)
     const state = stateOf({ at: p, constraints: [
-        { feature: "tilt", apex: [0, 0, 0], axis: [1, 0, 0], halfAngle: 0 },
+        { feature: "tilt", apex: [0, 0, 0], axis: [1, 0, 0], halfAngle: 0, set: coneSet([0, 0, 0], [1, 0, 0], 0) },
     ] })
     assert.equal(state.dof, 1, "a closed cone is a line, one degree")
     const marks = marksOf(state.locus, { at: p })
@@ -124,7 +125,7 @@ test("tilt 360 is tilt 0: the axis, and it has a mark", () => {
 
 test("a half-angle of 90 is a plane, and it is marked as one", () => {
     const state = stateOf({ at: [0, 0, 3], constraints: [
-        { feature: "tilt", apex: [0, 0, 0], axis: [1, 0, 0], halfAngle: 90 },
+        { feature: "tilt", apex: [0, 0, 0], axis: [1, 0, 0], halfAngle: 90, set: coneSet([0, 0, 0], [1, 0, 0], 90) },
     ] })
     assert.equal(state.locus.kind, "cone")
     assert.equal(state.dof, 2, "an open cone is a plane, two degrees")

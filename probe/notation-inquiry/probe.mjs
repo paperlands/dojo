@@ -1,3 +1,5 @@
+// probe-status: concluded
+// probe-witness: test/js/notation/ (falsifiers graduated per BASELINE.md)
 // Headless falsifier battery, not a claim about children's lived experience.
 // Run: node probe/notation-inquiry/probe.mjs
 import { Lexer } from '../../assets/js/turtling/mafs/lexer.js'

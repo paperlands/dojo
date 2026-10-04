@@ -70,9 +70,13 @@ test("the canvas offers a hand only to an unanchored place", () => {
         "the state query gates the pointer gesture, topmost first")
     assert.match(turtle, /canTouch: frame => this\._touchable\(frame\)/, "a point gaining a head releases an existing capture")
     assert.doesNotMatch(turtle, /\bfreePoint\(/, "the pin loop reads the state, not a second predicate")
-    // The span starts at the declaring scope's frame origin — where `origin` reads,
-    // never the cursor that seated the place and never the pin. (id:laws-decl-interface)
-    assert.match(turtle, /if \(held\) drawSpan\(overlay\.ctx, view\.project\(worldTransform\(frame\.parent\)\.position\), at, \{ alpha: 0\.45 \}\)/,
-        "a held place spans its origin to the pin, and no read moves with it")
+    // A held point's dotted spokes join it to what constrains it: each distance's
+    // counterpart — or, unconstrained, the declaring scope's frame origin, where
+    // `origin` reads. Never the cursor that seated the place and never the pin.
+    // (id:laws-freedom, id:laws-decl-interface)
+    assert.match(turtle, /this\._stateOf\(frame\)\.truth\.distances\.map\(\(d\) => d\.other\)/,
+        "a held point spans to its distance counterparts")
+    assert.match(turtle, /partners\.length \? partners : \[worldTransform\(frame\.parent\)\.position\]/,
+        "and to its origin only when nothing constrains it")
 })
 

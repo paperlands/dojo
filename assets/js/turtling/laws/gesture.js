@@ -176,7 +176,9 @@ export function createGesture(deps) {
             if (!ray) return { moved: false }
             // The hand's own point, or the frozen camera plane every locus falls back
             // to. (id:laws-decl-anchor)
-            const placed = grab.hand ? grab.hand.place(grab.handState, { ray, pointer: { x, y }, project, detents }) : null
+            // The accepted world point rides along: a circle's hand seeds its phase from
+            // it, so a refused move advances nothing. (id:laws-decl-handle)
+            const placed = grab.hand ? grab.hand.place(grab.handState, { ray, pointer: { x, y }, project, detents, anchor: accepted.position }) : null
             let request = placed
             if (!request) {
                 const hit = touchPlane(ray, grab.plane)

@@ -5,6 +5,7 @@ import assert from "node:assert/strict"
 
 import { execute, drainEvents } from "../../../assets/js/turtling/executor.js"
 import { ASTNode } from "../../../assets/js/turtling/ast.js"
+import { Parser } from "../../../assets/js/turtling/mafs/parse.js"
 
 const near = (a, b, eps = 1e-8) => Math.abs(a - b) < eps
 
@@ -16,6 +17,7 @@ function mockDeps() {
                 return /^-?\d+\.?\d*$/.test(expr)
             },
             parse(expr) {
+                if (expr[0] === "'" || expr[0] === '"') return new Parser().parse(expr)
                 return { value: expr, children: [] }
             },
             defineFunction() {},
@@ -25,6 +27,7 @@ function mockDeps() {
             constants: {},
             namespace_check(val) { return val in this.constants },
             run(tree, ctx) {
+                if (tree.type === 'string') return tree.value
                 if (tree.value in this.constants) return this.constants[tree.value]()
                 return parseFloat(tree.value) || 0
             }

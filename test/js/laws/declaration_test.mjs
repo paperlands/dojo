@@ -1,9 +1,7 @@
 // Phase 1 — the first declaration.
 //
-// Existence only: `let A` states that A is here. Distance and pin are refused
-// locally with a span rather than silently ignored, and a declaration inside a
-// loop, conditional or function body is refused because one batch belongs to one
-// supported source body. (id:laws-decl-batch)
+// Reached declarations belong to the caller's named slots. Wrappers and repetition
+// do not change their admission or create implicit scopes. (id:laws-generative-experiments)
 //
 // From that one parse come two meanings: the batch (what is declared) and the
 // executable stream (what runs, reached declarations included, node identity
@@ -91,19 +89,11 @@ test("acceptance: `let A.distance = 5` is a dotted relation with its span", () =
     assert.equal(node.span.line, 1)
 })
 
-test("acceptance: a declaration is refused inside a LOOP body only", () => {
-    // A recipe or conditional body is walked at most once per activation, so the
-    // activation frame scopes the identity. A loop body re-reaches ONE site, so its
-    // identity would need an instance key that has not been earned: there it stays
-    // refused. (id:laws-decl-batch)
-    const nested = [
-        "loop 3 do\n  let A\nend",
-    ]
-    for (const src of nested) {
-        const [wound] = collectErrors(parseProgram(src))
-        assert.ok(wound, `${src.split("\n")[0]} should refuse the declaration`)
-        assert.equal(wound.span.line, 2, "the diagnostic is located at the declaration")
-        assert.match(wound.expected, /cannot live inside/)
+test("acceptance: declarations in a loop keep their source sites", () => {
+    for (const src of ["loop 3 do\n  let A\nend", "loop 3 do\n  let A.distance = 5\nend"]) {
+        assert.deepEqual(collectErrors(parseProgram(src)), [])
+        const declaration = first(src).children[0]
+        assert.equal(declaration.span.line, 2)
     }
     // An `as` body is a supported source body, so its declaration belongs there.
     const ambient = first("as child do\n  let A\nend")
@@ -111,10 +101,8 @@ test("acceptance: a declaration is refused inside a LOOP body only", () => {
     assert.equal(ambient.children[0].type, 'Existence')
 })
 
-test("acceptance: a recipe or conditional body scopes its own declaration", () => {
-    // The activation frame IS the identity's owner, so a declaration inside a body
-    // walked once per activation needs no instance key — a later answer that omits
-    // it is a rebuild, which region replacement withdraws. (id:laws-decl-batch)
+test("acceptance: a recipe or conditional body admits reached declarations", () => {
+    // Neither body creates an owning frame on its own. (id:laws-generative-experiments)
     for (const src of ["def f do\n  let A\nend", "when 1 do\n  let A\nend"]) {
         const [wound] = collectErrors(parseProgram(src))
         assert.equal(wound, undefined, `${src.split("\n")[0]} accepts a local declaration`)

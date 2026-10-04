@@ -25,9 +25,10 @@ function seat(origin = undefined) {
     return { scheduler, host, A: host.children.get("A") }
 }
 
-const coord = (host, a, over = {}) => ({
-    feature: "coordinate", axis: "y", endpoints: [a.id], scope: host.id, frame: host.id, predicate: 0, ...over,
-})
+const coord = (host, a, over = {}) => {
+    const binding = { feature: "coordinate", axis: "y", endpoints: [a.id], scope: host.id, frame: host.id, predicate: 0, ...over }
+    return { ...binding, expression: { type: "coordinate", references: [a.id], frame: binding.frame, axis: binding.axis, value: binding.predicate } }
+}
 
 function move(scheduler, frame, position) {
     const r = scheduler.requestMotion(frame, { rotation: frame.transform.deref().rotation, position }, scheduler.motionRevision)

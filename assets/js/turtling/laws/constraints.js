@@ -5,10 +5,11 @@
 // A constraint contributes its gradient (a normal) at the point; freedom is the
 // null space. Resolution is projection onto the locus, never a solve.
 
-import { meetAll, dofOf, nearest, plane as planeSet, point as pointSet, sphere as sphereSet, cone as coneSet, conicSamples, basisOf, ringOf } from "./meet.js"
+import { meetAll, copyLocus, dofOf, nearest, conicSamples, basisOf, ringOf, sphere as sphereSet, point as pointSet } from "./meet.js"
 import { unionBounds } from "./fit.js"
 import { sub, dot, len, unit, finite3, directionBetween } from "./vec3.js"
 import { openAngle, coneLateral } from "./cone.js"
+import { boundTerm } from "./authored.js"
 
 
 // First-order rank of a set of normals (Gram–Schmidt). In free 3-space the
@@ -18,45 +19,68 @@ function rankOf(normals) {
     for (const n of normals) {
         let v = [...n]
         for (const b of basis) { const d = dot(v, b); v = [v[0] - d * b[0], v[1] - d * b[1], v[2] - d * b[2]] }
-        const m = len(v)
-        if (m > 1e-9) basis.push(v.map((x) => x / m))
+        const u = unit(v, 1e-9)   // stable kernel; independence below 1e-9 is no direction
+        if (u) basis.push(u)
     }
     return basis.length
 }
 
 // `at` — the accepted world position. `headed` — a body owns the position.
-// `constraints` — the active laws on it, already resolved: { feature: 'distance',
-// other, radius } or { pinned: true }. Declared symmetries only; nothing algebraic.
+// `constraints` — the active laws on it, already resolved. Each record carries its resolved
+// SET (the contextual geometry) plus the semantic and policy facts a set cannot tell us: an
+// authored axis and scalar, a held partner, a pin. Declared symmetries only; nothing algebraic.
+// (D058)
 export function stateOf({ at = null, headed = false, exposed = true, isPlace = true,
-    error = null, unresolved = null, constraints = [] } = {}) {
+    error = null, unresolved = null, unavailable = [], constraints = [] } = {}) {
     const known = finite3(at)
 
     // role — what it is. Free point or headed identity; independent of whether
     // its answer is usable. (id:laws-decl-point-agent)
     const role = headed ? 'headed' : 'point'
 
+    // refusal — a contribution whose geometry is UNAVAILABLE. It is named, never silence,
+    // and never read as "pinned" or "mathematically impossible": an unreadable obligation
+    // is a different thing from a supported query with no available motion. Accepted
+    // geometry still stands as observation. (D058)
+    const refusal = unavailable.length > 0
+        ? { kind: unavailable.every((u) => u.reason === 'unreadable') ? 'unreadable' : 'unsupported',
+            unavailable: unavailable.map((u) => ({ feature: u.feature, reason: u.reason })) }
+        : null
+
     // status — where the answer stands. `previous` keeps the last accepted
     // geometry as an observation but is not an offer; `unresolved` has no answer.
     const status = (!known || error) ? 'unresolved'
-        : (unresolved || !exposed || !isPlace) ? 'previous'
+        : (unresolved || refusal || !exposed || !isPlace) ? 'previous'
             : 'accepted'
 
     // truth — what holds it. A zero radius is a PIN only when the other point is
     // held; two coincident movable points keep their common translation, so the
     // pair is coincident, not pinned. (id:laws-freedom)
+    // truth — what holds it. GEOMETRY is DERIVED from each record's resolved set; the record
+    // keeps only what a set cannot tell us: the authored axis and scalar, and the POLICY
+    // facts (a pin, a held partner). Authored meaning is never reverse-engineered from a
+    // reduction. A zero radius is a PIN only when the other point is held; two coincident
+    // movable points keep their common translation, so the pair is coincident, not pinned.
+    // (id:laws-freedom, D058)
+    const distanceFrom = (c) => c.set?.kind === 'sphere'
+        ? { other: [...c.set.center], radius: c.set.radius, held: c.otherHeld === true }
+        : c.set?.kind === 'point'
+            ? { other: [...c.set.at], radius: 0, held: c.otherHeld === true }
+            : null
     const distances = constraints
-        .filter((c) => c.feature === 'distance' && Number.isFinite(c.radius) && finite3(c.other))
-        .map((c) => ({ other: [...c.other], radius: c.radius, held: c.otherHeld === true }))
-    const pinned = constraints.some((c) => c.pinned) || distances.some((c) => c.radius === 0 && c.held)
-    const coincident = distances.some((c) => c.radius === 0 && !c.held)
-    // A framed coordinate is a truth about the point, carried as its own plane.
+        .filter((c) => c.feature === 'distance')
+        .map(distanceFrom)
+        .filter(Boolean)
+    const pinned = constraints.some((c) => c.pinned) || distances.some((d) => d.radius === 0 && d.held)
+    const coincident = distances.some((d) => d.radius === 0 && !d.held)
+    // A framed coordinate carries its AUTHORED axis and scalar; its plane is the set's.
     const coordinates = constraints
-        .filter((c) => c.feature === 'coordinate' && c.plane && finite3(c.plane.point) && c.plane.normal)
-        .map((c) => ({ axis: c.axis, value: c.value, plane: { point: [...c.plane.point], normal: [...c.plane.normal] } }))
+        .filter((c) => c.feature === 'coordinate' && c.set?.kind === 'plane')
+        .map((c) => ({ axis: c.axis, value: c.value, plane: { point: [...c.set.point], normal: [...c.set.normal] } }))
     // A tilt is a cone about the declaring frame's nose, apex at its origin.
     const cones = constraints
-        .filter((c) => c.feature === 'tilt' && finite3(c.apex) && finite3(c.axis) && Number.isFinite(c.halfAngle))
-        .map((c) => ({ apex: [...c.apex], axis: [...c.axis], halfAngle: c.halfAngle }))
+        .filter((c) => c.feature === 'tilt' && c.set?.kind === 'cone')
+        .map((c) => ({ apex: [...c.set.apex], axis: [...c.set.axis], halfAngle: c.set.halfAngle }))
     const truth = { pinned, coincident, distances, coordinates, cones }
 
     // interaction — what a request here may move. This query HOLDS the other
@@ -65,10 +89,10 @@ export function stateOf({ at = null, headed = false, exposed = true, isPlace = t
     // one that names the partner as movable — and the shipped request method
     // does not offer it yet. (id:laws-freedom, id:laws-experiment-7-ruling)
     const resolved = pinned || status !== 'accepted' || role === 'headed' ? [] : distances
-        .filter((c) => c.radius > 0)
-        .map((c) => ({
-            normal: directionBetween(c.other, at) ?? [1, 0, 0],   // coincident: a stated direction
-            locus: { kind: 'sphere', center: [...c.other], radius: c.radius },
+        .filter((d) => d.radius > 0)
+        .map((d) => ({
+            normal: directionBetween(d.other, at) ?? [1, 0, 0],   // coincident: a stated direction
+            locus: { kind: 'sphere', center: [...d.other], radius: d.radius },
         }))
     const normals = resolved.map((r) => r.normal)
     const coupled = coincident && !pinned
@@ -80,47 +104,22 @@ export function stateOf({ at = null, headed = false, exposed = true, isPlace = t
     const pointLocus = !known ? null
         : pinned
             ? (constraints.some((c) => c.pinned) ? { kind: 'point', at: [...at] }
-                : { kind: 'point', at: [...distances.find((c) => c.radius === 0 && c.held).other] })
+                : { kind: 'point', at: [...distances.find((d) => d.radius === 0 && d.held).other] })
             : (resolved.length === 1 ? resolved[0].locus : null)
-    const setOf = (c) => {
-        if (c.set) return c.set
-        if (c.feature === 'coordinate' && c.plane) return planeSet(c.plane.point, c.plane.normal)
-        if (c.feature === 'tilt' && finite3(c.apex) && finite3(c.axis) && Number.isFinite(c.halfAngle)) {
-            return coneSet(c.apex, c.axis, c.halfAngle)
-        }
-        if (c.feature === 'distance' && Number.isFinite(c.radius) && finite3(c.other)) {
-            // The query holds the other participants. A zero distance therefore
-            // names an EXISTING point — a set like any other, so locus, projection
-            // and freedom all come from the one meet. (id:laws-freedom)
-            if (c.radius > 0) return sphereSet(c.other, c.radius)
-            if (c.radius === 0) return pointSet(c.other)
-            return null
-        }
-        return null
-    }
-    const sets = constraints.map(setOf).filter(Boolean)
+    // Every constraint record carries its own resolved set; nothing is reconstructed here.
+    // (D058)
+    const sets = constraints.map((c) => c.set).filter(Boolean)
     let locus = pointLocus
     if (status === 'accepted' && role === 'point' && !pinned && sets.length > 0) {
         const met = meetAll(sets)
-        const named = (kind, extra = {}) => ({ kind, ...extra })
-        if (met.kind === 'plane') locus = named('plane', { point: [...met.point], normal: [...met.normal] })
-        else if (met.kind === 'halfplane') locus = named('halfplane', { point: [...met.point], normal: [...met.normal], dir: [...met.dir] })
-        else if (met.kind === 'line') locus = named('line', { point: [...met.point], dir: [...met.dir] })
-        else if (met.kind === 'ray') locus = named('ray', { point: [...met.point], dir: [...met.dir] })
-        else if (met.kind === 'circle') locus = named('circle', { center: [...met.center], normal: [...met.normal], radius: met.radius, ...(met.keep ? { keep: [...met.keep] } : {}) })
-        else if (met.kind === 'sphere') locus = named('sphere', { center: [...met.center], radius: met.radius })
-        else if (met.kind === 'cone') locus = named('cone', { apex: [...met.apex], axis: [...met.axis], halfAngle: met.halfAngle })
-        else if (met.kind === 'point') locus = named('point', { at: [...met.at] })
-        else if (met.kind === 'conic') locus = named('conic', { shape: met.shape, origin: [...met.origin], u: [...met.u], v: [...met.v], normal: [...met.normal], Q: [...met.Q] })
-        else if (met.kind === 'points') locus = named('points', { at: met.at.map((p) => [...p]) })
-        else locus = null
+        locus = copyLocus(met)
         dof = dofOf(met)
     }
     const offered = status === 'accepted' && role === 'point' && !pinned
     const interaction = {
         offered,
         movable: !offered ? 'none' : (dof ? 'point' : 'none'),
-        partners: coupled ? distances.filter((c) => c.radius === 0 && !c.held).map((c) => [...c.other]) : [],
+        partners: coupled ? distances.filter((d) => d.radius === 0 && !d.held).map((d) => [...d.other]) : [],
         normals, dof, locus,
     }
 
@@ -129,26 +128,52 @@ export function stateOf({ at = null, headed = false, exposed = true, isPlace = t
         : role === 'headed' ? 'headed'
             : pinned ? 'pinned' : 'free'
 
-    return { role, truth, status, interaction, tag,
+    return { role, truth, status, interaction, tag, refusal,
         at: known ? [...at] : null, headed, pinned, normals, dof, locus }
 }
 
 
-// A point is held when a hand cannot move it: it carries a body, a position pin
-// fixes it, or it coincides with something already held. Coincidence alone is
-// not a pin — two movable points keep their common translation. (id:laws-freedom)
+// DIRECT fixation: a running body, or a position pin. The attempt hold is a SEPARATE fact
+// (`heldFrame`), checked by each policy that needs it. (id:laws-freedom)
+// A law list, from either an array or the store. (id:laws-activation-order)
+const lawList = (laws) => (Array.isArray(laws) ? laws : laws.active())
+
+export function directlyFixed(frame, laws) {
+    if (!frame) return true
+    if (frame.generator != null || frame.actorState != null) return true
+    return lawList(laws).some((law) => law.feature === 'position' && law.endpoints[0] === frame.id)
+}
+
+// Any attempt's hold on a frame. (id:laws-activation-verdicts)
+export const heldFrame = (frame) => (frame?.heldAttempts?.size ?? 0) > 0
+
+// COINCIDENT partners: the distinct partners of a zero-distance pair the point belongs to.
+// Membership alone is NOT a hold — two movable points keep their common translation.
+// (id:laws-freedom)
+export function coincidentPartners(frame, laws) {
+    const partners = []
+    for (const law of lawList(laws)) {
+        if (law.feature !== 'distance') continue
+        const term = boundTerm(law)
+        if (!term || term.radius !== 0 || term.references[0] === term.references[1]) continue
+        if (!term.references.some((r) => r === frame?.id)) continue
+        partners.push(term.references.find((r) => r !== frame.id))
+    }
+    return partners
+}
+
+// A point is HELD when it is directly fixed, or when a coincident partner is itself held —
+// fixation PROPAGATED through coincidence. A self-zero is a tautology, never a hold; a framed
+// centre is fixed, so a coincident point is held by it.
+// (id:laws-freedom, id:laws-distance-literal-address)
 export function heldIdentity(candidate, laws, registry, seen = new Set()) {
     if (!candidate) return true
     if (seen.has(candidate.id)) return false
-    if (candidate.generator != null || candidate.actorState != null) return true
     seen.add(candidate.id)
-    for (const law of laws) {
-        if (law.feature === 'position' && law.endpoints[0] === candidate.id) return true
-        if (law.feature === 'distance' && law.predicate === 0 &&
-            (law.endpoints[0] === candidate.id || law.endpoints[1] === candidate.id)) {
-            const otherId = law.endpoints[0] === candidate.id ? law.endpoints[1] : law.endpoints[0]
-            if (heldIdentity(registry.get(otherId), laws, registry, seen)) return true
-        }
+    if (directlyFixed(candidate, laws)) return true
+    for (const other of coincidentPartners(candidate, laws)) {
+        if (other == null || typeof other === 'object') return true
+        if (heldIdentity(registry.get(other), laws, registry, seen)) return true
     }
     return false
 }
@@ -162,7 +187,10 @@ export function slider({ at, other, value, min = 0, max = Infinity }) {
     const radius = Math.min(max, Math.max(min, Number.isFinite(value) ? value : min))
     // A slider's reference is held: its zero is the reference point, not a
     // coincident pair that could translate. (id:laws-build-p3-slider)
-    const state = stateOf({ at, constraints: [{ feature: 'distance', other, radius, otherHeld: true }] })
+    // The record carries its OWN resolved set, like every other producer: a zero radius is a
+    // POINT, a positive one a sphere. (D058)
+    const record = { feature: 'distance', otherHeld: true, set: radius > 0 ? sphereSet(other, radius) : pointSet(other) }
+    const state = stateOf({ at, constraints: [record] })
     return { value: radius, bounds: { min, max }, locus: state.locus, tag: state.tag }
 }
 
@@ -320,6 +348,19 @@ export function marksOf(locus, { at = null, size = 3.5, viewDir = null, eye = nu
             })
             const spokes = at && finite3(locus.center) ? [[[...locus.center], [...at]]] : []
             return c && c.length > 1 ? { ...empty, curves: [c], spokes } : { ...empty, spokes }
+        }
+        case 'angle': {
+            // ONE nappe, apex excluded, drawn from the SAME fields nearest() resolves
+            // against: the ring is where a realized point at this radius would land. At 0°
+            // and 180° the locus is a ray, so there is no ring to draw. (id:laws-freedom)
+            const r = finite3(at) ? len(sub(at, locus.apex)) : size
+            const rad = (locus.degrees * Math.PI) / 180
+            const band = r * Math.sin(rad)
+            const ring = Math.abs(band) > 1e-9
+                ? ringOf(locus.apex.map((c, i) => c + locus.axis[i] * r * Math.cos(rad)), locus.axis, band, segments ?? 72)
+                : null
+            const spokes = finite3(at) ? [[[...locus.apex], [...at]]] : []
+            return ring ? { ...empty, curves: [ring], spokes } : { ...empty, spokes }
         }
         case 'cone': {
             // A half-angle of 90° is not a line: the locus is the plane through the

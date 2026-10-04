@@ -21,6 +21,8 @@ id:laws-ordered-replacement)
 | =distance.txt=      | 2b   | =let A.distance = 5= realizes A at [5,0,0]        |
 | =contradiction.txt= | 2c   | a pin over a distance faults, A keeps [5,0,0]     |
 | =joystick.txt=      | play | drag the pad: =pad.x= steers, =pad.y= throttles; the walker draws |
+| =driven-coordinate.txt= | play | drag X: A.x follows X.y; A.y stays free, A.z holds zero |
+| =reactive-randomness.txt= | play | drag B.x: A.x gets a fresh random offset; B.y and idle keep it |
 | =protractor.txt=    | play | drag an arm tip: radial sets its length, around sets the angle |
 
 A rung's *fence* is its headless suite; this directory is the second eye — the

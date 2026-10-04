@@ -1,5 +1,6 @@
 #+title: Laws Phase 0 — motion joint diagnostic
 #+FILETAGS: :compiler:probe:phase0:
+#+PROBE-STATUS: concluded
 
 * Question
 :PROPERTIES:

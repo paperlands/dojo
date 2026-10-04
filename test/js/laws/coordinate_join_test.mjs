@@ -8,6 +8,7 @@ import assert from "node:assert/strict"
 import { buildWorld, fork, drive } from "./harness.mjs"
 import { frameWorldTransform } from "../../../assets/js/turtling/scheduler.js"
 import { stateOf, project, circleCurve, planePatch } from "../../../assets/js/turtling/laws/constraints.js"
+import { plane as planeSet, sphere as sphereSet } from "../../../assets/js/turtling/laws/meet.js"
 
 const pass = ({ requested }) => ({ accepted: true, transform: requested })
 const pos = (f) => frameWorldTransform(f).position.map((n) => +n.toFixed(6))
@@ -68,21 +69,21 @@ test("an authored law records what it attempted and why", () => {
 
 test("the freedom display names the circle, not the sphere", () => {
     const circle = stateOf({ at: [5, 0, 0], constraints: [
-        { feature: "distance", other: [0, 0, 0], radius: 5, otherHeld: true },
-        { feature: "coordinate", axis: "y", value: 0, plane: { point: [0, 0, 0], normal: [0, 1, 0] } },
+        { feature: "distance", other: [0, 0, 0], radius: 5, otherHeld: true, set: sphereSet([0, 0, 0], 5) },
+        { feature: "coordinate", axis: "y", value: 0, plane: { point: [0, 0, 0], normal: [0, 1, 0] }, set: planeSet([0, 0, 0], [0, 1, 0]) },
     ] })
     assert.equal(circle.locus.kind, "circle")
     assert.equal(circle.dof, 1)
 
     const plane = stateOf({ at: [5, 0, 0], constraints: [
-        { feature: "coordinate", axis: "y", value: 0, plane: { point: [0, 0, 0], normal: [0, 1, 0] } },
+        { feature: "coordinate", axis: "y", value: 0, plane: { point: [0, 0, 0], normal: [0, 1, 0] }, set: planeSet([0, 0, 0], [0, 1, 0]) },
     ] })
     assert.equal(plane.locus.kind, "plane")
     assert.equal(plane.dof, 2)
 
     const uncertain = stateOf({ at: [5, 0, 0], constraints: [
-        { feature: "distance", other: [0, 2, 0], radius: 2, otherHeld: true },
-        { feature: "coordinate", axis: "y", value: 0, plane: { point: [0, 0, 0], normal: [0, 1, 0] } },
+        { feature: "distance", other: [0, 2, 0], radius: 2, otherHeld: true, set: sphereSet([0, 2, 0], 2) },
+        { feature: "coordinate", axis: "y", value: 0, plane: { point: [0, 0, 0], normal: [0, 1, 0] }, set: planeSet([0, 0, 0], [0, 1, 0]) },
     ] })
     assert.equal(uncertain.locus, null, "an uncertain meet names nothing")
     assert.equal(uncertain.dof, null)
@@ -90,8 +91,8 @@ test("the freedom display names the circle, not the sphere", () => {
 
 test("project lands on the named circle", () => {
     const circle = stateOf({ at: [5, 0, 0], constraints: [
-        { feature: "distance", other: [0, 0, 0], radius: 5, otherHeld: true },
-        { feature: "coordinate", axis: "y", value: 0, plane: { point: [0, 0, 0], normal: [0, 1, 0] } },
+        { feature: "distance", other: [0, 0, 0], radius: 5, otherHeld: true, set: sphereSet([0, 0, 0], 5) },
+        { feature: "coordinate", axis: "y", value: 0, plane: { point: [0, 0, 0], normal: [0, 1, 0] }, set: planeSet([0, 0, 0], [0, 1, 0]) },
     ] })
     const at = project(circle, [3, 1, 3])
     assert.ok(Math.abs(at[1]) < 1e-9, "on the plane")
@@ -134,8 +135,8 @@ test("two coordinate planes meet in a line the hand can follow", () => {
 
 test("the display names a line from two planes and a point from three", () => {
     const cs = [
-        { feature: "coordinate", axis: "y", value: 20, plane: { point: [0, 20, 0], normal: [0, 1, 0] } },
-        { feature: "coordinate", axis: "z", value: 5, plane: { point: [0, 0, 5], normal: [0, 0, 1] } },
+        { feature: "coordinate", axis: "y", value: 20, plane: { point: [0, 20, 0], normal: [0, 1, 0] }, set: planeSet([0, 20, 0], [0, 1, 0]) },
+        { feature: "coordinate", axis: "z", value: 5, plane: { point: [0, 0, 5], normal: [0, 0, 1] }, set: planeSet([0, 0, 5], [0, 0, 1]) },
     ]
     const line = stateOf({ at: [0, 20, 5], constraints: cs })
     assert.equal(line.locus.kind, "line")
@@ -144,7 +145,7 @@ test("the display names a line from two planes and a point from three", () => {
     assert.deepEqual(project(line, [7, 1, 1]), [7, 20, 5])
 
     const point = stateOf({ at: [0, 20, 5], constraints: [...cs,
-        { feature: "coordinate", axis: "x", value: 3, plane: { point: [3, 0, 0], normal: [1, 0, 0] } }] })
+        { feature: "coordinate", axis: "x", value: 3, plane: { point: [3, 0, 0], normal: [1, 0, 0] }, set: planeSet([3, 0, 0], [1, 0, 0]) }] })
     assert.equal(point.locus.kind, "point")
     assert.equal(point.dof, 0)
 })

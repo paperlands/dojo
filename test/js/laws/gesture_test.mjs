@@ -8,9 +8,8 @@ import assert from "node:assert/strict"
 import { buildWorld, fork, drive } from "./harness.mjs"
 import { createGesture } from "../../../assets/js/turtling/laws/gesture.js"
 import { DRAG_SLOP } from "../../../assets/js/turtling/laws/feel.js"
-import { exposed, freePoint } from "../../../assets/js/turtling/laws/batch.js"
-import { stateOf, heldIdentity } from "../../../assets/js/turtling/laws/constraints.js"
-import { constraintsOn, bindWorld } from "../../../assets/js/turtling/laws/authored.js"
+import { freePoint } from "../../../assets/js/turtling/laws/batch.js"
+import { pointStateOf } from "../../../assets/js/turtling/laws/point_state.js"
 import { frameWorldTransform, worldTransform } from "../../../assets/js/turtling/scheduler.js"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
 
@@ -297,26 +296,9 @@ const pinhole = (eye, { width = 800, height = 800, fov = 60, up = [0, 1, 0] } = 
     }
 }
 
-// The locus the turtle reads: the same query `_stateOf` makes, on the same store —
-// never a description a test injected. (id:laws-decl-point-agent)
-const locusOfWorld = (scheduler) => (frame) => {
-    const laws = scheduler.laws.active()
-    const ctx = bindWorld((id) => scheduler.registry.get(id), {
-        writerId: frame.id,
-        positionOf: (f) => frameWorldTransform(f).position,
-        poseOf: (f) => worldTransform(f),
-        heldOf: (id) => heldIdentity(scheduler.registry.get(id), laws, scheduler.registry),
-    })
-    return stateOf({
-        at: frameWorldTransform(frame).position,
-        headed: frame.generator != null || frame.actorState != null,
-        exposed: exposed(frame),
-        isPlace: frame.isPlace === true,
-        error: frame.error ?? null,
-        unresolved: frame.unresolved ?? frame.held ?? null,
-        constraints: constraintsOn(frame.id, laws, ctx),
-    }).locus
-}
+// The locus the display reads — the PRODUCTION projection, not a reconstruction, and with
+// the unavailable contributions it carries. (id:laws-decl-point-agent, D058)
+const locusOfWorld = (scheduler) => (frame) => pointStateOf(frame, scheduler).locus
 
 // The ball's hand is its own surface under the pointer: the grabbed point follows
 // the finger, the mirrored back included. (id:laws-decl-anchor)

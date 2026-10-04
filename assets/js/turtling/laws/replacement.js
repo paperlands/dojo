@@ -11,35 +11,73 @@
 // Only the declared symmetries are canonicalized. Nothing algebraic.
 
 import { kindOf, guardsOf, boundsOf } from "./expression.js"
-import { addressShape } from "./authored.js"
+import { addressShape, symmetricOf, normalizeExpression, isLiveInput, inputFrames, payloadOf } from "./authored.js"
 const FEATURES = {
     // coincidence is not an authored runtime law; its address is still an unordered pair.
-    coincidence: (endpoints) => [...endpoints],
+    coincidence: { address: (endpoints) => [...endpoints], symmetric: true },
 }
 
 // The canonical address key for a law. Endpoints are identity tokens, never
 // display names: a reversed distance pair reaches the same address, a different
 // scope or frame does not. (id:laws-ordered-replacement)
+// A type-tagged, injective serialization: a number and its string, a live identity and
+// a framed value, or two delimiter-bearing tokens can never share an address.
+// (id:laws-distance-literal-address)
+const tagged = (x) => {
+    if (x === null || x === undefined) return ["nil"]
+    if (typeof x === 'number') return ["num", Object.is(x, -0) ? 0 : x]
+    if (typeof x === 'string') return ["str", x]
+    if (x.frame !== undefined) return [x.relative ? "relative" : "framed", tagged(x.frame), (x.value ?? []).map((c) => (Object.is(c, -0) ? 0 : c))]
+    return ["json", JSON.stringify(x)]
+}
+
 export function addressOf(law) {
     if (law?.address) return law.address   // bound once; consumers do not rebuild it
     const { feature, endpoints = [], scope = null, frame = null } = law
-    const shape = addressShape(feature) ?? FEATURES[feature]
+    const shape = addressShape(feature) ?? FEATURES[feature]?.address
     if (!shape) throw new Error(`Unknown law feature: ${feature}`)
-    const ids = shape(endpoints, law).map(String).sort()
-    return [feature, ...ids, String(scope), frame == null ? '-' : String(frame)].join('|')
+    // Roles are preserved: parts stay in the row's declared order. Only a DECLARED
+    // symmetry is canonicalized — a reversed distance pair shares an address, but
+    // (target, axis) never collides with (axis, target). (id:laws-ordered-replacement, D058)
+    const parts = shape(endpoints, law).map(tagged)
+    const canonical = symmetricOf(feature) || FEATURES[feature]?.symmetric === true
+        ? [...parts].sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1))
+        : parts
+    return JSON.stringify([feature, canonical, tagged(scope), tagged(frame)])
 }
 
 // One bound law: identities, coordinate frame, authored predicate, payload kind
 // and domain guard fixed once. The address is derived here and reused; proposal,
 // validation and display read the record rather than rebuilding it.
 // (id:laws-build-p3, id:laws-build-p3a)
-export function bindLaw({ feature, endpoints, scope, frame, predicate, owner = null, axis = null, guards = null, bounds = null, sourceIds = [] }) {
-    const law = { feature, relation: feature, endpoints: [...endpoints], scope, frame, predicate, owner,
-        ...(axis == null ? {} : { axis }),
+export function bindLaw({ feature, endpoints, scope, frame, predicate, owner = null, axis = null, guards = null, bounds = null, sourceIds = [], source = null, expression = null }) {
+    // Bind once: a supplied term is frozen; a legacy caller without one is normalized
+    // through the same constructor. An explicitly malformed term is kept and fails
+    // closed at the accessor. (id:laws-distance-term-normalization, D058)
+    const raw = expression ?? normalizeExpression(feature, { endpoints, frame, axis, predicate, source })
+    const freezeRef = (r) => (r != null && typeof r === 'object' && !Array.isArray(r))
+        ? Object.freeze({ ...r, ...(Array.isArray(r.value) ? { value: Object.freeze([...r.value]) } : {}) })
+        : r
+    const term = raw == null ? null : Object.freeze({ ...raw,
+        ...(Array.isArray(raw.references) ? { references: Object.freeze(raw.references.map(freezeRef)) } : {}),
+        ...(Array.isArray(raw.value) ? { value: Object.freeze([...raw.value]) } : {}),
+    })
+    // The term is the authority; the compatibility fields derive from it. `endpoints`
+    // is the live solve mirror — a framed centre is never a solve participant — and the
+    // framed frames are retraction deps, not endpoints. (id:laws-distance-literal-address)
+    const references = Array.isArray(term?.references) ? term.references : endpoints
+    const liveEnds = references.filter(isLiveInput)
+    const boundFrame = term?.frame ?? frame
+    const boundAxis = term?.axis ?? axis
+    const boundPredicate = term == null ? predicate : (payloadOf(feature, term) ?? predicate)
+    const law = { feature, relation: feature, endpoints: Object.freeze([...liveEnds]), scope,
+        frame: boundFrame, predicate: boundPredicate, owner,
+        ...(boundAxis == null ? {} : { axis: boundAxis }),
+        ...(term == null ? {} : { expression: term }),
         kind: kindOf(feature),
         guards: guards ?? guardsOf(feature),
         bounds: bounds ?? boundsOf(feature),
-        sourceIds: [...new Set([...endpoints, ...sourceIds])] }
+        sourceIds: [...new Set([...liveEnds, ...inputFrames({ expression: term }), ...sourceIds])] }
     law.address = addressOf(law)
     return law
 }
@@ -103,7 +141,8 @@ export function createLawStore() {
         retractIdentity(frameId) {
             let hit = false
             for (const [key, law] of byAddress) {
-                if (law.frame === frameId || law.endpoints?.includes(frameId)) { byAddress.delete(key); hit = true }
+                if (law.frame === frameId || law.endpoints?.includes(frameId) ||
+                    inputFrames(law).includes(frameId)) { byAddress.delete(key); hit = true }
             }
             return hit ? 'retracted' : 'noop'
         },

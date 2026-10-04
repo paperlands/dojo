@@ -12,7 +12,7 @@
 
 import { compassOf } from "./relations.js"
 import { DEFAULT_ARM } from "./realize.js"
-import { sub, dot, len, finite3 } from "./vec3.js"
+import { sub, dot, len, finite3, unit } from "./vec3.js"
 
 export const REL_TOL = 1e-9
 export const ACCEPT_TOL = 1e-6
@@ -226,8 +226,11 @@ export function nearestOnMeet(feasible, request) {
             const seed = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]
             u = [n[1] * seed[2] - n[2] * seed[1], n[2] * seed[0] - n[0] * seed[2], n[0] * seed[1] - n[1] * seed[0]]
         }
-        const m = len(u) || 1
-        return { ok: true, at: feasible.center.map((c, i) => c + feasible.radius * u[i] / m) }
+        // Invalid intermediate arithmetic is not a plausible fallback: a lever that cannot
+        // be normalized names no point on the circle, so refuse rather than answer the centre.
+        const dir = unit(u)
+        if (!dir) return { ok: false, kind: "unresolved", reason: "the request direction is not finite" }
+        return { ok: true, at: feasible.center.map((c, i) => c + feasible.radius * dir[i]) }
     }
     return { ok: false, kind: "unresolved", reason: "no named meet for this component" }
 }

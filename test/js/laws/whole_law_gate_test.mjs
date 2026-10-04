@@ -26,6 +26,7 @@ const DISTANCE_HOST = "let A\nlet B\nas B do\n  let A.distance = 5\nend"
 // (removal retracts), so it is injected to probe the gate itself.
 const ghostDistance = (host, a) => ({
     feature: "distance", address: "ghost|A", endpoints: [a.id, "GHOST"], scope: host.id, frame: host.id, predicate: 999,
+    expression: { type: "distance", references: [a.id, "GHOST"], radius: 999 },
 })
 
 test("a ghost law makes a hand request unresolved, and nothing moves", () => {

@@ -25,11 +25,9 @@ const row = (name, kind, guard, bounds) => ({ family: familyOf(name), kind, guar
 // guard: a framed coordinate names one of the declaring frame's own axes.
 export const axisOk = (axis) => AXES.includes(axis)
 
-// One table: authored rows are the same objects as AUTHORED. Reads (bearing, x, …)
-// live here only. (id:relationships-row-contract)
-export const RELATION = {
-    distance: AUTHORED.distance,
-    bearing: AUTHORED.bearing,
+// The authored rows ARE the relation metadata; the reads (`sync`, `x`, …) are the only
+// additions. Nothing is registered twice. (id:relationships-row-contract)
+const READS = {
     sync: row("sync", KIND.duration, { finite: true }, null),
     x: row("x", KIND.scalar, { finite: true }, null),
     y: row("y", KIND.scalar, { finite: true }, null),
@@ -37,10 +35,9 @@ export const RELATION = {
     heading: row("heading", KIND.angle, { finite: true }, null),
     // Elevation is bounded by its meaning, not by policy: ±90 IS the paper's normal.
     elevation: row("elevation", KIND.angle, { finite: true }, { min: -90, max: 90 }),
-    position: AUTHORED.position,
-    coordinate: AUTHORED.coordinate,
-    tilt: AUTHORED.tilt,
 }
+
+export const RELATION = { ...AUTHORED, ...READS }
 
 export function relationOf(feature) {
     return RELATION[feature] ?? null

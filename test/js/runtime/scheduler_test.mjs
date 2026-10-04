@@ -7,6 +7,7 @@ import { createScheduler, createFrame, allDone, worldTransform, resolveBinding }
 import { parseProgram } from "../../../assets/js/turtling/parse.js"
 import { execute, drainEvents } from "../../../assets/js/turtling/executor.js"
 import { ASTNode } from "../../../assets/js/turtling/ast.js"
+import { Parser } from "../../../assets/js/turtling/mafs/parse.js"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
 
 // Helper: find a child ambient by name in the tree (not via registry)
@@ -39,7 +40,10 @@ function mockDeps() {
     return {
         mathParser: {
             isNumeric(expr) { return /^-?\d+\.?\d*$/.test(expr) },
-            parse(expr) { return { value: expr, children: [] } },
+            parse(expr) {
+                if (expr[0] === "'" || expr[0] === '"') return new Parser().parse(expr)
+                return { value: expr, children: [] }
+            },
             defineFunction() {},
             reset() {},
             userspace: new Map()
@@ -47,7 +51,7 @@ function mockDeps() {
         mathEvaluator: {
             constants: {},
             namespace_check(val) { return val in this.constants },
-            run(tree) { return parseFloat(tree.value) || 0 }
+            run(tree) { return tree.type === 'string' ? tree.value : parseFloat(tree.value) || 0 }
         }
     }
 }

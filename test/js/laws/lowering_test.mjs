@@ -11,6 +11,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 import { stateOf } from "../../../assets/js/turtling/laws/constraints.js"
+import { point as pointSet } from "../../../assets/js/turtling/laws/meet.js"
 import { guardsOf, predicateOk } from "../../../assets/js/turtling/laws/expression.js"
 import { addressOf, bindLaw, createLawStore } from "../../../assets/js/turtling/laws/replacement.js"
 
@@ -91,7 +92,7 @@ test("W2 zero radius: the relative freedom is zero and the common translation su
     // the partner held by the query there is no independent freedom to offer.
     const state = stateOf({
         at: a,
-        constraints: [{ feature: "distance", other: b, radius: 0, otherHeld: false }],
+        constraints: [{ feature: "distance", other: b, radius: 0, otherHeld: false, set: pointSet(b) }],
     })
     assert.equal(state.truth.pinned, false, "two movable coincident points are not a pin")
     assert.equal(state.truth.coincident, true)
@@ -101,7 +102,7 @@ test("W2 zero radius: the relative freedom is zero and the common translation su
     // Held reference: the same zero radius becomes a pin (dof 0), no translation.
     const pinned = stateOf({
         at: a,
-        constraints: [{ feature: "distance", other: b, radius: 0, otherHeld: true }],
+        constraints: [{ feature: "distance", other: b, radius: 0, otherHeld: true, set: pointSet(b) }],
     })
     assert.equal(pinned.truth.pinned, true)
     assert.equal(pinned.interaction.dof, 0)

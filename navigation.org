@@ -49,6 +49,30 @@ the *shape of the question*, not by habit.
 
 In short: Grep/Read to find, the bridge to cite, LSP to operate on a symbol.
 
+* PROBE — instruments and their exit
+:PROPERTIES:
+:ID: nav-probe-lifecycle
+:TYPE: reference
+:KEYWORDS: probe instrument status composted lifecycle spike witness drain
+:END:
+
+A =probe/= is an instrument — not a test, not a spec. It makes a question
+answerable =[⚡]=, and its worth is the reading, not the file. Every instrument
+carries one =probe-status:= header: =draft | active | concluded | superseded |
+composted=. That status is its exit — spent probes drain to =probe/composted/=, and
+nothing there is ever cited (re-anchor, not re-emit; D012). Doctrine, the header
+syntax per file type, and the drain rule: =probe/README.org=.
+
+Census, seat check, and citation-rot check:
+
+#+BEGIN_SRC sh
+bash scripts/verify/probe_status.sh           # advisory
+bash scripts/verify/probe_status.sh --strict  # exit 2 on any finding (a gate)
+#+END_SRC
+
+:PATH: probe/README.org
+:PATH: scripts/verify/probe_status.sh
+
 * STATE — tuplespace, presence, cache
 :PROPERTIES:
 :ID: nav-state
@@ -665,7 +689,7 @@ Fence: =test/js/laws/handle_test.mjs=.
 ** hands — one lifecycle per locus
 :PROPERTIES:
 :ID: nav-hand
-:KEYWORDS: hand handFor sphereHand coneHand coneRig coneTurn magnet detent paper disk cone polar apex hub halfAngle nappe touchCone coneFrame openAngle coneLateral feel tune
+:KEYWORDS: hand handFor sphereHand coneHand circleHand coneRig coneTurn circleRig circleTurn magnet detent paper disk cone polar apex hub halfAngle nappe touchCone coneFrame openAngle coneLateral feel tune phase graze ring
 :PATH: assets/js/turtling/laws/hand.js::handFor
 :END:
 One lifecycle for every locus: freeze a frame at pointer-down, then project each
@@ -676,7 +700,13 @@ own polar (D038, D039) — the pointer's screen angle dials the azimuth so a cir
 holds the height, the screen radius spends it at a drawn-scale rate, eased. The
 cone's geometry (=coneFrame=, =touchCone=) is =laws/cone.js=; the tuning numbers are
 =laws/feel.js=.
-Fence: =test/js/laws/handle_test.mjs= and =gesture_test.mjs=.
+A *circle* — a distance met by a plane — follows its own projected ring instead of the
+camera plane through it, because the law clamps a plane's request back onto the curve and
+in an oblique view that clamp IS the whole error. The hand seeds from the accepted point's
+phase, descends to the local minimum of the projected ring (so it cannot flip to the branch
+across the projection's medial axis), and HOLDS when a grazing view flattens the ring to a
+segment and no phase is disclosed.
+Fence: =test/js/laws/handle_test.mjs=, =gesture_test.mjs=, and =circle_hand_test.mjs=.
 
 ** geometry kernel — one arithmetic, one cone frame
 :PROPERTIES:
@@ -744,6 +774,214 @@ its new length), validates every distance, and publishes the component together.
 cycle or a non-distance law is unsupported, never approximated. [[id:laws-build-p3]].
 Fence: =phase3_component_test.mjs=.
 
+** two incidence views — validity references vs solve participants
+:PROPERTIES:
+:ID: nav-law-incidence
+:KEYWORDS: incidence validity references solve participants aspect position placement validityDependents componentOf boundReferences boundParticipants
+:PATH: assets/js/turtling/laws/component.js::validityDependents
+:END:
+Two derived views over the bound rows, not a second dependency model:
+=laws/authored.js::boundParticipants= is the positional solve participants (=componentOf=
+retains the frozen positional-endpoint mirror established at binding);
+=boundReferences= is the direct predicate inputs, qualified by =aspect= (=position= =
+effective live position; =placement= = stable placement transform).
+=validityDependents= answers which laws reference a supplied change and grants no
+movement permission; the whole-law gate stays authoritative and no selective
+acceptance is wired. Direct predicate incidence only — ancestor-placement propagation
+into descendants' effective positions is not yet modelled.
+[[id:laws-free-relations-read-validity]]. Fence: =test/js/laws/incidence_test.mjs=.
+
+** framed composition — original terms through the hand
+:PROPERTIES:
+:ID: nav-law-framed-composition
+:KEYWORDS: bearing distance framed term composition placement reach envelope reachPolicy hand supported refusal retained conjunction
+:PATH: test/js/laws/composition_test.mjs
+:END:
+Existing bearing/distance methods compose through the hand; the term and independent
+gate remain authoritative. Supported requests accept; admission refusal and unavailable
+geometric reduction preserve geometry and obligations. The reach envelope is context,
+not a permission grant or the API consumed by hand continuation.
+[[id:laws-free-relations-framed-composition]].
+
+** a literal centre — a framed value input, not an actor
+:PROPERTIES:
+:ID: nav-law-literal-centre
+:KEYWORDS: literal centre framed value distance origin coordinate address encoding tagged injective reversal radius revision parser signed negative zero
+:PATH: assets/js/turtling/laws/authored.js::inputPosition
+:END:
+=distance(A, origin)= and =distance(A, (x,y))= bind a framed value input within the
+distance relationship — solve participants {A}, validity {A position, F placement}, no
+position law and no synthetic identity. =parse.js= admits a live name, =origin= or a signed
+literal; the reach builds typed references; the address is a type-tagged, canonically
+ordered whole-key JSON (radius excluded), so a number and its string, a delimiter inside a
+token, or a framed value beside a live pair never collide. [[id:laws-distance-literal-address]].
+Fences: =test/js/laws/literal_centre_test.mjs=, =test/js/laws/literal_source_test.mjs= and
+=test/js/laws/vector_centre_test.mjs= (the =[x,y]= relative input).
+
+
+** a point's state — one WebGL-free projection
+:PROPERTIES:
+:ID: nav-law-point-state
+:KEYWORDS: point state projection pointStateOf point_state readers constraintsView unavailable refusal offered locus dof display witness gesture composition rung
+:PATH: assets/js/turtling/laws/point_state.js::pointStateOf
+:END:
+The ONE projection of a point's state: reader binding (the committed live head and the stable
+placement), the point query (surviving records AND unavailable contributions with reasons), the
+eligibility/status inputs, and =stateOf=. Turtle delegates to it and the CI composition rung
+calls it, so the display and a behavioural witness read the same story from the same code — no
+test-side reconstruction. [[id:laws-decl-point-agent]]
+Fences: =test/js/laws/composition_rung_test.mjs= (construct, agree, grab, drag, revise,
+obstruct, lose a reading) and =test/js/laws/gesture_test.mjs= (which reads its locus through
+this projection).
+** literal source contract — binding, revision, composition and lifetime
+:PROPERTIES:
+:ID: nav-law-literal-source
+:KEYWORDS: literal source origin distance framed centre signed coordinates negative zero reversed inputs revision pin obstruction hand placement retraction fresh play
+:PATH: test/js/laws/literal_source_test.mjs
+:END:
+Source-through-runtime fences for the framed distance input: either input order,
+one-live composition, addressed revision, refusal at the actual revision, placement
+rather than live-head reads, no invented actor/pin, and source lifetime.
+[[id:laws-distance-literal-address]] · [[id:laws-free-relations-contract]].
+
+** free-point relations — participants are not actors
+:PROPERTIES:
+:ID: nav-law-free-relations
+:KEYWORDS: free relationship pair BA AB cascade explicit participants bodyless distance
+:PATH: probe/free-point-relations/diagnostic.mjs
+:END:
+Historical diagnostic: source refusals, actor-workaround contrast and an injected
+bodyless-chain response through admission/publication. It predates production pair
+syntax; current implemented gates live at [[id:laws-free-relations-contract]].
+Run =node probe/free-point-relations/diagnostic.mjs=.
+
+** spine response policy — lawful lengths are not worm following
+:PROPERTIES:
+:ID: nav-law-spine-policy
+:KEYWORDS: spine worm nearest follower radial policy turning old direction redundant rows
+:PATH: probe/free-point-relations/policy_probe.mjs
+:END:
+A turned three-point witness separates old-direction tree feasibility from
+nearest-child following; parallel law rows expose a separate topology limit.
+Run =node probe/free-point-relations/policy_probe.mjs=. [[id:laws-free-relations-review]].
+
+** the hand door's coordinate contract — SE3, not an origin addend
+:PROPERTIES:
+:ID: nav-law-hand-contract
+:KEYWORDS: hand door coordinate contract requestMotion world parent own writer owner metric frame origin SE3 translated rotated parent equivalent
+:PATH: probe/free-point-relations/hand_contract.mjs
+:END:
+The same world wish reaches =requestMotion= as own-chain motion, a parent statement or a
+world statement, and lands on one target under translated and rotated parents; =origin.position
++ requested= agrees only while the chain does not rotate. [[id:laws-free-relations-f2-todos]].
+Run =node probe/free-point-relations/hand_contract.mjs=.
+
+** selection policies — a lawful length is not a chosen response
+:PROPERTIES:
+:ID: nav-law-policy-select
+:KEYWORDS: selection policy conserve hand-first nearest old follower balanced reinitialization tangential crossing exchange residual pair
+:PATH: probe/free-point-relations/policy_select.mjs
+:END:
+Three policies on one settled pair keep AB=r and return different points; only the writer
+landing on the wish follows the request, and =realizeDistanceTree= reproduces it on the
+pair's first edge. [[id:laws-free-relations-f2-todos]].
+Run =node probe/free-point-relations/policy_select.mjs=.
+
+** request sampling — one lawful endpoint, many followers
+:PROPERTIES:
+:ID: nav-law-hand-sampling
+:KEYWORDS: sampling leap unit steps follower walk chord traversal singular coincident plus-x fallback policy browser feel
+:PATH: probe/free-point-relations/hand_sampling.mjs
+:END:
+The same nearest-old-follower rule reaches B=−8 with A=−3 in one leap and A=−13 over unit
+requests; the chord between lawful endpoints passes through A=B, and the coincident request
+falls back to +x. [[id:laws-free-relations-f2-todos]].
+Run =node probe/free-point-relations/hand_sampling.mjs=.
+
+** geometry kernel contract — the tie is not in the kernel
+:PROPERTIES:
+:ID: nav-law-kernel-contract
+:KEYWORDS: kernel contract nearest sphere realizeDistance realizeFreeDistance validateDistance directionBetween regular zero radius singular invalid tie policy accepted bond metric frame
+:PATH: probe/free-point-relations/kernel_contract.mjs
+:END:
+Regular, zero-radius and singular placement are complete; =nearest= chooses +x at a finite
+coincidence while =directionBetween= answers null, and an invalid radius still reports
+success with a non-finite point. The missing piece is a tie resolver (last accepted bond,
+else metric frame), policy rather than geometry. [[id:laws-free-relations-f2-todos]].
+Run =node probe/free-point-relations/kernel_contract.mjs=.
+
+** pin controls — the policy stays under truth
+:PROPERTIES:
+:ID: nav-law-pin-identity
+:KEYWORDS: pin position law identity zero radius tautology duplicate refusal obstruction subordinate truth heldAttempts authored frame
+:PATH: probe/free-point-relations/pin_identity.mjs
+:END:
+A =position= pin refuses the hand-first wish (an obstruction, not a contradiction) while
+conservation stays lawful but does not follow; zero radius joins distinct ids, a same-id
+tautology keeps one entry, and the pin resolves in its authored frame.
+[[id:laws-free-relations-f2-todos]].
+Run =node probe/free-point-relations/pin_identity.mjs=.
+
+** bounded follow responder — adapter + policy, gate and publisher untouched
+:PROPERTIES:
+:ID: nav-law-follow-responder
+:KEYWORDS: follow responder admission adapter policy nearestFollower conserve candidate gate publisher tautology eligibility bounded
+:PATH: probe/free-point-relations/follow.mjs
+:END:
+One bounded responder through =motionAdmission=: adapter (coordinates; the CONNECTED
+component via =componentOf=; eligibility by scope + =staticVerdict= + =freePoint=; modelled
+relations only) plus a pure private world-position policy with explicit domain/finite checks
+and a role-aware singular bond oriented by writer/partner identity; the scheduler keeps the gate
+and the publisher. No pin flag, geometry store or commit path.
+[[id:laws-free-relations-f2]]. Witness: =probe/free-point-relations/follow_witness.mjs=.
+
+** follow witness — four concerns separated through the real door
+:PROPERTIES:
+:ID: nav-law-follow-witness
+:KEYWORDS: follow witness admission gate publisher isolated pair pin tautology chain refuse one consultation revision
+:PATH: probe/free-point-relations/follow_witness.mjs
+:END:
+Isolated pair, pin-refusal versus conserve-projection, a same-id tautology and a
+broader-topology refusal through the real admission/gate/publisher. [[id:laws-free-relations-f2]].
+Run =node probe/free-point-relations/follow_witness.mjs=.
+
+** runtime gate attack — poison, duplicate, stale, retired
+:PROPERTIES:
+:ID: nav-law-gate-attack
+:KEYWORDS: gate attack poison duplicate disconnected wrong-parent stale revision retired identity notification boundary release pin hand goal write path membership exact
+:PATH: probe/free-point-relations/gate_attack.mjs
+:END:
+Poisons and deceives the responder through the real door: refuse/fault/stale all leave accepted
+state, owner and revision untouched (exact, unrounded); one revision and one notification serve a
+changed joint result; release adds no pin or hand goal. A same-parent DISCONNECTED member that
+breaks no law is now REJECTED at the boundary (=membership=), even when its pose is unchanged.
+[[id:laws-free-relations-f2-todos]].
+Run =node probe/free-point-relations/gate_attack.mjs=.
+
+
+** F2 admission — membership, not the responder's own selection
+:PROPERTIES:
+:ID: nav-law-f2-membership
+:KEYWORDS: free relations F2 admission membership motionValidate componentOf scope subset outsider ceiling publisher responder
+:PATH: probe/free-point-relations/follow.mjs::membership
+:END:
+The responder chooses GEOMETRY; the door owns membership. `membership` is the independent
+`motionValidate` seam: it derives the writer's connected scope with `componentOf` over the
+accepted bound laws and refuses any returned entry outside it — a subset is allowed, and an
+outsider is refused even when its pose is unchanged. A CEILING over the scheduler's own
+eligibility/pin/hold/lifetime/original-predicate checks, and NOT imposed on the generic
+publisher, so lawless Phase-0 responders keep coupling actors. [[id:laws-free-relations-f2]].
+** pin response — a held anchor realizes its free partner
+:PROPERTIES:
+:ID: nav-law-pin-response
+:KEYWORDS: pin response held anchor free partner realizeDistanceTree componentCandidate anchor generalization pin before after movable
+:PATH: probe/free-point-relations/pin_response_probe.mjs
+:END:
+The capability was the anchor, not a solver: the joint exit anchors on the declared pin's
+target and realizes the free partner about it, both declaration orders. A prediction probe
+ran ahead of production. [[id:laws-free-relations-f2-todos]].
+Run =node probe/free-point-relations/pin_response_probe.mjs=.
+
 ** typed payload — kind, guard, bounds
 :PROPERTIES:
 :ID: nav-law-expression
@@ -765,6 +1003,55 @@ A new authored relation is one explicit descriptor (name, kind, guard, address,
 predicate, propose, validate). Parse, replacement, scheduler and display read it;
 the entries stay explicit. Display marks come from the locus (=marksOf=).
 [[id:relationships-row-contract]]. Fence: =authored_test.mjs=.
+Driven payloads are row capabilities (=driveOf=): position projects a point,
+coordinate carries a scalar. Accepted publication owns driver installation;
+the shared preflight refuses directional own-target reads before replacement.
+Fences: =driven_installation_test.mjs= and =driven_coordinate_test.mjs=.
+Reasoning: [[id:relationships-driven-payloads]]; canvas: =scripts/play/rungs/driven-coordinate.txt=.
+Reactive randomness: =assets/js/turtling/laws/reactive.js=; synchronous input questions
+gate intrinsic draws. Fence: =test/js/laws/reactive_randomness_test.mjs=; live play:
+=scripts/play/rungs/reactive-randomness.txt=. Reasoning: =laws-reactive-randomness=
+in =specs/compiler/relationships.org=; readings: =probe/reactive-randomness/RESULTS.org=.
+D059 payload boundary: =laws/verdict.js::applyLaw= and =laws/authored.js::withPayload=;
+=scheduler.js::redrawDerivedLaw= reads the accepted term. Fences:
+=test/js/laws/payload_boundary_test.mjs=, =driven_revision_boundary_test.mjs=;
+reasoning: [[id:laws-payload-boundary]]. Step 4 (TBD): [[id:laws-driven-intent-experiments]];
+run =node probe/driven-intent/probe.mjs=; readings =probe/driven-intent/RESULTS.org=.
+
+** relationship contract — ordered construction, declarative truth
+:PROPERTIES:
+:ID: nav-law-operational-contract
+:KEYWORDS: D058 declarative contract consolidation entity relationship installation address owner bind propose check publish composition matrix lifetime retained conjunction
+:PATH: specs/compiler/laws-free-relations.org::laws-free-relations-contract
+:END:
+Programs construct entities and reach obligations; fixed bound conjunctions state
+truth without output sides. Reach revises an address; hand preserves obligations.
+Bind → form the question → bounded proposal → original checks → joint publication
+or unchanged accepted prefix. The witness matrix names current fences and limits.
+
+** tower and law bridge — mathematical depth is not scene admission
+:PROPERTIES:
+:ID: nav-tower-law-contract-bridge
+:KEYWORDS: tower law bridge operation meaning binding frame guard generic coefficient symbolic derivative numerical admission tolerance quantization display
+:PATH: specs/weave/tower-laws-priors.org::tower-laws-contract-bridge
+:END:
+The tower owns operation meaning over admitted values; laws own obligations, methods
+propose, and publication owns accepted geometry/lifetime. Arithmetic quantization,
+geometric acceptance and display formatting stay separate. Generic coefficient routing
+does not earn symbolic/differential geometry or a universal solver.
+
+** distance term normalization — meaning, policy, capability
+:PROPERTIES:
+:ID: nav-law-term-normalization
+:KEYWORDS: D058 distance original term dotted pair normalize holding policy bounded methods retained conjunction literal identity guard witness
+:PATH: specs/compiler/laws-free-relations.org::laws-distance-term-normalization
+:END:
+D058 resolves one bound authority, one acceptance contract, bounded methods.
+Step 1 is implemented: pair/dotted terms bind once, distance views derive from them,
+and the dotted observer hold is explicit and reach-local. Equal terms/context agree;
+balanced and held-context initializers differ lawfully. Poisoned legacy mirrors
+cannot change truth; malformed terms refuse and the original gate judges candidates.
+[[id:laws-relationship-operational-boundary]] · [[id:laws-distance-term-normalization]].
 
 ** derived values — commit-driven readout
 :PROPERTIES:
@@ -781,6 +1068,10 @@ replacement before commitment and restores what it touches.
 Presence derives from the answer (=value !== undefined=); =list().hasValue= is a view,
 not stored truth. The store owns outcomes; the law pipeline still accepts geometry.
 Contract: [[id:tower-laws-readout-outcomes]]; cycle scope: [[id:tower-laws-cycle-contracts]].
+Proposed read-owned waiting/capture boundary: [[id:laws-readiness-contract]] (draft, not
+shipped); blocked is not NOTHING, and incomplete capture grants no build permission.
+Vetting: [[id:laws-readiness-vetting]]; =probe/readiness-review/contract.mjs= keeps
+current-behavior characterizations, not green acceptance of the proposed extension.
 Fences: =readout_test.mjs=, =readout_dependency_test.mjs=, =readout_contract_test.mjs=.
 =neighbours= is the shared derived edge view for SCC diagnosis and target reachability;
 The SCC and the target-reachability walk are iterative, so a deep graph cannot overflow the
@@ -837,12 +1128,26 @@ read. [[id:eval-relational]]. Fence: =relations_test.mjs=.
 :PROPERTIES:
 :ID: nav-law-pipeline
 :KEYWORDS: law distance position pin realize propose validate applyLaw pipeline
-:PATH: assets/js/turtling/scheduler.js::applyLaw
+:PATH: assets/js/turtling/laws/verdict.js::applyLaw
 :END:
 =let A.distance = …= and =let A = origin= are one noun: a law at an address. The
 pipeline is address → propose → validate → publish → store; a new form is a row in
 =PROPOSE=/=VALIDATE=, not a new effect. [[id:laws-build-solve-seam]] ·
 [[id:laws-build-p2c-verdict]]. Fence: =phase2_distance_test.mjs= / =phase2_failure_test.mjs=.
+
+** the law-verdict layer — gate, continuation, candidates
+:PROPERTIES:
+:ID: nav-law-verdict
+:KEYWORDS: law verdict gate lawViolation whole-law continue continueLaws candidate applyLaw pin conflict affectedMembers
+:PATH: assets/js/turtling/laws/verdict.js
+:END:
+One module owns reading a configuration against the active laws (=lawViolation= /
+=brokenLaw=), continuing an accepted candidate to closure (=continueLaws=), the pin
+conflict (=conflictAt=), the affected component (=affectedMembers=), and the analytic
+candidates for a component (=componentCandidate= / =componentMeetCandidate= / =applyLaw=).
+The frame world reading is injected (=world.read/transform=), so the module owns no
+scheduler state and mutates no frame — the caller installs. [[id:laws-activation-order]] ·
+[[id:laws-build-p3]]. Fence: =phase3_component_test.mjs= / =phase2_failure_test.mjs=.
 
 ** a point's state — what it is, where it may go
 :PROPERTIES:
@@ -1062,7 +1367,11 @@ ambient reads the world, so a position in a stream is not its to promise — it 
 :END:
 A derived figure's key is =evaluateArgs= in the declaring frame. Live names are
 ports at the call (=let art = hello X.x=). The membrane stays =captureFor=.
-Pins: =test/js/laws/figure_binding_test.mjs=.
+The read shares =mafs/parse_memo.js::parseMemo= with commands: bounded by parser
+identity and invalidated by its definition epoch. Captured parameters override actor
+constants; recapture refusals carry the figure's declaration span.
+Pins: =test/js/laws/figure_binding_test.mjs=, =test/js/notation/quoted_access_test.mjs=.
+Review and readiness limits: [[id:quoted-name-reader-review]].
 
 ** constructed figure display — incremental drawing, time-bounded pump
 :PROPERTIES:
@@ -1115,6 +1424,35 @@ reading [[id:live-rendering-split-clocks-results]].
 Integrated seam: [[id:live-rendering-seam-integration]]; C06 is adopted, not the
 whole experience contract. =test/js/runtime/settlement_test.mjs= pins settlement,
 readout drain-before-spend and new-play/edit/flush lifecycle.
+
+** generative law composition — same slot, distinct owners
+:PROPERTIES:
+:ID: nav-generative-law-composition
+:KEYWORDS: generative composition experiments def loop when named slot reuse sameSeed figure birth placement waiting owner membrane bound subject selectors
+:PATH: test/js/laws/generative_composition_test.mjs
+:END:
+Direct, helper, conditional and repeated reaches share binding and law acceptance.
+=scheduler.js::spawn= compares the attached =seed= before registering a figure's
+question; =birth= places a value without erasing its motion. =publish= permits the
+owner's waiting value at a cut, but rejects mid-instant and outside-region writes.
+=executor.js= binds subject selectors as data; =parse.js= no longer fences loops.
+Ground: [[id:laws-generative-experiments]], D057. No macro expander or new solver.
+
+** free-pair relationship — two bodyless participants
+:PROPERTIES:
+:ID: nav-free-point-relations
+:KEYWORDS: free point pair distance initialization bodyless bound expression static verdict tautology self-distance balanced midpoint original predicate atomic publication F1
+:PATH: test/js/laws/free_relations_test.mjs
+:END:
+=parse.js= reads =let distance(A,B)=r=; =executor.js= forwards selectors as data.
+=laws/authored.js= owns the retained expression, exact identity facts and measurement;
+=laws/realize.js::realizeFreeDistance= proposes an isolated balanced pair using the
+shared vector kernel. =laws/verdict.js::applyLaw= composes the original whole-law gate
+with existing settlement/publication; =bindLaw= owns the sampled expression snapshot.
+Ground: [[id:laws-free-relations-f1]], [[id:laws-free-relations-f1-audit]]. No following
+policy, live radius, actor adapter or second point store is earned by F1.
+Next probes: [[id:laws-free-relations-f2-todos]] — hand-space contract, selection
+discriminators, nearest-sphere kernel, pins, bounded admission, atomicity and play.
 
 ** render clock — epoch rebase, idle fast-forward
 :PROPERTIES:
@@ -1494,8 +1832,21 @@ The fixed operator rows feed the math lexer, expression parser, evaluator and
 PaperLang argument splitter. Surface contract: [[id:tower-surface]]. Scalar
 meanings and builtin signatures live in =mafs/tower.js=; the evaluator delegates.
 A node's KIND tells a name from a value: =operand= names something to resolve,
-=literal= holds a value as itself (=string= stays text). A capture is held through
+=literal= holds a value as itself; =string= interpolates source text. A capture is held through
 =heldValue=, a copy, never an alias. [[id:tower-tension-repr]]. Fence: =primitives_test.mjs=.
+
+** quoted names — one read across commands and figure questions
+:PROPERTIES:
+:ID: nav-quoted-name-read
+:MODULE: mafs/parse.js, mafs/evaluate.js
+:KEYWORDS: quoted name access computed dotted interpolation STRING DOT access_call parseMemo evaluateArgs question refusal epoch
+:PATH: assets/js/turtling/mafs/parse.js::parsePrimary
+:END:
+="mice".x= and ='mice[n]'.x= parse as =access=; a call suffix makes =access_call=.
+=mafs/evaluate.js::interpolate= reads the name's slots in the declaring scope, then
+the existing resolver reads the path. The name is data, never re-parsed source.
+Grammar and limits: [[id:quoted-name-reader-review]]; fence:
+=test/js/notation/quoted_access_test.mjs=.
 
 ** the grammar — a comma-list is a quantity, the delimiter names its kind
 :PROPERTIES:
@@ -1554,8 +1905,8 @@ relation loop, and D011's wait-for snapshot. D054 is not a fixed-point theorem;
 :END:
 One operation, ordered values, one value or an honest refusal. Operators and
 scalar builtins and the vector floor (=installVectorFloor=: scalar·vector scale,
-vector + vector add, scalar-function pervasion — a builtin applies pointwise, a
-scalar broadcasts and equal lengths zip) register here; the evaluator is sealed over it and never
+vector + vector add, =/= divide, every scalar builtin — ONE shape mechanism,
+=pervade=: a scalar broadcasts and equal lengths zip) register here; the evaluator is sealed over it and never
 switches. Boundary, witness and ladder: [[id:tower-center]].
 
 ** tower rounding — the tiny-signal probe

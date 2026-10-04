@@ -30,16 +30,15 @@
 
 import { sub, cross, dot, len, unit, finite3 } from "./vec3.js"
 
-const round = (v) => Math.abs(v) < 1e-12 ? 0 : v
 
 export function sampleSegment(from, to, samples = 16) {
     const out = []
     for (let i = 0; i <= samples; i++) {
         const t = i / samples
         out.push([
-            round(from[0] + (to[0] - from[0]) * t),
-            round(from[1] + (to[1] - from[1]) * t),
-            round(from[2] + (to[2] - from[2]) * t),
+            from[0] + (to[0] - from[0]) * t,
+            from[1] + (to[1] - from[1]) * t,
+            from[2] + (to[2] - from[2]) * t,
         ])
     }
     return out

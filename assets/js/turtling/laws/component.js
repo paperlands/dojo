@@ -11,6 +11,7 @@
 // two connected distances respond to one requested change, analytically.
 
 import { sub, len, unit, finite3, directionBetween, INVALID } from "./vec3.js"
+import { boundReferences } from "./authored.js"
 
 
 // The connected component of `laws` that shares a frame with any seed identity.
@@ -36,6 +37,21 @@ export function componentOf(laws, seedIds) {
         }
     }
     return { frames, laws: [...found] }
+}
+
+// Validity incidence: the active laws that must be rechecked when the given inputs
+// change. Direct reads only — a shared placement frame is a validity dependency,
+// never by itself a solve edge (that remains `componentOf`'s participants).
+// (id:laws-free-relations-read-validity, D058)
+export function validityDependents(laws, changes) {
+    // Typed keys, never delimiter strings: identity is the Map key (numeric 1 and string
+    // "1" are different identities) and aspect a Set member. (D058)
+    const wanted = new Map()
+    for (const { id, aspect } of changes) {
+        if (!wanted.has(id)) wanted.set(id, new Set())
+        wanted.get(id).add(aspect)
+    }
+    return laws.filter((law) => boundReferences(law).some((r) => wanted.get(r.id)?.has(r.aspect)))
 }
 
 // Realize a tree of distance laws from one anchor by radial propagation. Returns

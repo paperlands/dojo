@@ -58,6 +58,9 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                 // live camera. A mark and its hit target share this. (id:laws-decl-interface)
                 view: snapSE3(compositor?.viewReframe?.()),
                 camera: snapCamera(turtle.stage),
+                // The camera's OWN control state: a hand that takes the pointer must give the
+                // camera back when it lets go. (id:codex-play-eyes)
+                controlsEnabled: turtle.stage?.controls?.enabled ?? null,
                 // The play's active laws: address → predicate + owner.
                 // (id:laws-ordered-replacement)
                 laws: sch?.laws?.active?.() ?? [],

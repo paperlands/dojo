@@ -205,7 +205,9 @@ function makeMockCm6() {
                 this._state = EditorState.create({ doc: old.slice(0, from) + insert + old.slice(to) });
             }
             if (selection) this._state = { ...this._state, selection };
-            const update = { docChanged: !!changes, selectionSet: !!selection, state: this._state };
+            // Real CM6 ViewUpdates carry the view; the write path must not
+            // depend on it, but the deferral did.
+            const update = { docChanged: !!changes, selectionSet: !!selection, state: this._state, view: this };
             for (const fn of updateListeners) fn(update);
             // keep effects visible for merge-view assertions
             void effects;
@@ -542,6 +544,53 @@ describe("Terminal (CM6)", () => {
             "rename is a metadata transition — content untouched");
         assert.equal(term.getBufferInfo(id).content, "fw 7");
     })
+
+    // Regression — the write-through and the autosave it schedules are the
+    // single content writer; they must not wait on a paint. Deferring the
+    // doc-change notify to requestAnimationFrame dropped the edit on a hidden
+    // tab, an unload before the next frame, or a throttled rAF: the collection
+    // never moved and the flush paths persisted a stale copy (data loss).
+    test("a change lands in the authority even when no frame paints", () => {
+        const cm6  = makeMockCm6();
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+
+        const saved = globalThis.requestAnimationFrame;
+        globalThis.requestAnimationFrame = () => 99;   // present, never fires
+        try {
+            term.setValue("fw 31415");
+        } finally {
+            globalThis.requestAnimationFrame = saved;
+        }
+
+        assert.equal(term.getBufferInfo(id).content, "fw 31415",
+            "content must land under the keystroke, not after a paint");
+        localStorage.clear();
+    });
+
+    test("autosave persists a change that never painted", async () => {
+        const cm6  = makeMockCm6();
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+
+        const saved = globalThis.requestAnimationFrame;
+        globalThis.requestAnimationFrame = () => 99;   // present, never fires
+        try {
+            term.setValue("fw 27182");
+            await new Promise((r) => setTimeout(r, 600));
+        } finally {
+            globalThis.requestAnimationFrame = saved;
+        }
+
+        const stored = JSON.parse(localStorage.getItem("@paperlands.buffers@inner"));
+        assert.equal(stored[id].content, "fw 27182",
+            "the debounced autosave must be scheduled under the keystroke");
+        localStorage.clear();
+    });
 
     // buffers.js pure transition backing the rename path
     test("buffers.renameBuffer renames by id, leaves content and selection", async () => {

@@ -12,7 +12,7 @@ import {
     CLIENT_SPACE, viewMapping,
 } from "../../../assets/js/turtling/laws/handle.js"
 import { touchCone } from "../../../assets/js/turtling/laws/cone.js"
-import { coneRig, coneTurn, magnet } from "../../../assets/js/turtling/laws/hand.js"
+import { coneRig, coneTurn, magnet, sphereHand } from "../../../assets/js/turtling/laws/hand.js"
 import { readout, outcomeOf, OUTCOME, verdictFade } from "../../../assets/js/turtling/laws/outcome.js"
 import { CONE_RATE, CONE_EASE, DETENT_BAND, DETENT_HOLD, VERDICT_DECAY_MS } from "../../../assets/js/turtling/laws/feel.js"
 
@@ -371,4 +371,17 @@ test("the poles are a detent behind a flag", () => {
     const up = magnet(center, radius, near, { poles: true })
     assert.ok(Math.abs(Math.hypot(...up.map((v, i) => v - center[i])) - radius) < 1e-9, "still on the sphere")
     assert.ok(up[2] > near[2], `the pole pulls it up, got z = ${up[2]}`)
+})
+
+// A hand does not depend on how the facing normal is SCALED: a tiny nonzero normal is a
+// direction, not a zero-length one. A default floor would leave it unnormalized.
+// (id:cull-hunt-private-normalizers)
+test("sphereHand: scaling the facing normal does not change the hand", () => {
+    const locus = { center: [0, 0, 0], radius: 5 }
+    const ray = { origin: [0, 0, 10], direction: [0, 0, -1] }
+    const anchor = [0, 0, 5]
+    const unitHand = sphereHand.freeze({ anchor, ray, facing: [0, 0, 1], locus })
+    const tinyHand = sphereHand.freeze({ anchor, ray, facing: [0, 0, 5e-13], locus })
+    assert.equal(tinyHand.far, unitHand.far)
+    assert.deepEqual(tinyHand.disk, unitHand.disk, "the hand's geometry, not the raw facing")
 })

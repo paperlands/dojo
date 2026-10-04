@@ -4,6 +4,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { stateOf, project, silhouette, axesOf, sphereCurves, slider, marksOf } from "../../../assets/js/turtling/laws/constraints.js"
+import { sphere as sphereSet, point as pointSet } from "../../../assets/js/turtling/laws/meet.js"
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps
 const dist = (a, b) => Math.hypot(...a.map((n, i) => n - b[i]))
@@ -44,7 +45,7 @@ test("tag: not a place, not exposed, or faulted reads unresolved", () => {
 })
 
 test("one distance: a sphere, one normal, two degrees", () => {
-    const s = stateOf({ at: [5, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 5 }] })
+    const s = stateOf({ at: [5, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 5, set: sphereSet([0, 0, 0], 5) }] })
     assert.equal(s.tag, "free")
     assert.equal(s.dof, 2)
     assert.deepEqual(s.normals, [[1, 0, 0]])
@@ -52,12 +53,12 @@ test("one distance: a sphere, one normal, two degrees", () => {
 })
 
 test("coincident points take a stated direction, disclosed as policy", () => {
-    const s = stateOf({ at: [0, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 5 }] })
+    const s = stateOf({ at: [0, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 5, set: sphereSet([0, 0, 0], 5) }] })
     assert.deepEqual(s.normals, [[1, 0, 0]])
 })
 
 test("project: a desired point lands on the sphere, radially", () => {
-    const s = stateOf({ at: [5, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 5 }] })
+    const s = stateOf({ at: [5, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 5, set: sphereSet([0, 0, 0], 5) }] })
     assert.deepEqual(project(s, [10, 0, 0]), [5, 0, 0])
     const p = project(s, [3, 4, 0])
     assert.ok(near(dist(p, [0, 0, 0]), 5), "on the sphere")
@@ -65,7 +66,7 @@ test("project: a desired point lands on the sphere, radially", () => {
 })
 
 test("project: at the pole it keeps the stated direction", () => {
-    const s = stateOf({ at: [5, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 5 }] })
+    const s = stateOf({ at: [5, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 5, set: sphereSet([0, 0, 0], 5) }] })
     assert.deepEqual(project(s, [0, 0, 0]), [5, 0, 0])
 })
 
@@ -108,7 +109,7 @@ test("a rim is a contour: drawn off the shell's axis, dropped on it", () => {
 })
 
 test("axes: the normal rests, the tangent moves, and no camera enters", () => {
-    const s = stateOf({ at: [5, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 5 }] })
+    const s = stateOf({ at: [5, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 5, set: sphereSet([0, 0, 0], 5) }] })
     const ax = axesOf(s)
     assert.deepEqual(ax.normal, [1, 0, 0], "the constraint normal is the resting axis")
     assert.ok(near(dot(ax.normal, ax.tangent[0]), 0))
@@ -128,7 +129,7 @@ test("curves: parallel shares A's latitude; the meridian passes through A", () =
 })
 
 test("zero radius: the held endpoint fixes one point, not two degrees", () => {
-    const s = stateOf({ at: [0, 0, 0], constraints: [{ feature: "distance", other: [3, 0, 0], radius: 0, otherHeld: true }] })
+    const s = stateOf({ at: [0, 0, 0], constraints: [{ feature: "distance", other: [3, 0, 0], radius: 0, otherHeld: true, set: pointSet([3, 0, 0]) }] })
     assert.equal(s.tag, "pinned")
     assert.equal(s.dof, 0)
     assert.deepEqual(s.locus, { kind: "point", at: [3, 0, 0] })
@@ -141,7 +142,7 @@ test("zero radius: the held endpoint fixes one point, not two degrees", () => {
 // this point's independent freedom — the request method conserves the partner.
 // (id:laws-freedom, id:laws-experiment-7-ruling)
 test("coincidence names the coupling without offering the pair's translation", () => {
-    const s = stateOf({ at: [0, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 0 }] })
+    const s = stateOf({ at: [0, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 0, set: pointSet([0, 0, 0]) }] })
     assert.equal(s.truth.pinned, false, "a movable other does not pin")
     assert.equal(s.truth.coincident, true, "the coupling is named")
     assert.equal(s.dof, 0, "with the partner held there is no independent freedom")
@@ -156,8 +157,8 @@ test("coincidence names the coupling without offering the pair's translation", (
 // locus and the projection come from the same meet as the freedom. (id:laws-freedom)
 test("a zero distance composes: locus and projection read the one set", () => {
     const s = stateOf({ at: [0, 0, 0], constraints: [
-        { feature: "distance", other: [0, 0, 0], radius: 0, otherHeld: false },
-        { feature: "distance", other: [5, 0, 0], radius: 5, otherHeld: true },
+        { feature: "distance", other: [0, 0, 0], radius: 0, otherHeld: false, set: pointSet([0, 0, 0]) },
+        { feature: "distance", other: [5, 0, 0], radius: 5, otherHeld: true, set: sphereSet([5, 0, 0], 5) },
     ] })
     assert.equal(s.dof, 0)
     assert.equal(s.interaction.movable, "none")
@@ -198,7 +199,7 @@ test("headed and pinned are separate facts, not one exclusive tag", () => {
 })
 
 test("project at the centre uses the same +x policy as realization", () => {
-    const s = stateOf({ at: [0, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 5 }] })
+    const s = stateOf({ at: [0, 0, 0], constraints: [{ feature: "distance", other: [0, 0, 0], radius: 5, set: sphereSet([0, 0, 0], 5) }] })
     assert.deepEqual(project(s, [0, 0, 0]), [5, 0, 0])
 })
 

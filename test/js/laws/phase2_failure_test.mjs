@@ -31,6 +31,35 @@ test("acceptance: pinning over a distance is a located obstruction, no lie", () 
     assert.equal(scheduler.laws.active()[0].feature, "distance")
 })
 
+test("acceptance: a pin over a distance holds C and realizes its movable free partner", () => {
+    // Both B and C are free points: C's pin is met by moving B, so the joint exit
+    // anchors on the pinned member and realizes B on its sphere — never `obstructed`.
+    const scheduler = buildWorld({ admit: pass })
+    const host = scheduler.hotSwapChild("host", fork("host",
+        "let B\nlet C\nlet distance(B,C)=50\nlet C=(50,20,20)"))
+    drive(scheduler)
+    const B = host.children.get("B")
+    const C = host.children.get("C")
+    assert.equal(host.error, null, "a movable partner is not a conflict")
+    assert.equal(scheduler.laws.active().length, 2, "the pin and the distance both stand")
+    assert.deepEqual(pos(C), [50, 20, 20], "the pin holds")
+    const d = Math.hypot(...pos(B).map((n, i) => n - pos(C)[i]))
+    assert.ok(Math.abs(d - 50) < 1e-3, "the free partner is realized on its sphere")
+})
+
+test("acceptance: a distance declared over a pin realizes about the same anchor", () => {
+    const scheduler = buildWorld({ admit: pass })
+    const host = scheduler.hotSwapChild("host", fork("host",
+        "let C=(50,20,20)\nlet B\nlet distance(B,C)=50"))
+    drive(scheduler)
+    const B = host.children.get("B")
+    const C = host.children.get("C")
+    assert.equal(host.error, null)
+    assert.deepEqual(pos(C), [50, 20, 20], "the anchor does not move")
+    const d = Math.hypot(...pos(B).map((n, i) => n - pos(C)[i]))
+    assert.ok(Math.abs(d - 50) < 1e-3, "the pair is realized about the pin, both orders")
+})
+
 test("acceptance: a definition introduces its subject — `let V.position = origin` needs no `let V`", () => {
     const scheduler = buildWorld({ admit: pass })
     const host = scheduler.hotSwapChild("host", fork("host", "let V.position = origin"))

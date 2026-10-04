@@ -20,12 +20,17 @@ import { directionBetween } from "./laws/vec3.js"
 //
 // The same rule guards whatever else will become geometry — a size, a thickness, a
 // duration. A value that cannot be drawn is not drawn.
-// The predicate is the numerics surface's, not this file's. (conditionOf)
+// A SCALAR's condition is the numerics surface's, not this file's. (conditionOf)
 const admitted = (v) => conditionOf(v) === FINITE
-const poseAdmitted = (pos) => pos.every(admitted)
 const resultMeasure = (ctx, value, expr) => admitted(value) ? value : measure(value, { as: ctx.as, expr })
-const requirePose = (ctx, pos, expr) => {
-    if (!poseAdmitted(pos)) resultMeasure(ctx, pos.find(v => !admitted(v)), expr)
+// A resulting POSE's validity is SE3.isValid's — the one authority the scheduler already
+// names at admission. The command carries the accepted rotation, so only a position's
+// arithmetic can newly break it. This guard never repairs and never re-decides the fact;
+// it NAMES the refused value for the author. (phase 1: valid resulting state)
+// (phase 1: valid resulting state)
+const refuseBadPose = (ctx, pose, expr) => {
+    if (SE3.isValid({ rotation: ctx.transform.rotation, position: pose })) return
+    resultMeasure(ctx, pose.find((v) => !admitted(v)), expr)
 }
 
 // --- Movement commands ---
@@ -34,7 +39,7 @@ function fw(ctx, distance = 0) {
     const t = ctx.transform
     const [wx, wy, wz] = t.rotation.rotateVec(distance, 0, 0)
     const newPos = [t.position[0] + wx, t.position[1] + wy, t.position[2] + wz]
-    requirePose(ctx, newPos, "fw position")
+    refuseBadPose(ctx, newPos, "fw position")
     const transform = { rotation: t.rotation, position: newPos }
 
     if (ctx.style.down) {
@@ -46,7 +51,7 @@ function fw(ctx, distance = 0) {
 // Absolute in the frame that created this ambient (same space as home).
 function goTo(ctx, x = 0, y = 0, z = null) {
     const pos = [x, y, z ?? ctx.transform.position[2]]
-    requirePose(ctx, pos, "goto position")
+    refuseBadPose(ctx, pos, "goto position")
     const transform = { rotation: ctx.transform.rotation, position: pos }
     if (ctx.style.down) {
         return { transform, stroke: "extend", point: pos }
@@ -56,7 +61,7 @@ function goTo(ctx, x = 0, y = 0, z = null) {
 
 function jmpto(ctx, x = 0, y = 0, z = null) {
     const pos = [x, y, z ?? ctx.transform.position[2]]
-    requirePose(ctx, pos, "jmpto position")
+    refuseBadPose(ctx, pos, "jmpto position")
     return {
         transform: { rotation: ctx.transform.rotation, position: pos },
         stroke: "break"
@@ -67,7 +72,7 @@ function jmp(ctx, distance = 0) {
     const t = ctx.transform
     const [wx, wy, wz] = t.rotation.rotateVec(distance, 0, 0)
     const newPos = [t.position[0] + wx, t.position[1] + wy, t.position[2] + wz]
-    requirePose(ctx, newPos, "jmp position")
+    refuseBadPose(ctx, newPos, "jmp position")
     const transform = { rotation: t.rotation, position: newPos }
     // jmp always breaks the path (pen up, move, pen down)
     return { transform, stroke: "break" }
@@ -109,7 +114,7 @@ function faceto(ctx, x = 0, y = 0, z = null) {
     const target = [x, y, z ?? pos[2]]
     // The displacement is admitted BEFORE it is asked: a step whose arithmetic
     // overflowed is not taken, and the author is told. (phase 1: valid resulting state)
-    requirePose(ctx, [target[0] - pos[0], target[1] - pos[1], target[2] - pos[2]], "faceto direction")
+    refuseBadPose(ctx, [target[0] - pos[0], target[1] - pos[1], target[2] - pos[2]], "faceto direction")
     // Then the question is the kernel's, judged on the displacement alone: where the
     // figure stands is not a policy, so a resolvable separation aims at every placement
     // and the same figure keeps its bearing in every frame. null is exactly the
@@ -214,7 +219,7 @@ function bold(ctx, x = 1) {
 function beColour(ctx, color = "silver") {
     let resolved = color
     if (color === "invisible") resolved = "#00000000"
-    if (Number.isFinite(color)) resolved = `hsla(${~~(360 * color)}, 70%,  72%)`
+    if (conditionOf(color) === FINITE) resolved = `hsla(${~~(360 * color)}, 70%,  72%)`
     if (color === "random") resolved = `hsla(${~~(360 * (ctx.random ?? Math.random)())}, 70%,  72%)`
     if (/^([0-9a-f]{3}){1,2}$/i.test(color)) resolved = "#" + color
     return {

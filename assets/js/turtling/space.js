@@ -12,10 +12,12 @@
 //
 // An empty list, a non-array and a non-finite component do not land in the space.
 
+import { conditionOf, FINITE } from "./numerics.js"
+
 export const SPACE = 3
 
 export function toSpace(value) {
     if (!Array.isArray(value) || value.length < 1) return null
     const n = [value[0], value.length > 1 ? value[1] : 0, value.length > 2 ? value[2] : 0]
-    return n.every((x) => typeof x === "number" && Number.isFinite(x)) ? n : null
+    return n.every((x) => conditionOf(x) === FINITE) ? n : null
 }

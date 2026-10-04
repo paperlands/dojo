@@ -4,6 +4,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { realizeDistance, validateDistance, realizeTilt, DEFAULT_ARM, ACCEPT_TOL } from "../../../assets/js/turtling/laws/realize.js"
+import { nearest, sphere } from "../../../assets/js/turtling/laws/meet.js"
 
 const close = (a, b) => Math.abs(a - b) <= 1e-9
 
@@ -26,6 +27,15 @@ test("realize: coincident points take a repeatable direction, disclosed as polic
     const b = realizeDistance([0, 0, 0], [0, 0, 0], 5)
     assert.deepEqual(a.pose, [5, 0, 0], "the stated +x direction")
     assert.deepEqual(a.pose, b.pose, "the same choice every time")
+})
+
+test("realize: an invalid target is refused, never given the coincident +x policy", () => {
+    for (const target of [[NaN, 0, 0], [Infinity, 0, 0], [null, 0, 0], ["1", 0, 0], new Array(3)]) {
+        const r = realizeDistance(target, [0, 0, 0], 5)
+        assert.equal(r.ok, false, `target ${String(target)}`)
+        assert.match(r.reason, /target/, "refused as unplaceable, not placed")
+        assert.equal(r.pose, undefined, "no pose is invented from invalid geometry")
+    }
 })
 
 test("realize: the target moves along its own ray, the observer is held", () => {
@@ -100,18 +110,30 @@ test("realizeTilt: the default generator turns with the frame, not a world axis"
 test("realizeTilt: an explicit arm sets the apex default length", () => {
     const r = realizeTilt([0, 0, 0], [1, 0, 0], [0, 0, 1], [0, 0, 0], 30, 7)
     assert.ok(close(Math.hypot(...r.pose), 7), "the arm, not the unit default")
-
-// A proposal algorithm is a proposal, not a truth — and a repaired direction
-// kernel does not repair every one of them. realizeDistance divides a displacement
-// by a length that can run off the number line, so its candidate can be non-finite;
-// the independent check is what refuses it. Both halves stay stated here, so
-// neither the limit nor the check can go quiet. (id:laws-build-solve-seam)
-test("the seam: an overflowing proposal is refused by the independent check", () => {
-    const target = [-1e308, 0, 0]
-    const observer = [1e308, 0, 0]
-    const r = realizeDistance(target, observer, 5)
-    assert.equal(r.ok, true, "the algorithm still proposes, honestly reported")
-    assert.ok(r.pose.some((n) => !Number.isFinite(n)), "with an overflowing component")
-    assert.equal(validateDistance(target, observer, 5).ok, false, "the checker refuses it")
 })
+
+// A proposal algorithm is a proposal, not a truth. The direction kernel no longer overflows
+// on a huge separation, but the OUTPUT can still run off the number line; the independent
+// check is what refuses it. Both halves stay stated here, so neither the limit nor the check
+// can go quiet. (id:laws-build-solve-seam)
+test("the seam: an overflowing proposal is refused by the independent check", () => {
+    const target = [1.5e308, 0, 0]
+    const observer = [1e308, 0, 0]
+    const r = realizeDistance(target, observer, 1e308)
+    assert.equal(r.ok, true, "the algorithm still proposes, honestly reported")
+    assert.ok(r.pose.some((n) => !Number.isFinite(n)), "with an overflowing output")
+    assert.equal(validateDistance(r.pose, observer, 1e308).ok, false, "the checker refuses the CANDIDATE")
+})
+
+// The direction kernel no longer lets a huge-but-finite separation collapse the proposal to
+// [0,0,0]: the candidate is on the sphere and the independent check accepts it.
+// (id:cull-hunt-private-normalizers)
+test("realizeDistance uses the stable direction for a huge-but-finite separation", () => {
+    const observer = [0, 0, 0]
+    const target = [1.7e308, 1.7e308, 0]
+    const r = realizeDistance(target, observer, 5)
+    assert.equal(r.ok, true)
+    assert.equal(validateDistance(r.pose, observer, 5).ok, true, "the candidate is on the sphere")
+    const shared = nearest(sphere(observer, 5), target).at
+    for (let i = 0; i < 3; i++) assert.ok(Math.abs(r.pose[i] - shared[i]) < 1e-9, "agrees with the sphere kernel")
 })

@@ -116,11 +116,21 @@ export class Parser {
             return this.parseGroup(options);
         }
 
-        // String literal — a LITERAL, not a reference. It keeps its own node so
-        // evaluation can never mistake the word 'pi' for the constant pi.
+        // A quoted name is a string followed by a path, not reparsed source.
+        // It stays an AST read in commands, definitions and figure questions.
         if (token.type === 'STRING') {
             this.advance();
-            return new ASTNode('string', token.value);
+            const name = new ASTNode('string', token.value);
+            if (this.currentToken()?.type !== 'DOT') return name;
+            this.advance();
+            const path = this.currentToken();
+            if (path?.type !== 'IDENTIFIER') throw new Error('Expected a property after quoted name');
+            this.advance();
+            if (isOpenType(this.currentToken()?.type)) {
+                const call = this.parseFunctionCall('.' + path.value, options);
+                return new ASTNode('access_call', path.value, [name, ...call.children]);
+            }
+            return new ASTNode('access', path.value, [name]);
         }
         throw new Error(`Unexpected token: ${token.value}`);
     }

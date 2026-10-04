@@ -6,6 +6,7 @@ import assert from "node:assert/strict"
 import { buildWorld, fork, drive } from "./harness.mjs"
 import { frameWorldTransform } from "../../../assets/js/turtling/scheduler.js"
 import { stateOf } from "../../../assets/js/turtling/laws/constraints.js"
+import { plane as planeSet } from "../../../assets/js/turtling/laws/meet.js"
 import { DEFAULT_ARM } from "../../../assets/js/turtling/laws/realize.js"
 import { parseProgram } from "../../../assets/js/turtling/parse.js"
 import { AUTHORED } from "../../../assets/js/turtling/laws/authored.js"
@@ -68,13 +69,14 @@ test("a hand request stays on the signed half", () => {
 
 test("the freedom display names the half-plane, and a height law meets in a ray", () => {
     const hp = AUTHORED.bearing.set(
-        { feature: "bearing", frame: "F", predicate: 30, endpoints: ["P"] },
-        { poseOf: () => ({ position: [0, 0, 0], rotation: { x: 0, y: 0, z: 0, w: 1 } }) },
+        { feature: "bearing", frame: "F", predicate: 30, endpoints: ["P"],
+            expression: { type: "bearing", references: ["P"], frame: "F", value: 30 } },
+        { placementOf: () => ({ position: [0, 0, 0], rotation: { x: 0, y: 0, z: 0, w: 1 } }) },
     )
     assert.equal(hp.kind, "halfplane")
     const state = stateOf({ at: [1, 0, 0], constraints: [
         { feature: "bearing", set: hp },
-        { feature: "coordinate", axis: "z", value: 0, plane: { point: [0, 0, 0], normal: [0, 0, 1] } },
+        { feature: "coordinate", axis: "z", value: 0, plane: { point: [0, 0, 0], normal: [0, 0, 1] }, set: planeSet([0, 0, 0], [0, 0, 1]) },
     ] })
     assert.equal(state.locus.kind, "ray")
     assert.equal(state.dof, 1)

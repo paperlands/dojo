@@ -11,12 +11,18 @@
 // and the three honest non-answers: empty · uncertain · unresolved.
 
 import { meetPlaneSphere, REL_TOL, ACCEPT_TOL } from "./relationships.js"
+import { selectAngle } from "./angle.js"
 import { sub, add, scale, dot, cross, len, finite3, unit as unitKernel, directionBetween, INVALID } from "./vec3.js"
 import { openAngle, coneLateral } from "./cone.js"
 
 // A direction below meet's conditioning threshold is not one; the tolerance is
 // meet's policy, so it is passed, not defaulted. (id:laws-contradiction)
 const unit = (v) => unitKernel(v, REL_TOL)
+// ACCEPT_TOL is a LENGTH budget. Where a quantity is a SQUARED length BY NATURE — the squared
+// radius h² of an intersection circle — it compares against its square. A discriminant is not
+// that: it is coefficient-scaled, so it is classified by the ROOT APARTNESS (a length), never
+// against a fixed epsilon. (id:cull-hunt-dimensional-tolerance)
+const ACCEPT_TOL2 = ACCEPT_TOL * ACCEPT_TOL
 
 
 // An orthonormal frame for a plane: n and a tangent pair, without the camera.
@@ -55,6 +61,14 @@ export const plane = (point, normal) => ({ kind: "plane", point: [...point], nor
 export const halfplane = (point, normal, dir) => ({ kind: "halfplane", point: [...point], normal: [...unit(normal) ?? normal], dir: [...unit(dir) ?? dir] })
 export const sphere = (center, radius) => ({ kind: "sphere", center: [...center], radius })
 export const cone = (apex, axis, halfAngle) => ({ kind: "cone", apex: [...apex], axis: [...unit(axis) ?? axis], halfAngle })
+
+// The angle locus: the directions at exactly `degrees` from the axis through the apex —
+// ONE nappe, EXCLUDING the apex, where the arm has no direction at all. It takes the
+// angle VERBATIM, and that is why it is not a cone: a cone names its NARROW opening, so
+// there θ and 180 − θ are one surface and both nappes plus the apex are its members.
+// (id:laws-freedom)
+export const angle = (apex, axis, degrees) => ({ kind: "angle", apex: [...apex], axis: [...unit(axis) ?? axis], degrees })
+
 export const conic = (shape, origin, u, v, normal, Q) => ({ kind: "conic", shape, origin: [...origin], u: [...u], v: [...v], normal: [...normal], Q: [...Q] })
 
 const samePoint = (a, b) => len(sub(a, b)) <= ACCEPT_TOL
@@ -156,9 +170,11 @@ function meetLineSphere(ln, sp) {
     const b = dot(m, ln.dir)
     const c = dot(m, m) - sp.radius * sp.radius
     const disc = b * b - c
-    if (disc < -ACCEPT_TOL) return EMPTY
-    if (disc <= ACCEPT_TOL) return point(add(ln.point, scale(ln.dir, -b)))
-    const s = Math.sqrt(disc)
+    // disc = radius² − (perpendicular distance)²: a SQUARED length. A miss within the LENGTH
+    // budget is a tangent point; the two roots are real once they are further apart than it.
+    if (disc < -2 * sp.radius * ACCEPT_TOL) return EMPTY
+    const s = Math.sqrt(Math.max(0, disc))   // half the root separation, a length
+    if (s <= ACCEPT_TOL) return point(add(ln.point, scale(ln.dir, -b)))
     return points([add(ln.point, scale(ln.dir, -b + s)), add(ln.point, scale(ln.dir, -b - s))])
 }
 
@@ -172,13 +188,15 @@ function meetSphereSphere(a, b) {
     // meet: an unanswerable question shares no answer with a coincidence. (P2)
     if (!Number.isFinite(d)) return UNRESOLVED
     if (d <= REL_TOL) return Math.abs(a.radius - b.radius) <= ACCEPT_TOL ? a : EMPTY
+    // Separated or nested by more than the LENGTH budget: no shared point. (units, not h²)
+    if (d > a.radius + b.radius + ACCEPT_TOL) return EMPTY
+    if (d < Math.abs(a.radius - b.radius) - ACCEPT_TOL) return EMPTY
     const u = directionBetween(a.center, b.center)
     if (u === INVALID) return UNRESOLVED   // handled before any geometry consumes it
     const x = (a.radius * a.radius - b.radius * b.radius + d * d) / (2 * d)
     const h2 = a.radius * a.radius - x * x
-    if (h2 < -ACCEPT_TOL) return EMPTY
     const center = add(a.center, scale(u, x))
-    return h2 <= ACCEPT_TOL ? point(center) : circle(center, u, Math.sqrt(Math.max(0, h2)))
+    return h2 <= ACCEPT_TOL2 ? point(center) : circle(center, u, Math.sqrt(Math.max(0, h2)))
 }
 
 function meetsPoint(pt, set) {
@@ -191,8 +209,15 @@ function meetsPoint(pt, set) {
     }
 }
 
-const ORDER = ["space", "empty", "uncertain", "unresolved", "point", "points", "ray", "line", "circle", "halfplane", "plane", "sphere", "cone", "conic"]
+const ORDER = ["space", "empty", "uncertain", "unresolved", "point", "points", "ray", "line", "circle", "halfplane", "plane", "sphere", "angle", "cone", "conic"]
 const rank = (k) => ORDER.indexOf(k)
+
+// Named geometry is plain data; state copies it without learning its fields. (D058)
+export function copyLocus(set) {
+    if (!set || rank(set.kind) < 0 ||
+        [SPACE, EMPTY, UNCERTAIN, UNRESOLVED].some((result) => result.kind === set.kind)) return null
+    return structuredClone(set)
+}
 
 // The meet of two named sets. Commutative by canonical pair order; a pair with no
 // named meet is UNRESOLVED, never a guess. (id:laws-freedom)
@@ -291,7 +316,7 @@ function meetCircleCircle(a, b) {
     const u = directionBetween(a.center, b.center)
     if (u === INVALID) return UNRESOLVED   // invalid input is not the coincident pair (P2)
     const foot = add(a.center, scale(u ?? [1, 0, 0], x))
-    if (h2 <= ACCEPT_TOL) return point(foot)
+    if (h2 <= ACCEPT_TOL2) return point(foot)
     const perp = unit(cross(a.normal, sub(b.center, a.center)))
     const s = Math.sqrt(Math.max(0, h2))
     return perp ? points([add(foot, scale(perp, s)), add(foot, scale(perp, -s))]) : UNRESOLVED
@@ -344,10 +369,15 @@ function meetLineCone(ln, c) {
         return point(add(ln.point, scale(ln.dir, -qc / qb)))
     }
     const disc = qb * qb - 4 * qa * qc
-    if (disc < -ACCEPT_TOL) return EMPTY
-    if (disc <= ACCEPT_TOL) return point(add(ln.point, scale(ln.dir, -qb / (2 * qa))))
-    const s = Math.sqrt(disc)
-    return points([add(ln.point, scale(ln.dir, (-qb + s) / (2 * qa))), add(ln.point, scale(ln.dir, (-qb - s) / (2 * qa)))])
+    // Roots apart by a DISTANCE; a discriminant is a squared, coefficient-scaled quantity.
+    // Classify by the apartness (arc length); the sign is taken against that same scale.
+    // (id:cull-hunt-dimensional-tolerance)
+    const at = (t) => add(ln.point, scale(ln.dir, t))
+    const mid = -qb / (2 * qa)
+    const apart = Math.sqrt(Math.abs(disc)) / (2 * Math.abs(qa))
+    if (apart <= ACCEPT_TOL) return point(at(mid))
+    if (disc < 0) return EMPTY
+    return points([at(mid - apart), at(mid + apart)])
 }
 
 function meetPlaneCone(pl, c) {
@@ -415,10 +445,11 @@ function meetLineConic(ln, co) {
         return point(world(-qc / qb))
     }
     const disc = qb * qb - 4 * qa * qc
-    if (disc < -ACCEPT_TOL) return EMPTY
-    if (disc <= ACCEPT_TOL) return point(world(-qb / (2 * qa)))
-    const s = Math.sqrt(disc)
-    return points([world((-qb + s) / (2 * qa)), world((-qb - s) / (2 * qa))])
+    const mid = -qb / (2 * qa)
+    const apart = Math.sqrt(Math.abs(disc)) / (2 * Math.abs(qa))   // arc length
+    if (apart <= ACCEPT_TOL) return point(world(mid))
+    if (disc < 0) return EMPTY
+    return points([world(mid - apart), world(mid + apart)])
 }
 
 function meetConicPlane(co, pl) {
@@ -480,6 +511,8 @@ export function dofOf(set) {
         case "halfplane": return 2
         case "sphere": return 2
         case "cone": return (set.halfAngle <= 1e-9 || set.halfAngle >= 180 - 1e-9) ? 1 : 2
+        // A straight angle is a RAY; an interior one is a surface. Read verbatim.
+        case "angle": return (set.degrees <= 1e-9 || set.degrees >= 180 - 1e-9) ? 1 : 2
         case "conic": return 1
         case "line": return 1
         case "ray": return 1
@@ -494,7 +527,7 @@ export function dofOf(set) {
 // The nearest point of a named set to a request. A finite set of candidates is
 // resolved by policy: keep the current branch when it is still valid, else the
 // nearest. (id:laws-freedom)
-export function nearest(set, target, { keep = null, margin = 0 } = {}) {
+export function nearest(set, target, { keep = null, margin = 0, policy = null } = {}) {
     if (!set || !finite3(target)) return { ok: false, kind: "unresolved" }
     switch (set.kind) {
         case "space": return { ok: true, at: [...target] }
@@ -589,6 +622,15 @@ export function nearest(set, target, { keep = null, margin = 0 } = {}) {
             let best = null, bestD = Infinity
             for (const b of branches) for (const p of b) { const d = len(sub(p, target)); if (d < bestD) { bestD = d; best = p } }
             return best ? { ok: true, at: [...best], branch: "sampled" } : { ok: false, kind: "unresolved" }
+        }
+        case "angle": {
+            // ONE selection, shared with realizeAngle(), so the two entry points cannot
+            // drift. The policy is the caller's and is passed through.
+            const picked = selectAngle(set, target, policy ?? undefined)
+            if (!picked.ok) return { ok: false, kind: "unresolved", reason: picked.reason }
+            const declared = picked.azimuth === "declared" || picked.arm === "declared"
+            return { ok: true, at: picked.at, selection: picked.selection,
+                ...(declared ? { branch: "declared" } : {}) }
         }
         case "empty": return { ok: false, kind: "contradiction" }
         case "uncertain": return { ok: false, kind: "unresolved" }

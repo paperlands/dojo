@@ -189,6 +189,21 @@ describe('the semantic center — one door, composition as depth', () => {
         assert.equal(evaluator.applyFunction('sqrt', [4]), 2)
     })
 
+    test('evaluators share a frozen arithmetic floor, not their changing names', () => {
+        const a = new Evaluator(), b = new Evaluator()
+        assert.strictEqual(a.tower, b.tower)
+        assert.ok(Object.isFrozen(a.tower))
+        assert.throws(() => { a.tower.apply = () => 0 }, TypeError)
+        assert.throws(() => a.tower.define('+', ['number', 'number'], () => 0), RegistrySealed)
+        a.constants.pi = () => 7
+        a.shadowable.clear()
+        a.userFunctions = new Map()
+        assert.equal(b.constants.pi(), Math.PI)
+        assert.ok(b.shadowable.has('mod'))
+        assert.equal(b.userFunctions, null)
+        assert.equal(b.applyOperator('+', 2, 3), 5)
+    })
+
     test('the parser and the center share one builtin signature list', () => {
         const parser = new Parser()
         assert.equal(parser.builtins.size, SCALAR_BUILTINS.length)

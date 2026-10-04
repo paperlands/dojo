@@ -77,3 +77,13 @@ test("arcOk: a represented arc keeps its radius; a malformed one is refused", ()
     const p = arcPoint({ center: [1, 2, 3], radius: 5, axis: [0, 0, 1], fromAngle: 0, toAngle: Math.PI }, 0.5)
     assert.ok(Math.abs(Math.hypot(p[0] - 1, p[1] - 2, p[2] - 3) - 5) < 1e-9, "a derived point is on the radius")
 })
+
+// A sampler does not alter geometry. A stationary point at 5e-13 keeps its length, so the
+// sampled residual agrees with the analytic checker even at tolerance zero.
+// (id:cull-hunt-path-snapping)
+test("sampleSegment does not snap geometry: the sampler agrees with the analytic checker", () => {
+    const p = [5e-13, 0, 0]
+    assert.deepEqual(sampleSegment(p, p, 1)[0], p, "the point is not snapped to zero")
+    assert.equal(segmentResidual(p, p, [0, 0, 0], 0), 5e-13)
+    assert.equal(segmentOk({ from: p, to: p, other: [0, 0, 0], radius: 0, tol: 0 }).ok, false)
+})

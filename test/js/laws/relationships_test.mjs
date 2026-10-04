@@ -218,3 +218,14 @@ test("the nearest point on the meet is a consequence of the meet", () => {
     assert.equal(nearestOnMeet(meetPlaneSphere(plane, [0, 2, 0], 1), [4, 0, 0]).kind, "contradiction")
     assert.equal(nearestOnMeet(meetPlaneSphere(plane, [0, 2, 0], 2), [4, 0, 0]).kind, "unresolved")
 })
+
+// A finite but overflowing request must not become a plausible point: when the lever cannot
+// be normalized there is no point on the circle to answer, so the meet is unresolved.
+// (id:cull-hunt-private-normalizers)
+test("nearestOnMeet refuses an overflowing request instead of answering the centre", () => {
+    const n = [1 / Math.sqrt(3), 1 / Math.sqrt(3), 1 / Math.sqrt(3)]
+    const circle = { kind: "circle", center: [0, 0, 0], radius: 5, normal: n }
+    const r = nearestOnMeet(circle, [1.7e308, 1.7e308, 1.7e308])
+    assert.equal(r.ok, false)
+    assert.equal(r.kind, "unresolved")
+})

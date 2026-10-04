@@ -7,7 +7,7 @@
 //   REALIZE_TOL — exact placement (floating noise only)
 //   ACCEPT_TOL  — the independent check's absolute tolerance, display scale
 
-import { sub, add, scale, dot, len, finite3, unit as unitKernel } from "./vec3.js"
+import { sub, add, scale, dot, len, finite3, directionBetween, INVALID, unit as unitKernel } from "./vec3.js"
 import { openAngle, RAD } from "./cone.js"
 
 export const REALIZE_TOL = 1e-9
@@ -27,18 +27,42 @@ export function realizeDistance(target, observer, want) {
     if (!finite3(observer)) {
         return { ok: false, reason: 'observer position is unknown' }
     }
+    // Invalid input is not a coincidence: a target we cannot place is refused here,
+    // never given the coincident pair's +x policy. (P2)
+    if (!finite3(target)) {
+        return { ok: false, reason: 'target position is unknown' }
+    }
     if (!Number.isFinite(want) || want < 0) {
         return { ok: false, reason: 'distance must be a non-negative finite number' }
     }
-    const d = finite3(target) ? len(sub(target, observer)) : NaN
-    if (Math.abs(d - want) <= REALIZE_TOL) return { ok: true, pose: [...target], moved: false }
-    let ux = 1, uy = 0, uz = 0
-    if (d > REALIZE_TOL) {
-        const [dx, dy, dz] = sub(target, observer)
-        ux = dx / d; uy = dy / d; uz = dz / d
-    }
-    const pose = [observer[0] + ux * want, observer[1] + uy * want, observer[2] + uz * want]
+    // The already-satisfied test measures a LENGTH; the direction reuses the stable kernel
+    // so a huge-but-finite pair still yields a direction instead of [0,0,0]. A direction
+    // below REALIZE_TOL is not one — that caller policy is preserved.
+    const d = len(sub(target, observer))
+    if (Number.isFinite(d) && Math.abs(d - want) <= REALIZE_TOL) return { ok: true, pose: [...target], moved: false }
+    const dir = d > REALIZE_TOL ? directionBetween(observer, target) : null
+    if (dir === INVALID) return { ok: false, reason: 'distance direction is unknown' }
+    const u = dir ?? [1, 0, 0]   // coincident: the +x policy, stated, not a repair
+    const pose = [observer[0] + u[0] * want, observer[1] + u[1] * want, observer[2] + u[2] * want]
     return { ok: true, pose, moved: true }
+}
+
+// Equal world-space stays for an unpinned pair; the tie is context, not truth.
+// No direction is invented for invalid geometry. (id:laws-free-relations-f1)
+export function realizeFreeDistance(a, b, want, tie) {
+    if (!finite3(a) || !finite3(b) || !Number.isFinite(want) || want < 0) {
+        return { ok: false, reason: 'free distance needs finite positions and a non-negative finite radius' }
+    }
+    if (validateDistance(a, b, want).ok) return { ok: true, positions: [[...a], [...b]] }
+    const direction = directionBetween(a, b)
+    if (direction === INVALID) return { ok: false, reason: 'free distance has invalid seed geometry' }
+    const axis = direction ?? unitKernel(tie, 0)
+    if (!axis) return { ok: false, reason: 'coincident seeds need an explicit tie direction' }
+    const center = a.map((x, i) => x / 2 + b[i] / 2)
+    const half = want / 2
+    const positions = [center.map((x, i) => x - half * axis[i]), center.map((x, i) => x + half * axis[i])]
+    return positions.every(finite3) ? { ok: true, positions }
+        : { ok: false, reason: 'free distance candidate is outside finite geometry' }
 }
 
 // Realize a point on a cone: `want` from the observer's nose at the point's own

@@ -6,9 +6,10 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import {
     SPACE, EMPTY, UNCERTAIN, UNRESOLVED,
-    point, points, line, circle, plane, sphere, cone, halfplane, ray, conicSamples,
+    point, points, line, circle, plane, sphere, cone, halfplane, ray, conic, conicSamples,
     meet, meetAll, dofOf, nearest,
 } from "../../../assets/js/turtling/laws/meet.js"
+import { validateDistance } from "../../../assets/js/turtling/laws/realize.js"
 
 const at3 = (p) => p.map((n) => +n.toFixed(6))
 const Y0 = plane([0, 0, 0], [0, 1, 0])
@@ -250,4 +251,34 @@ test("near-parallel line and plane cross far away; only exact parallelism emptie
     // The same for a line sharing the plane's origin.
     assert.equal(meet(ln, plane([0, 0, 0], [5e-10, 1, 0])).kind, "uncertain")
     assert.equal(meet(ln, plane([0, 0, 0], [0, 1, 0])).kind, "line", "exactly parallel and in the plane")
+})
+
+// A squared clearance compares against a SQUARED budget: two small intersecting spheres are
+// a circle, and a point of it satisfies BOTH original laws. The old length-vs-squared mix
+// collapsed the circle to a midpoint that violated both. (id:cull-hunt-dimensional-tolerance)
+test("meet: a squared clearance keeps its units, so a real circle survives", () => {
+    const set = meetAll([sphere([0, 0, 0], 1e-4), sphere([1e-4, 0, 0], 1e-4)])
+    assert.equal(set.kind, "circle")
+    const q = nearest(set, [5e-5, 1e-4, 0])
+    assert.equal(validateDistance(q.at, [0, 0, 0], 1e-4).ok, true, "on the first sphere")
+    assert.equal(validateDistance(q.at, [1e-4, 0, 0], 1e-4).ok, true, "on the second sphere")
+})
+
+// The tolerance has UNITS: separation, nesting and tangency are all LENGTH tests, and a
+// discriminant is classified by the distance between its roots — not against a fixed
+// epsilon, and not blind to the coefficient scale. (id:cull-hunt-dimensional-tolerance)
+test("meet: separation is a length, and a scaled conic names the SAME roots", () => {
+    // two r=5 spheres 1e-7 apart are a single point within the length budget
+    const t = meetAll([sphere([0, 0, 0], 5), sphere([10 + 1e-7, 0, 0], 5)])
+    assert.equal(t.kind, "point")
+    assert.equal(validateDistance(t.at, [0, 0, 0], 5).ok, true)
+    assert.equal(validateDistance(t.at, [10 + 1e-7, 0, 0], 5).ok, true)
+    // the same conic scaled by 1e-7 names the same two intersections
+    const circleAt = (k) => conic("circle", [0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [k, 0, k, 0, 0, -k])
+    const ln = line([0, 0, 0], [1, 0, 0])
+    const one = meet(ln, circleAt(1)), tiny = meet(ln, circleAt(1e-7))
+    assert.equal(one.kind, "points")
+    assert.equal(tiny.kind, "points")
+    for (let i = 0; i < 2; i++) for (let j = 0; j < 3; j++)
+        assert.ok(Math.abs(one.at[i][j] - tiny.at[i][j]) < 1e-9, "same root")
 })

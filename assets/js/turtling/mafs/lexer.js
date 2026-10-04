@@ -13,7 +13,7 @@ const TOKEN_PATTERN = [
     '\'[^\']*\'|"[^"]*"',
     '[a-zA-Z][a-zA-Z0-9_]*(?:\\.[a-zA-Z][a-zA-Z0-9_]*)*',
     OPERATOR_PATTERN,
-    '[\\[\\],\\(\\)]',
+    '[\\[\\],\\(\\)\\.]',
     '\\s+'
 ].join('|')
 
@@ -61,6 +61,11 @@ export class Lexer {
                 type = 'IDENTIFIER';
             } else if (TYPE_OF_GLYPH[value]) {
                 type = TYPE_OF_GLYPH[value];
+            } else if (value === '.') {
+                if (tokens.at(-1)?.type !== 'STRING') {
+                    throw new Error(`Unknown token: ${value} at position ${match.index}`);
+                }
+                type = 'DOT';
             } else if (value === ',') {
                 type = 'COMMA';
             } else if (/^['"]/.test(value)) {

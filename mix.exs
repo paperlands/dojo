@@ -87,10 +87,10 @@ defmodule Dojo.MixProject do
 
   defp usage_rules do
     [
-      file: "CLAUDE.md",
+      file: "AGENTS.md",
       usage_rules: [],
       skills: [
-        location: ".claude/skills",
+        location: ".agents/skills",
         build: [
           "phoenix-framework": [
             description:

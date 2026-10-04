@@ -74,9 +74,9 @@ test("a conic marks as a trace, never as an exact curve", () => {
 // A place is admitted by the same tuple predicate its guard names, so a sparse
 // array cannot be read past it as three NaNs. (id:relationships-row-contract)
 test("propose: a place is three finite coordinates, judged by the guard's predicate", () => {
-    const poseOf = () => SE3.identity()
+    const placementOf = () => SE3.identity()
     const asked = (value) => AUTHORED.position.propose({
-        target: "t", observer: "o", value, poseOf, conflictAt: () => null, ownerOf: () => null,
+        target: "t", observer: "o", value, placementOf, conflictAt: () => null, ownerOf: () => null,
     })
     assert.equal(asked(new Array(3)).ok, false, "a sparse array is not three coordinates")
     assert.equal(asked([0, NaN, 0]).ok, false)

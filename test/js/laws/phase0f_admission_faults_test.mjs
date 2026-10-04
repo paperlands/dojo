@@ -78,6 +78,19 @@ test("a component that is not a list is rejected", () => {
     assert.match(frame.error?.message ?? "", /component is not a list/)
 })
 
+test("an accepted pose is admitted by ONE validity authority — malformed geometry faults", () => {
+    for (const transform of [
+        { rotation: SE3.identity().rotation, position: [Infinity, 0, 0] },
+        { rotation: { w: NaN, x: 0, y: 0, z: 0 }, position: [1, 0, 0] },
+        { rotation: SE3.identity().rotation, position: [1, 0] },
+    ]) {
+        const { frame } = attempt(() => ({ accepted: true, transform }))
+        assert.equal(frame.error?.kind, "motion", JSON.stringify(transform))
+        assert.match(frame.error.message, /stale or invalid pose/)
+        assert.deepEqual(frame.transform.deref().position, [0, 0, 0], "the bad pose never lands")
+    }
+})
+
 test("explicit refusal stays silent and holds the pose — the one clean refusal", () => {
     const { escaped, frame, errors } = attempt(() => ({ accepted: false }))
     assert.equal(escaped, null)

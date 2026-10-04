@@ -11,6 +11,7 @@ import { frameWorldTransform, worldTransform } from "../../../assets/js/turtling
 import { createGesture } from "../../../assets/js/turtling/laws/gesture.js"
 import { stateOf } from "../../../assets/js/turtling/laws/constraints.js"
 import { exposed } from "../../../assets/js/turtling/laws/batch.js"
+import { sphere as sphereSet, point as pointSet } from "../../../assets/js/turtling/laws/meet.js"
 
 const find = (frame, name) => {
     if (frame.name === name) return frame
@@ -35,11 +36,16 @@ const offer = (scheduler, frame) => {
         if (law.feature === "distance" && (law.endpoints[0] === frame.id || law.endpoints[1] === frame.id)) {
             const otherId = law.endpoints[0] === frame.id ? law.endpoints[1] : law.endpoints[0]
             const other = scheduler.registry.get(otherId)
-            if (other) constraints.push({ feature: "distance",
-                other: frameWorldTransform(other).position, radius: law.predicate,
-                otherHeld: other.generator != null || other.actorState != null })
+            if (other) {
+                const at = frameWorldTransform(other).position
+                const radius = law.predicate
+                // The record carries its OWN resolved set; the policy fact stays separate.
+                // (D058)
+                constraints.push({ feature: "distance", otherHeld: other.generator != null || other.actorState != null,
+                    set: radius > 0 ? sphereSet(at, radius) : pointSet(at) })
+            }
         } else if (law.feature === "position" && law.endpoints[0] === frame.id) {
-            constraints.push({ pinned: true })
+            constraints.push({ pinned: true, set: pointSet(frameWorldTransform(frame).position) })
         }
     }
     return stateOf({ at: frameWorldTransform(frame).position, headed, exposed: exposed(frame), constraints })

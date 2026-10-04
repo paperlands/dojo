@@ -115,6 +115,27 @@ export const createTerminal = (element, cm6, options = {}) => {
         bridge.pub({ id: buffer.id, name: buffer.name, content: buffer.content });
     };
 
+    // Bridge after paint — the glyph paints first, the live walk follows next
+    // frame (seamless writing). Newest content wins; a dropped final frame is a
+    // dropped render, never lost content — the authority above already moved.
+    // Falls back to sync when no rAF (node:test).
+    let paintPending = null;
+    let paintRaf = 0;
+    const flushPaint = () => {
+        paintRaf = 0;
+        const pending = paintPending;
+        paintPending = null;
+        if (!pending) return;
+        const { id, content } = pending;
+        const name = id ? state.collection.items.get(id)?.name : null;
+        bridge.pub({ id, name, content });
+    };
+    const publishAfterPaint = (id, content) => {
+        paintPending = { id, content };
+        if (typeof requestAnimationFrame !== 'function') return flushPaint();
+        if (!paintRaf) paintRaf = requestAnimationFrame(flushPaint);
+    };
+
     // Composite key for merge originals — addr alone isn't unique when remote user has multiple tabs
     const mergeKey = (origin) => origin?.buffer_id ? `${origin.addr}:${origin.buffer_id}` : origin?.addr;
 
@@ -285,9 +306,10 @@ export const createTerminal = (element, cm6, options = {}) => {
                         // unsaved state there is.
                         autosave();
                     }
-                    // 3. Bridge always — river drift and the live walk need it.
-                    const name = id ? state.collection.items.get(id)?.name : null;
-                    bridge.pub({ id, name, content });
+                    // 3. Bridge after paint — glyph first; the live walk next
+                    // frame. A dropped final frame is a dropped render, never
+                    // lost content (the authority above already moved).
+                    publishAfterPaint(id, content);
                 },
                 onSelectionChange: (selection) => {
                     selectionBridge.pub(selection);

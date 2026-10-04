@@ -1,5 +1,11 @@
 import { getOperator } from "./operators.js"
 import { createTower, installScalarFloor, installVectorFloor, SHADOWABLE_BUILTINS, asKind } from "./tower.js"
+import { Parser } from "./parse.js"
+import { parseMemo } from "./parse_memo.js"
+
+// Meanings are fixed; a learner's names change. Install this floor once,
+// not on every figure rebuild. (id:tower-center-life)
+const DEFAULT_TOWER = Object.freeze(installVectorFloor(installScalarFloor(createTower())).seal())
 
 // Nothing is not a measure. `null + 1` is 1 in JavaScript, so a read that had
 // no answer must not become a quantity. Arithmetic yields nothing instead;
@@ -16,12 +22,7 @@ export class Evaluator {
             'random': () => Math.random(),
         };
 
-        // Scalar meanings now live in the center (mafs/tower.js): operators and
-        // builtins are registrations, not a switch. Installation ends here and the
-        // registry is sealed, so no later define reinterprets a computation already
-        // in flight. (id:tower-center-boundaries)
-        this.tower = installVectorFloor(installScalarFloor(createTower()))
-        this.tower.seal()
+        this.tower = DEFAULT_TOWER
 
         // Deferred = stochastic/streaming primitives that must re-evaluate at
         // each use, never folded into an fn body at definition time. Foldable
@@ -42,7 +43,7 @@ export class Evaluator {
     // Start a fresh dependency record for one evaluation. The resolver fills it as it
     // reaches values; the caller reads `reads` after the evaluation succeeds.
     beginReads() {
-        this.reads = { live: false, frames: new Set() }
+        this.reads = { live: false, frames: new Set(), inputs: [], samples: [], locals: new Set() }
         return this.reads
     }
 
@@ -53,13 +54,41 @@ export class Evaluator {
         return false
     }
 
+    // Every source string has the same interpolation; held literals never enter.
+    // Interpolated names resolve as data, never as newly minted expression ink.
+    interpolate(text, context) {
+        let processed = text;
+        let previous;
+        do {
+            previous = processed;
+            processed = processed.replace(/\[([^[\]](?:[^[\]]|\[(?:\\.|[^[\]])*\])*)\]/g, (match, expr) => {
+                if (expr.trim().match(/^`.*`$/)) return match;
+                const parser = this.parser ?? (this.parser = new Parser());
+                const value = this.run(parseMemo(parser, expr.trim()), context);
+                return value !== undefined ? String(value) : match;
+            });
+        } while (processed !== previous);
+        return processed;
+    }
+
     run(ast, context) {
         if (!ast) return 0;
 
         // A literal is a value, never a name: it evaluates to itself, exactly as a
         // string literal does. Only an operand names something to resolve.
         // (id:tower-tension-repr)
-        if (ast.type === 'string' || ast.type === 'literal') return ast.value;
+        if (ast.type === 'literal') return ast.value;
+        if (ast.type === 'string') return this.interpolate(ast.value, context);
+        if (ast.type === 'access' || ast.type === 'access_call') {
+            const name = this.run(ast.children[0], context) + '.' + ast.value;
+            if (ast.type === 'access_call') {
+                return this.applyFunction(name, ast.children.slice(1).map(child => this.run(child, context)), context);
+            }
+            // Rehearsal has no ambient tree; the live resolver owns missing reads.
+            if (context && name in context) return this.readContext(name, context);
+            if (!this.resolveExternal) return null;
+            return this.resolveContext(name, context);
+        }
 
         // A list literal evaluates its elements in order and TAGS the result with the
         // kind its delimiter names: `(…)` a point, `[…]` a vector. The kind then rides
@@ -72,10 +101,10 @@ export class Evaluator {
 
         if (ast.type === 'operand') {
             if (context && ast.value in context) {
-                return context[ast.value];
+                return this.readContext(ast.value, context);
             }
             else if (ast.value in this.constants) {
-                return this.constants[ast.value]();
+                return this.readConstant(ast.value);
             } else {
                 return this.resolveContext(ast.value, context);
             }
@@ -107,7 +136,13 @@ export class Evaluator {
                 const [body, params] = entry;
                 const childContext = { ...context };
                 params.forEach((p, i) => { childContext[p] = args[i]; });
-                return this.run(body, childContext);
+                const reads = this.reads, locals = reads?.locals
+                if (reads) {
+                    reads.inputs?.push(['function', func, body, params])
+                    reads.locals = new Set([...(locals ?? []), ...params])
+                }
+                try { return this.run(body, childContext) }
+                finally { if (reads) reads.locals = locals }
             }
         }
         // Identify the callable before testing applicability: a known builtin
@@ -115,18 +150,45 @@ export class Evaluator {
         // through the center instead of leaking to another resolver.
         if (this.tower.known(func)) return this.tower.apply(func, ...args)
         if (this.resolveExternal) {
-            const result = this.resolveExternal(func, args);
+            const result = this.readExternal(func, args);
             if (result !== undefined) return result;
         }
         throw new Error(`Undefined function: ${func}`);
     }
 
+    // Observe resolved values, not names guessed from syntax. (id:laws-dependency-driven-place)
+    readExternal(name, args) {
+        const value = this.resolveExternal(name, args)
+        this.reads?.inputs?.push(['external', name, args ?? null, value])
+        return value
+    }
+
+    readContext(name, context) {
+        const local = this.reads?.locals?.has(name)
+        const value = !local && this.reads?.bind
+            ? this.reads.bind('scope', name, () => context[name]) : context[name]
+        if (!this.reads?.locals?.has(name)) this.reads?.inputs?.push(['scope', name, value])
+        return value
+    }
+
+    readConstant(name) {
+        if (!this.reads) return this.constants[name]()
+        const deferred = this.deferred.has(name)
+        const provide = () => this.constants[name]()
+        const value = deferred
+            ? (this.reads?.sample ? this.reads.sample(name) : provide())
+            : (this.reads?.bind ? this.reads.bind('constant', name, provide) : provide())
+        if (deferred) this.reads?.samples?.push([name, value])
+        else this.reads?.inputs?.push(['constant', name, value])
+        return value
+    }
+
     resolveContext(variable, context) {
         if (variable in context) {
-            return context[variable];
+            return this.readContext(variable, context);
         }
         if (this.resolveExternal) {
-            const resolved = this.resolveExternal(variable);
+            const resolved = this.readExternal(variable);
             if (resolved !== undefined) return resolved;
         }
         throw new Error(`Undefined variable: ${variable}`);

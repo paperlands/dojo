@@ -10,7 +10,10 @@ import { createStroke, extend as strokeExtend, flush as strokeFlush, fill as str
 import { matchPattern } from "./match.js"
 import { toSpace } from "./space.js"
 import { isNumericLiteral } from "./mafs/number.js"
+import { driveOf } from "./laws/authored.js"
+import { reactiveReading } from "./laws/reactive.js"
 import { kindOf } from "./mafs/tower.js"
+import { parseMemo } from "./mafs/parse_memo.js"
 import { demand, measure, spellingOf, conditionOf, FINITE } from "./numerics.js"
 import { notice } from "./report.js"
 // A HOLE DEMANDS A MEASURE, and the answer belongs to the numerics surface: what the
@@ -76,10 +79,6 @@ function chargeReductions(state) {
 
 const holeDomain = (holes, i) => holes?.[i] ?? "measure"
 
-// Hoisted: building a RegExp per evaluation is churn, and only a quoted spelling can
-// begin a string literal or a computed dotted access. (profile: evaluateExpr)
-const QUOTE_RE = /^(['"])(.*?)\1$/
-const COMPUTED_DOT_RE = /^(['"])(.*?)\1\.(.+)$/
 const IDENT_HEAD_RE = /^[a-zA-Z]/
 // Retry evaluateExpr; yield blocked on cross-ambient read failure only.
 // domain: "measure" (default) | "word"
@@ -89,8 +88,9 @@ function* evalOrBlock(expr, scope, state, domain = "measure", trackReads = false
             // Dependencies are what the READ reached, recorded by the resolver — a fresh
             // record per attempt, since a blocked read is retried.
             // (id:laws-dependency-driven-place)
-            if (trackReads) state.deps.mathEvaluator.beginReads()
-            return admit(evaluateExpr(expr, scope, state, domain), expr, domain, state)
+            const reading = trackReads ? readExpr(expr, scope, state, domain) : null
+            if (reading?.error) throw reading.error
+            return admit(reading ? reading.value : evaluateExpr(expr, scope, state, domain), expr, domain, state)
         } catch (e) {
             if (e.blocked) {
                 // The frame (or null when missing) the read waits on — the scheduler
@@ -166,6 +166,7 @@ export function* execute(ast, deps, opts = {}) {
     if (opts.actorState) state.loopCounter = opts.loopCounter ?? state.loopCounter
 
     deps.mathEvaluator.userFunctions = deps.mathParser.userspace
+    deps.mathEvaluator.parser = deps.mathParser
 
     // Lazy thunks — live values when read.
     const ec = deps.mathEvaluator.constants
@@ -269,7 +270,8 @@ function* emitPoint(name, expr, owner, scope, state, sampled) {
     yield { type: 'law', feature: 'position', target: name, value: toSpace(raw) ?? raw,
         axis: null, owner,
         // A coordinate that RESOLVED a reference tracks it; a literal owns no readout.
-        read: reads?.live ? (() => evaluateExpr(expr, scope, state)) : null }
+        read: reads?.live ? reactiveReading({ value: raw, reads },
+            (sample, bind) => readExpr(expr, scope, state, 'measure', sample, bind)) : null }
 }
 
 // A declared vector's pose and style, captured at its declaration. The display is
@@ -309,14 +311,11 @@ function* declareSampled(name, value, owner, state) {
     yield { type: 'parameter', name, owner, value }
 }
 
-// What a declared VALUE becomes, by its KIND — a row per kind, and a kind with no row
-// is a derived value. `place` is the fact a loop cannot hold. A new kind is NOT one
-// row: its delimiting form is the parser's, its algebra is a tower row, its shape is the
-// renderer's. What it never needs is a BRANCH here — which is the point of a table.
-// (id:notation-coordinate-vector)
+// What a declared value becomes, by its kind; every spelling takes this row.
+// A new kind changes neither repetition nor ownership. (id:notation-coordinate-vector)
 const DECLARED = {
-    point: { place: true, emit: emitPoint },
-    vector: { place: false, emit: emitVector },
+    point: { emit: emitPoint },
+    vector: { emit: emitVector },
 }
 
 function* walkBody(body, scope, state, stroke) {
@@ -398,7 +397,7 @@ function* walkBody(body, scope, state, stroke) {
                         const tree = parseMemo(parser, String(expression))
                         if (!readsDeferred(tree, deferred ?? new Set())) {
                             const value = yield* evalOrBlock(String(expression), scope, state)
-                            if (typeof value === "number" && Number.isFinite(value)) {
+                            if (conditionOf(value) === FINITE) {
                                 expression = String(value)
                             }
                         }
@@ -561,21 +560,51 @@ function* walkBody(body, scope, state, stroke) {
         case 'Law': {
             // A reached law: one feature, one evaluated value. The declaring
             // frame is the observer. (id:laws-ordered-replacement)
-            // A distance or bearing payload is sampled when reached: later changes to
-            // its source value do not revise the law. A POSITION payload that reads live
-            // state is different — it is a derived value (a readout), so the place
-            // tracks its source. A dependency-driven revision and a relational unknown
-            // (r chosen jointly with positions) are different capabilities; the former
-            // does not require the latter. (id:eval-relational, id:laws-dependency-driven-place)
+            // The row decides whether live reads drive revisions or sample once.
+            // Dependency-driven revision does not make the payload a relational unknown.
+            // (id:laws-dependency-driven-place)
             const feature = node.value
+            // A subject parameter is a bound selector, not source to substitute.
+            // The scheduler resolves it once into the law's endpoint identity. (id:laws-generative-experiments)
+            const selectors = node.meta.subjects ?? [node.meta.target]
+            const subjects = []
+            for (const selector of selectors) {
+                // A framed point descriptor is data, not a name to resolve. (id:laws-distance-literal-address)
+                if (selector != null && typeof selector === 'object') { subjects.push(selector); continue }
+                const subject = selector.startsWith('"')
+                    ? yield* evalOrBlock(selector, scope, state, 'word')
+                    : Object.hasOwn(scope, selector) ? scope[selector] : selector
+                if (typeof subject !== 'string' || !subject) throw new Error('a law subject must name a thing')
+                subjects.push(subject)
+            }
+            // Mover selectors follow the same bindings as the subjects. (D058)
+            if (node.meta.movers != null && !Array.isArray(node.meta.movers)) throw new Error('law movers must be selectors')
+            const movers = node.meta.movers?.map((selector) => {
+                const index = selectors.indexOf(selector)
+                if (index < 0 || typeof subjects[index] !== 'string') throw new Error('a law mover must name a live subject')
+                return subjects[index]
+            })
+            const target = subjects.find((s) => typeof s === 'string') ?? subjects[0]
             // A position is a pin: the ONE pipeline every point-kind declaration reaches.
             if (feature === 'position') {
-                yield* emitPoint(node.meta.target, node.meta.expr, node.span ?? null, scope, state)
+                yield* emitPoint(target, node.meta.expr, node.span ?? null, scope, state)
                 break
             }
-            const raw = yield* evalOrBlock(node.meta.expr, scope, state)
-            yield { type: 'law', feature, target: node.meta.target, value: raw,
-                axis: node.meta.axis ?? null, owner: node.span ?? null, read: null }
+            // Driven laws capture inputs before computing a new answer; other laws
+            // sample once. (id:laws-dependency-driven-place, id:laws-reactive-randomness)
+            const drive = driveOf(feature)
+            const raw = yield* evalOrBlock(node.meta.expr, scope, state, 'measure', !!drive)
+            const reads = state.deps.mathEvaluator.reads
+            yield { type: 'law', feature, target, value: raw,
+                ...(node.meta.subjects ? { subjects } : {}),
+                ...(movers ? { movers } : {}),
+                ...(node.meta.reachPolicy !== undefined ? { reachPolicy: node.meta.reachPolicy } : {}),
+                // Dotted reaches carry RHS provenance too, so both spellings bind the
+                // same typed term. (id:laws-distance-term-normalization)
+                expression: node.meta.expr,
+                axis: node.meta.axis ?? null, owner: node.span ?? null,
+                read: drive && reads?.live ? reactiveReading({ value: raw, reads },
+                    (sample, bind) => readExpr(node.meta.expr, scope, state, 'measure', sample, bind)) : null }
             break
         }
 
@@ -605,8 +634,12 @@ function* walkBody(body, scope, state, stroke) {
                 // A proper `let`: a place (identity and name) whose body is the
                 // recipe. A rebuild restarts the walk at this birth pose, not at the
                 // last head — see rewireChild's derived branch. (id:laws-figure-protocol)
-                yield { type: 'birth', name: node.value, origin: SE3.clone(state.transform), owner: node.span ?? null }
-                yield spawnEvent(state, scope, node.value, [call], state.functions, { profile: 'derived', question: inputs, recipe: figureCall.recipe, argExprs: figureCall.args })
+                yield { type: 'birth', name: node.value, origin: SE3.clone(state.transform),
+                    profile: 'derived', owner: node.span ?? null }
+                yield spawnEvent(state, scope, node.value, [call], state.functions, {
+                    profile: 'derived', question: inputs, recipe: figureCall.recipe,
+                    argExprs: figureCall.args, owner: node.span ?? null,
+                })
                 break
             }
             const deferred = state.deps?.mathEvaluator?.deferred
@@ -626,14 +659,6 @@ function* walkBody(body, scope, state, stroke) {
             // (id:notation-coordinate-vector)
             const row = DECLARED[shapedKind(expr, scope, state)]
             if (row) {
-                if (row.place && node.meta.inLoop) {
-                    // An identity cannot live in a loop: its instance key is not earned.
-                    // (id:laws-decl-batch)
-                    yield notice({ kind: 'declaration',
-                        message: "a declaration cannot live inside a loop",
-                        span: node.span ?? null })
-                    break
-                }
                 yield* row.emit(node.value, expr, node.span ?? null, scope, state)
                 break
             }
@@ -823,29 +848,6 @@ function* callCommand(name, args, state, stroke, baseRevision) {
 // Delegates to the injected math parser/evaluator.
 // The one owner of PaperLang expression evaluation.
 
-// Memo parse by expression; WeakMap on injected parser. (id:output-ledger-r3-meter)
-// Entry is { epoch, map }: parse() expands 0-arity userspace names into the
-// tree, so a hit is only safe while mathParser.epoch is unchanged. defineFunction
-// / reset bump epoch — without that, `label 'mice[out]'` then `fn out …` left
-// the old expansion of `out` stuck in the memo (every later square renamed to
-// the first; multi-index follow "worked" only when the label ran first).
-const PARSE_MEMO = new WeakMap()
-const MAX_MEMO = 512   // interpolated names ('mice[i]'.x) mint fresh strings
-
-function parseMemo(mathParser, expr) {
-    const epoch = mathParser.epoch ?? 0
-    let entry = PARSE_MEMO.get(mathParser)
-    if (entry === undefined || entry.epoch !== epoch) {
-        entry = { epoch, map: new Map() }
-        PARSE_MEMO.set(mathParser, entry)
-    }
-    const hit = entry.map.get(expr)
-    if (hit !== undefined) return hit
-    const tree = mathParser.parse(expr)
-    if (entry.map.size >= MAX_MEMO) entry.map.clear()
-    entry.map.set(expr, tree)
-    return tree
-}
 
 // Does an expression name a deferred (stochastic) primitive? Used to keep a
 // sampled input a parameter, not a value recomputed by an unrelated commit.
@@ -950,63 +952,44 @@ function shapedKind(expr, scope, state) {
     }
 }
 
-// Residual after shared resolve: measure → wound; word → string costume.
-// Math ops / quote interpolation stay measure. Not a numerical tower.
-// A quoted run is ONE primitive: a literal whose `[…]` slots are interpolation.
-// Interpolation happens wherever the run is evaluated — as argument text or as a
-// lowered string value — so a literal and a template never disagree by route.
-// (phase 1: coherent meaning)
-function interpolate(text, scope, state) {
-    let processed = text
-    let previous
-    do {
-        previous = processed
-        processed = processed.replace(
-            /\[([^[\]](?:[^[\]]|\[(?:\\.|[^[\]])*\])*)\]/g,
-            (match, innerExpr) => {
-                if (innerExpr.trim().match(/^`.*`$/)) {
-                    return match
-                }
-                // Interpolation slots are always measure (count, x, …).
-                const value = evaluateExpr(innerExpr.trim(), scope, state, "measure")
-                // A lowered value is SEMANTIC: it may mint a name, address a sibling,
-                // or store a string — so it keeps every bit. Rounding for the eye is the
-                // display gate at the consumer (numerics:format), never here. (id:tower-center-approximation-ruling)
-                return value !== undefined ? String(value) : match
-            }
-        )
-    } while (processed !== previous)
-    return processed
+
+function readExpr(expr, scope, state, domain = 'measure', sample = null, bind = null) {
+    const evaluator = state.deps.mathEvaluator, parent = evaluator.reads
+    const reads = evaluator.beginReads()
+    reads.active = true
+    reads.sample = sample
+    reads.bind = bind
+    try { return { value: evaluateExprBody(expr, scope, state, domain), reads } }
+    catch (error) { return { value: undefined, reads, error } }
+    finally {
+        reads.active = false
+        reads.sample = null
+        reads.bind = null
+        evaluator.reads = parent?.active ? parent : reads
+    }
 }
 
-function evaluateExpr(expr, scope, state, domain = "measure") {
+// Nested expression cells own their sampling; a parent's replay must not enter them.
+// (id:laws-reactive-randomness)
+function evaluateExpr(expr, scope, state, domain = 'measure') {
+    const evaluator = state.deps.mathEvaluator, parent = evaluator.reads
+    evaluator.reads = null
+    try { return evaluateExprBody(expr, scope, state, domain) }
+    finally { evaluator.reads = parent }
+}
+
+function evaluateExprBody(expr, scope, state, domain = 'measure') {
     const { mathParser, mathEvaluator } = state.deps
-
-    // Only a quoted spelling can be a string literal or a computed dotted access
-    // ('interp'.rest). Every other expression — numbers, names, operators — skips
-    // both matches. (profile: this ran two regexes on every evaluation.)
-    const head = expr[0]
-    if (head === "'" || head === '"') {
-        const quoteMatch = expr.match(QUOTE_RE)
-        if (quoteMatch) return interpolate(quoteMatch[2], scope, state)
-
-        // 'interp'.rest — interpolate the quoted name, then access the property.
-        // e.g. 'mice[follow]'.x → 'mice1.x' → dotted access
-        const computedDot = expr.match(COMPUTED_DOT_RE)
-        if (computedDot) {
-            const name = evaluateExpr(computedDot[1] + computedDot[2] + computedDot[1], scope, state, domain)
-            return evaluateExpr(name + '.' + computedDot[3], scope, state, domain)
-        }
-    }
 
     if (isNumericLiteral(expr)) return parseFloat(expr)
     // A name bound to NOTHING is still a name: `!= null` would fall through to the
     // identifier path and report a bound null as "Undefined variable".
-    if (scope[expr] !== undefined) return scope[expr]
+    if (scope[expr] !== undefined) return mathEvaluator.readContext
+        ? mathEvaluator.readContext(expr, scope) : scope[expr]
     const tree = parseMemo(mathParser, expr)
 
     // A LITERAL is not a reference: its word is returned as-is, never resolved.
-    if (tree.type === 'string') return interpolate(tree.value, scope, state)
+    if (tree.type === 'string') return mathEvaluator.run(tree, scope)
     // A held value is the value itself: never interpolated, resolved, or read as
     // a namespace. (id:tower-tension-repr)
     if (tree.type === 'literal') return tree.value
@@ -1019,7 +1002,8 @@ function evaluateExpr(expr, scope, state, domain = "measure") {
     // Bare identifier — resolveExternal, then hole residual domain.
     if (typeof tree.value === 'string' && IDENT_HEAD_RE.test(tree.value)) {
         if (mathEvaluator.resolveExternal) {
-            const resolved = mathEvaluator.resolveExternal(tree.value)
+            const resolved = mathEvaluator.readExternal
+                ? mathEvaluator.readExternal(tree.value) : mathEvaluator.resolveExternal(tree.value)
             if (resolved !== undefined) return resolved
         }
         if (domain === "word") return tree.value

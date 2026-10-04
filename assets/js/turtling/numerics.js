@@ -5,9 +5,11 @@
 //   CONDITION | what condition is it in?    this module owns this
 //
 // A condition is a FACT about a value, never a verdict about the caller. The verdict
-// belongs to the CONSUMER, named once in the table below — so no call site carries its
-// own epsilon, its own `Number.isFinite`, or its own private idea of what a nothing
-// means. One predicate, one policy table, one report shape. (id:tower-center-approximation)
+// belongs to the CONSUMER, named once in the table below — so the consumers this table
+// names share one predicate, one policy table and one report shape, and a caller keeps
+// only the refusal and reporting that are its own. Richer domains keep their own
+// authorities: a rigid pose (=SE3.isValid=), a distance's nonnegativity, a GPU
+// coordinate. (id:tower-center-approximation)
 //
 // Its only import is the report shape, itself a leaf: mafs/, laws/ and turtling/
 // all reach this without a cycle.
@@ -116,12 +118,6 @@ export function measure(value, options) {
     throw error
 }
 
-// ── A tolerance is a number PLUS the scale it was chosen at ────────────────
-// A bare epsilon is not one policy at every figure size — it is a different policy at
-// every figure size. `eps` is dimensionless; `of` is the magnitude in hand.
-export const tol = (eps, of) => Object.freeze({ eps, of })
-export const within = (a, b, tolerance) =>
-    Math.abs(a - b) <= tolerance.eps * Math.abs(tolerance.of)
 
 // ── The display gate ───────────────────────────────────────────────────────
 // The ONE place a value rounds for the eye, and it never feeds back: the stored value

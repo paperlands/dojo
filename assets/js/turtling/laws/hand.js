@@ -11,11 +11,14 @@
 
 import { facingPlane, touchPlane } from "./handle.js"
 import { coneFrame, isOpenCone } from "./cone.js"
-import { dot } from "./vec3.js"
+import { dot, unit, sub, add, scale, finite3 } from "./vec3.js"
+import { basisOf } from "./meet.js"
 import { CONE_RATE, CONE_EASE, DETENT_BAND, DETENT_HOLD } from "./feel.js"
 
 const wrapPi = (t) => Math.atan2(Math.sin(t), Math.cos(t))
-const unit3 = (v) => { const n = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / n, v[1] / n, v[2] / n] }
+// The floor is ZERO, not the default epsilon: only an exactly-degenerate direction is left
+// as given. A tiny nonzero normal must still normalize, or a scaled facing changes the hand.
+const unit3 = (v) => unit(v, 0) ?? v
 
 // A cone's hand is the cone's own polar about the apex's projection, forward:
 // the pointer's screen ANGLE dials the azimuth and its screen RADIUS spends the
@@ -115,6 +118,123 @@ export const sphereHand = {
     },
 }
 
+const RING = 96
+const GRAZE_PX = 2        // below this minor semi-axis the phase is not observable
+
+// A circle's hand follows the CURVE, not a plane through it: the frozen camera
+// plane proposes a point the law clamps back to the circle, and in an oblique view
+// that clamp IS the whole error. (id:laws-decl-handle, id:laws-decl-anchor)
+export function circleRig(locus, anchor, project) {
+    const center = locus?.center, r = locus?.radius
+    const b = basisOf(locus?.normal)
+    if (!b || !finite3(center) || !(r > 0) || !finite3(anchor)) return null
+    const phaseOf = (p) => {
+        const d = sub(p, center)
+        return Math.atan2(dot(d, b.v), dot(d, b.u))
+    }
+    const point = (phi) => add(center, add(scale(b.u, r * Math.cos(phi)), scale(b.v, r * Math.sin(phi))))
+    const index = (i) => ((i % RING) + RING) % RING
+    const keep = Array.isArray(locus.keep) ? locus.keep : null
+    const samples = []
+    for (let i = 0; i < RING; i++) {
+        const phi = (i / RING) * Math.PI * 2
+        const p = point(phi)
+        // A kept arc (a half-plane meet) offers only its own half: what is not there is
+        // not sampled, so it can neither be reached nor counted.
+        const on = !keep || dot(sub(p, center), keep) >= -1e-9
+        samples.push({ phi, screen: on && typeof project === 'function' ? project(p) : null })
+    }
+    const seen = samples.filter((s) => s.screen && Number.isFinite(s.screen.x) && Number.isFinite(s.screen.y))
+    if (seen.length < RING / 2) return null
+    // A projected circle's screen covariance is diag(a²/2, b²/2): its smaller
+    // eigenvalue is the MINOR semi-axis, so grazing drives it to zero.
+    let mx = 0, my = 0
+    for (const s of seen) { mx += s.screen.x; my += s.screen.y }
+    mx /= seen.length; my /= seen.length
+    let sxx = 0, sxy = 0, syy = 0
+    for (const s of seen) {
+        const dx = s.screen.x - mx, dy = s.screen.y - my
+        sxx += dx * dx; sxy += dx * dy; syy += dy * dy
+    }
+    sxx /= seen.length; sxy /= seen.length; syy /= seen.length
+    const half = Math.sqrt(Math.max(0, ((sxx - syy) / 2) ** 2 + sxy * sxy))
+    const minorEig = Math.max(0, (sxx + syy) / 2 - half)
+    return {
+        point, phaseOf, samples, index,
+        observable: Math.sqrt(2 * minorEig) >= GRAZE_PX,
+        phase: phaseOf(anchor),
+    }
+}
+
+// The rig's point under the live pointer: the nearest sample of the PROJECTED ring.
+// (id:laws-decl-handle)
+export function circleTurn(rig, pointer, anchor, project) {
+    const seed = rig.phaseOf(finite3(anchor) ? anchor : rig.point(rig.phase))
+    // Holding answers with the world point VERBATIM: what a hand that cannot move
+    // the point owes the finger is where the point is, not a re-derivation of it.
+    const held = () => (finite3(anchor) ? [...anchor] : rig.point(rig.phase))
+    // Grazing the plane collapses the ellipse to a segment and the phase is not
+    // disclosed, so the hand HOLDS the accepted point instead of guessing.
+    if (!rig.observable) return held()
+    // The hand seeds from the ACCEPTED point's phase, so a refused move advances
+    // nothing: the phase is READ from the world each move, never accumulated.
+    // (id:laws-decl-handle)
+    const i0 = rig.index(Math.round((seed / (Math.PI * 2)) * RING))
+    if (!rig.samples[i0].screen) return held()
+    const dist = (i) => {
+        const s = rig.samples[i].screen
+        return s ? Math.hypot(pointer.x - s.x, pointer.y - s.y) : Infinity
+    }
+    // Walk outward from the seed while a neighbour improves, both ways, and stop at the
+    // first that does not: that is the local minimum in the ACCEPTED point's own basin.
+    // It cannot reach the far branch — the climb halts at the barrier between them — so
+    // it needs no step cap to keep up with a fast finger. (id:laws-freedom)
+    let best = i0
+    let bestD = dist(i0)
+    for (const dir of [1, -1]) {
+        let at = i0
+        for (let n = 1; n < RING; n++) {
+            const j = rig.index(at + dir)
+            const d = dist(j)
+            if (d >= bestD) break
+            bestD = d
+            best = j
+            at = j
+        }
+    }
+    // Then a ternary search BETWEEN the bracketing samples: a vertex fitted to three
+    // samples is only a guess, and a finger landing between samples inherits its error.
+    const arc = (Math.PI * 2) / RING
+    const live = (phi) => {
+        const s = typeof project === 'function' ? project(rig.point(phi)) : null
+        return s && Number.isFinite(s.x) ? Math.hypot(pointer.x - s.x, pointer.y - s.y) : Infinity
+    }
+    let lo = rig.samples[best].phi - arc
+    let hi = rig.samples[best].phi + arc
+    if (typeof project === 'function') {
+        for (let n = 0; n < 14 && hi - lo > 1e-4; n++) {
+            const m1 = lo + (hi - lo) / 3
+            const m2 = hi - (hi - lo) / 3
+            if (live(m1) < live(m2)) hi = m2
+            else lo = m1
+        }
+    }
+    const phi = (lo + hi) / 2
+    rig.phase = phi
+    return rig.point(phi)
+}
+
+// A circle's hand is the circle's own projection, inverted. (id:laws-decl-anchor)
+export const circleHand = {
+    rejects: false,
+    freeze({ anchor, project, locus }) {
+        const rig = circleRig(locus, anchor, project)
+        return rig ? { rig } : null
+    },
+    place(state, { pointer, anchor, project }) {
+        return circleTurn(state.rig, pointer, anchor, project)
+    },
+}
 // A cone's hand is its polar rig, frozen at the grab. (id:laws-decl-anchor)
 export const coneHand = {
     rejects: false,
@@ -132,6 +252,7 @@ export const coneHand = {
 export function handFor(locus) {
     if (locus?.kind === 'sphere' && locus.radius > 0 && Array.isArray(locus.center)) return sphereHand
     if (locus?.kind === 'cone' && Array.isArray(locus.apex) && isOpenCone(locus.halfAngle)) return coneHand
+    if (locus?.kind === 'circle' && locus.radius > 0 && Array.isArray(locus.center) && Array.isArray(locus.normal)) return circleHand
     return null
 }
 
@@ -151,9 +272,8 @@ export function magnet(center, radius, point, opts = {}) {
     const { paper = false, poles = false, band = DETENT_BAND, hold = DETENT_HOLD } = opts ?? {}
     if (!point || !(radius > 0) || !(band > 0) || (!paper && !poles)) return point
     const d = [point[0] - center[0], point[1] - center[1], point[2] - center[2]]
-    const r = Math.hypot(d[0], d[1], d[2])
-    if (!(r > 1e-12)) return point
-    const u = [d[0] / r, d[1] / r, d[2] / r]
+    const u = unit(d)
+    if (!u) return point   // a point on the centre has no arm
     let best = null
     let bestAng = band
     const arming = (target) => {

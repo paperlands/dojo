@@ -8,7 +8,7 @@ import { bridged } from "../bridged.js"
 import { createStage } from "./stage.js"
 import { SE3 } from "./se3.js"
 import { createScheduler, metaRoot, sumCounts, frameWorldTransform, worldTransform } from "./scheduler.js"
-import { bindWorld, constraintsOn } from "./laws/authored.js"
+import { pointStateOf } from "./laws/point_state.js"
 import { createCompositor } from "./compositor.js"
 import { labInputs } from "./lab.js"
 import { createFocus, resolveAddress } from "./focus.js"
@@ -19,7 +19,7 @@ import { viewMapping } from "./laws/handle.js"
 import { verdictFade, OUTCOME } from "./laws/outcome.js"
 import { VERDICT_DECAY_MS } from "./laws/feel.js"
 import { drawPin, drawTrace, drawRim, drawGhostMark, drawAxis, drawCurve, drawSpan, nameAnchor, drawVectorName } from "./laws/pin.js"
-import { stateOf, axesOf, marksOf, heldIdentity, boundsOf } from "./laws/constraints.js"
+import { axesOf, marksOf, boundsOf } from "./laws/constraints.js"
 import { unionBounds, viewDirection } from "./laws/fit.js"
 import { hintsVisible, normalizeReveal, movedEnough } from "./laws/reveal.js"
 import { createOverlay } from "./overlay.js"
@@ -181,30 +181,11 @@ export class Turtle {
         return viewMapping(this.compositor?.viewReframe?.() ?? null, this.stage)
     }
 
-    // The one description of a point: free / headed / pinned / unresolved, with
-    // its normals, degrees of freedom and the exact locus. (id:laws-decl-point-agent)
+    // The one description of a point: free / headed / pinned / unresolved, with its normals,
+    // degrees of freedom and the exact locus. Delegated, so the display and a behavioural
+    // witness read the same story from the same code. (id:laws-decl-point-agent, D058)
     _stateOf(frame) {
-        const scheduler = this.scheduler
-        const headed = frame.generator != null || frame.actorState != null
-        const laws = scheduler.laws.active()
-        const ctx = bindWorld((id) => scheduler.registry.get(id), {
-            writerId: frame.id,
-            positionOf: (f) => frameWorldTransform(f).position,
-            poseOf: (f) => worldTransform(f),
-            heldOf: (id) => heldIdentity(scheduler.registry.get(id), laws, scheduler.registry),
-        })
-        return stateOf({
-            at: frameWorldTransform(frame).position,
-            headed,
-            exposed: exposed(frame),
-            isPlace: frame.isPlace === true,
-            error: frame.error ?? null,
-            // A failed attempt's hold is not an offer. The pin still draws (its
-            // previous state), but it is not touchable until an edit releases it.
-            // (id:laws-activation-verdicts)
-            unresolved: frame.unresolved ?? frame.held ?? null,
-            constraints: constraintsOn(frame.id, laws, ctx),
-        })
+        return pointStateOf(frame, this.scheduler)
     }
 
     // Frame the figure: every exposed place, plus the true radius of each
@@ -340,10 +321,16 @@ export class Turtle {
             const readout = held && this.lastReadout?.point === frame.name ? this.lastReadout : null
             const ghost = this._ghost?.point === frame.name
                 ? { text: this._ghost.text, fade: verdictFade(now - this._ghost.at) } : null
-            // While a hand holds a free point, a dotted line joins its origin to the pin:
-            // the declaring scope's birth/placement frame origin — where `origin` reads,
-            // not the cursor that seated it — shown, never spoken. (id:laws-decl-interface)
-            if (held) drawSpan(overlay.ctx, view.project(worldTransform(frame.parent).position), at, { alpha: 0.45 })
+            // While a hand holds a point, dotted spokes join it to what constrains it:
+            // each distance's counterpart — the centre of its sphere — and, when nothing
+            // does, the origin it came from (the declaring scope's birth/placement frame
+            // origin, where `origin` reads). Shown, never spoken.
+            // (id:laws-freedom, id:laws-decl-interface)
+            if (held) {
+                const partners = this._stateOf(frame).truth.distances.map((d) => d.other)
+                const targets = partners.length ? partners : [worldTransform(frame.parent).position]
+                for (const target of targets) drawSpan(overlay.ctx, view.project(target), at, { alpha: 0.45 })
+            }
             drawPin(overlay.ctx, {
                 cx: at.x, cy: at.y, width: overlay.width, name: frame.name,
                 ink: this.color,

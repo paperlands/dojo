@@ -1,3 +1,4 @@
+// probe-status: concluded
 // The tiny-signal probe — where the approximation policy becomes visible.
 // A diagnostic instrument, not an acceptance suite.
 //

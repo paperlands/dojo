@@ -7,7 +7,7 @@ import { kindOf } from "../mafs/tower.js"
 // Kind is part of the value (D051): equal components of different kinds are different
 // values. An untagged array reads as a vector, so a copy that forgot its tag degrades
 // to a vector rather than becoming a lie. (id:notation-coordinate-vector)
-const same = (a, b) => {
+export const same = (a, b) => {
     if (Array.isArray(a) && Array.isArray(b)) {
         return kindOf(a) === kindOf(b) && a.length === b.length && a.every((v, i) => same(v, b[i]))
     }
@@ -15,6 +15,8 @@ const same = (a, b) => {
 }
 
 const isKeyed = (spec) => typeof spec === "function" ? false : (spec != null && typeof spec === "object" && typeof spec.capture === "function" && typeof spec.build === "function")
+const isCaptured = spec => typeof spec === 'object' && spec != null &&
+    typeof spec.capture === 'function' && typeof spec.compute === 'function'
 
 // A definition stands on itself: no order can compute it, and no fixed point is chosen
 // here. One error for the whole store, so every boundary throws the same refusal.
@@ -87,14 +89,35 @@ export function createReadouts() {
         // A preflight restores the cache and references it touched. (id:laws-dependency-driven-place)
         if (active.saved && !active.saved.has(node)) {
             active.saved.set(node, { value: node.value, computedEpoch: node.computedEpoch,
-                deps: node.deps, frames: node.frames })
+                deps: node.deps, frames: node.frames, answer: node.answer,
+                requested: node.requested, hasRequested: node.hasRequested })
         }
         node.deps = new Set()
         node.frames = new Set()
         active.path.push(node.id)
         active.stack.add(node.id)
         let value
-        try { value = node.compute(active.snapshot) }
+        try {
+            if (node.capture) {
+                const question = node.capture(active.snapshot)
+                if (active.saved || (node.hasRequested && same(node.requested, question))) {
+                    value = node.answer
+                } else {
+                    // The new answer owns its reads, not the capture's old random choices.
+                    // (id:laws-reactive-randomness)
+                    node.deps = new Set()
+                    node.frames = new Set()
+                    const answer = node.compute(active.snapshot)
+                    if (answer.error && !active.collect) throw answer.error
+                    node.requested = answer.question
+                    node.hasRequested = true
+                    node.answer = answer.value
+                    value = node.answer
+                }
+            } else {
+                value = (active.saved ? (node.compute.capture ?? node.compute) : node.compute)(active.snapshot)
+            }
+        }
         catch (error) { if (!active.collect) throw error }
         finally { active.path.pop(); active.stack.delete(node.id) }
         // At a commit failure is nothing; on demand it throws before touching the cache.
@@ -274,7 +297,10 @@ export function createReadouts() {
         const outer = active
         active = probe
         try {
-            try { compute() } catch { /* an unready read proves nothing; let the caller commit */ }
+            try {
+                const capture = typeof compute === 'function' ? (compute.capture ?? compute) : compute.capture
+                capture()
+            } catch { /* an unready read proves nothing; let the caller commit */ }
             const seen = new Set()
             const reachable = (start) => {
                 const work = [start]
@@ -304,20 +330,19 @@ export function createReadouts() {
     }
 
     return {
-        // One derived value per (source, site). A loop re-reaching the same
-        // statement updates the node; it does not multiply subscriptions.
-        // `spec` is either a pure function (scalar kind) or { capture, build }. `drives`
-        // is the registrant's own datum, relayed back on every announced change.
+        // One derived value per (source, site); replacement retires old publication rights.
+        // Functions, synchronous {capture, compute, initial}, or deferred {capture, build}.
+        // The registrant's drives datum rides announcements. (id:laws-reactive-randomness)
         register(source, key, spec, drives = null) {
             let keys = bySource.get(source)
             if (!keys) { keys = new Map(); bySource.set(source, keys) }
             const owned = keys.get(key)
             if (owned !== undefined) {
                 const node = nodes.get(owned)
-                // A replaced computation makes the cache stale, and its producer
-                // association is gone with it: the new definition stands where it does,
-                // not where the old one did. (id:laws-build-p3-readout-built, id:laws-ordered-replacement)
-                if (node) { clearProduces(node); resetNode(node, spec); node.drives = drives }
+                // A fresh record retires old publication rights, even for equal questions.
+                // Producer associations belong to that installation, not its stable slot id.
+                // (id:laws-generative-experiments)
+                if (node) { clearProduces(node); nodes.set(owned, makeNode(owned, source, key, spec, drives)) }
                 return owned
             }
             const id = ++seq
@@ -382,6 +407,29 @@ export function createReadouts() {
         drivesOf(source, key) {
             const id = bySource.get(source)?.get(key)
             return id === undefined ? undefined : nodes.get(id)?.drives
+        },
+
+        // A frame leaving the play takes the derived values that PRODUCE it. A driven
+        // target's driver is owned by a declaring scope that may well survive the target,
+        // so a source release alone leaves it as an orphan. (id:laws-dependency-driven-place)
+        releaseProducing(frameId) {
+            // `produces` keys on the frame identity, but a removal names an id, so match
+            // by id over the nodes' produced sets. A driven target's driver is owned by a
+            // declaring scope that may survive the target.
+            const doomed = []
+            for (const [id, node] of nodes) {
+                for (const frame of node.produces ?? []) {
+                    if (frame != null && frame.id === frameId) { doomed.push(id); break }
+                }
+            }
+            for (const id of doomed) {
+                const node = nodes.get(id)
+                if (!node) continue
+                const keys = bySource.get(node.source)
+                if (keys) keys.delete(node.key)
+                dropNode(id)
+            }
+            return doomed.length > 0
         },
         drivesForSource(source) {
             const keys = bySource.get(source)
@@ -567,12 +615,15 @@ function resetNode(node, spec) {
         node.refused = false
         node.failure = undefined
     } else {
-        node.compute = spec
-        node.capture = undefined
+        node.compute = isCaptured(spec) ? spec.compute : spec
+        node.capture = isCaptured(spec) ? spec.capture : undefined
+        node.hasRequested = isCaptured(spec) && spec.initial !== undefined
+        node.requested = node.hasRequested ? spec.initial.question : undefined
+        node.answer = node.hasRequested ? spec.initial.value : undefined
         node.build = undefined
         node.pending = false
     }
-    node.value = undefined
+    node.value = node.answer
     // A replacement makes the node's place in the graph unknown again: recompute it.
     node.deps = new Set()
     node.frames = new Set()
