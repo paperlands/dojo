@@ -83,24 +83,3 @@ describe("4 · representation invariance — meaning AND rejection survive", () 
         assert.deepEqual(errorsOf("let F = label 'pi'"), [])
     })
 })
-
-// Rebuild: the same law across a question change. Pending — the figure lifecycle
-// reds (7) cover the wake; this pins the obligation so it is not forgotten.
-describe("5 · rebuild — later capture agrees with the first (pending)", () => {
-    const find = (frame, name) => {
-        if (frame.name === name) return frame
-        for (const c of frame.children.values()) { const h = find(c, name); if (h) return h }
-        return null
-    }
-    const drag = (s, frame, x) => s.requestMotion(frame,
-        { rotation: frame.transform.deref().rotation, position: [x, 0, 0] }, s.motionRevision)
-
-    test("a figure whose input turns invalid across a drag refuses at rebuild", { todo: true }, () => {
-        const scheduler = buildWorld({})
-        const host = scheduler.hotSwapChild("host", fork("host", "let X\nlet F = fw 1/(X.x-100)\nwait 1\n"))
-        drive(scheduler)
-        drag(scheduler, find(host, "X"), 100)
-        drive(scheduler, { maxTicks: 40 })
-        assert.match(scheduler.errors.map((e) => e.message).join("; "), /No measure/)
-    })
-})
