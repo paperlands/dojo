@@ -11,6 +11,7 @@ import { createObservable } from "./observable.js"
 // createCell() → { register, get, watch, changed }
 export function createCell() {
     let current = null
+    let seat = 0      // the winning registration's incarnation
     const breath = createObservable()
 
     function changed() {
@@ -18,14 +19,16 @@ export function createCell() {
     }
 
     function register(occupant) {
-        // Normalize ONCE, then guard against the normalized value: registering
-        // nothing must still hand back an unregister that can fire (comparing
-        // against the raw argument left `undefined` seated forever).
+        // Normalize ONCE. Ownership is the REGISTRATION's incarnation, never
+        // the occupant's value: re-registering the same object must not let
+        // the first unregister evict the second.
         const seated = occupant ?? null
+        const mine = ++seat
         current = seated
         changed()
         return () => {
-            if (current !== seated) return // a later mount won
+            if (mine !== seat) return // a later mount won — or already fired
+            seat += 1
             current = null
             changed()
         }

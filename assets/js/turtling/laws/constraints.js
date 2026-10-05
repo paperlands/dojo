@@ -138,9 +138,13 @@ export function stateOf({ at = null, headed = false, exposed = true, isPlace = t
 // A law list, from either an array or the store. (id:laws-activation-order)
 const lawList = (laws) => (Array.isArray(laws) ? laws : laws.active())
 
+// A place with a body: it walks. ONE spelling of "headed" — the point view, the
+// fix and the verdict all ask this. (id:laws-place-head-frame)
+export const hasBody = (frame) => frame?.generator != null || frame?.actorState != null
+
 export function directlyFixed(frame, laws) {
     if (!frame) return true
-    if (frame.generator != null || frame.actorState != null) return true
+    if (hasBody(frame)) return true
     return lawList(laws).some((law) => law.feature === 'position' && law.endpoints[0] === frame.id)
 }
 

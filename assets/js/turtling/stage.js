@@ -310,6 +310,11 @@ export function createStage(canvas, bridge, instruments = {}) {
                 // NEVER RETAIN THE PIXELS: takeSnapshot consumes the buffer
                 // below, and holding it would pin a full-canvas Uint8Array
                 // (1920×993×4 ≈ 7.6MB) per tab for the life of the page.
+                // THE SUBJECT DEPARTS HERE: meta and the save ask belong to THIS
+                // picture — a later frame's metadata must not ride it. (id:ownership-o1)
+                const snap = stage.renderstate.snapshot
+                const meta = { ...stage.renderstate.meta }
+                if (snap.save) stage.renderstate.snapshot = { save: false }
                 queueMicrotask(async () => {
                     try {
                         const rec = getRecorder()
@@ -317,9 +322,8 @@ export function createStage(canvas, bridge, instruments = {}) {
                         if (result) {
                             // The file, if one was asked for — read the flag before
                             // the clear, and clear it whole (id:kb-7-stage).
-                            const snap = stage.renderstate.snapshot
+                            if (disposed) { settle(null); return }
                             if (snap.save) {
-                                stage.renderstate.snapshot = { save: false }
                                 bridge.pub(["saveRecord", {
                                     snapshot: result.full,
                                     type: "image",
@@ -331,7 +335,7 @@ export function createStage(canvas, bridge, instruments = {}) {
                             // back to full so an all-clear frame still photographs.
                             const path = result.trimmed ?? result.full ?? null
                             stage.renderstate.meta.path = path
-                            bridge.pub(["hatchTurtle", { ...stage.renderstate.meta }])
+                            bridge.pub(["hatchTurtle", { ...meta, path }])
                             settle(path)
                             return
                         }

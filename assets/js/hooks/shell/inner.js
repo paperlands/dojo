@@ -46,7 +46,7 @@ export const inner = {
 function mountInner(hook, { term, cm6 }) {
     // Order: bodies → organs → wiring → birth. Nothing publishes before birth.
     // Arena releases are reverse-of-creation — register where made.
-    const arena = createArena();
+    const arena = hook.arena.child();   // ownership begins at acquisition, not return
 
     // BODIES — editor first and silent so organs below read a live term.shell.
     const canvas = document.getElementById('core-canvas');
@@ -278,7 +278,6 @@ function mountInner(hook, { term, cm6 }) {
         (payload) => {
             safePush(hook, "hatchTurtle", {
                 ...payload,
-                buffer_id: term.currentBufferId(),
             })
         },
         200
@@ -314,7 +313,7 @@ function mountInner(hook, { term, cm6 }) {
         const id = await mintSnap(ask, seen, ids, journal, path)
         if (!id) return null
         // First keep is the work. Stash its name; later snaps set target.
-        if (!ids.work_id) term.adoptWork?.(id)
+        if (!ids.work_id) term.adoptWork?.(id, ids.buffer_id)
         touched()
         void wire.announce()
         return id
@@ -328,7 +327,9 @@ function mountInner(hook, { term, cm6 }) {
             break;
         case "hatchTurtle": {
             // D022: document from this surface; reflection wins over stale hatch fields.
-            const hatch = { ...payload, ...(reflection() ?? {}) };
+            // The envelope is complete at DEPARTURE: a delayed hatch never
+            // re-reads the surface it left. (D022: reflection wins stale fields.)
+            const hatch = { ...payload, ...(reflection() ?? {}), buffer_id: term.currentBufferId() };
             pacedHatch(hatch);
             break;
         }

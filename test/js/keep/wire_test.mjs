@@ -650,3 +650,33 @@ describe("wire: one-fact settle is fenced to the shipped id (probe W1)", () => {
     })
 })
 
+describe("wire: the queue is owned, not merely demanded (ownership O2)", () => {
+    test("a superseded run cannot reclaim the queue — even from its error path", async () => {
+        let rootCalls = 0
+        let rejectA = null, releaseB = null
+        const gateA = new Promise((_, rej) => { rejectA = rej })
+        const gateB = new Promise((res) => { releaseB = res })
+        const door = {
+            root: () => (++rootCalls === 1 ? gateA : rootCalls === 2 ? gateB : Promise.resolve("r")),
+            local: async () => [],
+        }
+        const wire = createWire({ hook: makeHook({}), door })
+
+        void wire.announce()               // run A: hangs in root()
+        const healer = wire.reconnected()  // run B owns the latch; A is superseded
+        const third = wire.announce()      // pass demand armed mid-pass
+
+        rejectA(new Error("stale root"))  // A's error path
+        await new Promise((r) => setTimeout(r, 0))
+        assert.equal(rootCalls, 2, "the stale run consumes no pass demand")
+
+        releaseB("r")
+        await Promise.all([healer, third])
+        await new Promise((r) => setTimeout(r, 0))
+        assert.equal(rootCalls, 3, "the armed pass ran — as the healer's own")
+
+        await wire.announce()
+        assert.equal(rootCalls, 4, "and the door stays open for the next birth")
+    })
+})
+

@@ -415,9 +415,13 @@ export function createCompositor(scheduler, stage, opts = {}) {
         // The shared register itself (kindled + warm). Read-only seam.
         get light() { return focus },
 
-    // The pin shares the actual rendered head, not a guess from execution state.
-    // An empty place keeps its bead; once A walks, the ring leaves its centre open.
-    visibleHeadFor(id) { return !!ambientLayers.get(id)?.head?.turtleGroup?.visible },
+    // The ONE read the marks may make of the render: the actual rendered head's
+    // presence and ink — never a guess from execution state. An empty place keeps
+    // its bead; once A walks, the ring leaves its centre open. (id:laws-affordance)
+    renderOf(id) {
+        const head = ambientLayers.get(id)?.head
+        return { visible: !!head?.turtleGroup?.visible, ink: head?.colors?.headkey ?? null }
+    },
 
         // Vector marks for the invariant overlay: a declared object's world segment, so
         // the overlay can place its NAME beyond the tip on screen while the arrow stays

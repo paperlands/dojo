@@ -5,7 +5,7 @@
 import { createFrame } from "./frame.js"
 import { report, notice as noticeWire } from "./report.js"
 import { matchPattern } from "./match.js"
-import { execute, createActorState } from "./executor.js"
+import { execute, createActorState, headEventOf } from "./executor.js"
 import { deriveBatch, exposed, freePoint } from "./laws/batch.js"
 import { createLawStore } from "./laws/replacement.js"
 import { lawViolation, brokenLaw, heldFrame, continueLaws, conflictMessage, affectedMembers, plainPoses, applyLaw } from "./laws/verdict.js"
@@ -1226,7 +1226,6 @@ function seedOf(spec) {
         ast: [...(spec.code?.ast ?? [])],
         functions: spec.code?.functions ?? null,
         userspace: spec.env?.userspace ?? null,
-        color: spec.style?.color ?? null,
         recipe: spec.recipe ?? null,
         question: spec.question?.slice() ?? null,
         style: { ...spec.style },
@@ -1259,7 +1258,7 @@ function sameSeed(seed, spec) {
     }
     return seed.functions === (spec.code?.functions ?? null)
         && seed.userspace === (spec.env?.userspace ?? null)
-        && seed.color === (spec.style?.color ?? null)
+        && (seed.style?.color ?? null) === (spec.style?.color ?? null)
 }
 
 // Invalidate worldTransform cache on self/ancestor change.
@@ -2151,11 +2150,7 @@ function birth(ctx, value, _route, pump) {
 // (id:laws-transaction-d)
 function emitHead(member, pose) {
     if (!member.done) return
-    const head = {
-        type: 'head', position: pose.position, rotation: pose.rotation,
-        color: member.actorState?.style?.color,
-        headSize: member.actorState?.style?.showTurtle,
-    }
+    const head = headEventOf(member.actorState, pose)
     const target = member.targetFrame ? findReferenceFrame(member, member.targetFrame) : null
     putSync(member, target ? projectHead(head, target, relativeTransform(member, target)) : head)
 }
@@ -2977,11 +2972,7 @@ export function createScheduler(generator, opts = {}) {
                 // declaring-frame projection as a program head (id:ft-d5-head).
                 for (const { frame: member, pose } of members) {
                     if (!member.done) continue
-                    const head = {
-                        type: 'head', position: pose.position, rotation: pose.rotation,
-                        color: member.actorState?.style?.color,
-                        headSize: member.actorState?.style?.showTurtle,
-                    }
+                    const head = headEventOf(member.actorState, pose)
                     const target = targets.get(member)
                     putSync(member, target ? projectHead(head, target, relativeTransform(member, target)) : head)
                 }

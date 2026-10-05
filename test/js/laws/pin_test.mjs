@@ -13,11 +13,11 @@ const stub = () => {
         moveTo(x, y) { calls.push(['moveTo', x, y]) },
         lineTo(x, y) { calls.push(['lineTo', x, y]) },
         closePath() { calls.push(['close']) },
-        stroke() { calls.push(['stroke']) },
-        fill() { calls.push(['fill']) },
+        stroke() { calls.push(['stroke', ctx.strokeStyle, ctx.globalAlpha]) },
+        fill() { calls.push(['fill', ctx.fillStyle, ctx.globalAlpha]) },
         save() { calls.push(['save']) },
         restore() { calls.push(['restore']) },
-        fillText(text, x, y) { calls.push(['text', text, x, y, ctx.textAlign]) },
+        fillText(text, x, y) { calls.push(['text', text, x, y, ctx.textAlign, ctx.fillStyle, ctx.globalAlpha]) },
         measureText(s) { return { width: s.length * 6 } },
     }
     return { ctx, calls }
@@ -126,4 +126,21 @@ test("the label stays on the visible field", () => {
     drawPin(ctx, { cx: 100, cy: 50, name: 'A', width: 500 })
     assert.equal(calls.filter(c => c[0] === 'text')[0][4], 'right')
     assert.equal(calls.filter(c => c[0] === 'text')[1][4], 'left')
+})
+
+test("the mark and its name take the ink they are given, at the state's weight", () => {
+    const inked = stub(), paper = stub()
+    drawPin(inked.ctx, { cx: 100, cy: 50, name: 'A', width: 200, touchable: true, held: true,
+        facing: { x: 30, y: 0 }, ink: '#123456' })
+    drawPin(paper.ctx, { cx: 100, cy: 50, name: 'A', width: 200 })
+    const paints = inked.calls.filter(c => c[0] === 'fill' || c[0] === 'stroke')
+    assert.ok(paints.every(c => c[1] === '#123456'), "ring, arm and dot are the ink")
+    assert.ok(paints.every(c => [0.75, 0.85, 0.95].includes(c[2])),
+        "and the held ladder rides it — tint never flattens the weight")
+    const name = inked.calls.find(c => c[0] === 'text')
+    assert.equal(name[5], '#123456', "the name is the same ink")
+    assert.equal(name[6], 0.52, "at the name's own weight")
+    const rest = paper.calls.filter(c => c[0] === 'fill')[0]
+    assert.equal(rest[1], 'rgb(243,237,223)', "without ink, the mark is paper")
+    assert.equal(rest[2], 0.82, "at the resting dot's weight")
 })

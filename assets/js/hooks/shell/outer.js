@@ -31,7 +31,7 @@ export const outer = {
 
 function mountOuter(hook, { term, cm6 }) {
     // Read-only viewer; canvas render is inner via seeOuterShell. Arena owns listeners.
-    const arena = createArena();
+    const arena = hook.arena.child();   // ownership begins at acquisition, not return
     let outerAddr = null;
     let outerName = null;
     let outerRoot = null;

@@ -423,6 +423,7 @@ export class Recorder {
                     this._config
                 );
 
+                if (this._destroyed) return;   // death during negotiation retires the start
                 if (!negotiation.supported) {
                     throw new Error(
                         'No supported encoder configuration found. ' +
@@ -455,6 +456,7 @@ export class Recorder {
 
             // Initialize output with negotiated config
             await this._initializeOutput();
+            if (this._destroyed) return;   // the continuation allocates nothing on a dead recorder
             
             // Reset timing
             this._startTime = performance.now();

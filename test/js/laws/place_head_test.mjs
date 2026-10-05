@@ -74,9 +74,11 @@ test("the canvas offers a hand only to an unanchored place", () => {
     // counterpart — or, unconstrained, the declaring scope's frame origin, where
     // `origin` reads. Never the cursor that seated the place and never the pin.
     // (id:laws-freedom, id:laws-decl-interface)
-    assert.match(turtle, /this\._stateOf\(frame\)\.truth\.distances\.map\(\(d\) => d\.other\)/,
+    assert.match(turtle, /state\.truth\.distances\.map\(\(d\) => d\.other\)/,
         "a held point spans to its distance counterparts")
     assert.match(turtle, /partners\.length \? partners : \[worldTransform\(frame\.parent\)\.position\]/,
         "and to its origin only when nothing constrains it")
+    assert.match(turtle, /this\._handle = \{[\s\S]{0,600}?handle\.grabbed/,
+        "the canvas wrapper forwards the gesture's holding — the seam crosses the canvas")
 })
 

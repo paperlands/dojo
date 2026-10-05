@@ -243,13 +243,16 @@ function materializeVector(event, groups, ctx) {
         cone.position.y = -0.5          // the cone's tip lands on the group's origin
         head.add(cone)
         groups.pathGroup?.add?.(head)
-        entry = { line, head, event }
+        entry = { line, head, cone, event }
         store.set(event.name, entry)
     } else {
         const stale = entry.line.geometry
         entry.line.geometry = geometry
         entry.line.computeLineDistances()
         stale?.dispose?.()
+        // The vector is what it is now — ink too, never a first-paint freeze.
+        entry.line.material = ctx.materials?.get(event.color, event.thickness) ?? entry.line.material
+        entry.cone?.material?.color?.set?.(event.color)
         entry.event = event
     }
     placeArrow(entry.head, event.from, event.to)

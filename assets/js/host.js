@@ -7,10 +7,18 @@ export function createHatch(canvas, { caps, law } = {}) {
     let disposed = false
     let generation = 0
     let finishReject = null
+    // ONE progress dispatch for the hatch's lifetime; a play installs only its
+    // own completion and replacement retires it. Per-play wrapping grew the
+    // chain forever — 20k completed plays, one deep stack at the next breath.
+    let settleNow = null
+    turtle.onProgress = (p) => {
+        if (p?.phase === "settled") settleNow?.()
+    }
 
     function supersede() {
         const reject = finishReject
         finishReject = null
+        settleNow = null
         reject?.(new Error("superseded"))
     }
 
@@ -43,13 +51,10 @@ export function createHatch(canvas, { caps, law } = {}) {
                 if (disposed || generation !== gen) return
                 if (!turtle.scheduler?.done) return
                 finishReject = null
+                settleNow = null
                 resolve({ commandCount: turtle.scheduler.commandCount })
             }
-            const prev = turtle.onProgress
-            turtle.onProgress = (p) => {
-                prev?.(p)
-                if (p?.phase === "settled") settle()
-            }
+            settleNow = settle
             settle()
             return { finished, commandCount: result.commandCount }
         },
@@ -65,6 +70,7 @@ export function createHatch(canvas, { caps, law } = {}) {
             generation++
             const reject = finishReject
             finishReject = null
+            settleNow = null
             reject?.(new Error("hatch disposed"))
             turtle.dispose?.()
         },

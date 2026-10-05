@@ -20,7 +20,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { randomBytes } from "node:crypto";
 
-const DEBUG_HTTP = "http://localhost:9222";
+const DEBUG_HTTP = process.env.DOJO_CDP || "http://localhost:9222";
 // The shell page to drive. Override when the dev server is not on 4000 (the
 // rig's assumption, not a contract): DOJO_SHELL=localhost:4001/shell
 const SHELL_MATCH = process.env.DOJO_SHELL || "localhost:4000/shell";

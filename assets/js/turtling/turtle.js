@@ -4,6 +4,7 @@ import { ailmentsFor, standingAilments, verdict } from "../weave/queries.js"  //
 import { drainNamespace } from "./executor.js"
 import { Evaluator } from "./mafs/evaluate.js"
 import Render from "./render/index.js"
+import { INK } from "./ink.js"
 import { bridged } from "../bridged.js"
 import { createStage } from "./stage.js"
 import { SE3 } from "./se3.js"
@@ -18,7 +19,7 @@ import { exposed, pointCandidates } from "./laws/batch.js"
 import { viewMapping } from "./laws/handle.js"
 import { verdictFade, OUTCOME } from "./laws/outcome.js"
 import { VERDICT_DECAY_MS } from "./laws/feel.js"
-import { drawPin, drawTrace, drawRim, drawGhostMark, drawAxis, drawCurve, drawSpan, nameAnchor, drawVectorName } from "./laws/pin.js"
+import { drawPin, drawTrace, drawRim, drawGhostMark, drawAxis, drawCurve, drawSpan, nameAnchor, drawName } from "./laws/pin.js"
 import { axesOf, marksOf, boundsOf } from "./laws/constraints.js"
 import { unionBounds, viewDirection } from "./laws/fit.js"
 import { hintsVisible, normalizeReveal, movedEnough } from "./laws/reveal.js"
@@ -83,7 +84,7 @@ export class Turtle {
             stage.controls.addEventListener(ev, this._onControlsActive)
         }
 
-        this.color = '#e77808'
+        this.color = INK
         // Beat channel sink. Set by a host; read live at drain time. (id:host-beat)
         this.onBeat = null
 
@@ -188,6 +189,16 @@ export class Turtle {
         return pointStateOf(frame, this.scheduler)
     }
 
+    // A mark's ink is the current head's: the place's own, else the declaring
+    // scope's walk, else the seed. (id:laws-affordance)
+    _inkOf(frame) {
+        for (let f = frame; f; f = f.parent) {
+            const ink = this.compositor?.renderOf?.(f.id)?.ink
+            if (ink) return ink
+        }
+        return this.color
+    }
+
     // Frame the figure: every exposed place, plus the true radius of each
     // bounded locus it names. A bounded mark is framed by the eye, never
     // enlarged for it. (id:laws-freedom)
@@ -235,9 +246,13 @@ export class Turtle {
         const scheduler = this.scheduler
         if (!scheduler) return
         // A run can attach a head or remove a point without another pointer move.
-        if (this._heldFrame && (!this._touchable(this._heldFrame)
-            || scheduler.registry.get(this._heldFrame.id) !== this._heldFrame)) {
+        // The gesture OWNS the hand — this canvas reads its one published holding,
+        // never a mirror. (id:laws-decl-handle)
+        let heldFrame = this._handle?.grabbed?.frame ?? null
+        if (heldFrame && (!this._touchable(heldFrame)
+            || scheduler.registry.get(heldFrame.id) !== heldFrame)) {
             this._handle?.cancel()
+            heldFrame = null
         }
         const now = performance.now()
         if (this._ghost && now - this._ghost.at >= VERDICT_DECAY_MS) this._ghost = null
@@ -249,9 +264,15 @@ export class Turtle {
         const cp = { x: eye[0], y: eye[1], z: eye[2] }
         // Every law-derived hint is drawn only when the reveal control allows.
         const showHints = this._hintsVisible()
+        // ONE description per frame per pass — hints and marks read the same
+        // story, computed once. (id:laws-decl-point-agent, D058)
+        const states = new Map()
         for (const frame of scheduler.registry.values()) {
-            if (!showHints || frame === scheduler.root || !exposed(frame)) continue
-            const state = this._stateOf(frame)
+            if (frame === scheduler.root || !exposed(frame)) continue
+            states.set(frame, this._stateOf(frame))
+        }
+        for (const [frame, state] of states) {
+            if (!showHints) continue
             if (state.tag !== 'free') continue
             const at = state.at
             // Display scale: world units per pixel at this point's depth. The pitch
@@ -295,8 +316,7 @@ export class Turtle {
                     view.project(along(axes.normal)), { strong: true })
             }
         }
-        for (const frame of scheduler.registry.values()) {
-            if (frame === scheduler.root || !exposed(frame)) continue
+        for (const [frame, state] of states) {
             // A derived figure's pin marks its BIRTH — the definition's origin. An
             // ordinary place's pin marks where it walks. The membrane again: a value
             // has an origin to return to; a process owns its position.
@@ -316,8 +336,8 @@ export class Turtle {
             const facing = view.project([
                 world.position[0] + fx, world.position[1] + fy, world.position[2] + fz,
             ])
-            const touchable = this._touchable(frame)
-            const held = touchable && this._heldFrame === frame
+            const touchable = state.interaction.offered
+            const held = touchable && heldFrame === frame
             const readout = held && this.lastReadout?.point === frame.name ? this.lastReadout : null
             const ghost = this._ghost?.point === frame.name
                 ? { text: this._ghost.text, fade: verdictFade(now - this._ghost.at) } : null
@@ -327,14 +347,14 @@ export class Turtle {
             // origin, where `origin` reads). Shown, never spoken.
             // (id:laws-freedom, id:laws-decl-interface)
             if (held) {
-                const partners = this._stateOf(frame).truth.distances.map((d) => d.other)
+                const partners = state.truth.distances.map((d) => d.other)
                 const targets = partners.length ? partners : [worldTransform(frame.parent).position]
                 for (const target of targets) drawSpan(overlay.ctx, view.project(target), at, { alpha: 0.45 })
             }
             drawPin(overlay.ctx, {
                 cx: at.x, cy: at.y, width: overlay.width, name: frame.name,
-                ink: this.color,
-                withHead: this.compositor?.visibleHeadFor(frame.id) ?? false,
+                ink: this._inkOf(frame),
+                withHead: this.compositor?.renderOf(frame.id)?.visible ?? false,
                 touchable, held, accepted: frame.transform.deref().position,
                 facing: facing ? { x: facing.x - at.x, y: facing.y - at.y } : null,
                 outcome: readout?.outcome,
@@ -355,8 +375,8 @@ export class Turtle {
             const tip = view.project(mark.to)
             if (!tip) continue
             const anchor = nameAnchor(view.project(mark.from), tip)
-            drawVectorName(overlay.ctx, { cx: anchor.x, cy: anchor.y,
-                width: overlay.width, name: mark.name, ink: this.color })
+            drawName(overlay.ctx, { cx: anchor.x, cy: anchor.y,
+                width: overlay.width, lines: [{ text: mark.name }], ink: mark.color ?? this.color })
         }
     }
 
@@ -408,7 +428,7 @@ export class Turtle {
                 if (line.outcome === 'accepted') {
                     this._lastRefusal = null
                     this._ghost = null
-                } else if (line.outcome && this._heldFrame) {
+                } else if (line.outcome && this._handle?.grabbed) {
                     this._lastRefusal = { point: line.point, text: line.outcome }
                 }
                 this.requestRender()
@@ -420,22 +440,20 @@ export class Turtle {
             if (!answer.claimed) return
             event.stopImmediatePropagation()
             event.preventDefault()
-            this._heldFrame = answer.frame
             this._lastRefusal = null
             this._ghost = null
             this.requestRender()
         }
-        // A move is every sample it carries — the gesture owns that meaning, so the DOM
-        // layer only forwards the event and drops the held frame if the batch cancelled.
+        // A move is every sample it carries — the gesture owns that meaning and its
+        // own holding, so the DOM layer only forwards the event.
         // (id:laws-figures-phase34-intent)
         const move = event => {
             if (event.target !== canvas && captured !== event.pointerId) return
-            if (moveGesture(handle, event)) this._heldFrame = null
+            moveGesture(handle, event)
         }
         const end = event => {
             if (captured !== event.pointerId) return
             handle.pointerUp({ pointerId: event.pointerId })
-            this._heldFrame = null
             if (this._lastRefusal) {
                 this._ghost = { ...this._lastRefusal, at: performance.now() }
                 this._lastRefusal = null
@@ -445,7 +463,6 @@ export class Turtle {
         const cancel = event => {
             if (captured !== event.pointerId) return
             handle.pointerCancel({ pointerId: event.pointerId })
-            this._heldFrame = null
             this.requestRender()
         }
         window.addEventListener('pointerdown', down, { capture: true })
@@ -454,9 +471,11 @@ export class Turtle {
         window.addEventListener('pointercancel', cancel, { capture: true })
         canvas.addEventListener('lostpointercapture', cancel)
         this._handle = {
+            // The gesture's holding crosses the canvas seam here — the one
+            // read seam for held state, forwarded, never mirrored. (id:ownership-o3)
+            get grabbed() { return handle.grabbed },
             cancel: () => {
                 if (captured !== null) handle.pointerCancel({ pointerId: captured })
-                this._heldFrame = null
                 this._lastRefusal = null
                 this._ghost = null
             },
@@ -773,7 +792,6 @@ export class Turtle {
         if (this.scheduler.root.children.size === 0) {
             this._handle?.dispose()
             this._handle = null
-            this._heldFrame = null
             this._lastRefusal = null
             this._ghost = null
             this.compositor.dispose()
@@ -876,7 +894,6 @@ export class Turtle {
         if (this.scheduler) {
             this._handle?.dispose()
             this._handle = null
-            this._heldFrame = null
             this._lastRefusal = null
             this._hintsRevealed = false
             this._ghost = null

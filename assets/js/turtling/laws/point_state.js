@@ -4,7 +4,7 @@
 // (id:laws-decl-point-agent, id:laws-decl-interface, D058)
 import { frameWorldTransform, worldTransform } from "../scheduler.js"
 import { bindWorld, constraintsView } from "./authored.js"
-import { stateOf, heldIdentity } from "./constraints.js"
+import { stateOf, heldIdentity, hasBody } from "./constraints.js"
 import { exposed } from "./batch.js"
 
 export function pointStateOf(frame, scheduler, active = null) {
@@ -22,7 +22,7 @@ export function pointStateOf(frame, scheduler, active = null) {
     const view = constraintsView(frame.id, laws, ctx)
     return stateOf({
         at: frameWorldTransform(frame).position,
-        headed: frame.generator != null || frame.actorState != null,
+        headed: hasBody(frame),
         exposed: exposed(frame),
         isPlace: frame.isPlace === true,
         error: frame.error ?? null,

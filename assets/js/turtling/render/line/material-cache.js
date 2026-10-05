@@ -1,6 +1,7 @@
 // LineMaterial cache by style; stage-owned lifetime. (spec A3, id:child-ink)
 
 import { LineMaterial } from '../../../utils/three-addons/lines/LineMaterial.js'
+import { INK } from '../../ink.js'
 
 // opts.createMaterial — inject for headless tests; production tags _cached.
 export function createMaterialCache(opts = {}) {
@@ -13,7 +14,7 @@ export function createMaterialCache(opts = {}) {
 
         get(color, thickness) {
             if (disposed) throw new Error('materialCache: used after dispose')
-            const key = `${color || 0xe77808}:${thickness || 2}`
+            const key = `${color || INK}:${thickness || 2}`
             let mat = cache.get(key)
             if (!mat) {
                 mat = make(color, thickness, { vertexColors: false })
@@ -58,7 +59,7 @@ export function createMaterialCache(opts = {}) {
 
 function defaultLineMaterial(color, thickness, opts = {}) {
     const mat = new LineMaterial({
-        color: opts.vertexColors ? 0xffffff : (color || 0xe77808),
+        color: opts.vertexColors ? 0xffffff : (color || INK),
         linewidth: thickness || 2,
         vertexColors: !!opts.vertexColors,
         dashed: false,

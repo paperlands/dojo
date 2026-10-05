@@ -506,9 +506,9 @@ export const createTerminal = (element, cm6, options = {}) => {
             if (typeof content !== "string" || !state.collection) return;
             const id = state.collection.currentId;
             if (!id) return;
-            state.projecting = false;
-            state.collection = buffers.updateContent(state.collection, id, content);
-            autosave();
+            landContent(id, content);
+            // The one thing landContent's projection guard refuses: the heal
+            // forces the surface even when another buffer is projected.
             if (shell && editorView.getContent(shell) !== content) {
                 editorView.setContent(shell, content);
             }
@@ -553,9 +553,11 @@ export const createTerminal = (element, cm6, options = {}) => {
         },
 
         // Stash the origin keep the journal already named.
-        adoptWork(work_id) {
+        // The completion belongs to the buffer captured at ask time — never to
+        // whichever tab is current when the await resolves.
+        adoptWork(work_id, buffer_id = null) {
             if (!work_id || !state.collection) return null;
-            const id = state.collection.currentId;
+            const id = buffer_id ?? state.collection.currentId;
             if (!id) return null;
             const next = buffers.setWorkId(state.collection, id, work_id);
             if (next === state.collection) return id;

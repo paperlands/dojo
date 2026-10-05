@@ -17,6 +17,9 @@ const DOT_REST = 2.5     // the place itself, at rest
 const DOT_HELD = 3.5     // a hand is on it
 const FACING_MIN = 4     // px: a facing the eye flattened away is no facing
 const ARM_MIN = 4        // px: an arm shorter than its own base is no arm
+// One ink at one weight: the mark's colour through the state's alpha, so a tint
+// never flattens the held/resting ladder. (id:laws-decl-interface)
+const inkAt = (ctx, ink, alpha) => { ctx.globalAlpha = alpha; return ink || `rgb(${PAPER})` }
 
 // One coordinate, as the drawing states it: the plane is two numbers, and the
 // third appears only when the point has actually left it. (id:laws-decl-interface)
@@ -31,6 +34,7 @@ export function coordinate(position) {
 
 export function drawPin(ctx, { cx, cy, name = '', width = 0, withHead = false,
     touchable = false, held = false, accepted = null, outcome = null, ghost = null, facing = null, ink = null }) {
+    ctx.save()
     const radius = touchable || withHead ? 18 : 9
     const dot = held ? DOT_HELD : DOT_REST
     // The arm is drawn under the ring: the world's mark beneath the hand's.
@@ -47,7 +51,7 @@ export function drawPin(ctx, { cx, cy, name = '', width = 0, withHead = false,
         ctx.lineTo(cx + ux * reach, cy + uy * reach)
         ctx.lineTo(cx + ux * base + uy * half, cy + uy * base - ux * half)
         ctx.closePath()
-        ctx.fillStyle = ink || `rgba(${PAPER},${held ? 0.75 : 0.62})`
+        ctx.fillStyle = inkAt(ctx, ink, held ? 0.75 : 0.62)
         ctx.fill()
     }
 
@@ -55,7 +59,7 @@ export function drawPin(ctx, { cx, cy, name = '', width = 0, withHead = false,
     // couple it visibly to the arrow; neither steals the other's centre.
     ctx.beginPath()
     ctx.arc(cx, cy, radius, 0, TAU)
-    ctx.strokeStyle = ink || `rgba(${PAPER},${touchable ? held ? 0.85 : 0.5 : 0.28})`
+    ctx.strokeStyle = inkAt(ctx, ink, touchable ? (held ? 0.85 : 0.5) : 0.28)
     ctx.lineWidth = touchable && held ? 1.6 : 1
     ctx.stroke()
 
@@ -68,11 +72,11 @@ export function drawPin(ctx, { cx, cy, name = '', width = 0, withHead = false,
             // the compass has no bearing to give either. The dot opens instead of
             // vanishing — "it points at you", never "it has no facing". A facing we
             // did not read at all is not this case, and stays filled.
-            ctx.strokeStyle = ink || `rgba(${PAPER},${dotAlpha})`
+            ctx.strokeStyle = inkAt(ctx, ink, dotAlpha)
             ctx.lineWidth = 1
             ctx.stroke()
         } else {
-            ctx.fillStyle = ink || `rgba(${PAPER},${dotAlpha})`
+            ctx.fillStyle = inkAt(ctx, ink, dotAlpha)
             ctx.fill()
         }
     }
@@ -83,17 +87,13 @@ export function drawPin(ctx, { cx, cy, name = '', width = 0, withHead = false,
     if (held && accepted) lines.push(coordinate(accepted))
     if (held && outcome && outcome !== 'accepted') lines.push(outcome)
     else if (!held && touchable && ghost?.fade > 0) lines.push(ghost.text)
-    ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace'
-    const gap = radius + 12
-    const flip = cx + gap + Math.max(...lines.map(s => ctx.measureText(s).width)) > width
-    ctx.textAlign = flip ? 'right' : 'left'
-    ctx.textBaseline = 'alphabetic'
-    lines.forEach((line, index) => {
-        const fade = !held && index > 0 ? ghost?.fade ?? 1 : 1
-        ctx.fillStyle = `rgba(${PAPER},${(index === 0 ? 0.52 : 0.34) * fade})`
-        ctx.fillText(line, cx + (flip ? -gap : gap), cy - radius + 2 + index * 13)
+    drawName(ctx, {
+        cx, cy: cy - radius + 2, width, ink, gap: radius + 12,
+        lines: lines.map((text, index) => ({
+            text, alpha: (index === 0 ? 0.52 : 0.34) * (!held && index > 0 ? ghost?.fade ?? 1 : 1),
+        })),
     })
-    ctx.textAlign = 'left'
+    ctx.restore()
 }
 
 // Screen anchor for a name that reads beyond an object's tip: pad along the object's
@@ -108,18 +108,22 @@ export function nameAnchor(from, to, pad = 12) {
     return { x: to.x + dx / len * pad, y: to.y + dy / len * pad }
 }
 
-// A declared object's NAME, at a screen point: the same paper ink and monospace face
-// a pin's name uses, so a name reads the same wherever it marks a thing — and it is
-// invariant to the camera because the overlay is. (id:notation-coordinate-vector)
-export function drawVectorName(ctx, { cx, cy, width = 0, name = '', ink = null }) {
-    if (!name) return
+// The NAME protocol, one: monospace, measured, flipped at the field's edge. A
+// pin's label and a vector's name are the same reading, ink riding the mark's.
+// (id:notation-coordinate-vector, id:laws-decl-interface)
+export function drawName(ctx, { cx, cy, width = 0, lines = [], ink = null, gap = 0 }) {
+    if (!lines.some((line) => line?.text)) return
+    ctx.save()
     ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace'
-    ctx.textAlign = 'left'
+    const flip = cx + gap + Math.max(...lines.map((line) => ctx.measureText(line?.text ?? '').width)) > width
+    ctx.textAlign = flip ? 'right' : 'left'
     ctx.textBaseline = 'alphabetic'
-    const w = ctx.measureText(name).width
-    const flip = cx + w > width
-    ctx.fillStyle = ink || `rgba(${PAPER},0.52)`
-    ctx.fillText(name, flip ? cx - w : cx, cy)
+    lines.forEach(({ text, alpha = 0.52 }, index) => {
+        if (!text) return
+        ctx.fillStyle = inkAt(ctx, ink, alpha)
+        ctx.fillText(text, cx + (flip ? -gap : gap), cy + index * 13)
+    })
+    ctx.restore()
 }
 
 // A dashed mark: one polyline, one stroke, so the dash reads as a cadence and not

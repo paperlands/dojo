@@ -46,7 +46,7 @@ function emptyView() {
 }
 
 function mountRiver(hook) {
-    const arena = createArena()
+    const arena = hook.arena.child()   // ownership begins at acquisition, not return
     const root = hook.el
     const rail = root.querySelector("[data-rail]")
     const sun = root.querySelector("[data-sun]")
@@ -182,6 +182,7 @@ function mountRiver(hook) {
                 door.list(rootName, REACH),
                 door.local(rootName, REACH),
             ])
+            if (!alive()) return NO_PAGE
             let versions = ofWork(listed, work)
             // Journal owns the origin; recover onto the tab if the field is empty.
             if (versions.length === 0) {
@@ -503,6 +504,7 @@ function mountRiver(hook) {
         const title = message.value.trim()
         if (at.key === DRAFT && draft) setDraft({ ...draft, title: "" })
         beginSeal(title)
+        const mine = seal   // the seal that ISSUED this ask (id:ownership-o1)
         const prev = at.key === DRAFT && draft?.from ? draft.from : null
         // Self: session letters from the shell. Peer: live presence name, else origin.name.
         void askKeep(title, {
@@ -510,8 +512,9 @@ function mountRiver(hook) {
             name: sessionName(),
             peer: peerOf(term.get()),
         }).then((id) => {
-            if (!id && seal) miss(title)
-            else if (id) sealGuard.cancel()
+            if (seal !== mine) return   // a newer seal owns the seat
+            if (!id) miss(title)
+            else sealGuard.cancel()
         })
         return true
     }

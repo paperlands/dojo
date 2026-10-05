@@ -190,13 +190,7 @@ export function* execute(ast, deps, opts = {}) {
         // Flush accumulated path before crash propagates — valid geometry survives
         const pathEvent = strokeFlush(stroke)
         if (pathEvent) yield pathEvent
-        yield {
-            type: "head",
-            position: [...state.transform.position],
-            rotation: state.transform.rotation,
-            headSize: state.style.showTurtle,
-            color: state.style.color
-        }
+        yield headEventOf(state)
         throw error
     }
 
@@ -215,15 +209,18 @@ export function* execute(ast, deps, opts = {}) {
     }
 
     // Final head event — tells materializer where the turtle ended up
-    yield {
-        type: "head",
-        position: [...state.transform.position],
-        rotation: state.transform.rotation,
-        headSize: state.style.showTurtle,
-        color: state.style.color
-    }
+    yield headEventOf(state)
 
     return { commandCount: state.commandCount, actorState: state }
+}
+
+// The head event, ONE shape — the walk's and the scheduler's display projections
+// agree by construction. (id:ft-d5-head)
+export function headEventOf(state, pose = state?.transform) {
+    return {
+        type: 'head', position: [...pose.position], rotation: pose.rotation,
+        headSize: state?.style?.showTurtle, color: state?.style?.color,
+    }
 }
 
 // A component transaction posts a pose to this worker's inbox; the worker adopts

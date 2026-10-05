@@ -38,7 +38,7 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                 warm:       focus?.warm ?? [],
                 authored:   authoredOf?.() ?? null,
                 mine:       turtle._hatchMine,
-                held:       turtle._heldFrame?.name ?? null,
+                held:       turtle._handle?.grabbed?.name ?? null,
                 reveal:     turtle.reveal ? { condition: turtle.reveal, revealed: turtle.hintsRevealed === true, hints: turtle._hintsVisible?.() ?? null } : null,
                 handMoves:  turtle.handMoves ?? null,
                 revision:   turtle.scheduler?.motionRevision ?? null,

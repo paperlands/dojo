@@ -164,7 +164,24 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-  def handle_async(:follow_code, {:ok, %Dojo.Turtle{} = turtle}, socket) do
+  # The result carries its subject AND the installation it may update:
+  # a late follow from a closed or switched shell changes nothing. (id:ownership-o1)
+  def handle_async(:follow_code, {:ok, {gen, subject, %Dojo.Turtle{} = turtle}}, socket) do
+    if gen == follow_gen(socket) and socket.assigns.outershell.addr == subject do
+      apply_follow(turtle, socket)
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_async(:follow_code, {:ok, _}, socket), do: {:noreply, socket}
+  def handle_async(:follow_code, {:exit, _reason}, socket), do: {:noreply, socket}
+
+  # The follow epoch: every switch or close retires pending follow results.
+  defp follow_gen(socket), do: socket.assigns[:follow_gen] || 0
+  defp bump_follow(socket), do: assign(socket, :follow_gen, follow_gen(socket) + 1)
+
+  defp apply_follow(turtle, socket) do
     prev = socket.assigns.outershell.origin
     shell = OuterShell.observe(socket.assigns.outershell, turtle)
     socket = assign(socket, :outershell, shell)
@@ -186,8 +203,6 @@ defmodule DojoWeb.ShellLive do
     end
   end
 
-  def handle_async(:follow_code, {:ok, _}, socket), do: {:noreply, socket}
-  def handle_async(:follow_code, {:exit, _reason}, socket), do: {:noreply, socket}
 
   # presence handlers — keyed by reg_key (a meta field; Disciple.reg_key/1
   # stays tolerant of legacy metas where it rode inside the node tuple).
@@ -405,7 +420,7 @@ defmodule DojoWeb.ShellLive do
         turtle
       )
 
-    {:noreply, assign(socket, :outershell, outershell)}
+    {:noreply, socket |> assign(:outershell, outershell) |> bump_follow()}
   end
 
   # Empty seeTurtle = close. Server must tell the client (no prior close_js).
@@ -607,8 +622,9 @@ defmodule DojoWeb.ShellLive do
     if OuterShell.wants_updates?(outershell) and outershell.addr == reg_key and
          dis[reg_key][:node] do
       if (time || 0) > OuterShell.last_time(outershell) do
+        gen = follow_gen(socket)
         start_async(socket, :follow_code, fn ->
-          Dojo.Table.last(Dojo.Disciple.table_address(dis[reg_key]), :hatch)
+          {gen, reg_key, Dojo.Table.last(Dojo.Disciple.table_address(dis[reg_key]), :hatch)}
         end)
       else
         socket
@@ -624,8 +640,9 @@ defmodule DojoWeb.ShellLive do
     %{outershell: o, disciples: dis} = socket.assigns
 
     if o.addr && dis[o.addr][:node] do
+      gen = follow_gen(socket)
       start_async(socket, :follow_code, fn ->
-        Dojo.Table.last(Dojo.Disciple.table_address(dis[o.addr]), :hatch)
+        {gen, o.addr, Dojo.Table.last(Dojo.Disciple.table_address(dis[o.addr]), :hatch)}
       end)
     else
       socket
@@ -655,12 +672,12 @@ defmodule DojoWeb.ShellLive do
   # Chrome assigns only. Client owns open flag + canvas cleanup.
   # notify: true when the server closes without a prior close_js (empty seeTurtle).
   defp reset_outershell(socket, opts \\ []) do
-    socket = assign(socket, :outershell, %OuterShell{})
+    socket = socket |> assign(:outershell, %OuterShell{}) |> bump_follow()
     if opts[:notify], do: push_event(socket, "outerClose", %{}), else: socket
   end
 
   defp apply_outer_view(socket, %OuterShell{} = shell) do
-    socket = assign(socket, :outershell, shell)
+    socket = socket |> assign(:outershell, shell) |> bump_follow()
 
     case OuterShell.render_intent(shell) do
       {:push, source} -> push_event(socket, "seeOuterShell", OuterShell.payload(source, shell))

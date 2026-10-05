@@ -26,13 +26,15 @@ export async function fragmentIndex() {
     try {
         const res = await fetch("/codex/index.json")
         if (!res.ok) {
-            indexCache = null
+            // 404 is a FACT about the corpus (none pressed yet) and may cache;
+            // any other failure is transport — uncached, so the next call tries
+            // again. Transport failure is never evidence of an empty corpus.
+            if (res.status === 404) indexCache = null
             return null
         }
         indexCache = await res.json()
         return indexCache
     } catch {
-        indexCache = null
         return null
     }
 }

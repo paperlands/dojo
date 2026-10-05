@@ -87,6 +87,7 @@ export function createEngine(opts = {}) {
             }
             req.onsuccess = () => {
                 const d = req.result
+                if (closed) { d.close(); reject(new Error("journal: closed")); return }
                 // The upgrade waits for every older connection to close
                 // (id:kb-vet3 22). Answer versionchange by closing so the
                 // upgrade can proceed; the next verb re-opens versionless.

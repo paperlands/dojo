@@ -41,7 +41,7 @@ const DOORWAY = "the-chase"
 function mountWeave(hook, boot = {}) {
     // One lifetime — every organ registers its release here; async
     // continuations ask the same liveness (kernel/arena.js; hook adopts it).
-    const arena = createArena()
+    const arena = hook.arena.child()   // ownership begins at acquisition, not return
     const trailEl = hook.el
     const stage = () => boot.turtle ?? getStage()
     const nerve = () => boot.nerve ?? seatedNerve()

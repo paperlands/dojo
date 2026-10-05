@@ -7,7 +7,6 @@ import { PAGE } from "./page.js"
 /** The event that ships one kept-local message. */
 export const KEEP_EVENT = "keep"
 
-/** @typedef {"idle" | "draining" | "reannounce-armed"} Phase */
 
 /**
  * Open the keep's socket edge.
@@ -31,8 +30,8 @@ export function createWire(opts = {}) {
     const page =
         typeof opts.page === "number" && opts.page > 0 ? opts.page : PAGE
 
-    /** @type {Phase} */
-    let phase = "idle"
+    let running = false      // one shipment at a time
+    let passWanted = false   // "another pass requested" — independent of running
     let epoch = 0
 
     /**
@@ -64,77 +63,77 @@ export function createWire(opts = {}) {
 
     /**
      * Birth, rejoin, and after each mint — one PAGE of local, serial.
-     * Re-entry while draining arms a free pass.
+     * Re-entry while a pass runs arms another pass — never a second shipment.
      * @returns {Promise<void>}
      */
+    // "Running" and "another pass requested" are INDEPENDENT facts: a re-entry
+    // arms a pass — it never starts a second shipment beside the first.
     async function announce() {
-        if (phase === "draining") {
-            phase = "reannounce-armed"
-            return
-        }
-        const mine = ++epoch
-        phase = "draining"
+        passWanted = true
+        if (running) return
+        const run = ++epoch
+        running = run
         try {
-            if (!door || typeof door.root !== "function") return
+            passes: do {
+                passWanted = false
+                const mine = ++epoch
+                try {
+                    if (!door || typeof door.root !== "function") break passes
 
-            const root = await door.root()
-            if (mine !== epoch) return
+                    const root = await door.root()
+                    if (mine !== epoch) return   // superseded — the healer owns the queue
 
-            const held = await door.local(root, page)
-            if (mine !== epoch) return
+                    const held = await door.local(root, page)
+                    if (mine !== epoch) return
 
-            let progressed = false
-            let silenced = false
+                    let progressed = false
+                    let silenced = false
 
-            for (const bytes of held) {
-                if (mine !== epoch) return
-                const id = name(bytes)
-                const payload = await pack(door, id, bytes)
-                if (mine !== epoch) return
+                    for (const bytes of held) {
+                        if (mine !== epoch) return
+                        const id = name(bytes)
+                        const payload = await pack(door, id, bytes)
+                        if (mine !== epoch) return
 
-                const reply = await say(KEEP_EVENT, payload)
-                if (mine !== epoch) return
+                        const reply = await say(KEEP_EVENT, payload)
+                        if (mine !== epoch) return
 
-                // Silence ends this pass; remainder stays local for reconnect.
-                if (reply == null) {
-                    silenced = true
-                    break
+                        // Silence ends this pass; remainder stays local for reconnect.
+                        if (reply == null) {
+                            silenced = true
+                            break
+                        }
+
+                        // Only the id just shipped may settle (id:kb-12).
+                        const outcome = await settle(door, reply, note, id)
+                        if (outcome) progressed = true
+                    }
+
+                    if (mine === epoch && progressed && !silenced) {
+                        const more = await door.local(root, 1)
+                        if (mine === epoch && more.length > 0) passWanted = true
+                    }
+                } catch (err) {
+                    try {
+                        console.debug?.("[keep/wire] announce:", err?.message || err)
+                    } catch {
+                        /* nowhere to write */
+                    }
                 }
-
-                // Only the id just shipped may settle (id:kb-12).
-                const outcome = await settle(door, reply, note, id)
-                if (outcome) progressed = true
-            }
-
-            if (mine === epoch && progressed && !silenced) {
-                const more = await door.local(root, 1)
-                if (mine === epoch && more.length > 0) {
-                    phase = "reannounce-armed"
-                }
-            }
-        } catch (err) {
-            try {
-                console.debug?.("[keep/wire] announce:", err?.message || err)
-            } catch {
-                /* nowhere to write */
-            }
+                // Let a re-entry's arm land before the next pass runs.
+                await new Promise((r) => queueMicrotask(r))
+            // Pass demand is shared; only the run that OWNS the latch may
+            // consume it — including along error paths. (id:ownership-o2)
+            } while (passWanted && running === run)
+        } finally {
+            if (running === run) running = 0
         }
-
-        if (mine !== epoch) return
-
-        if (phase === "reannounce-armed") {
-            phase = "idle"
-            await new Promise((r) => queueMicrotask(r))
-            if (mine !== epoch) return
-            return announce()
-        }
-        phase = "idle"
     }
 
-    /** Reset phase, then announce (id:kb-vet2 15). */
+    /** Cancel the in-flight pass, then announce (id:kb-vet2 15). */
     function reconnected() {
         epoch += 1
-        phase = "idle"
+        running = 0   // even a pass hung on a reply cannot block the healer
         return announce()
     }
 

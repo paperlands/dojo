@@ -91,6 +91,10 @@ const DiscipleWindow = {
     if (namesChanged) {
       this.lastNames = currentNames;
       this.resetObservations();
+    } else {
+      // Same names may still mean new ELEMENTS — morphing replaces nodes
+      // wholesale. Identity rescans; names alone never decide. (id:ownership-o2)
+      this.checkForNewElements();
     }
   },
 
@@ -164,6 +168,9 @@ const DiscipleWindow = {
       const name = element.getAttribute("data-name");
 
       if (!name) return;
+      // The ELEMENT is the identity: a replaced element's late callback must
+      // never clear its successor's visibility. (id:ownership-o2)
+      if (this.observedElements.get(name) !== element) return;
 
       if (entry.isIntersecting) {
         // Add to visible set
@@ -188,8 +195,10 @@ const DiscipleWindow = {
 
     disciples.forEach(element => {
       const name = this.ensureNameAttribute(element);
-      if (name && !this.observedElements.has(name)) {
+      if (name && this.observedElements.get(name) !== element) {
         // new element found, start observing it
+        const stale = this.observedElements.get(name);
+        if (stale && stale !== element) this.observer.unobserve(stale);
         this.observedElements.set(name, element);
         this.observer.observe(element);
       }

@@ -67,16 +67,22 @@ export function createArena() {
         return c
     }
 
-    // Drain children (newest first), then own cleanups LIFO. Does not kill alive.
+    // Drain children (newest first), then own cleanups LIFO. Each release is
+    // isolated and the lists are emptied first: one failure never strands a
+    // sibling, and a cleanup cannot re-enter the drain it came from.
     function drain() {
-        for (let i = children.length - 1; i >= 0; i--) {
-            children[i].destroy()
-        }
+        const kids = children.slice().reverse()
+        const own = cleanups.slice().reverse()
         children.length = 0
-        for (let i = cleanups.length - 1; i >= 0; i--) {
-            cleanups[i]()
-        }
         cleanups.length = 0
+        let failure = null
+        for (const child of kids) {
+            try { child.destroy() } catch (err) { failure ??= err }
+        }
+        for (const cleanup of own) {
+            try { cleanup() } catch (err) { failure ??= err }
+        }
+        if (failure) console.warn("arena: a cleanup failed", failure)
     }
 
     function clear() {
@@ -86,8 +92,10 @@ export function createArena() {
 
     function destroy() {
         if (!alive) return // idempotent
-        drain()
+        // Death FIRST: a throwing cleanup must leave the arena dead, never
+        // half-cleaned and still taking work (zombie-mount).
         alive = false
+        drain()
     }
 
     return {

@@ -222,7 +222,7 @@ export function createGesture(deps) {
         },
 
         get grabbed() {
-            return grab ? { name: grab.name, pointerId: grab.pointerId } : null
+            return grab ? { name: grab.name, pointerId: grab.pointerId, frame: grab.frame } : null
         },
     }
 }

@@ -47,10 +47,12 @@ export function createJournal(opts = {}) {
      * @returns {Promise<string>} hex64 root
      */
     function root() {
+        if (closed) return Promise.reject(new Error("journal: closed"))
         if (cached != null) return Promise.resolve(cached)
         if (rootP) return rootP
         rootP = request("genesis", [])
             .then((bytes) => {
+                if (closed) throw new Error("journal: closed")
                 cached = name(bytes)
                 return cached
             })
@@ -96,6 +98,7 @@ export function createJournal(opts = {}) {
          */
         async genesis() {
             const bytes = await request("genesis", [])
+            if (closed) throw new Error("journal: closed")
             cached = name(bytes)
             return bytes
         },

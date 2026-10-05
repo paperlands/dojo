@@ -24,7 +24,7 @@ import { finite3 } from "./vec3.js"
 import { addressOf, bindLaw } from "./replacement.js"
 import { predicateOk } from "./expression.js"
 import { freePoint, exposed } from "./batch.js"
-import { heldIdentity, coincidentPartners, heldFrame } from "./constraints.js"
+import { heldIdentity, coincidentPartners, heldFrame, hasBody } from "./constraints.js"
 
 // Re-exported: the scheduler imports the attempt hold from here. (id:laws-activation-verdicts)
 export { heldFrame }
@@ -119,7 +119,7 @@ export function eligibilityOf(frame, laws, registry = null) {
         exposed: exposed(frame),
         seated: frame?.isPlace === true,
         settled: frame?.done === true,
-        owned: frame?.generator != null || frame?.actorState != null,
+        owned: hasBody(frame),
         broken: frame?.error != null || frame?.unresolved != null,
         pinned: pinnedLaw(laws, frame?.id) != null,
         held: heldFrame(frame),

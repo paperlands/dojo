@@ -1,23 +1,28 @@
 // One watch/notify — the breath every half-adopted list reimplements.
 //
-// Anonymous watchers, so the Set IS the registry. Snapshot on notify for the
-// one thing Set iteration does not give: a watcher registered mid-fan must not
-// hear the breath it was born into. (Unwatching mid-fan needs no snapshot —
-// deleting from a Set under iteration skips the deleted and no sibling.)
+// Anonymous watchers — each watch() its own INSTALLATION: the same fn may be
+// installed twice and hears once per installation. The fan snapshots installs
+// at notify and checks the token at delivery: removal retires at once, a
+// birth mid-fan waits for the next breath. (id:ownership-o2)
 // Carries whatever notify is handed: the cell's breath carries nothing; a
 // store carries the new signal.
 
 export function createObservable() {
-    const watchers = new Set()
+    // Registration is an INCARNATION: a token, not the function's identity.
+    let next = 0
+    const watchers = new Map()   // token → fn
 
     return {
         watch(fn) {
-            watchers.add(fn)
-            return () => { watchers.delete(fn) }
+            const token = ++next
+            watchers.set(token, fn)
+            return () => { watchers.delete(token) }
         },
 
         notify(...args) {
-            for (const fn of [...watchers]) fn(...args)
+            for (const [token, fn] of [...watchers]) {
+                if (watchers.has(token)) fn(...args)
+            }
         },
     }
 }

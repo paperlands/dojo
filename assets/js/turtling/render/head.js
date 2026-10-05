@@ -9,6 +9,7 @@ import {
     MeshBasicMaterial,
 } from '../../utils/three-entry.js'
 import {ColorConverter} from '../../utils/color.js'
+import { INK } from '../ink.js'
 
 // The head's on-screen size is invariant: its world scale tracks the camera
 // distance, snapped to a ratio ladder so it re-scales in uniform ~5% steps
@@ -27,7 +28,7 @@ const HEAD_DRAW_SCALE = 0.9
 export default class Head {
     constructor(scene) {
         const defaultColors = {
-            head: "#e77808",
+            head: INK,
             wireframe: "black"
         };
         

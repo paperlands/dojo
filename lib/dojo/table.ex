@@ -38,6 +38,8 @@ defmodule Dojo.Table do
     GenServer.call(table_pid, {:change_meta, delta})
   end
 
+  # A cache hit is last-known state of whichever owner wrote it — recovery
+  # material, never a liveness claim. (id:ownership-o4; lifecycle_test:272)
   def last({topic, target_node}, event) do
     case Cache.get({__MODULE__, :last, topic, event}) do
       nil -> fetch_state(topic, target_node, event, :last)
@@ -152,11 +154,11 @@ defmodule Dojo.Table do
   # ── The one write path (Phase 4 / decision 008) ─────────────────────────
   # `state.last` is the OWNER of a disciple's latest stores. The Cache is its
   # single DECLARED read-only projection — written here and nowhere else
-  # (async: locality is the projection's reason to exist; `Table.last/2`
-  # reads through it before falling back to the owner via RPC). No other
-  # module may put a `{Table, :last, …}` key.
+  # Written INLINE: the owner's mailbox is the projection's order, and
+  # terminate's retraction is always last. `Table.last/2` reads through it
+  # before falling back via RPC. No other module may put a `{Table, :last, …}` key.
   defp record(%{last: last, reg_key: reg_key} = state, event, store) do
-    async_cache_put(reg_key, event, store)
+    project(reg_key, event, store)
     %{state | last: Map.put(last, event, store)}
   end
 
@@ -232,15 +234,29 @@ defmodule Dojo.Table do
     end
   end
 
-  def terminate(_reason, %{reg_key: reg_key}) do
-    Cache.delete({__MODULE__, :last, reg_key, :hatch})
+  def terminate(_reason, %{reg_key: reg_key, last: last}) do
+    # Every projection this owner wrote dies with it — one incarnation's
+    # stores must never answer for the next.
+    for event <- Map.keys(last), do: unproject(reg_key, event)
+    unproject(reg_key, :hatch)
     :ok
   end
 
-  defp async_cache_put(reg_key, event, store) do
-    Task.Supervisor.start_child(Dojo.TaskSupervisor, fn ->
-      Cache.put({__MODULE__, :last, reg_key, event}, store, ttl: @ttl)
-    end)
+  # Best-effort projection write and retract: a projection may lose; it never
+  # kills the owner. Written INLINE — the owner's mailbox is the projection's
+  # order, so a task per update can never reorder it behind the owner's back.
+  defp project(reg_key, event, store) do
+    Cache.put({__MODULE__, :last, reg_key, event}, store, ttl: @ttl)
+    :ok
+  catch
+    _, _ -> :ok
+  end
+
+  defp unproject(reg_key, event) do
+    Cache.delete({__MODULE__, :last, reg_key, event})
+    :ok
+  catch
+    _, _ -> :ok
   end
 
   defp schedule_hatch_broadcast(%{broadcast_timer: nil} = state, store) do
