@@ -526,6 +526,14 @@ function resolveBinding(frame, name, args) {
         }
 
         const target = findFrame(frame, targetName)
+        // ONE interpretation, one judge. The reached frame is the dependency, and a closed
+        // region's admission asks about the RESOLVED subject — never about the spelling, so
+        // the gate and the resolver cannot choose different facts. (id:laws-figure-protocol,
+        // id:laws-dependency-driven-place)
+        recordRead(frame.deps?.mathEvaluator, target)
+        if (frame.closed && !ownsFrame(frame, target)) {
+            throw new Error(`closed region has no world read: ${name}`)
+        }
         if (!target) {
             // A missing name is a dataflow suspension while its parent can still
             // spawn it; only a finished parent makes it a wound. (D011)
@@ -961,15 +969,12 @@ function ownsFrame(frame, target) {
 function closeDerivedDeps(deps, frame) {
     frame.capture = deps.capture ?? captureEnvironment(frame.parent ?? frame)
     deps.mathEvaluator.resolveExternal = (name) => {
-        recordRead(deps.mathEvaluator, frame, name)
-        // A dotted read is not automatically an outside observation. A place inside the
-        // reader's own region is the region's business — a construction may contain
-        // local points and read them. Only a read of something the construction does
-        // NOT own is refused. (id:laws-figures-phase34-review)
-        if (typeof name === 'string' && name.includes('.')) {
-            if (ownsFrame(frame, findFrame(frame, name.slice(0, name.indexOf('.'))))) return resolveBinding(frame, name)
-            throw new Error(`closed region has no world read: ${name}`)
-        }
+        // Liveness only: a dotted read's reached frame is reported where it is resolved, and
+        // the region's admission is asked there too — the membrane never re-reads a spelling,
+        // so what it admits is what the resolver acts on. (id:laws-figure-protocol)
+        recordRead(deps.mathEvaluator)
+        if (typeof name === 'string' && name.includes('.')) return resolveBinding(frame, name)
+        // A local value the construction captured is still its own business.
         return resolveScopeValue(frame, name)
     }
     if (deps.mathEvaluator.constants) {
@@ -990,14 +995,11 @@ function closeDerivedDeps(deps, frame) {
 // The resolver NAMES what it reached: a dotted read records the frame it resolved, so
 // a dependency is a REFERENCE, never a spelling. This is the whole dependency exposure
 // — no syntactic scan of the expression by a consumer. (id:laws-dependency-driven-place)
-function recordRead(evaluator, frame, name) {
-    const reads = evaluator.reads
+function recordRead(evaluator, target) {
+    const reads = evaluator?.reads
     if (!reads) return
     reads.live = true
-    if (typeof name === 'string' && name.includes('.')) {
-        const target = findFrame(frame, name.slice(0, name.indexOf('.')))
-        if (target) reads.frames.add(target)
-    }
+    if (target) reads.frames.add(target)
 }
 
 function bindResolve(deps, frame) {
@@ -1014,7 +1016,7 @@ function bindResolve(deps, frame) {
     deps.mathEvaluator.endObservation = () => { frame.observation = null }
     deps.mathEvaluator.resolveExternal = (v, a) => {
         const result = resolveBinding(frame, v, a)
-        recordRead(deps.mathEvaluator, frame, v)
+        recordRead(deps.mathEvaluator)
         if (typeof v === 'string' && v.includes('.')) deps.mathEvaluator._observedSibling = true
         return result
     }
@@ -1391,7 +1393,7 @@ function wireChild(child, deps, mailbox, registry, code, executionState = null, 
 function rewireChild(child, value, pump) {
     // A rewired scope is a new source: its old statement sites are gone, so their
     // laws are retracted before the new body states its own. (id:laws-build-p2c)
-    if (pump.laws) pump.laws.retractFrame(child.id)
+    if (pump.laws) pump.laws.retractScope(child.id)
     // An edit repairs the attempt: release the component its failure held.
     // (id:laws-activation-verdicts)
     releaseSourceAttempts(metaRootFrame(child), subtreeIds(child))

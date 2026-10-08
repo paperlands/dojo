@@ -188,13 +188,13 @@ test("E. fence: source edit versus identity removal are different retractions", 
 
     const editing = createLawStore()
     editing.apply(declared)
-    assert.equal(editing.retractFrame("B"), "retracted", "a source edit retracts what the edited scope declared")
+    assert.equal(editing.retractScope("B"), "retracted", "a source edit retracts what the edited scope declared")
     assert.equal(editing.active().length, 0)
 
     const targeting = bindLaw({ feature: "distance", endpoints: ["B", "A"], scope: "A", frame: "A", predicate: 5 })
     const leaving = createLawStore()
     leaving.apply(targeting)
-    assert.equal(leaving.retractFrame("B"), "noop", "editing a target does not retract another scope's law")
+    assert.equal(leaving.retractScope("B"), "noop", "editing a target does not retract another scope's law")
     assert.equal(leaving.active().length, 1, "the target identity is still in the play")
     assert.equal(leaving.retractIdentity("B"), "retracted", "the identity leaving retracts every law naming it")
     assert.equal(leaving.active().length, 0)

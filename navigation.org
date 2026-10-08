@@ -738,15 +738,15 @@ declared-but-unreached local name is a located =Use before introduction=. Fence:
 ** law address and owner — what a line replaces
 :PROPERTIES:
 :ID: nav-law-address
-:KEYWORDS: address addressOf law store owner replacement retract retractFrame retractIdentity identity edit conjoin
+:KEYWORDS: address addressOf law store owner replacement retract retractScope retractIdentity identity edit conjoin
 :PATH: assets/js/turtling/laws/replacement.js::createLawStore
 :END:
 The address (feature + canonical endpoint identities + scope/frame) decides what a
 reached statement replaces; the source owner decides who supplies it. [[id:laws-ordered-replacement]] ·
 [[id:laws-build-p2a-verdict]]. Fence: =replacement_test.mjs=.
-A source edit retracts the laws the edited scope declared (=retractFrame=); an
-identity leaving the play retracts every law naming it (=retractIdentity=), so a law
-never outlives a participant. [[id:laws-activation-verdicts]].
+A source edit retracts the laws the edited scope DECLARED (=retractScope=, by =law.scope= —
+the expression =frame= only places the term); an identity leaving the play retracts every law
+naming it (=retractIdentity=), so a law never outlives a participant. [[id:laws-activation-verdicts]].
 
 ** a distance relation — state, realize, refuse
 :PROPERTIES:

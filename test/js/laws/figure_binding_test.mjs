@@ -191,6 +191,82 @@ wait 1
     assert.match(child.error.message, /no world read|Undefined variable/, child.error.message)
 })
 
+// The one rule, both directions: a closed region admits a dotted read exactly when the
+// RESOLVED subject lies inside it. That rule is asked where the target is resolved, so a
+// spelling never decides — and an unresolvable name is still the region's refusal, not the
+// resolver's own message. (id:laws-figure-protocol, id:laws-figures-phase34-review)
+test("closed-region admission asks the resolved subject, in both directions", () => {
+    const read = (line) => {
+        const scheduler = buildWorld({})
+        const host = scheduler.hotSwapChild("host", fork("host", `
+def peek d do
+  let A = (2, 0)
+  label ${line} 10
+end
+let X = (9, 0)
+let flake = peek 0
+`))
+        const trace = drive(scheduler, { maxTicks: 120 })
+        return {
+            labels: [...trace.values()].flat().filter((e) => e.type === "label").map((e) => e.text),
+            errors: scheduler.errors.map((e) => e.message),
+        }
+    }
+
+    // Admitted: the region's own place, read by the name the resolver reached.
+    const owned = read("A.x")
+    assert.deepEqual(owned.errors, [], owned.errors.join("; "))
+    assert.deepEqual(owned.labels, ["2"], "a local place answers")
+
+    // Refused, and by the region's own message: an outside frame, the shared ground, and a
+    // name nothing declares (the refusal precedes resolution, so it stays the region's).
+    for (const line of ["X.x", "world.x", "ghost.x"]) {
+        const r = read(line)
+        assert.deepEqual(r.labels, [], `${line} draws nothing`)
+        assert.deepEqual(r.errors, [`closed region has no world read: ${line}`], `${line} is refused by the region`)
+    }
+})
+
+// The ordering diagnosis does not pre-empt the region. A closed frame's batch does not name
+// its own body's later `let` (measured: declared = [] at the read), so a name declared after
+// the read is still the region's refusal — the message a reader saw before the rule moved.
+test("a name the region declares later is refused by the region, not by the ordering check", () => {
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host", `
+def peek d do
+  label A.x 10
+  let A = (2, 0)
+end
+let A = (9, 0)
+let flake = peek 0
+`))
+    drive(scheduler, { maxTicks: 120 })
+    assert.deepEqual(scheduler.errors.map((e) => e.message), ["closed region has no world read: A.x"],
+        "even with an outer namesake, the region answers for the name it is about to declare")
+})
+
+// The one diagnosis the move CHANGED, deliberately. Inside a nested ambient the batch does name
+// its own later bare `let` (measured: declared = ["A"]), so the resolver's located ordering error
+// wins over the region's refusal. Before the move the membrane answered first, about the outer
+// namesake it found — a fallback the language does not allow at all. The ordering diagnosis is
+// the language's own for this shape, and the ordinary (unclosed) case has always said it.
+test("inside a region, a later bare `let` is a located ordering error", () => {
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host", `
+def peek d do
+  as inner do
+    label A.x 10
+    let A
+  end
+end
+let A = (9, 0)
+let flake = peek 0
+`))
+    drive(scheduler, { maxTicks: 120 })
+    assert.deepEqual(scheduler.errors.map((e) => e.message), ["Use before introduction: A"],
+        "the name is the region's own and is read before its `let`")
+})
+
 test("a derived figure spans logical time: wait is a dt, not a refusal", () => {
     const scheduler = buildWorld({})
     const host = scheduler.hotSwapChild("host", fork("host", `

@@ -124,3 +124,20 @@ test("fresh play clears, then executes the source in order", () => {
     assert.equal(store.active().length, 1)
     assert.equal(store.lawAt(addressOf(distance("A", "B", 5, "s1"))).predicate, 10)
 })
+
+// One law, two identities: the declaring SCOPE owns the declaration; the expression
+// FRAME only places the term. A rewire of one must never be read as the other.
+// (id:laws-build-p2c, D059)
+test("lifetime: a scope's edit retracts what it declared, and a frame that only places it does not", () => {
+    const key = addressOf(distance("A", "B", 5, "s1", "s", "f"))
+    // `s` declares the law; its term is expressed in the frame `f`.
+    const editing = createLawStore()
+    editing.apply(distance("A", "B", 5, "s1", "s", "f"))
+    assert.equal(editing.retractScope("s"), "retracted", "the declaring scope's edit withdraws its law")
+    assert.equal(editing.lawAt(key), null)
+
+    const placing = createLawStore()
+    placing.apply(distance("A", "B", 5, "s1", "s", "f"))
+    assert.equal(placing.retractScope("f"), "noop", "the frame the term is expressed in owns no declaration")
+    assert.equal(placing.active().length, 1, "the declaration stands: that frame did not leave the play")
+})

@@ -123,14 +123,13 @@ export function createLawStore() {
             return hit ? 'retracted' : 'noop'
         },
 
-        // A source edit of a scope (a rewire) retracts the laws that scope declared.
-        // The declaring frame is the law's `frame`; a law merely targeting the scope
-        // survives, because the target identity did not leave the play.
-        // (id:laws-build-p2c)
-        retractFrame(frameId) {
+        // A source edit of a scope (a rewire) retracts the laws that scope DECLARED. Ownership
+        // is the law's `scope`; the expression `frame` only places the term, so a law whose term
+        // stands in this frame answers to whoever declared it. (id:laws-build-p2c, D059)
+        retractScope(scopeId) {
             let hit = false
             for (const [key, law] of byAddress) {
-                if (law.frame === frameId) { byAddress.delete(key); hit = true }
+                if (law.scope === scopeId) { byAddress.delete(key); hit = true }
             }
             return hit ? 'retracted' : 'noop'
         },

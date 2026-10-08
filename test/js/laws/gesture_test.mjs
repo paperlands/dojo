@@ -556,3 +556,39 @@ test("a cone point circles without jumping the height, and the detents never ben
     }
     assert.ok(spread > 0.5, `the point circles, got ${spread.toFixed(2)}`)
 })
+
+// A hand is handed the accepted point in its own space, WORLD: a circle's hand re-reads it
+// every move (a sphere's is frozen at the grab, a cone's never asks). A scope away from the
+// origin is the witness — at the origin local pose and world point coincide. (id:laws-decl-anchor)
+test("a grazing circle holds the accepted point, and a translated one does not jump the locus", () => {
+    const scheduler = buildWorld()
+    const host = scheduler.hotSwapChild("host", fork("host", `fw 100
+let A
+let B
+as B do
+  let A.distance = 5
+end
+let A.z = 0`))
+    drive(scheduler)
+    const A = find(host, "A")
+    // Plane ∩ sphere: a real circle, with the local pose [5,0,0] at world [105,0,0].
+    assert.ok(same(A.transform.deref().position, [5, 0, 0]), "the accepted local pose is [5,0,0]")
+    const world = [...frameWorldTransform(A).position]
+    assert.ok(same(world, [105, 0, 0]), `and the point IS at world [105,0,0], got ${world}`)
+    assert.equal(pointStateOf(A, scheduler).locus?.kind, "circle", "the locus the display reads is a circle")
+    // An eye in the circle's plane: the ring projects to a segment, so no phase is
+    // disclosed and the hand must HOLD the accepted point. The ordinary gate, no
+    // responder: a wrong anchor reaches the law's nearest and is published.
+    const view = pinhole([105, -100, 0], { up: [0, 0, 1] })
+    const h = harness(scheduler, [A], {
+        view, canTouch: freePoint, locusOf: locusOfWorld(scheduler), requestMotion: realMotion(scheduler),
+    })
+    const px = view.project(world)
+    assert.equal(h.down(px).claimed, true, "the point is grabbed where it is drawn")
+    h.move({ x: px.x + 4, y: px.y })
+    const line = h.last()
+    assert.ok(same(line.accepted, [5, 0, 0]), "the readout keeps the accepted LOCAL pose")
+    assert.ok(same(line.requested, [5, 0, 0]), `a held grazing move requests the accepted point, got ${line.requested}`)
+    assert.equal(line.outcome, "accepted", "holding is an accepted no-op")
+    assert.ok(same(frameWorldTransform(A).position, world, 1e-9), `the point stays where it is, got ${frameWorldTransform(A).position}`)
+})
