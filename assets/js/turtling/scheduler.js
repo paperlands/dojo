@@ -811,6 +811,16 @@ function woundMissingReference(ctx) {
 const errorRecord = (error) =>
     report({ kind: error.kind ?? 'walk', message: error.message, span: error.span ?? null })
 
+// A batch is folded into commandCount when it ends. A wound is an end. Leaving
+// the count on the batch makes sumCounts — the seat's authority — answer 0 for
+// a run that did draw. Fold, then drop the batch, so commandsOf cannot add it twice.
+function foldBatch(ctx) {
+    if (!ctx.batch) return
+    ctx.commandCount += ctx.batch.commandCount || 0
+    ctx.actorState = ctx.batch
+    ctx.batch = null
+}
+
 // Deliver once per address; never back to the emitter.
 export function deliverShout(shout, target) {
     const addr = addrOf(target)
@@ -1055,9 +1065,15 @@ function createChildGenerator(value, createDeps, execOpts) {
         // hidden head behind. (id:laws-figures-phase34-review)
         color: value.style?.color || execOpts.color,
         style: value.style,
-        maxRecurseDepth: execOpts.maxRecurseDepth,
+        // A closed cell's derived budget is a working depth. It cannot raise
+        // a host recurse ceiling, and the ceiling itself crosses this door.
+        maxRecurseDepth: closed
+            ? (execOpts.recurseCeiling != null ? Math.min(DERIVED_BUDGET, execOpts.recurseCeiling) : DERIVED_BUDGET)
+            : execOpts.maxRecurseDepth,
+        recurseCeiling: execOpts.recurseCeiling,
         maxRecurses: execOpts.maxRecurses,
         maxCommands: execOpts.maxCommands,
+        commandCeiling: execOpts.commandCeiling,
         breathEvery: execOpts.breathEvery,
         strokeMax: execOpts.strokeMax,
         motionProtocol: execOpts.motionProtocol,
@@ -1067,12 +1083,11 @@ function createChildGenerator(value, createDeps, execOpts) {
         birthtime: value.env?.birthtime,
         scope: value.env?.scope,
         lens: isLensName(value.name),
-        // A derived figure is a CLOSED cell: strict walk, hard budget, no
-        // truncation. Ordinary ambients keep their effectful semantics.
-        // (id:laws-figure-protocol)
+        // A closed figure's strict budget cannot raise the host recurse ceiling.
+        // Ordinary ambients keep their effects. (id:laws-figure-protocol)
         strict: closed,
         ...(closed ? {
-            maxReductions: DERIVED_BUDGET, maxRecurseDepth: DERIVED_BUDGET,
+            maxReductions: DERIVED_BUDGET,
             maxRecurses: DERIVED_BUDGET, breathEvery: 256,
             random: figureRandom,
         } : {}),
@@ -1290,20 +1305,6 @@ function unwireWorldCache(child) {
 }
 
 // --- Shared child wiring ---
-
-// What a fresh generator needs to be driven. ONE place, because both births use
-// it — first (wireChild) and re-run (rewireChild) — and a field wired in only
-// one of them is a bug that shows up a whole run later.
-// A declaration whose place was never reached is an unfulfilled requirement: a
-// clean end seats every declared name through its birth effect, so a missing one
-// is reported rather than counted as success. (id:laws-decl-join-repair)
-function reportUnrealizedPlaces(ctx) {
-    if (!ctx.declared || ctx.declared.size === 0) return
-    const missing = [...ctx.declared].filter((name) => !ctx.children.has(name))
-    if (missing.length > 0) {
-        ctx.unresolved = { reason: `existence not realized: ${missing.join(', ')}` }
-    }
-}
 
 // A declared place with no body yet: the walk's reached pose, facing forward.
 // That is the birth site, not a hidden pin and not a parse-time seat.
@@ -1571,6 +1572,7 @@ function interpretReply(raw, refusalStroke) {
 
 // Wound and end: the frame cannot honestly continue the command it asked about.
 function woundMotion(ctx, message) {
+    foldBatch(ctx)
     ctx.observation = null
     ctx.done = true
     ctx.generator = null
@@ -1590,6 +1592,23 @@ function woundMotion(ctx, message) {
 // The publication boundary builds the install from the candidate: a producer hands back a
 // candidate law, never an installation closure. (D058)
 const installOf = (outcome, pump) => outcome.install ?? (outcome.law ? () => pump.laws.apply(outcome.law) : null)
+// Accepted values include reached declarations, not just geometry. Delivery
+// cannot reopen admission; cancellation retires a listener immediately.
+function notifyAccepted(root) {
+    const watchers = root._acceptedWatchers
+    if (!watchers?.size) return
+    const wasNotifying = root.notifyingCommit === true
+    root.notifyingCommit = true
+    try {
+        for (const listen of [...watchers]) {
+            if (!watchers.has(listen)) continue
+            try { listen() } catch { /* notification is not acceptance */ }
+        }
+    } finally {
+        root.notifyingCommit = wasNotifying
+    }
+}
+
 function publish(writer, entries, registry, install = null, project = null) {
     const seen = new Set()
     // Running-member correction is a gated capability, off by default: this slice
@@ -1703,6 +1722,7 @@ function publish(writer, entries, registry, install = null, project = null) {
         if (project) {
             try { project() } catch (error) { failures.push(error) }
         }
+        notifyAccepted(root)
     } finally {
         root.notifyingCommit = wasNotifying
     }
@@ -2429,6 +2449,7 @@ function law(ctx, value, _route, pump) {
 }
 
 function woundRelation(ctx, message, kind = 'relation', span = null) {
+    foldBatch(ctx)
     ctx.observation = null
     ctx.done = true
     ctx.generator = null
@@ -2659,7 +2680,6 @@ function stepFrame(ctx, value, done, route, pump) {
         } else {
             ctx.commandCount += (typeof result === 'number' ? result : (result.commandCount || 0))
         }
-        reportUnrealizedPlaces(ctx)
         // Folded — drop the live batch or commandsOf would count it twice.
         ctx.batch = null
         ctx.observation = null
@@ -2710,6 +2730,7 @@ function stepOnce(ctx, route, pump) {
         if (admission) clearSuspension(ctx)
         ;({ value, done } = ctx.generator.next(input))
     } catch (error) {
+        foldBatch(ctx)
         ctx.observation = null
         ctx.done = true
         ctx.generator = null
@@ -2896,6 +2917,38 @@ export function createScheduler(generator, opts = {}) {
         get motionRevision() { return root._motionRevision },
         // The play's active laws (address → predicate, owner). Read-only seam.
         get laws() { return laws },
+        readPlace(name, property, ownerKey = 'host') {
+            const owner = root.children.get(ownerKey)
+            const frame = owner?.children.get(name)
+            if (!owner || !frame) return { kind: 'missing' }
+            try { return { kind: 'value', value: resolveProperty(frame, property, null, owner, true) } }
+            catch (error) { return { kind: 'unsupported', message: error.message } }
+        },
+        readScalar(name, ownerKey = 'host') {
+            const owner = root.children.get(ownerKey)
+            const id = owner?.scalars?.get(name)
+            if (id === undefined) return { kind: 'missing' }
+            try {
+                const value = readouts.value(id)
+                if (value === undefined) return { kind: 'unsupported', message: 'value is not ready' }
+                return { kind: 'value', value }
+            } catch (error) { return { kind: 'unsupported', message: error.message } }
+        },
+        proposePlace(name, position, revision, ownerKey = 'host') {
+            const owner = root.children.get(ownerKey)
+            const frame = owner?.children.get(name)
+            if (!owner || !frame) return { kind: 'missing' }
+            if (!Array.isArray(position) || position.length !== 3 || !Array.from(position).every(Number.isFinite))
+                return { kind: 'unsupported', message: 'position must contain three finite numbers' }
+            if (!freePoint(frame)) return { kind: 'unsupported', message: 'only a free authored place can be proposed' }
+            const current = frameWorldTransform(frame)
+            return this.requestMotion(frame, { ...current, position: [...position] }, revision, 'world')
+        },
+        onAcceptedChange(fn) {
+            root._acceptedWatchers ??= new Set()
+            root._acceptedWatchers.add(fn)
+            return () => root._acceptedWatchers.delete(fn)
+        },
         // Source-owned derived values (id:laws-build-p3-slider). Read-only seam.
         get readouts() { return readouts },
         // `ref` names the frame `requested` is expressed in — 'world', 'parent', or a named
@@ -3167,6 +3220,9 @@ export function createScheduler(generator, opts = {}) {
                 this.commandCount = sumCounts(root)
             }
 
+            // A completed slice exposes declarations and ordinary motion together,
+            // after dependent readings agree; it is not a motion-law revision.
+            notifyAccepted(root)
             return produced
         }
     }

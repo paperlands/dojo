@@ -3,7 +3,7 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
-import { execute, drainEvents } from "../../../assets/js/turtling/executor.js"
+import { execute, drainEvents, createActorState } from "../../../assets/js/turtling/executor.js"
 import { ASTNode } from "../../../assets/js/turtling/ast.js"
 import { Parser } from "../../../assets/js/turtling/mafs/parse.js"
 
@@ -411,6 +411,72 @@ describe("limits", () => {
             () => drainEvents(ast, mockDeps()),
             /Maximum command limit/
         )
+    })
+
+    test("a program cannot raise the host ceiling", () => {
+        const ast = [
+            call("limitCommand", 100),
+            call("fw", 1),
+            call("fw", 1),
+            call("fw", 1),
+            call("fw", 1),
+        ]
+        assert.throws(
+            () => drainEvents(ast, mockDeps(), { commandCeiling: 2, maxCommands: 2 }),
+            /Maximum command limit of 2 reached/
+        )
+    })
+
+    test("a limit has to be a positive integer", () => {
+        assert.throws(
+            () => drainEvents([call("limitCommand", -3), call("fw", 1)], mockDeps()),
+            /positive integer/
+        )
+        assert.throws(
+            () => drainEvents([call("fw", 1)], mockDeps(), { commandCeiling: 0 }),
+            /command ceiling must be a positive integer/
+        )
+        assert.throws(
+            () => drainEvents([call("fw", 1)], mockDeps(), { recurseCeiling: 0 }),
+            /recurse ceiling must be a positive integer/
+        )
+    })
+
+    test("a recurse ceiling throws instead of truncating", () => {
+        const ast = [
+            define("boom", [], [call("boom"), call("fw", 1)]),
+            call("boom"),
+        ]
+        assert.throws(
+            () => drainEvents(ast, mockDeps(), { recurseCeiling: 2, maxRecurseDepth: 2 }),
+            /Maximum recurse depth of 2 reached/
+        )
+    })
+
+    test("a working depth passed with the ceiling is the one that stops the call", () => {
+        const born = createActorState({ recurseCeiling: 500_000, maxRecurseDepth: 200_000 })
+        assert.equal(born.recurseCeiling, 500_000)
+        assert.equal(born.maxRecurseDepth, 200_000)
+        const ast = [
+            define("boom", [], [call("fw", 1), call("boom")]),
+            call("boom"),
+        ]
+        const events = drainEvents(ast, mockDeps(), { recurseCeiling: 500_000, maxRecurseDepth: 2 })
+        const heads = eventsOfType(events, "head")
+        assert.ok(heads.length >= 1)
+        assert.ok(heads.length < 10)
+    })
+
+    test("a working recurse limit beneath the ceiling still stops the call", () => {
+        const ast = [
+            call("limitRecurse", 1),
+            define("boom", [], [call("fw", 1), call("boom")]),
+            call("boom"),
+        ]
+        const events = drainEvents(ast, mockDeps(), { recurseCeiling: 10, maxRecurseDepth: 10 })
+        const heads = eventsOfType(events, "head")
+        assert.ok(heads.length >= 1)
+        assert.ok(heads.length < 10)
     })
 })
 

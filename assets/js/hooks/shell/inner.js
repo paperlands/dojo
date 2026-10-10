@@ -58,6 +58,12 @@ function mountInner(hook, { term, cm6 }) {
         reveal: link.read('reveal'),
     });
     arena.add(() => turtle.dispose());
+    // The page routes camera controls. This stage is the subscriber's choice,
+    // and the subscriber releases the route. An embedded hatch does not listen.
+    const stopCamera = cameraBridge.sub((payload) => turtle.stage.command(payload))
+    arena.add(stopCamera)
+    // The shell owns the hand. An embedded hatch evaluates laws and does not listen.
+    arena.add(turtle.attachHand())
     // Stage cell — the one address for the live turtle (gw-t-dom-registry).
     // Weave boot + revealAmbient read getStage(); no canvas.__turtle.
     arena.add(registerStage(turtle));

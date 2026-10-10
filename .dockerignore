@@ -55,6 +55,11 @@
 /mathworld/
 /peer/
 /books/
+# Local-only media and probes: 90MB (video 48 + design 23 + probe 19) that no
+# COPY in the Dockerfile reaches.
+/video/
+/design/
+/probe/
 *.org
 
 # Generated on crash by the VM

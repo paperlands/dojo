@@ -15,7 +15,8 @@ import {
 import { DojoOrbitControls } from './orbit.js'
 import Render from "./render/index.js"
 import { createMaterialCache } from "./render/line/material-cache.js"
-import { cameraBridge } from "../bridged.js"
+import { surfaceOfCanvas, observeSurface, contentRectOf, projectClient } from "./viewport.js"
+import { applyViewCommand } from "./camera_command.js"
 // AXIS_Z is the camera's sight axis: E is in camera convention (view.js), where
 // the eye looks down local −Z, so a roll is a turn about local Z.
 import { SE3, AXIS_Z } from "./se3.js"
@@ -32,8 +33,14 @@ export function createStage(canvas, bridge, instruments = {}) {
     // Scene
     const scene = new Scene()
 
-    // Camera
-    const aspect = window.innerWidth / window.innerHeight
+    // Camera, bitmap and line resolution share the canvas's content box.
+    // The window stands in only for an unavailable surface. (id:host-surface)
+    let surface = surfaceOfCanvas(canvas)
+    // What the surface was last measured as, and the bitmap that measurement
+    // produced. `applySurface` reads them to tell a page-sized canvas from an
+    // unsized one that is following its own bitmap (see the echo, below).
+    let applied = null
+    const aspect = surface && surface.width > 0 && surface.height > 0 ? surface.width / surface.height : 1
     const camera = new PerspectiveCamera(60, aspect, 0.1, 10000000)
     camera.lookAt(0, 0, 0)
     camera.position.set(0, 0, 500)
@@ -75,13 +82,12 @@ export function createStage(canvas, bridge, instruments = {}) {
         antialias: true,
         alpha: true
     })
-    renderer.setSize(window.innerWidth, window.innerHeight)
     // `outputEncoding` was removed in three r152 — setting it here did nothing;
     // colour comes from `outputColorSpace`'s default. Deleting it changes no
     // pixel (three-entry.js made the dead assignment visible).
     //renderer.capabilities.logarithmicDepthBuffer = true
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.sortObjects = false
+    applySurface()
 
     // Video and stills are an instrument, not paper: absent, the encoder stays out.
     // Built on first record or snapshot, never on a status read. It records the
@@ -102,69 +108,52 @@ export function createStage(canvas, bridge, instruments = {}) {
     // Head
     const head = new Render.Head(scene)
 
-    // Resize handler
-    const onResize = () => {
-        camera.aspect = window.innerWidth / window.innerHeight
+    // An unsized canvas follows its bitmap: at DPR 2, each write doubles the box.
+    // Pin that echo to the last measured box; page-authored sizes still win.
+    // (id:host-surface)
+    function applySurface() {
+        const next = surfaceOfCanvas(canvas)
+        if (!next) return
+        // Collapsed is a measured zero. Keep the projection already in hand —
+        // camera, buffer — and do not adopt the window or write a size over
+        // the page's zero.
+        if (next.collapsed) return
+        // An echo grows to our last bitmap at the same DPR. A steady box,
+        // collapsed surface or CSS transform is not an echo. (id:host-surface)
+        const echoed = !!applied && !next.collapsed && !next.transformed
+            && next.dpr === applied.dpr
+            && (next.width > applied.boxWidth + 1 || next.height > applied.boxHeight + 1)
+            && Math.abs(next.width - applied.bufferWidth) < 1
+            && Math.abs(next.height - applied.bufferHeight) < 1
+        // Pinning is to the box measured BEFORE the echo, never the grown one:
+        // the grown one is the artifact being stopped.
+        surface = echoed
+            ? { ...next, width: applied.boxWidth, height: applied.boxHeight }
+            : next
+        camera.aspect = surface.width / surface.height
         camera.updateProjectionMatrix()
-        renderer.setSize(window.innerWidth, window.innerHeight)
+        renderer.setPixelRatio(surface.dpr)
+        // Write layout only for an unavailable box or our own bitmap echo.
+        // Otherwise the page owns its width and height. (id:host-surface)
+        renderer.setSize(surface.width, surface.height, surface.windowed || echoed)
+        applied = {
+            boxWidth: surface.width, boxHeight: surface.height, dpr: surface.dpr,
+            bufferWidth: canvas.width, bufferHeight: canvas.height,
+        }
         // Line width is screen-space — keep cached materials' resolution current.
-        materials.updateResolution(window.innerWidth, window.innerHeight)
+        materials.updateResolution(surface.width, surface.height)
+    }
+    const onResize = () => {
+        applySurface()
         stage.requestRender?.()
     }
-    window.addEventListener('resize', onResize)
+    // A ResizeObserver cannot see a device ratio change, so the ratio is watched
+    // too (viewport.js). Both are unsubscribed on dispose.
+    const stopSurface = observeSurface(canvas, onResize)
 
-    // cameraBridge is a module-global EventTarget — unsub MUST run on dispose,
-    // else this closure pins the whole stage (renderer/scene/camera) forever
-    // and ghost handlers render stale scenes after a hook remount.
-    const cameraUnsub = cameraBridge.sub(async (payload) => {
-        switch (payload[0]) {
-        case 'recenter':
-            camera.position.set(0, 0, 500)
-            controls.target.set(0, 0, 0)
-            // Level the horizon too. A child who rolled the paper by accident
-            // needs ONE way back, and this is it — recenter means the default
-            // view, not the default view still banked.
-            viewOffset = SE3.identity()
-            controls.update()
-            break
-        case 'fit': {
-            // The turtle supplies the figure's world extents; the stage only
-            // moves the eye. A view change, never a geometry change.
-            const framed = stage.fitTargets?.()
-            if (framed?.bounds) stage.fitTo(framed.bounds, { dir: framed.dir })
-            break
-        }
-        case 'pan':
-            camera.desire = (camera.desire !== "pan") ? "pan" : "track"
-            break
-        case 'track':
-            camera.desire = (camera.desire !== "track") ? "track" : "pan"
-            break
-        case 'endtrack':
-            camera.desire = null
-            break
-        case 'record': {
-            try {
-                const rec = getRecorder()
-                if (rec) await rec.startRecording()
-            } catch (err) {
-                console.error('record failed:', err)
-            }
-            break
-        }
-        case 'endrecord': {
-            try {
-                const video = recorder ? await recorder.stopRecording() : null
-                if (video) bridge.pub(["saveRecord", { snapshot: video.blob, type: "video" }])
-            } catch (err) {
-                console.error('endrecord failed:', err)
-            }
-            break
-        }
-        }
-        // Camera/recorder state changed — wake the render loop to reflect it.
-        stage.requestRender?.()
-    })
+    // Camera commands address THIS stage. The shell may route a page control
+    // here; an embedded runtime does not subscribe to a page-global channel.
+    // The subscriber owns the unsubscription.
 
     // One capture: one promise. hatch() starts the work (or joins it).
     // dispose() flips `disposed` so a pending fence poll stands down instead
@@ -211,14 +200,44 @@ export function createStage(canvas, bridge, instruments = {}) {
         controls,
 
         project(world) {
-            const rect = canvas.getBoundingClientRect()
-            if (!rect.width || !rect.height) return null
+            const rect = contentRectOf(canvas)
             _project.set(world[0], world[1], world[2]).project(camera)
             if (_project.z > 1) return null                     // behind the eye, or past the far plane
-            const x = rect.left + (_project.x * 0.5 + 0.5) * rect.width
-            const y = rect.top + (-_project.y * 0.5 + 0.5) * rect.height
-            if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null
-            return { x, y }
+            // CSS transform has no client mapping. An unsupported box projects
+            // to nothing rather than to a point in a mixed coordinate space.
+            return projectClient(rect, _project.x, _project.y)
+        },
+
+        // One command, this instance. Record stays here because the recorder
+        // and the save bridge belong to the stage, not to the view arithmetic.
+        async command(payload) {
+            if (disposed) return
+            const name = payload?.[0]
+            if (name === "fit") {
+                const framed = stage.fitTargets?.()
+                if (framed?.bounds) stage.fitTo(framed.bounds, { dir: framed.dir })
+            } else if (!applyViewCommand({
+                camera,
+                controls,
+                level() { viewOffset = SE3.identity() },
+            }, name)) {
+                if (name === "record") {
+                    try {
+                        const rec = getRecorder()
+                        if (rec) await rec.startRecording()
+                    } catch (err) {
+                        console.error("record failed:", err)
+                    }
+                } else if (name === "endrecord") {
+                    try {
+                        const video = recorder ? await recorder.stopRecording() : null
+                        if (video) bridge.pub(["saveRecord", { snapshot: video.blob, type: "video" }])
+                    } catch (err) {
+                        console.error("endrecord failed:", err)
+                    }
+                }
+            }
+            stage.requestRender?.()
         },
 
         // Frame a figure from its world extents. A view change only — no
@@ -250,7 +269,7 @@ export function createStage(canvas, bridge, instruments = {}) {
         },
 
         unproject(clientX, clientY) {
-            const rect = canvas.getBoundingClientRect()
+            const rect = contentRectOf(canvas)
             if (!rect.width || !rect.height) return null
             const nx = ((clientX - rect.left) / rect.width) * 2 - 1
             const ny = -((clientY - rect.top) / rect.height) * 2 + 1
@@ -401,9 +420,8 @@ export function createStage(canvas, bridge, instruments = {}) {
             } catch (err) {
                 console.error('recorder destroy failed:', err)
             }
-            window.removeEventListener('resize', onResize)
+            stopSurface()
             controls.removeEventListener('twist', onTwist)
-            cameraUnsub()
             controls.dispose()   // OrbitControls' own pointer/touch listeners
             if (stage.renderLoop) stage.renderLoop.stop()
             // Own the free: remount safety is structural, not a caller checklist.

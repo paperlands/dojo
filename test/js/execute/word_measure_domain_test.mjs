@@ -49,6 +49,11 @@ describe("measure domain (strict bare idents)", () => {
         )
     })
 
+    test("a hyphen stays subtraction in a measure input", () => {
+        const events = drainEvents(parseProgram("fn step 7\nfw step-1"), realDeps())
+        assert.deepEqual(eventsOfType(events, "path")[0].points.at(-1), [6, 0, 0])
+    })
+
     test("jmp random still works (deferred constant)", () => {
         const events = drainEvents(
             [call("jmp", "random"), call("fw", 10)],
@@ -150,6 +155,28 @@ describe("word domain (ink / label)", () => {
         assert.equal(labels[0].text, "hello")
         assert.equal(labels[0].textSize, 10)
     })
+})
+
+describe("existence names use the ambient word input", () => {
+    for (const [label, source, name, expected] of [
+        ["defined word", 'fn name "hello"', "name", ["hello"]],
+        ["quoted literal", 'fn A "hello"', '"A"', ["A"]],
+        ["unbound word", "", "A", ["A"]],
+        ["hyphenated word", "", "A-1", ["A-1"]],
+        ["loop count", "", "count", ["0", "1", "2"]],
+        ["interpolation", "", '"part[count]"', ["part0", "part1", "part2"]],
+    ]) {
+        test(label, () => {
+            const reached = statement => drainEvents(parseProgram(
+                `${source}\nloop ${expected.length} do\n ${statement}\nend`
+            ), realDeps())
+            const births = eventsOfType(reached(`let ${name}`), "birth")
+            const spawns = eventsOfType(reached(`as ${name} do\n end`), "spawn")
+            assert.deepEqual(births.map(e => e.name), expected)
+            assert.deepEqual(births.map(e => e.name), spawns.map(e => e.name))
+            assert.ok(births.every(e => e.owner.line === 3))
+        })
+    }
 })
 
 describe("shout holes (name word, payload measure)", () => {

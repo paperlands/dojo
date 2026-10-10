@@ -30,7 +30,7 @@ const strokes = (calls) => calls.filter(c => c[0] === 'stroke').length
 
 test("an empty A is a dot in its ring, and no arm the world did not give", () => {
     const { ctx, calls } = stub()
-    drawPin(ctx, { cx: 100, cy: 50, name: 'A', width: 200 })
+    drawPin(ctx, { cx: 100, cy: 50, name: 'A', right: 200 })
     assert.deepEqual(arcs(calls).map(c => c[3]), [9, 2.5], "the ring, then the place itself")
     assert.equal(fills(calls), 1, "a pearl is not a point; a dot is")
     assert.equal(calls.some(c => c[0] === 'close'), false, "no north was given, so no arm")
@@ -39,9 +39,9 @@ test("an empty A is a dot in its ring, and no arm the world did not give", () =>
 
 test("the free point is touch-sized; an anchored point is only a reading", () => {
     const free = stub(), anchored = stub()
-    drawPin(free.ctx, { cx: 100, cy: 50, name: 'A', width: 200, touchable: true, held: true,
+    drawPin(free.ctx, { cx: 100, cy: 50, name: 'A', right: 200, touchable: true, held: true,
         accepted: [1, 2, 0] })
-    drawPin(anchored.ctx, { cx: 100, cy: 50, name: 'A', width: 200, withHead: true,
+    drawPin(anchored.ctx, { cx: 100, cy: 50, name: 'A', right: 200, withHead: true,
         accepted: [1, 2, 0], outcome: 'accepted' })
     assert.equal(arcs(free.calls)[0][3], 18)
     assert.equal(arcs(free.calls)[1][3], 3.5, "held, the place grows")
@@ -55,9 +55,9 @@ test("the free point is touch-sized; an anchored point is only a reading", () =>
 
 test("a held point shows z only once it has left the plane", () => {
     const flat = stub(), lifted = stub()
-    drawPin(flat.ctx, { cx: 100, cy: 50, name: 'A', width: 200, touchable: true, held: true,
+    drawPin(flat.ctx, { cx: 100, cy: 50, name: 'A', right: 200, touchable: true, held: true,
         accepted: [1, 2, 0] })
-    drawPin(lifted.ctx, { cx: 100, cy: 50, name: 'A', width: 200, touchable: true, held: true,
+    drawPin(lifted.ctx, { cx: 100, cy: 50, name: 'A', right: 200, touchable: true, held: true,
         accepted: [1, 2, -3.5] })
     assert.deepEqual(texts(flat.calls), ['A', '1.00, 2.00'])
     assert.deepEqual(texts(lifted.calls), ['A', '1.00, 2.00, -3.50'])
@@ -65,8 +65,8 @@ test("a held point shows z only once it has left the plane", () => {
 
 test("the arm points along the facing it is given — the heading the place was born", () => {
     const east = stub(), west = stub()
-    drawPin(east.ctx, { cx: 100, cy: 50, name: 'A', width: 200, touchable: true, facing: { x: 30, y: 0 } })
-    drawPin(west.ctx, { cx: 100, cy: 50, name: 'A', width: 200, touchable: true, facing: { x: -30, y: 0 } })
+    drawPin(east.ctx, { cx: 100, cy: 50, name: 'A', right: 200, touchable: true, facing: { x: 30, y: 0 } })
+    drawPin(west.ctx, { cx: 100, cy: 50, name: 'A', right: 200, touchable: true, facing: { x: -30, y: 0 } })
     const tipOf = (calls) => calls.filter(c => c[0] === 'lineTo')[0].slice(1)
     assert.deepEqual(tipOf(east.calls), [113, 50], "the tip is radius - 5 along the facing")
     assert.deepEqual(tipOf(west.calls), [87, 50], "the shaft follows the source's direction, not a north")
@@ -88,10 +88,10 @@ test("the arm points along the facing it is given — the heading the place was 
 
 test("a facing the eye flattened opens the dot; an arm with no room is no arm", () => {
     const flattened = stub(), nub = stub(), headed = stub()
-    drawPin(flattened.ctx, { cx: 100, cy: 50, name: 'A', width: 200, touchable: true,
+    drawPin(flattened.ctx, { cx: 100, cy: 50, name: 'A', right: 200, touchable: true,
         facing: { x: 2, y: 0 } })
-    drawPin(nub.ctx, { cx: 100, cy: 50, name: 'A', width: 200, facing: { x: 0, y: -20 } })
-    drawPin(headed.ctx, { cx: 100, cy: 50, name: 'A', width: 200, withHead: true,
+    drawPin(nub.ctx, { cx: 100, cy: 50, name: 'A', right: 200, facing: { x: 0, y: -20 } })
+    drawPin(headed.ctx, { cx: 100, cy: 50, name: 'A', right: 200, withHead: true,
         facing: { x: 0, y: -20 } })
     assert.equal(flattened.calls.some(c => c[0] === 'close'), false, "a flattened facing draws no blade")
     assert.equal(fills(flattened.calls), 0, "the dot OPENS rather than vanish: it points at you")
@@ -105,9 +105,9 @@ test("a facing the eye flattened opens the dot; an arm with no room is no arm", 
 
 test("a free point can show a refusal without turning an anchored point into a handle", () => {
     const free = stub(), anchored = stub()
-    drawPin(free.ctx, { cx: 100, cy: 50, name: 'A', width: 200, touchable: true,
+    drawPin(free.ctx, { cx: 100, cy: 50, name: 'A', right: 200, touchable: true,
         ghost: { text: 'rejected', fade: 0.25 } })
-    drawPin(anchored.ctx, { cx: 100, cy: 50, name: 'A', width: 200, withHead: true,
+    drawPin(anchored.ctx, { cx: 100, cy: 50, name: 'A', right: 200, withHead: true,
         ghost: { text: 'rejected', fade: 0.25 } })
     assert.deepEqual(texts(free.calls), ['A', 'rejected'])
     assert.deepEqual(texts(anchored.calls), ['A'])
@@ -115,24 +115,24 @@ test("a free point can show a refusal without turning an anchored point into a h
 
 test("A with a head has a ring at its pose, leaving the arrow visible", () => {
     const { ctx, calls } = stub()
-    drawPin(ctx, { cx: 100, cy: 50, name: 'A', width: 200, withHead: true })
+    drawPin(ctx, { cx: 100, cy: 50, name: 'A', right: 200, withHead: true })
     assert.deepEqual(arcs(calls), [['arc', 100, 50, 18]])
     assert.equal(fills(calls), 0, "no dot hides the arrow")
 })
 
 test("the label stays on the visible field", () => {
     const { ctx, calls } = stub()
-    drawPin(ctx, { cx: 470, cy: 50, name: 'longname', width: 500 })
-    drawPin(ctx, { cx: 100, cy: 50, name: 'A', width: 500 })
+    drawPin(ctx, { cx: 470, cy: 50, name: 'longname', right: 500 })
+    drawPin(ctx, { cx: 100, cy: 50, name: 'A', right: 500 })
     assert.equal(calls.filter(c => c[0] === 'text')[0][4], 'right')
     assert.equal(calls.filter(c => c[0] === 'text')[1][4], 'left')
 })
 
 test("the mark and its name take the ink they are given, at the state's weight", () => {
     const inked = stub(), paper = stub()
-    drawPin(inked.ctx, { cx: 100, cy: 50, name: 'A', width: 200, touchable: true, held: true,
+    drawPin(inked.ctx, { cx: 100, cy: 50, name: 'A', right: 200, touchable: true, held: true,
         facing: { x: 30, y: 0 }, ink: '#123456' })
-    drawPin(paper.ctx, { cx: 100, cy: 50, name: 'A', width: 200 })
+    drawPin(paper.ctx, { cx: 100, cy: 50, name: 'A', right: 200 })
     const paints = inked.calls.filter(c => c[0] === 'fill' || c[0] === 'stroke')
     assert.ok(paints.every(c => c[1] === '#123456'), "ring, arm and dot are the ink")
     assert.ok(paints.every(c => [0.75, 0.85, 0.95].includes(c[2])),

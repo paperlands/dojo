@@ -69,7 +69,13 @@ describe("createMaterialCache", () => {
         assert.throws(() => cache.get(1, 2), /used after dispose/)
     })
 
-    test("updateResolution walks every cached material", () => {
+    test("every material carries the resolution — at creation, and on update", () => {
+        // Line width is screen-space, so a material is only as honest as the
+        // resolution it holds. The cache used to read the WINDOW at creation,
+        // which is the wrong surface for a canvas that is not the viewport, and
+        // wrong for a material made after the last resize. The stage sets the
+        // number through updateResolution; the cache keeps it and hands it to
+        // everything it makes, whenever it makes it.
         const seen = []
         const cache = createMaterialCache({
             createMaterial: (color, thickness) => ({
@@ -79,7 +85,23 @@ describe("createMaterialCache", () => {
         })
         cache.get(1, 2)
         cache.get(2, 3)
+        // No surface has been set yet: the materials carry the placeholder, not a
+        // window read this cache cannot see.
+        assert.deepEqual(seen, [[1, 1], [1, 1]])
+
+        seen.length = 0
         cache.updateResolution(800, 600)
         assert.deepEqual(seen, [[800, 600], [800, 600]])
+
+        // And one made between resizes is not left behind at the placeholder.
+        seen.length = 0
+        cache.get(3, 4)
+        cache.getInk(6)
+        assert.deepEqual(seen, [[800, 600], [800, 600]])
+
+        // A later resize reaches the materials that already exist.
+        seen.length = 0
+        cache.updateResolution(320, 240)
+        assert.deepEqual(seen, [[320, 240], [320, 240], [320, 240], [320, 240]])
     })
 })

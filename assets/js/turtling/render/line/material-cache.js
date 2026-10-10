@@ -7,7 +7,18 @@ import { INK } from '../../ink.js'
 export function createMaterialCache(opts = {}) {
     const cache = new Map()
     let disposed = false
+    // Materials inherit the stage's current surface resolution, not the window.
+    // Remember it for materials created after a resize. (id:host-surface)
+    let resolution = { width: 1, height: 1 }
     const make = opts.createMaterial || defaultLineMaterial
+    // Every material this cache creates carries the current resolution, so one made
+    // between resizes is not silently sized to whatever it happened to be then.
+    const adopt = (key, mat) => {
+        mat._cached = true
+        mat.resolution?.set(resolution.width, resolution.height)
+        cache.set(key, mat)
+        return mat
+    }
 
     return {
         get size() { return cache.size },
@@ -17,9 +28,7 @@ export function createMaterialCache(opts = {}) {
             const key = `${color || INK}:${thickness || 2}`
             let mat = cache.get(key)
             if (!mat) {
-                mat = make(color, thickness, { vertexColors: false })
-                mat._cached = true
-                cache.set(key, mat)
+                mat = adopt(key, make(color, thickness, { vertexColors: false }))
             }
             return mat
         },
@@ -30,15 +39,14 @@ export function createMaterialCache(opts = {}) {
             const key = `ink:${thickness || 2}`
             let mat = cache.get(key)
             if (!mat) {
-                mat = make(0xffffff, thickness, { vertexColors: true })
-                mat._cached = true
-                cache.set(key, mat)
+                mat = adopt(key, make(0xffffff, thickness, { vertexColors: true }))
             }
             return mat
         },
 
         // Line width is screen-space — keep resolution current after resize.
         updateResolution(width, height) {
+            resolution = { width, height }
             for (const mat of cache.values()) mat.resolution?.set(width, height)
         },
 
@@ -64,6 +72,7 @@ function defaultLineMaterial(color, thickness, opts = {}) {
         vertexColors: !!opts.vertexColors,
         dashed: false,
     })
-    mat.resolution.set(window.innerWidth, window.innerHeight)
+    // The resolution is the stage's to set (see `adopt` above); LineMaterial's own
+    // default is (1, 1), and the stage sets the surface before anything draws.
     return mat
 }

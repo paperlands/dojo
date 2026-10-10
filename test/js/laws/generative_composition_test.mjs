@@ -128,6 +128,34 @@ for (const [route, statement] of Object.entries(births)) {
     })
 }
 
+for (const [label, source, names] of [
+    ["defined word", 'fn name "hello"\nloop 3 do\n fw 10\n let name\nend', ["hello"]],
+    ["count", 'loop 3 do\n fw 10\n let count\nend', ["0", "1", "2"]],
+    ["interpolation", 'loop 3 do\n fw 10\n let "part[count]"\nend', ["part0", "part1", "part2"]],
+    ["helper parameter", 'def mark name do\n let name\nend\nloop 3 do\n fw 10\n mark "hello"\nend', ["hello"]],
+]) {
+    test(`G2: ${label} births use resolved names, not source spellings`, () => {
+        const result = run(source)
+        clean(result)
+        assert.equal(result.host.unresolved, null)
+        assert.deepEqual([...result.host.children.keys()], names)
+        assert.equal(new Set([...result.host.children.values()].map(f => f.id)).size, names.length)
+        for (const [i, name] of names.entries()) {
+            const child = result.host.children.get(name)
+            assert.deepEqual(position(child), [names.length === 1 ? 30 : (i + 1) * 10, 0, 0])
+            assert.equal(result.host.reached.has(name), true)
+        }
+    })
+}
+
+test("G2: let and as resolve the same name and join the same place", () => {
+    const result = run('fn name "hello"\nfw 10\nlet name\nas name do\n fw 2\nend')
+    clean(result)
+    assert.equal(result.host.unresolved, null)
+    assert.deepEqual([...result.host.children.keys()], ["hello"])
+    assert.deepEqual(position(result.host.children.get("hello")), [12, 0, 0])
+})
+
 const laws = {
     direct: "let A.distance = count+1",
     helper: "reach count+1",

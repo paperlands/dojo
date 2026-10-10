@@ -40,6 +40,8 @@ const FACING_STEP = 20
 export class Turtle {
     constructor(canvas, options = {}) {
         this._caps = options.caps ?? null
+        this._handRequested = options.interactive === true
+        this._disposed = false
         // The law seam: an injected admission/observation policy for this play.
         // Lab-only — no child-facing syntax, no second API. (id:laws-build-p0)
         this._law = options.law ?? null
@@ -123,6 +125,7 @@ export class Turtle {
     }
 
     requestRender() {
+        if (this._disposed) return
         this._renderRequested = true
         this.renderLoop.ensureRunning()
     }
@@ -153,6 +156,9 @@ export class Turtle {
     }
 
     dispose() {
+        if (this._disposed) return
+        this._disposed = true
+        this._handRequested = false
         this._stopHeartbeat()
         document.removeEventListener('visibilitychange', this._onVisibilityChange)
         for (const ev of ['start', 'change', 'end']) {
@@ -221,6 +227,25 @@ export class Turtle {
         }
         const bounds = unionBounds(spheres)
         return bounds ? { bounds, dir: viewDirection(primary?.normal ?? null) } : null
+    }
+
+    readPlace(name, property, ownerKey = 'host') {
+        return this.scheduler?.readPlace(name, property, ownerKey) ?? { kind: 'missing' }
+    }
+
+    readScalar(name, ownerKey = 'host') {
+        return this.scheduler?.readScalar(name, ownerKey) ?? { kind: 'missing' }
+    }
+
+    proposePlace(name, position, ownerKey = 'host') {
+        if (!this.scheduler) return { kind: 'missing' }
+        const verdict = this.scheduler.proposePlace(name, position, this.scheduler.motionRevision, ownerKey)
+        if (verdict.kind === 'accept') this.requestRender()
+        return { kind: verdict.kind, ...(verdict.message ? { message: verdict.message } : {}) }
+    }
+
+    onAcceptedChange(fn) {
+        return this.scheduler?.onAcceptedChange(fn) ?? (() => {})
     }
 
     // The shell verb and the probe call share this one path: frame, don't enlarge.
@@ -352,7 +377,7 @@ export class Turtle {
                 for (const target of targets) drawSpan(overlay.ctx, view.project(target), at, { alpha: 0.45 })
             }
             drawPin(overlay.ctx, {
-                cx: at.x, cy: at.y, width: overlay.width, name: frame.name,
+                cx: at.x, cy: at.y, right: overlay.right, name: frame.name,
                 ink: this._inkOf(frame),
                 withHead: this.compositor?.renderOf(frame.id)?.visible ?? false,
                 touchable, held, accepted: frame.transform.deref().position,
@@ -376,7 +401,7 @@ export class Turtle {
             if (!tip) continue
             const anchor = nameAnchor(view.project(mark.from), tip)
             drawName(overlay.ctx, { cx: anchor.x, cy: anchor.y,
-                width: overlay.width, lines: [{ text: mark.name }], ink: mark.color ?? this.color })
+                right: overlay.right, lines: [{ text: mark.name }], ink: mark.color ?? this.color })
         }
     }
 
@@ -435,7 +460,7 @@ export class Turtle {
             },
         })
         const down = event => {
-            if (event.target !== canvas) return
+            if (!this._handRequested || event.target !== canvas) return
             const answer = handle.pointerDown({ pointerId: event.pointerId, x: event.clientX, y: event.clientY })
             if (!answer.claimed) return
             event.stopImmediatePropagation()
@@ -490,6 +515,20 @@ export class Turtle {
         }
     }
 
+    // The mounting owner acquires the hand and releases its listeners.
+    attachHand() {
+        this._handRequested = true
+        this._ensureHandle()
+        return () => {
+            this._handRequested = false
+            this._handle?.dispose()
+            this._handle = null
+            this._heldFrame = null
+            this._lastRefusal = null
+            this._ghost = null
+        }
+    }
+
     _ensureScheduler() {
         if (this.scheduler) return
         this.scheduler = createScheduler(metaRoot(), {
@@ -499,7 +538,12 @@ export class Turtle {
                 mathParser: new Parser(),
                 mathEvaluator: new Evaluator()
             }),
-            execOpts: { ...(this._caps ?? {}), color: this.color },
+            execOpts: {
+                ...(this._caps ?? {}),
+                commandCeiling: this._caps?.maxCommands,
+                recurseCeiling: this._caps?.maxRecurseDepth,
+                color: this.color,
+            },
             // onShout carries the emitter's name; routing is read-side.
             onShout: (sourceName, msg, payload) => {
                 this._onShout?.(sourceName, msg, payload)
@@ -509,12 +553,10 @@ export class Turtle {
             ...labInputs(this._law),
         })
         this.focus.bind(this.scheduler)
-        // Live stage for STAGE_CONTRACT verbs; cadence + orbit target via opts
-        // (not stage fields — renderLoop used to leak frameInterval that way).
-        // focus is turtle-owned — compositor only reads/projects it.
-        // The overlay never takes input; only a free point claims a canvas touch.
-        this._overlay ||= createOverlay({ onResize: () => this.requestRender(), space: this.stage.space })
-        this._ensureHandle()
+        // The compositor projects turtle-owned focus and stage state.
+        // Only an opted-in owner installs the hand; the overlay never takes input.
+        this._overlay ||= createOverlay({ onResize: () => this.requestRender(), space: this.stage.space, canvas: this.stage.canvas })
+        if (this._handRequested) this._ensureHandle()
         this.compositor = createCompositor(this.scheduler,
             this.stage,
             {

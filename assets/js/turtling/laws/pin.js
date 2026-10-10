@@ -32,7 +32,7 @@ export function coordinate(position) {
     return depth === '0.00' || depth === '-0.00' ? plane : `${plane}, ${depth}`
 }
 
-export function drawPin(ctx, { cx, cy, name = '', width = 0, withHead = false,
+export function drawPin(ctx, { cx, cy, name = '', right = 0, withHead = false,
     touchable = false, held = false, accepted = null, outcome = null, ghost = null, facing = null, ink = null }) {
     ctx.save()
     const radius = touchable || withHead ? 18 : 9
@@ -88,7 +88,7 @@ export function drawPin(ctx, { cx, cy, name = '', width = 0, withHead = false,
     if (held && outcome && outcome !== 'accepted') lines.push(outcome)
     else if (!held && touchable && ghost?.fade > 0) lines.push(ghost.text)
     drawName(ctx, {
-        cx, cy: cy - radius + 2, width, ink, gap: radius + 12,
+        cx, cy: cy - radius + 2, right, ink, gap: radius + 12,
         lines: lines.map((text, index) => ({
             text, alpha: (index === 0 ? 0.52 : 0.34) * (!held && index > 0 ? ghost?.fade ?? 1 : 1),
         })),
@@ -111,11 +111,11 @@ export function nameAnchor(from, to, pad = 12) {
 // The NAME protocol, one: monospace, measured, flipped at the field's edge. A
 // pin's label and a vector's name are the same reading, ink riding the mark's.
 // (id:notation-coordinate-vector, id:laws-decl-interface)
-export function drawName(ctx, { cx, cy, width = 0, lines = [], ink = null, gap = 0 }) {
+export function drawName(ctx, { cx, cy, right = 0, lines = [], ink = null, gap = 0 }) {
     if (!lines.some((line) => line?.text)) return
     ctx.save()
     ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace'
-    const flip = cx + gap + Math.max(...lines.map((line) => ctx.measureText(line?.text ?? '').width)) > width
+    const flip = cx + gap + Math.max(...lines.map((line) => ctx.measureText(line?.text ?? '').width)) > right
     ctx.textAlign = flip ? 'right' : 'left'
     ctx.textBaseline = 'alphabetic'
     lines.forEach(({ text, alpha = 0.52 }, index) => {

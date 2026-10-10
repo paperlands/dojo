@@ -2,6 +2,7 @@
 import { connect } from "node:net"
 import { randomBytes } from "node:crypto"
 import { spawn } from "node:child_process"
+import { readFileSync } from "node:fs"
 
 const port = Number(process.argv[2])
 const dir = process.argv[3]
@@ -81,61 +82,85 @@ function wsConnect(url) {
 
 const chrome = spawn("chromium", [
     "--headless=new", "--disable-gpu",
-    "--remote-debugging-port=9225",
+    "--force-device-scale-factor=2",
+    "--remote-debugging-port=0",
     `--user-data-dir=${dir}/chrome`,
     `http://127.0.0.1:${port}/`,
 ], { stdio: "ignore" })
 
-const deadline = Date.now() + 20000
-let page
-while (Date.now() < deadline) {
-    try {
-        const pages = await (await fetch("http://127.0.0.1:9225/json")).json()
-        page = pages.find((p) => p.type === "page" && p.url.includes(String(port)))
-        if (page) break
-    } catch { /* chrome still booting */ }
-    await new Promise((r) => setTimeout(r, 200))
-}
-if (!page) {
-    chrome.kill()
-    console.error("no host page")
-    process.exit(1)
-}
-
-const ws = await wsConnect(new URL(page.webSocketDebuggerUrl))
-let nextId = 0
-const pending = new Map()
-ws.onMessage((raw) => {
-    const msg = JSON.parse(raw)
-    if (msg.id && pending.has(msg.id)) {
-        pending.get(msg.id)(msg)
-        pending.delete(msg.id)
+let ws
+try {
+    const deadline = Date.now() + 20000
+    let page
+    while (Date.now() < deadline) {
+        try {
+            const debugPort = readFileSync(`${dir}/chrome/DevToolsActivePort`, "utf8").split("\n")[0]
+            const pages = await (await fetch(`http://127.0.0.1:${debugPort}/json`)).json()
+            page = pages.find((p) => p.type === "page" && p.url === `http://127.0.0.1:${port}/`)
+            if (page) break
+        } catch { /* chrome still booting */ }
+        await new Promise((r) => setTimeout(r, 200))
     }
-})
-const cdp = (method, params = {}) => new Promise((res, rej) => {
-    const id = ++nextId
-    const t = setTimeout(() => rej(new Error("cdp timeout " + method)), 8000)
-    pending.set(id, (m) => { clearTimeout(t); res(m) })
-    ws.send(JSON.stringify({ id, method, params }))
-})
-await cdp("Runtime.enable")
+    if (!page) throw new Error("no host page")
 
-let text = ""
-while (Date.now() < deadline) {
-    const msg = await cdp("Runtime.evaluate", {
-        expression: "document.getElementById('out')?.textContent || ''",
-        returnByValue: true,
+    ws = await wsConnect(new URL(page.webSocketDebuggerUrl))
+    let nextId = 0
+    const pending = new Map()
+    ws.onMessage((raw) => {
+        const msg = JSON.parse(raw)
+        if (msg.id && pending.has(msg.id)) {
+            pending.get(msg.id)(msg)
+            pending.delete(msg.id)
+        }
     })
-    text = msg.result?.result?.value || ""
-    if (text.includes("DONE") || text.includes("FAIL ")) break
-    await new Promise((r) => setTimeout(r, 200))
+    const cdp = (method, params = {}) => new Promise((res, rej) => {
+        const id = ++nextId
+        const t = setTimeout(() => { pending.delete(id); rej(new Error("cdp timeout " + method)) }, 8000)
+        pending.set(id, (m) => { clearTimeout(t); res(m) })
+        ws.send(JSON.stringify({ id, method, params }))
+    })
+    await cdp("Runtime.enable")
+
+    let text = ""
+    let paintAttempted = false
+    while (Date.now() < deadline) {
+        const msg = await cdp("Runtime.evaluate", {
+            expression: "document.getElementById('out')?.textContent || ''",
+            returnByValue: true,
+        })
+        text = msg.result?.result?.value || ""
+        if (text.includes("PAINT_READY") && !paintAttempted) {
+            paintAttempted = true
+            const box = await cdp("Runtime.evaluate", {
+                expression: "(() => { const r = document.getElementById('c').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, scale: 1 } })()",
+                returnByValue: true,
+            })
+            const clip = box.result?.result?.value
+            const before = await cdp("Page.captureScreenshot", { format: "png", clip })
+            const action = await cdp("Runtime.evaluate", {
+                expression: "window.runProposalWitness()",
+                awaitPromise: true,
+                returnByValue: true,
+            })
+            if (action.result?.exceptionDetails || action.result?.result?.value !== true)
+                throw new Error("proposal witness failed")
+            const after = await cdp("Page.captureScreenshot", { format: "png", clip })
+            const painted = typeof before.result?.data === "string" && typeof after.result?.data === "string"
+                && before.result.data !== after.result.data
+            await cdp("Runtime.evaluate", {
+                expression: `window.finishProposalWitness(${painted})`,
+                returnByValue: true,
+            })
+        }
+        if (text.includes("DONE") || text.includes("FAIL ")) break
+        await new Promise((r) => setTimeout(r, 200))
+    }
+    console.log(text.trim())
+    const missing = ["bad:", "badline:1", "ok:", "rej:hatch disposed", "beats:", "scored:true", "quiet:true", "morph:", "morphok:true", "nest:", "nestok:true", "laws:", "lawsok:true", "pendingdispose:true", "interactionok:true:lifecycle:true:position:true:watchers:true:dispose-delivery:true:finite-refusal:true:headed:true:rotator:true:observer:true:scalar:true:pointer:true", "proposalRendered:true", "sourceValues:true:vectors:true", "surfaceok:true", "walkingReads:true", "hostTruth:true", "DONE"].filter((n) => !text.includes(n))
+    if (text.includes("FAIL ") || text.includes("bad:accepted") || missing.length)
+        throw new Error("runtime door failed: " + missing.join(", "))
+    console.log("runtime door ok")
+} finally {
+    ws?.close()
+    chrome.kill()
 }
-ws.close()
-chrome.kill()
-console.log(text.trim())
-const missing = ["bad:", "(line 1)", "ok:", "rej:hatch disposed", "beats:", "scored:true", "quiet:true", "morph:", "morphok:true", "nest:", "nestok:true", "laws:", "lawsok:true", "pendingdispose:true", "DONE"].filter((n) => !text.includes(n))
-if (text.includes("FAIL ") || text.includes("bad:accepted") || missing.length) {
-    console.error("runtime door failed", missing)
-    process.exit(1)
-}
-console.log("runtime door ok")

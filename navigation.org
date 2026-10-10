@@ -155,6 +155,26 @@ dropped entry — the clamp and =n= are identity, not tidiness
 ([[file:specs/weave/keep-carve.org][keep-carve]] =kc-c-stamp=). =n= never
 crosses a boundary; cross-hand compares read =t= alone (D008).
 
+** keep foundation review — evidence before extension
+:PROPERTIES:
+:ID: nav-keep-foundation-review
+:KEYWORDS: keep foundation Linear sync refusal receipt retention root proof clock tabs coverage migration
+:PATH: specs/weave/keep-foundation-review.org
+:END:
+Draft inquiry, not replacement law. Prior study and six counterexamples:
+=node probe/keep-foundation/audit.mjs=. Memory IDB; no real-server claim.
+Resolution/exit: =probe/keep-foundation/RESULTS.org=.
+
+** keep priors — Jujutsu identity, choices, and committed referents
+:PROPERTIES:
+:ID: nav-keep-priors-review
+:KEYWORDS: keep priors jj Jujutsu Git Automerge Datomic Darcs frontier conflict image identity correction
+:PATH: specs/weave/keep-priors-review.org
+:END:
+Draft structure review. =bash probe/keep-foundation/jj_prior.sh= isolates jj
+experiments in /tmp; =node probe/keep-foundation/referent_identity.mjs= measures
+message identity versus image identity. No production or migration change.
+
 ** keep hash — text → hex64, one engine always
 :PROPERTIES:
 :ID: nav-keep-hash
@@ -728,9 +748,11 @@ Fence: =test/js/laws/handle_test.mjs=.
 :KEYWORDS: let Existence deriveBatch birth seatPlace reached ordered birth use before introduction forward use
 :PATH: assets/js/turtling/scheduler.js::birth
 :END:
-=deriveBatch= keeps =Existence= in the executable stream; =executor.js= yields a
-=birth= effect carrying the executor's post-command pose; =scheduler.js::birth=
-seats a new identity or revises an existing one to that state, synchronously. [[id:laws-ordered-birth]] ·
+=deriveBatch= keeps =Existence= in the executable stream; =executor.js= reads its
+name through the same word input as =as= (bindings, =count=, quoted interpolation,
+unbound-word fallback), then yields =birth= with the resolved name and current pose.
+=scheduler.js::birth= seats or revisits that resolved slot synchronously; parsed
+name text is an index, not an end-of-walk existence requirement. [[id:laws-ordered-birth]] ·
 [[id:laws-build-p1a-verdict]] · [[id:laws-build-p1b-verdict]] · [[id:laws-build-p1c-verdict]] · [[id:laws-build-p1d-verdict]]. A read of a
 declared-but-unreached local name is a located =Use before introduction=. Fence:
 =declaration_test.mjs= ordered-birth tests.
@@ -1040,6 +1062,60 @@ propose, and publication owns accepted geometry/lifetime. Arithmetic quantizatio
 geometric acceptance and display formatting stay separate. Generic coefficient routing
 does not earn symbolic/differential geometry or a universal solver.
 
+** symbolic numerics performance — staged richness and backend boundaries
+:PROPERTIES:
+:ID: nav-symbolic-numerics-performance
+:KEYWORDS: symbolic CAS SICM Emmy GiNaC WASM CLN ganja geometric algebra staging compilation CSE DAG AD exact filters assumptions correctness performance
+:PATH: specs/weave/symbolic-numerics-performance-review.org::symbolic-performance-question
+:END:
+Research, not accepted design: rich operation meaning with specialized storage
+and prepared execution; measured literature results versus Dojo hypotheses.
+The GiNaC section inspects an existing WASM binding, its semantic and resource
+limits, licensing gate and the native compile_ex path that does not port as a JIT.
+
+** symbolic numerics experiments — turtle seams, matched JS, lifecycle costs
+:PROPERTIES:
+:ID: nav-symbolic-numerics-experiments
+:KEYWORDS: symbolic numerics ganja GiNaC Emmy benchmark experiment conformance cold startup compressed download retained memory preparation repeated evaluation transfer cancellation numeric tower
+:PATH: specs/weave/symbolic-numerics-performance-review.org::symbolic-performance-experimental-plan
+:END:
+Directed campaign and two bounded pilots: common evaluator/Versor controls,
+matched JS, lifecycle costs and total-session break-even. Emmy now earns actual
+browser generic/SCI witnesses; static ganja earns CSP/payload simplification.
+GiNaC's safe build is blocked. No backend or production change selected.
+
+** symbolic numerics probe — isolated worktrees, shared async-worker contract
+:PROPERTIES:
+:ID: nav-symbolic-numerics-probe
+:KEYWORDS: symbolic numerics ganja worktree async worker probe conformance retention CSP cancellation transfer benchmark pilot
+:PATH: probe/symbolic-numerics/README.org::symbolic-numerics-probe-room
+:END:
+Control/ganja/GiNaC/Emmy seats share one pinned tracked runtime and fixture harness.
+RESULTS.org records the Float64 Cl3/JS pilot, strict main/worker CSP gate,
+cancellation and correction of instrument defects. No backend selected.
+
+** symbolic numerics second pilot — actual browser gzip and prepared reuse
+:PROPERTIES:
+:ID: nav-symbolic-numerics-second-pilot
+:KEYWORDS: Emmy SCI ganja AOT static kernel cold gzip memory VM cancellation preparation paired JS
+:PATH: probe/symbolic-numerics/SECOND-RESULTS.org::symbolic-numerics-second-results
+:END:
+Parent-owned serial core/browser/boundary/retention/preparation-stop readings.
+Entry instruments: probe/symbolic-numerics/{parent-pilot,cold-browser,preparation-stop,summarize-parent}.mjs.
+No intrinsic speed ranking: VM differs from browser, A/A noise is retained,
+SCI buys reuse against generic Emmy only, and fixed-count stop checks can stall.
+
+** symbolic foundation witness — tower meaning before command admission
+:PROPERTIES:
+:ID: nav-symbolic-foundation-reference
+:KEYWORDS: CAS generic exact rational symbolic differential quarter turn rt fw label pose admission lowering signed permutation phase abstraction
+:PATH: probe/symbolic-foundation/README.org::symbolic-foundation-reference
+:END:
+Bounded reference in the generic worktree: one tower-routed unit-rotation
+definition, exact substitution versus approximate binding, prepared local action.
+Seventeen witnesses pass; actual rt/pose integration remains refused, not fixed.
+No backend selected. RESULTS.org records A/A noise and cold preparation costs.
+
 ** distance term normalization — meaning, policy, capability
 :PROPERTIES:
 :ID: nav-law-term-normalization
@@ -1324,10 +1400,53 @@ fixes: 201 scavenges per fixed workload against the pre-session baseline’s 203
 :KEYWORDS: createHatch play finished host runtime paperlang package
 :PATH: assets/js/host.js::createHatch
 :END:
-The package door (D030). =play= accepts. =finished= is =scheduler.done=.
-The lab seam rides the door: =createHatch(canvas, {caps, law})= carries an injected
-=motionAdmission | validate | observePureGoto= into =createScheduler= via =Turtle=
-— policy stays in the caller, the door owns no law. Live walk: =host_play.sh=.
+The package door (D030). =play= accepts; =finished= settles on scheduler completion
+and rejects fatal wounds. =turtling/run.js= owns the completion verdict.
+Consumer command: =node scripts/release/host.mjs= → =dist/host/= (ESM, closure,
+licenses, source-input snapshot, and content-addressed dirty revision).
+Guide: [[file:docs/host.org][PaperLang on your canvas]].
+Native interaction is opt-in: =createHatch(canvas, {interactive: true})= enables
+place gestures. =hatch.interaction.read('A', 'x')= and =subscribe('A', 'x', fn)=
+read committed PaperLang properties; =read('s')= / =subscribe('s', fn)= read a
+named value (including vectors) from the existing readout store. Subscribe after
+successful play; source-instant delivery follows derived-value recomputation.
+Ordinary actor motion follows the same slice boundary. Law commits notify only after
+installation and dependent reads agree. =onBeat= carries occurrences, never deduplicated
+readings. Host callback proposals (including initial delivery) return =busy=.
+Fences: =test/js/host/door_test.mjs=, =run_test.mjs= and =release_test.mjs=.
+Canvas content-box sizing: =turtling/viewport.js=; instance-owned overlays: =overlay.js=.
+The shell explicitly sizes =core-canvas= with =w-full h-full= in
+=lib/dojo_web/live/shell_live.html.heex=; =fixed inset-0= alone leaves a canvas
+at its intrinsic 300×150 size. Actual-shell regression (live server required):
+=node scripts/verify/shell_surface.mjs= — viewport coverage, DPR and centered projection,
+on desktop/mobile and after resize.
+=A.bearing= is resolved from the played
+host program frame, with its authored birth/reference semantics, not a site-made
+origin. =propose('A', [x,y,z])= goes through native law acceptance. Outcomes are
+=value/missing/unsupported= for reads and native verdicts for proposals. Fresh
+play retires subscriptions. A separate drawing that
+must follow a control should use a dedicated drawing-only hatch and explicitly
+replace that drawing from the callback; the persistent control hatch (and any held
+pointer) stays alive. The authored controls are ordinary laws:
+#+begin_src paperlang
+let A
+let A.z = 0
+let A.distance = 50
+#+end_src
+Read =A.bearing=. Slider:
+#+begin_src paperlang
+let A
+let A.y = 0
+let A.z = 0
+#+end_src
+Read =A.x=.
+Subscribe to =A.x= and call =drawing.play(drawOnly(value))= on a separate,
+drawing-only hatch; no control declaration or unrelated commands are replayed.
+Ordinary =fw= is not reactive. The lab seam carries injected
+=motionAdmission | validate | observePureGoto= into =createScheduler= via =Turtle=.
+Live walk: =scripts/verify/host_play.sh=.
+Behavioral fences: =test/js/host/interaction_test.mjs=. Adversarial findings and
+remaining release boundaries: [[file:specs/turtle/host-ergonomics-review.org][host ergonomics review]].
 
 ** become — the seed law: an unchanged seat is skipped whole
 :PROPERTIES:

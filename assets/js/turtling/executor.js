@@ -103,8 +103,37 @@ function* evalOrBlock(expr, scope, state, domain = "measure", trackReads = false
     }
 }
 
+// A host ceiling is a positive integer, or absent. Zero and fractions are not
+// a quieter way to say "unlimited".
+function positiveCeiling(value, what = "command ceiling") {
+    if (value == null) return null
+    if (!Number.isInteger(value) || value < 1) {
+        throw new Error(`${what} must be a positive integer`)
+    }
+    return value
+}
+
+// The program may lower its working limit. It may not raise the host ceiling.
+function adoptCommandLimit(state, requested) {
+    if (!Number.isInteger(requested) || requested < 1) {
+        throw new Error("limitCommand needs a positive integer")
+    }
+    const ceiling = state.commandCeiling
+    return ceiling == null ? requested : Math.min(requested, ceiling)
+}
+
+function adoptRecurseLimit(state, requested) {
+    if (!Number.isInteger(requested) || requested < 1) {
+        throw new Error("limitRecurse needs a positive integer")
+    }
+    const ceiling = state.recurseCeiling
+    return ceiling == null ? requested : Math.min(requested, ceiling)
+}
+
 // Actor state for execute. Mutated in place so a throw keeps registered defs. (D020, id:cmp-t-healthy-parts)
 export function createActorState(opts = {}) {
+    const commandCeiling = positiveCeiling(opts.commandCeiling)
+    const recurseCeiling = positiveCeiling(opts.recurseCeiling, "recurse ceiling")
     return {
         // Empty eye seeds to recenterPose. (id:eye-view-pipeline)
         transform: opts.lens ? recenterPose() : SE3.identity(),
@@ -119,15 +148,21 @@ export function createActorState(opts = {}) {
         rehearsal: opts.rehearsal === true,
         commandCount: 0,
         recurseCount: 0,
-        maxRecurseDepth: opts.maxRecurseDepth || 360,
+        // The working depth cannot exceed the host ceiling. Reaching the ceiling
+        // refuses; reaching a lower working depth truncates. (id:host-runtime-play)
+        recurseCeiling,
+        maxRecurseDepth: recurseCeiling == null
+            ? (opts.maxRecurseDepth || 360)
+            : Math.min(recurseCeiling, opts.maxRecurseDepth || recurseCeiling),
         maxRecurses: opts.maxRecurses || 888888,
-        // A recursion cap that stopped the walk: construction refuses rather than
-        // passing off a shortened drawing under the requested depth's name.
         truncated: false,
         // Strict construction: an inert Error node is refused, so a recipe reached
         // through dynamic dispatch cannot execute a parse-error body silently.
         strict: opts.strict === true,
-        maxCommands: opts.maxCommands || 88888888,
+        // A host ceiling is not the working limit. The working limit starts at the
+        // ceiling when one was promised, and a program may only lower it.
+        commandCeiling,
+        maxCommands: commandCeiling ?? (opts.maxCommands || 88888888),
         // Reductions: preemption meter (not language-visible commandCount). (D027 R3)
         reductions: 0,
         maxReductions: opts.maxReductions ?? 0,   // 0 = unbounded (ordinary walks)
@@ -458,6 +493,9 @@ function* walkBody(body, scope, state, stroke) {
                 if (state.recurseCount >= state.maxRecurses) {
                     throw new Error(`Maximum recurse limit of ${state.maxRecurses} reached`)
                 }
+                if (state.recurseCeiling != null && currDepth + 1 > state.recurseCeiling) {
+                    throw new Error(`Maximum recurse depth of ${state.recurseCeiling} reached`)
+                }
                 if (currDepth + 1 > state.maxRecurseDepth) { state.truncated = true; break }
 
                 // Build child scope with parameter bindings. These do NOT go on the frame:
@@ -546,7 +584,7 @@ function* walkBody(body, scope, state, stroke) {
             // identity before the next statement reads it. (id:laws-ordered-birth)
             yield {
                 type: 'birth',
-                name: node.value,
+                name: String(yield* evalOrBlock(node.value, scope, state, "word")),
                 origin: SE3.clone(state.transform),
                 owner: node.span ?? null,
             }
@@ -797,10 +835,10 @@ function* callCommand(name, args, state, stroke, baseRevision) {
     // Apply limit changes
     if (result.limits) {
         if (result.limits.maxRecurseDepth !== undefined) {
-            state.maxRecurseDepth = result.limits.maxRecurseDepth
+            state.maxRecurseDepth = adoptRecurseLimit(state, result.limits.maxRecurseDepth)
         }
         if (result.limits.maxCommands !== undefined) {
-            state.maxCommands = result.limits.maxCommands
+            state.maxCommands = adoptCommandLimit(state, result.limits.maxCommands)
         }
     }
 
@@ -983,7 +1021,9 @@ function evaluateExprBody(expr, scope, state, domain = 'measure') {
     // identifier path and report a bound null as "Undefined variable".
     if (scope[expr] !== undefined) return mathEvaluator.readContext
         ? mathEvaluator.readContext(expr, scope) : scope[expr]
-    const tree = parseMemo(mathParser, expr)
+    // A bare hyphenated word is a name here, not subtraction. Measures still parse it.
+    const tree = domain === 'word' && /^[A-Za-z_]\w*-[\w-]*$/.test(expr)
+        ? { type: 'operand', value: expr, children: [] } : parseMemo(mathParser, expr)
 
     // A LITERAL is not a reference: its word is returned as-is, never resolved.
     if (tree.type === 'string') return mathEvaluator.run(tree, scope)
