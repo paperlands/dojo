@@ -347,7 +347,7 @@ const distance = {
         c.set = term.radius > 0 ? sphereSet(centre, term.radius) : pointSet(centre)
         return c
     },
-    touches: (law, id) => (checkedDistanceTerm(law)?.references ?? []).some((r) => identityToken(r) && r === id),
+    points: (law) => (checkedDistanceTerm(law)?.references ?? []).filter(identityToken),
 }
 
 const position = defaults({
@@ -415,7 +415,7 @@ const position = defaults({
         const set = position.set(law, ctx)
         return { pinned: true, ...(set ? { set } : {}) }
     },
-    touches: (law, id) => law.endpoints[0] === id,
+    points: (law) => [law.endpoints[0]],
 })
 
 const coordinate = defaults({
@@ -467,7 +467,7 @@ const coordinate = defaults({
         // them. The plane itself is the set. (D058)
         return pl ? { feature: "coordinate", axis: t.axis, value: t.value, set: planeSet(pl.point, pl.normal) } : null
     },
-    touches: (law, id) => law.endpoints[0] === id,
+    points: (law) => [law.endpoints[0]],
 })
 
 const tilt = defaults({
@@ -521,7 +521,7 @@ const tilt = defaults({
         const halfAngle = normalizeTilt(t.value)
         return { feature: "tilt", set: coneSet(pose.position, axis, halfAngle) }
     },
-    touches: (law, id) => law.endpoints[0] === id,
+    points: (law) => [law.endpoints[0]],
 })
 
 
@@ -569,7 +569,7 @@ const bearing = defaults({
         const pl = bearingHalf(placementOf(t.frame), t.value)
         return pl ? { feature: "bearing", set: pl } : null
     },
-    touches: (law, id) => law.endpoints[0] === id,
+    points: (law) => [law.endpoints[0]],
 })
 
 
@@ -639,15 +639,18 @@ export function bindWorld(getFrame, { live, placement, ...extras } = {}) {
     }
 }
 
+// Point incidence is enumerable, so indexed and scanning queries share the same row. (D058)
+export const pointSubjects = (law) => AUTHORED[law?.feature]?.points?.(law) ?? []
+
 // One point query: the laws that TOUCH one point, their resolved set contributions and their
 // constraint records. OTHER INPUTS ARE HELD — this is the point's own truths, not the
 // complete configuration space; a sphere cannot replace the relationship between two free
 // ends. Callers keep every original obligation and apply their own selection policy. (D058)
 export function pointQuery(id, laws, ctx) {
     const contributions = []
-    for (const law of laws) {
+    for (const law of laws instanceof Map ? (laws.get(id) ?? []) : laws) {
         const row = AUTHORED[law.feature]
-        if (!row?.touches?.(law, id)) continue
+        if (!pointSubjects(law).includes(id)) continue
         // A verified tautology is NEUTRAL: it forms no set and names no unavailability, so
         // it can never disable an otherwise supported meet. (D058)
         const neutral = row.tautology?.(law) === true

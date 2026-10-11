@@ -33,8 +33,13 @@ node test/js/profile/numeric_cost_bench.mjs             # the numerics units, pe
 node test/js/profile/breath_cost_bench.mjs              # what the preemption boundary costs
 node test/js/profile/frontend_bench.mjs                # reader · parser · lexer · evaluator
 node test/js/profile/live_loop_bench.mjs               # the user loops, against a frame budget
+node test/js/profile/point_read_bench.mjs              # scan · shared snapshot · prepared point pass
 #+END_SRC
 
+- =point_read_bench.mjs= rotates scanning/shared/prepared passes over real pinned-point worlds,
+  includes preparation in timing, and counts snapshots/records separately. =POINTS= and =SAMPLES=
+  configure it. Run alone; it measures model interpretation, not projection, DOM or GPU.
+  Deterministic fences live in =test/js/laws/point_read_test.mjs=; [[id:runtime-prepared-point-read]].
 - =harness.mjs= — =profileProgram(src, { ticks, frameMs })=: builds a real
   scheduler exactly as =turtle._ensureScheduler=, runs a batch flush then N
   animation ticks, brackets heap with =global.gc()=, walks the live frame tree

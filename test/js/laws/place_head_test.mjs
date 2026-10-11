@@ -66,7 +66,7 @@ test("the canvas offers a hand only to an unanchored place", () => {
         "an ordinary place's pin marks its accepted world pose")
     assert.match(turtle, /world\.rotation\.rotateVec\(FACING_STEP, 0, 0\)/,
         "the arm is the place's own heading, not the paper's north")
-    assert.match(turtle, /pointCandidates\(scheduler\.registry\.values\(\), frame => this\._touchable\(frame\)\)/,
+    assert.match(turtle, /pointCandidates\(scheduler\.registry\.values\(\), frame =>\s*exposed\(frame\) && read\(frame\)\.interaction\.offered\)/,
         "the state query gates the pointer gesture, topmost first")
     assert.match(turtle, /canTouch: frame => this\._touchable\(frame\)/, "a point gaining a head releases an existing capture")
     assert.doesNotMatch(turtle, /\bfreePoint\(/, "the pin loop reads the state, not a second predicate")

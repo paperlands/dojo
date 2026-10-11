@@ -3,19 +3,47 @@
 // SAME story from the SAME code — never a test-side reconstruction.
 // (id:laws-decl-point-agent, id:laws-decl-interface, D058)
 import { frameWorldTransform, worldTransform } from "../scheduler.js"
-import { bindWorld, constraintsView } from "./authored.js"
+import { bindWorld, constraintsView, pointSubjects } from "./authored.js"
 import { stateOf, heldIdentity, hasBody } from "./constraints.js"
 import { exposed } from "./batch.js"
 
+// A read pass borrows one unchanged model; discard it before mutation or yielding. (D058)
+export function preparePointRead(scheduler) {
+    let laws = null
+    const states = new Map()
+    const held = new Map()
+    return (frame) => {
+        if (!laws) {
+            laws = new Map()
+            for (const law of scheduler.laws.active()) {
+                for (const id of new Set(pointSubjects(law))) {
+                    if (!laws.has(id)) laws.set(id, [])
+                    laws.get(id).push(law)
+                }
+            }
+        }
+        if (!states.has(frame)) states.set(frame, readPointState(frame, scheduler, laws, (id) => {
+            if (!held.has(id)) held.set(id, heldIdentity(scheduler.registry.get(id), laws, scheduler.registry))
+            return held.get(id)
+        }))
+        return states.get(frame)
+    }
+}
+
 export function pointStateOf(frame, scheduler, active = null) {
     const laws = active ?? scheduler.laws.active()
+    return readPointState(frame, scheduler, laws,
+        (id) => heldIdentity(scheduler.registry.get(id), laws, scheduler.registry))
+}
+
+function readPointState(frame, scheduler, laws, heldOf) {
     const ctx = bindWorld((id) => scheduler.registry.get(id), {
         writerId: frame.id,
         // The display reads the committed live head and the stable placement — the same two
         // readings the solver wires, from its own sources. (id:laws-decl-interface)
         live: (f) => frameWorldTransform(f),
         placement: (f) => worldTransform(f),
-        heldOf: (id) => heldIdentity(scheduler.registry.get(id), laws, scheduler.registry),
+        heldOf,
     })
     // ONE query, consumed together: the surviving records and the unavailable contributions
     // share a single interpretation. (D058)

@@ -12,33 +12,28 @@ import { eyeCameraPose } from "./view.js"
 import { rebaseEpoch, idleFloorMs } from "./timeline.js"
 import { createPacer } from "./pacer.js"
 
-// Clone shared materials; troika Text sets opacity direct.
-function setGroupOpacity(group, opacity) {
-    // Lines/fills: transparent only when opacity < 1 — full-bright with
-    // transparent:true loses depth write and trails vanish (sister ambient
-    // looks like a lone head). Text is different: SDF edges *are* alpha, so
-    // transparent must stay on or the soft step hard-cuts (torn outline).
-    const seeThrough = opacity < 1
+const materialDefaults = new WeakMap()
+
+// Cache bindings own shared lines; other materials already belong to their mesh. (id:child-ink)
+function setGroupOpacity(group, opacity, materials) {
     group.traverse(child => {
-        if (child.material) {
-            if (typeof child.text === 'string') {
-                const mats = Array.isArray(child.material)
-                    ? child.material
-                    : [child.material]
-                for (const m of mats) {
-                    if (!m) continue
-                    m.transparent = true
-                    m.opacity = opacity
-                }
-            } else {
-                if (!child._ownMaterial) {
-                    child.material = child.material.clone()
-                    child._ownMaterial = true
-                }
-                child.material.transparent = seeThrough
-                child.material.opacity = opacity
-                child.material.depthWrite = !seeThrough
+        if (!child.material) return
+        const text = typeof child.text === 'string'
+        if (!text) materials.bindOpacity?.(child, opacity)
+        const mats = Array.isArray(child.material) ? child.material : [child.material]
+        for (const mat of mats) {
+            if (!mat || mat._cached) continue
+            if (!materialDefaults.has(mat)) materialDefaults.set(mat, {
+                transparent: mat.transparent, depthWrite: mat.depthWrite,
+            })
+            const defaults = materialDefaults.get(mat)
+            mat.opacity = opacity
+            const transparent = text || opacity < 1 || defaults.transparent
+            if (mat.transparent !== transparent) {
+                mat.transparent = transparent
+                mat.needsUpdate = true
             }
+            if (!text) mat.depthWrite = opacity < 1 ? false : defaults.depthWrite
         }
     })
 }
@@ -95,6 +90,15 @@ export function createCompositor(scheduler, stage, opts = {}) {
     // Per-ambient rendering state: { group, head, shapist }
     // Keyed by ambient.id (unique monotonic counter).
     const ambientLayers = new Map()
+    let opacityByFrame = new WeakMap()
+    let defaultOpacity = 1
+
+    function opacityOf(frame) {
+        for (let f = frame; f; f = f.parent) {
+            if (opacityByFrame.has(f)) return opacityByFrame.get(f)
+        }
+        return defaultOpacity
+    }
 
     function getOrCreateLayer(id, makeHead = true) {
         const existing = ambientLayers.get(id)
@@ -122,7 +126,10 @@ export function createCompositor(scheduler, stage, opts = {}) {
     // Dispose geometry; skip cache-owned materials.
     function disposeMesh(c) {
         if (c.geometry) c.geometry.dispose()
-        if (c.material && !c.material._cached) c.material.dispose()
+        stage.materials.release?.(c)
+        for (const mat of Array.isArray(c.material) ? c.material : [c.material]) {
+            if (mat && !mat._cached) mat.dispose?.()
+        }
     }
 
     // Clear a child layer's geometry/materials but preserve its head mesh.
@@ -235,6 +242,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
             }
             // Rebuild the trail mesh once per frame, not per event.
             flushTrail(layer)
+            setGroupOpacity(layer.group, opacityOf(ambient), stage.materials)
             produced = true
         }
         return produced
@@ -263,8 +271,9 @@ export function createCompositor(scheduler, stage, opts = {}) {
         for (const ambient of scheduler.registry.values()) {
             if (ambient.address === address) {
                 visitPostOrder(ambient, (frame) => {
+                    opacityByFrame.set(frame, opacity)
                     const layer = ambientLayers.get(frame.id)
-                    if (layer) setGroupOpacity(layer.group, opacity)
+                    if (layer) setGroupOpacity(layer.group, opacity, stage.materials)
                 })
                 break
             }
@@ -598,8 +607,10 @@ export function createCompositor(scheduler, stage, opts = {}) {
 
         // Propagate opacity to all child ambient layers.
         setOpacity(opacity) {
+            defaultOpacity = opacity
+            opacityByFrame = new WeakMap()
             for (const [id, layer] of ambientLayers) {
-                setGroupOpacity(layer.group, opacity)
+                setGroupOpacity(layer.group, opacity, stage.materials)
             }
         },
 

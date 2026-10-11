@@ -16,6 +16,8 @@ import { kindOf } from "./mafs/tower.js"
 import { parseMemo } from "./mafs/parse_memo.js"
 import { demand, measure, spellingOf, conditionOf, FINITE } from "./numerics.js"
 import { notice } from "./report.js"
+import { isBeing } from "./frame.js"
+import { markLocal, extend, project, isLocal } from "./bindings.js"
 // A HOLE DEMANDS A MEASURE, and the answer belongs to the numerics surface: what the
 // value IS (a fact, `conditionOf`) apart from what this consumer may DO about it (a
 // verdict, `POLICY`). This file holds no epsilon and no rule of its own — only the
@@ -78,6 +80,14 @@ function chargeReductions(state) {
 // contract follows the resolved callable and cannot disagree with itself. (id:gw-grammar)
 
 const holeDomain = (holes, i) => holes?.[i] ?? "measure"
+
+// A bare identifier argument that names a being binds the being itself; a quoted
+// spelling stays a deliberate lookup and a local scalar keeps its value. (P2)
+function bareSubjectOf(child, scope, state) {
+    if (child?.type !== 'Argument' || typeof child.value !== 'string') return null
+    if (!/^[A-Za-z_][\w-]*$/.test(child.value) || Object.hasOwn(scope ?? {}, child.value)) return null
+    return state.deps?.mathEvaluator?.resolveSubject?.(child.value) ?? null
+}
 
 const IDENT_HEAD_RE = /^[a-zA-Z]/
 // Retry evaluateExpr; yield blocked on cross-ambient read failure only.
@@ -269,9 +279,10 @@ function adoptRebase(state) {
 
 const PURE_POINT_READ = /^[A-Za-z_][A-Za-z0-9_]*\.(?:x|y|z)$/
 
-function* readGotoArgs(nodes, scope, state) {
+function* readPointArgs(nodes, scope, state, command) {
     while (true) {
-        const baseRevision = state.deps.mathEvaluator.beginObservation()
+        const baseRevision = state.deps.mathEvaluator.beginObservation(command)
+        if (baseRevision === undefined) return null
         let blocked
         try {
             const args = nodes.map(node => evaluateExpr(node.value, scope, state))
@@ -330,6 +341,7 @@ function* emitVector(name, expr, owner, scope, state, sampled) {
     }
     yield { type: 'scalar', name, owner, initial: d, vector: vectorMeta(name, state),
         read: sampled === undefined ? (() => evaluateExpr(expr, scope, state, 'measure')) : (() => sampled) }
+    bindLocal(scope, state, name)
 }
 
 // A SAMPLED declaration samples its value ONCE, then routes it through the SAME kind
@@ -337,10 +349,15 @@ function* emitVector(name, expr, owner, scope, state, sampled) {
 // a visible object and a value. Sampling answers *when* a value is read; the kind
 // answers *what* is declared. They are independent. (id:eval-relational,
 // id:notation-coordinate-vector)
-function* declareSampled(name, value, owner, state) {
+function* declareSampled(name, value, owner, scope, state) {
     const row = DECLARED[kindOf(value)]
-    if (row) return yield* row.emit(name, null, owner, null, state, value)
+    if (row) {
+        yield* row.emit(name, null, owner, scope, state, value)
+        if (kindOf(value) !== 'point') bindLocal(scope, state, name)
+        return
+    }
     yield { type: 'parameter', name, owner, value }
+    bindLocal(scope, state, name)
 }
 
 // What a declared value becomes, by its kind; every spelling takes this row.
@@ -348,6 +365,15 @@ function* declareSampled(name, value, owner, state) {
 const DECLARED = {
     point: { emit: emitPoint },
     vector: { emit: emitVector },
+}
+
+// A local declaration marks its name in the CURRENT scope. The mark is the binding's
+// provenance: a reader can tell a declaration made here from a formal or a captured
+// value, so the nearer binding wins without a depth or context-copy flag. The
+// declaration's VALUE stays on the frame and is read live through the ambient door.
+// (id:being-facets-centers-review)
+function bindLocal(scope, state, name) {
+    markLocal(scope, name)
 }
 
 function* walkBody(body, scope, state, stroke) {
@@ -415,12 +441,16 @@ function* walkBody(body, scope, state, stroke) {
                 }
                 const signature = rawArgs[0]
                 let expression = rawArgs[1] || 0
-                const fnScope = { ...scope }
+                const fnScope = project(scope)
                 const ec = state.deps.mathEvaluator.constants
                 const deferred = state.deps.mathEvaluator.deferred
                 for (const key of Object.keys(ec)) {
                     if (deferred?.has(key)) continue   // late-evaluated: keep symbolic
-                    if (!(key in fnScope)) fnScope[key] = ec[key]()
+                    if (key in fnScope) continue
+                    // An omitted shadowed property is CLAIMED, not free: a locally declared
+                    // `x` must not be replaced here by the cursor constant. (id:being-facets-centers-review)
+                    if (isLocal(scope, key)) continue
+                    fnScope[key] = ec[key]()
                 }
                 const parser = state.deps.mathParser
                 if (typeof parser.parseSignature === "function") {
@@ -439,21 +469,31 @@ function* walkBody(body, scope, state, stroke) {
                 break
             }
 
-            // Only two pure ambient-coordinate arguments may retry as one read.
-            if (state.observePureGoto && state.motionProtocol && node.value === 'goto' &&
-                !state.functions[scope.goto || 'goto']) {
-                if (node.children.length !== 2 ||
-                    !node.children.every(arg => PURE_POINT_READ.test(arg.value))) {
+            // Pure point arguments share one observation; a stale candidate rereads the
+            // whole command, never a retained coordinate. (id:being-facets-situated)
+            const observeGoto = state.observePureGoto && node.value === 'goto' &&
+                !state.functions[scope.goto || 'goto']
+            const observeAim = node.value === 'faceto' && !state.functions[scope.faceto || 'faceto'] &&
+                node.children.length >= 2 && node.children.length <= 3 &&
+                node.children.every(arg => PURE_POINT_READ.test(arg.value)) &&
+                typeof state.deps.mathEvaluator.beginObservation === 'function'
+            if (state.motionProtocol && (observeGoto || observeAim)) {
+                if (observeGoto && (node.children.length !== 2 ||
+                    !node.children.every(arg => PURE_POINT_READ.test(arg.value)))) {
                     yield { type: 'motionUnresolved', reason: 'unsupported goto arguments' }
                     break
                 }
-                let settled = false
+                let settled = false, observed = false
                 for (let retry = 0; retry < 2 && !settled; retry++) {
-                    const { args, baseRevision } = yield* readGotoArgs(node.children, scope, state)
-                    settled = (yield* callCommand('goto', args, state, stroke, baseRevision)) !== 'stale'
+                    const reading = yield* readPointArgs(node.children, scope, state, node.value)
+                    if (!reading) break
+                    observed = true
+                    settled = (yield* callCommand(node.value, reading.args, state, stroke, reading.baseRevision)) !== 'stale'
                 }
-                if (!settled) yield { type: 'motionUnresolved', reason: 'stale motion base' }
-                break
+                if (observed) {
+                    if (!settled) yield { type: 'motionUnresolved', reason: 'stale motion base' }
+                    break
+                }
             }
 
             // Resolve the recipient FIRST: a user definition brings its own contract.
@@ -479,6 +519,9 @@ function* walkBody(body, scope, state, stroke) {
                     args.push(admit(child.value, spellingOf(child.value), holeDomain(holes, i), state))
                     continue
                 }
+                // A bare name that names a being binds the being, not its spelling. (id:being-facets-p2-seam)
+                const being = bareSubjectOf(child, scope, state)
+                if (being) { args.push(being); continue }
                 args.push(yield* evalOrBlock(child.value, scope, state, holeDomain(holes, i)))
             }
 
@@ -508,7 +551,10 @@ function* walkBody(body, scope, state, stroke) {
                     childScope[param] = args[i] || 0
                 })
                 childScope['__depth__'] = currDepth + 1
-
+                // The call scope is innermost for this frame's execution: a formal
+                // outranks the caller's own scalar. A spawned frame gets a fresh state,
+                // so its own declarations outrank the scope it captured.
+                // (id:being-facets-p2-seam)
                 yield* walkBody(userFn.body, childScope, state, stroke)
             } else {
                 yield* callCommand(node.value, args, state, stroke)
@@ -544,7 +590,10 @@ function* walkBody(body, scope, state, stroke) {
                     }
                     if (matchIdx !== -1) {
                         const event = mailbox.splice(matchIdx, 1)[0]
-                        const childScope = { ...scope, ...captures }
+                        const boundCaptures = node.meta.binding
+                            ? [...Object.keys(captures), node.meta.binding] : Object.keys(captures)
+                        const childScope = extend(scope, boundCaptures)
+                        Object.assign(childScope, captures)
                         if (node.meta.binding) {
                             childScope[node.meta.binding] = event.payload
                         }
@@ -573,8 +622,22 @@ function* walkBody(body, scope, state, stroke) {
 
         case 'Ambient': {
             // Grammar hole: ambient name is word (seeker, mice[count] after interp).
-            const ambientName = String(yield* evalOrBlock(node.value, scope, state, "word"))
-            yield spawnEvent(state, scope, ambientName, node.children, state.functions, { frame: node.meta?.frame || null })
+            // A bare selector needs the relative precedence of two binding stores. A
+            // callee's formal scope is innermost, so it outranks the caller's own scalar;
+            // outside a call, THIS frame's own declaration shadows a captured outer
+            // binding, and an ancestor name never redirects a passed participant.
+            // Quoted and interpolated forms stay words. (id:being-facets-centers-review)
+            // A bare selector resolves through the one ambient precedence: a nearer
+            // frame declaration wins over a captured binding, and a call formal stays
+            // innermost. Quoted and interpolated forms stay words.
+            // (id:being-facets-centers-review)
+            const selected = yield* evalOrBlock(node.value, scope, state, "word")
+            // A bound being crosses by identity; only a spelling is coerced to a name.
+            // (id:being-facets-p2-seam)
+            const receiver = isBeing(selected) ? selected : null
+            const ambientName = receiver ? receiver.name : String(selected)
+            yield spawnEvent(state, scope, ambientName, node.children, state.functions,
+                { frame: node.meta?.frame || null, receiver, site: node.span?.line != null ? String(node.span.line) : null })
             break
         }
 
@@ -606,9 +669,15 @@ function* walkBody(body, scope, state, stroke) {
             for (const selector of selectors) {
                 // A framed point descriptor is data, not a name to resolve. (id:laws-distance-literal-address)
                 if (selector != null && typeof selector === 'object') { subjects.push(selector); continue }
-                const subject = selector.startsWith('"')
-                    ? yield* evalOrBlock(selector, scope, state, 'word')
-                    : Object.hasOwn(scope, selector) ? scope[selector] : selector
+                // A BOUND name resolves through the one interpretation, so a nearer
+                // local declaration shadows a captured being here as it does for `.x`
+                // and `as`. A name this frame does not bind stays a spelling for the
+                // spatial resolver. (id:being-facets-centers-review)
+                const quoted = selector.startsWith('"')
+                const bound = quoted || Object.hasOwn(scope, selector)
+                    || state.deps?.mathEvaluator?.owns?.(selector) === true
+                const subject = bound ? yield* evalOrBlock(selector, scope, state, 'word') : selector
+                if (isBeing(subject)) { subjects.push(subject); continue }
                 if (typeof subject !== 'string' || !subject) throw new Error('a law subject must name a thing')
                 subjects.push(subject)
             }
@@ -616,10 +685,10 @@ function* walkBody(body, scope, state, stroke) {
             if (node.meta.movers != null && !Array.isArray(node.meta.movers)) throw new Error('law movers must be selectors')
             const movers = node.meta.movers?.map((selector) => {
                 const index = selectors.indexOf(selector)
-                if (index < 0 || typeof subjects[index] !== 'string') throw new Error('a law mover must name a live subject')
+                if (index < 0 || (typeof subjects[index] !== 'string' && !isBeing(subjects[index]))) throw new Error('a law mover must name a live subject')
                 return subjects[index]
             })
-            const target = subjects.find((s) => typeof s === 'string') ?? subjects[0]
+            const target = subjects.find((s) => typeof s === 'string' || isBeing(s)) ?? subjects[0]
             // A position is a pin: the ONE pipeline every point-kind declaration reaches.
             if (feature === 'position') {
                 yield* emitPoint(target, node.meta.expr, node.span ?? null, scope, state)
@@ -687,7 +756,7 @@ function* walkBody(body, scope, state, stroke) {
                 // through the SAME declaration behavior the live path uses. `random` is an
                 // input, not a reading. (id:eval-relational, id:notation-coordinate-vector)
                 yield* declareSampled(node.value,
-                    evaluateExpr(expr, scope, state, 'measure'), node.span ?? null, state)
+                    evaluateExpr(expr, scope, state, 'measure'), node.span ?? null, scope, state)
                 break
             }
             // The value's KIND chooses a ROW, never a branch.
@@ -701,6 +770,7 @@ function* walkBody(body, scope, state, stroke) {
                 type: 'scalar', name: node.value, owner: node.span ?? null,
                 read: () => evaluateExpr(expr, scope, state, 'measure'),
             }
+            bindLocal(scope, state, node.value)
             break
         }
 
@@ -818,8 +888,12 @@ function* callCommand(name, args, state, stroke, baseRevision) {
                 result.stroke = "break"
             }
         } else {
-            result.transform = admission.pose
-            if (result.stroke === "extend") result.point = admission.pose.position
+            // The accepted verdict is an INDEPENDENTLY OWNED cursor value. Publishing stored
+            // this pose in the receiver's atom, so adopting admission.pose directly would
+            // alias the continuation to the world (mutating the parked cursor would move the
+            // receiver). Copy pose AND ink point. (id:being-facets-p4-sequence)
+            result.transform = SE3.clone(admission.pose)
+            if (result.stroke === "extend") result.point = [...result.transform.position]
         }
     }
     // Apply transform changes
@@ -922,13 +996,15 @@ function spawnEvent(state, scope, name, body, functions, extra = {}) {
         frame: extra.frame ?? null,
         profile: extra.profile ?? null,
         question: extra.question ?? null,
+        receiver: extra.receiver ?? null,
+        site: extra.site ?? null,
         origin: SE3.clone(state.transform),
         style: { ...state.style },
         code: { ast: body, functions: { ...(functions ?? state.functions) } },
         env: {
             userspace: new Map(state.deps.mathParser.userspace),
             loopCounter: state.loopCounter,
-            scope: { ...scope },
+            scope: project(scope),
             birthtime: state.birthtime + state.elapsedTime,
         },
     }

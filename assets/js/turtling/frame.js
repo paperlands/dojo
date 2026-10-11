@@ -48,3 +48,11 @@ export function createFrame(name, generator, opts = {}) {
         mailbox: [],   // actor inbox (Hewitt/Erlang); see listensFor
     }
 }
+
+// A being is a frame; its identity is the id, never the name. (id:being-facets-p2-seam)
+export const isBeing = (value) => value != null && typeof value === 'object' &&
+    typeof value.id === 'number' && value.transform != null && value.children != null &&
+    // An INSTALLATION owns execution, not geometry: it is never a being, so a carried
+    // handle is refused at every facet, law and receiver admission door.
+    // (id:being-facets-p4-sequence)
+    value.installation !== true

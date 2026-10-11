@@ -135,8 +135,9 @@ export function stateOf({ at = null, headed = false, exposed = true, isPlace = t
 
 // DIRECT fixation: a running body, or a position pin. The attempt hold is a SEPARATE fact
 // (`heldFrame`), checked by each policy that needs it. (id:laws-freedom)
-// A law list, from either an array or the store. (id:laws-activation-order)
-const lawList = (laws) => (Array.isArray(laws) ? laws : laws.active())
+// The same law list, scanned or indexed at this identity. (id:laws-activation-order)
+const lawList = (laws, id) => laws instanceof Map ? (laws.get(id) ?? [])
+    : Array.isArray(laws) ? laws : laws.active()
 
 // A place with a body: it walks. ONE spelling of "headed" — the point view, the
 // fix and the verdict all ask this. (id:laws-place-head-frame)
@@ -145,7 +146,7 @@ export const hasBody = (frame) => frame?.generator != null || frame?.actorState 
 export function directlyFixed(frame, laws) {
     if (!frame) return true
     if (hasBody(frame)) return true
-    return lawList(laws).some((law) => law.feature === 'position' && law.endpoints[0] === frame.id)
+    return lawList(laws, frame.id).some((law) => law.feature === 'position' && law.endpoints[0] === frame.id)
 }
 
 // Any attempt's hold on a frame. (id:laws-activation-verdicts)
@@ -156,7 +157,7 @@ export const heldFrame = (frame) => (frame?.heldAttempts?.size ?? 0) > 0
 // (id:laws-freedom)
 export function coincidentPartners(frame, laws) {
     const partners = []
-    for (const law of lawList(laws)) {
+    for (const law of lawList(laws, frame.id)) {
         if (law.feature !== 'distance') continue
         const term = boundTerm(law)
         if (!term || term.radius !== 0 || term.references[0] === term.references[1]) continue

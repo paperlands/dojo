@@ -2,7 +2,8 @@
 // Pump + park: preemptive slice (time) and backpressure (credit/residency) share one park.
 // Instant law: no sibling advances past a parked mid-instant. (id:output-ledger-r2-instant)
 
-import { createFrame } from "./frame.js"
+import { createFrame, isBeing } from "./frame.js"
+import { installAmbientDoor } from "./ambient.js"
 import { report, notice as noticeWire } from "./report.js"
 import { matchPattern } from "./match.js"
 import { execute, createActorState, headEventOf } from "./executor.js"
@@ -46,8 +47,12 @@ function visitPostOrder(ctx, fn) {
 // An admitted writer owns the rest of its logical instant regardless of sibling
 // registration order. Other park causes keep the scheduler's original traversal.
 function visitPostOrderMotionFirst(ctx, fn) {
-    const children = [...ctx.children.values()].sort((a, b) =>
-        Number(!!b.midInstant) - Number(!!a.midInstant))
+    const children = [...ctx.children.values()]
+    // Installations own execution but not geometry: they join the ADVANCE frontier here,
+    // while findFrame, traversal and exposure search ctx.children and never see them.
+    // (id:being-facets-p4-sequence)
+    for (const record of ctx.installations?.values() ?? []) children.push(record.frame)
+    children.sort((a, b) => Number(!!b.midInstant) - Number(!!a.midInstant))
     for (const child of children) visitPostOrderMotionFirst(child, fn)
     fn(ctx)
 }
@@ -64,6 +69,11 @@ function terminateAmbient(ctx) {
 
 function allDone(ctx) {
     if (!ctx.done) return false
+    // Installations own execution: an unfinished installation keeps the world awake,
+    // even though it is not a geometric child. (id:being-facets-p4-sequence)
+    for (const record of ctx.installations?.values() ?? []) {
+        if (!allDone(record.frame)) return false
+    }
     for (const child of ctx.children.values()) {
         if (!allDone(child)) return false
     }
@@ -208,10 +218,17 @@ const EMPTY_SYNC = Object.freeze([])
 
 // Deliver an already-charged deposit. null = taken; else refusal cause.
 // Safe to retry — no side effects on refuse. (id:output-ledger-r2-credit)
-function deliverDeposit(ctx, value, frameTarget, frameTransform, stock) {
+function deliverDeposit(ctx, value, frameTarget, frameTransform, stock, destination = ctx) {
+    // The deposit LANDS on the DESTINATION: for an installation's authored motion that is
+    // the retained receiver; otherwise the writer itself. The writer keeps its run tag,
+    // continuation and rights. (id:being-facets-p4-sequence)
     if (value.type === "head") {
-        ctx.transform.swap(() => ({ rotation: value.rotation, position: [...value.position] }))
-        putSync(ctx, lensOutput(ctx, projectHead(value, frameTarget, frameTransform)))
+        // Only the ordinary self-motion installs here. An installation's pose was already
+        // COMMITTED at the boundary; this deposit projects it. (id:being-facets-p4-sequence)
+        if (destination === ctx) {
+            destination.transform.swap(() => ({ rotation: value.rotation, position: [...value.position] }))
+        }
+        putSync(destination, lensOutput(destination, projectHead(value, frameTarget, frameTransform)))
         return null
     }
 
@@ -220,7 +237,7 @@ function deliverDeposit(ctx, value, frameTarget, frameTransform, stock) {
     if (stock?.full && value.type === 'path') return 'residency'
 
     // Credit = flow control: sink queue full (classic credit-based backpressure).
-    const sink = frameTarget ? frameTarget.channel : ctx.channel
+    const sink = frameTarget ? frameTarget.channel : destination.channel
     if (sink.full) return 'credit'
 
     // The held clear lands WITH the new ink: one step, so the swap is atomic to the view.
@@ -230,7 +247,7 @@ function deliverDeposit(ctx, value, frameTarget, frameTransform, stock) {
     if (frameTarget) {
         sink.put(transformEvent(value, frameTransform, ctx.id))
     } else {
-        sink.put(lensOutput(ctx, value))
+        sink.put(lensOutput(destination, value))
     }
     return null
 }
@@ -238,9 +255,9 @@ function deliverDeposit(ctx, value, frameTarget, frameTransform, stock) {
 // Charge once, deliver maybe later. Park holds a charged deposit — replaying
 // must not charge again. (id:output-ledger-r3-stock-flow)
 // null | 'ceiling' (wounded) | refusal cause to parkOwing
-function offerDeposit(ctx, value, frameTarget, frameTransform, stock) {
+function offerDeposit(ctx, value, frameTarget, frameTransform, stock, destination = ctx) {
     if (!chargeInk(ctx, value, stock)) return 'ceiling'
-    return deliverDeposit(ctx, value, frameTarget, frameTransform, stock)
+    return deliverDeposit(ctx, value, frameTarget, frameTransform, stock, destination)
 }
 
 // --- Suspension: every way a frame stops, as one table ---
@@ -526,54 +543,10 @@ function resolveBinding(frame, name, args) {
         }
 
         const target = findFrame(frame, targetName)
-        // ONE interpretation, one judge. The reached frame is the dependency, and a closed
-        // region's admission asks about the RESOLVED subject — never about the spelling, so
-        // the gate and the resolver cannot choose different facts. (id:laws-figure-protocol,
-        // id:laws-dependency-driven-place)
-        recordRead(frame.deps?.mathEvaluator, target)
-        if (frame.closed && !ownsFrame(frame, target)) {
-            throw new Error(`closed region has no world read: ${name}`)
-        }
-        if (!target) {
-            // A missing name is a dataflow suspension while its parent can still
-            // spawn it; only a finished parent makes it a wound. (D011)
-            if (frame.inlineAdvancing || (frame.parent && !frame.parent.done)) {
-                // Dataflow suspension: dependency may arrive later
-                const err = new Error(`Blocked on assistant: ${targetName}`)
-                err.blocked = true
-                throw err
-            }
-            throw new Error(`Undefined assistant: ${targetName}`)
-        }
-
-        // An observation is a synchronization point, not a peek at whatever
-        // committed pose is lying there. If the target's subtree is still inside
-        // an instant and the reader is outside it, suspend and retry.
-        // Settled target is the common case: the O(1) subtree check short-circuits
-        // before the O(depth) ancestor walk. Both operands are pure, so order is free.
-        if (subtreeUnsettled(target) && !isAncestorOf(target, frame)) {
-            // A wait-for cycle is synchronous: pin every member to its pre-instant
-            // pose (Jacobi) so no edge reads another's same-instant commit. A plain
-            // suspension propagates as a park.
-            if (waitsOn(target, frame)) {
-                markCycle(frame, target)
-            } else {
-                const err = new Error(`Blocked on assistant: ${targetName} (mid-instant)`)
-                err.blocked = true
-                err.blockedFrame = target
-                throw err
-            }
-        }
-
-        if (frame.suspension?.kind === 'dataflow') clearSuspension(frame)
-        // A sibling reads in the room's frame so faceto/goto compose; a containing
-        // ancestor reads world-space. `world` is always world-space (prim-world);
-        // `origin` stays observer-relative so `goto origin.x` composes. (prim-position)
-        const isWorld = targetName === 'world'
-        const isOrigin = targetName === 'origin'
-        const contains = target !== frame && isAncestorOf(target, frame)
-        const ground = isWorld ? false : (isOrigin ? true : !contains)
-        return resolveProperty(target, property, args, frame, ground)
+        // Admission — being, current registry, region containment — lives at the one
+        // facet door below, so the gate and the resolver cannot choose different facts.
+        // (id:being-facets-centers-review, id:laws-figure-protocol)
+        return resolveFacet(frame, target, targetName, property, args)
     } else {
         // Unqualified: walk ancestor chain for fn binding
         // A scalar introduced by `let s = expr` is a value, not a frame. Its
@@ -599,6 +572,73 @@ function resolveBinding(frame, name, args) {
         }
         return undefined
     }
+}
+
+// The one eligibility predicate: exactly three facts and no authorization — a being,
+// the exact object in the current registry, and the requesting region's containment.
+// Each door orders its own refusal from these facts; operation policy (read, move,
+// receiver, attachment) stays with the caller. `owned` is asked even of a name that no
+// longer resolves, so an unresolved read is still the region's refusal.
+// (id:being-facets-centers-review, id:being-facets-p2-seam)
+function admitBeing(frame, being, registry) {
+    const isBe = isBeing(being)
+    // A registry is REQUIRED to certify liveness. A missing registry is not proof of life:
+    // it must never authorize a carried identity, a law or a receiver. The named read's
+    // standalone exception lives at its door (resolveFacet), not in this predicate.
+    // (id:being-facets-centers-review)
+    const live = isBe && registry != null && liveIn(registry, being)
+    return { being: isBe, live, owned: !frame.closed || ownsFrame(frame, being) }
+}
+
+// One facet door: a dotted reach and a bound being both end here, so eligibility and the
+// coordinate frame cannot diverge. `reference` is the reserved frame name the read came
+// through; a bound being passes null, so a reserved interpretation is never inferred from
+// a frame's presence. (id:being-facets-centers-review)
+function resolveFacet(frame, target, reference, property, args) {
+    recordRead(frame.deps?.mathEvaluator, target)
+    const eligibility = admitBeing(frame, target, metaRootFrame(frame)._registry)
+    if (!eligibility.owned) {
+        throw new Error(`closed region has no world read: ${reference ? `${reference}.${property}` : `${target.name}.${property}`}`)
+    }
+    if (!eligibility.being) {
+        // A missing name is a dataflow suspension while its parent can still spawn it;
+        // only a finished parent makes it a wound. (D011)
+        if (frame.inlineAdvancing || (frame.parent && !frame.parent.done)) {
+            const err = new Error(`Blocked on assistant: ${reference}`)
+            err.blocked = true
+            throw err
+        }
+        throw new Error(`Undefined assistant: ${reference}`)
+    }
+    // A name resolved in this tree has no separate retirement question; only a CARRIED
+    // identity must be certified by the registry. (id:being-facets-centers-review)
+    if (!eligibility.live && reference == null) throw new Error(`retired subject: ${target.name}`)
+    // An observation is a synchronization point, not a peek at whatever committed pose
+    // is lying there. A wait-for cycle is synchronous (Jacobi); a plain suspension parks.
+    if (subtreeUnsettled(target) && !isAncestorOf(target, frame)) {
+        if (waitsOn(target, frame)) {
+            markCycle(frame, target)
+        } else {
+            const err = new Error(`Blocked on assistant: ${reference ?? target.name} (mid-instant)`)
+            err.blocked = true
+            err.blockedFrame = target
+            throw err
+        }
+    }
+    if (frame.suspension?.kind === 'dataflow') clearSuspension(frame)
+    // A sibling reads in the room's frame so faceto/goto compose; a containing ancestor
+    // reads world-space. `world` is always world-space; `origin` stays observer-relative.
+    const isWorld = reference === 'world'
+    const isOrigin = reference === 'origin'
+    const contains = target !== frame && isAncestorOf(target, frame)
+    const ground = isWorld ? false : (isOrigin ? true : !contains)
+    return resolveProperty(target, property, args, frame, ground)
+}
+
+// A bound being's facet, through the same door; retired and closed are the door's own
+// refusals now. (id:being-facets-p2-seam)
+function resolveBeingFacet(frame, being, property, args) {
+    return resolveFacet(frame, being, null, property, args)
 }
 
 // A reading is the value, exactly. No floor and no decimal snapping: what a figure
@@ -677,12 +717,17 @@ function markCycle(reader, target) {
     visit(target)
 }
 
-// Target pose in the observer's birth frame — same numbers goto/faceto drink.
-// Root / missing observer → identity birth → world numbers (the tab floor).
+// The reader owns observation and admission; an installation's geometric reference is
+// its retained receiver's birth basis, not the declaring source or current cursor.
+// (id:being-facets-situated)
 function poseInObserverBirth(target, observer) {
     const world = readWorldTransform(target, observer)
     if (!observer) return world
-    const birth = observer.observation?.poses.get(observer)?.birth || worldTransform(observer)
+    const basis = observer.installation === true ? observer.receiver : observer
+    if (observer.installation === true && !admitBeing(observer, basis, metaRootFrame(observer)._registry).live) {
+        throw new Error('the retained receiver has left the world')
+    }
+    const birth = observer.observation?.poses.get(basis)?.birth ?? worldTransform(basis)
     return SE3.compose(SE3.invert(birth), world)
 }
 
@@ -927,6 +972,7 @@ function declaredInputs(value) {
     return bound
 }
 
+
 // Everything a construction may read: its ancestors' parameters and scalars, then the
 // names bound at the declaration site, nearest last so the site wins.
 function captureFor(frame, value) {
@@ -995,10 +1041,11 @@ function closeDerivedDeps(deps, frame) {
             deps.figureRandom ?? keyedStream(keyedSeed(frame.address ?? frame.name))
     }
     // A closed cell has no observation to begin. The pure-goto retry asks for one
-    // (executor.js::readGotoArgs), and an absent method would speak with its own
+    // (executor.js::readPointArgs), and an absent method would speak with its own
     // TypeError instead of the membrane. Answer as an empty observation, so the
     // world read is what refuses. (id:laws-figure-protocol)
-    deps.mathEvaluator.beginObservation = () => metaRootFrame(frame)._configurationRevision ?? 0
+    deps.mathEvaluator.beginObservation = (command) => command === 'faceto' && frame.installation !== true
+        ? undefined : (metaRootFrame(frame)._configurationRevision ?? 0)
     deps.mathEvaluator.endObservation = () => {}
 }
 
@@ -1012,24 +1059,62 @@ function recordRead(evaluator, target) {
     if (target) reads.frames.add(target)
 }
 
+// A nearer lexical binding owns the name; presence, not value, decides. An unready
+// binding is not permission to fall back to an outer namesake. (id:being-facets-centers-review)
+function ownsName(frame, name) {
+    for (let node = frame; node; node = node.parent) {
+        if (node.params?.has(name) || node.scalars?.has(name)) return true
+    }
+    return false
+}
+
 function bindResolve(deps, frame) {
-    deps.mathEvaluator.beginObservation = () => {
-        const root = metaRootFrame(frame)
-        const poses = new Map()
-        visitPostOrder(root, member => {
-            const birth = worldTransform(member)
-            poses.set(member, { birth, world: SE3.compose(birth, member.transform.deref()) })
-        })
-        frame.observation = { poses, revision: root._configurationRevision }
-        return frame.observation.revision
+    // The frame's ambient door, as ONE documented object: the algebra and the executor
+    // see the tree only through this. (id:being-facets-centers-review)
+    const door = {
+        observe(command) {
+            // Coherent point-aim reads are earned for installations; ordinary actors keep
+            // their existing cycle/instant contract. (id:being-facets-situated)
+            if (command === 'faceto' && frame.installation !== true) return undefined
+            const root = metaRootFrame(frame)
+            const poses = new Map()
+            visitPostOrder(root, member => {
+                const birth = worldTransform(member)
+                poses.set(member, { birth, world: SE3.compose(birth, member.transform.deref()) })
+            })
+            frame.observation = { poses, revision: root._configurationRevision }
+            return frame.observation.revision
+        },
+        unobserved() { frame.observation = null },
+        resolve(v, a) {
+            const result = resolveBinding(frame, v, a)
+            recordRead(deps.mathEvaluator)
+            if (typeof v === 'string' && v.includes('.')) deps.mathEvaluator._observedSibling = true
+            return result
+        },
+        // A bare name may bind a being: resolve it once in this frame's ambient door. (P2)
+        subject(name) {
+            if (ownsName(frame, name)) return undefined
+            const target = findFrame(frame, name, 'world')
+            return target && target !== frame ? target : undefined
+        },
+        // This frame's OWN declaration, for a receiver selector: an inner binding shadows a
+        // captured scope, but an ancestor must never redirect a passed participant.
+        // (id:being-facets-centers-review)
+        own(name) {
+            if (frame.params?.has(name)) return frame.params.get(name)
+            if (frame.scalars?.has(name)) return metaRootFrame(frame)._readouts?.value(frame.scalars.get(name))
+            return undefined
+        },
+        // A bound subject's facet reads and a bare name's being both cross here. (P2)
+        isSubject: isBeing,
+        // Presence, not value: a nearer lexical declaration owns the name even when its
+        // value is not a subject, so a dotted read cannot fall back to an outer namesake.
+        // (id:being-facets-centers-review)
+        owns(name) { return frame.params?.has(name) === true || frame.scalars?.has(name) === true },
+        facet(being, property, args) { return resolveBeingFacet(frame, being, property, args) },
     }
-    deps.mathEvaluator.endObservation = () => { frame.observation = null }
-    deps.mathEvaluator.resolveExternal = (v, a) => {
-        const result = resolveBinding(frame, v, a)
-        recordRead(deps.mathEvaluator)
-        if (typeof v === 'string' && v.includes('.')) deps.mathEvaluator._observedSibling = true
-        return result
-    }
+    installAmbientDoor(deps.mathEvaluator, door)
 }
 
 // --- Child generator factory ---
@@ -1392,6 +1477,9 @@ function wireChild(child, deps, mailbox, registry, code, executionState = null, 
 
 // Fresh fork on an existing frame (keep id/tree/origin/address).
 function rewireChild(child, value, pump) {
+    // A rewired scope is a new source: the installations its old sites seated are gone
+    // with those sites. (id:being-facets-p4-sequence)
+    retireInstallationsUnder(child, pump)
     // A rewired scope is a new source: its old statement sites are gone, so their
     // laws are retracted before the new body states its own. (id:laws-build-p2c)
     if (pump.laws) pump.laws.retractScope(child.id)
@@ -1494,17 +1582,19 @@ function blocked(ctx, value) {
     return { verdict: 'paused' }
 }
 
-function wait(ctx, value, route) {
+function wait(ctx, value, route, pump) {
     // Logical sleep: first wait anchors to logicalBirth, not wall clock (D011).
     closeInstant(ctx)
-    const { now, frameTarget, frameTransform } = route
+    const { now, frameTarget, frameTransform, destination } = route
+    if (destination === null) return endUnresolved(ctx, 'the retained receiver has left the world')
     ctx.resumeAt = (ctx.resumeAt > 0 ? ctx.resumeAt : (ctx.logicalBirth ?? now)) + value.duration
     ctx.elapsedTime += value.duration / 1000
-    if (value.position) {
-        ctx.transform.swap(() => ({
-            rotation: value.rotation,
-            position: [...value.position]
-        }))
+    // The wait carries the CURRENT CURSOR. For an installation the preceding accepted motion
+    // already owns that geometry: re-proposing it here would republish a stale cursor over
+    // the receiver (and bypass the law gate). Ordinary self-walk keeps its landing.
+    // (id:being-facets-p4-sequence)
+    if (value.position && destination === ctx) {
+        ctx.transform.swap(() => ({ rotation: value.rotation, position: [...value.position] }))
         putSync(ctx, lensOutput(ctx, projectHead({
             type: "head",
             position: value.position,
@@ -1513,6 +1603,11 @@ function wait(ctx, value, route) {
             headSize: value.headSize
         }, frameTarget, frameTransform)))
     }
+    // On RESUMPTION the continuation refreshes its geometric cursor from the receiver's
+    // accepted local pose — a COPY, never a publication. Shared participation keeps one
+    // geometric reality: the installation owns the sequence, not a private pose it
+    // reinstalls. (id:being-facets-p4-sequence)
+    if (ctx.installation) ctx.refreshOnResume = true
     return { verdict: 'paused', produced: true }
 }
 
@@ -1610,6 +1705,15 @@ function notifyAccepted(root) {
 }
 
 function publish(writer, entries, registry, install = null, project = null) {
+    // An installation's publication rights are checked at the BOUNDARY: exact occupant
+    // identity and source membership — not merely target liveness. A retired writer cannot
+    // publish, even when its targets stay live. (id:being-facets-p4-sequence)
+    if (writer.installation === true) {
+        const record = writer.installationRecord
+        if (!record || !liveIn(registry, record.source) || record.source.installations?.get(record.site) !== record) {
+            return { kind: 'conflict', message: 'the installation no longer holds publication rights' }
+        }
+    }
     const seen = new Set()
     // Running-member correction is a gated capability, off by default: this slice
     // solves settled configurations only. (id:laws-activation-order)
@@ -1684,7 +1788,7 @@ function publish(writer, entries, registry, install = null, project = null) {
     const notify = prepared.map(write)
     const changed = notify.some(Boolean)
     if (changed) {
-        for (const { frame } of entries) if (!frame.done && frame.batch) frame.batch.rebase = frame.transform.deref()
+        for (const { frame } of entries) if (!frame.done && frame.batch) frame.batch.rebase = SE3.clone(frame.transform.deref())
     }
     // Install laws, ownership and accepted geometry before any notification:
     // no watcher may see new geometry beside an old law. (id:laws-activation-order)
@@ -1732,22 +1836,42 @@ function publish(writer, entries, registry, install = null, project = null) {
 }
 
 // A verdict as publication entries: the writer, then its component members.
-const verdictEntries = (writer, verdict) =>
+// An installation's authored motion is a proposal on behalf of the RETAINED receiver: the
+// writer keeps its rights/continuation, the destination is the receiver. A frame that is
+// not an installation is its own destination. (id:being-facets-p4-sequence)
+function motionDestination(frame, registry) {
+    if (frame?.installation !== true) return frame
+    // A lost participant is a REFUSAL, never a silent self-destination: the receiver was
+    // admitted as the destination and must remain a live member. (id:being-facets-p4-sequence)
+    const receiver = frame.receiver
+    return receiver && liveIn(registry, receiver) ? receiver : null
+}
+
+// ONE motion attempt: created at the producer boundary, retained through synchronous or
+// delayed admission, and crossing the publication boundary. Identity is retained
+// (writer/destination); eligibility is rechecked there, never cached. `request.frame` is
+// DERIVED from the destination — never a second, independently editable destination.
+// (id:being-facets-p4-sequence)
+function motionAttempt(writer, destination, request) {
+    return { writer, destination, request: { ...request, frame: destination } }
+}
+
+const verdictEntries = (attempt, verdict) =>
     // Poses arrive normalized to the frame's own chain (the hand's door converts), so the
     // entries carry only WHICH FIELD the accepted pose belongs in and whether it was stated.
-    [{ frame: writer, pose: verdict.pose, stated: verdict.stated === true },
+    [{ frame: attempt.destination, pose: verdict.pose, stated: verdict.stated === true },
         ...verdict.component.map((m) => ({ frame: m.frame, pose: m.pose, stated: verdict.stated === true }))]
 
-function commitTransaction(verdict, writer, registry, project = null) {
-    return publish(writer, verdictEntries(writer, verdict), registry, null, project)
+function commitTransaction(verdict, attempt, registry, project = null) {
+    return publish(attempt.writer, verdictEntries(attempt, verdict), registry, null, project)
 }
 
 // The responder proposes; a separate check decides whether it is publishable.
 // This opt-in check is synchronous: no guesses, partial component or async work
 // escapes while it runs. A failed check is a broken responder, not impossibility.
-function checkMotion(verdict, writer, registry, validate, request) {
+function checkMotion(verdict, attempt, registry, validate) {
     if (verdict.kind !== 'accept') return verdict
-    const entries = [{ frame: writer, pose: verdict.pose }, ...verdict.component]
+    const entries = [{ frame: attempt.destination, pose: verdict.pose }, ...verdict.component]
     const seen = new Set()
     for (const { frame, pose } of entries) {
         // ONE pose-validity authority (SE3.isValid), the same door the commands and
@@ -1759,7 +1883,7 @@ function checkMotion(verdict, writer, registry, validate, request) {
     }
     if (validate) {
         try {
-            if (validate({ request, writer, entries }) !== true) {
+            if (validate({ request: attempt.request, writer: attempt.writer, entries }) !== true) {
                 return { kind: 'fault', message: 'motion responder proposed geometry that fails independent validation' }
             }
         } catch (error) {
@@ -1773,7 +1897,7 @@ function checkMotion(verdict, writer, registry, validate, request) {
     // ONE datum decides both: a caller that NAMES the frame is stating a position; a caller
     // that names nothing is making its own motion (what the walk and today's pointer do).
     // (id:laws-figures-phase34-hand-frame)
-    verdict.ref = request?.ref ?? null
+    verdict.ref = attempt.request?.ref ?? null
     verdict.stated = verdict.ref !== null
     // NORMALIZED here, at the door: the whole verdict — the writer and every component the
     // policy moved — is converted out of the declared frame into the frame's own chain, so
@@ -1790,7 +1914,7 @@ function checkMotion(verdict, writer, registry, validate, request) {
                 if (!world) throw new Error(`no frame named '${verdict.ref}' to state a position against`)
                 return SE3.compose(SE3.invert(worldTransform(frame)), world)
             }
-            verdict.pose = toOwn(writer, verdict.pose)
+            verdict.pose = toOwn(attempt.destination, verdict.pose)
             verdict.component = verdict.component.map((m) => ({ ...m, pose: toOwn(m.frame, m.pose) }))
         } catch (error) {
             return { kind: 'unresolved', message: error.message }
@@ -1867,6 +1991,9 @@ function releaseReadouts(root, ids) {
 // first; preserving selected descendants is a later policy, not a reason to keep
 // obsolete children by accident. (id:laws-figures-phase34-review)
 function releaseRegion(frame, pump) {
+    // A closed region is replaced whole: its installations go with the answer.
+    // (id:being-facets-p4-sequence)
+    retireInstallationsUnder(frame, pump)
     if (frame.children.size === 0) return
     const root = metaRootFrame(frame)
     const ids = subtreeIds(frame)
@@ -2022,14 +2149,20 @@ function proposedOverrides(writer, verdict) {
 
 
 
-function parkOnVerdict(ctx, verdict, pump, request) {
-    if (motionBaseChanged(ctx, request)) verdict = { kind: 'stale' }
-    else verdict = checkMotion(verdict, ctx, pump.registry, pump.motionValidate, request)
+function parkOnVerdict(ctx, verdict, pump, attempt) {
+    // Identity is retained on the attempt; ELIGIBILITY is rechecked HERE, never cached.
+    // (id:being-facets-p4-sequence)
+    const { writer, destination, request } = attempt
+    if (destination === null || !liveIn(pump.registry, destination)) {
+        return woundMotion(ctx, 'the retained receiver has left the world')
+    }
+    if (motionBaseChanged(writer, request)) verdict = { kind: 'stale' }
+    else verdict = checkMotion(verdict, attempt, pump.registry, pump.motionValidate)
     // A proposed configuration that breaks an active law is refused, never shown
     // as accepted. (id:laws-activation-order)
     let gate = null
     if (verdict.kind === 'accept') {
-        gate = brokenLaw(proposedOverrides(ctx, verdict), pump.registry, pump.laws, lawWorld)
+        gate = brokenLaw(proposedOverrides(destination, verdict), pump.registry, pump.laws, lawWorld)
         if (gate.status === 'cannot-measure') verdict = { kind: 'unresolved', message: gate.reason }
         else if (heldFrame(ctx) || gate.status === 'violation') {
             verdict = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
@@ -2043,8 +2176,8 @@ function parkOnVerdict(ctx, verdict, pump, request) {
         baseRevision: request?.baseRevision ?? null,
     })
     if (verdict.kind === 'fault') return woundMotion(ctx, verdict.message)
-    if (verdict.kind === 'accept' && verdict.component.length > 0) {
-        const conflict = commitTransaction(verdict, ctx, pump.registry)
+    if (verdict.kind === 'accept' && (writer.installation === true || verdict.component.length > 0)) {
+        const conflict = commitTransaction(verdict, attempt, pump.registry)
         if (conflict) return woundMotion(ctx, conflict.message)
     }
     openInstant(ctx)
@@ -2057,13 +2190,15 @@ function parkOnVerdict(ctx, verdict, pump, request) {
 }
 
 function motion(ctx, value, _route, pump) {
+    const destination = motionDestination(ctx, pump.registry)
+    if (destination === null) return woundMotion(ctx, 'the retained receiver has left the world')
     if (pump.motionAdmissionAsync) return delayedMotion(ctx, value, pump)
 
-    const request = { command: value.command, from: value.from, requested: value.requested,
-        frame: ctx, baseRevision: value.baseRevision }
+    const attempt = motionAttempt(ctx, destination, {
+        command: value.command, from: value.from, requested: value.requested, baseRevision: value.baseRevision })
     let raw
     try {
-        raw = pump.motionAdmission ? pump.motionAdmission(request)
+        raw = pump.motionAdmission ? pump.motionAdmission(attempt.request)
             : { accepted: true, transform: value.requested }
     } catch (error) {
         return woundMotion(ctx, `motion responder failed: ${error.message}`)
@@ -2071,7 +2206,7 @@ function motion(ctx, value, _route, pump) {
     if (isThenable(raw)) {
         return woundMotion(ctx, 'motion responder returned a Promise; use motionAdmissionAsync for delayed replies')
     }
-    return parkOnVerdict(ctx, interpretReply(raw, pump.execOpts.refusalStroke), pump, request)
+    return parkOnVerdict(ctx, interpretReply(raw, pump.execOpts.refusalStroke), pump, attempt)
 }
 
 // Controlled delayed admission: the responder may answer after the writer parks,
@@ -2081,17 +2216,21 @@ function delayedMotion(ctx, value, pump) {
     const run = ctx.run
     const seq = ++ctx.motionSeq
 
-    const request = { command: value.command, from: value.from, requested: value.requested,
-        frame: ctx, baseRevision: value.baseRevision }
+    // The attempt is fixed at admission and RETAINED through the delayed reply; eligibility
+    // is rechecked at acceptance, never cached. (id:being-facets-p4-sequence)
+    const destination = motionDestination(ctx, pump.registry)
+    if (destination === null) return woundMotion(ctx, 'the retained receiver has left the world')
+    const attempt = motionAttempt(ctx, destination, {
+        command: value.command, from: value.from, requested: value.requested, baseRevision: value.baseRevision })
     let raw
     try {
-        raw = pump.motionAdmissionAsync(request)
+        raw = pump.motionAdmissionAsync(attempt.request)
     } catch (error) {
         return woundMotion(ctx, `motion responder failed: ${error.message}`)
     }
 
     // A responder that answers now is applied now; only a thenable parks.
-    if (!isThenable(raw)) return parkOnVerdict(ctx, interpretReply(raw, pump.execOpts.refusalStroke), pump, request)
+    if (!isThenable(raw)) return parkOnVerdict(ctx, interpretReply(raw, pump.execOpts.refusalStroke), pump, attempt)
 
     openInstant(ctx)
     suspend(ctx, 'admission', { seq, verdict: null })
@@ -2102,16 +2241,15 @@ function delayedMotion(ctx, value, pump) {
         if (isThenable(resolved)) return void woundMotion(ctx, 'delayed motion responder resolved to another Promise')
         // The delayed reply is still a motion path: active laws govern it, exactly
         // as they govern a synchronous reply. (id:laws-activation-order)
-        const checked = motionBaseChanged(ctx, request) ? { kind: 'stale' } :
-            checkMotion(interpretReply(resolved, pump.execOpts.refusalStroke),
-                ctx, pump.registry, pump.motionValidate, request)
+        const checked = motionBaseChanged(ctx, attempt.request) ? { kind: 'stale' } :
+            checkMotion(interpretReply(resolved, pump.execOpts.refusalStroke), attempt, pump.registry, pump.motionValidate)
         let ruling = checked
-        const check = ruling.kind === 'accept' ? brokenLaw(proposedOverrides(ctx, ruling), pump.registry, pump.laws, lawWorld) : null
+        const check = ruling.kind === 'accept' ? brokenLaw(proposedOverrides(attempt.destination, ruling), pump.registry, pump.laws, lawWorld) : null
         if (check?.status === 'cannot-measure') ruling = { kind: 'unresolved', message: check.reason }
         else if (check?.status === 'violation') ruling = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
         if (ruling.kind === 'fault') return void woundMotion(ctx, ruling.message)
-        if (ruling.kind === 'accept' && ruling.component.length > 0) {
-            const conflict = commitTransaction(ruling, ctx, pump.registry)
+        if (ruling.kind === 'accept' && (ctx.installation === true || ruling.component.length > 0)) {
+            const conflict = commitTransaction(ruling, attempt, pump.registry)
             if (conflict) return void woundMotion(ctx, conflict.message)
         }
         suspend(ctx, 'admission', { seq, verdict: ruling })
@@ -2325,13 +2463,15 @@ function parameterReadout(ctx, value, _route, pump) {
 }
 
 function law(ctx, value, _route, pump) {
-    const targetName = value.target
+    // A bound subject crosses as the being itself, not a name to re-resolve. (id:being-facets-p2-seam)
+    const boundTarget = isBeing(value.target) ? value.target : null
+    const targetName = boundTarget ? boundTarget.name : value.target
     const driven = driveOf(value.feature)
     // One binding rule for reads and relations: a name this scope declares but has
     // not reached is a located use-before-introduction, never an outer namesake.
     // A position definition is the exception — it is a definition, never a use.
     // (id:laws-ordered-birth)
-    const visible = findFrame(ctx, targetName, 'world')
+    const visible = boundTarget ?? findFrame(ctx, targetName, 'world')
     const declaredHere = ctx.declared?.has(targetName) === true
     for (const name of value.subjects ?? [targetName]) {
         if (value.feature !== 'position' && ctx.declared?.has(name) && !ctx.children.has(name)) {
@@ -2349,7 +2489,7 @@ function law(ctx, value, _route, pump) {
     // The seat is provisional: a statement that does not commit withdraws it, so
     // one failed statement leaves no identity, no exposure and no hold behind.
     const born = introduces ? seatPlace(ctx, targetName, pump, SE3.clone(ctx.transform.deref())) : null
-    const target = findFrame(ctx, targetName, 'world')
+    const target = boundTarget ?? findFrame(ctx, targetName, 'world')
     if (!target || target === ctx) {
         if (born) withdrawPlace(ctx, born, pump)
         return woundRelation(ctx, `Unknown target: ${targetName}`, 'relation', value.owner)
@@ -2357,14 +2497,25 @@ function law(ctx, value, _route, pump) {
     // A framed point descriptor is a validity input, never a participant: only live
     // names are resolved and admitted. (id:laws-distance-literal-address)
     const subjects = value.subjects ?? null
-    const participants = subjects ? subjects.filter((s) => typeof s === 'string').map((name) => findFrame(ctx, name, 'world')) : null
-    const references = subjects ? subjects.map((s) => typeof s === 'string'
-        ? (findFrame(ctx, s, 'world')?.id ?? null)
-        : { frame: ctx.id, value: [...(s.framed ?? s.relative)], ...(s.relative ? { relative: true } : {}) }) : null
+    // Resolve each selector ONCE: a bound being is the identity, a name reaches its frame
+    // (a missing one stays a failure, never a filtered-away entry), and a framed point
+    // descriptor is a VALUE, never a participant. (id:laws-distance-literal-address)
+    const resolved = subjects ? subjects.map((s) => isBeing(s) ? { frame: s }
+        : typeof s === 'string' ? { frame: findFrame(ctx, s, 'world') }
+        : { reference: { frame: ctx.id, value: [...(s.framed ?? s.relative)], ...(s.relative ? { relative: true } : {}) } }) : null
+    const participants = resolved ? resolved.filter((r) => r.frame !== undefined).map((r) => r.frame) : null
+    const references = resolved ? resolved.map((r) => r.reference ?? (r.frame ? r.frame.id : null)) : null
     if (participants?.some((f) => !f || f === ctx)) {
         return woundRelation(ctx, 'a distance subject must name an introduced spatial point', 'relation', value.owner)
     }
-    const outside = ctx.closed && (participants ?? [target]).find((f) => !ownsFrame(ctx, f))
+
+    // A retired being is refused, never re-bound to a same-name namesake. (id:being-facets-p2-seam)
+    const boundBeings = [target, ...(participants ?? [])].filter((f) => isBeing(f))
+    if (boundBeings.some((f) => !admitBeing(ctx, f, pump.registry).live)) {
+        if (born) withdrawPlace(ctx, born, pump)
+        return woundRelation(ctx, 'a bound subject is retired', 'relation', value.owner)
+    }
+    const outside = ctx.closed && (participants ?? [target]).find((f) => !admitBeing(ctx, f, pump.registry).owned)
     if (outside) {
         return woundRelation(ctx, `closed region has no outside law target: ${outside.name}`, 'relation', value.owner)
     }
@@ -2373,7 +2524,7 @@ function law(ctx, value, _route, pump) {
     // test rejected a lawful reader — a settled or headed B — before any method was
     // proposed. `movers` is the row's declaration; absent it, every subject moves, so
     // distance and the closed-region contract are unchanged. (id:laws-build-solve-seam)
-    const movable = value.movers?.map((name) => findFrame(ctx, name, 'world')?.id) ?? null
+    const movable = value.movers?.map((m) => isBeing(m) ? m.id : findFrame(ctx, m, 'world')?.id) ?? null
     if (movable?.some((id) => id == null || !(references ?? [target.id]).includes(id))) {
         if (born) withdrawPlace(ctx, born, pump)
         return woundRelation(ctx, 'a law mover must name a bound live subject', 'relation', value.owner)
@@ -2514,6 +2665,20 @@ function supersedeFigure(ctx, value, pump) {
 }
 
 function spawn(ctx, value, route, pump) {
+    // A bound receiver is an IDENTITY, admitted before any parent mutation or slot
+    // lookup: a nearer namesake or a coerced word cannot redirect it, and a refusal
+    // leaves no partial effect. Eligibility is three facts, not permission to replace
+    // the receiver's source — attachment policy is a separate seam. (id:being-facets-p2-seam)
+    const receiver = isBeing(value.receiver) ? value.receiver : null
+    if (receiver) {
+        const eligibility = admitBeing(ctx, receiver, pump.registry)
+        if (!eligibility.live) return woundRelation(ctx, `retired receiver: ${receiver.name}`, 'relation')
+        if (!eligibility.owned) return woundRelation(ctx, `closed region has no outside receiver: ${receiver.name}`, 'relation')
+        // CUTOVER: the declaring slot holds the current installation; the installation owns
+        // its continuation; the receiver is RETAINED, never rewired. Eligibility is
+        // admission, not permission to replace the receiver's source. (id:being-facets-p4-sequence)
+        return spawnInstallation(ctx, value, route, pump, receiver)
+    }
     // Keep parent transform atom current between head events.
     ctx.transform.swap(() => value.origin)
     // Freeze the environment before the question is registered, so the run and the
@@ -2608,11 +2773,91 @@ function seatChild(ctx, value, pump, route, deferredShouts) {
     return child
 }
 
+// CUTOVER — installation ownership (PRODUCTION). A declaring slot holds the current
+// installation; the installation owns its continuation and run; the receiver is a
+// retained participant, never rewired. The seat is NOT a child of the declaring frame,
+// so findFrame and tree traversal cannot reach it: it cannot become a geometric
+// participant by name. A FRESH record distinguishes a replacement from its predecessor
+// (frame identity survives an in-place rewire). (id:being-facets-p4-sequence)
+function retireInstallation(source, record, pump) {
+    if (source.installations?.get(record.site) !== record) return false
+    const root = metaRootFrame(source)
+    // FOLLOW BOTH OWNERSHIP EDGES RECURSIVELY: an installation can own an ordinary ambient
+    // child, and that child can own a nested installation. Retiring only this frame's
+    // direct installations strands the nested continuation. (id:being-facets-p4-sequence)
+    retireInstallationsUnder(record.frame, pump)
+    terminateAmbient(record.frame)
+    releaseAttemptsFor(root, subtreeIds(record.frame))
+    releaseReadouts(root, subtreeIds(record.frame))
+    visitPostOrder(record.frame, (c) => {
+        resetInk(c, pump.stock)
+        pump.registry.delete(c.id)
+        pump.laws.retractIdentity(c.id)
+    })
+    source.installations.delete(record.site)
+    return true
+}
+
+// Retire every installation seated by a frame and its descendants — the explicit
+// counterpart to the tree teardown the non-child seat does not receive.
+function retireInstallationsUnder(frame, pump) {
+    for (const child of frame.children.values()) retireInstallationsUnder(child, pump)
+    for (const record of [...(frame.installations?.values() ?? [])]) retireInstallation(frame, record, pump)
+}
+
+function spawnInstallation(ctx, value, route, pump, receiver) {
+    const site = value.site ?? value.name
+    const prior = ctx.installations?.get(site)
+    if (prior) retireInstallation(ctx, prior, pump)
+    // Inherit the declaring region's restriction; an installation is never silently
+    // opened. A closed region keeps its closure (and its captured environment).
+    // (id:being-facets-p4-sequence)
+    value.closed = ctx.closed === true
+    if (value.closed) {
+        value.figureSeed = `${frameAddress(metaRootFrame(ctx), ctx)}/${value.name}@${site}`
+        value.capture = captureFor(ctx, value)
+    }
+    // An installation's authored movement ALWAYS enters the attempt path. A responder or an
+    // active law is not a prerequisite for production correctness, so the protocol is part
+    // of the fresh actor state, not patched onto it. (id:being-facets-p4-sequence)
+    const { generator, deps, mailbox, batch, relationshipBatch } =
+        createChildGenerator(value, pump.createDeps, { ...pump.execOpts, motionProtocol: true })
+    // The continuation starts from the receiver's ACCEPTED pose — copied, never aliased:
+    // the writer and the destination stay distinct frames. (id:being-facets-p4-sequence)
+    batch.transform = SE3.clone(receiver.transform.deref())
+    const child = attachMeta(
+        createFrame(value.name, generator, {
+            parent: ctx,
+            origin: value.origin,
+            ...pump.channelOpts,
+            logicalBirth: ctx.resumeAt > 0 ? ctx.resumeAt : (ctx.logicalBirth ?? route.now),
+        }),
+        value.frame,
+        pump.stock,
+    )
+    child.birthtime = (value.env?.birthtime || 0) / 1000
+    child.profile = null
+    child.closed = value.closed
+    child.receiver = receiver
+    child.installation = true
+    // Deliberately NOT ctx.children.set: the seat is not a discoverable child.
+    wireChild(child, deps, mailbox, pump.registry, value.code, batch, relationshipBatch, pump)
+    child.seed = seedOf(value)
+    const record = { site, source: ctx, frame: child, receiver, run: child.run }
+    child.installationRecord = record
+    ;(ctx.installations ??= new Map()).set(site, record)
+    if (route.deferredShouts) deliverDeferredToFrame(route.deferredShouts, child)
+    return { verdict: 'spawned', spawned: child, produced: true }
+}
+
 // Output event — one offered deposit (head pose-swap + run tagging inside).
 // (spec id:ft-d7-deposit-runid)
 function deposit(ctx, value, route, pump) {
-    const { frameTarget, frameTransform } = route
-    const refusal = offerDeposit(ctx, value, frameTarget, frameTransform, pump.stock)
+    const { frameTarget, frameTransform, destination } = route
+    // A lost destination has no channel or geometry: end the venture rather than crash the
+    // delivery or silently present it on the installation. (id:being-facets-p4-sequence)
+    if (destination === null) return endUnresolved(ctx, 'the retained receiver has left the world')
+    const refusal = offerDeposit(ctx, value, frameTarget, frameTransform, pump.stock, destination)
     if (refusal === 'ceiling') return { verdict: 'ended', produced: true }
     if (refusal) {
         parkOwing(ctx, refusal, value)
@@ -2697,12 +2942,13 @@ function stepFrame(ctx, value, done, route, pump) {
 // One generator step (owed deposit first). Both pumps share this path.
 // (id:output-ledger-r2-credit)
 function stepOnce(ctx, route, pump) {
-    const { frameTarget, frameTransform } = route
+    const { frameTarget, frameTransform, destination } = route
+    if (destination === null) return endUnresolved(ctx, 'the retained receiver has left the world')
 
     // Resume after a suspension: replay an owed deposit first (emission order).
     const sus = ctx.suspension
     if (sus?.owed) {
-        const refusal = deliverDeposit(ctx, sus.owed, frameTarget, frameTransform, pump.stock)
+        const refusal = deliverDeposit(ctx, sus.owed, frameTarget, frameTransform, pump.stock, destination)
         if (refusal) {
             // Debt stays; only the kind may change (credit→residency resets the stall clock).
             if (sus.kind !== refusal) {
@@ -2723,7 +2969,8 @@ function stepOnce(ctx, route, pump) {
     // program walk with no laboratory responder. The executor asks for admission
     // whenever a law is live; with none, the unconstrained fast path stays.
     // (id:laws-activation-order)
-    if (ctx.batch) ctx.batch.motionProtocol = pump.motionAdmission != null ||
+    if (ctx.batch) ctx.batch.motionProtocol = ctx.installation === true ||
+        pump.motionAdmission != null ||
         pump.motionAdmissionAsync != null || pump.laws.count() > 0
     try {
         const input = admission ? admission.verdict : undefined
@@ -2756,7 +3003,7 @@ function drainUntilPause(child, now, pump, deferredShouts) {
     clearSpentPark(child)
 
     // now + deferredShouts ride route — pump stays config. (id:carving-todo-effects-table)
-    const route = { frameTarget, frameTransform, now, deferredShouts }
+    const route = { frameTarget, frameTransform, destination: motionDestination(child, pump.registry), now, deferredShouts }
 
     while (true) {
         const step = stepOnce(child, route, pump)
@@ -2822,6 +3069,7 @@ export function createScheduler(generator, opts = {}) {
         bindResolve(opts.rootDeps, root)
     }
     const registry = new Map([[root.id, root]])
+    root._registry = registry
 
     // Shared pump bag for tick/hotSwap/advanceChild. Config only — now rides route.
     // (id:output-ledger-r2-pacer, id:carving-todo-effects-table)
@@ -2968,6 +3216,9 @@ export function createScheduler(generator, opts = {}) {
             if (heldFrame(frame)) return { kind: 'refuse', ink: execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
             if (revision !== root._motionRevision) return { kind: 'stale' }
             const request = { command: 'hand', from: frame.transform.deref(), requested, frame, ref }
+            // The hand path is its own destination (self-motion), carried as one attempt.
+            // (id:being-facets-p4-sequence)
+            const attempt = motionAttempt(frame, frame, request)
 
             // Who decides the verdict? An installed responder, always. Failing that,
             // an existence-only declaration decides nothing, so its own admission is
@@ -2990,7 +3241,7 @@ export function createScheduler(generator, opts = {}) {
                 return { kind: 'unresolved' }
             }
             const verdict = checkMotion(interpretReply(raw, execOpts.refusalStroke),
-                frame, registry, pump.motionValidate, request)
+                attempt, registry, pump.motionValidate)
             if (verdict.kind !== 'accept') return verdict
             // Continue along the active laws: the touched endpoint moves to the
             // nearest admissible position, every other coordinate stays.
@@ -3002,7 +3253,7 @@ export function createScheduler(generator, opts = {}) {
             if (!pump.motionAdmission && !pump.motionAdmissionAsync) {
                 continueLaws(verdict, frame, registry, laws, lawWorld)
             }
-            const check = brokenLaw(proposedOverrides(frame, verdict), registry, laws, lawWorld)
+            const check = brokenLaw(proposedOverrides(attempt.destination, verdict), registry, laws, lawWorld)
             recordAttempt(root, {
                 path: 'hand-settled', owner: frame.id,
                 from: frame.transform.deref().position, requested: verdict.pose?.position ?? null,
@@ -3022,7 +3273,7 @@ export function createScheduler(generator, opts = {}) {
                     return { kind: 'unresolved' }
                 targets.set(member, target)
             }
-            const conflict = commitTransaction(verdict, frame, registry, () => {
+            const conflict = commitTransaction(verdict, attempt, registry, () => {
                 // A hand never repaints deposited ink. Its head uses the same
                 // declaring-frame projection as a program head (id:ft-d5-head).
                 for (const { frame: member, pose } of members) {
@@ -3053,6 +3304,9 @@ export function createScheduler(generator, opts = {}) {
                 // A changed seed is a fresh play: a relationship-only edit does not
                 // yet carry statement ownership across a reparse. (id:laws-build-p2-recut)
                 terminateAmbient(existing)
+                // A replaced source retires its installations, not only explicit removal.
+                // (id:being-facets-p4-sequence)
+                retireInstallationsUnder(existing, pump)
                 // Leaving the tree frees its share of the stage stock.
                 releaseAttemptsFor(root, subtreeIds(existing))
                 releaseReadouts(root, subtreeIds(existing))
@@ -3097,12 +3351,39 @@ export function createScheduler(generator, opts = {}) {
             const child = root.children.get(key)
             if (!child) return
             terminateAmbient(child)
+            retireInstallationsUnder(child, pump)
             releaseAttemptsFor(root, subtreeIds(child))
             releaseReadouts(root, subtreeIds(child))
             visitPostOrder(child, (c) => { resetInk(c, stock); registry.delete(c.id); laws.retractIdentity(c.id) })
             root.children.delete(key)
             bumpTree(root)
             this.done = allDone(root)
+        },
+
+        // The current installations seated by a declaring frame, keyed internally by
+        // statement site. The lookup surface, never a children-map layout.
+        // (id:being-facets-p4-sequence)
+        installationsOf(frame) {
+            return [...(frame?.installations?.values() ?? [])]
+                .filter((record) => registry.get(record.frame.id) === record.frame)
+        },
+
+        // Selective retirement of one installation among siblings in one source. A stale
+        // record is refused: only the CURRENT occupant of the site may be retired.
+        // (id:being-facets-p4-sequence)
+        // OWNER COMMAND: retire whatever currently occupies this slot.
+        // (id:being-facets-p4-sequence)
+        retireInstallation(frame, site) {
+            const record = frame?.installations?.get(site)
+            return record ? retireInstallation(frame, record, pump) : false
+        },
+
+        // HANDLE COMMAND: retire only this captured occupant; refuse if it was replaced.
+        // An old address must not acquire authority over the new occupant.
+        // (id:being-facets-p4-sequence)
+        retireOccupant(handle) {
+            if (!handle?.source || !handle?.frame) return false
+            return retireInstallation(handle.source, handle, pump)
         },
 
         get errors() {
@@ -3144,7 +3425,7 @@ export function createScheduler(generator, opts = {}) {
 
             // The earliest logical instant with a ready frame (resumeAt ≤ now).
             let frontier = Infinity
-            visitPostOrder(root, (ctx) => {
+            visitPostOrderMotionFirst(root, (ctx) => {
                 if (!ctx.done && ctx.resumeAt <= now && ctx.resumeAt < frontier) {
                     frontier = ctx.resumeAt
                 }
@@ -3178,7 +3459,16 @@ export function createScheduler(generator, opts = {}) {
                 clearSpentPark(ctx)
 
                 // Same stepFrame as the trampoline. now on route, not pump. (id:output-ledger-r2-instant)
-                const route = { frameTarget, frameTransform, now, deferredShouts }
+                const route = { frameTarget, frameTransform, destination: motionDestination(ctx, pump.registry), now, deferredShouts }
+                // A WAIT JOINT refreshes the retained cursor from the receiver's accepted
+                // local pose before the next command — pose only: no publication, no
+                // binding/style import, placement composition untouched.
+                // (id:being-facets-p4-sequence)
+                if (ctx.refreshOnResume) {
+                    ctx.refreshOnResume = false
+                    const receiver = route.destination ?? ctx.receiver
+                    if (receiver) ctx.batch.rebase = SE3.clone(receiver.transform.deref())
+                }
 
                 while (!ctx.done) {
                     const step = stepOnce(ctx, route, pump)

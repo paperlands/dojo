@@ -9,7 +9,7 @@ import { bridged } from "../bridged.js"
 import { createStage } from "./stage.js"
 import { SE3 } from "./se3.js"
 import { createScheduler, metaRoot, sumCounts, frameWorldTransform, worldTransform } from "./scheduler.js"
-import { pointStateOf } from "./laws/point_state.js"
+import { pointStateOf, preparePointRead } from "./laws/point_state.js"
 import { createCompositor } from "./compositor.js"
 import { labInputs } from "./lab.js"
 import { createFocus, resolveAddress } from "./focus.js"
@@ -211,12 +211,13 @@ export class Turtle {
     _fitTargets() {
         const scheduler = this.scheduler
         if (!scheduler) return null
+        const read = preparePointRead(scheduler)
         const spheres = []
         let primary = null
         for (const frame of scheduler.registry.values()) {
             if (frame === scheduler.root || frame.isLens || !exposed(frame)) continue
             spheres.push({ center: frameWorldTransform(frame).position, radius: 0 })
-            const state = this._stateOf(frame)
+            const state = read(frame)
             const bounds = boundsOf(state.locus, state.at)
             if (bounds) spheres.push(bounds)
             // The direction comes from the largest bounded mark, so a circle reads
@@ -270,11 +271,12 @@ export class Turtle {
         const view = this._view()
         const scheduler = this.scheduler
         if (!scheduler) return
+        const read = preparePointRead(scheduler)
         // A run can attach a head or remove a point without another pointer move.
         // The gesture OWNS the hand — this canvas reads its one published holding,
         // never a mirror. (id:laws-decl-handle)
         let heldFrame = this._handle?.grabbed?.frame ?? null
-        if (heldFrame && (!this._touchable(heldFrame)
+        if (heldFrame && (!read(heldFrame).interaction.offered
             || scheduler.registry.get(heldFrame.id) !== heldFrame)) {
             this._handle?.cancel()
             heldFrame = null
@@ -291,13 +293,14 @@ export class Turtle {
         const showHints = this._hintsVisible()
         // ONE description per frame per pass — hints and marks read the same
         // story, computed once. (id:laws-decl-point-agent, D058)
-        const states = new Map()
+        const frames = []
         for (const frame of scheduler.registry.values()) {
             if (frame === scheduler.root || !exposed(frame)) continue
-            states.set(frame, this._stateOf(frame))
+            frames.push(frame)
         }
-        for (const [frame, state] of states) {
+        for (const frame of frames) {
             if (!showHints) continue
+            const state = read(frame)
             if (state.tag !== 'free') continue
             const at = state.at
             // Display scale: world units per pixel at this point's depth. The pitch
@@ -341,7 +344,8 @@ export class Turtle {
                     view.project(along(axes.normal)), { strong: true })
             }
         }
-        for (const [frame, state] of states) {
+        for (const frame of frames) {
+            const state = read(frame)
             // A derived figure's pin marks its BIRTH — the definition's origin. An
             // ordinary place's pin marks where it walks. The membrane again: a value
             // has an origin to return to; a process owns its position.
@@ -414,8 +418,12 @@ export class Turtle {
         let captured = null
         let damping = null
         const handle = createGesture({
-            candidates: () => pointCandidates(scheduler.registry.values(), frame => this._touchable(frame))
-                .map(frame => ({ name: frame.name, frame })),
+            candidates: () => {
+                const read = preparePointRead(scheduler)
+                return pointCandidates(scheduler.registry.values(), frame =>
+                    exposed(frame) && read(frame).interaction.offered)
+                    .map(frame => ({ name: frame.name, frame }))
+            },
             canTouch: frame => this._touchable(frame),
             anchorOf: frame => frameWorldTransform(frame),
             birthOf: frame => worldTransform(frame),

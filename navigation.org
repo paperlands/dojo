@@ -855,6 +855,13 @@ test-side reconstruction. [[id:laws-decl-point-agent]]
 Fences: =test/js/laws/composition_rung_test.mjs= (construct, agree, grab, drag, revise,
 obstruct, lose a reading) and =test/js/laws/gesture_test.mjs= (which reads its locus through
 this projection).
+
+=preparePointRead= borrows one unchanged model for a synchronous read pass: one lazy active-law
+snapshot, row-derived point incidence, whole-context partner holds, and one state per frame.
+Turtle's overlay, fitting and candidate walks each use a pass; none survives mutation or yielding.
+Fence: =test/js/laws/point_read_test.mjs=. Bench: =test/js/profile/point_read_bench.mjs=.
+[[id:runtime-prepared-point-read]] records the constitution, ablation and limits.
+
 ** literal source contract — binding, revision, composition and lifetime
 :PROPERTIES:
 :ID: nav-law-literal-source
@@ -1061,6 +1068,36 @@ The tower owns operation meaning over admitted values; laws own obligations, met
 propose, and publication owns accepted geometry/lifetime. Arithmetic quantization,
 geometric acceptance and display formatting stay separate. Generic coefficient routing
 does not earn symbolic/differential geometry or a universal solver.
+
+** ambient door — the algebra's one window on the tree
+:PROPERTIES:
+:ID: nav-ambient-door
+:KEYWORDS: ambient door installAmbientDoor evaluator algebra resolveExternal isSubject resolveSubjectFacet ownSubject owns resolveSubject observe unobserved bindings markLocal isLocal context binding being facet boundFacet
+:PATH: assets/js/turtling/ambient.js::installAmbientDoor
+:END:
+The pure algebra keeps no frame knowledge: it reaches the tree only through one
+documented door installed by =installAmbientDoor=. A frame owner builds the door
+(=scheduler.js::bindResolve=) and installs every hook at once, so the seam is swappable,
+testable, and cannot accrete assignments at each call site. A bare =Evaluator= has no
+door and stays a calculator; dotted bound subjects and bound callables share one private
+=boundFacet= in =mafs/evaluate.js=. (id:being-facets-centers-review)
+One precedence, per-binding provenance: a local declaration MARKS its name in the current
+scope (=assets/js/turtling/bindings.js=, a non-enumerable symbol Set); a formal or captured
+value is not marked. Two operations earn the spread: =extend= carries the inherited marks
+(minus newly bound names) for a nearer block; =project= omits marked names for capture and
+=fnScope=. =readContext= routes a marked read through =resolveExternal= so it stays LIVE
+(never frozen into replay); =boundFacet= gives a marked non-subject no answer rather than
+falling through to an outer namesake. The law-selector branch resolves every BOUND selector
+through the same door. Fences: =test/js/laws/subject_binding_test.mjs=.
+Situated receiver reads: [[id:being-facets-situated]]. =scheduler.js::poseInObserverBirth=
+keeps the installation as reader/authority but uses the retained receiver's birth basis for
+relative spatial facets. Active observations freeze target and reference together. The
+existing =world=/=origin= views and lexical lookup are not reparented. =executor.js::readPointArgs=
+shares a snapshot for an installation's pure-coordinate =faceto=; =bindResolve::observe(command)=
+declines that extension for ordinary actors, preserving their cycle/instant contract.
+Fence: =test/js/laws/situated_observation_test.mjs=; law refusal, offset cursor, movement,
+readiness and retired input are tested in a translated/rotated room with owner at x=500.
+Fence: =test/js/runtime/ambient_door_test.mjs=.
 
 ** symbolic numerics performance — staged richness and backend boundaries
 :PROPERTIES:
@@ -1415,6 +1452,9 @@ installation and dependent reads agree. =onBeat= carries occurrences, never dedu
 readings. Host callback proposals (including initial delivery) return =busy=.
 Fences: =test/js/host/door_test.mjs=, =run_test.mjs= and =release_test.mjs=.
 Canvas content-box sizing: =turtling/viewport.js=; instance-owned overlays: =overlay.js=.
+The marks layer mounts into the canvas parent's =[data-turtle-overlay]= host when
+present; the shell marks it =phx-update="ignore"= so morphdom cannot reconcile the
+JS-appended overlay away on a presence/hatch patch. (id:host-surface)
 The shell explicitly sizes =core-canvas= with =w-full h-full= in
 =lib/dojo_web/live/shell_live.html.heex=; =fixed inset-0= alone leaves a canvas
 at its intrinsic 300×150 size. Actual-shell regression (live server required):
@@ -1909,6 +1949,12 @@ The canvas outlives the hook; teardown must free GL + controls + subscriptions.
 is owned here — =stage.dispose()= always reclaims; compositor only =clear()=s on
 reset. Tested headless: =test/js/render/material_cache_test.mjs=.
 
+=bindOpacity(mesh, degree)= leases stage-owned line variants; =release(mesh)= retires a binding.
+Same-style vector updates retain their lease; arrays, resizing and clear share this lifetime.
+Compositor retains each layer's degree for future output; exclusive head/fill/text materials
+stay with their existing owner. Fences: =test/js/render/material_binding_test.mjs= and
+=test/js/runtime/compositor_opacity_test.mjs=. [[id:runtime-material-bindings]]
+
 ** turtle↔compositor seam — what the compositor reads off the stage
 :PROPERTIES:
 :ID: nav-stage-contract
@@ -1966,6 +2012,55 @@ A node's KIND tells a name from a value: =operand= names something to resolve,
 the existing resolver reads the path. The name is data, never re-parsed source.
 Grammar and limits: [[id:quoted-name-reader-review]]; fence:
 =test/js/notation/quoted_access_test.mjs=.
+
+** bound subjects — one selector read before ambient resolution
+:PROPERTIES:
+:ID: nav-bound-subject-read
+:MODULE: mafs/evaluate.js
+:KEYWORDS: selector parameter dotted operand subject readContext closed captured live follow
+:PATH: assets/js/turtling/mafs/evaluate.js::run
+:END:
+An atomic =a.x= reads a string-bound =a= once through =readContext=, then sends the
+resolved path to the existing ambient resolver. Already-evaluated access subjects
+are not rebound. Ownership, observation and suspension still belong to the resolver.
+A =let= figure rebuilds for a changed captured question; an ordinary recipe call
+remains an open process. A selector string alone does not capture an outside pose.
+Fence: =test/js/notation/selector_read_test.mjs=; [[id:laws-figures-phase34-review]].
+
+** bound behaviour spike — receiver identity before opening closure
+:PROPERTIES:
+:ID: nav-bound-behaviour-spike
+:MODULE: executor.js, scheduler.js, mafs/evaluate.js
+:KEYWORDS: bound behaviour activation triangle hunt rabbit fox identity receiver owner laws closure capture withdrawal
+:PATH: probe/bound-behaviour/probe.mjs
+:END:
+Sixteen readings distinguish the triangle question, ordinary receiver adoption and
+law refusal, wrong-identity clones after opening/widening reads, live versus captured
+observations, running-writer no-op, branch-dependent effects and subscription retirement.
+Run =node probe/bound-behaviour/probe.mjs=; [[id:bound-behaviour-spike-results]].
+The identity and framed-capture models are probe adapters, not production support.
+Contract still open: [[id:bound-behaviour-contract-candidate]].
+Attachment cycle: =probe/bound-behaviour/attachment.mjs=; run with =node=.
+Sixteen further readings separate run/installation rights, receiver-frame interpretation,
+resume cursor policy, occupancy duration and candidate policy; [[id:bound-behaviour-attachment-results]].
+No production attachment engine or source-owned ink publication is implemented.
+Vision and P0–P6 gates: [[id:being-facets-vision]]; bounded P1: [[id:being-facets-p1-results]].
+Run =node --test test/js/laws/facet_observation_test.mjs= for facet equality,
+provenance rewiring and pending-versus-ready delivery in two coordinate frames.
+Bounded P2 subject seam: =probe/bound-behaviour/subjects.mjs=; [[id:being-facets-p2-seam]] (D061).
+Run =node --test test/js/laws/subject_binding_test.mjs= for bare-versus-quoted binding, facet and
+callable access through a bound being, the nearer-scalar rule, and law-endpoint identity.
+
+After-D061 boundary audit: [[id:being-facets-centers-review]]. Run
+=node probe/bound-behaviour/centers.mjs= for bound-facet input tracing, scalar
+shadowing, nested forwarding and reserved coordinate-view interpretation.
+
+P4 creation order and fresh baseline: [[id:being-facets-p4-sequence]] — receiver identity,
+situated observation, real program motion, cancellation, wait/occupancy, owned output,
+then named activation. Selection forwards best; no returned-reference prerequisite.
+Admission adversary: =node probe/bound-behaviour/receiver-admission.mjs= — closed escape
+and source replacement are refused; formal-binding/caller-scalar precedence is closed and
+fenced. The receiver's own run/slot ownership remains the open seam (id:being-facets-p4-sequence).
 
 ** the grammar — a comma-list is a quantity, the delimiter names its kind
 :PROPERTIES:

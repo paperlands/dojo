@@ -143,7 +143,7 @@ test("reach question: three roles, a bound alias and a headed reader cross the r
 })
 
 test("reach question: smuggling a finite edit for the held reader preserves the accepted prefix", () => {
-    let previous, revision
+    let previous
     const result = runThree((proposal, env, calls) => {
         if (calls === 1) return proposal
         previous = [...env.worldOf(env.target)]
@@ -156,5 +156,22 @@ test("reach question: smuggling a finite edit for the held reader preserves the 
     assert.equal(law.expression.degrees, 45)
     assert.deepEqual(host.children.get("A").transform.deref().position, previous)
     assert.deepEqual(host.children.get("B").transform.deref().position, [1, 0, 0])
-    assert.equal(scheduler.root._motionRevision, 3, "B's walk, C's pin and the accepted angle only")
+    // Two PUBLICATION commits in the accepted prefix: C's position law
+    // (`let C=(3,0,0)`) and the accepted distance moving A. B's `fw 1` is not a
+    // motion revision: it is an unconstrained program walk, committed to B's batch
+    // before any law is live, and a single-frame program walk never routes through
+    // the publication door. Its movement is a source/configuration change (a distinct
+    // counter), preserved in B's pose above. (id:laws-p0m-publication, id:laws-build-current)
+    assert.equal(scheduler.root._motionRevision, 2,
+        "the accepted prefix is C's pin and the accepted angle; B's walk is not a publication")
+})
+
+test("reach question: an unconstrained walk is a configuration change, not a motion publication", () => {
+    const scheduler = buildWorld()
+    const host = scheduler.hotSwapChild("host", fork("host", "as B do\n  fw 1\nend"))
+    drive(scheduler)
+    assert.equal(host.error ?? host.unresolved ?? null, null)
+    assert.deepEqual(host.children.get("B").transform.deref().position, [1, 0, 0])
+    assert.equal(scheduler.root._motionRevision, 0,
+        "with no law live the walk is a source/configuration change; it is not published as motion")
 })

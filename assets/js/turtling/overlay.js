@@ -8,6 +8,14 @@ import { surfaceOf, surfaceOfCanvas, observeSurface, contentRectOf } from "./vie
 // never takes input, so stacking only decides what it is drawn over.
 const Z_ABOVE_CANVAS = 2
 
+// The one mount read: a designated host marked for JS ownership when the shell
+// offers one, else the canvas's own parent, else the body. Pure, so the
+// contract is testable without a DOM. (id:host-surface)
+export function overlayMountFor(surface, doc = globalThis.document) {
+    const parent = surface?.parentElement ?? null
+    return parent?.querySelector?.('[data-turtle-overlay]') ?? parent ?? doc.body
+}
+
 // The layer occupies the projection's space, so the mark stays with its
 // walking head when the camera moves.
 export function createOverlay({ onResize, space = CLIENT_SPACE, canvas: surface = null } = {}) {
@@ -22,11 +30,14 @@ export function createOverlay({ onResize, space = CLIENT_SPACE, canvas: surface 
         zIndex: String(Z_ABOVE_CANVAS),
     })
     layer.setAttribute('aria-hidden', 'true')
-    // The surface a canvas occupies is its containing block. Never `document.body`:
-    // on a page with more than one canvas that would be every canvas's overlay at
-    // once, sized to the window and stacked on the page instead of on the ink.
-    const mount = surface?.parentElement ?? document.body
+    // The canvas's containing block, never `document.body` (that would stack one
+    // overlay per canvas on the window). Prefer the designated host: it carries
+    // phx-update="ignore", so morphdom cannot reconcile the JS-appended layer away
+    // on a presence/hatch patch. (id:host-surface)
+    const mount = overlayMountFor(surface)
     mount.appendChild(layer)
+    // Heal a surface with no ignored host; the marks never outlive their mount. (id:host-surface)
+    const ensureMounted = () => { if (!layer.isConnected) overlayMountFor(surface).appendChild(layer) }
 
     const ctx = layer.getContext('2d')
     let dpr = 1
@@ -152,6 +163,7 @@ export function createOverlay({ onResize, space = CLIENT_SPACE, canvas: surface 
             // Clear in device pixels, then re-anchor: `begin` opens the frame the
             // marks are drawn in, so the origin is read here rather than trusted
             // from the last resize.
+            ensureMounted()
             ctx.setTransform(1, 0, 0, 1, 0, 0)
             ctx.clearRect(0, 0, layer.width, layer.height)
             anchor()

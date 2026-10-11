@@ -2,6 +2,7 @@ import { getOperator } from "./operators.js"
 import { createTower, installScalarFloor, installVectorFloor, SHADOWABLE_BUILTINS, asKind } from "./tower.js"
 import { Parser } from "./parse.js"
 import { parseMemo } from "./parse_memo.js"
+import { isLocal, extend } from "../bindings.js"
 
 // Meanings are fixed; a learner's names change. Install this floor once,
 // not on every figure rebuild. (id:tower-center-life)
@@ -71,6 +72,45 @@ export class Evaluator {
         return processed;
     }
 
+    // One seam for a dotted BOUND subject: `subject.property` or `subject.callable[args]`.
+    // Returns { handled, value } so a null facet is a value, never "not handled". A
+    // string-bound subject is NOT handled: a quoted spelling is a deliberate lookup, and
+    // the caller reinterpolates it. (id:being-facets-centers-review)
+    boundFacet(name, context, args) {
+        if (typeof name !== 'string' || !context) return { handled: false };
+        const dot = name.indexOf('.');
+        if (dot <= 0) return { handled: false };
+        const subject = name.slice(0, dot);
+        // A frame-OWN declaration outranks the captured scope it was spawned under; a
+        // call formal (a local) stays innermost. (id:being-facets-centers-review)
+        const local = this.reads?.locals?.has(subject);
+        // A frame-own declaration shadows only when it is marked HERE (a local declaration)
+        // or the name is absent from this scope; a formal or a captured binding stays the
+        // nearer binding. (id:being-facets-centers-review)
+        const present = Object.hasOwn(context, subject);
+        const owns = !local && this.owns?.(subject) === true && (!present || this.declaredHere(context, subject));
+        const held = owns ? this.ownSubject?.(subject)
+            : present ? context[subject] : undefined;
+        if (held === undefined && !owns) return { handled: false };
+        // A bound being answers the facet. A deliberate spelling reinterpolates. A frame-
+        // owned value owns the name: the read has no answer and must not fall through to
+        // an outer namesake. A bare context value keeps its external path.
+        // (id:being-facets-centers-review)
+        if (!this.isSubject?.(held)) {
+            if (typeof held === 'string') return { handled: false };
+            if (owns) return { handled: true, value: null };
+            return { handled: false };
+        }
+        return { handled: true, value: this.readSubjectFacet(held, name.slice(dot + 1), args) };
+    }
+    // A binding declared in THIS scope is marked (bindings.js); a formal or a captured
+    // value is not. The mark is the binding's provenance, not the context's identity.
+    // (id:being-facets-centers-review)
+    declaredHere(context, name) {
+        return isLocal(context, name)
+    }
+
+
     run(ast, context) {
         if (!ast) return 0;
 
@@ -106,7 +146,18 @@ export class Evaluator {
             else if (ast.value in this.constants) {
                 return this.readConstant(ast.value);
             } else {
-                return this.resolveContext(ast.value, context);
+                // An atomic dotted operand has the same bound subject as access.
+                // Read it once; the ambient resolver still owns admission and facts.
+                // (id:laws-generative-experiments)
+                const facet = this.boundFacet(ast.value, context);
+                if (facet.handled) return facet.value;
+                let name = ast.value;
+                const dot = typeof name === 'string' ? name.indexOf('.') : -1;
+                const subject = dot > 0 ? name.slice(0, dot) : null;
+                if (context && subject && Object.hasOwn(context, subject) && typeof context[subject] === 'string') {
+                    name = this.readContext(subject, context) + name.slice(dot);
+                }
+                return this.resolveContext(name, context);
             }
         } else if (ast.type === 'function') {
             const args = ast.children.map(child => this.run(child, context));
@@ -124,6 +175,17 @@ export class Evaluator {
 
     applyFunction(func, args, context) {
         if (hasNothing(...args)) return null
+        // A bound subject's callable facet: resolve the being once, evaluate arguments
+        // once, and enter the same facet door. A failed bound lookup never falls back to
+        // ambient spelling. (id:being-facets-centers-review)
+        if (context && typeof func === 'string') {
+            const facet = this.boundFacet(func, context, args);
+            if (facet.handled) return facet.value;
+            // A string-bound subject is a deliberate spelling: resolve it once, here.
+            const dot = func.indexOf('.');
+            const bound = dot > 0 ? context[func.slice(0, dot)] : null;
+            if (typeof bound === 'string') func = this.readContext(func.slice(0, dot), context) + func.slice(dot);
+        }
         // The child's own word wins where the surface lets it be shadowed: a user fn
         // at this exact arity owns a shadowable builtin's name (round, mod).
         // Otherwise a scalar builtin is a center registration — the same door the
@@ -134,7 +196,7 @@ export class Evaluator {
             const entry = this.userFunctions.get(key);
             if (entry && (this.shadowable.has(func) || !this.tower.known(func))) {
                 const [body, params] = entry;
-                const childContext = { ...context };
+                const childContext = extend(context, params);
                 params.forEach((p, i) => { childContext[p] = args[i]; });
                 const reads = this.reads, locals = reads?.locals
                 if (reads) {
@@ -163,11 +225,25 @@ export class Evaluator {
         return value
     }
 
+    // A bound subject's read records like a spelled one: dependency and observed input.
+    // The input key is the identity, never the display spelling — a name must not become
+    // a semantic cache key. (id:being-facets-centers-review)
+    readSubjectFacet(being, property, args) {
+        const value = this.resolveSubjectFacet(being, property, args)
+        this.reads?.inputs?.push(['external', `@${being.id}.${property}`, args ?? null, value])
+        return value
+    }
+
     readContext(name, context) {
         const local = this.reads?.locals?.has(name)
+        // A local declaration is marked in THIS scope (bindings.js) and is read LIVE
+        // through the ambient door: recording it as a scope input would freeze it into
+        // replay. A formal and a captured value keep their existing path.
+        // (id:being-facets-centers-review)
+        if (!local && this.resolveExternal && this.declaredHere(context, name)) return this.readExternal(name)
         const value = !local && this.reads?.bind
             ? this.reads.bind('scope', name, () => context[name]) : context[name]
-        if (!this.reads?.locals?.has(name)) this.reads?.inputs?.push(['scope', name, value])
+        if (!local) this.reads?.inputs?.push(['scope', name, value])
         return value
     }
 
