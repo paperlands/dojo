@@ -70,7 +70,7 @@ describe("SPATIAL reads observer birth-frame coordinates", () => {
 })
 
 describe("SPATIAL nests: friend coords match goto/faceto", () => {
-    test("sibling.x is in the observer's birth frame under a rotated parent", () => {
+    test("sibling coordinates are world-valued under a rotated parent", () => {
         // Parent turns and walks; children share that birth floor.
         // guide sits at local (100, 0); seeker reads guide.x/y and faces it.
         const ast = parseProgram(
@@ -98,8 +98,8 @@ describe("SPATIAL nests: friend coords match goto/faceto", () => {
         // From seeker: guide is at birth (100, 0) — not world (50, -100) after parent rt90+fw50.
         const gx = resolveBinding(seeker, 'guide.x')
         const gy = resolveBinding(seeker, 'guide.y')
-        assert.ok(Math.abs(gx - 100) < 0.001, `guide.x in seeker birth should be ~100, got ${gx}`)
-        assert.ok(Math.abs(gy - 0) < 0.001, `guide.y in seeker birth should be ~0, got ${gy}`)
+        assert.ok(Math.abs(gx - 0) < 0.001, `guide.x is world x, got ${gx}`)
+        assert.ok(Math.abs(gy + 150) < 0.001, `guide.y is world y, got ${gy}`)
 
         // Seeker faceto + fw 100 reaches guide's birth spot.
         const sp = seeker.transform.deref().position

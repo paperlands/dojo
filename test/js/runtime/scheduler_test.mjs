@@ -1400,11 +1400,11 @@ describe("universe names: world vs origin", () => {
         assert.equal(resolveBinding(timer, 'world.x'), 150)
     })
 
-    test("origin is the fixed datum, read in the observer's birth frame", () => {
+    test("the root datum is world-valued, not an observer-relative coordinate", () => {
         const { timer } = universe()
         assert.equal(resolveBinding(timer, 'origin.time'), 0)
         // Absolute 0, expressed on a birth floor seated at 100 → -100.
-        assert.equal(resolveBinding(timer, 'origin.x'), -100)
+        assert.equal(resolveBinding(timer, 'origin.x'), 0)
     })
 
     test("world is tab-local: resolved per observer, not the shared root", () => {

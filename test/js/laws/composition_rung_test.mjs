@@ -192,15 +192,16 @@ test("CI composition rung: an obstructed revision changes neither revision nor o
 
 test("CI rung — LOWER-LEVEL contract: an unavailable contribution preserves observation", () => {
     const scheduler = buildWorld()
-    const host = scheduler.hotSwapChild("host", fork("host", "let A\nlet distance(A, origin) = 5\nlet A.z = 0"))
+    const host = scheduler.hotSwapChild("host", fork("host", "let A\nlet O\nlet distance(A, O) = 5\nlet A.z = 0"))
     drive(scheduler, { maxTicks: 60 })
     const A = byName(scheduler, "A")
     assert.equal(host.error ?? null, null, "the construction itself is supported")
 
-    // The PLACEMENT reading is the production seam `point_state` wires: unavailable here, so
-    // the obligations' sets cannot be formed. (D058)
+    // An explicit being reference is required geometry; numeric coordinates need no placement.
+    // (id:world-coordinate-phase-3)
+    const O = byName(scheduler, "O")
     const blind = bindWorld((id) => scheduler.registry.get(id), {
-        writerId: A.id, live: (f) => frameWorldTransform(f), placement: () => null,
+        writerId: A.id, live: (f) => f === O ? null : frameWorldTransform(f), placement: (f) => worldTransform(f),
     })
     const view = constraintsView(A.id, scheduler.laws.active(), blind)
     const state = stateOf({ at: frameWorldTransform(A).position,

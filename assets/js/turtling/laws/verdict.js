@@ -525,7 +525,8 @@ export function applyLaw(spec, pump, world) {
         feature: spec.feature,
         endpoints: references,
         scope: spec.observer.id,
-        frame: spec.observer.id,
+        frame: row.reference === 'placement' && spec.observer.installation === true
+            ? spec.observer.receiver.id : spec.observer.id,
         // A proposal derives its inputs from the BOUND CANDIDATE: a supplied term is the
         // authority, carrying its own frame, references and payload. The loose fields are
         // only the road a declaration takes to BUILD one. (id:laws-payload-boundary, D058)

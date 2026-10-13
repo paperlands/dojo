@@ -80,7 +80,7 @@ function midpointResponder(record, policy) {
 const seat = (scheduler) => {
     scheduler.hotSwapChild("a", fork("a", "wait 1\nwait 1", at(0)))
     scheduler.hotSwapChild("b", fork("b", "wait 1\nwait 1", at(10)))
-    scheduler.hotSwapChild("m", fork("m", "goto 3 0\nwait 1", at(5)))
+    scheduler.hotSwapChild("m", fork("m", "goto 8 0\nwait 1", at(5)))
 }
 
 test("L1 component hand-first: one commit moves the whole relation", () => {

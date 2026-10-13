@@ -21,8 +21,8 @@ const familyOf = (name) =>
 
 const row = (name, kind, guard, bounds) => ({ family: familyOf(name), kind, guard, bounds })
 
-// The axis is part of a coordinate law's meaning, so it carries its own domain
-// guard: a framed coordinate names one of the declaring frame's own axes.
+// A numeric coordinate names a world axis; the axis itself is part of the obligation.
+// (id:world-coordinate-phase-3)
 export const axisOk = (axis) => AXES.includes(axis)
 
 // The authored rows ARE the relation metadata; the reads (`sync`, `x`, …) are the only

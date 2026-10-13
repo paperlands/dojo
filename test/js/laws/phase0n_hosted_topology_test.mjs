@@ -10,12 +10,12 @@ import { SE3 } from "../../../assets/js/turtling/se3.js"
 
 // b names a as its declaring frame; its ink is deposited in a's channel.
 // The host steps between births, so the siblings have distinct inertial origins.
-const source = `jmpto 10 0
+const source = `jmp 10
 as a do
   wait 0.001
   fw 1
 end
-jmpto 15 0
+jmp 5
 as b a do
   wait 0.001
   fw 2

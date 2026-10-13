@@ -5,10 +5,10 @@ import { buildWorld, fork, at, nz } from "./harness.mjs"
 import { frameWorldTransform, worldTransform, takeSync } from "../../../assets/js/turtling/scheduler.js"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
 
-const source = (rotated = false) => `${rotated ? "rt 90\n" : ""}jmpto 5 0
+const source = (rotated = false) => `${rotated ? "rt 90\n" : ""}jmpto 35 7
 as b do
 end
-jmpto 0 0
+jmpto 30 7
 as a b do
   fw 1
   fw 2

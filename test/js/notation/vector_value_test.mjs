@@ -193,7 +193,8 @@ describe("singleton admission — the bracket, and a narrow scalar consumer", ()
         assert.deepEqual(points("goto [1,] [2,] [3,]"), points("goto 1 2 3"))
         // A longer vector is not a scalar, and is not spread.
         assert.equal(points("fw [7,8]"), null)
-        assert.equal(points("goto [1,2,3]"), null)
+        // A coordinate value is a valid target; the command consumes its components.
+        assert.deepEqual(points("goto [1,2,3]"), points("goto 1 2 3"))
     })
 
     test("a malformed vector refuses as the vector — never as an unanswered scalar", () => {

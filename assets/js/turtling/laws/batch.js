@@ -9,7 +9,11 @@
 // *current source participation* — never a flag that outlives the declaration that
 // granted it. (id:laws-decl-ownership, id:laws-ordered-birth)
 
-export const isDeclaration = (node) => node?.type === 'Existence'
+// A `let` introduces its name in its declaring scope — whether bare existence or a
+// value declaration. A `let A = (x,y)` therefore shadows a visible outer namesake
+// (D061: a quoted lookup re-resolves in the receiving scope); a `let A.x = …` law
+// still revises the visible identity. (id:laws-names, id:laws-decl-frame)
+export const isDeclaration = (node) => node?.type === 'Existence' || node?.type === 'Declaration'
 
 export function deriveBatch(body = []) {
     const declared = new Set()

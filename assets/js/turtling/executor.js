@@ -9,6 +9,7 @@ import { recenterPose } from "./view.js"
 import { createStroke, extend as strokeExtend, flush as strokeFlush, fill as strokeFill } from "./stroke.js"
 import { matchPattern } from "./match.js"
 import { toSpace } from "./space.js"
+import { storageSpace } from "./localize.js"
 import { isNumericLiteral } from "./mafs/number.js"
 import { driveOf } from "./laws/authored.js"
 import { reactiveReading } from "./laws/reactive.js"
@@ -81,6 +82,76 @@ function chargeReductions(state) {
 
 const holeDomain = (holes, i) => holes?.[i] ?? "measure"
 
+
+// One callable signature, read in one place: a "target" callable takes its whole
+// argument list as ONE coordinate target. (id:world-coordinate-phase-3)
+const isTargetCall = (spec) => spec?.holes?.length === 1 && spec.holes[0] === "target"
+
+// A singleton selects its sole component — only when that component is PRESENT and
+// finite. A hole, a null or a non-number is structure, not a scalar. (id:notation-array-growth)
+const unwrapSingleton = (v) => Array.isArray(v) && v.length === 1 && (0 in v) && !Array.isArray(v[0]) &&
+    conditionOf(v[0]) === FINITE ? v[0] : v
+
+// A malformed point refuses at the same measure boundary a scalar hole uses.
+const refusePoint = (value, state) => measure(value, { as: consumerOf(state), expr: "coordinate target" })
+
+// A SUPPLIED coordinate value is validated BEFORE any default: an empty value, a hole,
+// a null or a non-number is malformed structure, never a repairable omission.
+function validateVector(v, state) {
+    if (v.length === 0) return refusePoint(v, state)
+    const n = Math.min(v.length, 3)
+    for (let i = 0; i < n; i++) {
+        if (!(i in v) || v[i] == null || conditionOf(v[i]) !== FINITE) return refusePoint(v, state)
+    }
+    return v
+}
+
+// Complete only PERMITTED omissions: x/y are the command's zero, z is the sampled world
+// height; values past the third are the value's defined projection. Storage is not this
+// function's business. (id:world-coordinate-phase-3)
+function completePoint(components, cursorHeight, state) {
+    const x = components[0] ?? 0, y = components[1] ?? 0, z = components[2] ?? cursorHeight
+    const point = [x, y, z]
+    const bad = point.find((c) => conditionOf(c) !== FINITE)
+    return bad === undefined ? point : refusePoint(bad, state)
+}
+
+// A target spelling looks up a location; a bound being reads by identity. Both wait at
+// the existing facet door, retrying only projection. (id:world-coordinate-phase-3)
+function* projectPosition(subject, state) {
+    while (true) {
+        try {
+            const evaluator = state.deps.mathEvaluator
+            const at = isBeing(subject)
+                ? evaluator?.resolveSubjectFacet?.(subject, "position")
+                : evaluator?.resolveExternal?.(`${subject}.position`)
+            return Array.isArray(at) && at.length === 3 ? [...at] : at
+        } catch (error) {
+            if (!error.blocked) throw error
+            yield { type: 'blocked', target: error.blockedFrame ?? null }
+        }
+    }
+}
+
+// One being or spelling → its location (possibly waiting); one coordinate value → its
+// validated components; scalar components → the point. A point mixed with components is
+// refused, never discarded. (id:world-coordinate-phase-3)
+function* bindTarget(raw, state, cursorHeight) {
+    const parts = raw.map(unwrapSingleton)
+    if (parts.length === 1 && (isBeing(parts[0]) || typeof parts[0] === 'string')) return yield* projectPosition(parts[0], state)
+    if (parts.length === 1 && Array.isArray(parts[0])) return completePoint(validateVector(parts[0], state), cursorHeight, state)
+    if (parts.some((v) => isBeing(v) || Array.isArray(v))) {
+        throw new Error("a coordinate target takes one point or its components, not both")
+    }
+    return completePoint(parts, cursorHeight, state)
+}
+
+// Only a DISPLAY consumer reads a bound being as its LOCATION. A "word" hole is not
+// enough: a colour or a shout message takes the value unchanged. (id:world-coordinate-phase-3)
+function* bindDisplay(value, hole, display, state) {
+    if (!display || hole !== "word" || !isBeing(value)) return value
+    return (yield* projectPosition(value, state)) ?? value
+}
 // A bare identifier argument that names a being binds the being itself; a quoted
 // spelling stays a deliberate lookup and a local scalar keeps its value. (P2)
 function bareSubjectOf(child, scope, state) {
@@ -207,6 +278,9 @@ export function* execute(ast, deps, opts = {}) {
     // Pass-local stroke; always flushed before execute ends.
     const stroke = createStroke()
 
+    // A standalone execution owns world storage; seated frames supply their own basis.
+    // (id:world-coordinate-phase-2)
+    deps.space ??= storageSpace(SE3.identity)
     state.deps = deps
     if (opts.actorState) state.loopCounter = opts.loopCounter ?? state.loopCounter
 
@@ -220,12 +294,12 @@ export function* execute(ast, deps, opts = {}) {
     // the axis, and the difference a user wants is just `time`. (id:host-beat)
     ec['time'] = () => state.elapsedTime / 1000
     ec['birthtime'] = () => state.birthtime / 1000
-    // A place reads its own coordinate, exactly. No floor, no decimal snapping: a
-    // figure must be able to see the ink it just laid down. What the eye sees is the
-    // display's business, and it never feeds back. (ruling 3)
-    ec['x'] = () => state.transform.position[0]
-    ec['y'] = () => state.transform.position[1]
-    ec['z'] = () => state.transform.position[2]
+    // World position of the private continuation; published participant geometry has its own owner.
+    // (id:world-coordinate-phase-2-reads)
+    const cursor = () => state.deps.space.sample().toWorldPoint(state.transform.position)
+    ec['x'] = () => cursor()[0]
+    ec['y'] = () => cursor()[1]
+    ec['z'] = () => cursor()[2]
     ec['count'] = () => state.loopCounter
 
     try {
@@ -499,30 +573,40 @@ function* walkBody(body, scope, state, stroke) {
             // Resolve the recipient FIRST: a user definition brings its own contract.
             // The holes (arity + kinds) follow the resolved callable, not the spelling.
             const userFn = state.functions[scope[node.value] || node.value]
+            const spec = userFn ? null : contractOf(node.value)
             const holes = userFn
                 ? userFn.parameters.map(() => "measure")
-                : (contractOf(node.value)?.holes ?? [])
-            // The callable's own contract. Extra arguments were authored, so dropping
-            // them silently would answer a different question — refuse instead.
-            // (id:gw-grammar)
-            if (node.children.length > holes.length) {
-                throw new Error(`${node.value} takes ${holes.length} argument${holes.length === 1 ? "" : "s"}, but ${node.children.length} were given`)
+                : (spec?.holes ?? [])
+            // A "target" callable is a whole-call signature; the ONE reader is
+            // isTargetCall. Every other callable consumes one argument per hole.
+            const target = !userFn && isTargetCall(spec)
+            // A display consumer is named by its spec, never inferred from a hole kind.
+            const display = spec?.display === true
+            const maxArity = target ? 3 : holes.length
+            if (node.children.length > maxArity) {
+                throw new Error(`${node.value} takes ${maxArity} argument${maxArity === 1 ? "" : "s"}, but ${node.children.length} were given`)
             }
-            const args = []
+            // 1 · ACQUIRE — a name resolves to its value or retained being; a scalar hole
+            // still admits. A target argument is preserved for the binder.
+            // (id:world-coordinate-phase-3)
+            const raw = []
             for (let i = 0; i < node.children.length; i++) {
                 const child = node.children[i]
-                // A computed argument is already EVALUATED, but not thereby ADMITTED:
-                // it crosses the SAME admission as a source argument. Source or value,
-                // one authority decides whether the callable can use it.
-                // Already evaluated ≠ already admitted. (id:eval-relational)
+                const domain = target ? "measure" : holeDomain(holes, i)
                 if (child.type === 'Value') {
-                    args.push(admit(child.value, spellingOf(child.value), holeDomain(holes, i), state))
+                    raw.push(target ? child.value : admit(child.value, spellingOf(child.value), domain, state))
                     continue
                 }
-                // A bare name that names a being binds the being, not its spelling. (id:being-facets-p2-seam)
                 const being = bareSubjectOf(child, scope, state)
-                if (being) { args.push(being); continue }
-                args.push(yield* evalOrBlock(child.value, scope, state, holeDomain(holes, i)))
+                if (being) { raw.push(being); continue }
+                raw.push(yield* evalOrBlock(child.value, scope, state, domain))
+            }
+            // 2 · BIND — a display word shows a being's location, possibly waiting; a
+            // target is bound by callCommand, which owns the one basis sample.
+            // (id:world-coordinate-phase-3)
+            const args = target ? raw : []
+            if (!target) {
+                for (let i = 0; i < raw.length; i++) args.push(yield* bindDisplay(raw[i], holeDomain(holes, i), display, state))
             }
 
             // shout is a directive, not a COMMANDS entry — and not a user fn.
@@ -847,8 +931,20 @@ function* callCommand(name, args, state, stroke, baseRevision) {
     }
     state.commandCount++
 
+    // A coordinate consumer reads the world chart through ONE adapter: the receiver's
+    // own storage basis, sampled once for the forward and return conversions. The
+    // callable's own spec carries the coordinate contract, so aliases inherit it.
+    // (id:world-coordinate-phase-2)
+    const spec = contractOf(name)
+    const target = isTargetCall(spec)
+    const convert = target ? state.deps.space.sample() : null
+    // ONE sampled cursor: completion's world height and the return conversion share it,
+    // and the consumer's required value is acquired here, possibly waiting.
+    // (id:world-coordinate-phase-3)
+    const world = convert ? convert.toWorld(state.transform) : null
+    if (target) args = [yield* bindTarget(args, state, world.position[2])]
     const ctx = {
-        transform: state.transform,
+        transform: convert ? world : state.transform,
         style: state.style,
         random: state.random,
         as: consumerOf(state)
@@ -858,6 +954,17 @@ function* callCommand(name, args, state, stroke, baseRevision) {
     stroke.lastPos = [...state.transform.position]
 
     const result = cmd(ctx, ...args)
+    if (convert && result.transform) {
+        // 3 · PROPOSE — the command returned only the fields it changed, in world terms.
+        // Convert exactly those; an untouched component never takes a round trip.
+        // (id:world-coordinate-phase-3)
+        const patch = result.transform
+        result.transform = {
+            rotation: patch.rotation ? convert.toLocalRotation(patch.rotation) : state.transform.rotation,
+            position: patch.position ? convert.toLocalPoint(patch.position) : [...state.transform.position],
+        }
+        if (result.stroke === "extend") result.point = [...result.transform.position]
+    }
     // Admit the accumulated clock before a wait flushes ink or changes run state.
     if (result.effects) {
         for (const event of result.effects) {

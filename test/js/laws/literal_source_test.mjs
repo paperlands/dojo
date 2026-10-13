@@ -80,20 +80,19 @@ test("literal source 5: a known-supported hand request accepts, preserving the p
     assert.ok(Math.abs(Math.hypot(...at) - 5) < 1e-6, "A stays on the sphere about the framed origin")
 })
 
-test("literal source 6: the centre follows the frame's placement, not its live head", () => {
+test("literal source 6: a fixed numeric centre depends on neither owner placement nor its live head", () => {
     const scheduler = buildWorld()
     const host = scheduler.hotSwapChild("host", fork("host", "let A\nlet distance(A, origin) = 5"))
     drive(scheduler)
     const law = distanceLaws(scheduler)[0]
-    assert.deepEqual(validityDependents([law], [{ id: host.id, aspect: "placement" }]).map((l) => l.feature), ["distance"],
-        "the framed centre reads F's placement")
+    assert.deepEqual(validityDependents([law], [{ id: host.id, aspect: "placement" }]), [])
     assert.deepEqual(validityDependents([law], [{ id: host.id, aspect: "position" }]), [],
         "walking F's head is not a placement read")
     const turned = { position: [10, 0, 0], rotation: SE3.rotateLocal(SE3.identity(), { x: 0, y: 0, z: 1 }, 90).rotation }
     const moved = scheduler.hotSwapChild("host", fork("host", "let A\nlet distance(A, origin) = 5", turned))
     drive(scheduler)
     const at = frameWorldTransform(moved.children.get("A")).position
-    assert.ok(Math.abs(Math.hypot(at[0] - 10, at[1], at[2]) - 5) < 1e-6, "five from the moved placement origin")
+    assert.ok(Math.abs(Math.hypot(...at) - 5) < 1e-6, "five from the same world origin")
 })
 
 test("literal source 7: replacement, deletion and fresh play leave no stale obligation", () => {

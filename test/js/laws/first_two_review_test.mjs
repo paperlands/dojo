@@ -122,7 +122,7 @@ test("a position definition reaches the visible identity, it does not shadow it"
     drive(scheduler)
     const B = find(host, "B")
     assert.equal(B.children.get("V"), undefined, "no local namesake is minted")
-    assert.deepEqual(world(host.children.get("V")), [9, 0, 0], "the pin revised the visible V at B's origin")
+    assert.deepEqual(world(host.children.get("V")), [0, 0, 0], "the pin revised the visible V at the authored world point")
 })
 
 // R4 — the opening relationship silently becomes a scalar. (id:laws-first-two-spelling)

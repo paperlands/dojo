@@ -90,28 +90,18 @@ test("a record keeps what a SET cannot tell us: authored meaning and policy, not
     assert.equal(d.radius, undefined)
 })
 
-test("a pin whose GEOMETRY is unavailable keeps the fact and reports the missing geometry", () => {
-    // The record SURVIVES ({ pinned: true }) — but its set cannot be formed, so a view must
-    // not offer it as available geometry. A failed set counts, not merely a missing record.
-    // (id:laws-activation-order, D058)
+test("a fixed numeric pin's geometry needs no owner placement reader", () => {
     const pin = lawOf("position", { type: "position", references: ["A"], frame: "S", value: [1, 2, 3] }, [1, 2, 3])
     const blind = { worldOf: () => [1, 2, 3], placementOf: () => null, livePoseOf: () => null, writerId: "A" }
     const view = constraintsView("A", [pin], blind)
-    assert.equal(view.complete, false, "the set-bearing contribution failed")
-    assert.equal(view.unavailable.length, 1, "and it travels to the view")
-    assert.equal(view.unavailable[0].reason, "unsupported")
-    assert.equal(view.constraints.length, 1, "while the pin FACT survives")
+    assert.equal(view.complete, true)
+    assert.deepEqual(view.unavailable, [])
+    assert.equal(view.constraints.length, 1)
     assert.equal(view.constraints[0].pinned, true)
-
+    assert.deepEqual(view.constraints[0].set.at, [1, 2, 3])
     const state = stateOf({ at: [1, 2, 3], unavailable: view.unavailable, constraints: view.constraints })
-    assert.equal(state.status, "previous", "not offered as available geometry")
-    assert.equal(state.refusal?.kind, "unsupported", "the refusal is named")
-    assert.equal(state.truth.pinned, true, "the pin is still a truth")
-
-    // And with the placement available, the same law is complete and offered.
-    const sighted = constraintsView("A", [pin], ctxOf())
-    assert.equal(sighted.complete, true)
-    assert.equal(sighted.unavailable.length, 0)
+    assert.equal(state.status, "accepted")
+    assert.equal(state.truth.pinned, true)
 })
 
 test("a candidate outcome vocabulary: stale, inapplicable and rejected are distinct", () => {

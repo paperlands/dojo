@@ -831,10 +831,11 @@ not a permission grant or the API consumed by hand continuation.
 :KEYWORDS: literal centre framed value distance origin coordinate address encoding tagged injective reversal radius revision parser signed negative zero
 :PATH: assets/js/turtling/laws/authored.js::inputPosition
 :END:
-=distance(A, origin)= and =distance(A, (x,y))= bind a framed value input within the
-distance relationship — solve participants {A}, validity {A position, F placement}, no
-position law and no synthetic identity. =parse.js= admits a live name, =origin= or a signed
-literal; the reach builds typed references; the address is a type-tagged, canonically
+Numeric point centres bind a world point value within the distance relationship — solve
+participants {A}, validity {A position}, no position law and no synthetic identity. Explicit
+reference constructions retain their stated birth/live dependencies. =parse.js= admits a live
+name or signed literal; the reach builds typed references;
+the address is a type-tagged, canonically
 ordered whole-key JSON (radius excluded), so a number and its string, a delimiter inside a
 token, or a framed value beside a live pair never collide. [[id:laws-distance-literal-address]].
 Fences: =test/js/laws/literal_centre_test.mjs=, =test/js/laws/literal_source_test.mjs= and
@@ -1098,6 +1099,39 @@ declines that extension for ordinary actors, preserving their cycle/instant cont
 Fence: =test/js/laws/situated_observation_test.mjs=; law refusal, offset cursor, movement,
 readiness and retired input are tested in a translated/rotated room with owner at x=500.
 Fence: =test/js/runtime/ambient_door_test.mjs=.
+
+World geometry: [[id:world-coordinate-foundation]] has cut over without an experiment flag.
+=POSITION= projects observation-owned world poses; own cursor coordinates project private
+continuation through =localize.js::storageSpace=. Point-consuming callable specs (=input:
+"point"=) share that sampled representation crossing across aliases. Installations use the
+retained receiver's storage basis. =ORIENTATION= remains reference-dependent.
+
+=laws/authored.js= interprets numeric =position=/=coordinate= payloads and literal centres
+directly as world geometry. No numeric basis reader or chart tag remains. Explicit references
+retain geometric dependencies; declaring scopes retain authority and lifetime. Angular laws
+retain a placement reference; construction re-placement checks the entire posed subtree against
+original obligations before publication.
+
+Fences: =test/js/motion/world_consumers_test.mjs=, =test/js/motion/world_read_command_test.mjs=,
+=test/js/laws/world_laws_test.mjs=, =test/js/motion/target_binding_test.mjs= (acquire → bind → propose). [[file:probe/world-coordinate/witness.mjs][The promoted witness]]
+checks the translated/rotated/pitched read→command scene; [[id:world-coordinate-census]] retains
+the pre-cutover evidence. Remaining work: observation composition, sealed argument lifetimes,
+and the accepted immutable own-birth-origin public surface.
+
+** grid and conformal geometry — domain, map, finite view
+:PROPERTIES:
+:ID: nav-grid-conformal
+:KEYWORDS: grid vector ruler lattice cube cuboid sphere plane conformal CGA inversion tangent angle curve topology infinity lifecycle
+:PATH: specs/compiler/grid-conformal-inquiry.org::grid-conformal-inquiry
+:END:
+Diagnosis: scalar admission, square GridHelper and rigid event representation restrict
+shape; endpoint-only transformation loses conformal curves. Candidate, not shipped:
+product domain → explicit geometry map → bounded finite view; existing owners keep
+ink versus current-object lifetime. Replay =node probe/grid-conformal/inquiry.mjs=;
+readings =probe/grid-conformal/readings.jsonl=. Physical extents/cell size and 3D skin
+selected. Law-priors extension: [[id:cga-expression-inquiry]] — held distance and held angle,
+conformal tangent action, tower operations and inherited admission; no separate CGA
+command vocabulary or lifetime. Proposed, not implemented.
 
 ** symbolic numerics performance — staged richness and backend boundaries
 :PROPERTIES:
@@ -1638,6 +1672,11 @@ on the axis (spawn and rewire: the parent's frontier; fresh seat: the root's), n
 to =now=. Consumed ticks — admission parks included — must not drift a frame's
 frontier past a sibling's and let it read an earlier instant. Fence:
 =test/js/runtime/scheduler_determinism_test.mjs= and phase0c.
+
+Writer overlap: =visitPostOrderMotionFirst= derives unfinished-branch priority;
+=orderExecution= preserves reached slot order across children and installations.
+Time outranks hierarchy; hierarchy resolves ties. Fences: =test/js/laws/writer_order_test.mjs=.
+Contract and two red witnesses: [[id:being-facets-writer-order]].
 
 =scheduler.atCut= reads instant closure; it is not the live horizon gate.
 =scheduler.isSettledThrough(H)= also sees due work, queued derived moves and pending
@@ -3340,5 +3379,8 @@ Pre-cut depth page ([[id:keep-cut]] III). Open-work is a fold, not this door.
 =scripts/ops/prodkeep.sh= SFTP-pulls =/data/keep.db= off Fly app =thedojo= into a
 timestamped, never-overwritten backup under =backups/keep/=, checkpointing the
 WAL first so one =cp= is the whole store ([[file:specs/weave/keep-access.org][keep-access]] =kb-10=). =--census= /
-=--clan= / =--list= read local backups with no network. Runbook: read a clan,
+=--clan= / =--list= read local backups with no network. =--book= renders the
+report book (one self-contained HTML); =--pdf= typesets the same walk — newest
+hand first, pandoc + XeTeX — from =keepbook.mjs --json=, one walk and two faces
+([[file:scripts/ops/keepbook-pdf.mjs][keepbook-pdf.mjs]]). Runbook: read a clan,
 extract images, restore — [[file:scripts/ops/prodkeep.org][scripts/ops/prodkeep.org]] =ops-prodkeep=.

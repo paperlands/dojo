@@ -68,31 +68,20 @@ describe("fw (forward)", () => {
 describe("goto", () => {
     const goTo = COMMANDS.get("goto")
 
-    test("sets absolute position in frame space", () => {
-        const result = goTo(mkCtx(identity()), 50, 75)
-        assert.ok(near(result.transform.position[0], 50))
-        assert.ok(near(result.transform.position[1], 75))
-    })
-
-    test("preserves z when not specified", () => {
-        const t = { ...identity(), position: [0, 0, 42] }
-        const result = goTo(mkCtx(t), 10, 20)
-        assert.ok(near(result.transform.position[2], 42))
-    })
-
-    test("sets z when specified", () => {
-        const result = goTo(mkCtx(identity()), 10, 20, 30)
-        assert.ok(near(result.transform.position[2], 30))
+    test("proposes the bound world target as a position patch", () => {
+        const result = goTo(mkCtx(identity()), [50, 75, 0])
+        assert.deepEqual(result.transform.position, [50, 75, 0])
+        assert.deepEqual(Object.keys(result.transform), ["position"], "only the proposed field")
     })
 
     test("extends stroke when pen is down", () => {
-        const result = goTo(mkCtx(identity()), 50, 50)
+        const result = goTo(mkCtx(identity()), [50, 50, 0])
         assert.equal(result.stroke, "extend")
         assert.deepEqual(result.point, result.transform.position)
     })
 
     test("breaks stroke when pen is up", () => {
-        const result = goTo(mkCtx(identity(), { down: false }), 50, 50)
+        const result = goTo(mkCtx(identity(), { down: false }), [50, 50, 0])
         assert.equal(result.stroke, "break")
     })
 })
@@ -101,10 +90,10 @@ describe("jmpto", () => {
     const jmpto = COMMANDS.get("jmpto")
     const goTo = COMMANDS.get("goto")
 
-    test("moves to same frame-local spot as goto, without drawing", () => {
+    test("moves to the same bound target as goto, without drawing", () => {
         const ctx = mkCtx(identity())
-        const jump = jmpto(ctx, 100, 200)
-        const walk = goTo(ctx, 100, 200)
+        const jump = jmpto(ctx, [100, 200, 0])
+        const walk = goTo(ctx, [100, 200, 0])
         assert.deepEqual(jump.transform.position, walk.transform.position)
         assert.equal(jump.stroke, "break")
     })
@@ -225,22 +214,22 @@ describe("faceto", () => {
 
     test("face along +x direction", () => {
         const t = { ...identity(), position: [0, 0, 0] }
-        const result = faceto(mkCtx(t), 100, 0)
-        const m = fw(mkCtx(result.transform), 50)
+        const result = faceto(mkCtx(t), [100, 0, 0])
+        const m = fw(mkCtx({ ...identity(), rotation: result.transform.rotation }), 50)
         assert.ok(near(m.transform.position[0], 50))
         assert.ok(near(m.transform.position[1], 0))
     })
 
     test("face along +y direction", () => {
-        const result = faceto(mkCtx(identity()), 0, 100)
-        const m = fw(mkCtx(result.transform), 50)
+        const result = faceto(mkCtx(identity()), [0, 100, 0])
+        const m = fw(mkCtx({ ...identity(), rotation: result.transform.rotation }), 50)
         assert.ok(near(m.transform.position[0], 0))
         assert.ok(near(m.transform.position[1], 50))
     })
 
     test("face along -x direction", () => {
-        const result = faceto(mkCtx(identity()), -100, 0)
-        const m = fw(mkCtx(result.transform), 50)
+        const result = faceto(mkCtx(identity()), [-100, 0, 0])
+        const m = fw(mkCtx({ ...identity(), rotation: result.transform.rotation }), 50)
         assert.ok(near(m.transform.position[0], -50))
         assert.ok(near(m.transform.position[1], 0))
     })
@@ -248,22 +237,21 @@ describe("faceto", () => {
     test("aims in birth-frame coords from an offset pose", () => {
         // Standing at (10, 0); faceto 10 100 faces +y in the same frame as goto.
         const t = { ...identity(), position: [10, 0, 0] }
-        const result = faceto(mkCtx(t), 10, 100)
-        const m = fw(mkCtx(result.transform), 50)
+        const result = faceto(mkCtx(t), [10, 100, 0])
+        const m = fw(mkCtx({ ...t, rotation: result.transform.rotation }), 50)
         assert.ok(near(m.transform.position[0], 10))
         assert.ok(near(m.transform.position[1], 50))
     })
 
     test("no-op when target is at current position", () => {
-        const result = faceto(mkCtx(identity()), 0, 0, 0)
+        const result = faceto(mkCtx(identity()), [0, 0, 0])
         assert.equal(result.transform, undefined)
     })
 
-    test("keeps position, sets local rotation only", () => {
-        const t = { ...identity(), position: [0, 0, 42] }
-        const result = faceto(mkCtx(t), 100, 0)
+    test("proposes only the rotation patch, never a displacement", () => {
+        const result = faceto(mkCtx(identity()), [100, 0, 0])
         assert.ok(result.transform.rotation)
-        assert.ok(near(result.transform.position[2], 42))
+        assert.equal(result.transform.position, undefined, "an aim proposes no displacement")
         assert.equal(result.world, undefined)
     })
 })

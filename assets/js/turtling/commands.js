@@ -4,8 +4,8 @@
 // Delta = { transform?, style?, stroke?, point?, effects?, limits? }
 //
 // pose / stroke+point / effects.
-// Place (goto/jmpto) and aim (faceto): frame-local — same space as home/fw,
-// coords in the ambient's birth frame.
+// Point consumers use world geometry; body-relative motion keeps its explicit reference.
+// (id:world-coordinate-phase-2)
 
 import { Versor } from "./mafs/versors.js"
 import { SE3, AXIS_X, AXIS_Y, AXIS_Z } from "./se3.js"
@@ -48,25 +48,19 @@ function fw(ctx, distance = 0) {
     return { transform, stroke: "break" }
 }
 
-// Absolute in the frame that created this ambient (same space as home).
-function goTo(ctx, x = 0, y = 0, z = null) {
-    const pos = [x, y, z ?? ctx.transform.position[2]]
-    refuseBadPose(ctx, pos, "goto position")
-    const transform = { rotation: ctx.transform.rotation, position: pos }
-    if (ctx.style.down) {
-        return { transform, stroke: "extend", point: pos }
-    }
-    return { transform, stroke: "break" }
+// A coordinate target is ONE completed world point, bound by the invocation. The command
+// proposes only what it changes; the executor owns the storage conversion.
+// (id:world-coordinate-phase-3)
+function place(ctx, target, stroke) {
+    refuseBadPose(ctx, target, "position")
+    const patch = { transform: { position: target } }
+    if (stroke === "extend" && ctx.style.down) return { ...patch, stroke: "extend", point: target }
+    return { ...patch, stroke: "break" }
 }
 
-function jmpto(ctx, x = 0, y = 0, z = null) {
-    const pos = [x, y, z ?? ctx.transform.position[2]]
-    refuseBadPose(ctx, pos, "jmpto position")
-    return {
-        transform: { rotation: ctx.transform.rotation, position: pos },
-        stroke: "break"
-    }
-}
+function goTo(ctx, target) { return place(ctx, target, "extend") }
+
+function jmpto(ctx, target) { return place(ctx, target, "break") }
 
 function jmp(ctx, distance = 0) {
     const t = ctx.transform
@@ -108,10 +102,9 @@ function left(ctx, angle = 0) {
 
 // --- Absolute orientation ---
 
-function faceto(ctx, x = 0, y = 0, z = null) {
-    // Aim at a birth-frame point — same coordinate noun as goto/jmpto/home.
+function faceto(ctx, target) {
+    // Aim at a world point; home remains an explicit own-reference operation.
     const pos = ctx.transform.position
-    const target = [x, y, z ?? pos[2]]
     // The displacement is admitted BEFORE it is asked: a step whose arithmetic
     // overflowed is not taken, and the author is told. (phase 1: valid resulting state)
     refuseBadPose(ctx, [target[0] - pos[0], target[1] - pos[1], target[2] - pos[2]], "faceto direction")
@@ -128,9 +121,7 @@ function faceto(ctx, x = 0, y = 0, z = null) {
     const pitchRotation = Versor.fromAxisAngle(AXIS_Y, pitchAngle)
     const rotation = yawRotation.multiply(pitchRotation)
 
-    return {
-        transform: { rotation, position: pos }
-    }
+    return { transform: { rotation } }
 }
 
 // --- Event-producing commands ---
@@ -270,7 +261,14 @@ function limitMessage(ctx, limit = 8192) {
 // and a surplus argument is refused — never silently dropped. (id:gw-grammar)
 //
 // Hole kinds: "word" a name costume; "measure" any scalar reading; "finite" a finite number.
-const def = (fn, names, ...holes) => ({ fn, names, holes: Object.freeze(holes) })
+// A spec is ONE per callable, shared across every alias. A trailing options object
+// carries the callable's consumer contract — a coordinate target, or `display: true`
+// (a bound being reads as its location) — so an alias inherits it with no second name
+// list. (id:world-coordinate-phase-2)
+const def = (fn, names, ...holes) => {
+    const opts = holes.length && typeof holes[holes.length - 1] === 'object' ? holes.pop() : null
+    return { fn, names, holes: Object.freeze(holes), ...(opts ?? {}) }
+}
 
 const SPECS = [
     def(fw, ["fw", "forward", "fd"], "finite"),
@@ -284,10 +282,10 @@ const SPECS = [
     def(jmp, ["jmp", "jump"], "finite"),
     def(bold, ["bold"], "finite"),
     def(grid, ["grid"], "finite", "finite"),
-    def(goTo, ["goto"], "finite", "finite", "finite"),
-    def(faceto, ["faceto"], "finite", "finite", "finite"),
-    def(jmpto, ["jmpto", "jumpto"], "finite", "finite", "finite"),
-    def(label, ["label"], "word", "finite"),
+    def(goTo, ["goto"], "target"),
+    def(faceto, ["faceto"], "target"),
+    def(jmpto, ["jmpto", "jumpto"], "target"),
+    def(label, ["label"], "word", "finite", { display: true }),
     def(erase, ["erase"]),
     def(home, ["home"]),
     def(fill, ["fill"]),
@@ -309,6 +307,7 @@ for (const spec of SPECS) {
     }
 }
 export const contractOf = (name) => CONTRACTS.get(name)
+
 
 // Default style — used by executor to initialize context
 export const DEFAULT_STYLE = Object.freeze({

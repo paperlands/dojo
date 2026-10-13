@@ -11,7 +11,7 @@
 // Only the declared symmetries are canonicalized. Nothing algebraic.
 
 import { kindOf, guardsOf, boundsOf } from "./expression.js"
-import { addressShape, symmetricOf, normalizeExpression, isLiveInput, inputFrames, payloadOf } from "./authored.js"
+import { AUTHORED, addressShape, symmetricOf, normalizeExpression, isLiveInput, inputFrames, payloadOf } from "./authored.js"
 const FEATURES = {
     // coincidence is not an authored runtime law; its address is still an unordered pair.
     coincidence: { address: (endpoints) => [...endpoints], symmetric: true },
@@ -28,6 +28,7 @@ const tagged = (x) => {
     if (typeof x === 'number') return ["num", Object.is(x, -0) ? 0 : x]
     if (typeof x === 'string') return ["str", x]
     if (x.frame !== undefined) return [x.relative ? "relative" : "framed", tagged(x.frame), (x.value ?? []).map((c) => (Object.is(c, -0) ? 0 : c))]
+    if (Array.isArray(x.value)) return ["point", x.value.map((c) => (Object.is(c, -0) ? 0 : c))]
     return ["json", JSON.stringify(x)]
 }
 
@@ -67,7 +68,7 @@ export function bindLaw({ feature, endpoints, scope, frame, predicate, owner = n
     // framed frames are retraction deps, not endpoints. (id:laws-distance-literal-address)
     const references = Array.isArray(term?.references) ? term.references : endpoints
     const liveEnds = references.filter(isLiveInput)
-    const boundFrame = term?.frame ?? frame
+    const boundFrame = AUTHORED[feature]?.reference ? (term?.frame ?? frame) : frame
     const boundAxis = term?.axis ?? axis
     const boundPredicate = term == null ? predicate : (payloadOf(feature, term) ?? predicate)
     const law = { feature, relation: feature, endpoints: Object.freeze([...liveEnds]), scope,

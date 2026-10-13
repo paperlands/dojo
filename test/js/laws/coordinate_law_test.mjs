@@ -48,17 +48,14 @@ test("a coordinate law reads the declaring frame's own axis", () => {
     assert.deepEqual(pos(A), before, "a refused motion does not publish")
 })
 
-test("a rotated declaring frame rotates its axis plane", () => {
+test("a rotated declaring frame does not rotate a world-axis plane", () => {
     const origin = { position: [0, 0, 0], rotation: Versor.fromAxisAngle(AXIS_Z, 90) }
     const { scheduler, host, A } = seat(origin)
     scheduler.laws.apply(coord(host, A))
-
-    // local +y turns to world −x: the plane is x = 0.
-    assert.equal(move(scheduler, A, [1, 0, 0]).kind, "accept", "world x = 0 is on the plane")
-    assert.deepEqual(pos(A), [0, 1, 0])
-
+    assert.equal(move(scheduler, A, [0, 1, 0]).kind, "accept", "local +y lands on world y=0")
+    assert.deepEqual(pos(A), [-1, 0, 0])
     const before = pos(A)
-    assert.equal(move(scheduler, A, [0, 1, 0]).kind, "refuse", "world x = −1 is off it")
+    assert.equal(move(scheduler, A, [1, 0, 0]).kind, "refuse", "local +x lands off world y=0")
     assert.deepEqual(pos(A), before)
 })
 
@@ -75,14 +72,11 @@ test("a coordinate address is point, axis and frame; a revision replaces", () =>
     assert.equal(addressOf(coord(host, A, { predicate: 5 })), yLaw.address ?? addressOf(yLaw))
 })
 
-test("a missing frame is unresolved, and nothing publishes", () => {
+test("an absent placement reader does not make a numeric coordinate unresolved", () => {
     const { scheduler, host, A } = seat()
     scheduler.laws.apply(coord(host, A, { frame: "GHOST" }))
-    const before = pos(A)
-    const r = move(scheduler, A, [1, 0, 0])
-    assert.equal(r.kind, "unresolved")
-    assert.match(r.message, /missing bound reference/)
-    assert.deepEqual(pos(A), before)
+    assert.equal(move(scheduler, A, [1, 0, 0]).kind, "accept")
+    assert.deepEqual(pos(A), [1, 0, 0])
 })
 
 test("an unknown axis is unresolved, not skipped", () => {

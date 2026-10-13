@@ -49,8 +49,7 @@ test("S2: validity incidence reads placement frames and live positions, separate
     const { scheduler, A, B, C, host } = seat()
     const active = scheduler.laws.active()
     const byPlacement = validityDependents(active, [{ id: host.id, aspect: "placement" }])
-    assert.deepEqual(features(byPlacement), ["coordinate", "coordinate"], "both coordinate readings read F's placement")
-    assert.deepEqual(byPlacement.map((l) => l.endpoints[0]).sort(asc), [A.id, C.id].sort(asc))
+    assert.deepEqual(byPlacement, [], "world numeric coordinates do not read the owner's placement")
     assert.deepEqual(validityDependents(active, [{ id: host.id, aspect: "position" }]), [],
         "walking F's live head does not read F's placement")
     assert.deepEqual(features(validityDependents(active, [{ id: A.id, aspect: "position" }])), ["coordinate", "distance"],
@@ -76,7 +75,7 @@ test("S2: moving C leaves the A/B assembly untouched", () => {
     assert.deepEqual(pos(B), beforeB, "B did not move")
 })
 
-test("S2: an actual placement change re-derives both coordinate readings", () => {
+test("S2: new owner placement does not change the numeric coordinate meanings", () => {
     const scheduler = buildWorld()
     const identity = SE3.identity()
     const first = scheduler.hotSwapChild("host", fork("host", SOURCE, identity))
@@ -86,11 +85,9 @@ test("S2: an actual placement change re-derives both coordinate readings", () =>
     const turned = scheduler.hotSwapChild("host", fork("host", SOURCE, turnedPose))
     drive(scheduler)
     const A = turned.children.get("A"), B = turned.children.get("B"), C = turned.children.get("C")
-    assert.notDeepEqual(pos(A), beforeA, "the placement moved the reading")
-    // Each point keeps its own local reading in the turned frame.
-    const local = (pose, frame) => SE3.unapply(pose, frameWorldTransform(frame).position)
-    assert.ok(Math.abs(local(turnedPose, A)[0] - 1) < 1e-6, "A.x=1 in F")
-    assert.ok(Math.abs(local(turnedPose, C)[1] - 1) < 1e-6, "C.y=1 in F")
+    assert.ok(Math.abs(pos(A)[0] - 1) < 1e-6, "A.x=1 in world axes")
+    assert.ok(Math.abs(pos(C)[1] - 1) < 1e-6, "C.y=1 in world axes")
+    assert.equal(pos(A)[0], beforeA[0], "the constrained world coordinate did not change")
     // The two assemblies did not merge under the shared placement.
     assert.deepEqual(solveOf(scheduler, A), [A.id, B.id].sort(asc))
     assert.deepEqual(solveOf(scheduler, C), [C.id])

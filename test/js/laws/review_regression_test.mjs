@@ -114,7 +114,7 @@ test("P1.3 a child born through `as` revises to the walk's here, not double-coun
     assert.deepEqual(world(A), [20, 0, 0], "the being act lands at the parent, once")
 })
 
-test("P1.3 a pin is realized and checked in the frame it was authored in", () => {
+test("P1.3 a pin is realized and checked at its authored world point", () => {
     const scheduler = buildWorld({})
     const host = scheduler.hotSwapChild("host", fork("host", [
         "let A",
@@ -125,10 +125,10 @@ test("P1.3 a pin is realized and checked in the frame it was authored in", () =>
     ].join("\n")))
     drive(scheduler)
     const A = find(host, "A")
-    assert.deepEqual(world(A), [10, 0, 0], "the pin realized A at B's origin")
+    assert.deepEqual(world(A), [0, 0, 0], "the pin is the world point, not B's origin")
     const revision = scheduler.motionRevision
     const r = scheduler.requestMotion(A, { rotation: A.transform.deref().rotation,
-        position: [10, 0, 0] }, revision)
+        position: [...A.transform.deref().position] }, revision)
     assert.equal(r.kind, "accept", "a request that leaves A exactly on the pin is admitted")
 })
 

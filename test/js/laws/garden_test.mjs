@@ -90,12 +90,16 @@ const pos = (frame) => frameWorldTransform(frame).position.map((n) => +n.toFixed
 // each carrying a flower AT ITS OWN TIP; and an old fence that must stay untouched.
 const GARDEN = `
 def petal size do
+  petalFrom size x y
+end
+
+def petalFrom size startX startY do
   beColour random
   fw size
   let tip
   wait 0.5
   lt 90
-  fw tip.x
+  fw sqrt((tip.x - startX)^2 + (tip.y - startY)^2)
 end
 
 def flower size do

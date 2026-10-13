@@ -62,23 +62,22 @@ test("a term-only coordinate proposal commits from the bound term", () => {
 })
 
 // 3. A term whose frame is TRANSLATED away from the ownership scope proposes in the FRAME.
-test("a translated term frame, distinct from the ownership scope, is the one proposed", () => {
+test("a translated declaration context does not reinterpret the bound world point", () => {
     const s = stub([["T", [0, 0, 0]], ["O", [0, 0, 0]], ["F", [10, 0, 0]]])
     const term = { type: "position", references: ["T"], frame: "F", axis: null, value: [2, 0, 0], source: null }
     const out = applyLaw({ feature: "position", target: s.frames.get("T"), observer: s.frames.get("O"), owner: null, term }, s.pump, s.world)
     assert.equal(out.kind, "commit", out.message ?? "the term's frame places the point")
-    // F at +10x, payload [2,0,0] → world [12,0,0]; T at origin, so its local pose is [12,0,0].
-    assert.ok(near(poseOf(out), [12, 0, 0]), `placed through F, got ${JSON.stringify(poseOf(out))}`)
+    assert.ok(near(poseOf(out), [2, 0, 0]), `world payload, got ${JSON.stringify(poseOf(out))}`)
 })
 
 // 4. A term whose frame is ROTATED proposes through the rotated frame.
-test("a rotated term frame is the one proposed", () => {
+test("a rotated declaration context does not reinterpret the bound world point", () => {
     // F rotated 90° about z: its local +x points to world +y.
     const s = stub([["T", [0, 0, 0]], ["O", [0, 0, 0]], ["F", [0, 0, 0], Versor.raw(Math.SQRT1_2, 0, 0, Math.SQRT1_2)]])
     const term = { type: "position", references: ["T"], frame: "F", axis: null, value: [2, 0, 0], source: null }
     const out = applyLaw({ feature: "position", target: s.frames.get("T"), observer: s.frames.get("O"), owner: null, term }, s.pump, s.world)
     assert.equal(out.kind, "commit", out.message ?? "the term's frame places the point")
-    assert.ok(near(poseOf(out), [0, 2, 0]), `placed through the rotated F, got ${JSON.stringify(poseOf(out))}`)
+    assert.ok(near(poseOf(out), [2, 0, 0]), `world payload, got ${JSON.stringify(poseOf(out))}`)
 })
 
 // 5. A supplied term preserves its references at BINDING. This is a binding-level control —

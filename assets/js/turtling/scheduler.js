@@ -8,13 +8,14 @@ import { report, notice as noticeWire } from "./report.js"
 import { matchPattern } from "./match.js"
 import { execute, createActorState, headEventOf } from "./executor.js"
 import { deriveBatch, exposed, freePoint } from "./laws/batch.js"
-import { createLawStore } from "./laws/replacement.js"
+import { addressOf, createLawStore } from "./laws/replacement.js"
 import { lawViolation, brokenLaw, heldFrame, continueLaws, conflictMessage, affectedMembers, plainPoses, applyLaw } from "./laws/verdict.js"
 import { predicateOk, kindOf } from "./laws/expression.js"
 import { driveOf, withPayload } from "./laws/authored.js"
 import { measure, headingOf, elevationOf } from "./laws/relations.js"
 import { createReadouts, same as sameValue } from "./laws/readout.js"
 import { SE3 } from "./se3.js"
+import { storageSpace } from "./localize.js"
 import { keyedSeed, keyedStream } from "./mafs/keyed_stream.js"
 import { parseMemo } from "./mafs/parse_memo.js"
 import { chargeInk, woundInk, enforceResidency, resetInk, createStock } from "./ledger.js"
@@ -37,6 +38,13 @@ function lensOutput(frame, event) {
 
 // --- Tree walk ---
 
+// A reached slot has one sibling order across geometric children and installations.
+// Replacement keeps that order; it confers no publication rights. (id:being-facets-writer-order)
+function orderExecution(parent, child, prior = null) {
+    child.executionOrder = prior?.executionOrder ??
+        (parent.nextExecutionOrder = (parent.nextExecutionOrder ?? 0) + 1)
+}
+
 function visitPostOrder(ctx, fn) {
     for (const child of ctx.children.values()) {
         visitPostOrder(child, fn)
@@ -44,17 +52,22 @@ function visitPostOrder(ctx, fn) {
     fn(ctx)
 }
 
-// An admitted writer owns the rest of its logical instant regardless of sibling
-// registration order. Other park causes keep the scheduler's original traversal.
+// An unfinished instant owns its whole execution branch, including nested installations.
+// Otherwise retain post-order hierarchy and reached sibling order. (id:being-facets-writer-order)
 function visitPostOrderMotionFirst(ctx, fn) {
-    const children = [...ctx.children.values()]
-    // Installations own execution but not geometry: they join the ADVANCE frontier here,
-    // while findFrame, traversal and exposure search ctx.children and never see them.
-    // (id:being-facets-p4-sequence)
-    for (const record of ctx.installations?.values() ?? []) children.push(record.frame)
-    children.sort((a, b) => Number(!!b.midInstant) - Number(!!a.midInstant))
-    for (const child of children) visitPostOrderMotionFirst(child, fn)
-    fn(ctx)
+    const order = (frame) => {
+        const children = [...frame.children.values()]
+        for (const record of frame.installations?.values() ?? []) children.push(record.frame)
+        if (frame.installations?.size) children.sort((a, b) => a.executionOrder - b.executionOrder)
+        const branches = children.map(order)
+        branches.sort((a, b) => Number(b.open) - Number(a.open))
+        return { frame, branches, open: !!frame.midInstant || branches.some((branch) => branch.open) }
+    }
+    const visit = ({ frame, branches }) => {
+        for (const branch of branches) visit(branch)
+        fn(frame)
+    }
+    visit(order(ctx))
 }
 
 function terminateAmbient(ctx) {
@@ -626,8 +639,8 @@ function resolveFacet(frame, target, reference, property, args) {
         }
     }
     if (frame.suspension?.kind === 'dataflow') clearSuspension(frame)
-    // A sibling reads in the room's frame so faceto/goto compose; a containing ancestor
-    // reads world-space. `world` is always world-space; `origin` stays observer-relative.
+    // Only orientation asks for a reader reference; position always projects world geometry.
+    // (id:world-coordinate-phase-2-reads)
     const isWorld = reference === 'world'
     const isOrigin = reference === 'origin'
     const contains = target !== frame && isAncestorOf(target, frame)
@@ -731,12 +744,17 @@ function poseInObserverBirth(target, observer) {
     return SE3.compose(SE3.invert(birth), world)
 }
 
-// Spatial properties — projections of a pose, world-space unless ground is set.
-const SPATIAL = {
+// Position projections — a pose's coordinates. They follow the one world chart.
+const POSITION = {
     x: (t) => t.position[0],
     y: (t) => t.position[1],
     z: (t) => t.position[2],
     position: (t) => t.position,
+}
+
+// Orientation projections — a pose's facing. They answer the reader's reference-dependent
+// question, so they keep the ground convention. (id:world-coordinate-phase-2-reads)
+const ORIENTATION = {
     heading: (t) => headingFromQuaternion(t.rotation),
     elevation: (t) => elevationOf(t.rotation),
 }
@@ -758,9 +776,8 @@ const RELATIONAL = {
 }
 
 // Resolve a property on a target frame — spatial, temporal, relational, or fn.
-// `ground` = read in the observer's own frame, not shared world space: only a
-// sibling/stranger and `origin` (so goto composes). `world` and containing
-// ancestors answer world-space (prim-world, prim-position).
+// `ground` selects the reader reference for orientation only. Position is always world-valued.
+// (id:world-coordinate-phase-2-reads)
 // A reading outside its guard's domain is a wound, never a number. The domain is
 // the row's own, so a read and a law refuse the same values for the same reason.
 // Measured 2026-09-26: a heading with no compass bearing answered NaN, a program
@@ -775,6 +792,7 @@ function readable(property, value, target) {
     throw new Error(`No ${property}: ${target.name} answers outside its domain`)
 }
 
+
 function resolveProperty(target, property, args, observer, ground = false) {
     // Report the frame to the readout graph: while a derived node computes, this frame is
     // a reference it stands on. A no-op outside a compute. (id:laws-dependency-driven-place)
@@ -783,11 +801,14 @@ function resolveProperty(target, property, args, observer, ground = false) {
     // so an aim reading would invent an orientation nobody stated — a yaw through
     // `heading`, a level through `elevation`. Bearing to it is a real reading; its
     // own aim is not. (id:laws-affordance)
-    if (!args && (property === 'heading' || property === 'elevation') && freePoint(target)) {
+    if (!args && ORIENTATION[property] && freePoint(target)) {
         throw new Error(`No ${property}: ${target.name} is a free point`)
     }
-    if (!args && SPATIAL[property]) {
-        return readable(property, SPATIAL[property](ground
+    if (!args && POSITION[property]) {
+        return readable(property, POSITION[property](readWorldTransform(target, observer)), target)
+    }
+    if (!args && ORIENTATION[property]) {
+        return readable(property, ORIENTATION[property](ground
             ? poseInObserverBirth(target, observer) : readWorldTransform(target, observer)), target)
     }
     if (!args && TEMPORAL[property]) {
@@ -1047,6 +1068,7 @@ function closeDerivedDeps(deps, frame) {
     deps.mathEvaluator.beginObservation = (command) => command === 'faceto' && frame.installation !== true
         ? undefined : (metaRootFrame(frame)._configurationRevision ?? 0)
     deps.mathEvaluator.endObservation = () => {}
+    installStorage(deps, frame)
 }
 
 // The resolver NAMES what it reached: a dotted read records the frame it resolved, so
@@ -1066,6 +1088,16 @@ function ownsName(frame, name) {
         if (node.params?.has(name) || node.scalars?.has(name)) return true
     }
     return false
+}
+
+// The receiver's own storage basis, read live at each call. ONE adapter serves every
+// coordinate consumer, so no command does origin arithmetic. (id:world-coordinate-phase-2)
+function installStorage(deps, frame) {
+    deps.space = storageSpace(() => {
+        const receiver = motionDestination(frame, metaRootFrame(frame)._registry)
+        if (!receiver) throw new Error('the retained receiver has left the world')
+        return worldTransform(receiver)
+    })
 }
 
 function bindResolve(deps, frame) {
@@ -1115,6 +1147,7 @@ function bindResolve(deps, frame) {
         facet(being, property, args) { return resolveBeingFacet(frame, being, property, args) },
     }
     installAmbientDoor(deps.mathEvaluator, door)
+    installStorage(deps, frame)
 }
 
 // --- Child generator factory ---
@@ -1420,6 +1453,7 @@ function seatPlace(parent, name, pump, pose = null) {
     // The place's birth pose: the anchor a derived figure's pin marks. It stays
     // fixed while the walking head drifts. (id:laws-figure-protocol)
     place.birthPose = SE3.clone(pose ?? SE3.identity())
+    orderExecution(parent, place)
     parent.children.set(name, place)
     bumpTree(parent)
     wireChild(place, pump.createDeps(), [], pump.registry, { ast: [], functions: {} }, null, null)
@@ -1704,7 +1738,7 @@ function notifyAccepted(root) {
     }
 }
 
-function publish(writer, entries, registry, install = null, project = null) {
+function publish(writer, entries, registry, install = null, project = null, obligations) {
     // An installation's publication rights are checked at the BOUNDARY: exact occupant
     // identity and source membership — not merely target liveness. A retired writer cannot
     // publish, even when its targets stay live. (id:being-facets-p4-sequence)
@@ -1763,6 +1797,14 @@ function publish(writer, entries, registry, install = null, project = null) {
         const origin = SE3.compose(SE3.invert(base), chainTarget)
         if (!SE3.isValid(origin)) return { kind: 'unsupported', message: `'${frame.name}' states a pose whose origin is invalid` }
         prepared.push({ frame, stated: true, motion, origin })
+    }
+    if (!Array.isArray(obligations)) return { kind: 'unsupported', message: 'publication needs retained obligations' }
+    if (prepared.some(entry => entry.stated)) {
+        const check = lawViolation(obligations, null, registry, posedWorld(prepared))
+        if (check.status !== 'valid') return {
+            kind: check.status === 'violation' ? 'refuse' : 'unsupported',
+            message: check.status === 'violation' ? `the placement conflicts with the ${check.law.feature} law` : check.reason,
+        }
     }
     // A STATED pose is a POSITION, for EVERY frame — ambient or place, value or process. It
     // lands in the slot that means "where this thing is" (origin) and the frame's own motion
@@ -1862,8 +1904,8 @@ const verdictEntries = (attempt, verdict) =>
     [{ frame: attempt.destination, pose: verdict.pose, stated: verdict.stated === true },
         ...verdict.component.map((m) => ({ frame: m.frame, pose: m.pose, stated: verdict.stated === true }))]
 
-function commitTransaction(verdict, attempt, registry, project = null) {
-    return publish(attempt.writer, verdictEntries(attempt, verdict), registry, null, project)
+function commitTransaction(verdict, attempt, pump, project = null) {
+    return publish(attempt.writer, verdictEntries(attempt, verdict), pump.registry, null, project, pump.laws.active())
 }
 
 // The responder proposes; a separate check decides whether it is publishable.
@@ -2112,7 +2154,7 @@ function settleAttempt(ctx, pump, outcome) {
         const conflict = publish(ctx, outcome.poses, pump.registry, installOf(outcome, pump), () => {
             if (outcome.head) emitHead(outcome.head.frame, outcome.head.pose)
             for (const h of outcome.heads ?? []) emitHead(h.frame, h.pose)
-        })
+        }, publicationLaws(pump, outcome.law))
         if (conflict) {
             const kind = conflict.kind === 'unsupported' ? 'unsupported' : 'relation'
             record(kind, conflict.message)
@@ -2177,7 +2219,7 @@ function parkOnVerdict(ctx, verdict, pump, attempt) {
     })
     if (verdict.kind === 'fault') return woundMotion(ctx, verdict.message)
     if (verdict.kind === 'accept' && (writer.installation === true || verdict.component.length > 0)) {
-        const conflict = commitTransaction(verdict, attempt, pump.registry)
+        const conflict = commitTransaction(verdict, attempt, pump)
         if (conflict) return woundMotion(ctx, conflict.message)
     }
     openInstant(ctx)
@@ -2249,7 +2291,7 @@ function delayedMotion(ctx, value, pump) {
         else if (check?.status === 'violation') ruling = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
         if (ruling.kind === 'fault') return void woundMotion(ctx, ruling.message)
         if (ruling.kind === 'accept' && (ctx.installation === true || ruling.component.length > 0)) {
-            const conflict = commitTransaction(ruling, attempt, pump.registry)
+            const conflict = commitTransaction(ruling, attempt, pump)
             if (conflict) return void woundMotion(ctx, conflict.message)
         }
         suspend(ctx, 'admission', { seq, verdict: ruling })
@@ -2276,7 +2318,8 @@ function birth(ctx, value, _route, pump) {
         const base = SE3.compose(worldTransform(ctx), value.origin)
         const here = placesFigure ? SE3.compose(base, motion) : base
         const next = SE3.compose(SE3.invert(worldTransform(existing)), here)
-        const check = lawViolation(pump.laws.active(), new Map([[existing, next]]), pump.registry, lawWorld)
+        const check = placesFigure ? checkPlacement(existing, value.origin, pump)
+            : lawViolation(pump.laws.active(), new Map([[existing, next]]), pump.registry, lawWorld)
         const outcome = check.status === 'cannot-measure'
             ? { kind: 'unresolved', message: check.reason, span: value.owner }
             : check.status === 'violation'
@@ -2446,7 +2489,7 @@ function redrawDerivedLaw(move, pump) {
     if (outcome.kind !== 'commit') return
     publish(observer, outcome.poses, pump.registry, installOf(outcome, pump), () => {
         for (const h of outcome.heads ?? []) emitHead(h.frame, h.pose)
-    })
+    }, publicationLaws(pump, outcome.law))
 }
 
 
@@ -2502,7 +2545,9 @@ function law(ctx, value, _route, pump) {
     // descriptor is a VALUE, never a participant. (id:laws-distance-literal-address)
     const resolved = subjects ? subjects.map((s) => isBeing(s) ? { frame: s }
         : typeof s === 'string' ? { frame: findFrame(ctx, s, 'world') }
-        : { reference: { frame: ctx.id, value: [...(s.framed ?? s.relative)], ...(s.relative ? { relative: true } : {}) } }) : null
+        : { reference: s.relative
+            ? { frame: ctx.id, value: [...s.relative], relative: true }
+            : { value: [...s.framed] } }) : null
     const participants = resolved ? resolved.filter((r) => r.frame !== undefined).map((r) => r.frame) : null
     const references = resolved ? resolved.map((r) => r.reference ?? (r.frame ? r.frame.id : null)) : null
     if (participants?.some((f) => !f || f === ctx)) {
@@ -2664,6 +2709,34 @@ function supersedeFigure(ctx, value, pump) {
     pump.wake?.()
 }
 
+// Project the effective installation without mutating accepted geometry or storage caches.
+// (id:world-coordinate-phase-3)
+function posedWorld(entries) {
+    const edits = new Map(entries.map(entry => [entry.frame, entry])), bases = new Map()
+    const motion = f => {
+        const edit = edits.get(f)
+        return edit ? (edit.stated ? edit.motion : edit.pose) : f.transform.deref()
+    }
+    const basis = f => {
+        if (bases.has(f)) return bases.get(f)
+        const edit = edits.get(f)
+        const pose = f.parent ? SE3.compose(basis(f.parent),
+            edit?.stated ? edit.origin : (f.origin || motion(f.parent))) : SE3.identity()
+        bases.set(f, pose)
+        return pose
+    }
+    return { read: f => SE3.compose(basis(f), motion(f)), transform: basis }
+}
+function checkPlacement(frame, origin, pump) {
+    return lawViolation(pump.laws.active(), null, pump.registry, posedWorld([
+        { frame, stated: true, motion: frame.transform.deref(), origin },
+    ]))
+}
+function publicationLaws(pump, candidate) {
+    const active = pump.laws.active()
+    return candidate ? [...active.filter(law => addressOf(law) !== addressOf(candidate)), candidate] : active
+}
+
 function spawn(ctx, value, route, pump) {
     // A bound receiver is an IDENTITY, admitted before any parent mutation or slot
     // lookup: a nearer namesake or a coerced word cannot redirect it, and a refusal
@@ -2693,6 +2766,12 @@ function spawn(ctx, value, route, pump) {
     const deferredShouts = route.deferredShouts
 
     if (existing) {
+        if (value.profile === 'derived' && sameSeed(existing.seed, value)) {
+            const check = checkPlacement(existing, value.origin, pump)
+            if (check.status !== 'valid') return woundRelation(ctx,
+                check.status === 'violation' ? `the placement conflicts with the ${check.law.feature} law` : check.reason,
+                check.status === 'violation' ? 'relation' : 'unresolved')
+        }
         // A declared place keeps its placement: starting a body there does not
         // move it. An ordinary ambient keeps the origin refresh, so the
         // compositor still tracks the parent's pose. (id:laws-decl-join-repair)
@@ -2765,6 +2844,7 @@ function seatChild(ctx, value, pump, route, deferredShouts) {
     child.closed = value.closed === true
     // Register under the name BEFORE wiring: wireChild stamps the
     // address, whose last segment is this children-map key.
+    orderExecution(ctx, child)
     ctx.children.set(value.name, child)
     bumpTree(ctx)
     wireChild(child, deps, mailbox, pump.registry, value.code, batch, relationshipBatch, pump)
@@ -2841,6 +2921,7 @@ function spawnInstallation(ctx, value, route, pump, receiver) {
     child.receiver = receiver
     child.installation = true
     // Deliberately NOT ctx.children.set: the seat is not a discoverable child.
+    orderExecution(ctx, child, prior?.frame)
     wireChild(child, deps, mailbox, pump.registry, value.code, batch, relationshipBatch, pump)
     child.seed = seedOf(value)
     const record = { site, source: ctx, frame: child, receiver, run: child.run }
@@ -3273,7 +3354,7 @@ export function createScheduler(generator, opts = {}) {
                     return { kind: 'unresolved' }
                 targets.set(member, target)
             }
-            const conflict = commitTransaction(verdict, attempt, registry, () => {
+            const conflict = commitTransaction(verdict, attempt, pump, () => {
                 // A hand never repaints deposited ink. Its head uses the same
                 // declaring-frame projection as a program head (id:ft-d5-head).
                 for (const { frame: member, pose } of members) {
@@ -3283,7 +3364,10 @@ export function createScheduler(generator, opts = {}) {
                     putSync(member, target ? projectHead(head, target, relativeTransform(member, target)) : head)
                 }
             })
-            if (conflict) return { kind: conflict.kind === 'unsupported' ? 'unresolved' : 'busy', message: conflict.message }
+            if (conflict) return {
+                kind: conflict.kind === 'unsupported' ? 'unresolved' : conflict.kind === 'refuse' ? 'refuse' : 'busy',
+                message: conflict.message,
+            }
             return verdict
         },
 
@@ -3332,6 +3416,7 @@ export function createScheduler(generator, opts = {}) {
             )
             // Register under the key BEFORE wiring: wireChild stamps the frame's
             // address, whose top segment is this registration key.
+            orderExecution(root, child)
             root.children.set(key, child)
             bumpTree(root)
             wireChild(child, deps, mailbox, registry, forkSpec.code, batch, relationshipBatch, pump)

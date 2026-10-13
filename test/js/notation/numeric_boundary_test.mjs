@@ -55,7 +55,7 @@ for (const command of ["bold 'bad'", "show 0/0", "grid 1/0 10", "label hi 0/0", 
 
 for (const scale of [1e-200, 1e-15, 1, 1e200]) {
     test(`faceto has the same bearing at scale ${scale}`, () => {
-        const transform = COMMANDS.get("faceto")({ transform: SE3.identity(), style: DEFAULT_STYLE }, scale, scale, scale).transform
+        const transform = COMMANDS.get("faceto")({ transform: SE3.identity(), style: DEFAULT_STYLE }, [scale, scale, scale]).transform
         assert.ok(transform)
         const dir = transform.rotation.rotateVec(1, 0, 0)
         assert.ok(dir.every(x => Math.abs(x - 1 / Math.sqrt(3)) < 1e-14), String(dir))
@@ -153,7 +153,7 @@ test("faceto's bearing survives translation, like the direction it asks for", ()
     // origin and the aim after translation are the same +y. (P1)
     for (const [pos, x, y] of [[[0, 0, 0], 0, 0.5], [[1e12, 1e12, 0], 1e12, 1e12 + 0.5]]) {
         const { transform } = COMMANDS.get("faceto")(
-            { transform: { ...SE3.identity(), position: pos }, style: DEFAULT_STYLE }, x, y)
+            { transform: { ...SE3.identity(), position: pos }, style: DEFAULT_STYLE }, [x, y, pos[2]])
         assert.ok(transform, `the half-unit displacement aims at ${pos}`)
         const dir = transform.rotation.rotateVec(1, 0, 0)
         assert.ok(Math.abs(dir[0]) < 1e-12 && Math.abs(dir[1] - 1) < 1e-12 && Math.abs(dir[2]) < 1e-12,

@@ -1,7 +1,7 @@
 // One descriptor per authored relation. Entries stay explicit; wiring is uniform.
 // A descriptor is not a registry that hides branches. (id:relationships-row-contract)
 
-import { planeOfAxis, AXES, wrapDegrees, realizeBearing } from "./relationships.js"
+import { AXES, wrapDegrees, realizeBearing } from "./relationships.js"
 import { forwardOf, DEG, headingOf, compassOf, wrapPositive, upOf } from "./relations.js"
 import { realizeDistance, realizeFreeDistance, validateDistance, realizeTilt, ACCEPT_TOL } from "./realize.js"
 import { nearest as meetNearest, plane as planeSet, sphere as sphereSet, point as pointSet, cone as coneSet, halfplane as halfplaneSet } from "./meet.js"
@@ -146,13 +146,17 @@ function isFramedInput(input) {
         identityToken(input.frame) && finite3(input.value)
 }
 
+// A fixed point has coordinates, not a declaring frame. (id:world-coordinate-phase-3)
+const isPointInput = (input) => input != null && typeof input === 'object' &&
+    !Array.isArray(input) && input.frame == null && input.relative !== true && finite3(input.value)
+
 // Live entity inputs are the only solve participants; a framed value never moves.
 export const isLiveInput = (input) => identityToken(input)
 
 // STRUCTURAL: both inputs are live entities. This is not an initialization choice — a
 // dotted distance has two live inputs and is still target-only. (D058)
 export const hasTwoLiveInputs = (term) => term?.references?.length === 2 && term.references.every(isLiveInput)
-const distanceInputOk = (input) => identityToken(input) || isFramedInput(input)
+const distanceInputOk = (input) => identityToken(input) || isPointInput(input) || isFramedInput(input)
 
 
 // One interpretation of an input's world position, over a reader context. A live
@@ -162,6 +166,7 @@ const distanceInputOk = (input) => identityToken(input) || isFramedInput(input)
 // (id:laws-distance-literal-address)
 export function inputPosition(input, ctx) {
     if (identityToken(input)) return ctx.worldOf(input)
+    if (isPointInput(input)) return [...input.value]
     if (!isFramedInput(input)) return null
     const pose = input.relative ? ctx.livePoseOf(input.frame) : ctx.placementOf(input.frame)
     return pose ? SE3.apply(pose, input.value) : null
@@ -189,23 +194,22 @@ export function makeDistanceTerm(references, radius, source = null) {
     return { type: 'distance', references: Array.isArray(references) ? [...references] : [], radius, source }
 }
 
-// The shared binding normalizer: legacy callers without a term get the same shape.
-// A framed term: the original value plus its one referenced point and coordinate
-// frame. Every row carries one, so no view reconstructs meaning. (D058)
-function makeFramedTerm(type, { references, frame, axis = null, value, source = null }) {
-    return { type, references: Array.isArray(references) ? [...references] : [], frame, axis, value, source }
+// Numeric terms retain payload and participants; angular terms also name a placement reference.
+// (id:world-coordinate-phase-3)
+function makeValueTerm(type, { references, axis = null, value, source = null }) {
+    return { type, references: Array.isArray(references) ? [...references] : [], axis, value, source }
 }
-
-// A framed term is well-formed only with one identity-token reference, a frame, and a
-// payload in the row's admitted domain. A malformed payload — missing, null, wrong kind —
-// is refused HERE, structurally, never by catching an exception where geometry is derived.
-// (D058)
-function checkedFramedTerm(law, type, payloadOk) {
+function makeFramedTerm(type, binding) {
+    return { ...makeValueTerm(type, binding), frame: binding.frame }
+}
+function checkedValueTerm(law, type, payloadOk) {
     const t = law?.expression
     if (t?.type !== type || !Array.isArray(t.references) || t.references.length !== 1) return null
-    if (!identityToken(t.references[0]) || t.frame == null) return null
-    if (!payloadOk(t.value)) return null
-    return t
+    return identityToken(t.references[0]) && payloadOk(t.value) ? t : null
+}
+function checkedFramedTerm(law, type, payloadOk) {
+    const t = checkedValueTerm(law, type, payloadOk)
+    return t && identityToken(t.frame) ? t : null
 }
 
 // The shared binding normalizer: legacy callers without a term get the same shape.
@@ -257,9 +261,9 @@ const distance = {
     address: (endpoints, law) => checkedDistanceTerm(law)?.references ?? endpoints,
     endpoints: (spec) => spec.participants?.map((f) => f.id) ?? targetObserver(spec),
     participants: (law) => (checkedDistanceTerm(law)?.references ?? []).filter(identityToken),
-    references: (law) => (checkedDistanceTerm(law)?.references ?? []).map((r) => identityToken(r)
-        ? { id: r, aspect: "position" }
-        : { id: r.frame, aspect: r.relative ? "position" : "placement" }),
+    references: (law) => (checkedDistanceTerm(law)?.references ?? []).flatMap((r) => identityToken(r)
+        ? [{ id: r, aspect: "position" }]
+        : isFramedInput(r) ? [{ id: r.frame, aspect: r.relative ? "position" : "placement" }] : []),
     term: checkedDistanceTerm,
     ...payloadSlot("radius"),
     normalizeTerm: ({ endpoints, predicate, source }) => makeDistanceTerm(endpoints, predicate, source ?? null),
@@ -361,41 +365,33 @@ const position = defaults({
     drive: true,
     address: one,
     endpoints: targetOnly,
-    // A pin reads the point's live position and its frame's stable placement — the
-    // frame is a validity reference, never a solve participant. (D058)
+    // Only the constrained being supplies geometry; the declaring scope owns lifetime.
+    // (id:world-coordinate-phase-3)
     participants: (law) => [law.endpoints[0]],
-    references: (law) => [
-        { id: law.endpoints[0], aspect: "position" },
-        { id: law.frame, aspect: "placement" },
-    ],
-    term: (law) => checkedFramedTerm(law, "position", finite3),
+    references: (law) => [{ id: law.endpoints[0], aspect: "position" }],
+    term: (law) => checkedValueTerm(law, "position", finite3),
     ...payloadSlot("value"),
-    normalizeTerm: ({ endpoints, frame, predicate, source }) => makeFramedTerm("position", { references: endpoints, frame, value: predicate, source: source ?? null }),
+    normalizeTerm: ({ endpoints, predicate, source }) => makeValueTerm("position", { references: endpoints, value: predicate, source: source ?? null }),
     // The reading IS the point's live position; the expectation is its declared world point,
     // so a candidate is checked against the bound payload — not mere finiteness. (D058)
     read(law, at) {
         return finite3(at) ? [...at] : null
     },
-    expected(law, ctx) {
+    expected(law) {
         const t = boundTerm(law)
-        const frame = t ? ctx.placementOf(t.frame) : null
-        return frame ? SE3.apply(frame, t.value) : null
+        return t ? [...t.value] : null
     },
     residual: (got, want) => Math.hypot(got[0] - want[0], got[1] - want[1], got[2] - want[2]),
-    propose({ law, target, placementOf, conflictAt, ownerOf, value, observer }) {
-        // The proposal derives from the BOUND CANDIDATE: the term's frame places the term's
-        // payload. The declaring scope is ownership, never the placement. A term is always
-        // present on a bound law; the loose fields are the legacy road only.
-        // (id:laws-payload-boundary, D058)
+    propose({ law, target, conflictAt, ownerOf, value }) {
+        // The bound payload is the world point; ownership supplies no implicit geometry.
+        // (id:world-coordinate-phase-3)
         const t = boundTerm(law)
         const payload = t ? t.value : value
         // The guard's own predicate: a hole in a sparse array is not a coordinate.
         if (!finite3(payload)) {
             return { ok: false, reason: "a position needs three finite coordinates" }
         }
-        const frame = placementOf(t ? t.frame : observer)
-        if (!frame) return { ok: false, reason: "the position's frame has no placement", kind: "unresolved" }
-        const world = SE3.apply(frame, payload)
+        const world = [...payload]
         const conflict = conflictAt?.(target, world)
         const at = conflict ? (ownerOf?.(conflict.law) ?? "source") : null
         return conflict
@@ -404,11 +400,9 @@ const position = defaults({
                 : { ok: false, reason: `the pin conflicts with the ${conflict.law.feature} at ${at}`, kind: "obstructed", conflict: conflict.law, residual: conflict.residual, world })
             : { ok: true, world }
     },
-    set(law, { placementOf }) {
+    set(law) {
         const t = boundTerm(law)
-        if (!t) return null
-        const frame = placementOf(t.frame)
-        return frame ? pointSet(SE3.apply(frame, t.value)) : null
+        return t ? pointSet(t.value) : null
     },
     // A pin's record carries its own set: no consumer reconstructs it. (D058)
     constraint(law, ctx) {
@@ -427,51 +421,42 @@ const coordinate = defaults({
     form: (property) => ({ feature: "coordinate", axis: property }),
     address: oneAxis,
     endpoints: targetOnly,
-    // A coordinate reads the point's live position and its frame's stable placement.
     participants: (law) => [law.endpoints[0]],
-    references: (law) => [
-        { id: law.endpoints[0], aspect: "position" },
-        { id: law.frame, aspect: "placement" },
-    ],
-    term: (law) => checkedFramedTerm(law, "coordinate", Number.isFinite),
+    references: (law) => [{ id: law.endpoints[0], aspect: "position" }],
+    term: (law) => checkedValueTerm(law, "coordinate", Number.isFinite),
     ...payloadSlot("value"),
-    normalizeTerm: ({ endpoints, frame, axis, predicate, source }) => makeFramedTerm("coordinate", { references: endpoints, frame, axis, value: predicate, source: source ?? null }),
+    normalizeTerm: ({ endpoints, axis, predicate, source }) => makeValueTerm("coordinate", { references: endpoints, axis, value: predicate, source: source ?? null }),
     meet: true,
-    measure(law, { worldOf, placementOf }) {
+    measure(law, { worldOf }) {
         const t = boundTerm(law)
         if (!t) return { status: "cannot-measure", law, reason: "the coordinate has no bound term" }
         if (!axisOk(t.axis)) return { status: "cannot-measure", law, reason: `the ${law.feature} has an unknown axis '${t.axis}'` }
         const at = worldOf(t.references[0])
-        if (!at || !placementOf(t.frame)) return missing(law, "reference")
-        return assess(coordinate, law, coordinate.read(law, at, { placementOf }), t.value)
+        if (!at) return missing(law, "reference")
+        return assess(coordinate, law, coordinate.read(law, at), t.value)
     },
-    read(law, at, { placementOf }) {
+    read(law, at) {
         const t = boundTerm(law)
-        if (!t || !axisOk(t.axis) || !finite3(at)) return null
-        const frame = placementOf(t.frame)
-        if (!frame) return null
-        const local = SE3.unapply(frame, at)
-        return finite3(local) ? local[AXIS_IDX[t.axis]] : null
+        return t && axisOk(t.axis) && finite3(at) ? at[AXIS_IDX[t.axis]] : null
     },
-    set(law, { placementOf }) {
+    set(law) {
         const t = boundTerm(law)
         if (!t || !axisOk(t.axis)) return null
-        const pl = planeOfAxis(placementOf(t.frame), t.axis, t.value)
-        return pl ? planeSet(pl.point, pl.normal) : null
+        const point = [0, 0, 0], normal = [0, 0, 0], index = AXIS_IDX[t.axis]
+        point[index] = t.value
+        normal[index] = 1
+        return planeSet(point, normal)
     },
-    constraint(law, { placementOf }) {
-        const t = boundTerm(law)
-        if (!t) return null
-        const pl = planeOfAxis(placementOf(t.frame), t.axis, t.value)
-        // The authored AXIS and SCALAR are retained: a world-space plane cannot identify
-        // them. The plane itself is the set. (D058)
-        return pl ? { feature: "coordinate", axis: t.axis, value: t.value, set: planeSet(pl.point, pl.normal) } : null
+    constraint(law) {
+        const t = boundTerm(law), set = coordinate.set(law)
+        return set ? { feature: "coordinate", axis: t.axis, value: t.value, set } : null
     },
     points: (law) => [law.endpoints[0]],
 })
 
 const tilt = defaults({
     name: "tilt",
+    reference: "placement",
     family: null, kind: "angle",
     guard: { finite: true }, bounds: { min: 0, max: 180 },
     properties: ["tilt"],
@@ -501,14 +486,16 @@ const tilt = defaults({
     // A tilt from a frame. A point on the apex has no direction to read, so the
     // declaration realizes a generator from the frame's own up and the paper-scale
     // arm instead of failing to measure. (id:laws-freedom)
-    propose({ target, observer, value, worldOf, placementOf }) {
-        const pose = placementOf(observer)
+    propose({ law, target, observer, value, worldOf, placementOf }) {
+        const t = boundTerm(law)
+        if (law && !t) return { ok: false, kind: "unresolved", reason: "the tilt has no bound term" }
+        const pose = placementOf(t ? t.frame : observer)
         if (!pose || !finite3(pose.position)) return { ok: false, kind: "unresolved", reason: "the declaring frame has no pose" }
         const nose = forwardOf(pose.rotation)
         const up = upOf(pose.rotation)
         const moving = worldOf(target)
         if (!finite3(moving)) return { ok: false, kind: "unresolved", reason: "the point has no position" }
-        const r = realizeTilt(pose.position, nose, up, moving, normalizeTilt(value))
+        const r = realizeTilt(pose.position, nose, up, moving, normalizeTilt(t ? t.value : value))
         return r.ok ? { ok: true, world: r.pose } : { ok: false, reason: r.reason }
     },
     constraint(law, { placementOf }) {
@@ -527,6 +514,7 @@ const tilt = defaults({
 
 const bearing = defaults({
     name: "bearing",
+    reference: "placement",
     family: "relational", kind: "angle",
     guard: { finite: true }, bounds: null,
     properties: ["bearing"],
@@ -553,14 +541,16 @@ const bearing = defaults({
     },
     // A bearing from a frame. A point on the vertex has no direction, so the
     // declaration realizes a paper-scale arm on the ray. (id:laws-freedom)
-    propose({ target, observer, value, worldOf, placementOf }) {
-        const pose = placementOf(observer)
+    propose({ law, target, observer, value, worldOf, placementOf }) {
+        const t = boundTerm(law)
+        if (law && !t) return { ok: false, kind: "unresolved", reason: "the bearing has no bound term" }
+        const pose = placementOf(t ? t.frame : observer)
         if (!pose || !finite3(pose.position)) return { ok: false, kind: "unresolved", reason: "the declaring frame has no pose" }
         const heading = headingOf(pose.rotation)
         if (heading === null) return { ok: false, kind: "unresolved", reason: "the declaring frame has no heading" }
         const moving = worldOf(target)
         if (!finite3(moving)) return { ok: false, kind: "unresolved", reason: "the point has no position" }
-        const r = realizeBearing({ vertex: pose.position, moving }, heading + value)
+        const r = realizeBearing({ vertex: pose.position, moving }, heading + (t ? t.value : value))
         return r.ok ? { ok: true, world: r.pose } : { ok: false, reason: r.reason }
     },
     constraint(law, { placementOf }) {
@@ -635,6 +625,7 @@ export function bindWorld(getFrame, { live, placement, ...extras } = {}) {
         // A live position is the live pose's projection, never a third reading.
         worldOf: (frameOrId) => read(live, frameOrId)?.position ?? null,
         placementOf: (frameOrId) => read(placement, frameOrId),
+        frameOf,
         ...extras,
     }
 }
