@@ -1403,6 +1403,17 @@ Fences: =test/js/notation/three_doors_test.mjs=, =finite_measure_test.mjs=,
 =laws/relations_test.mjs=, =execute/round_test.mjs=, =laws/free_point_test.mjs=;
 readings: =probe/tower-rounding/probe.mjs= (before/after) and =composition.mjs=.
 
+** numeric rotation precision — composition and shared action
+:PROPERTIES:
+:ID: nav-rotation-precision
+:KEYWORDS: rt fw 45 90 quaternion composition coefficient epsilon angular drift cancellation sparse vector action precision
+:PATH: assets/js/turtling/mafs/versors.js::rotateVec
+:END:
+The dimensionless =1e-12= budget conditions composed rotation and its coefficients,
+never coordinates or scalar values. Contract: [[file:specs/weave/rotation-precision.org::rotation-precision-boundary][rotation precision]].
+Regressions: =test/js/motion/{quarter_turn,rigid_precision}_test.mjs=.
+Matched old/new executor cost: =node test/js/profile/rigid_precision_bench.mjs=.
+
 ** the numeric surface — one condition, one policy table, one report
 :PROPERTIES:
 :ID: nav-numerics

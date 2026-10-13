@@ -30,11 +30,7 @@ const find = (frame, name) => {
 }
 const quat = (rotation) => [rotation.x, rotation.y, rotation.z, rotation.w].map((n) => +n.toFixed(6))
 // The direction `fw` advances along: the frame's own x axis, read in its frame.
-const fwAxis = (rotation) => [
-    1 - 2 * (rotation.y * rotation.y + rotation.z * rotation.z),
-    2 * (rotation.x * rotation.y + rotation.w * rotation.z),
-    2 * (rotation.x * rotation.z - rotation.w * rotation.y),
-].map((n) => +n.toFixed(6))
+const fwAxis = (rotation) => rotation.rotateVec(1, 0, 0).map((n) => +n.toFixed(6))
 const pose = (scheduler, name) => {
     const frame = find(scheduler.root, name)
     const { position, rotation } = frame.transform.deref()

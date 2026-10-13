@@ -21,8 +21,8 @@ for (const scale of [1e-9, 1, 1e9]) {
     })
 }
 
-test("a tiny authored turn survives and both rotation APIs agree", () => {
-    const q = Versor.fromAxisAngle(AXIS_Z, 1e-17)
+test("an above-budget authored turn survives and both rotation APIs agree", () => {
+    const q = Versor.fromAxisAngle(AXIS_Z, 1e-8)
     const v = q.rotate({ x: 1, y: 0, z: 0 })
     const tuple = q.rotateVec(1, 0, 0)
     assert.ok(tuple[1] > 0)
