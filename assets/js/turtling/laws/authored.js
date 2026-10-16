@@ -363,6 +363,9 @@ const position = defaults({
     // A capability is declared here; the scheduler enforces what it means.
     // (id:laws-dependency-driven-place)
     drive: true,
+    // Only a position may PLACE a missing subject. The capability permits; ownership
+    // and the environment decide (laws/resolution.js). (laws-first-two-pin-birth, D058)
+    mayEstablish: true,
     address: one,
     endpoints: targetOnly,
     // Only the constrained being supplies geometry; the declaring scope owns lifetime.
@@ -572,6 +575,10 @@ export const AUTHORED = { distance, position, coordinate, tilt, bearing }
 // (id:laws-dependency-driven-place)
 export const driveOf = (feature) => AUTHORED[feature]?.drive ?? null
 
+// Which operators may PLACE a subject. Operator semantics, not a binding role: it
+// permits establishment and decides nothing else. (laws-first-two-pin-birth, D058)
+export const mayEstablishOf = (feature) => AUTHORED[feature]?.mayEstablish === true
+
 // Replace ONLY the payload-bearing field of a term, keeping every other field — frame,
 // references, axis, provenance and any future meaning. The row's schema decides which
 // field that is; a view never enumerates them. (id:laws-payload-boundary)
@@ -585,6 +592,22 @@ export function parseProperty(property) {
         if (row.properties?.includes(property)) return row.form ? row.form(property) : { feature: row.name }
     }
     return null
+}
+
+// The INVERSE of parseProperty: the authored spelling of a feature (and axis). One
+// home for the mapping, so a printer never enumerates features. (D058)
+export function propertyOf(feature, axis = null) {
+    const row = AUTHORED[feature]
+    if (!row) return feature
+    const properties = row.properties ?? []
+    if (axis != null) {
+        for (const property of properties) {
+            const form = row.form ? row.form(property) : { feature: row.name }
+            if (form.axis === axis) return property
+        }
+        return axis
+    }
+    return properties[0] ?? feature
 }
 
 export function parseSupport() {

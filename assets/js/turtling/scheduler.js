@@ -3,15 +3,18 @@
 // Instant law: no sibling advances past a parked mid-instant. (id:output-ledger-r2-instant)
 
 import { createFrame, isBeing } from "./frame.js"
+import { createExecution } from "./execution.js"
 import { installAmbientDoor } from "./ambient.js"
 import { report, notice as noticeWire } from "./report.js"
 import { matchPattern } from "./match.js"
 import { execute, createActorState, headEventOf } from "./executor.js"
 import { deriveBatch, exposed, freePoint } from "./laws/batch.js"
-import { addressOf, createLawStore } from "./laws/replacement.js"
+import { resolveTarget, reservedUnreached } from "./laws/resolution.js"
+import { addressOf, bindLaw, createLawStore } from "./laws/replacement.js"
 import { lawViolation, brokenLaw, heldFrame, continueLaws, conflictMessage, affectedMembers, plainPoses, applyLaw } from "./laws/verdict.js"
 import { predicateOk, kindOf } from "./laws/expression.js"
-import { driveOf, withPayload } from "./laws/authored.js"
+import { AUTHORED, bindWorld, driveOf, mayEstablishOf, withPayload } from "./laws/authored.js"
+import { meetAll, nearest } from "./laws/meet.js"
 import { measure, headingOf, elevationOf } from "./laws/relations.js"
 import { createReadouts, same as sameValue } from "./laws/readout.js"
 import { SE3 } from "./se3.js"
@@ -77,11 +80,15 @@ function terminateAmbient(ctx) {
     unwireWorldCache(ctx)
     ctx.observation = null
     ctx.done = true
+    clearSuspension(ctx)
     ctx.channel.close()
 }
 
 function allDone(ctx) {
     if (!ctx.done) return false
+    // A discovered meaning owes one bounded comparison before the world may idle.
+    // (id:being-facets-root-repair)
+    if (ctx.compareOwed === true) return false
     // Installations own execution: an unfinished installation keeps the world awake,
     // even though it is not a geometric child. (id:being-facets-p4-sequence)
     for (const record of ctx.installations?.values() ?? []) {
@@ -91,6 +98,19 @@ function allDone(ctx) {
         if (!allDone(child)) return false
     }
     return true
+}
+
+// Does any frame still owe the one bounded comparison a discovered meaning requires?
+// (id:being-facets-root-repair)
+function owesComparison(ctx) {
+    const stack = [ctx]
+    while (stack.length > 0) {
+        const node = stack.pop()
+        if (node.compareOwed === true) return true
+        for (const child of node.children.values()) stack.push(child)
+        for (const record of node.installations?.values() ?? []) stack.push(record.frame)
+    }
+    return false
 }
 
 // A frame's whole walk — itself plus everything it spawned. Exported because
@@ -180,7 +200,18 @@ const identicalPose = (a, b) => a && b &&
     a.rotation.y === b.rotation.y && a.rotation.z === b.rotation.z
 // ONE liveness fact, read at every door: is this still the frame the registry holds?
 // A retired identity is not this world's writer, target or observer. (id:laws-ordered-replacement)
-const liveIn = (registry, frame) => registry.get(frame?.id) === frame
+const liveIn = (registry, frame) => frame != null && registry.get(frame.id) === frame
+
+// Execution ancestry owns the question; inputs retain identity, not their whole state.
+// (id:execution-input-revisions)
+function executionDepends(frame, input) {
+    for (let node = frame; node; node = node.parent) {
+        if (node === input || node.receiver === input) return true
+        for (const entry of node.consumed?.values() ?? []) if (entry.target === input) return true
+    }
+    return false
+}
+
 
 // Stroke-run id from source geometry+width; colour does not break. (id:child-ink, id:ft-d7-deposit-runid)
 function tagRun(ctx, value) {
@@ -189,7 +220,9 @@ function tagRun(ctx, value) {
     const style = `${value.thickness}`
     const continues = style === ctx._strokeStyle && _samePt(value.points[0], ctx._strokeEnd)
     if (!continues) ctx._strokeRun = (ctx._strokeRun || 0) + 1
-    value.runId = ctx._strokeRun
+    // Installation counters restart on replacement; their receiver's displayed ink does not.
+    // (id:ft-d7-deposit-runid)
+    value.runId = ctx.installation === true ? `${ctx.id}:${ctx._strokeRun}` : ctx._strokeRun
     ctx._strokeEnd = value.points[value.points.length - 1]
     ctx._strokeStyle = style
 }
@@ -286,10 +319,12 @@ const SUSPENSIONS = {
 
 function suspend(frame, kind, parts) {
     if (!SUSPENSIONS[kind]) throw new Error(`Unknown suspension: ${kind}`)
+    clearSuspension(frame)
     frame.suspension = { kind, owed: null, ...parts }   // owed stays null unless a debt is held
 }
 
 function clearSuspension(frame) {
+    frame.suspension?.cancel?.()
     frame.suspension = null
 }
 
@@ -490,12 +525,15 @@ function atCut(frame) {
 // No unfinished or unserviced logical obligation remains through H.
 // Future waits settle; pending frames, derived moves and keyed builds do not.
 // (id:live-rendering-reveal)
-function settledThrough(registry, root, H) {
+function settledThrough(registry, root, H, pump) {
     if (root._derivedMoves.length > 0) return false
     // A keyed readout answer waiting to build is an unserviced obligation (owner's own state).
-    if (root._readouts?.hasPending?.()) return false
+    if (root._readouts?.hasWork?.()) return false
     for (const frame of registry.values()) {
         if (frame === root || frame.done) continue
+        // Deferred execution is not due; an already-open instant still must close.
+        // (id:execution-input-revisions)
+        if (!pump.execution.permits(frame) && !ownsInstant(frame)) continue
         if (frame.suspension) return false
         if (frame.midInstant) return false
         if (frame.resumeAt <= H) return false
@@ -610,7 +648,7 @@ function admitBeing(frame, being, registry) {
 function resolveFacet(frame, target, reference, property, args) {
     recordRead(frame.deps?.mathEvaluator, target)
     const eligibility = admitBeing(frame, target, metaRootFrame(frame)._registry)
-    if (!eligibility.owned) {
+    if (!eligibility.owned && !passedParticipant(frame, target)) {
         throw new Error(`closed region has no world read: ${reference ? `${reference}.${property}` : `${target.name}.${property}`}`)
     }
     if (!eligibility.being) {
@@ -683,7 +721,11 @@ function readLocal(frame) {
     return frame.transform.deref()
 }
 
-function readWorldTransform(frame, observer) {
+function readWorldTransform(frame, observer, frozen = true) {
+    // Question interpretation governs a captured input's value: a fresh operation snapshot
+    // must not override the retained meaning. (id:being-facets-root-repair)
+    const view = frozen ? questionViewOf(observer) : null
+    if (view && view.readings.has(frame) && !isLiveReceiver(view, frame)) return view.readings.get(frame).world
     const capture = observer?.observation
     if (capture) {
         const entry = capture.poses.get(frame)
@@ -697,6 +739,30 @@ function readWorldTransform(frame, observer) {
     }
     return SE3.compose(worldTransform(frame), readLocal(frame))
 }
+
+// The nearest question view owns a read. A read inside an installation belongs to its
+// owning declaration's question: the installation is the execution of that construction,
+// not a separate reader. (id:declared-behaviour-revision-contract)
+function questionViewOf(observer) {
+    for (let node = observer; node; node = node.parent) {
+        if (node.questionView) return node.questionView
+    }
+    return null
+}
+
+// Receiver progress belongs to the governing realization, including sibling writers.
+// A separately named inner question retains its own capture authority.
+// (id:declared-behaviour-revision-contract)
+function isLiveReceiver(view, target) {
+    return view?.owner?.consumed?.get(receiverKey(target))?.receiver === true
+}
+
+// The receiver's accepted pose as a comparable vector, and its key in the question's
+// consumed footprint. (id:declared-behaviour-revision-contract)
+const poseVector = (pose) => [pose.rotation.w, pose.rotation.x, pose.rotation.y, pose.rotation.z,
+    pose.position[0], pose.position[1], pose.position[2]]
+const receiverKey = (receiver) => `rx:${receiver.id}`
+const captureReceiver = (receiver) => poseVector(frameWorldTransform(receiver))
 
 // Does `start` already wait, transitively, on `reader`? The edge we are about to
 // add would close a cycle, so the read must resolve against the snapshot.
@@ -733,15 +799,22 @@ function markCycle(reader, target) {
 // The reader owns observation and admission; an installation's geometric reference is
 // its retained receiver's birth basis, not the declaring source or current cursor.
 // (id:being-facets-situated)
-function poseInObserverBirth(target, observer) {
-    const world = readWorldTransform(target, observer)
-    if (!observer) return world
+function observerBirth(observer, frozen = true) {
     const basis = observer.installation === true ? observer.receiver : observer
     if (observer.installation === true && !admitBeing(observer, basis, metaRootFrame(observer)._registry).live) {
         throw new Error('the retained receiver has left the world')
     }
-    const birth = observer.observation?.poses.get(basis)?.birth ?? worldTransform(basis)
-    return SE3.compose(SE3.invert(birth), world)
+    const view = frozen ? questionViewOf(observer) : null
+    // An installation's basis is its receiver: a current-world cursor, not a captured read.
+    const captured = isLiveReceiver(view, basis) ? null : view?.readings.get(basis)?.birth
+    return captured
+        ?? observer.observation?.poses.get(basis)?.birth ?? worldTransform(basis)
+}
+
+function poseInObserverBirth(target, observer, frozen = true, birth = null) {
+    const world = readWorldTransform(target, observer, frozen)
+    if (!observer && !birth) return world
+    return SE3.compose(SE3.invert(birth ?? observerBirth(observer, frozen)), world)
 }
 
 // Position projections — a pose's coordinates. They follow the one world chart.
@@ -793,7 +866,7 @@ function readable(property, value, target) {
 }
 
 
-function resolveProperty(target, property, args, observer, ground = false) {
+function resolveProperty(target, property, args, observer, ground = false, frozen = true, interpretation = null) {
     // Report the frame to the readout graph: while a derived node computes, this frame is
     // a reference it stands on. A no-op outside a compute. (id:laws-dependency-driven-place)
     metaRootFrame(observer ?? target)._readouts?.readsink?.(target)
@@ -805,13 +878,24 @@ function resolveProperty(target, property, args, observer, ground = false) {
         throw new Error(`No ${property}: ${target.name} is a free point`)
     }
     if (!args && POSITION[property]) {
-        return readable(property, POSITION[property](readWorldTransform(target, observer)), target)
+        const read = POSITION[property](readWorldTransform(target, observer, frozen))
+        if (frozen) recordQuestionRead(observer, target, property, args, ground, read)
+        return readable(property, read, target)
     }
     if (!args && ORIENTATION[property]) {
-        return readable(property, ORIENTATION[property](ground
-            ? poseInObserverBirth(target, observer) : readWorldTransform(target, observer)), target)
+        const birth = ground ? interpretation ?? (observer ? observerBirth(observer, frozen) : null) : null
+        const read = ORIENTATION[property](ground
+            ? poseInObserverBirth(target, observer, frozen, birth) : readWorldTransform(target, observer, frozen))
+        if (frozen) recordQuestionRead(observer, target, property, args, ground, read, birth)
+        return readable(property, read, target)
     }
     if (!args && TEMPORAL[property]) {
+        const view = frozen ? questionViewOf(observer) : null
+        if (view && view.readings.has(target) && !isLiveReceiver(view, target)) {
+            const read = TEMPORAL[property](view.readings.get(target))
+            if (frozen) recordQuestionRead(observer, target, property, args, ground, read)
+            return readable(property, read, target)
+        }
         return readable(property, TEMPORAL[property](target), target)
     }
     if (!args && observer && RELATIONAL[property]) {
@@ -824,6 +908,46 @@ function resolveProperty(target, property, args, observer, ground = false) {
     if (result !== undefined) return result
 
     throw new Error(`Undefined property: ${property} on assistant ${target.name}`)
+}
+
+// A capture discovers meaning; it does not consume it. (id:being-facets-root-repair)
+let readingQuestion = false
+
+// Record a consumed captured input. Only a declared participant is frozen, and the nearest
+// question view owns the record. The baseline is the value the run actually read.
+// (id:being-facets-root-repair)
+function recordQuestionRead(observer, target, property, args, ground, value, birth = null) {
+    if (readingQuestion) return
+    const view = questionViewOf(observer)
+    if (!view || !view.readings.has(target) || isLiveReceiver(view, target)) return
+    // Revoked readers cannot amend a footprint. Shared readings retain their original question
+    // authority through forwarding; pointer equality finds it without another registry.
+    // (id:being-facets-root-repair)
+    const root = metaRootFrame(observer)
+    if (!root._registry || !liveIn(root._registry, observer)) return
+    const reading = view.readings.get(target)
+    let owner = view.owner
+    for (let up = questionViewOf(owner.parent); up && up.readings.get(target) === reading; up = questionViewOf(owner.parent)) {
+        owner = up.owner
+    }
+    if (!owner || !root._registry.has(owner.id)) return
+    if (!owner.consumed) owner.consumed = new Map()
+    // A footprint retains the interpretation, not the observer's execution machinery.
+    // Equivalent grounded reads share the same basis regardless of writer incarnation.
+    // (id:being-facets-root-repair)
+    const rotation = birth?.rotation
+    const key = rotation
+        ? `${target.id}|${property}|g|${rotation.w},${rotation.x},${rotation.y},${rotation.z}`
+        : `${target.id}|${property}`
+    if (owner.consumed.has(key)) return
+    const interpretation = birth ? SE3.clone(birth) : null
+    owner.consumed.set(key, {
+        target, property, args, ground,
+        baseline: value,
+        live: () => resolveProperty(target, property, args, null, ground, false, interpretation),
+    })
+    // One bounded comparison is owed for this newly discovered meaning.
+    owner.compareOwed = true
 }
 
 // Look up a fn binding in a frame's userspace and evaluate it.
@@ -944,12 +1068,9 @@ function interceptShout(frame, value, registry, deferredShouts, onShout) {
     if (onShout && !closedRoot(frame)) onShout(frame.name, value.name, value.payload)
 }
 
-// Mark dotted cross-ambient reads so loops auto-yield.
-// A derived figure is closed: it may read its ancestors' params and scalars —
-// the captured inputs — and nothing else. No sibling frame, no dotted world
-// read. Its randomness is a stream keyed to its place, so the closure is total.
-// This is the closure profile on the child door, so a figure IS an ambient
-// without becoming an effectful one. (id:laws-figure-eidos-cell, id:laws-figure-protocol-flake)
+// Ordinary construction inputs are captured; explicit participants remain live addresses
+// through the encounter door, never unrestricted world lookup.
+// (id:being-facets-participant-membrane)
 const DERIVED_BUDGET = 200_000
 
 // Every external input a construction's free reads may resolve to, frozen at the
@@ -1026,7 +1147,7 @@ function regionRoot(frame) {
 // the site would mean — and because this runs again for every question, a moved input
 // reaches the next answer instead of freezing the first.
 // (id:laws-figures-phase34-input)
-function evaluateArgs(frame, exprs, declared) {
+function evaluateArgs(frame, exprs, declared, seed) {
     if (!exprs?.length) return []
     const { mathParser, mathEvaluator } = frame.deps ?? {}
     if (!mathParser || !mathEvaluator) return exprs.map(() => undefined)
@@ -1034,7 +1155,14 @@ function evaluateArgs(frame, exprs, declared) {
     // otherwise name a live evaluator constant. (id:laws-figures-phase34-input)
     mathEvaluator.parser = mathParser
     const scope = Object.fromEntries(declared ?? [])
-    return exprs.map(expr => mathEvaluator.run(parseMemo(mathParser, expr), scope))
+    return exprs.map((expr, index) => {
+        // The SAME binding interpretation as first acquisition: an argument that bound a
+        // being keeps that identity; only an expression is re-read, because a live name is
+        // a port. Re-finding the spelling could reach a namesake — exactly what D061
+        // forbids. (id:being-facets-p2-seam)
+        if (isBeing(seed?.[index])) return seed[index]
+        return mathEvaluator.run(parseMemo(mathParser, expr, exprs), scope)
+    })
 }
 
 function ownsFrame(frame, target) {
@@ -1043,6 +1171,79 @@ function ownsFrame(frame, target) {
     for (let node = target; node; node = node.parent) if (node === root) return true
     return false
 }
+
+// Explicit inputs are the membrane's addresses, not ownership of the outside world.
+// Nested answers inherit the region's inputs; they cannot import a free name by rebinding it.
+// (id:being-facets-participant-membrane)
+function passedParticipant(frame, target) {
+    const region = regionRoot(frame)
+    return isBeing(target) && liveIn(metaRootFrame(frame)._registry, region) &&
+        region.seed?.question?.some(input => input === target) === true
+}
+// One encounter protocol in both contexts; only unqualified resolution differs.
+// Passed participants admit scoped requests, not ownership of the outside world.
+// (id:being-facets-participant-membrane)
+function encounterDoor(frame, deps) {
+    // Immutable read provenance: the deps that wired this door. A callback retained past a
+    // rewire still closes over the mutable frame, so it is checked against this captured
+    // wiring, never against whatever the frame now holds. (id:being-facets-root-repair)
+    const wiredDeps = deps ?? null
+    return {
+        observe(command) {
+            // Coherent point-aim reads are earned for installations; ordinary actors keep
+            // their existing cycle/instant contract. (id:being-facets-situated)
+            if (command === 'faceto' && frame.installation !== true) return undefined
+            const root = metaRootFrame(frame)
+            const poses = new Map()
+            visitPostOrder(root, member => {
+                const birth = worldTransform(member)
+                poses.set(member, { birth, world: SE3.compose(birth, member.transform.deref()) })
+            })
+            frame.observation = { poses, revision: root._configurationRevision }
+            return frame.observation.revision
+        },
+        unobserved() { frame.observation = null },
+        // A bare name may bind a being, ITSELF included: a body's own name is a binding,
+        // not a coordinate reachable only through a dot. Receiver legality stays with the
+        // receiver-admission boundary. (P2, id:being-facets-p2-seam)
+        subject(name) {
+            if (ownsName(frame, name)) return undefined
+            return findFrame(frame, name, 'world') ?? undefined
+        },
+        // This frame's OWN declaration, for a receiver selector: an inner binding shadows
+        // a captured scope, but an ancestor must never redirect a passed participant.
+        own(name) {
+            if (frame.params?.has(name)) return frame.params.get(name)
+            if (frame.scalars?.has(name)) return metaRootFrame(frame)._readouts?.value(frame.scalars.get(name))
+            return undefined
+        },
+        isSubject: isBeing,
+        // Presence, not value: a nearer lexical declaration owns the name even when its
+        // value is not a subject, so a read cannot fall back to an outer namesake.
+        // (id:being-facets-centers-review)
+        owns(name) { return frame.params?.has(name) === true || frame.scalars?.has(name) === true },
+        // A bound subject's facet read and a bare name's being both cross here — the ONE
+        // facet door, whose region policy decides inside vs outside and live vs retired.
+        // A callback from a replaced run holds no rights: its captured deps is not the
+        // frame's current run. (id:being-facets-root-repair)
+        facet(being, property, args) {
+            if (wiredDeps && wiredDeps !== frame.deps) return undefined
+            return resolveBeingFacet(frame, being, property, args)
+        },
+    }
+}
+
+function installEncounter(evaluator, frame, deps) {
+    const door = encounterDoor(frame, deps)
+    evaluator.beginObservation = door.observe
+    evaluator.endObservation = door.unobserved
+    evaluator.resolveSubject = door.subject
+    evaluator.ownSubject = door.own
+    evaluator.isSubject = door.isSubject
+    evaluator.owns = door.owns
+    evaluator.resolveSubjectFacet = door.facet
+}
+
 function closeDerivedDeps(deps, frame) {
     frame.capture = deps.capture ?? captureEnvironment(frame.parent ?? frame)
     deps.mathEvaluator.resolveExternal = (name) => {
@@ -1061,13 +1262,7 @@ function closeDerivedDeps(deps, frame) {
         deps.mathEvaluator.constants.random =
             deps.figureRandom ?? keyedStream(keyedSeed(frame.address ?? frame.name))
     }
-    // A closed cell has no observation to begin. The pure-goto retry asks for one
-    // (executor.js::readPointArgs), and an absent method would speak with its own
-    // TypeError instead of the membrane. Answer as an empty observation, so the
-    // world read is what refuses. (id:laws-figure-protocol)
-    deps.mathEvaluator.beginObservation = (command) => command === 'faceto' && frame.installation !== true
-        ? undefined : (metaRootFrame(frame)._configurationRevision ?? 0)
-    deps.mathEvaluator.endObservation = () => {}
+    installEncounter(deps.mathEvaluator, frame, deps)
     installStorage(deps, frame)
 }
 
@@ -1104,47 +1299,13 @@ function bindResolve(deps, frame) {
     // The frame's ambient door, as ONE documented object: the algebra and the executor
     // see the tree only through this. (id:being-facets-centers-review)
     const door = {
-        observe(command) {
-            // Coherent point-aim reads are earned for installations; ordinary actors keep
-            // their existing cycle/instant contract. (id:being-facets-situated)
-            if (command === 'faceto' && frame.installation !== true) return undefined
-            const root = metaRootFrame(frame)
-            const poses = new Map()
-            visitPostOrder(root, member => {
-                const birth = worldTransform(member)
-                poses.set(member, { birth, world: SE3.compose(birth, member.transform.deref()) })
-            })
-            frame.observation = { poses, revision: root._configurationRevision }
-            return frame.observation.revision
-        },
-        unobserved() { frame.observation = null },
         resolve(v, a) {
             const result = resolveBinding(frame, v, a)
             recordRead(deps.mathEvaluator)
             if (typeof v === 'string' && v.includes('.')) deps.mathEvaluator._observedSibling = true
             return result
         },
-        // A bare name may bind a being: resolve it once in this frame's ambient door. (P2)
-        subject(name) {
-            if (ownsName(frame, name)) return undefined
-            const target = findFrame(frame, name, 'world')
-            return target && target !== frame ? target : undefined
-        },
-        // This frame's OWN declaration, for a receiver selector: an inner binding shadows a
-        // captured scope, but an ancestor must never redirect a passed participant.
-        // (id:being-facets-centers-review)
-        own(name) {
-            if (frame.params?.has(name)) return frame.params.get(name)
-            if (frame.scalars?.has(name)) return metaRootFrame(frame)._readouts?.value(frame.scalars.get(name))
-            return undefined
-        },
-        // A bound subject's facet reads and a bare name's being both cross here. (P2)
-        isSubject: isBeing,
-        // Presence, not value: a nearer lexical declaration owns the name even when its
-        // value is not a subject, so a dotted read cannot fall back to an outer namesake.
-        // (id:being-facets-centers-review)
-        owns(name) { return frame.params?.has(name) === true || frame.scalars?.has(name) === true },
-        facet(being, property, args) { return resolveBeingFacet(frame, being, property, args) },
+        ...encounterDoor(frame, deps),
     }
     installAmbientDoor(deps.mathEvaluator, door)
     installStorage(deps, frame)
@@ -1559,10 +1720,13 @@ function rewireChild(child, value, pump) {
     // A NEW RUN IS A NEW CLOCK (D011), anchored at the parent's current instant:
     // resumeAt once it has waited, else its own birth. The old run's resumeAt is
     // past, so waiting would fast-forward the animation into one tick.
+    // A fresh run joins the shared axis at the ACTUAL revision cut. Local zero is the run's
+    // own elapsed time, not a global scheduling priority: inheriting the parent's stale wait
+    // schedules expired deadlines, and taking frontier zero starves already-scheduled work.
+    // (id:declared-behaviour-revision-clock)
+    const cut = pump.now ?? 0
     child.resumeAt = 0
-    child.logicalBirth = child.parent
-        ? (child.parent.resumeAt > 0 ? child.parent.resumeAt : child.parent.logicalBirth)
-        : null
+    child.logicalBirth = cut
     child.channel.drain()
     // RE-DERIVE IN PLACE: the cell and its show persist across a question, so the old answer
     // is not retracted HERE. It is replaced when the new one lands — the clear is discharged
@@ -1754,7 +1918,7 @@ function publish(writer, entries, registry, install = null, project = null, obli
     const settledOnly = metaRootFrame(writer)._settledOnly !== false
     const prepared = []
     for (const { frame, pose, stated, ref } of entries) {
-        if (writer.closed && !ownsFrame(writer, frame)) {
+        if (writer.closed && !ownsFrame(writer, frame) && !passedParticipant(writer, frame)) {
             return { kind: 'conflict', message: 'a closed construction cannot publish outside its region' }
         }
         if (!frame || seen.has(frame) || !liveIn(registry, frame)) {
@@ -1829,6 +1993,16 @@ function publish(writer, entries, registry, install = null, project = null, obli
     }
     const notify = prepared.map(write)
     const changed = notify.some(Boolean)
+    // An accepted effect belongs to EVERY declaration whose realization contains this
+    // installation, not only its immediate source: advance each ancestor's receiver baseline
+    // so a descendant's own motion is not mistaken for an external change.
+    // (id:declared-behaviour-revision-contract)
+    if (writer.installation === true && writer.receiver) {
+        for (let node = writer; node; node = node.parent) {
+            const entry = node.consumed?.get(receiverKey(writer.receiver))
+            if (entry) entry.baseline = captureReceiver(writer.receiver)
+        }
+    }
     if (changed) {
         for (const { frame } of entries) if (!frame.done && frame.batch) frame.batch.rebase = SE3.clone(frame.transform.deref())
     }
@@ -1976,6 +2150,17 @@ function checkMotion(verdict, attempt, registry, validate) {
 const motionBaseChanged = (ctx, request) => request.baseRevision !== undefined &&
     request.baseRevision !== metaRootFrame(ctx)._configurationRevision
 
+
+// A nested realization needs its own question AND every enclosing question's authority.
+// (id:declared-behaviour-revision-contract)
+function questionMoved(frame) {
+    const store = metaRootFrame(frame)._readouts
+    for (let node = frame; node; node = node.parent) {
+        const owner = node.questionView?.owner
+        if (owner?.token && !store.accepts(owner.parent?.id, owner.name, owner.token)) return true
+    }
+    return false
+}
 // Hard laws outrank requests: does a proposed configuration break an active law?
 // Continuation (moving the other endpoint) is Phase 3. (id:laws-activation-order)
 // The one reading a relation measures from: the evaluator's live read, or a proposed
@@ -2154,7 +2339,7 @@ function settleAttempt(ctx, pump, outcome) {
         const conflict = publish(ctx, outcome.poses, pump.registry, installOf(outcome, pump), () => {
             if (outcome.head) emitHead(outcome.head.frame, outcome.head.pose)
             for (const h of outcome.heads ?? []) emitHead(h.frame, h.pose)
-        }, publicationLaws(pump, outcome.law))
+        }, outcome.laws ? constructionLaws(pump, outcome.laws) : publicationLaws(pump, outcome.law))
         if (conflict) {
             const kind = conflict.kind === 'unsupported' ? 'unsupported' : 'relation'
             record(kind, conflict.message)
@@ -2191,15 +2376,28 @@ function proposedOverrides(writer, verdict) {
 
 
 
+// Every admission reply enters through the same live execution permission.
+// Deferred delivery lives in the existing suspension, never a second work queue.
+// (id:execution-input-revisions)
 function parkOnVerdict(ctx, verdict, pump, attempt) {
+    let step
+    if (pump.execution.run(ctx, () => { step = acceptVerdict(ctx, verdict, pump, attempt) })) return step
+    openInstant(ctx)
+    suspend(ctx, 'admission', { seq: ++ctx.motionSeq, verdict: null,
+        deliver: () => parkOnVerdict(ctx, verdict, pump, attempt) })
+    return { verdict: 'parked', produced: true }
+}
+
+function acceptVerdict(ctx, verdict, pump, attempt) {
+    const offered = verdict
     // Identity is retained on the attempt; ELIGIBILITY is rechecked HERE, never cached.
     // (id:being-facets-p4-sequence)
     const { writer, destination, request } = attempt
     if (destination === null || !liveIn(pump.registry, destination)) {
         return woundMotion(ctx, 'the retained receiver has left the world')
     }
-    if (motionBaseChanged(writer, request)) verdict = { kind: 'stale' }
-    else verdict = checkMotion(verdict, attempt, pump.registry, pump.motionValidate)
+    if (motionBaseChanged(writer, request) || questionMoved(writer)) verdict = { kind: 'stale' }
+    else verdict = checkMotion({ ...verdict }, attempt, pump.registry, pump.motionValidate)
     // A proposed configuration that breaks an active law is refused, never shown
     // as accepted. (id:laws-activation-order)
     let gate = null
@@ -2210,6 +2408,8 @@ function parkOnVerdict(ctx, verdict, pump, attempt) {
             verdict = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
         }
     }
+    if (!pump.execution.permits(ctx)) return parkOnVerdict(ctx, offered, pump, attempt)
+    if (motionBaseChanged(writer, request) || questionMoved(writer)) verdict = { kind: 'stale' }
     recordAttempt(metaRootFrame(ctx), {
         path: 'hand', owner: ctx.id,
         from: request?.from?.position ?? null, requested: request?.requested?.position ?? null,
@@ -2251,6 +2451,19 @@ function motion(ctx, value, _route, pump) {
     return parkOnVerdict(ctx, interpretReply(raw, pump.execOpts.refusalStroke), pump, attempt)
 }
 
+// A pending reply owns a disposable subscription, not an immortal execution closure; the
+// subscription severs THIS reaction but never cancels the underlying external promise or
+// service, which its own owner must settle or abandon. (id:execution-input-revisions)
+function subscribeReply(promise, receive) {
+    const finish = (fulfilled, value) => {
+        const reply = receive
+        receive = null
+        reply?.(fulfilled, value)
+    }
+    Promise.resolve(promise).then(value => finish(true, value), error => finish(false, error))
+    return () => { receive = null }
+}
+
 // Controlled delayed admission: the responder may answer after the writer parks,
 // which keeps its instant until the verdict lands. A reply applies only while the
 // run that asked is still in the tree. (id:laws-build-solve-seam)
@@ -2278,25 +2491,14 @@ function delayedMotion(ctx, value, pump) {
     suspend(ctx, 'admission', { seq, verdict: null })
 
     const stale = () => ctx.done || ctx.run !== run || ctx.suspension?.kind !== 'admission' || ctx.suspension.seq !== seq
-    Promise.resolve(raw).then((resolved) => {
+    ctx.suspension.cancel = subscribeReply(raw, (fulfilled, value) => {
         if (stale()) return
-        if (isThenable(resolved)) return void woundMotion(ctx, 'delayed motion responder resolved to another Promise')
-        // The delayed reply is still a motion path: active laws govern it, exactly
-        // as they govern a synchronous reply. (id:laws-activation-order)
-        const checked = motionBaseChanged(ctx, attempt.request) ? { kind: 'stale' } :
-            checkMotion(interpretReply(resolved, pump.execOpts.refusalStroke), attempt, pump.registry, pump.motionValidate)
-        let ruling = checked
-        const check = ruling.kind === 'accept' ? brokenLaw(proposedOverrides(attempt.destination, ruling), pump.registry, pump.laws, lawWorld) : null
-        if (check?.status === 'cannot-measure') ruling = { kind: 'unresolved', message: check.reason }
-        else if (check?.status === 'violation') ruling = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
-        if (ruling.kind === 'fault') return void woundMotion(ctx, ruling.message)
-        if (ruling.kind === 'accept' && (ctx.installation === true || ruling.component.length > 0)) {
-            const conflict = commitTransaction(ruling, attempt, pump)
-            if (conflict) return void woundMotion(ctx, conflict.message)
-        }
-        suspend(ctx, 'admission', { seq, verdict: ruling })
-    }, (error) => {
-        if (!stale()) woundMotion(ctx, `motion responder failed: ${error.message}`)
+        const verdict = !fulfilled
+            ? { kind: 'fault', message: `motion responder failed: ${value?.message ?? value}` }
+            : isThenable(value)
+                ? { kind: 'fault', message: 'delayed motion responder resolved to another Promise' }
+                : interpretReply(value, pump.execOpts.refusalStroke)
+        parkOnVerdict(ctx, verdict, pump, attempt)
     })
     return { verdict: 'parked', produced: true }
 }
@@ -2308,8 +2510,11 @@ function shout(ctx, value, route, pump) {
 // A reached birth seats or revisits a named slot before its next read.
 // Binding places a value; bare birth adopts the cursor. (id:laws-ordered-birth)
 function birth(ctx, value, _route, pump) {
-    const existing = ctx.children.get(value.name)
-    if (existing) {
+    // A declaration owns its name here: adopt the local child or establish — it never
+    // reaches a visible namesake. The policy is shared with law(). (laws-decl-frame, D058)
+    const resolution = resolveTarget('declare', { local: ctx.children.has(value.name) })
+    if (resolution.kind === 'adopt') {
+        const existing = ctx.children.get(value.name)
         // Bare birth adopts the cursor; binding places a figure with motion intact.
         // Origin, head and anchor commit together or remain unchanged.
         // (id:laws-generative-experiment-slot)
@@ -2510,28 +2715,28 @@ function law(ctx, value, _route, pump) {
     const boundTarget = isBeing(value.target) ? value.target : null
     const targetName = boundTarget ? boundTarget.name : value.target
     const driven = driveOf(value.feature)
-    // One binding rule for reads and relations: a name this scope declares but has
-    // not reached is a located use-before-introduction, never an outer namesake.
-    // A position definition is the exception — it is a definition, never a use.
-    // (id:laws-ordered-birth)
-    const visible = boundTarget ?? findFrame(ctx, targetName, 'world')
+    // One name policy for reads and relations, shared with birth. The callers keep
+    // every lookup and admission gate; the policy only selects. (laws/resolution.js, D058)
+    const local = ctx.children.has(targetName)
+    const found = boundTarget ?? findFrame(ctx, targetName, 'world')
     const declaredHere = ctx.declared?.has(targetName) === true
+    const mayEstablish = mayEstablishOf(value.feature)
+    // A declared-but-unreached name is a located use-before-introduction for a USE,
+    // never for a definition. (id:laws-ordered-birth)
     for (const name of value.subjects ?? [targetName]) {
-        if (value.feature !== 'position' && ctx.declared?.has(name) && !ctx.children.has(name)) {
+        if (!mayEstablish && reservedUnreached(ctx.declared?.has(name) === true, ctx.children.has(name))) {
             return woundRelation(ctx, `Use before introduction: ${name}`, 'relation', value.owner)
         }
     }
-    // A definition introduces its subject in the declaring scope when no local
-    // name has been reached and either the scope declares it or nothing is
-    // visible. Otherwise it revises the visible identity — the SAME target rule
-    // as a relation, so an outer namesake never changes a definition's legality.
-    // (id:laws-names, id:laws-decl-frame)
-    const introduces = value.feature === 'position'
-        && !ctx.children.has(targetName)
-        && (declaredHere || !visible)
-    // The seat is provisional: a statement that does not commit withdraws it, so
-    // one failed statement leaves no identity, no exposure and no hold behind.
-    const born = introduces ? seatPlace(ctx, targetName, pump, SE3.clone(ctx.transform.deref())) : null
+    const resolution = resolveTarget('condition', { local, found, bound: boundTarget, declaredHere, mayEstablish })
+    if (resolution.kind === 'refuse') {
+        return woundRelation(ctx, `Unknown target: ${targetName}`, 'relation', value.owner)
+    }
+    // The seat is provisional: a statement that does not commit withdraws it, so one
+    // failed statement leaves no identity, no exposure and no hold behind.
+    const born = resolution.kind === 'establish' ? seatPlace(ctx, targetName, pump, SE3.clone(ctx.transform.deref())) : null
+    // Target selection is the caller's lookup, never the policy: a reserved name resolves
+    // before a local child. (findFrame, D061)
     const target = boundTarget ?? findFrame(ctx, targetName, 'world')
     if (!target || target === ctx) {
         if (born) withdrawPlace(ctx, born, pump)
@@ -2658,32 +2863,136 @@ function woundRelation(ctx, message, kind = 'relation', span = null) {
 
 // One live bound definition owns its captured questions and attached answers.
 // Replacement retires publication rights, even for equal questions. (id:laws-figure-protocol)
-function registerFigureCell(ctx, value, pump) {
+// A question's retained interpretation: the declared participant inputs read once at the
+// boundary. Serving answers from it; equality compares only what the run consumed.
+// (id:being-facets-root-repair)
+// A keyed figure's question: bindings plus the consumed meanings, marked so the store can
+// expose the binding view. (id:being-facets-root-repair)
+function questionToken(bindings, footprint) {
+    const token = [bindings, footprint]
+    token.deferredQuestion = true
+    return token
+}
+
+function captureQuestionView(ctx, value, child) {
+    // Capture inputs once; forwarded readings share their enclosing interpretation.
+    // One identity-keyed map provides membership and state, not another world authority.
+    // (id:being-facets-root-repair)
+    const enclosing = questionViewOf(ctx)
+    const readings = new Map()
+    for (const input of value.question ?? []) {
+        if (!isBeing(input)) continue
+        if (enclosing && enclosing.readings.has(input)) {
+            readings.set(input, enclosing.readings.get(input))
+        } else {
+            const birth = worldTransform(input)
+            readings.set(input, {
+                birth,
+                world: SE3.compose(birth, readLocal(input)),
+                elapsedTime: input.elapsedTime || 0,
+                birthtime: input.birthtime || 0,
+                done: input.done === true,
+                commandCount: input.commandCount,
+            })
+        }
+    }
+    const view = { owner: child, readings }
+    if (child) child.questionView = view
+    return view
+}
+
+// Compare consumed meanings; discoveries refine the attached question's footprint.
+// Their live comparison belongs to the next capture, not to discovery itself.
+// (id:being-facets-root-repair)
+function figureQuestion(ctx, value) {
+    readingQuestion = true
+    let bindings
+    try { bindings = evaluateArgs(ctx, value.argExprs, declaredInputs(value), value.question) }
+    finally { readingQuestion = false }
+    const child = ctx.children.get(value.name)
+    if (!child) return questionToken(bindings, [])
+    if (!child.token) child.token = questionToken(bindings, [])
+    if (!child.consumed) child.consumed = new Map()
+    const bindingsChanged = !sameValue(bindings, child.token[0])
+    const known = new Set(child.token[1].map(([key]) => key))
+    let changed = false
+    const baselines = []
+    const live = []
+    for (const [key, entry] of child.consumed) {
+        // A pre-seat read retains its captured meaning; receiver freshness has one owner.
+        // (id:declared-behaviour-revision-contract)
+        let now = entry.baseline
+        if (entry.receiver === true || !isLiveReceiver(child.questionView, entry.target)) {
+            try { now = entry.live() } catch { /* retain an unavailable input's baseline */ }
+        }
+        baselines.push([key, entry.baseline])
+        live.push([key, now])
+        if ((known.has(key) || entry.receiver === true) && !sameValue(now, entry.baseline)) changed = true
+    }
+    // One bounded comparison is owed for a newly discovered meaning, cleared only when a
+    // capture could see every consumed key. (id:being-facets-root-repair)
+    // The retained receiver's accepted pose is an implicit input: an external change
+    // revises the declaration; the run's own accepted motion advances the entry's baseline.
+    // (id:declared-behaviour-revision-contract)
+    if (child.compareOwed && [...child.consumed.keys()].every((key) => known.has(key))) child.compareOwed = false
+    // A changed authored binding or consumed meaning replaces the run. The receiver's own
+    // cursor is excluded at the read layer, never by a blanket effect witness.
+    // (id:declared-behaviour-revision-contract)
+    if (bindingsChanged || changed) {
+        // The store owns requested demand; child.token describes the run ACTUALLY attached.
+        // The new question is only adopted when supersedeFigure establishes it.
+        // (id:being-facets-root-repair)
+        return questionToken(bindings, changed ? live : baselines)
+    }
+    child.token[0] = bindings
+    child.token[1] = baselines
+    return child.token
+}
+
+// One live bound definition owns its captured questions and attached answers.
+// Replacement retires publication rights, even for equal questions. (id:laws-figure-protocol)
+function registerFigureCell(ctx, value, pump, reuse = false) {
     if (!pump.readouts) return
     retractIfVector(ctx, value.name, pump)   // a figure is not a vector; the arrow leaves
+    const child = ctx.children.get(value.name)
+    if (!child) return
     // The question is the arguments, re-read in the declaring frame. A live
     // name is a port (`let art = hello X.x`), not a free `let` in the body.
     // The membrane stays captureFor. (id:laws-figures-phase34-input)
-    const question = () => evaluateArgs(ctx, value.argExprs, declaredInputs(value))
+    // Declaration/subscription is the current source; the question interpretation, footprint
+    // and run rights transfer only across equal reuse. (id:being-facets-root-repair)
+    // Same-definition reuse (sameSeed) already proves the question's identity, so the
+    // retained interpretation, footprint and run rights transfer as-is; only a real
+    // replacement rebuilds. (id:being-facets-root-repair)
+    if (!reuse || !child.questionView) {
+        child.consumed = new Map()
+        child.compareOwed = false
+        child.token = questionToken((value.question ?? []).slice(), [])
+        captureQuestionView(ctx, value, child)
+    }
     pump.readouts.register(ctx.id, value.name, {
-        capture: question,
+        capture: () => figureQuestion(ctx, value),
+        scope: child,
         // The body is attached with this question; seed only that actual attachment.
         // (id:laws-generative-experiments)
-        seed: value.question?.slice(0, value.argExprs?.length ?? 0),
+        seed: child.token,
         // This record is an invalidation subscription, NOT an answer: its build
         // requests a restart, and the run's outcome lives on the frame, where a wound
         // already carries provenance. Returning the name made a restart read as
         // completed construction — a refused figure settled as its own success.
         // (id:laws-figures-phase34-review)
-        build: () => { supersedeFigure(ctx, value, pump) },
+        build: (q) => { supersedeFigure(ctx, value, pump, q) },
     })
 }
 
 // supersede: the newest question wins. A running build is abandoned, not left to
 // finish — a value is preempted; an ordinary ambient process is not (D011/D028).
-function supersedeFigure(ctx, value, pump) {
+function supersedeFigure(ctx, value, pump, question) {
     const child = ctx.children.get(value.name)
     if (!child) return
+    // Demand that returned to the actually attached question is not a new question: keep the
+    // run, view, footprint and discovery debt. (id:being-facets-root-repair)
+    if (question && child.token && sameValue(question, child.token)) return
     // The run reads the environment as it stood at this question, not live.
     // A rebuild is a new question, so it is a new snapshot. (id:laws-figures-phase34-review)
     value.capture = captureFor(ctx, value)
@@ -2692,7 +3001,7 @@ function supersedeFigure(ctx, value, pump) {
     // expressions is exactly what separates this from baking a value once.
     if (value.argExprs) {
         try {
-            value.question = evaluateArgs(ctx, value.argExprs, declaredInputs(value))
+            value.question = evaluateArgs(ctx, value.argExprs, declaredInputs(value), value.question)
         } catch (error) {
             // Readiness belongs to the question boundary; a refusal belongs to
             // this figure, with its declaration's location, never to NOTHING.
@@ -2705,7 +3014,18 @@ function supersedeFigure(ctx, value, pump) {
         // string is not a name to re-resolve). (id:eval-relational)
         value.question.forEach((input, i) => { if (args[i]) args[i].value = input })
     }
+    // A changed question is a new boundary: fresh footprint, view and debt. The node keeps
+    // its identity — only the readout build path runs; authoring is not re-registered.
+    // (id:being-facets-root-repair)
+    child.consumed = new Map()
+    child.compareOwed = false
+    captureQuestionView(ctx, value, child)
+    child.token = question ?? questionToken((value.question ?? []).slice(), [])
     rewireChild(child, value, pump)
+    // A question-change rebuild joins the shared axis at the revision cut, never at frontier
+    // zero: otherwise a continuously revised declaration starves already-scheduled work.
+    // (id:declared-behaviour-revision-clock)
+    child.resumeAt = pump.now ?? child.resumeAt
     pump.wake?.()
 }
 
@@ -2737,6 +3057,79 @@ function publicationLaws(pump, candidate) {
     return candidate ? [...active.filter(law => addressOf(law) !== addressOf(candidate)), candidate] : active
 }
 
+// The obligations a construction admits: the accepted prefix with EVERY requested
+// obligation conjoined at its address. No member may be omitted. (D058)
+function constructionLaws(pump, laws) {
+    const addresses = new Set(laws.map((law) => addressOf(law)))
+    return [...pump.laws.active().filter((law) => !addresses.has(addressOf(law))), ...laws]
+}
+
+// Prepare ONE candidate against the REQUESTED conjunction, before any obligation is
+// accepted truth. Pure over the rows and the meet algebra: it solves and selects; it
+// seats nothing, installs nothing, publishes nothing. (id:laws-first-two-pin-birth, D058)
+function prepareConstruction(ctx, born, value, pump) {
+    const obligations = value.obligations ?? []
+    const laws = obligations.map((o) => bindLaw({
+        feature: o.feature, endpoints: [born.id], axis: o.axis ?? null,
+        scope: ctx.id, frame: ctx.id, owner: value.owner, predicate: null, expression: o.term(born.id, ctx.id),
+    }))
+    // The ADMITTED batch must be the INSTALLED batch. Duplicate addresses would collapse
+    // at the store into fewer records than admission certified, so a repeated request is
+    // refused rather than silently normalized. (D058)
+    if (new Set(laws.map((law) => law.address)).size !== laws.length)
+        return { ok: false, kind: 'request', message: 'a construction request repeats an obligation address' }
+    const world = bindWorld((id) => pump.registry.get(id), {
+        live: (f) => frameWorldTransform(f),
+        placement: (f) => worldTransform(f),
+    })
+    // One uniform row context: `writerId` belongs to the row interface, never a
+    // per-feature branch. (D058)
+    const context = { writerId: born.id, ...world }
+    const sets = laws.map((law) => AUTHORED[law.feature].set(law, context))
+    const conjunction = meetAll(sets)
+    // Preserve the CONJUNCTION's outcome — empty, uncertain or unresolved — never one
+    // generic failure. An unnameable meet is an honest non-answer, not a relation error. (D058)
+    if (!conjunction || ['empty', 'uncertain', 'unresolved'].includes(conjunction.kind))
+        return { ok: false, kind: conjunction?.kind ?? 'unresolved',
+            message: conjunction?.kind === 'empty' ? 'the construction has no point in common'
+                : conjunction?.kind === 'uncertain' ? 'the construction meet is uncertain'
+                    : 'the construction meet is not a named set' }
+    const near = nearest(conjunction, value.seed ?? [0, 0, 0])
+    if (!near?.ok) return { ok: false, kind: 'unresolved', message: near?.reason ?? 'the construction has no candidate' }
+    return { ok: true, laws, candidate: near.at }
+}
+
+// An EXPLICIT construction: a fresh LOCAL identity whose requested obligations are
+// prepared together and admitted by ONE publication. A condition never introduces on its
+// own — this statement asks for the place. (id:laws-first-two-pin-birth, laws-ordered-birth)
+function constructEffect(ctx, value, _route, pump) {
+    const name = value.name
+    // The experiment's explicit choice: an ABSENT LOCAL identity, and nothing adopted.
+    if (ctx.children.has(name)) return woundRelation(ctx, `construct target '${name}' is already local`, 'relation', value.owner)
+    // The seat is provisional: identity, no exposure, no obligation yet. (laws-names)
+    const born = seatPlace(ctx, name, pump, SE3.clone(ctx.transform.deref()))
+    const prepared = prepareConstruction(ctx, born, value, pump)
+    if (!prepared.ok) {
+        withdrawPlace(ctx, born, pump)
+        // The outcome routes by KIND: a demonstrated impossibility is a contradiction, a
+        // malformed request is a relation error, and an unnameable/uncertain meet is
+        // UNRESOLVED — the honest non-answer, never a relation wound. (D058)
+        if (prepared.kind === 'empty') return woundRelation(ctx, prepared.message, 'contradiction', value.owner)
+        if (prepared.kind === 'request') return woundRelation(ctx, prepared.message, 'relation', value.owner)
+        return endUnresolved(ctx, prepared.message)
+    }
+    // ONE publication: the accepted pose is composed through the placement by publish(),
+    // so the birth anchor (birthPose) and the accepted world pose stay distinct.
+    const outcome = {
+        kind: 'commit', span: value.owner, laws: prepared.laws,
+        poses: [{ frame: born, pose: SE3.translateLocal(SE3.identity(), prepared.candidate[0], prepared.candidate[1], prepared.candidate[2]), stated: true, ref: 'world' }],
+        install: () => { for (const law of prepared.laws) pump.laws.apply(law); ctx.reached?.add(name) },
+    }
+    const settled = settleAttempt(ctx, pump, outcome)
+    if (settled) { withdrawPlace(ctx, born, pump); return settled }
+    return { verdict: 'continue', produced: true }
+}
+
 function spawn(ctx, value, route, pump) {
     // A bound receiver is an IDENTITY, admitted before any parent mutation or slot
     // lookup: a nearer namesake or a coerced word cannot redirect it, and a refusal
@@ -2746,7 +3139,7 @@ function spawn(ctx, value, route, pump) {
     if (receiver) {
         const eligibility = admitBeing(ctx, receiver, pump.registry)
         if (!eligibility.live) return woundRelation(ctx, `retired receiver: ${receiver.name}`, 'relation')
-        if (!eligibility.owned) return woundRelation(ctx, `closed region has no outside receiver: ${receiver.name}`, 'relation')
+        if (!eligibility.owned && !passedParticipant(ctx, receiver)) return woundRelation(ctx, `closed region has no outside receiver: ${receiver.name}`, 'relation')
         // CUTOVER: the declaring slot holds the current installation; the installation owns
         // its continuation; the receiver is RETAINED, never rewired. Eligibility is
         // admission, not permission to replace the receiver's source. (id:being-facets-p4-sequence)
@@ -2785,7 +3178,7 @@ function spawn(ctx, value, route, pump) {
             // (id:laws-generative-experiments)
             const reuse = sameSeed(existing.seed, value)
             if (!reuse) rewireChild(existing, value, pump)
-            registerFigureCell(ctx, value, pump)
+            registerFigureCell(ctx, value, pump, reuse)
             if (reuse) return { verdict: 'continue' }
             if (deferredShouts) deliverDeferredToFrame(deferredShouts, existing)
             return { verdict: 'spawned', spawned: existing, produced: true }
@@ -2920,6 +3313,9 @@ function spawnInstallation(ctx, value, route, pump, receiver) {
     child.closed = value.closed
     child.receiver = receiver
     child.installation = true
+    // The installation joins the shared axis at its declaring frame's current instant,
+    // never at frontier zero. (id:declared-behaviour-revision-clock)
+    child.resumeAt = ctx.resumeAt > 0 ? ctx.resumeAt : (ctx.logicalBirth ?? route.now)
     // Deliberately NOT ctx.children.set: the seat is not a discoverable child.
     orderExecution(ctx, child, prior?.frame)
     wireChild(child, deps, mailbox, pump.registry, value.code, batch, relationshipBatch, pump)
@@ -2927,6 +3323,17 @@ function spawnInstallation(ctx, value, route, pump, receiver) {
     const record = { site, source: ctx, frame: child, receiver, run: child.run }
     child.installationRecord = record
     ;(ctx.installations ??= new Map()).set(site, record)
+    // The receiver's accepted pose is an implicit question input of the owning declaration:
+    // an external change revises it, the run's own accepted motion advances the baseline.
+    // (id:declared-behaviour-revision-contract)
+    const questionOwner = questionViewOf(ctx)?.owner ?? ctx
+    ;(questionOwner.consumed ??= new Map()).set(receiverKey(receiver), {
+        receiver: true, target: receiver,
+        baseline: captureReceiver(receiver),
+        live: () => captureReceiver(receiver),
+    })
+    // No blanket effect witness: a read of the receiver's cursor is excluded at the read
+    // layer, so reported owner-supersession is participant revision. (id:declared-behaviour-revision-contract)
     if (route.deferredShouts) deliverDeferredToFrame(route.deferredShouts, child)
     return { verdict: 'spawned', spawned: child, produced: true }
 }
@@ -2988,7 +3395,7 @@ function noticeEffect(ctx, value) {
 // yields is DEPOSITED: the ledger takes credit and the frame's channel carries it out.
 // So this list, plus the deposit default, is the whole routing vocabulary.
 export const EFFECTS = {
-    breath, blocked, wait, yield: yieldEffect, shout, spawn, limitMailbox, motion, motionUnresolved, notice: noticeEffect, birth, law, scalar: scalarReadout, parameter: parameterReadout,
+    breath, blocked, wait, yield: yieldEffect, shout, spawn, limitMailbox, motion, motionUnresolved, notice: noticeEffect, birth, law, construct: constructEffect, scalar: scalarReadout, parameter: parameterReadout,
 }
 
 // Verdict for one yield. Pumps act; this only means. (id:output-ledger-r2-instant)
@@ -3025,6 +3432,9 @@ function stepFrame(ctx, value, done, route, pump) {
 function stepOnce(ctx, route, pump) {
     const { frameTarget, frameTransform, destination } = route
     if (destination === null) return endUnresolved(ctx, 'the retained receiver has left the world')
+    if (!pump.execution.permits(ctx) || questionMoved(ctx)) return { verdict: 'paused' }
+    ctx.suspension?.deliver?.()
+    if (ctx.done) return { verdict: 'ended', produced: true }
 
     // Resume after a suspension: replay an owed deposit first (emission order).
     const sus = ctx.suspension
@@ -3073,6 +3483,7 @@ function stepOnce(ctx, route, pump) {
 // Drain a single child's generator until it pauses (wait/done/blocked/error)
 // or spawns a new child. Returns the spawned child frame, or null if paused.
 function drainUntilPause(child, now, pump, deferredShouts) {
+    pump.now = now
     let frameTarget = null
     let frameTransform = null
     if (child.targetFrame) {
@@ -3118,7 +3529,17 @@ export function createScheduler(generator, opts = {}) {
     // The play's active laws: one address → one predicate + owner. (id:laws-ordered-replacement)
     const laws = createLawStore()
     // Source-owned derived values, recomputed once per commit. (id:laws-build-p3-slider)
-    const readouts = createReadouts()
+    const execution = createExecution({
+        current: frame => liveIn(registry, frame),
+        depends: executionDepends,
+        onRelease() {
+            pump.wake()
+            if (root.notifyingCommit) return
+            readouts.recompute(committedSnapshot())
+            readouts.drain()
+        },
+    })
+    const readouts = createReadouts({ permits: owner => !root.notifyingCommit && execution.permits(owner) })
 
     const root = attachMeta(
         createFrame(ROOT_NAME, generator, channelOpts),
@@ -3160,6 +3581,7 @@ export function createScheduler(generator, opts = {}) {
         motionAdmission: opts.motionAdmission || null,
         motionAdmissionAsync: opts.motionAdmissionAsync || null,
         motionValidate: opts.motionValidate || null,
+        execution,
         channelOpts,
         registry,
         laws,
@@ -3207,6 +3629,9 @@ export function createScheduler(generator, opts = {}) {
         root,
         channel: root.channel,   // backward compat — root frame's channel
         registry,
+        // The caller owns the scope; releasing it services final demand before old work.
+        // (id:execution-input-revisions)
+        defer: input => execution.defer(input),
         stock,
 
         get resumeAt() { return root.resumeAt },
@@ -3239,7 +3664,7 @@ export function createScheduler(generator, opts = {}) {
         // Settlement through H is a fact, not a retry or publication instruction.
         // It does not certify complete display geometry or ready visual resources.
         // (id:live-rendering-reveal)
-        isSettledThrough(H) { return settledThrough(registry, root, H) },
+        isSettledThrough(H) { return settledThrough(registry, root, H, pump) },
         // A finished drawing may accept a settled, pen-up hand request without
         // reviving its coroutine. The same responder, check and component commit
         // serve program motion. The caller supplies the last seen motion revision.
@@ -3486,7 +3911,10 @@ export function createScheduler(generator, opts = {}) {
 
         // Earliest resumeAt only; post-order within an instant. (D011 #3)
         tick(now) {
+            if (root.notifyingCommit) return false
             this.lastTickTime = now
+            pump.now = now
+            readouts.drain()
             // A derived place whose coordinate changed commits its move here, OUTSIDE
             // any publication and before any early return: a queued move is not work
             // the frontier knows about. A move that cannot land keeps the last pose.
@@ -3511,11 +3939,14 @@ export function createScheduler(generator, opts = {}) {
             // The earliest logical instant with a ready frame (resumeAt ≤ now).
             let frontier = Infinity
             visitPostOrderMotionFirst(root, (ctx) => {
-                if (!ctx.done && ctx.resumeAt <= now && ctx.resumeAt < frontier) {
+                if (!ctx.done && pump.execution.permits(ctx) && ctx.resumeAt <= now && ctx.resumeAt < frontier) {
                     frontier = ctx.resumeAt
                 }
             })
             if (frontier === Infinity) {        // nothing ready at this `now`
+                // Discharge a discovered meaning's one bounded comparison before idle.
+                // (id:being-facets-root-repair)
+                if (owesComparison(root) && root._readouts?.size > 0) root._readouts.recompute(committedSnapshot())
                 this.done = allDone(root)
                 if (this.done) this.commandCount = sumCounts(root)
                 return false
@@ -3527,7 +3958,7 @@ export function createScheduler(generator, opts = {}) {
             let parked = false
 
             visitPostOrderMotionFirst(root, (ctx) => {
-                if (parked || ctx.done || ctx.resumeAt > frontier) return
+                if (parked || ctx.done || !pump.execution.permits(ctx) || ctx.resumeAt > frontier) return
 
                 // Defer shouts until all siblings exist.
                 const deferredShouts = []

@@ -562,3 +562,159 @@ use 3`)
         'the locally declared x owns its name inside the captured function')
     assert.deepEqual(result.scheduler.errors.map((e) => e.message), [])
 })
+
+
+// ── ONE acquisition: the surface does not change finding ─────────────────────────
+// The CALL path holds Argument nodes and the DECLARATION path holds raw strings. One
+// acquire serves both, so the same spelling finds the same being either way.
+// (id:being-facets-p2-seam, id:being-facets-centers-review)
+
+function runTrace(source, ticks = 40) {
+    assert.deepEqual(collectErrors(parseProgram(source)), [], 'healthy construction parses')
+    const scheduler = buildWorld()
+    const host = scheduler.hotSwapChild('host', fork('host', source))
+    const trace = drive(scheduler, { maxTicks: ticks })
+    const labels = [...trace.values()].flat().filter((e) => e.type === 'label').map((e) => e.text)
+    return { scheduler, host, labels, messages: scheduler.errors.map((e) => e.message ?? String(e)) }
+}
+
+test('a declaration argument binds the being, exactly as an ordinary call does', () => {
+    const result = run(`def choose a do
+  fw 1
+end
+let rabbit
+let flake = choose rabbit`)
+    assert.ok(result.host.children.get('flake'), 'the private answer exists')
+    assert.deepEqual(result.scheduler.errors.map((e) => e.message), [],
+        'a declaration path finds the being: no Undefined variable: rabbit')
+    assert.deepEqual(position(result.host.children.get('rabbit')), [0, 0, 0], 'the participant is untouched')
+})
+
+test('a body finds its own name, so a recipe can forward self', () => {
+    const result = run(`def face subject do
+  faceto subject
+end
+as rabbit do
+  loop 2 do
+    fw 5
+    face rabbit
+    wait 1/24
+  end
+end`)
+    assert.deepEqual(result.scheduler.errors.map((e) => e.message), [],
+        'self is a binding, not an undefined name')
+    assert.ok(result.host.children.get('rabbit'), 'the self-referencing being still runs')
+})
+
+test('a display word resolves a being before the literal fallback', () => {
+    const result = runTrace(`as rabbit do
+  loop 2 do
+    fw 5
+    label rabbit 0.1
+    wait 1/24
+  end
+end`)
+    assert.ok(result.labels.length > 0, 'the label drew')
+    assert.ok(result.labels.every((text) => /^[-0-9.,[\] ]+$/.test(text)),
+        'a found being reaches the display adaptation, not its spelling')
+    assert.equal(result.labels.includes('rabbit'), false, 'the literal never masks the found being')
+})
+
+test('an unresolved word hole keeps its spelling — white is still a colour', () => {
+    const result = runTrace(`as rabbit do
+  beColour white
+  label snow
+  fw 1
+end`)
+    assert.deepEqual(result.scheduler.errors.map((e) => e.message), [], 'no wound for a genuine word')
+    assert.deepEqual(result.labels, ['snow'], 'a genuinely unresolved word is permitted')
+})
+
+// Passing explicit participants permits scoped requests, not access to an unrelated being.
+// An outside receiver omitted from the input question remains a containment refusal.
+// (id:being-facets-participant-membrane)
+test('a private declaration cannot reach an unpassed outside receiver', () => {
+    const result = runTrace(`def move target do
+  as target do
+    fw 2
+  end
+end
+def hunt prey do
+  let nested = move fox
+end
+as rabbit do
+  loop 3 do
+    fw 5
+    rt 1
+    wait 1/24
+  end
+end
+let fox
+let hunting = hunt rabbit`)
+    assert.ok(result.messages.some((m) => /closed region has no outside receiver/.test(m)),
+        'containment is what the boundary knows')
+    assert.equal(result.messages.some((m) => /Undefined variable/.test(m)), false,
+        'never an undefined-name error')
+    assert.ok(result.host.children.get('rabbit'), 'the observed participant survives')
+    assert.ok(result.host.children.get('fox'), 'the receiver survives')
+})
+
+
+// ── The same binding at acquisition and at reconstruction ────────────────────────
+// A being bound at first sight keeps its identity when the question is re-read; only
+// the expression argument is re-read, because a live name is a port. The unused
+// participant deliberately isolates binding from containment.
+// (id:being-facets-p2-seam)
+
+test('a rebuilt question retains a bound being and re-reads a live expression', () => {
+    const result = run(`let rabbit
+let driver
+def choose participant len do
+  fw len
+end
+let flake = choose rabbit driver.x`, { admit: ({ requested }) => ({ accepted: true, transform: requested }) })
+    const driver = result.host.children.get('driver'), flake = result.host.children.get('flake')
+    assert.deepEqual(flake.transform.deref().position, [0, 0, 0])
+    const outcome = result.scheduler.requestMotion(driver,
+        { rotation: driver.transform.deref().rotation, position: [12, 0, 0] }, result.scheduler.motionRevision)
+    assert.equal(outcome.kind, 'accept')
+    result.scheduler.readouts.recompute()
+    result.scheduler.readouts.drain()
+    drive(result.scheduler, { maxTicks: 120 })
+    assert.deepEqual(flake.transform.deref().position, [12, 0, 0], 'the live expression reached the rebuild')
+    assert.equal(result.scheduler.errors.some((e) => /Undefined variable: rabbit/.test(e.message)), false,
+        'the bound being was not re-found by spelling')
+})
+
+test('a bound being is retained even when a same-name spelling would fail', () => {
+    const result = run(`let rabbit
+let driver
+def choose participant len do
+  fw len
+end
+let flake = choose rabbit driver.x`, { admit: ({ requested }) => ({ accepted: true, transform: requested }) })
+    result.scheduler.readouts.recompute()
+    result.scheduler.readouts.drain()
+    drive(result.scheduler, { maxTicks: 60 })
+    assert.equal(result.scheduler.errors.some((e) => /Undefined variable/.test(e.message)), false,
+        'the identity, not the spelling, is what the rebuild holds')
+})
+
+// ── Presence, never truthiness: only omission takes the default ───────────────────
+
+test('a supplied empty string keeps its meaning and reaches the consumer', () => {
+    const result = runTrace(`def emit t do
+  label t
+end
+emit ""`)
+    assert.deepEqual(result.labels, [''], 'the supplied empty text was not replaced by 0')
+})
+
+test('an omitted argument alone takes the recipe default', () => {
+    const result = runTrace(`def emit t do
+  label t
+end
+emit`)
+    assert.deepEqual(result.labels, ['0'], 'omission receives the default')
+    assert.deepEqual(result.scheduler.errors.map((e) => e.message), [])
+})

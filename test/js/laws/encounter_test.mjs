@@ -216,10 +216,9 @@ wait 60
     assert.equal(w2.put(X, [5, 0, 0]).kind, "accept", "the input moves mid-opening")
     w2.pump(40)
     assert.ok(a2.runIncarnation > 1, "today: a new question is a new run — the opening RESTARTS")
-    // STEP 4's WITNESS: the new run restarts its wait, so while the hand keeps asking the
-    // answer never completes. It completes only once the hand rests.
-    assert.deepEqual(w2.ink(a2), [25], "mid-restart: only the first stroke exists")
-    w2.pump(80)
-    assert.deepEqual(w2.ink(a2), [25, 25], "and it completes only after the hand rests")
+    // The rebuilt opening re-anchors its wait at the revision cut (the move), not the
+    // parent's future wait, so it completes one authored wait after the cut.
+    // (id:declared-behaviour-revision-clock)
+    assert.deepEqual(w2.ink(a2), [25, 25], "the rebuilt opening completes at the re-anchored cut")
     assert.equal(runs0, 1, "the first world was left alone")
 })

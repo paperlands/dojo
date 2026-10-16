@@ -757,6 +757,52 @@ name text is an index, not an end-of-walk existence requirement. [[id:laws-order
 declared-but-unreached local name is a located =Use before introduction=. Fence:
 =declaration_test.mjs= ordered-birth tests.
 
+** one acquisition — a name finds the same being wherever it is written
+:PROPERTIES:
+:ID: nav-one-acquire
+:KEYWORDS: acquire acquireArgument bareSubjectOf subject bind being argument declaration quotation self finding identity
+:PATH: assets/js/turtling/executor.js::acquireArgument
+:END:
+=acquireArgument= is the ONE reader of an argument, whatever its surface: an explicit
+=Value=, a bare name that binds a being, or an expression. An ordinary call holds
+=Argument= nodes and a declaration's =figureCall= holds raw strings; both reach here, so
+=let flake = choose rabbit= finds the being an ordinary =choose rabbit= does. The ambient
+door's =subject= finds a name INCLUDING self: a body's own name is a binding, not a
+coordinate reachable only through a dot. The quote stays the boundary — an unresolved
+bare name in a =word= hole keeps its spelling (=white=), while a found being reaches the
+consumer's adaptation. [[id:being-facets-p2-seam]] · [[id:being-facets-centers-review]].
+Fence: =subject_binding_test.mjs= one-acquisition tests.
+
+
+** participant membrane — explicit inputs carry scoped encounters
+:PROPERTIES:
+:ID: nav-participant-membrane
+:KEYWORDS: membrane participant passedParticipant encounter facet receiver declaration question identity request publication
+:PATH: assets/js/turtling/scheduler.js::passedParticipant
+:END:
+The closed region's attached =seed.question= retains the beings explicitly supplied at its
+binding site. =passedParticipant= admits their facet requests and receiver proposals by
+identity, not spelling; =resolveFacet=, =spawn= and =publish= retain their existing liveness,
+original-law and run-rights checks. Descendants inherit the enclosing region's addresses;
+a nested declaration cannot import a free world name. No new callable kind or open profile.
+Fence: =test/js/laws/participant_membrane_test.mjs=. [[id:being-facets-participant-membrane]].
+
+
+** deferred question — retained inputs, consumed meaning, owned interpretation
+:PROPERTIES:
+:ID: nav-deferred-question
+:KEYWORDS: deferred question capture retained interpretation footprint baseline forwarding sameSeed supersede comparison progress
+:PATH: assets/js/turtling/scheduler.js::captureQuestionView
+:END:
+=registerFigureCell= transfers the retained view on equal reuse but updates the declaration's
+subscription. =recordQuestionRead= routes inherited dependencies to their original authority;
+=figureQuestion= compares consumed baselines under their retained interpretation, not a
+reader's later drawing state. =supersedeFigure= adopts requested demand only when attaching
+it, and retains the run when demand returns to the attached question. Installation reads
+remain live. Fence: =test/js/laws/deferred_question_test.mjs=.
+Contract and limits: [[id:being-facets-root-repair]].
+
+
 ** law address and owner — what a line replaces
 :PROPERTIES:
 :ID: nav-law-address
@@ -2111,6 +2157,55 @@ then named activation. Selection forwards best; no returned-reference prerequisi
 Admission adversary: =node probe/bound-behaviour/receiver-admission.mjs= — closed escape
 and source replacement are refused; formal-binding/caller-scalar precedence is closed and
 fenced. The receiver's own run/slot ownership remains the open seam (id:being-facets-p4-sequence).
+
+** declared behaviour causal center — revision is not a paint opportunity
+:PROPERTIES:
+:ID: nav-declared-behaviour-causal-center
+:MODULE: scheduler.js, laws/readout.js, compositor.js
+:KEYWORDS: hunting causal logical frontier pending demand own motion receiver context revision clock hand starvation feedback
+:PATH: specs/compiler/declared-behaviour-causal-center.org
+:END:
+[[id:declared-behaviour-causal-center]] reopens the revision's causal center with frozen
+paired contrasts: authored trajectory invariance, demanded-versus-attached lifetime,
+nested receiver authority and same-instant renewal. Scratch clock substitution is a
+counterfactual, not a production fix; builds must be tested at their causal service cut.
+
+** declared behaviour revision — question changes, accepted history remains
+:PROPERTIES:
+:ID: nav-declared-behaviour-revision
+:MODULE: scheduler.js, executor.js, laws/readout.js
+:KEYWORDS: hunting sierpinski declarative behaviour reconstruction restart local time question installation feedback progress cancellation equality
+:PATH: test/js/laws/behaviour_revision_test.mjs
+:END:
+Run =node --test test/js/laws/behaviour_revision_test.mjs= for twenty-two standing witnesses.
+[[id:declared-behaviour-revision]] selects local-zero reconstruction without rewinding
+receiver history; a consumed participant change now revises the declared behaviour through
+the existing readout replacement, and the fresh run re-anchors its waits at the revision
+cut (no catch-up). The retained receiver's accepted pose is an implicit input: an external
+change revises it, the run's own accepted motion advances the baseline. Implicit receiver
+reads stay current-world (=isLiveReceiver=, scoped by question authority); an explicit
+receiver-as-question remains characterized feedback. Controls prove old-reply revocation
+AND fresh publication; equal reuse is scoped to the current lifetime.
+Installation stroke ids include their writer identity: a replacement must not join its
+first segment to the retained receiver's old trail across a pen-up hand move
+(=scheduler.js::tagRun=). Real rendered-segment fence:
+=test/js/render/installation_ink_test.mjs=.
+[[id:declared-behaviour-hand-release]] uses the generic input revision scope; the gesture
+owns its cleanup across release, cancellation and disposal. No grab policy lives in the
+scheduler. Fence: =test/js/laws/grab_revision_test.mjs=.
+
+** execution input revisions — one permission, not a hand-specific pause
+:PROPERTIES:
+:ID: nav-execution-input-revisions
+:MODULE: execution.js, scheduler.js, laws/readout.js
+:KEYWORDS: execution permission defer input revision scope lease grab release hold async reply continuation rebuild pending permitted work nested question authority
+:PATH: assets/js/turtling/execution.js
+:END:
+[[id:execution-input-revisions]]: =scheduler.defer(input)= returns an idempotent close;
+one live =permits(owner)= governs dependent continuations, keyed builds and admission
+delivery. Observations remain live; pending demand is not yet permitted work. Async replies
+share =scheduler.js::parkOnVerdict= and stay in the existing suspension when deferred.
+Fences: =test/js/runtime/execution_test.mjs= and =test/js/laws/execution_revision_test.mjs=.
 
 ** the grammar — a comma-list is a quantity, the delimiter names its kind
 :PROPERTIES:

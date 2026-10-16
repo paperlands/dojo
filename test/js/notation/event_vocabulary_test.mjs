@@ -24,7 +24,7 @@ import { nameAnchor } from "../../../assets/js/turtling/laws/pin.js"
 describe("the wire's vocabulary", () => {
     test("the scheduler routes exactly these verbs — a new one is an edit here", () => {
         assert.deepEqual(Object.keys(EFFECTS).sort(), [
-            "birth", "blocked", "breath", "law", "limitMailbox", "motion",
+            "birth", "blocked", "breath", "construct", "law", "limitMailbox", "motion",
             "motionUnresolved", "notice", "parameter", "scalar", "shout", "spawn",
             "wait", "yield",
         ])

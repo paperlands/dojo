@@ -14,6 +14,10 @@ export const same = (a, b) => {
     return Object.is(a, b)
 }
 
+// A keyed figure's question carries bindings plus the meanings it consumed; the store's
+// public view stays the binding array. (id:being-facets-root-repair)
+const exposeQuestion = (q) => (q && q.deferredQuestion ? q[0] : q)
+
 const isKeyed = (spec) => typeof spec === "function" ? false : (spec != null && typeof spec === "object" && typeof spec.capture === "function" && typeof spec.build === "function")
 const isCaptured = spec => typeof spec === 'object' && spec != null &&
     typeof spec.capture === 'function' && typeof spec.compute === 'function'
@@ -26,7 +30,7 @@ const cycleError = () => {
     return error
 }
 
-export function createReadouts() {
+export function createReadouts({ permits = () => true } = {}) {
     const nodes = new Map()        // node id -> node record
     const bySource = new Map()     // source -> Map(key -> node id)
     const watchers = new Set()
@@ -52,6 +56,11 @@ export function createReadouts() {
     let prevSize = -1
     let cachedCycle = null        // the last SCC result and closure, reused while topology holds
     let cachedInvalid = null
+
+    // Pending demand is work only while its execution scope permits servicing.
+    // (id:execution-input-revisions)
+    const work = node => node.build && node.pending && !node.cycled &&
+        (node.scope == null || permits(node.scope))
 
     // Every watcher is invited before any failure is re-raised: one throwing
     // subscriber must not silence its siblings or leave a commit half-announced.
@@ -512,7 +521,7 @@ export function createReadouts() {
             drains++
             const changed = []
             for (const node of [...nodes.values()]) {
-                if (!node.build || !node.pending || node.cycled) continue
+                if (nodes.get(node.id) !== node || !work(node)) continue
                 const question = node.requested
                 let value, refused = false
                 try {
@@ -563,15 +572,23 @@ export function createReadouts() {
             return node.value
         },
 
+        // Whether an attached realization still answers the latest captured question.
+        // (id:declared-behaviour-revision-contract)
+        accepts(source, key, question) {
+            const node = nodes.get(bySource.get(source)?.get(key))
+            return !node?.hasRequested || same(node.requested, question)
+        },
+
 
         stats() { return { size: nodes.size, recomputes, drains, builds } },
         // Existing state, not a second queue: is any keyed answer waiting to build?
         hasPending() { for (const node of nodes.values()) if (node.pending) return true; return false },
+        hasWork() { for (const node of nodes.values()) if (work(node)) return true; return false },
         list() {
             return [...nodes.values()].map((n) => ({
                 id: n.id, keyed: !!n.build, hasValue: n.value !== undefined,
                 pending: !!n.pending, hasRequested: !!n.hasRequested,
-                question: n.requested ?? null,
+                question: exposeQuestion(n.requested) ?? null,
                 failure: n.failure ? String(n.failure.message ?? n.failure) : null,
             }))
         },
@@ -600,6 +617,7 @@ function makeNode(id, source, key, spec, drives = null) {
 }
 
 function resetNode(node, spec) {
+    node.scope = spec?.scope
     if (isKeyed(spec)) {
         node.compute = undefined
         node.capture = spec.capture
@@ -651,7 +669,7 @@ function captureQuestion(node, snapshot, changed) {
     // Tell observers the question moved and the standing answer is now *previous*.
     changed.push({
         id: node.id, source: node.source,
-        question: node.requested, pending: true, refused: node.refused,
+        question: exposeQuestion(node.requested), pending: true, refused: node.refused,
         value: node.value, previous: node.value,
     })
 }
@@ -672,7 +690,7 @@ function settle(node, question, value, refused, changed) {
     changed.push({
         id: node.id,
         source: node.source,
-        question,
+        question: exposeQuestion(question),
         pending: false,
         refused,
         value: refused ? undefined : value,

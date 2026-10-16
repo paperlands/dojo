@@ -1,5 +1,5 @@
 import { ASTNode } from "./ast.js"
-import { parseProperty, parseSupport } from "./laws/authored.js"
+import { parseProperty, parseSupport, propertyOf } from "./laws/authored.js"
 import { getOperator } from "./mafs/operators.js"
 import { Lexer } from "./mafs/lexer.js"
 import { Parser as ExprParser } from "./mafs/parse.js"
@@ -604,6 +604,12 @@ function declarationEquals(source) {
     return -1
 }
 
+// A binder is a plain name OR one quoted word — the spelling `let "part[count]"`
+// already uses. The word's VALUE is read at its reach by the one name seam; the
+// parser only says whether a name was written. (id:laws-names)
+const QUOTED_WORD = /^(?:'[^']*'|"[^"]*")$/
+const names = (lhs) => /^[A-Za-z_][\w-]*$/.test(lhs) || QUOTED_WORD.test(lhs)
+
 function parseStatement(tokens, state, rec) {
     const kw = tokens[0];
     const len = tokens.length;
@@ -684,8 +690,9 @@ function parseStatement(tokens, state, rec) {
         // is: a point is a place, a vector an object and a value, anything else a
         // derived value. The walk that reads it knows. (id:notation-coordinate-vector)
         //
-        // Other function-looking binders are not declarations. (id:laws-names)
-        if (!/^[A-Za-z_][\w-]*$/.test(lhs)) {
+        // Other function-looking binders are not declarations; a quoted word IS a
+        // name, read at its reach by the same seam. (id:laws-names)
+        if (!names(lhs)) {
             return errorNode(rec, "a name after 'let'", lhs)
         }
         if (listed(expr) && !parses(expr)) {
@@ -774,6 +781,13 @@ function parseStatement(tokens, state, rec) {
 
 
 // print ast fn
+
+// The printer's inverse of the distance-subject reader: a live name, a framed point
+// `(x,y,z)`, or a relative vector `[x,y,z]`. (id:laws-distance-literal-address)
+const spellSubject = (s) => typeof s === 'string' ? s
+    : Array.isArray(s?.framed) ? `(${s.framed.join(', ')})`
+        : Array.isArray(s?.relative) ? `[${s.relative.join(', ')}]`
+            : String(s)
 export function printAST(ast) {
     const out = [];
     
@@ -868,6 +882,27 @@ export function printAST(ast) {
                 out.push(`${indent}as ${node.value}${mod} do${margin}`)
                 node.children.forEach(c => visit(c, depth + 1))
                 out.push(indent + END + endMargin)
+                break
+            }
+
+            case 'Existence':
+                // A bare `let NAME` — a place, seeded at its reach. (id:laws-ordered-birth)
+                out.push(`${indent}let ${node.value}${margin}`)
+                break
+
+            case 'Declaration':
+                out.push(`${indent}let ${node.value}=${node.meta.expr}${margin}`)
+                break
+
+            case 'Law': {
+                // `feature(subjects) = e` or `target.property = e`. The authored
+                // spelling comes from the row, never a local feature list. (D058)
+                const subjects = node.meta.subjects
+                if (subjects) {
+                    out.push(`${indent}let ${node.value}(${subjects.map(spellSubject).join(', ')})=${node.meta.expr}${margin}`)
+                } else {
+                    out.push(`${indent}let ${node.meta.target}.${propertyOf(node.value, node.meta.axis)}=${node.meta.expr}${margin}`)
+                }
                 break
             }
 

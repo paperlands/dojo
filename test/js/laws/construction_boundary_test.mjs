@@ -1,8 +1,6 @@
-// Phase 0 — the construction boundary. A closed (private/derived) construction must not
-// acquire authority over a being OUTSIDE it: forbidden attachment refuses BEFORE any
-// partial mutation. Private-local construction and INTERNAL attachment stay permitted.
-// Inspect pose, closure, source, subtree and laws — not only errors.
-// (id:being-facets-p4-rungs, id:laws-figures-phase34-review)
+// A private construction cannot import free world authority; explicit participant inputs
+// admit scoped requests without replacing the participants or their original laws.
+// (id:being-facets-participant-membrane)
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildWorld, fork, drive } from './harness.mjs'
@@ -11,7 +9,7 @@ import { frameWorldTransform } from '../../../assets/js/turtling/scheduler.js'
 const position = (frame) => frameWorldTransform(frame).position
 const messages = (scheduler) => scheduler.errors.map((error) => error.message ?? String(error))
 
-test('a private construction cannot acquire authority over an outside being', () => {
+test('a private construction cannot acquire authority over an unpassed outside being', () => {
     const scheduler = buildWorld()
     // The outside being is SOURCED: it owns a body, a subtree and an own-scope law, so
     // preservation is a POSITIVE claim, not an empty-subtree absence. (id:being-facets-p4-rungs)
@@ -33,15 +31,14 @@ let C.x = 1`))
     fw 1
   end
 end
-def wrap target do
-  let out = move target
+def wrap do
+  let out = move A
 end
-wrap A`)
-    spec.env.scope.A = A
+let private = wrap`)
     const src = scheduler.hotSwapChild('src', spec)
     drive(scheduler)
-    const out = src.children.get('out')
-    assert.ok(out, 'the private answer exists')
+    const out = src.children.get('private')?.children.get('out')
+    assert.ok(out, 'the nested private answer exists')
     // The private construction is closed, derived, and owns nothing outside it.
     assert.equal(out.closed, true, 'the answer is a private construction')
     assert.equal(out.profile, 'derived')

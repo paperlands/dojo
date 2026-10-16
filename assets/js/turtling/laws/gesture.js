@@ -50,7 +50,7 @@ export function createGesture(deps) {
         project,         // (worldPosition) => { x, y } in CSS pixels
         rayAt,           // (x, y) => { origin, direction }
         facing,          // () => the camera's world viewing direction
-        capture,         // ({ pointerId }) => void
+        capture,         // ({ pointerId, frame }) => optional cleanup
         release,         // ({ pointerId }) => void
         setControls,     // (enabled) => void
         controlsEnabled, // () => boolean — the camera's OWN current state
@@ -70,10 +70,11 @@ export function createGesture(deps) {
     // unconditional enable — comes back.
     const endCapture = (reason, acceptedPosition) => {
         if (!grab) return false
-        const { pointerId, name, controlsWasEnabled } = grab
+        const { pointerId, name, controlsWasEnabled, close } = grab
         grab = null
         release({ pointerId })
         setControls(controlsWasEnabled)
+        close?.()
         if (reason) {
             onReadout(readout({ point: name, accepted: acceptedPosition ?? null, requested: null, outcome: reason }))
         }
@@ -139,7 +140,7 @@ export function createGesture(deps) {
                     armed: false,
                     controlsWasEnabled: controlsEnabled(),
                 }
-                capture({ pointerId })
+                grab.close = capture({ pointerId, frame: candidate.frame })
                 setControls(false)
                 // The frame travels back so a cue can be exact: names can repeat
                 // across scopes, a frame cannot.

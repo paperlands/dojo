@@ -441,11 +441,12 @@ export class Turtle {
             // Slight stickiness at the ball's own landmarks: the paper it rests on.
             // (id:laws-decl-anchor)
             detents: { paper: true, poles: true },
-            capture: ({ pointerId }) => {
+            capture: ({ pointerId, frame }) => {
                 captured = pointerId
                 try { canvas.setPointerCapture?.(pointerId) } catch { /* browser may not own it */ }
                 damping = controls.enableDamping
                 controls.enableDamping = false
+                return scheduler.defer(frame)
             },
             release: ({ pointerId }) => {
                 if (captured === pointerId) {
