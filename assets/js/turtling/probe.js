@@ -4,6 +4,17 @@
 // play needs a way to ASK it (id:codex-play-eyes). Nothing in assets/ may
 // import this file. Opt-in only (`?perf=1` in the shell).
 
+import { snapshotFact } from './observation.js'
+
+const LAW_FIELDS = ['address', 'feature', 'relation', 'endpoints', 'scope', 'frame', 'predicate',
+    'owner', 'axis', 'expression', 'kind', 'guards', 'bounds', 'sourceIds']
+// Observation scope: law facts only; other read fields are delegated as-is.
+const lawFact = (law) => {
+    const fact = {}
+    for (const key of LAW_FIELDS) if (key in law) fact[key] = law[key]
+    return snapshotFact(fact)
+}
+
 export function attachProbe(turtle, law, { authoredOf } = {}) {
     window.__probe = {
         read: () => {
@@ -23,6 +34,11 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                         transform: snapSE3(ambient.transform?.deref?.() ?? ambient.transform),
                         origin: snapSE3(ambient.origin),
                         isPlace: !!ambient.isPlace,
+                        // Retained ownership ids, not liveness or publication permission; ids join in this read.
+                        // (id:being-facets-p4-sequence)
+                        installation: ambient.installation === true,
+                        receiverId: ambient.receiver?.id ?? null,
+                        sourceId: ambient.installationRecord?.source?.id ?? null,
                         error: ambient.error ?? null,
                         unresolved: ambient.unresolved ?? null,
                         state: turtle._stateOf?.(ambient) ?? null,
@@ -63,9 +79,9 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                 controlsEnabled: turtle.stage?.controls?.enabled ?? null,
                 // The play's active laws: address → predicate + owner.
                 // (id:laws-ordered-replacement)
-                laws: sch?.laws?.active?.() ?? [],
-                // The last decision, read-only: what was attempted, against what,
-                // with which gate result. Records only when the probe is attached.
+                laws: (sch?.laws?.active?.() ?? []).map(lawFact),
+                // Last recorded decision: what was attempted, against what, with which gate.
+                // (id:scheduler-observation-ownership)
                 attempt: sch?.root?._lastAttempt ?? null,
             }
         },

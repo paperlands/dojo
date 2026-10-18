@@ -77,8 +77,16 @@ export function conflictMessage(violation, candidate) {
 }
 
 // A live frame is circular; the record must be plain data a probe can serialize.
+const quatComponents = ['w', 'x', 'y', 'z']
+const plainRotation = (r) => (r == null || typeof r !== 'object'
+    ? r
+    : Object.fromEntries(quatComponents.filter((k) => k in r).map((k) => [k, r[k]])))
+const plainPose = (p) => (p == null || typeof p !== 'object'
+    ? p
+    : { rotation: plainRotation(p.rotation),
+        position: Array.isArray(p.position) ? p.position.slice() : p.position })
 export const plainPoses = (x) => (Array.isArray(x)
-    ? x.map((p) => ({ frame: p.frame?.id ?? p.frame, pose: p.pose }))
+    ? x.map((p) => ({ frame: p.frame?.id ?? p.frame, pose: plainPose(p.pose) }))
     : (x ?? null))
 
 // --- Attempt holds, pins, and the affected component ---

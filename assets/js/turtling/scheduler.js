@@ -21,6 +21,7 @@ import { measure, headingOf, elevationOf } from "./laws/relations.js"
 import { createReadouts, same as sameValue } from "./laws/readout.js"
 import { SE3 } from "./se3.js"
 import { storageSpace, toLocalPose, toWorldPose } from "./localize.js"
+import { snapshotFact } from "./observation.js"
 import { keyedSeed, keyedStream } from "./mafs/keyed_stream.js"
 import { parseMemo } from "./mafs/parse_memo.js"
 import { chargeInk, woundInk, enforceResidency, resetInk, createStock } from "./ledger.js"
@@ -2241,11 +2242,11 @@ function releaseRegion(frame, pump) {
 }
 
 
-// A read-only record of the last decision, for the opt-in probe. It observes
-// publication — it never decides, mutates or delays one. (id:codex-play-eyes)
+// The last RECORDED decision, not a commit receipt; the revision samples the
+// publication counter at capture. (id:scheduler-observation-ownership)
 function recordAttempt(root, entry) {
     if (!root) return
-    root._lastAttempt = { ...entry, revision: root._motionRevision ?? 0 }
+    root._lastAttempt = snapshotFact({ ...entry, revision: root._motionRevision ?? 0 })
 }
 
 
@@ -2401,15 +2402,14 @@ function acceptVerdict(ctx, verdict, pump, attempt) {
     }
     if (motionBaseChanged(writer, request) || questionMoved(writer)) verdict = { kind: 'stale' }
     else {
-        // Default own-motion following is reproposed at acceptance from current state.
-        // Parking retains the raw offer; an installed responder owns its own answer.
-        // (id:laws-free-relations-f4-actor)
-        // The same geometry fact, asked after staleness and before the producer. The program's
-        // settlement belongs to its own instant, so no `done` test appears here.
-        // (id:laws-free-relations-f4-actor, id:laws-free-relations-contract)
-        if (usesDefaultMotion(pump) &&
-            writer === destination && request.command !== 'hand' && isMotionDestination(writer, pump.registry)) {
-            verdict = programFollowing(verdict, writer, pump.registry, pump.laws, lawWorld) ?? verdict
+        // Following uses destination geometry, not installation placement. The actual
+        // writer retains its rights; an out-of-scope expansion declines WHOLE.
+        // (id:laws-free-relations-f4-actor, id:being-facets-p4-sequence)
+        if (usesDefaultMotion(pump) && request.command !== 'hand' &&
+            isMotionDestination(destination, pump.registry)) {
+            const produced = programFollowing(verdict, destination, pump.registry, pump.laws, lawWorld)
+            if (produced && produced.component.every(({ frame }) =>
+                mayAddressParticipant(writer, frame, pump.registry))) verdict = produced
         }
         verdict = checkMotion({ ...verdict }, attempt, pump.registry, pump.motionValidate)
     }

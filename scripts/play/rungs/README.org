@@ -24,6 +24,12 @@ id:laws-ordered-replacement)
 | =driven-coordinate.txt= | play | drag X: A.x follows X.y; A.y stays free, A.z holds zero |
 | =reactive-randomness.txt= | play | drag B.x: A.x gets a fresh random offset; B.y and idle keep it |
 | =protractor.txt=    | play | drag an arm tip: radial sets its length, around sets the angle |
+| =receiver-spines.txt= | play | one recipe over two supplied 3-joint chains; stride/turn twiddle; fw trails; fit before shot |
+| =conic-orbit.txt=   | play | one cone cut by a plane: pitch selects circle, ellipse, parabola or hyperbola |
+| =torus-knot.txt=    | play | p=2, q=3 trefoil on a torus of radii 3 and 1.2; closed parametric walk |
 
 A rung's *fence* is its headless suite; this directory is the second eye — the
 actual canvas. Keep both, and keep them small.
+
+=receiver-spines.txt= needs a late frame for its accumulated trails: after =run=,
+=eval 'window.__probe.fit()'= then =shot <png> --bare=.

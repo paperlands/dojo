@@ -982,7 +982,7 @@ earlier ~1e-3 reading was display rounding. Fences: =test/js/laws/leaf_init_test
 :PATH: specs/compiler/laws-free-relations-review.org::laws-free-relations-review
 :END:
 Bound originals, accepted reference, coordinate roles and request/choice remain distinct.
-=verdict.js::programFollowing= encodes GIVEN/FREE with one private own-pose =work= map;
+=laws/program_following.js::programFollowing= encodes GIVEN/FREE with one private own-pose =work= map;
 accepted =reference= is not assignment knowledge. Placement reads remain held even for
 unassigned followers. =question_scope_test.mjs= fences hidden conditioning and private work.
 [[id:laws-free-relations-actor-campaign]]; prior reasoning: [[id:laws-free-relations-compositional-center]].
@@ -1148,6 +1148,7 @@ publisher installs. Policy modules import this, never =verdict.js= internals.
 :KEYWORDS: actor following programFollowing nearestChild scalar treeShape treeFold poseReference expressPose statePose accepted bond pure distance tree own instant free sibling positionPose local rotation position-only follower pose
 :PATH: assets/js/turtling/laws/following.js
 :PATH: assets/js/turtling/laws/program_following.js
+:PATH: assets/js/turtling/scheduler.js::acceptVerdict
 :END:
 The tree orders placement; it does not require a homogeneous conjunction. A follower keeps its
 radial accepted-bond offer if ready originals hold, else existing =pointQuery/meet/nearest=
@@ -1159,10 +1160,17 @@ for both =expressPose= and =statePose=; world requests keep their identity fast 
 final edits; it is POLICY over the kernel, not part of the verdict layer. =candidate.js::
 positionPose= shares only position conversion and exact accepted local rotation with reach and
 hand repair, not their selection policy. =scheduler.js::acceptVerdict= owns independent
-validation and publication, and certifies the FINAL candidate once ([[id:nav-law-certify-final]]). Full pins, other running actors, non-tree coupling and unsupported
+validation and publication, and certifies the FINAL candidate once ([[id:nav-law-certify-final]]).
+For an installation the default producer's geometric root is the DESTINATION (its retained
+receiver); the installation stays the actual writer for publication rights, never certification.
+The whole produced component is screened with =mayAddressParticipant(actual writer, member)=:
+any inadmissible member declines the expansion WHOLE, leaving the ORIGINAL offer to the gate.
+[[id:laws-free-relations-installed-receiver]]. Full pins, other running actors, non-tree coupling and unsupported
 reductions retain bounded refusals. Independent conditioned branches commute, not arbitrary
 cross-branch reads. Keepers: =test/js/laws/{actor_follow,following,hand_standard,component_response,
-lifecycle_witness,localization_representation}_test.mjs=.
+lifecycle_witness,localization_representation,receiver_follow,receiver_affordance}_test.mjs=.
+Nine focused tests across =receiver_follow= (7) and =receiver_affordance= (2) fence this path.
+Rung: =scripts/play/rungs/receiver-spines.txt= — one recipe over two supplied 3-joint chains.
 [[id:laws-free-relations-actor-campaign]].
 
 ** actor spine in the browser — ordinary source, no hand switch
@@ -1219,6 +1227,28 @@ candidate that will publish, never an intermediate proposal. =isMotionDestinatio
 shared geometry fact and stops there: settlement is each door's own order, hand (settled actor)
 versus program (its own running instant). Keepers:
 =test/js/laws/{component_response,hand_standard}_test.mjs=. D063.
+
+** owned observations — decision and law facts
+:PROPERTIES:
+:ID: nav-observation-ownership
+:KEYWORDS: observation ownership snapshotFact decision record law facts plain data freeze ids roles probe attempt capture revision keys
+:PATH: assets/js/turtling/observation.js::snapshotFact
+:PATH: assets/js/turtling/scheduler.js::recordAttempt
+:PATH: assets/js/turtling/probe.js::attachProbe
+:PATH: assets/js/turtling/laws/verdict.js::plainPoses
+:END:
+Decision and active-law observations own immutable plain data: runtime handles become
+ids, pose components are projected explicitly, numerics are not normalized; callers
+supply plain, acyclic input, never a general serializer. The attempt slot is the last
+RECORDED decision, not a ledger or commit receipt: =revision= samples the publication
+counter at capture, not necessarily after commit. Ambient =installation=/=receiverId=/
+=sourceId= are retained-role designations, not liveness or permission; join ids within
+the SAME read, never by namesake. Delegated =state=/=authored=/=layers=/=order=/=error=
+are not generally audited; no whole-port security claim. Records pay a copy/freeze
+cost, and admissions may be frequent; no cheapness or performance claim.
+Fences: =test/js/laws/{decision_snapshot,probe_roles,plain_poses,law_observation}_test.mjs=.
+Receiver context: [[id:nav-law-follow-responder]], =receiver-spines.txt=.
+[[id:scheduler-observation-ownership]].
 
 ** movement cost — named operations, matched-state diagnostics
 :PROPERTIES:
