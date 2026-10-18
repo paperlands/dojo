@@ -150,6 +150,9 @@ export function createOverlay({ onResize, space = CLIENT_SPACE, canvas: surface 
 
     return {
         get ctx() { return ctx },
+        // The element itself: a picture composites the LAYER, not the canvas it
+        // sits above, and the layer owns its own bitmap size.
+        get canvas() { return layer },
         get width() { return width },
         get height() { return height },
         // The layer's client-space box. A mark projected to a client point is inside

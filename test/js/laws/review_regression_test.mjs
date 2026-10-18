@@ -34,7 +34,27 @@ test("P1.1 ordinary program motion obeys an active law with no responder", () =>
     const B = find(host, "B")
     assert.equal(B.error, null, "a refusal is not a wound")
     assert.equal(dist(A, B).toFixed(6), "5.000000", "the law held")
-    assert.deepEqual(world(B), [0, 0, 0], "the step was refused, so B did not move")
+    // The default following method answers the truth by PLACEMENT, not by refusal: the walker
+    // keeps the intent it authored and the bound free point is carried with it. Obeying a law
+    // and refusing a step are different answers, and the method set decides which one applies.
+    // (id:laws-free-relations-f4-actor)
+    assert.deepEqual(world(B), [100, 0, 0], "the step was taken along its own heading")
+    assert.deepEqual(world(A), [95, 0, 0], "the free partner was carried, still at 5")
+})
+
+test("P1.1b a PINNED partner keeps the lawful refusal: no wound, no move", () => {
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild("host", fork("host",
+        "let A=(5,0,0)\nlet B\nas B do\n  let A.distance = 5\n  fw 100\nend"))
+    drive(scheduler)
+    const A = find(host, "A")
+    const B = find(host, "B")
+    // A pin is not a free point, so the following method declines and the ordinary gate keeps
+    // its say: the step is refused, nothing moves, and the refusal is not a wound.
+    assert.equal(B.error, null, "a refusal is not a wound")
+    assert.equal(dist(A, B).toFixed(6), "5.000000", "the law held")
+    assert.deepEqual(world(A), [5, 0, 0], "the pinned partner did not move")
+    assert.deepEqual(world(B), [0, 0, 0], "the walker did not move")
 })
 
 test("P1.1 the Promise admission path obeys the law too", async () => {

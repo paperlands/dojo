@@ -2,7 +2,8 @@
 // Pump + park: preemptive slice (time) and backpressure (credit/residency) share one park.
 // Instant law: no sibling advances past a parked mid-instant. (id:output-ledger-r2-instant)
 
-import { createFrame, isBeing } from "./frame.js"
+import { createFrame, isBeing, isLiveBeing, liveIn } from "./frame.js"
+import { isWithinRegion, isSuppliedParticipant, mayAddressParticipant } from "./participation.js"
 import { createExecution } from "./execution.js"
 import { installAmbientDoor } from "./ambient.js"
 import { report, notice as noticeWire } from "./report.js"
@@ -12,13 +13,14 @@ import { deriveBatch, exposed, freePoint } from "./laws/batch.js"
 import { resolveTarget, reservedUnreached } from "./laws/resolution.js"
 import { addressOf, bindLaw, createLawStore } from "./laws/replacement.js"
 import { lawViolation, brokenLaw, heldFrame, continueLaws, conflictMessage, affectedMembers, plainPoses, applyLaw } from "./laws/verdict.js"
+import { programFollowing } from "./laws/program_following.js"
 import { predicateOk, kindOf } from "./laws/expression.js"
 import { AUTHORED, bindWorld, driveOf, mayEstablishOf, withPayload } from "./laws/authored.js"
 import { meetAll, nearest } from "./laws/meet.js"
 import { measure, headingOf, elevationOf } from "./laws/relations.js"
 import { createReadouts, same as sameValue } from "./laws/readout.js"
 import { SE3 } from "./se3.js"
-import { storageSpace } from "./localize.js"
+import { storageSpace, toLocalPose, toWorldPose } from "./localize.js"
 import { keyedSeed, keyedStream } from "./mafs/keyed_stream.js"
 import { parseMemo } from "./mafs/parse_memo.js"
 import { chargeInk, woundInk, enforceResidency, resetInk, createStock } from "./ledger.js"
@@ -198,9 +200,13 @@ const identicalPose = (a, b) => a && b &&
     a.position[0] === b.position[0] && a.position[1] === b.position[1] && a.position[2] === b.position[2] &&
     a.rotation.w === b.rotation.w && a.rotation.x === b.rotation.x &&
     a.rotation.y === b.rotation.y && a.rotation.z === b.rotation.z
-// ONE liveness fact, read at every door: is this still the frame the registry holds?
-// A retired identity is not this world's writer, target or observer. (id:laws-ordered-replacement)
-const liveIn = (registry, frame) => frame != null && registry.get(frame.id) === frame
+// Geometry, not admission: a live being with a parent, not a lens, no wound. The hand asks it as
+// a precondition; the program asks only whether the DEFAULT producer may run. Settlement is absent
+// on purpose (a hand needs a settled actor; a program is the actor's own instant). (D063)
+const isMotionDestination = (frame, registry) =>
+    isLiveBeing(frame, registry) && frame.parent != null && !frame.isLens && !frame.error
+
+const usesDefaultMotion = (pump) => pump.motionAdmission == null && pump.motionAdmissionAsync == null
 
 // Execution ancestry owns the question; inputs retain identity, not their whole state.
 // (id:execution-input-revisions)
@@ -453,28 +459,25 @@ function dirtyWorldSubtree(frame) {
     bumpTree(frame)
 }
 
-// A statement's pose is expressed in a REFERENCE FRAME, and the door converts it to a
-// world position before deciding the field. Three names cover everything today, and a
-// fourth (`<named frame>`, an attachment point) is the same mechanism:
-//   own    - the frame's own chain, where its motion lives (what the walk speaks)
-//   parent - the parent's chain, where its origin lives (what a place's position is)
-//   world  - the root's frame (what a pointer picks: 'be there')
-// (id:laws-figures-phase34-hand-frame)
+// Own/parent reference stable placement; named frames reference their live heads.
+// Both conversion directions resolve through this one convention. (id:laws-figures-phase34-hand-frame)
+function poseReference(frame, ref) {
+    if (ref === 'parent') return frame.parent ? worldTransform(frame.parent) : SE3.identity()
+    if (ref === 'own' || ref == null) return worldTransform(frame)
+    const anchor = findReferenceFrame(frame, ref)
+    return anchor ? frameWorldTransform(anchor) : null
+}
+
 function expressPose(frame, ref, pose) {
     if (ref === 'world') return pose
-    if (ref === 'parent') {
-        const base = frame.parent ? worldTransform(frame.parent) : SE3.identity()
-        return SE3.compose(base, pose)
-    }
-    if (ref === 'own' || ref == null) return SE3.compose(worldTransform(frame), pose)
-    // A NAMED frame, resolved by the SAME door an ambient's frame of reference uses —
-    // findReferenceFrame, the wide reach with its generation memo. The language already
-    // says it: "a FRAME OF REFERENCE need not be kin, any frame can be one". So an
-    // attachment reaches what a reference reaches, and nothing new is invented for it.
-    // (id:laws-figures-phase34-attach)
-    const anchor = findReferenceFrame(frame, ref)
-    if (!anchor) return null
-    return SE3.compose(frameWorldTransform(anchor), pose)
+    const base = poseReference(frame, ref)
+    return base ? toWorldPose(base, pose) : null
+}
+
+function statePose(frame, ref, worldPose) {
+    if (ref === 'world') return worldPose
+    const base = poseReference(frame, ref)
+    return base ? toLocalPose(base, worldPose) : null
 }
 
 // The frame a `as <name> <frame> do` names. One door, so the drain, the tick
@@ -625,33 +628,17 @@ function resolveBinding(frame, name, args) {
     }
 }
 
-// The one eligibility predicate: exactly three facts and no authorization — a being,
-// the exact object in the current registry, and the requesting region's containment.
-// Each door orders its own refusal from these facts; operation policy (read, move,
-// receiver, attachment) stays with the caller. `owned` is asked even of a name that no
-// longer resolves, so an unresolved read is still the region's refusal.
-// (id:being-facets-centers-review, id:being-facets-p2-seam)
-function admitBeing(frame, being, registry) {
-    const isBe = isBeing(being)
-    // A registry is REQUIRED to certify liveness. A missing registry is not proof of life:
-    // it must never authorize a carried identity, a law or a receiver. The named read's
-    // standalone exception lives at its door (resolveFacet), not in this predicate.
-    // (id:being-facets-centers-review)
-    const live = isBe && registry != null && liveIn(registry, being)
-    return { being: isBe, live, owned: !frame.closed || ownsFrame(frame, being) }
-}
-
 // One facet door: a dotted reach and a bound being both end here, so eligibility and the
 // coordinate frame cannot diverge. `reference` is the reserved frame name the read came
 // through; a bound being passes null, so a reserved interpretation is never inferred from
 // a frame's presence. (id:being-facets-centers-review)
 function resolveFacet(frame, target, reference, property, args) {
     recordRead(frame.deps?.mathEvaluator, target)
-    const eligibility = admitBeing(frame, target, metaRootFrame(frame)._registry)
-    if (!eligibility.owned && !passedParticipant(frame, target)) {
+    const registry = metaRootFrame(frame)._registry
+    if (!mayAddressParticipant(frame, target, registry)) {
         throw new Error(`closed region has no world read: ${reference ? `${reference}.${property}` : `${target.name}.${property}`}`)
     }
-    if (!eligibility.being) {
+    if (!isBeing(target)) {
         // A missing name is a dataflow suspension while its parent can still spawn it;
         // only a finished parent makes it a wound. (D011)
         if (frame.inlineAdvancing || (frame.parent && !frame.parent.done)) {
@@ -663,7 +650,7 @@ function resolveFacet(frame, target, reference, property, args) {
     }
     // A name resolved in this tree has no separate retirement question; only a CARRIED
     // identity must be certified by the registry. (id:being-facets-centers-review)
-    if (!eligibility.live && reference == null) throw new Error(`retired subject: ${target.name}`)
+    if (!isLiveBeing(target, registry) && reference == null) throw new Error(`retired subject: ${target.name}`)
     // An observation is a synchronization point, not a peek at whatever committed pose
     // is lying there. A wait-for cycle is synchronous (Jacobi); a plain suspension parks.
     if (subtreeUnsettled(target) && !isAncestorOf(target, frame)) {
@@ -801,7 +788,7 @@ function markCycle(reader, target) {
 // (id:being-facets-situated)
 function observerBirth(observer, frozen = true) {
     const basis = observer.installation === true ? observer.receiver : observer
-    if (observer.installation === true && !admitBeing(observer, basis, metaRootFrame(observer)._registry).live) {
+    if (observer.installation === true && !isLiveBeing(basis, metaRootFrame(observer)._registry)) {
         throw new Error('the retained receiver has left the world')
     }
     const view = frozen ? questionViewOf(observer) : null
@@ -1132,16 +1119,6 @@ function resolveScopeValue(frame, name) {
     return frame.capture?.get(name)
 }
 
-// The outermost closed frame the reader belongs to: the region the boundary governs.
-function regionRoot(frame) {
-    let root = frame
-    for (let node = frame.parent; node && node.closed; node = node.parent) root = node
-    return root
-}
-
-// Is the named target inside the reader's own region? A local point answers yes; a
-// sibling outside the construction, or `world`/`origin`, answers no.
-// (id:laws-figures-phase34-review)
 // CAPTURE, for arguments: read each bound expression afresh in the DECLARING frame.
 // Names resolve there, so an inline argument means what the same expression bound at
 // the site would mean — and because this runs again for every question, a moved input
@@ -1165,21 +1142,6 @@ function evaluateArgs(frame, exprs, declared, seed) {
     })
 }
 
-function ownsFrame(frame, target) {
-    const root = regionRoot(frame)
-    if (!target) return false
-    for (let node = target; node; node = node.parent) if (node === root) return true
-    return false
-}
-
-// Explicit inputs are the membrane's addresses, not ownership of the outside world.
-// Nested answers inherit the region's inputs; they cannot import a free name by rebinding it.
-// (id:being-facets-participant-membrane)
-function passedParticipant(frame, target) {
-    const region = regionRoot(frame)
-    return isBeing(target) && liveIn(metaRootFrame(frame)._registry, region) &&
-        region.seed?.question?.some(input => input === target) === true
-}
 // One encounter protocol in both contexts; only unqualified resolution differs.
 // Passed participants admit scoped requests, not ownership of the outside world.
 // (id:being-facets-participant-membrane)
@@ -1918,7 +1880,7 @@ function publish(writer, entries, registry, install = null, project = null, obli
     const settledOnly = metaRootFrame(writer)._settledOnly !== false
     const prepared = []
     for (const { frame, pose, stated, ref } of entries) {
-        if (writer.closed && !ownsFrame(writer, frame) && !passedParticipant(writer, frame)) {
+        if (!mayAddressParticipant(writer, frame, registry)) {
             return { kind: 'conflict', message: 'a closed construction cannot publish outside its region' }
         }
         if (!frame || seen.has(frame) || !liveIn(registry, frame)) {
@@ -2072,53 +2034,70 @@ function motionAttempt(writer, destination, request) {
     return { writer, destination, request: { ...request, frame: destination } }
 }
 
+// Which members one candidate would publish: destination first, then its component.
+// What each boundary ASKS of them stays that boundary's own. (D063)
+const candidateEntries = (verdict, attempt) =>
+    [{ frame: attempt.destination, pose: verdict.pose }, ...verdict.component]
+
 const verdictEntries = (attempt, verdict) =>
-    // Poses arrive normalized to the frame's own chain (the hand's door converts), so the
-    // entries carry only WHICH FIELD the accepted pose belongs in and whether it was stated.
-    [{ frame: attempt.destination, pose: verdict.pose, stated: verdict.stated === true },
-        ...verdict.component.map((m) => ({ frame: m.frame, pose: m.pose, stated: verdict.stated === true }))]
+    // Poses arrive normalized to the frame's own chain, so an entry carries only which FIELD
+    // the accepted pose belongs in and whether it was stated. (id:laws-figures-phase34-hand-frame)
+    candidateEntries(verdict, attempt)
+        .map(({ frame, pose }) => ({ frame, pose, stated: verdict.stated === true }))
 
 function commitTransaction(verdict, attempt, pump, project = null) {
     return publish(attempt.writer, verdictEntries(attempt, verdict), pump.registry, null, project, pump.laws.active())
 }
 
-// The responder proposes; a separate check decides whether it is publishable.
-// This opt-in check is synchronous: no guesses, partial component or async work
-// escapes while it runs. A failed check is a broken responder, not impossibility.
-function checkMotion(verdict, attempt, registry, validate) {
-    if (verdict.kind !== 'accept') return verdict
-    const entries = [{ frame: attempt.destination, pose: verdict.pose }, ...verdict.component]
+// Re-express a normalized candidate only for the declared-convention validator.
+// This view never returns to normalization or publication. (id:laws-figures-phase34-hand-frame)
+function declaredCandidate(verdict, writer) {
+    if (!verdict.stated || verdict.ref === 'own' || verdict.ref == null) return verdict
+    const stated = (frame, own) => statePose(frame, verdict.ref, toWorldPose(worldTransform(frame), own))
+    return { ...verdict, pose: stated(writer, verdict.pose),
+        component: verdict.component.map((m) => ({ ...m, pose: stated(m.frame, m.pose) })) }
+}
+
+// Structural checks apply to the FINAL edit, whatever produced it. This is the ONE validity
+// authority: a declared pose that overflows on the way into the frame's own chain is caught
+// here, over the computed installation, not over the request that preceded it.
+// (id:laws-free-relations-n-node-review)
+function certifyEdits(verdict, attempt, registry) {
     const seen = new Set()
-    for (const { frame, pose } of entries) {
-        // ONE pose-validity authority (SE3.isValid), the same door the commands and
-        // their witnesses use: a duplicate, stale or malformed accepted pose is one fault.
+    for (const { frame, pose } of candidateEntries(verdict, attempt)) {
+        // ONE pose-validity authority (SE3.isValid): duplication, retirement and malformed
+        // geometry are one fault. (id:laws-free-relations-n-node-review)
         if (seen.has(frame) || !liveIn(registry, frame) || !SE3.isValid(pose)) {
             return { kind: 'fault', message: 'accepted motion has a duplicate, stale or invalid pose' }
         }
         seen.add(frame)
     }
-    if (validate) {
-        try {
-            if (validate({ request: attempt.request, writer: attempt.writer, entries }) !== true) {
-                return { kind: 'fault', message: 'motion responder proposed geometry that fails independent validation' }
-            }
-        } catch (error) {
-            return { kind: 'fault', message: `motion validation failed: ${error.message}` }
+    return verdict
+}
+
+// The host's INDEPENDENT ceiling over EVERY member that will publish, once per candidate, in
+// the request's declared convention (`entriesRef`) — never a world request beside local poses.
+// (id:laws-free-relations-n-node-review, id:laws-figures-phase34-hand-frame)
+function certifyRights(verdict, attempt, validate) {
+    if (!validate) return verdict
+    const entries = candidateEntries(verdict, attempt)
+    try {
+        if (validate({ request: attempt.request, writer: attempt.writer, entries, entriesRef: attempt.request.ref ?? 'own' }) !== true) {
+            return { kind: 'fault', message: 'motion responder proposed geometry that fails independent validation' }
         }
+    } catch (error) {
+        return { kind: 'fault', message: `motion validation failed: ${error.message}` }
     }
-    // The door NAMES the frame its pose is expressed in. A hand picks a point and says be
-    // there — a world position; the walk asks to move, in its own frame. The datum rides on
-    // the verdict so the checker, the continuation and the write all see one meaning.
-    // (id:laws-figures-phase34-hand-frame)
-    // ONE datum decides both: a caller that NAMES the frame is stating a position; a caller
-    // that names nothing is making its own motion (what the walk and today's pointer do).
-    // (id:laws-figures-phase34-hand-frame)
+    return verdict
+}
+
+// ONE datum decides both: a caller that names a frame is stating a position, one that names
+// nothing is making its own motion. Normalized here, so the checker, the continuation and the
+// write all see one meaning. (id:laws-figures-phase34-hand-frame)
+function normalizeDeclared(verdict, attempt) {
+    if (verdict.kind !== 'accept') return verdict
     verdict.ref = attempt.request?.ref ?? null
     verdict.stated = verdict.ref !== null
-    // NORMALIZED here, at the door: the whole verdict — the writer and every component the
-    // policy moved — is converted out of the declared frame into the frame's own chain, so
-    // the law checker, the continuation and the write all see one meaning.
-    // (id:laws-figures-phase34-hand-frame)
     if (verdict.stated && verdict.ref !== 'own') {
         // A name that resolves to nothing, or a resolution that blocks, is a fact about the
         // world — an unresolved wish, never a crash and never a silent zero.
@@ -2128,7 +2107,7 @@ function checkMotion(verdict, attempt, registry, validate) {
             toOwn = (frame, pose) => {
                 const world = expressPose(frame, verdict.ref, pose)
                 if (!world) throw new Error(`no frame named '${verdict.ref}' to state a position against`)
-                return SE3.compose(SE3.invert(worldTransform(frame)), world)
+                return toLocalPose(worldTransform(frame), world)
             }
             verdict.pose = toOwn(attempt.destination, verdict.pose)
             verdict.component = verdict.component.map((m) => ({ ...m, pose: toOwn(m.frame, m.pose) }))
@@ -2136,13 +2115,37 @@ function checkMotion(verdict, attempt, registry, validate) {
             return { kind: 'unresolved', message: error.message }
         }
     }
-    // Conversion is arithmetic: a finite declared pose can overflow on the way into the
-    // frame's own chain, and the EFFECTIVE pose is what gets installed. Validity is closed
-    // over the computed installation, not over the request that preceded it.
-    if (!SE3.isValid(verdict.pose) || verdict.component.some((m) => !SE3.isValid(m.pose))) {
-        return { kind: 'fault', message: 'accepted motion normalizes to an invalid pose' }
+    return verdict
+}
+
+// ONE certification, after the LAST producer, over the members that will publish: identity and
+// shape, then the host's ceiling in the request's declared convention. (D063)
+function certifyFinal(verdict, attempt, registry, validate) {
+    if (verdict.kind !== 'accept') return verdict
+    const structural = certifyEdits(verdict, attempt, registry)
+    if (structural.kind !== 'accept') return structural
+    const rights = certifyRights(declaredCandidate(verdict, attempt.destination), attempt, validate)
+    return rights.kind === 'accept' ? verdict : rights
+}
+
+// INPUT validity, nothing more: the proposed poses must be well formed before arithmetic
+// touches them, or conversion would rebuild a four-coordinate position into a valid one and
+// compose would throw on a missing rotation. Identity and ownership are not asked here. (D063)
+function refuseMalformedProposal(verdict, attempt) {
+    if (verdict.kind !== 'accept') return verdict
+    for (const { pose } of candidateEntries(verdict, attempt)) {
+        if (!SE3.isValid(pose)) return { kind: 'fault', message: 'the proposed motion has a malformed pose' }
     }
     return verdict
+}
+
+// An installed responder is the last producer of its own candidate.
+function checkMotion(verdict, attempt, registry, validate) {
+    const admitted = refuseMalformedProposal(verdict, attempt)
+    if (admitted.kind !== 'accept') return admitted
+    const normalized = normalizeDeclared(admitted, attempt)
+    if (normalized.kind !== 'accept') return normalized
+    return certifyFinal(normalized, attempt, registry, validate)
 }
 
 // The writer has a verdict: apply the transaction, record it, and park so the
@@ -2397,7 +2400,19 @@ function acceptVerdict(ctx, verdict, pump, attempt) {
         return woundMotion(ctx, 'the retained receiver has left the world')
     }
     if (motionBaseChanged(writer, request) || questionMoved(writer)) verdict = { kind: 'stale' }
-    else verdict = checkMotion({ ...verdict }, attempt, pump.registry, pump.motionValidate)
+    else {
+        // Default own-motion following is reproposed at acceptance from current state.
+        // Parking retains the raw offer; an installed responder owns its own answer.
+        // (id:laws-free-relations-f4-actor)
+        // The same geometry fact, asked after staleness and before the producer. The program's
+        // settlement belongs to its own instant, so no `done` test appears here.
+        // (id:laws-free-relations-f4-actor, id:laws-free-relations-contract)
+        if (usesDefaultMotion(pump) &&
+            writer === destination && request.command !== 'hand' && isMotionDestination(writer, pump.registry)) {
+            verdict = programFollowing(verdict, writer, pump.registry, pump.laws, lawWorld) ?? verdict
+        }
+        verdict = checkMotion({ ...verdict }, attempt, pump.registry, pump.motionValidate)
+    }
     // A proposed configuration that breaks an active law is refused, never shown
     // as accepted. (id:laws-activation-order)
     let gate = null
@@ -2411,7 +2426,7 @@ function acceptVerdict(ctx, verdict, pump, attempt) {
     if (!pump.execution.permits(ctx)) return parkOnVerdict(ctx, offered, pump, attempt)
     if (motionBaseChanged(writer, request) || questionMoved(writer)) verdict = { kind: 'stale' }
     recordAttempt(metaRootFrame(ctx), {
-        path: 'hand', owner: ctx.id,
+        path: 'program-motion', command: request?.command ?? null, owner: ctx.id,
         from: request?.from?.position ?? null, requested: request?.requested?.position ?? null,
         candidate: verdict.pose?.position ?? null, verdict: verdict.kind,
         gate: gate ? { status: gate.status, law: gate.law?.address ?? null, residual: gate.residual ?? null, reason: gate.reason ?? null } : null,
@@ -2761,32 +2776,32 @@ function law(ctx, value, _route, pump) {
 
     // A retired being is refused, never re-bound to a same-name namesake. (id:being-facets-p2-seam)
     const boundBeings = [target, ...(participants ?? [])].filter((f) => isBeing(f))
-    if (boundBeings.some((f) => !admitBeing(ctx, f, pump.registry).live)) {
+    if (boundBeings.some((f) => !isLiveBeing(f, pump.registry))) {
         if (born) withdrawPlace(ctx, born, pump)
         return woundRelation(ctx, 'a bound subject is retired', 'relation', value.owner)
     }
-    const outside = ctx.closed && (participants ?? [target]).find((f) => !admitBeing(ctx, f, pump.registry).owned)
-    if (outside) {
-        return woundRelation(ctx, `closed region has no outside law target: ${outside.name}`, 'relation', value.owner)
+    const inaccessible = (participants ?? [target]).find(subject => !mayAddressParticipant(ctx, subject, pump.registry))
+    if (inaccessible) {
+        return woundRelation(ctx, `closed region has no outside law target: ${inaccessible.name}`, 'relation', value.owner)
     }
-    // READ admission and MOVE admission are different questions. A law READS its other
-    // subjects; only its declared movers must be settled, bodyless and free. One shared
-    // test rejected a lawful reader — a settled or headed B — before any method was
-    // proposed. `movers` is the row's declaration; absent it, every subject moves, so
-    // distance and the closed-region contract are unchanged. (id:laws-build-solve-seam)
+    // Subjects may be read without being movable. Only the operation's movers must
+    // satisfy the bounded method's free-point domain. (id:laws-build-solve-seam)
     const movable = value.movers?.map((m) => isBeing(m) ? m.id : findFrame(ctx, m, 'world')?.id) ?? null
     if (movable?.some((id) => id == null || !(references ?? [target.id]).includes(id))) {
         if (born) withdrawPlace(ctx, born, pump)
         return woundRelation(ctx, 'a law mover must name a bound live subject', 'relation', value.owner)
     }
     const moves = (f) => !movable || movable.includes(f.id)
-    if (participants?.some((f) => moves(f) && (f.parent !== ctx || !freePoint(f) || heldFrame(f)))) {
-        return endUnresolved(ctx, 'explicit distance currently requires settled bodyless children of its declaring scope')
+    // Supplied participants change the declaring owner, not the sibling/movement domain.
+    // Reads do not grant motion; candidates still cross the original gate and publisher.
+    // (id:laws-recipe-composition)
+    const moving = participants?.filter(moves)
+    if (moving?.some((f) => (f.parent !== ctx && !isSuppliedParticipant(ctx, f, pump.registry)) ||
+        f.parent !== moving[0].parent || !freePoint(f) || heldFrame(f))) {
+        return endUnresolved(ctx, 'explicit distance currently requires settled bodyless siblings admitted by its declaring scope')
     }
-    // A reader that is not a mover is still admitted only where the scope owns it: a settled
-    // body or a held point is readable, and reading it moves nothing. (id:laws-freedom)
-    if (participants?.some((f) => !moves(f) && !ownsFrame(ctx, f))) {
-        return endUnresolved(ctx, 'a read-only subject must belong to the declaring scope')
+    if (participants?.some((f) => !moves(f) && !isWithinRegion(ctx, f) && !isSuppliedParticipant(ctx, f, pump.registry))) {
+        return endUnresolved(ctx, 'a read-only subject must belong to or be supplied to the declaring scope')
     }
     // D054 refuses detected own-target reads as a definition policy, even if stable.
     // This is not a fixed-point test or a ban on cyclic relational obligations.
@@ -3131,15 +3146,12 @@ function constructEffect(ctx, value, _route, pump) {
 }
 
 function spawn(ctx, value, route, pump) {
-    // A bound receiver is an IDENTITY, admitted before any parent mutation or slot
-    // lookup: a nearer namesake or a coerced word cannot redirect it, and a refusal
-    // leaves no partial effect. Eligibility is three facts, not permission to replace
-    // the receiver's source — attachment policy is a separate seam. (id:being-facets-p2-seam)
+    // A bound receiver keeps its identity. Check liveness and scope before attachment;
+    // neither permits replacing its source. (id:participation-language)
     const receiver = isBeing(value.receiver) ? value.receiver : null
     if (receiver) {
-        const eligibility = admitBeing(ctx, receiver, pump.registry)
-        if (!eligibility.live) return woundRelation(ctx, `retired receiver: ${receiver.name}`, 'relation')
-        if (!eligibility.owned && !passedParticipant(ctx, receiver)) return woundRelation(ctx, `closed region has no outside receiver: ${receiver.name}`, 'relation')
+        if (!isLiveBeing(receiver, pump.registry)) return woundRelation(ctx, `retired receiver: ${receiver.name}`, 'relation')
+        if (!mayAddressParticipant(ctx, receiver, pump.registry)) return woundRelation(ctx, `closed region has no outside receiver: ${receiver.name}`, 'relation')
         // CUTOVER: the declaring slot holds the current installation; the installation owns
         // its continuation; the receiver is RETAINED, never rewired. Eligibility is
         // admission, not permission to replace the receiver's source. (id:being-facets-p4-sequence)
@@ -3717,7 +3729,10 @@ export function createScheduler(generator, opts = {}) {
             if (!frame.done || subtreeUnsettled(frame)) return { kind: 'busy' }
             // A settled actor may live inside a hosted play. Keep the transaction
             // inside one seating: a sibling's birth frame is not the root's frame.
-            if (!frame.parent || frame.isLens || frame.error) return { kind: 'unresolved' }
+            // The shared geometry fact, asked AFTER settlement: a hand is a settled actor's move,
+            // so an unsettled frame is `busy` above and never a geometry refusal here. An
+            // installation is not a being and is refused as unresolved, not moved as an actor.
+            if (!isMotionDestination(frame, registry)) return { kind: 'unresolved' }
             // A failed attempt holds its component until an edit releases it.
             if (heldFrame(frame)) return { kind: 'refuse', ink: execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
             if (revision !== root._motionRevision) return { kind: 'stale' }
@@ -3746,19 +3761,19 @@ export function createScheduler(generator, opts = {}) {
             } else {
                 return { kind: 'unresolved' }
             }
-            const verdict = checkMotion(interpretReply(raw, execOpts.refusalStroke),
-                attempt, registry, pump.motionValidate)
-            if (verdict.kind !== 'accept') return verdict
-            // Continue along the active laws: the touched endpoint moves to the
-            // nearest admissible position, every other coordinate stays.
-            // (id:laws-build-p2d)
+            const offered = normalizeDeclared(
+                refuseMalformedProposal(interpretReply(raw, execOpts.refusalStroke), attempt), attempt)
+            if (offered.kind !== 'accept') return offered
             // One candidate producer. An installed responder owns the component it
             // returns; only when none is installed does the built-in continuation
             // policy choose geometry. The two never run in series.
             // (id:laws-build-solve-seam)
-            if (!pump.motionAdmission && !pump.motionAdmissionAsync) {
-                continueLaws(verdict, frame, registry, laws, lawWorld)
-            }
+            if (usesDefaultMotion(pump)) continueLaws(offered, frame, registry, laws, lawWorld)
+            // ONE certification, and it is the LAST step before the gate: whatever produced
+            // this candidate — a responder or the continuation — the host reads it once, whole.
+            // (id:laws-free-relations-n-node-review)
+            const verdict = certifyFinal(offered, attempt, registry, pump.motionValidate)
+            if (verdict.kind !== 'accept') return verdict
             const check = brokenLaw(proposedOverrides(attempt.destination, verdict), registry, laws, lawWorld)
             recordAttempt(root, {
                 path: 'hand-settled', owner: frame.id,

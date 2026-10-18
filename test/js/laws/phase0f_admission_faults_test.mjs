@@ -79,14 +79,20 @@ test("a component that is not a list is rejected", () => {
 })
 
 test("an accepted pose is admitted by ONE validity authority — malformed geometry faults", () => {
+    // One authority (SE3.isValid), TWO boundaries: the proposed pose is refused before any
+    // arithmetic touches it, and the effective candidate is refused again after conversion.
+    // Non-finite, malformed rotation, short position, and a replaced length are all the same
+    // fault — never a silent rebuild into a valid three-coordinate pose.
     for (const transform of [
         { rotation: SE3.identity().rotation, position: [Infinity, 0, 0] },
         { rotation: { w: NaN, x: 0, y: 0, z: 0 }, position: [1, 0, 0] },
         { rotation: SE3.identity().rotation, position: [1, 0] },
+        { rotation: SE3.identity().rotation, position: [1, 0, 0, 99] },
+        { position: [1, 0, 0] },
     ]) {
         const { frame } = attempt(() => ({ accepted: true, transform }))
         assert.equal(frame.error?.kind, "motion", JSON.stringify(transform))
-        assert.match(frame.error.message, /stale or invalid pose/)
+        assert.match(frame.error.message, /malformed pose|stale or invalid pose/)
         assert.deepEqual(frame.transform.deref().position, [0, 0, 0], "the bad pose never lands")
     }
 })

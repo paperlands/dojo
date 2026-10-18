@@ -37,6 +37,10 @@ export function buildWorld({ admit, admitAsync, validate, observeGoto = false, r
     })
 }
 
+// The one accepted-world read a test needs: where a frame stands. Moved here when the
+// laboratory adapter retired; it was never a policy. (M3c)
+export const worldOf = (frame) => [...frameWorldTransform(frame).position]
+
 export const world = (name, scheduler) => {
     const frame = scheduler.root.children.get(name)
     return frame && frameWorldTransform(frame).position

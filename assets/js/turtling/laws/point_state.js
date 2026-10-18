@@ -3,7 +3,7 @@
 // SAME story from the SAME code — never a test-side reconstruction.
 // (id:laws-decl-point-agent, id:laws-decl-interface, D058)
 import { frameWorldTransform, worldTransform } from "../scheduler.js"
-import { bindWorld, constraintsView, pointSubjects } from "./authored.js"
+import { bindWorld, constraintsView, indexByIdentities, pointSubjects } from "./authored.js"
 import { stateOf, heldIdentity, hasBody } from "./constraints.js"
 import { exposed } from "./batch.js"
 
@@ -13,15 +13,7 @@ export function preparePointRead(scheduler) {
     const states = new Map()
     const held = new Map()
     return (frame) => {
-        if (!laws) {
-            laws = new Map()
-            for (const law of scheduler.laws.active()) {
-                for (const id of new Set(pointSubjects(law))) {
-                    if (!laws.has(id)) laws.set(id, [])
-                    laws.get(id).push(law)
-                }
-            }
-        }
+        if (!laws) laws = indexByIdentities(scheduler.laws.active(), pointSubjects)
         if (!states.has(frame)) states.set(frame, readPointState(frame, scheduler, laws, (id) => {
             if (!held.has(id)) held.set(id, heldIdentity(scheduler.registry.get(id), laws, scheduler.registry))
             return held.get(id)

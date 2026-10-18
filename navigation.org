@@ -777,15 +777,15 @@ Fence: =subject_binding_test.mjs= one-acquisition tests.
 ** participant membrane — explicit inputs carry scoped encounters
 :PROPERTIES:
 :ID: nav-participant-membrane
-:KEYWORDS: membrane participant passedParticipant encounter facet receiver declaration question identity request publication
-:PATH: assets/js/turtling/scheduler.js::passedParticipant
+:KEYWORDS: membrane participant isWithinRegion isSuppliedParticipant mayAddressParticipant encounter facet receiver declaration question identity request publication
+:PATH: assets/js/turtling/participation.js::mayAddressParticipant
 :END:
-The closed region's attached =seed.question= retains the beings explicitly supplied at its
-binding site. =passedParticipant= admits their facet requests and receiver proposals by
-identity, not spelling; =resolveFacet=, =spawn= and =publish= retain their existing liveness,
-original-law and run-rights checks. Descendants inherit the enclosing region's addresses;
-a nested declaration cannot import a free world name. No new callable kind or open profile.
-Fence: =test/js/laws/participant_membrane_test.mjs=. [[id:being-facets-participant-membrane]].
+=participation.js= owns enclosing-region containment, supplied inputs and scope policy;
+=frame.js::isLiveBeing= answers exact current registry membership separately. Facet,
+law, receiver and publication consumers retain their distinct refusal/lifetime order.
+Descendants inherit the enclosing region's question; an inner declaration cannot
+launder an outside address. Fences: =test/js/laws/participation{,_boundary}_test.mjs=
+and =participant_membrane_test.mjs=. [[id:participation-language]].
 
 
 ** deferred question — retained inputs, consumed meaning, owned interpretation
@@ -891,7 +891,7 @@ Fences: =test/js/laws/literal_centre_test.mjs=, =test/js/laws/literal_source_tes
 ** a point's state — one WebGL-free projection
 :PROPERTIES:
 :ID: nav-law-point-state
-:KEYWORDS: point state projection pointStateOf point_state readers constraintsView unavailable refusal offered locus dof display witness gesture composition rung
+:KEYWORDS: point state projection pointStateOf point_state preparePointRead indexByIdentities captured incidence readers constraintsView unavailable refusal offered locus dof display witness gesture composition rung
 :PATH: assets/js/turtling/laws/point_state.js::pointStateOf
 :END:
 The ONE projection of a point's state: reader binding (the committed live head and the stable
@@ -907,6 +907,9 @@ this projection).
 snapshot, row-derived point incidence, whole-context partner holds, and one state per frame.
 Turtle's overlay, fitting and candidate walks each use a pass; none survives mutation or yielding.
 Fence: =test/js/laws/point_read_test.mjs=. Bench: =test/js/profile/point_read_bench.mjs=.
+=authored.js::indexByIdentities= now shares the ordered row-index builder with hand/actor
+proposals: =pointSubjects= for geometry, =boundParticipants= for readiness, never cached values.
+Fence: =test/js/laws/incidence_index_test.mjs=; no index survives a source change or a yield.
 [[id:runtime-prepared-point-read]] records the constitution, ablation and limits.
 
 ** literal source contract — binding, revision, composition and lifetime
@@ -920,6 +923,87 @@ one-live composition, addressed revision, refusal at the actual revision, placem
 rather than live-head reads, no invented actor/pin, and source lifetime.
 [[id:laws-distance-literal-address]] · [[id:laws-free-relations-contract]].
 
+** named law recipes — own obligations over supplied beings
+:PROPERTIES:
+:ID: nav-law-recipe-composition
+:KEYWORDS: law recipe abstraction composition named declaration supplied participant membrane independent ownership withdrawal link rim
+:PATH: test/js/laws/law_recipe_test.mjs
+:END:
+=let rod = link A B 5= retains A/B and owns its law in the named scope. Reuses
+=scheduler.js::law= / =participation.js= and the existing gate/publisher; movable
+distance inputs remain settled bodyless siblings. Two compatible instances retain
+independent support; withdrawal, rewire, retired identities and unpassed participants
+are fenced. Multiple reaches remain ordered effects, not an implicit atomic batch.
+Contract and experiment: [[id:laws-recipe-composition]].
+
+** scheduler organisation — knowledge boundaries, naming and policy priors
+:PROPERTIES:
+:ID: nav-scheduler-organisation-priors
+:KEYWORDS: scheduler organisation naming guards policy participation membrane information hiding Parnas Ousterhout capabilities ownership refusal order extensibility
+:PATH: specs/turtle/scheduler-organisation-priors.org::scheduler-organisation-priors
+:END:
+Primary-source study and local caller matrix: distinguish factual containment, scope
+policy, movement domains and current publication rights. An eight-case Boolean model
+exposes the open-context counterexample to unifying read-only admission with membrane
+access. Proposed participation extraction and naming vocabulary, not a runtime rewrite.
+
+** participation language — within, supplied to, live in, may address
+:PROPERTIES:
+:ID: nav-participation-language
+:KEYWORDS: participation language requester subject region registry within supplied live address containment liveness ownership lifecycle preposition refusal
+:PATH: specs/turtle/participation-language.org::participation-language
+:END:
+The first bounded scheduler extraction is realised: three scope queries plus the
+live-being fact, with explicit registry input and no scheduler dependency or cache.
+A supplied subject can be retired; read-only scope has no open-context exemption.
+Seventeen new direct/characterization tests preserve these distinctions and the
+consumers' different refusal orders. Later installation/publication cuts remain open.
+
+** n-node response — bounded leaf initialization and the rooted tree
+:PROPERTIES:
+:ID: nav-response-n-node-evidence
+:KEYWORDS: leaf isolated initialization prefix preserve settle permitted ceiling singular declaring metric ray recurrence nearest child old direction pure fold one kernel point query component motion enumeration tie raw precision
+:PATH: specs/compiler/laws-free-relations-review.org::laws-free-relations-n-node-evidence
+:END:
+A bounded leaf method closes a new edge with exactly one isolated endpoint, placing that
+leaf alone via the bound distance -> =inputPosition= -> =nearestChild= -> =settle(permitted:[leaf])=, so
+the accepted prefix is never reconfigured and =operation.movable= is obeyed as a ceiling.
+The reviewer's exact source installs two laws (A=-50, B=50, D=-450). The tree is one
+kernel (=nearestChild=) with a PURE fold (ID -> WORLD), and it is NOT the old-direction
+=realizeDistanceTree= control. Enumerating the same active laws in reverse does not move
+the fold. Raw real-pointer evidence satisfies |AB|-100 = 0 and |BD|-500 <= 1.7e-13; an
+earlier ~1e-3 reading was display rounding. Fences: =test/js/laws/leaf_init_test.mjs=,
+=test/js/laws/following_test.mjs= and =actor_follow_test.mjs=. [[id:laws-free-relations-n-node-review]].
+
+** response compositional center — actor campaign, bounded methods, lifecycle
+:PROPERTIES:
+:ID: nav-response-compositional-center
+:KEYWORDS: composition reusable core bound question held given free coordinates partial assignment conditioning projection tree separator accepted base response support provenance named reference frame writer rotation actor lifecycle
+:PATH: specs/compiler/laws-free-relations-review.org::laws-free-relations-review
+:END:
+Bound originals, accepted reference, coordinate roles and request/choice remain distinct.
+=verdict.js::programFollowing= encodes GIVEN/FREE with one private own-pose =work= map;
+accepted =reference= is not assignment knowledge. Placement reads remain held even for
+unassigned followers. =question_scope_test.mjs= fences hidden conditioning and private work.
+[[id:laws-free-relations-actor-campaign]]; prior reasoning: [[id:laws-free-relations-compositional-center]].
+
+** free-relation contract audit — projection, policy substitution, creation lag
+:PROPERTIES:
+:ID: nav-free-relations-contract-audit
+:KEYWORDS: scoped relation valuation combine project condition correlation shared C free D certificate outer witness exclusion unknown pending budget actor hand policy substitution singleton lag benchmark
+:PATH: specs/compiler/laws-free-relations-review.org::laws-free-relations-contract-audit
+:END:
+The frontier loses upstream alternatives even with a downstream singleton. Hand repair
+finds a witness but cannot replace actor following: given roots, recurrence and ties differ.
+Original gate and publisher stay authoritative; projected support remains unimplemented.
+Quadratic checks also occur at HEAD; marked warm delay is mostly the 100 ms quiet timer. Cold cost remains open.
+Run =node probe/free-point-relations/composition_audit.mjs=; peer instruments and readings
+live beside it. This review distinguishes tested falsifiers from reference oracles.
+[[id:response-composition-vetted-pattern-priors]] vets assumptions, sound abstraction,
+conditioning, behavioral substitution and logical/physical time; none earns a framework.
+[[id:laws-priors-data-structures]] ranks retained incidence, typed event worklists,
+separator/Bayes trees and reversible sparse sets, with concrete source and benchmark limits.
+
 ** free-point relations — participants are not actors
 :PROPERTIES:
 :ID: nav-law-free-relations
@@ -931,6 +1015,18 @@ bodyless-chain response through admission/publication. It predates production pa
 syntax; current implemented gates live at [[id:laws-free-relations-contract]].
 Run =node probe/free-point-relations/diagnostic.mjs=.
 
+** n-node response review — lawful is not authorized or least-change
+:PROPERTIES:
+:ID: nav-law-n-node-review
+:KEYWORDS: n-node component continuation permission ceiling validation rotation local world least change branch order bisection lifecycle composition
+:PATH: probe/free-point-relations/n_node_review.mjs
+:END:
+Six headless readings separate final-candidate movement rights, full-pose conservation,
+selection guarantees and source withdrawal. Permission expansion and follower rotation
+now have standing corrections; global least-change and branch-order limits remain.
+Run =node probe/free-point-relations/n_node_review.mjs=.
+[[id:laws-free-relations-n-node-review]] records causes, priors and the bounded next cut.
+
 ** spine response policy — lawful lengths are not worm following
 :PROPERTIES:
 :ID: nav-law-spine-policy
@@ -940,6 +1036,41 @@ Run =node probe/free-point-relations/diagnostic.mjs=.
 A turned three-point witness separates old-direction tree feasibility from
 nearest-child following; parallel law rows expose a separate topology limit.
 Run =node probe/free-point-relations/policy_probe.mjs=. [[id:laws-free-relations-review]].
+
+** response composition priors — compose descriptions, derive behavior
+:PROPERTIES:
+:ID: nav-response-composition-priors
+:KEYWORDS: response composition primitives least action stationary variational Lagrangian lens maintainer least change semiring RMPflow fabrics priority duplicate support shared participant Dechter join projection contractor interval approximation tolerance evidence dyadic BigInt branch prune ideal
+:PATH: specs/compiler/response-composition-priors.org::response-composition-priors
+:END:
+Checked priors separate truth, selection/evolution and bounded realization. Join before
+projection preserves shared witnesses; conditioning is not elimination. Safe outer pruning
+can exclude without producing a witness. The dyadic mixed-geometry spike preserves four
+branches; ideal exclusion is not residual-band refusal. Research, not runtime capability.
+[[id:response-composition-algebra-priors]] · [[id:response-composition-pattern]] · [[id:response-composition-variational-prior]].
+
+** response composition witness — retained boundary, retired machinery
+:PROPERTIES:
+:ID: nav-response-composition-runtime
+:KEYWORDS: composable response source identity witness joint publication retired lab current rights source receipt
+:PATH: probe/response-composition/README.org::response-composition-runtime
+:END:
+One fixed 1D/four-pose museum fixture keeps the original beings, source arithmetic and
+original gate. The role adapters and exploratory machinery are not a forward architecture.
+Run =node --test probe/response-composition/witness.mjs= (3 tests).
+Findings and limits remain in the README; the earned core is [[id:tower-capture-operands]].
+
+** numeric function capture — unused beings and qualified aliases
+:PROPERTIES:
+:ID: nav-tower-capture-operands
+:KEYWORDS: fn defineFunction heldValue capture snapshot unused cycle alias qualified subject callable namesake local recipe source operand
+:PATH: specs/weave/tower.org::tower-capture-operands
+:END:
+The parser holds only consumed operand bindings and rejects unsupported qualified local
+subjects instead of reaching another permitted namesake. Local numeric response source
+now works without inherited-vocabulary injection; view attachment remains a lab protocol.
+Run =node --test test/js/notation/function_capture_test.mjs= (15 controls).
+Source-local joint publication: [[id:response-composition-cycle-3-witness]].
 
 ** the hand door's coordinate contract — SE3, not an origin addend
 :PROPERTIES:
@@ -998,55 +1129,135 @@ tautology keeps one entry, and the pin resolves in its authored frame.
 [[id:laws-free-relations-f2-todos]].
 Run =node probe/free-point-relations/pin_identity.mjs=.
 
-** bounded follow responder — adapter + policy, gate and publisher untouched
+** candidate primitives — one binding, one pose rule, one movement fact
+:PROPERTIES:
+:ID: nav-law-candidate
+:KEYWORDS: candidate lawContext positionPose canMove pinnedLaw private proposal chart crossing toLocalPoint rotation retained movement fact policy gate publisher layering
+:PATH: assets/js/turtling/laws/candidate.js
+:END:
+Above the authored rows, below the gate and every policy. =lawContext= is the one world the
+rows read through; =positionPose= converts the point and carries the stored rotation by
+reference (the follower-rotation ruling is still OPEN, D063); =canMove= is =freePoint= plus
+pin and hold. Nothing here decides admissibility: a policy proposes, the gate measures, the
+publisher installs. Policy modules import this, never =verdict.js= internals.
+[[id:laws-free-relations-contract]], D063.
+
+** actor following — pure placement, current capture, existing acceptance
 :PROPERTIES:
 :ID: nav-law-follow-responder
-:KEYWORDS: follow responder admission adapter policy nearestFollower conserve candidate gate publisher tautology eligibility bounded
-:PATH: probe/free-point-relations/follow.mjs
+:KEYWORDS: actor following programFollowing nearestChild scalar treeShape treeFold poseReference expressPose statePose accepted bond pure distance tree own instant free sibling positionPose local rotation position-only follower pose
+:PATH: assets/js/turtling/laws/following.js
+:PATH: assets/js/turtling/laws/program_following.js
 :END:
-One bounded responder through =motionAdmission=: adapter (coordinates; the CONNECTED
-component via =componentOf=; eligibility by scope + =staticVerdict= + =freePoint=; modelled
-relations only) plus a pure private world-position policy with explicit domain/finite checks
-and a role-aware singular bond oriented by writer/partner identity; the scheduler keeps the gate
-and the publisher. No pin flag, geometry store or commit path.
-[[id:laws-free-relations-f2]]. Witness: =probe/free-point-relations/follow_witness.mjs=.
+The tree orders placement; it does not require a homogeneous conjunction. A follower keeps its
+radial accepted-bond offer if ready originals hold, else existing =pointQuery/meet/nearest=
+views condition it. Future adjustable POSITION reads defer; stable PLACEMENT reads do not.
+=nearestChild= answers one finite point or null; the fold owns collection assembly.
+=scheduler.js::poseReference= interprets own/parent placement versus named live heads once
+for both =expressPose= and =statePose=; world requests keep their identity fast path.
+=laws/program_following.js::programFollowing= stages one own-pose map for trials, views and
+final edits; it is POLICY over the kernel, not part of the verdict layer. =candidate.js::
+positionPose= shares only position conversion and exact accepted local rotation with reach and
+hand repair, not their selection policy. =scheduler.js::acceptVerdict= owns independent
+validation and publication, and certifies the FINAL candidate once ([[id:nav-law-certify-final]]). Full pins, other running actors, non-tree coupling and unsupported
+reductions retain bounded refusals. Independent conditioned branches commute, not arbitrary
+cross-branch reads. Keepers: =test/js/laws/{actor_follow,following,hand_standard,component_response,
+lifecycle_witness,localization_representation}_test.mjs=.
+[[id:laws-free-relations-actor-campaign]].
 
-** follow witness — four concerns separated through the real door
+** actor spine in the browser — ordinary source, no hand switch
+:PROPERTIES:
+:ID: nav-law-follow-play
+:KEYWORDS: actor spine procedural animation computed loop J0 pulling seed step turn wait play browser
+:PATH: scripts/play/rungs/actor-spine.txt
+:END:
+Run =node scripts/play/play_cdp.mjs run scripts/play/rungs/actor-spine.txt 2000 /tmp/actor-spine.png --bare=,
+then =node scripts/play/play_cdp.mjs probe=. Two loops construct nine unpinned joints/eight
+relations plus nine world-Z coordinate laws; one attached actor circles with a large BOUNDED
+loop. Twiddle seed sign, step or turn separately. The old =follow= mode/hand URL is retired,
+not an alias for this encounter. [[id:laws-free-relations-actor-campaign]].
+
+** historical follow witness — retired encounter, not a current passing gate
 :PROPERTIES:
 :ID: nav-law-follow-witness
-:KEYWORDS: follow witness admission gate publisher isolated pair pin tautology chain refuse one consultation revision
-:PATH: probe/free-point-relations/follow_witness.mjs
+:KEYWORDS: historical follow witness archive hand adapter conservation admission gate publisher
+:PATH: test/js/laws/hand_standard_test.mjs
 :END:
-Isolated pair, pin-refusal versus conserve-projection, a same-id tautology and a
-broader-topology refusal through the real admission/gate/publisher. [[id:laws-free-relations-f2]].
-Run =node probe/free-point-relations/follow_witness.mjs=.
+The museum preserves the earlier encounter, including its stale conservation expectation.
+Current contracts live in =test/js/laws/{hand_standard,component_response,actor_follow}_test.mjs=.
+[[id:laws-free-relations-actor-campaign]].
 
 ** runtime gate attack — poison, duplicate, stale, retired
 :PROPERTIES:
 :ID: nav-law-gate-attack
 :KEYWORDS: gate attack poison duplicate disconnected wrong-parent stale revision retired identity notification boundary release pin hand goal write path membership exact
-:PATH: probe/free-point-relations/gate_attack.mjs
+:PATH: test/js/laws/hostile_producer_test.mjs
 :END:
-Poisons and deceives the responder through the real door: refuse/fault/stale all leave accepted
-state, owner and revision untouched (exact, unrounded); one revision and one notification serve a
-changed joint result; release adds no pin or hand goal. A same-parent DISCONNECTED member that
-breaks no law is now REJECTED at the boundary (=membership=), even when its pose is unchanged.
-[[id:laws-free-relations-f2-todos]].
-Run =node probe/free-point-relations/gate_attack.mjs=.
+Historical F2 hostile-producer instrument: poison, duplicate/stale identities, independent
+membership ceiling and coherent publication. The retired encounter lives only in the museum;
+current program expansion ceilings and ordinary hand contracts are standing regressions.
+[[id:laws-free-relations-actor-campaign]].
 
+
+** one certification of the final candidate
+:PROPERTIES:
+:ID: nav-law-certify-final
+:KEYWORDS: certifyFinal normalizeDeclared entriesRef motionValidate host ceiling declared convention request.ref one invocation final candidate structural validity certifyEdits isMotionDestination settlement hand program ordering
+:PATH: assets/js/turtling/scheduler.js::certifyFinal
+:PATH: assets/js/turtling/scheduler.js::refuseMalformedProposal
+:END:
+The move step refuses a malformed proposed pose BEFORE any arithmetic
+(=refuseMalformedProposal=, same =SE3.isValid= authority as the effective check: a missing
+rotation must not throw from compose, and a four-coordinate position must not be rebuilt into a
+valid three-coordinate one by conversion). Then
+=normalizeDeclared= (name the request's convention, convert the whole candidate into each
+frame's own chain) and exactly ONE =certifyFinal=: structural identity/validity over the final
+members — the EFFECTIVE candidate, so an overflow on the way into its own chain is caught too —
+then the host's =motionValidate= in the request's own convention, where =entriesRef= IS
+=request.ref= (falling back to =own=). A ceiling refuses the
+candidate that will publish, never an intermediate proposal. =isMotionDestination= names the
+shared geometry fact and stops there: settlement is each door's own order, hand (settled actor)
+versus program (its own running instant). Keepers:
+=test/js/laws/{component_response,hand_standard}_test.mjs=. D063.
+
+** movement cost — named operations, matched-state diagnostics
+:PROPERTIES:
+:ID: nav-movement-latency
+:KEYWORDS: movement latency benchmark profile hand actor requestMotion allocation warm phase raw samples fixed-point sphere tangent conditioning sweeps CONTINUATION_STEP_TOL CONTINUATION_EDIT_TOL refinement budget tiny intent restatement
+:PATH: test/js/profile/movement_latency_bench.mjs
+:END:
+Call-only hand latency, actor attempt observations and allocation brackets have separate scopes.
+RAW phase filters reproduce reported statistics; diagnostics replay accepted histories after timing
+and compare private proposals with effective publication. Readings: =test/js/profile/README.org=.
+[[id:laws-movement-cost-mechanism]] records the baseline near-tangent fixed-point observation.
+The authorized follow-up at [[id:laws-continuation-refinement-budget]] names separate
+=verdict.js::CONTINUATION_STEP_TOL= and =CONTINUATION_EDIT_TOL= budgets (both 1e-9).
+Fence: =test/js/laws/continuation_refinement_test.mjs=; neither budget rules carry/rotation.
+
+** module linkage — a moved export fails in a second
+:PROPERTIES:
+:ID: nav-module-linkage
+:KEYWORDS: import smoke link fence module export moved referenceerror bundler three.core.min dependency graph
+:PATH: test/js/modules/import_smoke_test.mjs
+:END:
+Every module under =assets/js/turtling/= must LINK. A moved or renamed export, a dangling
+import, or a module asking for a symbol its dependency does not export is one red test instead
+of a =ReferenceError= deep inside a law run. The only excuse is the esbuild bundle
+(=three.core.min=), and the excuse is itself checked so it cannot rot. Run it first when a
+refactor moves symbols between modules. Fences =laws/candidate.js= and
+=laws/program_following.js= in particular.
 
 ** F2 admission — membership, not the responder's own selection
 :PROPERTIES:
 :ID: nav-law-f2-membership
 :KEYWORDS: free relations F2 admission membership motionValidate componentOf scope subset outsider ceiling publisher responder
-:PATH: probe/free-point-relations/follow.mjs::membership
+:PATH: assets/js/turtling/scheduler.js::certifyRights
 :END:
-The responder chooses GEOMETRY; the door owns membership. `membership` is the independent
-`motionValidate` seam: it derives the writer's connected scope with `componentOf` over the
-accepted bound laws and refuses any returned entry outside it — a subset is allowed, and an
-outsider is refused even when its pose is unchanged. A CEILING over the scheduler's own
-eligibility/pin/hold/lifetime/original-predicate checks, and NOT imposed on the generic
-publisher, so lawless Phase-0 responders keep coupling actors. [[id:laws-free-relations-f2]].
+Historical encounter-specific membership ceiling, NOT a universal movement permission.
+Current =scheduler.js::certifyRights= sees the complete candidate; the actor regression allows
+the writer alone and proves an expanded follower cannot escape that ceiling. Connectivity,
+addressability and publication rights remain different questions. [[id:laws-free-relations-actor-campaign]].
+
 ** pin response — a held anchor realizes its free partner
 :PROPERTIES:
 :ID: nav-law-pin-response

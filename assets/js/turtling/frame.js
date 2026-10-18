@@ -56,3 +56,11 @@ export const isBeing = (value) => value != null && typeof value === 'object' &&
     // handle is refused at every facet, law and receiver admission door.
     // (id:being-facets-p4-sequence)
     value.installation !== true
+
+// Registry identity also covers execution installations, which are not beings.
+// (id:laws-ordered-replacement)
+export const liveIn = (registry, frame) => frame != null && registry != null && registry.get(frame.id) === frame
+
+// Being admission adds geometry's kind contract, never settledness.
+// (id:participation-language)
+export const isLiveBeing = (being, registry) => isBeing(being) && liveIn(registry, being)

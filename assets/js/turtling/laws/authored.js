@@ -656,6 +656,20 @@ export function bindWorld(getFrame, { live, placement, ...extras } = {}) {
 // Point incidence is enumerable, so indexed and scanning queries share the same row. (D058)
 export const pointSubjects = (law) => AUTHORED[law?.feature]?.points?.(law) ?? []
 
+// One ordered index for one question/read pass: exact input order, one contribution
+// per row, typed keys, same row refs. Values are resolved by each pointQuery; no point
+// set is cached. The selector is explicit. (D058)
+export function indexByIdentities(laws, selector) {
+    const index = new Map()
+    for (const law of laws) {
+        for (const id of new Set(selector(law))) {
+            if (!index.has(id)) index.set(id, [])
+            index.get(id).push(law)
+        }
+    }
+    return index
+}
+
 // One point query: the laws that TOUCH one point, their resolved set contributions and their
 // constraint records. OTHER INPUTS ARE HELD — this is the point's own truths, not the
 // complete configuration space; a sphere cannot replace the relationship between two free

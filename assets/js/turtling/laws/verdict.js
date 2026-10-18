@@ -17,19 +17,22 @@
 
 import { measure } from "./relations.js"
 import { meetAll, nearest as meetNearest } from "./meet.js"
-import { realizeDistance, ACCEPT_TOL } from "./realize.js"
-import { AUTHORED, bindWorld, boundTerm, isLiveInput, inputPosition, pointQuery, payloadOf } from "./authored.js"
+import { ACCEPT_TOL } from "./realize.js"
+import { AUTHORED, bindWorld, boundTerm, indexByIdentities, isLiveInput, inputPosition, pointQuery, pointSubjects, payloadOf } from "./authored.js"
 import { componentOf, realizeDistanceTree } from "./component.js"
 import { finite3 } from "./vec3.js"
 import { addressOf, bindLaw } from "./replacement.js"
 import { predicateOk } from "./expression.js"
-import { freePoint, exposed } from "./batch.js"
+import { exposed } from "./batch.js"
+import { canMove, lawContext as lawCtx, pinnedLaw, positionPose } from "./candidate.js"
+import { nearestChild } from "./following.js"
 import { heldIdentity, coincidentPartners, heldFrame, hasBody } from "./constraints.js"
 
 // Re-exported: the scheduler imports the attempt hold from here. (id:laws-activation-verdicts)
 export { heldFrame }
 import { conditionOf, FINITE } from "../numerics.js"
 import { SE3 } from "../se3.js"
+import { toLocalPoint } from "../localize.js"
 
 // --- The whole-law gate ---
 
@@ -48,17 +51,6 @@ import { SE3 } from "../se3.js"
 // contradiction. (id:laws-activation-order)
 const LAWFUL = Object.freeze({ status: 'valid' })
 const cannotMeasure = (law, reason) => ({ status: 'cannot-measure', law, reason })
-
-// The one world the AUTHORED rows read through: the live pose (with an optional candidate
-// override map) and the stable placement. Injected, so the rows stay pure.
-// (id:laws-decl-interface)
-function lawCtx(registry, overrides, world, extras = {}) {
-    return bindWorld((id) => registry.get(id), {
-        live: (f) => world.read(f, overrides),
-        placement: (f) => world.transform(f),
-        ...extras,
-    })
-}
 
 export function lawViolation(activeLaws, overrides, registry, world) {
     if (!activeLaws || activeLaws.length === 0) return LAWFUL
@@ -92,14 +84,6 @@ export const plainPoses = (x) => (Array.isArray(x)
 // --- Attempt holds, pins, and the affected component ---
 
 
-// The position law that fixes a frame, or null. Its predicate is authored in the law's
-// own frame, so the caller must interpret it there. (id:laws-decl-frame)
-function pinnedLaw(laws, frameId) {
-    for (const law of Array.isArray(laws) ? laws : laws.active()) {
-        if (law.feature === 'position' && law.endpoints[0] === frameId) return law
-    }
-    return null
-}
 
 // A position pin's authored target, read from its term — never a rival field.
 // (id:laws-free-relations-contract, D058)
@@ -129,12 +113,6 @@ export function eligibilityOf(frame, laws, registry = null) {
         coupled: registry != null && coincidentPartners(frame, laws).some((other) =>
             other == null || typeof other === 'object' || heldIdentity(registry.get(other), laws, registry)),
     }
-}
-
-// A permitted mover: seated, exposed, settled, unowned, unbroken, unpinned, unheld.
-const canMove = (frame, laws) => {
-    const e = eligibilityOf(frame, laws)
-    return e.exposed && e.seated && e.settled && !e.owned && !e.broken && !e.pinned && !e.held
 }
 
 // A distance reference's world point comes from `inputPosition`, the one interpreter —
@@ -221,7 +199,7 @@ function settle(spec, candidate, worlds, pump, scope, world, { permitted, fail =
         // producer may not smuggle a non-finite point for a frame it does not own.
         // (id:laws-activation-order)
         if (!finite3(target)) return unsupported(spec, `a proposed position for '${frame.name}' is not a finite point`)
-        const pose = { rotation: frame.transform.deref().rotation, position: SE3.unapply(world.transform(frame), target) }
+        const pose = positionPose(world, frame, target)
         if (!SE3.isValid(pose)) return unsupported(spec, `the prepared pose for '${frame.name}' is invalid`)
         poses.push({ frame, pose })
     }
@@ -235,75 +213,132 @@ function settle(spec, candidate, worlds, pump, scope, world, { permitted, fail =
     return { kind: 'commit', poses, address: candidate.address, law: candidate, heads: heads ?? poses, span: spec.owner }
 }
 
+
 // --- Continuation ---
 
-// The hand's continuation: keep every untouched coordinate still and move the
-// touched endpoint to the nearest admissible position under the active laws.
-// Target-only projection; conserve untouched points. (id:laws-build-p2d, id:laws-activation-order)
-//
-// A distance is undirected. Which end this request moved is read from the
-// request's own poses, never from the order the law stored its ends in: the moved
-// end is projected back onto the law and the untouched end is conserved. When
-// both ends moved, the request is the proposal and `brokenLaw` decides — the
-// continuation never picks one by spelling. Following is an installed policy, not
-// a secret of the address. (id:laws-build-p2d, id:laws-names)
+// Refinement is not an input floor or a predicate-acceptance tolerance.
+// (id:laws-continuation-refinement-budget)
+const CONTINUATION_STEP_TOL = 1e-9
+// Inclusion compares the last retained world point with the committed one.
+const CONTINUATION_EDIT_TOL = 1e-9
+
+// The continuation: the writer's world position is the request's, every other movable member
+// answers it. Not a solver, and not conservation of untouched coordinates — authority is what is
+// conserved. (id:laws-build-p3, id:laws-contradiction, id:laws-free-relations-f2)
 export function continueLaws(verdict, writer, registry, laws, world) {
     if (!laws || verdict.kind !== 'accept') return verdict
-    const poses = new Map([[writer, verdict.pose], ...verdict.component.map((m) => [m.frame, m.pose])])
-    const ctx = lawCtx(registry, poses, world, { writerId: writer.id })
-    // The writer's own truths meet as one named set. (id:laws-freedom)
-    const comp = componentOf(laws.active(), [writer.id]).laws
-    // One point query, not a fourth gather: the writer's truths meet as one set.
-    const query = pointQuery(writer.id, comp, ctx)
-    if (query.meets) {
-        if (query.complete) {
-            const wish = world.read(writer, poses).position
-            const accepted = world.read(writer, null).position
-            const near = meetNearest(meetAll(query.sets), wish, { keep: accepted })
-            if (near.ok) {
-                poses.set(writer, { rotation: verdict.pose.rotation, position: SE3.unapply(world.transform(writer), near.at) })
-                verdict.pose = poses.get(writer)
-                return verdict
+    const requested = new Map([[writer, verdict.pose], ...verdict.component.map((m) => [m.frame, m.pose])])
+    const activeLaws = laws.active()
+    const component = componentOf(activeLaws, [writer.id])
+    const pointIncidence = indexByIdentities(component.laws, pointSubjects)
+    // A truth the request cannot hand to any mover binds it; every other truth is carried.
+    const bound = component.laws.filter((law) => {
+        const others = (law.endpoints ?? []).filter((id) => id !== writer.id)
+        return others.length === 0 || others.every((id) => !canMove(registry.get(id), activeLaws))
+    })
+    const wish = world.read(writer, requested).position
+    // An unreadable offer is not a proposal; the door's input check refuses it. (D063)
+    if (!finite3(wish)) return verdict
+    const committed = world.read(writer, null).position
+    const displaced = (was, next) => was === undefined ||
+        Math.hypot(...next.position.map((v, i) => v - was.position[i])) > CONTINUATION_STEP_TOL
+
+    // ONE attempt: the writer's world position is GIVEN, the rest of the component answers it.
+    const solve = (writerWorld) => {
+        const work = new Map()
+        // The writer's own pose is the REQUEST's, kept by reference: its rotation is the one
+        // the door accepted and must survive unchanged.
+        // A position-only answer keeps the REQUESTED rotation and converts only the point,
+        // through the one chart crossing. (id:world-coordinate-foundation-phases)
+        const writerLocal = (at) => ({ rotation: verdict.pose.rotation,
+            position: toLocalPoint(world.transform(writer), at) })
+        const ctx = lawCtx(registry, work, world, { writerId: writer.id })
+        // `keep` is the branch the member already stands on: a cone's nappe, a halfplane's
+        // side, one of two points. Least change holds it unless the request improves on it.
+        const place = (frame, from, reference, keep) => {
+            const query = pointQuery(frame.id, from, { ...ctx, writerId: frame.id })
+            const sets = query.setBearing.map((c) => c.set)
+            if (sets.length === 0 || sets.some((set) => !set)) return null
+            const met = meetAll(sets)
+            if (met.kind !== 'empty') {
+                const near = meetNearest(met, reference, { keep })
+                if (near.ok) return near.at
+            }
+            // An intersection that does not resolve as one set is answered by the most-violated
+            // truth. The KIND is not swallowed: `feasible` is `status === 'valid'`, so a member
+            // placed this way still has to pass every original truth at the outcome boundary,
+            // and an unreadable one is a non-answer, never a licence.
+            // (id:laws-contradiction, id:laws-free-relations-n-node-review)
+            let at = null
+            let gap = -1
+            for (const set of sets) {
+                const near = meetNearest(set, reference, { keep })
+                if (!near.ok) continue
+                const d = Math.hypot(...near.at.map((v, i) => v - reference[i]))
+                if (d > gap) { gap = d; at = near.at }
+            }
+            return at
+        }
+        work.set(writer, writerLocal(writerWorld))
+        // A bound writer yields to what it cannot hand off, so the wish is met as near as
+        // those truths allow and no further.
+        if (bound.length > 0) {
+            const at = place(writer, bound, writerWorld, world.read(writer, null).position)
+            if (at) work.set(writer, writerLocal(at))
+        }
+        let changed = true
+        for (let sweep = 0; changed && sweep <= 2 * component.frames.size + 2; sweep++) {
+            changed = false
+            for (const id of component.frames) {
+                const frame = registry.get(id)
+                if (!frame || frame === writer) continue
+                if (!canMove(frame, activeLaws)) continue
+                const here = world.read(frame, work).position
+                const at = place(frame, pointIncidence, here, world.read(frame, null).position)
+                if (!at) continue
+                const next = positionPose(world, frame, at)
+                if (!displaced(work.get(frame), next)) continue
+                work.set(frame, next)
+                changed = true
             }
         }
+        return work
     }
-    const active = laws.active().filter((law) => law.feature === 'distance')
-    if (active.length === 0) return verdict
-    // A bounded sweep over the connected laws: projecting onto one circle may
-    // disturb another. The bound stops a cycle from spinning; brokenLaw still
-    // refuses any sweep that does not close, so a non-confluent cycle is never
-    // published. (id:laws-build-p3, id:laws-contradiction)
-    let changed = true
-    for (let sweep = 0; changed && sweep <= active.length; sweep++) {
-        changed = false
-        for (const law of active) {
-            const term = boundTerm(law)
-            if (!term) continue
-            const [r0, r1] = term.references
-            const frameOf = (ref) => isLiveInput(ref) ? registry.get(ref) : null
-            const a = frameOf(r0), b = frameOf(r1)
-            const aMoved = a != null && poses.has(a)
-            const bMoved = b != null && poses.has(b)
-            // A hand that moved neither end has nothing to say to this law.
-            if (!aMoved && !bMoved) continue
-            // Both ends moved: the request proposed the pair. Its legality is
-            // brokenLaw's question; the continuation must not move either silently.
-            if (aMoved && bMoved) continue
-            const moved = aMoved ? a : b
-            const otherRef = aMoved ? r1 : r0
-            const proposed = poses.get(moved)
-            const otherPos = inputPosition(otherRef, ctx)
-            if (!otherPos) continue
-            const r = realizeDistance(world.read(moved, poses).position, otherPos, term.radius)
-            if (!r.ok || !r.moved) continue
-            poses.set(moved, { rotation: proposed.rotation, position: SE3.unapply(world.transform(moved), r.pose) })
-            changed = true
+    // A law that cannot be MEASURED is not a satisfied law, so only `valid` is feasible: a
+    // clamp may not treat an unreadable truth as licence. (id:laws-free-relations-n-node-review)
+    const feasible = (work) => lawViolation(laws.active(), work, registry, world).status === 'valid'
+
+    let chosen = solve(wish)
+    if (!feasible(chosen) && feasible(solve(committed))) {
+        // Walk back along the straight line and keep the furthest point that closes. Only a
+        // real advance is taken: zero progress is NOT an answer, so a wish this method cannot
+        // answer stays unaccepted instead of becoming a silent no-op accept. The committed
+        // configuration is never published from here — it was already the world.
+        let lo = 0
+        let hi = 1
+        for (let step = 0; step < 16; step++) {
+            const mid = (lo + hi) / 2
+            const candidate = solve(committed.map((v, i) => v + (wish[i] - v) * mid))
+            if (feasible(candidate)) { lo = mid; chosen = candidate } else hi = mid
         }
+        if (lo === 0) chosen = solve(wish)
     }
-    verdict.pose = poses.get(writer)
-    for (const member of verdict.component) member.pose = poses.get(member.frame)
+
+    verdict.pose = chosen.get(writer)
+    for (const id of component.frames) {
+        const frame = registry.get(id)
+        if (!frame || frame === writer) continue
+        const pose = chosen.get(frame)
+        if (!pose) continue
+        const member = verdict.component.find((m) => m.frame === frame)
+        if (member) { member.pose = pose; continue }
+        const at = SE3.compose(world.transform(frame), pose).position
+        if (Math.hypot(...at.map((v, i) => v - world.read(frame, null).position[i])) > CONTINUATION_EDIT_TOL)
+            verdict.component.push({ frame, pose })
+    }
     return verdict
 }
+
 
 // --- Analytic candidates for a component ---
 
@@ -573,6 +608,33 @@ export function applyLaw(spec, pump, world) {
                 // An anchor is a pin, a body, a hold or a coupled partner — not a mover.
                 return !!e && (!(e.exposed && e.seated && e.settled && !e.owned && !e.broken) || e.held || e.pinned)
             })
+            // ONE isolated leaf: only that leaf is placed, from the bound distance, so the
+            // accepted prefix is never reconfigured and mixed/cyclic accepted truths do not
+            // block it. A stated selection, not least change or midpoint balance. (id:laws-free-relations-f2)
+            const term = boundTerm(candidate)
+            const live = references.filter(isLiveInput)
+            const touched = (id) => surviving.some((law) => (law.endpoints ?? []).includes(id) &&
+                AUTHORED[law.feature]?.staticVerdict?.(law)?.status !== 'tautology')
+            const isolates = live.filter((id) => !touched(id))
+            if (term?.type === 'distance' && live.length === 2 && isolates.length === 1) {
+                const leafId = isolates[0]
+                const leaf = pump.registry.get(leafId)
+                const fact = leaf && eligibilityOf(leaf, scope, pump.registry)
+                // An explicit ceiling is a ceiling: a mover set that does not name the leaf
+                // refuses it, empty set included. settle enforces the same, never substitutes.
+                const withinCeiling = operation.movable.includes(leafId)
+                if (withinCeiling && fact?.exposed && fact.seated && fact.settled &&
+                    !fact.owned && !fact.broken && !fact.held && !fact.pinned) {
+                    const leafCtx = lawCtx(pump.registry, null, world)
+                    const centre = inputPosition(term.references.find((ref) => ref !== leafId), leafCtx)
+                    // Zero and positive radii share one distance kernel; only the tie is reach policy.
+                    // (id:laws-free-relations-f2)
+                    const at = nearestChild({ centre, at: leafCtx.worldOf(leaf), radius: term.radius,
+                        bond: world.transform(spec.observer).rotation.rotateVec(1, 0, 0) })
+                    if (at) return settle(spec, candidate, new Map([[leafId, at]]), pump, scope, world,
+                        { permitted: [leafId] })
+                }
+            }
             if (anchors.length === 1) {
                 const joint = componentCandidate(spec, candidate, pump, scope, world, anchors[0])
                 if (joint !== INAPPLICABLE) return joint

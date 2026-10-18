@@ -164,6 +164,9 @@ export function createStage(canvas, bridge, instruments = {}) {
     let hatchP = null
     /** @type {((path: string | null) => void) | null} */
     let resolveHatch = null
+    // The picture's surfaces above this canvas, in paint order. Set by whoever
+    // draws marks on their own layer; a lazy read, so a disposed layer reads null.
+    let overlayOf = () => null
 
     function picture() {
         if (!hatchP) {
@@ -279,6 +282,13 @@ export function createStage(canvas, bridge, instruments = {}) {
             return { origin: [origin.x, origin.y, origin.z], direction: [direction.x, direction.y, direction.z] }
         },
 
+        // The marks layer, offered by the turtle that draws it. The stage does not
+        // own the picture's top surface; it names the seam every capture consumer
+        // asks, so a still is the PICTURE and an empty answer is a canvas alone.
+        // (id:host-surface)
+        attachOverlay(fn) { overlayOf = fn ?? (() => null) },
+        markLayers: () => [overlayOf()].filter(Boolean),
+
         head,
         get recorder() { return recorder },
         // LineMaterial cache (spec A3) — WebGL-lifetime owner; dispose() frees it.
@@ -337,7 +347,7 @@ export function createStage(canvas, bridge, instruments = {}) {
                 queueMicrotask(async () => {
                     try {
                         const rec = getRecorder()
-                        const result = rec ? await rec.takeSnapshot({ pixels, width, height }) : null
+                        const result = rec ? await rec.takeSnapshot({ pixels, width, height, layers: stage.markLayers() }) : null
                         if (result) {
                             // The file, if one was asked for — read the flag before
                             // the clear, and clear it whole (id:kb-7-stage).

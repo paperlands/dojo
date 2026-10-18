@@ -264,8 +264,10 @@ test("a genuinely free pair: the coincidence is named and reads one set", () => 
     assert.deepEqual(project(view, [5, 5, 0]), [0, 0, 0], "projection reads the same set")
     const r = scheduler.requestMotion(A, { rotation: A.transform.deref().rotation, position: [3, 0, 0] }, scheduler.motionRevision)
     drive(scheduler, { maxTicks: 3 })
-    assert.equal(r.kind, "accept", "accepted without displacement")
-    assert.deepEqual(world(A), [0, 0, 0])
+    // The default continuation carries: the wish is the objective and the coincident partner
+    // answers, so a zero distance is kept by MOVING, never by refusing or by a tautology.
+    assert.equal(r.kind, "accept", "accepted")
+    assert.ok(Math.hypot(...world(A).map((v, i) => v - world(B)[i])) < 1e-9, "the coincidence holds")
 })
 
 // R5b — a small denominator is not emptiness. Two nearly parallel planes meet in a

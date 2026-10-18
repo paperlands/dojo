@@ -435,9 +435,9 @@ export class Turtle {
             project: world => this._view().project(world),
             rayAt: (x, y) => this._view().rayAt(x, y),
             facing: () => this._view().facing(),
-            // A sphere's hand rides its camera-plane disk; a cone its own polar.
-            // (id:laws-decl-anchor)
-            locusOf: frame => this._stateOf(frame).locus,
+            // The default hand reads the law's locus; an encounter may choose another request surface.
+            // (id:laws-free-relations-f2)
+            locusOf: frame => this._handLocusOf ? this._handLocusOf(frame) : this._stateOf(frame).locus,
             // Slight stickiness at the ball's own landmarks: the paper it rests on.
             // (id:laws-decl-anchor)
             detents: { paper: true, poles: true },
@@ -525,11 +525,13 @@ export class Turtle {
     }
 
     // The mounting owner acquires the hand and releases its listeners.
-    attachHand() {
+    attachHand({ locusOf = null } = {}) {
+        this._handLocusOf = locusOf
         this._handRequested = true
         this._ensureHandle()
         return () => {
             this._handRequested = false
+            this._handLocusOf = null
             this._handle?.dispose()
             this._handle = null
             this._heldFrame = null
@@ -565,6 +567,9 @@ export class Turtle {
         // The compositor projects turtle-owned focus and stage state.
         // Only an opted-in owner installs the hand; the overlay never takes input.
         this._overlay ||= createOverlay({ onResize: () => this.requestRender(), space: this.stage.space, canvas: this.stage.canvas })
+        // The stage is handed the picture's top surface lazily: dispose() nulls the
+        // reference and the read follows it, so a hatch after teardown composes none.
+        this.stage.attachOverlay(() => this._overlay?.canvas ?? null)
         if (this._handRequested) this._ensureHandle()
         this.compositor = createCompositor(this.scheduler,
             this.stage,

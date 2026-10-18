@@ -65,10 +65,12 @@ test('F1 audit: coincidence between distinct identities is a real constraint, no
     const result = run('let A\nlet B\nlet distance(A,B)=0')
     clean(result)
     assert.equal(AUTHORED.distance.staticVerdict(result.scheduler.laws.active()[0]), null)
-    const before = position(result.A)
     const response = result.scheduler.requestMotion(result.A, { rotation: SE3.identity().rotation, position: [10, 0, 0] }, result.scheduler.motionRevision, 'world')
     assert.equal(response.kind, 'accept')
-    assert.deepEqual(position(result.A), before, 'the unchanged-partner control still enforces coincidence')
+    // Still a real constraint: the zero distance is kept by carrying the partner, which is
+    // neither a tautology nor a refusal.
+    assert.ok(Math.hypot(...position(result.A).map((v, i) => v - position(result.B)[i])) < 1e-9,
+        'the coincidence is kept by the carried partner')
 })
 
 test('F1 audit: tiny positive self-distance is an exact contradiction, not a tolerance pass', () => {
@@ -261,13 +263,15 @@ test("F1: attaching a body is not an implicit free-pair initializer", () => {
     assert.deepEqual(position(result.B), [0, 0, 0])
 })
 
-test("F1: a coupled search remains unresolved; preceding law and poses survive", () => {
+test("F1: an isolated leaf closes the coupled search; the accepted prefix survives", () => {
+    // B is constrained by the accepted AB; C is isolated, so only C is placed on BC's own
+    // set. The prefix A/B is never reconfigured. (id:laws-free-relations-f2)
     const result = run("let A\nlet B\nlet C\nlet distance(A,B)=5\nlet distance(B,C)=10")
-    assert.ok(result.host.unresolved)
-    assert.equal(result.scheduler.laws.count(), 1)
+    assert.equal(result.host.unresolved ?? null, null)
+    assert.equal(result.scheduler.laws.count(), 2)
     close(position(result.A), [-2.5, 0, 0])
     close(position(result.B), [2.5, 0, 0])
-    assert.deepEqual(position(result.host.children.get("C")), [0, 0, 0])
+    close(position(result.host.children.get("C")), [-7.5, 0, 0])
 })
 
 test("F1: a current lawful mixed configuration needs no pair search", () => {

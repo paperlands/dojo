@@ -79,8 +79,11 @@ const gestureFor = (scheduler, frames) => {
 
 // One fixture, two spellings. Identity, scope, owner, predicate and request are
 // held constant; only the order the law stores its ends changes. A=0, B=5, |AB|=5.
-const AB = "let A\ngoto 5 0\nlet B\ngoto 0 0\nas B do\n  let A.distance = 5\nend"
-const BA = "let A\ngoto 5 0\nlet B\ngoto 0 0\nas A do\n  let B.distance = 5\nend"
+// BOTH fixtures are role-symmetric: two free points, one law, spelled either way. The
+// earlier pair headed a different node in each, so it compared two different situations
+// while claiming to compare one scenario.
+const AB = "let A\njmp 5\nlet B\nlet distance(A,B)=5"
+const BA = "let A\njmp 5\nlet B\nlet distance(B,A)=5"
 
 test("undirected: one request lands one way whichever end the law stored first", () => {
     const run = (src) => {
@@ -98,11 +101,12 @@ test("undirected: one request lands one way whichever end the law stored first",
     const two = run(BA)
     assert.notEqual(one.ends, two.ends, "the two laws really do spell their ends differently")
     assert.deepEqual(one.a, two.a, "the request moves A to one place, not two")
-    assert.deepEqual(one.b, two.b, "and the untouched B stays in one place")
-    // Target-only projection is the built-in policy: the moved end is projected, not
-    // the other. (id:laws-build-p2d)
-    assert.deepEqual(one.a, [10, 0, 0], "A lands on the circle about the untouched B")
-    assert.deepEqual(one.b, [5, 0, 0])
+    assert.deepEqual(one.b, two.b, "and the answering B lands in one place")
+    // The wish is the objective and the partner answers: A carries to the request and B
+    // holds the length. Neither answer is a secret of how the law spelled its ends.
+    // (id:laws-freedom, id:laws-free-relations-f2)
+    assert.deepEqual(one.a, [20, 0, 0], "A carries to the wish")
+    assert.deepEqual(one.b, [15, 0, 0], "B answers to keep the length")
 })
 
 // A headed declaring scope is never a hand's target, and a coincident point whose

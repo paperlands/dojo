@@ -16,6 +16,28 @@ export function heldValue(value) {
     return value
 }
 
+// Only operand keys can consume substitutions; held data and call names cannot.
+// (id:tower-capture-operands)
+const operandNames = (ast, names = new Set()) => {
+    if (ast.type === 'operand' && typeof ast.value === 'string') names.add(ast.value)
+    for (const child of ast.children ?? []) operandNames(child, names)
+    return names
+}
+
+// A qualified local subject cannot escape to a same-named ambient being.
+// (id:being-facets-centers-review)
+const checkCaptureSubjects = (ast, ctx, params) => {
+    if ((ast.type === 'operand' || ast.type === 'function') && typeof ast.value === 'string') {
+        const dot = ast.value.indexOf('.')
+        const subject = ast.value.slice(0, dot)
+        const formal = params.includes(subject) || (ast.type === 'operand' && params.includes(ast.value))
+        if (dot > 0 && !formal && Object.hasOwn(ctx, subject)) {
+            throw new Error(`cannot capture qualified binding '${subject}' in a numeric function; use explicit inputs`)
+        }
+    }
+    for (const child of ast.children ?? []) checkCaptureSubjects(child, ctx, params)
+}
+
 export class Parser {
     constructor() {
         // One owner for the builtin signatures: the center's own description. The
@@ -253,12 +275,13 @@ export class Parser {
         }
 
         const expressionAST = this.parse(expression);
+        const referenced = operandNames(expressionAST);
 
         const substitutions = new Map();
 
         for (const key of Object.keys(ctx)) {
-            // Don't substitute parameter names — they stay symbolic
-            if (!params.includes(key)) {
+            // Formals stay symbolic; unused bindings are not acquired.
+            if (!params.includes(key) && referenced.has(key)) {
                 // A captured value is held, never referenced: its own node and a copy,
                 // so the body reads the snapshot it was declared with. (id:tower-tension-repr)
                 substitutions.set(key, new ASTNode('literal', heldValue(ctx[key])));
@@ -266,6 +289,7 @@ export class Parser {
         }
 
         const subexpressionAST = this.substituteParameters(expressionAST, substitutions)
+        checkCaptureSubjects(subexpressionAST, ctx, params)
 
 
         const key = this.makeKey(name, params.length);

@@ -34,6 +34,7 @@ node test/js/profile/breath_cost_bench.mjs              # what the preemption bo
 node test/js/profile/frontend_bench.mjs                # reader · parser · lexer · evaluator
 node test/js/profile/live_loop_bench.mjs               # the user loops, against a frame budget
 node test/js/profile/point_read_bench.mjs              # scan · shared snapshot · prepared point pass
+node --expose-gc test/js/profile/movement_latency_bench.mjs  # movement, against a frame budget
 #+END_SRC
 
 - =point_read_bench.mjs= rotates scanning/shared/prepared passes over real pinned-point worlds,
@@ -349,6 +350,146 @@ Tools surface only after a Claude Code restart. Protocol per session:
    color-varying program (=color [count]=) ~15×, re-snapshot. Growth that never
    recedes = the unbounded material cache.
 
-* RELATED
+* MOVEMENT LATENCY
+:PROPERTIES:
+:TYPE: reference
+:END:
+
+=movement_latency_bench.mjs= asks where movement costs what. It is a reading instrument:
+each cell names its workload, records the outcome it observed, and reports the displacement
+it achieved. A wish pattern is part of the fixture, not a detail.
+
+The observed mechanism behind the expensive carry workload is recorded, without a ruling, at
+[[id:laws-movement-cost-mechanism]] (=observed-laboratory=): near-tangent circle recomputation,
+fixed-circle idempotence, non-monotone error over the bounded sweep, and the explicit
+distinction between the loop's position-change test and the gate's acceptance tolerance. Carry
+and follower rotation stay open there and here.
+
+#+BEGIN_SRC sh
+node --expose-gc test/js/profile/movement_latency_bench.mjs
+ROTATE=7 RAW=/tmp/movement.jsonl node --expose-gc test/js/profile/movement_latency_bench.mjs
+SAMPLES=50 ACTOR_EDITS=40 node --expose-gc test/js/profile/movement_latency_bench.mjs   # quick read
+#+END_SRC
+
+Scopes are named because they are not interchangeable:
+
+| scope           | includes                                                                  |
+|-----------------+---------------------------------------------------------------------------|
+| =latency:hand=  | one =requestMotion= CALL only — the 2 settle ticks are excluded           |
+| =settleMs=      | the 2 settle ticks, timed separately and reported as their own field       |
+| =alloc:hand=    | warmed world; call + 2 settle ticks + drains, divided by operations        |
+| =latency:motion=| one =scheduler.tick= whose observed attempt is =program-motion= and published |
+| =alloc:motion=  | warmed world (3 observed motions outside); ticks carrying 20, per motion edit |
+
+=RAW= is JSONL: the first line is schema metadata (version, runtime, source hash, scope
+strings, sample counts); every row carries =phase ∈ {warm, measure, cold}=, =op=, =kind=,
+=outcome=, =ms=, =delta=, =requested=, =before=, =after=, =displacement=, =command=, =path=,
+and null slots for =members/reads/transforms= until the diagnostic pass fills them. Filter
+=phase === "measure"= to reproduce the printed statistics. =warm= rows are retained and tagged;
+=cold= means the FIRST operation in a FRESH world — never a process-cold claim. =ROTATE= changes
+the timing order only.
+
+Two carry workloads, not interchangeable:
+
+| workload | wish | what the continuation does |
+|----------+--------------------------------------------+------------------------------------|
+| rebasing | one step D from the CURRENT world position | the writer moves; followers usually already lawful |
+| absolute | the same world points every edit, ±2        | the chain is re-stretched: every member re-placed |
+
+One run (Node 26, headless model time, no GPU; =ROTATE=0, =SAMPLES=200=). Single run: the
+expensive cells are order- and history-sensitive and repeat runs vary, which is what =ROTATE= and
+=RAW= exist to measure. Magnitudes below are indications, not constants:
+
+| cell                        | n   | p50      | tail (p99/max) | disp | alloc     |
+|-----------------------------+-----+----------+----------------+------+-----------|
+| carry n=4  D=1 rebasing     | 200 | 0.36 ms  | 1.9 / 3.1      | 1    | ~123 KB   |
+| carry n=8  D=1 rebasing     | 200 | 0.51 ms  | 2.2 / 2.3      | 1    | ~242 KB   |
+| carry n=16 D=1 rebasing     | 200 | 1.32 ms  | 3.8 / 5.0      | 1    | ~474 KB   |
+| carry n=12 D=4 rebasing     | 200 | 0.93 ms  | 2.7 / 3.9      | 4    | ~348 KB   |
+| absolute ±2 n=8             | 200 | 0.44 ms  | 1.6 / 4.4      | 4    | ~242 KB   |
+| absolute ±2 n=16            | 200 | 11.3 ms  | 21.0 / 22.2    | 4    | ~4.8 MB   |
+| clamp within reach (n=3)    | 200 | 0.25 ms  | 1.0 / 26.8     | 4    | ~77 KB    |
+| clamp restatement (n=3)     | 200 | 0.22 ms  | 0.8 / 0.9      | 0    | ~68 KB    |
+| clamp initial, cold (n=3)   | 12  | 5.98 ms  | 9.2            | 20   | —         |
+| clamp boundary refuse (n=3) | 100 | 5.82 ms  | 10.5 / 11.1    | 0    | —         |
+| unrelated K=0 (n=4)         | 200 | 0.20 ms  | 1.3 / 4.0      | 1    | ~116 KB   |
+| unrelated K=50              | 200 | 1.43 ms  | 5.4 / 7.8      | 1    | ~508 KB   |
+| unrelated K=200             | 200 | 6.72 ms  | 13.3 / 14.5    | 1    | ~1.6 MB   |
+| actor translate n=8         | 120 | 0.50 ms  | 2.3 / 3.1      | 1    | ~163 KB   |
+| actor rotate n=8            | 120 | 0.30 ms  | 1.0 / 1.1      | —    | ~153 KB   |
+| actor translate n=16        | 120 | 0.82 ms  | 2.4 / 2.8      | 1    | ~300 KB   |
+| actor rotate n=16           | 120 | 0.63 ms  | 2.5 / 3.5      | —    | ~276 KB   |
+
+Matched command (translation, one unit per operation): motion tick / hand edit p50 =
+0.88×, 0.98×, 0.62× at n=2, 8, 16. Operational only: the tick also carries execution and
+observers, the call also carries publication, and the two geometry histories are not identical.
+
+*Diagnostic pass (M2).* After every timing cell, and never before one, the bench replays each
+hand/unrelated cell's exact warmup and then, on the state the timing cell occupies, runs a
+*replica* of one continuation call through a counting world, followed by one whole-door call
+(the scheduler's own world wrapped and restored). Two witnesses bracket the replica:
+
+1. *Identity*: every participant's frame, origin and transform objects are saved by reference
+   and must be the same objects afterwards; every active law must keep its address, declaring
+   frame and endpoints. Law OBJECTS cannot be witnessed this way — =laws.active()= materialises
+   fresh records per call (measured), and the artifact records that fact rather than pretending
+   otherwise.
+2. *Value*: a digest over every participant's origin, local and world pose, membership and
+   revision, and every law's address/feature/endpoints/owner/declaring frame, before and after.
+
+Then the producer is compared against the door: the replica's candidate (writer + component) is
+predicted in WORLD coordinates, the door is asked the same question on the same state, and the
+bench asserts the door verdict's member set matches the candidate and that the installed world
+poses equal the prediction within a declared 1e-12 diagnostic budget. Artifacts (=*.diag.jsonl=)
+carry per cell: one-based ordinal, target, members (= writer + component), reads, transforms,
+whole-door counts, signature match, and =maxPublishedPositionGap= /
+=maxPublishedRotationGap=. In these identity-room fixtures both gaps are 0. For scale: at n=16
+the rebasing cell's replica asks 253 reads / 46 transforms and re-places 2 members; the absolute
+±2 cell asks 3157 / 541 and re-places 5–6. Those are counts of what the method asks for; they are
+not an attribution and this file draws no conclusion from them.
+*Provenance:* every timing and count in this section was measured on the pre-change baseline
+(refinement stop 1e-12, pinned verdict hash `8769d4b0…`). The runtime now uses a trial refinement
+stop of 1e-9, [[id:laws-continuation-refinement-budget]]; those cells are cheaper after it, so the
+historical readings are not restated as current claims.
+
+*Post-change checkpoint (2026-10-18, Node 26.12.0).* One uninstrumented A/B over this frozen
+instrument: B0/A0/A7/B7, a fresh process each, 200 ops per cell, the baseline verdict
+`8769d4b0…` served under the canonical URL and the current verdict `10aca177…`, with no counters
+inside any timed region and no per-call hooks. Same scopes as above: `latency:hand` = the call
+only, `alloc:hand` = call + 2 settles + drains. Receipts: `/tmp/movement-stop-ab/`.
+
+| cell              | baseline p50 / p99 / max        | current p50 / p99 / max      | baseline alloc | current alloc |
+|-------------------+---------------------------------+------------------------------+----------------+---------------|
+| absolute ±2, n=16 | 10.13–10.40 / 15.81–15.98 / 17.03–18.34 ms | 0.87–1.11 / 2.75–3.57 / 2.88–4.03 ms | 4232–4762 KB/op | 450–485 KB/op |
+
+Read counts in three warmed states fell 3157 → 253; publication gaps stayed 0; both arms were
+200/200 accept-changed. This is a *method-generated history response* comparison, not an
+identical-output or scene-latency claim. Contract: [[id:laws-continuation-refinement-budget]];
+mechanism review: [[id:laws-movement-cost-mechanism]].
+
+What this instrument does NOT establish, and must not be read into it:
+
+1. *No mechanism.* The continuation's sweep count, its convergence test and the gate's
+   tolerance are being measured separately with an instrumented in-memory copy of the pinned
+   module, not from these timings. A CSV of medians cannot attribute cost to a loop, and
+   subtracting two cells does not either. No root-cause claim lives here until that
+   instrument's equivalence checks (candidate output, effective published poses, source and
+   copy hashes) land.
+2. *No policy.* Refusal is not "no value" — a refused edit preserves obligations, and its cost
+   (5.8 ms p50 to publish nothing) is a price of the search, not a verdict on it. A cheaper
+   movement policy is not thereby the intended interaction. 16.67 ms is a whole frame, not a
+   budget available to movement.
+3. *No breadth.* GPUs/render, input scheduling, observers, competing work, continuous lawful
+   trajectories, arbitrary constraint graphs, richer tower values entering geometry, other
+   machines — all outside. Headless model time is not "what the user feels".
+4. *No cold JIT claim.* The first motion tick is reported separately and labelled JIT; the
+   =cold= phase is reserved for first operations in fresh worlds.
+
+Corrections kept from the review that produced this version: an earlier README said "members 2
+(writer only)" — it is writer + 1 follower; and an earlier sentence claimed the fresh-fixture
+diagnostic explained the steady-state difference — withdrawn, and the diagnostics now run on the
+warmed state.
+
+* RELATED* RELATED* RELATED
 - Diagnosis + follow-up fixes: =~/.claude/plans/observe-deeply-across-the-elegant-mccarthy.md=
 - Spec: [[file:../../../specs/turtle-rearchitecture.org]]

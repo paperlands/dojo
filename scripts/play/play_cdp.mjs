@@ -341,6 +341,100 @@ try {
     if (s.consoleTail.length)
       console.log("console tail:\n" + s.consoleTail.slice(-15).join("\n"));
     if (outPng) await screenshot(s, outPng, bare);
+  } else if (mode === "dragnode") {
+    // BOUNDED exact-source drag with REAL CDP pointer input, as a GATE (non-zero exit on any
+    // failure), recording EVERY pointer sample separately: a whole drag is not one transaction.
+    // Usage: dragnode <prog-file> <name> <dx> <dy> [waitMs]
+    const [progFile, name, dx = "110", dy = "80", waitMs = "5000"] = args;
+    const program = readFileSync(progFile, "utf8");
+    await s.cdp("Runtime.enable");
+    let held0 = "NO EDITOR";
+    for (let i = 0; i < 80 && held0 === "NO EDITOR"; i++) {
+      held0 = await s.evalJs(`(() => {
+      const box = document.querySelector('.cm-content') || document.querySelector('textarea');
+      if (!box) return 'NO EDITOR';
+      box.focus();
+      if (box.tagName === 'TEXTAREA') { box.value = ${JSON.stringify(program)}
+        box.dispatchEvent(new Event('input', { bubbles: true })); return box.value.slice(0, 40); }
+      document.execCommand('selectAll');
+      document.execCommand('insertText', false, ${JSON.stringify(program)});
+      return box.innerText.slice(0, 40); })()`);
+      if (held0 === "NO EDITOR") await sleep(250);
+    }
+    if (held0 === "NO EDITOR") { console.error("dragnode: editor never mounted"); process.exit(2); }
+    await sleep(Number(waitMs));
+    const snap = () => s.evalJs(`(() => { const w = window.__probe.read(); const a = {};
+      for (const x of w.ambients) if (['A','B','D'].includes(x.name)) a[x.name] = (x.state && x.state.at) || x.transform.pos;
+      return { rev: w.revision, a, ids: Object.fromEntries(w.ambients.filter(x => ['A','B','D'].includes(x.name)).map(x => [x.name, x.id])),
+        laws: w.laws.map(l => ({ ep: l.endpoints, r: l.expression && l.expression.radius })),
+        held: w.held, controlsEnabled: w.controlsEnabled, handMoves: w.handMoves,
+        attempt: w.attempt ? { path: w.attempt.path, command: w.attempt.command ?? null, outcome: w.attempt.outcome, gate: w.attempt.gate ?? null } : null }; })()`);
+    await s.cdp("Page.bringToFront");
+    const environment = await s.evalJs(`Promise.race([
+      new Promise(ok => requestAnimationFrame(() => ok({ visibility: document.visibilityState, raf: true }))),
+      new Promise(ok => setTimeout(() => ok({ visibility: document.visibilityState, raf: false }), 1500))])`);
+    environment.window = (await s.cdp("Browser.getWindowForTarget", {})).result?.bounds ?? null;
+    if (environment.visibility !== "visible" || !environment.raf)
+      throw new Error("dragnode: make the browser visible with a running render loop before testing input");
+    await s.evalJs(`window.__probe.look({ position: [-200, -80, 900], target: [-200, 0, 0] })`);
+    const rendered = await s.evalJs(`Promise.race([
+      new Promise(ok => requestAnimationFrame(() => requestAnimationFrame(() => ok(true)))),
+      new Promise(ok => setTimeout(() => ok(false), 1500))])`);
+    if (!rendered) throw new Error("dragnode: camera did not reach a rendered frame");
+    const before = await snap();
+    const target = before.a[name] ?? null;
+    const px = target && await s.evalJs(`window.__probe.project(${JSON.stringify(target)})`);
+    if (!px) { console.error(`dragnode: ${name} is not projectable`); process.exit(1); }
+    const failures = [];
+    const must = (ok, why) => { if (!ok) failures.push(why); return ok; };
+    const byId = (o) => { const m = {}; for (const [n, id] of Object.entries(o.ids ?? {})) m[id] = o.a[n]; return m; };
+    const rawLen = (o, ep) => { const m = byId(o); const a = m[ep[0]], b = m[ep[1]];
+      return a && b ? Math.hypot(...a.map((v, i) => v - b[i])) : null; };
+    const samples = [];
+    const step = async (label, type, x, y) => {
+      const r0 = await snap();
+      await pointer(s, type, x, y);
+      await sleep(300);
+      const r1 = await snap();
+      const delta = r1.rev - r0.rev;
+      const lens = r1.laws.map((l) => ({ r: l.r, got: rawLen(r1, l.ep) }));
+      samples.push({ sample: label, event: type, rev: [r0.rev, r1.rev], delta, held: r1.held,
+        controlsEnabled: r1.controlsEnabled, attempt: r1.attempt,
+        lengths: lens.map((l) => ({ want: l.r, err: l.got == null ? null : Math.abs(l.got - l.r) })), raw: r1.a });
+      must(delta <= 1, `${label}: ${delta} revisions in one sample (a sample is one request)`);
+      for (const l of lens) must(l.got != null && Math.abs(l.got - l.r) <= 1e-6,
+        `${label}: original radius ${l.r} not held (raw |len| = ${l.got})`);
+      must(r1.attempt?.gate == null || r1.attempt.gate.status !== "violation", `${label}: gate reported a violation`);
+      return r1;
+    };
+    await s.evalJs(HIDE);
+    try {
+      environment.hit = await s.evalJs(`(() => {
+        const el = document.elementFromPoint(${Math.round(px.x)}, ${Math.round(px.y)});
+        return { id: el?.id ?? null, tag: el?.tagName ?? null }; })()`);
+      if (environment.hit.id !== "core-canvas")
+        throw new Error(`dragnode: press is blocked by ${environment.hit.tag}#${environment.hit.id}`);
+      const pressed = await step("press", "mousePressed", px.x, px.y);
+      must(pressed.held === name, `capture failed: held=${pressed.held} (want ${name})`);
+      must(pressed.controlsEnabled === false, "controls were not disabled while grabbed");
+      await step("move-1", "mouseMoved", px.x + Number(dx) / 2, px.y + Number(dy) / 2);
+      await step("move-2", "mouseMoved", px.x + Number(dx), px.y + Number(dy));
+      await step("release", "mouseReleased", px.x + Number(dx), px.y + Number(dy));
+    } finally {
+      await s.evalJs(RESTORE);
+    }
+    const idle0 = await snap();
+    await sleep(1200);
+    const idle1 = await snap();
+    const idleStable = JSON.stringify(idle0.a) === JSON.stringify(idle1.a) && idle0.rev === idle1.rev;
+    must(idle1.held === null, `release did not clear the grab (held=${idle1.held})`);
+    must(idle1.controlsEnabled === true, "controls were not restored after release");
+    must(idleStable, "the world did not settle while idle");
+    console.log(JSON.stringify({ input: "CDP Input.dispatchMouseEvent", name, environment, laws: idle1.laws, samples,
+      released: { held: idle1.held, controlsEnabled: idle1.controlsEnabled }, idleStable,
+      movingSamples: samples.filter((x) => x.delta > 0).length,
+      totalRevisions: samples.reduce((n, x) => n + x.delta, 0), ok: failures.length === 0, failures }, null, 1));
+    if (failures.length > 0) { console.error("dragnode FAILED:\n  " + failures.join("\n  ")); process.exit(1); }
   } else if (mode === "shot") {
     await screenshot(s, args[0], bare);
   } else if (mode === "eval") {

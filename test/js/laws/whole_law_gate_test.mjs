@@ -9,12 +9,11 @@ import { buildWorld, fork, drive } from "./harness.mjs"
 import { frameWorldTransform } from "../../../assets/js/turtling/scheduler.js"
 import { addressOf } from "../../../assets/js/turtling/laws/replacement.js"
 
-const pass = ({ requested }) => ({ accepted: true, transform: requested })
 const pos = (f) => frameWorldTransform(f).position.map((n) => +n.toFixed(6))
 const addrs = (scheduler) => scheduler.laws.active().map(addressOf).sort()
 
 function seat(source) {
-    const scheduler = buildWorld({ admit: pass })
+    const scheduler = buildWorld({})
     const host = scheduler.hotSwapChild("host", fork("host", source))
     drive(scheduler)
     return { scheduler, host }
