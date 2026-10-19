@@ -51,7 +51,7 @@ try {
     for (const required of ['turtling/turtle.js', 'turtling/orbit.js', 'utils/threetext.js'])
         if (!inputs.some(path => path.endsWith(required))) throw Error('host closure missing ' + required)
     const licenses = (await readdir(join(root, 'scripts/release/licenses'))).sort()
-    const sourcePaths = [...new Set([...inputs, 'LICENSE', 'docs/host.org', 'scripts/release/host.mjs',
+    const sourcePaths = [...new Set([...inputs, 'LICENSE', 'scripts/release/host.org', 'scripts/release/host.mjs',
         'scripts/release/NOTICE.txt', 'scripts/vendor/package.json', 'scripts/vendor/package-lock.json',
         ...licenses.map(name => 'scripts/release/licenses/' + name)])].sort()
     const sources = {}
@@ -84,7 +84,7 @@ try {
         sourceDigest, sources, artifacts, esbuild: esbuild.version,
     }, null, 2) + '\n')
     await writeFile(join(temp, 'README.txt'),
-        'Import createHatch from host.mjs. See sources/docs/host.org for the API.\n' +
+        'Import createHatch from host.mjs. See sources/scripts/release/host.org for the API.\n' +
         'Keep LICENSE, NOTICE.txt, licenses/ and host.mjs.LEGAL.txt with distributions.\n' +
         'Build-input snapshot: overlay sources/ on a checkout, then run node scripts/release/host.mjs\n' +
         'Rebuilding requires a Git checkout at release.json.commit with these inputs overlaid.\n' +
