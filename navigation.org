@@ -1201,16 +1201,16 @@ reductions retain bounded refusals. Independent conditioned branches commute, no
 cross-branch reads. Keepers: =test/js/laws/{actor_follow,following,hand_standard,component_response,
 lifecycle_witness,localization_representation,receiver_follow,receiver_affordance}_test.mjs=.
 Nine focused tests across =receiver_follow= (7) and =receiver_affordance= (2) fence this path.
-Rung: =scripts/play/rungs/receiver-spines.txt= — one recipe over two supplied 3-joint chains.
+Rung: =scripts/play/rungs/receiver-spines.plang= — one recipe over two supplied 3-joint chains.
 [[id:laws-free-relations-actor-campaign]].
 
 ** actor spine in the browser — ordinary source, no hand switch
 :PROPERTIES:
 :ID: nav-law-follow-play
 :KEYWORDS: actor spine procedural animation computed loop J0 pulling seed step turn wait play browser
-:PATH: scripts/play/rungs/actor-spine.txt
+:PATH: scripts/play/rungs/actor-spine.plang
 :END:
-Run =node scripts/play/play_cdp.mjs run scripts/play/rungs/actor-spine.txt 2000 /tmp/actor-spine.png --bare=,
+Run =node scripts/play/play_cdp.mjs run scripts/play/rungs/actor-spine.plang 2000 /tmp/actor-spine.png --bare=,
 then =node scripts/play/play_cdp.mjs probe=. Two loops construct nine unpinned joints/eight
 relations plus nine world-Z coordinate laws; one attached actor circles with a large BOUNDED
 loop. Twiddle seed sign, step or turn separately. The old =follow= mode/hand URL is retired,
@@ -1278,7 +1278,7 @@ the SAME read, never by namesake. Delegated =state=/=authored=/=layers=/=order=/
 are not generally audited; no whole-port security claim. Records pay a copy/freeze
 cost, and admissions may be frequent; no cheapness or performance claim.
 Fences: =test/js/laws/{decision_snapshot,probe_roles,plain_poses,law_observation}_test.mjs=.
-Receiver context: [[id:nav-law-follow-responder]], =receiver-spines.txt=.
+Receiver context: [[id:nav-law-follow-responder]], =receiver-spines.plang=.
 [[id:scheduler-observation-ownership]].
 
 ** movement cost — named operations, matched-state diagnostics
@@ -1355,10 +1355,10 @@ Driven payloads are row capabilities (=driveOf=): position projects a point,
 coordinate carries a scalar. Accepted publication owns driver installation;
 the shared preflight refuses directional own-target reads before replacement.
 Fences: =driven_installation_test.mjs= and =driven_coordinate_test.mjs=.
-Reasoning: [[id:relationships-driven-payloads]]; canvas: =scripts/play/rungs/driven-coordinate.txt=.
+Reasoning: [[id:relationships-driven-payloads]]; canvas: =scripts/play/rungs/driven-coordinate.plang=.
 Reactive randomness: =assets/js/turtling/laws/reactive.js=; synchronous input questions
 gate intrinsic draws. Fence: =test/js/laws/reactive_randomness_test.mjs=; live play:
-=scripts/play/rungs/reactive-randomness.txt=. Reasoning: =laws-reactive-randomness=
+=scripts/play/rungs/reactive-randomness.plang=. Reasoning: =laws-reactive-randomness=
 in =specs/compiler/relationships.org=; readings: =probe/reactive-randomness/RESULTS.org=.
 D059 payload boundary: =laws/verdict.js::applyLaw= and =laws/authored.js::withPayload=;
 =scheduler.js::redrawDerivedLaw= reads the accepted term. Fences:

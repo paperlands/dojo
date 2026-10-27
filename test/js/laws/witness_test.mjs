@@ -40,5 +40,5 @@ test("the pure meet and the scheduler agree on one witness", () => {
 })
 
 test("the browser rung is the same source", () => {
-    assert.equal(readFileSync("scripts/play/rungs/coordinate.txt", "utf8").trimEnd(), WITNESS.source)
+    assert.equal(readFileSync("scripts/play/rungs/coordinate.plang", "utf8").trimEnd(), WITNESS.source)
 })

@@ -7,7 +7,7 @@ import { pointStateOf } from '../../../assets/js/turtling/laws/point_state.js'
 import { conicSource } from './conic_source.mjs'
 import { readFileSync } from 'node:fs'
 
-const RUNG = readFileSync(new URL('../../../scripts/play/rungs/conic-orbit.txt', import.meta.url), 'utf8')
+const RUNG = readFileSync(new URL('../../../scripts/play/rungs/conic-orbit.plang', import.meta.url), 'utf8')
 const pass = ({ requested }) => ({ accepted: true, transform: requested })
 
 function run(source) {

@@ -2,7 +2,7 @@
 // the cone, cutting plane and point are the authored source, not a JS locus.
 import { readFileSync } from 'node:fs'
 
-const RUNG = readFileSync(new URL('../../../scripts/play/rungs/conic-orbit.txt', import.meta.url), 'utf8')
+const RUNG = readFileSync(new URL('../../../scripts/play/rungs/conic-orbit.plang', import.meta.url), 'utf8')
 
 function replaceOne(text, from, to) {
     const parts = text.split(from)

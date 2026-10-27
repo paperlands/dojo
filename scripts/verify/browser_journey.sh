@@ -35,7 +35,7 @@
 #   7 a refused revision leaves the accepted geometry visible and the refusal legible
 set -u
 
-RUNG="${1:-scripts/play/rungs/circle.txt}"
+RUNG="${1:-scripts/play/rungs/circle.plang}"
 RADIUS="${2:-3}"
 OUT="${3:-/tmp}"
 
