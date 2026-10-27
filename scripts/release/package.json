@@ -1,0 +1,28 @@
+{
+  "name": "@paperland/paperlang",
+  "version": "0.6.0",
+  "description": "Play PaperLang programs on your own canvas, without the Dojo page.",
+  "type": "module",
+  "exports": "./host.mjs",
+  "files": [
+    "host.mjs",
+    "host.mjs.LEGAL.txt",
+    "host.meta.json",
+    "release.json",
+    "README.md",
+    "LICENSE",
+    "NOTICE.txt",
+    "licenses/",
+    "sources/"
+  ],
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/paperlands/dojo.git"
+  },
+  "keywords": ["paperlang", "turtle", "canvas", "mathematics"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  }
+}

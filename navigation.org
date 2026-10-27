@@ -1797,59 +1797,23 @@ fixes: 201 scavenges per fixed workload against the pre-session baseline’s 203
 ** host door — play a program on a canvas
 :PROPERTIES:
 :ID: nav-host-play
-:KEYWORDS: createHatch play finished host runtime paperlang package
-:PATH: assets/js/host.js::createHatch
+:KEYWORDS: createWorld play finished host runtime paperlang package
+:PATH: assets/js/host.js::createWorld
 :END:
-The package door (D030). =play= accepts; =finished= settles on scheduler completion
-and rejects fatal wounds. =turtling/run.js= owns the completion verdict.
-Consumer command: =node scripts/release/host.mjs= → =dist/host/= (ESM, closure,
-licenses, source-input snapshot, and content-addressed dirty revision).
-Guide: [[file:docs/host.org][PaperLang on your canvas]].
-Native interaction is opt-in: =createHatch(canvas, {interactive: true})= enables
-place gestures. =hatch.interaction.read('A', 'x')= and =subscribe('A', 'x', fn)=
-read committed PaperLang properties; =read('s')= / =subscribe('s', fn)= read a
-named value (including vectors) from the existing readout store. Subscribe after
-successful play; source-instant delivery follows derived-value recomputation.
-Ordinary actor motion follows the same slice boundary. Law commits notify only after
-installation and dependent reads agree. =onBeat= carries occurrences, never deduplicated
-readings. Host callback proposals (including initial delivery) return =busy=.
-Fences: =test/js/host/door_test.mjs=, =run_test.mjs= and =release_test.mjs=.
-Canvas content-box sizing: =turtling/viewport.js=; instance-owned overlays: =overlay.js=.
-The marks layer mounts into the canvas parent's =[data-turtle-overlay]= host when
-present; the shell marks it =phx-update="ignore"= so morphdom cannot reconcile the
-JS-appended overlay away on a presence/hatch patch. (id:host-surface)
-The shell explicitly sizes =core-canvas= with =w-full h-full= in
-=lib/dojo_web/live/shell_live.html.heex=; =fixed inset-0= alone leaves a canvas
-at its intrinsic 300×150 size. Actual-shell regression (live server required):
-=node scripts/verify/shell_surface.mjs= — viewport coverage, DPR and centered projection,
-on desktop/mobile and after resize.
-=A.bearing= is resolved from the played
-host program frame, with its authored birth/reference semantics, not a site-made
-origin. =propose('A', [x,y,z])= goes through native law acceptance. Outcomes are
-=value/missing/unsupported= for reads and native verdicts for proposals. Fresh
-play retires subscriptions. A separate drawing that
-must follow a control should use a dedicated drawing-only hatch and explicitly
-replace that drawing from the callback; the persistent control hatch (and any held
-pointer) stays alive. The authored controls are ordinary laws:
-#+begin_src paperlang
-let A
-let A.z = 0
-let A.distance = 50
-#+end_src
-Read =A.bearing=. Slider:
-#+begin_src paperlang
-let A
-let A.y = 0
-let A.z = 0
-#+end_src
-Read =A.x=.
-Subscribe to =A.x= and call =drawing.play(drawOnly(value))= on a separate,
-drawing-only hatch; no control declaration or unrelated commands are replayed.
-Ordinary =fw= is not reactive. The lab seam carries injected
-=motionAdmission | validate | observePureGoto= into =createScheduler= via =Turtle=.
-Live walk: =scripts/verify/host_play.sh=.
-Behavioral fences: =test/js/host/interaction_test.mjs=. Adversarial findings and
-remaining release boundaries: [[file:specs/turtle/host-ergonomics-review.org][host ergonomics review]].
+Consumer API and browser imports: [[file:scripts/release/README.md][PaperLang on your canvas]].
+Build/publish: [[file:scripts/release/host.org][release runbook]].
+Implementation invariants: [[file:specs/turtle/host-runtime.org][host runtime]] (D030).
+=host.js::createWorld= owns the lifecycle; =turtling/run.js= owns completion.
+Package version: =scripts/release/package.json=. =release.yml::npm= publishes on
+production push after green CI, with the app version but no desktop-build dependency.
+=/paperlang/0.6= and =/paperlang/latest= live in =PaperLangController=.
+Fences: =test/js/host/=, =test/dojo_web/controllers/paperlang_controller_test.exs=,
+=scripts/verify/host_closure.sh= and =host_play.sh=.
+Surface lookup: =turtling/viewport.js= and =overlay.js=. The overlay host must stay
+=phx-update="ignore"=; =core-canvas= needs explicit =w-full h-full=, not just fixed
+insets (id:host-surface). Live-shell check: =scripts/verify/shell_surface.mjs=.
+Lab admission seam: =Turtle= → =createScheduler=; adversarial findings:
+[[file:specs/turtle/host-ergonomics-review.org][host ergonomics review]].
 
 ** become — the seed law: an unchanged seat is skipped whole
 :PROPERTIES:

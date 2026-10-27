@@ -8,6 +8,8 @@ import { dirname, resolve, relative, join, sep } from 'node:path'
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const git = (...args) => execFileSync('git', ['-C', root, ...args], { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32 * 1024 * 1024 })
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
+const packageBytes = await readFile(join(root, 'scripts/release/package.json'))
+const { name, version } = JSON.parse(packageBytes)
 const out = resolve(process.argv[2] ?? join(root, 'dist/host'))
 const inside = relative(root, out)
 if (!inside || (!inside.startsWith('..' + sep) && inside !== '..' && !inside.startsWith('dist' + sep)))
@@ -31,6 +33,7 @@ await mkdir(dirname(out), { recursive: true })
 const temp = await mkdtemp(join(dirname(out), '.host-release-'))
 try {
     const loaded = new Map()
+    loaded.set('scripts/release/package.json', packageBytes)
     const result = await esbuild.build({
         absWorkingDir: root,
         entryPoints: ['assets/js/host.js'],
@@ -53,6 +56,8 @@ try {
     const licenses = (await readdir(join(root, 'scripts/release/licenses'))).sort()
     const sourcePaths = [...new Set([...inputs, 'LICENSE', 'scripts/release/host.org', 'scripts/release/host.mjs',
         'scripts/release/NOTICE.txt', 'scripts/vendor/package.json', 'scripts/vendor/package-lock.json',
+        'scripts/release/package.json', 'scripts/release/README.md',
+        'scripts/release/verify-host.mjs',
         ...licenses.map(name => 'scripts/release/licenses/' + name)])].sort()
     const sources = {}
     let sourceDirty = false
@@ -75,20 +80,16 @@ try {
         relative(temp, resolve(root, path)), info,
     ]))
     await writeFile(join(temp, 'host.meta.json'), JSON.stringify(meta, null, 2) + '\n')
+    await copyFile(join(temp, 'sources/scripts/release/package.json'), join(temp, 'package.json'))
+    await copyFile(join(temp, 'sources/scripts/release/README.md'), join(temp, 'README.md'))
     const artifacts = {}
-    for (const path of ['host.mjs', 'host.mjs.LEGAL.txt', 'host.meta.json', 'LICENSE', 'NOTICE.txt',
+    for (const path of ['host.mjs', 'host.mjs.LEGAL.txt', 'host.meta.json', 'LICENSE', 'NOTICE.txt', 'package.json', 'README.md',
         ...licenses.map(name => 'licenses/' + name)]) artifacts[path] = sha256(await readFile(join(temp, path)))
     await writeFile(join(temp, 'release.json'), JSON.stringify({
-        artifact: 'paperlang-host', format: 'esm', commit, checkoutDirty, sourceDirty,
+        artifact: 'paperlang-host', name, version, format: 'esm', commit, checkoutDirty, sourceDirty,
         revision: sourceDirty ? `${commit}-dirty+${sourceDigest.slice(0, 12)}` : commit,
         sourceDigest, sources, artifacts, esbuild: esbuild.version,
     }, null, 2) + '\n')
-    await writeFile(join(temp, 'README.txt'),
-        'Import createHatch from host.mjs. See sources/scripts/release/host.org for the API.\n' +
-        'Keep LICENSE, NOTICE.txt, licenses/ and host.mjs.LEGAL.txt with distributions.\n' +
-        'Build-input snapshot: overlay sources/ on a checkout, then run node scripts/release/host.mjs\n' +
-        'Rebuilding requires a Git checkout at release.json.commit with these inputs overlaid.\n' +
-        'Source URLs and git tags identify only clean commits; dirty builds carry sourceDigest.\n')
     if (existing.length) await rm(out, { recursive: true })
     else await rm(out, { recursive: true, force: true })
     await rename(temp, out)

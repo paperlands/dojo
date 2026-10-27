@@ -18,7 +18,7 @@ export function completionOf(scheduler, seatKey) {
 // Supersession and disposal are not wounds in the program. The reason is the
 // machine-readable fact; the message stays the sentence the door already spoke.
 export function halt(reason) {
-    const message = reason === "disposed" ? "hatch disposed" : reason
+    const message = reason === "disposed" ? "world disposed" : reason
     const err = new Error(message)
     err.reason = reason
     return err
@@ -33,7 +33,7 @@ export function refuse(wound) {
     return err
 }
 
-// One observer for every play of a hatch. It reads the current run. It does
+// One observer for every play of a world. It reads the current run. It does
 // not wrap the previous callback, so a twentieth play is not twenty calls.
 export function createRunWatch(read) {
     let current = null

@@ -14,6 +14,11 @@ defmodule DojoWeb.Router do
     plug :accepts, ["json"]
   end
 
+  scope "/paperlang", DojoWeb do
+    get "/:version", PaperLangController, :show
+    options "/:version", PaperLangController, :options
+  end
+
   scope "/", DojoWeb do
     pipe_through :browser
 

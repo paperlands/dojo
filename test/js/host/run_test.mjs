@@ -1,4 +1,4 @@
-// Run truth for the hatch door. The source fence cannot see a late wound.
+// Run truth for the world door. The source fence cannot see a late wound.
 // Run with: node --test test/js/host/run_test.mjs
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
@@ -141,6 +141,6 @@ describe("a stopped walk is not a successful one", () => {
         assert.equal(halt("superseded").message, "superseded")
         const disposed = halt("disposed")
         assert.equal(disposed.reason, "disposed")
-        assert.equal(disposed.message, "hatch disposed")
+        assert.equal(disposed.message, "world disposed")
     })
 })

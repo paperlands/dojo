@@ -156,7 +156,7 @@ try {
         await new Promise((r) => setTimeout(r, 200))
     }
     console.log(text.trim())
-    const missing = ["bad:", "badline:1", "ok:", "rej:hatch disposed", "beats:", "scored:true", "quiet:true", "morph:", "morphok:true", "nest:", "nestok:true", "laws:", "lawsok:true", "pendingdispose:true", "interactionok:true:lifecycle:true:position:true:watchers:true:dispose-delivery:true:finite-refusal:true:headed:true:rotator:true:observer:true:scalar:true:pointer:true", "proposalRendered:true", "sourceValues:true:vectors:true", "surfaceok:true", "walkingReads:true", "hostTruth:true", "DONE"].filter((n) => !text.includes(n))
+    const missing = ["bad:", "badline:1", "ok:", "rej:world disposed", "beats:", "scored:true", "quiet:true", "morph:", "morphok:true", "nest:", "nestok:true", "laws:", "lawsok:true", "pendingdispose:true", "interactionok:true:lifecycle:true:position:true:watchers:true:dispose-delivery:true:finite-refusal:true:headed:true:rotator:true:observer:true:scalar:true:pointer:true", "proposalRendered:true", "sourceValues:true:vectors:true", "surfaceok:true", "walkingReads:true", "hostTruth:true", "DONE"].filter((n) => !text.includes(n))
     if (text.includes("FAIL ") || text.includes("bad:accepted") || missing.length)
         throw new Error("runtime door failed: " + missing.join(", "))
     console.log("runtime door ok")

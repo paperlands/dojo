@@ -18,15 +18,15 @@ export class Turtle {
 }`)
 const { Turtle } = await import(fakeURL)
 const source = readFileSync(new URL('../../../assets/js/host.js', import.meta.url), 'utf8')
-const { createHatch } = await import('data:text/javascript,' + encodeURIComponent(
+const { createWorld } = await import('data:text/javascript,' + encodeURIComponent(
     source.replace('"./turtling/turtle.js"', JSON.stringify(fakeURL))
         .replace('"./turtling/run.js"', JSON.stringify(new URL('../../../assets/js/turtling/run.js', import.meta.url).href))))
 
 async function ready() {
-    const hatch = createHatch({})
+    const world = createWorld({})
     const turtle = Turtle.instances.at(-1)
-    await (await hatch.play('let A')).finished
-    return { hatch, turtle }
+    await (await world.play('let A')).finished
+    return { world, turtle }
 }
 
 function seat(source) {
@@ -93,19 +93,19 @@ test('sparse positions are unsupported before they reach admission', () => {
 })
 
 test('subscriptions require a played program and a callable observer', async () => {
-    const hatch = createHatch({})
-    assert.throws(() => hatch.interaction.subscribe('s', () => {}), /play.*before subscribing/)
-    await (await hatch.play('let A')).finished
-    assert.throws(() => hatch.interaction.subscribe('A', 'x', null), TypeError)
-    hatch.dispose()
+    const world = createWorld({})
+    assert.throws(() => world.interaction.subscribe('s', () => {}), /play.*before subscribing/)
+    await (await world.play('let A')).finished
+    assert.throws(() => world.interaction.subscribe('A', 'x', null), TypeError)
+    world.dispose()
 })
 
 test('public vectors are immutable snapshots; equal values do not re-deliver', async () => {
-    const { hatch, turtle } = await ready()
+    const { world, turtle } = await ready()
     const vector = [1, 2, 3, 4]
     turtle.answer = { kind: 'value', value: vector }
     const samples = []
-    const off = hatch.interaction.subscribe('v', answer => samples.push(answer))
+    const off = world.interaction.subscribe('v', answer => samples.push(answer))
     const first = samples[0]
     assert.ok(Object.isFrozen(first) && Object.isFrozen(first.value))
     assert.notEqual(first.value, vector)
@@ -117,60 +117,60 @@ test('public vectors are immutable snapshots; equal values do not re-deliver', a
     assert.equal(samples.length, 2)
     off(); off()
     assert.equal(turtle.watchers.size, 0)
-    hatch.dispose()
+    world.dispose()
 })
 
 test('the public boundary refuses non-finite, sparse and non-plain values', async () => {
-    const { hatch, turtle } = await ready()
+    const { world, turtle } = await ready()
     for (const value of [Infinity, NaN, [0, Infinity], Array(3), { x: 1 }, undefined]) {
         turtle.answer = { kind: 'value', value }
-        assert.equal(hatch.interaction.read('s').kind, 'unsupported')
+        assert.equal(world.interaction.read('s').kind, 'unsupported')
     }
     turtle.answer = { kind: 'value', value: null }
-    assert.deepEqual(hatch.interaction.read('s'), { kind: 'value', value: null })
-    hatch.dispose()
+    assert.deepEqual(world.interaction.read('s'), { kind: 'value', value: null })
+    world.dispose()
 })
 
 test('observer failure and mid-fan cancellation cannot silence a live sibling', async () => {
-    const { hatch, turtle } = await ready()
+    const { world, turtle } = await ready()
     let stopCancelled = () => {}
     const cancelled = [], sibling = []
-    hatch.interaction.subscribe('s', answer => { if (answer.value === 7) stopCancelled() })
-    hatch.interaction.subscribe('s', () => { throw new Error('observer') })
-    stopCancelled = hatch.interaction.subscribe('s', answer => cancelled.push(answer.value))
-    hatch.interaction.subscribe('s', answer => sibling.push(answer.value))
+    world.interaction.subscribe('s', answer => { if (answer.value === 7) stopCancelled() })
+    world.interaction.subscribe('s', () => { throw new Error('observer') })
+    stopCancelled = world.interaction.subscribe('s', answer => cancelled.push(answer.value))
+    world.interaction.subscribe('s', answer => sibling.push(answer.value))
     turtle.publish({ kind: 'value', value: 7 })
     assert.deepEqual(cancelled, [0])
     assert.deepEqual(sibling, [0, 7])
-    hatch.dispose()
+    world.dispose()
 })
 
 test('replacement and disposal retire subscriptions and dispose exactly once', async () => {
-    const { hatch, turtle } = await ready()
+    const { world, turtle } = await ready()
     const samples = []
-    hatch.interaction.subscribe('s', answer => samples.push(answer.value))
-    await (await hatch.play('let B')).finished
+    world.interaction.subscribe('s', answer => samples.push(answer.value))
+    await (await world.play('let B')).finished
     turtle.publish({ kind: 'value', value: 7 })
     assert.deepEqual(samples, [0])
     assert.equal(turtle.watchers.size, 0)
-    hatch.interaction.subscribe('s', () => {})
-    hatch.dispose(); hatch.dispose()
+    world.interaction.subscribe('s', () => {})
+    world.dispose(); world.dispose()
     assert.equal(turtle.disposeCount, 1)
     assert.equal(turtle.watchers.size, 0)
-    assert.equal(hatch.interaction.read('s').kind, 'retired')
-    assert.equal(hatch.interaction.propose('A', [0, 0, 0]).kind, 'retired')
+    assert.equal(world.interaction.read('s').kind, 'retired')
+    assert.equal(world.interaction.propose('A', [0, 0, 0]).kind, 'retired')
 })
 
 test('overlapping play acceptance says superseded, not disposed', async () => {
-    const { hatch, turtle } = await ready()
+    const { world, turtle } = await ready()
     let finishAcceptance
     turtle.upsertAmbient = () => new Promise(resolve => { finishAcceptance = resolve })
-    const earlier = hatch.play('first')
+    const earlier = world.play('first')
     const firstAcceptance = finishAcceptance
-    const later = hatch.play('second')
+    const later = world.play('second')
     firstAcceptance({ success: true, commandCount: 1 })
     await assert.rejects(earlier, /superseded/)
     finishAcceptance({ success: true, commandCount: 1 })
     await (await later).finished
-    hatch.dispose()
+    world.dispose()
 })

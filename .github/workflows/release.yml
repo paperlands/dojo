@@ -30,7 +30,7 @@ jobs:
   # ── CI first ────────────────────────────────────────────────────────────
   # A push has no PR event, so call the reusable CI workflow: red tests stop
   # the version gate and the half-hour installers. Web already shipped from
-  # the PR into release (ci.yml deploy job); this path is installers only.
+  # the PR into release (ci.yml deploy job). npm needs only green CI on this push.
   ci:
     name: CI
     uses: ./.github/workflows/ci.yml
@@ -374,3 +374,47 @@ jobs:
             "burrito_out/PaperLandDojo-${VERSION}-windows-x86-setup.exe" \
             "burrito_out/PaperLandDojo-${VERSION}-macos-x86_64.dmg" \
             "burrito_out/PaperLandDojo-${VERSION}-macos-arm64.dmg"
+
+  npm:
+    name: Publish PaperLang to npm
+    needs: [ci]
+    if: vars.NPM_PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_COMMIT: ${{ github.sha }}
+
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+
+      - name: Install OIDC-capable npm
+        run: npm install --global npm@11
+
+      - name: Verify host contracts and packed consumer
+        run: node --test test/js/host/*_test.mjs
+
+      - name: Build package
+        run: node scripts/release/host.mjs
+
+      - name: Verify clean, versioned release
+        run: |
+          VERSION=$(awk -F'"' '/^ *version: *"/ {print $2; exit}' mix.exs)
+          test -n "$VERSION" || { echo "::error::Could not read version from mix.exs"; exit 1; }
+          node scripts/release/verify-host.mjs dist/host "$VERSION" "$RELEASE_COMMIT"
+
+      - name: Publish with trusted publishing
+        working-directory: dist/host
+        run: npm publish --access public --provenance

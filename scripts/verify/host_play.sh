@@ -12,7 +12,25 @@ cleanup() {
 }
 trap cleanup EXIT
 
-node "$root/scripts/release/host.mjs" "$out/runtime" >/dev/null
+node "$root/scripts/release/host.mjs" "$out/package" >/dev/null
+(
+    cd "$out"
+    export npm_config_cache="$out/npm-cache"
+    export npm_config_userconfig="$out/npmrc"
+    export npm_config_offline=true
+    export npm_config_ignore_scripts=true
+    npm pack ./package --json --pack-destination . > packed.json
+    tarball="$(node --input-type=module -e 'import fs from "node:fs"; console.log(Object.values(JSON.parse(fs.readFileSync("packed.json")))[0].filename)')"
+    printf '{"private":true,"type":"module"}\n' > package.json
+    npm install "./$tarball" --package-lock=false --no-audit --no-fund >/dev/null
+    node --input-type=module -e '
+        import fs from "node:fs"
+        const {name} = JSON.parse(fs.readFileSync("package/package.json"))
+        fs.writeFileSync("consumer.mjs", "export { createWorld } from " + JSON.stringify(name))
+    '
+    "$root/scripts/vendor/node_modules/esbuild/bin/esbuild" consumer.mjs \
+        --bundle --format=esm --platform=browser --outfile=runtime/host.mjs >/dev/null
+)
 
 cat > "$out/index.html" << 'HTML'
 <style>#c { display: block; width: 320px; height: 240px; }</style>
@@ -22,29 +40,29 @@ cat > "$out/index.html" << 'HTML'
 const out = document.getElementById("out")
 const say = (s) => { out.textContent += s + "\n" }
 try {
-    const { createHatch } = await import("./runtime/host.mjs")
+    const { createWorld } = await import("./runtime/host.mjs")
     const canvas = document.getElementById("c")
-    const hatch = createHatch(canvas)
+    const world = createWorld(canvas)
     try {
-        await hatch.play("nope")
+        await world.play("nope")
         say("bad:accepted")
     } catch (e) {
         say("bad:" + e.message + ":badline:" + (e.wound?.span?.line ?? "noline"))
     }
-    const run = await hatch.play("fw 20")
+    const run = await world.play("fw 20")
     const fin = await run.finished
     say("ok:" + run.commandCount + ":" + fin.commandCount)
-    const hatch2 = createHatch(canvas)
-    const held = await hatch2.play("wait 30")
+    const world2 = createWorld(canvas)
+    const held = await world2.play("wait 30")
     const ended = held.finished.then(() => "ended", (e) => "rej:" + e.message)
-    hatch2.dispose()
+    world2.dispose()
     say(await ended)
 
     // Beats: one channel, emitted where the playhead consumes the stroke.
     const beats = []
-    const hatch3 = createHatch(canvas)
-    hatch3.onBeat((b) => beats.push(b))
-    const run3 = await hatch3.play("fw 20\nwait 0.2\nrt 90\nfw 20\nwait 0.2\nfw 20")
+    const world3 = createWorld(canvas)
+    world3.onBeat((b) => beats.push(b))
+    const run3 = await world3.play("fw 20\nwait 0.2\nrt 90\nfw 20\nwait 0.2\nfw 20")
     await run3.finished
     say("beats:" + JSON.stringify(beats.map((b) => [b.time, b.line, b.lines])))
     const scored = beats.length === 3
@@ -53,14 +71,14 @@ try {
         && Math.abs(beats[2].time - 0.4) < 1e-9 && beats[2].lines.join() === "6"
         && beats.every((b, i) => i === 0 || b.time >= beats[i - 1].time)
     const n = beats.length
-    hatch3.dispose()
+    world3.dispose()
     await new Promise((r) => setTimeout(r, 120))
     say("scored:" + scored + ":quiet:" + (beats.length === n))
 
     // A def body, a wait joint, and a spawned child on the parent's clock.
     const beats4 = []
-    const hatch4 = createHatch(canvas)
-    hatch4.onBeat((b) => beats4.push(b))
+    const world4 = createWorld(canvas)
+    world4.onBeat((b) => beats4.push(b))
     const prog4 = [
         "def polygon n do",
         "  loop n do",
@@ -77,7 +95,7 @@ try {
         "  end",
         "end",
     ].join("\n")
-    const run4 = await hatch4.play(prog4)
+    const run4 = await world4.play(prog4)
     await run4.finished
     say("morph:" + JSON.stringify(beats4.map((b) => [b.time, b.birthtime, b.line, b.lines])))
     const morphok = beats4.length === 4
@@ -86,13 +104,13 @@ try {
         && beats4.some((b) => Math.abs((b.birthtime + b.time) - (0.1 + 1 / 24)) < 1e-9)
         && beats4.some((b) => Math.abs(b.birthtime - 0.1) < 1e-9)
         && beats4.some((b) => b.birthtime === 0)
-    hatch4.dispose()
+    world4.dispose()
     say("morphok:" + morphok)
 
     // Generations: a grandchild's birth is the child's `birthtime + time`.
     const beatsN = []
-    const hatchN = createHatch(canvas)
-    hatchN.onBeat((b) => beatsN.push(b))
+    const worldN = createWorld(canvas)
+    worldN.onBeat((b) => beatsN.push(b))
     const progN = [
         "wait 0.1",
         "as a do",
@@ -105,12 +123,12 @@ try {
         "  end",
         "end",
     ].join("\n")
-    const runN = await hatchN.play(progN)
+    const runN = await worldN.play(progN)
     await runN.finished
     say("nest:" + JSON.stringify(beatsN.map((b) => [b.time, b.birthtime, b.line, b.lines])))
     const nestok = beatsN.some((b) => Math.abs(b.birthtime - 0.2) < 1e-9)
         && beatsN.some((b) => Math.abs(b.time - 1 / 24) < 1e-9 && Math.abs(b.birthtime - 0.2) < 1e-9)
-    hatchN.dispose()
+    worldN.dispose()
     say("nestok:" + nestok)
 
     // The law seam: an injected relationship governs real host motion. One valid
@@ -127,7 +145,7 @@ try {
         accepted.push([requested.position[0], pose.position[0]])
         return { accepted: true, transform: requested, component: [{ frame: other, transform: pose }] }
     }
-    const hatch5 = createHatch(canvas, { law: { motionAdmission: pair } })
+    const world5 = createWorld(canvas, { law: { motionAdmission: pair } })
     const prog5 = [
         "as b do",
         "  goto 5 0",
@@ -138,63 +156,63 @@ try {
         "  goto 3 0",
         "end",
     ].join("\n")
-    const run5 = await hatch5.play(prog5)
+    const run5 = await world5.play(prog5)
     await run5.finished
     const first = accepted.length
-    const run5b = await hatch5.play(prog5)   // a fresh play re-establishes, never inherits
+    const run5b = await world5.play(prog5)   // a fresh play re-establishes, never inherits
     await run5b.finished
     const repeated = accepted.length === first * 2
         && accepted.slice(first).every((p, i) => p[0] === accepted[i][0] && p[1] === accepted[i][1])
-    hatch5.dispose()
+    world5.dispose()
     let disposedRefused = false
-    try { await hatch5.play(prog5) } catch (e) { disposedRefused = e.message === "hatch disposed" }
+    try { await world5.play(prog5) } catch (e) { disposedRefused = e.message === "world disposed" }
     const lawsok = first === 2
         && accepted.slice(0, first).every(([x, y]) => Math.abs(Math.abs(x - y) - 5) < 1e-9)
         && accepted[first - 1][0] === 3 && accepted[first - 1][1] === 8
         && repeated && disposedRefused
     say("laws:" + JSON.stringify(accepted))
-    // Disposal is stronger than dropping the hatch handle: a nested, delayed
+    // Disposal is stronger than dropping the world handle: a nested, delayed
     // verdict cannot wake its old frame after the canvas is gone.
     let answer6, parked6
-    const hatch6 = createHatch(canvas, { law: { motionAdmissionAsync: ({ frame, requested }) => {
+    const world6 = createWorld(canvas, { law: { motionAdmissionAsync: ({ frame, requested }) => {
         if (frame.name !== "a") return { accepted: true, transform: requested }
         parked6 = frame
         return new Promise(resolve => { answer6 = resolve })
     } } })
-    const run6 = await hatch6.play("as b do\nend\nas a do\n  fw 1\nend")
+    const run6 = await world6.play("as b do\nend\nas a do\n  fw 1\nend")
     const ended6 = run6.finished.catch(e => e.message)
     const parked = parked6?.suspension?.kind === "admission"
-    hatch6.dispose()
+    world6.dispose()
     answer6?.({ accepted: true, transform: { ...parked6.transform.deref(), position: [50, 0, 0] } })
     await Promise.resolve()
     say("pendingdispose:" + (parked && parked6.done && parked6.channel.closed
-        && parked6.transform.deref().position[0] === 0 && await ended6 === "hatch disposed"))
+        && parked6.transform.deref().position[0] === 0 && await ended6 === "world disposed"))
     say("lawsok:" + lawsok)
 
     // The host seam reads authored properties and proposes through native admission.
-    const hatch7 = createHatch(canvas)
-    const run7 = await hatch7.play("let A\nlet A.y = 0\nlet A.z = 0")
+    const world7 = createWorld(canvas)
+    const run7 = await world7.play("let A\nlet A.y = 0\nlet A.z = 0")
     await run7.finished
-    const initial7 = hatch7.interaction.read("A", "x")
-    const coincident7 = hatch7.interaction.read("A", "bearing")
+    const initial7 = world7.interaction.read("A", "x")
+    const coincident7 = world7.interaction.read("A", "bearing")
     const defaultDown7 = new PointerEvent("pointerdown", { clientX: 160, clientY: 120, pointerId: 70, pointerType: "mouse", button: 0, buttons: 1, bubbles: true, cancelable: true })
     canvas.dispatchEvent(defaultDown7)
     const defaultInteractionOff7 = !defaultDown7.defaultPrevented
-    const missing7 = hatch7.interaction.read("NotDeclared", "x")
+    const missing7 = world7.interaction.read("NotDeclared", "x")
     const samples7 = []
     const mutatedSamples7 = []
-    const stop7 = hatch7.interaction.subscribe("A", "x", answer => samples7.push(answer.value))
-    const stopMutate7 = hatch7.interaction.subscribe("A", "x", answer => {
+    const stop7 = world7.interaction.subscribe("A", "x", answer => samples7.push(answer.value))
+    const stopMutate7 = world7.interaction.subscribe("A", "x", answer => {
         mutatedSamples7.push(answer.value)
         if (mutatedSamples7.length === 1) {
             try { answer.value = 7 } catch { /* frozen public answer */ }
         }
     })
-    const stopThrow7 = hatch7.interaction.subscribe("A", "x", () => { throw new Error("observer") })
-    const movedToSeven7 = hatch7.interaction.propose("A", [7, 0, 0])
-    const moved7 = hatch7.interaction.propose("A", [12, 0, 0])
-    const refused7 = hatch7.interaction.propose("A", [12, Number.POSITIVE_INFINITY, 0])
-    const final7 = hatch7.interaction.read("A", "x")
+    const stopThrow7 = world7.interaction.subscribe("A", "x", () => { throw new Error("observer") })
+    const movedToSeven7 = world7.interaction.propose("A", [7, 0, 0])
+    const moved7 = world7.interaction.propose("A", [12, 0, 0])
+    const refused7 = world7.interaction.propose("A", [12, Number.POSITIVE_INFINITY, 0])
+    const final7 = world7.interaction.read("A", "x")
     say("interaction:" + JSON.stringify({ initial7, missing7, moved: moved7.kind, refused: refused7.kind, final7, samples7 }))
     const interactionOk = initial7.kind === "value" && initial7.value === 0
         && coincident7.kind === "value" && coincident7.value === null
@@ -206,22 +224,22 @@ try {
     stopMutate7()
     stopThrow7()
     const obsoleteSamples7 = []
-    const stopObsolete7 = hatch7.interaction.subscribe("A", "x", answer => obsoleteSamples7.push(answer.value))
-    const replay7 = await hatch7.play("let A\nlet A.y = 0\nlet A.z = 0")
+    const stopObsolete7 = world7.interaction.subscribe("A", "x", answer => obsoleteSamples7.push(answer.value))
+    const replay7 = await world7.play("let A\nlet A.y = 0\nlet A.z = 0")
     await replay7.finished
-    hatch7.interaction.propose("A", [20, 0, 0])
+    world7.interaction.propose("A", [20, 0, 0])
     const replayRetired7 = obsoleteSamples7.length === 1 && obsoleteSamples7[0] === 12
     stopObsolete7()
-    hatch7.dispose()
-    const retired7 = hatch7.interaction.read("A", "x").kind === "retired"
-    const hatch8 = createHatch(canvas, { interactive: true })
-    const run8 = await hatch8.play("let A\nlet A.z = 0\nlet A.distance = 50")
+    world7.dispose()
+    const retired7 = world7.interaction.read("A", "x").kind === "retired"
+    const world8 = createWorld(canvas, { interactive: true })
+    const run8 = await world8.play("let A\nlet A.z = 0\nlet A.distance = 50")
     await run8.finished
-    const bearing8 = hatch8.interaction.read("A", "bearing")
+    const bearing8 = world8.interaction.read("A", "bearing")
     const rotatorEvents8 = []
-    const stopBearing8 = hatch8.interaction.subscribe("A", "bearing", answer => rotatorEvents8.push(answer.value))
-    const rotated8 = hatch8.interaction.propose("A", [0, 0, 0])
-    const bearingAfter8 = hatch8.interaction.read("A", "bearing")
+    const stopBearing8 = world8.interaction.subscribe("A", "bearing", answer => rotatorEvents8.push(answer.value))
+    const rotated8 = world8.interaction.propose("A", [0, 0, 0])
+    const bearingAfter8 = world8.interaction.read("A", "bearing")
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     const rect8 = canvas.getBoundingClientRect()
     let rotatorPointerClaimed8 = false
@@ -239,9 +257,9 @@ try {
                 clientY: rect8.top + y, pointerId, pointerType: "mouse", button: 0, buttons: 0, bubbles: true, cancelable: true }))
         }
     }
-    const pointerBearing8 = hatch8.interaction.read("A", "bearing")
-    const distanceAfter8 = hatch8.interaction.read("A", "distance")
-    const zAfter8 = hatch8.interaction.read("A", "z")
+    const pointerBearing8 = world8.interaction.read("A", "bearing")
+    const distanceAfter8 = world8.interaction.read("A", "distance")
+    const zAfter8 = world8.interaction.read("A", "z")
     const rotatorOk = bearing8.kind === "value" && rotated8.kind === "accept"
         && bearingAfter8.kind === "value" && bearingAfter8.value !== bearing8.value
         && rotatorPointerClaimed8 && pointerBearing8.kind === "value" && pointerBearing8.value !== bearingAfter8.value
@@ -250,22 +268,22 @@ try {
         && rotatorEvents8.length === 3 && rotatorEvents8[0] === bearing8.value
         && rotatorEvents8[1] === bearingAfter8.value && rotatorEvents8[2] === pointerBearing8.value
     const lifecycleOk = retired7 && replayRetired7
-    const hatch10 = createHatch(canvas)
+    const world10 = createWorld(canvas)
     const source10 = ["goto 10 20", "rt 90", "let A", "let A.z = 0",
         "let A.distance = 50", "let b = A.bearing"].join("\n")
-    const run10 = await hatch10.play(source10)
+    const run10 = await world10.play(source10)
     await run10.finished
-    const directBearing10 = hatch10.interaction.read("A", "bearing")
-    const scalarBearing10 = hatch10.interaction.read("b")
+    const directBearing10 = world10.interaction.read("A", "bearing")
+    const scalarBearing10 = world10.interaction.read("b")
     const observerOk10 = directBearing10.kind === "value"
         && Object.is(directBearing10.value, scalarBearing10.value)
-    hatch10.dispose()
-    const hatch11 = createHatch(canvas)
-    const run11 = await hatch11.play("let A\nlet A.y = 0\nlet A.z = 0\nlet s = A.x")
+    world10.dispose()
+    const world11 = createWorld(canvas)
+    const run11 = await world11.play("let A\nlet A.y = 0\nlet A.z = 0\nlet s = A.x")
     await run11.finished
     const scalarSamples11 = []
-    const stop11 = hatch11.interaction.subscribe("s", answer => scalarSamples11.push(answer.value))
-    const scalarMoved11 = hatch11.interaction.propose("A", [7, 0, 0])
+    const stop11 = world11.interaction.subscribe("s", answer => scalarSamples11.push(answer.value))
+    const scalarMoved11 = world11.interaction.propose("A", [7, 0, 0])
     const scalarOk11 = scalarSamples11[0] === 0 && scalarSamples11.at(-1) === 7
         && scalarMoved11.kind === "accept"
     stop11()
@@ -273,87 +291,87 @@ try {
     const paintGate11 = new Promise(resolve => { finishPaint11 = resolve })
     window.proposalWitnessReady = true
     window.runProposalWitness = async () => {
-        const verdict = hatch11.interaction.propose("A", [17, 0, 0])
+        const verdict = world11.interaction.propose("A", [17, 0, 0])
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-        return verdict.kind === "accept" && hatch11.interaction.read("A", "x").value === 17
+        return verdict.kind === "accept" && world11.interaction.read("A", "x").value === 17
     }
     window.finishProposalWitness = rendered => finishPaint11(rendered)
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     say("PAINT_READY")
     const proposalRendered11 = await paintGate11
-    hatch11.dispose()
+    world11.dispose()
     say("proposalRendered:" + proposalRendered11)
-    const hatch12 = createHatch(canvas, { law: { motionAdmission: ({ requested }) => ({ accepted: true, transform: requested }) } })
-    const run12 = await hatch12.play("let A\nlet A.z = 0\nlet A.distance = 50")
+    const world12 = createWorld(canvas, { law: { motionAdmission: ({ requested }) => ({ accepted: true, transform: requested }) } })
+    const run12 = await world12.play("let A\nlet A.z = 0\nlet A.distance = 50")
     await run12.finished
     const refusalEvents12 = []
-    const stop12 = hatch12.interaction.subscribe("A", "bearing", answer => refusalEvents12.push(answer.value))
-    const beforeRefusal12 = hatch12.interaction.read("A", "bearing")
-    const finiteRefusal12 = hatch12.interaction.propose("A", [0, 0, 0])
-    const refusalState12 = hatch12.interaction.read("A", "bearing")
+    const stop12 = world12.interaction.subscribe("A", "bearing", answer => refusalEvents12.push(answer.value))
+    const beforeRefusal12 = world12.interaction.read("A", "bearing")
+    const finiteRefusal12 = world12.interaction.propose("A", [0, 0, 0])
+    const refusalState12 = world12.interaction.read("A", "bearing")
     const refusalOk12 = finiteRefusal12.kind === "refuse"
         && Object.is(refusalState12.value, beforeRefusal12.value)
         && refusalEvents12.length === 1
         && refusalEvents12.length === 1 && refusalEvents12[0] === 0
     stop12()
-    hatch12.dispose()
-    const hatch17 = createHatch(canvas)
-    const run17 = await hatch17.play("as A do\n  rt 90\nend")
+    world12.dispose()
+    const world17 = createWorld(canvas)
+    const run17 = await world17.play("as A do\n  rt 90\nend")
     await run17.finished
-    const headingBefore17 = hatch17.interaction.read("A", "heading")
-    const headedProposal17 = hatch17.interaction.propose("A", [1, 0, 0])
-    const headingAfter17 = hatch17.interaction.read("A", "heading")
+    const headingBefore17 = world17.interaction.read("A", "heading")
+    const headedProposal17 = world17.interaction.propose("A", [1, 0, 0])
+    const headingAfter17 = world17.interaction.read("A", "heading")
     const headedRejected17 = headedProposal17.kind === "unsupported"
         && headingBefore17.kind === "value" && headingAfter17.kind === "value"
         && headingBefore17.value === headingAfter17.value
-    hatch17.dispose()
-    const hatch13 = createHatch(canvas)
-    const run13 = await hatch13.play("let A\nlet A.y = 0\nlet A.z = 0\nlet B\nlet B.y = 0\nlet B.z = 0")
+    world17.dispose()
+    const world13 = createWorld(canvas)
+    const run13 = await world13.play("let A\nlet A.y = 0\nlet A.z = 0\nlet B\nlet B.y = 0\nlet B.z = 0")
     await run13.finished
     const positions13 = []
-    const stop13 = hatch13.interaction.subscribe("A", "position", answer => {
+    const stop13 = world13.interaction.subscribe("A", "position", answer => {
         positions13.push([...answer.value])
         if (positions13.length === 1) {
             try { answer.value[0] = 42 } catch { /* frozen public vector */ }
         }
     })
-    const movedB13 = hatch13.interaction.propose("B", [5, 0, 0])
-    const unchangedA13 = hatch13.interaction.read("A", "position")
+    const movedB13 = world13.interaction.propose("B", [5, 0, 0])
+    const unchangedA13 = world13.interaction.read("A", "position")
     const positionOk13 = movedB13.kind === "accept" && positions13.length === 1
         && Object.isFrozen(unchangedA13.value) && unchangedA13.value[0] === 0
     stop13()
-    hatch13.dispose()
-    const hatch14 = createHatch(canvas)
-    const run14 = await hatch14.play("let A\nlet A.y = 0\nlet A.z = 0")
+    world13.dispose()
+    const world14 = createWorld(canvas)
+    const run14 = await world14.play("let A\nlet A.y = 0\nlet A.z = 0")
     await run14.finished
     const siblingValues14 = [], lateValues14 = []
     let lateStop14 = () => {}, siblingStop14 = () => {}, lateCreated14 = false
-    const spawnerStop14 = hatch14.interaction.subscribe("A", "x", answer => {
+    const spawnerStop14 = world14.interaction.subscribe("A", "x", answer => {
         if (answer.value !== 0 && !lateCreated14) {
             lateCreated14 = true
-            lateStop14 = hatch14.interaction.subscribe("A", "x", value => lateValues14.push(value.value))
+            lateStop14 = world14.interaction.subscribe("A", "x", value => lateValues14.push(value.value))
             siblingStop14()
         }
     })
-    siblingStop14 = hatch14.interaction.subscribe("A", "x", answer => siblingValues14.push(answer.value))
-    hatch14.interaction.propose("A", [7, 0, 0])
+    siblingStop14 = world14.interaction.subscribe("A", "x", answer => siblingValues14.push(answer.value))
+    world14.interaction.propose("A", [7, 0, 0])
     const snapshotWatchers14 = lateValues14.join() === "7" && siblingValues14.join() === "0"
-    hatch14.interaction.propose("A", [8, 0, 0])
+    world14.interaction.propose("A", [8, 0, 0])
     const watchersOk14 = snapshotWatchers14 && lateValues14.join() === "7,8" && siblingValues14.join() === "0"
     spawnerStop14()
     lateStop14()
-    hatch14.dispose()
-    const hatch15 = createHatch(canvas)
-    const run15 = await hatch15.play("let A\nlet A.y = 0\nlet A.z = 0")
+    world14.dispose()
+    const world15 = createWorld(canvas)
+    const run15 = await world15.play("let A\nlet A.y = 0\nlet A.z = 0")
     await run15.finished
     const disposedSibling15 = []
-    const disposeFirst15 = hatch15.interaction.subscribe("A", "x", answer => {
-        if (answer.value === 7) hatch15.dispose()
+    const disposeFirst15 = world15.interaction.subscribe("A", "x", answer => {
+        if (answer.value === 7) world15.dispose()
     })
-    hatch15.interaction.subscribe("A", "x", answer => disposedSibling15.push(answer.value))
-    const disposedDuringDelivery15 = hatch15.interaction.propose("A", [7, 0, 0]).kind === "accept"
+    world15.interaction.subscribe("A", "x", answer => disposedSibling15.push(answer.value))
+    const disposedDuringDelivery15 = world15.interaction.propose("A", [7, 0, 0]).kind === "accept"
         && disposedSibling15.join() === "0"
-        && hatch15.interaction.read("A", "x").kind === "retired"
+        && world15.interaction.read("A", "x").kind === "retired"
     disposeFirst15()
     say("positionEquality:" + positionOk13)
     say("watchers:" + watchersOk14 + ":disposeDelivery:" + disposedDuringDelivery15)
@@ -361,9 +379,9 @@ try {
     say("rotator:" + JSON.stringify({ bearing8, rotated8: rotated8.kind, bearingAfter8, distanceAfter8, zAfter8, rotatorEvents8 }))
     stopBearing8()
     say("observer:" + JSON.stringify({ directBearing10, scalarBearing10 }))
-    hatch8.dispose()
-    const hatch9 = createHatch(canvas, { interactive: true })
-    const run9 = await hatch9.play("let A\nlet A.y = 0\nlet A.z = 0")
+    world8.dispose()
+    const world9 = createWorld(canvas, { interactive: true })
+    const run9 = await world9.play("let A\nlet A.y = 0\nlet A.z = 0")
     await run9.finished
     await new Promise(resolve => setTimeout(resolve, 100))
     const rect9 = canvas.getBoundingClientRect()
@@ -373,49 +391,49 @@ try {
     const move9 = new PointerEvent("pointermove", { clientX: center9.x + 30, clientY: center9.y, pointerId: 71, pointerType: "mouse", buttons: 1, bubbles: true, cancelable: true })
     window.dispatchEvent(move9)
     window.dispatchEvent(new PointerEvent("pointerup", { ...center9, pointerId: 71, pointerType: "mouse", button: 0, buttons: 0, bubbles: true, cancelable: true }))
-    const pointer9 = hatch9.interaction.read("A", "x")
+    const pointer9 = world9.interaction.read("A", "x")
     const claimed9 = down9.defaultPrevented
     const movedByPointer9 = pointer9.kind === "value" && pointer9.value !== 0
     const outside9 = new PointerEvent("pointerdown", { clientX: 5, clientY: 5, pointerId: 72, pointerType: "mouse", button: 0, buttons: 1, bubbles: true, cancelable: true })
     document.body.dispatchEvent(outside9)
     const outsideNotCaptured9 = !outside9.defaultPrevented
-    hatch9.dispose()
-    const hatch16 = createHatch(canvas, { interactive: true })
+    world9.dispose()
+    const world16 = createWorld(canvas, { interactive: true })
     const source16 = "let A\nlet A.y = 0\nlet A.z = 0"
-    const run16 = await hatch16.play(source16)
+    const run16 = await world16.play(source16)
     await run16.finished
     await new Promise(resolve => setTimeout(resolve, 80))
     const rect16 = canvas.getBoundingClientRect()
     const down16 = new PointerEvent("pointerdown", { clientX: rect16.left + rect16.width / 2, clientY: rect16.top + rect16.height / 2, pointerId: 81, pointerType: "mouse", button: 0, buttons: 1, bubbles: true, cancelable: true })
     canvas.dispatchEvent(down16)
-    const replacement16 = await hatch16.play(source16)
+    const replacement16 = await world16.play(source16)
     await replacement16.finished
     await new Promise(resolve => setTimeout(resolve, 80))
     window.dispatchEvent(new PointerEvent("pointermove", { clientX: rect16.left + rect16.width / 2 + 30, clientY: rect16.top + rect16.height / 2, pointerId: 81, pointerType: "mouse", buttons: 1, bubbles: true, cancelable: true }))
     window.dispatchEvent(new PointerEvent("pointerup", { clientX: rect16.left + rect16.width / 2 + 30, clientY: rect16.top + rect16.height / 2, pointerId: 81, pointerType: "mouse", button: 0, buttons: 0, bubbles: true, cancelable: true }))
-    const afterHeldReplacement16 = hatch16.interaction.read("A", "x")
+    const afterHeldReplacement16 = world16.interaction.read("A", "x")
     const replacedHeldOk16 = down16.defaultPrevented && afterHeldReplacement16.kind === "value"
         && afterHeldReplacement16.value === 0
-    hatch16.dispose()
+    world16.dispose()
     say("pointer:" + JSON.stringify({ claimed9, pointer9, movedByPointer9, outsideNotCaptured9, down16: down16.defaultPrevented, afterHeldReplacement16, replacedHeldOk16 }))
     say("interactionok:" + interactionOk + ":lifecycle:" + lifecycleOk + ":position:" + positionOk13 + ":watchers:" + watchersOk14 + ":dispose-delivery:" + disposedDuringDelivery15 + ":finite-refusal:" + refusalOk12 + ":headed:" + headedRejected17 + ":rotator:" + rotatorOk + ":observer:" + observerOk10 + ":scalar:" + scalarOk11 + ":pointer:" + (claimed9 && movedByPointer9 && outsideNotCaptured9 && replacedHeldOk16))
-    const hatch18 = createHatch(canvas)
-    const run18 = await hatch18.play("let s = 1\nlet t = s\nwait 0.1\nlet s = 2\nlet A")
+    const world18 = createWorld(canvas)
+    const run18 = await world18.play("let s = 1\nlet t = s\nwait 0.1\nlet s = 2\nlet A")
     const sourceSamples18 = [], birthSamples18 = []
-    hatch18.interaction.subscribe("s", answer => sourceSamples18.push([answer.value, hatch18.interaction.read("t").value]))
-    hatch18.interaction.subscribe("A", "x", answer => birthSamples18.push(answer.kind === "value" ? answer.value : answer.kind))
+    world18.interaction.subscribe("s", answer => sourceSamples18.push([answer.value, world18.interaction.read("t").value]))
+    world18.interaction.subscribe("A", "x", answer => birthSamples18.push(answer.kind === "value" ? answer.value : answer.kind))
     await run18.finished
     const sourceOk18 = JSON.stringify(sourceSamples18) === "[[1,1],[2,2]]"
         && JSON.stringify(birthSamples18) === '["missing",0]'
-    const vectorRun18 = await hatch18.play("let A\nlet v = [A.x, A.y, A.z, 4]")
+    const vectorRun18 = await world18.play("let A\nlet v = [A.x, A.y, A.z, 4]")
     await vectorRun18.finished
     const vectorSamples18 = []
-    hatch18.interaction.subscribe("v", answer => vectorSamples18.push(answer.value))
-    const vectorMoved18 = hatch18.interaction.propose("A", [7, 0, 0])
+    world18.interaction.subscribe("v", answer => vectorSamples18.push(answer.value))
+    const vectorMoved18 = world18.interaction.propose("A", [7, 0, 0])
     const vectorsOk18 = vectorMoved18.kind === "accept"
         && JSON.stringify(vectorSamples18) === "[[0,0,0,4],[7,0,0,4]]"
         && vectorSamples18.every(Object.isFrozen)
-    hatch18.dispose()
+    world18.dispose()
     say("sourceValues:" + sourceOk18 + ":vectors:" + vectorsOk18)
     // Two page-owned surfaces; each overlay and bitmap follows only its canvas.
     const surfacePlate = document.createElement("div")
@@ -425,9 +443,9 @@ try {
     surfaceB.style.cssText = "display:block;width:140px;height:90px"
     surfacePlate.append(surfaceA, surfaceB)
     document.body.append(surfacePlate)
-    const surfaceHatchA = createHatch(surfaceA), surfaceHatchB = createHatch(surfaceB)
-    await (await surfaceHatchA.play("fw 5")).finished
-    await (await surfaceHatchB.play("fw 5")).finished
+    const surfaceWorldA = createWorld(surfaceA), surfaceWorldB = createWorld(surfaceB)
+    await (await surfaceWorldA.play("fw 5")).finished
+    await (await surfaceWorldB.play("fw 5")).finished
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
     const surfaceParts = {
         buffers: surfaceA.width === Math.floor(213 * dpr) && surfaceB.width === Math.floor(140 * dpr),
@@ -439,10 +457,10 @@ try {
     await new Promise(resolve => setTimeout(resolve, 150))
     const overlayA = surfacePlate.querySelector("canvas[aria-hidden=true]")
     surfaceParts.collapsed = surfaceA.clientWidth === 0 && overlayA?.getBoundingClientRect().width === 0
-    surfaceHatchA.dispose()
+    surfaceWorldA.dispose()
     surfaceParts.isolated = surfacePlate.querySelectorAll(":scope > canvas").length === 3
-    await (await surfaceHatchB.play("fw 8")).finished
-    surfaceHatchB.dispose()
+    await (await surfaceWorldB.play("fw 8")).finished
+    surfaceWorldB.dispose()
     surfaceParts.disposed = surfacePlate.querySelectorAll(":scope > canvas").length === 2
     surfacePlate.remove()
 
@@ -452,42 +470,42 @@ try {
     barePlate.append(bareCanvas)
     document.body.append(barePlate)
     const bareWidth = bareCanvas.getBoundingClientRect().width
-    const bareHatch = createHatch(bareCanvas)
-    await (await bareHatch.play("fw 5")).finished
+    const bareWorld = createWorld(bareCanvas)
+    await (await bareWorld.play("fw 5")).finished
     await new Promise(resolve => setTimeout(resolve, 150))
     surfaceParts.unsized = bareCanvas.getBoundingClientRect().width === bareWidth
         && bareCanvas.width === Math.floor(bareWidth * dpr)
-    bareHatch.dispose()
+    bareWorld.dispose()
     barePlate.remove()
     say("surface:" + JSON.stringify(surfaceParts))
     say("surfaceok:" + Object.values(surfaceParts).every(Boolean))
 
-    const delayedHatch = createHatch(canvas)
-    const delayedRun = await delayedHatch.play("wait 0.05\nlet s = 7")
+    const delayedWorld = createWorld(canvas)
+    const delayedRun = await delayedWorld.play("wait 0.05\nlet s = 7")
     const delayedSamples = []
-    delayedHatch.interaction.subscribe("s", answer => delayedSamples.push(answer.kind === "value" ? answer.value : answer.kind))
+    delayedWorld.interaction.subscribe("s", answer => delayedSamples.push(answer.kind === "value" ? answer.value : answer.kind))
     await delayedRun.finished
-    delayedHatch.dispose()
-    const walkingHatch = createHatch(canvas)
-    const walkingRun = await walkingHatch.play("as A do\nwait 0.05\njmp 10\nend")
+    delayedWorld.dispose()
+    const walkingWorld = createWorld(canvas)
+    const walkingRun = await walkingWorld.play("as A do\nwait 0.05\njmp 10\nend")
     const walkingSamples = []
-    walkingHatch.interaction.subscribe("A", "position", answer => walkingSamples.push(answer.value?.[0]))
+    walkingWorld.interaction.subscribe("A", "position", answer => walkingSamples.push(answer.value?.[0]))
     await walkingRun.finished
-    walkingHatch.dispose()
+    walkingWorld.dispose()
     say("walkingReads:" + (JSON.stringify(delayedSamples) === '["missing",7]'
         && JSON.stringify(walkingSamples) === '[0,10]'))
-    const lateHatch = createHatch(canvas)
-    const lateRun = await lateHatch.play("fw 1\nwait 0.05\nnope")
+    const lateWorld = createWorld(canvas)
+    const lateRun = await lateWorld.play("fw 1\nwait 0.05\nnope")
     let lateFatal = false
     try { await lateRun.finished } catch (error) {
         lateFatal = error.reason === "fatal" && error.wound?.span?.line === 3
     }
-    lateHatch.dispose()
-    const capHatch = createHatch(canvas, { caps: { maxCommands: 4 } })
-    const capRun = await capHatch.play("fw 1\nwait 0.05\nlimitCommand 100\nfw 1\nfw 1\nfw 1")
+    lateWorld.dispose()
+    const capWorld = createWorld(canvas, { caps: { maxCommands: 4 } })
+    const capRun = await capWorld.play("fw 1\nwait 0.05\nlimitCommand 100\nfw 1\nfw 1\nfw 1")
     let capFatal = false
     try { await capRun.finished } catch (error) { capFatal = error.reason === "fatal" }
-    capHatch.dispose()
+    capWorld.dispose()
     say("hostTruth:" + (lateFatal && capFatal))
     say("DONE")
 } catch (e) {

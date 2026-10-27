@@ -29,7 +29,7 @@ test('release is reproducible, licensed, bounded, and identifies actual source b
         for (const [path, hash] of Object.entries(first.artifacts))
             assert.equal(sha256(await readFile(join(a, path))), hash, path)
         const meta = await json(join(a, 'host.meta.json'))
-        assert.ok(meta.outputs['host.mjs'].exports.includes('createHatch'))
+        assert.deepEqual(meta.outputs['host.mjs'].exports, ['createWorld'])
         assert.deepEqual(Object.keys(meta.outputs).sort(), ['host.mjs', 'host.mjs.LEGAL.txt'])
         assert.ok(!Object.keys(meta.inputs).some(path => /recorder|mediabunny|\/editor\/|\/terminal\/|phoenix_live_view/.test(path)))
         assert.match(await readFile(join(a, 'LICENSE'), 'utf8'), /GNU AFFERO GENERAL PUBLIC LICENSE/)
@@ -55,14 +55,57 @@ test('release is reproducible, licensed, bounded, and identifies actual source b
         assert.equal(pristine.revision, pristine.commit)
         assert.equal(pristine.sourceDigest, first.sourceDigest)
         assert.equal(pristine.artifacts['host.mjs'], first.artifacts['host.mjs'])
+
+        const verify = (version = pristine.version, commit = pristine.commit) =>
+            execFileSync(process.execPath, [join(root, 'scripts/release/verify-host.mjs'),
+                cleanOut, version, commit], { stdio: 'pipe', encoding: 'utf8' })
+        assert.match(verify(), /Verified @paperland\/paperlang@/)
+        assert.throws(() => verify('999.0.0'), /release version mismatch/)
+        assert.throws(() => verify(pristine.version, '0'.repeat(40)), /release commit mismatch/)
+        for (const [path, message] of [
+            ['host.mjs', /artifact hash mismatch: host.mjs/],
+            ['sources/assets/js/host.js', /source hash mismatch: assets\/js\/host.js/],
+        ]) {
+            const original = await readFile(join(cleanOut, path))
+            await writeFile(join(cleanOut, path), Buffer.concat([original, Buffer.from('\n// tampered\n')]))
+            assert.throws(() => verify(), message)
+            await writeFile(join(cleanOut, path), original)
+        }
+        for (const [field, value, message] of [
+            ['checkoutDirty', true, /release checkout is dirty/],
+            ['sourceDirty', true, /release source inputs are dirty/],
+            ['sourceDigest', 'tampered', /source digest mismatch/],
+        ]) {
+            await writeFile(join(cleanOut, 'release.json'), JSON.stringify({ ...pristine, [field]: value }))
+            assert.throws(() => verify(), message)
+        }
+        await writeFile(join(cleanOut, 'release.json'), JSON.stringify(pristine, null, 2) + '\n')
+        assert.match(verify(), /Verified @paperland\/paperlang@/)
         await writeFile(join(clean, 'assets/js/host.js'), '\n// local edit\n', { flag: 'a' })
         build(clean, cleanOut)
         const edited = await json(join(cleanOut, 'release.json'))
         assert.equal(edited.commit, pristine.commit)
         assert.equal(edited.checkoutDirty, true)
         assert.equal(edited.sourceDirty, true)
+        assert.throws(() => verify(), /release source inputs are dirty/)
         assert.notEqual(edited.sourceDigest, pristine.sourceDigest)
         assert.notEqual(edited.revision, pristine.revision)
+
+        const manifestPath = join(clean, 'scripts/release/package.json')
+        const manifest = await json(manifestPath)
+        const [major, minor, patch] = manifest.version.split('.').map(Number)
+        const nextVersion = `${major}.${minor}.${patch + 1}`
+        manifest.version = nextVersion
+        await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
+        build(clean, cleanOut)
+        const bumped = await json(join(cleanOut, 'release.json'))
+        assert.equal(bumped.version, nextVersion)
+        assert.equal((await json(join(cleanOut, 'package.json'))).version, nextVersion)
+        assert.equal(bumped.sourceDirty, true)
+        assert.equal(bumped.commit, pristine.commit)
+        assert.notEqual(bumped.sourceDigest, edited.sourceDigest)
+        assert.notEqual(bumped.artifacts['package.json'], edited.artifacts['package.json'])
+        assert.equal(bumped.artifacts['host.mjs'], edited.artifacts['host.mjs'])
     } finally {
         await rm(temp, { recursive: true, force: true })
     }

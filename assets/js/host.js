@@ -24,7 +24,7 @@ function sameAnswer(a, b) {
     return Object.is(a.value, b.value)
 }
 
-export function createHatch(canvas, { caps, law, interactive = false } = {}) {
+export function createWorld(canvas, { caps, law, interactive = false } = {}) {
     // `law` is the lab seam (id:laws-build-p0); interaction is explicitly opt-in.
     const turtle = new Turtle(canvas, { caps, law, interactive })
     let disposed = false
