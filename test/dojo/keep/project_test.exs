@@ -53,6 +53,7 @@ defmodule Dojo.Keep.ProjectTest do
       id = Keep.hash(bytes)
       assert {:ok, %{id: ^id, target: nil}} = Keep.project(bytes, id)
     end
+
     test "unknown free fields pass — meaning is never judged" do
       bytes = message(%{"invented_today" => true})
       id = Keep.hash(bytes)
@@ -138,6 +139,7 @@ defmodule Dojo.Keep.ProjectTest do
       id = Keep.hash(bytes)
       assert {:ok, %{id: ^id, target: nil}} = Keep.project(bytes, id)
     end
+
     test "claimed id ≠ hash(message) → :name (anti-divergence)" do
       bytes = message()
       assert Keep.project(bytes, String.duplicate("0", 64)) == {:error, :name}

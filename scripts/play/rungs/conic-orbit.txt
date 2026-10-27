@@ -1,0 +1,13 @@
+# Cone + cutting plane: pitch selects the orbit family.
+# 0 hyperbola, 30 parabola, 60 ellipse, 90 circle; P stays on the exact conic.
+let R
+as R do
+  pitch 60
+  let B
+  goto 5 1 0
+  let P
+  as B do
+    let P.tilt = 30
+    let P.z = 1
+  end
+end
