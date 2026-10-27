@@ -59,6 +59,7 @@ export const createTerminal = (element, cm6, options = {}) => {
 
     const bridge = bridged("terminal");
     const selectionBridge = bridged("terminal.selection");
+    const sourceBridge = bridged("terminal.source");
 
     // --- State atom ---
     // Single mutable reference. Transitions via pure functions from buffers.js.
@@ -108,11 +109,27 @@ export const createTerminal = (element, cm6, options = {}) => {
         autosave.cancel();
         saveToStorage();
     };
+    const sourceClaim = (id, content, buffer_id = id) => {
+        const name = id ? state.collection?.items.get(id)?.name ?? null : null;
+        const claim = { place: "coreshell", addr: id, name, text: content, buffer_id };
+        sourceBridge.pub(claim);
+        return claim;
+    };
 
     const triggerBridge = () => {
         const buffer = buffers.currentBuffer(state.collection);
-        if (!buffer) return;
-        bridge.pub({ id: buffer.id, name: buffer.name, content: buffer.content });
+        if (!buffer) return null;
+        const claim = sourceClaim(buffer.id, buffer.content);
+        bridge.pub({ id: buffer.id, name: buffer.name, content: buffer.content, claim });
+        return { id: buffer.id, name: buffer.name, content: buffer.content, claim };
+    };
+
+    const announceMetadata = (id = state.collection?.currentId) => {
+        const buffer = id ? state.collection?.items.get(id) : buffers.currentBuffer(state.collection);
+        if (!buffer) return null;
+        const payload = { id: buffer.id, name: buffer.name, content: buffer.content, metadata: true };
+        bridge.pub(payload);
+        return payload;
     };
 
     // Bridge after paint — the glyph paints first, the live walk follows next
@@ -126,12 +143,12 @@ export const createTerminal = (element, cm6, options = {}) => {
         const pending = paintPending;
         paintPending = null;
         if (!pending) return;
-        const { id, content } = pending;
+        const { id, content, claim } = pending;
         const name = id ? state.collection.items.get(id)?.name : null;
-        bridge.pub({ id, name, content });
+        bridge.pub({ id, name, content, claim });
     };
-    const publishAfterPaint = (id, content) => {
-        paintPending = { id, content };
+    const publishAfterPaint = (id, content, claim) => {
+        paintPending = { id, content, claim };
         if (typeof requestAnimationFrame !== 'function') return flushPaint();
         if (!paintRaf) paintRaf = requestAnimationFrame(flushPaint);
     };
@@ -256,6 +273,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         // Bridges — exposed for shell.js subscription
         bridge,
         selectionBridge,
+        sourceBridge,
 
         // shell getter — shell.js listeners need the EditorView directly
         get shell() { return shell; },
@@ -309,7 +327,10 @@ export const createTerminal = (element, cm6, options = {}) => {
                     // 3. Bridge after paint — glyph first; the live walk next
                     // frame. A dropped final frame is a dropped render, never
                     // lost content (the authority above already moved).
-                    publishAfterPaint(id, content);
+                    const claim = id
+                        ? sourceClaim(id, content, state.projecting ? null : id)
+                        : null;
+                    publishAfterPaint(id, content, claim);
                 },
                 onSelectionChange: (selection) => {
                     selectionBridge.pub(selection);
@@ -563,7 +584,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             if (next === state.collection) return id;
             state.collection = next;
             saveToStorage();
-            triggerBridge();
+            announceMetadata(id);
             return id;
         },
 
@@ -778,7 +799,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             // focus movement. Publish so render/ambient subscribers track the name.
             state.collection = buffers.renameBuffer(state.collection, id, newName);
             saveToStorage();
-            if (id === state.collection.currentId) triggerBridge();
+            if (id === state.collection.currentId) announceMetadata(id);
         },
 
         triggerBridge,

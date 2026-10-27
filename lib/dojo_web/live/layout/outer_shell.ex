@@ -1,37 +1,26 @@
 defmodule DojoWeb.ShellLive.OuterShell do
   @moduledoc """
-  The OuterShell domain model / FSM. Its view is `DojoWeb.OuterShellLive`
-  (`components/outer_shell.ex`).
+  Server-owned selection and cached peer snapshots for the outer code-review surface.
 
-  One living diff between two turtle-sources along a fork lineage.
+  The selector is `addr`, `view`, `follow_peer`, and `draft_live`:
+    * `addr` names the selected subject, even before its first document arrives.
+    * `view` chooses `:watch` (current peer), `:recall` (last good), or `:draft`.
+    * `follow_peer` permits peer updates outside a draft. Drafts always read updates.
+    * `draft_live` couples local draft execution and peer-baseline updates.
+      It has no effect outside `:draft`; false freezes both, not the draft text.
 
-  The OuterShell is a code-review surface. It holds two sources and a small
-  selector — nothing more. The merge view is the single rendering primitive.
+  `origin` caches the latest peer turtle; `last_good` caches its latest success.
+  `active` routes outer actions; it is not evidence that a peer is present.
+  Presence supplies the display name and device root.
 
-    * `origin`    — the friend's code (the lineage root you're watching).
-                    Always carries the *current* turtle, success or error.
-    * `last_good` — the last successful `origin` (for look-back, and the
-                    natural baseline since a diff against broken code is noise).
-    * `mine`      — your version lives in the editor (CM6), not here; in
-                    `:draft` it is diffed against `origin`. It is the same
-                    lineage as your coreshell fork, seen from another angle.
+  This is not the whole client state machine. CM6 owns the editable draft;
+  the outer hook owns local execution and `watch.user_attention` (`peer` or
+  `reader`). Attention ownership never changes `follow_peer`. Recovery restores
+  selector metadata, not a document, and preserves a matching local draft.
 
-  ## View — a pairing over the one diff, not a mode machine
-
-    * `:watch`  — show `origin` live. Errors show live (glitch in the view).
-    * `:draft`  — editable; merge `mine` against `origin`.
-    * `:recall` — look back at `last_good`.
-    * `:request`— (reserved/future) the same diff with an *inbound* proposal
-                  as `mine`.
-
-  `stream` is the liveness switch: does `origin` flow to the foreground /
-  merge-baseline live, or is it frozen.
-
-  ## Observation is uniform
-
-  An incoming turtle always becomes the current `origin` (and `last_good` on
-  success). What gets pushed to the view is *derived* by `render_intent/1`
-  from `view` + `stream` — there are no per-event transitions.
+  `observe/2` updates the cached snapshots uniformly. `render_intent/1` decides
+  which snapshot to deliver, or holds the current editor island.
+  Ownership and transitions: specs/weave/outer-shell.org.
   """
 
   alias Dojo.Turtle
@@ -40,12 +29,12 @@ defmodule DojoWeb.ShellLive.OuterShell do
             name: "friend",
             # Device root of the hand being watched — letters' peer key (id:kc-sign).
             root: nil,
-            follow: true,
+            follow_peer: true,
             active: false,
             origin: nil,
             last_good: nil,
             view: :watch,
-            stream: true
+            draft_live: true
 
   # --- Observation: one clause, no branching on view ---
 
@@ -62,16 +51,20 @@ defmodule DojoWeb.ShellLive.OuterShell do
 
   # --- Render intent: what (if anything) to push, derived from the selector ---
   #
-  # Returns {:push, turtle} | :hold. The view/stream the JS needs to render the
+  # Returns {:push, turtle} | :hold. The view/draft_live the JS needs to render the
   # right diff travel on the seeOuterShell payload itself, not here.
 
   # :recall — look back at the last good.
   def render_intent(%__MODULE__{view: :recall, last_good: %Turtle{} = good}), do: {:push, good}
 
-  # :draft, frozen baseline — don't disturb the draft the user is editing.
-  def render_intent(%__MODULE__{view: :draft, stream: false}), do: :hold
+  # A new LV has no last_good yet. Keep the recall intent and HOLD — the
+  # client island stays until a known success can become the baseline.
+  def render_intent(%__MODULE__{view: :recall}), do: :hold
 
-  # :draft, live baseline — stream origin into the merge ORIGINAL (rebase preview).
+  # :draft, frozen baseline — don't disturb the draft the user is editing.
+  def render_intent(%__MODULE__{view: :draft, draft_live: false}), do: :hold
+
+  # A live draft receives the peer's latest code in its merge baseline.
   def render_intent(%__MODULE__{view: :draft, origin: %Turtle{} = origin}), do: {:push, origin}
 
   # :watch — show origin live, whatever its state (error shows live, #5).
@@ -81,18 +74,16 @@ defmodule DojoWeb.ShellLive.OuterShell do
 
   # --- UI actions: just set the selector ---
 
-  # A DRAFT RUNS. You intervene *because* their code is broken, so the state that
-  # used to start frozen is the one that most needs a runtime — and since a dead
-  # cell makes the whole document `:error`, freezing there froze nearly every
-  # draft. Toggle to hold; holding is the deliberate act now.
-  def draft(%__MODULE__{} = shell), do: %{shell | view: :draft, stream: true}
+  # Drafts start running, including when the peer's code is broken.
+  def draft(%__MODULE__{} = shell), do: %{shell | view: :draft, draft_live: true}
 
-  def toggle_stream(%__MODULE__{stream: stream} = shell), do: %{shell | stream: !stream}
+  def toggle_draft_live(%__MODULE__{draft_live: draft_live} = shell),
+    do: %{shell | draft_live: !draft_live}
 
   def recall(%__MODULE__{last_good: %Turtle{}} = shell), do: %{shell | view: :recall}
   def recall(shell), do: shell
 
-  def watch(%__MODULE__{} = shell), do: %{shell | view: :watch, stream: true}
+  def watch(%__MODULE__{} = shell), do: %{shell | view: :watch, draft_live: true}
 
   # --- Queries ---
 
@@ -104,13 +95,11 @@ defmodule DojoWeb.ShellLive.OuterShell do
   def errored?(_), do: false
 
   @doc """
-  Whether the shell wants the friend's latest code streamed in.
-
-  Following on the canvas (watch) wants it; so does any draft — a live draft
-  streams the friend's code into the merge baseline, and even a frozen draft
-  wants their execution status flowing to the nerve while you work on a fix.
+  Whether to read the peer's latest turtle: peer updates enabled, or any draft.
+  A frozen draft still updates the server cache, but holds the visible baseline.
+  This does not control whose position guides local attention.
   """
-  def wants_updates?(%__MODULE__{follow: true}), do: true
+  def wants_updates?(%__MODULE__{follow_peer: true}), do: true
   def wants_updates?(%__MODULE__{view: :draft}), do: true
   def wants_updates?(_), do: false
 
@@ -130,7 +119,7 @@ defmodule DojoWeb.ShellLive.OuterShell do
     :origin_name,
     :root,
     :view,
-    :stream
+    :draft_live
   ]
 
   @doc "The seeOuterShell contract (atoms). Dual of JS OUTER_SHELL_KEYS."
@@ -148,7 +137,7 @@ defmodule DojoWeb.ShellLive.OuterShell do
       origin_name: shell.name,
       root: shell.root,
       view: shell.view,
-      stream: shell.stream
+      draft_live: shell.draft_live
     })
   end
 

@@ -19,7 +19,9 @@ import { nerve, nerveSeat } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
 import { mountSun } from "../../nerve/sun.js"
 import { commands, listeners, mutators } from "./core.js"
-import { register, outerDrafting } from "./term-cell.js"
+import { register, outerDrafting, putSource, getSource, get as getTerm } from "./term-cell.js"
+import { selection } from "./selection-intent.js"
+import { createCurrentAnnounce } from "./current-announce.js"
 import { createArena } from "../../kernel/arena.js"
 import { attach } from "../../kernel/attach.js"
 
@@ -39,7 +41,8 @@ import { transpile } from "../../weave/parse.js"
 // Events registered at mounted(); handlers returned once mount() stands.
 export const inner = {
     events: ["seeOuterShell", "relayCamera", "selfkeepCanvas", "outerkeepCanvas",
-             "writeShell", "opBuffer", "forkBuffer"],
+             "writeShell", "syncShell", "opBuffer", "forkBuffer"],
+    arrive: (name, payload) => selection()?.arrive(name, payload),
     mount: mountInner,
 };
 
@@ -104,7 +107,12 @@ function mountInner(hook, { term, cm6 }) {
     // or friend push. Names a PLACE too: draft authors the addr the peer
     // pushes, so an addr alone cannot say whose figure the faults are.
     let authored = null
-    const disown = (addr) => { if (authored?.addr === addr) authored = null }
+    let owner = getSource() ?? null
+    let coreSourceRelease = null
+    const disown = (addr) => {
+        if (authored?.addr === addr) authored = null
+        if (owner?.addr === addr) owner = null
+    }
 
     // Attention is the address (D021). Live caret when we hold the shell;
     // reached ledger otherwise. Cursor is the gate — when we hold it, we read it.
@@ -127,16 +135,26 @@ function mountInner(hook, { term, cm6 }) {
         catch { return null }
     }
 
-    const seatingAttention = (addr) => {
-        const line = cursorLine(addr)
+    // D021 cursor law for the outer owner: the claim names the subject, the
+    // live editor names the line. No timer and no second coordinate.
+    const outerCursorLine = () => {
+        const outer = getTerm("outershell")
+        const v = outer?.shell
+        if (!v || v.destroyed) return null
+        try { return v.state.doc.lineAt(v.state.selection.main.head).number }
+        catch { return null }
+    }
+
+    const seatingAttention = (addr, place = CORESHELL) => {
+        const line = place === OUTERSHELL ? outerCursorLine() : cursorLine(addr)
         if (line != null) return { line }
         return attentionOn(addr)
     }
 
-    // Author's line for the wire — live caret when on screen, else ledger (outer draft).
+    // Author's line for the wire — live caret when on screen, else ledger.
     const authoredAttention = () => {
         if (!authored) return null
-        return seatingAttention(authored.addr)
+        return seatingAttention(authored.addr, authored.place)
     }
 
     // Reflect law (weave/reflect.js) — surface lends bodies, names subject;
@@ -149,14 +167,15 @@ function mountInner(hook, { term, cm6 }) {
     })
     const askDiagnostics = (addr, place = CORESHELL) => reflector.ask(addr, place)
 
-    // One authored buffer at a time (D022), so one subject for the reflect.
-    const reflection = () => authored && reflector.of({
-        addr: authored.addr,
-        place: authored.place,
-        source: authored.text,
-        attend: authoredAttention(),
-    })
-
+    const reflection = () => {
+        if (!authored || !owner || authored.claim !== owner) return null
+        return reflector.of({
+            addr: authored.addr,
+            place: authored.place,
+            source: authored.text,
+            attend: authoredAttention(),
+        })
+    }
     // Progress for ONE shell — one scheduler holds both places; unscoped read
     // gives two suns one number. null = the world.
     const progressAt = (place) =>
@@ -257,17 +276,35 @@ function mountInner(hook, { term, cm6 }) {
 
     // WIRING — every organ above stands; from here the surface only listens.
     // Seat after quiet (not under keys). Hatch rests longer (BEAT.settled).
-    const quietRender = temporal.quiet(({ id, name, content }) => {
+    // Render only the current owner claim; a committed claim is a no-op.
+    const renderCore = ({ id, name, content, claim }) => {
+        if (!claim || claim !== owner || authored?.claim === claim) return false
+        const label = claim.name ?? name
         nerve()?.run()
-        authored = { addr: id, place: CORESHELL, name, text: content }
         enact(id, law.observe(id, {
-            name, doc: content, witness: SELF, place: CORESHELL,
+            name: label, doc: content, witness: SELF, place: CORESHELL,
             attention: seatingAttention(id),
         }))
+        authored = { addr: id, place: CORESHELL, name: label, text: content, buffer_id: claim.buffer_id ?? null, claim }
         syncTabs()
-    }, 100)
+        announceCurrent.wake()
+        return true
+    }
+    const applyMetadata = ({ id, name }) => {
+        if (owner?.addr === id) owner.name = name
+        if (authored?.addr === id) authored = { ...authored, name }
+    }
+    const quietRender = temporal.quiet(renderCore, 100)
     arena.add(quietRender.cancel)
-    arena.add(term.bridge.sub(quietRender))
+    arena.add(term.sourceBridge.sub((claim) => {
+        coreSourceRelease = putSource(claim)
+        owner = claim
+    }))
+    arena.add(() => coreSourceRelease?.())
+    arena.add(term.bridge.sub((payload) => {
+        if (payload.metadata) applyMetadata(payload)
+        else quietRender(payload)
+    }))
 
     // A TAB SWITCH IS NEWS THE WORLD NEVER HEARS: the ask reads currentBufferId(),
     // this surface's own state, so it moves with no world breath behind it.
@@ -281,13 +318,24 @@ function mountInner(hook, { term, cm6 }) {
 
     // Hatch carries no ask (id:kc-p-join).
     const pacedHatch = temporal.pace(
-        (payload) => {
+        (payload, claim) => {
+            if (claim && claim !== owner) return
             safePush(hook, "hatchTurtle", {
                 ...payload,
             })
         },
         200
     );
+
+    // One demand for the owner's CURRENT document; the hatch sink carries it.
+    const announceCurrent = createCurrentAnnounce({
+        read: () => reflection(),
+        send: (current) => pacedHatch(
+            { ...current, buffer_id: authored?.buffer_id ?? null, path: null },
+            authored?.claim ?? null,
+        ),
+    })
+    arena.add(announceCurrent.release)
     arena.add(pacedHatch.cancel);
 
     // Journal door (id:kb-3-owner) + wire edge (id:kb-9).
@@ -310,7 +358,9 @@ function mountInner(hook, { term, cm6 }) {
 
     // Join: snap now (not a hatch beat), one put, then announce. No picture → null.
     arena.add(registerKeeper(async (ask) => {
-        const seen = reflection() ?? {}
+        // Dirty owner: no reflection, so no snapshot. Never mint an empty body.
+        const seen = reflection()
+        if (!seen) return null
         const ids = {
             work_id: term.currentWorkId(),
             buffer_id: term.currentBufferId(),
@@ -332,11 +382,11 @@ function mountInner(hook, { term, cm6 }) {
             if (payload.type === "image") saveImage(payload.snapshot, payload.title);
             break;
         case "hatchTurtle": {
-            // D022: document from this surface; reflection wins over stale hatch fields.
-            // The envelope is complete at DEPARTURE: a delayed hatch never
-            // re-reads the surface it left. (D022: reflection wins stale fields.)
-            const hatch = { ...payload, ...(reflection() ?? {}), buffer_id: term.currentBufferId() };
-            pacedHatch(hatch);
+            // Dirty owner: no reflection, no hatch. Committed body only.
+            const committed = reflection()
+            if (!committed) break
+            const hatch = { ...payload, ...committed, buffer_id: authored?.buffer_id ?? null }
+            pacedHatch(hatch, authored?.claim ?? null);
             break;
         }
         }
@@ -358,32 +408,39 @@ function mountInner(hook, { term, cm6 }) {
     // constructors: observe · attend · forget (+ restore). focus died with
     // the world sentinel; a click is attend (light-ladders-cut4).
     // Law decides; perform() executes.
-    const onObserve = ({ addr, name, code }) => {
+    const onObserve = ({ addr, name, code, claim }) => {
+        if (claim && claim !== owner) return
+        if (claim && authored?.claim === claim && authored.addr === addr) return
         // Live draft — SELF at the friend's place, standing BESIDE their
         // record rather than on top of it. Both held; hers paints
         // (weave/page.js `paints`), theirs is the baseline she reverts to.
-        authored = { addr, place: OUTERSHELL, name, text: code }
         enact(addr, law.observe(addr, {
             name, doc: code, witness: SELF, place: OUTERSHELL,
-            attention: attentionOn(addr),
+            attention: seatingAttention(addr, OUTERSHELL),
         }))
+        authored = { addr, place: OUTERSHELL, name, text: code, buffer_id: null, claim: claim ?? null }
+        announceCurrent.wake()
     }
     const onRestore = ({ addr, name, code }) => {
         // Leave draft: drop self's record; law hands the seat back to the
         // friend's held record WITH THEIR OWN BODY — including pushes that
         // arrived while drafting. Re-seating the peer from frozen text was
         // a second door onto the same fact, and a beat of blank canvas.
+        if (owner?.place === OUTERSHELL) owner = null
         disown(addr)
         enact(addr, law.restore(addr, OUTERSHELL), { witness: PEER })
     }
     arena.add(scene.sub({
+        // Outer's cheap ownership claim; it never renders.
+        claim: (payload) => { owner = payload },
         // One ladder step: reached cell mounts and RUNS (lazy). Line held so
         // the next edit on this addr carries it (D021).
         //
         // Reflect's coordinate moved — watcher has news even with no typing
         // (D025 R4). Re-arm hatch only for the buffer being reflected:
         // another addr's reach changes nothing a friend can see.
-        attend: ({ addr, line, witness }) => {
+        attend: ({ addr, line, witness, claim }) => {
+            if (claim && claim !== owner) return
             reached.set(addr, line)
             // Witness is the claim: self's reach moves the light; theirs is
             // presence and never takes it from a hand in the other shell (P9).
@@ -406,11 +463,12 @@ function mountInner(hook, { term, cm6 }) {
         restore: onRestore,
     }));
 
-    // Peer body on the canvas. Outer owns follow/intervene; this only seats.
+    // Outer owns reader attention; this handler only seats peer code.
     // Fresh + attend.line → open on their cell (not ladder birth cell 0).
     // Later hatches → sticky order so body pushes don't re-aim intervene;
     // while following, outer onPeerLine moves attend on line changes.
     const onSeeOuterShell = (payload) => {
+        if (selection()?.accepted(payload) === false) return
         if (!payload?.addr) return
         if (payload.state !== "success") return
         // Prefer standing tree; plain tabs often hatch commands:[] with source only.
@@ -429,8 +487,7 @@ function mountInner(hook, { term, cm6 }) {
         })
         enact(payload.addr, ans, { witness: PEER })
         const { source, merge } = ans
-        // Outershell is the compare surface: stream the peer baseline, then
-        // light the coreshell merge view only while watching (resumeMerge).
+        // Update the peer baseline; light the coreshell merge only in watch view.
         // forkBuffer itself never enables merge — a fork without outer is
         // ordinary editing (terminal.mergeActive / id:la-fork).
         if (merge && payload.buffer_id) {
@@ -517,7 +574,7 @@ function mountInner(hook, { term, cm6 }) {
             // Rejoin before the first breath: the journal owns the origin id.
             void reclaimWork(journal, term).then(() => {
                 if (!arena.alive) return
-                term.triggerBridge()
+                if (!owner) term.triggerBridge()
             })
             // ?fork=<ref> forks the named thing or finds its buffer — after
             // birth, so every organ stands; idempotent, so a remount only
@@ -538,6 +595,23 @@ function mountInner(hook, { term, cm6 }) {
 
         events: {
             seeOuterShell:  onSeeOuterShell,
+            // Owner-ready: settle local edits, then read CURRENT once.
+            syncShell:      () => {
+                const commit = () => {
+                    if (!owner) {
+                        const announced = term.triggerBridge?.()
+                        if (announced) renderCore(announced)
+                        return
+                    }
+                    if (authored?.claim === owner) return
+                    if (owner.place === OUTERSHELL) {
+                        onObserve({ addr: owner.addr, name: owner.name, code: owner.text, claim: owner })
+                    } else {
+                        renderCore({ id: owner.addr, name: owner.name, content: owner.text, claim: owner })
+                    }
+                }
+                announceCurrent.sync(commit)
+            },
             relayCamera:    ({ command }) => cameraCommand(command),
             // Same ask fence as the river (id:kj-vet 6); file beside the keep.
             selfkeepCanvas:  ({ title })  => keepAndSave(title),
@@ -558,7 +632,7 @@ async function reclaimWork(door, term) {
         if (!door || !buf) return
         const listed = await door.list(await door.root(), REACH)
         const recovered = adoptWork(listed, buf, work)
-        if (recovered && recovered !== work) term.adoptWork?.(recovered)
+        if (recovered && recovered !== work) term.adoptWork?.(recovered, buf)
     } catch {
         /* a shut door leaves the field as it is */
     }

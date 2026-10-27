@@ -1,8 +1,9 @@
 defmodule DojoWeb.OuterShellLive do
   @moduledoc """
-  The view for the OuterShell. A pure projection of the `OuterShell` model
-  (`live/layout/outer_shell.ex`): it renders from assigns and emits bare
-  intents (`{:outer_shell, …}`); the LiveView owns all state.
+  Server-rendered chrome for the outer code-review surface.
+  It projects the LiveView's selector and emits bare `{:outer_shell, …}` intents.
+  CM6 owns draft text; the outer hook owns local attention and draft execution.
+  See specs/weave/outer-shell.org for ownership and transitions.
   """
   use DojoWeb, :live_component
 
@@ -13,13 +14,13 @@ defmodule DojoWeb.OuterShellLive do
     {:ok, assign(socket, assigns)}
   end
 
-  def handle_event("followTurtle", _, socket) do
-    send(self(), {:outer_shell, :toggle_follow})
+  def handle_event("toggleFollowPeer", _, socket) do
+    send(self(), {:outer_shell, :toggle_follow_peer})
     {:noreply, socket}
   end
 
-  def handle_event("toggleStream", _, socket) do
-    send(self(), {:outer_shell, :toggle_stream})
+  def handle_event("toggleDraftLive", _, socket) do
+    send(self(), {:outer_shell, :toggle_draft_live})
     {:noreply, socket}
   end
 
@@ -36,8 +37,7 @@ defmodule DojoWeb.OuterShellLive do
   # Deck pattern: flag → cleanup → inform. Offline: first two steps need no socket.
   def close_js do
     JS.remove_class("is-open", to: "#outer-open")
-    |> JS.dispatch("phx:outerClose", to: "body")
-    |> JS.push("closeTurtle")
+    |> JS.dispatch("phx:outerClose", to: "body", detail: %{local: true})
   end
 
   def render(assigns) do
@@ -61,14 +61,14 @@ defmodule DojoWeb.OuterShellLive do
         </div>
 
         <div class="flex items-center gap-1 flex-shrink-0">
-          <%!-- Fork lives beside the cross — always present, since whatever you
-                are viewing can always be kept as a fork (JS-driven: it forks the
-                live draft if you're drafting, else their code). --%>
+          <%!-- Fork only when the selected subject's document is ready (id:outer-shell-transitions). --%>
           <button
             id="outer-fork"
             type="button"
             title="Keep a fork in your shell"
-            class="flex items-center transform scale-x-[-1] justify-center w-6 h-6 transition-all duration-300 transform pointer-events-auto backdrop-blur-sm hover:scale-110 group focus-within:border-none"
+            disabled
+            phx-mounted={JS.ignore_attributes(["disabled"])}
+            class="flex items-center transform scale-x-[-1] justify-center w-6 h-6 transition-all duration-300 transform pointer-events-auto backdrop-blur-sm hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed group focus-within:border-none"
           >
             <svg
               class="w-4 h-4 transition-colors text-accent-content group-hover:text-primary-content"
@@ -130,10 +130,19 @@ defmodule DojoWeb.OuterShellLive do
           </span>
         </div>
 
+        <p
+          id="outer-selection-status"
+          role="status"
+          hidden
+          phx-mounted={JS.ignore_attributes(["hidden"])}
+          class="mb-2 text-xs text-secondary-content"
+        >
+          Waiting for selected code. Any code still shown belongs to the previous selection.
+        </p>
         <div
           id="outerenv"
           phx-update="ignore"
-          phx-mounted={JS.ignore_attributes(["data-outer-state"])}
+          phx-mounted={JS.ignore_attributes(["data-outer-state", "data-outer-selection"])}
           data-outer-state="ok"
           class="overflow-y-scroll relative border pointer-events-auto rounded-lg h-[calc(100dvh-18rem)] lg:h-[60vh] border-amber-600/20 dark-scrollbar backdrop-blur-xs scrollbar-hide cursor-text"
         >
@@ -174,24 +183,33 @@ defmodule DojoWeb.OuterShellLive do
   end
 
   # The chip is the single liveness control; what it does depends on the state.
-  defp chip_action(%OuterShell{view: :draft}), do: "toggleStream"
+  defp chip_action(%OuterShell{view: :draft}), do: "toggleDraftLive"
   defp chip_action(%OuterShell{view: :recall}), do: "watchLive"
 
   defp chip_action(%OuterShell{} = shell),
-    do: if(OuterShell.errored?(shell), do: "recall", else: "followTurtle")
+    do: if(OuterShell.errored?(shell), do: "recall", else: "toggleFollowPeer")
 
-  defp chip_title(%OuterShell{view: :draft}), do: "Toggle live baseline (rebase onto their code)"
-  defp chip_title(%OuterShell{view: :recall}), do: "Last good — click for the live bug"
+  defp chip_title(%OuterShell{view: :draft, draft_live: true}),
+    do: "Freeze draft execution and peer baseline"
 
-  defp chip_title(%OuterShell{} = shell),
-    do:
-      if(OuterShell.errored?(shell), do: "Live bug — click for last good", else: "Toggle follow")
+  defp chip_title(%OuterShell{view: :draft, draft_live: false}),
+    do: "Run draft and update peer baseline"
+
+  defp chip_title(%OuterShell{view: :recall}), do: "Last good — click for current peer code"
+
+  defp chip_title(%OuterShell{} = shell) do
+    cond do
+      OuterShell.errored?(shell) -> "Live bug — click for last good"
+      shell.follow_peer -> "Pause peer code updates"
+      true -> "Resume peer code updates"
+    end
+  end
 
   # Yellow = the secondary-content theme token (matches the panel title).
-  defp mode_indicator_class(%OuterShell{view: :draft, stream: true}),
+  defp mode_indicator_class(%OuterShell{view: :draft, draft_live: true}),
     do: "bg-secondary-content animate-ping"
 
-  defp mode_indicator_class(%OuterShell{view: :draft, stream: false}),
+  defp mode_indicator_class(%OuterShell{view: :draft, draft_live: false}),
     do: "bg-secondary-content animate-pulse"
 
   defp mode_indicator_class(%OuterShell{view: :recall}), do: "bg-error"
@@ -200,7 +218,7 @@ defmodule DojoWeb.OuterShellLive do
     cond do
       # Live error — keep pinging; it's the friend's code as it breaks now.
       OuterShell.errored?(shell) -> "bg-error animate-ping"
-      shell.follow -> "bg-accent-content animate-ping"
+      shell.follow_peer -> "bg-accent-content animate-ping"
       true -> "bg-primary"
     end
   end

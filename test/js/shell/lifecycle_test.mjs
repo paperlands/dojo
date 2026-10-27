@@ -144,6 +144,48 @@ describe("boot seam: events riding the mount patch are never lost", () => {
         assert.equal(mounted, 1)
     })
 
+    test("acquire runs before registration; arrive ingests before the boot queue", async () => {
+        const boot = deferred()
+        const seen = []
+        let acquired = false
+
+        const surface = {
+            events: ["seeOuterShell"],
+            acquire(hook) {
+                acquired = true
+                hook.selection = "owner"
+            },
+            arrive(name, payload) {
+                seen.push(["arrive", name, payload.addr])
+            },
+            mount: () => ({
+                events: { seeOuterShell: (payload) => seen.push(["surface", payload.addr]) },
+                arena: createArena(),
+            }),
+        }
+
+        const hook = makeHook(
+            makeShellHook({
+                boot: () => boot.promise,
+                surfaces: { outershell: surface, coreshell: surface },
+            })
+        )
+
+        hook.mounted()
+        assert.equal(acquired, true)
+        assert.equal(hook.selection, "owner")
+
+        hook.fire("seeOuterShell", { addr: "a1" })
+        assert.deepEqual(seen, [["arrive", "seeOuterShell", "a1"]], "arrive precedes the queue")
+
+        boot.resolve({})
+        await tick()
+        assert.deepEqual(seen, [
+            ["arrive", "seeOuterShell", "a1"],
+            ["surface", "a1"],
+        ])
+    })
+
     test("data-target names the surface: outershell vs coreshell", async () => {
         const outer = makeSurface(["seeOuterShell"])
         const inner = makeSurface(["writeShell"])
@@ -297,5 +339,28 @@ describe("dead state: a mid-boot destroy stands the mount down", () => {
         await tick()
         hook.destroyed()
         assert.deepEqual(order, [3, 2, 1])
+    })
+
+    test("outer recovery events ride the boot queue in order", async () => {
+        const { surface, record } = makeSurface(["outerIntent", "syncShell"])
+        const boot = deferred()
+        const hook = makeHook(
+            makeShellHook({ boot: () => boot.promise, surfaces: { outershell: surface, coreshell: surface } }),
+            "outershell"
+        )
+
+        hook.mounted()
+        const intent = { addr: "a1", view: "watch", draft_live: true, follow_peer: true }
+        hook.fire("outerIntent", intent)
+        hook.fire("syncShell", {})
+
+        boot.resolve({})
+        await tick()
+
+        assert.deepEqual(record.seen, [
+            ["birth", null],
+            ["outerIntent", intent],
+            ["syncShell", {}],
+        ])
     })
 })

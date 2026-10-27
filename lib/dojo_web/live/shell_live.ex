@@ -27,6 +27,9 @@ defmodule DojoWeb.ShellLive do
   @debug_heex_annotations false
   @debug_attributes false
 
+  @selector_views %{"watch" => :watch, "draft" => :draft, "recall" => :recall}
+  @selector_keys [:addr, :view, :draft_live, :follow_peer]
+
   def mount(_params, _session, socket) do
     {:ok,
      socket
@@ -104,7 +107,8 @@ defmodule DojoWeb.ShellLive do
 
   def handle_async(:list_disciples, {:ok, disciples}, %{assigns: %{clan: clan}} = socket) do
     Dojo.Class.listen("shell:" <> clan)
-    {:noreply, assign(socket, :disciples, Map.new(disciples, fn {k, d} -> {k, with_root(d)} end))}
+    socket = assign(socket, :disciples, Map.new(disciples, fn {k, d} -> {k, with_root(d)} end))
+    {:noreply, apply_selection(socket)}
   end
 
   def handle_async(:list_disciples, {:exit, reason}, socket) do
@@ -123,7 +127,9 @@ defmodule DojoWeb.ShellLive do
 
   def handle_async(:join_disciples, {:ok, class}, %{assigns: %{clan: _clan}} = socket) do
     Process.monitor(class)
-    {:noreply, assign(socket, :class, class)}
+    # The owner stands only after the Table is attached. This is the one
+    # readiness request: the client answers by reading CURRENT, never a queue.
+    {:noreply, socket |> assign(:class, class) |> push_event("syncShell", %{})}
   end
 
   def handle_async(:join_disciples, {:exit, reason}, socket) do
@@ -164,22 +170,197 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
-  # The result carries its subject AND the installation it may update:
-  # a late follow from a closed or switched shell changes nothing. (id:ownership-o1)
-  def handle_async(:follow_code, {:ok, {gen, subject, %Dojo.Turtle{} = turtle}}, socket) do
-    if gen == follow_gen(socket) and socket.assigns.outershell.addr == subject do
-      apply_follow(turtle, socket)
-    else
-      {:noreply, socket}
+  @max_follow_attempts 3
+  @follow_backoff [250, 1000]
+
+  # One owned read lane: task or retry timer, with one coalesced "again" flag.
+  def handle_async(:follow_code, {:ok, {gen, addr, attempt, outcome}}, socket) do
+    case socket.assigns[:follow_read] do
+      %{phase: :read, gen: ^gen, addr: ^addr, attempt: ^attempt, again: again} ->
+        socket = assign(socket, :follow_read, nil)
+
+        if current_follow?(socket, gen, addr),
+          do: {:noreply, finish_follow(socket, again, gen, addr, attempt, outcome)},
+          else: {:noreply, socket}
+
+      _ ->
+        {:noreply, socket}
     end
   end
 
   def handle_async(:follow_code, {:ok, _}, socket), do: {:noreply, socket}
-  def handle_async(:follow_code, {:exit, _reason}, socket), do: {:noreply, socket}
 
-  # The follow epoch: every switch or close retires pending follow results.
+  def handle_async(:follow_code, {:exit, reason}, socket) do
+    case socket.assigns[:follow_read] do
+      %{phase: :read, gen: gen, addr: addr, attempt: attempt} ->
+        socket = assign(socket, :follow_read, nil)
+
+        if current_follow?(socket, gen, addr),
+          do: {:noreply, schedule_retry(socket, gen, addr, attempt, {:exit, reason})},
+          else: {:noreply, socket}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  defp finish_follow(socket, again, gen, addr, attempt, outcome) do
+    case outcome do
+      {:turtle, %Dojo.Turtle{} = turtle} ->
+        {:noreply, socket} = apply_follow(turtle, socket)
+        maybe_trailing(socket, again, gen, addr)
+
+      :empty ->
+        maybe_trailing(socket, again, gen, addr)
+
+      {:error, reason} ->
+        # A coalesced hatch never buys another attempt: the failure budget is
+        # the slot's, and retry departure consumes any demand that arrived.
+        schedule_retry(socket, gen, addr, attempt, reason)
+    end
+  end
+
+  defp current_follow?(socket, gen, addr) do
+    gen == follow_gen(socket) and socket.assigns.outershell.addr == addr and
+      OuterShell.wants_updates?(socket.assigns.outershell)
+  end
+
+  defp maybe_trailing(socket, true, gen, addr) do
+    if current_follow?(socket, gen, addr),
+      do: start_follow_read(socket, gen, addr, 1),
+      else: socket
+  end
+
+  defp maybe_trailing(socket, _again, _gen, _addr), do: socket
+
+  defp start_follow_read(socket, gen, addr, attempt) do
+    case socket.assigns.disciples[addr] do
+      %{} = disciple ->
+        address = Dojo.Disciple.table_address(disciple)
+
+        socket =
+          assign(socket, :follow_read, %{
+            phase: :read,
+            gen: gen,
+            addr: addr,
+            attempt: attempt,
+            again: false
+          })
+
+        start_async(socket, :follow_code, fn ->
+          try do
+            {gen, addr, attempt, follow_outcome(Dojo.Table.last(address, :hatch))}
+          rescue
+            e -> {gen, addr, attempt, {:error, Exception.message(e)}}
+          catch
+            kind, reason -> {gen, addr, attempt, {:error, {kind, reason}}}
+          end
+        end)
+
+      _ ->
+        socket
+    end
+  end
+
+  defp follow_outcome(nil), do: :empty
+  defp follow_outcome(%Dojo.Turtle{} = turtle), do: {:turtle, turtle}
+  defp follow_outcome(other), do: {:error, {:unexpected, other}}
+
+  defp demand_follow(socket, addr) do
+    %{outershell: shell} = socket.assigns
+
+    if shell.addr == addr and OuterShell.wants_updates?(shell) do
+      case socket.assigns[:follow_read] do
+        nil -> start_follow_read(socket, follow_gen(socket), addr, 1)
+        slot -> assign(socket, :follow_read, %{slot | again: true})
+      end
+    else
+      socket
+    end
+  end
+
+  defp schedule_retry(socket, gen, addr, attempt, reason) do
+    if attempt < @max_follow_attempts do
+      delay = Enum.at(@follow_backoff, attempt - 1, 1000)
+      timer = :erlang.start_timer(delay, self(), :follow_retry)
+
+      assign(socket, :follow_read, %{
+        phase: :retry,
+        gen: gen,
+        addr: addr,
+        attempt: attempt + 1,
+        timer: timer,
+        again: false
+      })
+    else
+      Logger.warning(
+        "follow_code exhausted addr=#{addr} gen=#{gen} attempts=#{attempt} reason=#{inspect(reason, limit: 10, printable_limit: 200)}"
+      )
+
+      assign(socket, :follow_read, nil)
+    end
+  end
+
+  defp retire_follow_read(socket, reason) do
+    case socket.assigns[:follow_read] do
+      %{phase: :read} ->
+        socket |> assign(:follow_read, nil) |> cancel_async(:follow_code, reason)
+
+      %{phase: :retry, timer: timer} ->
+        if timer, do: :erlang.cancel_timer(timer)
+        assign(socket, :follow_read, nil)
+
+      _ ->
+        socket
+    end
+  end
+
+  # Each selection epoch retires pending peer-read results.
   defp follow_gen(socket), do: socket.assigns[:follow_gen] || 0
-  defp bump_follow(socket), do: assign(socket, :follow_gen, follow_gen(socket) + 1)
+
+  defp bump_follow(socket) do
+    socket
+    |> retire_follow_read(:epoch)
+    |> assign(:follow_gen, follow_gen(socket) + 1)
+  end
+
+  # The owner's selector descriptor: recovery metadata, never a document.
+  defp push_intent(socket) do
+    push_event(socket, "outerIntent", Map.take(socket.assigns.outershell, @selector_keys))
+  end
+
+  # Presence enriches a retained selection without changing its selector.
+  defp apply_selection(
+         %{assigns: %{outershell: %OuterShell{addr: addr, origin: nil} = shell, disciples: dis}} =
+           socket
+       )
+       when is_binary(addr) do
+    case dis[addr] do
+      %{} = disciple ->
+        shell = %{shell | name: "#{disciple[:name]}", root: disciple[:root], active: true}
+        socket = assign(socket, :outershell, shell)
+
+        # A paused watch keeps its island; only a live/following seat reads.
+        if OuterShell.wants_updates?(shell), do: fetch_watch(socket, addr), else: socket
+
+      _ ->
+        socket
+    end
+  end
+
+  defp apply_selection(socket), do: socket
+
+  # Optional last-known chrome from the client; presence always overwrites it.
+  defp recover_name(shell, payload) do
+    shell =
+      if is_binary(payload["name"]) and payload["name"] != "",
+        do: %{shell | name: payload["name"]},
+        else: shell
+
+    if is_binary(payload["root"]) and payload["root"] != "",
+      do: %{shell | root: payload["root"]},
+      else: shell
+  end
 
   defp apply_follow(turtle, socket) do
     prev = socket.assigns.outershell.origin
@@ -203,7 +384,6 @@ defmodule DojoWeb.ShellLive do
     end
   end
 
-
   # presence handlers — keyed by reg_key (a meta field; Disciple.reg_key/1
   # stays tolerant of legacy metas where it rode inside the node tuple).
   # The `disciples` assign is a DECLARED READ-ONLY PROJECTION of Tracker
@@ -218,7 +398,11 @@ defmodule DojoWeb.ShellLive do
     # Gate.change re-joins under a new phx_ref; hatch meta is not Tracker state.
     disciple = disciple |> retain_hatch_meta(d[reg_key]) |> with_root()
 
-    {:noreply, assign(socket, :disciples, Map.put(d, reg_key, disciple))}
+    socket = assign(socket, :disciples, Map.put(d, reg_key, disciple))
+
+    if socket.assigns.outershell.addr == reg_key,
+      do: {:noreply, apply_selection(socket)},
+      else: {:noreply, socket}
   end
 
   def handle_info(
@@ -284,12 +468,36 @@ defmodule DojoWeb.ShellLive do
     {:noreply, Session.apply_setting(socket, key, value)}
   end
 
+  def handle_info({:timeout, timer, :follow_retry}, socket) do
+    case socket.assigns[:follow_read] do
+      %{phase: :retry, timer: ^timer, gen: gen, addr: addr, attempt: attempt} ->
+        socket = assign(socket, :follow_read, nil)
+
+        if current_follow?(socket, gen, addr),
+          do: {:noreply, start_follow_read(socket, gen, addr, attempt)},
+          else: {:noreply, socket}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
   # --- OuterShell LiveComponent messages ---
 
-  def handle_info({:outer_shell, :toggle_follow}, socket) do
-    # The LiveView owns the authoritative follow flag; the component emits a bare
+  def handle_info({:outer_shell, :toggle_follow_peer}, socket) do
+    # The LiveView owns the authoritative follow_peer flag; the component emits a bare
     # intent and we flip our own value — no stale read round-trips through the UI.
-    {:noreply, update(socket, :outershell, &%{&1 | follow: !&1.follow})}
+    socket = update(socket, :outershell, &%{&1 | follow_peer: !&1.follow_peer})
+    socket = push_intent(socket)
+    # Resuming an idle watch reads CURRENT now, not at the next hatch.
+    socket =
+      cond do
+        socket.assigns.outershell.follow_peer -> fetch_latest(socket)
+        OuterShell.wants_updates?(socket.assigns.outershell) -> socket
+        true -> retire_follow_read(socket, :paused)
+      end
+
+    {:noreply, socket}
   end
 
   def handle_info({:outer_shell, :recall}, socket) do
@@ -300,9 +508,9 @@ defmodule DojoWeb.ShellLive do
     {:noreply, apply_outer_view(socket, OuterShell.watch(socket.assigns.outershell))}
   end
 
-  def handle_info({:outer_shell, :toggle_stream}, socket) do
-    shell = OuterShell.toggle_stream(socket.assigns.outershell)
-    live = shell.view == :draft and shell.stream
+  def handle_info({:outer_shell, :toggle_draft_live}, socket) do
+    shell = OuterShell.toggle_draft_live(socket.assigns.outershell)
+    live = shell.view == :draft and shell.draft_live
 
     socket =
       socket
@@ -350,7 +558,7 @@ defmodule DojoWeb.ShellLive do
         %{assigns: %{class: class, clan: clan, session: %Session{name: name} = session}} =
           socket
       )
-      when is_binary(name) do
+      when is_pid(class) and is_binary(name) do
     # Pre-cut hatch attribution (keep-cut II).
     id = Session.author_id(session)
 
@@ -367,31 +575,69 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
+  # Not ready, or not a full reflect: syncShell will read CURRENT once the
+  # owner stands. No pending_hatch, no queue.
+  def handle_event("hatchTurtle", _payload, socket), do: {:noreply, socket}
+
+  # Recovery metadata from the watcher's mirrored descriptor. It installs the
+  # selection BEFORE presence; enrichment/fetch lands when the peer is known.
+  def handle_event("restoreShell", payload, socket) when is_map(payload) do
+    with addr when is_binary(addr) and addr != "" <- payload["addr"],
+         view when not is_nil(view) <- @selector_views[payload["view"]],
+         draft_live when is_boolean(draft_live) <- payload["draft_live"],
+         follow_peer when is_boolean(follow_peer) <- payload["follow_peer"] do
+      shell = %OuterShell{
+        addr: addr,
+        view: view,
+        draft_live: draft_live,
+        follow_peer: follow_peer,
+        active: true
+      }
+
+      socket =
+        socket
+        |> assign(:outershell, recover_name(shell, payload))
+        |> bump_follow()
+        |> push_intent()
+
+      socket = apply_selection(socket)
+      {:reply, Map.take(socket.assigns.outershell, @selector_keys ++ [:name, :root]), socket}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("restoreShell", _payload, socket), do: {:noreply, socket}
+
+  # A click is an intention, not a successful read. Install it FIRST; an empty
+  # store means "wait for their next hatch", never "forget the click".
   def handle_event(
         "seeTurtle",
         %{"addr" => addr},
-        %{assigns: %{disciples: dis, class: _class}} = socket
+        %{assigns: %{disciples: dis}} = socket
       )
       when is_binary(addr) do
-    case Dojo.Table.last(Dojo.Disciple.table_address(dis[addr]), :hatch) do
-      %Dojo.Turtle{} = turtle ->
-        # The friend's work_id lives in presence (`dis[addr][:keep]`) — read it
+    case dis[addr] do
+      %{} = disciple ->
+        # The friend's work_id lives in presence (`disciple[:keep]`) — read it
         # HERE, at the click, when this shell wants that work's keeps (id:kb-8).
-        outershell =
-          OuterShell.observe(
-            %OuterShell{
-              addr: addr,
-              active: true,
-              name: "#{dis[addr][:name]}",
-              root: dis[addr][:root]
-            },
-            turtle
-          )
+        outershell = %OuterShell{
+          addr: addr,
+          active: true,
+          name: "#{disciple[:name]}",
+          root: disciple[:root],
+          follow_peer: true
+        }
 
-        {:noreply,
-         socket
-         |> push_event("seeOuterShell", OuterShell.payload(turtle, outershell))
-         |> assign(:outershell, outershell)}
+        socket =
+          socket
+          |> assign(:outershell, outershell)
+          |> bump_follow()
+          |> push_intent()
+
+        # Same epoch-fenced fetch as go-live; an empty answer leaves intent
+        # standing for the next hatch. Never block the LV on a remote read.
+        {:noreply, fetch_watch(socket, addr)}
 
       _ ->
         {:noreply, socket}
@@ -416,11 +662,17 @@ defmodule DojoWeb.ShellLive do
 
     outershell =
       OuterShell.observe(
-        %OuterShell{addr: addr, active: true, name: name, follow: false},
+        %OuterShell{addr: addr, active: true, name: name, follow_peer: false},
         turtle
       )
 
-    {:noreply, socket |> assign(:outershell, outershell) |> bump_follow()}
+    socket =
+      socket
+      |> assign(:outershell, outershell)
+      |> bump_follow()
+      |> push_intent()
+
+    {:reply, Map.take(outershell, @selector_keys ++ [:name, :root]), socket}
   end
 
   # Empty seeTurtle = close. Server must tell the client (no prior close_js).
@@ -428,25 +680,34 @@ defmodule DojoWeb.ShellLive do
     {:noreply, reset_outershell(socket, notify: true)}
   end
 
-  # Client already ran close_js (flag + outerClose). Assigns only.
+  # Client already ran cleanup; the reply is the canonical closed selector.
   def handle_event("closeTurtle", _, socket) do
-    {:noreply, reset_outershell(socket)}
+    socket = reset_outershell(socket)
+    {:reply, %{addr: nil, view: :watch, draft_live: true, follow_peer: true}, socket}
   end
 
   # The Shell JS hook reports the user started editing in the outer viewer.
-  # The editable merge is already configured client-side (beginDraft); here we
-  # only record the view so the server-rendered indicator reflects draft state.
-  # We do NOT push back — that would overwrite the draft the user is typing.
-  def handle_event("outerDraft", _, socket) do
-    # Draft auto-runs over working code, but waits for the toggle over an error.
-    # OuterShell.draft/1 sets `stream` from the friend's state; JS runs on live.
-    shell = OuterShell.draft(socket.assigns.outershell)
+  # A draft names its SUBJECT (O1): a bare event or a retired subject changes
+  # nothing. On a mismatch re-assert the selector so the client retires its ghost.
+  def handle_event("outerDraft", %{"addr" => addr}, socket)
+      when is_binary(addr) and addr != "" do
+    %{addr: selected} = socket.assigns.outershell
 
-    {:noreply,
-     socket
-     |> assign(:outershell, shell)
-     |> push_event("outerLive", %{live: shell.view == :draft and shell.stream})}
+    if is_binary(selected) and selected != "" and selected == addr do
+      # A draft always runs (OuterShell.draft/1); the client owns liveness.
+      shell = OuterShell.draft(socket.assigns.outershell)
+
+      {:noreply,
+       socket
+       |> assign(:outershell, shell)
+       |> push_intent()
+       |> push_event("outerLive", %{live: shell.view == :draft and shell.draft_live})}
+    else
+      {:noreply, push_intent(socket)}
+    end
   end
+
+  def handle_event("outerDraft", _payload, socket), do: {:noreply, socket}
 
   # Handle the viewport update event from the hook (Decision 003, Layer 3 — windowed pull)
   def handle_event(
@@ -620,15 +881,8 @@ defmodule DojoWeb.ShellLive do
     %{outershell: outershell, disciples: dis} = socket.assigns
 
     if OuterShell.wants_updates?(outershell) and outershell.addr == reg_key and
-         dis[reg_key][:node] do
-      if (time || 0) > OuterShell.last_time(outershell) do
-        gen = follow_gen(socket)
-        start_async(socket, :follow_code, fn ->
-          {gen, reg_key, Dojo.Table.last(Dojo.Disciple.table_address(dis[reg_key]), :hatch)}
-        end)
-      else
-        socket
-      end
+         not is_nil(dis[reg_key][:node]) and (time || 0) > OuterShell.last_time(outershell) do
+      demand_follow(socket, reg_key)
     else
       socket
     end
@@ -636,18 +890,11 @@ defmodule DojoWeb.ShellLive do
 
   # Fetch the friend's latest now, bypassing the time gate — used on go-live so
   # the merge baseline jumps to their current code immediately.
-  defp fetch_latest(socket) do
-    %{outershell: o, disciples: dis} = socket.assigns
+  defp fetch_latest(socket), do: fetch_watch(socket, socket.assigns.outershell.addr)
 
-    if o.addr && dis[o.addr][:node] do
-      gen = follow_gen(socket)
-      start_async(socket, :follow_code, fn ->
-        {gen, o.addr, Dojo.Table.last(Dojo.Disciple.table_address(dis[o.addr]), :hatch)}
-      end)
-    else
-      socket
-    end
-  end
+  # One demand slot: all callers refer to CURRENT; the owned lane coalesces.
+  defp fetch_watch(socket, addr) when is_binary(addr), do: demand_follow(socket, addr)
+  defp fetch_watch(socket, _addr), do: socket
 
   defp bump_path_time(nil, _time), do: nil
   defp bump_path_time(path, time), do: Regex.replace(~r/\?t=\d+/, path, "?t=#{time}")
@@ -666,18 +913,25 @@ defmodule DojoWeb.ShellLive do
 
   defp find_reg_key(_disciples, _), do: nil
 
-  # Apply a view/stream change: persist it, then push the source if one is due.
-  # The view/stream ride the seeOuterShell payload, so JS configures the editor
-  # (read-only watch vs editable merge) from that alone.
+  # Persist the selector; deliver a snapshot only when render_intent allows it.
   # Chrome assigns only. Client owns open flag + canvas cleanup.
   # notify: true when the server closes without a prior close_js (empty seeTurtle).
   defp reset_outershell(socket, opts \\ []) do
-    socket = socket |> assign(:outershell, %OuterShell{}) |> bump_follow()
+    socket =
+      socket
+      |> assign(:outershell, %OuterShell{})
+      |> bump_follow()
+      |> push_intent()
+
     if opts[:notify], do: push_event(socket, "outerClose", %{}), else: socket
   end
 
   defp apply_outer_view(socket, %OuterShell{} = shell) do
-    socket = socket |> assign(:outershell, shell) |> bump_follow()
+    socket =
+      socket
+      |> assign(:outershell, shell)
+      |> bump_follow()
+      |> push_intent()
 
     case OuterShell.render_intent(shell) do
       {:push, source} -> push_event(socket, "seeOuterShell", OuterShell.payload(source, shell))

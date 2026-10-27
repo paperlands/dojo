@@ -350,6 +350,18 @@ describe("mintSnap: one put, photograph or nothing", () => {
         assert.equal(await door.source(name("")), "")
     })
 
+    test("missing reflection is not an empty source", async () => {
+        const missing = await mintSnap(
+            { title: "missing" },
+            undefined,
+            { work_id: "e".repeat(64) },
+            door,
+            PNG_1PX,
+        )
+        assert.equal(missing, null)
+        assert.equal((await door.list(await door.root())).length, 0)
+    })
+
     test("a dead door yields null, never a rejection", async () => {
         const dead = {
             root: async () => {

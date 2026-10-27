@@ -29,7 +29,6 @@ defmodule DojoWeb.DiscipleStrip do
   import DojoWeb.SVGComponents
 
   alias DojoWeb.ShellLive.DiscipleWindow
-  alias DojoWeb.ShellLive.OuterShell
 
   attr :windows, :list, required: true
   attr :outershell, :any, default: nil
@@ -65,8 +64,19 @@ defmodule DojoWeb.DiscipleStrip do
           @win.depth && "d#{@win.depth}",
           @peekable? && "peekable"
         ]}
-        phx-click={@hour != :kept && open_or_close(@outershell, @win.hand)}
-        phx-throttle="500"
+        phx-click={
+          @hour != :kept &&
+            JS.dispatch("phx:outerSelect",
+              to: "body",
+              detail: %{
+                addr: @win.hand,
+                view: "watch",
+                draft_live: true,
+                follow_peer: true,
+                name: @win.name
+              }
+            )
+        }
         phx-value-addr={@win.hand}
       >
         <span class="spill" aria-hidden="true"></span>
@@ -136,7 +146,4 @@ defmodule DojoWeb.DiscipleStrip do
 
   # A reg_key carries `:` and base64; url_encode64 keeps the id selector-safe.
   defp seat_id(hand), do: "win-" <> Base.url_encode64(hand, padding: false)
-
-  defp open_or_close(%OuterShell{addr: hand}, hand), do: DojoWeb.OuterShellLive.close_js()
-  defp open_or_close(_, _), do: JS.push("seeTurtle")
 end

@@ -98,6 +98,12 @@ export async function mintSnap(ask, reflection, ids, door, path) {
         say("mintSnap: no ask")
         return null
     }
+    // Missing snapshot is not an empty document; only an explicit source is a body.
+    if (!reflection || typeof reflection.source !== "string") {
+        say("no source — not kept")
+        return null
+    }
+
     const image = toBlob(path)
     if (image == null) {
         say("no picture — not kept")
@@ -106,7 +112,7 @@ export async function mintSnap(ask, reflection, ids, door, path) {
 
     try {
         const root = await door.root()
-        const source = typeof reflection?.source === "string" ? reflection.source : ""
+        const source = reflection.source
         const work_id =
             typeof ids?.work_id === "string" && ids.work_id ? ids.work_id : null
         const bytes = writeSnap({

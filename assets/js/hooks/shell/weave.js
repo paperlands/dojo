@@ -26,8 +26,8 @@ import { nerve as seatedNerve } from "../nerve.js"
 import { createArena } from "../../kernel/arena.js"
 import { link } from "../../link.js"
 import { stamp } from "../../utils/stamp.js"
-import { safePush } from "../../adapter.js"
 import { outerShellPayload, dispatchPhx } from "./outer-shell-payload.js"
+import { selection, requestSelection } from "./selection-intent.js"
 
 export const weave = {
     events: [],
@@ -51,9 +51,27 @@ function mountWeave(hook, boot = {}) {
 
     // The address the child stands at — the newest fragment step's target.
     let hereAddr = null
-    // Only a NEWER open cancels an older one; a dead surface is answered by the
-    // arena, so the epoch does not have to say death too.
-    let openEpoch = 0
+    // Route epoch orders unresolved lookups only; a resolved fragment departs
+    // through the owner, so ambient reveals never cancel a live fetch.
+    let routeEpoch = 0
+    const beginRoute = () => {
+        routeEpoch++
+        const controller = selection()
+        return { epoch: routeEpoch, controller, owner: controller?.current?.() ?? null }
+    }
+    const routeAlive = (route) => {
+        if (route.epoch !== routeEpoch) return false
+        if (route.controller == null) return selection() == null
+        if (selection() !== route.controller) return false
+        return route.owner == null
+            ? route.controller.current() == null
+            : route.controller.owns(route.owner)
+    }
+    const stillOwns = (route, controller, owner) => {
+        if (!arena.alive) return false
+        if (controller == null) return selection() == null && route.epoch === routeEpoch
+        return selection() === controller && controller.owns(owner)
+    }
 
     // Hearth projection of walk signals — derived at emit time, capped.
     const trail = []
@@ -123,10 +141,11 @@ function mountWeave(hook, boot = {}) {
                     return
                 }
                 if (step.ref?.id) {
+                    const route = beginRoute()
                     fragmentIndex().then((idx) => {
-                        if (!arena.alive) return
+                        if (!arena.alive || !routeAlive(route)) return
                         const hit = idx?.[step.ref.id]
-                        if (hit) openPage(hit.name, { id: step.ref.id, title: hit.title })
+                        if (hit) openPage(hit.name, { id: step.ref.id, title: hit.title }, route)
                     })
                 }
             })
@@ -139,8 +158,9 @@ function mountWeave(hook, boot = {}) {
     // when no ambient answers (nerve/reveal.js).
     async function followPortal(word) {
         if (!arena.alive) return
+        const route = beginRoute()
         const index = await fragmentIndex()
-        if (!arena.alive) return
+        if (!arena.alive || !routeAlive(route)) return
 
         const r = resolve(word, { ambients: ambientNames(), index })
         const to = r.kind === "fragment" ? `~/${r.name}`
@@ -153,17 +173,24 @@ function mountWeave(hook, boot = {}) {
         emitWalk(hereAddr, to, ref, r.kind)
 
         if (r.kind === "ambient") revealAmbient(r.name)
-        else if (r.kind === "fragment") await openPage(r.name, { id: r.id, title: r.title })
+        else if (r.kind === "fragment") await openPage(r.name, { id: r.id, title: r.title }, route)
     }
 
-    // Open a page = press the document, invoke the outershell.
-    async function openPage(name, meta = {}) {
+    // Express the subject first; press the document after its fetch.
+    async function openPage(name, meta = {}, route = null) {
         if (!name) return
-        const my = ++openEpoch
-        const alive = () => my === openEpoch && arena.alive
+        const myRoute = route ?? beginRoute()
+        if (!arena.alive || !routeAlive(myRoute)) return
+
+        const addr = `~/${name}`
+        const intentCell = selection()
+        const selector = { addr, view: "watch", draft_live: true, follow_peer: false }
+        const owner = intentCell?.open(selector) ?? null
+        if (intentCell && !owner) return
+        if (intentCell) dispatchPhx("outerIntent", selector)
 
         const text = await fetchFragment(name)
-        if (!alive()) return
+        if (!stillOwns(myRoute, intentCell, owner)) return
 
         if (text == null) {
             // Not (yet) born — the gold step is the whole answer.
@@ -173,7 +200,6 @@ function mountWeave(hook, boot = {}) {
 
         const { id, title, source } = transpile(text)
         const ast = parseProgram(source)
-        const addr = `~/${name}`
         const prev = hereAddr
         hereAddr = addr
 
@@ -190,7 +216,7 @@ function mountWeave(hook, boot = {}) {
         const diags = diagnostics(ast, [], addr)
         // `t` alone — %Turtle{time:} is an LWW key compared across hands (D008).
         const ts = stamp().t
-        dispatchPhx("seeOuterShell", outerShellPayload({
+        const payload = outerShellPayload({
             addr,
             origin_name: pageName,
             source,
@@ -198,11 +224,22 @@ function mountWeave(hook, boot = {}) {
             diagnostics: diags,
             state: "success",
             view: "watch",
-            stream: true,
+            draft_live: true,
             time: ts,
             // path / attend / buffer_id — library has none; builder keeps keys as null
-        }))
-        safePush(hook, "seeWeave", { addr, name: pageName, source, ts })
+        })
+
+        if (intentCell && !intentCell.install(owner, payload)) return
+        const token = intentCell ? intentCell.supersede(addr) : null
+        dispatchPhx("seeOuterShell", payload)
+        if (!stillOwns(myRoute, intentCell, owner)) return
+
+        requestSelection(
+            intentCell,
+            token,
+            () => hook.pushEvent("seeWeave", { addr, name: pageName, source, ts }),
+            (descriptor) => dispatchPhx("outerIntent", descriptor),
+        )
     }
 
     // Portals anywhere (editor ink, outer viewer) fall through to the scope

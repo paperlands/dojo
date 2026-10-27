@@ -570,6 +570,68 @@ describe("Terminal (CM6)", () => {
         localStorage.clear();
     });
 
+    test("source claim lands under the key even when no frame paints", () => {
+        const cm6 = makeMockCm6();
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+        const claims = [];
+        term.sourceBridge.sub((claim) => claims.push(claim));
+
+        const saved = globalThis.requestAnimationFrame;
+        globalThis.requestAnimationFrame = () => 99;
+        try {
+            term.setValue("fw 2718");
+        } finally {
+            globalThis.requestAnimationFrame = saved;
+        }
+
+        const claim = claims.at(-1);
+        assert.equal(claim.text, "fw 2718");
+        assert.equal(claim.addr, id);
+        assert.equal(claim.buffer_id, id);
+        assert.equal(claim.place, "coreshell");
+        localStorage.clear();
+    });
+
+    test("projected source claim carries honest null buffer id", () => {
+        const cm6 = makeMockCm6();
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+        const claims = [];
+        term.sourceBridge.sub((claim) => claims.push(claim));
+
+        term.setValue("kept code", { project: true });
+
+        const claim = claims.at(-1);
+        assert.equal(claim.text, "kept code");
+        assert.equal(claim.addr, id);
+        assert.equal(claim.buffer_id, null);
+        localStorage.clear();
+    });
+
+    test("metadata announcement does not mint a source claim", () => {
+        const cm6 = makeMockCm6();
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+        const claims = [];
+        const frames = [];
+        term.sourceBridge.sub((claim) => claims.push(claim));
+        term.bridge.sub((payload) => frames.push(payload));
+
+        term.adoptWork("work-1", id);
+
+        assert.equal(claims.length, 0, "metadata never claims authorship");
+        assert.equal(frames.at(-1).metadata, true);
+        assert.equal(frames.at(-1).id, id);
+        localStorage.clear();
+    });
+
     test("autosave persists a change that never painted", async () => {
         const cm6  = makeMockCm6();
         localStorage.clear();

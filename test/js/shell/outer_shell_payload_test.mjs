@@ -27,7 +27,7 @@ describe("outerShellPayload — one shape, every key present", () => {
             diagnostics: [],
             state: "success",
             view: "watch",
-            stream: true,
+            draft_live: true,
             time: 1,
         })
         assert.equal(payload.path, null)
@@ -38,7 +38,7 @@ describe("outerShellPayload — one shape, every key present", () => {
         assert.deepEqual(payload.commands, [{ type: "Call" }])
         assert.equal(payload.state, "success")
         assert.equal(payload.view, "watch")
-        assert.equal(payload.stream, true)
+        assert.equal(payload.draft_live, true)
     })
 
     test("empty partial still has every key (defaults, never undefined)", () => {
@@ -50,17 +50,17 @@ describe("outerShellPayload — one shape, every key present", () => {
         assert.deepEqual(payload.commands, [])
         assert.deepEqual(payload.diagnostics, [])
         assert.equal(payload.view, "watch")
-        assert.equal(payload.stream, true)
+        assert.equal(payload.draft_live, true)
     })
 
     test("explicit nulls are kept — not overwritten by defaults that lie", () => {
         const payload = outerShellPayload({
-            stream: false,
+            draft_live: false,
             view: "draft",
             commands: null,
         })
-        // stream/view honor explicit values; arrays default only when missing
-        assert.equal(payload.stream, false)
+        // draft_live/view honor explicit values; arrays default only when missing
+        assert.equal(payload.draft_live, false)
         assert.equal(payload.view, "draft")
         // null is a value — ?? keeps null for scalar fields, but commands uses ?? []
         assert.deepEqual(payload.commands, [])

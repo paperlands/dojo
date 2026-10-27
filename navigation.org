@@ -582,9 +582,40 @@ From a JS =pushEvent= name, jump with =C-c d e= or grep =handle_event("name"=.
 ** outer shell layout — zones around the editor
 :PROPERTIES:
 :ID: nav-outershell
-:KEYWORDS: outershell outer shell layout zones rightthird vh chrome
+:KEYWORDS: outershell outer shell layout zones rightthird vh chrome follow_peer draft_live user_attention selectedAddr shownAddr pending transitions
 :PATH: lib/dojo_web/components/outer_shell.ex
 :END:
+Selection, document readiness, peer updates, draft execution, and reader attention
+are separate axes: [[id:outer-shell-model][outer-shell ownership and transition tables]].
+=follow_peer= controls peer updates; =watch.user_attention= names ="peer"= or
+="reader"=. =draft_live= couples local draft execution with baseline updates.
+
+** shell readiness & outer recovery — fresh read, selector mirror
+:PROPERTIES:
+:ID: nav-shell-readiness
+:KEYWORDS: syncShell outerIntent restoreShell seeTurtle fetch_watch announceCurrent current-announce outer-recovery readiness reconnect resume draft recall frozen outerClose closeTurtle follow_read retry source claim buffer_id enact pacer lease
+:PATH: lib/dojo_web/live/shell_live.ex
+:END:
+One readiness edge: `syncShell` after class attach. The owner reads CURRENT
+(`inner.js` `announceCurrent`, `current-announce.js`); the watcher restores its
+`outerIntent`/`restoreShell` mirror (`outer.js`, `outer-recovery.js`).
+`%OuterShell{}` is the retained selector; presence enriches, the peer's Table is
+the source. Local close is a command at raw arrival (`outer.arrive`), one
+correlated `closeTurtle`; domain cleanup never sends. Readiness restores the
+newest local descriptor by owner/receipt, not by clock. The source cell is a
+producer-owned claim; commit follows a successful `enact`, and the pacer keeps
+the departure claim. `follow_read` is one owned read/timer with one coalesced
+demand and a bounded retry budget. D025 build amendment: the picture is optional,
+not permission. Replay: `probe/shell-recovery/README.org`.
+
+`selection-intent.js` `requestSelection` is the one receipt protocol: send leaves
+synchronously, and only an exact-address descriptor acks and applies. A missing,
+malformed, or stale receipt leaves the current fence standing.
+
+Peer clicks are one local =phx:outerSelect= selector departure; =owner= is the
+selected subject and a receipt is only its acknowledgement. Library open departs
+before its fetch; route resolution is epoch/controller-guarded, ambient reveal is
+not selection. Same-address documents assume channel order + server =follow_gen=.
 
 ** helios-window — disciple strip, selenic turn
 :PROPERTIES:
@@ -3072,10 +3103,10 @@ move must not rewrite the friend's document. See the warning on the function.
 ** the watcher's law — one latch, three doors
 :PROPERTIES:
 :ID: nav-watch-law
-:KEYWORDS: watch law follow latch following peerAt ownCaret step openWatch resume hand reassert draftEnter draftView peerLine claim viewport mark chase stir intervene firefly caret stash outershell
+:KEYWORDS: watch law user_attention peer reader follow_peer draft_live attention peerAt ownCaret step openWatch resume hand reassert draftEnter draftView peerLine claim viewport mark chase stir intervene firefly caret stash outershell
 :PATH: assets/js/editor/watch-law.js::export function step
 :END:
-=step(state, event) → { state, ...acts }= over ={following, peerAt, ownCaret}=.
+=step(state, event) → { state, ...acts }= over ={user_attention, peerAt, ownCaret}=.
 AN ACT NAMED IS AN ACT PERFORMED; =null= is a real value (unmark, unclaim), an
 absent key is an absence. Every reading rides the event — the law never looks at
 a view. The mark and the firefly track the peer in EVERY state; only the claim

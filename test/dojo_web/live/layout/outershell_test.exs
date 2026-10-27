@@ -1,6 +1,8 @@
 defmodule DojoWeb.ShellLive.OuterShellTest do
   use ExUnit.Case, async: true
 
+  require Phoenix.LiveViewTest
+
   alias Dojo.Turtle
   alias DojoWeb.ShellLive.OuterShell
 
@@ -52,13 +54,18 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
       assert {:push, %Turtle{source: "good"}} = OuterShell.render_intent(shell)
     end
 
+    test "recall holds when a new LV has no last_good yet" do
+      shell = %OuterShell{view: :recall} |> OuterShell.observe(err("broken"))
+      assert :hold = OuterShell.render_intent(shell)
+    end
+
     test "draft with frozen baseline holds (does not disturb the draft)" do
-      shell = OuterShell.observe(%OuterShell{view: :draft, stream: false}, ok())
+      shell = OuterShell.observe(%OuterShell{view: :draft, draft_live: false}, ok())
       assert :hold = OuterShell.render_intent(shell)
     end
 
     test "draft with live baseline streams origin into the merge original" do
-      shell = OuterShell.observe(%OuterShell{view: :draft, stream: true}, ok())
+      shell = OuterShell.observe(%OuterShell{view: :draft, draft_live: true}, ok())
       assert {:push, %Turtle{state: :success}} = OuterShell.render_intent(shell)
     end
 
@@ -71,7 +78,7 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
     test "draft/1 auto-runs (live) when their code isn't in error" do
       shell = OuterShell.draft(%OuterShell{origin: ok()})
       assert shell.view == :draft
-      assert shell.stream == true
+      assert shell.draft_live == true
     end
 
     # A draft over an error used to start frozen, so there was no runtime and no
@@ -81,12 +88,12 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
     test "draft/1 runs over an error too — that is what you drafted for" do
       shell = OuterShell.draft(%OuterShell{origin: err()})
       assert shell.view == :draft
-      assert shell.stream == true
+      assert shell.draft_live == true
     end
 
-    test "toggle_stream/1 flips the liveness switch" do
-      assert OuterShell.toggle_stream(%OuterShell{stream: false}).stream == true
-      assert OuterShell.toggle_stream(%OuterShell{stream: true}).stream == false
+    test "toggle_draft_live/1 switches draft execution and baseline updates together" do
+      assert OuterShell.toggle_draft_live(%OuterShell{draft_live: false}).draft_live == true
+      assert OuterShell.toggle_draft_live(%OuterShell{draft_live: true}).draft_live == false
     end
 
     test "recall/1 only engages when there is a last good" do
@@ -95,10 +102,57 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
       assert OuterShell.recall(%OuterShell{}).view == :watch
     end
 
-    test "watch/1 returns to live following" do
-      shell = OuterShell.watch(%OuterShell{view: :recall, stream: false})
+    test "watch/1 returns to current code without resuming paused peer updates" do
+      shell = OuterShell.watch(%OuterShell{view: :recall, draft_live: false, follow_peer: false})
       assert shell.view == :watch
-      assert shell.stream == true
+      assert shell.draft_live == true
+      assert shell.follow_peer == false
+    end
+  end
+
+  describe "independent selector axes" do
+    test "peer-update demand depends on follow_peer or draft view, not draft_live" do
+      for view <- [:watch, :recall, :draft],
+          follow_peer <- [false, true],
+          draft_live <- [false, true] do
+        shell = %OuterShell{view: view, follow_peer: follow_peer, draft_live: draft_live}
+        assert OuterShell.wants_updates?(shell) == (follow_peer or view == :draft)
+      end
+    end
+
+    test "a frozen draft caches new peer code without delivering a baseline" do
+      shell =
+        %OuterShell{view: :draft, follow_peer: false, draft_live: false}
+        |> OuterShell.observe(ok("fw 20"))
+
+      assert shell.origin.source == "fw 20"
+      assert shell.last_good.source == "fw 20"
+      assert OuterShell.wants_updates?(shell)
+      assert OuterShell.render_intent(shell) == :hold
+    end
+  end
+
+  describe "chrome names the action, not an ambiguous follow or stream mode" do
+    test "chip labels distinguish peer updates from the coupled draft switch" do
+      for {shell, title, event} <- [
+            {%OuterShell{follow_peer: true}, "Pause peer code updates", "toggleFollowPeer"},
+            {%OuterShell{follow_peer: false}, "Resume peer code updates", "toggleFollowPeer"},
+            {%OuterShell{view: :draft, draft_live: true},
+             "Freeze draft execution and peer baseline", "toggleDraftLive"},
+            {%OuterShell{view: :draft, draft_live: false}, "Run draft and update peer baseline",
+             "toggleDraftLive"}
+          ] do
+        html =
+          Phoenix.LiveViewTest.render_component(DojoWeb.OuterShellLive,
+            id: "outer-shell",
+            locale: "en",
+            outershell: shell
+          )
+
+        assert title in Floki.attribute(Floki.parse_fragment!(html), "[title]", "title")
+        assert html =~ event
+        assert html =~ "outer-selection-status"
+      end
     end
   end
 
@@ -168,7 +222,7 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
         addr: "alice",
         name: "Alice",
         view: :watch,
-        stream: true
+        draft_live: true
       }
 
       payload = OuterShell.payload(turtle, shell)
@@ -179,7 +233,7 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
       assert payload.origin_name == "Alice"
       assert Map.has_key?(payload, :root)
       assert payload.view == :watch
-      assert payload.stream == true
+      assert payload.draft_live == true
       assert payload.source == "fw 10"
       assert payload.path == "frames/x.png"
       assert payload.attend == %{line: 2}
