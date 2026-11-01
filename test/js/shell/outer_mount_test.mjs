@@ -9,9 +9,11 @@ import { openWatch, step } from "../../../assets/js/editor/watch-law.js"
 const noop = () => {}
 const stops = () => noop
 const listeners = []
+const attends = []
 const pushes = []
 const forks = []
 const reaches = []
+const follows = []
 
 function makeArena() {
     return {
@@ -24,12 +26,12 @@ function makeArena() {
 }
 
 const mock = {
-    scene: { attend: noop, observe: noop, claim: noop, restore: noop, remove: noop, sub: stops, fork: (payload) => forks.push(payload) },
+    scene: { attend: (...args) => attends.push(args), observe: noop, claim: noop, restore: noop, remove: noop, sub: stops, fork: (payload) => forks.push(payload) },
     temporal: { quiet: (fn) => Object.assign(fn, { cancel: noop }) },
     printAST: () => "",
     mountReach: (_view, options) => { reaches.push(options); return { cleanup: noop, reset: noop, pause: noop } },
     setPeerCell: noop,
-    follow: noop,
+    follow: (...args) => follows.push(args),
     haltFollow: noop,
     mountChase: () => ({ cleanup: noop, stir: noop, update: noop }),
     openWatch,
@@ -111,7 +113,9 @@ async function mount({ deferBoot = false } = {}) {
     pushes.length = 0
     forks.length = 0
     reaches.length = 0
-    const selectionStatus = { hidden: true }
+    follows.length = 0
+    attends.length = 0
+    const selectionStatus = { dataset: {}, querySelector: () => null }
     const forkButton = { disabled: true }
     globalThis.document = {
         getElementById: (id) => ({
@@ -285,7 +289,7 @@ describe("explicit switch: displayed code is not yet the selected document", () 
         shell.selectPeer(B)
         assert.equal(text, "fw 10")
         assert.equal(shell.env.dataset.outerSelection, "waiting")
-        assert.equal(shell.selectionStatus.hidden, false)
+        assert.equal(shell.selectionStatus.dataset.state, "waiting")
         assert.equal(shell.forkButton.disabled, true)
         shell.clickFork()
         assert.deepEqual(forks, [])
@@ -294,7 +298,7 @@ describe("explicit switch: displayed code is not yet the selected document", () 
         await shell.tick()
         shell.see(B, "fw 20")
         assert.equal(shell.env.dataset.outerSelection, "ready")
-        assert.equal(shell.selectionStatus.hidden, true)
+        assert.equal(shell.selectionStatus.dataset.state, "ready")
         assert.equal(shell.forkButton.disabled, false)
         shell.clickFork()
         assert.equal(forks[0].addr, B)
@@ -302,7 +306,7 @@ describe("explicit switch: displayed code is not yet the selected document", () 
 
         shell.close()
         assert.equal(shell.env.dataset.outerSelection, "closed")
-        assert.equal(shell.selectionStatus.hidden, true)
+        assert.equal(shell.selectionStatus.dataset.state, "closed")
         assert.equal(shell.forkButton.disabled, true)
     })
 
@@ -369,6 +373,34 @@ describe("explicit switch: displayed code is not yet the selected document", () 
         see(B, "fw 20")
         assert.equal(drafting, false)
         assert.equal(text, "fw 20")
+    })
+})
+
+describe("a keep opens through the hand's door, at its beginning", () => {
+    const KEEP = "/keeps/" + "a".repeat(64)
+
+    test("a lamp subject lands on line 1 and claims it, so the light turns", async () => {
+        const shell = await mount()
+        shell.see(KEEP, "fw 10")
+        assert.equal(text, "fw 10")
+        assert.equal(follows.length, 1, "one landing per arrival")
+        assert.equal(follows[0][1], 1)
+        assert.deepEqual(attends, [[KEEP, 1]], "the claim is what moves the light")
+    })
+
+    test("a repeated push of the same keep keeps the reader's place", async () => {
+        const shell = await mount()
+        shell.see(KEEP, "fw 10")
+        shell.see(KEEP, "fw 10")
+        assert.equal(follows.length, 1, "opening is the arrival, not every push")
+        assert.equal(attends.length, 1)
+    })
+
+    test("a hand without a line is not invented one", async () => {
+        const shell = await mount()
+        shell.see(A, "fw 10")
+        assert.deepEqual(follows, [], "no attend, no movement — the peer line owns it")
+        assert.deepEqual(attends, [], "and nothing is claimed on their behalf")
     })
 })
 

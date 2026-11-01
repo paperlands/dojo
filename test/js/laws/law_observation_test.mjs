@@ -10,7 +10,7 @@ import { lawViolation } from '../../../assets/js/turtling/laws/verdict.js'
 
 const pass = ({ requested }) => ({ accepted: true, transform: requested })
 const lawKeys = ['address', 'feature', 'relation', 'endpoints', 'scope', 'frame', 'predicate',
-    'owner', 'expression', 'kind', 'guards', 'bounds', 'sourceIds']
+    'owner', 'expression', 'kind', 'guards', 'bounds', 'sourceIds', 'radius', 'observedInputs']
 
 function seat() {
     const scheduler = buildWorld({ admit: pass })
@@ -69,7 +69,11 @@ test('the canonical term shape and numeric JSON survive unchanged', () => {
         assert.equal(observed.expression.radius, 5)
         assert.deepEqual(observed.expression.references, [...original.expression.references])
         assert.equal(Object.getPrototypeOf(observed.expression), Object.prototype)
-        assert.deepEqual(JSON.parse(JSON.stringify(observed)), JSON.parse(JSON.stringify(original)))
+        // The observation adds its own distance fields; the bound term itself does not drift.
+        assert.deepEqual(JSON.parse(JSON.stringify(observed.expression)),
+            JSON.parse(JSON.stringify(original.expression)), 'the bound term is unchanged')
+        assert.deepEqual(JSON.parse(JSON.stringify(observed.observedInputs)), observed.observedInputs,
+            'the observed inputs round-trip as plain JSON')
     } finally { ctx.restore() }
 })
 

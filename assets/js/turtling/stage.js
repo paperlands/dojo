@@ -23,6 +23,7 @@ import { SE3, AXIS_Z } from "./se3.js"
 import { CLIENT_SPACE } from "./laws/handle.js"
 import { fitPose } from "./laws/fit.js"
 
+import { createCapture, copyBody, copyLayers, copyValue, makeSurface } from "./capture.js"
 export function createStage(canvas, bridge, instruments = {}) {
     const ctx = canvas.getContext("webgl2") ?? canvas.getContext("webgl")
 
@@ -155,33 +156,12 @@ export function createStage(canvas, bridge, instruments = {}) {
     // here; an embedded runtime does not subscribe to a page-global channel.
     // The subscriber owns the unsubscription.
 
-    // One capture: one promise. hatch() starts the work (or joins it).
-    // dispose() flips `disposed` so a pending fence poll stands down instead
-    // of touching freed GL or publishing to a dead surface.
-    let hatchInFlight = false
+    // One active cut, one unissued demand. dispose settles both.
+    const caps = createCapture()
     let disposed = false
-    /** @type {Promise<string | null> | null} */
-    let hatchP = null
-    /** @type {((path: string | null) => void) | null} */
-    let resolveHatch = null
     // The picture's surfaces above this canvas, in paint order. Set by whoever
     // draws marks on their own layer; a lazy read, so a disposed layer reads null.
     let overlayOf = () => null
-
-    function picture() {
-        if (!hatchP) {
-            hatchP = new Promise((r) => { resolveHatch = r })
-        }
-        return hatchP
-    }
-
-    function settle(path) {
-        const r = resolveHatch
-        hatchP = null
-        resolveHatch = null
-        hatchInFlight = false
-        if (r) r(path)
-    }
 
     // Points project into client/CSS pixels against the canvas bounds and the
     // current camera. Invisible points have no marker or hit target.
@@ -316,115 +296,150 @@ export function createStage(canvas, bridge, instruments = {}) {
             renderer.render(scene, camera)
         },
 
-        get hatching() { return hatchInFlight },
+        get hatching() { return caps.hatching },
 
-        // The picture this hatch will produce. A keep borrows this; hatch()
-        // starts the work after the frame has been drawn.
-        picture() { return picture() },
+        // Next unissued cut. A keep waits here; it does not join the active one.
+        picture() { return caps.picture() },
 
         // WebGL2 readback is ASYNC: PIXEL_PACK_BUFFER + fence, never a sync
-        // readPixels (stalled the main thread). Returns the picture promise.
-        // In-flight joins the same promise; lastHatchAt stamps only a start.
-        hatch(bridge) {
-            const p = picture()
-            if (hatchInFlight || disposed) {
-                if (disposed) settle(null)
-                return p
+        // readPixels (stalled the main thread). Returns this activation.
+        hatch(bridge, lend) {
+            if (disposed) return Promise.resolve(null)
+            if (caps.hatching) return caps.active().promise
+            const which = caps.reserve()
+            let cut
+            try {
+                const lent = lend?.() ?? null
+                const body = lent?.body ? copyBody(lent.body) : null
+                const layers = copyLayers(stage.markLayers(), makeSurface)
+                if (!body || !lent?.claim || layers == null) {
+                    caps.fail(which)
+                    return which.promise
+                }
+                cut = {
+                    body,
+                    claim: lent.claim,
+                    save: copyValue(stage.renderstate.snapshot ?? { save: false }),
+                    width: canvas.width,
+                    height: canvas.height,
+                    layers,
+                }
+            } catch {
+                caps.fail(which)
+                return which.promise
             }
-            hatchInFlight = true
-            const width = canvas.width
-            const height = canvas.height
+            which.cut = cut
+            if (cut.save?.save) stage.renderstate.snapshot = { save: false }
+            const { width, height, layers, save, body } = cut
 
+            // A GPU fault surfaces from the queue, not from the call: the activation
+            // owns its readback, so a throw frees the handles and cancels this cut.
+            // (id:keep-coherence-capture-cut)
+            let sync = null
+            let buf = null
+
+            const abandon = () => {
+                const held = buf
+                buf = null
+                if (sync) { try { ctx.deleteSync(sync) } catch {} sync = null }
+                if (held) { try { ctx.deleteBuffer(held) } catch {} }
+                caps.fail(which)
+            }
+
+            // Readback pixels are fresh and owned; the recorder flips this array in place.
             const finish = (pixels) => {
-                // NEVER RETAIN THE PIXELS: takeSnapshot consumes the buffer
-                // below, and holding it would pin a full-canvas Uint8Array
-                // (1920×993×4 ≈ 7.6MB) per tab for the life of the page.
-                // THE SUBJECT DEPARTS HERE: meta and the save ask belong to THIS
-                // picture — a later frame's metadata must not ride it. (id:ownership-o1)
-                const snap = stage.renderstate.snapshot
-                const meta = { ...stage.renderstate.meta }
-                if (snap.save) stage.renderstate.snapshot = { save: false }
                 queueMicrotask(async () => {
                     try {
+                        if (disposed) { caps.fail(which); return }
                         const rec = getRecorder()
-                        const result = rec ? await rec.takeSnapshot({ pixels, width, height, layers: stage.markLayers() }) : null
-                        if (result) {
-                            // The file, if one was asked for — read the flag before
-                            // the clear, and clear it whole (id:kb-7-stage).
-                            if (disposed) { settle(null); return }
-                            if (snap.save) {
-                                bridge.pub(["saveRecord", {
-                                    snapshot: result.full,
-                                    type: "image",
-                                    title: snap.title ?? null,
-                                }])
-                            }
-                            // The stage returns a PICTURE and world meta — never an
-                            // ask (id:kj-types). Prefer trimmed for the keep; fall
-                            // back to full so an all-clear frame still photographs.
-                            const path = result.trimmed ?? result.full ?? null
-                            stage.renderstate.meta.path = path
-                            bridge.pub(["hatchTurtle", { ...meta, path }])
-                            settle(path)
-                            return
+                        const result = rec
+                            ? await rec.takeSnapshot({ pixels, width, height, layers })
+                            : null
+                        if (!result) { caps.fail(which); return }
+                        if (disposed) { caps.fail(which); return }
+                        if (save?.save) {
+                            bridge.pub(["saveRecord", {
+                                snapshot: result.full,
+                                type: "image",
+                                title: save.title ?? null,
+                            }])
+                            // A subscriber may dispose inside that callback: a hatch
+                            // published after death is not this cut's to send.
+                            if (disposed) { caps.fail(which); return }
                         }
+                        const path = result.trimmed ?? result.full ?? null
+                        bridge.pub(["hatchTurtle", { body, path, claim: cut.claim }])
+                        caps.finish(which, path)
                     } catch {
-                        /* encode died — a keep waiting on this capture hears null */
+                        caps.fail(which)
                     }
-                    settle(null)
                 })
             }
 
-            if (typeof ctx.fenceSync !== 'function') {
-                // WebGL1 — no fences; the synchronous readback is the only way.
-                const pixels = new Uint8Array(width * height * 4)
-                ctx.readPixels(0, 0, width, height, ctx.RGBA, ctx.UNSIGNED_BYTE, pixels)
-                finish(pixels)
-                return p
-            }
-
-            // Enqueue the GPU-side copy now (reads this frame's drawing buffer,
-            // same as the old sync path), collect the bytes once the fence says
-            // the copy landed — no pipeline stall on this thread.
-            const buf = ctx.createBuffer()
-            ctx.bindBuffer(ctx.PIXEL_PACK_BUFFER, buf)
-            ctx.bufferData(ctx.PIXEL_PACK_BUFFER, width * height * 4, ctx.STREAM_READ)
-            ctx.readPixels(0, 0, width, height, ctx.RGBA, ctx.UNSIGNED_BYTE, 0)
-            ctx.bindBuffer(ctx.PIXEL_PACK_BUFFER, null)
-            const sync = ctx.fenceSync(ctx.SYNC_GPU_COMMANDS_COMPLETE, 0)
-            ctx.flush()
-
             const poll = () => {
-                if (disposed || ctx.isContextLost()) {
-                    // Stand down, but hand the GL objects back first: bailing
-                    // straight out leaks the fence and the pack buffer.
-                    if (!ctx.isContextLost()) { ctx.deleteSync(sync); ctx.deleteBuffer(buf) }
-                    settle(null)
-                    return
-                }
-                const status = ctx.clientWaitSync(sync, 0, 0)
-                if (status === ctx.TIMEOUT_EXPIRED) { setTimeout(poll, 8); return }
-                ctx.deleteSync(sync)
-                if (status === ctx.WAIT_FAILED) {
+                try {
+                    if (disposed || ctx.isContextLost()) {
+                        if (!ctx.isContextLost()) abandon()
+                        else caps.fail(which)
+                        return
+                    }
+                    const status = ctx.clientWaitSync(sync, 0, 0)
+                    if (status === ctx.TIMEOUT_EXPIRED) { setTimeout(poll, 8); return }
+                    ctx.deleteSync(sync)
+                    sync = null
+                    if (status === ctx.WAIT_FAILED) { abandon(); return }
+                    const pixels = new Uint8Array(width * height * 4)
+                    ctx.bindBuffer(ctx.PIXEL_PACK_BUFFER, buf)
+                    ctx.getBufferSubData(ctx.PIXEL_PACK_BUFFER, 0, pixels)
+                    ctx.bindBuffer(ctx.PIXEL_PACK_BUFFER, null)
                     ctx.deleteBuffer(buf)
-                    settle(null)
+                    buf = null
+                    finish(pixels)
+                } catch {
+                    abandon()
+                }
+            }
+
+            // Data/staging allocation validation: this proves the extent WE staged,
+            // not that every later GPU read wrote valid bytes. (M2c)
+            const read = () => {
+                const big = Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0
+                if (!big || ctx.isContextLost()) { abandon(); return }
+                const bytes = width * height * 4
+                // The synchronous branch stages into our own array: nothing to size here,
+                // and no loss-free claim about a GL error it cannot report.
+                if (typeof ctx.fenceSync !== "function") {
+                    const pixels = new Uint8Array(bytes)
+                    ctx.readPixels(0, 0, width, height, ctx.RGBA, ctx.UNSIGNED_BYTE, pixels)
+                    finish(pixels)
                     return
                 }
-                const pixels = new Uint8Array(width * height * 4)
+                buf = ctx.createBuffer()
+                if (!buf) { abandon(); return }
                 ctx.bindBuffer(ctx.PIXEL_PACK_BUFFER, buf)
-                ctx.getBufferSubData(ctx.PIXEL_PACK_BUFFER, 0, pixels)
+                ctx.bufferData(ctx.PIXEL_PACK_BUFFER, bytes, ctx.STREAM_READ)
+                // ONE query per cut — get*Parameter can flush and round-trip, so this
+                // never runs per render, per poll or per join.
+                if (ctx.getBufferParameter(ctx.PIXEL_PACK_BUFFER, ctx.BUFFER_SIZE) !== bytes) {
+                    abandon()
+                    return
+                }
+                ctx.readPixels(0, 0, width, height, ctx.RGBA, ctx.UNSIGNED_BYTE, 0)
                 ctx.bindBuffer(ctx.PIXEL_PACK_BUFFER, null)
-                ctx.deleteBuffer(buf)
-                finish(pixels)
+                sync = ctx.fenceSync(ctx.SYNC_GPU_COMMANDS_COMPLETE, 0)
+                if (!sync) { abandon(); return }
+                ctx.flush()
+                setTimeout(poll, 0)
             }
-            setTimeout(poll, 0)
-            return p
+
+            try { read() } catch { abandon() }
+            return which.promise
         },
 
         // Cleanup
         dispose() {
             disposed = true
-            settle(null)
+            caps.close()
             try {
                 if (recorderResolved) recorder?.destroy?.()
             } catch (err) {

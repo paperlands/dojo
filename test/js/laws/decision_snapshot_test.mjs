@@ -7,6 +7,8 @@ import assert from 'node:assert/strict'
 import { buildWorld, fork, drive } from './harness.mjs'
 import { frameWorldTransform, lawWorld } from '../../../assets/js/turtling/scheduler.js'
 import { attachProbe } from '../../../assets/js/turtling/probe.js'
+import { bindLaw } from '../../../assets/js/turtling/laws/replacement.js'
+import { makeDistanceTerm } from '../../../assets/js/turtling/laws/authored.js'
 import { SE3, AXIS_Z } from '../../../assets/js/turtling/se3.js'
 import { lawViolation } from '../../../assets/js/turtling/laws/verdict.js'
 
@@ -178,4 +180,49 @@ let venture = move A B
     drive(free, { maxTicks: 10 })
     assert.equal(attempt(free), undefined, 'the unconstrained fast path records nothing')
     assert.equal(free.motionRevision, 0)
+})
+
+test('distance facts expose observed world inputs: live, absolute and relative', () => {
+    const scheduler = buildWorld({})
+    const host = scheduler.hotSwapChild('host', fork('host',
+        'let A\nlet B\nlet distance(A,B)=2\nlet C\nlet distance(C, (0,0,3)) = 5'))
+    drive(scheduler, { maxTicks: 6 })
+    const A = host.children.get('A'), B = host.children.get('B'), C = host.children.get('C')
+    // A RELATIVE framed literal: B to A's live rotated pose, value (2,0,0).
+    scheduler.laws.apply(bindLaw({ feature: 'distance', endpoints: [B.id], scope: host.id, frame: host.id, predicate: 3,
+        expression: makeDistanceTerm([B.id, { frame: A.id, value: [2, 0, 0], relative: true }], 3),
+        owner: { line: 99 } }))
+    const previous = globalThis.window
+    try {
+        globalThis.window = {}
+        attachProbe({ scheduler, _stateOf: () => null }, { orderOf: () => null })
+        const facts = globalThis.window.__probe.read().laws
+        const live = facts.find((f) => f.radius === 2)
+        const absolute = facts.find((f) => f.radius === 5)
+        const relative = facts.find((f) => f.radius === 3)
+        assert.ok(live && absolute && relative, 'every distance row is captured')
+
+        // Frozen observation; live geometry stays live.
+        for (const fact of facts) {
+            assert.ok(frozen(fact) && frozen(fact.observedInputs), 'the fact and its input list are frozen')
+            assert.throws(() => { fact.observedInputs[0] = [9, 9, 9] })
+        }
+        assert.ok(!frozen(A) && !frozen(A.transform.deref().position), 'live frames are not frozen')
+
+        const w = (f) => frameWorldTransform(f).position.map((n) => +n.toFixed(9))
+        const at = (p) => p.map((n) => +n.toFixed(9))
+        assert.deepEqual(at(live.observedInputs[0]), w(A), 'a live input is read at its world position')
+        assert.deepEqual(at(live.observedInputs[1]), w(B))
+        assert.deepEqual(at(absolute.observedInputs[0]), w(C), 'the literal law target is live')
+        assert.deepEqual(at(absolute.observedInputs[1]), [0, 0, 3], 'an absolute literal is itself')
+        const relativeAt = SE3.apply(frameWorldTransform(A), [2, 0, 0])
+        assert.deepEqual(at(relative.observedInputs[1]), at(relativeAt),
+            'a relative literal reads the live pose, not the placement alone')
+        assert.equal(relative.observedInputs[0] && relative.observedInputs[0].length, 3)
+        assert.equal(relative.radius, 3, 'the bound radius is kept beside the observation')
+        assert.equal(relative.expression.radius, 3, 'the bound term is untouched')
+    } finally {
+        if (previous === undefined) delete globalThis.window
+        else globalThis.window = previous
+    }
 })

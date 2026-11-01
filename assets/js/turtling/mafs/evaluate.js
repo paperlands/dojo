@@ -41,8 +41,7 @@ export class Evaluator {
         this.reads = null
     }
 
-    // Start a fresh dependency record for one evaluation. The resolver fills it as it
-    // reaches values; the caller reads `reads` after the evaluation succeeds.
+    // Start a dependency record for one reading; its owner keeps the returned record.
     beginReads() {
         this.reads = { live: false, frames: new Set(), inputs: [], samples: [], locals: new Set() }
         return this.reads

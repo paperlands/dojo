@@ -71,6 +71,48 @@ const DiscipleWindow = {
       }
     };
     this.panelsEl?.addEventListener('wheel', this.handleWheel, { passive: false });
+
+    // DRAG TO PAN — the hand's own version of the wheel. A press that travels
+    // past a few pixels is a pan, not a seat open: its click is swallowed in
+    // capture before the seat's phx-click can fire, and the next press clears
+    // the memory. Mouse only — touch already pans (touch-pan-x) — and the
+    // pointerdown preventDefault is what kills the native image drag and the
+    // text selection. Move/up live on window so a pan survives leaving the bar.
+    this.pan = null;
+    this.panSwallowsClick = false;
+    this.onPanStart = (e) => {
+      this.pan = null;
+      this.panSwallowsClick = false;
+      if (e.pointerType !== 'mouse' || e.button !== 0 || !this.panelsEl) return;
+      this.pan = { x: e.clientX, left: this.panelsEl.scrollLeft, dragged: false };
+      e.preventDefault();
+    };
+    this.onPanMove = (e) => {
+      const pan = this.pan;
+      if (!pan) return;
+      const dx = e.clientX - pan.x;
+      if (!pan.dragged) {
+        if (Math.abs(dx) < 6) return;   // a click's own small travel
+        pan.dragged = true;
+      }
+      this.panelsEl.scrollLeft = pan.left - dx;
+    };
+    this.onPanEnd = () => {
+      this.panSwallowsClick = !!this.pan?.dragged;
+      this.pan = null;
+    };
+    this.onPanClick = (e) => {
+      if (!this.panSwallowsClick) return;
+      this.panSwallowsClick = false;
+      e.stopPropagation();
+      e.preventDefault();
+    };
+
+    this.el.addEventListener('pointerdown', this.onPanStart);
+    window.addEventListener('pointermove', this.onPanMove);
+    window.addEventListener('pointerup', this.onPanEnd);
+    window.addEventListener('pointercancel', this.onPanEnd);
+    window.addEventListener('click', this.onPanClick, true);
   },
 
   updated() {
@@ -239,6 +281,12 @@ const DiscipleWindow = {
 
     this.el.removeEventListener('scroll', this.onScroll);
     this.panelsEl?.removeEventListener('wheel', this.handleWheel);
+    this.el.removeEventListener('pointerdown', this.onPanStart);
+    window.removeEventListener('pointermove', this.onPanMove);
+    window.removeEventListener('pointerup', this.onPanEnd);
+    window.removeEventListener('pointercancel', this.onPanEnd);
+    window.removeEventListener('click', this.onPanClick, true);
+    this.pan = null;
     this.panelsEl = null;
 
     // Clear data structures

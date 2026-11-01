@@ -37,6 +37,20 @@ describe("fold: empty river still has a present", () => {
 })
 
 describe("fold: linear keeps", () => {
+    test("legacy and third-branch keeps remain visible without invented edges", () => {
+        const a = snap("a", { t: 1 })
+        const b = snap("b", { t: 2 })
+        const c = snap("c", { t: 3 })
+        const legacy = fold([c, b, a], [], { head: name(b) })
+        assert.deepEqual(legacy.columns.map((col) => col.sky).filter((bytes) => bytes != null), [a, b, c])
+        assert.equal(legacy.hasMirror, false)
+        assert.equal(legacy.headKey, name(b))
+        const B = snap("B", { t: 4, prev: name(a) })
+        const C = snap("C", { t: 5, prev: name(a) })
+        const D = snap("D", { t: 6, prev: name(a) })
+        assert.equal(fold([D, C, B, a], []).columns.length, 5, "every branch plus present stays inspectable")
+    })
+
     test("one keep → column + present; local is kept-local", () => {
         const a = snap("a", { t: 1 })
         const f = fold([a], [a])
@@ -58,8 +72,9 @@ describe("fold: linear keeps", () => {
     })
 
     test("fork opens a mirror", () => {
+        // This mirror has authored ancestry on both alternatives.
         const a = snap("a", { t: 1 })
-        const b = snap("b", { t: 2 })
+        const b = snap("b", { t: 2, prev: name(a) })
         const c = snap("c", { t: 3, prev: name(a) })
         const f = fold([c, b, a], [c, b, a])
         assert.equal(f.hasMirror, true)

@@ -61,14 +61,20 @@ defmodule DojoWeb.OuterShellLive do
         </div>
 
         <div class="flex items-center gap-1 flex-shrink-0">
-          <%!-- Fork only when the selected subject's document is ready (id:outer-shell-transitions). --%>
+          <%!-- Fork only when the selected subject's document is ready
+                (id:outer-shell-transitions). THE FENCE IS NOT DIMMED
+                (id:hw-twilight: state is light, not a dimmed control). A warm
+                read flips readiness inside one frame, so `disabled:opacity-40`
+                painted a dip-and-return on every click — the blink. The waiting
+                hour already says "not yet" (cloud + crescent); the cursor still
+                says it at the button. --%>
           <button
             id="outer-fork"
             type="button"
             title="Keep a fork in your shell"
             disabled
             phx-mounted={JS.ignore_attributes(["disabled"])}
-            class="flex items-center transform scale-x-[-1] justify-center w-6 h-6 transition-all duration-300 transform pointer-events-auto backdrop-blur-sm hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed group focus-within:border-none"
+            class="flex items-center transform scale-x-[-1] justify-center w-6 h-6 transition-[transform,color] duration-300 pointer-events-auto backdrop-blur-sm hover:scale-110 disabled:cursor-not-allowed group focus-within:border-none"
           >
             <svg
               class="w-4 h-4 transition-colors text-accent-content group-hover:text-primary-content"
@@ -130,14 +136,19 @@ defmodule DojoWeb.OuterShellLive do
           </span>
         </div>
 
+        <%!-- WAITING IS AN HOUR, NOT A SENTENCE (id:hw-phases). While the next
+              selection is being read, the document already on the glass keeps
+              its place and the light leaves it; this mark is a crescent that
+              turns at the frame. No text in the flow, so the panel never moves.
+              `data-state` is the whole contract with outer.js paintSelection. --%>
         <p
           id="outer-selection-status"
           role="status"
-          hidden
-          phx-mounted={JS.ignore_attributes(["hidden"])}
-          class="mb-2 text-xs text-secondary-content"
+          aria-live="polite"
+          phx-mounted={JS.ignore_attributes(["data-state"])}
+          class="outer-waiting"
         >
-          Waiting for selected code. Any code still shown belongs to the previous selection.
+          <span class="sr-only">waiting for the selected code</span>
         </p>
         <div
           id="outerenv"
@@ -168,6 +179,12 @@ defmodule DojoWeb.OuterShellLive do
   end
 
   # --- Private helpers ---
+
+  # A keep that signed no letters has no name to put in the possessive
+  # (id:kc-sign). Name the absence; never "…'s code" around nothing.
+  defp head_title(locale, %OuterShell{name: name})
+       when not is_binary(name) or name == "",
+       do: Session.t(locale, "a kept work")
 
   # The title names exactly which state of whose code you're looking at.
   defp head_title(locale, %OuterShell{view: :draft, name: name}),

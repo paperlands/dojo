@@ -14,6 +14,9 @@ export const HIT_RADIUS = 18
 // A still finger is a click. Two pixels is enough; more is a deadzone.
 export const DRAG_SLOP = 2
 
+// Two still taps on one hand return it home.
+export const DOUBLE_TAP_MS = 300
+
 // How fast a drawn pixel of hand spends a cone point's height, and how much of the
 // remaining height error one move closes. (D039)
 export const CONE_RATE = 0.5

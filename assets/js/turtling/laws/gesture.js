@@ -13,7 +13,7 @@ import {
     birthLocal, requestedPose, hitTest, eligibility,
 } from "./handle.js"
 import { outcomeOf, readout, OUTCOME } from "./outcome.js"
-import { HIT_RADIUS, DRAG_SLOP } from "./feel.js"
+import { HIT_RADIUS, DRAG_SLOP, DOUBLE_TAP_MS } from "./feel.js"
 import { handFor } from "./hand.js"
 // A move means EVERY sample it carries. A browser coalesces the real sub-frame pointer
 // path into one `pointermove`, so a handler reading only clientX/clientY samples the
@@ -36,6 +36,7 @@ export function moveGesture(handle, event) {
     return cancelled
 }
 
+
 export function createGesture(deps) {
     const {
         candidates,      // () => [{ name, frame }] — the places currently offered
@@ -44,6 +45,7 @@ export function createGesture(deps) {
         registered,      // (frame) => boolean
         canTouch = () => true, // an empty point may be touched; a walking head owns its point
         requestMotion,   // (frame, pose, revision) => verdict
+        homeOf = frame => frame.transform.deref(), // current program baseline; identity removes the action
         onAccepted = null, // ({ frame, from, to }) => void — one accepted hand move
         revision,        // () => number
         wake,            // () => void — an idle canvas must paint an accepted move
@@ -59,11 +61,27 @@ export function createGesture(deps) {
         slop = DRAG_SLOP,
         locusOf = null,      // (frame) => named locus — a sphere's hand is its camera-plane disk
         detents = null,      // { paper, poles, band, hold } — slight stickiness at the ball's landmarks
+        now = () => performance.now(),
     } = deps
 
     const poseOf = (frame) => frame.transform.deref()
     let grab = null
+    let lastTap = null
 
+    const submit = (frame, name, accepted, requested, intent = null) => {
+        const verdict = requestMotion(frame, requested, revision(), null, intent)
+        const outcome = verdict.kind === 'accept' ? OUTCOME.accepted : outcomeOf(verdict)
+        // Report the landed pose, not the requested point.
+        if (verdict.kind === 'accept' && onAccepted) {
+            onAccepted({ frame, from: accepted.position, to: verdict.pose.position })
+        }
+        onReadout(readout({
+            point: name, accepted: accepted.position,
+            requested: requested.position, outcome,
+        }))
+        if (verdict.kind === 'accept') wake()
+        return outcome
+    }
 
     // Every way a capture ends goes through here, so ownership is never left
     // behind: the pointer is released and the CAMERA'S OWN previous state — not an
@@ -85,6 +103,8 @@ export function createGesture(deps) {
         // Decide ownership here, before the camera consumes the event.
         pointerDown({ pointerId, x, y }) {
             if (grab) return { claimed: false }   // one pointer owns the hand
+            const previousTap = lastTap
+            lastTap = null
             const here = { x, y }
             for (const candidate of candidates()) {
                 if (!canTouch(candidate.frame)) continue
@@ -138,6 +158,8 @@ export function createGesture(deps) {
                     offset: [anchor[0] - hit[0], anchor[1] - hit[1], anchor[2] - hit[2]],
                     down: { x, y },
                     armed: false,
+                    startedAt: now(),
+                    previousTap,
                     controlsWasEnabled: controlsEnabled(),
                 }
                 grab.close = capture({ pointerId, frame: candidate.frame })
@@ -190,24 +212,26 @@ export function createGesture(deps) {
                 request = [hit[0] + grab.offset[0], hit[1] + grab.offset[1], hit[2] + grab.offset[2]]
             }
             const requested = requestedPose(accepted, birthLocal(request, birth))
-            const verdict = requestMotion(grab.frame, requested, revision())
-            const outcome = verdict.kind === 'accept' ? OUTCOME.accepted : outcomeOf(verdict)
-            // The move the scheduler actually accepted, not the one requested:
-            // a reveal follows a landed displacement, never a proposal.
-            if (verdict.kind === 'accept' && onAccepted) {
-                onAccepted({ frame: grab.frame, from: accepted.position, to: verdict.pose.position })
-            }
-            onReadout(readout({
-                point: grab.name, accepted: accepted.position,
-                requested: requested.position, outcome,
-            }))
-            if (verdict.kind === 'accept') wake()
-            return { moved: true, outcome }
+            return { moved: true, outcome: submit(grab.frame, grab.name, accepted, requested) }
         },
 
-        // Release keeps every accepted move and asks for nothing further.
-        pointerUp({ pointerId }) {
+        // Two still taps ask for home through the same motion door as a drag.
+        pointerUp({ pointerId, x = grab?.down.x, y = grab?.down.y }) {
             if (!grab || grab.pointerId !== pointerId) return { ended: false }
+            const { frame, name, down, previousTap } = grab
+            const at = now()
+            const accepted = poseOf(frame)
+            const gate = eligibility({ frame, registered: registered(frame), accepted })
+            if (!grab.armed && at - grab.startedAt <= DOUBLE_TAP_MS
+                && Math.hypot(x - down.x, y - down.y) <= slop && gate.ok && canTouch(frame)) {
+                if (previousTap?.frame === frame && previousTap.revision === revision()
+                    && at - previousTap.at <= DOUBLE_TAP_MS
+                    && Math.hypot(x - previousTap.x, y - previousTap.y) <= radius) {
+                    submit(frame, name, accepted, requestedPose(accepted, homeOf(frame).position), { reset: true })
+                } else {
+                    lastTap = { frame, x, y, at, revision: revision() }
+                }
+            }
             endCapture(null)
             return { ended: true }
         },
@@ -221,6 +245,7 @@ export function createGesture(deps) {
 
         // Disposal, fresh play and a replaced scope all arrive here.
         dispose() {
+            lastTap = null
             const ended = endCapture(OUTCOME.cancelled, grab ? poseOf(grab.frame).position ?? null : null)
             return { ended }
         },

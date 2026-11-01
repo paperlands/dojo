@@ -5,13 +5,23 @@
 // import this file. Opt-in only (`?perf=1` in the shell).
 
 import { snapshotFact } from './observation.js'
+import { lawWorld } from './scheduler.js'
+import { lawContext } from './laws/candidate.js'
+import { boundTerm, inputPosition } from './laws/authored.js'
 
 const LAW_FIELDS = ['address', 'feature', 'relation', 'endpoints', 'scope', 'frame', 'predicate',
     'owner', 'axis', 'expression', 'kind', 'guards', 'bounds', 'sourceIds']
-// Observation scope: law facts only; other read fields are delegated as-is.
-const lawFact = (law) => {
+// Observation scope: law facts only; other read fields are delegated as-is. A distance term
+// also exposes its OBSERVED world inputs (typed inputPosition) beside the bound term and
+// radius; unreadable inputs stay null. (id:codex-play-eyes)
+const lawFact = (law, ctx) => {
     const fact = {}
     for (const key of LAW_FIELDS) if (key in law) fact[key] = law[key]
+    const term = boundTerm(law)
+    if (ctx && term?.type === 'distance' && Array.isArray(term.references)) {
+        fact.radius = term.radius
+        fact.observedInputs = term.references.map((input) => inputPosition(input, ctx))
+    }
     return snapshotFact(fact)
 }
 
@@ -22,6 +32,7 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
             const focus = turtle.focus
             const compositor = turtle.compositor
             const ambients = []
+            const lawCtx = sch?.registry ? lawContext(sch.registry, null, lawWorld) : null
             if (sch?.registry) {
                 for (const [id, ambient] of sch.registry) {
                     if (ambient === sch.root) continue
@@ -79,7 +90,7 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                 controlsEnabled: turtle.stage?.controls?.enabled ?? null,
                 // The play's active laws: address → predicate + owner.
                 // (id:laws-ordered-replacement)
-                laws: (sch?.laws?.active?.() ?? []).map(lawFact),
+                laws: (sch?.laws?.active?.() ?? []).map((law) => lawFact(law, lawCtx)),
                 // Last recorded decision: what was attempted, against what, with which gate.
                 // (id:scheduler-observation-ownership)
                 attempt: sch?.root?._lastAttempt ?? null,

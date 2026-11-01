@@ -85,6 +85,9 @@
     display: flex;
     align-items: flex-end;
     gap: 1.1rem;
+    /* A drag across the bar is a pan (DiscipleWindow hook), never a text
+       selection — the strip is chrome, not a document. */
+    user-select: none;
   }
 
   :root[data-theme="light"] .disciple-strip {
@@ -131,7 +134,11 @@
       inset 0 0 0 1px var(--edge),
       inset 0 0 14px var(--rim-in);
     opacity: var(--lum);
-    transition: box-shadow 900ms ease;
+    /* opacity too: --lum lifts a lamp under the hand, and a light that jumps
+       is a flicker — the frame still crosses in one breath. */
+    transition:
+      box-shadow 900ms ease,
+      opacity 900ms ease;
   }
 
   .disciple-strip .pane {
@@ -165,7 +172,12 @@
     opacity: 0.92;
     filter: saturate(var(--work-sat));
     transition: filter 900ms ease;
+    /* A drag across a seat is a pan (DiscipleWindow hook), never an image
+       grab or a text selection — the bar is chrome, not a document. */
+    -webkit-user-drag: none;
+    user-select: none;
   }
+
 
   .disciple-strip .name {
     position: absolute;
@@ -402,8 +414,10 @@
   }
 
   /* kept — the hand is gone and the lamp remains. Full, and STILL: the weather
-     stops first, which is how stillness becomes the news. */
+     stops first, which is how stillness becomes the news. A lamp opens the keep
+     it shows (id:la-fork-pull), so the seat is a door: pointer, no hint text. */
   .disciple-strip .win.kept {
+    cursor: pointer;
     --illum: 1;
     --edge: color-mix(in oklch, var(--color-base-content) 26%, transparent);
     --rim-in: color-mix(in oklch, var(--color-base-content) 12%, transparent);
@@ -449,13 +463,25 @@
      only just rises: subtle, felt because it MOVES, not because it glows. The
      amber core holds against the moon; the violet is the road to focus, which
      resolves it to pure --peer-ink. Excludes .focus so a chosen peer keeps its
-     violet, and .kept, which the hand cannot open. Twilight is still last. */
+     violet. A kept seat is a door too — a lamp opens its own keep
+     (id:la-fork-pull) — but it rests dimmed by depth, so its crossing lifts the
+     light as well as turning it. Twilight is still last. */
   .disciple-strip .win:not(.kept):not(.focus):hover {
     --illum: 0.95;
     --edge: color-mix(in oklch, var(--twilight) 44%, transparent);
     --rim-in: color-mix(in oklch, var(--color-primary) 16%, transparent);
     --rim-out: color-mix(in oklch, var(--twilight) 38%, transparent);
     cursor: pointer;
+  }
+
+  /* The lamp under the hand wears the same crossing. Its frame rests at 26%
+     and depth takes it further down, so the road must raise the light, not
+     only recolour it — nothing about being looked at stays distant. */
+  .disciple-strip .win.kept:hover:not(.focus) {
+    --edge: color-mix(in oklch, var(--twilight) 52%, transparent);
+    --rim-in: color-mix(in oklch, var(--color-primary) 20%, transparent);
+    --rim-out: color-mix(in oklch, var(--twilight) 42%, transparent);
+    --lum: 0.86;
   }
 
   /* ── twilight — looking tints the air, never a ring ──────────────────
@@ -466,6 +492,19 @@
     --edge: color-mix(in oklch, var(--peer-ink) 28%, transparent);
     --rim-in: color-mix(in oklch, var(--peer-ink) 10%, transparent);
     --rim-out: color-mix(in oklch, var(--peer-ink) 9%, transparent);
+  }
+
+  /* THE LAMP YOU OPEN IS NOT FAR AWAY. A kept frame rests at 26% and depth
+     thins it further (Cole: depth is air), so the general focus's 28% over it
+     was a rounding error. The board's 55%, rim 22/28
+     (design/helios-window/_takahata.css), and the light near full: looking at
+     a memory resolves the road and the distance stops applying to the frame.
+     The work itself is untouched (id:hw-takahata). */
+  .disciple-strip .win.kept.focus {
+    --edge: color-mix(in oklch, var(--peer-ink) 55%, transparent);
+    --rim-in: color-mix(in oklch, var(--peer-ink) 22%, transparent);
+    --rim-out: color-mix(in oklch, var(--peer-ink) 28%, transparent);
+    --lum: 0.92;
   }
 
   /* ── the crossing ────────────────────────────────────────────────────

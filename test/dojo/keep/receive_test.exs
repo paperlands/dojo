@@ -12,7 +12,7 @@ defmodule Dojo.Keep.ReceiveTest do
   @clan "test-clan"
   @author "author-alice"
   @other "author-bob"
-  @root String.duplicate("e", 64)
+  @root Dojo.KeepSigning.root(String.duplicate("e", 64))
   @target String.duplicate("f", 64)
   @png "PNGBYTES"
 
@@ -44,11 +44,27 @@ defmodule Dojo.Keep.ReceiveTest do
       |> maybe_put("source", Keyword.get(opts, :source))
       |> maybe_image(Keyword.get(opts, :image, @png))
 
-    Keep.receive(payload,
+    Keep.receive(Dojo.KeepSigning.sign(payload),
       clan: clan,
       author_id: author_id,
       name: Keyword.get(opts, :name)
     )
+  end
+
+  # A targetless origin: its id IS the work (keep kernel).
+  defp targetless(root), do: snap_for(root, nil, "origin", 1)
+
+  defp snap_for(root, target, title, t) do
+    body = %{
+      "v" => 1,
+      "kind" => "snap",
+      "root" => root,
+      "ts" => %{"t" => 1_700_000_000_000 + t, "n" => 0},
+      "title" => title
+    }
+
+    body = if target, do: Map.put(body, "target", target), else: body
+    Jason.encode!(body)
   end
 
   defp maybe_put(payload, _key, nil), do: payload
@@ -158,8 +174,8 @@ defmodule Dojo.Keep.ReceiveTest do
     end
   end
 
-  describe "TOFU bind — the only decision" do
-    test "first author binds the root; their keep is shared" do
+  describe "the roots row — bookkeeping, not a fence" do
+    test "first author is recorded on the root row; their keep is shared" do
       bytes = snap()
       assert %{id: _} = ship(bytes, author_id: @author)
 
@@ -188,8 +204,9 @@ defmodule Dojo.Keep.ReceiveTest do
                @author
     end
 
-    test "[⚠→✓] a clan-mate CANNOT take another member's river — refused :work" do
-      # Closed (id:ka-hijack → id:ka-works-bind). The hole was on the write: target was unbound.
+    test "a foreign-root child lands, and joins no river without an origin" do
+      # The fence moved from the write to evidence: bytes are retained, and
+      # membership needs the origin's root (Member law), not a first writer.
       mine = snap(title: "mine", t: 1_700_000_000_000)
 
       theirs =
@@ -198,48 +215,41 @@ defmodule Dojo.Keep.ReceiveTest do
           "title" => "theirs",
           "v" => 1,
           "kind" => "snap",
-          "root" => String.duplicate("9", 64),
+          "root" => Dojo.KeepSigning.root(String.duplicate("9", 64)),
           "ts" => %{"t" => 1_700_000_999_999, "n" => 0},
           "target" => @target
         })
 
       assert %{id: _} = ship(mine, author_id: @author)
-
-      assert %{id: id, at: at, node: _, why: :work} = ship(theirs, author_id: @other)
-      assert id == Keep.hash(theirs)
+      assert %{id: id, at: at} = ship(theirs, author_id: @other)
       assert is_integer(at)
-      assert count_keeps(Keep.hash(theirs)) == 0
+      assert id == Keep.hash(theirs)
+      assert count_keeps(id) == 1, "bytes land"
 
-      roots =
-        from(k in "keeps", where: k.target == ^@target, select: k.root)
-        |> Repo.all()
-        |> Enum.uniq()
-
-      assert roots == [@root], "one river, one hand — the ordering argument holds"
-
-      assert {:ok, %{message: head}} = Keep.pull(@target)
-      assert Jason.decode!(head)["title"] == "mine"
+      assert Repo.one(from(w in "works", select: count(w.work_id))) == 0
+      assert Keep.history(@target, of: :target) == {[], nil}
+      assert Keep.pull(@target) == :none
     end
 
-    test "another room claiming the root is refused :root — permanently" do
+    test "another room's ship lands; the roots row is bookkeeping, not a fence" do
       a = snap(title: "alice", n: 0)
       b = snap(title: "elsewhere", n: 1)
 
       assert %{id: _} = ship(a, clan: @clan)
-      assert %{id: _, why: _} = r = ship(b, clan: "other-clan")
+      assert %{id: _} = ship(b, clan: "other-clan")
 
-      assert r.why == :root
-      assert r.id == Keep.hash(b)
-      assert is_integer(r.at)
-      # The other room's message never lands.
-      assert count_keeps(Keep.hash(b)) == 0
-      # The bound room's stands alone.
+      # Retention is not ownership: the second room's bytes land.
+      assert count_keeps(Keep.hash(b)) == 1
       assert count_keeps(Keep.hash(a)) == 1
+
+      # The first arrival still names the root's recorded room — a fact beside
+      # the bytes, never a veto, and never a grant.
+      assert Repo.one(from(r in "roots", where: r.root == ^@root, select: r.clan)) == @clan
     end
 
     test "a rename does not sever the bind — author_id is recorded, not compared" do
       # The wound (id:kb-vet5 40): comparing author_id made every later keep of
-      # that root a permanent :root refusal. author_id is never a write fence.
+      # that root a permanent refusal. author_id is never a write fence.
       before = snap(title: "before", n: 0)
       after_rename = snap(title: "after", n: 1)
 
@@ -267,47 +277,51 @@ defmodule Dojo.Keep.ReceiveTest do
   end
 
   # One judgement per continuant, by its primary key (id:ka-rule).
-  describe "the works bind — a river belongs to one hand (id:ka-works-bind)" do
-    test "first hand binds the work; the row is the judgement and nothing else" do
-      assert %{id: _} = ship(snap())
+  describe "works — evidence, not a bind (keep-cut IV)" do
+    test "a continuation writes no works row; origin and child are the members" do
+      origin = targetless(@root)
+      work = Keep.hash(origin)
+      assert %{id: ^work} = ship(origin)
 
-      assert Repo.one(from(w in "works", where: w.work_id == ^@target, select: w.root)) ==
-               @root
-    end
+      child = snap_for(@root, work, "child", 2)
+      assert %{id: child_id} = ship(child)
 
-    test "the same hand keeps again — bound once, never re-bound" do
-      assert %{id: _} = ship(snap(title: "one", n: 0))
-      assert %{id: _} = ship(snap(title: "two", n: 1))
-
-      assert Repo.one(from(w in "works", where: w.work_id == ^@target, select: count(w.work_id))) ==
-               1
-    end
-
-    test "a snap with no work is an origin — it lands; hang is the cut" do
-      # Origin omits target. Its id *is* the work (keep kernel).
-      bytes =
-        Jason.encode!(%{
-          "source_id" => "abc",
-          "v" => 1,
-          "kind" => "snap",
-          "root" => @root,
-          "ts" => %{"t" => 1_700_000_000_000, "n" => 0}
-        })
-
-      assert %{id: id, target: nil} = ship(bytes)
-      assert is_binary(id)
-      assert count_keeps(id) == 1
-      # Pre-cut works bind only when target is present.
       assert Repo.one(from(w in "works", select: count(w.work_id))) == 0
+
+      assert {rows, _} = Keep.history(work, of: :target, n: 10)
+      assert Enum.sort(Enum.map(rows, & &1.id)) == Enum.sort([work, child_id])
     end
 
-    test "an unheard-of kind binds nothing — enforcement fails OPEN" do
-      # `target` carries more than one continuant (id:ka-selectors): a work has
-      # one owner, a walk's NODE has none — many hands walk one node. A
-      # kind-blind bind would let the first hand to walk a node own it and
-      # refuse every other hand :work, permanently. And an old server must
-      # never refuse a kind it has not heard of (id:kb-12), so the unknown case
-      # binds nothing rather than claiming or rejecting.
+    test "a foreign-root child is retained and never a member" do
+      origin = targetless(@root)
+      work = Keep.hash(origin)
+      assert %{id: ^work} = ship(origin)
+
+      stranger = Dojo.KeepSigning.root(String.duplicate("9", 64))
+      theirs = snap_for(stranger, work, "theirs", 3)
+
+      assert %{id: theirs_id} = ship(theirs, author_id: @other)
+      assert count_keeps(theirs_id) == 1, "bytes land"
+
+      assert {rows, _} = Keep.history(work, of: :target, n: 10)
+      assert Enum.map(rows, & &1.root) |> Enum.uniq() == [@root]
+      refute theirs_id in Enum.map(rows, & &1.id)
+    end
+
+    test "a child before its origin is pending, then eligible when the origin arrives" do
+      origin = targetless(@root)
+      work = Keep.hash(origin)
+      child = snap_for(@root, work, "early", 2)
+
+      assert %{id: child_id} = ship(child)
+      assert Keep.history(work, of: :target) == {[], nil}, "no origin, no membership"
+
+      assert %{id: ^work} = ship(origin)
+      assert {rows, _} = Keep.history(work, of: :target, n: 10)
+      assert Enum.sort(Enum.map(rows, & &1.id)) == Enum.sort([work, child_id])
+    end
+
+    test "an unheard-of kind lands; nothing binds" do
       walk = fn root ->
         Jason.encode!(%{
           "v" => 1,
@@ -318,68 +332,12 @@ defmodule Dojo.Keep.ReceiveTest do
         })
       end
 
-      assert %{id: _} = a = ship(walk.(@root))
-      refute Map.has_key?(a, :why)
-      # A SECOND HAND walking the same node is admitted, not refused.
-      assert %{id: _} = b = ship(walk.(String.duplicate("9", 64)), author_id: @other)
-      refute Map.has_key?(b, :why)
+      assert %{id: _} = ship(walk.(@root))
 
-      assert Repo.one(from(w in "works", select: count(w.work_id))) == 0,
-             "nothing binds a continuant nobody owns"
-    end
+      assert %{id: _} =
+               ship(walk.(Dojo.KeepSigning.root(String.duplicate("9", 64))), author_id: @other)
 
-    test "a refusal leaves NO partial binding — one transaction holds them all" do
-      # kb-source-keys: when two stores hold one fact, one transaction holds
-      # them. `roots` and `works` are two more such stores, and both used to
-      # write BEFORE the transaction opened — two lines under a comment
-      # quoting that very law. The observable proof: a stranger's root is bound
-      # by step one and the work refuses at step two, so if the binds were
-      # outside, their roots row would survive the refusal.
-      stranger = String.duplicate("9", 64)
-
-      theirs =
-        Jason.encode!(%{
-          "source_id" => "abc",
-          "v" => 1,
-          "kind" => "snap",
-          "root" => stranger,
-          "ts" => %{"t" => 1_700_000_000_001, "n" => 0},
-          "target" => @target
-        })
-
-      assert %{id: _} = ship(snap())
-      assert %{why: :work} = ship(theirs, author_id: @other)
-
-      assert Repo.one(from(r in "roots", where: r.root == ^stranger, select: count(r.root))) == 0,
-             "the root bind rolled back with the refusal"
-
-      assert Repo.one(from(w in "works", where: w.work_id == ^@target, select: w.root)) == @root
-      assert count_keeps(Keep.hash(theirs)) == 0
-    end
-
-    test "owned_kinds stays frozen — kinds/ is not a registry" do
-      # Condemned. A 1:1 with kinds/ baptizes it and gives every future kind
-      # a chair it has not earned (keep kernel 2026-09-06).
-      assert Keep.owned_kinds() == %{"snap" => :work}
-    end
-
-    test "the refusal is permanent and stamped, so announce terminates" do
-      # :work is permanent — re-shipping does not change the hand (id:kb-12).
-      theirs =
-        Jason.encode!(%{
-          "source_id" => "abc",
-          "v" => 1,
-          "kind" => "snap",
-          "root" => String.duplicate("9", 64),
-          "ts" => %{"t" => 1_700_000_000_001, "n" => 0},
-          "target" => @target
-        })
-
-      assert %{id: _} = ship(snap())
-      assert %{why: :work, at: at1} = ship(theirs, author_id: @other)
-      assert %{why: :work, at: at2} = ship(theirs, author_id: @other)
-      assert is_integer(at1) and is_integer(at2)
-      assert count_keeps(Keep.hash(theirs)) == 0
+      assert Repo.one(from(w in "works", select: count(w.work_id))) == 0
     end
   end
 
@@ -509,6 +467,24 @@ defmodule Dojo.Keep.ReceiveTest do
       assert %{id: id} = ship(bytes, image: "FIRST")
       assert %{id: ^id} = ship(bytes, image: "SECOND")
       assert image_of(id) == "FIRST"
+    end
+
+    test "the receipt names the stored picture digest" do
+      bytes = snap()
+      assert %{image_digest: digest} = ship(bytes, image: "FACE")
+      assert digest == Keep.hash("FACE")
+    end
+
+    test "a text-only receipt names no picture" do
+      assert %{image_digest: nil} = ship(snap(), image: false)
+    end
+
+    test "a second picture under one id reports the FIRST digest" do
+      bytes = snap()
+      assert %{id: id, image_digest: first} = ship(bytes, image: "FIRST")
+      assert %{id: ^id, image_digest: ^first} = ship(bytes, image: "SECOND")
+      assert image_of(id) == "FIRST"
+      assert first == Keep.hash("FIRST")
     end
   end
 

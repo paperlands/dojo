@@ -340,8 +340,7 @@ test('capture hooks cannot leak into an ordinary evaluator use', () => {
     const s = scene()
     s.idle()
     const evaluator = s.host.deps.mathEvaluator
-    assert.equal(evaluator.reads.sample, null)
-    assert.equal(evaluator.reads.bind, null)
+    assert.equal(evaluator.reads, null)
     near(evaluator.run(s.host.deps.mathParser.parse('random'), {}), .002)
     assert.equal(s.samples(), 2)
     s.move(s.B, [7, 0, 0]); s.tick()

@@ -300,8 +300,8 @@ test("acceptance: ordered birth — a re-reached let revises to the current head
         position: [3, 0, 0] }, revision).kind, "accept")
     drive(scheduler)
     assert.equal(host.children.get("a"), a, "the same identity throughout")
-    assert.deepEqual(frameWorldTransform(a).position.map((n) => +n.toFixed(6)), [100, 0, 0],
-        "the re-reached let adopts the current head's state")
+    assert.deepEqual(frameWorldTransform(a).position.map((n) => +n.toFixed(6)), [103, 0, 0],
+        "the re-reached let adopts the source baseline and reapplies the hand action")
 })
 
 // Phase 1b — naming and time. (id:laws-ordered-birth)

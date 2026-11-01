@@ -9,7 +9,7 @@
 // record (`observations.jsonl`, written when the gate was live: `+`, `-` and every
 // builtin result snapped to 1e14). `landed` is measured NOW: arithmetic is the
 // substrate's, and the display is where a learner's eye gets a clean answer.
-// (id:tower-center-approximation-ruling — accepted and implemented; the display gate
+// (id:tower-center-approximation-ruling — implemented; semantic ruling still proposed; the display gate
 // is numerics:format.)
 //
 // What the ruling changed, in one line: `0 + 1e-15` was 0 and `1000 * 1e-15` was

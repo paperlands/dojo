@@ -2,58 +2,19 @@
 // Math deps injected.
 
 import { COMMANDS, DEFAULT_STYLE, contractOf } from "./commands.js"
-import { readArguments } from "./parse.js"
-import { ASTNode } from "./ast.js"
 import { SE3 } from "./se3.js"
 import { recenterPose } from "./view.js"
 import { createStroke, extend as strokeExtend, flush as strokeFlush, fill as strokeFill } from "./stroke.js"
 import { matchPattern } from "./match.js"
-import { toSpace } from "./space.js"
 import { storageSpace } from "./localize.js"
-import { isNumericLiteral } from "./mafs/number.js"
-import { driveOf } from "./laws/authored.js"
-import { reactiveReading } from "./laws/reactive.js"
-import { kindOf } from "./mafs/tower.js"
 import { parseMemo } from "./mafs/parse_memo.js"
-import { demand, measure, spellingOf, conditionOf, FINITE } from "./numerics.js"
+import { demand, measure, conditionOf, FINITE } from "./numerics.js"
 import { notice } from "./report.js"
 import { isBeing } from "./frame.js"
-import { markLocal, extend, project, isLocal } from "./bindings.js"
-// A HOLE DEMANDS A MEASURE, and the answer belongs to the numerics surface: what the
-// value IS (a fact, `conditionOf`) apart from what this consumer may DO about it (a
-// verdict, `POLICY`). This file holds no epsilon and no rule of its own — only the
-// name of the consumer asking. (id:tower-center-approximation, ruling: absent-is-zero)
-//
-// The two passes that judge VOCABULARY rather than ink — the headless rehearsal (where
-// a seat's diagnostics come from) and a closed construction — refuse a value of the
-// wrong kind outright. A live walk is told and carries on: a refusal drops the ONE
-// statement, never the figure (D020).
-const consumerOf = (state) => state.strict ? "construction" : state.rehearsal ? "vocabulary" : "walk"
-
-// The door, and a PLAIN call. `yield*` on every argument costs more than the check it
-// wraps — measured 162 ns of delegation per argument, and no profile can see it, because
-// the cost lands in the CALLER's self time. So: the value comes back, or a refusal is
-// thrown and the walk's own catch yields what the author is owed, where the statement is.
-// The common path returns before any verdict object exists.
-function admit(value, expr, domain, state) {
-    if (domain !== "finite") return value
-    // A scalar-command hole admits a rank-one, length-one vector by SELECTING its
-    // sole component — but only when that component is PRESENT and finite. A hole
-    // (`Array(1)`), an explicit nothing, a non-finite value, a longer vector and a
-    // rank-two value are each malformed for a scalar hole: every one is refused as
-    // the VECTOR it is, never unwrapped into an unanswered scalar that borrows a
-    // default. The command is a narrow consumer; the value keeps its shape
-    // everywhere else. (id:notation-array-growth)
-    if (Array.isArray(value)) {
-        const lone = value.length === 1 && (0 in value) && !Array.isArray(value[0])
-        if (!lone || conditionOf(value[0]) !== FINITE) {
-            return measure(value, { as: consumerOf(state), expr })
-        }
-        value = value[0]
-    }
-    if (conditionOf(value) === FINITE) return value
-    return measure(value, { as: consumerOf(state), expr })
-}
+import { extend, project, isLocal } from "./bindings.js"
+import { evalOrBlock, readsDeferred } from "./expressions.js"
+import { acquireArgument, bindTarget, bindDisplay, readPointArgs, consumerOf, holeDomain, isTargetCall } from "./arguments.js"
+import { declareExistence, declareValue, declareLaw, spawnEvent } from "./declarations.js"
 
 // typeof guard: bare process?.env throws on undeclared process in the browser.
 const envNum = (name) => {
@@ -74,130 +35,6 @@ function chargeReductions(state) {
         const error = new Error(`Maximum reductions of ${state.maxReductions} reached`)
         error.kind = 'budget'
         throw error
-    }
-}
-
-// Hole kinds and arity live WITH the command (commands.js `COMMANDS`), so the
-// contract follows the resolved callable and cannot disagree with itself. (id:gw-grammar)
-
-const holeDomain = (holes, i) => holes?.[i] ?? "measure"
-
-
-// One callable signature, read in one place: a "target" callable takes its whole
-// argument list as ONE coordinate target. (id:world-coordinate-phase-3)
-const isTargetCall = (spec) => spec?.holes?.length === 1 && spec.holes[0] === "target"
-
-// A singleton selects its sole component — only when that component is PRESENT and
-// finite. A hole, a null or a non-number is structure, not a scalar. (id:notation-array-growth)
-const unwrapSingleton = (v) => Array.isArray(v) && v.length === 1 && (0 in v) && !Array.isArray(v[0]) &&
-    conditionOf(v[0]) === FINITE ? v[0] : v
-
-// A malformed point refuses at the same measure boundary a scalar hole uses.
-const refusePoint = (value, state) => measure(value, { as: consumerOf(state), expr: "coordinate target" })
-
-// A SUPPLIED coordinate value is validated BEFORE any default: an empty value, a hole,
-// a null or a non-number is malformed structure, never a repairable omission.
-function validateVector(v, state) {
-    if (v.length === 0) return refusePoint(v, state)
-    const n = Math.min(v.length, 3)
-    for (let i = 0; i < n; i++) {
-        if (!(i in v) || v[i] == null || conditionOf(v[i]) !== FINITE) return refusePoint(v, state)
-    }
-    return v
-}
-
-// Complete only PERMITTED omissions: x/y are the command's zero, z is the sampled world
-// height; values past the third are the value's defined projection. Storage is not this
-// function's business. (id:world-coordinate-phase-3)
-function completePoint(components, cursorHeight, state) {
-    const x = components[0] ?? 0, y = components[1] ?? 0, z = components[2] ?? cursorHeight
-    const point = [x, y, z]
-    const bad = point.find((c) => conditionOf(c) !== FINITE)
-    return bad === undefined ? point : refusePoint(bad, state)
-}
-
-// A target spelling looks up a location; a bound being reads by identity. Both wait at
-// the existing facet door, retrying only projection. (id:world-coordinate-phase-3)
-function* projectPosition(subject, state) {
-    while (true) {
-        try {
-            const evaluator = state.deps.mathEvaluator
-            const at = isBeing(subject)
-                ? evaluator?.resolveSubjectFacet?.(subject, "position")
-                : evaluator?.resolveExternal?.(`${subject}.position`)
-            return Array.isArray(at) && at.length === 3 ? [...at] : at
-        } catch (error) {
-            if (!error.blocked) throw error
-            yield { type: 'blocked', target: error.blockedFrame ?? null }
-        }
-    }
-}
-
-// One being or spelling → its location (possibly waiting); one coordinate value → its
-// validated components; scalar components → the point. A point mixed with components is
-// refused, never discarded. (id:world-coordinate-phase-3)
-function* bindTarget(raw, state, cursorHeight) {
-    const parts = raw.map(unwrapSingleton)
-    if (parts.length === 1 && (isBeing(parts[0]) || typeof parts[0] === 'string')) return yield* projectPosition(parts[0], state)
-    if (parts.length === 1 && Array.isArray(parts[0])) return completePoint(validateVector(parts[0], state), cursorHeight, state)
-    if (parts.some((v) => isBeing(v) || Array.isArray(v))) {
-        throw new Error("a coordinate target takes one point or its components, not both")
-    }
-    return completePoint(parts, cursorHeight, state)
-}
-
-// Only a DISPLAY consumer reads a bound being as its LOCATION. A "word" hole is not
-// enough: a colour or a shout message takes the value unchanged. (id:world-coordinate-phase-3)
-function* bindDisplay(value, hole, display, state) {
-    if (!display || hole !== "word" || !isBeing(value)) return value
-    return (yield* projectPosition(value, state)) ?? value
-}
-// A bare identifier that names a being binds the being itself; a quoted spelling stays
-// a deliberate lookup and a local scalar keeps its value. The CALL path holds an
-// Argument node, the DECLARATION path holds a raw string; finding must not depend on
-// which surface carried it. (P2, id:being-facets-p2-seam)
-function bareSubjectOf(child, scope, state) {
-    const name = typeof child === 'string' ? child : child?.type === 'Argument' ? child.value : null
-    if (typeof name !== 'string') return null
-    if (!/^[A-Za-z_][\w-]*$/.test(name) || Object.hasOwn(scope ?? {}, name)) return null
-    return state.deps?.mathEvaluator?.resolveSubject?.(name) ?? null
-}
-
-// ONE acquisition for every argument, whatever its surface: an explicit value, a bare
-// name that finds a being, or an expression. Sharing it is what keeps a declaration's
-// participants and an ordinary call's participants the same kind of thing.
-// (id:being-facets-p2-seam, id:being-facets-centers-review)
-function* acquireArgument(child, scope, state, domain, target) {
-    if (child && child.type === 'Value') {
-        return target ? child.value : admit(child.value, spellingOf(child.value), domain, state)
-    }
-    const source = typeof child === 'string' ? child : child?.value
-    const being = bareSubjectOf(source, scope, state)
-    if (being) return being
-    return yield* evalOrBlock(source, scope, state, domain)
-}
-
-const IDENT_HEAD_RE = /^[a-zA-Z]/
-// Retry evaluateExpr; yield blocked on cross-ambient read failure only.
-// domain: "measure" (default) | "word"
-function* evalOrBlock(expr, scope, state, domain = "measure", trackReads = false) {
-    while (true) {
-        try {
-            // Dependencies are what the READ reached, recorded by the resolver — a fresh
-            // record per attempt, since a blocked read is retried.
-            // (id:laws-dependency-driven-place)
-            const reading = trackReads ? readExpr(expr, scope, state, domain) : null
-            if (reading?.error) throw reading.error
-            return admit(reading ? reading.value : evaluateExpr(expr, scope, state, domain), expr, domain, state)
-        } catch (e) {
-            if (e.blocked) {
-                // The frame (or null when missing) the read waits on — the scheduler
-                // needs it to tell a dataflow suspension from a cycle. (D011)
-                yield { type: 'blocked', target: e.blockedFrame ?? null }
-                continue
-            }
-            throw e
-        }
     }
 }
 
@@ -370,106 +207,8 @@ function adoptRebase(state) {
 
 const PURE_POINT_READ = /^[A-Za-z_][A-Za-z0-9_]*\.(?:x|y|z)$/
 
-function* readPointArgs(nodes, scope, state, command) {
-    while (true) {
-        const baseRevision = state.deps.mathEvaluator.beginObservation(command)
-        if (baseRevision === undefined) return null
-        let blocked
-        try {
-            const args = nodes.map(node => evaluateExpr(node.value, scope, state))
-            return { args, baseRevision }
-        } catch (error) {
-            if (!error.blocked) throw error
-            blocked = error
-        } finally {
-            state.deps.mathEvaluator.endObservation()
-        }
-        // D011 owns the wait; no partial argument or capture survives it.
-        yield { type: 'blocked', target: blocked.blockedFrame ?? null }
-    }
-}
-
-// The two declaration pipelines, reachable from every spelling that means them: a point
-// pins, a vector is an OBJECT and a VALUE — a straight line to the point it reaches, and
-// a name that HOLDS the displacement. The walker neither moves nor lays ink, because a
-// declaration is not an act. (id:notation-coordinate-vector)
-function* emitPoint(name, expr, owner, scope, state, sampled) {
-    if (sampled !== undefined) {
-        yield { type: 'law', feature: 'position', target: name, value: toSpace(sampled) ?? sampled,
-            axis: null, owner, read: null }
-        return
-    }
-    const raw = yield* evalOrBlock(expr, scope, state, 'measure', true)
-    const reads = state.deps.mathEvaluator.reads
-    yield { type: 'law', feature: 'position', target: name, value: toSpace(raw) ?? raw,
-        axis: null, owner,
-        // A coordinate that RESOLVED a reference tracks it; a literal owns no readout.
-        read: reads?.live ? reactiveReading({ value: raw, reads },
-            (sample, bind) => readExpr(expr, scope, state, 'measure', sample, bind, owner)) : null }
-}
-
-// A declared vector's pose and style, captured at its declaration. The display is
-// re-derived from these plus the current value, so birth and every redraw share ONE
-// event contract. (id:notation-coordinate-vector)
-function vectorMeta(name, state) {
-    const t = state.transform
-    return { name, from: [...t.position], rotation: t.rotation, color: state.style.color,
-        thickness: state.style.thickness, textSize: state.style.label ?? 5 }
-}
-
-// A vector is an OBJECT and a VALUE. The name binds the displacement (a scalar readout
-// whose drive is the arrow), and the DISPLAY is owned by that one readout — initial,
-// update and removal. No separate vector event rides the ink channel.
-// (id:notation-coordinate-vector)
-function* emitVector(name, expr, owner, scope, state, sampled) {
-    const v = sampled === undefined ? (yield* evalOrBlock(expr, scope, state)) : sampled
-    const d = toSpace(v)
-    if (!d) {
-        yield notice({ kind: 'vector',
-            message: `a displacement needs at least one finite component, not ${spellingOf(v)}`,
-            span: owner })
-        return
-    }
-    yield { type: 'scalar', name, owner, initial: d, vector: vectorMeta(name, state),
-        read: sampled === undefined ? (() => evaluateExpr(expr, scope, state, 'measure', owner)) : (() => sampled) }
-    bindLocal(scope, state, name)
-}
-
-// A SAMPLED declaration samples its value ONCE, then routes it through the SAME kind
-// behavior the live path uses: a sampled point is still a place, a sampled vector still
-// a visible object and a value. Sampling answers *when* a value is read; the kind
-// answers *what* is declared. They are independent. (id:eval-relational,
-// id:notation-coordinate-vector)
-function* declareSampled(name, value, owner, scope, state) {
-    const row = DECLARED[kindOf(value)]
-    if (row) {
-        yield* row.emit(name, null, owner, scope, state, value)
-        if (kindOf(value) !== 'point') bindLocal(scope, state, name)
-        return
-    }
-    yield { type: 'parameter', name, owner, value }
-    bindLocal(scope, state, name)
-}
-
-// What a declared value becomes, by its kind; every spelling takes this row.
-// A new kind changes neither repetition nor ownership. (id:notation-coordinate-vector)
-const DECLARED = {
-    point: { emit: emitPoint },
-    vector: { emit: emitVector },
-}
-
-// A local declaration marks its name in the CURRENT scope. The mark is the binding's
-// provenance: a reader can tell a declaration made here from a formal or a captured
-// value, so the nearer binding wins without a depth or context-copy flag. The
-// declaration's VALUE stays on the frame and is read live through the ambient door.
-// (id:being-facets-centers-review)
-function bindLocal(scope, state, name) {
-    markLocal(scope, name)
-}
-
 function* walkBody(body, scope, state, stroke) {
     let matched = false
-
 
     for (const node of body) {
         adoptRebase(state)   // a component rebase lands before this node reads pose
@@ -491,7 +230,7 @@ function* walkBody(body, scope, state, stroke) {
         case 'Loop': {
             // A count is a decision too: a count that is not a finite number is not a
             // count, so the loop is not taken — and the author is told why.
-            const asked = demand(yield* evalOrBlock(node.value, scope, state),
+            const asked = demand(yield* evalOrBlock(node.value, scope, state.deps),
                 { as: "count", expr: node.value, span: node.span ?? null })
             if (asked.notice) yield asked.notice
             if (asked.verdict !== "take") continue
@@ -549,7 +288,7 @@ function* walkBody(body, scope, state, stroke) {
                     if (params.length === 0) {
                         const tree = parseMemo(parser, String(expression))
                         if (!readsDeferred(tree, deferred ?? new Set())) {
-                            const value = yield* evalOrBlock(String(expression), scope, state)
+                            const value = yield* evalOrBlock(String(expression), scope, state.deps)
                             if (conditionOf(value) === FINITE) {
                                 expression = String(value)
                             }
@@ -706,7 +445,7 @@ function* walkBody(body, scope, state, stroke) {
                     // A branch is a DECISION. A condition that has no answer takes no branch,
                     // and says so: ordering a figure by a non-answer is how it goes wrong with
                     // no ink to show for it. (numerics: conditionOf, POLICY.condition)
-                    const asked = demand(yield* evalOrBlock(node.value, scope, state),
+                    const asked = demand(yield* evalOrBlock(node.value, scope, state.deps),
                         { as: "condition", expr: node.value, span: node.span ?? null })
                     if (asked.notice) yield asked.notice
                     if (asked.verdict === "take" && asked.value !== 0) {
@@ -729,7 +468,7 @@ function* walkBody(body, scope, state, stroke) {
             // frame declaration wins over a captured binding, and a call formal stays
             // innermost. Quoted and interpolated forms stay words.
             // (id:being-facets-centers-review)
-            const selected = yield* evalOrBlock(node.value, scope, state, "word")
+            const selected = yield* evalOrBlock(node.value, scope, state.deps, "word")
             // A bound being crosses by identity; only a spelling is coerced to a name.
             // (id:being-facets-p2-seam)
             const receiver = isBeing(selected) ? selected : null
@@ -748,144 +487,17 @@ function* walkBody(body, scope, state, stroke) {
             break
         }
 
-        case 'Existence': {
-            // A reached declaration is the birth site. It carries the executor's
-            // post-command pose and source span; the scheduler seats or adopts the
-            // identity before the next statement reads it. (id:laws-ordered-birth)
-            yield {
-                type: 'birth',
-                name: String(yield* evalOrBlock(node.value, scope, state, "word")),
-                origin: SE3.clone(state.transform),
-                owner: node.span ?? null,
-            }
+        case 'Existence':
+            yield* declareExistence(node, scope, state)
             break
-        }
 
-
-        case 'Law': {
-            // A reached law: one feature, one evaluated value. The declaring
-            // frame is the observer. (id:laws-ordered-replacement)
-            // The row decides whether live reads drive revisions or sample once.
-            // Dependency-driven revision does not make the payload a relational unknown.
-            // (id:laws-dependency-driven-place)
-            const feature = node.value
-            // A subject parameter is a bound selector, not source to substitute.
-            // The scheduler resolves it once into the law's endpoint identity. (id:laws-generative-experiments)
-            const selectors = node.meta.subjects ?? [node.meta.target]
-            const subjects = []
-            for (const selector of selectors) {
-                // A framed point descriptor is data, not a name to resolve. (id:laws-distance-literal-address)
-                if (selector != null && typeof selector === 'object') { subjects.push(selector); continue }
-                // A BOUND name resolves through the one interpretation, so a nearer
-                // local declaration shadows a captured being here as it does for `.x`
-                // and `as`. A name this frame does not bind stays a spelling for the
-                // spatial resolver. (id:being-facets-centers-review)
-                const quoted = selector.startsWith('"')
-                const bound = quoted || Object.hasOwn(scope, selector)
-                    || state.deps?.mathEvaluator?.owns?.(selector) === true
-                const subject = bound ? yield* evalOrBlock(selector, scope, state, 'word') : selector
-                if (isBeing(subject)) { subjects.push(subject); continue }
-                if (typeof subject !== 'string' || !subject) throw new Error('a law subject must name a thing')
-                subjects.push(subject)
-            }
-            // Mover selectors follow the same bindings as the subjects. (D058)
-            if (node.meta.movers != null && !Array.isArray(node.meta.movers)) throw new Error('law movers must be selectors')
-            const movers = node.meta.movers?.map((selector) => {
-                const index = selectors.indexOf(selector)
-                if (index < 0 || (typeof subjects[index] !== 'string' && !isBeing(subjects[index]))) throw new Error('a law mover must name a live subject')
-                return subjects[index]
-            })
-            const target = subjects.find((s) => typeof s === 'string' || isBeing(s)) ?? subjects[0]
-            // A position is a pin: the ONE pipeline every point-kind declaration reaches.
-            if (feature === 'position') {
-                yield* emitPoint(target, node.meta.expr, node.span ?? null, scope, state)
-                break
-            }
-            // Driven laws capture inputs before computing a new answer; other laws
-            // sample once. (id:laws-dependency-driven-place, id:laws-reactive-randomness)
-            const drive = driveOf(feature)
-            const raw = yield* evalOrBlock(node.meta.expr, scope, state, 'measure', !!drive)
-            const reads = state.deps.mathEvaluator.reads
-            yield { type: 'law', feature, target, value: raw,
-                ...(node.meta.subjects ? { subjects } : {}),
-                ...(movers ? { movers } : {}),
-                ...(node.meta.reachPolicy !== undefined ? { reachPolicy: node.meta.reachPolicy } : {}),
-                // Dotted reaches carry RHS provenance too, so both spellings bind the
-                // same typed term. (id:laws-distance-term-normalization)
-                expression: node.meta.expr,
-                axis: node.meta.axis ?? null, owner: node.span ?? null,
-                read: drive && reads?.live ? reactiveReading({ value: raw, reads },
-                    (sample, bind) => readExpr(node.meta.expr, scope, state, 'measure', sample, bind, node)) : null }
+        case 'Law':
+            yield* declareLaw(node, scope, state)
             break
-        }
 
-        case 'Declaration': {
-            // ONE declaration, ONE reading: `let NAME = <expr>`. The VALUE decides what
-            // the name is — a point is a place, a vector an object and a value, anything
-            // else a derived value — so no spelling has to be known in advance.
-            // A recipe call is a figure, not a number. A deferred (stochastic)
-            // primitive is a PARAMETER: sampled once, never resampled by an unrelated
-            // commit. (id:notation-coordinate-vector, id:eval-relational)
-            const expr = node.meta.expr
-            // A quoted binder is a computed name read HERE, at its reach — the same
-            // word seam `let "part[count]"` uses. A plain name is its own spelling.
-            // (id:laws-names, id:laws-generative-experiments)
-            const name = node.value.startsWith('"') || node.value.startsWith("'")
-                ? String(yield* evalOrBlock(node.value, scope, state, 'word'))
-                : node.value
-            // A recipe call is a figure, not a number: emit the construction
-            // intent; the scheduler owns the cell and its lifetime.
-            const figureCall = figureCallOf(expr, state)
-            if (figureCall) {
-                const arity = state.functions?.[figureCall.recipe]?.parameters?.length ?? 0
-                // A missing hole is the command's own default, or 0 for a def.
-                // Not a wound. (id:eval-relational)
-                const inputs = []
-                for (const arg of figureCall.args) {
-                    inputs.push(yield* acquireArgument(arg, scope, state, 'measure', false))
-                }
-                while (inputs.length < arity) inputs.push(0)
-                const call = new ASTNode('Call', figureCall.recipe,
-                    inputs.map((input) => new ASTNode('Value', input)))
-                call.span = node.span ?? null
-                // A proper `let`: a place (identity and name) whose body is the
-                // recipe. A rebuild restarts the walk at this birth pose, not at the
-                // last head — see rewireChild's derived branch. (id:laws-figure-protocol)
-                yield { type: 'birth', name, origin: SE3.clone(state.transform),
-                    profile: 'derived', owner: node.span ?? null }
-                yield spawnEvent(state, scope, name, [call], state.functions, {
-                    profile: 'derived', question: inputs, recipe: figureCall.recipe,
-                    argExprs: figureCall.args, owner: node.span ?? null,
-                })
-                break
-            }
-            const deferred = state.deps?.mathEvaluator?.deferred
-            let stochastic = false
-            if (deferred && typeof expr === 'string') {
-                try { stochastic = readsDeferred(parseMemo(state.deps.mathParser, expr), deferred) } catch { stochastic = false }
-            }
-            if (stochastic) {
-                // Sampled once here, then routed by the kind of the value it sampled
-                // through the SAME declaration behavior the live path uses. `random` is an
-                // input, not a reading. (id:eval-relational, id:notation-coordinate-vector)
-                yield* declareSampled(name,
-                    evaluateExpr(expr, scope, state, 'measure'), node.span ?? null, scope, state)
-                break
-            }
-            // The value's KIND chooses a ROW, never a branch.
-            // (id:notation-coordinate-vector)
-            const row = DECLARED[shapedKind(expr, scope, state)]
-            if (row) {
-                yield* row.emit(name, expr, node.span ?? null, scope, state)
-                break
-            }
-            yield {
-                type: 'scalar', name, owner: node.span ?? null,
-                read: () => evaluateExpr(expr, scope, state, 'measure', node),
-            }
-            bindLocal(scope, state, name)
+        case 'Declaration':
+            yield* declareValue(node, scope, state)
             break
-        }
 
         case 'Empty':
             break
@@ -1087,185 +699,6 @@ function* callCommand(name, args, state, stroke, baseRevision) {
             yield event
         }
     }
-}
-
-// --- Expression evaluation ---
-// Delegates to the injected math parser/evaluator.
-// The one owner of PaperLang expression evaluation.
-
-
-// Does an expression name a deferred (stochastic) primitive? Used to keep a
-// sampled input a parameter, not a value recomputed by an unrelated commit.
-// (id:eval-relational)
-// A figure-valued binding: `let flake = recipe[args]` where `recipe` is a turtle
-// procedure (a `def`), not a math function. Recognized at walk so the math
-// evaluator never sees it. The captured args are the question; construction is
-// the answer, and runs outside publication. (id:laws-figure-eidos-naming)
-// One argument list, however the call is written: top-level commas and brackets
-// group, nesting is respected. (id:laws-figures-phase34-review)
-function splitTopLevel(s) {
-    const out = []
-    let depth = 0, start = 0
-    for (let i = 0; i < s.length; i++) {
-        const c = s[i]
-        if (c === '[' || c === '(') depth++
-        else if (c === ']' || c === ')') depth--
-        else if (c === ',' && depth === 0) { out.push(s.slice(start, i)); start = i + 1 }
-    }
-    out.push(s.slice(start))
-    return out
-}
-
-
-// The spawn payload — the ONE door a child inherits through: space (origin),
-// colour (style), vocabulary (code + userspace), captured scope, and logical
-// birth on the shared axis. `as … do` and a figure binding share it, so a figure
-// IS a child ambient, not a parallel construction. (id:turtle-ambient-calculus)
-function spawnEvent(state, scope, name, body, functions, extra = {}) {
-    return {
-        type: 'spawn',
-        name,
-        // What the caller BOUND crosses with the child: a whitelist here silently
-        // dropped a field once, and the child's question went empty. The named
-        // fields below neutralise only the undefineds.
-        ...extra,
-        frame: extra.frame ?? null,
-        profile: extra.profile ?? null,
-        question: extra.question ?? null,
-        receiver: extra.receiver ?? null,
-        site: extra.site ?? null,
-        origin: SE3.clone(state.transform),
-        style: { ...state.style },
-        code: { ast: body, functions: { ...(functions ?? state.functions) } },
-        env: {
-            userspace: new Map(state.deps.mathParser.userspace),
-            loopCounter: state.loopCounter,
-            scope: project(scope),
-            birthtime: state.birthtime + state.elapsedTime,
-        },
-    }
-}
-
-// A recipe call is ONE call, however it is written: `recipe a b` and
-// `recipe[a, b]` reach the same argument list, and `recipe` alone is a call with
-// no inputs. The recipe's OWN signature decides where an input ends — never a
-// splitter, because no splitter can know that `r 2 + 3` is one input to a
-// one-input recipe and three tokens to nothing else.
-// (id:laws-figure-eidos-naming, id:laws-figures-phase34-review)
-function figureCallOf(expr, state) {
-    if (typeof expr !== 'string') return null
-    const head = /^\s*([A-Za-z_][A-Za-z0-9_]*)/.exec(expr)
-    if (!head) return null
-    const name = head[1]
-    const signature = state.functions?.[name]
-    const cmd = signature ? null : COMMANDS.get(name)
-    if (!signature && !cmd) return null
-    const rest = expr.slice(head[0].length).trim()
-    // The invocation reads its arguments with the SAME boundary contract as a command
-    // line — holding a figure must not re-read its arguments. A bracketed `[a, b]`
-    // spelling is its own explicit list. (id:gw-grammar)
-    if (rest.startsWith('[') && rest.endsWith(']')) {
-        const inner = rest.slice(1, -1).trim()
-        return { recipe: name, args: inner === '' ? [] : splitTopLevel(inner).map((a) => a.trim()) }
-    }
-    return { recipe: name, args: readArguments(rest) }
-}
-
-
-function readsDeferred(tree, names) {
-    if (!tree) return false
-    if (tree.type === 'operand' && names.has(tree.value)) return true
-    for (const child of tree.children ?? []) if (readsDeferred(child, names)) return true
-    return false
-}
-
-
-
-// The kind a readable declaration RHS would have, without admitting it: a pure read,
-// so an expression that is not ready does not block a declaration that may be a value.
-// (id:notation-coordinate-vector)
-function shapedKind(expr, scope, state) {
-    // Malformed ink is the author's to see, never a silent derived value: the parse
-    // must succeed before the read is asked for its kind.
-    parseMemo(state.deps.mathParser, expr)
-    try {
-        return kindOf(evaluateExpr(expr, scope, state, 'measure'))
-    } catch (error) {
-        // A domain refusal is the author's too — `(p) + (q)` has no meaning. A read
-        // that is not ready, or names something absent, leaves the declaration the
-        // derived value it already was. (id:notation-coordinate-vector)
-        if (error?.name === 'TowerRefusal' || error?.name === 'DomainRefusal') throw error
-        return null
-    }
-}
-
-
-function readExpr(expr, scope, state, domain = 'measure', sample = null, bind = null, term = null) {
-    const evaluator = state.deps.mathEvaluator, parent = evaluator.reads
-    const reads = evaluator.beginReads()
-    reads.active = true
-    reads.sample = sample
-    reads.bind = bind
-    try { return { value: evaluateExprBody(expr, scope, state, domain, term), reads } }
-    catch (error) { return { value: undefined, reads, error } }
-    finally {
-        reads.active = false
-        reads.sample = null
-        reads.bind = null
-        evaluator.reads = parent?.active ? parent : reads
-    }
-}
-
-// Nested expression cells own their sampling; a parent's replay must not enter them.
-// (id:laws-reactive-randomness)
-function evaluateExpr(expr, scope, state, domain = 'measure', term = null) {
-    const evaluator = state.deps.mathEvaluator, parent = evaluator.reads
-    evaluator.reads = null
-    try { return evaluateExprBody(expr, scope, state, domain, term) }
-    finally { evaluator.reads = parent }
-}
-
-function evaluateExprBody(expr, scope, state, domain = 'measure', term = null) {
-    const { mathParser, mathEvaluator } = state.deps
-
-    if (isNumericLiteral(expr)) return parseFloat(expr)
-    // A name bound to NOTHING is still a name: `!= null` would fall through to the
-    // identifier path and report a bound null as "Undefined variable".
-    if (scope[expr] !== undefined) return mathEvaluator.readContext
-        ? mathEvaluator.readContext(expr, scope) : scope[expr]
-    // A bare hyphenated word is a name here, not subtraction. Measures still parse it.
-    const tree = domain === 'word' && /^[A-Za-z_]\w*-[\w-]*$/.test(expr)
-        ? { type: 'operand', value: expr, children: [] } : parseMemo(mathParser, expr, term)
-
-    // A LITERAL is not a reference: its word is returned as-is, never resolved.
-    if (tree.type === 'string') return mathEvaluator.run(tree, scope)
-    // A held value is the value itself: never interpolated, resolved, or read as
-    // a namespace. (id:tower-tension-repr)
-    if (tree.type === 'literal') return tree.value
-
-    // Expression or known namespace — always evaluate (ops already strict on leaves).
-    if (tree.children.length > 0 || mathEvaluator.namespace_check(tree.value)) {
-        return mathEvaluator.run(tree, scope)
-    }
-
-    // Bare identifier — resolveExternal, then hole residual domain.
-    if (typeof tree.value === 'string' && IDENT_HEAD_RE.test(tree.value)) {
-        if (mathEvaluator.resolveExternal) {
-            const resolved = mathEvaluator.readExternal
-                ? mathEvaluator.readExternal(tree.value) : mathEvaluator.resolveExternal(tree.value)
-            if (resolved !== undefined) return resolved
-        }
-        if (domain === "word") return tree.value
-        // A DOTTED NAME IS A CROSS-AMBIENT READ. Landing here means there is no
-        // ambient tree to read against — the rehearsal is headless and does not
-        // negotiate with siblings (D019). An absent sibling is NOTHING, not a
-        // wound: words past it must still register. A live walk never lands
-        // here for a dotted name — `namespace_check` routes it through
-        // resolveExternal (`Undefined assistant` or blocks).
-        if (tree.value.includes('.')) return null
-        throw new Error(`Undefined variable: ${tree.value}`)
-    }
-    return tree.value
 }
 
 // Convenience: drain a generator into an array of events (batch mode)

@@ -111,14 +111,22 @@ function mountOuter(hook, { term, cm6 }) {
     arena.add(register("outershell", term));
     const envEl = hook.el.closest('#outerenv');
     const hasSelectedDocument = () => !!shownAddr && subject() === shownAddr;
+    // WRITE ONLY ON CHANGE. Most updates change no selection at all (a peer's
+    // hatch, a mirror, a readiness retry), and writing an attribute invalidates
+    // style whether or not the value moved. A quiet repaint is no repaint.
     const paintSelection = () => {
         const ready = hasSelectedDocument();
         const waiting = !!subject() && !ready;
-        if (envEl) envEl.dataset.outerSelection = waiting ? "waiting" : ready ? "ready" : "closed";
+        const state = waiting ? "waiting" : ready ? "ready" : "closed";
+        if (envEl && envEl.dataset.outerSelection !== state) {
+            envEl.dataset.outerSelection = state;
+        }
+        // The crescent's whole input: no DOM is added or removed, so the panel
+        // never moves — the hour is painted by the same state the fence reads.
         const status = document.getElementById("outer-selection-status");
-        if (status) status.hidden = !waiting;
+        if (status && status.dataset.state !== state) status.dataset.state = state;
         const fork = document.getElementById("outer-fork");
-        if (fork) fork.disabled = !ready;
+        if (fork && fork.disabled !== !ready) fork.disabled = !ready;
     };
     paintSelection();
 
@@ -406,6 +414,10 @@ function mountOuter(hook, { term, cm6 }) {
         onPeerLine(attend?.line ?? null);
     };
 
+    // `/keeps/<id>` — a memory, not a hand (OuterShell.keep_addr/1). It carries
+    // no attend, so it must be placed by its own shape: the beginning.
+    const isKeep = (addr) => typeof addr === "string" && addr.startsWith("/keeps/")
+
     const onSeeOuterShell = (payload) => {
         if (!intent.accepted(payload)) return
         // A local departure mirrors its selector at once, so readiness during
@@ -456,7 +468,12 @@ function mountOuter(hook, { term, cm6 }) {
             // Body first (viewport needs the doc), then line — onPeerLine claims
             // only while following. First canvas seat with their line is inner's job.
             term.changeouter(source);
-            onPeerLine(attendLine);
+            // ONE DOOR: a hand lands on their line; a memory has no line to land
+            // on, so opening it lands on the first — through the same onPeerLine,
+            // whose claim turns the light to the outershell ambient exactly as a
+            // hand's line does. (updateOuter keeps the place by design, which for
+            // a memory would be the last peer's scroll.)
+            onPeerLine(opening && isKeep(payload.addr) ? 1 : attendLine);
         }
 
         wireWounds = payload?.diagnostics ?? NONE;

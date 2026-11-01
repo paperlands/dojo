@@ -102,8 +102,9 @@ function whyOf(field) {
  */
 export function unshaped(value) {
     if (value == null || typeof value !== "object") return "message"
-    for (const { field, type } of SKELETON) {
-        if (!typeOk(fetchPath(value, field), type)) return whyOf(field)
+    for (const { field, type, max } of SKELETON) {
+        const held = fetchPath(value, field)
+        if (!typeOk(held, type) || (max != null && held > max)) return whyOf(field)
     }
     return null
 }

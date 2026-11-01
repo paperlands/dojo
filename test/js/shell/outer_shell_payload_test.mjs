@@ -15,7 +15,7 @@ describe("outerShellPayload — one shape, every key present", () => {
         const payload = outerShellPayload({ addr: "a1", source: "fw 10" })
         const keys = Object.keys(payload).sort()
         assert.deepEqual(keys, [...OUTER_SHELL_KEYS].sort())
-        assert.equal(keys.length, 13)
+        assert.equal(keys.length, 16)
     })
 
     test("library open fills path / attend / buffer_id as null, not absent", () => {
@@ -33,6 +33,8 @@ describe("outerShellPayload — one shape, every key present", () => {
         assert.equal(payload.path, null)
         assert.equal(payload.attend, null)
         assert.equal(payload.buffer_id, null)
+        assert.equal(payload.work_id, null)
+        assert.equal(payload.base_id, null)
         assert.equal(payload.addr, "~/spirals")
         assert.equal(payload.source, "fw 50")
         assert.deepEqual(payload.commands, [{ type: "Call" }])
@@ -97,7 +99,7 @@ describe("dispatchPhx — the window door LiveView's handleEvent is", () => {
             assert.equal(seen.length, 1)
             assert.equal(seen[0].addr, "x")
             assert.equal(seen[0].source, "fd 1")
-            assert.equal(Object.keys(seen[0]).length, 13)
+            assert.equal(Object.keys(seen[0]).length, 16)
         } finally {
             door.uninstall()
         }

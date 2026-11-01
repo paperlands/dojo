@@ -3,7 +3,7 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { hash } from "../../../assets/js/keep/hash.js"
+import { hash, hashBytes } from "../../../assets/js/keep/hash.js"
 
 const oracle = (text) => createHash("sha256").update(text, "utf8").digest("hex")
 
@@ -28,6 +28,15 @@ const NIST = [
 ]
 
 describe("hash: FIPS 180-4 oracle equivalence", () => {
+    test("binary bytes and offset views match the oracle at padding boundaries", () => {
+        const data = Uint8Array.from({ length: 300 }, (_, i) => i)
+        for (let n = 0; n <= 200; n++) {
+            const bytes = data.subarray(3, 3 + n)
+            assert.equal(hashBytes(bytes), oracle(bytes), `binary len ${n}`)
+        }
+        assert.notEqual(hashBytes(new Uint8Array([255])), hash("ÿ"))
+    })
+
     test("NIST short vectors", () => {
         for (const { msg, dig } of NIST) {
             assert.equal(hash(msg), dig, `NIST: ${JSON.stringify(msg).slice(0, 40)}`)

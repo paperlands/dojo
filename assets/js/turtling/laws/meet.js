@@ -8,7 +8,7 @@
 //
 // The set kinds, bounded to unbounded:
 //   point · points · line · circle · plane · sphere · space
-// and the three honest non-answers: empty · uncertain · unresolved.
+// plus the empty answer and two method statuses: empty · uncertain · unresolved.
 
 import { meetPlaneSphere, REL_TOL, ACCEPT_TOL } from "./relationships.js"
 import { selectAngle } from "./angle.js"
@@ -123,24 +123,40 @@ function clipToHalf(set, hp) {
         if (Math.abs(Math.abs(dot(set.normal, hp.normal)) - 1) <= 1e-9) return hp
         return clipToHalf(meetPlanePlane(set, supporting(hp)), hp)
     }
-    if (set.kind === "halfplane") return clipToHalf(clipToHalf(supporting(set), hp), set)
     if (set.kind === "line" || set.kind === "ray") {
         const g0 = dot(sub(set.point, hp.point), hp.dir)
         const gd = dot(set.dir, hp.dir)
-        if (Math.abs(gd) <= REL_TOL) return g0 >= -ACCEPT_TOL ? set : EMPTY
+        if (gd === 0) return g0 >= -ACCEPT_TOL ? set : EMPTY
+        if (Math.abs(gd) <= REL_TOL) return UNCERTAIN
         const t = -g0 / gd
+        if (!Number.isFinite(t)) return UNRESOLVED
+        if (set.kind === "ray") {
+            if (gd > 0 && t <= 0) return set
+            // A positive finite segment is unnamed, not empty. (id:laws-meet-axioms)
+            if (gd < 0) return t < 0 ? EMPTY : t === 0 ? point(set.point) : UNRESOLVED
+        }
         const origin = add(set.point, scale(set.dir, t))
-        const along = gd > 0 ? set.dir : scale(set.dir, -1)
-        if (set.kind === "ray" && dot(along, set.dir) < 0) return EMPTY
-        return ray(origin, along)
+        if (!finite3(origin)) return UNRESOLVED
+        return ray(origin, gd > 0 ? set.dir : scale(set.dir, -1))
     }
     if (set.kind === "circle") return { ...set, keep: [...hp.dir] }
     return UNRESOLVED
 }
 
 function meetHalfplane(hp, other) {
-    if (other.kind === "halfplane") return clipToHalf(clipToHalf(meet(supporting(hp), supporting(other)), hp), other)
-    return clipToHalf(meet(supporting(hp), other), hp)
+    if (other.kind !== "halfplane") return clipToHalf(meet(supporting(hp), other), hp)
+    const cut = meetPlanePlane(supporting(hp), supporting(other))
+    if (cut.kind !== "plane") return clipToHalf(clipToHalf(cut, hp), other)
+    // Coplanar halves can bound an unnamed strip or wedge; clipping must not
+    // recreate a half-plane and recurse without reducing it. (id:laws-meet-axioms)
+    if (len(cross(hp.dir, other.dir)) !== 0) return UNRESOLVED
+    const boundary = unit(cross(hp.normal, hp.dir))
+    if (!boundary || !unit(other.dir)) return UNRESOLVED
+    const gap = dot(sub(other.point, hp.point), hp.dir)
+    if (!Number.isFinite(gap)) return UNRESOLVED
+    if (dot(hp.dir, other.dir) > 0) return gap > 0 ? other : hp
+    if (gap < 0) return EMPTY
+    return gap === 0 ? line(hp.point, boundary) : UNRESOLVED
 }
 
 // A line and a plane. `den = n·dir` is the sine of the line's angle to the plane,
@@ -270,14 +286,23 @@ export function meet(a, b) {
 }
 
 function meetLineLine(a, b) {
+    if (!finite3(a.point) || !finite3(b.point) || !unit(a.dir) || !unit(b.dir)) return UNRESOLVED
     const n = cross(a.dir, b.dir)
-    const parallel = len(n) <= REL_TOL
+    const sine = len(n)
     const between = sub(b.point, a.point)
-    if (parallel) {
+    if (!finite3(between)) return UNRESOLVED
+    if (sine === 0) {
         return len(cross(between, a.dir)) <= ACCEPT_TOL ? a : EMPTY
     }
+    if (sine <= REL_TOL) return UNCERTAIN
+    // |between·n|/|n| is the separation of two non-parallel lines. A separation
+    // beyond the length budget is an empty intersection, never the perpendicular foot.
+    const separation = Math.abs(dot(between, n)) / sine
+    if (!Number.isFinite(separation)) return UNRESOLVED
+    if (separation > ACCEPT_TOL) return EMPTY
     const t = dot(cross(between, b.dir), n) / dot(n, n)
-    return point(add(a.point, scale(a.dir, t)))
+    const at = add(a.point, scale(a.dir, t))
+    return finite3(at) && meetsPoint({ at }, a) && meetsPoint({ at }, b) ? point(at) : UNRESOLVED
 }
 
 // A line and a circle: 0, 1 or 2 points. Cross the circle's plane first; a line
@@ -492,7 +517,8 @@ export function conicSamples(co, { range: rangeOverride = null, steps = 96 } = {
     return branches.filter((b) => b.length > 1)
 }
 
-// Fold the meet over a conjunction of sets. A non-answer anywhere is the answer.
+// Reduce in order, stopping at the first empty/uncertain/unresolved result.
+// Later operands do not participate in binary status precedence. (id:laws-meet-axioms)
 export function meetAll(sets) {
     let cur = SPACE
     for (const s of sets) {

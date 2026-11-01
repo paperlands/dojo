@@ -4,12 +4,29 @@ defmodule DojoWeb.KeepController do
   # The room's read door for the fork word (id:la-fork-pull) — sibling of the
   # walk's GET /keeps/:id/image (id:kb-13). The reader verifies the name; this
   # answer carries no authority.
-  def pull(conn, %{"ref" => ref}) do
-    case Dojo.Keep.pull(ref) do
-      {:ok, keep} -> json(conn, keep)
-      :none -> send_resp(conn, 404, "")
+  def pull(conn, %{"ref" => ref} = params) do
+    {mode, reply} =
+      case params["read"] do
+        nil -> {"legacy", Dojo.Keep.pull(ref)}
+        "keep" -> {"keep", Dojo.Keep.get(ref)}
+        "work" -> {"work", Dojo.Keep.head(ref)}
+        _ -> {nil, :unknown}
+      end
+
+    case mode do
+      nil ->
+        send_resp(conn, 400, "")
+
+      mode ->
+        conn
+        |> put_resp_header("x-dojo-keep-read", mode)
+        |> put_resp_header("cache-control", "no-cache")
+        |> answer(reply)
     end
   end
+
+  defp answer(conn, {:ok, keep}), do: json(conn, keep)
+  defp answer(conn, :none), do: send_resp(conn, 404, "")
 
   @doc """
   One river, cursored (id:ka-door-shape).

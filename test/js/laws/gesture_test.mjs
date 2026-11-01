@@ -26,21 +26,22 @@ const find = (frame, name) => {
 
 // A screen whose world-to-pixel scale is 100, and a ray that falls straight down
 // on the pixel it is given — so a witness can name a world point in pixels.
-const harness = (scheduler, frames, { controlsEnabled = true, requestMotion, canTouch, locusOf, facing = [0, 0, -1], slop = 0, view = null, detents = null } = {}) => {
+const harness = (scheduler, frames, { controlsEnabled = true, requestMotion, onAccepted, canTouch, locusOf, facing = [0, 0, -1], slop = 0, view = null, detents = null } = {}) => {
     const requests = []
     const readouts = []
-    const state = { captured: null, controls: { enabled: controlsEnabled }, woke: 0 }
+    const state = { captured: null, controls: { enabled: controlsEnabled }, woke: 0, now: 0 }
     const gesture = createGesture({
         candidates: () => frames.map((frame) => ({ name: frame.name, frame })),
         anchorOf: (frame) => frameWorldTransform(frame),
         birthOf: (frame) => worldTransform(frame),
         registered: (frame) => scheduler.registry.get(frame.id) === frame,
         canTouch,
-        requestMotion: (frame, pose, revision) => {
-            requests.push({ frame, pose })
-            return requestMotion ? requestMotion(frame, pose, revision) : { kind: "accept" }
+        requestMotion: (frame, pose, revision, ref, intent) => {
+            requests.push({ frame, pose, intent })
+            return requestMotion ? requestMotion(frame, pose, revision, ref, intent) : { kind: "accept" }
         },
         revision: () => scheduler.motionRevision,
+        homeOf: frame => scheduler.handHome(frame),
         wake: () => { state.woke++ },
         project: view ? (world) => view.project(world) : (world) => ({ x: world[0] * 100, y: world[1] * 100 }),
         rayAt: view ? (x, y) => view.rayAt(x, y) : (x, y) => ({ origin: [x / 100, y / 100, 5], direction: [...facing] }),
@@ -52,7 +53,9 @@ const harness = (scheduler, frames, { controlsEnabled = true, requestMotion, can
         onReadout: (line) => readouts.push(line),
         locusOf,
         detents,
+        onAccepted,
         slop,
+        now: () => state.now,
     })
     return {
         gesture, requests, readouts, state,
@@ -255,7 +258,7 @@ const onSphere = (at = [3, 0, 4]) => {
 }
 
 const same = (a, b, eps = 1e-9) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) <= eps
-const realMotion = (scheduler) => (frame, pose, revision) => scheduler.requestMotion(frame, pose, revision)
+const realMotion = (scheduler) => (frame, pose, revision, ref, intent) => scheduler.requestMotion(frame, pose, revision, ref, intent)
 const pixel = (world) => ({ x: world[0] * 100, y: world[1] * 100 })
 
 // A real perspective camera, so a witness names a direction in pixels and the
@@ -435,6 +438,170 @@ test("a click inside slop does not move the point", () => {
     assert.equal(h.requests.length, 0)
 })
 
+
+const tap = (h, frame, gap = 40) => {
+    const p = frameWorldTransform(frame).position
+    const at = { x: p[0] * 100, y: p[1] * 100 }
+    h.state.now += gap
+    assert.equal(h.down(at).claimed, true)
+    h.state.now += 20
+    h.gesture.pointerUp({ pointerId: 1, ...at })
+}
+
+const displaced = (source = "let a", options = {}) => {
+    const scheduler = buildWorld({ admit: pass })
+    const host = scheduler.hotSwapChild("host", fork("host", source))
+    drive(scheduler)
+    const a = host.children.get("a")
+    const h = harness(scheduler, [a], {
+        canTouch: freePoint, requestMotion: realMotion(scheduler), slop: DRAG_SLOP, ...options,
+    })
+    const p = frameWorldTransform(a).position
+    assert.equal(h.down({ x: p[0] * 100, y: p[1] * 100 }).claimed, true)
+    h.move({ x: p[0] * 100 + 100, y: p[1] * 100 + 100 })
+    h.up()
+    return { scheduler, host, a, h }
+}
+
+test("double tap returns to the original local placement, not the last drag or world zero", () => {
+    const moves = []
+    const { a, h } = displaced("goto 2 1\nrt 90\nlet a", {
+        onAccepted: move => moves.push(move), controlsEnabled: false,
+    })
+    const original = [2, 1, 0]
+    const p = frameWorldTransform(a).position
+    h.down({ x: p[0] * 100, y: p[1] * 100 })
+    h.move({ x: p[0] * 100 + 100, y: p[1] * 100 })
+    h.up()
+    const requests = h.requests.length
+    tap(h, a)
+    assert.equal(h.requests.length, requests, "one tap is not a reset")
+    tap(h, a)
+    assert.equal(h.requests.length, requests + 1)
+    assert.deepEqual(a.transform.deref().position, [0, 0, 0])
+    assert.deepEqual(frameWorldTransform(a).position, original)
+    assert.equal(moves.length, 3, "reset uses the accepted-move callback too")
+    assert.deepEqual(moves.at(-1).to, [0, 0, 0])
+    assert.equal(h.state.woke, 3)
+    assert.equal(h.last().outcome, "accepted")
+    assert.equal(h.state.captured, null)
+    assert.equal(h.state.controls.enabled, false, "the camera's prior state is restored")
+})
+
+test("double tap remembers a nonzero program placement and preserves current heading", () => {
+    const { a, h } = displaced("let a\nlet a.x = 3")
+    const rotation = a.transform.deref().rotation
+    tap(h, a)
+    tap(h, a)
+    assert.deepEqual(a.transform.deref().position, [3, 0, 0])
+    assert.equal(h.requests.at(-1).pose.rotation, rotation)
+})
+
+test("double tap is a motion request: a refusal leaves accepted geometry unchanged", () => {
+    let refuse = false
+    const scheduler = buildWorld({ admit: request => refuse ? { accepted: false } : pass(request) })
+    const host = scheduler.hotSwapChild("host", fork("host", "let a"))
+    const a = host.children.get("a")
+    const h = harness(scheduler, [a], { requestMotion: realMotion(scheduler) })
+    h.down({ x: 0, y: 0 })
+    h.move({ x: 100, y: 0 })
+    h.up()
+    const before = a.transform.deref()
+    refuse = true
+    tap(h, a)
+    tap(h, a)
+    assert.deepEqual(h.requests.at(-1).pose.position, [0, 0, 0])
+    assert.equal(a.transform.deref(), before)
+    assert.notEqual(h.last().outcome, "accepted")
+    assert.equal(h.state.woke, 1)
+    assert.equal(h.state.captured, null)
+    assert.equal(h.state.controls.enabled, true)
+})
+
+test("slow taps, long presses, drags and cancellation do not form a double tap", () => {
+    for (const interrupt of ["slow", "hold", "drag", "cancel", "dispose", "miss", "release-drift"]) {
+        const { a, h } = displaced()
+        tap(h, a)
+        const p = frameWorldTransform(a).position
+        const at = { x: p[0] * 100, y: p[1] * 100 }
+        if (interrupt === "slow") h.state.now += 400
+        if (interrupt === "dispose") h.gesture.dispose()
+        if (interrupt === "miss") h.down({ x: -1000, y: -1000 })
+        if (["hold", "drag", "cancel", "release-drift"].includes(interrupt)) {
+            h.down(at)
+            if (interrupt === "hold") h.state.now += 400
+            if (interrupt === "drag") {
+                h.move({ x: at.x + 10, y: at.y })
+                h.move(at)
+            }
+            if (interrupt === "cancel") h.cancel()
+            else h.gesture.pointerUp({ pointerId: 1, x: at.x + (interrupt === "release-drift" ? 10 : 0), y: at.y })
+        }
+        const count = h.requests.length
+        tap(h, a)
+        assert.equal(h.requests.length, count, `${interrupt} must break the tap pair`)
+    }
+})
+
+test("tap pairs cannot cross identities, revisions, or a withdrawn point", () => {
+    const { scheduler, host, a, h } = displaced()
+    const b = scheduler.hotSwapChild("other", fork("other", "goto 5 0\nlet a"))
+    drive(scheduler)
+    const other = b.children.get("a")
+    const both = harness(scheduler, [a, other], { canTouch: freePoint, requestMotion: realMotion(scheduler) })
+    tap(both, a)
+    tap(both, other)
+    assert.equal(both.requests.length, 0, "same name is not same hand")
+    tap(h, a)
+    scheduler.requestMotion(other, { ...other.transform.deref(), position: [1, 0, 0] }, scheduler.motionRevision)
+    tap(h, a)
+    assert.equal(h.requests.length, 1, "an intervening revision breaks the pair")
+    const p = frameWorldTransform(a).position
+    h.down({ x: p[0] * 100, y: p[1] * 100 })
+    host.reached.delete("a")
+    h.up()
+    assert.equal(h.requests.length, 1, "withdrawal before release cannot reset")
+    assert.equal(h.state.captured, null)
+})
+
+test("the home survives detaching and reattaching a hand", () => {
+    const { scheduler, a, h } = displaced()
+    h.gesture.dispose()
+    const next = harness(scheduler, [a], { requestMotion: realMotion(scheduler) })
+    tap(next, a)
+    tap(next, a)
+    assert.deepEqual(a.transform.deref().position, [0, 0, 0])
+})
+
+test("a real program restatement establishes a new home for the same identity", () => {
+    const scheduler = buildWorld({ admit: pass })
+    const host = scheduler.hotSwapChild("host", fork("host", "let a\nwait 1\ngoto 2 0\nlet a"))
+    const a = host.children.get("a")
+    const h = harness(scheduler, [a], { requestMotion: realMotion(scheduler) })
+    h.down({ x: 0, y: 0 })
+    h.move({ x: 100, y: 0 })
+    h.up()
+    drive(scheduler)
+    assert.equal(host.children.get("a"), a)
+    assert.deepEqual(a.transform.deref().position, [3, 0, 0])
+    h.down({ x: 300, y: 0 })
+    h.move({ x: 400, y: 0 })
+    h.up()
+    tap(h, a)
+    tap(h, a)
+    assert.deepEqual(a.transform.deref().position, [2, 0, 0])
+})
+
+test("two touch contacts can have different pointer ids and still reset the same hand", () => {
+    const { a, h } = displaced()
+    tap(h, a)
+    const p = frameWorldTransform(a).position
+    const at = { x: p[0] * 100, y: p[1] * 100 }
+    assert.equal(h.gesture.pointerDown({ pointerId: 2, ...at }).claimed, true)
+    h.gesture.pointerUp({ pointerId: 2, ...at })
+    assert.deepEqual(a.transform.deref().position, [0, 0, 0])
+})
+
 test("a short pull moves the point with the finger", () => {
     const { scheduler, A } = onSphere([5 * Math.cos(Math.PI / 15), 0, 5 * Math.sin(Math.PI / 15)])
     const view = pinhole([0, 0, 60])
@@ -591,4 +758,16 @@ let A.z = 0`))
     assert.ok(same(line.requested, [5, 0, 0]), `a held grazing move requests the accepted point, got ${line.requested}`)
     assert.equal(line.outcome, "accepted", "holding is an accepted no-op")
     assert.ok(same(frameWorldTransform(A).position, world, 1e-9), `the point stays where it is, got ${frameWorldTransform(A).position}`)
+})
+
+test("a double tap carries reset intent through the motion door; a drag carries none", () => {
+    const { a, h } = displaced("let a")
+    const p = frameWorldTransform(a).position
+    h.down({ x: p[0] * 100, y: p[1] * 100 })
+    h.move({ x: p[0] * 100 + 100, y: p[1] * 100 })
+    h.up()
+    assert.equal(h.requests.at(-1).intent, null, "an ordinary drag asks for no reset")
+    tap(h, a)
+    tap(h, a)
+    assert.deepEqual(h.requests.at(-1).intent, { reset: true }, "the reset is explicit, not inferred")
 })

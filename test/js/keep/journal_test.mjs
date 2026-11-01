@@ -1,11 +1,14 @@
-// The journal — six (now eight) verbs, one engine (id:kb-5, id:kc-c-journal).
+// The journal — one verb catalog, one engine (id:kb-5, id:kc-c-journal).
 // Store and random injected; memory IDB speaks the measured shapes.
 import { describe, test, beforeEach, afterEach } from "node:test"
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
 import { createEngine, DB_VERSION } from "../../../assets/js/keep/journal.store.js"
 import { write, read, name, V } from "../../../assets/js/keep/entry.js"
 import { createMemoryIDB } from "./idb_memory.mjs"
+import { PAGE } from "../../../assets/js/keep/page.js"
 
+const imageDigest = (size) => createHash("sha256").update(Buffer.alloc(size)).digest("hex")
 const fill = (b) => (arr) => {
     arr.fill(b)
     return arr
@@ -157,6 +160,83 @@ describe("journal: list is newest-first; local is a number", () => {
     })
 })
 
+describe("journal: local proof filter is positive evidence before n", () => {
+    /** @type {ReturnType<typeof createEngine>} */
+    let j
+    let root
+    beforeEach(async () => {
+        j = freshJournal()
+        root = name(await j.genesis())
+    })
+    afterEach(async () => {
+        await j.close()
+    })
+
+    const ghost = (t, tag) => snap(root, { tag }, { t, n: 0 })
+    const signed = async (t, tag) => {
+        const bytes = ghost(t, tag)
+        await j.put(bytes, { authored: true })
+        return bytes
+    }
+
+    test("the default read is unchanged; proved skips rows before n", async () => {
+        for (let i = 0; i < 3; i++) await j.put(ghost(2000 + i, `g${i}`))
+        const oldest = await signed(1, "s")
+        assert.deepEqual((await j.local(root, 2)).map((x) => read(x).tag), ["g2", "g1"])
+        assert.deepEqual((await j.local(root, 2, { proved: true })), [oldest])
+    })
+
+    test("PAGE+1 unproven prefix cannot hide a signed oldest", async () => {
+        for (let i = 0; i < 13; i++) await j.put(ghost(2000 + i, `g${i}`))
+        const oldest = await signed(1, "s")
+        assert.equal((await j.local(root, PAGE)).includes(oldest), false)
+        assert.deepEqual((await j.local(root, PAGE, { proved: true })), [oldest])
+    })
+
+    test("signed oldest inside one page is returned by the filter", async () => {
+        for (let i = 0; i < PAGE - 1; i++) await j.put(ghost(2000 + i, `g${i}`))
+        const oldest = await signed(1, "s")
+        assert.equal((await j.local(root, PAGE)).at(-1), oldest)
+        assert.deepEqual((await j.local(root, PAGE, { proved: true })), [oldest])
+    })
+
+    test("all-unproven terminates unchanged: empty, facts still local", async () => {
+        for (let i = 0; i < 4; i++) await j.put(ghost(2000 + i, `g${i}`))
+        assert.deepEqual(await j.local(root, PAGE, { proved: true }), [])
+        assert.equal((await j.local(root)).length, 4)
+    })
+
+    test("later proof enrichment becomes eligible", async () => {
+        const later = ghost(10, "later")
+        await j.put(later)
+        assert.deepEqual(await j.local(root, PAGE, { proved: true }), [])
+        await j.put(later, { authored: true })
+        assert.deepEqual(await j.local(root, PAGE, { proved: true }), [later])
+    })
+
+    test("equal stamps are both eligible", async () => {
+        const a = await signed(100, "a")
+        const b = await signed(100, "b")
+        const held = await j.local(root, 2, { proved: true })
+        assert.equal(held.length, 2)
+        assert.deepEqual(held.map(name).sort(), [name(a), name(b)].sort())
+    })
+
+    test("a no-crypto reader still reads proof-bearing old rows", async () => {
+        const { idb, KeyRange } = createMemoryIDB()
+        const first = createEngine({ idb, KeyRange, dbName: "filter-keyless" })
+        const kroot = name(await first.genesis())
+        const bytes = write("snap", { tag: "old" }, { root: kroot, target: "b".repeat(64), ts: { t: 1, n: 0 } })
+        await first.put(bytes, { authored: true })
+        const proof = await first.proof(bytes)
+        await first.close()
+        const blind = createEngine({ idb, KeyRange, dbName: "filter-keyless", crypto: {} })
+        assert.deepEqual(await blind.local(kroot, 1, { proved: true }), [bytes])
+        assert.deepEqual(await blind.proof(bytes), proof)
+        await blind.close()
+    })
+})
+
 describe("journal: share is a fact beside; genesis is once", () => {
     /** @type {ReturnType<typeof createEngine>} */
     let j
@@ -245,8 +325,8 @@ describe("journal: blobs capped; source never evicted; messages forever", () => 
             const b = await mk("b", 200, img(60))
             const c = await mk("c", 300, img(60)) // kept local — never evicted
 
-            await j.share(a.id, { at: 1, node: "n" })
-            await j.share(b.id, { at: 2, node: "n" })
+            await j.share(a.id, { at: 1, node: "n", retained: { image: imageDigest(60) } })
+            await j.share(b.id, { at: 2, node: "n", retained: { image: imageDigest(60) } })
             // Trigger eviction fold via another put
             await mk("d", 400, img(10))
 
@@ -273,12 +353,12 @@ describe("journal: blobs capped; source never evicted; messages forever", () => 
                 image: new Blob([new Uint8Array(100)]),
                 source: src,
             })
-            await j.share(id, { at: 1, node: "n" })
+            await j.share(id, { at: 1, node: "n", retained: { image: imageDigest(100) } })
             // More shared images to force eviction
             for (let i = 0; i < 3; i++) {
                 const b = snap(root, { i }, { t: 10 + i, n: 0 })
                 const bid = await j.put(b, { image: new Blob([new Uint8Array(50)]) })
-                await j.share(bid, { at: 2 + i, node: "n" })
+                await j.share(bid, { at: 2 + i, node: "n", retained: { image: imageDigest(50) } })
             }
             // Source survives
             assert.equal(await j.source(name(src)), src)
@@ -518,11 +598,8 @@ describe("journal: the genesis lives in self, not the log", () => {
         }
     })
 
-    test("the genesis never ships — TOFU binds on the first snap's root field", async () => {
-        // local(root) is what announce drains (id:kb-9). The genesis is absent
-        // from it, so the clan learns the root from a SNAP that carries it, and
-        // the nonce never leaves the browser. Deliberate: if a later change put
-        // the genesis in the index, announce would start shipping it silently.
+    test("genesis travels as proof evidence, never as a local log moment", async () => {
+        // Genesis is public proof evidence, not a log moment (id:keep-auth-write-guard).
         const j = freshJournal()
         try {
             const gen = await j.genesis()
@@ -642,6 +719,153 @@ describe("journal: eviction cannot cost what it does not need", () => {
             assert.equal(gets, 0, "a message-only put reads no blob at all")
         } finally {
             await j.close()
+        }
+    })
+})
+
+describe("journal: an answer is not retention — the negative permission", () => {
+    test("refusal's retained:false blocks eviction; accepted control still evicts", async () => {
+        const j = freshJournal({ blobCap: 100 })
+        const root = "k".repeat(64)
+        const blob = (n) => new Blob([new Uint8Array(n)], { type: "image/png" })
+        try {
+            const mk = async (tag, t) => {
+                const bytes = snap(root, { tag }, { t, n: 0 })
+                const id = await j.put(bytes, { image: blob(60) })
+                return { id, bytes }
+            }
+            const accepted = await mk("accepted", 100)
+            const refused = await mk("refused", 200)
+            const silent = await mk("silent", 300)
+
+            await j.share(accepted.id, { at: 1, node: "n", retained: { image: imageDigest(60) } })
+            await j.share(refused.id, { at: 2, node: "n", retained: false })
+
+            await mk("pressure", 400)
+
+            assert.equal(await j.image(accepted.id), undefined, "accepted image is evictable")
+            assert.ok(await j.image(refused.id), "a refusal grants no eviction permission")
+            assert.ok(await j.image(silent.id), "silence is not an answer")
+            for (const x of [accepted, refused, silent]) {
+                assert.equal(await j.get(x.id), x.bytes, "the message is never evicted")
+            }
+        } finally {
+            await j.close()
+        }
+    })
+
+    test("a verified image digest permits eviction", async () => {
+        const j = freshJournal({ blobCap: 100 })
+        const root = "p".repeat(64)
+        const blob = () => new Blob([new Uint8Array(60)], { type: "image/png" })
+        try {
+            const bytes = snap(root, { tag: "verified" }, { t: 1, n: 0 })
+            const id = await j.put(bytes, { image: blob() })
+            await j.share(id, {
+                at: 1, node: "n", retained: { image: imageDigest(60) },
+            })
+            await j.put(snap(root, { tag: "pressure" }, { t: 2, n: 0 }), { image: blob() })
+            assert.equal(await j.image(id), undefined, "a verified referent may be evicted")
+        } finally {
+            await j.close()
+        }
+    })
+
+    test("a legacy row with no retained fact stays pinned", async () => {
+        const j = freshJournal({ blobCap: 100 })
+        const root = "q".repeat(64)
+        const blob = () => new Blob([new Uint8Array(60)], { type: "image/png" })
+        try {
+            const bytes = snap(root, { tag: "legacy" }, { t: 1, n: 0 })
+            const id = await j.put(bytes, { image: blob() })
+            await j.share(id, { at: 1, node: "n" }) // no retention fact
+            await j.put(snap(root, { tag: "pressure" }, { t: 2, n: 0 }), { image: blob() })
+            assert.ok(await j.image(id), "no verified fact ⇒ no eviction, even for an old row")
+        } finally {
+            await j.close()
+        }
+    })
+
+    test("a later refusal cannot erase the first answer's fact", async () => {
+        const { idb, KeyRange } = createMemoryIDB()
+        const dbName = "share-once"
+        const root = "m".repeat(64)
+        const blob = () => new Blob([new Uint8Array(60)], { type: "image/png" })
+        const bytes = snap(root, { tag: "first" }, { t: 1, n: 0 })
+
+        const j = createEngine({
+            idb, KeyRange, dbName, version: DB_VERSION,
+            random: fill(0x42), stamp: () => ({ t: 1, n: 0 }), blobCap: 100,
+        })
+        const id = await j.put(bytes, { image: blob() })
+        await j.share(id, { at: 10, node: "first", retained: { image: imageDigest(60) } })
+        await j.share(id, { at: 11, node: "second", retained: false })
+        await j.close()
+
+        // The row's first fact stands: the later answer grafted no negative.
+        const raw = await new Promise((resolve, reject) => {
+            const req = idb.open(dbName, DB_VERSION)
+            req.onsuccess = () => resolve(req.result)
+            req.onerror = () => reject(req.error)
+        })
+        const row = await new Promise((resolve, reject) => {
+            const tx = raw.transaction(["log"], "readonly")
+            const g = tx.objectStore("log").get(id)
+            g.onsuccess = () => resolve(g.result)
+            g.onerror = () => reject(g.error)
+        })
+        raw.close()
+        assert.deepEqual(row.shared, { at: 10, node: "first", retained: { image: imageDigest(60) } })
+        assert.equal(row.local, 0)
+
+        const j2 = createEngine({
+            idb, KeyRange, dbName, version: DB_VERSION,
+            random: fill(0x42), stamp: () => ({ t: 2, n: 0 }), blobCap: 100,
+        })
+        try {
+            await j2.put(snap(root, { tag: "pressure" }, { t: 2, n: 0 }), { image: blob() })
+            assert.equal(await j2.image(id), undefined, "the first fact still permits eviction")
+        } finally {
+            await j2.close()
+        }
+    })
+
+    test("the negative permission survives reproject", async () => {
+        const { idb, KeyRange } = createMemoryIDB()
+        const dbName = "negative-reproject"
+        const root = "n".repeat(64)
+        const blob = () => new Blob([new Uint8Array(60)], { type: "image/png" })
+        const bytes = snap(root, { tag: "refused" }, { t: 1, n: 0 })
+
+        const j1 = createEngine({
+            idb, KeyRange, dbName, version: 1,
+            random: fill(0x42), stamp: () => ({ t: 1, n: 0 }), blobCap: 100,
+        })
+        const id = await j1.put(bytes, { image: blob() })
+        await j1.share(id, { at: 1, node: "n", retained: false })
+        await j1.close()
+
+        const j2 = createEngine({
+            idb, KeyRange, dbName, version: 2,
+            random: fill(0x42), stamp: () => ({ t: 2, n: 0 }), blobCap: 100,
+        })
+        try {
+            await j2.put(snap(root, { tag: "pressure" }, { t: 3, n: 0 }), { image: blob() })
+            assert.ok(await j2.image(id), "reproject keeps the negative permission")
+        } finally {
+            await j2.close()
+        }
+
+        // A plain reopen at the same version also keeps the marker: no upgrade
+        // is required for the negative permission to hold. (id:keep-foundation-retention)
+        const j3 = createEngine({
+            idb, KeyRange, dbName, version: 2,
+            random: fill(0x42), stamp: () => ({ t: 3, n: 0 }), blobCap: 100,
+        })
+        try {
+            assert.ok(await j3.image(id), "a plain reopen keeps the negative permission")
+        } finally {
+            await j3.close()
         }
     })
 })

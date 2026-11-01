@@ -2,11 +2,12 @@
 // Zero imports. Zero side effects. Every function returns a new value.
 //
 // A buffer is a plain value:
-//   { id, work_id, name, content, mode, created, lastModified, origin }
+//   { id, work_id, base_id, name, content, mode, created, lastModified, origin }
 //   origin: null | { addr, buffer_id, source, time, name, root? } — fork lineage
 //            root is the peer's device root (signature_of on first keep).
 //   work_id: the origin keep this tab is of, once kept. Null until the first
 //            put. Then stash that keep's name. Never a minted nonce.
+//   base_id: exact keep this buffer continues; null means unknown, never HEAD.
 //
 // A collection is a plain value:
 //   { items: Map<id, buffer>, currentId: string | null }
@@ -25,6 +26,7 @@ export const createCollection = (mints) => {
     const buffer = {
         id,
         work_id: null,
+        base_id: null,
         name: DEFAULT_NAME,
         content: DEFAULT_CONTENT,
         mode: DEFAULT_MODE,
@@ -63,6 +65,7 @@ export const addBuffer = (collection, opts = {}, mints) => {
     const buffer = {
         id,
         work_id: typeof opts.work_id === "string" && opts.work_id ? opts.work_id : null,
+        base_id: opts.base_id ?? null,
         name: opts.name || mints.name(),
         content: opts.content ?? '',
         mode: opts.mode ?? DEFAULT_MODE,
@@ -137,6 +140,14 @@ export const setWorkId = (collection, id, work_id) => {
     return { items, currentId: collection.currentId }
 };
 
+export const setBaseId = (collection, id, base_id) => {
+    const held = collection.items.get(id)
+    if (!held || base_id === undefined || held.base_id === base_id) return collection
+    const items = new Map(collection.items)
+    items.set(id, { ...held, base_id })
+    return { items, currentId: collection.currentId }
+};
+
 // --- Navigation ---
 
 export const nextId = (collection) => {
@@ -174,6 +185,7 @@ export const serialize = (collection) => {
         data[id] = {
             id,
             work_id: buffer.work_id,
+            base_id: buffer.base_id ?? null,
             name: buffer.name,
             active: collection.currentId === id,
             content: buffer.content,
@@ -194,6 +206,7 @@ export const serialize = (collection) => {
 const fillDefaults = (raw, mints) => ({
     id: raw.id ?? mints.id(),
     work_id: typeof raw.work_id === "string" && raw.work_id ? raw.work_id : null,
+    base_id: typeof raw.base_id === 'string' && raw.base_id ? raw.base_id : null,
     name: raw.name ?? mints.name(),
     content: raw.content ?? DEFAULT_CONTENT,
     mode: raw.mode ?? DEFAULT_MODE,

@@ -15,16 +15,20 @@ export function sharedIds(ids, heldIds) {
 
 /**
  * Accept a message that arrived with a permanent clan answer.
- * Order is put, then share (id:kb-8). Source rides; image does not (id:kb-source-absence).
+ * Put, then share (id:kb-8). Source/proof ride; authoring intent never does.
  *
  * @param {{ put: Function, share: Function }} door
  * @param {string} bytes - the message, as it crossed the wire
  * @param {{ at: number, node: string } | null | undefined} fact - permanent answer, or none yet
- * @param {{ source?: string }} [extras] - the source text that fanned beside it
+ * @param {{ source?: string, proof?: object }} [extras] - archival data only
  * @returns {Promise<string>} the message id
  */
 export async function accept(door, bytes, fact, extras = {}) {
-    const id = await door.put(bytes, extras)
+    const { source, proof } = extras
+    const id = await door.put(bytes, {
+        ...(source !== undefined ? { source } : {}),
+        ...(proof != null ? { proof } : {}),
+    })
     if (fact != null) await door.share(id, fact)
     return id
 }

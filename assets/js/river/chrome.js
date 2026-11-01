@@ -1,7 +1,6 @@
-// Caption chrome — word, share link, mode paint, keep→land beats (id:kr-vis).
+// Caption chrome — word, mode paint, keep→land beats (id:kr-vis).
 
 import { read } from "../keep/entry.js"
-import { link, shareForkRef } from "../link.js"
 import { applyMode, isOpen, modeOf, seatOf } from "./mode.js"
 import { bytesOf } from "./keeps.js"
 
@@ -29,28 +28,6 @@ export function titleOf(bytes) {
     }
 }
 
-/**
- * Share URL for a shared standing keep, else null (id:la-fork-pull).
- * @param {{ at: {key: string, id: string|null}, sharedIds: Set<string>, keeps: Map<string, {bytes: string}>, newestId: string|null, work: string|null }} args
- * @param {{address: (o: object) => string}} [door]
- * @returns {string|null}
- */
-export function shareLinkOf({ at, sharedIds, keeps, newestId, work }, door = link) {
-    if (!at.id || !sharedIds.has(at.id)) return null
-    let workId = work
-    const bytes = bytesOf(keeps, at.id)
-    if (bytes) {
-        try {
-            const target = read(bytes).target
-            if (typeof target === "string" && target) workId = target
-        } catch {
-            /* keep id still answers */
-        }
-    }
-    const ref = shareForkRef(at.id, { workId, headId: newestId })
-    if (!ref) return null
-    return door.address({ fork: ref })
-}
 
 /**
  * Caption facts for the standing seat — pure; the painter writes them.

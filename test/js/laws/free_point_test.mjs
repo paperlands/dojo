@@ -359,7 +359,7 @@ test("the accepted z is published: a reader in another ambient sees one instant"
     assert.equal(resolveBinding(m, "b.y"), stood[1])
 })
 
-test("a fresh play inherits no hand state", () => {
+test("a fresh code run retains the scoped hand action, not the retired frame", () => {
     const source = "let b\nas m do\n  wait 1\nend"
     const { scheduler, b } = freeB(source)
     const h = harness(scheduler, [b], {
@@ -373,13 +373,14 @@ test("a fresh play inherits no hand state", () => {
     const stood = [...accepted(b)]
     assert.ok(Math.abs(stood[2]) > 1e-6, "the hand really moved the point off its plane")
 
-    // `fresh` is the NEW PLAY door: realize anew, inherit nothing.
+    // A new run gets new frames; the same scoped slot retains its user input.
     const next = scheduler.hotSwapChild("host", fork("host", source), { fresh: true })
     drive(scheduler)
     const again = next.children.get("b")
     assert.ok(again, "the fresh play seats the declaration again")
-    assert.deepEqual(accepted(again).map((n) => +n.toFixed(6)), [0, 0, 0],
-        "a fresh play inherits no hand state")
+    assert.notEqual(again, b)
+    assert.deepEqual(accepted(again).map((n) => +n.toFixed(6)), stood.map((n) => +n.toFixed(6)),
+        "a code rerun reapplies the hand action")
 })
 
 test("perspective: a flat camera drags in xy only — z is never invented", () => {

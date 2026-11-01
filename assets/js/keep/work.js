@@ -78,8 +78,8 @@ export function newerKeep(a, b) {
         const tb = read(b).ts
         if (!tb || typeof tb.t !== "number") return a
         if (!ta || typeof ta.t !== "number") return b
-        if (tb.t > ta.t || (tb.t === ta.t && (tb.n ?? 0) > (ta.n ?? 0))) return b
-        return a
+        const order = tb.t - ta.t || (tb.n ?? 0) - (ta.n ?? 0)
+        return order > 0 || (order === 0 && name(b) > name(a)) ? b : a
     } catch {
         return a
     }
@@ -88,9 +88,8 @@ export function newerKeep(a, b) {
 /**
  * The chain under a page of one work's keeps.
  *
- * Causal parent is `prev` when minted (id:kc-contracts); else next older by
- * author order. First fork can land on a still-linear river. A prev outside
- * the page is a foot.
+ * Only authored `prev` supplies ancestry. Missing or off-page evidence ends
+ * the known line; display adjacency never invents a parent.
  *
  * @param {string[]} versions - ofWork output, newest-first
  * @param {string[]} [ids] - the page's names, if the caller already holds them
@@ -111,7 +110,7 @@ function linesOf(versions, ids = namesOf(versions)) {
     const parent = new Map()
     for (let i = 0; i < ids.length; i++) {
         const named = bodies[i].prev
-        const p = typeof named === "string" && named ? named : (ids[i + 1] ?? null)
+        const p = typeof named === "string" && named ? named : null
         parent.set(ids[i], p != null && byId.has(p) ? p : null)
     }
 

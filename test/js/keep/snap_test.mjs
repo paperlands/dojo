@@ -8,7 +8,7 @@ import {
 } from "../../../assets/js/keep/kinds/snap.js"
 import { createJournal as createDoor } from "../../../assets/js/keep/journal.js"
 import { createEngine } from "../../../assets/js/keep/journal.store.js"
-import { read, name, V } from "../../../assets/js/keep/entry.js"
+import { read, name, V, write } from "../../../assets/js/keep/entry.js"
 import { createMemoryIDB } from "./idb_memory.mjs"
 
 const fill = (b) => (arr) => {
@@ -28,6 +28,56 @@ function freshDoor() {
         blobCap: 1024 * 1024,
     })
     return createDoor({ engine })
+}
+
+/** Seat raw bytes in =self= (a legacy genesis with no signing key). */
+async function seedSelf(idb, dbName, key, value) {
+    const db = await new Promise((resolve, reject) => {
+        const request = idb.open(dbName)
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+    })
+    try {
+        const tx = db.transaction("self", "readwrite")
+        const done = new Promise((resolve, reject) => {
+            tx.oncomplete = resolve
+            tx.onabort = () => reject(tx.error)
+            tx.onerror = () => reject(tx.error)
+        })
+        const request = tx.objectStore("self").put(value, key)
+        await new Promise((resolve, reject) => {
+            request.onsuccess = resolve
+            request.onerror = () => reject(request.error)
+        })
+        await done
+    } finally {
+        db.close()
+    }
+}
+
+/** Remove one =self= record (losing a signing key). */
+async function deleteSelf(idb, dbName, key) {
+    const db = await new Promise((resolve, reject) => {
+        const request = idb.open(dbName)
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+    })
+    try {
+        const tx = db.transaction("self", "readwrite")
+        const done = new Promise((resolve, reject) => {
+            tx.oncomplete = resolve
+            tx.onabort = () => reject(tx.error)
+            tx.onerror = () => reject(tx.error)
+        })
+        const request = tx.objectStore("self").delete(key)
+        await new Promise((resolve, reject) => {
+            request.onsuccess = resolve
+            request.onerror = () => reject(request.error)
+        })
+        await done
+    } finally {
+        db.close()
+    }
 }
 
 describe("writeSnap: the first kind", () => {
@@ -375,5 +425,113 @@ describe("mintSnap: one put, photograph or nothing", () => {
             await mintSnap({ title: "x" }, { source: "x" }, { work_id: "f".repeat(64) }, dead, PNG_1PX),
             null,
         )
+    })
+})
+
+describe("mintSnap: the hand read before the picture", () => {
+    test("a stale cached root cannot author after another tab replaced the hand", async () => {
+        const { idb, KeyRange } = createMemoryIDB()
+        const dbName = `snap-stale-tab-${Math.random().toString(36).slice(2)}`
+        const tabA = createEngine({ idb, KeyRange, dbName })
+        const tabB = createEngine({ idb, KeyRange, dbName })
+        let doorA = null
+        let doorB = null
+        try {
+            await tabA.genesis() // schema + a key we then replace with a legacy hand
+            const legacy = write("genesis", { nonce: "ab".repeat(32) }, { ts: { t: 1, n: 0 } })
+            await seedSelf(idb, dbName, "genesis", legacy)
+            const oldRoot = name(legacy)
+
+            doorA = createDoor({ engine: tabA })
+            doorB = createDoor({ engine: tabB })
+            assert.deepEqual(await tabA.hand(), { root: oldRoot, signing: "keyless" })
+            assert.equal(await doorA.root(), oldRoot, "tab A caches its warm name")
+
+            const next = await doorB.newHand({ expectedRoot: oldRoot })
+            assert.equal(next.changed, true)
+            // Readiness is computed from the store, not from A's warm cache.
+            assert.deepEqual(await doorA.hand(), { root: next.root, signing: "ready" })
+            assert.equal(await doorA.root(), next.root,
+                "the readiness read dropped the stale cached name")
+
+            const authored = await mintSnap(
+                { title: "after recovery" },
+                { source: "fw 9" },
+                { root: next.root },
+                doorA,
+                PNG_1PX,
+            )
+            assert.ok(authored)
+            assert.equal(read(await doorA.get(authored)).root, next.root)
+
+            // The engine's birth-root check stays the last word.
+            await assert.rejects(
+                mintSnap(
+                    { title: "stale" },
+                    { source: "fw 8" },
+                    { root: oldRoot },
+                    doorA,
+                    PNG_1PX,
+                ),
+                (error) => error.code === "stale-hand",
+                "no bytes under a hand this tab no longer holds",
+            )
+            assert.equal((await doorA.local(next.root, 10)).length, 1)
+        } finally {
+            await doorA?.close()
+            await doorB?.close()
+        }
+    })
+
+    test("ids.root is authoritative — the mutable door root is never read", async () => {
+        const captured = "c".repeat(64)
+        let authored = null
+        const door = {
+            root: () => { throw new Error("a mint must use the captured hand") },
+            put: async (bytes) => { authored = bytes; return name(bytes) },
+        }
+        const id = await mintSnap(
+            { title: "captured" },
+            { source: "fw 7", diagnostics: [] },
+            { root: captured },
+            door,
+            PNG_1PX,
+        )
+        assert.equal(id, name(authored))
+        assert.equal(read(authored).root, captured)
+    })
+
+    test("a hand replacement keeps the old hand's bytes and retained proof", async () => {
+        const { idb, KeyRange } = createMemoryIDB()
+        const dbName = `snap-evidence-${Math.random().toString(36).slice(2)}`
+        const tab = createEngine({ idb, KeyRange, dbName })
+        let door = null
+        try {
+            const birth = await tab.genesis()
+            const oldRoot = name(birth)
+            const oldSource = "fw 200"
+            const oldRow = write("snap", { source_id: name(oldSource), title: "old" },
+                { root: oldRoot, ts: { t: 20, n: 0 } })
+            const oldId = name(oldRow)
+            await tab.put(oldRow, { source: oldSource, authored: true })
+            const oldProof = await tab.proof(oldRow)
+
+            await deleteSelf(idb, dbName, "signing-key")
+            assert.equal((await tab.hand()).signing, "keyless")
+            const next = await tab.newHand({ expectedRoot: oldRoot })
+            assert.equal(next.changed, true)
+
+            door = createDoor({ engine: tab })
+            assert.equal(await door.get(oldId), oldRow, "old bytes are readable")
+            assert.deepEqual(await door.proof(oldRow), oldProof, "old evidence is retained")
+            assert.equal((await door.local(oldRoot, 10, { proved: true })).length, 1,
+                "the old row is still in its own proved page")
+            assert.equal(await door.get(oldRoot), birth, "the old genesis is archived")
+            // Delivery after replacement is a policy decision; this test only
+            // proves the evidence survives it.
+        } finally {
+            await door?.close()
+            await tab.close()
+        }
     })
 })

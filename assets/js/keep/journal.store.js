@@ -4,7 +4,7 @@
 //   log    — messages, append-only, forever; id = name(message)
 //   blobs  — images, keyed by the *message's* id; capped; shared only may go
 //   source — program text, keyed by name(text); NEVER evicted (id:kb-source)
-//   self   — one record: the genesis bytes; identity's home (id:kb-vet2-root)
+//   self   — genesis bytes + nonextractable signing key (id:keep-auth-write-guard)
 //
 // put takes bytes, not (id, bytes) — the name is not a choice (id:kc-law 3).
 // local is 1|0, a number — a boolean index holds zero rows (measured).
@@ -20,20 +20,39 @@
 import { stamp as ambientStamp } from "../utils/stamp.js"
 import { name, read, unshaped } from "./entry.js"
 import { genesisBytes } from "./genesis.js"
+import { hashBytes } from "./hash.js"
+import { signingHand, keepProof, checkKeepProof, publicCredential } from "./auth.js"
 
 export const DB_VERSION = 1
 
-/** Default hard cap on the image blob store (bytes). Shared only may yield. */
+/** Image eviction target; sole or unverified copies may exceed it. */
 const DEFAULT_BLOB_CAP = 32 * 1024 * 1024
+function typed(code, message) {
+    const error = new Error(message)
+    error.code = code
+    return error
+}
 
-/**
- * A deliberate OVER-estimate of one image (measured ~17 KB, id:kc-evict), used
- * only to skip the fold when the cap provably cannot be reached. Over-estimating
- * is the safe direction: it folds too eagerly, never too late.
- */
-const NOMINAL_IMAGE = 64 * 1024
+function compatibleKey(key) {
+    return key != null && key.type === "private" && key.extractable === false &&
+        key.algorithm?.name === "ECDSA" && key.algorithm?.namedCurve === "P-256"
+}
+
+const supportsGenesis = (genesis) => {
+    try {
+        publicCredential(genesis)
+        return true
+    } catch {
+        return false
+    }
+}
+
+const usableHand = (genesis, key, crypto) =>
+    crypto?.subtle != null && compatibleKey(key) && supportsGenesis(genesis)
 
 const SELF_KEY = "genesis"
+const SIGNING_KEY = "signing-key"
+const PRIOR_KEY = "genesis-prior:"
 
 /**
  * @param {object} [opts]
@@ -52,6 +71,7 @@ export function createEngine(opts = {}) {
     if (!KeyRange) throw new Error("journal: no IDBKeyRange (and none injected)")
     const dbName = opts.dbName ?? "dojo-keep"
     const version = opts.version ?? DB_VERSION
+    const crypto = opts.crypto ?? globalThis.crypto
     const random =
         opts.random ??
         (globalThis.crypto?.getRandomValues?.bind(globalThis.crypto) ?? null)
@@ -163,20 +183,9 @@ export function createEngine(opts = {}) {
         })
     }
 
-    /**
-     * put(bytes, {image?, source?}) → id
-     * Hashes the message, projects columns, stores. Image under the message's
-     * id; source under name(source). ONE tx over [log, blobs, source].
-     * Idempotent on id: a second put of the same name preserves shared/local.
-     *
-     * Skeleton (id:kb-11-derive, client twin): a log keep names its
-     * journal, its work, and its time. Refuse silent loss in neither index.
-     * The genesis is not a put — it lives in `self` (id:kb-5-genesis-place).
-     *
-     * Clan history lands as local: 1. The permanent answer is a later share,
-     * never a put option — put then share (id:kb-8, keep/shared.js accept).
-     * There is no put(bytes, {shared}).
-     */
+    // Retain bytes + proof atomically; only explicit authored intent may sign.
+    // Source and image share the transaction; receipts remain a later share.
+    // Incoming bytes are never inferred to be ours (id:keep-auth-durable-proof).
     async function put(bytes, extras = {}) {
         if (typeof bytes !== "string") {
             throw new TypeError("journal.put: bytes must be the entry string")
@@ -196,36 +205,55 @@ export function createEngine(opts = {}) {
 
         const root = value.root
         const ts = value.ts
+        const { image, source } = extras
+        const imageDigest = await digestOfImage(image)
+        const evidence = await putProof(bytes, root, extras)
+        // An authored proof must pass the SAME admission before it is stored.
+        if (extras.authored === true && evidence != null) {
+            await checkKeepProof(bytes, evidence, crypto)
+        }
 
-        await withStore(["log", "blobs", "source"], "readwrite", async (tx) => {
+        const stores = ["log", "blobs", "source", ...(extras.authored === true ? ["self"] : [])]
+        await withStore(stores, "readwrite", async (tx) => {
+            // Authored bytes commit only under the hand that is active AT WRITE TIME.
+            if (extras.authored === true) {
+                const self = tx.objectStore("self")
+                const birth = await idbReq(self.get(SELF_KEY))
+                const key = await idbReq(self.get(SIGNING_KEY))
+                if (birth == null || name(birth) !== root || key == null) {
+                    throw typed("stale-hand", "keep: stale hand; no bytes were written")
+                }
+            }
             const log = tx.objectStore("log")
             const blobs = tx.objectStore("blobs")
             const sources = tx.objectStore("source")
 
             const existing = await idbReq(log.get(id))
-            if (!existing) {
-                // local: 1 — kept local until a permanent answer (id:kc-c-journal).
-                log.put({ id, message: bytes, root, ts, local: 1 })
-            }
-            // Existing row: leave shared/local alone. Message is content-addressed;
-            // a second put of the same bytes is the same keep (idempotent union).
+            const row = existing ?? { id, message: bytes, root, ts, local: 1 }
+            if (evidence != null && !row.proof) row.proof = evidence
+            if (!existing || evidence != null) log.put(row)
 
-            if (extras.image != null) {
+            if (image != null) {
                 const has = await idbReq(blobs.get(id))
-                if (!has) blobs.put(extras.image, id)
+                if (!has) {
+                    // Bind only the blob actually inserted. (id:keep-foundation-retention)
+                    blobs.put(image, id)
+                    row.image_digest = imageDigest
+                    log.put(row)
+                }
             }
             // Store source unconditionally when handed — even "". source_id =
             // name("") must point at a row, not a tombstone (id:kb-source-absence).
-            if (extras.source !== undefined) {
-                const sid = name(extras.source)
-                sources.put(extras.source, sid)
+            if (source !== undefined) {
+                const sid = name(source)
+                sources.put(source, sid)
             }
         })
 
         // Eviction is a fold at put, never a stored verdict (id:kc-evict).
         // Only a NEW blob can push the store over: a message-only put cannot,
         // and most puts are message-only (clan history, re-puts, forks).
-        if (extras.image != null) await evictIfNeeded()
+        if (image != null) await evictIfNeeded()
         return id
     }
 
@@ -235,9 +263,11 @@ export function createEngine(opts = {}) {
         return withStore(["log", "self"], "readonly", async (tx) => {
             const row = await idbReq(tx.objectStore("log").get(id))
             if (row) return row.message
-            const held = await idbReq(tx.objectStore("self").get(SELF_KEY))
+            const self = tx.objectStore("self")
+            const held = await idbReq(self.get(SELF_KEY))
             if (held != null && name(held) === id) return held
-            return undefined
+            const prior = await idbReq(self.get(PRIOR_KEY + id))
+            return prior ?? undefined
         })
     }
 
@@ -257,29 +287,25 @@ export function createEngine(opts = {}) {
     }
 
     /**
-     * Kept local: not yet permanently answered. local is 1|0, a NUMBER —
-     * a boolean index holds 0 rows (measured). Newest first, like list.
-     *
-     * n bounds the SHARED FOLD (id:kb-8-page): a kept-local entry inside the
-     * newest n of the whole log is necessarily among the newest n kept-local,
-     * so local(root, n) is exactly enough to fold list(root, n). The wire
-     * ships local(root, PAGE) the same way — one page per pass (id:kb-9).
+     * Default = newest n kept-local (the shared fold, id:kb-8-page).
+     * proved = retain only rows with proof BEFORE n, so wire page and "more" share one query.
+     * Sparse prefixes are inspected without an n bound (finite total, not a latency promise).
      */
-    async function local(root, n = Infinity) {
+    async function local(root, n = Infinity, { proved = false } = {}) {
         return withStore(["log"], "readonly", async (tx) => {
             const idx = tx.objectStore("log").index("by_root_local")
             const range = KeyRange.bound(
                 [root, 1, -Infinity, -Infinity],
                 [root, 1, Infinity, Infinity],
             )
-            return cursorCollect(idx.openCursor(range, "prev"), n)
+            // Positive evidence before the n bound: a proof-less row is inspected, not shipped.
+            const keep = proved ? (row) => row.proof != null : null
+            return cursorCollect(idx.openCursor(range, "prev"), n, keep)
         })
     }
 
-    /**
-     * Clan's permanent answer beside the value. Flips local → 0.
-     * shared = {at, node}. A permanent refusal is also an answer (id:kc-c-shared).
-     */
+    /** An answer ends the retry (local → 0); only a verified
+     *  retained:{image:digest} permits eviction. (id:keep-foundation-retention) */
     async function share(id, shared) {
         if (!shared || typeof shared.at !== "number") {
             throw new TypeError("journal.share: shared needs {at, node}")
@@ -291,7 +317,16 @@ export function createEngine(opts = {}) {
             // Granted once. A second share of the same id is a no-op that keeps
             // the first fact (the row's fact, not the attempt's — id:kb-vet3 26).
             if (row.shared) return true
-            row.shared = { at: shared.at, node: shared.node }
+            const retained = shared.retained === false
+                ? false
+                : shared.retained && typeof shared.retained.image === "string"
+                    ? { image: shared.retained.image }
+                    : undefined
+            row.shared = {
+                at: shared.at,
+                node: shared.node,
+                ...(retained === undefined ? {} : { retained }),
+            }
             row.local = 0
             log.put(row)
             return true
@@ -311,23 +346,137 @@ export function createEngine(opts = {}) {
         })
     }
 
-    /**
-     * Read-or-mint in ONE readwrite transaction over `self`.
-     * Two tabs: the engine serialises the tx; the second reads the first's
-     * mint. A random body makes two tabs a fork without this — the transaction
-     * is the race fence, not idempotence (id:kb-3-owner).
-     *
-     * The genesis is the journal's name, not a log row. History never shows
-     * it and it never ships, because it is not in the log (id:kb-5-genesis-place).
-     */
+    // Crypto completes before the byte/proof transaction (id:keep-auth-durable-proof).
+    async function putProof(bytes, root, { proof: candidate, authored = false }) {
+        if (authored !== true && authored !== false) throw new TypeError("keep: authored must be boolean")
+        if (candidate != null) {
+            if (authored) throw new Error("keep: authoring and proof retention are separate intents")
+            return checkKeepProof(bytes, candidate, crypto)
+        }
+        const held = await withStore(authored ? ["log", "self"] : ["log"], "readonly", async (tx) => {
+            const row = await idbReq(tx.objectStore("log").get(name(bytes)))
+            if (!authored) return { row }
+            const self = tx.objectStore("self")
+            const [birth, key] = await Promise.all([
+                idbReq(self.get(SELF_KEY)),
+                idbReq(self.get(SIGNING_KEY)),
+            ])
+            return { row, birth, key }
+        })
+        if (authored && (held.birth == null || name(held.birth) !== root)) {
+            throw typed("stale-hand", "keep: cannot author another root")
+        }
+        if (held.row?.message === bytes && held.row.proof) return held.row.proof
+        if (!authored) return null
+        if (!usableHand(held.birth, held.key, crypto)) {
+            throw typed("needs-hand", "keep: signing key unavailable; a keyless root needs a new signing hand")
+        }
+        return keepProof(bytes, held.birth, held.key, crypto)
+    }
+
+    // This reads public evidence; key loss cannot erase it or authorize new bytes.
+    async function proof(bytes) {
+        if (typeof bytes !== "string") throw new TypeError("journal.proof: bytes must be text")
+        const row = await withStore(["log"], "readonly", (tx) =>
+            idbReq(tx.objectStore("log").get(name(bytes))))
+        if (row?.message !== bytes || !row.proof) throw new Error("keep: no retained proof")
+        return row.proof
+    }
+
+    // Computed readiness; never mints and never signs (id:keep-auth-write-guard).
+    async function hand() {
+        return withStore(["self"], "readonly", async (tx) => {
+            const self = tx.objectStore("self")
+            const [birth, key] = await Promise.all([
+                idbReq(self.get(SELF_KEY)),
+                idbReq(self.get(SIGNING_KEY)),
+            ])
+            const root = typeof birth === "string" ? name(birth) : null
+            if (crypto?.subtle == null) return { root, signing: "unavailable" }
+            if (birth == null) return { root: null, signing: "none" }
+            return { root, signing: usableHand(birth, key, crypto) ? "ready" : "keyless" }
+        })
+    }
+
+    // Local hand lineage only: public self genesis + verified prior keys.
+    // Never mints, rotates, reads the private key, or consults crypto.
+    async function roots() {
+        return withStore(["self"], "readonly", async (tx) => {
+            const self = tx.objectStore("self")
+            const [birth, keys] = await Promise.all([
+                idbReq(self.get(SELF_KEY)),
+                idbReq(self.getAllKeys()),
+            ])
+            let active = null
+            const seen = new Set()
+            if (typeof birth === "string") {
+                active = name(birth)
+                seen.add(active)
+            }
+            const priors = []
+            for (let i = 0; i < keys.length; i++) {
+                const key = keys[i]
+                if (typeof key !== "string" || !key.startsWith(PRIOR_KEY)) continue
+                const value = await idbReq(self.get(key))
+                if (typeof value !== "string") continue
+                const root = key.slice(PRIOR_KEY.length)
+                if (!root || name(value) !== root || seen.has(root)) continue
+                seen.add(root)
+                priors.push(root)
+            }
+            priors.sort()
+            return { active, prior: priors }
+        })
+    }
+
+    // Explicit recovery only: none/keyless -> a fresh hand; healthy pair is a no-op.
+    async function newHand({ expectedRoot } = {}) {
+        const read = () => withStore(["self"], "readonly", async (tx) => {
+            const self = tx.objectStore("self")
+            return {
+                birth: await idbReq(self.get(SELF_KEY)),
+                key: await idbReq(self.get(SIGNING_KEY)),
+            }
+        })
+        const seat = async (tx, hand) => {
+            const self = tx.objectStore("self")
+            const birth = await idbReq(self.get(SELF_KEY))
+            const key = await idbReq(self.get(SIGNING_KEY))
+            const current = typeof birth === "string" ? name(birth) : null
+            if (current !== (expectedRoot ?? null)) throw typed("stale-hand", "keep: stale hand")
+            if (usableHand(birth, key, crypto)) return { root: current, changed: false }
+            const bytes = genesisBytes(random, stampFn(), hand.auth)
+            if (birth != null) self.put(birth, PRIOR_KEY + current)
+            self.put(bytes, SELF_KEY)
+            self.put(hand.privateKey, SIGNING_KEY)
+            return { root: name(bytes), changed: true, archived: current }
+        }
+
+        const before = await read()
+        const current = typeof before.birth === "string" ? name(before.birth) : null
+        if (current !== (expectedRoot ?? null)) throw typed("stale-hand", "keep: stale hand")
+        if (usableHand(before.birth, before.key, crypto)) return { root: current, changed: false }
+        const next = await signingHand(crypto)
+        return withStore(["self"], "readwrite", (tx) => seat(tx, next))
+    }
+
+    // One atomic seat for genesis + key, including a two-tab first-mint race.
+    // Genesis travels as public evidence, never as a moment in the log.
     async function genesis() {
+        const held = await withStore(["self"], "readonly", (tx) =>
+            idbReq(tx.objectStore("self").get(SELF_KEY)))
+        if (held != null) return held
+
+        // Crypto yields tasks: mint outside IDB, then atomically seat key + genesis.
+        const hand = await signingHand(crypto)
         return withStore(["self"], "readwrite", async (tx) => {
             const self = tx.objectStore("self")
             const held = await idbReq(self.get(SELF_KEY))
             if (held != null) return held
 
-            const bytes = genesisBytes(random, stampFn())
+            const bytes = genesisBytes(random, stampFn(), hand.auth)
             self.put(bytes, SELF_KEY)
+            self.put(hand.privateKey, SIGNING_KEY)
             return bytes
         })
     }
@@ -341,12 +490,6 @@ export function createEngine(opts = {}) {
             const log = tx.objectStore("log")
             const blobs = tx.objectStore("blobs")
             const keys = await idbReq(blobs.getAllKeys())
-            // Cheap upper bound before the exact fold: if every blob were
-            // NOMINAL_IMAGE we would still fit, so nothing can be over and the
-            // per-blob reads are pure waste. Keys cost one request; sizes cost N.
-            // An image larger than NOMINAL can only DELAY this fold, never skip
-            // it: keys.length keeps growing, so the gate always opens.
-            if (keys.length * NOMINAL_IMAGE <= blobCap) return
             /** @type {{id: string, size: number, t: number, n: number}[]} */
             const shared = []
             let total = 0
@@ -356,8 +499,10 @@ export function createEngine(opts = {}) {
                 const size = blobSize(blob)
                 total += size
                 const row = await idbReq(log.get(id))
-                // Only shared (local === 0) may be evicted. No shared fact ⇒ only copy.
-                if (row && row.local === 0) {
+                // The receipt must cover this stored blob, not an earlier occupant.
+                // Legacy or unverifiable blobs stay pinned. (id:keep-foundation-retention)
+                if (row?.local === 0 && typeof row.image_digest === "string" &&
+                    row.image_digest === row.shared?.retained?.image) {
                     const t = row.ts?.t ?? 0
                     const n = row.ts?.n ?? 0
                     shared.push({ id, size, t, n })
@@ -369,6 +514,9 @@ export function createEngine(opts = {}) {
             for (const s of shared) {
                 if (total <= blobCap) break
                 blobs.delete(s.id)
+                const row = await idbReq(log.get(s.id))
+                delete row.image_digest
+                log.put(row)
                 total -= s.size
             }
         })
@@ -391,7 +539,11 @@ export function createEngine(opts = {}) {
         share,
         image,
         source,
+        hand,
+        roots,
+        newHand,
         genesis,
+        proof,
         close,
         get blobCap() {
             return blobCap
@@ -454,17 +606,28 @@ function idbReq(request) {
     })
 }
 
-function cursorCollect(cursorReq, n) {
+function cursorCollect(cursorReq, n, keep = null) {
     const out = []
     return new Promise((resolve, reject) => {
         cursorReq.onsuccess = () => {
             const c = cursorReq.result
             if (!c || out.length >= n) return resolve(out)
-            out.push(c.value.message)
+            if (!keep || keep(c.value)) out.push(c.value.message)
             c.continue()
         }
         cursorReq.onerror = () => reject(cursorReq.error)
     })
+}
+
+// Hash before opening a transaction. Only immutable Blob bytes earn a binding.
+// Other image shapes remain readable but pinned. (id:keep-foundation-retention)
+async function digestOfImage(image) {
+    if (typeof Blob === "undefined" || !(image instanceof Blob)) return null
+    try {
+        return hashBytes(new Uint8Array(await image.arrayBuffer()))
+    } catch {
+        return null
+    }
 }
 
 function blobSize(blob) {

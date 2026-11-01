@@ -17,6 +17,7 @@ import { stamp } from "../../utils/stamp.js"
  * @param {string | null} [p.prev]
  * @param {string | null} [p.name] — letters this hand wears now
  * @param {{ root: string, name: string } | null} [p.peer] — fork: their root + letters
+ * @param {unknown} [p.choices] — plain offered choices (opaque here)
  * @param {{t: number, n: number}} p.ts
  * @returns {string}
  */
@@ -30,6 +31,7 @@ export function writeSnap({
     prev = null,
     name: letters = null,
     peer = null,
+    choices = undefined,
     ts,
 }) {
     if (
@@ -43,6 +45,7 @@ export function writeSnap({
     }
     const source_id = name(source)
     const body = { source_id, title, diagnostics, buffer_id }
+    if (choices !== undefined) body.choices = choices
     // Absent, not null.
     if (typeof prev === "string" && prev) body.prev = prev
     const signature_of = signatureOf(root, letters, peer)
@@ -84,7 +87,9 @@ export function toBlob(path) {
  * No work_id → origin keep (its id becomes the work).
  * @param {{ title: string, prev?: string, name?: string, peer?: { root: string, name: string } }} ask
  * @param {{ source?: string, diagnostics?: unknown }} reflection
- * @param {{ work_id?: string | null, buffer_id?: string | null }} ids
+ * @param {{ work_id?: string | null, buffer_id?: string | null, root?: string | null }} ids
+ *   root: the hand read before the picture. A cached door root may be another
+ *   tab's stale name; the engine's birth-root check stays the last word.
  * @param {{ root: () => Promise<string>, put: Function }} door
  * @param {string | Blob | null} path  hatch product; toBlob decides
  * @returns {Promise<string | null>}  the keep id, or null
@@ -111,7 +116,8 @@ export async function mintSnap(ask, reflection, ids, door, path) {
     }
 
     try {
-        const root = await door.root()
+        const root =
+            typeof ids?.root === "string" && ids.root ? ids.root : await door.root()
         const source = reflection.source
         const work_id =
             typeof ids?.work_id === "string" && ids.work_id ? ids.work_id : null
@@ -125,13 +131,17 @@ export async function mintSnap(ask, reflection, ids, door, path) {
             prev: typeof ask.prev === "string" && ask.prev ? ask.prev : null,
             name: typeof ask.name === "string" && ask.name ? ask.name : null,
             peer: ask.peer ?? null,
+            choices: reflection?.choices,
             ts: stamp(),
         })
 
         // One write: source + picture. The keep is a photograph or it is not.
-        return await door.put(bytes, { source, image })
+        return await door.put(bytes, { source, image, authored: true })
     } catch (e) {
         say("mintSnap failed:", e && e.message ? e.message : e)
+        if (e?.code === "needs-hand" || e?.code === "stale-hand" || e?.name === "QuotaExceededError") {
+            throw e
+        }
         return null
     }
 }

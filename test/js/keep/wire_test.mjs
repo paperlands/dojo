@@ -13,6 +13,7 @@ import assert from "node:assert/strict"
 import { readFileSync, readdirSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
+import { createHash } from "node:crypto"
 import { createWire, KEEP_EVENT } from "../../../assets/js/keep/wire.js"
 import { PAGE } from "../../../assets/js/keep/page.js"
 import { createJournal } from "../../../assets/js/keep/journal.js"
@@ -43,7 +44,8 @@ function freshDoor() {
         stamp: () => ({ t: 1_700_000_000_000 + ++c, n: 0 }),
         blobCap: 1024,
     })
-    return createJournal({ engine })
+    const door = createJournal({ engine })
+    return { ...door, engine, put: (bytes, extras = {}) => door.put(bytes, { ...extras, authored: true }) }
 }
 
 /** Controllable pushEvent: queue replies, hang, drop, or custom. */
@@ -677,6 +679,196 @@ describe("wire: the queue is owned, not merely demanded (ownership O2)", () => {
 
         await wire.announce()
         assert.equal(rootCalls, 4, "and the door stays open for the next birth")
+    })
+})
+
+describe("wire: an answer is not retention — refusal, pressure, silence", () => {
+    /** @type {ReturnType<typeof freshDoor>} */
+    let door
+    beforeEach(() => {
+        door = freshDoor()
+    })
+    afterEach(async () => {
+        await door.close()
+    })
+
+    const blob = (n) => new Blob([new Uint8Array(n)], { type: "image/png" })
+
+    async function pressure(root, count = 20) {
+        for (let i = 0; i < count; i += 1) {
+            await door.put(
+                snap(root, { tag: `pressure-${i}` }, { t: 1000 + i, n: 0 }),
+                { image: blob(60) },
+            )
+        }
+    }
+
+    test("a refusal grants no eviction permission; the accepted control still evicts", async () => {
+        const root = await door.root()
+        const acceptedBytes = snap(root, { tag: "accepted" }, { t: 1, n: 0 })
+        const refusedBytes = snap(root, { tag: "refused" }, { t: 2, n: 0 })
+        const acceptedImage = blob(60)
+        const acceptedId = await door.put(acceptedBytes, { image: acceptedImage })
+        const acceptedDigest = createHash("sha256")
+            .update(Buffer.from(await acceptedImage.arrayBuffer()))
+            .digest("hex")
+        const refusedId = await door.put(refusedBytes, { image: blob(60) })
+
+        const hook = makeHook({
+            [KEEP_EVENT]: async (payload) => payload.id === refusedId
+                ? { id: payload.id, at: 7, node: "n1", why: "root" }
+                : { id: payload.id, at: 6, node: "n1", image_digest: acceptedDigest },
+        })
+        const wire = createWire({ hook, door })
+        await wire.announce()
+        assert.equal((await door.local(root)).length, 0, "both answers are terminal")
+
+        const shipped = hook.log.filter((e) => e.name === KEEP_EVENT).length
+        await wire.announce()
+        assert.equal(
+            hook.log.filter((e) => e.name === KEEP_EVENT).length,
+            shipped,
+            "a refusal still ends the retry",
+        )
+
+        await pressure(root)
+
+        assert.equal(await door.image(acceptedId), undefined, "accepted image is evictable")
+        assert.ok(await door.image(refusedId), "a refusal grants no eviction permission")
+        assert.equal(await door.get(refusedId), refusedBytes, "the message stays")
+    })
+
+    test("an accepted answer without a matching stored digest withholds eviction", async () => {
+        const root = await door.root()
+        const bytes = snap(root, { tag: "mismatch" }, { t: 1, n: 0 })
+        const id = await door.put(bytes, { image: blob(60) })
+        const stale = createHash("sha256").update(Buffer.from("a-different-image")).digest("hex")
+        const hook = makeHook({
+            [KEEP_EVENT]: async (payload) => ({
+                id: payload.id, at: 1, node: "n1", image_digest: stale,
+            }),
+        })
+        await createWire({ hook, door }).announce()
+        await pressure(root)
+        assert.ok(await door.image(id), "a stale digest is not proof of these bytes")
+    })
+
+    test("an accepted text-only ship withholds eviction of the held picture", async () => {
+        const root = await door.root()
+        const bytes = snap(root, { tag: "text-only" }, { t: 1, n: 0 })
+        const id = await door.put(bytes, { image: blob(60) })
+        const noImage = { ...door, image: async () => undefined }
+        const hook = makeHook({
+            [KEEP_EVENT]: async (payload) => ({ id: payload.id, at: 1, node: "n1" }),
+        })
+        await createWire({ hook, door: noImage }).announce()
+        await pressure(root)
+        assert.ok(await door.image(id), "no shipped image means no verified retention")
+    })
+
+    test("retention hashing does not depend on WebCrypto digest", async (t) => {
+        t.mock.method(globalThis.crypto.subtle, "digest", () => { throw new Error("no secure context") })
+        const root = await door.root()
+        const image = blob(60)
+        const digest = createHash("sha256").update(Buffer.alloc(60)).digest("hex")
+        const id = await door.put(snap(root, { tag: "http" }, { t: 1, n: 0 }), { image })
+        const hook = makeHook({
+            [KEEP_EVENT]: async (payload) => ({ id: payload.id, at: 1, node: "n", image_digest: digest }),
+        })
+        await createWire({ hook, door }).announce()
+        await pressure(root)
+        assert.equal(await door.image(id), undefined, "exact binary digest needs no WebCrypto")
+    })
+
+    test("silence keeps the only image local", async () => {
+        const root = await door.root()
+        const bytes = snap(root, { tag: "quiet" }, { t: 1, n: 0 })
+        const id = await door.put(bytes, { image: blob(60) })
+
+        const wire = createWire({ hook: makeHook({}), door })
+        await wire.announce()
+        assert.equal((await door.local(root)).length, 1, "silence is not an answer")
+
+        await pressure(root)
+        assert.ok(await door.image(id), "a local image is never evicted")
+        assert.equal(await door.get(id), bytes)
+    })
+})
+
+describe("wire: positive proof before the page bound", () => {
+    /** @type {ReturnType<typeof freshDoor>} */
+    let door
+    beforeEach(() => {
+        door = freshDoor()
+    })
+    afterEach(async () => {
+        await door.close()
+    })
+
+    const ghost = (root, t, tag) => write("snap", { tag }, { root, target: "b".repeat(64), ts: { t, n: 0 } })
+    const reply = async (payload) => ({ id: payload.id, at: 1, node: "n" })
+
+    test("PAGE+1 unproven rows cannot hide the signed oldest", async () => {
+        const root = await door.root()
+        for (let i = 0; i < PAGE + 1; i++) await door.engine.put(ghost(root, 2000 + i, `g${i}`))
+        const signed = ghost(root, 1, "s")
+        await door.put(signed)
+
+        const hook = makeHook({ [KEEP_EVENT]: reply })
+        await createWire({ hook, door }).announce()
+
+        const keeps = hook.log.filter((e) => e.name === KEEP_EVENT)
+        assert.equal(keeps.length, 1, "the one proved row ships")
+        assert.equal(keeps[0].payload.message, signed)
+        assert.deepEqual(keeps[0].payload.proof, await door.proof(signed),
+            "the retained proof travels, not a re-signing")
+        assert.equal((await door.local(root)).length, PAGE + 1, "unproven facts stay local")
+    })
+
+    test("all-unproven terminates unchanged", async () => {
+        const root = await door.root()
+        for (let i = 0; i < 3; i++) await door.engine.put(ghost(root, 2000 + i, `g${i}`))
+        const hook = makeHook({ [KEEP_EVENT]: reply })
+        const wire = createWire({ hook, door })
+        await wire.announce()
+        await wire.announce()
+        assert.equal(hook.log.filter((e) => e.name === KEEP_EVENT).length, 0)
+        assert.equal((await door.local(root)).length, 3)
+    })
+
+    test("later proof enrichment becomes eligible on the next pass", async () => {
+        const root = await door.root()
+        const later = ghost(root, 10, "later")
+        await door.engine.put(later)
+        const hook = makeHook({ [KEEP_EVENT]: reply })
+        const wire = createWire({ hook, door })
+        await wire.announce()
+        assert.equal(hook.log.filter((e) => e.name === KEEP_EVENT).length, 0)
+
+        await door.engine.put(later, { authored: true })
+        await wire.announce()
+        const keeps = hook.log.filter((e) => e.name === KEEP_EVENT)
+        assert.equal(keeps.length, 1)
+        assert.equal(keeps[0].payload.message, later)
+        assert.equal((await door.local(root)).length, 0)
+    })
+
+    test("page and the more probe use the same positive filter", async () => {
+        const root = await door.root()
+        await door.engine.put(ghost(root, 500, "g0"))
+        await door.engine.put(ghost(root, 501, "g1"))
+        for (let i = 0; i < 13; i++) await door.put(ghost(root, 100 + i, `s${i}`))
+
+        const calls = []
+        const spy = { ...door, local: (r, n, opts) => { calls.push(opts); return door.local(r, n, opts) } }
+        const hook = makeHook({ [KEEP_EVENT]: reply })
+        await createWire({ hook, door: spy }).announce()
+
+        assert.equal(hook.log.filter((e) => e.name === KEEP_EVENT).length, 13,
+            "all signed rows ship across pages")
+        assert.ok(calls.length >= 2, "the more probe ran")
+        assert.ok(calls.every((opts) => opts?.proved === true), "every read is filtered")
+        assert.equal((await door.local(root)).length, 2, "ghosts remain local facts")
     })
 })
 

@@ -93,6 +93,25 @@ export function createLawStore() {
         return null
     }
 
+    // One private removal loop; the three predicates stay distinct. Callers pass a
+    // predicate, never a merged notion of owner, scope and named identity.
+    const removeWhere = (predicate) => {
+        let hit = false
+        for (const [key, law] of byAddress) if (predicate(law)) { byAddress.delete(key); hit = true }
+        return hit ? 'retracted' : 'noop'
+    }
+
+    // A law names the retired ids through three distinct channels; membership is a Set
+    // probe, and the framed-input list is read once per law, not once per retired id.
+    const namesAny = (law, ids) => ids.has(law.frame) ||
+        (law.endpoints?.some((id) => ids.has(id)) ?? false) ||
+        inputFrames(law).some((id) => ids.has(id))
+
+    const retractIdentities = (frameIds) => {
+        const ids = frameIds instanceof Set ? frameIds : new Set(frameIds)
+        return removeWhere((law) => namesAny(law, ids))
+    }
+
     return {
         // A reached statement: installs or replaces the law at its address.
         apply(law) {
@@ -116,36 +135,19 @@ export function createLawStore() {
         // Delete a statement site. Only the addresses it currently owns go; a
         // superseded owner owns nothing, so its delete is a no-op. Lowered
         // helpers share the owner, so one delete retracts them together.
-        retract(owner) {
-            let hit = false
-            for (const [key, law] of byAddress) {
-                if (law.owner === owner) { byAddress.delete(key); hit = true }
-            }
-            return hit ? 'retracted' : 'noop'
-        },
+        retract(owner) { return removeWhere((law) => law.owner === owner) },
 
         // A source edit of a scope (a rewire) retracts the laws that scope DECLARED. Ownership
         // is the law's `scope`; the expression `frame` only places the term, so a law whose term
         // stands in this frame answers to whoever declared it. (id:laws-build-p2c, D059)
-        retractScope(scopeId) {
-            let hit = false
-            for (const [key, law] of byAddress) {
-                if (law.scope === scopeId) { byAddress.delete(key); hit = true }
-            }
-            return hit ? 'retracted' : 'noop'
-        },
+        retractScope(scopeId) { return removeWhere((law) => law.scope === scopeId) },
 
         // An identity leaving the play retracts every law that names it, wherever
         // that law was declared: a law survives only while both participants exist.
-        // (id:laws-activation.org "Remove a scope/identity")
-        retractIdentity(frameId) {
-            let hit = false
-            for (const [key, law] of byAddress) {
-                if (law.frame === frameId || law.endpoints?.includes(frameId) ||
-                    inputFrames(law).includes(frameId)) { byAddress.delete(key); hit = true }
-            }
-            return hit ? 'retracted' : 'noop'
-        },
+        // One scan for a whole retired subtree; the single id delegates. The union is
+        // exact: placing frame, endpoints, and framed inputs. (id:laws-activation.org)
+        retractIdentities(frameIds) { return retractIdentities(frameIds) },
+        retractIdentity(frameId) { return retractIdentities([frameId]) },
 
         ownerOf(address) { return byAddress.get(address)?.owner ?? null },
         lawAt(address) { return byAddress.get(address) ?? null },

@@ -3,7 +3,7 @@
 
 import { createArena } from "../../kernel/arena.js"
 import { attach } from "../../kernel/attach.js"
-import { link } from "../../link.js"
+import { link, liveForkRef, pullHistory, pullKeep } from "../../link.js"
 import { name, read } from "../../keep/entry.js"
 import { REACH } from "../../keep/page.js"
 import { adoptWork, ofWork } from "../../keep/work.js"
@@ -17,11 +17,11 @@ import { pulse, whenDone } from "../../kernel/motion.js"
 import { copyText } from "../../utils/clipboard.js"
 import { temporal } from "../../utils/temporal.js"
 import { wear } from "../../river/atoms.js"
-import { readDraft, readHead, writeDraft, writeHead } from "../../river/memory.js"
+import { readDraft, writeDraft } from "../../river/memory.js"
 import { paint } from "../../river/paint.js"
 import { mountWheel } from "../../river/wheel.js"
 import { HEAD, fold, landed, restKey } from "../../river/fold.js"
-import { BEAT, paintChrome, shareLinkOf } from "../../river/chrome.js"
+import { BEAT, paintChrome, titleOf } from "../../river/chrome.js"
 import { DRAFT, modeOf, PRESENT } from "../../river/mode.js"
 import { clear as clearKeeps, faceOf, ingest, prune } from "../../river/keeps.js"
 
@@ -32,6 +32,19 @@ export const river = {
 
 /** No door, no work, or a sour read — the fold still runs, on nothing. */
 const NO_PAGE = Object.freeze({ versions: [], held: [] })
+
+/** Where a work's history lives: its exact origin's root, else the active root. */
+export function pageRootOf({ origin, work, fallback }) {
+    if (typeof origin !== "string" || name(origin) !== work) return fallback
+    try {
+        const value = read(origin)
+        return value.target == null && typeof value.root === "string" && value.root
+            ? value.root
+            : fallback
+    } catch {
+        return fallback
+    }
+}
 
 /** One clock for the ceremony — monotonic where the browser offers it. */
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now())
@@ -77,10 +90,17 @@ function mountRiver(hook) {
 
     // ── independent truths ───────────────────────────────────────────
     let work = null
+    /** Live outer ghost context; null when attention is on this hand. */
+    let peer = null
+    /** Which hand's river is in focus while a ghost is open. */
+    let focus = "core"
+    /** The exact base only when both currents actually share it. */
+    let forkBase = null
+    /** Ids seen on each current, for attention without a mode bar. */
+    let lanes = { core: new Set(), peer: new Set() }
     /** Chosen line head for the mirror (null = newest). */
     let lineHead = null
     let at = { key: PRESENT, id: null }
-    let unkept = null
     /** @type {{from: string, text: string, title: string, face: string|null}|null} */
     let draft = null
     /** @type {Map<string, {bytes: string, source?: string, face?: string}>} */
@@ -91,15 +111,69 @@ function mountRiver(hook) {
     let epoch = 0
 
     // Guards, not truths. landHold is a setTimeout (remaining HOLD_MIN).
+    // Elapsed time is not evidence: a slow answer earns a notice, never a
+    // failure. Only the answered outcome settles the seal (producer liveness).
     const sealGuard = temporal.quiet(() => {
-        // Only a still-open seal is a miss. A landed keep cancels this.
-        if (seal) miss(seal.title)
+        if (seal) nerve()?.push(S.system("keep not confirmed yet — still waiting"))
     }, BEAT.KEEP_GUARD_MS)
     const flareOut = temporal.quiet(cool, BEAT.IGNITE_MS)
     /** @type {ReturnType<typeof setTimeout> | null} */
     let landHoldT = null
 
+    const baseTitle = () => {
+        const row = forkBase ? keeps.get(forkBase) : null
+        return row ? (titleOf(row.bytes) || "an untitled moment") : "a shared moment"
+    }
+    const paintFocus = () => {
+        root.dataset.compare = peer ? "true" : "false"
+        root.dataset.focus = focus
+    }
+    const setFocus = (next) => {
+        if (next === focus) return
+        focus = next
+        paintFocus()
+    }
+
+    const bindOuter = (name, fn) => {
+        if (typeof window === "undefined") return
+        window.addEventListener(name, fn)
+        arena.add(() => window.removeEventListener(name, fn))
+    }
+    bindOuter("phx:seeOuterShell", (event) => {
+        const payload = event?.detail
+        if (!payload?.addr) return
+        forkBase = null
+        peer = {
+            addr: payload.addr,
+            name: typeof payload.origin_name === "string" ? payload.origin_name : null,
+            root: typeof payload.root === "string" ? payload.root : null,
+            work: typeof payload.work_id === "string" ? payload.work_id : null,
+            base: typeof payload.base_id === "string" ? payload.base_id : null,
+        }
+        focus = peer.work ? "peer" : "core"
+        at = { key: PRESENT, id: null }
+        lineHead = null
+        paintFocus()
+        void refold({ rest: PRESENT })
+    })
+    const leavePeer = () => {
+        if (!peer) return
+        peer = null
+        focus = "core"
+        forkBase = null
+        paintFocus()
+        void refold({ rest: PRESENT })
+    }
+    bindOuter("phx:outerSelect", leavePeer)
+    bindOuter("phx:outerClose", leavePeer)
+
     const wheel = mountWheel(rail, { onCenter, onSettle, onTap })
+    arena.on(rail, "pointerover", (event) => {
+        if (!peer) return
+        const place = event.target?.closest?.("[data-place]")?.dataset.place
+        if (place === "sky") setFocus("core")
+        else if (place === "water") setFocus("peer")
+    })
     arena.add(wheel.release)
     arena.add(flareOut.cancel)
     arena.add(sealGuard.cancel)
@@ -111,12 +185,6 @@ function mountRiver(hook) {
         if (work) writeDraft(work, next)
     }
 
-    function setUnkept(text) {
-        if (typeof text !== "string") return
-        unkept = text
-        if (work) writeHead(work, text)
-    }
-
     // ── refold: door → keeps + fold → paint → chrome → effects ───────
 
     async function refold({ ignite = false, rest = null } = {}) {
@@ -125,9 +193,10 @@ function mountRiver(hook) {
 
         if (reseat()) rest = PRESENT
         const page = await readPage(alive)
+        const ghostPage = peer ? await readGhostPage(alive) : null
         if (!alive()) return
 
-        const folded = reindex(page)
+        const folded = peer ? compareFold(page, ghostPage, peer) : reindex(page)
 
         // Land is fold-derived (id:kr-land) — mint grows newestId past seal.head.
         if (!ignite && seal && landed(seal.head, folded.newestId)) {
@@ -152,19 +221,41 @@ function mountRiver(hook) {
         say()
     }
 
-    /** The child moved to another work: forget this fold, wear that work's memory. */
+    /** The child moved to another work: forget this fold, wear that work's draft. */
     function reseat() {
-        const shell = term.get()
-        const workNow = shell?.currentWorkId() ?? null
+        const workNow = term.get()?.currentWorkId() ?? null
         if (workNow === work) return false
         work = workNow
         lineHead = null
         clearKeeps(keeps)
         view = emptyView()
-        unkept = readHead(work)
         draft = readDraft(work)
-        if (unkept != null) shell?.pinHead?.(unkept)
         return true
+    }
+
+    /** The focused ghost's lazy page. */
+    async function readGhostPage(alive) {
+        const ghost = peer
+        if (!ghost?.work) return NO_PAGE
+        const pulled = await pullHistory(ghost.work, { n: REACH })
+        if (!alive()) return NO_PAGE
+        const versions = []
+        const seen = new Set()
+        for (const row of pulled?.keeps ?? []) {
+            if (typeof row?.message !== "string") continue
+            const id = name(row.message)
+            if (seen.has(id)) continue
+            seen.add(id)
+            versions.push(row.message)
+        }
+        if (ghost.base && !seen.has(ghost.base)) {
+            const cut = await pullKeep(ghost.base)
+            if (!alive()) return NO_PAGE
+            if (cut && typeof cut.message === "string" && name(cut.message) === ghost.base) {
+                versions.push(cut.message)
+            }
+        }
+        return { versions, held: [] }
     }
 
     /** The door's page, folded to this work. A shut or sour door is no page. */
@@ -173,8 +264,17 @@ function mountRiver(hook) {
         const shell = term.get()
         if (!door || !work) return NO_PAGE
         try {
-            const rootName = await door.root()
+            // Index context from exact origin bytes, not write authority.
+            let origin = null
+            try { origin = await door.get(work) } catch { origin = null }
             if (!alive()) return NO_PAGE
+            // Known history needs no read-or-minting signer. root() only
+            // supplies an index when the exact origin cannot.
+            let rootName = pageRootOf({ origin, work, fallback: null })
+            if (!rootName) {
+                rootName = await door.root()
+                if (!alive()) return NO_PAGE
+            }
             // REACH, not PAGE — this page is filtered down to one work, so it
             // must reach past the author's other rivers (id:ka-reach). SAME
             // depth on both sides: that is what kb-8-page's proof requires.
@@ -222,13 +322,141 @@ function mountRiver(hook) {
         return folded
     }
 
+    /** One river, one confluence, two currents (compare). */
+    function compareFold(core, ghost, context) {
+        const coreVersions = core?.versions ?? []
+        const peerVersions = ghost?.versions ?? []
+        const all = [...coreVersions, ...peerVersions]
+        ingest(keeps, all)
+        const contextBase = typeof context?.base === "string" ? context.base : null
+        const peerIds = new Set(peerVersions.map(name))
+        let coreHeadBase = null
+        try {
+            coreHeadBase = coreVersions[0] ? read(coreVersions[0]).prev ?? null : null
+        } catch {
+            coreHeadBase = null
+        }
+        const currentBase = term.get()?.currentBaseId?.() ?? null
+        const coreBase = coreHeadBase ?? currentBase
+        // The fork point can be an ancestor in the peer page, not the peer's
+        // current base; the core head's prev names where this branch began.
+        const base = coreBase && peerIds.has(coreBase)
+            ? coreBase
+            : (contextBase && coreBase === contextBase ? contextBase : null)
+        forkBase = base
+        lanes = {
+            core: new Set(coreVersions.map(name)),
+            peer: new Set(peerVersions.map(name)),
+        }
+        const baseBytes = base ? all.find((bytes) => name(bytes) === base) ?? null : null
+        const branch = (versions) => {
+            let arr = versions.slice()
+            if (base) {
+                const at = arr.findIndex((bytes) => name(bytes) === base)
+                if (at >= 0) arr = arr.slice(0, at + 1)
+            }
+            return arr.reverse().filter((bytes) => name(bytes) !== base)
+        }
+        const coreBranch = branch(coreVersions)
+        const peerBranch = branch(peerVersions)
+        const columns = []
+        if (baseBytes) {
+            columns.push({
+                key: `base:${base}`,
+                sky: baseBytes,
+                water: null,
+                trunk: true,
+                meet: true,
+            })
+        }
+        for (let i = 0; i < Math.max(coreBranch.length, peerBranch.length); i++) {
+            const sky = coreBranch[i] ?? null
+            const water = peerBranch[i] ?? null
+            const id = sky ? name(sky) : water ? name(water) : `slot:${i}`
+            columns.push({
+                key: `cmp:${i}:${id}`,
+                sky,
+                water,
+                trunk: false,
+                meet: false,
+            })
+        }
+        const local = new Set((core?.held ?? []).map(name))
+        const ids = new Set(all.map(name))
+        const keptLocal = new Set([...local].filter((id) => ids.has(id)))
+        const sharedIds = new Set([...ids].filter((id) => !local.has(id)))
+        view = {
+            sharedIds,
+            siblingHead: null,
+            keptLocal,
+            newestId: coreVersions[0] ? name(coreVersions[0]) : peerVersions[0] ? name(peerVersions[0]) : null,
+        }
+        return {
+            sharedIds,
+            kept: (id) => local.has(id),
+            keptLocal,
+            settling: false,
+            columns,
+            siblingHead: null,
+            heads: {
+                core: coreVersions[0] ? name(coreVersions[0]) : null,
+                peer: peerVersions[0] ? name(peerVersions[0]) : null,
+            },
+            hasMirror: columns.some((column) => column.water != null),
+            headKey: baseBytes ? `base:${base}` : columns[0]?.key ?? PRESENT,
+            newestId: view.newestId,
+        }
+    }
+
     /** Paint: rail, sky, and — on a landing — the arrival ceremony. */
+    function markFork() {
+        for (const el of rail.querySelectorAll("[data-fork]")) {
+            delete el.dataset.fork
+            delete el.dataset.forkLabel
+        }
+        const base = forkBase
+        if (!base) return
+        const esc = typeof CSS?.escape === "function" ? CSS.escape(base) : base
+        const seat = rail.querySelector(`[data-place="sky"][data-id="${esc}"]`)
+        if (!seat) return
+        seat.setAttribute("data-fork", "true")
+        seat.dataset.forkLabel = baseTitle()
+    }
+
+    function markHeads(folded) {
+        for (const col of rail.querySelectorAll("[data-head], [data-peer-head]")) {
+            delete col.dataset.head
+            delete col.dataset.label
+            delete col.dataset.peerHead
+            delete col.dataset.peerLabel
+        }
+        for (const lane of ["core", "peer"]) {
+            const id = folded.heads?.[lane]
+            if (!id) continue
+            const esc = typeof CSS?.escape === "function" ? CSS.escape(id) : id
+            const place = lane === "core" ? "sky" : "water"
+            const col = [...rail.children].find((el) =>
+                el.querySelector?.(`[data-place="${place}"][data-id="${esc}"]`))
+            if (!col) continue
+            const label = lane === "core" ? "you" : (peer?.name ? `@${peer.name}` : "peer")
+            if (lane === "core") {
+                col.dataset.head = "core"
+                col.dataset.label = label
+            } else {
+                col.dataset.peerHead = "peer"
+                col.dataset.peerLabel = label
+            }
+        }
+    }
+
     function show(folded, ignite) {
         root.classList.toggle("has-mirror", folded.hasMirror)
         const { seats, arrived } = paint(rail, folded.columns, {
             kept: folded.kept,
             faceOf: (id) => faceOf(keeps, id),
         })
+        markFork()
+        markHeads(folded)
         paintSky(root, moodOf({
             keptLocal: folded.keptLocal.size,
             landing: ignite,
@@ -276,7 +504,6 @@ function mountRiver(hook) {
         }
         blush()
         say()
-        nerve()?.push(S.system("failed to keep try again"))
     }
 
     /**
@@ -385,13 +612,8 @@ function mountRiver(hook) {
     // ── standing ─────────────────────────────────────────────────────
 
     function onCenter(where) {
-        const from = at.key
         at = where ?? { key: PRESENT, id: null }
         root.dataset.centered = at.id ?? at.key
-        if (from === PRESENT && at.key !== PRESENT) {
-            const shell = term.get()
-            setUnkept(shell?.getValue() ?? unkept)
-        }
         say()
         void openFace()
     }
@@ -402,19 +624,21 @@ function mountRiver(hook) {
     }
 
     /** setValue: text and project mode together. */
-    function hold(text, project) {
+    function hold(text, project, base_id = null) {
         const shell = term.get()
         if (!shell) return
-        if (shell.getValue() === text && !!shell.projecting?.() === project) return
-        shell.setValue(text, { project })
+        if (shell.getValue() === text && !!shell.projecting?.() === project && (!project || shell.currentBaseId?.() === base_id)) return
+        shell.setValue(text, { project, base_id })
     }
 
     /** Editor holds whatever the standing seat names. */
     function projectStanding() {
         if (at.key === PRESENT) {
-            if (unkept != null) hold(unkept, false)
+            // The buffer owns the head. Missing is not an empty program.
+            const text = term.get()?.headContent?.()
+            if (typeof text === "string") hold(text, false)
         } else if (at.key === DRAFT) {
-            if (draft) hold(draft.text, true)
+            if (draft) hold(draft.text, true, draft.from)
         } else if (at.id) {
             void stand(at.id)
         }
@@ -424,21 +648,35 @@ function mountRiver(hook) {
     async function stand(id) {
         const door = getDoor()
         const row = keeps.get(id)
-        if (!door || !row) return
+        if (!row) return
+
+        if (peer && lanes.core.has(id) && !lanes.peer.has(id)) setFocus("core")
+        else if (peer && lanes.peer.has(id) && !lanes.core.has(id)) setFocus("peer")
 
         if (row.source == null) {
-            const my = work
-            let text
-            try {
-                text = await door.source(read(row.bytes).source_id)
-            } catch {
-                return
+            const my = (focus === "peer" && peer) ? peer.work : work
+            const sourceId = read(row.bytes).source_id
+            let text = null
+            if (door) {
+                try {
+                    text = await door.source(sourceId)
+                } catch {
+                    text = null
+                }
             }
-            if (!arena.alive || my !== work || typeof text !== "string") return
+            if (text == null && peer) {
+                const cut = await pullKeep(id)
+                if (cut && typeof cut.message === "string" && name(cut.message) === id) {
+                    row.bytes = cut.message
+                    text = typeof cut.source === "string" ? cut.source : null
+                }
+            }
+            if (!arena.alive || ((focus === "peer" && peer) ? peer.work : work) !== my || typeof text !== "string") return
+            if (name(text) !== sourceId) return
             row.source = text
         }
         if (at.id !== id) return
-        hold(row.source, true)
+        hold(row.source, true, id)
     }
 
     function seatFor(id) {
@@ -450,12 +688,7 @@ function mountRiver(hook) {
         const shell = term.get()
         if (!shell) return
 
-        if (at.key === PRESENT) {
-            if (shell.projecting?.()) return
-            const text = shell.getValue()
-            if (typeof text === "string" && text !== unkept) setUnkept(text)
-            return
-        }
+        if (at.key === PRESENT) return
 
         if (at.key === DRAFT) {
             if (!draft) return
@@ -490,6 +723,7 @@ function mountRiver(hook) {
 
     /** Lit ring predicate — light, tap, Enter share it (id:kr-ready). */
     function ready() {
+        if (focus === "peer" && peer) return false
         return modeOf({
             at,
             sharedIds: view.sharedIds,
@@ -507,13 +741,45 @@ function mountRiver(hook) {
         const mine = seal   // the seal that ISSUED this ask (id:ownership-o1)
         const prev = at.key === DRAFT && draft?.from ? draft.from : null
         // Self: session letters from the shell. Peer: live presence name, else origin.name.
+        // The ask's answer belongs to THIS subject. Recovery/fork preparation
+        // may move the selection to a new stream; the old seal ends quietly and
+        // the caption returns only to the stream this ask actually prepared.
+        const asked = term.get()?.currentBufferId?.() ?? null
+        const restoreCaption = () => {
+            if (typeof title !== "string" || !title) return
+            if (message.value) return   // a freshly entered word wins
+            message.value = title
+            if (at.key === DRAFT && draft) setDraft({ ...draft, title })
+            say()
+        }
         void askKeep(title, {
             prev,
             name: sessionName(),
             peer: peerOf(term.get()),
-        }).then((id) => {
+        }).then((answer) => {
+            if (!arena.alive) return   // a remount may share the bufferId
+            const current = term.get()?.currentBufferId?.() ?? null
+            if (answer?.prepared) {
+                // createBuffer's refold may have already ended this seal. A
+                // NEWER seal still owns the seat; otherwise return the word to
+                // the stream this ask prepared — never an unrelated one.
+                if (seal !== mine && seal != null) return
+                if (current !== answer.prepared.bufferId) return
+                if (seal === mine) endSeal()
+                restoreCaption()
+                return
+            }
             if (seal !== mine) return   // a newer seal owns the seat
-            if (!id) miss(title)
+            if (current !== asked) {
+                endSeal()   // a moved subject neither blushes nor carries the old word
+                return
+            }
+            if (answer?.cancelled) {
+                endSeal()
+                restoreCaption()
+                return
+            }
+            if (!answer) miss(title)
             else sealGuard.cancel()
         })
         return true
@@ -556,6 +822,7 @@ function mountRiver(hook) {
     }
 
     if (copy) {
+        let copyAttempt = 0
         const uncopy = temporal.quiet(() => {
             copy.classList.remove("is-copied")
             copy.title = "copy link"
@@ -564,15 +831,28 @@ function mountRiver(hook) {
         arena.on(copy, "click", async (e) => {
             e.preventDefault()
             e.stopPropagation()
-            const url = shareLinkOf({
-                at,
-                sharedIds: view.sharedIds,
-                keeps,
-                newestId: view.newestId,
-                work,
-            })
-            if (!url) return
-            await copyText(url)
+            const copyEpoch = epoch
+            const attempt = ++copyAttempt
+            const id = at.id
+            const newestId = view.newestId
+            const bytes = bytesOf(keeps, id)
+            let work = null
+            try {
+                work = bytes && (read(bytes).target ?? name(bytes))
+            } catch {
+                // No local bytes: only the exact server reading can earn a copy.
+            }
+            const current = () => arena.alive && copyEpoch === epoch && attempt === copyAttempt &&
+                at.id === id && view.newestId === newestId
+            const url = (async () => {
+                const ref = await liveForkRef({ id, work })
+                if (!current() || !ref) throw new Error("copy: stale or not live")
+                const address = link.address({ fork: ref })
+                if (!address) throw new Error("copy: no address")
+                return address
+            })()
+            const took = await copyText(url)
+            if (!current() || !took) return
             copy.classList.add("is-copied")
             copy.title = "copied"
             uncopy()

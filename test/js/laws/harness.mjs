@@ -21,7 +21,7 @@ export function fork(name, src, origin = IDENT) {
 
 // `clock` is the scheduler's injected time source: a frozen one makes the display
 // pump's deadline deterministic (an always-spent or always-open slice).
-export function buildWorld({ admit, admitAsync, validate, observeGoto = false, refusalStroke, capacity = 64, strokeMax = 1, breathEvery = 1, settledOnly = true, clock, onShout = () => {} } = {}) {
+export function buildWorld({ admit, admitAsync, validate, observeGoto = false, refusalStroke, capacity = 64, strokeMax = 1, breathEvery = 1, settledOnly = true, clock, onShout = () => {}, onHandInput = null } = {}) {
     return createScheduler(metaRoot(), {
         createDeps: deps,
         execOpts: { color: "#000000", strokeMax, breathEvery },
@@ -34,6 +34,7 @@ export function buildWorld({ admit, admitAsync, validate, observeGoto = false, r
         settledOnly,
         clock,
         onShout,
+        onHandInput,
     })
 }
 

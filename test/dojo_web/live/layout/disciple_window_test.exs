@@ -138,13 +138,41 @@ defmodule DojoWeb.ShellLive.DiscipleWindowTest do
                hand: nil,
                name: nil,
                now: nil,
-               kept: %{src: "/keeps/k1/image", title: "spirals", at: 5}
+               kept: %{id: "k1", src: "/keeps/k1/image", title: "spirals", at: 5}
              } = Window.lantern(lrow())
     end
 
     test "a dark seat wears the name the journal still knows (id:ks-name)" do
       assert %Window{name: "alice", kept: %{title: "spirals"}} =
                Window.lantern(lrow(%{name: "alice"}))
+    end
+
+    test "the kept face carries the work's id — a lamp is opened by name" do
+      assert %Window{kept: %{id: "k1"}} = Window.lantern(lrow())
+    end
+
+    test "the kept face's letters are the keep's own signature (id:kc-sign)" do
+      # `authors` is retired and nothing writes it, so a fan row's `name` is nil
+      # for every hand that ever kept. The bytes sign themselves instead.
+      html =
+        render_component(&DojoWeb.DiscipleStrip.strip/1,
+          windows: [
+            Window.lantern(
+              lrow(%{name: nil, message: ~s({"title":"tree","signature_of":{"rootA":"lowe"}})})
+            )
+          ],
+          outershell: nil
+        )
+
+      assert html =~ ~s(class="name">lowe</span>)
+      assert html =~ ~s(class="sill")
+    end
+
+    test "a keep that signed no root of its own leaves the name absent, not guessed" do
+      assert %Window{name: nil} =
+               Window.lantern(
+                 lrow(%{name: nil, message: ~s({"title":"tree","signature_of":{"other":"ado"}})})
+               )
     end
 
     test "the kept face renders the durable name top-right" do
@@ -181,6 +209,31 @@ defmodule DojoWeb.ShellLive.DiscipleWindowTest do
 
     test "no open shell is no focus" do
       refute Window.focus?(win(), nil)
+    end
+
+    test "a lamp wears it when its keep is the open subject" do
+      lamp = Window.lantern(lrow())
+
+      assert Window.focus?(lamp, %OuterShell{addr: OuterShell.keep_addr("k1")})
+      refute Window.focus?(lamp, %OuterShell{addr: OuterShell.keep_addr("k2")})
+      refute Window.focus?(lamp, %OuterShell{addr: "h1"})
+    end
+
+    test "a living seat's kept face is a peek — its door stays the hand" do
+      peeking = Window.of({"h1", dis()}, lrow())
+
+      refute Window.focus?(peeking, %OuterShell{addr: OuterShell.keep_addr("k1")})
+      assert Window.focus?(peeking, %OuterShell{addr: "h1"})
+    end
+
+    test "the painted seat carries the class, so no client invents one" do
+      html =
+        render_component(&DojoWeb.DiscipleStrip.strip/1,
+          windows: [Window.lantern(lrow())],
+          outershell: %OuterShell{addr: OuterShell.keep_addr("k1")}
+        )
+
+      assert html =~ ~s(class="win kept focus")
     end
   end
 end

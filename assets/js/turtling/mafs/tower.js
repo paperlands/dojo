@@ -243,9 +243,9 @@ const acrossUnary = (tower, op, kinds, fn) => {
     for (const types of tuplesOf(kinds, 1)) tower.define(op, types, fn)
 }
 
-// The scalar floor: every operator and builtin the evaluator used to hold in a
-// switch, now registrations. Moved verbatim — safe integers stay exact, `+`/`-`
-// round on the float branch, `*`/`/` do not, builtins round. (id:tower-synth-dispatch)
+// Scalar arithmetic and builtin results are unquantized; explicit round snaps.
+// Implemented, ruling pending; display and geometry keep their own policies.
+// (id:tower-center-approximation-ruling)
 export function installScalarFloor(tower) {
     across(tower, '+', SCALAR_KINDS, (a, b) => plus(asNum(a), asNum(b)))
     across(tower, '-', SCALAR_KINDS, (a, b) => minus(asNum(a), asNum(b)))

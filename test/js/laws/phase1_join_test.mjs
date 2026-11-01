@@ -1,9 +1,8 @@
 // Phase 1c — join and keep, under the being act.
 //
-// `let A` is a being act: a new identity seats at the walk's state, and an
-// existing one adopts the current head's state. Identity and body are kept; the
-// hand's earlier move is revised by a later reach. Joining (`as`) attaches a head
-// to that same identity. The ordinary (undeclared) re-entry is the control.
+// `let A` seats the source baseline; a bodyless point retains its hand action
+// across later reaches. Joining (`as`) attaches a head to that same identity
+// and retires the free-point input. (id:laws-hand-action)
 //
 // (id:laws-ordered-birth, id:laws-decl-join-repair, id:laws-order-lifetime)
 // Run: node --test test/js/laws/phase1_join_test.mjs
@@ -50,8 +49,8 @@ function walk(source) {
 test("acceptance: a re-reached let revises the being to the current head state", () => {
     const { a } = walk(REVISED)
     // born [0,0,0]; walk to [50,0,0]; hand moves it to [3,0,0]; the second
-    // `let a` adopts [50,0,0]; joining adds fw 1 from there.
-    at(a, 51, 0, 0)
+    // `let a` adopts [50,0,0] + hand [3,0,0]; joining adds fw 1.
+    at(a, 54, 0, 0)
     assert.equal(freePoint(a), false, "as a gave that same identity a head")
 })
 
@@ -66,7 +65,7 @@ test("acceptance: same-play re-seat and green-tree edit retain identity and geom
     const held = scheduler.hotSwapChild("host", spec)
     assert.equal(held, host, "an unchanged seed holds the seat")
     assert.equal(held.children.get("a"), a, "and the same identity")
-    at(a, 51, 0, 0)
+    at(a, 54, 0, 0)
 
     // A whitespace-only edit reuses the source node: the seat and the accepted
     // geometry survive without a restart.
@@ -74,7 +73,7 @@ test("acceptance: same-play re-seat and green-tree edit retain identity and geom
     const green = scheduler.hotSwapChild("host", { ...spec, code: { ...spec.code, ast: edited } })
     assert.equal(green, host, "a green-tree edit retained the seat")
     assert.equal(green.children.get("a"), a)
-    at(a, 51, 0, 0)
+    at(a, 54, 0, 0)
 })
 
 test("acceptance: without a later reach the hand's move survives into joining", () => {

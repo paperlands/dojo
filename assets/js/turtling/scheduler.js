@@ -10,6 +10,8 @@ import { report, notice as noticeWire } from "./report.js"
 import { matchPattern } from "./match.js"
 import { execute, createActorState, headEventOf } from "./executor.js"
 import { deriveBatch, exposed, freePoint } from "./laws/batch.js"
+import { createHandState } from "./laws/hand_state.js"
+import { copyChoices } from "./laws/hand_choices.js"
 import { resolveTarget, reservedUnreached } from "./laws/resolution.js"
 import { addressOf, bindLaw, createLawStore } from "./laws/replacement.js"
 import { lawViolation, brokenLaw, heldFrame, continueLaws, conflictMessage, affectedMembers, plainPoses, applyLaw } from "./laws/verdict.js"
@@ -1581,6 +1583,7 @@ function seatPlace(parent, name, pump, pose = null) {
     parent.children.set(name, place)
     bumpTree(parent)
     wireChild(place, pump.createDeps(), [], pump.registry, { ast: [], functions: {} }, null, null)
+    pump.hands?.seed(place)
     return place
 }
 
@@ -1880,7 +1883,7 @@ function publish(writer, entries, registry, install = null, project = null, obli
     // solves settled configurations only. (id:laws-activation-order)
     const settledOnly = metaRootFrame(writer)._settledOnly !== false
     const prepared = []
-    for (const { frame, pose, stated, ref } of entries) {
+    for (const { frame, pose, stated, ref, handBase, handBaseWorld } of entries) {
         if (!mayAddressParticipant(writer, frame, registry)) {
             return { kind: 'conflict', message: 'a closed construction cannot publish outside its region' }
         }
@@ -1913,7 +1916,7 @@ function publish(writer, entries, registry, install = null, project = null, obli
             // what lands are then one configuration. (id:laws-activation-order)
             const world = expressPose(frame, 'own', pose)
             if (!SE3.isValid(world)) return { kind: 'unsupported', message: `'${frame.name}' would hold an invalid pose` }
-            prepared.push({ frame, pose })
+            prepared.push({ frame, pose, handBase })
             continue
         }
         const world = expressPose(frame, ref ?? 'own', pose)
@@ -1923,7 +1926,9 @@ function publish(writer, entries, registry, install = null, project = null, obli
         const base = frame.parent ? worldTransform(frame.parent) : SE3.identity()
         const origin = SE3.compose(SE3.invert(base), chainTarget)
         if (!SE3.isValid(origin)) return { kind: 'unsupported', message: `'${frame.name}' states a pose whose origin is invalid` }
-        prepared.push({ frame, stated: true, motion, origin })
+        const baseline = handBaseWorld ? SE3.compose(SE3.invert(chainTarget), handBaseWorld) : handBase
+        if (baseline && !SE3.isValid(baseline)) return { kind: 'unsupported', message: 'the hand baseline is not representable' }
+        prepared.push({ frame, stated: true, motion, origin, handBase: baseline })
     }
     if (!Array.isArray(obligations)) return { kind: 'unsupported', message: 'publication needs retained obligations' }
     if (prepared.some(entry => entry.stated)) {
@@ -1941,6 +1946,7 @@ function publish(writer, entries, registry, install = null, project = null, obli
     // (id:laws-figures-phase34-hand-frame)
     const write = (entry) => {
         const { frame } = entry
+        if (entry.handBase) frame.handBase = entry.handBase
         if (!entry.stated) {
             if (identicalPose(frame.transform.deref(), entry.pose)) return null
             return frame.transform.swapDeferred(() => entry.pose)
@@ -2035,6 +2041,11 @@ function motionAttempt(writer, destination, request) {
     return { writer, destination, request: { ...request, frame: destination } }
 }
 
+// What a callback may hold: an ISOLATED MUTABLE SHELL of fields — not a deep snapshot,
+// not a read-only graph (frame/pose objects stay shared). One authority boundary, named
+// once so the four handoffs are grep-visible. (id:being-facets-p4-sequence)
+const requestShell = (attempt) => ({ ...attempt.request })
+
 // Which members one candidate would publish: destination first, then its component.
 // What each boundary ASKS of them stays that boundary's own. (D063)
 const candidateEntries = (verdict, attempt) =>
@@ -2046,8 +2057,8 @@ const verdictEntries = (attempt, verdict) =>
     candidateEntries(verdict, attempt)
         .map(({ frame, pose }) => ({ frame, pose, stated: verdict.stated === true }))
 
-function commitTransaction(verdict, attempt, pump, project = null) {
-    return publish(attempt.writer, verdictEntries(attempt, verdict), pump.registry, null, project, pump.laws.active())
+function commitTransaction(verdict, attempt, pump, project = null, install = null) {
+    return publish(attempt.writer, verdictEntries(attempt, verdict), pump.registry, install, project, pump.laws.active())
 }
 
 // Re-express a normalized candidate only for the declared-convention validator.
@@ -2083,7 +2094,9 @@ function certifyRights(verdict, attempt, validate) {
     if (!validate) return verdict
     const entries = candidateEntries(verdict, attempt)
     try {
-        if (validate({ request: attempt.request, writer: attempt.writer, entries, entriesRef: attempt.request.ref ?? 'own' }) !== true) {
+        // The callback sees its own shell: one authoritative request, never a foreign view
+        // that can relabel the frame or invent reset intent. (id:laws-hand-action-algebra)
+        if (validate({ request: requestShell(attempt), writer: attempt.writer, entries, entriesRef: attempt.request.ref ?? 'own' }) !== true) {
             return { kind: 'fault', message: 'motion responder proposed geometry that fails independent validation' }
         }
     } catch (error) {
@@ -2217,27 +2230,30 @@ function releaseReadouts(root, ids) {
     }
 }
 
-// A closed region's answer owns its subtree. A rebuild replaces that subtree, so a
-// child the new answer never declares cannot survive it — whole-region replacement
-// first; preserving selected descendants is a later policy, not a reason to keep
-// obsolete children by accident. (id:laws-figures-phase34-review)
+// ONE retirement pass for ordinary subtrees: one postorder collect, the ledgers, ONE bulk
+// law scan, then unregister + ink. Callers keep their own termination/installation/frame/edge
+// policy. (id:being-facets-p4-sequence)
+function releaseSubtrees(roots, pump) {
+    if (roots.length === 0) return
+    const root = metaRootFrame(roots[0])
+    const ids = new Set(), members = []
+    for (const start of roots) visitPostOrder(start, (c) => { members.push(c); ids.add(c.id) })
+    releaseAttemptsFor(root, ids)
+    releaseReadouts(root, ids)
+    pump.laws?.retractIdentities(ids)
+    for (const c of members) { resetInk(c, pump.stock); pump.registry.delete(c.id) }
+}
+
+// A region owning its answer's subtree: a rebuild replaces it whole, so a child the new
+// answer never declares cannot survive. (id:laws-figures-phase34-review)
 function releaseRegion(frame, pump) {
     // A closed region is replaced whole: its installations go with the answer.
     // (id:being-facets-p4-sequence)
     retireInstallationsUnder(frame, pump)
     if (frame.children.size === 0) return
-    const root = metaRootFrame(frame)
-    const ids = subtreeIds(frame)
-    ids.delete(frame.id)
-    releaseAttemptsFor(root, ids)
-    releaseReadouts(root, ids)
-    for (const child of [...frame.children.values()]) terminateAmbient(child)
-    visitPostOrder(frame, (c) => {
-        if (c === frame) return
-        pump.registry.delete(c.id)
-        if (pump.laws) pump.laws.retractIdentity(c.id)
-        resetInk(c, pump.stock)
-    })
+    const children = [...frame.children.values()]
+    for (const child of children) terminateAmbient(child)
+    releaseSubtrees(children, pump)
     frame.children.clear()
 }
 
@@ -2455,7 +2471,7 @@ function motion(ctx, value, _route, pump) {
         command: value.command, from: value.from, requested: value.requested, baseRevision: value.baseRevision })
     let raw
     try {
-        raw = pump.motionAdmission ? pump.motionAdmission(attempt.request)
+        raw = pump.motionAdmission ? pump.motionAdmission(requestShell(attempt))
             : { accepted: true, transform: value.requested }
     } catch (error) {
         return woundMotion(ctx, `motion responder failed: ${error.message}`)
@@ -2494,7 +2510,7 @@ function delayedMotion(ctx, value, pump) {
         command: value.command, from: value.from, requested: value.requested, baseRevision: value.baseRevision })
     let raw
     try {
-        raw = pump.motionAdmissionAsync(attempt.request)
+        raw = pump.motionAdmissionAsync(requestShell(attempt))
     } catch (error) {
         return woundMotion(ctx, `motion responder failed: ${error.message}`)
     }
@@ -2538,8 +2554,10 @@ function birth(ctx, value, _route, pump) {
         const base = SE3.compose(worldTransform(ctx), value.origin)
         const here = placesFigure ? SE3.compose(base, motion) : base
         const next = SE3.compose(SE3.invert(worldTransform(existing)), here)
+        const edits = placesFigure ? [{ frame: existing, pose: next, stated: true }]
+            : pump.hands.prepare([{ frame: existing, pose: next }], pump.laws.active())
         const check = placesFigure ? checkPlacement(existing, value.origin, pump)
-            : lawViolation(pump.laws.active(), new Map([[existing, next]]), pump.registry, lawWorld)
+            : lawViolation(pump.laws.active(), new Map(edits.map(e => [e.frame, e.pose])), pump.registry, lawWorld)
         const outcome = check.status === 'cannot-measure'
             ? { kind: 'unresolved', message: check.reason, span: value.owner }
             : check.status === 'violation'
@@ -2549,9 +2567,9 @@ function birth(ctx, value, _route, pump) {
                 // The adopted pose is the being's new truth: its display projection
                 // rides the same commit, so the point and its head never disagree.
                 // (id:laws-p0m-publication)
-                : { kind: 'commit', poses: [{ frame: existing, pose: next, stated: placesFigure }],
+                : { kind: 'commit', poses: edits,
                     install: () => { existing.birthPose = SE3.clone(placesFigure ? value.origin : next) },
-                    heads: [{ frame: existing, pose: placesFigure ? motion : next }], span: value.owner }
+                    heads: [{ frame: existing, pose: placesFigure ? motion : edits[0].pose }], span: value.owner }
         const settled = settleAttempt(ctx, pump, outcome)
         if (settled) return settled
         ctx.reached?.add(value.name)
@@ -3133,11 +3151,15 @@ function constructEffect(ctx, value, _route, pump) {
         if (prepared.kind === 'request') return woundRelation(ctx, prepared.message, 'relation', value.owner)
         return endUnresolved(ctx, prepared.message)
     }
+    const obligations = constructionLaws(pump, prepared.laws)
+    const poses = pump.hands.prepare([
+        { frame: born, pose: SE3.translateLocal(SE3.identity(), ...prepared.candidate), stated: true, ref: 'world' },
+    ], obligations)
     // ONE publication: the accepted pose is composed through the placement by publish(),
     // so the birth anchor (birthPose) and the accepted world pose stay distinct.
     const outcome = {
         kind: 'commit', span: value.owner, laws: prepared.laws,
-        poses: [{ frame: born, pose: SE3.translateLocal(SE3.identity(), prepared.candidate[0], prepared.candidate[1], prepared.candidate[2]), stated: true, ref: 'world' }],
+        poses,
         install: () => { for (const law of prepared.laws) pump.laws.apply(law); ctx.reached?.add(name) },
     }
     const settled = settleAttempt(ctx, pump, outcome)
@@ -3266,19 +3288,12 @@ function seatChild(ctx, value, pump, route, deferredShouts) {
 // (frame identity survives an in-place rewire). (id:being-facets-p4-sequence)
 function retireInstallation(source, record, pump) {
     if (source.installations?.get(record.site) !== record) return false
-    const root = metaRootFrame(source)
     // FOLLOW BOTH OWNERSHIP EDGES RECURSIVELY: an installation can own an ordinary ambient
     // child, and that child can own a nested installation. Retiring only this frame's
     // direct installations strands the nested continuation. (id:being-facets-p4-sequence)
     retireInstallationsUnder(record.frame, pump)
     terminateAmbient(record.frame)
-    releaseAttemptsFor(root, subtreeIds(record.frame))
-    releaseReadouts(root, subtreeIds(record.frame))
-    visitPostOrder(record.frame, (c) => {
-        resetInk(c, pump.stock)
-        pump.registry.delete(c.id)
-        pump.laws.retractIdentity(c.id)
-    })
+    releaseSubtrees([record.frame], pump)
     source.installations.delete(record.site)
     return true
 }
@@ -3531,6 +3546,7 @@ export function createScheduler(generator, opts = {}) {
     if (opts.observePureGoto) execOpts.observePureGoto = true
     if (opts.refusalStroke !== undefined) execOpts.refusalStroke = opts.refusalStroke
     const onShout = opts.onShout || null
+    const onHandInput = opts.onHandInput || null
 
     // Null = unpaced. (id:output-ledger-r2-pacer)
     let deadline = null
@@ -3584,6 +3600,7 @@ export function createScheduler(generator, opts = {}) {
     }
     const registry = new Map([[root.id, root]])
     root._registry = registry
+    const hands = createHandState(registry, lawWorld)
 
     // Shared pump bag for tick/hotSwap/advanceChild. Config only — now rides route.
     // (id:output-ledger-r2-pacer, id:carving-todo-effects-table)
@@ -3597,8 +3614,10 @@ export function createScheduler(generator, opts = {}) {
         channelOpts,
         registry,
         laws,
+        hands,
         readouts,
         onShout,
+        onHandInput,
         stock,
         // Inline drain asks too — unpaced hang is real.
         outOfTime: () => deadline !== null && clock() > deadline,
@@ -3717,10 +3736,48 @@ export function createScheduler(generator, opts = {}) {
         },
         // Source-owned derived values (id:laws-build-p3-slider). Read-only seam.
         get readouts() { return readouts },
+        handHome(frame) { return hands.home(frame) },
+        // Flattened effective choices for ONE owned seat. Read-only: presence is not
+        // application and grants no publication right. (id:laws-construction-input)
+        handChoices(seat) {
+            // Page law names a raw seat key; resolve it once, then use typed frame scope.
+            if (typeof seat === 'string') {
+                const frame = root.children.get(seat)
+                return frame ? hands.choices(frame) : []
+            }
+            return liveIn(registry, seat) && seat.parent === root ? hands.choices(seat) : []
+        },
+        // Session-local overrides only (masks included), the capture overlay input.
+        handLocalChoices(seat) {
+            if (typeof seat === 'string') {
+                const frame = root.children.get(seat)
+                return frame ? hands.localChoices(frame) : []
+            }
+            return liveIn(registry, seat) && seat.parent === root ? hands.localChoices(seat) : []
+        },
+        // Pre-seat offered choices: install the value before a fresh seat, so its own
+        // birth seed uses the source baseline + adjustment. No realization, no rights.
+        // (id:laws-construction-input)
+        offerAt(seatKey, capsule) {
+            if (typeof seatKey !== 'string' || !seatKey) return { kind: 'unsupported' }
+            if (capsule == null) {
+                return hands.offerAt(seatKey, []) ? { kind: 'accept' } : { kind: 'unsupported' }
+            }
+            const choice = copyChoices(capsule)
+            if (!choice) return { kind: 'unsupported', message: 'the offered choices are malformed' }
+            for (const entry of choice.inputs) {
+                if (entry.route.root !== 'document') return {
+                    kind: 'unsupported', message: 'cell routes are not restored yet',
+                }
+            }
+            return hands.offerAt(seatKey, choice.inputs.map(({ route, action }) => ({ names: route.names, action })))
+                ? { kind: 'accept' }
+                : { kind: 'unsupported', message: 'the offered choices are malformed' }
+        },
         // `ref` names the frame `requested` is expressed in — 'world', 'parent', or a named
         // frame. Naming one makes this a STATEMENT (a position); naming none is a motion.
         // (id:laws-figures-phase34-hand-frame)
-        requestMotion(frame, requested, revision, ref = null) {
+        requestMotion(frame, requested, revision, ref = null, intent = null) {
             if (!liveIn(registry, frame) || frame === root) return { kind: 'stale' }
             // A publication's notifications are on the stack; a request raised from one
             // is refused for retry, never interleaved — the watcher's commit is later
@@ -3736,10 +3793,10 @@ export function createScheduler(generator, opts = {}) {
             // A failed attempt holds its component until an edit releases it.
             if (heldFrame(frame)) return { kind: 'refuse', ink: execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
             if (revision !== root._motionRevision) return { kind: 'stale' }
-            const request = { command: 'hand', from: frame.transform.deref(), requested, frame, ref }
-            // The hand path is its own destination (self-motion), carried as one attempt.
-            // (id:being-facets-p4-sequence)
-            const attempt = motionAttempt(frame, frame, request)
+            // The hand path is its own destination (self-motion), carried as ONE captured
+            // attempt; responders get a shell, never this object. (id:being-facets-p4-sequence)
+            const attempt = motionAttempt(frame, frame, {
+                command: 'hand', from: frame.transform.deref(), requested, frame, ref, reset: intent?.reset === true })
 
             // Who decides the verdict? An installed responder, always. Failing that,
             // an existence-only declaration decides nothing, so its own admission is
@@ -3749,7 +3806,7 @@ export function createScheduler(generator, opts = {}) {
             // bypassed. (id:laws-decl-ownership)
             let raw
             if (pump.motionAdmission) {
-                try { raw = pump.motionAdmission(request) }
+                try { raw = pump.motionAdmission(requestShell(attempt)) }
                 catch (error) { return { kind: 'fault', message: `motion responder failed: ${error.message}` } }
                 if (isThenable(raw)) {
                     return { kind: 'unresolved', message: 'hand admission must settle synchronously' }
@@ -3794,6 +3851,7 @@ export function createScheduler(generator, opts = {}) {
                     return { kind: 'unresolved' }
                 targets.set(member, target)
             }
+            const handPlan = ref == null ? hands.acceptance(attempt.request, verdict, laws.active()) : null
             const conflict = commitTransaction(verdict, attempt, pump, () => {
                 // A hand never repaints deposited ink. Its head uses the same
                 // declaring-frame projection as a program head (id:ft-d5-head).
@@ -3803,12 +3861,124 @@ export function createScheduler(generator, opts = {}) {
                     const target = targets.get(member)
                     putSync(member, target ? projectHead(head, target, relativeTransform(member, target)) : head)
                 }
-            })
+            }, handPlan?.install ?? null)
             if (conflict) return {
                 kind: conflict.kind === 'unsupported' ? 'unresolved' : conflict.kind === 'refuse' ? 'refuse' : 'busy',
                 message: conflict.message,
             }
+            // Only a successful publication reports the plan's retention limitation.
+            if (handPlan?.retention) verdict.retention = handPlan.retention
+            // A LOCAL accepted input change is hatch news for its own seat; offered
+            // updates deliberately do not echo as local. (id:laws-construction-input)
+            if (handPlan?.install) pump.onHandInput?.(JSON.parse(handPlan.slot)[0])
             return verdict
+        },
+
+        // A live offer is data: adopt, then realize through default authority + gate.
+        // Refusal keeps it dormant with accepted geometry; local gestures stay D064.
+        // (id:laws-construction-input)
+        offerChoices(seat, capsule) {
+            if (!liveIn(registry, seat) || seat === root) return { kind: 'stale' }
+            // A nested frame is not a seat; re-rooting its route would alias the top participant.
+            if (seat.parent !== root) return { kind: 'unsupported', message: 'only a registered top seat is offered' }
+            if (root.notifyingCommit) return { kind: 'busy', message: 'publication in flight' }
+            if (!seat.done || subtreeUnsettled(seat)) return { kind: 'busy' }
+            // Import is not a synthetic hand: a custom responder owns its own question.
+            if (!usesDefaultMotion(pump) || pump.motionValidate) return {
+                kind: 'unsupported', message: 'a custom motion responder owns this seat',
+            }
+            if (capsule == null) return {
+                kind: 'unsupported', message: 'legacy/absent choices are not a live replacement',
+            }
+            const choice = copyChoices(capsule)
+            if (!choice) return { kind: 'unsupported', message: 'the offered choices are malformed' }
+
+            const bound = []
+            const boundByKey = new Map()
+            for (const entry of choice.inputs) {
+                if (entry.route.root !== 'document') return {
+                    kind: 'unsupported', message: 'cell routes are not restored yet',
+                }
+                let node = seat
+                for (const name of entry.route.names) {
+                    node = node?.children?.get(name)
+                    if (!node) return {
+                        kind: 'unresolved', message: `the offered route has no participant: ${entry.route.names.join('/')}`,
+                    }
+                }
+                if (!liveIn(registry, node) || !freePoint(node) || !isMotionDestination(node, registry) || heldFrame(node)) {
+                    return { kind: 'unsupported', message: 'the offered route is not a settled free point' }
+                }
+                const key = JSON.stringify(entry.route.names)
+                bound.push({ key, frame: node, names: entry.route.names, action: entry.action })
+                boundByKey.set(key, node)
+            }
+
+            const before = hands.choices(seat)
+            if (!hands.offer(seat, bound.map(({ names, action }) => ({ names, action })))) {
+                return { kind: 'unsupported', message: 'the offered choices are malformed' }
+            }
+            const after = hands.choices(seat)
+            const asMap = (list) => new Map(list.map((entry) => [JSON.stringify(entry.names), entry.action]))
+            const oldActions = asMap(before), newActions = asMap(after)
+            const changed = [...new Set([...oldActions.keys(), ...newActions.keys()])]
+                .filter((key) => JSON.stringify(oldActions.get(key)) !== JSON.stringify(newActions.get(key)))
+            if (!changed.length) return { kind: 'unchanged' }
+
+            const members = [], keys = new Map()
+            for (const key of changed) {
+                let node = boundByKey.get(key) ?? null
+                if (!node) {
+                    node = seat
+                    for (const name of JSON.parse(key)) {
+                        node = node?.children?.get(name)
+                        if (!node) break
+                    }
+                }
+                if (!node) continue                         // a removed route is already absent
+                // A removed offer must restore its former target; a new one was checked above.
+                if (!boundByKey.has(key) &&
+                    (!liveIn(registry, node) || !freePoint(node) || !isMotionDestination(node, registry) || heldFrame(node))) continue
+                if (keys.has(node)) return { kind: 'unsupported', message: 'two routes name one participant' }
+                keys.set(node, key)
+                members.push(node)
+            }
+            if (!members.length) return { kind: 'unchanged' }
+
+            const poses = members.map((frame) => ({ frame, pose: hands.home(frame) }))
+            const prepared = hands.prepare(poses, laws.active())
+            const outcomes = prepared
+                .filter((entry) => entry.handOutcome)
+                .map((entry) => ({ names: JSON.parse(keys.get(entry.frame)), ...entry.handOutcome }))
+            const cleared = members.filter((frame) => newActions.get(keys.get(frame)) == null)
+            const overrides = new Map(prepared.map((entry) => [entry.frame, entry.pose]))
+            const check = brokenLaw(overrides, registry, laws, lawWorld)
+            if (check.status === 'cannot-measure') {
+                return { kind: 'unresolved', message: check.reason, retained: true, outcomes }
+            }
+            if (check.status === 'violation') {
+                return { kind: 'refuse', retained: true, outcomes }
+            }
+            const install = () => { for (const frame of cleared) frame.handBase = null }
+            const project = () => {
+                for (const { frame, pose } of prepared) {
+                    if (!frame.done) continue
+                    const head = headEventOf(frame.actorState, pose)
+                    const target = frame.targetFrame ? findReferenceFrame(frame, frame.targetFrame) : null
+                    putSync(frame, target ? projectHead(head, target, relativeTransform(frame, target)) : head)
+                }
+            }
+            const conflict = publish(seat,
+                prepared.map(({ frame, pose, handBase }) => ({ frame, pose, handBase })),
+                registry, install, project, laws.active())
+            if (conflict) {
+                return {
+                    kind: conflict.kind === 'unsupported' ? 'unresolved' : conflict.kind === 'refuse' ? 'refuse' : 'busy',
+                    message: conflict.message,
+                    retained: true,
+                }
+            }
+            return { kind: 'accept', outcomes }
         },
 
 
@@ -3816,12 +3986,27 @@ export function createScheduler(generator, opts = {}) {
         // Caller sees hold by identity: returned frame === the one already seated.
         // A prepared batch can seat all identities before any executor runs.
         // The caller must finish seating the batch before calling tick().
-        hotSwapChild(key, forkSpec, { fresh = false, deferStart = false } = {}) {
+        hotSwapChild(key, forkSpec, { fresh = false, deferStart = false, choices } = {}) {
             const existing = root.children.get(key)
+            // Validate the WHOLE offered value before retiring any standing source.
+            let offered
+            if (choices !== undefined) {
+                if (choices === null) offered = []
+                else {
+                    const admitted = copyChoices(choices)
+                    if (!admitted) return existing ?? null
+                    // This scheduler consumes materialized document-root names only.
+                    // Page law is the sole cell binder; never let a cell root alias top p.
+                    if (!admitted.inputs.every(({ route }) => route.root === "document")) return existing ?? null
+                    offered = admitted.inputs.map(({ route, action }) => ({ names: route.names, action }))
+                }
+            }
             if (existing && !fresh && sameSeed(existing.seed, forkSpec)) {
                 const heldName = forkSpec.name || key
                 // A rename is a resolution change even though the tree's shape held.
                 if (existing.name !== heldName) { existing.name = heldName; bumpTree(root) }
+                // Green hold: same source, changed offer is a live reconcile, not a re-seat.
+                if (choices !== undefined) this.offerChoices(existing, choices)
                 return existing
             }
             if (existing) {
@@ -3832,13 +4017,13 @@ export function createScheduler(generator, opts = {}) {
                 // (id:being-facets-p4-sequence)
                 retireInstallationsUnder(existing, pump)
                 // Leaving the tree frees its share of the stage stock.
-                releaseAttemptsFor(root, subtreeIds(existing))
-                releaseReadouts(root, subtreeIds(existing))
-                visitPostOrder(existing, (c) => { resetInk(c, stock); registry.delete(c.id); laws.retractIdentity(c.id) })
+                releaseSubtrees([existing], pump)
                 root.children.delete(key)
                 bumpTree(root)
             }
 
+            // New/replaced construction: the admitted entries are input for its birth seed.
+            if (offered !== undefined) hands.offerAt(key, offered)
             const displayName = forkSpec.name || key
             const { generator, deps, mailbox, batch, relationshipBatch } = createChildGenerator(forkSpec, createDeps, execOpts)
             const child = attachMeta(
@@ -3867,6 +4052,7 @@ export function createScheduler(generator, opts = {}) {
             const deferredShouts = []
             if (!deferStart) advanceChild(child, this.lastTickTime, pump, deferredShouts)
             if (deferredShouts.length > 0) flushDeferredShouts(deferredShouts, registry)
+            if (hands.size && allDone(child)) hands.prune(child)
             this.done = false
             return child
         },
@@ -3875,11 +4061,10 @@ export function createScheduler(generator, opts = {}) {
         removeChild(key) {
             const child = root.children.get(key)
             if (!child) return
+            hands.forget(child)
             terminateAmbient(child)
             retireInstallationsUnder(child, pump)
-            releaseAttemptsFor(root, subtreeIds(child))
-            releaseReadouts(root, subtreeIds(child))
-            visitPostOrder(child, (c) => { resetInk(c, stock); registry.delete(c.id); laws.retractIdentity(c.id) })
+            releaseSubtrees([child], pump)
             root.children.delete(key)
             bumpTree(root)
             this.done = allDone(root)
@@ -4038,6 +4223,7 @@ export function createScheduler(generator, opts = {}) {
 
             this.done = allDone(root)
             if (this.done) {
+                hands.prune()
                 this.commandCount = sumCounts(root)
             }
 

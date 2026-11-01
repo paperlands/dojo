@@ -159,26 +159,36 @@ export class Turtle {
         if (this._disposed) return
         this._disposed = true
         this._handRequested = false
-        this._stopHeartbeat()
-        document.removeEventListener('visibilitychange', this._onVisibilityChange)
+        // Death is final above; each release now runs even if a sibling throws, so
+        // the stage's closure — it settles pending pictures — cannot be skipped by
+        // a failing handle or compositor. (id:keep-coherence-capture-cut)
+        const failures = []
+        const release = (fn) => { try { fn() } catch (err) { failures.push(err) } }
+        release(() => this._stopHeartbeat())
+        release(() => document.removeEventListener('visibilitychange', this._onVisibilityChange))
         for (const ev of ['start', 'change', 'end']) {
-            this.stage.controls.removeEventListener(ev, this._onControlsActive)
+            release(() => this.stage.controls.removeEventListener(ev, this._onControlsActive))
         }
-        this._handle?.dispose()
+        release(() => this._handle?.dispose())
         this._handle = null
-        this._overlay?.dispose()
+        release(() => this._overlay?.dispose())
         this._overlay = null
         // Dispose compositor/stage on remount — canvas outlives the hook.
         // Light register dies with the turtle (not with the compositor).
-        this.compositor?.dispose()
+        release(() => this.compositor?.dispose())
         // Ending the canvas ends its pending admissions too. Dropping only the
         // scheduler reference leaves a parked frame alive for a late Promise.
-        for (const key of this.scheduler?.root.children.keys() ?? []) this.scheduler.removeChild(key)
+        // Each admission is its own attempt: one parked frame that fails to go
+        // cannot keep the next — or the stage — from ending. (id:keep-coherence-capture-cut)
+        for (const key of [...(this.scheduler?.root.children.keys() ?? [])]) {
+            release(() => this.scheduler.removeChild(key))
+        }
         this.compositor = null
         this.scheduler = null
-        this.focus.bind(null)
+        release(() => this.focus.bind(null))
         this.onBeat = null
-        this.stage.dispose()
+        release(() => this.stage.dispose())
+        if (failures.length) console.warn('turtle: a dispose step failed', failures)
     }
 
     // Compose the compositor's reframe with the stage's camera once, so the
@@ -428,7 +438,8 @@ export class Turtle {
             anchorOf: frame => frameWorldTransform(frame),
             birthOf: frame => worldTransform(frame),
             registered: frame => scheduler.registry.get(frame.id) === frame,
-            requestMotion: (frame, pose, revision) => scheduler.requestMotion(frame, pose, revision),
+            requestMotion: (frame, pose, revision, ref, intent) => scheduler.requestMotion(frame, pose, revision, ref, intent),
+            homeOf: frame => scheduler.handHome(frame),
             onAccepted: ({ from, to }) => this._recordAcceptedHandMove(from, to),
             revision: () => scheduler.motionRevision,
             wake: () => this.requestRender(),
@@ -487,7 +498,7 @@ export class Turtle {
         }
         const end = event => {
             if (captured !== event.pointerId) return
-            handle.pointerUp({ pointerId: event.pointerId })
+            handle.pointerUp({ pointerId: event.pointerId, x: event.clientX, y: event.clientY })
             if (this._lastRefusal) {
                 this._ghost = { ...this._lastRefusal, at: performance.now() }
                 this._lastRefusal = null
@@ -559,6 +570,9 @@ export class Turtle {
             onShout: (sourceName, msg, payload) => {
                 this._onShout?.(sourceName, msg, payload)
             },
+            // A local accepted input change, scoped to its seat. The shell decides
+            // whether that seat belongs to its authored reflection.
+            onHandInput: (slot) => this._onHandInput?.(slot),
             // createScheduler reads the seam at the top level, not from execOpts;
             // only the permitted laboratory inputs pass. (id:laws-decl-lab)
             ...labInputs(this._law),
@@ -645,8 +659,10 @@ export class Turtle {
         // A keep reads THIS frame's buffer — hatch after render, never
         // from the click (drawing buffer is already presented and cleared).
         if (this._snapOwed) {
-            this._snapOwed = false
-            this.hatch()
+            if (!this.stage.hatching) {
+                this._snapOwed = false
+                this.hatch()
+            }
         } else if (verdict.reason) {
             this.hatch()
         }
@@ -678,14 +694,12 @@ export class Turtle {
     // The picture, when this capture finishes. In-flight joins; stamp only a start.
     hatch() {
         const joining = this.stage.hatching
-        const pending = this.stage.hatch(this.bridge)
+        const pending = this.stage.hatch(this.bridge, () => this.lendCut?.() ?? null)
         if (!joining) this._lastHatchAt = performance.now()
         return pending
     }
 
-    // A keep is intention, not a hatch beat. Same GPU path; the verdict
-    // does not gate it. Borrows hatch's picture; onFrame starts the work
-    // after render (drawing buffer is live only then).
+    // A keep asks for the next cut. It does not join one already issued.
     snap() {
         this._snapOwed = true
         this.requestRender()
@@ -735,7 +749,7 @@ export class Turtle {
 
     // hatch:false = passive seat (no snapshot/reflect).
     // vocab = phase ancestors (D019); fresh:true forces restart. (id:cmp-become-seed)
-    upsertAmbient(key, displayName, code, { hatch = true, vocab = null, nodes = null, vocabNodes = null, fresh = false } = {}) {
+    upsertAmbient(key, displayName, code, { hatch = true, vocab = null, nodes = null, vocabNodes = null, fresh = false, choices } = {}) {
         try {
             // Live node slices when present; green tree reuses otherwise. (id:cmp-green-tree)
             let instructions = nodes
@@ -771,7 +785,7 @@ export class Turtle {
                     code: { ast: instructions, functions: ns?.functions ?? null },
                     style: { color: this.color },
                     env: ns?.userspace?.size ? { userspace: ns.userspace } : null
-                }, { fresh }))
+                }, { fresh, choices }))
             // A new play is a new seat: the reveal starts hidden again. A
             // green-tree reuse (seat === before) keeps what this play revealed.
             if (seat !== before) this._hintsRevealed = false
@@ -830,6 +844,9 @@ export class Turtle {
     programFor(seat) {
         if (!this._parseMemo || seat == null) return null
         return this._parseMemo.get(seat)?.ast ?? null
+    }
+    handLocalChoices(seat) {
+        return this.scheduler?.handLocalChoices(seat) ?? []
     }
 
     removeAmbient(key) {

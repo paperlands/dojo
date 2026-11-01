@@ -96,6 +96,10 @@ describe("ofWork: the work's keeps among a page of the author's history", () => 
         assert.equal(adoptWork(listed, "tab", null), WORK)
     })
 
+    test("an empty page after a hand switch never clears the old work", () => {
+        assert.equal(adoptWork([], "tab", WORK), WORK)
+    })
+
     test("adoptWork does not steal another buffer's river", () => {
         const listed = newestFirst(snap("x", { work: OTHER, t: 1, buffer: "theirs" }))
         assert.equal(adoptWork(listed, "mine", WORK), WORK)
@@ -167,6 +171,14 @@ describe("REACH: the river reads past the author's other rivers (id:ka-reach)", 
 })
 
 describe("newerKeep: author order, pure (id:kb-8)", () => {
+    test("equal stamps select by content ID, not argument order", () => {
+        const a = snap("a", { t: 1 })
+        const b = snap("b", { t: 1 })
+        const winner = name(a) > name(b) ? a : b
+        assert.equal(newerKeep(a, b), winner)
+        assert.equal(newerKeep(b, a), winner)
+    })
+
     test("the later ts wins", () => {
         const older = snap("a", { t: 1 })
         const newer = snap("b", { t: 9 })
@@ -184,14 +196,22 @@ describe("newerKeep: author order, pure (id:kb-8)", () => {
 
 describe("the lines: prev when minted, author order until then (id:kr-mirror)", () => {
     // linesOf / meetOfIds are private; mirrorOf is the public sentence.
-    test("with no prev anywhere the river is ONE line, newest at the head", () => {
+    test("display neighbors never supply missing ancestry", () => {
+        const a = snap("a", { t: 1 })
+        const b = snap("b", { t: 2 })
+        const c = snap("c", { t: 3 })
+        assert.deepEqual(mirrorOf([c, b, a], name(b)).line, [b])
+        assert.equal(mirrorOf([c, b, a], name(b)).meet, null)
+    })
+
+    test("legacy keeps have a display selection but no inferred line", () => {
         const a = snap("a", { t: 1 })
         const b = snap("b", { t: 2 })
         const c = snap("c", { t: 3 })
         const m = mirrorOf([c, b, a])
-        assert.equal(m.head, name(c), "one head — the river un-forked")
-        assert.deepEqual(m.line, [c, b, a])
-        assert.deepEqual(m.sibling, [])
+        assert.equal(m.head, name(c))
+        assert.deepEqual(m.line, [c])
+        assert.deepEqual(m.sibling, [b])
         assert.equal(m.meet, null)
     })
 
@@ -215,8 +235,7 @@ describe("the lines: prev when minted, author order until then (id:kr-mirror)", 
         assert.equal(fromE.meet, name(b))
     })
 
-    test("first fork on a still-linear river: prev on the new keep only", () => {
-        // a─b─c linear (no prev keys); e forks from b
+    test("an explicit fork does not invent ancestry among legacy keeps", () => {
         const a = snap("a", { t: 1 })
         const b = snap("b", { t: 2 })
         const c = snap("c", { t: 3 })
@@ -225,10 +244,10 @@ describe("the lines: prev when minted, author order until then (id:kr-mirror)", 
 
         const fromC = mirrorOf(versions, name(c))
         const fromE = mirrorOf(versions, name(e))
-        assert.deepEqual(fromC.line, [c, b, a], "old head walks by time")
-        assert.deepEqual(fromE.line, [e, b, a], "fork walks prev then time")
-        assert.equal(fromC.meet, name(b))
-        assert.equal(fromE.meet, name(b))
+        assert.deepEqual(fromC.line, [c])
+        assert.deepEqual(fromE.line, [e, b])
+        assert.equal(fromC.meet, null)
+        assert.equal(fromE.meet, null)
     })
 
     test("a prev outside the page is a foot, not a broken link", () => {
@@ -269,7 +288,7 @@ describe("the meet: derived at the reader, never stored", () => {
 describe("mirrorOf: this line, and the nearest sibling by meet", () => {
     test("one line — no water at all", () => {
         const a = snap("a", { t: 1 })
-        const b = snap("b", { t: 2 })
+        const b = snap("b", { t: 2, prev: name(a) })
         const m = mirrorOf([b, a])
         assert.equal(m.head, name(b))
         assert.deepEqual(m.line, [b, a])

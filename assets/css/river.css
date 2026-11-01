@@ -454,6 +454,63 @@
    thing with no pigment at all: past and future are simply where the
    light runs out. */
 
+.river-seat[data-fork]::after {
+  content: "⑂ " attr(data-fork-label);
+  position: absolute;
+  top: -0.95rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.64rem;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--color-primary);
+  text-shadow: 0 0 8px var(--river-55);
+  pointer-events: none;
+}
+
+/* Compare is its own composition: the work caption must not compete with
+   the fork and current labels. */
+.river-sky[data-compare="true"] .river-word,
+.river-sky[data-compare="true"] .river-message { display: none; }
+.river-sky[data-compare="true"] {
+  --river-seat: 52px;
+  --river-gap: 22px;
+}
+
+/* Attention lights a current; it never replaces the river. */
+.river-sky[data-compare="true"] [data-place="water"] { opacity: 0.28; }
+.river-sky[data-compare="true"][data-focus="peer"] [data-place="water"] {
+  opacity: 0.78;
+  filter: blur(0.6px) saturate(0.95);
+}
+.river-sky[data-compare="true"][data-focus="peer"] [data-place="sky"]:not([data-fork]) { opacity: 0.34; }
+.river-sky[data-compare="true"][data-focus="core"] [data-place="sky"] { opacity: 1; }
+
+/* Heads name the currents — the only labels on the water. */
+.river-col[data-head]::before,
+.river-col[data-peer-head]::after {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
+  white-space: nowrap;
+  color: color-mix(in oklch, var(--color-base-content) 78%, transparent);
+  text-shadow: 0 0 8px color-mix(in oklch, var(--color-primary) 28%, transparent);
+  pointer-events: none;
+}
+.river-col[data-head]::before {
+  content: attr(data-label);
+  top: -1.15rem;
+}
+.river-col[data-peer-head]::after {
+  content: attr(data-peer-label);
+  bottom: -1.15rem;
+}
+
 /* ── the word at the meridian ────────────────────────────────────
    One caption for one sun — ABOVE the rail, under the light. Standing
    in a keep it reads that keep's title; standing in the present it

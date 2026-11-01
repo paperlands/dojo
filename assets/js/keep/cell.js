@@ -40,11 +40,15 @@ export function registerKeeper(keeper) {
 }
 
 /**
- * Ask once: `{ title, prev?, name?, peer? }`. Answered with id or null (never hangs).
+ * Ask once: `{ title, prev?, name?, peer? }`. Never hangs. The answer is a fact:
+ *   string                     — a keep id landed
+ *   { prepared: { bufferId } } — a fresh stream is ready; keep again
+ *   { cancelled: true }        — no keep was issued (declined or abandoned)
+ *   null                       — nothing was kept
  * Letters come from the shell (session); peer only when the caller has one (outershell fork).
  * @param {string} title
  * @param {{ prev?: string | null, name?: string | null, peer?: { root: string, name: string } | null }} [opts]
- * @returns {Promise<string | null>}
+ * @returns {Promise<string | { prepared: { bufferId: string } } | { cancelled: true } | null>}
  */
 export async function askKeep(title, { prev = null, name = null, peer = null } = {}) {
     const keeper = keeperCell.get()

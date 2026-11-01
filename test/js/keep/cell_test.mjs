@@ -128,6 +128,15 @@ describe("askKeep is answered — the seal ends on a fact (id:kj-vet 2)", () => 
         un()
     })
 
+    test("prepared and cancelled facts pass through untouched", async () => {
+        const un = registerKeeper(() => ({ prepared: { bufferId: "fresh" } }))
+        assert.deepEqual(await askKeep("prepared"), { prepared: { bufferId: "fresh" } })
+        un()
+        const un2 = registerKeeper(() => ({ cancelled: true }))
+        assert.deepEqual(await askKeep("cancelled"), { cancelled: true })
+        un2()
+    })
+
     test("a refused mint answers null — not silence", async () => {
         const un = registerKeeper(() => null)
         assert.equal(await askKeep("refused"), null)

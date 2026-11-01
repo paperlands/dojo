@@ -190,7 +190,7 @@ function settle(spec, candidate, worlds, pump, scope, world, { permitted, fail =
     // The operation's permitted edits are REQUIRED input, not an option: an omitted allow-list
     // would silently widen every producer's permission. (id:laws-activation-order)
     if (!Array.isArray(permitted)) throw new Error("settle needs the operation's permitted edit ids")
-    const poses = []
+    let poses = []
     for (const [id, target] of worlds) {
         // The operation's OWN intent. Valid geometry plus publication rights over a frame
         // does not establish that THIS operation should move it — a single-point method
@@ -211,6 +211,7 @@ function settle(spec, candidate, worlds, pump, scope, world, { permitted, fail =
         if (!SE3.isValid(pose)) return unsupported(spec, `the prepared pose for '${frame.name}' is invalid`)
         poses.push({ frame, pose })
     }
+    poses = pump.hands?.prepare(poses, scope) ?? poses
     const check = lawViolation(scope, new Map(poses.map(({ frame, pose }) => [frame, pose])), pump.registry, world)
     if (check.status === 'cannot-measure') return { kind: 'unresolved', message: check.reason, span: spec.owner }
     if (check.status !== 'valid') {
@@ -350,12 +351,31 @@ export function continueLaws(verdict, writer, registry, laws, world) {
 
 // --- Analytic candidates for a component ---
 
-function componentMeetCandidate(spec, candidate, comp, pump, scope, world) {
+function componentMeetCandidate(spec, candidate, comp, pump, scope, world, retained = null) {
     const meeters = comp.laws.filter((law) => AUTHORED[law.feature]?.meet)
     if (meeters.length === 0) return INAPPLICABLE
     const p = meeters[0].endpoints[0]
+    const point = p == null ? null : pump.registry.get(p)
+    // A retained request must first prove it is this producer's question: every meeting law names
+    // the same point, the operation admits it, it may be placed, and the store still has input.
+    // Only these PRE-candidate doubts decline. (id:laws-hand-action-state)
+    if (retained !== null) {
+        const fact = point && eligibilityOf(point, scope, pump.registry)
+        if (!point || !meeters.every((law) => law.endpoints[0] === p) ||
+            !spec.operation?.movable?.includes(p) || !retained(p) ||
+            !(fact?.exposed && fact.seated && fact.settled && !fact.owned && !fact.broken && !fact.held && !fact.pinned)) {
+            return INAPPLICABLE
+        }
+        // Baseline-first: a source reference the originals already hold IS the candidate; settlement
+        // may leave an uninterpretable input dormant. The ideal meet is not demanded here.
+        // (id:laws-hand-action-state)
+        const source = (pump.hands?.selectionWorld(point) ?? world).read(point, null).position
+        if (lawViolation(scope, new Map([[point, positionPose(world, point, source)]]),
+            pump.registry, world).status === 'valid') {
+            return settle(spec, candidate, new Map([[p, source]]), pump, scope, world, { permitted: [p] })
+        }
+    }
     if (!meeters.every((law) => law.endpoints[0] === p)) return unsupported(spec, 'a relation names another point')
-    const point = pump.registry.get(p)
     if (!point) return unsupported(spec, 'the point is not seated')
     const ctx = lawCtx(pump.registry, null, world, { writerId: p })
     // The SAME point query: a named meet, or the feature that cannot form its set.
@@ -391,7 +411,9 @@ function componentMeetCandidate(spec, candidate, comp, pump, scope, world) {
             members: affectedMembers(pump.registry, comp.laws, [p]) }
     }
     if (met.kind === 'uncertain' || met.kind === 'unresolved') return unsupported(spec, 'the meet is not a named set')
-    const near = meetNearest(met, world.read(point, null).position)
+    // The nearest reference is the point's SOURCE position, not an accepted pose an input has
+    // already carried. (id:laws-hand-action-state)
+    const near = meetNearest(met, (pump.hands?.selectionWorld(point) ?? world).read(point, null).position)
     if (!near.ok) return unsupported(spec, 'the meet has no nearest point')
     // The SAME candidate boundary every producer exits through: prepare, check, assemble.
     // (id:laws-activation-order)
@@ -408,8 +430,7 @@ function componentMeetCandidate(spec, candidate, comp, pump, scope, world) {
 // Dispatch is explicit: a new topology adds a producer, not another acceptance route; a new
 // relation adds semantics, not every producer. (D058)
 function componentCandidate(spec, candidate, pump, scope, world, anchorHint = null) {
-    const active = [...pump.laws.active().filter((law) => addressOf(law) !== addressOf(candidate)), candidate]
-    const comp = componentOf(active, candidate.endpoints)
+    const comp = componentOf(scope, candidate.endpoints)
     if (comp.laws.length < 2) return INAPPLICABLE
     // Producer 1: a component that names ONE point meets its truths as one set.
     if (comp.laws.some((law) => AUTHORED[law.feature]?.meet)) {
@@ -520,6 +541,39 @@ function reachOperation(spec, row, candidate) {
     })
 }
 
+// The ONE isolated-leaf producer: one free point against the accepted prefix, placed from the
+// bound distance read from its own SOURCE reference, never from a pose an input may have
+// carried. The refused law and the already-lawful one both enter here. (id:laws-free-relations-f2)
+function isolatedLeaf(spec, candidate, pump, scope, world, references, surviving, operation, retained = null) {
+    const term = boundTerm(candidate)
+    const live = references.filter(isLiveInput)
+    const touched = (id) => surviving.some((law) => (law.endpoints ?? []).includes(id) &&
+        AUTHORED[law.feature]?.staticVerdict?.(law)?.status !== 'tautology')
+    const isolates = live.filter((id) => !touched(id))
+    // Topology and ceiling say which frame may move; `retained` says only that it still carries
+    // input work. Neither substitutes for the other. (id:laws-activation-order)
+    if (term?.type !== 'distance' || live.length !== 2 || isolates.length !== 1) return INAPPLICABLE
+    const leafId = isolates[0]
+    if (retained !== null && !retained(leafId)) return INAPPLICABLE
+    const leaf = pump.registry.get(leafId)
+    const fact = leaf && eligibilityOf(leaf, scope, pump.registry)
+    if (!operation.movable.includes(leafId) || !(fact?.exposed && fact.seated && fact.settled &&
+        !fact.owned && !fact.broken && !fact.held && !fact.pinned)) return INAPPLICABLE
+    const leafCtx = lawCtx(pump.registry, null, pump.hands?.selectionWorld(leaf) ?? world)
+    const centre = inputPosition(term.references.find((ref) => ref !== leafId), leafCtx)
+    // Recorded baseline when there is one, else where the point stands. If the scope already
+    // holds there, that reference IS the candidate; selection may not choose another lawful point.
+    const source = leafCtx.worldOf(leaf)
+    const at = lawViolation(scope, new Map([[leaf, positionPose(world, leaf, source)]]),
+        pump.registry, world).status === 'valid'
+        ? source
+        : nearestChild({ centre, at: source, radius: term.radius,
+            bond: world.transform(spec.observer).rotation.rotateVec(1, 0, 0) })
+    // One placement, one candidate boundary: prepare, check the original truths, assemble.
+    return at ? settle(spec, candidate, new Map([[leafId, at]]), pump, scope, world, { permitted: [leafId] })
+        : INAPPLICABLE
+}
+
 // The primary producer reads an accepted snapshot; the final gate reads the world. (D058)
 function reachEnvelope(spec, candidate, scope, ctx, operation, registry) {
     const copyPose = (pose) => {
@@ -599,6 +653,20 @@ export function applyLaw(spec, pump, world) {
     if (policy === 'balanced') {
         const current = lawViolation(scope, new Map(), pump.registry, world)
         if (current.status === 'valid') {
+            // A valid law proves neither that a retained input was interpreted nor that the pose it
+            // holds came from the source: one producer still owes that, and only for an admitted
+            // mover. (id:laws-hand-action-state)
+            const retained = (id) => pump.hands?.hasInput(pump.registry.get(id)) === true
+            if ((operation.movable ?? []).some(retained)) {
+                const leaf = isolatedLeaf(spec, candidate, pump, scope, world, references, surviving,
+                    operation, retained)
+                if (leaf !== INAPPLICABLE) return leaf
+                const meetScope = componentOf(scope, references)
+                if (meetScope.laws.length > 1) {
+                    const meet = componentMeetCandidate(spec, candidate, meetScope, pump, scope, world, retained)
+                    if (meet !== INAPPLICABLE) return meet
+                }
+            }
             return { kind: 'commit', poses: [], address: candidate.address,
                 law: candidate, span: spec.owner }
         }
@@ -616,33 +684,10 @@ export function applyLaw(spec, pump, world) {
                 // An anchor is a pin, a body, a hold or a coupled partner — not a mover.
                 return !!e && (!(e.exposed && e.seated && e.settled && !e.owned && !e.broken) || e.held || e.pinned)
             })
-            // ONE isolated leaf: only that leaf is placed, from the bound distance, so the
-            // accepted prefix is never reconfigured and mixed/cyclic accepted truths do not
-            // block it. A stated selection, not least change or midpoint balance. (id:laws-free-relations-f2)
-            const term = boundTerm(candidate)
-            const live = references.filter(isLiveInput)
-            const touched = (id) => surviving.some((law) => (law.endpoints ?? []).includes(id) &&
-                AUTHORED[law.feature]?.staticVerdict?.(law)?.status !== 'tautology')
-            const isolates = live.filter((id) => !touched(id))
-            if (term?.type === 'distance' && live.length === 2 && isolates.length === 1) {
-                const leafId = isolates[0]
-                const leaf = pump.registry.get(leafId)
-                const fact = leaf && eligibilityOf(leaf, scope, pump.registry)
-                // An explicit ceiling is a ceiling: a mover set that does not name the leaf
-                // refuses it, empty set included. settle enforces the same, never substitutes.
-                const withinCeiling = operation.movable.includes(leafId)
-                if (withinCeiling && fact?.exposed && fact.seated && fact.settled &&
-                    !fact.owned && !fact.broken && !fact.held && !fact.pinned) {
-                    const leafCtx = lawCtx(pump.registry, null, world)
-                    const centre = inputPosition(term.references.find((ref) => ref !== leafId), leafCtx)
-                    // Zero and positive radii share one distance kernel; only the tie is reach policy.
-                    // (id:laws-free-relations-f2)
-                    const at = nearestChild({ centre, at: leafCtx.worldOf(leaf), radius: term.radius,
-                        bond: world.transform(spec.observer).rotation.rotateVec(1, 0, 0) })
-                    if (at) return settle(spec, candidate, new Map([[leafId, at]]), pump, scope, world,
-                        { permitted: [leafId] })
-                }
-            }
+            // The isolated leaf: one producer for the refused and the already-lawful case.
+            // (id:laws-free-relations-f2)
+            const leaf = isolatedLeaf(spec, candidate, pump, scope, world, references, surviving, operation)
+            if (leaf !== INAPPLICABLE) return leaf
             if (anchors.length === 1) {
                 const joint = componentCandidate(spec, candidate, pump, scope, world, anchors[0])
                 if (joint !== INAPPLICABLE) return joint
@@ -650,7 +695,7 @@ export function applyLaw(spec, pump, world) {
             return unsupported(spec, 'free-pair initialization cannot reconfigure coupled obligations yet')
         }
     }
-    const ctx = lawCtx(pump.registry, null, world, {
+    const ctx = lawCtx(pump.registry, null, policy === 'target-only' ? (pump.hands?.selectionWorld(spec.target) ?? world) : world, {
         pinWorld: (id) => {
             const pin = pinnedLaw(pump.laws, id)
             const target = pin ? positionTarget(pin) : null
@@ -668,8 +713,7 @@ export function applyLaw(spec, pump, world) {
             return { kind: placed.kind, message: placed.reason, span: spec.owner,
                 candidate: placed.world ? { frame: spec.target.id, world: placed.world } : null,
                 residual: placed.residual ?? null,
-                members: affectedMembers(pump.registry,
-                    [...pump.laws.active().filter((law) => addressOf(law) !== addressOf(candidate)), candidate],
+                members: affectedMembers(pump.registry, scope,
                     candidate.endpoints, [spec.target, spec.observer]) }
         }
         return { kind: placed.kind ?? 'relation', message: placed.reason, span: spec.owner }

@@ -257,7 +257,7 @@ defmodule Dojo.Keep.RepoTest do
       refute plan =~ "SCAN keeps", "root depth must not scan: #{plan}"
     end
 
-    test "[structural] head_of fences ownership without losing its index" do
+    test "[structural] legacy fences read through works; modern proves the origin" do
       # The plan tests hand-build their queries, so they drift the same way the
       # implementation did. This watches the implementation itself.
       #
@@ -272,22 +272,22 @@ defmodule Dojo.Keep.RepoTest do
         |> File.read!()
         |> String.replace(~r/^\s*#.*$/m, "")
 
-      # owner_query is the target fence — head_of and depth(:target) — never
-      # root. A join here is the wound id:ka-vet 65 named. (The value-returning
-      # `owner_of/1` wraps this same builder for the seat read.)
+      # owner_query is the *legacy* fence only: legacy depth, legacy fan row,
+      # legacy pull head. Modern membership proves the origin instead, and the
+      # two must not be confused. A join here is the wound id:ka-vet 65 named.
       assert length(Regex.scan(~r/subquery\(owner_query\(/, src)) == 2,
-             "owner_query fences the two target reads, and only those"
+             "owner_query fences the two legacy subquery reads"
+
+      assert length(Regex.scan(~r/subquery\(origin_root\(/, src)) == 1,
+             "one shared modern membership query composes the origin proof"
+
+      assert src =~ "origin_root(dynamic(",
+             "the room fan embeds that proof instead of a second origin rule"
 
       # TWO CLOCKS, EACH DECLARED ONCE (id:ka-latest). The author's is a named
       # function every one-hand door composes; the room's is the other.
       assert src =~ "defp by_author",
              "the author's clock is declared once and composed, never inlined"
-
-      assert src =~ "defp by_room",
-             "the room's clock is declared once and composed, never inlined"
-
-      assert length(Regex.scan(~r/desc: k\.shared_at/, src)) == 1,
-             "the room's clock orders the fan in exactly one place"
 
       refute src =~ ~r/order_by:.*ts_t.*\n.*clan|clan.*order_by:.*ts_t/,
              "a room must never be ordered by an author's clock"

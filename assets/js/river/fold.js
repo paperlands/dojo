@@ -68,8 +68,12 @@ export function fold(versions, held, {
 
     const { line, sibling, meet, siblingHead, lineIds, siblingIds } =
         mirrorOf(versions, head, ids)
-    const columns = columnsOf(line, sibling, meet, { line: lineIds, sibling: siblingIds })
-    const headKey = columns.length ? columns[columns.length - 1].key : PRESENT
+    let columns = columnsOf(line, sibling, meet, { line: lineIds, sibling: siblingIds })
+    const shown = new Set(columns.flatMap(({ sky, water }) => [sky, water]))
+    // Unlinked legacy keeps stay visible, without invented ancestry.
+    if (versions.some((bytes) => !shown.has(bytes))) columns = columnsOf(versions, [], null, { line: ids })
+    const mirrored = columns.some(({ water }) => water != null)
+    const headKey = columns.find(({ sky }) => sky === line[0])?.key ?? PRESENT
     const newestId = ids[0] ?? null
 
     // East: key is the kind (id:kr-meridian).
@@ -99,8 +103,8 @@ export function fold(versions, held, {
         keptLocal,
         settling,
         columns,
-        siblingHead,
-        hasMirror: sibling.length > 0,
+        siblingHead: mirrored ? siblingHead : null,
+        hasMirror: mirrored,
         headKey,
         newestId,
     }

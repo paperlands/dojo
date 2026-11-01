@@ -365,8 +365,8 @@ try {
     await sleep(Number(waitMs));
     const snap = () => s.evalJs(`(() => { const w = window.__probe.read(); const a = {};
       for (const x of w.ambients) if (['A','B','D'].includes(x.name)) a[x.name] = (x.state && x.state.at) || x.transform.pos;
-      return { rev: w.revision, a, ids: Object.fromEntries(w.ambients.filter(x => ['A','B','D'].includes(x.name)).map(x => [x.name, x.id])),
-        laws: w.laws.map(l => ({ ep: l.endpoints, r: l.expression && l.expression.radius })),
+      return { rev: w.revision, a,
+        laws: w.laws.map(l => ({ f: l.feature, r: l.radius ?? null, at: l.observedInputs ?? null })),
         held: w.held, controlsEnabled: w.controlsEnabled, handMoves: w.handMoves,
         attempt: w.attempt ? { path: w.attempt.path, command: w.attempt.command ?? null, outcome: w.attempt.outcome, gate: w.attempt.gate ?? null } : null }; })()`);
     await s.cdp("Page.bringToFront");
@@ -387,9 +387,18 @@ try {
     if (!px) { console.error(`dragnode: ${name} is not projectable`); process.exit(1); }
     const failures = [];
     const must = (ok, why) => { if (!ok) failures.push(why); return ok; };
-    const byId = (o) => { const m = {}; for (const [n, id] of Object.entries(o.ids ?? {})) m[id] = o.a[n]; return m; };
-    const rawLen = (o, ep) => { const m = byId(o); const a = m[ep[0]], b = m[ep[1]];
-      return a && b ? Math.hypot(...a.map((v, i) => v - b[i])) : null; };
+    // Independent residual from the OBSERVED world inputs: not validate, not lawViolation,
+    // not the gate's own status. Unreadable inputs are unscorable; non-distance rows are
+    // reported as unsupported, never dropped silently.
+    const residuals = (o) => (o.laws ?? []).map((l) => {
+      if (l.f !== "distance") return { feature: l.f, unsupported: "this rig scores distance residuals" };
+      const ok = Array.isArray(l.at) && l.at.length === 2 && Number.isFinite(l.r) &&
+        l.at.every((p) => Array.isArray(p) && p.length === 3 && p.every((v) => Number.isFinite(v)));
+      if (!ok) return { feature: "distance", unscorable: "observed inputs or radius are unreadable" };
+      const [a, b] = l.at;
+      const got = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+      return { feature: "distance", radius: l.r, got, err: Math.abs(got - l.r) };
+    });
     const samples = [];
     const step = async (label, type, x, y) => {
       const r0 = await snap();
@@ -397,13 +406,15 @@ try {
       await sleep(300);
       const r1 = await snap();
       const delta = r1.rev - r0.rev;
-      const lens = r1.laws.map((l) => ({ r: l.r, got: rawLen(r1, l.ep) }));
+      const checks = residuals(r1);
       samples.push({ sample: label, event: type, rev: [r0.rev, r1.rev], delta, held: r1.held,
-        controlsEnabled: r1.controlsEnabled, attempt: r1.attempt,
-        lengths: lens.map((l) => ({ want: l.r, err: l.got == null ? null : Math.abs(l.got - l.r) })), raw: r1.a });
+        controlsEnabled: r1.controlsEnabled, attempt: r1.attempt, checks, raw: r1.a });
       must(delta <= 1, `${label}: ${delta} revisions in one sample (a sample is one request)`);
-      for (const l of lens) must(l.got != null && Math.abs(l.got - l.r) <= 1e-6,
-        `${label}: original radius ${l.r} not held (raw |len| = ${l.got})`);
+      for (const c of checks) {
+        if (c.unsupported) continue;      // reported in the sample, not silently dropped
+        if (c.unscorable) { must(false, `${label}: distance residual is unscorable (${c.unscorable})`); continue }
+        must(c.err <= 1e-6, `${label}: independent residual ${c.err.toExponential(2)} exceeds 1e-6`)
+      }
       must(r1.attempt?.gate == null || r1.attempt.gate.status !== "violation", `${label}: gate reported a violation`);
       return r1;
     };

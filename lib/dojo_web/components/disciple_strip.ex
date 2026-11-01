@@ -29,6 +29,7 @@ defmodule DojoWeb.DiscipleStrip do
   import DojoWeb.SVGComponents
 
   alias DojoWeb.ShellLive.DiscipleWindow
+  alias DojoWeb.ShellLive.OuterShell
 
   attr :windows, :list, required: true
   attr :outershell, :any, default: nil
@@ -64,19 +65,7 @@ defmodule DojoWeb.DiscipleStrip do
           @win.depth && "d#{@win.depth}",
           @peekable? && "peekable"
         ]}
-        phx-click={
-          @hour != :kept &&
-            JS.dispatch("phx:outerSelect",
-              to: "body",
-              detail: %{
-                addr: @win.hand,
-                view: "watch",
-                draft_live: true,
-                follow_peer: true,
-                name: @win.name
-              }
-            )
-        }
+        phx-click={seat_click(@hour, @win)}
         phx-value-addr={@win.hand}
       >
         <span class="spill" aria-hidden="true"></span>
@@ -85,8 +74,8 @@ defmodule DojoWeb.DiscipleStrip do
         <div class="pane">
           <%!-- The lamp, behind: shown by default on a dark seat, the peek on a
                 living one (id:hw-takahata image center). Title and time rest on
-                the sill; the name is the hand, top-right, when the journal still
-                knows it (id:ks-name). --%>
+                the sill; the name is the hand, top-right, when the keep signed
+                its own root (id:kc-sign, id:ks-name). --%>
           <div :if={@win.kept} class="face kept">
             <%!-- No src → no img. A missing picture is named absence, not the
                  turtlehead fallback (id:kc-e-missing-image). onerror stays for
@@ -123,6 +112,30 @@ defmodule DojoWeb.DiscipleStrip do
       </div>
     </div>
     """
+  end
+
+  # One seat, one command, one door: the subject the shown face can NAME. A
+  # living hand is selected by addr; a lamp by the keep's room address, read
+  # once and never followed (id:la-fork-pull). A keepless lamp names nothing.
+  defp seat_click(:kept, %{kept: %{id: id}, name: name}) when is_binary(id),
+    do: select(OuterShell.keep_addr(id), name, false)
+
+  defp seat_click(:kept, _win), do: nil
+
+  defp seat_click(_hour, win), do: select(win.hand, win.name, true)
+
+  # A local departure at raw arrival — the client owns open vs close, never us.
+  defp select(addr, name, follow_peer) do
+    JS.dispatch("phx:outerSelect",
+      to: "body",
+      detail: %{
+        addr: addr,
+        view: "watch",
+        draft_live: true,
+        follow_peer: follow_peer,
+        name: name
+      }
+    )
   end
 
   # Time since the room last met this lamp — a snapshot at render, coarse on

@@ -1,6 +1,7 @@
 // Shared is a fold, not a field (id:kb-8). Put then share is the order.
 import { describe, test, beforeEach, afterEach } from "node:test"
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
@@ -335,17 +336,18 @@ describe("shared: the surface's four reads, and the laws they carry (id:kb-8)", 
         })
         try {
             const root = "i".repeat(64)
-            const img = (n) => new Uint8Array(n)
+            const img = (n) => new Blob([new Uint8Array(n)])
+            const digest = createHash("sha256").update(Buffer.alloc(60)).digest("hex")
             const a = snap(root, { tag: "a" }, { t: 100, n: 0 })
             const b = snap(root, { tag: "b" }, { t: 200, n: 0 })
             const idA = await j.put(a, { image: img(60) })
             const idB = await j.put(b, { image: img(60) })
-            await j.share(idA, { at: 1, node: "n" })
-            await j.share(idB, { at: 2, node: "n" })
+            await j.share(idA, { at: 1, node: "n", retained: { image: digest } })
+            await j.share(idB, { at: 2, node: "n", retained: { image: digest } })
             // A third shared image pushes past the cap — oldest shared yields.
             const cBytes = snap(root, { tag: "c" }, { t: 300, n: 0 })
             const idC = await j.put(cBytes, { image: img(60) })
-            await j.share(idC, { at: 3, node: "n" })
+            await j.share(idC, { at: 3, node: "n", retained: { image: digest } })
 
             for (const [id, bytes] of [
                 [idA, a],

@@ -113,8 +113,11 @@ defmodule DojoWeb.ShellLive.OuterShell do
     :attend,
     :diagnostics,
     :source,
+    :choices,
     :time,
     :buffer_id,
+    :work_id,
+    :base_id,
     :addr,
     :origin_name,
     :root,
@@ -140,6 +143,33 @@ defmodule DojoWeb.ShellLive.OuterShell do
       draft_live: shell.draft_live
     })
   end
+
+  @doc """
+  The subject address of a keep — the room's own name for it.
+
+  A peer is selected by `//host/path`; a keep is read by id (id:la-fork-pull),
+  so its subject wears the door it came from. Never a presence key.
+  """
+  @spec keep_addr(String.t()) :: String.t()
+  def keep_addr(id) when is_binary(id), do: "/keeps/" <> id
+
+  @doc "The keep a subject address names — the other half of `keep_addr/1`."
+  @spec keep_ref(String.t()) :: String.t() | nil
+  def keep_ref("/keeps/" <> id), do: if(id =~ ~r/^[0-9a-f]{64}$/, do: id)
+  def keep_ref(_), do: nil
+
+  @doc """
+  The name a recording of this subject should carry.
+
+  `name` is nil when the subject signed no letters — a keep with no
+  `signature_of` for its root (id:kc-sign: absence is named, never guessed).
+  A render that `<>`'d it would take the whole LiveView down with it.
+  """
+  @spec creation_title(String.t() | nil) :: String.t()
+  def creation_title(name) when is_binary(name) and name != "",
+    do: name <> "'s creation"
+
+  def creation_title(_), do: "a creation"
 
   # Name the BUMP, never the fields that matter: a field added to the reflect is
   # covered the day it is added and can never mint a second gate (D025 R3).

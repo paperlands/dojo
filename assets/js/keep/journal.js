@@ -46,26 +46,36 @@ export function createJournal(opts = {}) {
      * Idempotent find-or-create; never a getter, never a capability probe.
      * @returns {Promise<string>} hex64 root
      */
+    function clearRoot() {
+        cached = null
+        rootP = null
+    }
+
     function root() {
         if (closed) return Promise.reject(new Error("journal: closed"))
         if (cached != null) return Promise.resolve(cached)
         if (rootP) return rootP
-        rootP = request("genesis", [])
-            .then((bytes) => {
-                if (closed) throw new Error("journal: closed")
-                cached = name(bytes)
-                return cached
-            })
-            .catch((err) => {
-                rootP = null
-                throw err
-            })
-        return rootP
+        // Only the promise that is still current may populate the cache.
+        const pending = request("genesis", []).then((bytes) => {
+            if (closed) throw new Error("journal: closed")
+            const value = name(bytes)
+            if (rootP === pending) cached = value
+            return value
+        })
+        rootP = pending
+        pending.then(null, () => {
+            if (rootP === pending) rootP = null
+        })
+        return pending
     }
 
     const door = {
         /** One way to ask who am I. Always a promise. */
         root,
+        /** Local hand lineage, active first; never mints or reads the key. */
+        roots() {
+            return request("roots", [])
+        },
 
         /** The public verbs — always promises. */
         put(bytes, extras) {
@@ -78,8 +88,10 @@ export function createJournal(opts = {}) {
             return request("list", n === undefined ? [r] : [r, n])
         },
         /** n bounds the fold and the ship page (id:kb-8-page, id:kb-9). */
-        local(r, n) {
-            return request("local", n === undefined ? [r] : [r, n])
+        local(r, n, opts) {
+            if (n === undefined && opts === undefined) return request("local", [r])
+            if (opts === undefined) return request("local", [r, n])
+            return request("local", [r, n, opts])
         },
         share(id, shared) {
             return request("share", [id, shared])
@@ -87,20 +99,45 @@ export function createJournal(opts = {}) {
         image(id) {
             return request("image", [id])
         },
+        /** Read retained exact-byte evidence; never sign on read or expose a key. */
+        proof(bytes) {
+            return request("proof", [bytes])
+        },
         source(sourceId) {
             return request("source", [sourceId])
         },
 
         /**
          * Read-or-mint the genesis entry itself (bytes). Prefer root() when
-         * only the name is needed.
+         * only the name is needed; readiness is hand()'s question.
          * @returns {Promise<string>} the genesis bytes
          */
         async genesis() {
             const bytes = await request("genesis", [])
             if (closed) throw new Error("journal: closed")
-            cached = name(bytes)
             return bytes
+        },
+        /**
+         * Computed readiness; never mints. A cached name may be another tab's
+         * old hand, so it must not outlive this read: drop it first. (id:keep-auth-write-guard)
+         */
+        async hand() {
+            clearRoot()
+            const reading = await request("hand", [])
+            if (closed) throw new Error("journal: closed")
+            return reading
+        },
+        /** Explicit recovery; clears the root cache on success or refusal. */
+        async newHand({ expectedRoot } = {}) {
+            try {
+                const result = await request("newHand", [{ expectedRoot }])
+                if (closed) throw new Error("journal: closed")
+                clearRoot()
+                return result
+            } catch (err) {
+                clearRoot()
+                throw err
+            }
         },
 
         async close() {
@@ -184,7 +221,12 @@ function workerTransport(opts) {
         if (!p) return
         pending.delete(msg.id)
         if (msg.ok) p.resolve(msg.value)
-        else p.reject(new Error(msg.error || "journal error"))
+        else {
+            const error = new Error(msg.error || "journal error")
+            if (typeof msg.name === "string" && msg.name) error.name = msg.name
+            if (typeof msg.code === "string" && msg.code) error.code = msg.code
+            p.reject(error)
+        }
     }
 
     worker.onerror = (ev) => {

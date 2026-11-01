@@ -3,8 +3,8 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { AUTHORED, withPayload } from "../../../assets/js/turtling/laws/authored.js"
-import { applyLaw } from "../../../assets/js/turtling/laws/verdict.js"
-import { createLawStore } from "../../../assets/js/turtling/laws/replacement.js"
+import { applyLaw, lawViolation } from "../../../assets/js/turtling/laws/verdict.js"
+import { bindLaw, createLawStore } from "../../../assets/js/turtling/laws/replacement.js"
 import { angleOf, selectAngle, validateAngle } from "../../../assets/js/turtling/laws/angle.js"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
 import { buildWorld, fork, drive } from "./harness.mjs"
@@ -65,6 +65,37 @@ test("reach question: the producer sees a frozen snapshot but the gate checks th
         assert.ok(Object.isFrozen(observed.snapshot))
     } finally { AUTHORED.distance.propose = real }
 })
+
+for (const feature of ["coordinate", "position"]) {
+    test(`reach question: ${feature === "coordinate" ? "meet fallback" : "obstruction"} reuses the retained conjunction`, () => {
+        const s = stub()
+        s.pump.laws.apply(bindLaw({
+            feature, endpoints: ["A"], scope: "O", frame: "O", owner: "retained",
+            ...(feature === "coordinate" ? { axis: "x", predicate: 0 } : { predicate: [0, 0, 0] }),
+        }))
+        const active = s.pump.laws.active
+        const before = active()
+        let reads = 0
+        s.pump.laws.active = () => { reads++; return active() }
+        const out = applyLaw({ ...s.spec, operation: { policy: "target-only", movable: ["A"] } }, s.pump, s.world)
+
+        assert.ok(reads <= 2, `do not rebuild the conjunction after the separate pin lookup (${reads} reads)`)
+        assert.deepEqual(active(), before, "proposal and obstruction reporting install no obligation")
+        assert.deepEqual(s.poses.get("A").position, [0, 0, 0])
+        assert.deepEqual(s.poses.get("B").position, [3, 0, 0])
+        if (feature === "coordinate") {
+            assert.equal(out.kind, "commit", out.message)
+            assert.deepEqual(out.poses.map(e => e.frame.id), ["A"], "the fallback keeps the mover ceiling")
+            const overrides = new Map(out.poses.map(e => [e.frame, e.pose]))
+            assert.equal(lawViolation([...before, out.law], overrides, s.registry, s.world).status, "valid",
+                "the fallback satisfies BOTH the retained coordinate and the proposed distance")
+        } else {
+            assert.equal(out.kind, "obstructed", out.message)
+            assert.deepEqual(new Set(out.members.map(f => f.id)), new Set(["A", "B", "O"]))
+            assert.equal(s.pump.laws.count(), 1, "refusal preserves the accepted prefix")
+        }
+    })
+}
 
 const FEATURE = "threeRoleProbe"
 const termOf = (law) => law.expression?.type === FEATURE && law.expression.references.length === 3

@@ -191,6 +191,15 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
       assert OuterShell.reflect_changed?(ok("fw 100"), %Turtle{ok("fw 100") | state: :error})
     end
 
+    test "choice-only changes are news, while identical choices and bumps are not" do
+      inherited = %{"v" => 1, "inputs" => []}
+      offered = %Turtle{ok("fw 100") | choices: inherited}
+      assert OuterShell.reflect_changed?(ok("fw 100"), offered)
+      refute OuterShell.reflect_changed?(offered, %Turtle{offered | time: 99, path: "a.png"})
+      refute OuterShell.reflect_changed?(offered, %Turtle{offered | choices: inherited})
+      assert OuterShell.reflect_changed?(offered, %Turtle{offered | choices: nil})
+    end
+
     # The gate names the bump, never the fields that matter (D025 R3), so a
     # field no test here enumerates counts the day it is added.
     test "true when a field no one enumerated moved" do
@@ -205,6 +214,52 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
     end
   end
 
+  describe "a keep that signed no letters (id:kc-sign)" do
+    test "the panel names the absence, never an empty possessive" do
+      html =
+        Phoenix.LiveViewTest.render_component(DojoWeb.OuterShellLive,
+          id: "outer-shell",
+          locale: "en",
+          outershell: %OuterShell{
+            addr: OuterShell.keep_addr(String.duplicate("a", 64)),
+            name: nil,
+            active: true
+          }
+        )
+
+      assert html =~ "a kept work"
+      refute html =~ "&#39;s code"
+    end
+
+    test "creation_title/1 names a recording even with no letters" do
+      assert OuterShell.creation_title("lowe") == "lowe's creation"
+
+      for none <- [nil, ""] do
+        assert OuterShell.creation_title(none) == "a creation"
+      end
+    end
+  end
+
+  describe "waiting is an hour, not a sentence (id:hw-phases)" do
+    test "the mark is mounted once, carries no prose, and is gated by data-state" do
+      html =
+        Phoenix.LiveViewTest.render_component(DojoWeb.OuterShellLive,
+          id: "outer-shell",
+          locale: "en",
+          outershell: %OuterShell{addr: "//kai.t/hatch", name: "kai"}
+        )
+
+      [mark] = Floki.find(Floki.parse_fragment!(html), "#outer-selection-status")
+
+      assert Floki.attribute(mark, "class") == ["outer-waiting"]
+      assert Floki.attribute(mark, "role") == ["status"]
+      assert Floki.attribute(mark, "hidden") == [], "never display-gated: no layout move"
+      assert Floki.attribute(mark, "data-state") == [], "the client owns the hour"
+      assert Floki.text(mark) =~ "waiting for the selected code"
+      refute html =~ "Any code still shown belongs to the previous selection"
+    end
+  end
+
   describe "payload/2 — the seeOuterShell envelope (dual of JS OUTER_SHELL_KEYS)" do
     test "emits exactly payload_keys — every Turtle field plus shell overlay" do
       turtle = %Turtle{
@@ -212,10 +267,13 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
         source: "fw 10",
         commands: [],
         diagnostics: [],
+        choices: %{"v" => 1, "inputs" => []},
         time: 1,
         path: "frames/x.png",
         attend: %{line: 2},
-        buffer_id: "buf-1"
+        buffer_id: "buf-1",
+        work_id: "work-1",
+        base_id: "base-1"
       }
 
       shell = %OuterShell{
@@ -228,16 +286,19 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
       payload = OuterShell.payload(turtle, shell)
 
       assert Map.keys(payload) |> Enum.sort() == OuterShell.payload_keys() |> Enum.sort()
-      assert map_size(payload) == 13
+      assert map_size(payload) == 16
       assert payload.addr == "alice"
       assert payload.origin_name == "Alice"
       assert Map.has_key?(payload, :root)
       assert payload.view == :watch
       assert payload.draft_live == true
       assert payload.source == "fw 10"
+      assert payload.choices === turtle.choices
       assert payload.path == "frames/x.png"
       assert payload.attend == %{line: 2}
       assert payload.buffer_id == "buf-1"
+      assert payload.work_id == "work-1"
+      assert payload.base_id == "base-1"
     end
 
     test "nil Turtle fields stay present as nil — not dropped (key absence is not the contract)" do
@@ -245,9 +306,15 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
       assert Map.has_key?(payload, :path)
       assert Map.has_key?(payload, :attend)
       assert Map.has_key?(payload, :buffer_id)
+      assert Map.has_key?(payload, :work_id)
+      assert Map.has_key?(payload, :base_id)
+      assert Map.has_key?(payload, :choices)
+      assert payload.choices == nil
       assert payload.path == nil
       assert payload.attend == nil
       assert payload.buffer_id == nil
+      assert payload.work_id == nil
+      assert payload.base_id == nil
     end
   end
 

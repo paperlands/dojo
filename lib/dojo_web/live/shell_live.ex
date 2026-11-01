@@ -125,6 +125,18 @@ defmodule DojoWeb.ShellLive do
     {:noreply, socket}
   end
 
+  # One keep read per selection; a newer subject cancels the older ask.
+  def handle_async(:keep_open, {:ok, {:ok, keep}}, socket) do
+    {:noreply, open_keep(socket, keep)}
+  end
+
+  def handle_async(:keep_open, {:exit, reason}, socket) do
+    Logger.error("[LC:ShellLive] keep read failed: #{inspect(reason)}")
+    {:noreply, socket}
+  end
+
+  def handle_async(:keep_open, _answer, socket), do: {:noreply, socket}
+
   def handle_async(:join_disciples, {:ok, class}, %{assigns: %{clan: _clan}} = socket) do
     Process.monitor(class)
     # The owner stands only after the Table is attached. This is the one
@@ -600,7 +612,7 @@ defmodule DojoWeb.ShellLive do
         |> bump_follow()
         |> push_intent()
 
-      socket = apply_selection(socket)
+      socket = socket |> apply_selection() |> read_keep()
       {:reply, Map.take(socket.assigns.outershell, @selector_keys ++ [:name, :root]), socket}
     else
       _ -> {:noreply, socket}
@@ -759,7 +771,7 @@ defmodule DojoWeb.ShellLive do
         name: name
       )
 
-    {:reply, reply, publish_latest_keep(socket, reply)}
+    {:reply, reply, publish_latest_keep(socket, reply, payload)}
   end
 
   def handle_event("keep", _payload, socket), do: {:noreply, socket}
@@ -926,6 +938,41 @@ defmodule DojoWeb.ShellLive do
     if opts[:notify], do: push_event(socket, "outerClose", %{}), else: socket
   end
 
+  # A keep subject is read by name, never followed (id:la-fork-pull). Async so
+  # the document lands after the receipt that acks the selector — the peer
+  # read's ordering; a hung room never blocks the click.
+  defp read_keep(%{assigns: %{outershell: %OuterShell{addr: addr}}} = socket)
+       when is_binary(addr) do
+    case OuterShell.keep_ref(addr) do
+      ref when is_binary(ref) -> start_async(socket, :keep_open, fn -> Dojo.Keep.get(ref) end)
+      _ -> socket
+    end
+  end
+
+  defp read_keep(socket), do: socket
+
+  # The keep's own bytes name it: root from the message, letters from its
+  # signature (id:kc-sign). A tombstone source still opens — empty, not absent.
+  # A newer selection retires this read: no old completion may reclaim it.
+  defp open_keep(%{assigns: %{outershell: %OuterShell{addr: addr}}} = socket, keep) do
+    if addr == OuterShell.keep_addr(keep.id), do: observe_keep(socket, keep), else: socket
+  end
+
+  defp observe_keep(socket, keep) do
+    root = Dojo.Keep.root_of(keep.message)
+    turtle = %Dojo.Turtle{state: :success, source: keep.source || "", time: keep.at}
+
+    shell = %OuterShell{
+      addr: OuterShell.keep_addr(keep.id),
+      active: true,
+      name: Dojo.Keep.letters(keep.message, root),
+      root: root,
+      follow_peer: false
+    }
+
+    apply_outer_view(socket, OuterShell.observe(shell, turtle))
+  end
+
   defp apply_outer_view(socket, %OuterShell{} = shell) do
     socket =
       socket
@@ -940,16 +987,28 @@ defmodule DojoWeb.ShellLive do
   end
 
   # Presence :keep should be the origin id (keep-cut VI). Pre-cut still ships target.
+  # An ephemeral false hint suppresses only this live publication; receive/admit/
+  # settle are untouched. Absent/true keeps the legacy active behavior.
   defp publish_latest_keep(
          %{assigns: %{class: class}} = socket,
-         %{target: target}
+         %{target: target},
+         %{"current" => false}
+       )
+       when is_pid(class) and is_binary(target) do
+    socket
+  end
+
+  defp publish_latest_keep(
+         %{assigns: %{class: class}} = socket,
+         %{target: target},
+         _payload
        )
        when is_pid(class) and is_binary(target) do
     Dojo.Table.change_meta(class, {:keep, target})
     socket
   end
 
-  defp publish_latest_keep(socket, _), do: socket
+  defp publish_latest_keep(socket, _, _), do: socket
 
   # A departed hand leaves its lamp — the head of its journal (id:ks-delta). The
   # root is already on the disciple (owner_of, resolved upstream), so we ask the

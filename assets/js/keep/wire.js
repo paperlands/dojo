@@ -2,10 +2,54 @@
 // Bound not backoff: PAGE ships, silence ends pass. No online flag, outbox, or queue.
 
 import { name, read } from "./entry.js"
+import { hashBytes } from "./hash.js"
 import { PAGE } from "./page.js"
 
 /** The event that ships one kept-local message. */
 export const KEEP_EVENT = "keep"
+
+// Positive evidence only: an unproven kept-local row is inspected, never shipped.
+// The page filter and ship gate share this positive evidence. (id:keep-auth-durable-proof)
+const PROVED = Object.freeze({ proved: true })
+
+// Local hand lineage is the root set. A present roots() that fails is a real
+// read error, never an empty queue; only an absent method falls back to root().
+async function lineage(door) {
+    if (door && typeof door.roots === "function") {
+        const meta = await door.roots()
+        if (!meta || typeof meta !== "object" || !Array.isArray(meta.prior)) {
+            throw new TypeError("keep/wire: roots() must return {active, prior}")
+        }
+        const active = typeof meta.active === "string" && meta.active ? meta.active : null
+        const out = []
+        const seen = new Set()
+        if (active) {
+            out.push(active)
+            seen.add(active)
+        }
+        for (const root of meta.prior) {
+            if (typeof root !== "string" || !root || seen.has(root)) continue
+            seen.add(root)
+            out.push(root)
+        }
+        return { active, roots: out }
+    }
+    if (door && typeof door.root === "function") {
+        const root = await door.root()
+        return typeof root === "string" && root
+            ? { active: root, roots: [root] }
+            : { active: null, roots: [] }
+    }
+    return { active: null, roots: [] }
+}
+
+function debugAnnounce(err) {
+    try {
+        console.debug?.("[keep/wire] announce:", err?.message || err)
+    } catch {
+        /* nowhere to write */
+    }
+}
 
 
 /**
@@ -14,7 +58,7 @@ export const KEEP_EVENT = "keep"
  * @param {object} opts
  * @param {{ pushEvent?: Function, liveSocket?: { isConnected?: () => boolean } }} opts.hook
  *   The LiveView hook (or a test double). pushEvent is named only here in keep/.
- * @param {{ root: () => Promise<string>, local: Function, share: Function, source?: Function, image?: Function }} [opts.door]
+ * @param {{ root: () => Promise<string>, roots?: () => Promise<{active: string|null, prior: string[]}>, local: (root: string, n?: number, opts?: { proved?: boolean }) => Promise<string[]>, share: Function, source?: Function, image?: Function, proof: Function }} [opts.door]
  *   The journal door. Absent → announce ships nothing and says so.
  * @param {(eventName: string, err?: unknown) => void} [opts.onDrop]
  *   Optional log for a dropped push — never throws into the caller.
@@ -78,47 +122,50 @@ export function createWire(opts = {}) {
                 passWanted = false
                 const mine = ++epoch
                 try {
-                    if (!door || typeof door.root !== "function") break passes
-
-                    const root = await door.root()
+                    const { active, roots } = await lineage(door)
                     if (mine !== epoch) return   // superseded — the healer owns the queue
-
-                    const held = await door.local(root, page)
-                    if (mine !== epoch) return
 
                     let progressed = false
                     let silenced = false
+                    let more = false
 
-                    for (const bytes of held) {
+                    for (const root of roots) {
                         if (mine !== epoch) return
-                        const id = name(bytes)
-                        const payload = await pack(door, id, bytes)
-                        if (mine !== epoch) return
+                        let held
+                        try {
+                            held = await door.local(root, page, PROVED)
+                            if (mine !== epoch) return
 
-                        const reply = await say(KEEP_EVENT, payload)
-                        if (mine !== epoch) return
+                            for (const bytes of held) {
+                                if (mine !== epoch) return
+                                const id = name(bytes)
+                                const { payload, imageDigest } = await pack(door, id, bytes, root === active)
+                                if (mine !== epoch) return
 
-                        // Silence ends this pass; remainder stays local for reconnect.
-                        if (reply == null) {
-                            silenced = true
-                            break
+                                const reply = await say(KEEP_EVENT, payload)
+                                if (mine !== epoch) return
+
+                                // Silence ends this pass; remainder stays local for reconnect.
+                                if (reply == null) {
+                                    silenced = true
+                                    break
+                                }
+
+                                // Only the id just shipped may settle (id:kb-12).
+                                const outcome = await settle(door, reply, note, id, imageDigest)
+                                if (outcome) progressed = true
+                            }
+                        } catch (err) {
+                            // One bad root must not block unrelated healthy roots.
+                            debugAnnounce(err)
                         }
-
-                        // Only the id just shipped may settle (id:kb-12).
-                        const outcome = await settle(door, reply, note, id)
-                        if (outcome) progressed = true
+                        if (silenced) break
+                        if (Array.isArray(held) && held.length >= page) more = true
                     }
 
-                    if (mine === epoch && progressed && !silenced) {
-                        const more = await door.local(root, 1)
-                        if (mine === epoch && more.length > 0) passWanted = true
-                    }
+                    if (mine === epoch && progressed && !silenced && more) passWanted = true
                 } catch (err) {
-                    try {
-                        console.debug?.("[keep/wire] announce:", err?.message || err)
-                    } catch {
-                        /* nowhere to write */
-                    }
+                    debugAnnounce(err)
                 }
                 // Let a re-entry's arm land before the next pass runs.
                 await new Promise((r) => queueMicrotask(r))
@@ -171,10 +218,17 @@ export function createWire(opts = {}) {
  * @param {{ source?: Function, image?: Function }} door
  * @param {string} id
  * @param {string} bytes
+ * @param {boolean} current
  */
-async function pack(door, id, bytes) {
-    /** @type {{ id: string, message: string, source?: string, image?: string }} */
+async function pack(door, id, bytes, current) {
+    /** @type {{ id: string, message: string, source?: string, image?: string, current?: false }} */
     const payload = { id, message: bytes }
+    // Suppression hint only: false for prior/unknown hands; active sends no field.
+    if (!current) payload.current = false
+    // No unsigned fallback into authenticated server admission.
+    payload.proof = await door.proof(bytes)
+    if (!payload.proof) throw new Error("keep: no signing proof")
+    let imageDigest = null
     try {
         const v = read(bytes)
         const sid = v && v.source_id
@@ -189,30 +243,42 @@ async function pack(door, id, bytes) {
         if (typeof door.image === "function") {
             const blob = await door.image(id)
             if (blob != null) {
-                const image = await toBase64(blob)
-                if (image) payload.image = image
+                const facts = await blobFacts(blob)
+                if (facts.image) payload.image = facts.image
+                imageDigest = facts.digest
             }
         }
     } catch {
         // Mint gates the picture; eviction may still drop it later. No blob → ship text.
     }
-    return payload
+    return { payload, imageDigest }
 }
 
 /**
  * Permanent answer → share. Fenced to expectedId (id:kb-12). why stays off journal.
  * @param {{ share: Function }} door
- * @param {{ id?: string, at?: number, node?: string, why?: string }} reply
+ * @param {{ id?: string, at?: number, node?: string, why?: string, image_digest?: string }} reply
  * @param {(note: {kind: string, id: string, why?: string}) => void} note
  * @param {string} expectedId
+ * @param {string | null} [imageDigest] digest of the image this ship carried
  * @returns {Promise<"shared" | "refused" | null>}
  */
-async function settle(door, reply, note, expectedId) {
+async function settle(door, reply, note, expectedId, imageDigest = null) {
     if (!reply || typeof reply !== "object") return null
     if (typeof expectedId !== "string" || !expectedId) return null
     if (reply.id !== expectedId || typeof reply.at !== "number") return null
 
-    await door.share(reply.id, { at: reply.at, node: reply.node })
+    // A permanent answer ends the retry; it is not retention evidence. Only a
+    // receipt naming the STORED image, matching the bytes this ship carried, may
+    // grant eviction. Everything else records a NEGATIVE permission — never proof
+    // that no remote bytes exist. (id:keep-foundation-retention)
+    const verified = reply.why == null && typeof imageDigest === "string" &&
+        typeof reply.image_digest === "string" && reply.image_digest === imageDigest
+    await door.share(reply.id, {
+        at: reply.at,
+        node: reply.node,
+        ...(verified ? { retained: { image: imageDigest } } : { retained: false }),
+    })
 
     if (reply.why != null) {
         note({ kind: "refused", id: reply.id, why: reply.why })
@@ -221,7 +287,7 @@ async function settle(door, reply, note, expectedId) {
     return "shared"
 }
 
-async function toBase64(blob) {
+async function blobFacts(blob) {
     const buf = await blob.arrayBuffer()
     const bytes = new Uint8Array(buf)
     let bin = ""
@@ -229,5 +295,5 @@ async function toBase64(blob) {
     for (let i = 0; i < bytes.length; i += 0x8000) {
         bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000))
     }
-    return globalThis.btoa(bin)
+    return { image: globalThis.btoa(bin), digest: hashBytes(bytes) }
 }

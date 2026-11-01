@@ -45,8 +45,13 @@
   #outerenv {
     transition: background-color 300ms ease, box-shadow 300ms ease;
   }
+  /* Into the waiting hour the cloud gathers fast; out of it the light returns
+     in one slow bloom (620ms — the strip's arrival beat). */
   #outerenv .cm-content {
-    transition: color 300ms ease;
+    transition:
+      color 300ms ease,
+      opacity 620ms cubic-bezier(0.22, 1, 0.36, 1),
+      filter 620ms cubic-bezier(0.22, 1, 0.36, 1);
   }
   #outerenv[data-outer-state="error"] {
     background-color: rgba(100, 22, 24, 0.12);
@@ -59,6 +64,61 @@
   #outerenv[data-outer-state="draft"] {
     background-color: color-mix(in oklch, var(--color-secondary-content) 9%, transparent);
     box-shadow: inset 0 0 24px color-mix(in oklch, var(--color-secondary-content) 16%, transparent);
+  }
+
+  /* WAITING IS AN HOUR, NOT A SENTENCE (id:hw-phases). Between two selections
+     the document already on the glass KEEPS ITS PLACE: the light leaves it
+     (cloud) and a crescent turns at the frame. Nothing enters or leaves the
+     flow, so the panel never moves — and arrival is the same transition run
+     backwards, one bloom of moonlight (620ms, the strip's arrival beat).
+     These rules sit AFTER the error/draft hours on purpose: the old document's
+     weather is not news any more. */
+  #outerenv[data-outer-selection="waiting"] {
+    /* The cloud gathers, it does not pop: the wash takes the same 300ms the
+       hour does, and the code underneath recedes on its own clock below. */
+    transition:
+      background-color 300ms ease,
+      box-shadow 300ms ease;
+    background-color: color-mix(in oklch, var(--color-base-100) 30%, transparent);
+    box-shadow: inset 0 0 40px color-mix(in oklch, var(--peer-ink) 9%, transparent);
+  }
+  #outerenv[data-outer-selection="waiting"] .cm-content {
+    opacity: 0.32;
+    filter: saturate(0.25) blur(0.4px);
+    transition:
+      opacity 240ms ease,
+      filter 240ms ease;
+  }
+
+  /* A circle with an offset inner shadow IS a crescent — no border, no image.
+     It turns slowly (a moon, not a spinner); it fades, so its absence is the
+     bloom, and it never takes a pointer. */
+  .outer-waiting {
+    position: absolute;
+    inset-inline: 0;
+    top: 46%;
+    margin-inline: auto;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    pointer-events: none;
+    opacity: 0;
+    box-shadow: inset -0.52rem 0 0 0
+      color-mix(in oklch, var(--peer-ink) 58%, var(--color-primary));
+    filter: drop-shadow(0 0 12px color-mix(in oklch, var(--peer-ink) 40%, transparent));
+    transition: opacity 240ms ease;
+  }
+  .outer-waiting[data-state="waiting"] {
+    opacity: 1;
+    transition: opacity 620ms ease 100ms;
+    animation: outer-moon-turn 16s linear infinite;
+  }
+  @keyframes outer-moon-turn {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .outer-waiting[data-state="waiting"] { animation: none; }
   }
 
   /* hearth trail */
@@ -387,7 +447,9 @@
                 phx-rtclick={
                   ((@outershell.active &&
                       JS.dispatch("phx:outerkeepCanvas",
-                        detail: %{"title" => @outershell.name <> "'s creation"}
+                        detail: %{
+                          "title" => DojoWeb.ShellLive.OuterShell.creation_title(@outershell.name)
+                        }
                       )) ||
                      JS.dispatch("phx:selfkeepCanvas",
                        detail: %{"title" => @session.name <> "'s creation"}

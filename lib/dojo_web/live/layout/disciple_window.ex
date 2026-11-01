@@ -12,6 +12,7 @@ defmodule DojoWeb.ShellLive.DiscipleWindow do
 
     * `now`  — the hand at work: their live hatch, off their own node.
     * `kept` — the room's memory: their last keep, off `/keeps/:id/image`.
+      The id rides with it: a lamp is opened by the work's name (id:la-fork-pull).
 
   Two censuses (id:keep-ms-apis), and **they never cross**: a hatch is never
   shown as a keep, nor a keep as what a friend is drawing now
@@ -46,7 +47,14 @@ defmodule DojoWeb.ShellLive.DiscipleWindow do
           hand: String.t() | nil,
           name: String.t() | nil,
           now: %{src: String.t() | nil, state: atom() | nil} | nil,
-          kept: %{src: String.t() | nil, title: String.t(), at: integer()} | nil,
+          kept:
+            %{
+              id: String.t(),
+              src: String.t() | nil,
+              title: String.t(),
+              at: integer()
+            }
+            | nil,
           depth: 1..4 | nil
         }
 
@@ -153,18 +161,27 @@ defmodule DojoWeb.ShellLive.DiscipleWindow do
     }
   end
 
+  # Display does not walk: a lamp's letters are its keep's own signature, never
+  # the retired `authors` table (id:kc-sign — letters from signature_of, else
+  # nil). Absence is named, not guessed from presence.
   defp name_of(%{name: name}) when is_binary(name) and name != "", do: name
+
+  defp name_of(%{root: root, message: message}), do: Dojo.Keep.letters(message, root)
   defp name_of(_), do: nil
 
   # A keep row → the lamp face: the immutable image only when the room holds
   # one (`face`, id:ka-seat). Absent picture is a named state — never a URL
   # that 404s into turtlehead (id:kc-e-missing-image). Title + room clock still.
-  # `nil` when the hand has kept nothing.
-  defp kept_of(%{id: id, at: at, face: true} = row),
-    do: %{src: "/keeps/#{id}/image", title: title_of(Map.get(row, :message)), at: at}
-
-  defp kept_of(%{id: _id, at: at} = row),
-    do: %{src: nil, title: title_of(Map.get(row, :message)), at: at}
+  # `nil` when the hand has kept nothing. The `id` rides: a lamp is opened by
+  # the work's name, never by a presence address (id:la-fork-pull).
+  defp kept_of(%{id: id, at: at} = row) do
+    %{
+      id: id,
+      src: if(Map.get(row, :face), do: "/keeps/#{id}/image"),
+      title: title_of(Map.get(row, :message)),
+      at: at
+    }
+  end
 
   defp kept_of(_), do: nil
 
@@ -194,9 +211,18 @@ defmodule DojoWeb.ShellLive.DiscipleWindow do
   @doc """
   The author is looking at this hand — the twilight rim (id:hw-twilight).
 
+  A seat answers to the name its shown face can open by, and no other: a living
+  hand by its `addr`, a lamp by its keep's room address (id:la-fork-pull). A
+  living seat's `kept` is only the peek — its door is still the hand.
+
   Violet is someone else, chartreuse is you; never `accent-content`.
   """
   @spec focus?(t(), OuterShell.t() | nil) :: boolean()
   def focus?(%__MODULE__{hand: hand}, %OuterShell{addr: hand}) when is_binary(hand), do: true
+
+  def focus?(%__MODULE__{hand: nil, kept: %{id: id}}, %OuterShell{addr: addr})
+      when is_binary(id) and is_binary(addr),
+      do: addr == OuterShell.keep_addr(id)
+
   def focus?(%__MODULE__{}, _), do: false
 end
