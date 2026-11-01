@@ -1,5 +1,6 @@
 import { safePush } from "../adapter.js"
 import { temporal } from "../utils/temporal.js"
+import { DRAG_PX } from "../utils/pan.js"
 
 const DiscipleWindow = {
   mounted() {
@@ -72,19 +73,36 @@ const DiscipleWindow = {
     };
     this.panelsEl?.addEventListener('wheel', this.handleWheel, { passive: false });
 
-    // DRAG TO PAN — the hand's own version of the wheel. A press that travels
-    // past a few pixels is a pan, not a seat open: its click is swallowed in
-    // capture before the seat's phx-click can fire, and the next press clears
-    // the memory. Mouse only — touch already pans (touch-pan-x) — and the
-    // pointerdown preventDefault is what kills the native image drag and the
-    // text selection. Move/up live on window so a pan survives leaving the bar.
+    // DRAG TO PAN — the hand's own version of the wheel (river/wheel.js). A
+    // press that travels past DRAG_PX is a pan, not a seat open: its click is
+    // swallowed in capture before the seat's phx-click can fire, and the next
+    // press clears the memory. Mouse only — touch already pans (touch-pan-x) —
+    // and the pointerdown preventDefault is what kills the native image drag
+    // and the text selection. Move/up live on window so a pan survives leaving
+    // the bar. `is-dragging` is the hand's own state: the bar shows `grabbing`
+    // exactly while it travels, the same class the river's rail wears.
     this.pan = null;
     this.panSwallowsClick = false;
+    // One press at a time: a release that never reached us leaves no seat lit.
+    this.releasePress = () => {
+      this.pressedSeat?.classList.remove('is-pressed');
+      this.pressedSeat = null;
+    };
     this.onPanStart = (e) => {
       this.pan = null;
       this.panSwallowsClick = false;
+      this.releasePress();
       if (e.pointerType !== 'mouse' || e.button !== 0 || !this.panelsEl) return;
       this.pan = { x: e.clientX, left: this.panelsEl.scrollLeft, dragged: false };
+      // THE PRESS IS FELT AT ONCE — the chosen rim is a fact from the room and
+      // arrives a round trip later. A class, not `:active`: the pointerdown
+      // preventDefault that kills the image drag can swallow the browser's own
+      // activation state, so the hand is lit here, by the hand.
+      const seat = e.target?.closest?.('.win');
+      if (seat) {
+        this.pressedSeat = seat;
+        seat.classList.add('is-pressed');
+      }
       e.preventDefault();
     };
     this.onPanMove = (e) => {
@@ -92,14 +110,17 @@ const DiscipleWindow = {
       if (!pan) return;
       const dx = e.clientX - pan.x;
       if (!pan.dragged) {
-        if (Math.abs(dx) < 6) return;   // a click's own small travel
+        if (Math.abs(dx) < DRAG_PX) return;   // a click's own small travel
         pan.dragged = true;
+        this.panelsEl.classList.add('is-dragging');
       }
       this.panelsEl.scrollLeft = pan.left - dx;
     };
     this.onPanEnd = () => {
       this.panSwallowsClick = !!this.pan?.dragged;
       this.pan = null;
+      this.panelsEl?.classList.remove('is-dragging');
+      this.releasePress();
     };
     this.onPanClick = (e) => {
       if (!this.panSwallowsClick) return;
@@ -287,6 +308,8 @@ const DiscipleWindow = {
     window.removeEventListener('pointercancel', this.onPanEnd);
     window.removeEventListener('click', this.onPanClick, true);
     this.pan = null;
+    this.panelsEl?.classList.remove('is-dragging');
+    this.releasePress();
     this.panelsEl = null;
 
     // Clear data structures

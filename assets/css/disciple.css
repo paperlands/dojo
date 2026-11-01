@@ -85,10 +85,28 @@
     display: flex;
     align-items: flex-end;
     gap: 1.1rem;
+    /* THE HAND SAYS PAN. Same idiom as the river's wheel (cursor: grab on the
+       rail, grabbing while dragging): a seat's click is a refinement of the
+       drag, not a different surface. Inherited by every seat on purpose — the
+       whole bar travels, so the whole bar takes the hand. */
+    cursor: grab;
     /* A drag across the bar is a pan (DiscipleWindow hook), never a text
        selection — the strip is chrome, not a document. */
     user-select: none;
+    /* NIGHT AT THE EDGE (the river's law, one instrument over): the bar
+       dissolves into the page instead of being cut by a box. The fade is the
+       bar's own PADDING (16px), not a percentage: the first window starts
+       exactly where the mask reaches full black, so a seat at rest is never
+       half-dissolved — the river can use percentages because its rail padding
+       is half a seat wide, this bar cannot. */
+    -webkit-mask-image: linear-gradient(
+      to right, transparent 0, black 16px, black calc(100% - 16px), transparent 100%);
+    mask-image: linear-gradient(
+      to right, transparent 0, black 16px, black calc(100% - 16px), transparent 100%);
   }
+
+  .disciple-strip.is-dragging,
+  .disciple-strip.is-dragging * { cursor: grabbing; }
 
   :root[data-theme="light"] .disciple-strip {
     --spill-gain: 0.1;
@@ -104,6 +122,15 @@
     height: 108px;
     flex-shrink: 0;
     overflow: visible;
+    /* A native button, painted as a window: UA chrome and hand both go, the
+       bar's cursor (grab) is taken instead — the gesture owns the pointer. */
+    appearance: none;
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: inherit;
     --illum: 0.7;
     transition:
       --illum 900ms ease,
@@ -415,9 +442,9 @@
 
   /* kept — the hand is gone and the lamp remains. Full, and STILL: the weather
      stops first, which is how stillness becomes the news. A lamp opens the keep
-     it shows (id:la-fork-pull), so the seat is a door: pointer, no hint text. */
+     it shows (id:la-fork-pull), so the seat is a door — but the bar's hand is
+     the pan's (grab), never a browser pointer: one gesture, one hand. */
   .disciple-strip .win.kept {
-    cursor: pointer;
     --illum: 1;
     --edge: color-mix(in oklch, var(--color-base-content) 26%, transparent);
     --rim-in: color-mix(in oklch, var(--color-base-content) 12%, transparent);
@@ -450,12 +477,26 @@
   /* The ROOM goes quiet with distance and the work holds — the far seat is a
      frame and one mark, which is the true sentence: the hand is gone, the work
      is not. Names and ledges are the room; never the work. */
-  .disciple-strip .win.d1 .name { opacity: 0.58; }
-  .disciple-strip .win.d2 .name { opacity: 0.42; }
-  .disciple-strip .win.d3 .name { opacity: 0.28; }
-  .disciple-strip .win.d4 .name { opacity: 0.18; }
+  /* The room is quiet, not deleted: a name at arm's length still reads
+     (0.18 was a watermark, not a name). Hover and choice restore it fully
+     below (id:hw-twilight); touch has no hover, so the floor has to hold. */
+  .disciple-strip .win.d1 .name { opacity: 0.62; }
+  .disciple-strip .win.d2 .name { opacity: 0.52; }
+  .disciple-strip .win.d3 .name { opacity: 0.42; }
+  .disciple-strip .win.d4 .name { opacity: 0.34; }
   .disciple-strip .win.d3 .sill,
   .disciple-strip .win.d4 .sill { opacity: 0.66; }
+
+  /* DISTANCE IS AIR, NOT AN ILLEGIBLE LABEL. The work holds at every depth
+     (id:hw-takahata); the room is what went quiet — so the room comes back the
+     moment a hand comes near or chooses the seat (id:hw-twilight). */
+  .disciple-strip .win:hover .name,
+  .disciple-strip .win.focus .name,
+  .disciple-strip .win:focus-visible .name { opacity: 1; }
+
+  .disciple-strip .win:hover .sill,
+  .disciple-strip .win.focus .sill,
+  .disciple-strip .win:focus-visible .sill { opacity: 1; }
 
   /* ── hover — the light breaks through (peer-select preview) ──────────
      The hand nears and TWILIGHT crosses in — amber meeting violet at the frame
@@ -471,7 +512,6 @@
     --edge: color-mix(in oklch, var(--twilight) 44%, transparent);
     --rim-in: color-mix(in oklch, var(--color-primary) 16%, transparent);
     --rim-out: color-mix(in oklch, var(--twilight) 38%, transparent);
-    cursor: pointer;
   }
 
   /* The lamp under the hand wears the same crossing. Its frame rests at 26%
@@ -505,6 +545,44 @@
     --rim-in: color-mix(in oklch, var(--peer-ink) 22%, transparent);
     --rim-out: color-mix(in oklch, var(--peer-ink) 28%, transparent);
     --lum: 0.92;
+  }
+
+  /* ── the press, and the keyboard's ring ──────────────────────────────
+     THE PRESS IS FELT BEFORE THE ROOM ANSWERS. `.focus` is a fact from the
+     server and arrives a round trip later; the press is the hand's own, so it
+     lights at once — the same twilight, one step brighter. */
+
+  .disciple-strip .win:active,
+  .disciple-strip .win.is-pressed {
+    --illum: 1.05;
+    --edge: color-mix(in oklch, var(--twilight) 58%, transparent);
+    --rim-in: color-mix(in oklch, var(--color-primary) 22%, transparent);
+    --rim-out: color-mix(in oklch, var(--twilight) 48%, transparent);
+    /* A TOUCH, NOT AN HOUR: the crossing takes 900ms, a press 140. */
+    transition:
+      --illum 140ms ease-out,
+      --edge 140ms ease-out,
+      --rim-in 140ms ease-out,
+      --rim-out 140ms ease-out;
+  }
+
+  /* every surface that paints those values shares the press's clock */
+  .disciple-strip .win:active::before,
+  .disciple-strip .win.is-pressed::before,
+  .disciple-strip .win:active .rim,
+  .disciple-strip .win.is-pressed .rim,
+  .disciple-strip .win:active .spill,
+  .disciple-strip .win.is-pressed .spill {
+    transition-duration: 140ms;
+    transition-timing-function: ease-out;
+  }
+
+  /* A hand without a mouse must see where it stands. Amber is the author's own
+     sun: this says "under your hand", not "someone else" (violet) and not
+     "selected" (the twilight rim). */
+  .disciple-strip .win:focus-visible {
+    outline: 2px solid color-mix(in oklch, var(--color-primary) 72%, transparent);
+    outline-offset: 3px;
   }
 
   /* ── the crossing ────────────────────────────────────────────────────
@@ -567,10 +645,8 @@
      spill the leave-crossing uses, but voluntary and reversible — the work
      is never touched (id:hw-takahata), only what covers it. */
 
-  .disciple-strip .win.peekable {
-    cursor: help;
-  }
-
+  /* No question-mark hand: `help` said "ask me" where the bar says "move me".
+     The peek is a hover, and the hand stays the pan's. */
   .disciple-strip .win.peekable:hover .face.now {
     opacity: 0;
     transition: opacity 240ms ease;

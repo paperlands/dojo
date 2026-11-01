@@ -62,5 +62,24 @@ defmodule DojoWeb.DiscipleStripCommandTest do
       render_component(&DojoWeb.DiscipleStrip.strip/1, windows: [nameless], outershell: nil)
 
     refute html =~ "phx-click", "no subject, no door"
+    assert html =~ ~s(tabindex="-1"), "and it is not a stop in the keyboard's walk"
+    assert html =~ ~s(aria-disabled="true")
+  end
+
+  # A seat was a div with a click handler: a hand without a mouse could not
+  # knock. The door is a native button now, so Enter and Space are the browser's
+  # own law and focus has somewhere to land.
+  test "every seat is a button with a name the ear can use" do
+    html =
+      render_component(&DojoWeb.DiscipleStrip.strip/1,
+        windows: [win("h1", "wren"), lamp()],
+        outershell: nil
+      )
+
+    assert length(Regex.scan(~r/<button[^>]*type="button"/, html)) == 2
+    assert html =~ ~s(tabindex="0")
+    assert html =~ ~s(aria-label="open wren&#39;s window")
+    assert html =~ ~s(aria-label="open tree, kept by lowe")
+    refute html =~ "aria-disabled", "a door that opens is not announced as disabled"
   end
 end

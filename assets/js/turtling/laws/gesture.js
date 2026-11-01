@@ -40,6 +40,11 @@ export function moveGesture(handle, event) {
 export function createGesture(deps) {
     const {
         candidates,      // () => [{ name, frame }] — the places currently offered
+        // The cursor's own list: the pins the last draw already offered. Hover
+        // must never rebuild the point-state projection (that is the display's
+        // work, once per frame); a PRESS must never read a frame-old list. So
+        // the two reads are two deps, and only the cheap one is advisory.
+        hoverCandidates = candidates,
         anchorOf,        // (frame) => live world transform — where the point IS
         birthOf,         // (frame) => birth frame — the frame the request is expressed in
         registered,      // (frame) => boolean
@@ -99,6 +104,34 @@ export function createGesture(deps) {
         return true
     }
 
+    // THE FOUR GATES OF A POINT: offered, touchable, under the pointer, and
+    // lawful to hold. `pointerDown` and `hoveredAt` read the SAME gates, so the
+    // hand the cursor promises is exactly the hand a press would take — the
+    // cursor can never claim a point the law would refuse.
+    // (id:laws-decl-handle)
+    // `at` is the drawn CLIENT point, when the caller has one (the hover path
+    // carries the point the last draw used). A press never passes it: a hand is
+    // taken from the live projection, not from a frame-old picture.
+    const hitAt = (here, candidate, at = null) => {
+        // A DRAWN candidate carries its own `at`, and the draw already offered
+        // only touchable pins — so the cursor asks the cheap questions (gate and
+        // distance) and never re-runs the point-state projection that `canTouch`
+        // costs. A press passes no `at` and asks everything, always.
+        if (!at && !canTouch(candidate.frame)) return null
+        // Behind the camera, clipped, or on a zero-sized canvas: not a target,
+        // and never a made-up hit. (id:laws-decl-handle)
+        const anchor = at ? null : anchorOf(candidate.frame).position
+        const projected = at ?? project(anchor)
+        if (!projected || !hitTest(here, projected, radius)) return null
+        const accepted = poseOf(candidate.frame)
+        const gate = eligibility({
+            frame: candidate.frame,
+            registered: registered(candidate.frame),
+            accepted,
+        })
+        return { anchor, projected, accepted, gate }
+    }
+
     return {
         // Decide ownership here, before the camera consumes the event.
         pointerDown({ pointerId, x, y }) {
@@ -107,19 +140,9 @@ export function createGesture(deps) {
             lastTap = null
             const here = { x, y }
             for (const candidate of candidates()) {
-                if (!canTouch(candidate.frame)) continue
-                // Behind the camera, clipped, or on a zero-sized canvas: not a target,
-                // and never a made-up hit. (id:laws-decl-handle)
-                const anchor = anchorOf(candidate.frame).position
-                const projected = project(anchor)
-                if (!projected) continue
-                if (!hitTest(here, projected, radius)) continue
-                const accepted = poseOf(candidate.frame)
-                const gate = eligibility({
-                    frame: candidate.frame,
-                    registered: registered(candidate.frame),
-                    accepted,
-                })
+                const found = hitAt(here, candidate)
+                if (!found) continue
+                const { anchor, accepted, gate } = found
                 if (!gate.ok) {
                     onReadout(readout({
                         point: candidate.name, accepted: accepted.position ?? null,
@@ -241,6 +264,17 @@ export function createGesture(deps) {
             if (!grab || grab.pointerId !== pointerId) return { ended: false }
             endCapture(OUTCOME.cancelled, poseOf(grab.frame).position ?? null)
             return { ended: true }
+        },
+
+        // WOULD A PRESS HERE TAKE A HAND? The cursor's question, answered by
+        // the press's own gates. The DOM layer asks once per move and says
+        // `grab` only where the answer is yes. (id:laws-decl-handle)
+        hoveredAt({ x, y }) {
+            const here = { x, y }
+            for (const candidate of hoverCandidates()) {
+                if (hitAt(here, candidate, candidate.at ?? null)?.gate.ok) return true
+            }
+            return false
         },
 
         // Disposal, fresh play and a replaced scope all arrive here.

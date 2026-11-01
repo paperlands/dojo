@@ -7,7 +7,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { buildWorld, fork, drive } from "./harness.mjs"
 import { createGesture } from "../../../assets/js/turtling/laws/gesture.js"
-import { DRAG_SLOP } from "../../../assets/js/turtling/laws/feel.js"
+import { DRAG_SLOP, HIT_RADIUS } from "../../../assets/js/turtling/laws/feel.js"
 import { freePoint } from "../../../assets/js/turtling/laws/batch.js"
 import { pointStateOf } from "../../../assets/js/turtling/laws/point_state.js"
 import { frameWorldTransform, worldTransform } from "../../../assets/js/turtling/scheduler.js"
@@ -26,12 +26,13 @@ const find = (frame, name) => {
 
 // A screen whose world-to-pixel scale is 100, and a ray that falls straight down
 // on the pixel it is given — so a witness can name a world point in pixels.
-const harness = (scheduler, frames, { controlsEnabled = true, requestMotion, onAccepted, canTouch, locusOf, facing = [0, 0, -1], slop = 0, view = null, detents = null } = {}) => {
+const harness = (scheduler, frames, { controlsEnabled = true, requestMotion, onAccepted, canTouch, locusOf, facing = [0, 0, -1], slop = 0, view = null, detents = null, hoverCandidates = null } = {}) => {
     const requests = []
     const readouts = []
     const state = { captured: null, controls: { enabled: controlsEnabled }, woke: 0, now: 0 }
     const gesture = createGesture({
         candidates: () => frames.map((frame) => ({ name: frame.name, frame })),
+        hoverCandidates: hoverCandidates ?? undefined,
         anchorOf: (frame) => frameWorldTransform(frame),
         birthOf: (frame) => worldTransform(frame),
         registered: (frame) => scheduler.registry.get(frame.id) === frame,
@@ -96,6 +97,45 @@ const seated = (source = "let a\nas a do\n  goto 3 0\n  rt 90\nend") => {
     drive(scheduler)
     return { scheduler, host, a: find(host, "a") }
 }
+
+// The cursor cannot promise a hand the press would refuse: both read the same
+// four gates (offered · touchable · under the pointer · lawful to hold).
+// (id:laws-decl-handle)
+test("the cursor's question is the press's question: grab exactly where a hand is taken", () => {
+    const { scheduler, a } = seated()
+    const h = harness(scheduler, [a])
+
+    assert.equal(h.gesture.hoveredAt({ x: 300, y: 0 }), true, "on the point")
+    assert.equal(h.gesture.hoveredAt({ x: 300 + HIT_RADIUS - 1, y: 0 }), true, "inside the radius")
+    assert.equal(h.gesture.hoveredAt({ x: 300 + HIT_RADIUS + 1, y: 0 }), false, "outside it")
+    assert.equal(h.gesture.hoveredAt({ x: 0, y: 0 }), false, "bare glass is no hand")
+
+    assert.equal(h.down({ x: 300, y: 0 }).claimed, true, "and the press agrees on the point")
+    h.up()
+    assert.equal(h.down({ x: 0, y: 0 }).claimed, false, "and on the bare glass")
+})
+
+// The cursor must never pay for the display's read pass. It reads the list the
+// LAST DRAW already offered; a press keeps the exact list, so a frame-old cache
+// can only cost the cursor, never a gesture.
+test("hover reads the draw's own list; a press keeps the exact one", () => {
+    const { scheduler, a } = seated()
+
+    const cold = harness(scheduler, [a], { hoverCandidates: () => [] })
+    assert.equal(cold.gesture.hoveredAt({ x: 300, y: 0 }), false, "an empty draw list offers nothing")
+    assert.equal(cold.down({ x: 300, y: 0 }).claimed, true, "the press still reads the exact list")
+
+    const warm = harness(scheduler, [a], { hoverCandidates: () => [{ name: a.name, frame: a }] })
+    assert.equal(warm.gesture.hoveredAt({ x: 300, y: 0 }), true, "and the cursor believes the draw")
+})
+
+test("a point the law refuses does not ask for the hand either", () => {
+    const { scheduler, a } = seated()
+    const h = harness(scheduler, [a], { canTouch: () => false })
+
+    assert.equal(h.gesture.hoveredAt({ x: 300, y: 0 }), false, "no touch, no cursor")
+    assert.equal(h.down({ x: 300, y: 0 }).claimed, false, "no touch, no press")
+})
 
 test("positive: an off-centre grab moves by the pointer's delta, never by a jump", () => {
     const { scheduler, a } = seated()

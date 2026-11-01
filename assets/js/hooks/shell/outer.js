@@ -123,8 +123,13 @@ function mountOuter(hook, { term, cm6 }) {
         }
         // The crescent's whole input: no DOM is added or removed, so the panel
         // never moves — the hour is painted by the same state the fence reads.
+        // aria-live speaks on CHANGE, so the word changes with the hour.
         const status = document.getElementById("outer-selection-status");
-        if (status && status.dataset.state !== state) status.dataset.state = state;
+        if (status && status.dataset.state !== state) {
+            status.dataset.state = state;
+            const word = status.querySelector("span");
+            if (word) word.textContent = waiting ? "waiting for the selected code" : "";
+        }
         const fork = document.getElementById("outer-fork");
         if (fork && fork.disabled !== !ready) fork.disabled = !ready;
     };

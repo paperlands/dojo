@@ -240,8 +240,8 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
     end
   end
 
-  describe "waiting is an hour, not a sentence (id:hw-phases)" do
-    test "the mark is mounted once, carries no prose, and is gated by data-state" do
+  describe "waiting is the chip's breath, not a symbol (id:hw-phases)" do
+    test "the ear's half is real, the eye's half is absent" do
       html =
         Phoenix.LiveViewTest.render_component(DojoWeb.OuterShellLive,
           id: "outer-shell",
@@ -249,14 +249,45 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
           outershell: %OuterShell{addr: "//kai.t/hatch", name: "kai"}
         )
 
-      [mark] = Floki.find(Floki.parse_fragment!(html), "#outer-selection-status")
+      frag = Floki.parse_fragment!(html)
+      [status] = Floki.find(frag, "#outer-selection-status")
 
-      assert Floki.attribute(mark, "class") == ["outer-waiting"]
-      assert Floki.attribute(mark, "role") == ["status"]
-      assert Floki.attribute(mark, "hidden") == [], "never display-gated: no layout move"
-      assert Floki.attribute(mark, "data-state") == [], "the client owns the hour"
-      assert Floki.text(mark) =~ "waiting for the selected code"
+      assert Floki.attribute(status, "class") == ["sr-only"],
+             "no symbol in the middle of the glass — the chip carries the state"
+
+      assert Floki.attribute(status, "role") == ["status"]
+      assert Floki.attribute(status, "hidden") == [], "never display-gated: no layout move"
+      assert Floki.attribute(status, "data-state") == [], "the client owns the hour"
+      assert Floki.text(status) =~ "waiting for the selected code"
       refute html =~ "Any code still shown belongs to the previous selection"
+
+      # the halo the CSS dims while waiting is one element, named for the state
+      assert [_halo] = Floki.find(frag, "#outer-chip-halo")
+      assert Floki.find(frag, ".outer-waiting") == [], "the crescent is gone"
+    end
+
+    test "the cloud is a layer in front of the glass, never a filter on the work" do
+      html =
+        Phoenix.LiveViewTest.render_component(DojoWeb.OuterShellLive,
+          id: "outer-shell",
+          locale: "en",
+          outershell: %OuterShell{addr: "//kai.t/hatch", name: "kai"}
+        )
+
+      frag = Floki.parse_fragment!(html)
+      [veil] = Floki.find(frag, "#outerenv .outer-veil")
+
+      assert Floki.attribute(veil, "aria-hidden") == ["true"],
+             "light in front of the glass is not a thing to read"
+
+      assert Floki.find(frag, "#outershell .outer-veil") == [],
+             "the veil sits beside the editor, not inside it: the work's pixels are untouched"
+
+      [env] = Floki.find(frag, "#outerenv")
+      children = Floki.children(env)
+
+      assert List.last(children) |> Floki.attribute("class") == ["outer-veil"],
+             "painted last in the panel = above the code"
     end
   end
 

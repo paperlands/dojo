@@ -276,11 +276,17 @@ export class Turtle {
     // (id:laws-place-head-frame)
     _drawPins() {
         const overlay = this._overlay
-        if (!overlay) return
+        if (!overlay) {
+            this._pinCandidates = []
+            return
+        }
         overlay.begin()
         const view = this._view()
         const scheduler = this.scheduler
-        if (!scheduler) return
+        if (!scheduler) {
+            this._pinCandidates = []
+            return
+        }
         const read = preparePointRead(scheduler)
         // A run can attach a head or remove a point without another pointer move.
         // The gesture OWNS the hand — this canvas reads its one published holding,
@@ -293,6 +299,10 @@ export class Turtle {
         }
         const now = performance.now()
         if (this._ghost && now - this._ghost.at >= VERDICT_DECAY_MS) this._ghost = null
+        // The cursor's list is a BYPRODUCT of the draw: each pin is offered here
+        // already (id:laws-decl-handle), so hover needs no second projection pass.
+        // Rebuilt every draw, so it is never older than the frame on the glass.
+        const offerable = []
         // Where a constrained point MAY go — its locus, the axis it rests on, and
         // the surface's coordinate curves through it. All world geometry, so a
         // camera turn carries them with the world. (id:laws-freedom)
@@ -376,6 +386,11 @@ export class Turtle {
                 world.position[0] + fx, world.position[1] + fy, world.position[2] + fz,
             ])
             const touchable = state.interaction.offered
+            // THE CURSOR'S INDEX, free: `state.at` is the same live position the
+            // gesture projects for a press, and `offered` is the same answer
+            // `canTouch` gives — so the pin is cached with the point a press
+            // would take, at the cost of one projection already owed the draw.
+            if (touchable) offerable.push({ name: frame.name, frame, at: view.project(state.at) })
             const held = touchable && heldFrame === frame
             const readout = held && this.lastReadout?.point === frame.name ? this.lastReadout : null
             const ghost = this._ghost?.point === frame.name
@@ -417,6 +432,9 @@ export class Turtle {
             drawName(overlay.ctx, { cx: anchor.x, cy: anchor.y,
                 right: overlay.right, lines: [{ text: mark.name }], ink: mark.color ?? this.color })
         }
+        // Published last: a half-built list is never read (the hover path can
+        // land between two frames, never inside one).
+        this._pinCandidates = offerable
     }
 
     _ensureHandle() {
@@ -435,6 +453,9 @@ export class Turtle {
                     .map(frame => ({ name: frame.name, frame }))
             },
             canTouch: frame => this._touchable(frame),
+            // The pins the last draw already offered — Turlte's own read pass, not a
+            // second one per pointer move. A press keeps the exact path.
+            hoverCandidates: () => this._pinCandidates ?? [],
             anchorOf: frame => frameWorldTransform(frame),
             birthOf: frame => worldTransform(frame),
             registered: frame => scheduler.registry.get(frame.id) === frame,
@@ -479,10 +500,28 @@ export class Turtle {
                 this.requestRender()
             },
         })
+        // THE HAND ON THE GLASS. A pin is drawn, not a node, so the pointer is
+        // the only place the cursor can be true. The same four gates that decide
+        // a press decide the shape: `grab` only where a movable point actually
+        // answers yes, `grabbing` while that hand is held (capture keeps it
+        // alive off-canvas), `default` everywhere else. (id:laws-decl-handle)
+        // One write only when the shape changes: a pointer move at 240 Hz must
+        // not touch the CSSOM to say the same word twice.
+        const shape = cursor => {
+            if (canvas.style.cursor !== cursor) canvas.style.cursor = cursor
+        }
+        const hover = event => {
+            if (!this._handRequested) return shape('default')
+            if (handle.grabbed) return shape('grabbing')
+            if (event.target !== canvas) return shape('default')
+            shape(handle.hoveredAt({ x: event.clientX, y: event.clientY }) ? 'grab' : 'default')
+        }
+        const leave = () => shape('default')
         const down = event => {
             if (!this._handRequested || event.target !== canvas) return
             const answer = handle.pointerDown({ pointerId: event.pointerId, x: event.clientX, y: event.clientY })
             if (!answer.claimed) return
+            shape('grabbing')
             event.stopImmediatePropagation()
             event.preventDefault()
             this._lastRefusal = null
@@ -503,17 +542,21 @@ export class Turtle {
                 this._ghost = { ...this._lastRefusal, at: performance.now() }
                 this._lastRefusal = null
             }
+            hover(event)   // the gripping closes itself: back to grab over the pin, default away
             this.requestRender()
         }
         const cancel = event => {
             if (captured !== event.pointerId) return
             handle.pointerCancel({ pointerId: event.pointerId })
+            shape('default')
             this.requestRender()
         }
         window.addEventListener('pointerdown', down, { capture: true })
         window.addEventListener('pointermove', move, { capture: true })
         window.addEventListener('pointerup', end, { capture: true })
         window.addEventListener('pointercancel', cancel, { capture: true })
+        canvas.addEventListener('pointermove', hover)
+        canvas.addEventListener('pointerleave', leave)
         canvas.addEventListener('lostpointercapture', cancel)
         this._handle = {
             // The gesture's holding crosses the canvas seam here — the one
@@ -529,7 +572,10 @@ export class Turtle {
                 window.removeEventListener('pointermove', move, { capture: true })
                 window.removeEventListener('pointerup', end, { capture: true })
                 window.removeEventListener('pointercancel', cancel, { capture: true })
+                canvas.removeEventListener('pointermove', hover)
+                canvas.removeEventListener('pointerleave', leave)
                 canvas.removeEventListener('lostpointercapture', cancel)
+                shape('')
                 handle.dispose()
             },
         }
@@ -545,6 +591,7 @@ export class Turtle {
             this._handLocusOf = null
             this._handle?.dispose()
             this._handle = null
+            this._pinCandidates = []
             this._heldFrame = null
             this._lastRefusal = null
             this._ghost = null

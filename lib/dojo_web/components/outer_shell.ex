@@ -128,27 +128,31 @@ defmodule DojoWeb.OuterShellLive do
             class="pointer-events-auto cursor-pointer relative flex h-2 w-2 flex-shrink-0 transition-colors delay-150"
             title={chip_title(@outershell)}
           >
-            <span class={[
-              "absolute inline-flex h-full w-full rounded-full opacity-75",
-              mode_indicator_class(@outershell)
-            ]}></span>
+            <span
+              id="outer-chip-halo"
+              class={[
+                "absolute inline-flex h-full w-full rounded-full opacity-75",
+                mode_indicator_class(@outershell)
+              ]}
+            ></span>
             <span class="relative inline-flex rounded-full h-2 w-2 bg-primaryAccent"></span>
           </span>
         </div>
 
-        <%!-- WAITING IS AN HOUR, NOT A SENTENCE (id:hw-phases). While the next
-              selection is being read, the document already on the glass keeps
-              its place and the light leaves it; this mark is a crescent that
-              turns at the frame. No text in the flow, so the panel never moves.
-              `data-state` is the whole contract with outer.js paintSelection. --%>
+        <%!-- THE CHIP IS THE WHOLE SENTENCE (id:hw-phases). No symbol stands in
+              the middle of the glass: while the next selection is read the live
+              lamp holds its breath (the ping stops, the halo goes neutral) and
+              comes back green the moment the document lands. This element is the
+              ear's half only — an aria-live region the eye never sees; `data-state`
+              is the whole contract with outer.js paintSelection. --%>
         <p
           id="outer-selection-status"
           role="status"
           aria-live="polite"
           phx-mounted={JS.ignore_attributes(["data-state"])}
-          class="outer-waiting"
+          class="sr-only"
         >
-          <span class="sr-only">waiting for the selected code</span>
+          <span>waiting for the selected code</span>
         </p>
         <div
           id="outerenv"
@@ -164,6 +168,12 @@ defmodule DojoWeb.OuterShellLive do
             class="relative z-40 rounded-sm pointer-events-auto cursor-text bg-inherit border-none h-full"
             data-target="outershell"
           />
+          <%!-- A CLOUD IN FRONT, never a filter on the work (id:hw-takahata):
+                while the next selection is being read, the veil is a layer of
+                light over the glass — the code keeps its own pixels, its own
+                colour, its own edges. `#outerenv` is phx-update="ignore", so
+                this static child is never patched; the hour is CSS only. --%>
+          <div class="outer-veil" aria-hidden="true"></div>
         </div>
 
         <%!-- The friend's execution signals — directly below their code, right-aligned.

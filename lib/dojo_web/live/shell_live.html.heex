@@ -14,7 +14,17 @@
     filter: drop-shadow(0 1px 1px var(--color-secondary-content));
   }
   .outershell { display: none; }
-  .rightpane:has(#outer-open.is-open) .outershell { display: block; }
+  /* THE PANEL ARRIVES, IT DOES NOT POP. Going from display:none to a box starts
+     an animation, so the place opens as light — no JS, no second flag, no
+     layout. Closing is not animated: leaving needs no ceremony. */
+  @keyframes outer-arrive {
+    from { opacity: 0; translate: 0 6px; }
+    to   { opacity: 1; translate: 0 0; }
+  }
+  .rightpane:has(#outer-open.is-open) .outershell {
+    display: block;
+    animation: outer-arrive 260ms ease-out both;
+  }
 
   /* pane flip flag (#pane-state, phx-update=ignore) — client-driven like
      #deck-state: the panel stays mounted, CSS gates it, no server round-trip */
@@ -45,13 +55,8 @@
   #outerenv {
     transition: background-color 300ms ease, box-shadow 300ms ease;
   }
-  /* Into the waiting hour the cloud gathers fast; out of it the light returns
-     in one slow bloom (620ms — the strip's arrival beat). */
   #outerenv .cm-content {
-    transition:
-      color 300ms ease,
-      opacity 620ms cubic-bezier(0.22, 1, 0.36, 1),
-      filter 620ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: color 300ms ease;
   }
   #outerenv[data-outer-state="error"] {
     background-color: rgba(100, 22, 24, 0.12);
@@ -73,52 +78,53 @@
      backwards, one bloom of moonlight (620ms, the strip's arrival beat).
      These rules sit AFTER the error/draft hours on purpose: the old document's
      weather is not news any more. */
-  #outerenv[data-outer-selection="waiting"] {
-    /* The cloud gathers, it does not pop: the wash takes the same 300ms the
-       hour does, and the code underneath recedes on its own clock below. */
-    transition:
-      background-color 300ms ease,
-      box-shadow 300ms ease;
-    background-color: color-mix(in oklch, var(--color-base-100) 30%, transparent);
-    box-shadow: inset 0 0 40px color-mix(in oklch, var(--peer-ink) 9%, transparent);
-  }
-  #outerenv[data-outer-selection="waiting"] .cm-content {
-    opacity: 0.32;
-    filter: saturate(0.25) blur(0.4px);
-    transition:
-      opacity 240ms ease,
-      filter 240ms ease;
+  /* THE FENCE'S LOOK ARRIVES WITH THE CLOUD. A warm read flips readiness inside
+     one frame, so dimming at once would paint a dip-and-return (the blink). The
+     0s transition delayed by 220ms means: warm reads never dim it, real waits
+     do, and nothing fades — only the state is late. */
+  #outer-fork { transition: opacity 0s linear; }
+  .outershell:has(#outerenv[data-outer-selection="waiting"]) #outer-fork {
+    opacity: 0.55;
+    transition: opacity 0s linear 220ms;
   }
 
-  /* A circle with an offset inner shadow IS a crescent — no border, no image.
-     It turns slowly (a moon, not a spinner); it fades, so its absence is the
-     bloom, and it never takes a pointer. */
-  .outer-waiting {
+  /* THE CLOUD IS A LAYER, NOT A FILTER (id:hw-takahata: no hour may touch the
+     work). The previous selection recedes because light stands in front of the
+     glass — the code keeps its own pixels, colour and edges; only the veil's
+     opacity moves. It enters with the cloud (240ms) and leaves as the arrival
+     bloom (620ms, the strip's beat). */
+  .outer-veil {
     position: absolute;
-    inset-inline: 0;
-    top: 46%;
-    margin-inline: auto;
-    width: 1.75rem;
-    height: 1.75rem;
-    border-radius: 50%;
+    inset: 0;
+    z-index: 45;
     pointer-events: none;
+    border-radius: inherit;
     opacity: 0;
-    box-shadow: inset -0.52rem 0 0 0
-      color-mix(in oklch, var(--peer-ink) 58%, var(--color-primary));
-    filter: drop-shadow(0 0 12px color-mix(in oklch, var(--peer-ink) 40%, transparent));
+    background-color: color-mix(in oklch, var(--color-base-100) 66%, transparent);
+    box-shadow: inset 0 0 60px color-mix(in oklch, var(--peer-ink) 12%, transparent);
+    transition: opacity 620ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #outerenv[data-outer-selection="waiting"] .outer-veil {
+    opacity: 1;
     transition: opacity 240ms ease;
   }
-  .outer-waiting[data-state="waiting"] {
-    opacity: 1;
-    transition: opacity 620ms ease 100ms;
-    animation: outer-moon-turn 16s linear infinite;
-  }
-  @keyframes outer-moon-turn {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+
+  /* THE CHIP IS THE WHOLE SENTENCE. While the next selection is read, the live
+     lamp holds its breath: the ping stops and the halo goes neutral, because a
+     green pulse must never claim a document that has not landed. When it does,
+     the server's state returns — green — and the ping comes back. Nothing is
+     drawn in the middle of the glass. */
+  .outershell:has(#outerenv[data-outer-selection="waiting"]) #outer-chip-halo {
+    animation: none;
+    opacity: 0.35;
+    background-color: var(--color-base-content);
+    transition: opacity 220ms ease, background-color 220ms ease;
   }
   @media (prefers-reduced-motion: reduce) {
-    .outer-waiting[data-state="waiting"] { animation: none; }
+    .animate-marquee { animation: none; }
+    #outer-chip-halo { animation: none; }
+    #outerenv[data-outer-state="error"] .cm-content { animation: none; }
+    .rightpane:has(#outer-open.is-open) .outershell { animation: none; }
   }
 
   /* hearth trail */

@@ -23,6 +23,15 @@ defmodule DojoWeb.DiscipleStrip do
       seat's identity with `querySelector("[phx-value-addr]")`; flatten the two
       levels and visibility never reports, so meta never hydrates and every
       window stays a crescent.
+
+  ## The seat is a button
+
+  It is a `<button>` and not a `<div>` with a click handler, so a hand without
+  a mouse can knock: Enter and Space are the door by the browser's own law, and
+  `:focus-visible` paints a ring the template never branches on. Its cursor is
+  inherited from the bar (grab · grabbing), because the press belongs to the
+  pan's gesture and a click is the refinement. A seat whose shown face names no
+  subject keeps the element but leaves the tab order.
   """
   use DojoWeb, :html
 
@@ -45,10 +54,13 @@ defmodule DojoWeb.DiscipleStrip do
 
   defp window(assigns) do
     hour = DiscipleWindow.hour(assigns.win)
+    click = seat_click(hour, assigns.win)
 
     assigns =
       assign(assigns,
         hour: hour,
+        click: click,
+        label: seat_label(hour, assigns.win),
         focus?: DiscipleWindow.focus?(assigns.win, assigns.outershell),
         # A living seat with a last keep can be peeked; a dark seat already shows it.
         peekable?: assigns.win.kept != nil and hour != :kept
@@ -56,8 +68,17 @@ defmodule DojoWeb.DiscipleStrip do
 
     ~H"""
     <div id={seat_id(@win.key)} class="pointer-events-auto">
-      <div
+      <%!-- A DOOR IS A BUTTON. The seat was a div with a click handler: a hand
+            without a mouse could not knock, and there was no focus to see. The
+            native element gives Enter and Space their own law, a focus ring, and
+            the cursor — nothing about the window's paint changes. A seat whose
+            shown face names no subject stays out of the tab order. --%>
+      <button
+        type="button"
         data-disciple
+        aria-label={@label}
+        aria-disabled={if @click, do: nil, else: "true"}
+        tabindex={if @click, do: "0", else: "-1"}
         class={[
           "win",
           to_string(@hour),
@@ -65,7 +86,7 @@ defmodule DojoWeb.DiscipleStrip do
           @win.depth && "d#{@win.depth}",
           @peekable? && "peekable"
         ]}
-        phx-click={seat_click(@hour, @win)}
+        phx-click={@click}
         phx-value-addr={@win.hand}
       >
         <span class="spill" aria-hidden="true"></span>
@@ -109,10 +130,26 @@ defmodule DojoWeb.DiscipleStrip do
             <span class="name">{@win.name}</span>
           </div>
         </div>
-      </div>
+      </button>
     </div>
     """
   end
+
+  # What a hand that cannot see the picture hears. A lamp is opened by its
+  # work, so the door says the work's name — and whose it is, when its keep
+  # signed letters (id:kc-sign, id:ks-name). Absence is named, never guessed.
+  defp seat_label(:kept, %{kept: %{title: title}, name: name}) do
+    if is_binary(name) and name != "" do
+      "open #{title}, kept by #{name}"
+    else
+      "open #{title}"
+    end
+  end
+
+  defp seat_label(_hour, %{name: name}) when is_binary(name) and name != "",
+    do: "open #{name}'s window"
+
+  defp seat_label(_hour, _win), do: "open window"
 
   # One seat, one command, one door: the subject the shown face can NAME. A
   # living hand is selected by addr; a lamp by the keep's room address, read

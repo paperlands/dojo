@@ -742,6 +742,27 @@ Overlay: =_selene.css=; the rim seeing is =_takahata.css=. Live seam still
 One call per played night: =run <prog> [waitMs] [out.png] --bare= · =shot= · =eval=;
 the protocol lives in =codex/play.org=.
 
+** SICM in play — expressive frontier across existing centers
+:PROPERTIES:
+:ID: nav-sicm-play
+:KEYWORDS: sicm mechanics expressiveness play path function composition pendulum action Keep facets lifecycle context prior
+:PATH: specs/compiler/sicm-play-frontier.org::sicm-play-frontier
+:END:
+Book-grounded inquiry, not a new engine: distinguish configuration, prescribed path,
+and model-derived evolution. Exact free-particle control, context/ownership checks,
+and bounded plang probes; reuse Keep's owned capture rather than a harness store.
+
+** embodied play — advance, turn, meet again
+:PROPERTIES:
+:ID: nav-embodied-play
+:KEYWORDS: embodied syntonic becoming intuition fw rt lt as reencounter origin birth snapshot continuation named slot carry projection ink surface
+:PATH: probe/embodied-play/README.org::probe-embodied-play
+:END:
+Six-line round walk; changing right to left changes the curl. Nesting grants a
+birth frame, not live carrying. Re-encounter refreshes the same running walker's
+stance; frame projection chooses where its ink is left. Live/source-matched witnesses,
+no new primitive. The equation-led “next frontier” is withdrawn in the SICM map.
+
 ** session — mutation, not replacement
 :PROPERTIES:
 :ID: nav-session
