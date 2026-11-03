@@ -14,7 +14,8 @@
 // whole problem. (id:tower-center-approximation-ruling)
 //
 // Re-read 2026-11-03: the comparison door now preserves a NaN (section 5b);
-// Infinity remains unruled, and interpolated display is still a separate gap.
+// Infinity keeps extended-real answers (D065); the fault model is deferred, and
+// interpolated display is still a separate gap.
 
 import { createTower, installScalarFloor } from '../../assets/js/turtling/mafs/tower.js'
 import { drainEvents } from '../../assets/js/turtling/executor.js'
@@ -122,9 +123,9 @@ noteOf('nothing in a hole (goto A.x)', run('goto nothing.x nothing.y\n  fw 1\n')
     'the identity, quietly — nothing is an answer')
 noteOf("a word in a hole (fw 'oops')", run("fw 'oops'\n  fw 1\n"), 'the author is told')
 
-// ── 5b. The comparison door — NaN recovered; Infinity still open ────────────
+// ── 5b. The comparison door — NaN recovered; Infinity extended-real (D065) ───
 // The landed rule: a comparison with a NaN operand is NaN, so the condition
-// consumer notices and takes no branch. Infinity is a separate, unruled species;
+// consumer notices and takes no branch. Infinity keeps its extended-real answers;
 // its IEEE answers still become a finite boolean. (id:tower-center-approximation)
 note('0/0 > 0', tower.apply('>', 0 / 0, 0), 'nothing', 'the comparison preserves NaN')
 note('0/0 == 0/0', tower.apply('==', 0 / 0, 0 / 0), 'nothing', 'and again')
@@ -132,7 +133,7 @@ note('1/0 == 1/0', tower.apply('==', 1 / 0, 1 / 0), 'nothing', 'infinity still a
 noteOf('when (0/0 > 0) do', run('when (0/0 > 0) do\n  fw 10\nend\n'),
     'a COMPARED NaN is now told: no branch, and why')
 noteOf('when (1/0 > 0) do', run('when (1/0 > 0) do\n  fw 10\nend\n'),
-    'a compared infinity still draws: the open species')
+    'a compared infinity still draws: extended-real (D065)')
 noteOf('when (0/0) do', run('when (0/0) do\n  fw 10\nend\n'),
     'a BARE non-answer in a condition is told: no branch, and why')
 

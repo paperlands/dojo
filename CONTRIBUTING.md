@@ -4,10 +4,10 @@
 
 | Tool | Version | Install |
 |---|---|---|
-| Elixir | ~> 1.18 | [elixir-lang.org](https://elixir-lang.org/install.html) |
-| OTP | 27+ | included with Elixir |
+| Elixir | ~> 1.20 | [elixir-lang.org](https://elixir-lang.org/install.html) |
+| OTP | 29.x  | included with Elixir |
+| Node | 22.x (optional) |  only for the zero-npm JS suite |
 
-Use [asdf](https://asdf-vm.com/) or [mise](https://mise.jdx.dev/) with `.tool-versions` to pin Elixir and OTP versions.
 
 ## Setup
 

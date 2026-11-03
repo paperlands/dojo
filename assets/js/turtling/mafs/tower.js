@@ -293,9 +293,10 @@ export function installScalarFloor(tower) {
     acrossUnary(tower, '-', SCALAR_KINDS, (x) => -asNum(x))
     // `!` keeps its boolean result; it is the one prefix whose answer feeds back
     // as a truth, so it ranges over every value kind.
-    // A non-finite number is not a boolean. Finite ! still is. (id:tower-center-approximation)
+    // `!` is truth assessment. Infinity is truthy, so `!Infinity` is false; a NaN
+    // is a non-answer, not a truth. (id:tower-center-approximation; D066)
     acrossUnary(tower, '!', VALUE_KINDS, (x) =>
-        typeof x === 'number' && !Number.isFinite(x) ? x : !x)
+        typeof x === 'number' && Number.isNaN(x) ? x : !x)
 
     // Numerical builtins participate in the same widening: a boolean argument is
     // its value 0/1, so `sqrt(!0)` is 1. (id:tower-center-scalars)

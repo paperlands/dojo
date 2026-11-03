@@ -1,5 +1,5 @@
 // A NaN comparison is not a finite 1/0. The existing demand door recovers it.
-// Infinity comparisons are unchanged: that policy is not ruled here.
+// Infinity keeps its extended-real answers (D065); the fault model is deferred.
 // Run: node --test test/js/notation/numeric_fault_test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
@@ -77,10 +77,19 @@ test("a NaN operand is preserved by bitwise, power and tested-left selection", (
     // A finite operand selected without testing the bad value is not a laundering.
     assert.equal(ev("0 && (0/0)"), 0)
     assert.equal(ev("1 || (0/0)"), 1)
-    // Infinity is not this rule; it remains unruled.
+    // Infinity is not this rule; it keeps extended-real answers (D065).
     assert.equal(ev("1/0 == 1/0"), 1)
     assert.equal(ev("1/0 & 1"), 0)
     assert.equal(ev("(1/0) ^ 0"), 1)
+})
+
+test("infinity keeps its extended-real arithmetic answers", () => {
+    assert.equal(ev("1/(1/0)"), 0)
+    assert.equal(ev("exp(-(1/0))"), 0)
+    assert.equal(ev("atan2(1/0, 1)"), 90)
+    assert.ok(Number.isNaN(ev("(1/0) - (1/0)")))
+    assert.ok(Number.isNaN(ev("0 * (1/0)")))
+    assert.ok(Number.isNaN(ev("mod(1/0, 4)")))
 })
 
 test("a vector label names and notices a non-finite component", () => {

@@ -403,21 +403,28 @@ the first now notices and skips; the second selects the finite left operand and 
 =0 && (0/0)= continues to select the finite left operand. Both children still evaluate.
 
 Witness: =test/js/notation/numeric_fault_test.mjs=. Raw:
-=observations-2026-11-03-nan-completion.jsonl= (56 tower rows + 27 condition rows).
+=observations-2026-11-03-nan-completion.jsonl= (56 tower rows + 30 condition rows).
 
-Still open: infinity comparisons/bitwise/power, interpolated display (the value is
-already text when the display door sees it), and the deferred vector products.
+Still open: interpolated display (the value is already text when the display door
+sees it), the deferred fault model, and the deferred vector products. Infinity
+comparisons/bitwise/power keep extended-real answers (D065).
+Truth follows the value model (D066): =!Infinity= is false; =!NaN= is NaN. The
+composition witness is =test/js/notation/numeric_composition_test.mjs=.
 
-* Infinity — a species still unruled
+Oracle review <2026-11-03>: [[file:ORACLE-REVIEW-2026-11-03.md][sound with caveats]].
+D066 applies the truth rule and the four bounded amendments.
+
+* Infinity — settled extended-real for v0.6; fault model deferred
 :PROPERTIES:
 :ID: probe-tower-comparison-infinity
-:TYPE: question
+:TYPE: evidence
 :END:
 
-The current runtime inherits IEEE: a comparison with +/-Infinity answers a finite
-1/0. The rig records four candidate dispositions; it chooses none.
+The runtime inherits IEEE, and D065 chooses that column for v0.6: a comparison
+with +/-Infinity answers a finite 1/0, and a finite result may decide a branch.
+The fault-model columns remain recorded for a later decision.
 
-| Expression | Current (IEEE) | preserve operand | NaN | refuse |
+| Expression | Current (IEEE) — chosen (D065) | preserve operand (deferred) | NaN (deferred) | refuse (deferred) |
 |------------+----------------+------------------+-----+--------|
 | =1/0 == 1/0= | 1 | Infinity | NaN | domain-refusal |
 | =1/0 == -1/0= | 0 | Infinity (left) | NaN | domain-refusal |
@@ -443,5 +450,7 @@ propagates (=abs(1/0)=, =sqrt(1/0)=, =(1/0)//4=), NaN (=(1/0)-(1/0)=,
 =exp(-(1/0))= is 0, =atan2(1/0,1)= is 90). The rig records the routes; it
 does not choose which finite limits are allowed.
 
-Not decided here. The instrument stays =active= for this layer and the deferred
-product rows; the comparison/equality slice is fenced by its tests.
+Chosen <2026-11-03>: extended-real for v0.6 (D065). The fault model is deferred
+to a later decision and would need its own frame-survival witness. The instrument
+stays =active= for that deferred layer, the product rows and interpolated display;
+the comparison/equality slice is fenced by its tests.

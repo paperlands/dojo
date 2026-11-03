@@ -318,8 +318,10 @@ gone before any consumer sees it). Readings, before and after:
 **Later landing (2026-11-03).** The comparison door no longer erases a NaN: all
 eight scalar comparison glyphs preserve it, and bitwise, power, tested-left
 selection and vector labels do too. The historical reading above is kept as the
-baseline it recorded. Infinity comparisons and interpolated display remain open:
+baseline it recorded. Infinity comparisons keep their extended-real answers (D065); the
+fault model is deferred. Interpolated display remains open:
 `probe/tower-comparison/RESULTS.org` and `specs/weave/tower-center.org`.
+Truth follows the value model (D066): `!Infinity` is false; `!NaN` remains a non-answer.
 
 ### Boundary follow-up — admission, rigidity, and fill
 

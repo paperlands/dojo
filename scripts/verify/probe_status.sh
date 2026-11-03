@@ -12,7 +12,8 @@
 #   .exs  # probe-status: active         .html <!-- probe-status: active -->
 #   .doj  # probe-status: active
 #
-# Not instruments: *.jsonl (records — inherit their writer's status) and
+# Not instruments: *.jsonl and *.log (records — a raw log or a record stream
+# inherits its writer's status; it has no comment syntax to carry one) and
 # README.org (describes, does not declare).
 #
 # Modes:
@@ -42,7 +43,7 @@ while IFS= read -r f; do
         *)
             [ "$status" = composted ] && note "OFF SEAT    $f — 'composted' must live under probe/composted/" ;;
     esac
-done < <(find probe -type f ! -name '*.jsonl' ! -name 'README.org' | sort)
+done < <(find probe -type f ! -name '*.jsonl' ! -name '*.log' ! -name 'README.org' | sort)
 
 # 2. No cited probe path has rotted or points into the compost.
 cited=$(grep -rhoE 'probe/[A-Za-z0-9_./-]+\.(mjs|exs|doj|html|org|jsonl)' \

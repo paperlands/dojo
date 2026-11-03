@@ -683,6 +683,18 @@ are separate axes: [[id:outer-shell-model][outer-shell ownership and transition 
 =follow_peer= controls peer updates; =watch.user_attention= names ="peer"= or
 ="reader"=. =draft_live= couples local draft execution with baseline updates.
 
+THE WAITING HOUR IS LIGHT, NOT A SYMBOL. The panel arrives (one =outer-arrive=
+animation on the open flag; closing is not animated). While a selection is read,
+=.outer-veil= — a layer INSIDE =#outerenv=, above the code and below the moon —
+carries the cloud, so the work keeps its own pixels, colour and edges
+([[id:hw-takahata]]). The chip says the rest: while waiting its halo stops pinging
+and goes neutral, then returns the server's own state (green for a live hand, amber
+still for a keep). No text in the flow, no crescent: =#outer-selection-status= is
+=sr-only= (=role="status"=), the ear's half only. =paintSelection= writes
+=data-outer-selection=, =data-state= and the fork's =disabled= only when they change;
+the fork's fence look arrives after 220ms (a warm read never dims it) and never fades.
+Paths: =lib/dojo_web/live/shell_live.html.heex=, =assets/js/hooks/shell/outer.js=.
+
 ** shell readiness & outer recovery — fresh read, selector mirror
 :PROPERTIES:
 :ID: nav-shell-readiness
@@ -723,8 +735,70 @@ Disciple panels are WINDOWS (frame · pane · sill). 00–05 settled the laws
 under a sun; the lamp was wrong. Author is solar; a peer is moonlight
 (=--peer-ink=). Boards: =06-phases.html= · =07-twilight.html= ·
 =08-lichtung.html= · =09-selenic.html= · =10-lichtung.html=.
-Overlay: =_selene.css=; the rim seeing is =_takahata.css=. Live seam still
-=#disciple_panels= in =shell_live.html.heex=.
+Overlay: =_selene.css=; the rim seeing is =_takahata.css=. The live seam is
+=#disciple_panels= in =shell_live.html.heex=, composed from
+=lib/dojo_web/components/disciple_strip.ex= over =assets/css/disciple.css=:
+a seat is a BUTTON, the bar is a HAND, and the lamp opens its keep by address
+([[id:nav-disciple-strip]] · [[id:nav-strip-hand]]). The panel's waiting hour is
+its own node under [[id:nav-outershell]].
+
+** disciple strip — the seat is a door, the lamp names its keep
+:PROPERTIES:
+:ID: nav-disciple-strip
+:KEYWORDS: disciple strip seat window lamp lantern door button type tabindex aria-label aria-disabled focus-visible ring press is-pressed rim keep_addr focus depth name mask padding empty silence keyed wrapper phx-value-addr
+:PATH: lib/dojo_web/components/disciple_strip.ex
+:END:
+A seat is a native =<button type="button">=, not a div with a handler: Enter and
+Space are the door by the browser's own law, =:focus-visible= paints the author's
+amber ring, and =aria-label= names what it opens (=open tree, kept by lowe=; the
+hand's letters for a living window). A seat whose shown face names no subject keeps
+the element but leaves the tab order (=tabindex="-1"=, =aria-disabled="true"=).
+The wrapper is keyed by root, =phx-value-addr= rides the descendant — both are
+load-bearing for identity and visibility ([[id:ownership-o2]]).
+A living hand is selected by =addr=; a lamp by =OuterShell.keep_addr/1= — the room
+address it was opened by ([[id:la-fork-pull]]). The twilight rim answers to that
+same name: a dark seat is focused when the open subject IS its keep. The press rim
+(=is-pressed=, 140ms) is the hand's own and lands before the room answers; the
+crossing (900ms) stays the hour's. Distance is air, but a name reads at rest
+(0.62/0.52/0.42/0.34) and comes back full on hover, choice or focus; the bar's
+edge dissolves over its own padding (16px), never over a seat. An empty bar says
+nothing — silence is the deliberate state. Fences:
+=test/dojo_web/live/layout/disciple_strip_command_test.exs=,
+=disciple_window_test.exs=.
+
+** strip hand — one drag, one press, one threshold
+:PROPERTIES:
+:ID: nav-strip-hand
+:KEYWORDS: grab grabbing is-dragging drag pan press is-pressed DRAG_PX pan.js wheel horizontal axis visibility IntersectionObserver non-disciple cull scroll
+:PATH: assets/js/hooks/disciplewindow.js
+:END:
+The bar is =cursor: grab= and =is-dragging= makes it =grabbing= — the same idiom as
+the river's rail. A press that travels past =DRAG_PX= is a pan, not a door: its click
+is swallowed in capture before the seat's =phx-click= can fire, and the next press
+clears that memory. Under =DRAG_PX= the press lights its own rim (=is-pressed=) and
+commits the door. =DRAG_PX= is ONE number for the wheel and the strip
+(=assets/js/utils/pan.js=, re-exported by =river/wheel.js=). The hook also pumps
+vertical wheel into the horizontal axis and reports visibility; furniture inside the
+bar carries =non-disciple= so the scan never treats it as a window.
+
+** pin hand — the cursor's question is the press's question
+:PROPERTIES:
+:ID: nav-pin-hand
+:KEYWORDS: hoveredAt hitAt cursor grab grabbing drawn point pin hover drawn client point _pinCandidates CSSOM pointermove canTouch eligibility pointer capture
+:PATH: assets/js/turtling/laws/gesture.js::hoveredAt
+:END:
+A pin is drawn, not a node, so the cursor can only be true at the pointer. The law
+answers =hoveredAt/1= with the SAME four gates a press uses — offered · touchable ·
+under the pointer · lawful to hold (=hitAt/3=) — so the cursor never promises a hand
+the press would refuse. The DOM layer asks once per move: =grabbing= while a hand is
+held (capture keeps it true off-canvas), =grab= where a press would take one,
+=default= everywhere else — never a blanket cursor on the whole glass.
+Cheap by construction: the draw's own read pass publishes =_pinCandidates= (frame +
+the drawn CLIENT point), so the cursor skips the point-state projection and the
+=candidates()= rebuild entirely; a press still reads the exact list. The style write
+is guarded, so a move that changes nothing touches no CSSOM. Caveat: a derived
+figure's pin is drawn at its BIRTH while the press takes the walking anchor — the
+cursor is honest about the grab point, not the drawn one.
 
 ** deck — card components
 :PROPERTIES:
@@ -762,6 +836,17 @@ Six-line round walk; changing right to left changes the curl. Nesting grants a
 birth frame, not live carrying. Re-encounter refreshes the same running walker's
 stance; frame projection chooses where its ink is left. Live/source-matched witnesses,
 no new primitive. The equation-led “next frontier” is withdrawn in the SICM map.
+
+** temporal play — velocity, wait and law lifetime
+:PROPERTIES:
+:ID: nav-temporal-play
+:KEYWORDS: velocity v wait dt rate temporal law initial condition reset coast direction heading inertial Lagrangian Euler Modelica Yampa lifecycle
+:PATH: specs/compiler/sicm-play-frontier.org::sicm-play-temporal-frontier
+:END:
+Sketch, not shipped dynamics: distinguish initial velocity, a standing velocity law,
+and a generator of change. Interval observation, shared receiver time and source-owned
+publication are the discriminators; pose-only acceptance does not earn conservation.
+Priors and the bounded witness ladder live here; the partner owns =probe/velocity-seam/=.
 
 ** session — mutation, not replacement
 :PROPERTIES:
@@ -1391,20 +1476,7 @@ reductions retain bounded refusals. Independent conditioned branches commute, no
 cross-branch reads. Keepers: =test/js/laws/{actor_follow,following,hand_standard,component_response,
 lifecycle_witness,localization_representation,receiver_follow,receiver_affordance}_test.mjs=.
 Nine focused tests across =receiver_follow= (7) and =receiver_affordance= (2) fence this path.
-Rung: =scripts/play/rungs/receiver-spines.plang= — one recipe over two supplied 3-joint chains.
 [[id:laws-free-relations-actor-campaign]].
-
-** actor spine in the browser — ordinary source, no hand switch
-:PROPERTIES:
-:ID: nav-law-follow-play
-:KEYWORDS: actor spine procedural animation computed loop J0 pulling seed step turn wait play browser
-:PATH: scripts/play/rungs/actor-spine.plang
-:END:
-Run =node scripts/play/play_cdp.mjs run scripts/play/rungs/actor-spine.plang 2000 /tmp/actor-spine.png --bare=,
-then =node scripts/play/play_cdp.mjs probe=. Two loops construct nine unpinned joints/eight
-relations plus nine world-Z coordinate laws; one attached actor circles with a large BOUNDED
-loop. Twiddle seed sign, step or turn separately. The old =follow= mode/hand URL is retired,
-not an alias for this encounter. [[id:laws-free-relations-actor-campaign]].
 
 ** historical follow witness — retired encounter, not a current passing gate
 :PROPERTIES:
@@ -1549,10 +1621,9 @@ Driven payloads are row capabilities (=driveOf=): position projects a point,
 coordinate carries a scalar. Accepted publication owns driver installation;
 the shared preflight refuses directional own-target reads before replacement.
 Fences: =driven_installation_test.mjs= and =driven_coordinate_test.mjs=.
-Reasoning: [[id:relationships-driven-payloads]]; canvas: =scripts/play/rungs/driven-coordinate.plang=.
+Reasoning: [[id:relationships-driven-payloads]].
 Reactive randomness: =assets/js/turtling/laws/reactive.js=; synchronous input questions
-gate intrinsic draws. Fence: =test/js/laws/reactive_randomness_test.mjs=; live play:
-=scripts/play/rungs/reactive-randomness.plang=. Reasoning: =laws-reactive-randomness=
+gate intrinsic draws. Fence: =test/js/laws/reactive_randomness_test.mjs=. Reasoning: =laws-reactive-randomness=
 in =specs/compiler/relationships.org=; readings: =probe/reactive-randomness/RESULTS.org=.
 D059 payload boundary: =laws/verdict.js::applyLaw= and =laws/authored.js::withPayload=;
 =scheduler.js::redrawDerivedLaw= reads the accepted term. Fences:
@@ -2715,7 +2786,7 @@ vector + vector add, =/= divide, every scalar builtin — ONE shape mechanism,
 =pervade=: a scalar broadcasts and equal lengths zip) register here; the evaluator is sealed over it and never
 switches. Boundary, witness and ladder: [[id:tower-center]].
 
-** vector ordering — exact dyadic magnitude; equality landed; Infinity open
+** vector ordering — exact dyadic magnitude; equality landed; Infinity extended-real
 :PROPERTIES:
 :ID: nav-tower-comparison
 :KEYWORDS: tower vector comparison equality order magnitude norm D018 refusal provisional compareMagnitude squareUnits binary64 dyadic BigInt exact snapshot finite NaN bitwise power selection display notice infinity
@@ -2725,14 +2796,17 @@ D018's four orders compare exact magnitudes of represented finite Number vectors
 nonempty, rank-one, equal dimensions. Component dominance then exact dyadic squares;
 no norm, epsilon or equality regression. Whole-coordinate equality is coordinate
 identity, not magnitude: =[3,0] == [0,3]= is 0 while both =<= directions stay 1.
-Fences: =vector_magnitude_test.mjs=, =condition_equality_test.mjs=.
+Fences: =vector_magnitude_test.mjs=, =condition_equality_test.mjs=, =numeric_composition_test.mjs=.
 =node probe/tower-comparison/compare.mjs [--jsonl]= also records products, mixed
 scaling, non-finite condition/display routes and the Infinity decision matrix.
 Cross/wedge are explicitly deferred; mixed additive broadcast is held.
 [[id:tower-tension-compare]] · [[id:probe-tower-comparison-landed]].
 A NaN is preserved by comparison, bitwise, power and tested-left selection; a vector
 label notices its first non-finite component (=numeric_fault_test.mjs=).
-Infinity comparisons/bitwise/power and interpolated display remain open:
+Infinity keeps its extended-real answers (D065); the fault model is deferred.
+Truth follows the value model (D066): =!Infinity= is false; =!NaN= remains a
+non-answer; a finite result from an infinite operand may execute without provenance.
+Interpolated display remains open:
 [[id:probe-tower-comparison-nan-completion]] · [[id:probe-tower-comparison-infinity]] ·
 [[id:tower-center-approximation-ruling]].
 
@@ -3698,9 +3772,11 @@ first cell on first light). The degree ladder is one pure transition
 :PROPERTIES:
 :ID: nav-tiger
 :KEYWORDS: papertiger tiger companion mood stance mascot clippy pounce coil slink prowl halo intent resting question gaze leap undraw draw ink gesture playground meadow atelier carve seed grok imagine potrace normalize archetype bestiary ladder skeleton anima image_edit image_gen image_to_video reference_to_video ZDR upload_url journey experiment lineage score
-:PATH: scripts/bestiary/papertiger
+:PATH: scripts/bestiary/cli.mjs
 :END:
-Canon lives in =specs/papertiger/= (=papertiger.org= + anima, atelier,
+The generated ground (=papertiger/core/=, =_carve/=, =_skeleton/=, =_ladder/=,
+=dreams/=) is local art, not release source: it is git-ignored, and a clone
+rebuilds it through this CLI. Canon lives in =specs/papertiger/= (=papertiger.org= + anima, atelier,
 evolve, moodboards, skeleton-alphabet, *grok_imagine* API runbook
 [[id:gi-entry]]). The living ground is the bestiary:
 =scripts/bestiary/papertiger/= (=core/=, =_carve/=, =_skeleton/=,

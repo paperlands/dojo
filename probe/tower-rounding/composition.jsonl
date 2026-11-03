@@ -39,7 +39,7 @@
 {"label":"0/0 == 0/0","value":"NaN","said":"nothing","comment":"and again"}
 {"label":"1/0 == 1/0","value":"1","said":"nothing","comment":"infinity still answers a finite 1"}
 {"label":"when (0/0 > 0) do","value":"","said":"1x nan","comment":"a COMPARED NaN is now told: no branch, and why"}
-{"label":"when (1/0 > 0) do","value":"","said":"nothing","comment":"a compared infinity still draws: the open species"}
+{"label":"when (1/0 > 0) do","value":"","said":"nothing","comment":"a compared infinity still draws: extended-real (D065)"}
 {"label":"when (0/0) do","value":"","said":"1x nan","comment":"a BARE non-answer in a condition is told: no branch, and why"}
 {"label":"display 0.1 + 0.2","value":"0.3","said":"nothing","comment":"reads clean; the value keeps its bits"}
 {"label":"display sin(30)","value":"0.5","said":"nothing","comment":"reads clean; the value keeps its bits"}

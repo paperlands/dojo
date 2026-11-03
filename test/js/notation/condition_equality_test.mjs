@@ -59,9 +59,8 @@ test("boolean admission is the condition door only", () => {
     assert.equal(demand("a", { as: "condition" }).verdict, "refuse")
 })
 
-test("a non-finite number survives !, so the branch is refused, not taken", () => {
-    for (const source of ["when !(0/0) do\n fw 2\nend\nfw 3", "when !(0/0 < 1) do\n fw 2\nend\nfw 3",
-        "when !(1/0) do\n fw 2\nend\nfw 3"]) {
+test("a NaN survives !, so the branch is refused, not taken", () => {
+    for (const source of ["when !(0/0) do\n fw 2\nend\nfw 3", "when !(0/0 < 1) do\n fw 2\nend\nfw 3"]) {
         const run = walk(source)
         assert.equal(run.notices.length, 1, source)
         assert.deepEqual(run.head, [3, 0, 0], source)
@@ -69,6 +68,14 @@ test("a non-finite number survives !, so the branch is refused, not taken", () =
     assert.equal(ev("!0"), true)
     assert.equal(ev("!1"), false)
     assert.equal(ev("!'a'"), false)
+})
+
+test("infinity is truthy, so ! is a finite false", () => {
+    assert.equal(ev("!(1/0)"), false)
+    assert.equal(ev("!(-1/0)"), false)
+    const run = walk("when !(1/0) do\n fw 2\nend\nfw 3")
+    assert.equal(run.notices.length, 0)
+    assert.deepEqual(run.head, [3, 0, 0])
 })
 
 test("vector equality is the coordinates, and a length tie is not identity", () => {

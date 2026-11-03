@@ -22,6 +22,29 @@ stale=$(grep -E '^[[:space:]]*:PATH:' navigation.org | sed -E 's/^[[:space:]]*:P
     fi
   done)
 
+# Tracking, not existence: a hotpath that only exists on this machine is not a
+# hotpath a clone can follow. `specs/` is its own repo (pinned by specs.lock), so
+# its paths are asked there. Advisory like the rest — a document set awaiting its
+# commit is a release decision, not a reason to block a session's stop.
+untracked=$(grep -E '^[[:space:]]*:PATH:' navigation.org | sed -E 's/^[[:space:]]*:PATH:[[:space:]]*//' |
+  while IFS= read -r path; do
+    file=${path%%::*}
+    case "$file" in
+      specs/*)
+        if [ -d specs/.git ] || git -C specs rev-parse --git-dir >/dev/null 2>&1; then
+          if [ -z "$(git -C specs ls-files -- "$file" | head -1)" ]; then
+            echo "UNTRACKED navigation.org hotpath (specs repo): $file"
+          fi
+        fi
+        ;;
+      *)
+        if [ -z "$(git ls-files -- "$file" | head -1)" ]; then
+          echo "UNTRACKED navigation.org hotpath (dojo repo): $file"
+        fi
+        ;;
+    esac
+  done | sort -u)
+
 if [ "$1" = "--stop-hook" ]; then
   input=$(cat)
   # Already blocked once this stop — let it through rather than loop.
@@ -39,4 +62,5 @@ if [ "$1" = "--stop-hook" ]; then
 fi
 
 [ -n "$stale" ] && printf '%s\n' "$stale"
+[ -n "$untracked" ] && printf '%s\n' "$untracked"
 exit 0

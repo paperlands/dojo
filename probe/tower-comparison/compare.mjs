@@ -2,9 +2,11 @@
 // Run: node probe/tower-comparison/compare.mjs [--jsonl]
 //
 // Order is exact squared length. Equality is coordinate identity, not the
-// provisional whole-value refinement and not a length tie. `!` of a non-finite
-// number keeps it. Bitwise, power and tested-left selection now preserve NaN;
-// infinity comparisons and interpolated display remain open. The `magnitude` column
+// provisional whole-value refinement and not a length tie. `!` keeps a NaN as a
+// non-answer; Infinity is truthy, so `!Infinity` is false (D066). Bitwise, power
+// and tested-left selection preserve NaN; infinity comparisons keep extended-real
+// answers (D065); the fault model is deferred and interpolated display remains open.
+// The `magnitude` column
 // is the naive hypot contrast, not the contract. (id:tower-center-approximation-ruling)
 //
 // WIDENED 2026-11-03. The first rig asked only comparison rows. This one also asks
@@ -129,9 +131,9 @@ const comparisonCases = [
     ["vector arithmetic control", '[1,2] + [3,4]', [1, 2], [3, 4], '+'],
 ]
 
-// Infinity is a second non-finite species. The current runtime inherits IEEE:
-// a comparison with +/-Infinity answers a finite 1/0. The candidate columns name
-// the dispositions a ruling could pick; none is asserted here.
+// Infinity is a second non-finite species. The runtime inherits IEEE, and D065
+// chooses that column for v0.6; the fault-model columns are retained for a later
+// decision and are not asserted here.
 const firstNonFinite = (...args) =>
     args.find((x) => typeof x === 'number' && !Number.isFinite(x)) ?? null
 const infinityCases = [
@@ -211,12 +213,12 @@ for (const [label, source, a, b, op] of infinityCases) {
     const { current, answer, refusal } = attempt(source)
     rows.push({
         route: 'tower', kind: 'infinity', case: label, source, op,
-        current: answer === 'value' ? current : `${answer}: ${refusal}`,
+        current: answer === 'value' ? num(current) : `${answer}: ${refusal}`,
         answer, refusal,
-        ieee: answer === 'value' ? current : null,
-        preserve: firstNonFinite(a, b),
-        nan: NaN,
-        note: 'Infinity is unruled; preserve returns the offending operand so the consumer notices',
+        ieee: answer === 'value' ? num(current) : null,
+        preserve: num(firstNonFinite(a, b)),
+        nan: 'NaN',
+        note: 'Infinity keeps extended-real answers (D065); preserve/nan are deferred fault-model columns',
     })
 }
 
@@ -224,9 +226,9 @@ for (const [label, source] of infinityArithmeticCases) {
     const { current, answer, refusal } = attempt(source)
     rows.push({
         route: 'tower', kind: 'infinity-arithmetic', case: label, source, op: null,
-        current: answer === 'value' ? current : `${answer}: ${refusal}`,
+        current: answer === 'value' ? num(current) : `${answer}: ${refusal}`,
         answer, refusal,
-        note: 'current route only; the policy is open',
+        note: 'D065 keeps the extended-real answer; the fault model is deferred',
     })
 }
 
@@ -313,11 +315,11 @@ const conditionCases = [
         "when 0 do\n fw 1\nend\nwhen !(0/0 < 1) do\n fw 2\nend\nfw 3"],
     ["boolean condition (!0) takes the branch",
         "when 0 do\n fw 1\nend\nwhen !0 do\n fw 2\nend\nfw 3"],
-    ["laundered infinity equality",
+    ["chosen: infinity equality draws",
         "when 0 do\n fw 1\nend\nwhen (1/0 == 1/0) do\n fw 2\nend\nfw 3"],
-    ["open: infinity bitwise still draws",
+    ["chosen: infinity bitwise draws",
         "when 0 do\n fw 1\nend\nwhen (((1/0)&1)==0) do\n fw 2\nend\nfw 3"],
-    ["open: infinity power still draws",
+    ["chosen: infinity power draws",
         "when 0 do\n fw 1\nend\nwhen ((1/0)^0) do\n fw 2\nend\nfw 3"],
     ["direct indeterminate (1/0 - 1/0)",
         "when 0 do\n fw 1\nend\nwhen (1/0 - 1/0) do\n fw 2\nend\nfw 3"],
@@ -327,10 +329,13 @@ const conditionCases = [
     ["display: interpolated non-finite", "label 'x[0/0]'"],
     ["display: recovered comparison (!=)", "label (0/0 != 0/0)"],
     ["display: recovered comparison (==)", "label (0/0 == 0/0)"],
-    ["display: open truth conversion after comparison", "label !(0/0 < 1)"],
+    ["display: NaN truth conversion", "label !(0/0 < 1)"],
+    ["chosen: !Infinity is a finite false", "when !(1/0) do\n fw 2\nend\nfw 3"],
+    ["display: !Infinity is false", "label !(1/0)"],
+    ["display: !NaN is a non-answer", "label !(0/0)"],
     ["display: non-finite infinity", "label (1/0)"],
-    ["display: laundered infinity equality", "label (1/0 == 1/0)"],
-    ["display: laundered infinity order", "label (1/0 > 1)"],
+    ["display: chosen infinity equality", "label (1/0 == 1/0)"],
+    ["display: chosen infinity order", "label (1/0 > 1)"],
 ]
 const conditionRows = conditionCases.map(([label, source]) => ({
     case: label, ...condition(source),
@@ -369,7 +374,7 @@ for (const r of rows.filter((row) => row.kind === 'comparison')) {
     assert.ok(['value', 'tower-refusal', 'domain-refusal'].includes(r.answer),
         `${r.source} must answer or refuse by name at the one door, not ${r.answer}: ${r.current}`)
 }
-// Infinity rows record a route and a named offending operand; the policy is open.
+// Infinity rows record the chosen extended-real route and the deferred fault-model columns.
 for (const r of rows.filter((row) => row.kind === 'infinity')) {
     assert.ok(['value', 'tower-refusal', 'domain-refusal'].includes(r.answer),
         `${r.source}: unclassified route ${r.answer}`)
@@ -408,4 +413,4 @@ assert.ok(directNaN.notices.length > 0 || directNaN.fault,
 for (const row of conditionRows) {
     assert.equal(row.parseErrors.length, 0, `${row.case}: valid fixture must parse cleanly`)
 }
-// The laundered rows are RECORDED, not asserted: a later repair must move them.
+// The recorded rows are evidence, not policy: a later decision must move them deliberately.
