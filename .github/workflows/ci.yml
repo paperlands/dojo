@@ -28,8 +28,8 @@ defaults:
     shell: bash
 
 env:
-  ELIXIR_VERSION: "1.20.1"
-  OTP_VERSION: "29.0.2"
+  ELIXIR_VERSION: "1.20.5"
+  OTP_VERSION: "29.1.2"
 
 jobs:
   # ── Leaves (parallel) ───────────────────────────────────────────────────
