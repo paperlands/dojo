@@ -105,9 +105,7 @@ if config_env() == :prod do
         port: partisan_port,
         own_ip: own_ip
       }
-    },
-    # Stable mesh — no WiFi roaming timeouts needed
-    connect_timeout: 5_000
+    }
 else
   # ── Dev/Local: mDNS multicast discovery ────────────────────────────
   # UUID identity survives WiFi roaming; mDNS TXT records carry the name.
@@ -134,15 +132,12 @@ else
       type: Dojo.Cluster.MDNS.PartisanAdapter,
       initial_delay: 2_000,
       polling_interval: 5_000,
-      timeout: 2_000,
+      timeout: 5_000,
       config: %{
         service: "_erlang._tcp.local",
         timeout_ms: 2_000
       }
-    },
-    # 1.5s — generous for LAN; default 5s causes 25s worst-case per stale IP
-    # during WiFi roaming (5 channels × 5s timeout each)
-    connect_timeout: 1_500
+    }
 end
 
 # LAN nodes share a compiled application, never a SQLite journal. The wrapper
@@ -181,16 +176,41 @@ config :partisan,
   channels: %{
     gossip: %{monotonic: false, parallelism: 1, compression: false},
     undefined: %{monotonic: false, parallelism: 1, compression: false},
-    control: %{monotonic: true, parallelism: 1},
+    # Direct messages (PubSub `direct_broadcast`) ride this channel. A monotonic
+    # channel suppresses sends under queue pressure and still answers `ok`, so a
+    # directed message could be dropped without a trace (D070.4). Only the data
+    # channel carries supersedable state.
+    control: %{monotonic: false, parallelism: 1},
     data: %{monotonic: true, parallelism: 2, compression: true},
     partisan_membership: %{monotonic: false, parallelism: 1, compression: true}
   },
   phi_threshold: 12.0,
   secret: System.get_env("DOJO_CLUSTER_SECRET") || "dev_secret",
   gossip_interval: 1000,
-  # 1.5s — generous for LAN; default 5s causes 25s worst-case per stale IP
-  # during WiFi roaming (5 channels × 5s timeout each)
-  connect_timeout: 1_500,
+  # One ceiling for one connection attempt, the same everywhere (D070). A peer
+  # that cannot answer should not cost us an unbounded wait, but the value
+  # belongs to the network: LAN answers in milliseconds, a relayed or wide-area
+  # peer may not. Stale addresses are removed by the §4.3 eviction path, not by
+  # making every attempt impatient.
+  connect_timeout:
+    String.to_integer(System.get_env("PARTISAN_CONNECT_TIMEOUT") || "5000"),
+  # A failed observation backs off; the cap is low on purpose, because a slow
+  # backend that is classified as failing must not silently stop discovery for a
+  # minute — the roamed node needs to be found again inside that window.
+  retry_max: 10_000,
+
+  # Every broadcast handler that must disseminate declares its group (D070.3).
+  # Without this the handler's broadcast_data/1 runs locally and the cast lands
+  # on an unstarted atom: `ok` with no recipient.
+  broadcast_mods: [:partisan_plumtree_backend, Phoenix.PubSub.Partisan.Handler],
+  # A roamed peer leaves a half-open socket behind; the OS default keepalive is
+  # measured in hours, and until the socket is dead the old spec stays "connected"
+  # and nothing replaces it. ~25 s to detection.
+  tcp_keepalive: %{idle: 10, interval: 5, count: 3},
+  # A sender faster than its socket grows the connection mailbox without bound;
+  # `infinity` is upstream's default and is not a sane one on a shared cluster.
+  # Refuse the send instead, so pressure surfaces as `{error, overloaded}`.
+  connection_high_watermark: 5_000,
   listen_options: listen_options
 
 config :dojo, Phoenix.PubSub.Partisan,

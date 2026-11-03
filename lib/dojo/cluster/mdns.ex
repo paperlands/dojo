@@ -63,8 +63,18 @@ defmodule Dojo.Cluster.MDNS do
   end
 
   @doc "Return the current peer cache as a list of `{name, ip, port}` tuples."
-  def cached_peers do
-    GenServer.call(__MODULE__, :cached_peers)
+  def cached_peers, do: cached_peers(5_000)
+
+  @doc """
+  Cached peers, bounded by the caller's deadline.
+
+  The discovery agent enforces its own timeout by killing the worker; a lookup
+  that inherits a larger call timeout can therefore be killed before it answers
+  and be classified as a timeout that the backend never had. Taking the deadline
+  from the caller keeps the two consistent.
+  """
+  def cached_peers(timeout) do
+    GenServer.call(__MODULE__, :cached_peers, timeout)
   catch
     :exit, _ -> []
   end
@@ -294,7 +304,11 @@ defmodule Dojo.Cluster.MDNS do
 
   def handle_info(:poll, state) do
     pre_sweep_count = map_size(state.cache)
+    # Departure baseline taken before the sweep: an entry that only ages out
+    # still departed, and telemetry must say so.
+    pre_poll = state.cache
     swept = sweep_cache(state.cache)
+    expired = Map.keys(pre_poll) -- Map.keys(swept)
     evicted_count = pre_sweep_count - map_size(swept)
     state = %{state | cache: swept}
 
@@ -331,6 +345,7 @@ defmodule Dojo.Cluster.MDNS do
       end
 
     # POOF: track missed queries and evict unresponsive peers
+    pre_poof = cache
     cache = apply_poof(cache, pre_seen)
 
     # Notify adapter of discovered peers
@@ -350,13 +365,14 @@ defmodule Dojo.Cluster.MDNS do
       peers: peer_names
     })
 
-    # Notify adapter of departed peers (goodbyes received during this cycle)
-    departed = Map.keys(state.cache) -- Map.keys(cache)
+    # Report every departure with its cause. Only evidence — an explicit
+    # goodbye, or POOF silence past the threshold — may leave Partisan
+    # membership; TTL aging is cache hygiene and must not orphan a live peer.
+    for {name, reason, action} <- departures(pre_poll, pre_poof, cache, expired) do
+      if action == :transport, do: state.adapter.on_peer_departed(name)
 
-    Enum.each(departed, fn name ->
-      state.adapter.on_peer_departed(name)
-      :telemetry.execute([:dojo, :cluster, :peer_departed], %{}, %{node: name, reason: :goodbye})
-    end)
+      :telemetry.execute([:dojo, :cluster, :peer_departed], %{}, %{node: name, reason: reason})
+    end
 
     # Node.monitor: monitor new connections for reactive failover
     state = maybe_monitor_nodes(%{state | cache: cache})
@@ -734,12 +750,45 @@ defmodule Dojo.Cluster.MDNS do
         name == own_name ->
           acc
 
-        is_goodbye ->
-          Logger.debug("[mDNS] goodbye received for #{name} — evicting from cache")
+        is_goodbye and same_address?(acc, name, ip) ->
+          Logger.debug("[mDNS] goodbye for #{name} at #{fmt(ip)} — evicting from cache")
           Map.delete(acc, name)
+
+        # A goodbye is scoped to the address it was sent from (RFC 6762 §10.1).
+        # A delayed goodbye for an old address must not evict the fresh record.
+        is_goodbye ->
+          Logger.debug(
+            "[mDNS] goodbye for #{name} from #{fmt(ip)} ignored — cached address differs"
+          )
+
+          acc
 
         true ->
           Map.put(acc, name, Peer.new(name, ip, port))
+      end
+    end)
+  end
+
+  defp same_address?(cache, name, ip) do
+    case cache do
+      %{^name => %Peer{ip: cached_ip}} -> cached_ip == ip
+      _ -> false
+    end
+  end
+
+  # Every disappearance since the poll baseline, with its cause and what that
+  # cause licenses. Sweeping before this comparison is what used to lose TTL
+  # departures silently — but aging out is not evidence a peer left.
+  @doc false
+  def departures(pre_poll, pre_poof, cache, expired) do
+    pre_poll
+    |> Map.keys()
+    |> Kernel.--(Map.keys(cache))
+    |> Enum.map(fn name ->
+      cond do
+        name in expired -> {name, :expired, :cache_only}
+        Map.has_key?(pre_poof, name) -> {name, :poof, :transport}
+        true -> {name, :goodbye, :transport}
       end
     end)
   end

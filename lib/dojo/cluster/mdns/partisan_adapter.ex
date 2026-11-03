@@ -125,6 +125,14 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
       connections: partisan_connection_report(),
       hyparview: hyparview_state(),
       discovery_agent: safe(fn -> :partisan_peer_discovery_agent.status() end),
+      discovery_health:
+        safe(fn ->
+          if function_exported?(:partisan_peer_discovery_agent, :info, 0) do
+            :partisan_peer_discovery_agent.info()
+          else
+            :unavailable
+          end
+        end),
       config: partisan_config_snapshot()
     }
   end
@@ -347,8 +355,11 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
   end
 
   @impl :partisan_peer_discovery_agent
-  def lookup(state, _timeout) do
-    peers = Dojo.Cluster.MDNS.cached_peers()
+  def lookup(state, timeout) do
+    # Answer inside the deadline the agent enforces: it kills the worker at
+    # `timeout', so a call that can take longer than that would be reported as a
+    # timeout of our making rather than of the backend's.
+    peers = Dojo.Cluster.MDNS.cached_peers(max(100, timeout - 50))
 
     specs =
       Enum.map(peers, fn {name, ip, port} ->
@@ -357,9 +368,19 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
 
     {:ok, specs, state}
   rescue
-    # Module may be temporarily unavailable during dev code reloading
-    UndefinedFunctionError -> {:ok, [], state}
+    # A failed observation is reported as a failure, not as an empty answer
+    # (D071). "No peers" and "could not look" are different facts; the second one
+    # must be visible in the agent's health, and neither may evict anyone.
+    #
+    # The classes stay distinct: an absent module is an availability problem,
+    # anything else raised here is our bug and must not be labelled as the
+    # network being down. Neither choice is a retry policy — the agent owns that.
+    e in UndefinedFunctionError ->
+      {:error, {:adapter_unavailable, Exception.message(e)}, state}
+
+    e ->
+      {:error, {:adapter_exception, Exception.message(e)}, state}
   catch
-    :exit, _ -> {:ok, [], state}
+    :exit, reason -> {:error, {:adapter_exit, reason}, state}
   end
 end
