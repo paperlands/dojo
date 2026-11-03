@@ -67,6 +67,7 @@ defmodule Dojo.MixProject do
       {:jason, "~> 1.2"},
       {:nebulex, "~> 2.6"},
       {:shards, "~> 1.1.1"},
+      {:observer_cli, "~> 2.0"},
       {:dns_cluster, "~> 0.2"},
       {:bandit, "~> 1.2"},
       {:burrito, burrito_dep()},
