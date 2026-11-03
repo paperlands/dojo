@@ -2,7 +2,7 @@ defmodule Dojo.Room do
   alias Dojo.Cache
 
   def get_leaderboard!(topic) do
-    case Cache.get({__MODULE__, :leaderboard, topic}) do
+    case Cache.get!({__MODULE__, :leaderboard, topic}) do
       nil ->
         %{}
 
@@ -12,7 +12,7 @@ defmodule Dojo.Room do
   end
 
   def add_leaderboard!(topic, name) do
-    case Cache.get({__MODULE__, :leaderboard, topic}) do
+    case Cache.get!({__MODULE__, :leaderboard, topic}) do
       nil ->
         map = Map.new([{name, %{count: 1, history: [{time_now(), 1}]}}])
         Cache.put({__MODULE__, :leaderboard, topic}, map)

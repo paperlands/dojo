@@ -80,11 +80,11 @@ config :logger, :console,
 config :phoenix, :json_library, Jason
 
 config :dojo, Dojo.Cache,
-  # stats: true,
-  gc_interval: :timer.minutes(5),
-  backend: :shards,
-  gc_cleanup_min_timeout: :timer.seconds(1),
-  gc_cleanup_max_timeout: :timer.seconds(30)
+  primary: [
+    backend: :shards,
+    partitions: System.schedulers_online(),
+    gc_interval: :timer.minutes(5)
+  ]
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

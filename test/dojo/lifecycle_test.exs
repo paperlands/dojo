@@ -251,7 +251,7 @@ defmodule Dojo.LifecycleTest do
       Table.publish(table, {Dojo.Turtle, nil, turtle}, :hatch)
 
       assert_eventually(fn ->
-        Cache.get({Table, :last, rk, :hatch}) != nil
+        Cache.get!({Table, :last, rk, :hatch}) != nil
       end)
     end
 
@@ -261,12 +261,12 @@ defmodule Dojo.LifecycleTest do
 
       turtle = %Dojo.Turtle{state: :hatch, path: "/test", commands: [:fd], time: 1}
       Table.publish(table, {Dojo.Turtle, nil, turtle}, :hatch)
-      assert_eventually(fn -> Cache.get({Table, :last, rk, :hatch}) != nil end)
+      assert_eventually(fn -> Cache.get!({Table, :last, rk, :hatch}) != nil end)
 
       # Kill watcher → Table terminates normally → terminate/2 clears cache
       Process.exit(watcher, :kill)
       assert_eventually(fn -> not table_alive?(table) end)
-      assert_eventually(fn -> Cache.get({Table, :last, rk, :hatch}) == nil end)
+      assert_eventually(fn -> Cache.get!({Table, :last, rk, :hatch}) == nil end)
     end
 
     test "cache survives Table crash (terminate/2 may not run)" do
@@ -275,14 +275,14 @@ defmodule Dojo.LifecycleTest do
 
       turtle = %Dojo.Turtle{state: :hatch, path: "/test", commands: [:fd], time: 1}
       Table.publish(table, {Dojo.Turtle, nil, turtle}, :hatch)
-      assert_eventually(fn -> Cache.get({Table, :last, rk, :hatch}) != nil end)
+      assert_eventually(fn -> Cache.get!({Table, :last, rk, :hatch}) != nil end)
 
       # Brutal kill — terminate/2 does NOT run
       Process.exit(table, :kill)
       assert_eventually(fn -> not table_alive?(table) end)
 
       # Cache should still have the entry (stale but available for recovery)
-      assert Cache.get({Table, :last, rk, :hatch}) != nil
+      assert Cache.get!({Table, :last, rk, :hatch}) != nil
 
       Cache.delete({Table, :last, rk, :hatch})
     end

@@ -41,14 +41,14 @@ defmodule Dojo.Table do
   # A cache hit is last-known state of whichever owner wrote it — recovery
   # material, never a liveness claim. (id:ownership-o4; lifecycle_test:272)
   def last({topic, target_node}, event) do
-    case Cache.get({__MODULE__, :last, topic, event}) do
+    case Cache.get!({__MODULE__, :last, topic, event}) do
       nil -> fetch_state(topic, target_node, event, :last)
       cached_state -> cached_state
     end
   end
 
   def last_meta({topic, target_node}, event) do
-    case Cache.get({__MODULE__, :last, topic, event}) do
+    case Cache.get!({__MODULE__, :last, topic, event}) do
       nil -> fetch_state(topic, target_node, event, :last_meta)
       cached -> Map.take(cached, [:path, :state, :time])
     end
