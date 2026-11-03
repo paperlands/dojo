@@ -37,14 +37,12 @@ defmodule Dojo.MixProject do
   defp deps do
     [
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:igniter, "~> 0.6", only: [:dev, :test]},
       {:usage_rules, "~> 1.1", only: :dev},
       {:lazy_html, ">= 0.0.0", only: :test},
       {:phoenix, "~> 1.8"},
       {:phoenix_ecto, "~> 4.4"},
       {:ecto_sql, "~> 3.10"},
       {:ecto_sqlite3, "~> 0.24.1"},
-      {:postgrex, ">= 0.0.0"},
       {:phoenix_html, "~> 4.0"},
       {:phoenix_live_reload, "~> 1.5", only: :dev},
       {:phoenix_live_view, "~> 1.2.0"},
@@ -69,19 +67,11 @@ defmodule Dojo.MixProject do
       {:jason, "~> 1.2"},
       {:nebulex, "~> 2.6"},
       {:shards, "~> 1.1.1"},
-      {:observer_cli, "~> 1.8"},
       {:dns_cluster, "~> 0.2"},
       {:bandit, "~> 1.2"},
-      {:earmark, "1.5.0-pre1", override: true},
-      {:earmark_parser, "1.4.44"},
-      {:html_sanitize_ex, "~> 1.4"},
-      {:makeup, "~> 1.1"},
-      {:makeup_elixir, "~> 0.16"},
       {:burrito, burrito_dep()},
       {:partisan, partisan_dep()},
-      # Protocol Buffers for safe, non-atom signaling
-      {:recon, "~> 2.5"},
-      {:protox, "~> 2.0"}
+      {:recon, "~> 2.5"}
     ]
   end
 
