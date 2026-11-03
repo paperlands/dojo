@@ -1,0 +1,441 @@
+#+title: Tower vector comparison — ruled, provisional, observed
+#+date: <2026-10-29 Wed>
+#+PROBE-STATUS: active
+#+FILETAGS: :probe:tower:equality:
+
+* Charge
+:PROPERTIES:
+:ID: probe-tower-comparison
+:TYPE: question
+:END:
+
+Two documents, one accepted ruling, one provisional refinement, and a runtime that
+answers none of them. This instrument makes the readings visible side by side; it
+does not choose among them and registers nothing.
+
+- [[file:../../specs/decisions/018-geometric-operator-triad.decision.md][D018]]
+  (ACCEPTED; its header names =tower-tension-compare= as the tension it resolves):
+  *comparisons fall back to magnitude, no errors*; orderings compare =norm= — the
+  longer arrow wins.
+- [[id:tower-tension-compare]] — the tension D018 accepts, plus a *provisional
+  refinement*: `==`/`!=` compare *whole-value*, orderings stay magnitude
+  (= [3,0] == [0,3] = should be 0), "one registration to change".
+- [[id:tower-rungs]] — the rung ladder still lists *magnitude comparisons open*.
+- *Current worktree/runtime (observation: 2026-10-29):* no vector comparison
+  registration exists at the one door ([[id:tower-center-approximation-ruling]]).
+  This is not an audited published generation, only the tree this probe ran in.
+
+Prediction before running: the current runtime would refuse, so the *accepted*
+ordering bullet has no runtime meaning either; the ruling/refinement split would
+show on one more row — equal-length arrows in different directions under `==`.
+
+* Rig
+:PROPERTIES:
+:ID: probe-tower-comparison-rig
+:END:
+
+#+begin_src sh
+node probe/tower-comparison/compare.mjs
+#+end_src
+
+Seven expressions through =Parser → Evaluator=, i.e. the same =tower.apply= door
+the executor uses. Two projections are computed in the instrument from the doc's
+own words, labelled *magnitude* and *whole-value*; they are not proposals. Controls
+assert only that the rig observes: scalar/text order answer, vector arithmetic is
+admitted, and every comparison reaches the center (a named refusal is an answer).
+
+* Readings, 2026-10-29
+:PROPERTIES:
+:ID: probe-tower-comparison-readings
+:TYPE: evidence
+:END:
+
+| Expression        | Current runtime (2026-10-29)               | magnitude (D018) | whole-value (provisional) |
+|-------------------+--------------------------------------------+------------------+--------------------|
+| =[1,2] < [1,3]=   | refusal: no meaning for `<` over vector    | 1                | 1                  |
+| =[3,0] <= [0,3]=  | refusal: no meaning for `<=` over vector   | 1                | 1                  |
+| =[1,2] == [1,2]=  | refusal: no meaning for `==` over vector   | 1                | 1                  |
+| =[3,0] == [0,3]=  | refusal: no meaning for `==` over vector   | *1*              | *0*                |
+| =1 < 2=           | 1                                          | —                | —                  |
+| ='a' < 'b'=       | 1                                          | —                | —                  |
+| =[1,2] + [3,4]=   | =[4,6]=                                    | —                | —                  |
+
+* The discriminating row
+:PROPERTIES:
+:ID: probe-tower-comparison-discriminator
+:END:
+
+= [3,0] == [0,3] = is the only row where the accepted ruling and the provisional
+refinement disagree, and it is also the row where "equal length, different arrow" is
+the whole question. The stronger reading is one row up: *no* vector comparison
+answers at all. The current runtime refuses the accepted ordering rule (=<==, =>==
+compare =norm=) exactly as it refuses the provisional `==` refinement. The finding is
+*accepted-ordering-absent-from-current-runtime*; D018's header names the tension it
+resolves, and [[id:tower-rungs]] still calls the same capability open. No claim here
+that the decision text is false, only that the registration has not landed in this
+tree.
+
+* What this does not establish
+:PROPERTIES:
+:ID: probe-tower-comparison-limits
+:END:
+
+- Not a claim that refusal is wrong. Refusal is a lawful answer; the finding is an
+  accepted ordering rule with no registration in the current runtime, not a ruling
+  that was mistaken.
+- Not a survey of every value kind (points, rotors, mixed kinds are unprobed).
+- Not a numeric-policy reading: quantized vs unquantized arithmetic is a different
+  question ([[id:tower-center-approximation-ruling]]); this file says nothing about
+  tolerances, display formatting or =round=.
+- No browser or display path.
+
+* Exit
+:PROPERTIES:
+:ID: probe-tower-comparison-exit
+:END:
+
+The ruling exists (D018, accepted); the registration does not. So the exit is one of:
+
+1. implement the accepted ordering rule (orderings compare =norm=) within D018's
+   scope, and settle `==`/`!=` as the doc's provisional whole-value refinement or by
+   a superseding creator preference; or
+2. obtain a superseding creator ruling that withdraws or narrows D018's comparison
+   bullet, and re-anchor [[id:tower-rungs]] and the decision text to it.
+
+Do not amend *RULED* to *open* in [[id:tower-tension-compare]]: D018 accepted it.
+The correction belongs to the implementation fence or to a new decision. The ruling
+re-anchors to a registration plus a fence in =tower_spike_test.mjs= /
+=vector_value_test.mjs=; this probe then becomes =concluded= (or =composted= when
+nothing cites it).
+
+* Second reading — orders, products, invalid conditions (2026-11-03)
+:PROPERTIES:
+:ID: probe-tower-comparison-widened
+:TYPE: evidence
+:END:
+
+HISTORIC — recorded before orderings landed. The tables in this section are the
+refusal-era reading. Do not read them as the current runtime. The landed reading
+is [[id:probe-tower-comparison-landed]].
+
+The original seven expressions above are unchanged. This layer widens the same rig.
+Run =node probe/tower-comparison/compare.mjs= (human) or =--jsonl=; the raw records
+are =observations-2026-11-03.jsonl=. It registers nothing and changes no meaning.
+
+** Route first
+
+Every row names its ROUTE: =value=, =tower-refusal=, =domain-refusal=,
+=parse-fault=, =surface-unknown= or =arity-fault=. This is load-bearing. A spaced =.=
+answers =Unknown token: .= at the parser, not "no meaning for . over ..." at the
+center, so it must not be read as a semantic refusal. An unclassified error is not a
+route at all: it throws and fails the rig, so a bug cannot become evidence.
+
+| Surface spelling | Current route | Note |
+|------------------+---------------+------|
+| =norm([3,4])= | surface-unknown | no surface builtin today; not a tower verdict |
+
+The comparison rows do reach the center and refuse there. =norm= does not: it is a
+surface spelling, and the comparison projections use an internal magnitude algorithm,
+not a promised =norm= builtin.
+Every condition fixture also asserts =parseErrors.length === 0=, so a parser regression
+cannot masquerade as a numeric notice.
+
+** Comparisons — all four orders and the tie
+
+| Expression | Current runtime | magnitude (D018) | whole-value (provisional) |
+|------------+-----------------+------------------+---------------------------|
+| =[1,2] < [1,3]= | refusal: no meaning | 1 | 1 |
+| =[1,2] <= [1,3]= | refusal: no meaning | 1 | 1 |
+| =[1,2] > [1,3]= | refusal: no meaning | 0 | 0 |
+| =[1,2] >= [1,3]= | refusal: no meaning | 0 | 0 |
+| =[3,0] < [0,3]= | refusal: no meaning | 0 | 0 |
+| =[3,0] <= [0,3]= | refusal: no meaning | *1* | *1* |
+| =[0,3] <= [3,0]= | refusal: no meaning | *1* | *1* |
+| =[3,0] > [0,3]= | refusal: no meaning | 0 | 0 |
+| =[3,0] >= [0,3]= | refusal: no meaning | *1* | *1* |
+| =[0,3] >= [3,0]= | refusal: no meaning | *1* | *1* |
+| =[1,2] == [1,2]= | refusal: no meaning | 1 | 1 |
+| =[1,2] != [1,2]= | refusal: no meaning | 0 | 0 |
+| =[3,0] == [0,3]= | refusal: no meaning | *1* | *0* |
+| =[3,0] != [0,3]= | refusal: no meaning | *0* | *1* |
+| =[1,2,3] < [1,2]= | refusal: no meaning | 0 | 0 |
+
+The accepted ordering rule is still absent from this runtime, exactly as the first
+reading found; the widened rows add the four glyphs and the reverse tie.
+
+** Scalar controls — the corrected examples, through the same door
+
+| Expression | Current | Recorded expectation |
+|------------+---------+----------------------|
+| =(1/3)+(1/3)+(1/3) == 1= | 1 | 1 |
+| =0.1+0.2 == 0.3= | 0 | 0 |
+| =1e-15+0 == 1e-15= | 1 | 1 |
+| =sin(30) == 0.5= | 0 | 0 |
+
+These are observation rows, not acceptance of a scalar policy. =sin(30)= is the
+representable =0.49999999999999994= and =0.1+0.2= is =0.30000000000000004=; the
+recorded expectations make the numeric owner's corrected examples reproducible
+without turning the current answer into a ruling. A display may still show =0.5=
+and =0.3=; that is the display boundary, not arithmetic.
+
+** The consistency seam — a preorder is not an identity
+
+Under the magnitude projection, =[3,0] <= [0,3]= and =[0,3] <= [3,0]= are both 1,
+while the provisional whole-value =[3,0] == [0,3]= is 0. That is coherent as a total
+PREORDER whose equivalence classes are equal-length arrows; it is not a partial order
+and it is not identity. If both are shipped, the contract must say so in one voice:
+the six comparison glyphs are one semantic package, not six independent registrations.
+A child who writes =(a <= b) and (b <= a)= has not proved =a == b=.
+
+** Domain adversaries — the norm algorithm is part of the contract
+
+| Pair | safe =hypot= | naive =sqrt(dot)= |
+|------+--------------+-------------------|
+| =[1e308,1e308]= | 1.4142135623730951e308 | Infinity |
+| =[1.5e308,1.5e308]= | Infinity | Infinity |
+| =[1e-200,0]= | 1e-200 | 0 |
+| =[2e-200,0]= | 2e-200 | 0 |
+| =[0/0,0]= | NaN | NaN |
+
+The overflow row has no representable magnitude. D018 says "no errors", so making
+refusal the projection would be borrowing a ruling it did not make: the row is an
+UNRULED numerical domain. A scaled comparison can still order these finite arrows
+without materializing their norm, so the rig records
+=UNRULED numerical domain: scale or refuse=, not a verdict. The underflow row separates
+=hypot= from =sqrt(dot)=: the naive spelling loses both arrows to zero. A NaN component
+produces a finite boolean under IEEE (=false=, =!= true=) but the projection records the
+same UNRULED magnitude and =0= for whole-value; that is the withheld decision, not a
+policy. Unequal lengths are not "ragged operands" internally: the magnitude of R2 and
+R3 is defined; comparing them needs declared dimension semantics, not a zip mismatch.
+These are domain statements; a universal kernel was not attempted.
+
+** Products and mixed scalars — three different gaps
+
+| Spelling | Current runtime | Projection / note |
+|----------+-----------------+-------------------|
+| =[1,2,3] . [3,4,5]= | parse-fault: Unknown token | dot 26 (grade 0) |
+| =2 . [1,2,3]= | parse-fault: Unknown token | mixed scales (D018) |
+| =[1,2,3] . 2= | parse-fault: Unknown token | mixed scales (D018) |
+| =[1,0,0] * [0,1,0]= | tower-refusal | cross [0,0,1]; 3D Euclidean only |
+| =[1,0] * [0,1]= | tower-refusal | refuse: cross is not defined outside 3D |
+| =2 * [1,2,3]= | =[2,4,6]= | mixed scales |
+| =[1,2,3] * 2= | =[2,4,6]= | mixed scales |
+| =[1,0,0] ^ [0,1,0]= | tower-refusal | grade 2; NOT an ordinary 3-vector |
+| =2 ^ [1,2,3]= | tower-refusal | mixed scales (D018); distinct from vector wedge |
+| =[1,2,3] ^ 2= | tower-refusal | mixed scales (D018) |
+| =2 + [1,2,3]= | tower-refusal | broadcast =[3,4,5]=, HELD |
+| =[1,2,3] + 2= | tower-refusal | broadcast =[3,4,5]=, HELD |
+
+Three routes, not one defect: the spaced dot is lexical, the mixed =^= is an
+unregistered tower meaning, and vector =*= / =^= are absent product meanings. Scalar
+=^= scaling has no grade problem and must not be bundled with the vector wedge. The
+vector wedge cannot be returned as a 3-vector without lying about grade: its Hodge
+dual is numerically cross-like but transforms as a pseudovector. Cross is restricted
+to the explicit 3D Euclidean, proper-rotation domain; a 2D request refuses by name.
+The =+= mixed rows are HELD per [[id:tower-tension-additive]], not an unqualified
+accepted rule; D018's older broadcast row is a coherence seam to annotate, not a
+silent supersession.
+
+** Invalid conditions — four laundering routes, not one
+
+Real multiline programs through =parseProgram= and =drainEvents=; no hand-built AST.
+
+| Program (after =when 0 ... end=) | Last head | Notices | Label |
+|----------------------------------+-----------+---------+-------|
+| =when 1= then =when missing=, =fw 3= | [4,0,0] | 0 | — |
+| =when (0/0)=, =fw 3= | [3,0,0] | 1 | — |
+| =when (0/0 != 0/0)=, =fw 3= | [5,0,0] | 0 | — |
+| =when (0/0 < 1)=, =fw 3= | [3,0,0] | 0 | — |
+| =when (0/0 >= 1)=, =fw 3= | [3,0,0] | 0 | — |
+| =when !(0/0 < 1)=, =fw 3= | [3,0,0] | 1 | — |
+| =when !0= (boolean control), =fw 3= | [3,0,0] | 1 | — |
+| =when (1/0 == 1/0)=, =fw 3= | [5,0,0] | 0 | — |
+| =when (1/0 - 1/0)=, =fw 3= | [3,0,0] | 1 | — |
+| =label 0/0= | — | 1 | "not a number" |
+| =label [0/0]= | — | 0 | "[not a number,]" |
+| =label 'x[0/0]'= | — | 0 | "xNaN" |
+| =label (0/0 != 0/0)= | — | 0 | 1 |
+| =label (0/0 == 0/0)= | — | 0 | 0 |
+| =label !(0/0 < 1)= | — | 0 | "true" |
+| =label (1/0)= | — | 1 | "infinity" |
+| =label (1/0 == 1/0)= | — | 0 | 1 |
+| =label (1/0 > 1)= | — | 0 | 1 |
+
+A direct non-finite condition notices and takes no branch. A comparison launders the
+same operand into a finite boolean before the condition consumer sees it: =!= returns
+1 and the branch draws, =<= and =>= return 0 and say nothing. Display has a second
+and third route: the bare scalar notices, a vector element and an interpolated slot
+do not. This is not a command finite-gate failure; it is the comparison registration
+returning a finite answer. Logical =!= is no rescue: =!(0/0 < 1)= evaluates to
+boolean =true=, and the condition door then notices "is true, and the branch needs a
+number" — a separate boolean-admission seam, not a recovery. The same notice appears
+for the =!0= control, so it is not evidence about NaN. Infinity is a second
+non-finite species: =label (1/0)= notices "left the number line", but
+=label (1/0 == 1/0)= and =label (1/0 > 1)= answer 1 silently, and the equality
+branch draws. A "finite equality" rule must therefore name non-finite values
+generally; NaN is only one species. D020's recovery ruling is scoped to parse error
+nodes and
+cannot authorize this. The disposition of compared NaN is WITHHELD: IEEE inheritance,
+tower refusal, and a tagged result are different decisions with different costs. No
+tagged invalid species is proposed here; a refusal may also change whether a frame
+survives or skips depending on the expression door, so recovery is not promised.
+
+** What this does not establish
+
+- No claim that any refusal is the desired policy: refusal is an observed answer.
+- No browser, display-rendering, or scheduler route for the comparison rows.
+- No universal numeric kernel, no exact arithmetic, no tolerance or =round= change.
+- The four scalar controls are observations, not acceptance of an unquantized/equality
+  policy; the display boundary is separate.
+- The UNRULED numerical-domain label is not a refusal policy. Scaled comparison of
+  finite arrows remains an open domain choice, not a D018 consequence.
+- No survey of points, rotors, mixed kinds, or point-vs-vector comparison.
+- No host preference and no new decision. The =+= rows are held, not ruled here.
+- No claim that the provisional whole-value === is accepted; D018 calls it one
+  registration to change.
+
+** Exit
+
+Feed the delivery checkpoint in D018 (accepted meanings preserved; the missing spaced
+dot and surface =norm= marked) and the numeric owner [[id:tower-center-approximation-ruling]]
+for the compared-NaN disposition. The carry question is a separate probe
+([[file:../coincident-carry/RESULTS.org][coincident-carry]]). This instrument stays
+=active= until the comparison/products registration is fenced or a superseding
+ruling narrows it.
+
+* Landed — exact magnitude order (2026-11-03)
+:PROPERTIES:
+:ID: probe-tower-comparison-landed
+:TYPE: evidence
+:END:
+
+Orderings now answer. The contract is the sign of the difference of exact squared
+lengths of represented finite components, not a comparison of rounded norms.
+=magnitude= is the naive hypot contrast; =wholeValue= projects equality only, because
+ordering does not depend on the provisional identity choice. Raw:
+=observations-2026-11-03-landed.jsonl=. The earlier jsonl is the refusal-era record.
+
+| Expression | Current | naive hypot |
+|------------+---------+-------------|
+| =[1,2] < [1,3]= | 1 | 1 |
+| =[3,0] <= [0,3]= | 1 | 1 |
+| =[0,3] <= [3,0]= | 1 | 1 |
+| =[3,0] < [0,3]= | 0 | 0 |
+| =[3,0] == [0,3]= | tower-refusal | 1 |
+| =[1e16,1] > [1e16,0]= | *1* | *0* |
+| =[1e308,1e308] < [1.5e308,1.5e308]= | *1* | hypot cannot decide |
+| =[1e-200,0] < [2e-200,0]= | 1 | 1 |
+| =[1,2,3] < [1,2]= | domain-refusal: unequal lengths | 0 |
+| =[0/0,0] < [1,0]= | domain-refusal: non-finite | hypot cannot decide |
+| =[0/0,0] == [0/0,0]= | tower-refusal | hypot cannot decide |
+
+The `[3,0] == [0,3]` refusal in this table predates whole-value equality; the
+equality paragraph below records the landed coordinate identity.
+
+The collision row is the fence: hypot says the arrows are the same length; exact
+squares say the first is longer. The overflow row orders without producing Infinity. "hypot cannot decide" is that projection failing, not an open domain.
+A zero sign is a length tie (=[3,0] <= [0,3]= and the reverse are both 1) and is not
+identity — =[3,0] == [0,3]= still refuses. Unequal lengths and non-finite components
+are domain refusals, validated before any absolute value. Points, mixed kinds, and
+==, !=, === and !== are unchanged. No norm builtin, no epsilon, no equality change.
+
+Witness: =test/js/notation/vector_magnitude_test.mjs=, through the sealed default
+tower. Its oracle is binary-text fractions, not the production bit formula.
+
+A NaN operand of a scalar comparison is now NaN, not a finite 1/0, so =demand=
+notices and the branch is not taken. Infinity comparisons are unchanged and
+unruled: =1/0 == 1/0= still draws. Witness: =test/js/notation/numeric_fault_test.mjs=.
+
+Vector equality is coordinate identity, not a provisional refinement and not a
+length tie. =[3,0] == [0,3]= is 0 while both <= directions stay 1. A boolean
+condition takes the branch with no notice. =!(0/0)= keeps the non-finite number,
+so the branch notices and does not draw. Bitwise, power and tested-left selection
+now preserve NaN; interpolated display and infinity comparisons remain open.
+Witness: =test/js/notation/condition_equality_test.mjs=. Raw:
+=observations-2026-11-03-equality.jsonl= (64 records at that reading; the later
+NaN-completion raw is =observations-2026-11-03-nan-completion.jsonl=).
+
+* Recovery frontier — comparison is not the whole expression
+:PROPERTIES:
+:ID: probe-tower-comparison-recovery-frontier
+:TYPE: evidence
+:END:
+
+=observations-2026-11-03-recovery-frontier.jsonl= is the reading before boolean
+admission, before =!= kept a non-finite number, and before NaN consumption was
+closed. It is historical, not the current contract. The completion reading is
+=observations-2026-11-03-nan-completion.jsonl=.
+
+| Condition | Head after following =fw 3= | Notices |
+|-----------+----------------------------+---------|
+| =((0/0)&1)==0= | [5,0,0] | 0 |
+| =(0/0)^0= | [5,0,0] | 0 |
+| =(!(0/0))==(!0)= | [5,0,0] | 0 |
+| NaN OR 1 | [5,0,0] | 0 |
+| 1 OR NaN | [5,0,0] | 0 |
+| =0 && (0/0)= | [3,0,0] | 0 |
+
+In the first four rows an operation consumed the non-answer and returned a finite
+or Boolean value before the consumer could see its condition. The last two instead
+selected an already-finite left operand. Both children are evaluated today; do not
+confuse operand selection with an evaluation short-circuit guarantee. The historical
+=!0= refusal is closed in the equality file: =!0= takes the branch, and =!(0/0)= notices.
+
+* NaN consumption closed — bitwise, power, tested selection, vector display
+:PROPERTIES:
+:ID: probe-tower-comparison-nan-completion
+:TYPE: evidence
+:END:
+
+The remaining NaN laundering routes now preserve the non-answer. A NaN operand is
+returned as NaN; a tested NaN is not read as false; a vector label notices its first
+non-finite component. Finite selection controls are unchanged.
+
+| Program | Before | Now |
+|---------+--------+-----|
+| =((0/0)&1)==0= | [5,0,0], 0 notices | [3,0,0], 1 notice |
+| =(0/0)^0= | [5,0,0], 0 notices | [3,0,0], 1 notice |
+| =label [0/0]= | silent "[not a number,]" | 1 notice, same text |
+| =label [1/0]= | silent "[infinity,]" | 1 notice, same text |
+
+The tested-left selection rows (=0/0 || 1= and =1 || 0/0=) separate the same way:
+the first now notices and skips; the second selects the finite left operand and draws.
+=0 && (0/0)= continues to select the finite left operand. Both children still evaluate.
+
+Witness: =test/js/notation/numeric_fault_test.mjs=. Raw:
+=observations-2026-11-03-nan-completion.jsonl= (46 tower rows + 27 condition rows).
+
+Still open: infinity comparisons/bitwise/power, interpolated display (the value is
+already text when the display door sees it), and the deferred vector products.
+
+* Infinity — a species still unruled
+:PROPERTIES:
+:ID: probe-tower-comparison-infinity
+:TYPE: question
+:END:
+
+The current runtime inherits IEEE: a comparison with +/-Infinity answers a finite
+1/0. The rig records four candidate dispositions; it chooses none.
+
+| Expression | Current (IEEE) | preserve operand | NaN | refuse |
+|------------+----------------+------------------+-----+--------|
+| =1/0 == 1/0= | 1 | Infinity | NaN | domain-refusal |
+| =1/0 == -1/0= | 0 | Infinity (left) | NaN | domain-refusal |
+| =1/0 > 1= | 1 | Infinity | NaN | domain-refusal |
+| =-1/0 < 1= | 1 | -Infinity | NaN | domain-refusal |
+| =(1/0)&1= | 0 | Infinity | NaN | domain-refusal |
+| =(1/0)^0= | 1 | Infinity | NaN | domain-refusal |
+
+Details a ruling must name:
+- Vector ordering and equality already refuse non-finite components while scalar
+  comparisons still answer; a uniform species rule must choose between those.
+- Preserving the offending operand is order-sensitive: =1/0 == -1/0= reports
+  +Infinity and =-1/0 == 1/0= reports -Infinity. Both refuse a condition, but the
+  label names different operands.
+- Mapping both non-finite species to NaN loses the "left the number line" notice
+  that =conditionOf= already distinguishes.
+- Refusing at the tower changes statement/frame recovery and needs its own witness.
+- Overflow (=(1e308*10)=) is the same species as =1/0=; the rule must name both.
+
+Not decided here. The instrument stays =active= for this layer and the deferred
+product rows; the comparison/equality slice is fenced by its tests.

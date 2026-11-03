@@ -127,15 +127,11 @@ describe("the display gate — what the eye gets, at every magnitude", () => {
     })
 })
 
-describe("the one door still silent — CHARACTERIZED, not endorsed", () => {
-    // A comparison erases a non-answer before any consumer can see it: IEEE says every
-    // comparison with a NaN is false, and the center answers 0 without a word. The
-    // condition consumer (below) is told only when the value arrives BARE.
-    // Fixing this door changes the lines here — deliberately, with its own witnesses.
-    test("a NaN compared is 0, silently", () => {
-        assert.equal(ev("0/0 > 0"), 0)
-        assert.equal(ev("0/0 < 0"), 0)
-        assert.equal(ev("0/0 == 0/0"), 0, "a NaN is not equal to itself, and nothing says so")
+describe("a compared NaN reaches the consumer — infinity still does not", () => {
+    test("a NaN compared is NaN, so the consumer can still refuse it", () => {
+        assert.ok(Number.isNaN(ev("0/0 > 0")))
+        assert.ok(Number.isNaN(ev("0/0 < 0")))
+        assert.ok(Number.isNaN(ev("0/0 == 0/0")))
     })
 
     test("infinity orders as a number, which is at least true", () => {

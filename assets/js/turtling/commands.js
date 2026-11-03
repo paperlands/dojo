@@ -126,6 +126,19 @@ function faceto(ctx, target) {
 
 // --- Event-producing commands ---
 
+// A vector or text has no condition of its own; the display gate still owes the
+// author a notice when a component is non-finite. The first such component speaks.
+const nonFiniteIn = (value) => {
+    if (Array.isArray(value)) {
+        for (const component of value) {
+            const found = nonFiniteIn(component)
+            if (found !== null) return found
+        }
+        return null
+    }
+    return typeof value === "number" && !Number.isFinite(value) ? value : null
+}
+
 function label(ctx, text = ".", size = 1) {
     const pos = ctx.transform.position
     // One home for how big a name prints: the style. (id:notation-coordinate-vector)
@@ -133,7 +146,8 @@ function label(ctx, text = ".", size = 1) {
     // A value lowered into text is DISPLAY: it rounds for the eye, and a non-number is
     // NAMED rather than printed as a numeral — with the author told, since a label is
     // how a figure speaks. (ruling 5)
-    const shown = demand(text, { as: "display", expr: "label" })
+    const stray = nonFiniteIn(text)
+    const shown = demand(stray ?? text, { as: "display", expr: "label" })
     const printing = {
         type: "label",
         position: [pos[0], pos[1], pos[2]],

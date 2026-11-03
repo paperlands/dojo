@@ -315,6 +315,12 @@ gone before any consumer sees it). Readings, before and after:
 `probe/tower-rounding/composition.mjs`. Surface: `assets/js/turtling/numerics.js`
 ([[id:nav-numerics]]).
 
+**Later landing (2026-11-03).** The comparison door no longer erases a NaN: all
+eight scalar comparison glyphs preserve it, and bitwise, power, tested-left
+selection and vector labels do too. The historical reading above is kept as the
+baseline it recorded. Infinity comparisons and interpolated display remain open:
+`probe/tower-comparison/RESULTS.org` and `specs/weave/tower-center.org`.
+
 ### Boundary follow-up — admission, rigidity, and fill
 
 See `specs/weave/numeric-boundaries-review.org` for causes, repairs, costs and limits.

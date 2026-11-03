@@ -92,6 +92,9 @@ const say = (condition, { what, expr, value }) => {
 // is owed one. Never a throw from here: what a refusal DOES is the caller's, and the
 // caller knows whether its pass can carry on.
 export function demand(value, { as = "walk", span = null, expr = null } = {}) {
+    // A condition projects a boolean to 1/0. The classifier stays conditionOf.
+    // Other consumers still see a non-number. (id:tower-center-approximation)
+    if (as === "condition" && typeof value === "boolean") value = value ? 1 : 0
     const policy = POLICY[as] ?? POLICY.walk
     const condition = conditionOf(value)
     const answer = policy[condition] ?? TAKE

@@ -251,27 +251,37 @@ export function installScalarFloor(tower) {
     across(tower, '-', SCALAR_KINDS, (a, b) => minus(asNum(a), asNum(b)))
     across(tower, '*', SCALAR_KINDS, (a, b) => asNum(a) * asNum(b))
     across(tower, '/', SCALAR_KINDS, (a, b) => asNum(a) / asNum(b))
-    across(tower, '^', SCALAR_KINDS, (a, b) => Math.pow(asNum(a), asNum(b)))
+    across(tower, '^', SCALAR_KINDS, (a, b) =>
+        Number.isNaN(a) || Number.isNaN(b) ? NaN : Math.pow(asNum(a), asNum(b)))
     across(tower, '//', SCALAR_KINDS, (a, b) => integerDiv(asNum(a), asNum(b)))
 
     // Logical selection ranges over every value kind; bitwise stays numeric.
-    across(tower, '&&', VALUE_KINDS, (a, b) => a && b)
-    across(tower, '||', VALUE_KINDS, (a, b) => a || b)
-    across(tower, '&', SCALAR_KINDS, (a, b) => a & b)
-    across(tower, '|', SCALAR_KINDS, (a, b) => a | b)
+    // A tested NaN is preserved; an already-finite selection still stands. Bitwise
+    // and power preserve a NaN operand instead of coercing it. Infinity is a
+    // separate, unruled species. (id:tower-center-approximation)
+    across(tower, '&&', VALUE_KINDS, (a, b) => Number.isNaN(a) ? a : a && b)
+    across(tower, '||', VALUE_KINDS, (a, b) => Number.isNaN(a) ? a : a || b)
+    across(tower, '&', SCALAR_KINDS, (a, b) =>
+        Number.isNaN(a) || Number.isNaN(b) ? NaN : a & b)
+    across(tower, '|', SCALAR_KINDS, (a, b) =>
+        Number.isNaN(a) || Number.isNaN(b) ? NaN : a | b)
 
-    // Identity compares the values as they are; loose equality does its own
-    // coercion. Neither borrows `asNum`, or `true === 1` would become 1.
-    across(tower, '===', VALUE_KINDS, (a, b) => a === b ? 1 : 0)
-    across(tower, '!==', VALUE_KINDS, (a, b) => a !== b ? 1 : 0)
-    across(tower, '==', VALUE_KINDS, (a, b) => a == b ? 1 : 0)
-    across(tower, '!=', VALUE_KINDS, (a, b) => a != b ? 1 : 0)
-
-    // Order is arithmetic's cousin: a boolean is its value 0/1.
-    across(tower, '>=', SCALAR_KINDS, (a, b) => asNum(a) >= asNum(b) ? 1 : 0)
-    across(tower, '>', SCALAR_KINDS, (a, b) => asNum(a) > asNum(b) ? 1 : 0)
-    across(tower, '<=', SCALAR_KINDS, (a, b) => asNum(a) <= asNum(b) ? 1 : 0)
-    across(tower, '<', SCALAR_KINDS, (a, b) => asNum(a) < asNum(b) ? 1 : 0)
+    // A NaN operand is not a finite 1/0. The consumer still admits the result.
+    // Infinity is not this question. (id:tower-center-approximation)
+    const nanEither = (a, b) => Number.isNaN(a) || Number.isNaN(b)
+    const nanOrder = (a, b, holds) => {
+        const x = asNum(a), y = asNum(b)
+        if (Number.isNaN(x) || Number.isNaN(y)) return NaN
+        return holds(x, y) ? 1 : 0
+    }
+    across(tower, '===', VALUE_KINDS, (a, b) => nanEither(a, b) ? NaN : a === b ? 1 : 0)
+    across(tower, '!==', VALUE_KINDS, (a, b) => nanEither(a, b) ? NaN : a !== b ? 1 : 0)
+    across(tower, '==', VALUE_KINDS, (a, b) => nanEither(a, b) ? NaN : a == b ? 1 : 0)
+    across(tower, '!=', VALUE_KINDS, (a, b) => nanEither(a, b) ? NaN : a != b ? 1 : 0)
+    across(tower, '>=', SCALAR_KINDS, (a, b) => nanOrder(a, b, (x, y) => x >= y))
+    across(tower, '>', SCALAR_KINDS, (a, b) => nanOrder(a, b, (x, y) => x > y))
+    across(tower, '<=', SCALAR_KINDS, (a, b) => nanOrder(a, b, (x, y) => x <= y))
+    across(tower, '<', SCALAR_KINDS, (a, b) => nanOrder(a, b, (x, y) => x < y))
     // Text orders lexicographically (alphanumeric); mixed text/number has no honest
     // common order and refuses. (id:tower-center-scalars)
     across(tower, '>=', TEXT_KINDS, (a, b) => a >= b ? 1 : 0)
@@ -283,7 +293,9 @@ export function installScalarFloor(tower) {
     acrossUnary(tower, '-', SCALAR_KINDS, (x) => -asNum(x))
     // `!` keeps its boolean result; it is the one prefix whose answer feeds back
     // as a truth, so it ranges over every value kind.
-    acrossUnary(tower, '!', VALUE_KINDS, (x) => !x)
+    // A non-finite number is not a boolean. Finite ! still is. (id:tower-center-approximation)
+    acrossUnary(tower, '!', VALUE_KINDS, (x) =>
+        typeof x === 'number' && !Number.isFinite(x) ? x : !x)
 
     // Numerical builtins participate in the same widening: a boolean argument is
     // its value 0/1, so `sqrt(!0)` is 1. (id:tower-center-scalars)
@@ -296,6 +308,19 @@ export function installScalarFloor(tower) {
     }
 
     return tower
+}
+
+// Exact squared length in one dyadic unit: a tie is a real tie, and a materialized
+// norm is not asked — hypot(1e16,1) === hypot(1e16,0). Scratch only, not a cache. (D018)
+const SQUARE_VIEW = new DataView(new ArrayBuffer(8))
+const SQUARE_FRACTION = (1n << 52n) - 1n
+const SQUARE_HIDDEN = 1n << 52n
+const squareUnits = (x) => {
+    SQUARE_VIEW.setFloat64(0, x)
+    const bits = SQUARE_VIEW.getBigUint64(0)
+    const exponent = Number((bits >> 52n) & 0x7ffn)
+    const magnitude = (bits & SQUARE_FRACTION) | (exponent ? SQUARE_HIDDEN : 0n)
+    return (magnitude * magnitude) << BigInt(2 * Math.max(0, exponent - 1))
 }
 
 // ── The vector floor: the first values the scalar center cannot see ──────────
@@ -357,6 +382,60 @@ export function installVectorFloor(tower) {
             }
         }
     }
+    // Longer arrow wins. Componentwise dominance, else exact squares — never a norm,
+    // never an epsilon. A zero sign is a length tie, not identity. (D018)
+    const captureFiniteVector = (op, v) => {
+        const stable = new Array(v.length)
+        for (let i = 0; i < v.length; i++) {
+            const component = v[i]
+            if (Array.isArray(component)) throw new DomainRefusal(op, 'rank-one vectors', 'a vector element')
+            if (typeof component !== 'number' || !Number.isFinite(component)) {
+                const got = component === null ? 'null'
+                    : typeof component !== 'number' ? typeof component : 'a non-finite number'
+                throw new DomainRefusal(op, 'primitive finite numbers', got)
+            }
+            stable[i] = component
+        }
+        return stable
+    }
+    const compareMagnitude = (a, b) => {
+        let greater = false, less = false
+        for (let i = 0; i < a.length; i++) {
+            const left = Math.abs(a[i]), right = Math.abs(b[i])
+            if (left > right) greater = true
+            else if (left < right) less = true
+            if (greater && less) break
+        }
+        if (!greater || !less) return Number(greater) - Number(less)
+        let difference = 0n
+        for (let i = 0; i < a.length; i++) difference += squareUnits(a[i]) - squareUnits(b[i])
+        return difference > 0n ? 1 : difference < 0n ? -1 : 0
+    }
+    const vectorShape = (op, v) => {
+        if (!Array.isArray(v)) throw new DomainRefusal(op, 'a vector', tower.typeOf(v))
+        if (v.length === 0) throw new DomainRefusal(op, 'a nonempty vector', 'an empty vector')
+    }
+    for (const [op, holds] of [['<', (s) => s < 0], ['<=', (s) => s <= 0],
+        ['>', (s) => s > 0], ['>=', (s) => s >= 0]]) {
+        tower.define(op, ['vector', 'vector'], (a, b) => {
+            vectorShape(op, a)
+            vectorShape(op, b)
+            if (a.length !== b.length) throw new DomainRefusal(op, 'equal lengths', `${a.length} and ${b.length}`)
+            const left = captureFiniteVector(op, a), right = captureFiniteVector(op, b)
+            return holds(compareMagnitude(left, right)) ? 1 : 0
+        })
+    }
+    // Whole value, not length. A tie of magnitudes is not this answer. (D018)
+    const sameCoordinates = (a, b) => a.length === b.length && a.every((x, i) => x === b[i])
+    for (const [op, want] of [['==', true], ['===', true], ['!=', false], ['!==', false]]) {
+        tower.define(op, ['vector', 'vector'], (a, b) => {
+            vectorShape(op, a)
+            vectorShape(op, b)
+            const left = captureFiniteVector(op, a), right = captureFiniteVector(op, b)
+            return sameCoordinates(left, right) === want ? 1 : 0
+        })
+    }
+
 
     return tower
 }

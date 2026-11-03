@@ -1916,16 +1916,20 @@ A NON-FINITE number is a step NOT TAKEN, and the author is TOLD (a =notice= with
 severity =notice=). A value of the WRONG KIND is the author's, so it is reported where
 it is located while the siblings still run; the headless vocabulary pass (and a closed
 construction) refuses instead — that pass is where a seat's diagnostics come from, so
-the author is told while the seats still draw. A refusal drops the ONE statement,
-never the figure (D020). A =when= and a =loop= count are consumers too. This REVERSES
-the Phase 1 =finite-or-refuse= rule recorded in =test/js/notation/BASELINE.md=, and
-[[id:tower-center-approximation-ruling]] is now landed: arithmetic is the substrate's,
-the tower holds no epsilon, and the display (=numerics:format=) is where the eye gets
-a clean answer. =sqrt(-1)= / =1/0= still stay numbers at the tower
-([[id:tower-center-contract]]).
+the author is told while the seats still draw. Live numeric admission can skip one
+statement; D020 governs parse errors, not this numeric fault disposition. A =when=
+and a =loop= count are consumers too. This differs from the Phase 1 =finite-or-refuse=
+implementation recorded in =test/js/notation/BASELINE.md=. Worktree arithmetic no
+longer quantizes, but [[id:tower-center-approximation-ruling]] remains unaccepted.
+Display formatting is separate; =sqrt(-1)= / =1/0= still stay numeric values at the
+tower ([[id:tower-center-contract]]).
+A compared NaN is now a non-answer, so the condition consumer notices; bitwise,
+power and tested-left selection preserve it too. Infinity comparisons/bitwise/power
+remain finite and unruled. [[id:probe-tower-comparison-nan-completion]] ·
+[[id:probe-tower-comparison-infinity]].
 Fences: =test/js/notation/three_doors_test.mjs=, =finite_measure_test.mjs=,
 =primitives_test.mjs=, =contracts_test.mjs=, =word_measure_domain_test.mjs=,
-=laws/relations_test.mjs=, =execute/round_test.mjs=, =laws/free_point_test.mjs=;
+=laws/relations_test.mjs=, =execute/round_test.mjs=, =laws/free_point_test.mjs=, =numeric_fault_test.mjs=, =condition_equality_test.mjs=;
 readings: =probe/tower-rounding/probe.mjs= (before/after) and =composition.mjs=.
 
 ** numeric rotation precision — composition and shared action
@@ -2702,7 +2706,7 @@ relation loop, and D011's wait-for snapshot. D054 is not a fixed-point theorem;
 :PROPERTIES:
 :ID: nav-tower-center
 :MODULE: mafs/tower.js
-:KEYWORDS: tower center dispatch register kind typeOf seal operation generic coefficient shadow shadowable override reserved builtin round mod vector literal bracket rank-one scale add installVectorFloor pervade pervasion broadcast pointwise zip
+:KEYWORDS: tower center dispatch register kind typeOf seal operation generic coefficient shadow shadowable override reserved builtin round mod vector literal bracket rank-one scale add installVectorFloor pervade pervasion broadcast pointwise zip compareMagnitude squareUnits exact ordering dyadic BigInt
 :PATH: assets/js/turtling/mafs/tower.js
 :END:
 One operation, ordered values, one value or an honest refusal. Operators and
@@ -2711,15 +2715,37 @@ vector + vector add, =/= divide, every scalar builtin — ONE shape mechanism,
 =pervade=: a scalar broadcasts and equal lengths zip) register here; the evaluator is sealed over it and never
 switches. Boundary, witness and ladder: [[id:tower-center]].
 
-** vector comparison — accepted ordering, absent registration
+** vector ordering — exact dyadic magnitude; equality landed; Infinity open
 :PROPERTIES:
 :ID: nav-tower-comparison
-:KEYWORDS: tower vector comparison equality order magnitude norm D018 refusal provisional
+:KEYWORDS: tower vector comparison equality order magnitude norm D018 refusal provisional compareMagnitude squareUnits binary64 dyadic BigInt exact snapshot finite NaN bitwise power selection display notice infinity
 :PATH: probe/tower-comparison/compare.mjs
 :END:
-=node probe/tower-comparison/compare.mjs=: four vector refusals with scalar/text/vector controls.
-D018's magnitude ordering stands; whole-value equality remains provisional.
-[[id:tower-tension-compare]] · [[id:probe-tower-comparison]].
+D018's four orders compare exact magnitudes of represented finite Number vectors:
+nonempty, rank-one, equal dimensions. Component dominance then exact dyadic squares;
+no norm, epsilon or equality regression. Whole-coordinate equality is coordinate
+identity, not magnitude: =[3,0] == [0,3]= is 0 while both =<= directions stay 1.
+Fences: =vector_magnitude_test.mjs=, =condition_equality_test.mjs=.
+=node probe/tower-comparison/compare.mjs [--jsonl]= also records products, mixed
+scaling, non-finite condition/display routes and the Infinity decision matrix.
+Cross/wedge are explicitly deferred; mixed additive broadcast is held.
+[[id:tower-tension-compare]] · [[id:probe-tower-comparison-landed]].
+A NaN is preserved by comparison, bitwise, power and tested-left selection; a vector
+label notices its first non-finite component (=numeric_fault_test.mjs=).
+Infinity comparisons/bitwise/power and interpolated display remain open:
+[[id:probe-tower-comparison-nan-completion]] · [[id:probe-tower-comparison-infinity]] ·
+[[id:tower-center-approximation-ruling]].
+
+** coincident carry — endpoint priority and rotation layers
+:PROPERTIES:
+:ID: nav-coincident-carry
+:KEYWORDS: D063 coincident pair carry hard soft wish priority clamp writer follower rotation placement live world ceiling entriesRef certification
+:PATH: probe/coincident-carry/play.mjs
+:END:
+=node probe/coincident-carry/play.mjs [--jsonl]= prints both endpoints and
+placement/live/world rotations through public hand requests and the host ceiling.
+Lawfulness is not exact wish delivery; the host preference remains withheld.
+[[id:probe-coincident-carry]] · [[file:specs/decisions/063-movement-proposes-a-private-candidate.decision.md][D063]].
 
 ** tower rounding — the tiny-signal probe
 :PROPERTIES:
