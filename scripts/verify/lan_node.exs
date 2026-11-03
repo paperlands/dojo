@@ -16,6 +16,11 @@ defmodule LanNode do
   @cmd_slice_ms 100
 
   def run([idx, out_dir]) do
+    # Diagnostic: name the process that tears the node down. A bare `mix run'
+    # script dies on the first linked `:shutdown`, which hides the culprit; with
+    # exits trapped the node survives and the log names who left.
+    Process.flag(:trap_exit, true)
+
     path = Path.join(out_dir, "node#{idx}.term")
     File.mkdir_p!(out_dir)
     Phoenix.PubSub.subscribe(Dojo.PubSub, @topic)
@@ -58,6 +63,13 @@ defmodule LanNode do
 
       seen =
         receive do
+          {:EXIT, pid, reason} ->
+            Logger.error(
+              "[LanNode] linked process exited: from=#{inspect(pid)} " <>
+                "reason=#{inspect(reason)} info=#{inspect(Process.info(pid))}"
+            )
+
+            seen
           {:beat, name} -> Map.put(seen, name, now)
         after
           min(remaining, @cmd_slice_ms) -> seen
