@@ -143,6 +143,22 @@ const infinityCases = [
     ["infinity power", '(1/0) ^ 0', 1 / 0, 0, '^'],
 ]
 
+// The arithmetic surface splits: some routes propagate the non-finite, some
+// produce NaN, and some produce a finite limit. Any Infinity ruling must name
+// all three; this rig only records them.
+const infinityArithmeticCases = [
+    ["propagates: abs(infinity)", 'abs(1/0)'],
+    ["propagates: sqrt(infinity)", 'sqrt(1/0)'],
+    ["propagates: integer division", '(1/0) // 4'],
+    ["finite limit: reciprocal", '1/(1/0)'],
+    ["finite limit: exp(-infinity)", 'exp(-(1/0))'],
+    ["finite limit: atan2(infinity, 1)", 'atan2(1/0, 1)'],
+    ["NaN: infinity - infinity", '(1/0) - (1/0)'],
+    ["NaN: zero times infinity", '0 * (1/0)'],
+    ["NaN: infinity / infinity", '(1/0) / (1/0)'],
+    ["NaN: mod(infinity, 4)", 'mod(1/0, 4)'],
+]
+
 const productCases = [
     ["dot, vector:vector", '[1,2,3] . [3,4,5]', [1, 2, 3], [3, 4, 5], '.'],
     ["dot, mixed scalar:vector", '2 . [1,2,3]', 2, [1, 2, 3], '.'],
@@ -201,6 +217,16 @@ for (const [label, source, a, b, op] of infinityCases) {
         preserve: firstNonFinite(a, b),
         nan: NaN,
         note: 'Infinity is unruled; preserve returns the offending operand so the consumer notices',
+    })
+}
+
+for (const [label, source] of infinityArithmeticCases) {
+    const { current, answer, refusal } = attempt(source)
+    rows.push({
+        route: 'tower', kind: 'infinity-arithmetic', case: label, source, op: null,
+        current: answer === 'value' ? current : `${answer}: ${refusal}`,
+        answer, refusal,
+        note: 'current route only; the policy is open',
     })
 }
 
@@ -320,6 +346,7 @@ if (process.argv.includes('--jsonl')) {
             + `${row.kind === 'comparison'
                 ? `hypot=${row.magnitude} whole=${row.wholeValue}`
                 : row.kind === 'scalar' ? `expected=${row.expected} matches=${row.matchesExpected}`
+                : row.kind === 'infinity-arithmetic' ? `route=${row.answer}`
                 : row.kind === 'infinity' ? `ieee=${row.ieee} preserve=${row.preserve} nan=${row.nan}`
                 : row.kind === 'surface' ? row.note : JSON.stringify(row.projection)}`)
     }
@@ -358,6 +385,9 @@ assert.equal(overflow.magnitude, 'hypot cannot decide')
 // route is evidence; an unexpected error already threw and failed the rig.
 const NAMED_ROUTES = ['value', 'tower-refusal', 'domain-refusal', 'parse-fault', 'surface-unknown', 'arity-fault']
 for (const r of rows.filter((row) => row.kind === 'product' || row.kind === 'surface')) {
+    assert.ok(NAMED_ROUTES.includes(r.answer), `${r.source}: unclassified route ${r.answer}`)
+}
+for (const r of rows.filter((row) => row.kind === 'infinity-arithmetic')) {
     assert.ok(NAMED_ROUTES.includes(r.answer), `${r.source}: unclassified route ${r.answer}`)
 }
 // A spaced dot is a named route TODAY (parse fault), but implementing the token must

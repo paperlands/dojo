@@ -403,7 +403,7 @@ the first now notices and skips; the second selects the finite left operand and 
 =0 && (0/0)= continues to select the finite left operand. Both children still evaluate.
 
 Witness: =test/js/notation/numeric_fault_test.mjs=. Raw:
-=observations-2026-11-03-nan-completion.jsonl= (46 tower rows + 27 condition rows).
+=observations-2026-11-03-nan-completion.jsonl= (56 tower rows + 27 condition rows).
 
 Still open: infinity comparisons/bitwise/power, interpolated display (the value is
 already text when the display door sees it), and the deferred vector products.
@@ -436,6 +436,12 @@ Details a ruling must name:
   that =conditionOf= already distinguishes.
 - Refusing at the tower changes statement/frame recovery and needs its own witness.
 - Overflow (=(1e308*10)=) is the same species as =1/0=; the rule must name both.
+
+The arithmetic surface splits three ways, and the rule must name all three:
+propagates (=abs(1/0)=, =sqrt(1/0)=, =(1/0)//4=), NaN (=(1/0)-(1/0)=,
+=0*(1/0)=, =(1/0)/(1/0)=, =mod(1/0,4)=), or a finite limit (=1/(1/0)= is 0,
+=exp(-(1/0))= is 0, =atan2(1/0,1)= is 90). The rig records the routes; it
+does not choose which finite limits are allowed.
 
 Not decided here. The instrument stays =active= for this layer and the deferred
 product rows; the comparison/equality slice is fenced by its tests.
