@@ -61,7 +61,9 @@ defmodule Dojo.Cluster.LanTest do
   describe "application traffic" do
     test "PubSub carries a message between two live nodes" do
       topic = "lan:probe:#{System.unique_integer([:positive])}"
-      token = make_ref()
+      # Not a ref: `ref_encoding' replaces references with routable aliases on
+      # the wire, so a `make_ref()' token cannot match on the far side.
+      token = "tok-#{System.unique_integer([:positive])}"
 
       assert {:ok, :ok} = Lan.call(2, LanNode, :subscribe, [topic])
       assert {:ok, :ok} = Lan.call(1, LanNode, :broadcast, [topic, token])

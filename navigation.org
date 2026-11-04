@@ -745,7 +745,7 @@ its own node under [[id:nav-outershell]].
 ** disciple strip — the seat is a door, the lamp names its keep
 :PROPERTIES:
 :ID: nav-disciple-strip
-:KEYWORDS: disciple strip seat window lamp lantern door button type tabindex aria-label aria-disabled focus-visible ring press is-pressed rim keep_addr focus depth name mask padding empty silence keyed wrapper phx-value-addr
+:KEYWORDS: disciple strip seat window lamp lantern door button type tabindex aria-label aria-disabled focus-visible ring press is-pressed rim keep_addr focus depth name mask padding empty silence keyed wrapper phx-value-addr minmax grid-template-rows object-fit work picture frame
 :PATH: lib/dojo_web/components/disciple_strip.ex
 :END:
 A seat is a native =<button type="button">=, not a div with a handler: Enter and
@@ -765,6 +765,11 @@ edge dissolves over its own padding (16px), never over a seat. An empty bar says
 nothing — silence is the deliberate state. Fences:
 =test/dojo_web/live/layout/disciple_strip_command_test.exs=,
 =disciple_window_test.exs=.
+
+The picture is a definite box: =assets/css/disciple.css= pins =.face= to
+=grid-template-rows: minmax(0, 1fr)=, because a percentage height on a grid item
+reads off the ROW, whose automatic minimum is the image's own transferred size —
+91px in a 108px face, so the face's overflow cut the bottom of every square keep.
 
 ** strip hand — one drag, one press, one threshold
 :PROPERTIES:

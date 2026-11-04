@@ -64,17 +64,74 @@ defmodule Phoenix.PubSub.Partisan do
     :ok
   end
 
+  # Health is read from *this handler's* group, not the legacy broadcast server
+  # (D070.3). In v6 each handler owns its own group process; the old global name
+  # can be healthy while our group is absent, and then the cast lands nowhere and
+  # still returns `ok`.
   defp plumtree_overloaded? do
-    case Process.whereis(:partisan_plumtree_broadcast) do
-      nil ->
-        false
-
-      pid ->
-        case Process.info(pid, :message_queue_len) do
-          {:message_queue_len, len} -> len > @plumtree_overload_threshold
-          _ -> false
-        end
+    case group_queue_len() do
+      :unknown -> false
+      :missing -> true
+      len -> len > @plumtree_overload_threshold
     end
+  end
+
+  @doc false
+  # Health is read from *this handler's* group, not the legacy broadcast server
+  # (D070.3). D070.3 sets where health comes from; this sets that reading it may
+  # never kill the caller — it runs inside Phoenix.Tracker.Shard, where one
+  # exception takes presence down on every heartbeat.
+  def group_queue_len(fetch \\ &plumtree_group_name/0) do
+    case Process.whereis(fetch.()) do
+      nil -> warn_group_missing()
+      pid -> queue_len(pid)
+    end
+  rescue
+    e in UndefinedFunctionError -> warn_probe_unavailable(e)
+  end
+
+  # Static call, on purpose: `mix compile` warns when the running dep lacks the
+  # API, which is how a stale or mismatched partisan build gets diagnosed.
+  defp plumtree_group_name do
+    :partisan_plumtree_broadcast.group_name(Phoenix.PubSub.Partisan.Handler)
+  end
+
+  defp queue_len(pid) do
+    case Process.info(pid, :message_queue_len) do
+      {:message_queue_len, len} -> len
+      _ -> 0
+    end
+  end
+
+  # Warn once per node, not once per broadcast: a missing group is a
+  # configuration fact, and a per-message warning would flood the very log that
+  # should reveal it (D070.3).
+  defp warn_group_missing do
+    unless :persistent_term.get({__MODULE__, :group_missing_warned}, false) do
+      :persistent_term.put({__MODULE__, :group_missing_warned}, true)
+
+      Logger.warning(
+        "No broadcast group for #{inspect(__MODULE__)}: remote PubSub is not " <>
+          "disseminating. Declare the handler in :partisan, :broadcast_mods (D070.3)."
+      )
+    end
+
+    :missing
+  end
+
+  # The dep is wrong, not the group: say it once, naming what actually broke.
+  defp warn_probe_unavailable(%UndefinedFunctionError{module: mod, function: fun}) do
+    unless :persistent_term.get({__MODULE__, :probe_unavailable_warned}, false) do
+      :persistent_term.put({__MODULE__, :probe_unavailable_warned}, true)
+
+      Logger.error(
+        "#{inspect(mod)}.#{fun} is missing — the loaded Partisan is not the one this " <>
+          "code was built against. Remote PubSub still sends; health is unknown until " <>
+          "the dep is rebuilt (mix deps.clean partisan --build)."
+      )
+    end
+
+    :unknown
   end
 
   @impl true

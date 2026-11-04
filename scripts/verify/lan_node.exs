@@ -12,6 +12,10 @@ defmodule LanNode do
   # A beat older than this means the path went away, not that we were unlucky.
   @stale_ms 6_000
 
+  # `Logger.error/1` is a macro: without this the diagnostic itself raises and
+  # takes the node down with it (Elixir 1.20).
+  require Logger
+
   # How often the inbox for test-issued commands is checked.
   @cmd_slice_ms 100
 
@@ -70,7 +74,9 @@ defmodule LanNode do
             )
 
             seen
-          {:beat, name} -> Map.put(seen, name, now)
+
+          {:beat, name} ->
+            Map.put(seen, name, now)
         after
           min(remaining, @cmd_slice_ms) -> seen
         end

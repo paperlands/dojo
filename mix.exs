@@ -98,7 +98,10 @@ defmodule Dojo.MixProject do
     if path = System.get_env("PARTISAN_PATH") do
       [path: path]
     else
-      [github: "paperlands/partisan", commit: "latest"]
+      # Pinned by SHA, not a branch: a branch name in mix.exs is what let the
+      # lock drift to the v5 tip while the source assumed v6 (D070). The SHA is
+      # the fork's `reorg/v6.3.2-port` tip, sliced into reviewable PRs upstream.
+      [github: "paperlands/partisan", ref: "bf16654c0c9bec4aac999e38cd43167ad2ae17d1"]
     end
   end
 

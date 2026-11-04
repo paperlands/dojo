@@ -373,71 +373,10 @@ defmodule Dojo.BroadcastStormTest do
 
   # ── Test 5: NetworkMonitor Debounce ─────────────────────────────────────
 
-  describe "NetworkMonitor IP change debounce" do
-    # These test the debounce state machine logic.
-    # We test the pure logic, not the GenServer — extract after implementing.
-
-    test "identical IPs across polls triggers no change" do
-      ips = [{192, 168, 1, 100}]
-
-      # Simulate: poll detects same IPs
-      state = %{ips: ips, port: 9090, pending_ips: nil, stable_count: 0}
-
-      # No change → state unchanged
-      new_ips = [{192, 168, 1, 100}]
-      assert MapSet.new(new_ips) == MapSet.new(state.ips)
-    end
-
-    test "single IP change should NOT trigger immediate action (after debounce fix)" do
-      old_ips = [{192, 168, 1, 100}]
-      new_ips = [{192, 168, 1, 200}]
-
-      # First detection: should start debounce, not act
-      state = %{ips: old_ips, port: 9090, pending_ips: nil, stable_count: 0}
-
-      # After debounce fix: pending_ips should be set, ips unchanged
-      # Before fix: handle_ip_change fires immediately
-      refute MapSet.new(new_ips) == MapSet.new(old_ips), "IPs differ — change detected"
-
-      # The debounce state machine:
-      # Poll 1: new IPs detected → pending_ips = new_ips, stable_count = 1
-      debounced = %{state | pending_ips: new_ips, stable_count: 1}
-      assert debounced.pending_ips == new_ips
-      assert debounced.ips == old_ips, "IPs should NOT change yet"
-    end
-
-    test "two consecutive polls with same new IPs should trigger change" do
-      old_ips = [{192, 168, 1, 100}]
-      new_ips = [{192, 168, 1, 200}]
-
-      # Poll 1: detect change, start debounce
-      state1 = %{ips: old_ips, port: 9090, pending_ips: new_ips, stable_count: 1}
-
-      # Poll 2: same new IPs → stable_count reaches threshold
-      debounce_threshold = 2
-      assert state1.stable_count + 1 >= debounce_threshold, "Should trigger after 2 polls"
-
-      # Action: update ips, clear pending
-      state2 = %{state1 | ips: new_ips, pending_ips: nil, stable_count: 0}
-      assert state2.ips == new_ips
-    end
-
-    test "transient flap (A → B → A) is absorbed by debounce" do
-      ips_a = [{192, 168, 1, 100}]
-      ips_b = [{192, 168, 1, 200}]
-
-      # Poll 1: A → B detected
-      state1 = %{ips: ips_a, port: 9090, pending_ips: ips_b, stable_count: 1}
-
-      # Poll 2: back to A — flap! pending doesn't match
-      # Should reset pending, no action taken
-      assert MapSet.new(ips_a) == MapSet.new(state1.ips), "Flap back to original"
-      state2 = %{state1 | pending_ips: nil, stable_count: 0}
-
-      assert state2.ips == ips_a, "IPs should stay at original after flap"
-      assert state2.pending_ips == nil, "Pending should be cleared on flap"
-    end
-  end
+  # The network-change policy now lives in `NetworkMonitor.transition/4` and is
+  # tested against the real function in test/dojo/cluster/monitor_test.exs.
+  # The block that stood here built state maps by hand and asserted those same
+  # maps back, so it could not fail when the monitor changed either.
 
   # ── Test 6: Adversarial Chaos ───────────────────────────────────────────
 

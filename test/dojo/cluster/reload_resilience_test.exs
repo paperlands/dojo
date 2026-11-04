@@ -105,7 +105,7 @@ defmodule Dojo.Cluster.ReloadResilienceTest do
       assert state.ips == Dojo.Cluster.MDNS.routable_ipv4_addrs(),
              "NetworkMonitor's IP baseline drifted across a recompile: #{inspect(state.ips)}"
 
-      assert state.pending_ips == nil
+      assert state.pending == nil
     end
 
     @tag timeout: 180_000

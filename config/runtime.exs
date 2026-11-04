@@ -162,8 +162,13 @@ end
 config :partisan,
   authentication: :partisan_auth_hmac,
   peer_service_manager: :partisan_hyparview_peer_service_manager,
-  pid_encoding: false,
-  ref_encoding: false,
+  # Remote callers must survive as routable references. With both disabled, a pid
+  # arriving in a request is a foreign pid: `partisan_rpc`'s reply path hands it to
+  # `partisan:forward_message/3', whose `is_pid' clause calls `erlang:send/2' on a
+  # pid that belongs to another node — `badarg` without disterl, and the RPC worker
+  # crashes on every reply to a remote caller.
+  pid_encoding: true,
+  ref_encoding: true,
   hyparview: %{
     active_max_size: 5,
     active_min_size: 3,
@@ -192,8 +197,7 @@ config :partisan,
   # belongs to the network: LAN answers in milliseconds, a relayed or wide-area
   # peer may not. Stale addresses are removed by the §4.3 eviction path, not by
   # making every attempt impatient.
-  connect_timeout:
-    String.to_integer(System.get_env("PARTISAN_CONNECT_TIMEOUT") || "5000"),
+  connect_timeout: String.to_integer(System.get_env("PARTISAN_CONNECT_TIMEOUT") || "5000"),
   # A failed observation backs off; the cap is low on purpose, because a slow
   # backend that is classified as failing must not silently stop discovery for a
   # minute — the roamed node needs to be found again inside that window.
@@ -207,6 +211,10 @@ config :partisan,
   # measured in hours, and until the socket is dead the old spec stays "connected"
   # and nothing replaces it. ~25 s to detection.
   tcp_keepalive: %{idle: 10, interval: 5, count: 3},
+  # Detection is idle-gated and gossip keeps a dead path's socket busy, so the
+  # keepalive above never fires: this ping is what notices. Upstream's defaults
+  # (20 s + 10 s x 5) measured 87 s to re-adopt a roamed peer; 10 s + 5 s x 3 ≈ 25 s.
+  connection_ping: %{enabled: true, idle_timeout: 10_000, timeout: 5_000, max_attempts: 3},
   # A sender faster than its socket grows the connection mailbox without bound;
   # `infinity` is upstream's default and is not a sane one on a shared cluster.
   # Refuse the send instead, so pressure surfaces as `{error, overloaded}`.

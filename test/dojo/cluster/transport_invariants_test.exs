@@ -27,6 +27,11 @@ defmodule Dojo.Cluster.TransportInvariantsTest do
   @moduletag timeout: 600_000
   @nodes 3
 
+  # Re-adoption is timed by configuration, not by luck: `connection_ping` is
+  # idle-gated and gossip keeps a dead socket busy, so this ceiling is the whole
+  # detection budget (measured: 87 s at upstream defaults, ~30 s at ours).
+  @adoption_ms 60_000
+
   setup_all do
     unless Lan.available?() do
       raise "not inside the LAN namespace — run scripts/verify/lan_test.sh"
@@ -50,14 +55,26 @@ defmodule Dojo.Cluster.TransportInvariantsTest do
 
     :ok = Lan.roam(3, "#{fmt_ip(new_ip)}/24")
 
-    assert await(fn ->
-             for observer <- [1, 2] do
-               held = specs_for(observer, name_of(3))
-               length(held) == 1 and addrs_of(held) == [new_ip]
-             end
-             |> Enum.all?()
-           end),
-           "peers never settled on one spec at #{fmt_ip(new_ip)}\n#{describe_specs([1, 2], 3)}"
+    started = System.monotonic_time(:millisecond)
+
+    converged =
+      await(
+        fn ->
+          for observer <- [1, 2] do
+            held = specs_for(observer, name_of(3))
+            length(held) == 1 and addrs_of(held) == [new_ip]
+          end
+          |> Enum.all?()
+        end,
+        @adoption_ms
+      )
+
+    elapsed = System.monotonic_time(:millisecond) - started
+    if converged, do: IO.puts("[roam] re-adopted in #{elapsed} ms")
+
+    assert converged,
+           "peers never settled on one spec at #{fmt_ip(new_ip)} after #{elapsed} ms\n" <>
+             describe_specs([1, 2], name_of(3))
 
     # And the node itself agrees about where it is.
     assert [new_ip] = Lan.status(3).listen_addrs
@@ -76,7 +93,7 @@ defmodule Dojo.Cluster.TransportInvariantsTest do
                specs_for(observer, victim) == [] and not in_membership?(observer, victim)
              end)
            end),
-           "the dead node lingered in a view or in membership\n#{describe_specs([1, 2], 3)}"
+           "the dead node lingered in a view or in membership\n#{describe_specs([1, 2], victim)}"
   end
 
   test "the plane survives losing a node and re-forming with it" do
@@ -103,7 +120,7 @@ defmodule Dojo.Cluster.TransportInvariantsTest do
     # The data channel carries best-effort pubsub and may drop; that is its job.
     assert %{data: %{monotonic: true}} = channels
 
-    assert (1 |> Lan.call(:partisan_config, :get, [:connection_high_watermark]) |> unwrap()) ==
+    assert 1 |> Lan.call(:partisan_config, :get, [:connection_high_watermark]) |> unwrap() ==
              5_000,
            "connection queue is unbounded: a fast sender can exhaust memory"
 
@@ -117,7 +134,7 @@ defmodule Dojo.Cluster.TransportInvariantsTest do
     assert is_pid(1 |> Lan.call(Process, :whereis, [group]) |> unwrap()),
            "no broadcast group for the PubSub handler (#{inspect(group)})"
 
-    assert (1 |> Lan.call(:partisan_config, :get, [:connect_timeout]) |> unwrap()) == 5_000,
+    assert 1 |> Lan.call(:partisan_config, :get, [:connect_timeout]) |> unwrap() == 5_000,
            "connect_timeout is not the value this cluster advertises"
   end
 
@@ -131,7 +148,9 @@ defmodule Dojo.Cluster.TransportInvariantsTest do
     |> Lan.call(:partisan_peer_service, :members_for_orchestration, [], 30_000)
     |> unwrap()
     |> case do
+      # v6 answers `{ok, [node_spec]}`; v5 answered a bare list (D070).
       specs when is_list(specs) -> specs
+      {:ok, specs} when is_list(specs) -> specs
       _ -> []
     end
   end
@@ -171,9 +190,9 @@ defmodule Dojo.Cluster.TransportInvariantsTest do
     i |> Lan.status() |> Map.fetch!(:anchors) |> Map.take([:app, :endpoint, :cluster])
   end
 
-  defp describe_specs(observers, node_index) do
-    name = name_of(node_index)
-
+  # The name is passed in, not looked up: a crashed node has no status file, and
+  # the failure message must not be the thing that raises.
+  defp describe_specs(observers, name) do
     Enum.map_join(observers, "\n", fn i ->
       "  node#{i} holds #{inspect(Enum.map(specs_for(i, name), & &1.listen_addrs))} for #{inspect(name)}"
     end)

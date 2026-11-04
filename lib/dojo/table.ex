@@ -38,31 +38,40 @@ defmodule Dojo.Table do
     GenServer.call(table_pid, {:change_meta, delta})
   end
 
-  # A cache hit is last-known state of whichever owner wrote it — recovery
-  # material, never a liveness claim. (id:ownership-o4; lifecycle_test:272)
-  def last({topic, target_node}, event) do
-    case Cache.get!({__MODULE__, :last, topic, event}) do
-      nil -> fetch_state(topic, target_node, event, :last)
-      cached_state -> cached_state
-    end
+  # Content always asks the owner. A projection can outlive the incarnation that
+  # wrote it (terminate/2 retracts best-effort, TTL is minutes), and a document
+  # read is a claim about current state — not a hint. Shares fetch_state/4.
+  def last({reg_key, target_node}, event) do
+    fetch_state(reg_key, target_node, event, :last)
   end
 
-  def last_meta({topic, target_node}, event) do
-    case Cache.get!({__MODULE__, :last, topic, event}) do
-      nil -> fetch_state(topic, target_node, event, :last_meta)
+  # A cache hit is last-known state of whichever owner wrote it — recovery
+  # material, never a liveness claim. It answers only for an owner on THIS
+  # node: anything else is another incarnation's copy. (id:ownership-o4)
+  def last_meta({reg_key, target_node}, event) do
+    case cached(reg_key, event, target_node) do
+      nil -> fetch_state(reg_key, target_node, event, :last_meta)
       cached -> Map.take(cached, [:path, :state, :time])
     end
   end
 
-  defp fetch_state(topic, target_node, event, call_type) do
+  # The projection is written by the owner's own mailbox, so a hit means that
+  # owner runs here. A foreign owner must be asked, never substituted.
+  defp cached(reg_key, event, target_node) do
     if target_node == :partisan.node() do
-      local_fetch(topic, event, call_type)
+      Cache.get!({__MODULE__, :last, reg_key, event})
+    end
+  end
+
+  defp fetch_state(reg_key, target_node, event, call_type) do
+    if target_node == :partisan.node() do
+      local_fetch(reg_key, event, call_type)
     else
       case :partisan_rpc.call(
              target_node,
              __MODULE__,
              :local_fetch,
-             [topic, event, call_type],
+             [reg_key, event, call_type],
              5000
            ) do
         {:badrpc, reason} ->
@@ -75,8 +84,8 @@ defmodule Dojo.Table do
   end
 
   @doc false
-  def local_fetch(topic, event, call_type \\ :last) do
-    GenServer.call({:via, Registry, {Dojo.TableRegistry, topic}}, {call_type, event}, 5000)
+  def local_fetch(reg_key, event, call_type \\ :last) do
+    GenServer.call({:via, Registry, {Dojo.TableRegistry, reg_key}}, {call_type, event}, 5000)
   catch
     # Table absent or tearing down mid-call (self-stops with :normal when its
     # last watcher leaves) — same gone-from-under-us family as Class.attach.

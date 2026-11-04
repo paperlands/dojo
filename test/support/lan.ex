@@ -40,6 +40,11 @@ defmodule Dojo.Test.Lan do
     File.rm_rf!(out_dir())
     File.mkdir_p!(out_dir())
 
+    # A previous LAN module in this run leaves its bridge, namespaces and veth
+    # peers behind, and `ip` refuses to create what exists. Clear by name first,
+    # so one invocation can host more than one LAN module.
+    teardown(n)
+
     ip(["link", "add", bridge(), "type", "bridge"])
     ip(["link", "set", bridge(), "up"])
 
@@ -52,6 +57,28 @@ defmodule Dojo.Test.Lan do
   @doc "Kill every node and tear the namespaces down."
   def stop do
     for %{os_pid: pid} <- statuses(), do: System.cmd("kill", [pid], stderr_to_stdout: true)
+    teardown(max_nodes())
+    :ok
+  end
+
+  # The wrapper's ceiling; namespaces are named per run, so this is only a bound.
+  defp max_nodes, do: 32
+
+  # Any leftover is ours — names are per-run. Best-effort: `ip` exits non-zero
+  # for "does not exist", the ordinary case on a fresh run.
+  defp teardown(n) do
+    for i <- 1..n do
+      ip_ok(["netns", "del", namespace(i)])
+      ip_ok(["link", "del", "p#{i}"])
+      ip_ok(["link", "del", "v#{i}"])
+    end
+
+    ip_ok(["link", "del", bridge()])
+    :ok
+  end
+
+  defp ip_ok(args) do
+    _ = System.cmd("ip", args, stderr_to_stdout: true)
     :ok
   end
 

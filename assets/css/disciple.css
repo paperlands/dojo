@@ -185,6 +185,11 @@
     border-radius: 6px;
     overflow: hidden;
     display: grid;
+    /* DEFINITE TRACKS, OR THE PICTURE LEAVES THE FRAME. A percentage height on
+       a grid item reads off the ROW, whose automatic minimum is the image's own
+       transferred size (91px in a 108px face) — so the bottom was cut. */
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     place-items: center;
     background: transparent;
     color: var(--color-base-content);
