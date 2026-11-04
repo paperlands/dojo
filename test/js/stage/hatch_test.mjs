@@ -81,9 +81,9 @@ describe("hatch: alive — one glimpse per run", () => {
     })
 
     test("a busy stage does not lose the glimpse — it stays owed", () => {
-        // hatch() returns false while a readback is in flight; nothing stamps
-        // lastHatchAt, so the reflect stays changed and the verdict says hatch,
-        // every frame, until one lands.
+        // hatch() joins the in-flight promise; lastHatchAt stamps only a
+        // start, so the reflect stays changed and the verdict says hatch
+        // every frame until one lands.
         assert.deepEqual(world({ ...running, now: 10_700 }), { owed: true, reason: "alive" })
     })
 

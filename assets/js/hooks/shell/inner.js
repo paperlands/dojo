@@ -3,10 +3,13 @@
 // Adapters whole (S, scene/camera). bootShell + term-cell.register once.
 
 import { Turtle } from "../../turtling/turtle.js"
+import { publishCapture, currentDemand } from "../../turtling/capture.js"
+import { Recorder } from "../../turtling/export/recorder.js"
 import { registerStage } from "../../turtling/stage-cell.js"
 import { cameraBridge, scene } from "../../bridged.js"
 import { temporal } from "../../utils/temporal.js"
 import { pageLaw, CORESHELL, OUTERSHELL, SELF, PEER } from "../../weave/page.js"
+import { captureChoices, copyChoices } from "../../turtling/laws/hand_choices.js"
 import { registerWorld, worldChanged } from "../../weave/world.js"
 import { makeReflector } from "../../weave/reflect.js"
 import { seatHealth } from "../../weave/seat-health.js"
@@ -18,38 +21,60 @@ import { nerve, nerveSeat } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
 import { mountSun } from "../../nerve/sun.js"
 import { commands, listeners, mutators } from "./core.js"
-import { register, outerDrafting } from "./term-cell.js"
+import { register, outerDrafting, putSource, getSource, get as getTerm } from "./term-cell.js"
+import { selection } from "./selection-intent.js"
+import { createCurrentAnnounce } from "./current-announce.js"
 import { createArena } from "../../kernel/arena.js"
 import { attach } from "../../kernel/attach.js"
-import { createObservable } from "../../kernel/observable.js"
+
 import { safePush } from "../../adapter.js"
+import { name, read } from "../../keep/entry.js"
 import { createJournal } from "../../keep/journal.js"
 import { createWire } from "../../keep/wire.js"
-import { attachImage, mintSnap } from "../../keep/kinds/snap.js"
-import { askKeep, registerDoor, registerKeeper, touched } from "../../keep/cell.js"
-import { forkRef, link, pullKeep } from "../../link.js"
+import { mintSnap } from "../../keep/kinds/snap.js"
+import { adoptWork } from "../../keep/work.js"
+import { REACH } from "../../keep/page.js"
+import { askKeep, peerOf, registerDoor, registerKeeper, touched } from "../../keep/cell.js"
+import { sessionName } from "./session-name.js"
+import { forkRef, link, pullKeep, pullWork, pullLegacy } from "../../link.js"
 import { fetchFragment, fragmentIndex } from "../../weave/fragments.js"
 import { transpile } from "../../weave/parse.js"
 
-// Picture deadline: two hatch beats + readback. Late face, never lost keep.
-const SNAP_WAIT_MS = 1200
 
 // Events registered at mounted(); handlers returned once mount() stands.
 export const inner = {
     events: ["seeOuterShell", "relayCamera", "selfkeepCanvas", "outerkeepCanvas",
-             "writeShell", "opBuffer", "forkBuffer"],
+             "writeShell", "syncShell", "opBuffer", "forkBuffer"],
+    arrive: (name, payload) => selection()?.arrive(name, payload),
     mount: mountInner,
 };
 
 function mountInner(hook, { term, cm6 }) {
     // Order: bodies → organs → wiring → birth. Nothing publishes before birth.
     // Arena releases are reverse-of-creation — register where made.
-    const arena = createArena();
+    const arena = hook.arena.child();   // ownership begins at acquisition, not return
 
     // BODIES — editor first and silent so organs below read a live term.shell.
     const canvas = document.getElementById('core-canvas');
-    const turtle = new Turtle(canvas);
+    // The shell is an application: the recorder (and its encoder) is an
+    // instrument it opts into. A host that supplies none never loads it.
+    const turtle = new Turtle(canvas, {
+        instruments: { recorder: (c) => new Recorder(c, {}) },
+        // View-only: ?reveal=delayed withholds the law hints until a move.
+        reveal: link.read('reveal'),
+    });
     arena.add(() => turtle.dispose());
+    turtle.lendCut = () => {
+        const seen = reflection()
+        if (!seen || !owner) return null
+        return { body: { ...seen, buffer_id: authored?.buffer_id ?? null }, claim: owner }
+    }
+    // The page routes camera controls. This stage is the subscriber's choice,
+    // and the subscriber releases the route. An embedded hatch does not listen.
+    const stopCamera = cameraBridge.sub((payload) => turtle.stage.command(payload))
+    arena.add(stopCamera)
+    // The shell owns the hand. An embedded hatch evaluates laws and does not listen.
+    arena.add(turtle.attachHand())
     // Stage cell — the one address for the live turtle (gw-t-dom-registry).
     // Weave boot + revealAmbient read getStage(); no canvas.__turtle.
     arena.add(registerStage(turtle));
@@ -84,13 +109,35 @@ function mountInner(hook, { term, cm6 }) {
 
     // Page law decides; this surface performs. Law holds its own orders (Cut 1).
     const law = pageLaw()
+    // One admission for a provided capsule. undefined is "no news"; null is an
+    // explicit materialized record with none; anything provided is copied or refused.
+    const admitChoices = (raw) => {
+        if (raw === undefined) return { ok: true, choices: undefined }
+        if (raw === null) return { ok: true, choices: null }
+        const choices = copyChoices(raw)
+        return choices ? { ok: true, choices } : { ok: false }
+    }
     const DEGREE = { kindled: 1.0, warm: 0.4 }  // gw-appearance → canvas opacity
 
     // One authored buffer at a time (D022) — child's edit/draft, never a seat
     // or friend push. Names a PLACE too: draft authors the addr the peer
     // pushes, so an addr alone cannot say whose figure the faults are.
     let authored = null
-    const disown = (addr) => { if (authored?.addr === addr) authored = null }
+    let owner = getSource() ?? null
+    let coreSourceRelease = null
+    // A local accepted input is hatch news only for the authored seat; a foreign
+    // watched-seat gesture never opens self's reflection gate.
+    turtle._onHandInput = (seatKey) => {
+        if (!authored) return
+        // Exact membership in the page's own bindings; no private slot grammar here.
+        if (law.bindingsOf(authored.addr, authored.place, SELF).some(({ slot }) => slot === seatKey)) {
+            turtle.reflectChanged()
+        }
+    }
+    const disown = (addr) => {
+        if (authored?.addr === addr) authored = null
+        if (owner?.addr === addr) owner = null
+    }
 
     // Attention is the address (D021). Live caret when we hold the shell;
     // reached ledger otherwise. Cursor is the gate — when we hold it, we read it.
@@ -113,16 +160,26 @@ function mountInner(hook, { term, cm6 }) {
         catch { return null }
     }
 
-    const seatingAttention = (addr) => {
-        const line = cursorLine(addr)
+    // D021 cursor law for the outer owner: the claim names the subject, the
+    // live editor names the line. No timer and no second coordinate.
+    const outerCursorLine = () => {
+        const outer = getTerm("outershell")
+        const v = outer?.shell
+        if (!v || v.destroyed) return null
+        try { return v.state.doc.lineAt(v.state.selection.main.head).number }
+        catch { return null }
+    }
+
+    const seatingAttention = (addr, place = CORESHELL) => {
+        const line = place === OUTERSHELL ? outerCursorLine() : cursorLine(addr)
         if (line != null) return { line }
         return attentionOn(addr)
     }
 
-    // Author's line for the wire — live caret when on screen, else ledger (outer draft).
+    // Author's line for the wire — live caret when on screen, else ledger.
     const authoredAttention = () => {
         if (!authored) return null
-        return seatingAttention(authored.addr)
+        return seatingAttention(authored.addr, authored.place)
     }
 
     // Reflect law (weave/reflect.js) — surface lends bodies, names subject;
@@ -135,14 +192,25 @@ function mountInner(hook, { term, cm6 }) {
     })
     const askDiagnostics = (addr, place = CORESHELL) => reflector.ask(addr, place)
 
-    // One authored buffer at a time (D022), so one subject for the reflect.
-    const reflection = () => authored && reflector.of({
-        addr: authored.addr,
-        place: authored.place,
-        source: authored.text,
-        attend: authoredAttention(),
-    })
-
+    const reflection = () => {
+        if (!authored || !owner || authored.claim !== owner) return null
+        const seen = reflector.of({
+            addr: authored.addr,
+            place: authored.place,
+            source: authored.text,
+            attend: authoredAttention(),
+        })
+        if (!seen) return null
+        // Held offer + resident effective choices; unvisited offered roots survive.
+        const bindings = law.bindingsOf(authored.addr, authored.place, SELF)
+        const choices = captureChoices(
+            law.choicesOf(authored.addr, authored.place, SELF),
+            bindings,
+            (slot) => turtle.handLocalChoices(slot),
+            (slot) => !!turtle.scheduler?.root?.children?.has(slot),
+        )
+        return choices ? { ...seen, choices } : seen
+    }
     // Progress for ONE shell — one scheduler holds both places; unscoped read
     // gives two suns one number. null = the world.
     const progressAt = (place) =>
@@ -185,12 +253,16 @@ function mountInner(hook, { term, cm6 }) {
     const perform = (ans, { witness = SELF } = {}) => {
         for (const key of ans.gone) turtle.removeAmbient(key)
         for (const r of ans.runs) {
-            turtle.upsertAmbient(r.slot, r.name, r.code, {
+            const options = {
                 hatch: false,
                 vocab: r.vocab ?? null,
                 nodes: r.nodes ?? null,
                 vocabNodes: r.vocabNodes ?? null,
-            })
+            }
+            // What a source record offered; undefined is "no record news", null is a
+            // materialized record with no choices. (id:laws-construction-input)
+            if (r.choices !== undefined) options.choices = r.choices
+            turtle.upsertAmbient(r.slot, r.name, r.code, options)
         }
         turtle.light(ans.light, DEGREE)
         if (ans.hatch != null) turtle.reflectGate(ans.hatch, { witness })
@@ -243,17 +315,44 @@ function mountInner(hook, { term, cm6 }) {
 
     // WIRING — every organ above stands; from here the surface only listens.
     // Seat after quiet (not under keys). Hatch rests longer (BEAT.settled).
-    const quietRender = temporal.quiet(({ id, name, content }) => {
+    // Render only the current owner claim; a committed claim is a no-op.
+    const renderCore = ({ id, name, content, claim }) => {
+        if (!claim || claim !== owner || authored?.claim === claim) return false
+        const label = claim.name ?? name
         nerve()?.run()
-        authored = { addr: id, place: CORESHELL, name, text: content }
+        const origin = term.getBufferInfo?.(id)?.origin
+        const admitted = admitChoices(origin && Object.hasOwn(origin, "choices") ? origin.choices : undefined)
+        if (!admitted.ok) {
+            console.warn("[weave] unreadable offered choices; source not seated")
+            return false
+        }
         enact(id, law.observe(id, {
-            name, doc: content, witness: SELF, place: CORESHELL,
+            name: label, doc: content, witness: SELF, place: CORESHELL,
             attention: seatingAttention(id),
+            // No origin choices materializes as explicit none; a local tab has no
+            // record news at all. (id:laws-construction-input)
+            choices: admitted.choices === undefined ? null : admitted.choices,
         }))
+        authored = { addr: id, place: CORESHELL, name: label, text: content, buffer_id: claim.buffer_id ?? null, claim }
         syncTabs()
-    }, 100)
+        announceCurrent.wake()
+        return true
+    }
+    const applyMetadata = ({ id, name }) => {
+        if (owner?.addr === id) owner.name = name
+        if (authored?.addr === id) authored = { ...authored, name }
+    }
+    const quietRender = temporal.quiet(renderCore, 100)
     arena.add(quietRender.cancel)
-    arena.add(term.bridge.sub(quietRender))
+    arena.add(term.sourceBridge.sub((claim) => {
+        coreSourceRelease = putSource(claim)
+        owner = claim
+    }))
+    arena.add(() => coreSourceRelease?.())
+    arena.add(term.bridge.sub((payload) => {
+        if (payload.metadata) applyMetadata(payload)
+        else quietRender(payload)
+    }))
 
     // A TAB SWITCH IS NEWS THE WORLD NEVER HEARS: the ask reads currentBufferId(),
     // this surface's own state, so it moves with no world breath behind it.
@@ -267,14 +366,34 @@ function mountInner(hook, { term, cm6 }) {
 
     // Hatch carries no ask (id:kc-p-join).
     const pacedHatch = temporal.pace(
-        (payload) => {
+        (payload, claim) => {
+            if (claim && claim !== owner) return
             safePush(hook, "hatchTurtle", {
                 ...payload,
-                buffer_id: term.currentBufferId(),
             })
         },
         200
     );
+
+    // One demand for the owner's CURRENT document; the hatch sink carries it.
+    const announceCurrent = createCurrentAnnounce({
+        read: () => reflection(),
+        send: (current) => {
+            // The live demand carries the hand's own work and exact editing base.
+            // An outer/peer draft has no local work/base to borrow.
+            const own = authored?.place === CORESHELL
+            return pacedHatch(
+                currentDemand(
+                    current,
+                    authored?.buffer_id,
+                    own ? term.currentWorkId?.() ?? null : null,
+                    own ? term.currentBaseId?.() ?? null : null,
+                ),
+                authored?.claim ?? null,
+            )
+        },
+    })
+    arena.add(announceCurrent.release)
     arena.add(pacedHatch.cancel);
 
     // Journal door (id:kb-3-owner) + wire edge (id:kb-9).
@@ -284,9 +403,12 @@ function mountInner(hook, { term, cm6 }) {
 
     const wireDoor = {
         root: () => journal.root(),
-        local: (r, n) => journal.local(r, n),
+        roots: () => journal.roots(),
+        local: (r, n, opts) => journal.local(r, n, opts),
         source: (id) => journal.source(id),
         image: (id) => journal.image(id),
+        // The wire's auth fence: retained exact bytes, no unsigned fallback. (id:keep-auth-durable-proof)
+        proof: (bytes) => journal.proof(bytes),
         share: async (id, shared) => {
             const out = await journal.share(id, shared)
             touched()
@@ -295,37 +417,199 @@ function mountInner(hook, { term, cm6 }) {
     }
     const wire = createWire({ hook, door: wireDoor });
 
-    // Hatch products: subscribe, don't command (id:kj-answer).
-    const paths = createObservable();
-
-    // Join: mint first (word is cause), attach picture later (reveal).
+    // Join: snap now, one put, then announce. Identity recovery is the user's
+    // decision: prepare a fresh stream, never mint. Every await is fenced by the
+    // captured subject; a moved page keeps nothing. (id:keep-auth-write-guard)
     arena.add(registerKeeper(async (ask) => {
-        const minted = await mintSnap(ask, reflection() ?? {}, {
-            work_id: term.currentWorkId(),
-            buffer_id: term.currentBufferId(),
-        }, journal);
-        if (!minted) return null
-        touched();
-        void wire.announce();
-        void turtle.reflectChanged?.();
-        void temporal.once(paths.watch, SNAP_WAIT_MS).then(async (path) => {
-            if (await attachImage(journal, minted.bytes, path)) touched()
-        });
-        return minted.id
+        const say = (msg) => nerve()?.push(S.system(msg))
+        // Dirty owner: no reflection, so no snapshot. Never mint an empty body.
+        const seen = reflection()
+        if (!seen) {
+            say("keep not confirmed — try again")
+            return null
+        }
+        const claim = owner
+        const captured = {
+            workId: term.currentWorkId?.() ?? null,
+            bufferId: term.currentBufferId?.() ?? null,
+            baseId: term.currentBaseId?.() ?? null,
+            value: term.getValue?.() ?? seen.source,
+            projected: term.projecting?.() === true,
+        }
+        const contentNow = () => term.getValue?.() ?? seen.source
+        const held = () =>
+            arena.alive &&
+            owner === claim &&
+            (term.currentBufferId?.() ?? null) === captured.bufferId &&
+            (term.currentWorkId?.() ?? null) === captured.workId &&
+            (term.currentBaseId?.() ?? null) === captured.baseId &&
+            contentNow() === captured.value &&
+            (term.projecting?.() === true) === captured.projected
+        // Base follows the REQUEST (river draft prev), else the core editor's
+        // captured base. Never invent core ancestry for an outer source.
+        const requestedBase = ask.prev ?? (claim.place === CORESHELL ? captured.baseId : null) ?? null
+        // A prepared stream carries the requested reflection and its base; the
+        // old buffer keeps its work binding for reading. No mint: a second Keep
+        // returns the caption to the buffer this ask prepared. (id:keep-auth-write-guard)
+        const prepare = (msg) => {
+            const holder = term.getBufferInfo?.(captured.bufferId)
+            const freshId = term.createBuffer?.(holder?.name ?? "", seen.source, null, null, requestedBase)
+            if (freshId && (term.currentBufferId?.() ?? null) === freshId) say(msg)
+            return freshId ? { prepared: { bufferId: freshId } } : null
+        }
+
+        let hand
+        try {
+            hand = await journal.hand()
+        } catch {
+            if (!held()) return { cancelled: true }
+            say("keep unavailable — the journal did not answer")
+            return null
+        }
+        if (!held()) return { cancelled: true }
+
+        if (hand?.signing === "unavailable") {
+            // No secure context: refuse plainly. A keygen offer here would lie.
+            say("keep needs a secure context — no new hand was created")
+            return null
+        }
+
+        const handRoot = typeof hand?.root === "string" && hand.root ? hand.root : null
+
+        if (hand?.signing === "none" || hand?.signing === "keyless") {
+            const wanted = confirmOnce(hand.signing === "keyless"
+                ? "This journal's hand can't sign (its key is missing). Create a new hand for a new work? Old keeps stay readable."
+                : "This journal has no signing hand. Create a new hand for a new work?")
+            if (!wanted) {
+                say("keep cancelled — nothing changed")
+                return { cancelled: true }
+            }
+            if (!held()) return { cancelled: true }
+            let seated = null
+            try {
+                seated = await journal.newHand({ expectedRoot: handRoot })
+            } catch (e) {
+                if (!held()) return { cancelled: true }
+                say(e?.code === "stale-hand"
+                    ? "the hand changed — keep again"
+                    : "could not create a new hand — keep again")
+                return null
+            }
+            // A usable key restored during generation is not a new hand: the
+            // engine's CAS kept it, so keep the standing stream (no fork).
+            const fresh = seated?.changed === true
+            if (!held()) return { cancelled: true }
+            if (!fresh) {
+                say("hand available again — keep again")
+                return { prepared: { bufferId: captured.bufferId } }
+            }
+            return prepare("new hand ready — keep again for the new work")
+        }
+
+        if (hand?.signing !== "ready" || !handRoot) {
+            say("keep needs a hand — keep again")
+            return null
+        }
+
+        let eligible = true
+        if (captured.workId) {
+            let origin = null
+            try {
+                origin = await journal.get(captured.workId)
+            } catch {
+                origin = null
+            }
+            if (!held()) return { cancelled: true }
+            // Missing evidence is not proof — a real door throws here; read it
+            // as unproven, never as an accusation.
+            let proof = null
+            if (typeof origin === "string") {
+                try {
+                    proof = await journal.proof(origin)
+                } catch {
+                    proof = null
+                }
+                if (!held()) return { cancelled: true }
+            }
+            let targetless = false
+            let sameRoot = false
+            try {
+                targetless = read(origin).target == null
+                sameRoot = read(origin).root === handRoot
+            } catch { /* unreadable is not an origin */ }
+            eligible = typeof origin === "string" && name(origin) === captured.workId &&
+                targetless && sameRoot && proof != null
+            if (!eligible) {
+                // Foreign/unknown/unproven: a fresh null-work stream, old keep
+                // stays readable. Silence here would be a silent fork.
+                const fork = confirmOnce(
+                    "This hand can’t continue the old work. Start a new work from this draft? The old work stays unchanged.")
+                if (!fork) {
+                    say("keep cancelled — nothing changed")
+                    return { cancelled: true }
+                }
+                if (!held()) return { cancelled: true }
+                return prepare("new work ready — keep again")
+            }
+        }
+
+        ask = { ...ask, prev: requestedBase }
+        const shot = await turtle.snap?.() ?? null
+        if (!held()) return { cancelled: true }
+        const path = shot && typeof shot === "object" ? shot.path ?? null : null
+        const document = shot && typeof shot === "object" ? shot.body : null
+        if (!document || typeof document.source !== "string") {
+            say("no picture — not kept")
+            return null
+        }
+        if (shot.claim !== claim || document.source !== seen.source) {
+            say("no picture — not kept")
+            return null
+        }
+        const ids = {
+            work_id: eligible ? captured.workId : null,
+            buffer_id: captured.bufferId,
+            // Captured before the picture; the engine's birth-root check is last.
+            root: handRoot,
+        }
+        let id
+        try {
+            id = await mintSnap(ask, document, ids, journal, path)
+        } catch (e) {
+            // Another tab replaced the hand under us. Never remint or retry.
+            if (!arena.alive || !held()) return null
+            say(e?.code === "needs-hand" ? "keep needs a hand — keep again"
+                : e?.code === "stale-hand" ? "the hand changed — keep again"
+                    : "keep not confirmed — try again")
+            return null
+        }
+        if (!id) {
+            if (arena.alive && held()) say("keep not confirmed — try again")
+            return null
+        }
+        if (!arena.alive) return id
+        // First keep is the work. Stash its name; later snaps set target.
+        if (!captured.workId) term.adoptWork?.(id, captured.bufferId, null)
+        if (claim.place === CORESHELL && !captured.projected && owner === claim) {
+            term.adoptBase?.(id, captured.bufferId, ask.prev)
+        }
+        // The first keep adopts work/base; the live ghost must carry them now,
+        // not only on the next unrelated edit.
+        announceCurrent.sync()
+        touched()
+        void wire.announce()
+        return id
     }));
 
     arena.add(turtle.bridge.sub(([event, payload]) => {
         switch (event) {
         case "saveRecord":
-            if (payload.type === "video") saveRecording(payload.snapshot);
-            if (payload.type === "image") saveImage(payload.snapshot);
+            if (payload.type === "video") saveRecording(payload.snapshot, null, payload.title);
+            if (payload.type === "image") saveImage(payload.snapshot, payload.title);
             break;
         case "hatchTurtle": {
-            // D022: document from this surface; reflection wins over stale hatch fields.
-            const hatch = { ...payload, ...(reflection() ?? {}) };
-            if (payload.path) paths.notify(payload.path);
-            pacedHatch(hatch);
-            break;
+            publishCapture(payload, pacedHatch)
+            break
         }
         }
     }));
@@ -346,32 +630,49 @@ function mountInner(hook, { term, cm6 }) {
     // constructors: observe · attend · forget (+ restore). focus died with
     // the world sentinel; a click is attend (light-ladders-cut4).
     // Law decides; perform() executes.
-    const onObserve = ({ addr, name, code }) => {
+    const onObserve = ({ addr, name, code, claim }) => {
+        if (claim && claim !== owner) return
+        if (claim && authored?.claim === claim && authored.addr === addr) return
         // Live draft — SELF at the friend's place, standing BESIDE their
         // record rather than on top of it. Both held; hers paints
         // (weave/page.js `paints`), theirs is the baseline she reverts to.
-        authored = { addr, place: OUTERSHELL, name, text: code }
+        // A NEW draft snapshots the painted peer's offered value; an existing draft
+        // keeps its own. Later peer pushes never live-follow into it.
+        const existing = law.bindingsOf(addr, OUTERSHELL, SELF).length > 0
+        const inherited = existing ? undefined : law.choicesOf(addr, OUTERSHELL, PEER)
+        const admitted = admitChoices(inherited)
+        if (!admitted.ok) {
+            console.warn("[weave] unreadable peer offer; draft not opened")
+            return
+        }
         enact(addr, law.observe(addr, {
             name, doc: code, witness: SELF, place: OUTERSHELL,
-            attention: attentionOn(addr),
+            attention: seatingAttention(addr, OUTERSHELL),
+            choices: admitted.choices,
         }))
+        authored = { addr, place: OUTERSHELL, name, text: code, buffer_id: null, claim: claim ?? null }
+        announceCurrent.wake()
     }
     const onRestore = ({ addr, name, code }) => {
         // Leave draft: drop self's record; law hands the seat back to the
         // friend's held record WITH THEIR OWN BODY — including pushes that
         // arrived while drafting. Re-seating the peer from frozen text was
         // a second door onto the same fact, and a beat of blank canvas.
+        if (owner?.place === OUTERSHELL) owner = null
         disown(addr)
         enact(addr, law.restore(addr, OUTERSHELL), { witness: PEER })
     }
     arena.add(scene.sub({
+        // Outer's cheap ownership claim; it never renders.
+        claim: (payload) => { owner = payload },
         // One ladder step: reached cell mounts and RUNS (lazy). Line held so
         // the next edit on this addr carries it (D021).
         //
         // Reflect's coordinate moved — watcher has news even with no typing
         // (D025 R4). Re-arm hatch only for the buffer being reflected:
         // another addr's reach changes nothing a friend can see.
-        attend: ({ addr, line, witness }) => {
+        attend: ({ addr, line, witness, claim }) => {
+            if (claim && claim !== owner) return
             reached.set(addr, line)
             // Witness is the claim: self's reach moves the light; theirs is
             // presence and never takes it from a hand in the other shell (P9).
@@ -394,11 +695,12 @@ function mountInner(hook, { term, cm6 }) {
         restore: onRestore,
     }));
 
-    // Peer body on the canvas. Outer owns follow/intervene; this only seats.
+    // Outer owns reader attention; this handler only seats peer code.
     // Fresh + attend.line → open on their cell (not ladder birth cell 0).
     // Later hatches → sticky order so body pushes don't re-aim intervene;
     // while following, outer onPeerLine moves attend on line changes.
     const onSeeOuterShell = (payload) => {
+        if (selection()?.accepted(payload) === false) return
         if (!payload?.addr) return
         if (payload.state !== "success") return
         // Prefer standing tree; plain tabs often hatch commands:[] with source only.
@@ -412,13 +714,21 @@ function mountInner(hook, { term, cm6 }) {
         const line = payload?.attend?.line
         const fresh = !law.orderOf(OUTERSHELL, PEER).includes(payload.addr)
         const attention = (fresh && line != null) ? { line } : null
+        // Absent means "no news" on a held record; a source replacement with no
+        // choices materializes as explicit none. (id:laws-construction-input)
+        const admitted = admitChoices(payload.choices)
+        if (!admitted.ok) {
+            console.warn("[weave] unreadable peer choices; payload not seated")
+            return
+        }
+        const choices = admitted.choices === undefined ? (fresh ? null : undefined) : admitted.choices
         const ans = law.observe(payload.addr, {
             name, doc, witness: PEER, place: OUTERSHELL, attention,
+            choices,
         })
         enact(payload.addr, ans, { witness: PEER })
         const { source, merge } = ans
-        // Outershell is the compare surface: stream the peer baseline, then
-        // light the coreshell merge view only while watching (resumeMerge).
+        // Update the peer baseline; light the coreshell merge only in watch view.
         // forkBuffer itself never enables merge — a fork without outer is
         // ordinary editing (terminal.mergeActive / id:la-fork).
         if (merge && payload.buffer_id) {
@@ -484,8 +794,16 @@ function mountInner(hook, { term, cm6 }) {
 
     /** The aperture's gesture: keep the moment, and put a file on disk too. */
     const keepAndSave = (title) => {
-        void askKeep(title)
-        cameraCommand("snap", { title })
+        // turtle.snap sets _snapOwed; arming snapshot is for download on hatch finish.
+        if (turtle.renderstate) {
+            turtle.renderstate.snapshot = { save: true, title }
+        }
+        // The keeper owns the outcome and its one notice; preparation and
+        // cancellation speak for themselves.
+        void askKeep(title, {
+            name: sessionName(),
+            peer: peerOf(term),
+        })
     }
 
     return {
@@ -494,7 +812,11 @@ function mountInner(hook, { term, cm6 }) {
         // Lifecycle machine calls this; it is a phase, not a trailing line.
         // announce is the same sentence reconnected will say (id:kb-9).
         birth: () => {
-            term.triggerBridge();
+            // Rejoin before the first breath: the journal owns the origin id.
+            void reclaimWork(journal, term).then(() => {
+                if (!arena.alive) return
+                if (!owner) term.triggerBridge()
+            })
             // ?fork=<ref> forks the named thing or finds its buffer — after
             // birth, so every organ stands; idempotent, so a remount only
             // Mount is the whole enactment (id:la-law) — no nav listener race.
@@ -505,6 +827,8 @@ function mountInner(hook, { term, cm6 }) {
                     term,
                     corpus: { index: fragmentIndex, fetch: fetchFragment, press: transpile },
                     pull: pullKeep,
+                    pullWork,
+                    pullLegacy,
                 });
             }
             void wire.announce();
@@ -514,6 +838,23 @@ function mountInner(hook, { term, cm6 }) {
 
         events: {
             seeOuterShell:  onSeeOuterShell,
+            // Owner-ready: settle local edits, then read CURRENT once.
+            syncShell:      () => {
+                const commit = () => {
+                    if (!owner) {
+                        const announced = term.triggerBridge?.()
+                        if (announced) renderCore(announced)
+                        return
+                    }
+                    if (authored?.claim === owner) return
+                    if (owner.place === OUTERSHELL) {
+                        onObserve({ addr: owner.addr, name: owner.name, code: owner.text, claim: owner })
+                    } else {
+                        renderCore({ id: owner.addr, name: owner.name, content: owner.text, claim: owner })
+                    }
+                }
+                announceCurrent.sync(commit)
+            },
             relayCamera:    ({ command }) => cameraCommand(command),
             // Same ask fence as the river (id:kj-vet 6); file beside the keep.
             selfkeepCanvas:  ({ title })  => keepAndSave(title),
@@ -524,4 +865,27 @@ function mountInner(hook, { term, cm6 }) {
         },
         arena,
     };
+}
+
+// The page's own small consent (terminal.js precedent): absent/throw means no.
+function confirmOnce(message) {
+    try {
+        return typeof globalThis.confirm === "function" && globalThis.confirm(message) === true
+    } catch {
+        return false
+    }
+}
+
+// The log owns the origin id. Recover it onto the tab, or stay put.
+async function reclaimWork(door, term) {
+    try {
+        const work = term.currentWorkId()
+        const buf = term.currentBufferId()
+        if (!door || !buf) return
+        const listed = await door.list(await door.root(), REACH)
+        const recovered = adoptWork(listed, buf, work)
+        if (recovered && recovered !== work) term.adoptWork?.(recovered, buf)
+    } catch {
+        /* a shut door leaves the field as it is */
+    }
 }

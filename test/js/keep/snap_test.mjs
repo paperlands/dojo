@@ -5,11 +5,10 @@ import {
     writeSnap,
     toBlob,
     mintSnap,
-    attachImage,
 } from "../../../assets/js/keep/kinds/snap.js"
 import { createJournal as createDoor } from "../../../assets/js/keep/journal.js"
 import { createEngine } from "../../../assets/js/keep/journal.store.js"
-import { read, name, V } from "../../../assets/js/keep/entry.js"
+import { read, name, V, write } from "../../../assets/js/keep/entry.js"
 import { createMemoryIDB } from "./idb_memory.mjs"
 
 const fill = (b) => (arr) => {
@@ -29,6 +28,56 @@ function freshDoor() {
         blobCap: 1024 * 1024,
     })
     return createDoor({ engine })
+}
+
+/** Seat raw bytes in =self= (a legacy genesis with no signing key). */
+async function seedSelf(idb, dbName, key, value) {
+    const db = await new Promise((resolve, reject) => {
+        const request = idb.open(dbName)
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+    })
+    try {
+        const tx = db.transaction("self", "readwrite")
+        const done = new Promise((resolve, reject) => {
+            tx.oncomplete = resolve
+            tx.onabort = () => reject(tx.error)
+            tx.onerror = () => reject(tx.error)
+        })
+        const request = tx.objectStore("self").put(value, key)
+        await new Promise((resolve, reject) => {
+            request.onsuccess = resolve
+            request.onerror = () => reject(request.error)
+        })
+        await done
+    } finally {
+        db.close()
+    }
+}
+
+/** Remove one =self= record (losing a signing key). */
+async function deleteSelf(idb, dbName, key) {
+    const db = await new Promise((resolve, reject) => {
+        const request = idb.open(dbName)
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+    })
+    try {
+        const tx = db.transaction("self", "readwrite")
+        const done = new Promise((resolve, reject) => {
+            tx.oncomplete = resolve
+            tx.onabort = () => reject(tx.error)
+            tx.onerror = () => reject(tx.error)
+        })
+        const request = tx.objectStore("self").delete(key)
+        await new Promise((resolve, reject) => {
+            request.onsuccess = resolve
+            request.onerror = () => reject(request.error)
+        })
+        await done
+    } finally {
+        db.close()
+    }
 }
 
 describe("writeSnap: the first kind", () => {
@@ -157,6 +206,58 @@ describe("writeSnap: the first kind", () => {
         assert.deepEqual(read(writeSnap({ ...base, ts: fixed })).ts, fixed)
     })
 
+    test("signature_of — build by keys you have; empty → omit (id:kc-sign)", () => {
+        const root = "a".repeat(64)
+        const work = "b".repeat(64)
+        const peerRoot = "c".repeat(64)
+
+        // Self-only.
+        const linear = writeSnap({
+            root,
+            work_id: work,
+            source: "fw 1\n",
+            name: "bob",
+            ts: { t: 1, n: 0 },
+        })
+        assert.deepEqual(read(linear).signature_of, { [root]: "bob" })
+        assert.equal(read(linear).target, work)
+
+        // Both — neither side silently drops the other.
+        const fork = writeSnap({
+            root,
+            work_id: work,
+            source: "fw 2\n",
+            name: "bob",
+            peer: { root: peerRoot, name: "alice" },
+            prev: "d".repeat(64),
+            ts: { t: 2, n: 0 },
+        })
+        const v = read(fork)
+        assert.deepEqual(v.signature_of, { [peerRoot]: "alice", [root]: "bob" })
+        assert.equal(v.prev, "d".repeat(64))
+        assert.equal(v.target, work)
+
+        // Peer-only — missing self letters must not erase the peer.
+        const peerOnly = writeSnap({
+            root,
+            work_id: work,
+            source: "fw 3\n",
+            peer: { root: peerRoot, name: "alice" },
+            ts: { t: 3, n: 0 },
+        })
+        assert.deepEqual(read(peerOnly).signature_of, { [peerRoot]: "alice" })
+        assert.equal(Object.hasOwn(read(peerOnly).signature_of, root), false)
+
+        // No letters → no signature_of key (absence, not null).
+        const quiet = writeSnap({
+            root,
+            work_id: work,
+            source: "fw 4\n",
+            ts: { t: 4, n: 0 },
+        })
+        assert.equal(Object.hasOwn(read(quiet), "signature_of"), false)
+    })
+
 })
 
 describe("toBlob: data URL dies at the mint (id:kb-vet2-image)", () => {
@@ -177,7 +278,7 @@ describe("toBlob: data URL dies at the mint (id:kb-vet2-image)", () => {
 const PNG_1PX =
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 
-describe("mintSnap: the word is the cause (id:kj-answer)", () => {
+describe("mintSnap: one put, photograph or nothing", () => {
     /** @type {ReturnType<typeof freshDoor>} */
     let door
     beforeEach(() => {
@@ -187,118 +288,128 @@ describe("mintSnap: the word is the cause (id:kj-answer)", () => {
         await door.close()
     })
 
-    test("mints one keep from word + source; name verifies", async () => {
+    const mint = (ask, reflection, ids) =>
+        mintSnap(ask, reflection, ids, door, PNG_1PX)
+
+    test("mints one keep from word + source + picture; name verifies", async () => {
         const work = "c".repeat(64)
         const source = "fd 100"
-        const minted = await mintSnap(
+        const id = await mint(
             { title: "a small step" },
             { source, diagnostics: [] },
             { work_id: work, buffer_id: "buf" },
-            door,
         )
-        assert.ok(minted)
-        const bytes = await door.get(minted.id)
-        assert.equal(name(bytes), minted.id)
-        assert.equal(minted.bytes, bytes, "the bytes come back for the attach")
+        assert.ok(id)
+        const bytes = await door.get(id)
+        assert.equal(name(bytes), id)
         const v = read(bytes)
         assert.equal(v.kind, "snap")
         assert.equal(v.target, work)
         assert.equal(v.root, await door.root())
         assert.equal(v.source_id, name(source))
-        // mintSnap draws stamp() — a projectable ts lands in the bytes
         assert.ok(Number.isFinite(v.ts.t))
         assert.ok(Number.isFinite(v.ts.n))
-        // Source blob under name(source)
         assert.equal(await door.source(name(source)), source)
+        assert.ok(await door.image(id), "picture landed in the same put")
     })
 
-    test("NO GPU ON THIS PATH — the keep exists with no picture at all", async () => {
-        // The frame clock may never fire (turtling/hatch.js: !present, mine ===
-        // false, a canvas that never changes). It can cost a picture; it must
-        // never cost the child's word.
+    test("no picture — not kept", async () => {
         const minted = await mintSnap(
             { title: "kept in the dark" },
             { source: "fw 1\n", diagnostics: [] },
             { work_id: "a".repeat(64) },
             door,
+            null,
         )
-        assert.ok(minted, "a pictureless keep is a keep")
-        assert.equal(read(await door.get(minted.id)).title, "kept in the dark")
-        assert.equal(await door.image(minted.id), undefined)
+        assert.equal(minted, null)
+        assert.equal((await door.list(await door.root())).length, 0)
     })
 
     test("the reflection's wounds ride into the body (D022)", async () => {
         const wounds = [{ line: 2, message: "unknown verb" }]
-        const minted = await mintSnap(
+        const minted = await mint(
             { title: "hurt" },
             { source: "fw 1\nzz 2\n", diagnostics: wounds },
             { work_id: "a".repeat(64) },
-            door,
         )
-        assert.deepEqual(read(await door.get(minted.id)).diagnostics, wounds)
+        assert.deepEqual(read(await door.get(minted)).diagnostics, wounds)
     })
 
     test("prev rides the ASK, not the ids — the fork is the child's gesture", async () => {
         const parent = "9".repeat(64)
         const work = "b".repeat(64)
-        const forked = await mintSnap(
+        const forked = await mint(
             { title: "forked", prev: parent },
             { source: "fw 1\n", diagnostics: [] },
             { work_id: work },
-            door,
         )
-        assert.equal(read(await door.get(forked.id)).prev, parent)
+        assert.equal(read(await door.get(forked)).prev, parent)
 
         // Absent, not null, on a straight keep (id:kc-r-absence).
-        const straight = await mintSnap(
+        const straight = await mint(
             { title: "straight" },
             { source: "fw 2\n", diagnostics: [] },
             { work_id: work },
-            door,
         )
-        assert.equal(Object.hasOwn(read(await door.get(straight.id)), "prev"), false)
+        assert.equal(Object.hasOwn(read(await door.get(straight)), "prev"), false)
     })
 
     test("two keeps in one breath — each independent; nothing can pace a mint away", async () => {
         const work = "d".repeat(64)
         const [a, b] = await Promise.all([
-            mintSnap({ title: "one" }, { source: "a" }, { work_id: work }, door),
-            mintSnap({ title: "two" }, { source: "b" }, { work_id: work }, door),
+            mint({ title: "one" }, { source: "a" }, { work_id: work }),
+            mint({ title: "two" }, { source: "b" }, { work_id: work }),
         ])
-        assert.notEqual(a.id, b.id)
+        assert.notEqual(a, b)
         assert.equal((await door.list(await door.root())).length, 2)
     })
 
     test("a wordless ask stays silent; an empty word is no word", async () => {
         const work = "b".repeat(64)
-        const quiet = await mintSnap({}, { source: "fw 2\n" }, { work_id: work }, door)
-        assert.equal(read(await door.get(quiet.id)).title, null)
-        const blank = await mintSnap(
+        const quiet = await mint({}, { source: "fw 2\n" }, { work_id: work })
+        assert.equal(read(await door.get(quiet)).title, null)
+        const blank = await mint(
             { title: "" },
             { source: "fw 3\n" },
             { work_id: work },
-            door,
         )
-        assert.equal(read(await door.get(blank.id)).title, null)
+        assert.equal(read(await door.get(blank)).title, null)
     })
 
-    test("without work_id the mint returns null and does not reject", async () => {
-        // A drop is a fact (id:kc-c-wire) — said out loud, never an unhandled rejection.
-        assert.equal(
-            await mintSnap({ title: "x" }, { source: "x" }, { work_id: null }, door),
-            null,
+    test("without work_id the mint is an origin keep", async () => {
+        const id = await mintSnap(
+            { title: "x" },
+            { source: "x" },
+            { work_id: null },
+            door,
+            PNG_1PX,
         )
+        assert.ok(id)
+        const v = read(await door.get(id))
+        assert.equal(v.target, undefined)
+        assert.equal(name(await door.get(id)), id)
     })
 
     test("empty source is stored — source_id is not a tombstone", async () => {
-        const minted = await mintSnap(
+        const minted = await mint(
             { title: "blank" },
             { source: "" },
             { work_id: "e".repeat(64), buffer_id: "b" },
-            door,
         )
         assert.ok(minted)
         assert.equal(await door.source(name("")), "")
+    })
+
+    test("missing reflection is not an empty source", async () => {
+        const missing = await mintSnap(
+            { title: "missing" },
+            undefined,
+            { work_id: "e".repeat(64) },
+            door,
+            PNG_1PX,
+        )
+        assert.equal(missing, null)
+        assert.equal((await door.list(await door.root())).length, 0)
     })
 
     test("a dead door yields null, never a rejection", async () => {
@@ -311,52 +422,116 @@ describe("mintSnap: the word is the cause (id:kj-answer)", () => {
             },
         }
         assert.equal(
-            await mintSnap({ title: "x" }, { source: "x" }, { work_id: "f".repeat(64) }, dead),
+            await mintSnap({ title: "x" }, { source: "x" }, { work_id: "f".repeat(64) }, dead, PNG_1PX),
             null,
         )
     })
 })
 
-describe("attachImage: the picture is the reveal (id:kj-answer-attach)", () => {
-    /** @type {ReturnType<typeof freshDoor>} */
-    let door
-    beforeEach(() => {
-        door = freshDoor()
-    })
-    afterEach(async () => {
-        await door.close()
-    })
+describe("mintSnap: the hand read before the picture", () => {
+    test("a stale cached root cannot author after another tab replaced the hand", async () => {
+        const { idb, KeyRange } = createMemoryIDB()
+        const dbName = `snap-stale-tab-${Math.random().toString(36).slice(2)}`
+        const tabA = createEngine({ idb, KeyRange, dbName })
+        const tabB = createEngine({ idb, KeyRange, dbName })
+        let doorA = null
+        let doorB = null
+        try {
+            await tabA.genesis() // schema + a key we then replace with a legacy hand
+            const legacy = write("genesis", { nonce: "ab".repeat(32) }, { ts: { t: 1, n: 0 } })
+            await seedSelf(idb, dbName, "genesis", legacy)
+            const oldRoot = name(legacy)
 
-    const mint = (title) =>
-        mintSnap({ title }, { source: "fd 100" }, { work_id: "c".repeat(64) }, door)
+            doorA = createDoor({ engine: tabA })
+            doorB = createDoor({ engine: tabB })
+            assert.deepEqual(await tabA.hand(), { root: oldRoot, signing: "keyless" })
+            assert.equal(await doorA.root(), oldRoot, "tab A caches its warm name")
 
-    test("the picture lands on a keep that already exists; the keep is unchanged", async () => {
-        const minted = await mint("later")
-        assert.equal(await door.image(minted.id), undefined)
+            const next = await doorB.newHand({ expectedRoot: oldRoot })
+            assert.equal(next.changed, true)
+            // Readiness is computed from the store, not from A's warm cache.
+            assert.deepEqual(await doorA.hand(), { root: next.root, signing: "ready" })
+            assert.equal(await doorA.root(), next.root,
+                "the readiness read dropped the stale cached name")
 
-        assert.equal(await attachImage(door, minted.bytes, PNG_1PX), true)
+            const authored = await mintSnap(
+                { title: "after recovery" },
+                { source: "fw 9" },
+                { root: next.root },
+                doorA,
+                PNG_1PX,
+            )
+            assert.ok(authored)
+            assert.equal(read(await doorA.get(authored)).root, next.root)
 
-        const img = await door.image(minted.id)
-        assert.ok(img, "image stored under the message id")
-        // Same name, same bytes — put is idempotent, so the attach is not a
-        // second keep (id:kc-p-facts).
-        assert.equal(await door.get(minted.id), minted.bytes)
-        assert.equal((await door.list(await door.root())).length, 1)
-    })
-
-    test("no picture is not a wound — it says false and keeps nothing", async () => {
-        const minted = await mint("dark")
-        assert.equal(await attachImage(door, minted.bytes, null), false)
-        assert.equal(await door.image(minted.id), undefined)
-    })
-
-    test("a dead door yields false, never a rejection", async () => {
-        const minted = await mint("doomed")
-        const dead = {
-            put: async () => {
-                throw new Error("worker gone")
-            },
+            // The engine's birth-root check stays the last word.
+            await assert.rejects(
+                mintSnap(
+                    { title: "stale" },
+                    { source: "fw 8" },
+                    { root: oldRoot },
+                    doorA,
+                    PNG_1PX,
+                ),
+                (error) => error.code === "stale-hand",
+                "no bytes under a hand this tab no longer holds",
+            )
+            assert.equal((await doorA.local(next.root, 10)).length, 1)
+        } finally {
+            await doorA?.close()
+            await doorB?.close()
         }
-        assert.equal(await attachImage(dead, minted.bytes, PNG_1PX), false)
+    })
+
+    test("ids.root is authoritative — the mutable door root is never read", async () => {
+        const captured = "c".repeat(64)
+        let authored = null
+        const door = {
+            root: () => { throw new Error("a mint must use the captured hand") },
+            put: async (bytes) => { authored = bytes; return name(bytes) },
+        }
+        const id = await mintSnap(
+            { title: "captured" },
+            { source: "fw 7", diagnostics: [] },
+            { root: captured },
+            door,
+            PNG_1PX,
+        )
+        assert.equal(id, name(authored))
+        assert.equal(read(authored).root, captured)
+    })
+
+    test("a hand replacement keeps the old hand's bytes and retained proof", async () => {
+        const { idb, KeyRange } = createMemoryIDB()
+        const dbName = `snap-evidence-${Math.random().toString(36).slice(2)}`
+        const tab = createEngine({ idb, KeyRange, dbName })
+        let door = null
+        try {
+            const birth = await tab.genesis()
+            const oldRoot = name(birth)
+            const oldSource = "fw 200"
+            const oldRow = write("snap", { source_id: name(oldSource), title: "old" },
+                { root: oldRoot, ts: { t: 20, n: 0 } })
+            const oldId = name(oldRow)
+            await tab.put(oldRow, { source: oldSource, authored: true })
+            const oldProof = await tab.proof(oldRow)
+
+            await deleteSelf(idb, dbName, "signing-key")
+            assert.equal((await tab.hand()).signing, "keyless")
+            const next = await tab.newHand({ expectedRoot: oldRoot })
+            assert.equal(next.changed, true)
+
+            door = createDoor({ engine: tab })
+            assert.equal(await door.get(oldId), oldRow, "old bytes are readable")
+            assert.deepEqual(await door.proof(oldRow), oldProof, "old evidence is retained")
+            assert.equal((await door.local(oldRoot, 10, { proved: true })).length, 1,
+                "the old row is still in its own proved page")
+            assert.equal(await door.get(oldRoot), birth, "the old genesis is archived")
+            // Delivery after replacement is a policy decision; this test only
+            // proves the evidence survives it.
+        } finally {
+            await door?.close()
+            await tab.close()
+        }
     })
 })

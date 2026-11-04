@@ -12,8 +12,8 @@
 // The structural claim under assay is sharper than "unreachable". It is:
 //
 //   *A park's CAUSE determines whether it owes.*
-//     'time'                 → always owed === null   (a breath owes nothing)
-//     'credit' / 'residency' → always owed !== null    (a refusal owes its event)
+//     'breath' / 'admission' / 'dataflow' → always owed === null (nothing held)
+//     'credit' / 'residency'               → always owed !== null (a refusal owes its event)
 //
 // If that holds, a same-cause re-park either already owes this exact event or
 // owes nothing and cannot be reached with one — the two namespaces never meet.
@@ -127,9 +127,9 @@ function stress(src, cfg, maxTicks = 4000) {
     const delivered = []
     const sample = () => {
         for (const f of scheduler.registry.values()) {
-            if (!f.park) continue
-            if (!matrix.has(f.park.cause)) matrix.set(f.park.cause, new Set())
-            matrix.get(f.park.cause).add(f.park.owed !== null)
+            if (!f.suspension) continue
+            if (!matrix.has(f.suspension.kind)) matrix.set(f.suspension.kind, new Set())
+            matrix.get(f.suspension.kind).add(f.suspension.owed !== null)
         }
     }
     sample()   // the inline seat drain may already have parked
@@ -213,8 +213,8 @@ describe("SPIKE: can a park ever drop its debt? (S16)", () => {
                 `cause '${cause}' was seen BOTH owing and not owing — the two ` +
                 `namespaces meet, and a same-cause re-park can now eat an event`)
         }
-        if (merged.has("time")) {
-            assert.deepEqual([...merged.get("time")], [false], "a breath owes nothing")
+        if (merged.has("breath")) {
+            assert.deepEqual([...merged.get("breath")], [false], "a breath owes nothing")
         }
         for (const cause of ["credit", "residency"]) {
             if (merged.has(cause)) {
@@ -226,7 +226,7 @@ describe("SPIKE: can a park ever drop its debt? (S16)", () => {
     test("P3 coverage — absence of a counterexample counts only if all three park", () => {
         const seen = [...merged.keys()].sort()
         console.log("  causes exercised:", JSON.stringify(seen))
-        for (const cause of ["time", "credit", "residency"]) {
+        for (const cause of ["breath", "credit", "residency"]) {
             assert.ok(merged.has(cause),
                 `'${cause}' never parked in 720 worlds — this suite proves nothing about it`)
         }
@@ -290,11 +290,11 @@ const CAUSES_THAT_OWE = new Set(["credit", "residency"])
 // Every park on the stage agrees with the law: cause determines debt.
 function auditParks(scheduler, where) {
     for (const f of scheduler.registry.values()) {
-        if (!f.park) continue
-        const owes = f.park.owed !== null
-        const shouldOwe = CAUSES_THAT_OWE.has(f.park.cause)
+        if (!f.suspension) continue
+        const owes = f.suspension.owed !== null
+        const shouldOwe = CAUSES_THAT_OWE.has(f.suspension.kind)
         assert.equal(owes, shouldOwe,
-            `${where}: '${f.park.cause}' park ${owes ? "owes" : "owes nothing"} — the law is broken`)
+            `${where}: '${f.suspension.kind}' park ${owes ? "owes" : "owes nothing"} — the law is broken`)
     }
 }
 
@@ -327,7 +327,7 @@ describe("SPIKE: re-eval mid-park (the lifecycle seam)", () => {
                 auditParks(scheduler, `round ${round} tick ${i}`)
             }
             for (const f of scheduler.registry.values()) {
-                if (f.park?.owed) parkedAtSwap++
+                if (f.suspension?.owed) parkedAtSwap++
             }
             // The swap happens here, on the next loop turn, while a debt stands.
         }

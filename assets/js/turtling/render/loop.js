@@ -20,6 +20,7 @@ export default class Loop {
     }
 
     start() {
+        const run = this._run = (this._run || 0) + 1
         const loop = (timestamp) => {
 
             if (this.state.needsRestart) {
@@ -48,6 +49,7 @@ export default class Loop {
                 console.error('Render loop error:', e);
             }
 
+            if (this._run !== run) return   // stop()/start() during onRender retired this run
             this.state.animationFrameId = requestAnimationFrame(loop);
         };
 
@@ -58,6 +60,7 @@ export default class Loop {
     }
 
     stop() {
+        this._run = (this._run || 0) + 1
         if (this.state.animationFrameId) {
             cancelAnimationFrame(this.state.animationFrameId);
             this.state.animationFrameId = null;

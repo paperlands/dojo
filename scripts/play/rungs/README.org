@@ -1,0 +1,35 @@
+#+title: Rung reproducers — one program, one instrument read
+
+Each rung's canvas evidence is two commands, with no source edit and no dunder:
+
+#+begin_src sh
+node scripts/play/play_cdp.mjs run scripts/play/rungs/<name>.plang [waitMs]
+node scripts/play/play_cdp.mjs probe
+#+end_src
+
+=probe= prints the instrumented world read ([[file:../../../assets/js/turtling/probe.js]]):
+=ambients=, =layers=, =view= (the compositor's reframe), =camera=, and =laws= (the
+play's active addresses). A mark and its hit target are read in one frame; a law is
+read from the same store the scheduler committed it to. (id:laws-decl-interface,
+id:laws-ordered-replacement)
+
+* Programs, by rung
+| file                | rung | proves                                            |
+|---------------------+------+---------------------------------------------------|
+| =view.plang=          | 0    | head and ring coincide under an active eye        |
+| =birth.plang=         | 1a   | ordered birth: A at 100, B at 200                 |
+| =distance.plang=      | 2b   | =let A.distance = 5= realizes A at [5,0,0]        |
+| =contradiction.plang= | 2c   | a pin over a distance faults, A keeps [5,0,0]     |
+| =joystick.plang=      | play | drag the pad: =pad.x= steers, =pad.y= throttles; the walker draws |
+| =driven-coordinate.plang= | play | drag X: A.x follows X.y; A.y stays free, A.z holds zero |
+| =reactive-randomness.plang= | play | drag B.x: A.x gets a fresh random offset; B.y and idle keep it |
+| =protractor.plang=    | play | drag an arm tip: radial sets its length, around sets the angle |
+| =receiver-spines.plang= | play | one recipe over two supplied 3-joint chains; stride/turn twiddle; fw trails; fit before shot |
+| =conic-orbit.plang=   | play | one cone cut by a plane: pitch selects circle, ellipse, parabola or hyperbola |
+| =torus-knot.plang=    | play | p=2, q=3 trefoil on a torus of radii 3 and 1.2; closed parametric walk |
+
+A rung's *fence* is its headless suite; this directory is the second eye — the
+actual canvas. Keep both, and keep them small.
+
+=receiver-spines.plang= needs a late frame for its accumulated trails: after =run=,
+=eval 'window.__probe.fit()'= then =shot <png> --bare=.

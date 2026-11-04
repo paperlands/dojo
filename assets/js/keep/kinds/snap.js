@@ -1,31 +1,37 @@
-// Snap kind (id:kb-7-snap). target = work_id. body = { source_id, title,
-// diagnostics, buffer_id, prev? }. Title is the only unrecovered word; source
-// is a hash-named blob; prev only on fork. Data URL dies at toBlob.
+// Snap kind (keep kernel). Photograph or nothing.
+// Origin omits target (id is the work). Later keeps name target = origin id.
+// body: signature_of by keys you have; prev only if they had a keep.
 
 import { write, name } from "../entry.js"
 import { stamp } from "../../utils/stamp.js"
 
 /**
- * Author a snap. Pure. ts required from caller — never ambient (id:kc-parts).
+ * Author a snap. Pure. ts required from caller — never ambient.
  * @param {object} p
  * @param {string} p.root
- * @param {string} p.work_id
+ * @param {string} [p.work_id] - origin id; omit on the origin keep itself
  * @param {string} [p.source]
  * @param {string | null} [p.title]
  * @param {unknown} [p.diagnostics]
  * @param {string | null} [p.buffer_id]
  * @param {string | null} [p.prev]
+ * @param {string | null} [p.name] — letters this hand wears now
+ * @param {{ root: string, name: string } | null} [p.peer] — fork: their root + letters
+ * @param {unknown} [p.choices] — plain offered choices (opaque here)
  * @param {{t: number, n: number}} p.ts
  * @returns {string}
  */
 export function writeSnap({
     root,
-    work_id,
+    work_id = null,
     source = "",
     title = null,
     diagnostics = [],
     buffer_id = null,
     prev = null,
+    name: letters = null,
+    peer = null,
+    choices = undefined,
     ts,
 }) {
     if (
@@ -39,9 +45,32 @@ export function writeSnap({
     }
     const source_id = name(source)
     const body = { source_id, title, diagnostics, buffer_id }
-    // Absent, not null (id:kc-r-absence).
+    if (choices !== undefined) body.choices = choices
+    // Absent, not null.
     if (typeof prev === "string" && prev) body.prev = prev
-    return write("snap", body, { root, target: work_id, ts })
+    const signature_of = signatureOf(root, letters, peer)
+    if (signature_of) body.signature_of = signature_of
+    const ctx = { root, ts }
+    if (typeof work_id === "string" && work_id) ctx.target = work_id
+    return write("snap", body, ctx)
+}
+
+/** Build by keys you have — self optional, peer optional; empty → omit. */
+function signatureOf(root, letters, peer) {
+    const map = {}
+    if (typeof root === "string" && root && typeof letters === "string" && letters) {
+        map[root] = letters
+    }
+    if (
+        peer &&
+        typeof peer.root === "string" &&
+        peer.root &&
+        typeof peer.name === "string" &&
+        peer.name
+    ) {
+        map[peer.root] = peer.name
+    }
+    return Object.keys(map).length > 0 ? map : null
 }
 
 /** Data URL → Blob once; Blob passes through; else null. */
@@ -54,16 +83,18 @@ export function toBlob(path) {
 }
 
 /**
- * Mint into the journal — word is cause; picture attaches later (id:kj-answer).
- * Null is a spoken drop, never a reject (id:kc-c-wire). Returns {id, bytes}
- * so attach can re-put (idempotent on the name).
- * @param {{ title: string, prev?: string }} ask
+ * Mint a snap — one put, message + picture. No picture is a spoken drop.
+ * No work_id → origin keep (its id becomes the work).
+ * @param {{ title: string, prev?: string, name?: string, peer?: { root: string, name: string } }} ask
  * @param {{ source?: string, diagnostics?: unknown }} reflection
- * @param {{ work_id: string, buffer_id?: string | null }} ids
+ * @param {{ work_id?: string | null, buffer_id?: string | null, root?: string | null }} ids
+ *   root: the hand read before the picture. A cached door root may be another
+ *   tab's stale name; the engine's birth-root check stays the last word.
  * @param {{ root: () => Promise<string>, put: Function }} door
- * @returns {Promise<{ id: string, bytes: string } | null>}
+ * @param {string | Blob | null} path  hatch product; toBlob decides
+ * @returns {Promise<string | null>}  the keep id, or null
  */
-export async function mintSnap(ask, reflection, ids, door) {
+export async function mintSnap(ask, reflection, ids, door, path) {
     if (!door) {
         say("mintSnap: no door")
         return null
@@ -72,50 +103,46 @@ export async function mintSnap(ask, reflection, ids, door) {
         say("mintSnap: no ask")
         return null
     }
-    if (!ids?.work_id) {
-        say("mintSnap: no work_id — refuse silent keep")
+    // Missing snapshot is not an empty document; only an explicit source is a body.
+    if (!reflection || typeof reflection.source !== "string") {
+        say("no source — not kept")
+        return null
+    }
+
+    const image = toBlob(path)
+    if (image == null) {
+        say("no picture — not kept")
         return null
     }
 
     try {
-        const root = await door.root()
-        const source = typeof reflection?.source === "string" ? reflection.source : ""
+        const root =
+            typeof ids?.root === "string" && ids.root ? ids.root : await door.root()
+        const source = reflection.source
+        const work_id =
+            typeof ids?.work_id === "string" && ids.work_id ? ids.work_id : null
         const bytes = writeSnap({
             root,
-            work_id: ids.work_id,
+            work_id,
             source,
             title: typeof ask.title === "string" && ask.title ? ask.title : null,
             diagnostics: reflection?.diagnostics ?? [],
-            buffer_id: ids.buffer_id ?? null,
+            buffer_id: ids?.buffer_id ?? null,
             prev: typeof ask.prev === "string" && ask.prev ? ask.prev : null,
+            name: typeof ask.name === "string" && ask.name ? ask.name : null,
+            peer: ask.peer ?? null,
+            choices: reflection?.choices,
             ts: stamp(),
         })
 
-        // Source always — even ""; no tombstone (id:kb-source-absence).
-        const id = await door.put(bytes, { source })
-        return { id, bytes }
+        // One write: source + picture. The keep is a photograph or it is not.
+        return await door.put(bytes, { source, image, authored: true })
     } catch (e) {
         say("mintSnap failed:", e && e.message ? e.message : e)
+        if (e?.code === "needs-hand" || e?.code === "stale-hand" || e?.name === "QuotaExceededError") {
+            throw e
+        }
         return null
-    }
-}
-
-/**
- * Picture on an existing keep — fact beside value, like share (id:kc-p-facts).
- * @param {{ put: Function }} door
- * @param {string} bytes
- * @param {string | Blob | null} path
- * @returns {Promise<boolean>}
- */
-export async function attachImage(door, bytes, path) {
-    const image = toBlob(path)
-    if (!door || typeof bytes !== "string" || image == null) return false
-    try {
-        await door.put(bytes, { image })
-        return true
-    } catch (e) {
-        say("attachImage failed:", e && e.message ? e.message : e)
-        return false
     }
 }
 

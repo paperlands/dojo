@@ -1,8 +1,7 @@
-// The keep join as one breath (id:kc-p-join · id:kj-answer).
+// The keep join as one breath (id:kc-p-join).
 //
-// Models the coreshell seat without a canvas: ask → mint → once(path) → attach.
-// No hatch fixture can mint; the picture may arrive late or never; the word is
-// the cause either way.
+// Models the coreshell seat without a canvas: ask → once(path) → mint-with-picture.
+// No picture in the deadline → null, no row. A hatch alone mints nothing.
 //
 // Run: node --test test/js/keep/join_test.mjs
 
@@ -11,7 +10,7 @@ import assert from "node:assert/strict"
 
 import { createObservable } from "../../../assets/js/kernel/observable.js"
 import { temporal } from "../../../assets/js/utils/temporal.js"
-import { mintSnap, attachImage } from "../../../assets/js/keep/kinds/snap.js"
+import { mintSnap } from "../../../assets/js/keep/kinds/snap.js"
 import {
     askKeep,
     registerKeeper,
@@ -66,15 +65,14 @@ function seatOwner({
     /** @type {string[]} */
     const breaths = []
     const unTouch = watchTouched(() => breaths.push("touch"))
-    // The join itself (id:kj-answer-collapse) — mint first, reveal later.
+    // The join itself — wait for a picture, one put, or a spoken drop.
     const unKeeper = registerKeeper(async (ask) => {
-        const minted = await mintSnap(ask, reflection() ?? {}, ids(), door)
-        if (!minted) return null
+        const seen = reflection() ?? {}
+        const path = await temporal.once(paths.watch, waitMs)
+        const id = await mintSnap(ask, seen, ids(), door, path)
+        if (!id) return null
         touched()
-        void temporal.once(paths.watch, waitMs).then(async (path) => {
-            if (await attachImage(door, minted.bytes, path)) touched()
-        })
-        return minted.id
+        return id
     })
     return {
         breaths,
@@ -87,7 +85,7 @@ function seatOwner({
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-describe("the join lifecycle (id:kc-p-join · id:kj-answer)", () => {
+describe("the join lifecycle (id:kc-p-join)", () => {
     /** @type {ReturnType<typeof freshDoor>} */
     let door
     /** @type {ReturnType<typeof createObservable>} */
@@ -105,46 +103,32 @@ describe("the join lifecycle (id:kc-p-join · id:kj-answer)", () => {
         await door.close()
     })
 
-    test("the word is the cause — ask answers with an id before any picture", async () => {
-        // The seal ends on this return (id:kj-vet 2). A path that has not
-        // arrived yet must not hold the asker.
-        const id = await askKeep("a small step")
+    test("a path in the deadline mints a photograph", async () => {
+        const pending = askKeep("a small step")
+        paths.notify(PNG_1PX)
+        const id = await pending
         assert.equal(typeof id, "string")
         assert.ok(id.length > 0)
-        assert.equal(await door.image(id), undefined, "picture has not landed")
+        assert.ok(await door.image(id), "picture landed in the same put")
         assert.deepEqual(seat.breaths, ["touch"], "one fold breath at mint")
-        // The keep is whole without a face.
         assert.ok(await door.get(id))
     })
 
-    test("the picture is the reveal — a late path attaches; the keep is unchanged", async () => {
-        const id = await askKeep("later")
-        const bytes = await door.get(id)
-        assert.equal(await door.image(id), undefined)
-
-        // Hatch product arrives on its own clock (id:kj-life-hatch).
+    test("a late path still makes the keep — the wait is the join", async () => {
+        const pending = askKeep("later")
+        await sleep(10)
         paths.notify(PNG_1PX)
-        // Attach is async put; give the microtask + IDB a beat.
-        await sleep(30)
-
-        const img = await door.image(id)
-        assert.ok(img, "image stored under the message id")
-        assert.equal(await door.get(id), bytes, "re-put is the same keep")
-        assert.deepEqual(
-            seat.breaths,
-            ["touch", "touch"],
-            "mint then attach — two empty fold breaths, like share",
-        )
+        const id = await pending
+        assert.ok(id)
+        assert.ok(await door.image(id))
+        assert.deepEqual(seat.breaths, ["touch"])
     })
 
-    test("a producer that never produces costs a face, never the keep", async () => {
+    test("a producer that never produces is a spoken drop — no keep", async () => {
         const id = await askKeep("kept in the dark")
-        assert.ok(id)
-        // Wait past the deadline (seat waitMs = 40).
-        await sleep(80)
-        assert.ok(await door.get(id), "the keep still stands")
-        assert.equal(await door.image(id), undefined, "no face attached")
-        assert.deepEqual(seat.breaths, ["touch"], "attach never fires a second breath")
+        assert.equal(id, null)
+        assert.equal((await door.list(await door.root())).length, 0)
+        assert.deepEqual(seat.breaths, [], "no mint → no touch")
     })
 
     test("a hatch alone mints nothing — durability is not on that event", async () => {
@@ -169,14 +153,11 @@ describe("the join lifecycle (id:kc-p-join · id:kj-answer)", () => {
 
     test("fork prev rides the ask into the body; hatch never sees it", async () => {
         const parent = "9".repeat(64)
-        const id = await askKeep("forked", { prev: parent })
-        assert.ok(id)
-        // Path is nobody's business for the fork fact.
-        const { read } = await import("../../../assets/js/keep/entry.js")
-        assert.equal(read(await door.get(id)).prev, parent)
-        // A late path still only attaches the face — does not re-encode the ask.
+        const pending = askKeep("forked", { prev: parent })
         paths.notify(PNG_1PX)
-        await sleep(30)
+        const id = await pending
+        assert.ok(id)
+        const { read } = await import("../../../assets/js/keep/entry.js")
         assert.equal(read(await door.get(id)).prev, parent)
         assert.ok(await door.image(id))
     })

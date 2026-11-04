@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Every dojo commit restamps specs.lock to the current specs HEAD.
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+exec bash "$ROOT/scripts/verify/specs_sync.sh" --hook-pre-commit "$@"

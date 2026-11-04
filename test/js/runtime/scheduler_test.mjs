@@ -7,6 +7,7 @@ import { createScheduler, createFrame, allDone, worldTransform, resolveBinding }
 import { parseProgram } from "../../../assets/js/turtling/parse.js"
 import { execute, drainEvents } from "../../../assets/js/turtling/executor.js"
 import { ASTNode } from "../../../assets/js/turtling/ast.js"
+import { Parser } from "../../../assets/js/turtling/mafs/parse.js"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
 
 // Helper: find a child ambient by name in the tree (not via registry)
@@ -39,7 +40,10 @@ function mockDeps() {
     return {
         mathParser: {
             isNumeric(expr) { return /^-?\d+\.?\d*$/.test(expr) },
-            parse(expr) { return { value: expr, children: [] } },
+            parse(expr) {
+                if (expr[0] === "'" || expr[0] === '"') return new Parser().parse(expr)
+                return { value: expr, children: [] }
+            },
             defineFunction() {},
             reset() {},
             userspace: new Map()
@@ -47,7 +51,7 @@ function mockDeps() {
         mathEvaluator: {
             constants: {},
             namespace_check(val) { return val in this.constants },
-            run(tree) { return parseFloat(tree.value) || 0 }
+            run(tree) { return tree.type === 'string' ? tree.value : parseFloat(tree.value) || 0 }
         }
     }
 }
@@ -1140,6 +1144,55 @@ describe("idempotent spawn semantics", () => {
             `projected start should be circle's world origin [100,0,0], got [${start}]`)
     })
 
+    test("frame-targeted head keeps logical heading across goto and respawn", () => {
+        // Production-shaped tree: origin → sketch → other world.
+        // Velocity orientation used to yaw the nose on goto jumps and loop
+        // rewires ("turning left and right with no cause").
+        const code = `loop 3 do
+  fw 100
+  as other world do
+    wait 1
+    goto 0 100
+    fw 100
+  end
+  wait 2
+end
+`
+        const scheduler = createScheduler(function* () { return 0 }, {
+            createDeps: mockDeps,
+            execOpts: { color: '#fff' },
+        })
+        scheduler.hotSwapChild("@p", {
+            name: "sketch",
+            code: { ast: parseProgram(code), functions: null },
+            style: { color: '#fff', thickness: 2, down: true, showTurtle: 10 },
+            origin: SE3.identity(),
+        })
+
+        const headings = []
+        let ticks = 0
+        while (!scheduler.done && ticks < 200) {
+            scheduler.tick(ticks * 100)
+            let other = null
+            const walk = (f) => {
+                if (f.name === "other") other = f
+                for (const c of f.children.values()) walk(c)
+            }
+            walk(scheduler.root)
+            if (other?.sync?.head?.rotation) {
+                const r = other.sync.head.rotation
+                headings.push([r.w, r.x, r.y, r.z].map(n => Math.round(n * 1e6) / 1e6))
+            }
+            ticks++
+        }
+        assert.ok(scheduler.done)
+        assert.ok(headings.length > 0, "expected head poses")
+        const key = (h) => h.join(",")
+        const uniq = new Set(headings.map(key))
+        assert.equal(uniq.size, 1,
+            `head heading must not invent turns; got ${uniq.size} distinct quats: ${[...uniq].join(" | ")}`)
+    })
+
     test("non-frame batch child is NOT re-stamped (idempotent no-op)", () => {
         const ast = parseProgram("loop 4 do\n  rt 90\n  as side do\n    fw 50\n  end\nend")
         const deps = mockDeps()
@@ -1318,11 +1371,13 @@ describe("universe names: world vs origin", () => {
     const noop = () => (function* () {})()
     function universe() {
         const root = createFrame('origin', noop(), {})                 // synthetic root, parentless
+        const at = { ...SE3.identity(), position: [100, 0, 0] }
         const program = createFrame('sketch', noop(), {
             parent: root,
-            transform: { ...SE3.identity(), position: [100, 0, 0] },    // top-level turtle moved
+            transform: { ...at },    // top-level turtle moved
         })
-        const timer = createFrame('timer', noop(), { parent: program })
+        // Born where the program stood — production stamps origin at spawn.
+        const timer = createFrame('timer', noop(), { parent: program, origin: { ...at } })
         // Lifecycle fields the scheduler's attachMeta() would set in production:
         for (const f of [root, program, timer]) { f.elapsedTime = 0; f.commandCount = 0 }
         program.elapsedTime = 5                                         // program clock has advanced
@@ -1335,14 +1390,20 @@ describe("universe names: world vs origin", () => {
         assert.equal(resolveBinding(timer, 'world.time'), 5)
     })
 
-    test("world.x tracks the top-level program's transform", () => {
-        const { timer } = universe()
+    test("world.x is the program pose in shared world space", () => {
+        const { timer, program } = universe()
+        // The program stands at 100; `world` answers in the ground everyone
+        // shares, not relative to where the reader was born (prim-world).
         assert.equal(resolveBinding(timer, 'world.x'), 100)
+        // Program walks further → world.x tracks its turtle.
+        program.transform.swap(() => ({ ...SE3.identity(), position: [150, 0, 0] }))
+        assert.equal(resolveBinding(timer, 'world.x'), 150)
     })
 
-    test("origin is the fixed datum: timeless and at absolute (0,0,0)", () => {
+    test("the root datum is world-valued, not an observer-relative coordinate", () => {
         const { timer } = universe()
         assert.equal(resolveBinding(timer, 'origin.time'), 0)
+        // Absolute 0, expressed on a birth floor seated at 100 → -100.
         assert.equal(resolveBinding(timer, 'origin.x'), 0)
     })
 

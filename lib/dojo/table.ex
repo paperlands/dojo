@@ -38,29 +38,40 @@ defmodule Dojo.Table do
     GenServer.call(table_pid, {:change_meta, delta})
   end
 
-  def last({topic, target_node}, event) do
-    case Cache.get({__MODULE__, :last, topic, event}) do
-      nil -> fetch_state(topic, target_node, event, :last)
-      cached_state -> cached_state
-    end
+  # Content always asks the owner. A projection can outlive the incarnation that
+  # wrote it (terminate/2 retracts best-effort, TTL is minutes), and a document
+  # read is a claim about current state — not a hint. Shares fetch_state/4.
+  def last({reg_key, target_node}, event) do
+    fetch_state(reg_key, target_node, event, :last)
   end
 
-  def last_meta({topic, target_node}, event) do
-    case Cache.get({__MODULE__, :last, topic, event}) do
-      nil -> fetch_state(topic, target_node, event, :last_meta)
+  # A cache hit is last-known state of whichever owner wrote it — recovery
+  # material, never a liveness claim. It answers only for an owner on THIS
+  # node: anything else is another incarnation's copy. (id:ownership-o4)
+  def last_meta({reg_key, target_node}, event) do
+    case cached(reg_key, event, target_node) do
+      nil -> fetch_state(reg_key, target_node, event, :last_meta)
       cached -> Map.take(cached, [:path, :state, :time])
     end
   end
 
-  defp fetch_state(topic, target_node, event, call_type) do
+  # The projection is written by the owner's own mailbox, so a hit means that
+  # owner runs here. A foreign owner must be asked, never substituted.
+  defp cached(reg_key, event, target_node) do
     if target_node == :partisan.node() do
-      local_fetch(topic, event, call_type)
+      Cache.get!({__MODULE__, :last, reg_key, event})
+    end
+  end
+
+  defp fetch_state(reg_key, target_node, event, call_type) do
+    if target_node == :partisan.node() do
+      local_fetch(reg_key, event, call_type)
     else
       case :partisan_rpc.call(
              target_node,
              __MODULE__,
              :local_fetch,
-             [topic, event, call_type],
+             [reg_key, event, call_type],
              5000
            ) do
         {:badrpc, reason} ->
@@ -73,8 +84,8 @@ defmodule Dojo.Table do
   end
 
   @doc false
-  def local_fetch(topic, event, call_type \\ :last) do
-    GenServer.call({:via, Registry, {Dojo.TableRegistry, topic}}, {call_type, event}, 5000)
+  def local_fetch(reg_key, event, call_type \\ :last) do
+    GenServer.call({:via, Registry, {Dojo.TableRegistry, reg_key}}, {call_type, event}, 5000)
   catch
     # Table absent or tearing down mid-call (self-stops with :normal when its
     # last watcher leaves) — same gone-from-under-us family as Class.attach.
@@ -90,8 +101,8 @@ defmodule Dojo.Table do
   end
 
   def start_link(args) do
-    # Register using deterministic reg_key: "#{topic}:#{user_id}"
-    # This ensures singleton per user+clan with stable cache/presence keys
+    # Register using deterministic reg_key: "#{topic}:#{author_id}"
+    # (id:ki-presence). Singleton per person+clan with stable cache/presence keys.
     GenServer.start_link(__MODULE__, args, name: via_tuple(args.reg_key))
   end
 
@@ -152,11 +163,11 @@ defmodule Dojo.Table do
   # ── The one write path (Phase 4 / decision 008) ─────────────────────────
   # `state.last` is the OWNER of a disciple's latest stores. The Cache is its
   # single DECLARED read-only projection — written here and nowhere else
-  # (async: locality is the projection's reason to exist; `Table.last/2`
-  # reads through it before falling back to the owner via RPC). No other
-  # module may put a `{Table, :last, …}` key.
+  # Written INLINE: the owner's mailbox is the projection's order, and
+  # terminate's retraction is always last. `Table.last/2` reads through it
+  # before falling back via RPC. No other module may put a `{Table, :last, …}` key.
   defp record(%{last: last, reg_key: reg_key} = state, event, store) do
-    async_cache_put(reg_key, event, store)
+    project(reg_key, event, store)
     %{state | last: Map.put(last, event, store)}
   end
 
@@ -191,10 +202,11 @@ defmodule Dojo.Table do
   def handle_call(
         {:change_meta, {_key, _value} = delta},
         _from,
-        %{topic: topic, disciple: %{name: name}} = state
+        %{topic: topic, reg_key: reg_key} = state
       ) do
-    # Route Gate.change through Table PID (which owns the presence entry)
-    Dojo.Gate.change(self(), topic, name, delta)
+    # Route Gate.change through Table PID (which owns the presence entry).
+    # Tracker key is reg_key (id:ki-presence), never the display name.
+    Dojo.Gate.change(self(), topic, reg_key, delta)
     {:reply, :ok, state}
   end
 
@@ -212,9 +224,9 @@ defmodule Dojo.Table do
 
   def handle_info(
         {:network_change, new_addr},
-        %{topic: topic, disciple: %{name: name}} = state
+        %{topic: topic, reg_key: reg_key} = state
       ) do
-    Dojo.Gate.change(self(), topic, name, {:addr, new_addr})
+    Dojo.Gate.change(self(), topic, reg_key, {:addr, new_addr})
     {:noreply, state}
   end
 
@@ -231,15 +243,29 @@ defmodule Dojo.Table do
     end
   end
 
-  def terminate(_reason, %{reg_key: reg_key}) do
-    Cache.delete({__MODULE__, :last, reg_key, :hatch})
+  def terminate(_reason, %{reg_key: reg_key, last: last}) do
+    # Every projection this owner wrote dies with it — one incarnation's
+    # stores must never answer for the next.
+    for event <- Map.keys(last), do: unproject(reg_key, event)
+    unproject(reg_key, :hatch)
     :ok
   end
 
-  defp async_cache_put(reg_key, event, store) do
-    Task.Supervisor.start_child(Dojo.TaskSupervisor, fn ->
-      Cache.put({__MODULE__, :last, reg_key, event}, store, ttl: @ttl)
-    end)
+  # Best-effort projection write and retract: a projection may lose; it never
+  # kills the owner. Written INLINE — the owner's mailbox is the projection's
+  # order, so a task per update can never reorder it behind the owner's back.
+  defp project(reg_key, event, store) do
+    Cache.put({__MODULE__, :last, reg_key, event}, store, ttl: @ttl)
+    :ok
+  catch
+    _, _ -> :ok
+  end
+
+  defp unproject(reg_key, event) do
+    Cache.delete({__MODULE__, :last, reg_key, event})
+    :ok
+  catch
+    _, _ -> :ok
   end
 
   defp schedule_hatch_broadcast(%{broadcast_timer: nil} = state, store) do

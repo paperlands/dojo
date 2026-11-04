@@ -118,8 +118,7 @@ describe("entry: read is for display; unknowns need no rule", () => {
     })
 
     test("only a value is written — null and omitted are the same absence", () => {
-        // A missing work and a null work must not be two names (id:kc-r-absence).
-        // write() emits neither. put refuses both, because a log keep is about something.
+        // write() emits neither null nor the key. Origin omits target.
         const omitted = write("snap", { source: "x" }, { root: ctx.root, ts: ctx.ts })
         const explicit = write("snap", { source: "x" }, { ...ctx, target: null })
 
@@ -127,7 +126,7 @@ describe("entry: read is for display; unknowns need no rule", () => {
         assert.equal(name(omitted), name(explicit))
         assert.equal(omitted.includes("target"), false)
         assert.equal(read(omitted).target, undefined)
-        assert.equal(unshaped(read(omitted)), "target")
+        assert.equal(unshaped(read(omitted)), null)
     })
 
     test("genesis carries no journal and no work — it is the journal's name", () => {
@@ -178,7 +177,7 @@ describe("entry: the skeleton", () => {
     test("the table is field/type rows — the law, not a second predicate", () => {
         assert.deepEqual(
             skeleton.map((r) => r.field),
-            ["root", "kind", "target", "ts.t", "ts.n", "v"],
+            ["root", "kind", "ts.t", "ts.n", "v"],
         )
         for (const row of skeleton) {
             assert.equal(typeof row.type, "string")
@@ -198,7 +197,7 @@ describe("entry: the skeleton", () => {
         const tops = [...new Set(skeleton.map((r) => r.field.split(".")[0]))]
         assert.deepEqual(
             [...tops].sort(),
-            ["kind", "root", "target", "ts", "v"],
+            ["kind", "root", "ts", "v"],
         )
     })
 

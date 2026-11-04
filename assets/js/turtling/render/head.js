@@ -7,21 +7,28 @@ import {
     LineSegments,
     Mesh,
     MeshBasicMaterial,
-    Quaternion,
-    Vector3,
 } from '../../utils/three-entry.js'
 import {ColorConverter} from '../../utils/color.js'
+import { INK } from '../ink.js'
 
-// Scratch for world-velocity orientation of frame-targeted heads (reused per frame).
-const _hdDir = new Vector3();
-const _hdWorld = new Quaternion();
-const _hdFwd = new Vector3(1, 0, 0);   // head's nose points +x
-
+// The head's on-screen size is invariant: its world scale tracks the camera
+// distance, snapped to a ratio ladder so it re-scales in uniform ~5% steps
+// rather than doubling at decade edges. (id:laws-decl-interface)
+//
+// Deliberately CPU-side. three's `onBeforeCompile` was tried for a GPU
+// vertex-shader version and is NOT invoked for the head material in this stack
+// (verified in-browser); `onBeforeRender` is the live seam. Revisit only with
+// that understood.
+const HEAD_SCALE_STEP = 1.05
+const HEAD_SCALE_LOG = Math.log(HEAD_SCALE_STEP)
+// The drawn head is 10% smaller than the symbolic size: `show 10` keeps its
+// meaning, only the footprint on screen shrinks.
+const HEAD_DRAW_SCALE = 0.9
 
 export default class Head {
     constructor(scene) {
         const defaultColors = {
-            head: "#e77808",
+            head: INK,
             wireframe: "black"
         };
         
@@ -61,6 +68,7 @@ export default class Head {
         
         this.turtleMesh = new Mesh(headGeometry, headMaterial);
         this.turtleMesh.renderOrder = 10001;
+        this.turtleMesh.scale.setScalar(HEAD_DRAW_SCALE);
         this.turtleGroup.add(this.turtleMesh);
 
         // Wireframe as separate layer - renders AFTER solid
@@ -74,6 +82,7 @@ export default class Head {
 
         this.wireframeMesh = new LineSegments(edgeGeometry, edgeMaterial);
         this.wireframeMesh.renderOrder = 10002;
+        this.wireframeMesh.scale.setScalar(HEAD_DRAW_SCALE);
         this.turtleGroup.add(this.wireframeMesh);
     }
 
@@ -106,9 +115,6 @@ export default class Head {
 
     update(position, rotation, color, size=10) {
         this.turtleGroup.position.set(...position);
-        // A normal head shows its heading directly. A frame-targeted head passes
-        // rotation=null and is oriented by orientToWorld() instead — its local
-        // heading cancels the layer group's rotation and would otherwise freeze.
         if (rotation) this.turtleGroup.quaternion.copy(rotation);
 
         if(this.colors.headkey !== color) {
@@ -116,54 +122,24 @@ export default class Head {
         }
 
         if(this.current.size != size) {
-            this.turtleGroup.scale.setScalar(this.current.scale * size / this.current.size);
             this.current.size = size;
         }
     }
-
-    // Orient a frame-targeted head along its WORLD-space velocity — the direction
-    // its rendered position actually moves (the tangent of the projected ink). For
-    // such a head the layer group itself rotates (its origin tracks the target), so
-    // the local heading and group rotation can cancel and freeze the marker; only
-    // world velocity tracks the visible curve. `worldPos` is the head's world
-    // position, `groupQuat` its layer's world rotation; the head lives in the layer
-    // frame, so the world look quaternion maps back via groupQuat⁻¹. Eased per-RAF.
-    // (spec id:ft-d5-head)
-    orientToWorld(worldPos, groupQuat, alpha = 0.35) {
-        if (!this._prevWP) { this._prevWP = new Vector3().copy(worldPos); return; }
-        const dx = worldPos.x - this._prevWP.x, dy = worldPos.y - this._prevWP.y, dz = worldPos.z - this._prevWP.z;
-        this._prevWP.set(worldPos.x, worldPos.y, worldPos.z);
-        const len = Math.sqrt(dx*dx + dy*dy + dz*dz);
-        if (len < 1e-4) return;
-        _hdDir.set(dx/len, dy/len, dz/len);
-        _hdWorld.setFromUnitVectors(_hdFwd, _hdDir);   // +x → world velocity
-        if (!this._targetQuat) this._targetQuat = new Quaternion();
-        this._targetQuat.copy(groupQuat).invert().multiply(_hdWorld);   // → layer-local
-        this.turtleGroup.quaternion.slerp(this._targetQuat, alpha);
-    }
-
-    scale(scaleFactor=2) {
-        this.current.scaleFactor = scaleFactor;
-        const value = scaleFactor * this.current.size/10;
-
-        // Determine the magnitude (order of 10)
-        const magnitude = Math.floor(Math.log10(Math.abs(value)));
-
-        // Round to 1 significant figure
-        const scale = Math.pow(10, magnitude);
-        const roundedScaleFactor = Math.round(value / scale) * scale;
-
-        if(this.current.scale != roundedScaleFactor) {
-            this.current.scale = roundedScaleFactor;
-            this.turtleGroup.scale.setScalar(this.current.scale);
+    // Snap the invariant world scale to a ratio ladder: uniform in ratio, so a
+    // zoom never pops the head by more than HEAD_SCALE_STEP. (id:laws-decl-interface)
+    scale(scaleFactor = 2) {
+        const value = scaleFactor * this.current.size / 10
+        if (!(value > 0)) return
+        const snapped = Math.pow(HEAD_SCALE_STEP, Math.round(Math.log(value) / HEAD_SCALE_LOG))
+        if (this.current.scale !== snapped) {
+            this.current.scale = snapped
+            this.turtleGroup.scale.setScalar(snapped)
         }
-        
     }
 
     reset() {
         this.turtleGroup.position.set(...this.defaultPosition);
         this.turtleGroup.quaternion.copy(this.defaultRotation);
-        this._prevWP = null;   // restart world-velocity tracking (frame-targeted heads)
     }
 
     // Free GPU geometry/materials and detach from the scene. The scene is

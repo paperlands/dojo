@@ -10,6 +10,10 @@ export const VERBS = Object.freeze([
     "image",
     "source",
     "genesis",
+    "proof",
+    "hand",
+    "roots",
+    "newHand",
 ])
 
 export const VERB_SET = new Set(VERBS)

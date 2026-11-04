@@ -1,3 +1,5 @@
+import { angular, coefficient, sum3 } from "../rigid_precision.js";
+
 export class Versor {
     static EPSILON = Number.EPSILON;
 
@@ -41,7 +43,7 @@ export class Versor {
     }
 
     // Fast constructor — skips normalization for known-unit inputs.
-    // Used by fromAxisAngle (sin²+cos²=1) and multiply (unit×unit=unit).
+    // Used by fromAxisAngle and products still inside the unit-norm error budget.
     static raw(w, x, y, z) {
         const v = Object.create(Versor.prototype);
         v.w = w; v.x = x; v.y = y; v.z = z;
@@ -54,79 +56,63 @@ export class Versor {
         const halfAngle = (angle * Math.PI) / 360;
 
         // Handle identity rotation precisely
-        if (Math.abs(angle) < Versor.EPSILON) {
+        if (angle === 0) {
             return Versor.raw(1, 0, 0, 0);
         }
 
         const sinHalfAngle = Math.sin(halfAngle);
         const cosHalfAngle = Math.cos(halfAngle);
 
-        // Normalize axis
-        const length = Math.sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
-        if (length < Versor.EPSILON) {
+        // Normalize axis. A shared unit axis is every ordinary turtle turn: its raw
+        // squared length is exactly 1 — the correctly-rounded norm is 1 — so the
+        // common case pays neither scaling nor hypot.
+        const lengthSq = axis.x * axis.x + axis.y * axis.y + axis.z * axis.z;
+        if (lengthSq === 1) {
+            return Versor.raw(
+                cosHalfAngle,
+                axis.x * sinHalfAngle,
+                axis.y * sinHalfAngle,
+                axis.z * sinHalfAngle
+            );
+        }
+        // At the edges of the number line the raw norm cannot be taken: scale the
+        // largest component out first — a finite axis has a direction at any
+        // magnitude. A zero axis has no turn. (P2: scale before norm)
+        const m = Math.max(Math.abs(axis.x), Math.abs(axis.y), Math.abs(axis.z));
+        if (m === 0) {
             return Versor.raw(1, 0, 0, 0);
         }
+        const ux = axis.x / m, uy = axis.y / m, uz = axis.z / m;
+        const length = Math.hypot(ux, uy, uz);
 
-        const scale = sinHalfAngle / length;
         // sin²(θ/2) + cos²(θ/2) = 1 by construction — skip normalize
         return Versor.raw(
             cosHalfAngle,
-            axis.x * scale,
-            axis.y * scale,
-            axis.z * scale
+            (ux / length) * sinHalfAngle,
+            (uy / length) * sinHalfAngle,
+            (uz / length) * sinHalfAngle
         );
     }
 
     multiply(q) {
-        const w = this.w * q.w - this.x * q.x - this.y * q.y - this.z * q.z;
-        const x = this.w * q.x + this.x * q.w + this.y * q.z - this.z * q.y;
-        const y = this.w * q.y - this.x * q.z + this.y * q.w + this.z * q.x;
-        const z = this.w * q.z + this.x * q.y - this.y * q.x + this.z * q.w;
-        // unit × unit = unit by quaternion algebra — skip normalize
+        // Clean angular state before it can accumulate into a direction.
+        // This is the geometry's declared precision, not scalar rounding. (id:rotation-precision-boundary)
+        const w = angular(this.w * q.w - this.x * q.x - this.y * q.y - this.z * q.z);
+        const x = angular(this.w * q.x + this.x * q.w + this.y * q.z - this.z * q.y);
+        const y = angular(this.w * q.y - this.x * q.z + this.y * q.w + this.z * q.x);
+        const z = angular(this.w * q.z + this.x * q.y - this.y * q.x + this.z * q.w);
+        // Unit × unit is unit algebraically; retain the existing norm repair budget.
+        const normSq = w * w + x * x + y * y + z * z;
+        if (Math.abs(normSq - 1) > 8 * Number.EPSILON) {
+            const norm = Math.sqrt(normSq);
+            return Versor.raw(w / norm, x / norm, y / norm, z / norm);
+        }
         return Versor.raw(w, x, y, z);
     }
 
     rotate(v) {
-        // Optimize identity quaternion case
-        if (Math.abs(this.w - 1) < Versor.EPSILON &&
-            Math.abs(this.x) < Versor.EPSILON &&
-            Math.abs(this.y) < Versor.EPSILON &&
-            Math.abs(this.z) < Versor.EPSILON) {
-            return {
-                x: Number(v.x),
-                y: Number(v.y),
-                z: Number(v.z)
-            };
-        }
-
-        // Efficient quaternion rotation: v' = q * v * q*
-        // Using optimized formula: v' = v + 2 * qv × (qv × v + qw * v)
-        // where qv = (qx, qy, qz) and qw = this.w
-
-        const qx = this.x, qy = this.y, qz = this.z, qw = this.w;
-        const vx = v.x, vy = v.y, vz = v.z;
-
-        // First cross product: qv × v
-        const cx1 = qy * vz - qz * vy;
-        const cy1 = qz * vx - qx * vz;
-        const cz1 = qx * vy - qy * vx;
-
-        // qv × v + qw * v
-        const tx = cx1 + qw * vx;
-        const ty = cy1 + qw * vy;
-        const tz = cz1 + qw * vz;
-
-        // Second cross product: qv × (qv × v + qw * v)
-        const cx2 = qy * tz - qz * ty;
-        const cy2 = qz * tx - qx * tz;
-        const cz2 = qx * ty - qy * tx;
-
-        // Final result: v + 2 * (qv × (qv × v + qw * v))
-        return {
-            x: Number(vx + 2 * cx2),
-            y: Number(vy + 2 * cy2),
-            z: Number(vz + 2 * cz2)
-        };
+        const [x, y, z] = this.rotateVec(Number(v.x), Number(v.y), Number(v.z));
+        return { x, y, z };
     }
 
     // Rotate returning [x,y,z] tuple — zero object allocation.
@@ -135,35 +121,33 @@ export class Versor {
         if (this.w === 1 && this.x === 0 && this.y === 0 && this.z === 0) {
             return [vx, vy, vz];
         }
-        const qx = this.x, qy = this.y, qz = this.z, qw = this.w;
-        const cx1 = qy * vz - qz * vy;
-        const cy1 = qz * vx - qx * vz;
-        const cz1 = qx * vy - qy * vx;
-        const tx = cx1 + qw * vx;
-        const ty = cy1 + qw * vy;
-        const tz = cz1 + qw * vz;
-        const cx2 = qy * tz - qz * ty;
-        const cy2 = qz * tx - qx * tz;
-        const cz2 = qx * ty - qy * tx;
-        return [vx + 2 * cx2, vy + 2 * cy2, vz + 2 * cz2];
+        // One bounded-precision action for movement, frames and readings.
+        // Normalize coefficients before scaling distances; no coordinate floor.
+        // Sparse heading action avoids unused columns. (id:rotation-precision-boundary)
+        const w = this.w, x = this.x, y = this.y, z = this.z;
+        const xx = x * x, yy = y * y, zz = z * z;
+        const s = 2 / (w * w + xx + yy + zz);
+        const a = coefficient(1 - s * (yy + zz));
+        const b = coefficient(s * (x * y + w * z));
+        const c = coefficient(s * (x * z - w * y));
+        if (vy === 0 && vz === 0) return [a * vx, b * vx, c * vx];
+        return [
+            sum3(a * vx, coefficient(s * (x * y - w * z)) * vy, coefficient(s * (x * z + w * y)) * vz),
+            sum3(b * vx, coefficient(1 - s * (xx + zz)) * vy, coefficient(s * (y * z - w * x)) * vz),
+            sum3(c * vx, coefficient(s * (y * z + w * x)) * vy, coefficient(1 - s * (xx + yy)) * vz)
+        ];
     }
 
     getTransformValues() {
-        const x2 = this.x * this.x;
-        const y2 = this.y * this.y;
-        const z2 = this.z * this.z;
-        const xy = this.x * this.y;
-        const xz = this.x * this.z;
-        const yz = this.y * this.z;
-        const wx = this.w * this.x;
-        const wy = this.w * this.y;
-        const wz = this.w * this.z;
-
+        const w2 = this.w * this.w, x2 = this.x * this.x;
+        const y2 = this.y * this.y, z2 = this.z * this.z;
+        const s = 2 / (w2 + x2 + y2 + z2);
+        const xy = this.x * this.y, wz = this.w * this.z;
         return {
-            a: Number(1 - 2 * (y2 + z2)),
-            b: Number(2 * (xy + wz)),
-            c: Number(2 * (xy - wz)),
-            d: Number(1 - 2 * (x2 + z2)),
+            a: coefficient(1 - s * (y2 + z2)),
+            b: coefficient(s * (xy + wz)),
+            c: coefficient(s * (xy - wz)),
+            d: coefficient(1 - s * (x2 + z2)),
             e: 0,
             f: 0
         };

@@ -49,6 +49,40 @@ the *shape of the question*, not by habit.
 
 In short: Grep/Read to find, the bridge to cite, LSP to operate on a symbol.
 
+* RELEASE — promises and their witnesses
+:PROPERTIES:
+:ID: nav-v06-frontier
+:KEYWORDS: v0.6 release frontier coherence tower laws keep runtime artifact preservation evidence
+:PATH: specs/weave/v0.6-frontier.org
+:END:
+
+=specs/ATLAS.org= enters the constellation. This checkpoint separates host artifacts
+from Dojo recovery, and implemented behavior from accepted policy. Owners retain law.
+
+* PROBE — instruments and their exit
+:PROPERTIES:
+:ID: nav-probe-lifecycle
+:TYPE: reference
+:KEYWORDS: probe instrument status composted lifecycle spike witness drain
+:END:
+
+A =probe/= is an instrument — not a test, not a spec. It makes a question
+answerable =[⚡]=, and its worth is the reading, not the file. Every instrument
+carries one =probe-status:= header: =draft | active | concluded | superseded |
+composted=. That status is its exit — spent probes drain to =probe/composted/=, and
+nothing there is ever cited (re-anchor, not re-emit; D012). Doctrine, the header
+syntax per file type, and the drain rule: =probe/README.org=.
+
+Census, seat check, and citation-rot check:
+
+#+BEGIN_SRC sh
+bash scripts/verify/probe_status.sh           # advisory
+bash scripts/verify/probe_status.sh --strict  # exit 2 on any finding (a gate)
+#+END_SRC
+
+:PATH: probe/README.org
+:PATH: scripts/verify/probe_status.sh
+
 * STATE — tuplespace, presence, cache
 :PROPERTIES:
 :ID: nav-state
@@ -80,10 +114,12 @@ projection (=async_cache_put=). Briefly diverged as WIP; reconciled by =1d19ad4=
 ** who is present — tracker, join/leave
 :PROPERTIES:
 :ID: nav-gate
-:KEYWORDS: presence tracker gate join leave online disciples metadata transport
+:KEYWORDS: presence tracker gate join leave online disciples metadata transport reg_key author_id ki-presence
 :PATH: lib/dojo/gate.ex
 :END:
-Decision 002: presence doubles as metadata transport.
+Decision 002: presence doubles as metadata transport. Tracker key is
+Law: =reg_key = "#{topic}:#{root}"= ([[file:specs/weave/keep-carve.org][keep-carve]]
+=kc-repro=). Door still keys =topic:author_id= until the occupancy cut.
 
 ** persistence — nebulex cache as primary store
 :PROPERTIES:
@@ -95,10 +131,12 @@ Decision 002: presence doubles as metadata transport.
 ** identity — disciple, address, reg key
 :PROPERTIES:
 :ID: nav-disciple
-:KEYWORDS: identity disciple table_address reg_key session name addr
+:KEYWORDS: identity disciple table_address reg_key session name addr author_id ki-mint
 :PATH: lib/dojo/disciple.ex::def table_address
 :END:
-Decisions 006/007: one ambient address, one user identity.
+Decisions 006/007 (amended 2026-08-18): one ambient address; occupancy
+is the hand (=root=). Session id is a cookie, not a person.
+([[file:specs/weave/keep-carve.org][keep-carve]] =kc-repro=).
 
 ** room state — shared class space
 :PROPERTIES:
@@ -126,6 +164,94 @@ the kept entry's bytes and the bytes are the name, so a reissued stamp is a
 dropped entry — the clamp and =n= are identity, not tidiness
 ([[file:specs/weave/keep-carve.org][keep-carve]] =kc-c-stamp=). =n= never
 crosses a boundary; cross-hand compares read =t= alone (D008).
+
+** keep foundation review — evidence before extension
+:PROPERTIES:
+:ID: nav-keep-foundation-review
+:KEYWORDS: keep foundation Linear sync refusal receipt retention root proof clock tabs coverage migration
+:PATH: specs/weave/keep-foundation-review.org
+:END:
+Draft inquiry, not replacement law. Prior study and six counterexamples:
+=node probe/keep-foundation/audit.mjs=. Memory IDB; no real-server claim.
+Resolution/exit: =probe/keep-foundation/RESULTS.org=.
+Agreed direction: [[id:keep-foundation-archive-direction]] — shared state below Keep;
+enduring archives, rooms as reach; eager archive delivery and attention-driven peer pull.
+Encounter scope: [[id:keep-relevant-encounters]] — lazy root/work/base pulls, never all history first.
+Live share promise: [[id:la-live-share]] — server-backed signed material, not merely an answered row.
+Compatibility: [[id:keep-foundation-compatibility]] — exact old bytes, versioned meaning, preserve or honestly refuse future input.
+Coherence audit: [[id:keep-coherence-observation]] — source failures and the next capture boundary.
+Repairs: [[id:keep-coherence-head-owner]] · [[id:keep-coherence-whole-document]] — owned head, whole carry · [[id:keep-coherence-capture-cut]] — owned capture.
+Native capture witness: [[id:probe-keep-capture-browser]] — real PNG pixels with a software WebGL2 fence;
+=node probe/keep-foundation/capture_browser.mjs= (not a mounted app or hardware-performance proof).
+
+Origin membership regression: =mix test test/dojo/keep/work_membership_test.exs=.
+Different-root first-child capture is fixed; bytes stay retained without becoming members.
+Typed =keep:= / =work:= reads, per-room receipts and source digests: [[id:keep-origin-read-landing]].
+Cross-runtime path: =test/dojo/keep/link_roundtrip_test.exs=; actual JS/journal, routed Phoenix,
+controlled transport; signed WebCrypto payloads now pass the actual OTP write guard.
+Stable author paging: =test/dojo/keep/author_cursor_test.exs=; =t.n.id= order/cursor/seek,
+legacy cursor restarts, no implied causal order or late-arrival completeness.
+Release cut/limits: [[id:keep-author-paging]] · [[id:probe-keep-work-evidence]] · [[id:story-arrival]].
+
+** keep authentication — forward-only authorship
+:PROPERTIES:
+:ID: nav-keep-auth
+:KEYWORDS: keep authentication anonymous device key author root account signature enrollment legacy unsigned
+:PATH: specs/weave/keep-auth.org
+:END:
+Own-root signing, attributed forks; no scoped grants or legacy authority bridge.
+Historical keeps may leave production and survive as ghost credit, not signing rights.
+Contract: [[id:keep-auth-authority]] · [[id:keep-auth-relations]] · [[id:keep-auth-claims]].
+Coauthorship direction: [[id:keep-auth-coauthorship]] — multiple hands per work; exact
+moments carry proofs, origin proves birth rather than perpetual exclusive ownership.
+Proposal/acceptance center: [[id:keep-auth-proposal-acceptance]] — proposer signs P;
+author signs its incorporation and exact result. Referencing alone is not acceptance.
+Origin seam: [[id:keep-auth-origin-seam]] — one composable =origin_root/1= proof query
+for scalar reads and the bounded room fan; attribution conveys no membership.
+Regression: =mix test test/dojo/keep/work_membership_test.exs= (both fans: one SELECT).
+Own-root write guard: [[id:keep-auth-write-guard]] — =mix test test/dojo/keep/auth_test.exs=.
+Durable proofs: [[id:keep-auth-durable-proof]] — explicit mint signs at commit; imports never sign.
+=proof(bytes)= reads cached evidence after key loss; pulls preserve it, warm exact hits do not discover it.
+Portable integer bounds/corpus: =mix test test/dojo/keep/proof_wire_test.exs test/dojo/keep/integer_domain_test.exs=.
+Chromium worker + durable IDB + OTP: =node scripts/verify/keep_auth_browser.mjs=; repeat with =--bundled= for the classic worker.
+Explicit keyless recovery: =node --test test/js/keep/hand_transition_test.mjs test/js/keep/hand_restore_test.mjs test/js/keep/hand_door_test.mjs=.
+Gesture→real mint→wire: =node --test test/js/shell/inner_mount_test.mjs=; rendering/confirm ports mocked.
+Eager sync across key recovery: [[id:keep-auth-retired-delivery]] — =test/js/keep/root_lineage_test.mjs=; native =node scripts/verify/keep_auth_browser.mjs=.
+Publication/withdrawal claims, account enrollment and rotation remain unimplemented.
+Historical impersonation counterexample: [[id:probe-keep-auth-boundary]]; now superseded
+by missing-proof, wrong-key and unsigned-child refusal controls in =auth_test.exs=.
+Reading contract: [[id:keep-auth-reading-boundary]] · historical [[id:probe-keep-local-membership]].
+=node --test test/js/link/evidence_test.mjs=: proved work versus exact unproven borrowing,
+positive enrichment, read-without-signing and legacy offline/room-behind controls.
+Whole-shell regression: =node --test test/js/shell/inner_mount_test.mjs=.
+Real journal/wire mount ships retained proof and forwards proved-read options; missing-port
+mutations fail. Historical root cause: [[id:probe-keep-shell-wire]].
+Delivery liveness: [[id:probe-keep-page-liveness]] — =node probe/keep-foundation/page_liveness.mjs=.
+Stateless proved-read filter landed; raw newest-N windows are not inspection progress.
+Real Chromium sparse-prefix cost: [[id:probe-keep-local-filter-bench]].
+Crypto/storage: =node probe/keep-foundation/auth_key_recovery.mjs --algorithm P256-SHA256 --runs 3=.
+Comparative feasibility only; native Ed25519 has a known weak-key/split-verdict blocker.
+Evidence-only admission: =mix test probe/keep-foundation/admission_spike.exs=.
+Primitive corpus: =MIX_ENV=test mix run --no-start probe/keep-foundation/wycheproof_conformance.exs -- <vector.json>=.
+Wycheproof's acceptable bucket includes universal forgery; scored passes are not a key policy.
+These instruments install no authentication and change no existing roots.
+
+** keep priors — Jujutsu identity, choices, and committed referents
+:PROPERTIES:
+:ID: nav-keep-priors-review
+:KEYWORDS: keep priors jj Jujutsu Git Automerge Datomic Darcs frontier conflict image identity correction
+:PATH: specs/weave/keep-priors-review.org
+:END:
+Draft structure review. =bash probe/keep-foundation/jj_prior.sh= isolates jj
+experiments in /tmp; =node probe/keep-foundation/referent_identity.mjs= measures
+message identity versus image identity. No production or migration change.
+
+Git signing prior: [[id:keep-prior-git-signing]] — commit vs tag identity, per-object proofs,
+explicit ref selection and a disposable two-key/unsigned-parent witness; no continuity ruling.
+Attestation priors: [[id:keep-prior-attestation]] — DSSE, in-toto, grow-only evidence;
+ordinary signed referring statements versus literal same-payload co-signatures.
+State-capture priors: [[id:keep-prior-state-capture]] — document versus session;
+last emitted value versus restorable state; preserve core AST and scoped hydration.
 
 ** keep hash — text → hex64, one engine always
 :PROPERTIES:
@@ -155,7 +281,8 @@ entry is a string; there is nothing to canonicalize
 =nonce(random)= → hex64; =genesisBytes(random, ts)= → the entry whose =name= is
 the journal's root. Pure law — the BINDING (once, ever; find-or-create) lives
 in =self= ([[file:specs/weave/keep-build.org][keep-build]] =kb-3= ·
-=kb-5-genesis-place=). Not a log row. =work_id= reuses =nonce=.
+=kb-5-genesis-place=). Not a log row. The work is the origin keep
+([[file:specs/weave/keep-carve.org][keep-carve]] =kc-work-origin=); it does not reuse this mint.
 
 ** keep upcast — the fold exists before it is needed
 :PROPERTIES:
@@ -177,6 +304,12 @@ id, and refuses a =ts= that will never project. =local= is =1|0=; =list(root, n)
 and =local(root, n)= both cap, newest-first by reverse cursor. Genesis is one
 readwrite tx over =[self, log]=. Worker-only; the door never imports this
 ([[file:specs/weave/keep-build.org][keep-build]] =kb-5= · =kb-5-skeleton=).
+Retention seam: =test/js/keep/retention_test.mjs= — inserted Blob digest must
+match its receipt; eviction removes the binding. Legacy/unbound images stay
+pinned. =node probe/keep-cut/idb_diff.mjs= proves the retention walk on real IDB.
+Local process-crash witness: =node probe/keep-foundation/recovery.mjs --runs 3=
+— real worker mint, disposable browser SIGKILL/reopen, exact referent recovery,
+and a missing-source loss control. No normal browser profile is touched.
 
 ** keep journal door — the durability door
 :PROPERTIES:
@@ -205,20 +338,16 @@ to ask who am I. Verbs from =verbs.js=. Hatch path never awaits
 :PATH: lib/dojo/keep.ex
 :END:
 =project(message, claimed_id)= → columns or =:unparseable|:shape|:name=.
-No schema, no changeset. Five frozen fields only. The name is derived; a
-mismatch is anti-divergence ([[file:specs/weave/keep-build.org][keep-build]] =kb-11= · =kb-11-derive=).
+No schema, no changeset. Name is derived ([[id:keep-kernel]]).
 
-** keep receive — bind · stamp · insert · the row's fact
+** keep receive — project · insert · hang
 :PROPERTIES:
 :ID: nav-keep-receive
-:KEYWORDS: keep receive share refuse bind TOFU stamp insert on_conflict root author clan wire
+:KEYWORDS: keep receive share refuse hang clan_works stamp insert on_conflict root clan wire
 :PATH: lib/dojo/keep.ex
 :END:
-=receive(payload, clan:, author_id:)= → one fact (shared or refused) or =nil=
-silence. Project is not a judgement; bind is the only decision. Permanent
-refusals are stamped so announce terminates. Reply is the row's fact, never
-the attempt's stamp ([[file:specs/weave/keep-build.org][keep-build]] =kb-12=).
-LiveView door: =shell_live= event ="keep"=.
+Pre-cut: =receive= still binds. Law is =put= then =share= then hang ([[id:keep-cut]] IV).
+Door still takes =author_id= until phase II. LiveView event ="keep"=.
 
 ** keep referents — what a keep points at
 :PROPERTIES:
@@ -229,12 +358,11 @@ LiveView door: =shell_live= event ="keep"=.
 A referent is what a keep *points at*; the message is what it *is*. =source=
 (key =hash(text)=, =sources= table, fans on announce, never evicted, **no
 fence** — it proves itself) and =image= (key = the message's id, so its home is
-=keeps.image=; rides the share; evictable; fenced by =clan= + =image IS NULL=,
-and the fence's subject is the *bind's* subject). One ceiling for both plus the
-message: =@max_text= / =@max_image= → =why: :too_big=. Client side ships the
-image from =keep/wire.js= after the share reply; LiveView door: =shell_live=
-event ="keep:image"= ([[file:specs/weave/keep-build.org][keep-build]]
-=kb-vet5-referent= · =kb-12a=).
+=keeps.image=). Image rides the same insert when the mint held one; a
+keep without a picture is a row, and =face= is the named absence. One
+ceiling for both plus the message: =@max_text= / =@max_image= → =why:
+:too_big=. LiveView door: =shell_live= event ="keep"=. Read: =GET
+/keeps/:id/image= · =image_of/1=.
 
 ** keep by-target — one index, three doors
 :PROPERTIES:
@@ -251,23 +379,17 @@ Plan asserted, not timed (=test/dojo/keep/repo_test.exs=)
 ([[file:specs/weave/keep-access.org][keep-access]] =ka-door-shape= ·
 =ka-capability=).
 
-** keep works bind — a river belongs to one hand
+** keep hang — the circle sees rivers
 :PROPERTIES:
 :ID: nav-keep-works
-:KEYWORDS: keep works bind target work_id TOFU hijack refuse why work head_of single-hand continuant backfill rowid kinds.json subquery
+:KEYWORDS: keep hang clan_works work origin target hijack
 :PATH: lib/dojo/keep.ex
 :END:
-=bind_work/1= — TOFU for the second continuant (id:ka-works-bind). Refuses
-=:work=, stamped and permanent, so =announce= terminates. Both binds live
-*inside* =Repo.transact= — =roots= and =works= are two more stores holding one
-fact. It reads =kind= against =keep/kinds.json= (what a target *names*; the
-=kinds/= directory is the other interpreter) and **fails open** on kinds it has
-not heard of — a node is owned by nobody. =head_of= fences with a *scalar
-subquery, never a join*: a join trades =keeps_head_idx= for
-=keeps_history_idx=. The migration backfills by *=rowid=* — arrival order, not
-=ts_t=, which is the wire the attacker writes. Signatures do not close this
-([[file:specs/weave/keep-hand.org][keep-hand]] ·
-[[file:specs/weave/keep-access.org][keep-access]] =ka-hijack= · =ka-vet=).
+Law: =clan_works (clan, work)= — hang, not a lock
+([[file:specs/weave/keep-carve.org][keep-carve]] =kc-hang=). A minted
+=work_id= made the hijack; the mint is gone. Door still has
+=bind_work/1= until the cut
+([[file:specs/weave/keep-access.org][keep-access]] =ka-hijack=).
 
 ** keep fold passes — derive once per fold
 :PROPERTIES:
@@ -304,12 +426,13 @@ Door and worker import the same set — no second list to drift.
 ** keep snap kind — first kind, the mint
 :PROPERTIES:
 :ID: nav-keep-snap
-:KEYWORDS: keep snap kind writeSnap keepSnap toBlob work_id target source_id title mint
+:KEYWORDS: keep snap kind writeSnap mintSnap toBlob work_id target source_id title mint photograph
 :PATH: assets/js/keep/kinds/snap.js
 :END:
-=writeSnap= · =toBlob= · =keepSnap=. =target= is =work_id=; source is a blob
-pointer; data URL dies at the mint. Called from =inner.js= *before* the pacer
-([[file:specs/weave/keep-build.org][keep-build]] =kb-7=).
+=writeSnap= · =toBlob= · =mintSnap=. Photograph or nothing — one put of message
++ picture. =target= is =work_id=; source is a blob pointer; =buffer_id= is
+tab-recovery residue; data URL dies at the mint
+([[file:specs/weave/keep-build.org][keep-build]] =kb-7= · [[file:specs/weave/keep-join.org][keep-join]] =kj-answer=).
 
 ** keep shared — the fold, not a field
 :PROPERTIES:
@@ -317,10 +440,10 @@ pointer; data URL dies at the mint. Called from =inner.js= *before* the pacer
 :KEYWORDS: keep shared fold list local name accept put-then-share clan history page depth source fan
 :PATH: assets/js/keep/shared.js
 :END:
-=shared(list, local)= by =name(bytes)= at the reader — **same depth on both
-reads** (=local(root, n)=; measured 462 ms → 1.2 ms). =accept= is put then share
-— never =put({shared})= — and the *source* rides it. Clan history lands =local:1=
-([[file:specs/weave/keep-build.org][keep-build]] =kb-8= · =kb-8-page=).
+=sharedIds(ids, heldIds)= — list minus local, over names a fold already derived
+— **same depth on both reads** (=local(root, n)=; measured 462 ms → 1.2 ms).
+=accept= is put then share — never =put({shared})= — and the *source* rides it.
+Clan history lands =local:1= ([[file:specs/weave/keep-build.org][keep-build]] =kb-8= · =kb-8-page=).
 
 ** keep river — ofWork fold, self per work
 :PROPERTIES:
@@ -340,15 +463,15 @@ rig in =_light.css=). ([[file:specs/weave/keep-river.org][keep-river]]).
 ** keep work — the fold that makes a river (and its lines)
 :PROPERTIES:
 :ID: nav-keep-work
-:KEYWORDS: keep work ofWork fold target versions line lines head meet mirror sibling prev parent columns trunk swap divergence page-honesty
+:KEYWORDS: keep work ofWork adoptWork fold target versions line lines head meet mirror sibling prev parent columns trunk swap divergence page-honesty
 :PATH: assets/js/keep/work.js
 :END:
-=ofWork(listed, work_id)= filters the page by =target=; =linesOf= / =lineOf=
-walk =prev= (author order IS the chain until a fork mints one); =meetOf= is
-derived at the reader; =mirrorOf= picks the nearest sibling by meet;
-=columnsOf= keys trunk columns by keep id and divergent ones by distance —
-*that keying is why a swap holds the trunk still*. Pure, synchronous, never
-written ([[file:specs/weave/keep-river.org][keep-river]] =kr-fold= · =kr-mirror=).
+=ofWork(listed, work_id)= filters the page by =target=; =adoptWork= rejoins a
+tab whose cache reminted (body =buffer_id= names the river); =mirrorOf= walks
+=prev= only (missing ancestry stays unknown) and picks the nearest
+sibling by meet; =columnsOf= keys trunk columns by keep id and divergent ones
+by distance — *that keying is why a swap holds the trunk still*. Pure,
+synchronous, never written ([[file:specs/weave/keep-river.org][keep-river]] =kr-fold= · =kr-mirror=).
 
 ** keep cell — one door, one empty fold breath
 :PROPERTIES:
@@ -367,7 +490,7 @@ is fold-derived (=fold.settling= / =sharedIds=) — not a wire callback.
 ** river surface — meridian, mirror, swap
 :PROPERTIES:
 :ID: nav-river-surface
-:KEYWORDS: river surface shell data-target meridian wheel mirror water swap seat ring mark shade sun mood rig ignite land paint atoms light scroll-snap detent present unkept drift title message keep-gesture setValue ready is-ready onTap commitKeep fold mode chrome applyMode refold reseat readPage reindex restKey perWork canon
+:KEYWORDS: river surface shell data-target meridian wheel mirror water swap seat ring mark shade sun mood rig ignite land paint atoms light scroll-snap detent present unkept drift title message keep-gesture setValue ready is-ready onTap commitKeep fold mode chrome applyMode refold reseat readPage reindex restKey perWork canon blush miss not-kept
 :PATH: assets/js/hooks/shell/river.js
 :END:
 Fourth Shell surface (=data-target="river"=), client-lazy like the weave.
@@ -411,7 +534,9 @@ word). One open atom (=open(which)=); =is-ready= / =is-keeping= light
 =river/fold.js=, =river/mode.js=, =river/chrome.js=, =river/memory.js=
 (work heads+drafts), =river/light.js=, =river/atoms.js=, =river/paint.js=,
 =river/wheel.js=, =utils/clipboard.js=, =kernel/motion.js=
-([[id:nav-kernel-motion]] — landing + flare). The surface shape this obeys,
+([[id:nav-kernel-motion]] — landing + flare). A refused keep restores the
+word, blushes the sun, and the nerve says /not kept — try again/ so the
+gesture can fire again. The surface shape this obeys,
 and the two laws it shares with the nerve: [[id:surface-shape]].
 Style:
 =assets/css/river.css= (@layer components; HEEx via =DojoWeb.RiverComponent=).
@@ -419,20 +544,21 @@ NAMES: =river-*= belongs to the atoms (=river-open= is the open seat's
 dotted circle); a surface's own state wears =is-*=. The share flag is
 =#river-state.is-open=, the same shape as =#outer-open.is-open=.
 
-** work_id on the buffer — the second continuant
+** work — the origin keep
 :PROPERTIES:
 :ID: nav-work-id
-:KEYWORDS: work_id work buffer target continuant mint river fork tab
+:KEYWORDS: work work_id buffer target origin keep river fork tab
 :PATH: assets/js/terminal/buffers.js
+:NOTE: base_id is the exact local editing base, not work identity or global HEAD
 :END:
-=work_id= on every buffer; blank tab mints, fork continues, fork-from-keep
-rejoins. =term.currentWorkId()= is the seam to the mint
-([[file:specs/weave/keep-build.org][keep-build]] =kb-2a= · =kb-work=).
+Law: the work *is* the first keep ([[file:specs/weave/keep-carve.org][keep-carve]]
+=kc-work-origin=). Door still mints =work_id= on the buffer until the cut.
+=term.currentWorkId()= is the seam.
 
 ** link actions — the address bar as a fact store
 :PROPERTIES:
 :ID: nav-link-actions
-:KEYWORDS: link url query param action share fork deep-link read carry address mint vocabulary WORDS owner searchparams pull head cross-machine forkKept pinCommit headAtOpen coldPull landHand foreign
+:KEYWORDS: link url query param action share fork deep-link read carry address mint vocabulary WORDS owner searchparams pull head cross-machine forkKept keepFace workFace openPicture landHand foreign liveForkRef prepared clipboard compatibility
 :PATH: assets/js/link.js
 :END:
 =?action=share= · =?fork=<ref>= · =?weave== · =?perf= — surfaces read their
@@ -443,8 +569,16 @@ engine (=kernel/link.js=); =forkRef= is the fork word's ladder
 ones =link.address({fork})= mints into a shareable URL (=la-mint=), and
 =test/js/link/vocabulary_test.mjs= is the fence that keeps surfaces off
 =location=.
-Hex64 face is named cases (=pinCommit= / =headAtOpen= / =coldPull=), then
-hand (=landForeign= / =landMine=) — no mutable walk through nested faces.
+Typed readings: =keepFace= pins one moment; =workFace= finds an evidenced head;
+=holdLegacyFace= alone handles deprecated bare references. =openPicture= gates
+supported envelope/kind/choices before =landHand= chooses the local/foreign landing.
+Version/kind/refusal witnesses: =test/js/link/future_test.mjs= · [[id:keep-foundation-compatibility]].
+Live copy: =liveForkRef= + =utils/clipboard.js= prepared text; [[id:la-live-share]] · [[id:la-copy-lifetime]].
+Native witness: =node scripts/verify/keep_share_browser.mjs= (fresh isolated Chromium, simulated keeper).
+The landed exact keep supplies =base_id=; a missing-source find never changes it.
+The keeper captures that base as =prev= before the picture await.
+Source guard cross-door tests: =test/js/terminal/terminal_test.mjs= ("fork link")
+— missing never creates or overwrites; find-only preserves drafts; empty is valid.
 
 * CLUSTERING — discovery, transport, roaming
 :PROPERTIES:
@@ -476,10 +610,13 @@ hand (=landForeign= / =landMine=) — no mutable walk through nested faces.
 :PROPERTIES:
 :ID: nav-partisan-pubsub
 :KEYWORDS: pubsub broadcast partisan seen_table dedup storm fanout
-:PATH: lib/dojo/partisan_pubsub.ex
+:PATH: vendor/phx_pubsub_partisan/lib/phoenix/pubsub/partisan.ex
 :END:
 Decision 005: antifragile broadcast storm. Partisan internals: grep
 =/home/putra/Repos/partisan/src/= (fork; LSP won't index).
+It is its own OTP app on purpose: a host compile deletes the beam and unloads
+every stale module, and the Gate's tracker calls the adapter by atom every 3s.
+A dep is never purged, so a reload cannot unload it.
 
 ** which address routes — fly vs local
 :PROPERTIES:
@@ -487,6 +624,43 @@ Decision 005: antifragile broadcast storm. Partisan internals: grep
 :KEYWORDS: routable_addr routing fly local address resolution
 :PATH: lib/dojo/cluster/routing.ex::def routable_addr
 :END:
+
+** multinode tests — partisan discovery across IP changes, from ExUnit
+:PROPERTIES:
+:ID: nav-lan-test
+:KEYWORDS: lan multinode test exunit netns namespace roam partition discovery partisan programmatic
+:PATH: test/support/lan.ex
+:END:
+=scripts/verify/lan_test.sh= runs =test/dojo/cluster/lan_test.exs= inside a
+throwaway namespace; past the wrapper it is ordinary ExUnit. =Dojo.Test.Lan=
+builds the bridge, namespaces and nodes from Elixir: =start/2=, =roam/2=,
+=partition/1=, =heal/1=, =call/5= (MFA, never a closure), =await_mesh/2=.
+Each node holds one address, so =routable_ipv4_addrs/0= is per-node truth.
+br0 deliberately has no IPv4 — an address there would enlist ExUnit itself as
+another node. Nodes start serially: two =mix run='s racing on =_build= inflict
+the very absent-module fault the rig studies.
+
+Failover / departure / recovery are ported here from =multinode_test.exs=,
+which runs them against DistAdapter — a path only test config selects. Two
+things the port established: =MDNS.terminate/2= never runs (the GenServer does
+not trap exits, so a supervisor shutdown kills it outright), which means
+goodbyes ship only via =Application.prep_stop/1=; and the =nodedown= test does
+not port at all, being gated on =supports_node_monitor?= that PartisanAdapter
+answers false.
+
+** dev code-reload crashes — the absent-module window
+:PROPERTIES:
+:ID: nav-reload-rig
+:KEYWORDS: reload recompile crash purge beam undefined function dev loop rig dbg_callback
+:PATH: scripts/verify/reload_rig.exs
+:END:
+One module vanishing is survivable; =Compiling 75 files= is not. The whole
+ebin empties at once and =PartisanAdapter= goes with it, so
+=partisan_peer_discovery_agent= burns ={rest_for_one, 10, 10}= and takes the
+partisan application — then dojo — down. Reproduced by
+=test/dojo/cluster/full_recompile_test.exs=. A module cannot guard itself
+against its own absence: the rescue at =partisan_adapter.ex::lookup= and
+=@reloadable= in =monitor.ex= both go missing with the code they defend.
 
 * WEB — the shell seam
 :PROPERTIES:
@@ -504,9 +678,55 @@ From a JS =pushEvent= name, jump with =C-c d e= or grep =handle_event("name"=.
 ** outer shell layout — zones around the editor
 :PROPERTIES:
 :ID: nav-outershell
-:KEYWORDS: outershell outer shell layout zones rightthird vh chrome
+:KEYWORDS: outershell outer shell layout zones rightthird vh chrome follow_peer draft_live user_attention selectedAddr shownAddr pending transitions
 :PATH: lib/dojo_web/components/outer_shell.ex
 :END:
+Selection, document readiness, peer updates, draft execution, and reader attention
+are separate axes: [[id:outer-shell-model][outer-shell ownership and transition tables]].
+=follow_peer= controls peer updates; =watch.user_attention= names ="peer"= or
+="reader"=. =draft_live= couples local draft execution with baseline updates.
+
+THE WAITING HOUR IS LIGHT, NOT A SYMBOL. The panel arrives (one =outer-arrive=
+animation on the open flag; closing is not animated). While a selection is read,
+=.outer-veil= — a layer INSIDE =#outerenv=, above the code and below the moon —
+carries the cloud, so the work keeps its own pixels, colour and edges
+([[id:hw-takahata]]). The chip says the rest: while waiting its halo stops pinging
+and goes neutral, then returns the server's own state (green for a live hand, amber
+still for a keep). No text in the flow, no crescent: =#outer-selection-status= is
+=sr-only= (=role="status"=), the ear's half only. =paintSelection= writes
+=data-outer-selection=, =data-state= and the fork's =disabled= only when they change;
+the fork's fence look arrives after 220ms (a warm read never dims it) and never fades.
+Paths: =lib/dojo_web/live/shell_live.html.heex=, =assets/js/hooks/shell/outer.js=.
+
+** shell readiness & outer recovery — fresh read, selector mirror
+:PROPERTIES:
+:ID: nav-shell-readiness
+:KEYWORDS: syncShell outerIntent restoreShell seeTurtle fetch_watch keep_addr keep_ref announceCurrent current-announce outer-recovery readiness reconnect resume draft recall frozen outerClose closeTurtle follow_read retry source claim buffer_id enact pacer lease
+:PATH: lib/dojo_web/live/shell_live.ex
+:END:
+One readiness edge: `syncShell` after class attach. The owner reads CURRENT
+(`inner.js` `announceCurrent`, `current-announce.js`); the watcher restores its
+`outerIntent`/`restoreShell` mirror (`outer.js`, `outer-recovery.js`).
+A lamp is not a peer: it rides the same `outerSelect`/`restoreShell` door as
+`/keeps/<id>`, and the room reads the keep it holds (`Keep.get/1`) asynchronously
+so the document lands after the receipt — `follow_peer=false`.
+`%OuterShell{}` is the retained selector; presence enriches, the peer's Table is
+the source. Local close is a command at raw arrival (`outer.arrive`), one
+correlated `closeTurtle`; domain cleanup never sends. Readiness restores the
+newest local descriptor by owner/receipt, not by clock. The source cell is a
+producer-owned claim; commit follows a successful `enact`, and the pacer keeps
+the departure claim. `follow_read` is one owned read/timer with one coalesced
+demand and a bounded retry budget. D025 build amendment: the picture is optional,
+not permission. Replay: `probe/shell-recovery/README.org`.
+
+`selection-intent.js` `requestSelection` is the one receipt protocol: send leaves
+synchronously, and only an exact-address descriptor acks and applies. A missing,
+malformed, or stale receipt leaves the current fence standing.
+
+Peer clicks are one local =phx:outerSelect= selector departure; =owner= is the
+selected subject and a receipt is only its acknowledgement. Library open departs
+before its fetch; route resolution is epoch/controller-guarded, ambient reveal is
+not selection. Same-address documents assume channel order + server =follow_gen=.
 
 ** helios-window — disciple strip, selenic turn
 :PROPERTIES:
@@ -517,8 +737,76 @@ From a JS =pushEvent= name, jump with =C-c d e= or grep =handle_event("name"=.
 Disciple panels are WINDOWS (frame · pane · sill). 00–05 settled the laws
 under a sun; the lamp was wrong. Author is solar; a peer is moonlight
 (=--peer-ink=). Boards: =06-phases.html= · =07-twilight.html= ·
-=08-lichtung.html=. Overlay: =_selene.css=. Live seam still
-=#disciple_panels= in =shell_live.html.heex=.
+=08-lichtung.html= · =09-selenic.html= · =10-lichtung.html=.
+Overlay: =_selene.css=; the rim seeing is =_takahata.css=. The live seam is
+=#disciple_panels= in =shell_live.html.heex=, composed from
+=lib/dojo_web/components/disciple_strip.ex= over =assets/css/disciple.css=:
+a seat is a BUTTON, the bar is a HAND, and the lamp opens its keep by address
+([[id:nav-disciple-strip]] · [[id:nav-strip-hand]]). The panel's waiting hour is
+its own node under [[id:nav-outershell]].
+
+** disciple strip — the seat is a door, the lamp names its keep
+:PROPERTIES:
+:ID: nav-disciple-strip
+:KEYWORDS: disciple strip seat window lamp lantern door button type tabindex aria-label aria-disabled focus-visible ring press is-pressed rim keep_addr focus depth name mask padding empty silence keyed wrapper phx-value-addr minmax grid-template-rows object-fit work picture frame
+:PATH: lib/dojo_web/components/disciple_strip.ex
+:END:
+A seat is a native =<button type="button">=, not a div with a handler: Enter and
+Space are the door by the browser's own law, =:focus-visible= paints the author's
+amber ring, and =aria-label= names what it opens (=open tree, kept by lowe=; the
+hand's letters for a living window). A seat whose shown face names no subject keeps
+the element but leaves the tab order (=tabindex="-1"=, =aria-disabled="true"=).
+The wrapper is keyed by root, =phx-value-addr= rides the descendant — both are
+load-bearing for identity and visibility ([[id:ownership-o2]]).
+A living hand is selected by =addr=; a lamp by =OuterShell.keep_addr/1= — the room
+address it was opened by ([[id:la-fork-pull]]). The twilight rim answers to that
+same name: a dark seat is focused when the open subject IS its keep. The press rim
+(=is-pressed=, 140ms) is the hand's own and lands before the room answers; the
+crossing (900ms) stays the hour's. Distance is air, but a name reads at rest
+(0.62/0.52/0.42/0.34) and comes back full on hover, choice or focus; the bar's
+edge dissolves over its own padding (16px), never over a seat. An empty bar says
+nothing — silence is the deliberate state. Fences:
+=test/dojo_web/live/layout/disciple_strip_command_test.exs=,
+=disciple_window_test.exs=.
+
+The picture is a definite box: =assets/css/disciple.css= pins =.face= to
+=grid-template-rows: minmax(0, 1fr)=, because a percentage height on a grid item
+reads off the ROW, whose automatic minimum is the image's own transferred size —
+91px in a 108px face, so the face's overflow cut the bottom of every square keep.
+
+** strip hand — one drag, one press, one threshold
+:PROPERTIES:
+:ID: nav-strip-hand
+:KEYWORDS: grab grabbing is-dragging drag pan press is-pressed DRAG_PX pan.js wheel horizontal axis visibility IntersectionObserver non-disciple cull scroll
+:PATH: assets/js/hooks/disciplewindow.js
+:END:
+The bar is =cursor: grab= and =is-dragging= makes it =grabbing= — the same idiom as
+the river's rail. A press that travels past =DRAG_PX= is a pan, not a door: its click
+is swallowed in capture before the seat's =phx-click= can fire, and the next press
+clears that memory. Under =DRAG_PX= the press lights its own rim (=is-pressed=) and
+commits the door. =DRAG_PX= is ONE number for the wheel and the strip
+(=assets/js/utils/pan.js=, re-exported by =river/wheel.js=). The hook also pumps
+vertical wheel into the horizontal axis and reports visibility; furniture inside the
+bar carries =non-disciple= so the scan never treats it as a window.
+
+** pin hand — the cursor's question is the press's question
+:PROPERTIES:
+:ID: nav-pin-hand
+:KEYWORDS: hoveredAt hitAt cursor grab grabbing drawn point pin hover drawn client point _pinCandidates CSSOM pointermove canTouch eligibility pointer capture
+:PATH: assets/js/turtling/laws/gesture.js::hoveredAt
+:END:
+A pin is drawn, not a node, so the cursor can only be true at the pointer. The law
+answers =hoveredAt/1= with the SAME four gates a press uses — offered · touchable ·
+under the pointer · lawful to hold (=hitAt/3=) — so the cursor never promises a hand
+the press would refuse. The DOM layer asks once per move: =grabbing= while a hand is
+held (capture keeps it true off-canvas), =grab= where a press would take one,
+=default= everywhere else — never a blanket cursor on the whole glass.
+Cheap by construction: the draw's own read pass publishes =_pinCandidates= (frame +
+the drawn CLIENT point), so the cursor skips the point-state projection and the
+=candidates()= rebuild entirely; a press still reads the exact list. The style write
+is guarded, so a move that changes nothing touches no CSSOM. Caveat: a derived
+figure's pin is drawn at its BIRTH while the press takes the walking anchor — the
+cursor is honest about the grab point, not the drawn one.
 
 ** deck — card components
 :PROPERTIES:
@@ -536,12 +824,46 @@ under a sun; the lamp was wrong. Author is solar; a peer is moonlight
 One call per played night: =run <prog> [waitMs] [out.png] --bare= · =shot= · =eval=;
 the protocol lives in =codex/play.org=.
 
+** SICM in play — expressive frontier across existing centers
+:PROPERTIES:
+:ID: nav-sicm-play
+:KEYWORDS: sicm mechanics expressiveness play path function composition pendulum action Keep facets lifecycle context prior
+:PATH: specs/compiler/sicm-play-frontier.org::sicm-play-frontier
+:END:
+Book-grounded inquiry, not a new engine: distinguish configuration, prescribed path,
+and model-derived evolution. Exact free-particle control, context/ownership checks,
+and bounded plang probes; reuse Keep's owned capture rather than a harness store.
+
+** embodied play — advance, turn, meet again
+:PROPERTIES:
+:ID: nav-embodied-play
+:KEYWORDS: embodied syntonic becoming intuition fw rt lt as reencounter origin birth snapshot continuation named slot carry projection ink surface
+:PATH: probe/embodied-play/README.org::probe-embodied-play
+:END:
+Six-line round walk; changing right to left changes the curl. Nesting grants a
+birth frame, not live carrying. Re-encounter refreshes the same running walker's
+stance; frame projection chooses where its ink is left. Live/source-matched witnesses,
+no new primitive. The equation-led “next frontier” is withdrawn in the SICM map.
+
+** temporal play — velocity, wait and law lifetime
+:PROPERTIES:
+:ID: nav-temporal-play
+:KEYWORDS: velocity v wait dt rate temporal law initial condition reset coast direction heading inertial Lagrangian Euler Modelica Yampa lifecycle
+:PATH: specs/compiler/sicm-play-frontier.org::sicm-play-temporal-frontier
+:END:
+Sketch, not shipped dynamics: distinguish initial velocity, a standing velocity law,
+and a generator of change. Interval observation, shared receiver time and source-owned
+publication are the discriminators; pose-only acceptance does not earn conservation.
+Priors and the bounded witness ladder live here; the partner owns =probe/velocity-seam/=.
+
 ** session — mutation, not replacement
 :PROPERTIES:
 :ID: nav-session
-:KEYWORDS: session mutateSession reg_key sname connect_params
+:KEYWORDS: session mutateSession reg_key sname connect_params author_id ensure_author_id ki-mint ks-name BootLive
 :PATH: lib/dojo_web/session.ex
 :END:
+Session id is a cookie, not a person ([[file:specs/weave/keep-carve.org][keep-carve]]
+=kc-repro=). Display name is never a key (D007). Occupancy is =root()=.
 
 ** routes
 :PROPERTIES:
@@ -589,19 +911,1199 @@ the protocol lives in =codex/play.org=.
 :END:
 Verified syntax lives in =PAPERLANG.org= + =codex/refs/Library=.
 
+
+** place and walking head — one visible A
+:PROPERTIES:
+:ID: nav-place-head
+:KEYWORDS: place free point anchored arrowhead ring dot facing heading arm birth inherits spawn let as freePoint visibleHeadFor coordinate z held label readout vectorNames nameAnchor drawVectorName retractVector removeVector drawSpan dotted span spoke wish origin displacement
+:PATH: assets/js/turtling/compositor.js::getOrCreateLayer
+:END:
+The compositor materializes A's head when a visible pose arrives. The overlay
+draws the point at that same accepted position; =laws/pin.js= leaves room for
+the head. =laws/batch.js::freePoint= gates touch to an unanchored =let A=,
+including mid-capture attachment. [[id:laws-place-head-frame]] ·
+[[id:laws-decl-point-agent]]. Fences: =test/js/laws/place_head_test.mjs= and
+=gesture_test.mjs=. A held free point also spans its origin: =laws/pin.js::drawSpan= joins
+the declaring scope's birth/placement frame origin to the pin on that same canvas — where
+=origin= reads, not the cursor that seated it. Fence: =span_test.mjs=. (id:laws-decl-interface)
+A declared object's NAME is the overlay's too: =compositor.vectorNames= hands it a
+vector's world segment and =laws/pin.js nameAnchor/drawVectorName= draw the name beside
+a pin's — screen-space and viewport-invariant — while the arrow stays world geometry.
+Its lifetime is the binding's: =retractVector= / =removeVector= take geometry and name
+together. (id:notation-coordinate-vector, D055)
+
+** view boundary — one world-to-screen mapping
+:PROPERTIES:
+:ID: nav-view-boundary
+:KEYWORDS: viewReframe viewMapping reframe eye twist viewOffset project unproject facing rayAt depth latitude paper disk DRAG_SLOP slop HIT_RADIUS CLIENT_SPACE birthLocal requestedPose eligibility
+:PATH: assets/js/turtling/laws/handle.js::viewMapping
+:END:
+The compositor owns the effective eye/manual reframe =viewReframe=; the stage
+owns =project=/=unproject=/=facing=; =viewMapping= folds them, so a drawn mark
+and the gesture's ray, plane and facing share one frame. A still press is a click.
+The frozen camera plane through the anchor is the base every locus moves on; how a
+curved locus spends the pointer is the hand's business ([[id:nav-hand]]). The verb a
+request answers with, and the fade of a refusal, is =laws/outcome.js=.
+[[id:laws-decl-interface]].
+Fence: =test/js/laws/handle_test.mjs=.
+
+** hands — one lifecycle per locus
+:PROPERTIES:
+:ID: nav-hand
+:KEYWORDS: hand handFor sphereHand coneHand circleHand coneRig coneTurn circleRig circleTurn magnet detent paper disk cone polar apex hub halfAngle nappe touchCone coneFrame openAngle coneLateral feel tune phase graze ring
+:PATH: assets/js/turtling/laws/hand.js::handFor
+:END:
+One lifecycle for every locus: freeze a frame at pointer-down, then project each
+move into a world request. =handFor= picks the hand from the locus's own data, so
+the gesture routes instead of branching on kind. A *sphere* rides its camera-plane
+disk (D036) with a small =magnet= (D037) at its landmarks; an open *cone* speaks its
+own polar (D038, D039) — the pointer's screen angle dials the azimuth so a circle
+holds the height, the screen radius spends it at a drawn-scale rate, eased. The
+cone's geometry (=coneFrame=, =touchCone=) is =laws/cone.js=; the tuning numbers are
+=laws/feel.js=.
+A *circle* — a distance met by a plane — follows its own projected ring instead of the
+camera plane through it, because the law clamps a plane's request back onto the curve and
+in an oblique view that clamp IS the whole error. The hand seeds from the accepted point's
+phase, descends to the local minimum of the projected ring (so it cannot flip to the branch
+across the projection's medial axis), and HOLDS when a grazing view flattens the ring to a
+segment and no phase is disclosed.
+Fence: =test/js/laws/handle_test.mjs=, =gesture_test.mjs=, and =circle_hand_test.mjs=.
+Hand actions: =laws/action.js= is the framed algebra (translation, sphere turn, circle
+phase vector φ·n, cone turn/height); =laws/hand_state.js= retains one action per scoped slot
+outside the source AST. Source candidates reapply it before the original law gate; only
+accepted hand moves change the action. Reruns preserve inputs, never old frame publication
+rights. Chart crossings go through =localize.js= (=toLocalPose/toWorldPose/toLocalPoint/
+toWorldPoint/toLocalVector=), never ad-hoc SE3 inversions. Double-tap carries explicit reset
+intent through =requestMotion=; the action clears only on acceptance. Timing:
+=feel.js::DOUBLE_TAP_MS=. Fences: =action_test.mjs=, =hand_action_test.mjs=,
+=hand_action_gauge_test.mjs=, =hand_state_prepare_test.mjs=, =gesture_test.mjs=,
+=hand_source_replay_test.mjs=.
+Source selection reads the point's own baseline, never an accepted pose an input carried:
+=laws/verdict.js::isolatedLeaf= (one free point against the accepted prefix, entered from the
+lawful and the unsatisfied case alike, baseline-first then nearest, through settle/prepare/the
+whole gate) and =componentMeetCandidate='s nearest reference. =hand_state.js::hasInput= is a
+narrow store query, not a permission. The already-lawful case enters the meet for its OWN
+single point, baseline-first, so source order no longer decides a lawful named-meet replay; at
+extreme translated scales the gate refuses the quantized candidate by its typed relation, with
+the prefix and the input kept. Out of domain and unchanged: multi-point ties, coupled pairs and
+meets naming more than one point ([[id:laws-hand-action-state]]).
+Slots are ordinary-route only (verified child edges; top edge is the registration key); an
+installation-private child publishes but is not retained, reported request-locally as
+=retention: "unsupported-route"=. Contract: [[id:laws-hand-action]] ·
+[[id:response-composition-resolution-priors]].
+Adversarial composition audit: [[id:laws-hand-composition-audit]] — installation/child route
+alias, coupled replay boundary, clause-effect distinctions and plain-data transport contract.
+Construction inputs: [[id:laws-construction-input]] — =laws/hand_choices.js= owns plain values
+and held-offer ⊕ local-opinion capture; identity masks suppress inheritance. The canonical
+=scheduler.hotSwapChild= takes source + choices together: same seed holds the run and
+reconciles inputs through the original gate. =weave/page.js::bindingsOf/choicesOf= supplies
+portable document/cell roots and scopes authored-input news. Keep/live use =choices=.
+Fences: =construction_transfer_test.mjs= (four families, tiny input, editable inheritance),
+=hand_live_test.mjs=, =hand_capture_test.mjs=, =hand_restore_page_test.mjs= and the real
+page/scheduler lender cases in =shell/inner_mount_test.mjs=. Headless evidence only;
+no universal/coupled replay, private installation routes or new cell-eviction retention.
+Meaning proposal: [[id:laws-hand-action-meaning-proposal]] — declared source-derived
+interpretation; carry extra context only when non-derivable; no general coupled gate.
+Action-context diagnostic: [[id:probe-construction-action-context]] — same portable action
+through birth, live offer and actual hand; matched private-reference controls distinguish
+operation policy from mobile-anchor context. =node probe/construction-action-context/compare.mjs=.
+Browser journey: [[id:probe-construction-browser-journey]] — real hand → Keep → fresh-context
+local restore → local edit → re-Keep; replacement action and own-picture bytes checked.
+Isolated app/worker provenance; no server-pull or archival closure claim.
+Predicate versus locus: [[id:laws-predicate-locus-frontier]] — joint numerical admission
+can coexist with an empty nominal meet. Fence: =test/js/laws/predicate_locus_test.mjs=.
+
+** geometry kernel — one arithmetic, one cone frame
+:PROPERTIES:
+:ID: nav-geometry-kernel
+:KEYWORDS: vec3 vector unit cross dot sub add scale len finite3 cone openAngle coneLateral coneFrame conePointOn touchCone open nappe halfAngle
+:PATH: assets/js/turtling/laws/vec3.js::unit
+:END:
+One arithmetic for every law module (=vec3.js=: =sub=, =add=, =scale=, =dot=, =cross=,
+=len=, =unit=, =finite3=), one degenerate contract, and the policy tolerances passed
+where they mean something. A cone's own frame is =cone.js=: =openAngle= (the narrow
+reading of the double nappe), =coneLateral=, =coneFrame= and =touchCone=, so the hand,
+the display, =meet= and =realize= read one cone instead of re-deriving =min(half,
+180 − half)= and =|h|·tan=.
+Fence: =test/js/laws/handle_test.mjs=.
+
+** ordered birth — a reached let is the birth site
+:PROPERTIES:
+:ID: nav-ordered-birth
+:KEYWORDS: let Existence deriveBatch birth seatPlace reached ordered birth use before introduction forward use
+:PATH: assets/js/turtling/scheduler.js::birth
+:END:
+=deriveBatch= keeps =Existence= in the executable stream; =executor.js= reads its
+name through the same word input as =as= (bindings, =count=, quoted interpolation,
+unbound-word fallback), then yields =birth= with the resolved name and current pose.
+=scheduler.js::birth= seats or revisits that resolved slot synchronously; parsed
+name text is an index, not an end-of-walk existence requirement. [[id:laws-ordered-birth]] ·
+[[id:laws-build-p1a-verdict]] · [[id:laws-build-p1b-verdict]] · [[id:laws-build-p1c-verdict]] · [[id:laws-build-p1d-verdict]]. A read of a
+declared-but-unreached local name is a located =Use before introduction=. Fence:
+=declaration_test.mjs= ordered-birth tests.
+
+** one acquisition — a name finds the same being wherever it is written
+:PROPERTIES:
+:ID: nav-one-acquire
+:KEYWORDS: acquire acquireArgument subject bind being argument declaration quotation self finding identity
+:PATH: assets/js/turtling/arguments.js::acquireArgument
+:END:
+=acquireArgument= is the ONE reader of an argument, whatever its surface: an explicit
+=Value=, a bare name that binds a being, or an expression. An ordinary call holds
+=Argument= nodes and a declaration's =figureCall= holds raw strings; both reach here, so
+=let flake = choose rabbit= finds the being an ordinary =choose rabbit= does. The ambient
+door's =subject= finds a name INCLUDING self: a body's own name is a binding, not a
+coordinate reachable only through a dot. The quote stays the boundary — an unresolved
+bare name in a =word= hole keeps its spelling (=white=), while a found being reaches the
+consumer's adaptation. [[id:being-facets-p2-seam]] · [[id:being-facets-centers-review]].
+Fence: =subject_binding_test.mjs= one-acquisition tests.
+
+
+** participant membrane — explicit inputs carry scoped encounters
+:PROPERTIES:
+:ID: nav-participant-membrane
+:KEYWORDS: membrane participant isWithinRegion isSuppliedParticipant mayAddressParticipant encounter facet receiver declaration question identity request publication
+:PATH: assets/js/turtling/participation.js::mayAddressParticipant
+:END:
+=participation.js= owns enclosing-region containment, supplied inputs and scope policy;
+=frame.js::isLiveBeing= answers exact current registry membership separately. Facet,
+law, receiver and publication consumers retain their distinct refusal/lifetime order.
+Descendants inherit the enclosing region's question; an inner declaration cannot
+launder an outside address. Fences: =test/js/laws/participation{,_boundary}_test.mjs=
+and =participant_membrane_test.mjs=. [[id:participation-language]].
+
+
+** deferred question — retained inputs, consumed meaning, owned interpretation
+:PROPERTIES:
+:ID: nav-deferred-question
+:KEYWORDS: deferred question capture retained interpretation footprint baseline forwarding sameSeed supersede comparison progress
+:PATH: assets/js/turtling/scheduler.js::captureQuestionView
+:END:
+=registerFigureCell= transfers the retained view on equal reuse but updates the declaration's
+subscription. =recordQuestionRead= routes inherited dependencies to their original authority;
+=figureQuestion= compares consumed baselines under their retained interpretation, not a
+reader's later drawing state. =supersedeFigure= adopts requested demand only when attaching
+it, and retains the run when demand returns to the attached question. Installation reads
+remain live. Fence: =test/js/laws/deferred_question_test.mjs=.
+Contract and limits: [[id:being-facets-root-repair]].
+
+
+** law address and owner — what a line replaces
+:PROPERTIES:
+:ID: nav-law-address
+:KEYWORDS: address addressOf law store owner replacement retract retractScope retractIdentity identity edit conjoin
+:PATH: assets/js/turtling/laws/replacement.js::createLawStore
+:END:
+The address (feature + canonical endpoint identities + scope/frame) decides what a
+reached statement replaces; the source owner decides who supplies it. [[id:laws-ordered-replacement]] ·
+[[id:laws-build-p2a-verdict]]. Fence: =replacement_test.mjs=.
+A source edit retracts the laws the edited scope DECLARED (=retractScope=, by =law.scope= —
+the expression =frame= only places the term); an identity leaving the play retracts every law
+naming it (=retractIdentity=), so a law never outlives a participant. Retirement is one
+=releaseSubtrees(roots, pump)= pass: a single postorder collect, the attempt/readout ledgers,
+ONE bulk =retractIdentities(ids)= scan (exact union of placing frame, endpoints and framed
+inputs; the single-id form delegates), then unregister and reset ink. Callers keep their own
+termination, private-installation recursion and child/site-edge policy. Fence:
+=retirement_test.mjs=.
+
+** a distance relation — state, realize, refuse
+:PROPERTIES:
+:ID: nav-relation-distance
+:KEYWORDS: relation distance realize validate project continue A.distance
+:PATH: assets/js/turtling/laws/realize.js::realizeDistance
+:END:
+=let A.distance = <expr>= reaches the declaring frame as observer, realizes exactly,
+validates independently, then publishes law + geometry. A hand drag is projected
+onto the law (=continueLaws=: the target is projected, the observer drives its
+target, and the whole continuation is a fixed point, so statement order cannot
+change the verdict); the program walker is refused. [[id:laws-build-p2b-verdict]] ·
+[[id:laws-build-p2d-verdict]]. Fence:
+=phase2_distance_test.mjs=.
+
+** an affected component — two distances respond
+:PROPERTIES:
+:ID: nav-law-component
+:KEYWORDS: component componentOf realizeDistanceTree joint candidate tree distance
+:PATH: assets/js/turtling/laws/component.js::componentOf
+:END:
+A law revision derives the connected set of laws sharing an endpoint, realizes the
+tree jointly from one held anchor (each edge keeps its original direction and takes
+its new length), validates every distance, and publishes the component together. A
+cycle or a non-distance law is unsupported, never approximated. [[id:laws-build-p3]].
+Fence: =phase3_component_test.mjs=.
+
+** two incidence views — validity references vs solve participants
+:PROPERTIES:
+:ID: nav-law-incidence
+:KEYWORDS: incidence validity references solve participants aspect position placement validityDependents componentOf boundReferences boundParticipants
+:PATH: assets/js/turtling/laws/component.js::validityDependents
+:END:
+Two derived views over the bound rows, not a second dependency model:
+=laws/authored.js::boundParticipants= is the positional solve participants (=componentOf=
+retains the frozen positional-endpoint mirror established at binding);
+=boundReferences= is the direct predicate inputs, qualified by =aspect= (=position= =
+effective live position; =placement= = stable placement transform).
+=validityDependents= answers which laws reference a supplied change and grants no
+movement permission; the whole-law gate stays authoritative and no selective
+acceptance is wired. Direct predicate incidence only — ancestor-placement propagation
+into descendants' effective positions is not yet modelled.
+[[id:laws-free-relations-read-validity]]. Fence: =test/js/laws/incidence_test.mjs=.
+
+** framed composition — original terms through the hand
+:PROPERTIES:
+:ID: nav-law-framed-composition
+:KEYWORDS: bearing distance framed term composition placement reach envelope reachPolicy hand supported refusal retained conjunction
+:PATH: test/js/laws/composition_test.mjs
+:END:
+Existing bearing/distance methods compose through the hand; the term and independent
+gate remain authoritative. Supported requests accept; admission refusal and unavailable
+geometric reduction preserve geometry and obligations. The reach envelope is context,
+not a permission grant or the API consumed by hand continuation.
+[[id:laws-free-relations-framed-composition]].
+
+** law reach order — acceptance differs at coincidence
+:PROPERTIES:
+:ID: nav-laws-order-parity
+:KEYWORDS: laws reach order coordinate distance zero radius coincidence held policy D058 D063 rereach
+:PATH: probe/laws-order-parity/order_parity.mjs
+:END:
+=node probe/laws-order-parity/order_parity.mjs=: positive-radius reach orders accept;
+zero-radius distance-first refuses the later coordinate while coordinate-first accepts.
+The traced mover ceilings and producer choices differ; B is not an authored pin.
+[[id:probe-laws-order-parity]]; raw observations in its =readings.jsonl=.
+
+** a literal centre — a framed value input, not an actor
+:PROPERTIES:
+:ID: nav-law-literal-centre
+:KEYWORDS: literal centre framed value distance origin coordinate address encoding tagged injective reversal radius revision parser signed negative zero
+:PATH: assets/js/turtling/laws/authored.js::inputPosition
+:END:
+Numeric point centres bind a world point value within the distance relationship — solve
+participants {A}, validity {A position}, no position law and no synthetic identity. Explicit
+reference constructions retain their stated birth/live dependencies. =parse.js= admits a live
+name or signed literal; the reach builds typed references;
+the address is a type-tagged, canonically
+ordered whole-key JSON (radius excluded), so a number and its string, a delimiter inside a
+token, or a framed value beside a live pair never collide. [[id:laws-distance-literal-address]].
+Fences: =test/js/laws/literal_centre_test.mjs=, =test/js/laws/literal_source_test.mjs= and
+=test/js/laws/vector_centre_test.mjs= (the =[x,y]= relative input).
+
+
+** a point's state — one WebGL-free projection
+:PROPERTIES:
+:ID: nav-law-point-state
+:KEYWORDS: point state projection pointStateOf point_state preparePointRead indexByIdentities captured incidence readers constraintsView unavailable refusal offered locus dof display witness gesture composition rung
+:PATH: assets/js/turtling/laws/point_state.js::pointStateOf
+:END:
+The ONE projection of a point's state: reader binding (the committed live head and the stable
+placement), the point query (surviving records AND unavailable contributions with reasons), the
+eligibility/status inputs, and =stateOf=. Turtle delegates to it and the CI composition rung
+calls it, so the display and a behavioural witness read the same story from the same code — no
+test-side reconstruction. [[id:laws-decl-point-agent]]
+Fences: =test/js/laws/composition_rung_test.mjs= (construct, agree, grab, drag, revise,
+obstruct, lose a reading) and =test/js/laws/gesture_test.mjs= (which reads its locus through
+this projection).
+
+=preparePointRead= borrows one unchanged model for a synchronous read pass: one lazy active-law
+snapshot, row-derived point incidence, whole-context partner holds, and one state per frame.
+Turtle's overlay, fitting and candidate walks each use a pass; none survives mutation or yielding.
+Fence: =test/js/laws/point_read_test.mjs=. Bench: =test/js/profile/point_read_bench.mjs=.
+=authored.js::indexByIdentities= now shares the ordered row-index builder with hand/actor
+proposals: =pointSubjects= for geometry, =boundParticipants= for readiness, never cached values.
+Fence: =test/js/laws/incidence_index_test.mjs=; no index survives a source change or a yield.
+[[id:runtime-prepared-point-read]] records the constitution, ablation and limits.
+
+** literal source contract — binding, revision, composition and lifetime
+:PROPERTIES:
+:ID: nav-law-literal-source
+:KEYWORDS: literal source origin distance framed centre signed coordinates negative zero reversed inputs revision pin obstruction hand placement retraction fresh play
+:PATH: test/js/laws/literal_source_test.mjs
+:END:
+Source-through-runtime fences for the framed distance input: either input order,
+one-live composition, addressed revision, refusal at the actual revision, placement
+rather than live-head reads, no invented actor/pin, and source lifetime.
+[[id:laws-distance-literal-address]] · [[id:laws-free-relations-contract]].
+
+** named law recipes — own obligations over supplied beings
+:PROPERTIES:
+:ID: nav-law-recipe-composition
+:KEYWORDS: law recipe abstraction composition named declaration supplied participant membrane independent ownership withdrawal link rim
+:PATH: test/js/laws/law_recipe_test.mjs
+:END:
+=let rod = link A B 5= retains A/B and owns its law in the named scope. Reuses
+=scheduler.js::law= / =participation.js= and the existing gate/publisher; movable
+distance inputs remain settled bodyless siblings. Two compatible instances retain
+independent support; withdrawal, rewire, retired identities and unpassed participants
+are fenced. Multiple reaches remain ordered effects, not an implicit atomic batch.
+Contract and experiment: [[id:laws-recipe-composition]].
+
+** scheduler organisation — knowledge boundaries, naming and policy priors
+:PROPERTIES:
+:ID: nav-scheduler-organisation-priors
+:KEYWORDS: scheduler organisation naming guards policy participation membrane information hiding Parnas Ousterhout capabilities ownership refusal order extensibility
+:PATH: specs/turtle/scheduler-organisation-priors.org::scheduler-organisation-priors
+:END:
+Primary-source study and local caller matrix: distinguish factual containment, scope
+policy, movement domains and current publication rights. An eight-case Boolean model
+exposes the open-context counterexample to unifying read-only admission with membrane
+access. Proposed participation extraction and naming vocabulary, not a runtime rewrite.
+
+** participation language — within, supplied to, live in, may address
+:PROPERTIES:
+:ID: nav-participation-language
+:KEYWORDS: participation language requester subject region registry within supplied live address containment liveness ownership lifecycle preposition refusal
+:PATH: specs/turtle/participation-language.org::participation-language
+:END:
+The first bounded scheduler extraction is realised: three scope queries plus the
+live-being fact, with explicit registry input and no scheduler dependency or cache.
+A supplied subject can be retired; read-only scope has no open-context exemption.
+Seventeen new direct/characterization tests preserve these distinctions and the
+consumers' different refusal orders. Later installation/publication cuts remain open.
+
+** n-node response — bounded leaf initialization and the rooted tree
+:PROPERTIES:
+:ID: nav-response-n-node-evidence
+:KEYWORDS: leaf isolated initialization prefix preserve settle permitted ceiling singular declaring metric ray recurrence nearest child old direction pure fold one kernel point query component motion enumeration tie raw precision
+:PATH: specs/compiler/laws-free-relations-review.org::laws-free-relations-n-node-evidence
+:END:
+A bounded leaf method closes a new edge with exactly one isolated endpoint, placing that
+leaf alone via the bound distance -> =inputPosition= -> =nearestChild= -> =settle(permitted:[leaf])=, so
+the accepted prefix is never reconfigured and =operation.movable= is obeyed as a ceiling.
+The reviewer's exact source installs two laws (A=-50, B=50, D=-450). The tree is one
+kernel (=nearestChild=) with a PURE fold (ID -> WORLD), and it is NOT the old-direction
+=realizeDistanceTree= control. Enumerating the same active laws in reverse does not move
+the fold. Raw real-pointer evidence satisfies |AB|-100 = 0 and |BD|-500 <= 1.7e-13; an
+earlier ~1e-3 reading was display rounding. Fences: =test/js/laws/leaf_init_test.mjs=,
+=test/js/laws/following_test.mjs= and =actor_follow_test.mjs=. [[id:laws-free-relations-n-node-review]].
+
+** response compositional center — actor campaign, bounded methods, lifecycle
+:PROPERTIES:
+:ID: nav-response-compositional-center
+:KEYWORDS: composition reusable core bound question held given free coordinates partial assignment conditioning projection tree separator accepted base response support provenance named reference frame writer rotation actor lifecycle
+:PATH: specs/compiler/laws-free-relations-review.org::laws-free-relations-review
+:END:
+Bound originals, accepted reference, coordinate roles and request/choice remain distinct.
+=laws/program_following.js::programFollowing= encodes GIVEN/FREE with one private own-pose =work= map;
+accepted =reference= is not assignment knowledge. Placement reads remain held even for
+unassigned followers. =question_scope_test.mjs= fences hidden conditioning and private work.
+[[id:laws-free-relations-actor-campaign]]; prior reasoning: [[id:laws-free-relations-compositional-center]].
+
+** free-relation contract audit — projection, policy substitution, creation lag
+:PROPERTIES:
+:ID: nav-free-relations-contract-audit
+:KEYWORDS: scoped relation valuation combine project condition correlation shared C free D certificate outer witness exclusion unknown pending budget actor hand policy substitution singleton lag benchmark
+:PATH: specs/compiler/laws-free-relations-review.org::laws-free-relations-contract-audit
+:END:
+The frontier loses upstream alternatives even with a downstream singleton. Hand repair
+finds a witness but cannot replace actor following: given roots, recurrence and ties differ.
+Original gate and publisher stay authoritative; projected support remains unimplemented.
+Quadratic checks also occur at HEAD; marked warm delay is mostly the 100 ms quiet timer. Cold cost remains open.
+Run =node probe/free-point-relations/composition_audit.mjs=; peer instruments and readings
+live beside it. This review distinguishes tested falsifiers from reference oracles.
+[[id:response-composition-vetted-pattern-priors]] vets assumptions, sound abstraction,
+conditioning, behavioral substitution and logical/physical time; none earns a framework.
+[[id:laws-priors-data-structures]] ranks retained incidence, typed event worklists,
+separator/Bayes trees and reversible sparse sets, with concrete source and benchmark limits.
+
+** meet axioms — ideal conjunction versus bounded reduction
+:PROPERTIES:
+:ID: nav-laws-meet-axioms
+:KEYWORDS: meet algebra axioms identity commutativity associativity idempotence absorber precedence tolerance halfplane skew lines unresolved conjunction
+:PATH: specs/compiler/laws.org::laws-meet-axioms
+:END:
+[[id:laws-meet-axioms]] separates ideal intersection from bounded reduction. Skew-line
+soundness and half-plane/ray clipping have standing regressions in
+=test/js/laws/meet_line_line_test.mjs= and =meet_halfplane_test.mjs=. Missing reductions,
+tolerance matching and n-ary refusal remain separate limits; no universal semilattice claim.
+
+** free-point relations — participants are not actors
+:PROPERTIES:
+:ID: nav-law-free-relations
+:KEYWORDS: free relationship pair BA AB cascade explicit participants bodyless distance
+:PATH: probe/free-point-relations/diagnostic.mjs
+:END:
+Historical diagnostic: source refusals, actor-workaround contrast and an injected
+bodyless-chain response through admission/publication. It predates production pair
+syntax; current implemented gates live at [[id:laws-free-relations-contract]].
+Run =node probe/free-point-relations/diagnostic.mjs=.
+
+** n-node response review — lawful is not authorized or least-change
+:PROPERTIES:
+:ID: nav-law-n-node-review
+:KEYWORDS: n-node component continuation permission ceiling validation rotation local world least change branch order bisection lifecycle composition
+:PATH: probe/free-point-relations/n_node_review.mjs
+:END:
+Six headless readings separate final-candidate movement rights, full-pose conservation,
+selection guarantees and source withdrawal. Permission expansion and follower rotation
+now have standing corrections; global least-change and branch-order limits remain.
+Run =node probe/free-point-relations/n_node_review.mjs=.
+[[id:laws-free-relations-n-node-review]] records causes, priors and the bounded next cut.
+
+** spine response policy — lawful lengths are not worm following
+:PROPERTIES:
+:ID: nav-law-spine-policy
+:KEYWORDS: spine worm nearest follower radial policy turning old direction redundant rows
+:PATH: probe/free-point-relations/policy_probe.mjs
+:END:
+A turned three-point witness separates old-direction tree feasibility from
+nearest-child following; parallel law rows expose a separate topology limit.
+Run =node probe/free-point-relations/policy_probe.mjs=. [[id:laws-free-relations-review]].
+
+** response composition priors — compose descriptions, derive behavior
+:PROPERTIES:
+:ID: nav-response-composition-priors
+:KEYWORDS: response composition primitives least action stationary variational Lagrangian lens maintainer least change semiring RMPflow fabrics priority duplicate support shared participant Dechter join projection contractor interval approximation tolerance evidence dyadic BigInt branch prune ideal
+:PATH: specs/compiler/response-composition-priors.org::response-composition-priors
+:END:
+Checked priors separate truth, selection/evolution and bounded realization. Join before
+projection preserves shared witnesses; conditioning is not elimination. Safe outer pruning
+can exclude without producing a witness. The dyadic mixed-geometry spike preserves four
+branches; ideal exclusion is not residual-band refusal. Research, not runtime capability.
+[[id:response-composition-algebra-priors]] · [[id:response-composition-pattern]] · [[id:response-composition-variational-prior]].
+
+** response composition witness — retained boundary, retired machinery
+:PROPERTIES:
+:ID: nav-response-composition-runtime
+:KEYWORDS: composable response source identity witness joint publication retired lab current rights source receipt
+:PATH: probe/response-composition/README.org::response-composition-runtime
+:END:
+One fixed 1D/four-pose museum fixture keeps the original beings, source arithmetic and
+original gate. The role adapters and exploratory machinery are not a forward architecture.
+Run =node --test probe/response-composition/witness.mjs= (3 tests).
+Findings and limits remain in the README; the earned core is [[id:tower-capture-operands]].
+
+** numeric function capture — unused beings and qualified aliases
+:PROPERTIES:
+:ID: nav-tower-capture-operands
+:KEYWORDS: fn defineFunction heldValue capture snapshot unused cycle alias qualified subject callable namesake local recipe source operand
+:PATH: specs/weave/tower.org::tower-capture-operands
+:END:
+The parser holds only consumed operand bindings and rejects unsupported qualified local
+subjects instead of reaching another permitted namesake. Local numeric response source
+now works without inherited-vocabulary injection; view attachment remains a lab protocol.
+Run =node --test test/js/notation/function_capture_test.mjs= (15 controls).
+Source-local joint publication: [[id:response-composition-cycle-3-witness]].
+
+** the hand door's coordinate contract — SE3, not an origin addend
+:PROPERTIES:
+:ID: nav-law-hand-contract
+:KEYWORDS: hand door coordinate contract requestMotion world parent own writer owner metric frame origin SE3 translated rotated parent equivalent
+:PATH: probe/free-point-relations/hand_contract.mjs
+:END:
+The same world wish reaches =requestMotion= as own-chain motion, a parent statement or a
+world statement, and lands on one target under translated and rotated parents; =origin.position
++ requested= agrees only while the chain does not rotate. [[id:laws-free-relations-f2-todos]].
+Run =node probe/free-point-relations/hand_contract.mjs=.
+
+** selection policies — a lawful length is not a chosen response
+:PROPERTIES:
+:ID: nav-law-policy-select
+:KEYWORDS: selection policy conserve hand-first nearest old follower balanced reinitialization tangential crossing exchange residual pair
+:PATH: probe/free-point-relations/policy_select.mjs
+:END:
+Three policies on one settled pair keep AB=r and return different points; only the writer
+landing on the wish follows the request, and =realizeDistanceTree= reproduces it on the
+pair's first edge. [[id:laws-free-relations-f2-todos]].
+Run =node probe/free-point-relations/policy_select.mjs=.
+
+** request sampling — one lawful endpoint, many followers
+:PROPERTIES:
+:ID: nav-law-hand-sampling
+:KEYWORDS: sampling leap unit steps follower walk chord traversal singular coincident plus-x fallback policy browser feel
+:PATH: probe/free-point-relations/hand_sampling.mjs
+:END:
+The same nearest-old-follower rule reaches B=−8 with A=−3 in one leap and A=−13 over unit
+requests; the chord between lawful endpoints passes through A=B, and the coincident request
+falls back to +x. [[id:laws-free-relations-f2-todos]].
+Run =node probe/free-point-relations/hand_sampling.mjs=.
+
+** geometry kernel contract — the tie is not in the kernel
+:PROPERTIES:
+:ID: nav-law-kernel-contract
+:KEYWORDS: kernel contract nearest sphere realizeDistance realizeFreeDistance validateDistance directionBetween regular zero radius singular invalid tie policy accepted bond metric frame
+:PATH: probe/free-point-relations/kernel_contract.mjs
+:END:
+Regular, zero-radius and singular placement are complete; =nearest= chooses +x at a finite
+coincidence while =directionBetween= answers null, and an invalid radius still reports
+success with a non-finite point. The missing piece is a tie resolver (last accepted bond,
+else metric frame), policy rather than geometry. [[id:laws-free-relations-f2-todos]].
+Run =node probe/free-point-relations/kernel_contract.mjs=.
+
+** pin controls — the policy stays under truth
+:PROPERTIES:
+:ID: nav-law-pin-identity
+:KEYWORDS: pin position law identity zero radius tautology duplicate refusal obstruction subordinate truth heldAttempts authored frame
+:PATH: probe/free-point-relations/pin_identity.mjs
+:END:
+A =position= pin refuses the hand-first wish (an obstruction, not a contradiction) while
+conservation stays lawful but does not follow; zero radius joins distinct ids, a same-id
+tautology keeps one entry, and the pin resolves in its authored frame.
+[[id:laws-free-relations-f2-todos]].
+Run =node probe/free-point-relations/pin_identity.mjs=.
+
+** candidate primitives — one binding, one pose rule, one movement fact
+:PROPERTIES:
+:ID: nav-law-candidate
+:KEYWORDS: candidate lawContext positionPose canMove pinnedLaw private proposal chart crossing toLocalPoint rotation retained movement fact policy gate publisher layering
+:PATH: assets/js/turtling/laws/candidate.js
+:END:
+Above the authored rows, below the gate and every policy. =lawContext= is the one world the
+rows read through; =positionPose= converts the point and carries the stored rotation by
+reference (the follower-rotation ruling is still OPEN, D063); =canMove= is =freePoint= plus
+pin and hold. Nothing here decides admissibility: a policy proposes, the gate measures, the
+publisher installs. Policy modules import this, never =verdict.js= internals.
+[[id:laws-free-relations-contract]], D063.
+Center distillation: [[id:laws-free-relations-center-distillation]] — claims, choices and owner
+lifetimes compose differently; reach fallback reuses its retained question (=operation_question_test.mjs=).
+
+** actor following — pure placement, current capture, existing acceptance
+:PROPERTIES:
+:ID: nav-law-follow-responder
+:KEYWORDS: actor following programFollowing nearestChild scalar treeShape treeFold poseReference expressPose statePose accepted bond pure distance tree own instant free sibling positionPose local rotation position-only follower pose
+:PATH: assets/js/turtling/laws/following.js
+:PATH: assets/js/turtling/laws/program_following.js
+:PATH: assets/js/turtling/scheduler.js::acceptVerdict
+:END:
+The tree orders placement; it does not require a homogeneous conjunction. A follower keeps its
+radial accepted-bond offer if ready originals hold, else existing =pointQuery/meet/nearest=
+views condition it. Future adjustable POSITION reads defer; stable PLACEMENT reads do not.
+=nearestChild= answers one finite point or null; the fold owns collection assembly.
+=scheduler.js::poseReference= interprets own/parent placement versus named live heads once
+for both =expressPose= and =statePose=; world requests keep their identity fast path.
+=laws/program_following.js::programFollowing= stages one own-pose map for trials, views and
+final edits; it is POLICY over the kernel, not part of the verdict layer. =candidate.js::
+positionPose= shares only position conversion and exact accepted local rotation with reach and
+hand repair, not their selection policy. =scheduler.js::acceptVerdict= owns independent
+validation and publication, and certifies the FINAL candidate once ([[id:nav-law-certify-final]]).
+For an installation the default producer's geometric root is the DESTINATION (its retained
+receiver); the installation stays the actual writer for publication rights, never certification.
+The whole produced component is screened with =mayAddressParticipant(actual writer, member)=:
+any inadmissible member declines the expansion WHOLE, leaving the ORIGINAL offer to the gate.
+[[id:laws-free-relations-installed-receiver]]. Full pins, other running actors, non-tree coupling and unsupported
+reductions retain bounded refusals. Independent conditioned branches commute, not arbitrary
+cross-branch reads. Keepers: =test/js/laws/{actor_follow,following,hand_standard,component_response,
+lifecycle_witness,localization_representation,receiver_follow,receiver_affordance}_test.mjs=.
+Nine focused tests across =receiver_follow= (7) and =receiver_affordance= (2) fence this path.
+[[id:laws-free-relations-actor-campaign]].
+
+** historical follow witness — retired encounter, not a current passing gate
+:PROPERTIES:
+:ID: nav-law-follow-witness
+:KEYWORDS: historical follow witness archive hand adapter conservation admission gate publisher
+:PATH: test/js/laws/hand_standard_test.mjs
+:END:
+The museum preserves the earlier encounter, including its stale conservation expectation.
+Current contracts live in =test/js/laws/{hand_standard,component_response,actor_follow}_test.mjs=.
+[[id:laws-free-relations-actor-campaign]].
+
+** runtime gate attack — poison, duplicate, stale, retired
+:PROPERTIES:
+:ID: nav-law-gate-attack
+:KEYWORDS: gate attack poison duplicate disconnected wrong-parent stale revision retired identity notification boundary release pin hand goal write path membership exact
+:PATH: test/js/laws/hostile_producer_test.mjs
+:END:
+Historical F2 hostile-producer instrument: poison, duplicate/stale identities, independent
+membership ceiling and coherent publication. The retired encounter lives only in the museum;
+current program expansion ceilings and ordinary hand contracts are standing regressions.
+[[id:laws-free-relations-actor-campaign]].
+
+
+** one certification of the final candidate
+:PROPERTIES:
+:ID: nav-law-certify-final
+:KEYWORDS: certifyFinal normalizeDeclared entriesRef motionValidate host ceiling declared convention request.ref one invocation final candidate structural validity certifyEdits isMotionDestination settlement hand program ordering
+:PATH: assets/js/turtling/scheduler.js::certifyFinal
+:PATH: assets/js/turtling/scheduler.js::refuseMalformedProposal
+:END:
+The move step refuses a malformed proposed pose BEFORE any arithmetic
+(=refuseMalformedProposal=, same =SE3.isValid= authority as the effective check: a missing
+rotation must not throw from compose, and a four-coordinate position must not be rebuilt into a
+valid three-coordinate one by conversion). Then
+=normalizeDeclared= (name the request's convention, convert the whole candidate into each
+frame's own chain) and exactly ONE =certifyFinal=: structural identity/validity over the final
+members — the EFFECTIVE candidate, so an overflow on the way into its own chain is caught too —
+then the host's =motionValidate= in the request's own convention, where =entriesRef= IS
+=request.ref= (falling back to =own=). Every foreign callback — admission and =motionValidate=
+alike — is handed =requestShell(attempt)=: an ISOLATED MUTABLE SHELL of fields (shared frame and
+pose objects, never a deep snapshot), so a callback cannot relabel the captured frame or invent
+reset intent while =hands.acceptance= reads the authoritative =attempt.request=. A ceiling refuses the
+candidate that will publish, never an intermediate proposal. =isMotionDestination= names the
+shared geometry fact and stops there: settlement is each door's own order, hand (settled actor)
+versus program (its own running instant). Keepers:
+=test/js/laws/{component_response,hand_standard}_test.mjs= and the hand validator/admission
+mutation fences. D063.
+
+** owned observations — decision and law facts
+:PROPERTIES:
+:ID: nav-observation-ownership
+:KEYWORDS: observation ownership snapshotFact decision record law facts plain data freeze ids roles probe attempt capture revision keys
+:PATH: assets/js/turtling/observation.js::snapshotFact
+:PATH: assets/js/turtling/scheduler.js::recordAttempt
+:PATH: assets/js/turtling/probe.js::attachProbe
+:PATH: assets/js/turtling/laws/verdict.js::plainPoses
+:END:
+Decision and active-law observations own immutable plain data: runtime handles become
+ids, pose components are projected explicitly, numerics are not normalized; callers
+supply plain, acyclic input, never a general serializer. The attempt slot is the last
+RECORDED decision, not a ledger or commit receipt: =revision= samples the publication
+counter at capture, not necessarily after commit. Ambient =installation=/=receiverId=/
+=sourceId= are retained-role designations, not liveness or permission; join ids within
+the SAME read, never by namesake. Delegated =state=/=authored=/=layers=/=order=/=error=
+are not generally audited; no whole-port security claim. Records pay a copy/freeze
+cost, and admissions may be frequent; no cheapness or performance claim.
+Fences: =test/js/laws/{decision_snapshot,probe_roles,plain_poses,law_observation}_test.mjs=.
+Receiver context: [[id:nav-law-follow-responder]], =receiver-spines.plang=.
+[[id:scheduler-observation-ownership]].
+
+** movement cost — named operations, matched-state diagnostics
+:PROPERTIES:
+:ID: nav-movement-latency
+:KEYWORDS: movement latency benchmark profile hand actor requestMotion allocation warm phase raw samples fixed-point sphere tangent conditioning sweeps CONTINUATION_STEP_TOL CONTINUATION_EDIT_TOL refinement budget tiny intent restatement
+:PATH: test/js/profile/movement_latency_bench.mjs
+:END:
+Call-only hand latency, actor attempt observations and allocation brackets have separate scopes.
+RAW phase filters reproduce reported statistics; diagnostics replay accepted histories after timing
+and compare private proposals with effective publication. Readings: =test/js/profile/README.org=.
+[[id:laws-movement-cost-mechanism]] records the baseline near-tangent fixed-point observation.
+The authorized follow-up at [[id:laws-continuation-refinement-budget]] names separate
+=verdict.js::CONTINUATION_STEP_TOL= and =CONTINUATION_EDIT_TOL= budgets (both 1e-9).
+Fence: =test/js/laws/continuation_refinement_test.mjs=; neither budget rules carry/rotation.
+
+** module linkage — a moved export fails in a second
+:PROPERTIES:
+:ID: nav-module-linkage
+:KEYWORDS: import smoke link fence module export moved referenceerror bundler three.core.min dependency graph
+:PATH: test/js/modules/import_smoke_test.mjs
+:END:
+Every module under =assets/js/turtling/= must LINK. A moved or renamed export, a dangling
+import, or a module asking for a symbol its dependency does not export is one red test instead
+of a =ReferenceError= deep inside a law run. The only excuse is the esbuild bundle
+(=three.core.min=), and the excuse is itself checked so it cannot rot. Run it first when a
+refactor moves symbols between modules. Fences =laws/candidate.js= and
+=laws/program_following.js= in particular.
+
+** F2 admission — membership, not the responder's own selection
+:PROPERTIES:
+:ID: nav-law-f2-membership
+:KEYWORDS: free relations F2 admission membership motionValidate componentOf scope subset outsider ceiling publisher responder
+:PATH: assets/js/turtling/scheduler.js::certifyRights
+:END:
+Historical encounter-specific membership ceiling, NOT a universal movement permission.
+Current =scheduler.js::certifyRights= sees the complete candidate; the actor regression allows
+the writer alone and proves an expanded follower cannot escape that ceiling. Connectivity,
+addressability and publication rights remain different questions. [[id:laws-free-relations-actor-campaign]].
+
+** pin response — a held anchor realizes its free partner
+:PROPERTIES:
+:ID: nav-law-pin-response
+:KEYWORDS: pin response held anchor free partner realizeDistanceTree componentCandidate anchor generalization pin before after movable
+:PATH: probe/free-point-relations/pin_response_probe.mjs
+:END:
+The capability was the anchor, not a solver: the joint exit anchors on the declared pin's
+target and realizes the free partner about it, both declaration orders. A prediction probe
+ran ahead of production. [[id:laws-free-relations-f2-todos]].
+Run =node probe/free-point-relations/pin_response_probe.mjs=.
+
+** typed payload — kind, guard, bounds
+:PROPERTIES:
+:ID: nav-law-expression
+:KEYWORDS: expression kind guard domain bounds scalar length predicateOk bindLaw
+:PATH: assets/js/turtling/laws/expression.js::predicateOk
+:END:
+A lowered predicate carries one relation from the evaluator's vocabulary, one
+payload kind, one domain guard and its source ownership. The value is not part of
+the address; a slider's bounds and the guard it must satisfy are data.
+[[id:laws-build-p3a]] · [[id:eval-relational]]. Fence: =expression_test.mjs=.
+
+** authored relation — one row, uniform wiring
+:PROPERTIES:
+:ID: nav-law-authored
+:KEYWORDS: authored relation descriptor tilt coordinate distance propose validate parseProperty marksOf
+:PATH: assets/js/turtling/laws/authored.js::export const AUTHORED
+:END:
+A new authored relation is one explicit descriptor (name, kind, guard, address,
+predicate, propose, validate). Parse, replacement, scheduler and display read it;
+the entries stay explicit. Display marks come from the locus (=marksOf=).
+[[id:relationships-row-contract]]. Fence: =authored_test.mjs=.
+Driven payloads are row capabilities (=driveOf=): position projects a point,
+coordinate carries a scalar. Accepted publication owns driver installation;
+the shared preflight refuses directional own-target reads before replacement.
+Fences: =driven_installation_test.mjs= and =driven_coordinate_test.mjs=.
+Reasoning: [[id:relationships-driven-payloads]].
+Reactive randomness: =assets/js/turtling/laws/reactive.js=; synchronous input questions
+gate intrinsic draws. Fence: =test/js/laws/reactive_randomness_test.mjs=. Reasoning: =laws-reactive-randomness=
+in =specs/compiler/relationships.org=; readings: =probe/reactive-randomness/RESULTS.org=.
+D059 payload boundary: =laws/verdict.js::applyLaw= and =laws/authored.js::withPayload=;
+=scheduler.js::redrawDerivedLaw= reads the accepted term. Fences:
+=test/js/laws/payload_boundary_test.mjs=, =driven_revision_boundary_test.mjs=;
+reasoning: [[id:laws-payload-boundary]]. Step 4 (TBD): [[id:laws-driven-intent-experiments]];
+run =node probe/driven-intent/probe.mjs=; readings =probe/driven-intent/RESULTS.org=.
+
+** relationship contract — ordered construction, declarative truth
+:PROPERTIES:
+:ID: nav-law-operational-contract
+:KEYWORDS: D058 declarative contract consolidation entity relationship installation address owner bind propose check publish composition matrix lifetime retained conjunction
+:PATH: specs/compiler/laws-free-relations.org::laws-free-relations-contract
+:END:
+Programs construct entities and reach obligations; fixed bound conjunctions state
+truth without output sides. Reach revises an address; hand preserves obligations.
+Bind → form the question → bounded proposal → original checks → joint publication
+or unchanged accepted prefix. The witness matrix names current fences and limits.
+
+** tower and law bridge — mathematical depth is not scene admission
+:PROPERTIES:
+:ID: nav-tower-law-contract-bridge
+:KEYWORDS: tower law bridge operation meaning binding frame guard generic coefficient symbolic derivative numerical admission tolerance quantization display
+:PATH: specs/weave/tower-laws-priors.org::tower-laws-contract-bridge
+:END:
+The tower owns operation meaning over admitted values; laws own obligations, methods
+propose, and publication owns accepted geometry/lifetime. Arithmetic quantization,
+geometric acceptance and display formatting stay separate. Generic coefficient routing
+does not earn symbolic/differential geometry or a universal solver.
+
+** ambient door — the algebra's one window on the tree
+:PROPERTIES:
+:ID: nav-ambient-door
+:KEYWORDS: ambient door installAmbientDoor evaluator algebra resolveExternal isSubject resolveSubjectFacet ownSubject owns resolveSubject observe unobserved bindings markLocal isLocal context binding being facet boundFacet
+:PATH: assets/js/turtling/ambient.js::installAmbientDoor
+:END:
+The pure algebra keeps no frame knowledge: it reaches the tree only through one
+documented door installed by =installAmbientDoor=. A frame owner builds the door
+(=scheduler.js::bindResolve=) and installs every hook at once, so the seam is swappable,
+testable, and cannot accrete assignments at each call site. A bare =Evaluator= has no
+door and stays a calculator; dotted bound subjects and bound callables share one private
+=boundFacet= in =mafs/evaluate.js=. (id:being-facets-centers-review)
+One precedence, per-binding provenance: a local declaration MARKS its name in the current
+scope (=assets/js/turtling/bindings.js=, a non-enumerable symbol Set); a formal or captured
+value is not marked. Two operations earn the spread: =extend= carries the inherited marks
+(minus newly bound names) for a nearer block; =project= omits marked names for capture and
+=fnScope=. =readContext= routes a marked read through =resolveExternal= so it stays LIVE
+(never frozen into replay); =boundFacet= gives a marked non-subject no answer rather than
+falling through to an outer namesake. The law-selector branch resolves every BOUND selector
+through the same door. Fences: =test/js/laws/subject_binding_test.mjs=.
+Situated receiver reads: [[id:being-facets-situated]]. =scheduler.js::poseInObserverBirth=
+keeps the installation as reader/authority but uses the retained receiver's birth basis for
+relative spatial facets. Active observations freeze target and reference together. The
+existing =world=/=origin= views and lexical lookup are not reparented. =arguments.js::readPointArgs=
+shares a snapshot for an installation's pure-coordinate =faceto=; =bindResolve::observe(command)=
+declines that extension for ordinary actors, preserving their cycle/instant contract.
+Fence: =test/js/laws/situated_observation_test.mjs=; law refusal, offset cursor, movement,
+readiness and retired input are tested in a translated/rotated room with owner at x=500.
+Fence: =test/js/runtime/ambient_door_test.mjs=.
+
+World geometry: [[id:world-coordinate-foundation]] has cut over without an experiment flag.
+=POSITION= projects observation-owned world poses; own cursor coordinates project private
+continuation through =localize.js::storageSpace=. Point-consuming callable specs (=input:
+"point"=) share that sampled representation crossing across aliases. Installations use the
+retained receiver's storage basis. =ORIENTATION= remains reference-dependent.
+
+=laws/authored.js= interprets numeric =position=/=coordinate= payloads and literal centres
+directly as world geometry. No numeric basis reader or chart tag remains. Explicit references
+retain geometric dependencies; declaring scopes retain authority and lifetime. Angular laws
+retain a placement reference; construction re-placement checks the entire posed subtree against
+original obligations before publication.
+
+Fences: =test/js/motion/world_consumers_test.mjs=, =test/js/motion/world_read_command_test.mjs=,
+=test/js/laws/world_laws_test.mjs=, =test/js/motion/target_binding_test.mjs= (acquire → bind → propose). [[file:probe/world-coordinate/witness.mjs][The promoted witness]]
+checks the translated/rotated/pitched read→command scene; [[id:world-coordinate-census]] retains
+the pre-cutover evidence. Remaining work: observation composition, sealed argument lifetimes,
+and the accepted immutable own-birth-origin public surface.
+
+** grid and conformal geometry — domain, map, finite view
+:PROPERTIES:
+:ID: nav-grid-conformal
+:KEYWORDS: grid vector ruler lattice cube cuboid sphere plane conformal CGA inversion tangent angle curve topology infinity lifecycle
+:PATH: specs/compiler/grid-conformal-inquiry.org::grid-conformal-inquiry
+:END:
+Diagnosis: scalar admission, square GridHelper and rigid event representation restrict
+shape; endpoint-only transformation loses conformal curves. Candidate, not shipped:
+product domain → explicit geometry map → bounded finite view; existing owners keep
+ink versus current-object lifetime. Replay =node probe/grid-conformal/inquiry.mjs=;
+readings =probe/grid-conformal/readings.jsonl=. Physical extents/cell size and 3D skin
+selected. Law-priors extension: [[id:cga-expression-inquiry]] — held distance and held angle,
+conformal tangent action, tower operations and inherited admission; no separate CGA
+command vocabulary or lifetime. Proposed, not implemented.
+
+** symbolic numerics performance — staged richness and backend boundaries
+:PROPERTIES:
+:ID: nav-symbolic-numerics-performance
+:KEYWORDS: symbolic CAS SICM Emmy GiNaC WASM CLN ganja geometric algebra staging compilation CSE DAG AD exact filters assumptions correctness performance
+:PATH: specs/weave/symbolic-numerics-performance-review.org::symbolic-performance-question
+:END:
+Research, not accepted design: rich operation meaning with specialized storage
+and prepared execution; measured literature results versus Dojo hypotheses.
+The GiNaC section inspects an existing WASM binding, its semantic and resource
+limits, licensing gate and the native compile_ex path that does not port as a JIT.
+
+** symbolic numerics experiments — turtle seams, matched JS, lifecycle costs
+:PROPERTIES:
+:ID: nav-symbolic-numerics-experiments
+:KEYWORDS: symbolic numerics ganja GiNaC Emmy benchmark experiment conformance cold startup compressed download retained memory preparation repeated evaluation transfer cancellation numeric tower
+:PATH: specs/weave/symbolic-numerics-performance-review.org::symbolic-performance-experimental-plan
+:END:
+Directed campaign and two bounded pilots: common evaluator/Versor controls,
+matched JS, lifecycle costs and total-session break-even. Emmy now earns actual
+browser generic/SCI witnesses; static ganja earns CSP/payload simplification.
+GiNaC's safe build is blocked. No backend or production change selected.
+
+** symbolic numerics probe — isolated worktrees, shared async-worker contract
+:PROPERTIES:
+:ID: nav-symbolic-numerics-probe
+:KEYWORDS: symbolic numerics ganja worktree async worker probe conformance retention CSP cancellation transfer benchmark pilot
+:PATH: probe/symbolic-numerics/README.org::symbolic-numerics-probe-room
+:END:
+Control/ganja/GiNaC/Emmy seats share one pinned tracked runtime and fixture harness.
+RESULTS.org records the Float64 Cl3/JS pilot, strict main/worker CSP gate,
+cancellation and correction of instrument defects. No backend selected.
+
+** symbolic numerics second pilot — actual browser gzip and prepared reuse
+:PROPERTIES:
+:ID: nav-symbolic-numerics-second-pilot
+:KEYWORDS: Emmy SCI ganja AOT static kernel cold gzip memory VM cancellation preparation paired JS
+:PATH: probe/symbolic-numerics/SECOND-RESULTS.org::symbolic-numerics-second-results
+:END:
+Parent-owned serial core/browser/boundary/retention/preparation-stop readings.
+Entry instruments: probe/symbolic-numerics/{parent-pilot,cold-browser,preparation-stop,summarize-parent}.mjs.
+No intrinsic speed ranking: VM differs from browser, A/A noise is retained,
+SCI buys reuse against generic Emmy only, and fixed-count stop checks can stall.
+
+** symbolic foundation witness — tower meaning before command admission
+:PROPERTIES:
+:ID: nav-symbolic-foundation-reference
+:KEYWORDS: CAS generic exact rational symbolic differential quarter turn rt fw label pose admission lowering signed permutation phase abstraction
+:PATH: probe/symbolic-foundation/README.org::symbolic-foundation-reference
+:END:
+Bounded reference in the generic worktree: one tower-routed unit-rotation
+definition, exact substitution versus approximate binding, prepared local action.
+Seventeen witnesses pass; actual rt/pose integration remains refused, not fixed.
+No backend selected. RESULTS.org records A/A noise and cold preparation costs.
+
+** distance term normalization — meaning, policy, capability
+:PROPERTIES:
+:ID: nav-law-term-normalization
+:KEYWORDS: D058 distance original term dotted pair normalize holding policy bounded methods retained conjunction literal identity guard witness
+:PATH: specs/compiler/laws-free-relations.org::laws-distance-term-normalization
+:END:
+D058 resolves one bound authority, one acceptance contract, bounded methods.
+Step 1 is implemented: pair/dotted terms bind once, distance views derive from them,
+and the dotted observer hold is explicit and reach-local. Equal terms/context agree;
+balanced and held-context initializers differ lawfully. Poisoned legacy mirrors
+cannot change truth; malformed terms refuse and the original gate judges candidates.
+[[id:laws-relationship-operational-boundary]] · [[id:laws-distance-term-normalization]].
+
+** derived values — commit-driven readout
+:PROPERTIES:
+:ID: nav-live-readout
+:KEYWORDS: readout derived live label recompute early cutoff source-owned readouts dependency order cycle acyclic readsink produces graph neighbours SCC iterative stack-safe topology-cache reachability oracle probe observational dependsOnFrame refusal validity recovery
+:PATH: assets/js/turtling/laws/readout.js::createReadouts
+:END:
+Source-owned derived values with kind-aware equality and release on rewire/removal.
+=register= replaces computation, =drives= and producer associations; =retire= removes one
+driver. Scalar dependencies are fresh within a publication; keyed builds remain deferred.
+Node and preflight-root reads share =reading=. =readsink= reports frame references;
+=produces= closes frame-mediated cycles. =dependsOnFrame= refuses target-dependent
+replacement before commitment and restores what it touches.
+Presence derives from the answer (=value !== undefined=); =list().hasValue= is a view,
+not stored truth. The store owns outcomes; the law pipeline still accepts geometry.
+Contract: [[id:tower-laws-readout-outcomes]]; cycle scope: [[id:tower-laws-cycle-contracts]].
+Proposed read-owned waiting/capture boundary: [[id:laws-readiness-contract]] (draft, not
+shipped); blocked is not NOTHING, and incomplete capture grants no build permission.
+Vetting: [[id:laws-readiness-vetting]]; =probe/readiness-review/contract.mjs= keeps
+current-behavior characterizations, not green acceptance of the proposed extension.
+Fences: =readout_test.mjs=, =readout_dependency_test.mjs=, =readout_contract_test.mjs=.
+=neighbours= is the shared derived edge view for SCC diagnosis and target reachability;
+The SCC and the target-reachability walk are iterative, so a deep graph cannot overflow the
+call stack; membership on the compute path is a Set, not a scan. Discovery and the
+invalidity closure are cached under one topology generation (an exact edge comparison, so a
+value change that re-routes a read is seen), while enforcement — suppress, cancel keyed
+work, clear the refusal flag — still runs every publication. A cancelled keyed answer is
+RE-REQUESTED on recovery, since its question is unchanged and would otherwise look settled.
+Reuse discovery, continue enforcement, reevaluate values. The graph BOOKKEEPING is reduced,
+not change-proportional: every publication still evaluates all nodes, allocates their
+dependency sets, and compares topology. O(N+E) names the bookkeeping only; total publication
+cost also includes each node's computation and its equality checks. Two limits stay explicit:
+evaluation is not input-driven, and eager evaluation remains recursive despite the stack-safe
+SCC and preflight. Performance rig: =probe/readout-bench/=.
+=readout_graph_test.mjs= compares both with independent closure across 768 topologies.
+[[id:laws-build-p3-readout-built]]. No reactive runtime, no command replay.
+
+** derived display — a polygon follows the drag
+:PROPERTIES:
+:ID: nav-live-display
+:KEYWORDS: display polygon polygonSides live view projection replace side count
+:PATH: assets/js/turtling/laws/display.js::polygon
+:END:
+A committed scalar projected to geometry (a polygon whose side count follows the
+scalar), replaced on commit — no append, no command replay. [[id:laws-build-p3-display-built]].
+Fence: =display_test.mjs=.
+
+** trajectory — a legal endpoint is not a legal path
+:PROPERTIES:
+:ID: nav-law-path
+:KEYWORDS: path trajectory chord arc segmentResidual pathOk continuous motion diameter
+:PATH: assets/js/turtling/laws/path.js::pathOk
+:END:
+Samples the represented path and checks every active distance along it. The straight
+chord across a circle leaves the locus; a fine arc stays. PURE PREREQUISITE, not
+wired: the commit boundary validates endpoints only and the hand step is discrete,
+so a chord is not yet refused in play. Earned with Phase 4 running continuation.
+[[id:laws-build-p4-path-built]]. Fence: =path_test.mjs=.
+
+** relational vocabulary — one measurement
+:PROPERTIES:
+:ID: nav-eval-relational
+:KEYWORDS: relational distance bearing sync measure worldReading headingOf elevationOf forwardOf compass compassOf heading elevation aim null nothing north facing reading
+:PATH: assets/js/turtling/laws/relations.js::measure
+:END:
+RELATIONAL (distance, bearing, sync) and SPATIAL (x, y, z, heading, elevation) are
+one definition. A live read and a proposed configuration supply the same
+{ position, rotation, time } reading, so a source read and a legality check cannot
+disagree. A direction in 3D is two aim readings of one =forwardOf=, and a facing off
+the paper's plane answers =null= rather than a number: the demand refuses it, not the
+read. [[id:eval-relational]]. Fence: =relations_test.mjs=.
+
+** laws — one address, one pipeline
+:PROPERTIES:
+:ID: nav-law-pipeline
+:KEYWORDS: law distance position pin realize propose validate applyLaw pipeline
+:PATH: assets/js/turtling/laws/verdict.js::applyLaw
+:END:
+=let A.distance = …= and =let A = origin= are one noun: a law at an address. The
+pipeline is address → propose → validate → publish → store; a new form is a row in
+=PROPOSE=/=VALIDATE=, not a new effect. [[id:laws-build-solve-seam]] ·
+[[id:laws-build-p2c-verdict]]. Fence: =phase2_distance_test.mjs= / =phase2_failure_test.mjs=.
+
+** the law-verdict layer — gate, continuation, candidates
+:PROPERTIES:
+:ID: nav-law-verdict
+:KEYWORDS: law verdict gate lawViolation whole-law continue continueLaws candidate applyLaw pin conflict affectedMembers
+:PATH: assets/js/turtling/laws/verdict.js
+:END:
+One module owns reading a configuration against the active laws (=lawViolation= /
+=brokenLaw=), continuing an accepted candidate to closure (=continueLaws=), the pin
+conflict (=conflictAt=), the affected component (=affectedMembers=), and the analytic
+candidates for a component (=componentCandidate= / =componentMeetCandidate= / =applyLaw=).
+The frame world reading is injected (=world.read/transform=), so the module owns no
+scheduler state and mutates no frame — the caller installs. [[id:laws-activation-order]] ·
+[[id:laws-build-p3]]. Fence: =phase3_component_test.mjs= / =phase2_failure_test.mjs=.
+
+** a point's state — what it is, where it may go
+:PROPERTIES:
+:ID: nav-point-state
+:KEYWORDS: state stateOf locus sphere silhouette rim contour envelope project ghost dof normals
+:PATH: assets/js/turtling/laws/constraints.js::stateOf
+:END:
+One query: tag (free / headed / pinned / unresolved), normals, degrees of freedom, and
+gives the exact locus when the form names one. =project= resolves a target onto it;
+=axesOf= gives the resting normal and =sphereCurves= the parallel/meridian through the
+point (depth-faded by =drawCurve=); the overlay draws them as world geometry. The rim
+the eye sees is one contour (=drawRim=), drawn only off the shell's axis, never a
+second circumference ([[file:specs/decisions/031-the-rim-is-a-contour.decision.md][D031]]).
+[[id:laws-decl-point-agent]] · [[id:laws-freedom]]. Touchability comes from the same
+query: =turtle._touchable= reads =interaction.offered=. Fence: =constraints_test.mjs=.
+Closure: [[id:laws-build-p1-p2-closure]]; regressions: =first_two_review_test.mjs=.
+
+** the reveal control — when the possibility display appears
+:PROPERTIES:
+:ID: nav-reveal
+:KEYWORDS: reveal hints visible delayed possibility locus overlay show hide experiment
+:PATH: assets/js/turtling/laws/reveal.js::hintsVisible
+:END:
+View-only: Visible draws every law-derived hint at once; Delayed withholds them
+together until an explicit =turtle.revealNow()= — accepted movement is recorded,
+never a trigger. =turtle._drawPins= gates the hint loop; =?reveal=delayed= sets
+the condition; a new seat hides again. Fence: =reveal_test.mjs=.
+Experiment: [[id:laws-experiment-3-possibility]].
+
+
+
 ** evaluation — run, re-eval, frame swap
 :PROPERTIES:
 :ID: nav-executor
-:KEYWORDS: executor eval run interpret step walk
+:KEYWORDS: executor eval run interpret step walk declaration reading dependency sampling
 :PATH: assets/js/turtling/executor.js
 :END:
 
+The walker owns command order, preemption and stroke state. Its reusable centers:
+- =assets/js/turtling/expressions.js=: =evaluateExpr=, =readExpr= and =retryBlocked=;
+  value/observation isolation and one blocked-attempt protocol, using only math deps.
+- =assets/js/turtling/arguments.js=: =acquireArgument=, consumer admission, target
+  projection and =readPointArgs=. A finite singleton is selected in one place.
+- =assets/js/turtling/declarations.js=: =declareExistence=, =declareValue= and
+  =declareLaw=; sources carry ={initial, read, observe}= independently of kind.
+  Value-effect rows do not mutate scope; point and position share =lawEffect=.
+  =declareValue= marks local values after delivery; =spawnEvent= supplies one
+  inheritance snapshot for ambient and figure bodies.
+Birth/scope semantics are unchanged. Fences: =test/js/runtime/declaration_reading_test.mjs=,
+=test/js/runtime/expression_centers_test.mjs= and =test/js/laws/reactive_randomness_test.mjs=.
+
+P0 motion seam instrument and opt-in accepted move: =test/js/laws/phase0_probe_test.mjs=
+and =test/js/laws/phase0b_motion_test.mjs=; traces/results in =probe/laws-phase0/RESULTS.org=.
+The admission membrane: =interpretReply= turns a raw reply into exactly =accept |
+refuse | fault=. A component (=accept= with sibling poses) is one transaction:
+=commitTransaction= checks members first — a mid-instant target conflicts; a
+completed member retains accepted frame geometry without a live worker. Running
+members receive =batch.rebase= for their executors to adopt at the next command.
+An atom watcher can read half the commit; tick samples are not reader snapshots.
+Publication is a critical section: while a notifier stack is open, =requestMotion=
+refuses =busy= for retry, so an outer publication can never overwrite a newer
+accepted pose or its head slots. Fence: =test/js/laws/phase0m_publication_test.mjs=.
+How a program obtains its first accepted world is still open: source order
+currently stands in for batch assembly, a missing endpoint reads as a refusal,
+and a replaced dependency is dropped only on the pure-=goto= read. Characterization:
+=test/js/laws/phase0_activation_test.mjs=; reasoning: [[id:laws-activation-verdicts]].
+=phase0d..0i= share =test/js/laws/harness.mjs=; the analytic pair acceptance
+checks every sampled tick boundary, including a finished pen-up hand request.
+Reasoning: =specs/compiler/laws-transaction.org=; trace: =probe/laws-phase0/RESULTS.org=.
+Hosted source-spawned topology probe: =test/js/laws/phase0n_hosted_topology_test.mjs=
+([[id:laws-p0n-hosted-topology]]) pins birth/world conversion, declaring-frame
+deposits, scoped addresses and a settled pen-up nested hand commit.
+No-wait hosted analytic pair, rotated declaring-frame/head projection and pending
+edit/fresh/remove fences: =test/js/laws/phase0o_hosted_analytic_test.mjs=
+([[id:laws-p0o-hosted-analytic]]). Browser pending disposal:
+=scripts/verify/host_play.sh=. This still seats B before A and does not route a pointer.
+=test/js/laws/phase0j_spanning_read_test.mjs= pins a second gap: =resolveBinding=
+can read old A then new B across a commit. The proposed observation scope and
+deferred-notification/snapshot comparison live at [[id:laws-transaction-d]].
+=test/js/laws/phase0k_readiness_freshness_test.mjs= pins two different edges:
+D011's missing dependency keeps an old argument (including a sampled
+=random=); a source edit leaves a dependent delayed request live. The
+lifetime/readiness/freshness study is
+[[id:laws-transaction-readiness]].
+Find =requestMotion= and =motionValidate= in =assets/js/turtling/scheduler.js=:
+the finished, unframed pen-up hand door uses the execution admission; no
+pointer routing or general solver is claimed.
+Refusal is itself an interaction decision: =refusalStroke= picks =break= (flush and
+split the figure, the default) or =continue= (hold the pose, join the trail and carry
+fill through). An admission fault is never a refusal: a throw, malformed reply or
+accidental Promise wounds with =kind:'motion'=. Delayed replies use
+=motionAdmissionAsync=; =run=/=seq=/=done= drop anything stale after rewire, removal or
+disposal. Fences: =phase0e_refusal_stroke_test.mjs=, =phase0f_admission_faults_test.mjs=,
+=phase0g_delayed_admission_test.mjs=.
+
+*A measure is answered by what the value IS* (ruling: absent-is-zero)
+:PROPERTIES:
+:ID: nav-three-doors
+:KEYWORDS: finite measure hole demand absent nothing identity skip wound refused nan infinity overflow
+:PATH: assets/js/turtling/numerics.js::demand
+:END:
+
+The door is =numerics.js::demand= ([[id:nav-numerics]]): this file holds no epsilon
+and no rule of its own, only the CONSUMER's name. ABSENT takes the callable's own
+default — the identity — so =fw= walks nothing and =goto= lands at the origin, quietly.
+A NON-FINITE number is a step NOT TAKEN, and the author is TOLD (a =notice= with
+severity =notice=). A value of the WRONG KIND is the author's, so it is reported where
+it is located while the siblings still run; the headless vocabulary pass (and a closed
+construction) refuses instead — that pass is where a seat's diagnostics come from, so
+the author is told while the seats still draw. Live numeric admission can skip one
+statement; D020 governs parse errors, not this numeric fault disposition. A =when=
+and a =loop= count are consumers too. This differs from the Phase 1 =finite-or-refuse=
+implementation recorded in =test/js/notation/BASELINE.md=. Worktree arithmetic no
+longer quantizes, but [[id:tower-center-approximation-ruling]] remains unaccepted.
+Display formatting is separate; =sqrt(-1)= / =1/0= still stay numeric values at the
+tower ([[id:tower-center-contract]]).
+A compared NaN is now a non-answer, so the condition consumer notices; bitwise,
+power and tested-left selection preserve it too. Infinity comparisons/bitwise/power
+remain finite and unruled. [[id:probe-tower-comparison-nan-completion]] ·
+[[id:probe-tower-comparison-infinity]].
+Fences: =test/js/notation/three_doors_test.mjs=, =finite_measure_test.mjs=,
+=primitives_test.mjs=, =contracts_test.mjs=, =word_measure_domain_test.mjs=,
+=laws/relations_test.mjs=, =execute/round_test.mjs=, =laws/free_point_test.mjs=, =numeric_fault_test.mjs=, =condition_equality_test.mjs=;
+readings: =probe/tower-rounding/probe.mjs= (before/after) and =composition.mjs=.
+
+** numeric rotation precision — composition and shared action
+:PROPERTIES:
+:ID: nav-rotation-precision
+:KEYWORDS: rt fw 45 90 quaternion composition coefficient epsilon angular drift cancellation sparse vector action precision
+:PATH: assets/js/turtling/mafs/versors.js::rotateVec
+:END:
+The dimensionless =1e-12= budget conditions composed rotation and its coefficients,
+never coordinates or scalar values. Contract: [[file:specs/weave/rotation-precision.org::rotation-precision-boundary][rotation precision]].
+Regressions: =test/js/motion/{quarter_turn,rigid_precision}_test.mjs=.
+Matched old/new executor cost: =node test/js/profile/rigid_precision_bench.mjs=.
+
+** the numeric surface — one condition, one policy table, one report
+:PROPERTIES:
+:ID: nav-numerics
+:KEYWORDS: numerics condition finite infinite nan nothing not-a-number demand policy notice quiet wound tol within format display scale tolerance approximate rounding
+:PATH: assets/js/turtling/numerics.js
+:END:
+
+One leaf (only =report.js= imported), so =mafs/=, =laws/= and =turtling/= all reach it.
+Two axes kept apart: =conditionOf(value)= names the FACT (nothing | finite | infinite |
+nan | not-a-number) and =demand(value, {as})= returns the VERDICT (take | refuse) plus
+the notice the author is owed — the consumer names itself ONCE in =POLICY= (walk |
+vocabulary | construction | condition | count | display), so no call site carries its
+own epsilon or its own idea of nothing. =tol(eps, of)= + =within= make a tolerance
+eps times a SCALE (a bare epsilon is a different policy at every figure size);
+=format= is the ONE display gate (~12 significant digits, never feeding back, and a
+non-number named rather than printed as a numeral). ONE report shape, minted in
+=turtling/report.js= (=report= for a fault, =notice= for the wire form) and handed to
+five places that used to build it by hand — and NO severity of its own, because
+severity has one home: =weave/queries.js::KINDS=, whose rows now cover every kind the
+code mints (previously =ink=/=motion=/=relation= and the law outcomes answered by the
+unknown-kind default, which is a decision made by accident). The same =verdict= judges
+the document AND a seat, so a warning is shown without calling the document unwell.
+A notice rides the frame’s channel AND its standing =notices= list, which
+=scheduler.errors= includes, so a reader asks =ailments= instead of learning a second
+pipe; =kind:’parse’= carries a malformed line (the house’s own kind, not a synonym).
+Adopted at: =executor.js= (a hole, a =when=, a =loop= count, =x/y/z= exact, the label),
+=commands.js= (a pose, =label=’s display, =faceto=’s relative aim — it HOLDS its inputs),
+=laws/vec3.js= (=finite3=; =unit= keeps an ABSOLUTE floor because it sees only the
+result, and a tolerance needs the scale of the inputs — making it relative was tried
+and reverted: =unit(sub(a,b))= would name a direction from rounding noise.
+=directionBetween(a, b)= is the question those callers were reaching for: coincidence
+asked at the scale of the POINTS, so a coincident pair is null and the caller’s
+stated =?? [1, 0, 0]= fallback stands, while the same offset against a smaller figure
+is a real direction). Still absolute, recorded open: =REALIZE_TOL= /
+=ACCEPT_TOL= / =REL_TOL=, and the COMPARISON door (=0/0 > 0= answers 0
+with no word — the non-answer is erased before a consumer sees it; characterized in
+=test/js/notation/numeric_scale_test.mjs= so fixing it is a deliberate edit).
+=measure= returns a value/default or the shared statement refusal; converted command
+results and elapsed time are admitted before publication. =mafs/versors.js= repairs
+unit-norm drift without snapping angles. =render/shape.js= closes rings by topology,
+not an absolute endpoint epsilon. Adversarial witnesses:
+=test/js/notation/numeric_boundary_test.mjs=, =test/js/motion/numeric_stability_test.mjs=,
+=test/js/render/shape_test.mjs=. Evidence and unclosed boundaries:
+[[id:numeric-boundaries-review][numeric boundaries review]].
+Readings: =probe/tower-rounding/composition.mjs= (its =said= column is read back out of
+the events, not asserted by hand). Fences: =notation/{three_doors,finite_measure,
+numeric_scale,event_vocabulary}_test.mjs=, =wound/queries_test.mjs= (the severity axis).
+MEASURED, per call (test/js/profile/numeric_cost_bench.mjs): =conditionOf= 5 ns,
+=demand= taken 12 ns, the argument door =admit= a plain call since =yield*= delegation
+cost 162 ns of an argument and is invisible to a profile (it lands in the caller’s self
+time); =format= 21 ns for a round value and ~370 ns for a residue — a spelling that
+already fits the 12-digit BUDGET is the answer, and the SEARCH it replaced cost 450 ns
+on 42 but *3 665 ns* on =1/3=, a cost that grew with the number. Churn after both
+fixes: 201 scavenges per fixed workload against the pre-session baseline’s 203
+(=node --trace-gc=).
 ** re-eval recreates frames — persistent state keys by frameAddress
 :PROPERTIES:
 :ID: nav-hotswap
 :KEYWORDS: hotSwapChild frame id frameAddress re-eval persistent state remount
 :PATH: assets/js/turtling/turtle.js::hotSwapChild
 :END:
+
+** host door — play a program on a canvas
+:PROPERTIES:
+:ID: nav-host-play
+:KEYWORDS: createWorld play finished host runtime paperlang package
+:PATH: assets/js/host.js::createWorld
+:END:
+Consumer API and browser imports: [[file:scripts/release/README.md][PaperLang on your canvas]].
+Build/publish: [[file:scripts/release/host.org][release runbook]].
+Implementation invariants: [[file:specs/turtle/host-runtime.org][host runtime]] (D030).
+=host.js::createWorld= owns the lifecycle; =turtling/run.js= owns completion.
+Package version: =scripts/release/package.json=. =release.yml::npm= publishes on
+production push after green CI, with the app version but no desktop-build dependency.
+=/paperlang/0.6= and =/paperlang/latest= live in =PaperLangController=.
+Fences: =test/js/host/=, =test/dojo_web/controllers/paperlang_controller_test.exs=,
+=scripts/verify/host_closure.sh= and =host_play.sh=.
+Surface lookup: =turtling/viewport.js= and =overlay.js=. The overlay host must stay
+=phx-update="ignore"=; =core-canvas= needs explicit =w-full h-full=, not just fixed
+insets (id:host-surface). Live-shell check: =scripts/verify/shell_surface.mjs=.
+Lab admission seam: =Turtle= → =createScheduler=; adversarial findings:
+[[file:specs/turtle/host-ergonomics-review.org][host ergonomics review]].
 
 ** become — the seed law: an unchanged seat is skipped whole
 :PROPERTIES:
@@ -616,6 +2118,117 @@ cells stop blinking. =fresh:true= is the explicit restart door
 (=pageLaw.toggle= — the pin IS the membership; =turtle.toggleAmbient= was a
 second machine for it and is gone). Pins: =test/js/runtime/become_test.mjs=;
 seam lint: =test/js/document/check_tree.mjs=.
+
+** derived cell — the flake is keyed to its place
+:PROPERTIES:
+:ID: nav-keyed-stream
+:KEYWORDS: random keyed seed flake stochastic derived figure rebuild determinism
+:PATH: assets/js/turtling/mafs/keyed_stream.js::keyedStream
+:END:
+A derived figure is memoized by its key: =sameSeed= refuses the rebuild and the
+readout refuses an equal question — both memos decide by equality, so the answer
+must be a function of the key. =keyedStream(keyedSeed(address))= gives one stream
+per run, read by both doors: the evaluator's =random= constant and =ctx.random= for
+=beColour random=. Same figure, same flake; a rebuild does not re-roll. An ordinary
+ambient reads the world, so a position in a stream is not its to promise — it keeps
+=Math.random=. Pins: =test/js/execute/keyed_stream_test.mjs=,
+=test/js/laws/figure_binding_test.mjs=.
+
+
+** figure question — the arguments, not the parent let list
+:PROPERTIES:
+:ID: nav-figure-question
+:KEYWORDS: evaluateArgs figure key readout arguments captureFor same-bucket
+:PATH: assets/js/turtling/scheduler.js::function evaluateArgs
+:END:
+A derived figure's key is =evaluateArgs= in the declaring frame. Live names are
+ports at the call (=let art = hello X.x=). The membrane stays =captureFor=.
+The read shares =mafs/parse_memo.js::parseMemo= with commands: bounded by parser
+identity and invalidated by its definition epoch. Captured parameters override actor
+constants; recapture refusals carry the figure's declaration span.
+Pins: =test/js/laws/figure_binding_test.mjs=, =test/js/notation/quoted_access_test.mjs=.
+Review and readiness limits: [[id:quoted-name-reader-review]].
+
+** constructed figure display — incremental drawing, time-bounded pump
+:PROPERTIES:
+:ID: nav-construction-display
+:KEYWORDS: flicker unit circle sine bearing wait incremental render cadence figure restart time slice admission
+:PATH: assets/js/turtling/compositor.js::createCompositor
+:END:
+Each display frame drains ambient channels and materializes directly. The experience
+contract prefers completed macro/drawable prefixes; replacement staging remains open.
+=withSlice= supplies the pump's deadline; the finite overrun ceiling is not a latency
+guarantee. =scheduler.isSettledThrough(H)= supplies the separate live-clock gate.
+[[id:render-construction-cadence]] records the cadence and its restart regression.
+Pins: =test/js/runtime/compositor_budget_test.mjs=, =test/js/runtime/figure_cadence_test.mjs=.
+Performance evidence and graphics-engine priors: [[id:runtime-intention-performance]].
+Draft experience contract and controlled falsifiers: [[id:live-rendering-contract]].
+Baseline instrument: =probe/live-rendering/diagnose.mjs=; findings: [[id:live-rendering-results]].
+Readiness/horizon reference bench: =probe/live-rendering/p1.mjs=; plan: [[id:live-rendering-p1-plan]].
+Repeated finite/prefix comparisons agree; promotion rejected: [[id:live-rendering-p1-verdict]].
+Stop/wake isolation at existing scheduler seams: =probe/live-rendering/stopwake.mjs=;
+preregistration [[id:live-rendering-stopwake-plan]]; reading [[id:live-rendering-stopwake-results]].
+Owner census of stop/eligibility facts: =probe/live-rendering/owners.mjs=;
+reading [[id:live-rendering-owner-census-results]].
+Phase walk P2–P7 (controls and gates): =probe/live-rendering/phases.mjs=;
+reading [[id:live-rendering-phase-walk-results]].
+P4/P7 rigor (manipulation checks): =probe/live-rendering/rigor.mjs=;
+reading [[id:live-rendering-rigor-results]].
+Driver-pause cause witness: =probe/live-rendering/driver.mjs=;
+reading [[id:live-rendering-driver-pause-results]].
+P4 ink release (erase / replacement): =probe/live-rendering/p4.mjs=;
+reading [[id:live-rendering-p4-release-results]].
+P4 endless-drawing memory: =probe/live-rendering/p4-endless.mjs=;
+reading [[id:live-rendering-p4-endless-results]].
+Machinery cost (measure before minting): =probe/live-rendering/machinery.mjs=;
+reading [[id:live-rendering-machinery-results]] and [[id:live-rendering-reasoning-corrections]].
+Display-cut repair (=atCut= descends through done bodies), regression + controls:
+test/js/runtime/construction_cut_test.mjs; reading [[id:live-rendering-cut-repair-results]].
+Gauge repair (facet-wise oracle): =probe/live-rendering/gauge.mjs=;
+P3 identity repair (both frames): =probe/live-rendering/identity.mjs=;
+readings [[id:live-rendering-gauge-results]] and [[id:live-rendering-identity-results]].
+Shared reveal timing in the real compositor: =probe/live-rendering/compositor.mjs=;
+reading [[id:live-rendering-compositor-reveal-results]]; versioning [[id:live-rendering-versioning]].
+Driver retries under the real pump: =probe/live-rendering/retries.mjs=;
+Equivalent readiness readers: =probe/live-rendering/readers.mjs=;
+readings [[id:live-rendering-driver-retries-results]] and [[id:live-rendering-equivalent-readers-results]];
+compositor limits [[id:live-rendering-compositor-limits]].
+Pump repair (redundant overrun; driveToRest no-progress/no-drain exit):
+test/js/runtime/pump_overrun_test.mjs; reading [[id:live-rendering-pump-repair-results]].
+Split clocks (wall / reveal / pump stopping): =probe/live-rendering/clocks.mjs=;
+reading [[id:live-rendering-split-clocks-results]].
+Integrated seam: [[id:live-rendering-seam-integration]]; C06 is adopted, not the
+whole experience contract. =test/js/runtime/settlement_test.mjs= pins settlement,
+readout drain-before-spend and new-play/edit/flush lifecycle.
+
+** generative law composition — same slot, distinct owners
+:PROPERTIES:
+:ID: nav-generative-law-composition
+:KEYWORDS: generative composition experiments def loop when named slot reuse sameSeed figure birth placement waiting owner membrane bound subject selectors
+:PATH: test/js/laws/generative_composition_test.mjs
+:END:
+Direct, helper, conditional and repeated reaches share binding and law acceptance.
+=scheduler.js::spawn= compares the attached =seed= before registering a figure's
+question; =birth= places a value without erasing its motion. =publish= permits the
+owner's waiting value at a cut, but rejects mid-instant and outside-region writes.
+=executor.js= binds subject selectors as data; =parse.js= no longer fences loops.
+Ground: [[id:laws-generative-experiments]], D057. No macro expander or new solver.
+
+** free-pair relationship — two bodyless participants
+:PROPERTIES:
+:ID: nav-free-point-relations
+:KEYWORDS: free point pair distance initialization bodyless bound expression static verdict tautology self-distance balanced midpoint original predicate atomic publication F1
+:PATH: test/js/laws/free_relations_test.mjs
+:END:
+=parse.js= reads =let distance(A,B)=r=; =executor.js= forwards selectors as data.
+=laws/authored.js= owns the retained expression, exact identity facts and measurement;
+=laws/realize.js::realizeFreeDistance= proposes an isolated balanced pair using the
+shared vector kernel. =laws/verdict.js::applyLaw= composes the original whole-law gate
+with existing settlement/publication; =bindLaw= owns the sampled expression snapshot.
+Ground: [[id:laws-free-relations-f1]], [[id:laws-free-relations-f1-audit]]. No following
+policy, live radius, actor adapter or second point store is earned by F1.
+Next probes: [[id:laws-free-relations-f2-todos]] — hand-space contract, selection
+discriminators, nearest-sphere kernel, pins, bounded admission, atomicity and play.
 
 ** render clock — epoch rebase, idle fast-forward
 :PROPERTIES:
@@ -637,6 +2250,24 @@ Compositor consumes =now = t - epoch=: =assets/js/turtling/compositor.js=.
 (post-order tiebreak), so a wall-clock jump can't let a frame read a logically-later
 one. Decision 011 bullet 3. Head events for frame-targeted children are projected via
 =projectHead= so the cursor rides its deposited (re-projected) ink (spec ft-d5-head).
+=resumeAt= is logical, not wall-anchored: a frame's first =wait= anchors to its birth
+on the axis (spawn and rewire: the parent's frontier; fresh seat: the root's), never
+to =now=. Consumed ticks — admission parks included — must not drift a frame's
+frontier past a sibling's and let it read an earlier instant. Fence:
+=test/js/runtime/scheduler_determinism_test.mjs= and phase0c.
+
+Writer overlap: =visitPostOrderMotionFirst= derives unfinished-branch priority;
+=orderExecution= preserves reached slot order across children and installations.
+Time outranks hierarchy; hierarchy resolves ties. Fences: =test/js/laws/writer_order_test.mjs=.
+Contract and two red witnesses: [[id:being-facets-writer-order]].
+
+=scheduler.atCut= reads instant closure; it is not the live horizon gate.
+=scheduler.isSettledThrough(H)= also sees due work, queued derived moves and pending
+keyed builds. =advance(t)= drains readouts at H before spending normalized wall
+allowance; a held allowance is discarded, while wall observation continues.
+=driveToRest= stops on no progress/no drain even without a cut. Its overrun ceiling
+does not guarantee closure or wall-time latency. Fences: =settlement_test.mjs=,
+=pump_overrun_test.mjs=, =construction_cut_test.mjs=; [[id:live-rendering-reveal]].
 
 ** ink credit — how a figure cannot be lost
 :PROPERTIES:
@@ -659,6 +2290,10 @@ resumes next frame. Every lossless channel needs a drainer or its producer
 livelocks — =drainAndMaterialize= walks the whole registry. =full= means "put
 would refuse", closed or open. Fences: =test/js/runtime/backpressure_spike_test.mjs=,
 =test/js/runtime/ring_buffer_test.mjs=.
+
+=put(value, key)= CONFLATES a keyed value in place when the ring is full: a displayed
+object (a vector arrow) is what it is now, so a newer same-key event replaces the older
+one, while unkeyed ink still refuses and parks. (D027 R2.5, id:notation-coordinate-vector)
 
 ** a letter — who hears a shout, and what a full box means
 :PROPERTIES:
@@ -787,37 +2422,43 @@ pump ticks up to 64× a frame. Timing lives on =frame.park.since= (see
 [[id:nav-park]]), never in =ink= — a tick counter there fired in ~2 frames under
 exactly the multi-ambient load it guards.
 
-** a park is a park — the cause names why
+** one suspension, one table — every way a frame stops
 :PROPERTIES:
 :ID: nav-park
-:KEYWORDS: park parked midInstant pending owed cause credit time residency instant law preempt breath sibling observe parkBreath parkOwing clearSpentPark
+:KEYWORDS: suspension suspend suspended midInstant owed kind credit residency dataflow admission breath instant law preempt sibling observe parkBreath parkOwing clearSpentPark SUSPENSIONS owns unwinds
 :PATH: assets/js/turtling/scheduler.js
 :END:
 
-=frame.park = null | { cause: 'credit' | 'time' | 'residency', owed, since }= —
-one field for the mid-instant stop no sibling may read across (D027 R2.5b, R3.3:
-"a breath is a park with no cause"). It replaced three encodings that every new
-cause had to be written into separately.
+=frame.suspension = null | { kind, owed, since, ... }= — one record for every stop.
+The =SUSPENSIONS= table answers what a kind means: =owns= (the instant law: no
+sibling reads across it) and =unwinds= (an inline spawn drain stops, so no sibling
+is born into a partial instant). Kinds: =breath= (preempted, owns nothing), =credit=
+/ =residency= (a held deposit), =dataflow= (a read not ready), =admission= (a motion
+verdict). =frame.midInstant= is the separate fact "an admission opened an instant not
+yet closed by wait/yield/done".
 
-*Two doors, so debt is answered by the call* — never by reading a field:
+*Doors, not field-poking* — debt answered by the call, never by reading a field:
 
-- =parkBreath(ctx)= — the pass ran out of time. Owes nothing; the generator
-  stands where it is. Re-breathing is a no-op on =cause: 'time'=.
-- =parkOwing(ctx, cause, deposit)= — a deposit was charged but refused. Held and
-  replayed FIRST next pass so emission order survives. Only ever called with a
-  FRESH deposit (standing debt is replayed by =stepOnce=, which reparks in place).
-- =clearSpentPark(ctx)= at the start of a pass — a park with nothing owed is
-  spent, but *a debt outlives the pass that made it*.
-- =frame.park !== null= is the "is this frame mid-instant" question; =advanceChild=
-  unwinds the whole spawn stack on it.
+- =suspend(frame, kind, parts)= / =clearSuspension(frame)= — the only writers.
+- =parkBreath(ctx)= — the pass ran out of time. Owes nothing; a held debt outranks it.
+- =parkOwing(ctx, kind, deposit)= — a deposit was charged but refused. Held and
+  replayed FIRST next pass; standing debt is reparked in place by =stepOnce=.
+- =clearSpentPark(ctx)= at pass start — breath is spent; *a debt outlives the pass*.
+- =ownsInstant= is =midInstant || SUSPENSIONS[kind].owns= — one table lookup.
+- =advanceChild= unwinds when =SUSPENSIONS[kind].unwinds=.
+- =resolveBinding= suspends a dotted read of an unsettled subtree as =dataflow= unless
+  the reader is inside it (=isAncestorOf=). Fence: =phase0c_instant_ownership_test.mjs=.
+- A wait-for cycle is read *synchronously*: =markCycle= pins every member's
+  pre-instant pose and =readLocal= serves it until the observation =_obsEpoch=
+  advances. Jacobi for the observable instant; Gauss-Seidel inside a hidden solve.
 
 Fences: =backpressure_spike_test.mjs= (C3, S6, P5, park doors for S16),
-=quantum_spike_test.mjs= (S7).
+=quantum_spike_test.mjs= (S7), =suspension_state_test.mjs= (the one-record shape).
 
 *** parkBreath — stop with no debt
 :PROPERTIES:
 :ID: nav-park-breath
-:KEYWORDS: parkBreath breath time preempt midInstant no-debt
+:KEYWORDS: parkBreath breath preempt midInstant no-debt
 :PATH: assets/js/turtling/scheduler.js::parkBreath
 :END:
 
@@ -930,6 +2571,12 @@ The canvas outlives the hook; teardown must free GL + controls + subscriptions.
 is owned here — =stage.dispose()= always reclaims; compositor only =clear()=s on
 reset. Tested headless: =test/js/render/material_cache_test.mjs=.
 
+=bindOpacity(mesh, degree)= leases stage-owned line variants; =release(mesh)= retires a binding.
+Same-style vector updates retain their lease; arrays, resizing and clear share this lifetime.
+Compositor retains each layer's degree for future output; exclusive head/fill/text materials
+stay with their existing owner. Fences: =test/js/render/material_binding_test.mjs= and
+=test/js/runtime/compositor_opacity_test.mjs=. [[id:runtime-material-bindings]]
+
 ** turtle↔compositor seam — what the compositor reads off the stage
 :PROPERTIES:
 :ID: nav-stage-contract
@@ -940,16 +2587,265 @@ Five real verbs, checked at birth: =scene=, =camera=, =requestRender=,
 =viewOffset=, =materials=. Cadence (=frameMs=) and orbit (=controls=) ride
 =opts= — not stage interface — so a headless caller can omit them. The LIVE
 stage is still passed in, never mirrored. Pinned by
-=test/js/seams/compositor_stage_test.mjs=, which reads SOURCE: the compositor
-cannot be imported headless (materializer → vendored =threetext.js=, whose
-=from "./three.core.min"= has no extension and is immutable).
+=test/js/seams/compositor_stage_test.mjs=. It is now importable headless: the
+stage owns the Text constructor (=opts.createText=), so =materializer= no longer
+eagerly imports the vendored =threetext.js=. The real object is held by
+=test/js/render/figure_slot_test.mjs=.
+
+** labels — pooled Text, so erase does not rebuild
+:PROPERTIES:
+:ID: nav-labels
+:KEYWORDS: label text troika Text pool erase clear blink materializeLabel createLabels label-pool reuse
+:PATH: assets/js/turtling/render/label-pool.js::createLabelPool
+:END:
+A layer keeps its troika =Text=s. Erase hides; the next =label= reuses, so an
+unchanged rewrite dirties nothing and draws with no async =sync= gap — the
+=materializer.createLabels= takes the injected factory; the browser entry
+(=render/index.js=) wires the vendored Text in, so both the pool and the
+compositor are importable headless.
+The pool serves DEPOSITED label ink only. A declared object's name is not a label:
+it is screen-space and viewport-invariant, drawn by the overlay. (id:laws-decl-interface)
+An erase trims to =freeCap= free Texts (the burst peak is freed); layer
+teardown disposes geometry, material and detaches.
+Tested: =test/js/render/label_pool_test.mjs=.
 
 ** math expressions — lex, parse, evaluate, typeset
 :PROPERTIES:
 :ID: nav-mafs
-:KEYWORDS: mafs math expression lexer parse evaluate typeset versor
-:PATH: assets/js/turtling/mafs/evaluate.js
+:KEYWORDS: mafs math expression operator vocabulary fixity precedence associativity mod lexer parse evaluate typeset versor literal held operand reference
+:PATH: assets/js/turtling/mafs/operators.js
 :END:
+The fixed operator rows feed the math lexer, expression parser, evaluator and
+PaperLang argument splitter. Surface contract: [[id:tower-surface]]. Scalar
+meanings and builtin signatures live in =mafs/tower.js=; the evaluator delegates.
+A node's KIND tells a name from a value: =operand= names something to resolve,
+=literal= holds a value as itself; =string= interpolates source text. A capture is held through
+=heldValue=, a copy, never an alias. [[id:tower-tension-repr]]. Fence: =primitives_test.mjs=.
+
+** quoted names — one read across commands and figure questions
+:PROPERTIES:
+:ID: nav-quoted-name-read
+:MODULE: mafs/parse.js, mafs/evaluate.js
+:KEYWORDS: quoted name access computed dotted interpolation STRING DOT access_call parseMemo evaluateArgs question refusal epoch
+:PATH: assets/js/turtling/mafs/parse.js::parsePrimary
+:END:
+="mice".x= and ='mice[n]'.x= parse as =access=; a call suffix makes =access_call=.
+=mafs/evaluate.js::interpolate= reads the name's slots in the declaring scope, then
+the existing resolver reads the path. The name is data, never re-parsed source.
+Grammar and limits: [[id:quoted-name-reader-review]]; fence:
+=test/js/notation/quoted_access_test.mjs=.
+
+** bound subjects — one selector read before ambient resolution
+:PROPERTIES:
+:ID: nav-bound-subject-read
+:MODULE: mafs/evaluate.js
+:KEYWORDS: selector parameter dotted operand subject readContext closed captured live follow
+:PATH: assets/js/turtling/mafs/evaluate.js::run
+:END:
+An atomic =a.x= reads a string-bound =a= once through =readContext=, then sends the
+resolved path to the existing ambient resolver. Already-evaluated access subjects
+are not rebound. Ownership, observation and suspension still belong to the resolver.
+A =let= figure rebuilds for a changed captured question; an ordinary recipe call
+remains an open process. A selector string alone does not capture an outside pose.
+Fence: =test/js/notation/selector_read_test.mjs=; [[id:laws-figures-phase34-review]].
+
+** bound behaviour spike — receiver identity before opening closure
+:PROPERTIES:
+:ID: nav-bound-behaviour-spike
+:MODULE: executor.js, scheduler.js, mafs/evaluate.js
+:KEYWORDS: bound behaviour activation triangle hunt rabbit fox identity receiver owner laws closure capture withdrawal
+:PATH: probe/bound-behaviour/probe.mjs
+:END:
+Sixteen readings distinguish the triangle question, ordinary receiver adoption and
+law refusal, wrong-identity clones after opening/widening reads, live versus captured
+observations, running-writer no-op, branch-dependent effects and subscription retirement.
+Run =node probe/bound-behaviour/probe.mjs=; [[id:bound-behaviour-spike-results]].
+The identity and framed-capture models are probe adapters, not production support.
+Contract still open: [[id:bound-behaviour-contract-candidate]].
+Attachment cycle: =probe/bound-behaviour/attachment.mjs=; run with =node=.
+Sixteen further readings separate run/installation rights, receiver-frame interpretation,
+resume cursor policy, occupancy duration and candidate policy; [[id:bound-behaviour-attachment-results]].
+No production attachment engine or source-owned ink publication is implemented.
+Vision and P0–P6 gates: [[id:being-facets-vision]]; bounded P1: [[id:being-facets-p1-results]].
+Run =node --test test/js/laws/facet_observation_test.mjs= for facet equality,
+provenance rewiring and pending-versus-ready delivery in two coordinate frames.
+Bounded P2 subject seam: =probe/bound-behaviour/subjects.mjs=; [[id:being-facets-p2-seam]] (D061).
+Run =node --test test/js/laws/subject_binding_test.mjs= for bare-versus-quoted binding, facet and
+callable access through a bound being, the nearer-scalar rule, and law-endpoint identity.
+
+After-D061 boundary audit: [[id:being-facets-centers-review]]. Run
+=node probe/bound-behaviour/centers.mjs= for bound-facet input tracing, scalar
+shadowing, nested forwarding and reserved coordinate-view interpretation.
+
+P4 creation order and fresh baseline: [[id:being-facets-p4-sequence]] — receiver identity,
+situated observation, real program motion, cancellation, wait/occupancy, owned output,
+then named activation. Selection forwards best; no returned-reference prerequisite.
+Admission adversary: =node probe/bound-behaviour/receiver-admission.mjs= — closed escape
+and source replacement are refused; formal-binding/caller-scalar precedence is closed and
+fenced. The receiver's own run/slot ownership remains the open seam (id:being-facets-p4-sequence).
+
+** declared behaviour causal center — revision is not a paint opportunity
+:PROPERTIES:
+:ID: nav-declared-behaviour-causal-center
+:MODULE: scheduler.js, laws/readout.js, compositor.js
+:KEYWORDS: hunting causal logical frontier pending demand own motion receiver context revision clock hand starvation feedback
+:PATH: specs/compiler/declared-behaviour-causal-center.org
+:END:
+[[id:declared-behaviour-causal-center]] reopens the revision's causal center with frozen
+paired contrasts: authored trajectory invariance, demanded-versus-attached lifetime,
+nested receiver authority and same-instant renewal. Scratch clock substitution is a
+counterfactual, not a production fix; builds must be tested at their causal service cut.
+
+** declared behaviour revision — question changes, accepted history remains
+:PROPERTIES:
+:ID: nav-declared-behaviour-revision
+:MODULE: scheduler.js, executor.js, laws/readout.js
+:KEYWORDS: hunting sierpinski declarative behaviour reconstruction restart local time question installation feedback progress cancellation equality
+:PATH: test/js/laws/behaviour_revision_test.mjs
+:END:
+Run =node --test test/js/laws/behaviour_revision_test.mjs= for twenty-two standing witnesses.
+[[id:declared-behaviour-revision]] selects local-zero reconstruction without rewinding
+receiver history; a consumed participant change now revises the declared behaviour through
+the existing readout replacement, and the fresh run re-anchors its waits at the revision
+cut (no catch-up). The retained receiver's accepted pose is an implicit input: an external
+change revises it, the run's own accepted motion advances the baseline. Implicit receiver
+reads stay current-world (=isLiveReceiver=, scoped by question authority); an explicit
+receiver-as-question remains characterized feedback. Controls prove old-reply revocation
+AND fresh publication; equal reuse is scoped to the current lifetime.
+Installation stroke ids include their writer identity: a replacement must not join its
+first segment to the retained receiver's old trail across a pen-up hand move
+(=scheduler.js::tagRun=). Real rendered-segment fence:
+=test/js/render/installation_ink_test.mjs=.
+[[id:declared-behaviour-hand-release]] uses the generic input revision scope; the gesture
+owns its cleanup across release, cancellation and disposal. No grab policy lives in the
+scheduler. Fence: =test/js/laws/grab_revision_test.mjs=.
+
+** execution input revisions — one permission, not a hand-specific pause
+:PROPERTIES:
+:ID: nav-execution-input-revisions
+:MODULE: execution.js, scheduler.js, laws/readout.js
+:KEYWORDS: execution permission defer input revision scope lease grab release hold async reply continuation rebuild pending permitted work nested question authority
+:PATH: assets/js/turtling/execution.js
+:END:
+[[id:execution-input-revisions]]: =scheduler.defer(input)= returns an idempotent close;
+one live =permits(owner)= governs dependent continuations, keyed builds and admission
+delivery. Observations remain live; pending demand is not yet permitted work. Async replies
+share =scheduler.js::parkOnVerdict= and stay in the existing suspension when deferred.
+Fences: =test/js/runtime/execution_test.mjs= and =test/js/laws/execution_revision_test.mjs=.
+
+** the grammar — a comma-list is a quantity, the delimiter names its kind
+:PROPERTIES:
+:ID: nav-notation-grammar
+:MODULE: mafs/parse.js
+:KEYWORDS: grammar parse group bracket paren point coordinate vector delimiter comma declaration displacement pin literal shape narray dimension projection space toSpace
+:PATH: assets/js/turtling/mafs/parse.js
+:END:
+=parseGroup= reads `(a, b, c)` as a coordinate (a point) and `[a, b, c]` as a vector (a
+displacement); without a comma `(e)` groups and `[e]` is the singleton vector. A
+declaration reads that kind =let A = (c)= pins a fixed point, =let A = [v]= draws a
+displacement. The engine's space is three; a value is an n-array, and =space.js=
+=toSpace= is the one projection (n < 3 embeds, n > 3 truncates).
+ONE DECLARATION CENTER (D046, D051–D053): the parser validates the bracketed forms and the
+VALUE decides the kind — a POINT is a place (a pin, no ink), a VECTOR is an OBJECT (an
+arrow) and a VALUE (=isPlace: false=), anything else a derived value; the algebra is typed
+(=(p) + (q)= refused, =(p) - (q)= a vector). [[id:notation-coordinate-vector]].
+
+** value lifetimes — adversarial boundary witnesses
+:PROPERTIES:
+:ID: nav-notation-lifecycle
+:KEYWORDS: declaration vector redraw label replacement ownership readout drives kind equality sampling cycle resolved-reference dependency retract self-dependent overlay current-state
+:PATH: test/js/laws/value_lifecycle_test.mjs
+:END:
+=node --test test/js/laws/value_lifecycle_test.mjs= follows a declared value through
+change → replace → refuse → release: ONE current-state display lifetime per object
+(initial, update, removal owned by its readout), a collection of arrows each keeping its
+own newest value, an overlay name, a retired driver, a refused replacement, kind-aware
+equality, once-only sampling, a nested frame's own slot, and dependency read from the
+frames a read RESOLVED — never a syntactic name scan. The refused self-dependent place
+is D054; the display contract is D055. Reproducers: =probe/notation-review/lifecycle.mjs=;
+the causal record is [[id:value-lifecycle-review]].
+
+** relationship boundary — a relationship is not a callback
+:PROPERTIES:
+:ID: nav-relationship-boundary
+:KEYWORDS: relationship assignment feedback callback authority relational geometry cycle unresolved bindLaw guards ownership resolved references self-dependent
+:PATH: test/js/laws/relationship_boundary_test.mjs
+:END:
+A dependent position is assignment feedback (D049/D054) and may not stand on itself. A
+RELATIONSHIP is its own authority — expression and resolved references, coordinate frame
+and domain guards, source ownership, independent evaluation and final acceptance (D056).
+A cycle in legitimate relational geometry is a solver limitation (the scope ends
+=unresolved=), never the assignment refusal. The change callback triggers; the pipeline
+certifies.
+Cycle scope: [[id:tower-laws-cycle-contracts]] distinguishes a derived definition, a
+relation loop, and D011's wait-for snapshot. D054 is not a fixed-point theorem;
+=test/js/laws/component_test.mjs= witnesses a feasible loop outside the tree method.
+
+** the semantic center — one door for every operation
+:PROPERTIES:
+:ID: nav-tower-center
+:MODULE: mafs/tower.js
+:KEYWORDS: tower center dispatch register kind typeOf seal operation generic coefficient shadow shadowable override reserved builtin round mod vector literal bracket rank-one scale add installVectorFloor pervade pervasion broadcast pointwise zip compareMagnitude squareUnits exact ordering dyadic BigInt
+:PATH: assets/js/turtling/mafs/tower.js
+:END:
+One operation, ordered values, one value or an honest refusal. Operators and
+scalar builtins and the vector floor (=installVectorFloor=: scalar·vector scale,
+vector + vector add, =/= divide, every scalar builtin — ONE shape mechanism,
+=pervade=: a scalar broadcasts and equal lengths zip) register here; the evaluator is sealed over it and never
+switches. Boundary, witness and ladder: [[id:tower-center]].
+
+** vector ordering — exact dyadic magnitude; equality landed; Infinity extended-real
+:PROPERTIES:
+:ID: nav-tower-comparison
+:KEYWORDS: tower vector comparison equality order magnitude norm D018 refusal provisional compareMagnitude squareUnits binary64 dyadic BigInt exact snapshot finite NaN bitwise power selection display notice infinity
+:PATH: probe/tower-comparison/compare.mjs
+:END:
+D018's four orders compare exact magnitudes of represented finite Number vectors:
+nonempty, rank-one, equal dimensions. Component dominance then exact dyadic squares;
+no norm, epsilon or equality regression. Whole-coordinate equality is coordinate
+identity, not magnitude: =[3,0] == [0,3]= is 0 while both =<= directions stay 1.
+Fences: =vector_magnitude_test.mjs=, =condition_equality_test.mjs=, =numeric_composition_test.mjs=.
+=node probe/tower-comparison/compare.mjs [--jsonl]= also records products, mixed
+scaling, non-finite condition/display routes and the Infinity decision matrix.
+Cross/wedge are explicitly deferred; mixed additive broadcast is held.
+[[id:tower-tension-compare]] · [[id:probe-tower-comparison-landed]].
+A NaN is preserved by comparison, bitwise, power and tested-left selection; a vector
+label notices its first non-finite component (=numeric_fault_test.mjs=).
+Infinity keeps its extended-real answers (D065); the fault model is deferred.
+Truth follows the value model (D066): =!Infinity= is false; =!NaN= remains a
+non-answer; a finite result from an infinite operand may execute without provenance.
+Interpolated display remains open:
+[[id:probe-tower-comparison-nan-completion]] · [[id:probe-tower-comparison-infinity]] ·
+[[id:tower-center-approximation-ruling]].
+
+** coincident carry — endpoint priority and rotation layers
+:PROPERTIES:
+:ID: nav-coincident-carry
+:KEYWORDS: D063 coincident pair carry hard soft wish priority clamp writer follower rotation placement live world ceiling entriesRef certification
+:PATH: probe/coincident-carry/play.mjs
+:END:
+=node probe/coincident-carry/play.mjs [--jsonl]= prints both endpoints and
+placement/live/world rotations through public hand requests and the host ceiling.
+Lawfulness is not exact wish delivery; the host preference remains withheld.
+[[id:probe-coincident-carry]] · [[file:specs/decisions/063-movement-proposes-a-private-candidate.decision.md][D063]].
+
+** tower rounding — the tiny-signal probe
+:PROPERTIES:
+:ID: nav-tower-rounding
+:KEYWORDS: tower rounding precision 1e14 tiny signal approximation policy probe
+:PATH: probe/tower-rounding/probe.mjs
+:END:
+Records where the rounding policy becomes visible (1e-15 summed 1000 times is 0;
+1000 * 1e-15 is 1e-12). Diagnosis: [[id:tower-center-contract]].
+
+** notation inquiry — expression papercuts and tower horizons
+:PROPERTIES:
+:ID: nav-notation-inquiry
+:KEYWORDS: notation papercut bracket accessor implicit multiplication dot fidelity domain tower priors adversarial
+:PATH: probe/notation-inquiry/probe.mjs
+:END:
+Run the headless falsifier battery; =observations.jsonl= preserves the reading.
+Diagnosis, verified priors and open forces: [[id:notation-inquiry]].
 
 * NERVE & TERMINAL (JS) — signals and surfaces
 :PROPERTIES:
@@ -1088,7 +2984,7 @@ origin does not matter; timing does. Pure — =test/js/shell/lifecycle_test.mjs=
 :PATH: assets/js/hooks/shell/outer-shell-payload.js
 :END:
 Client builder + =dispatchPhx=; server dual =OuterShell.payload/2=
-(=live/layout/outer_shell.ex=). Thirteen keys always present (nils, not
+(=live/layout/outer_shell.ex=). Fourteen keys always present (nils, not
 sparse); =keep= is the friend's =work_id= from presence (continuant —
 =Keep.pull/1= resolves head by ts). Weave local open and friend hatch speak
 the same shape — =test/js/shell/outer_shell_payload_test.mjs=,
@@ -1148,7 +3044,7 @@ terminals all sit on this.
 ** kernel observable — one watch/notify
 :PROPERTIES:
 :ID: nav-kernel-observable
-:KEYWORDS: kernel observable createObservable createAtom watch notify swap deref
+:KEYWORDS: kernel observable createObservable createAtom watch notify swap deref identity Object.is
 :PATH: assets/js/kernel/observable.js::export function createObservable
 :END:
 The breath every half-adopted list reimplemented. Atom is a value over it.
@@ -1286,7 +3182,7 @@ role is data, an unknown one throws by name ([[id:lex-unmarked]]). Replaces
 ** outer surface — review, draft, fork
 :PROPERTIES:
 :ID: nav-shell-outer
-:KEYWORDS: outershell outer surface seeOuterShell outerSignal draft fork watch claimant projection cells stripped empty fences lint ink another's diagnostics
+:KEYWORDS: outershell outer surface seeOuterShell outerSignal draft fork watch claimant projection cells stripped empty fences lint ink another's diagnostics keep lamp
 :PATH: assets/js/hooks/shell/outer.js
 :END:
 The viewer renders =printAST(payload.commands)= in EVERY state (D022) — the
@@ -1294,7 +3190,8 @@ tree always builds and holds a broken line verbatim (D020), so the string
 =source= is only the honest degrade for a peer that sent no tree. Their
 =diagnostics= ink through =publishDiagnostics= (=editor/diagnostics.js=),
 withheld while drafting — the visible doc is then the CHILD'S draft, and the
-friend's line 12 is not his line 12.
+friend's line 12 is not his line 12. A keep arrives the same way — the room
+reads the bytes and pushes the document; this surface never fetches one.
 
 ** the grammar table — one fence / one blockDelta
 :PROPERTIES:
@@ -1496,10 +3393,10 @@ move must not rewrite the friend's document. See the warning on the function.
 ** the watcher's law — one latch, three doors
 :PROPERTIES:
 :ID: nav-watch-law
-:KEYWORDS: watch law follow latch following peerAt ownCaret step openWatch resume hand reassert draftEnter draftView peerLine claim viewport mark chase stir intervene firefly caret stash outershell
+:KEYWORDS: watch law user_attention peer reader follow_peer draft_live attention peerAt ownCaret step openWatch resume hand reassert draftEnter draftView peerLine claim viewport mark chase stir intervene firefly caret stash outershell
 :PATH: assets/js/editor/watch-law.js::export function step
 :END:
-=step(state, event) → { state, ...acts }= over ={following, peerAt, ownCaret}=.
+=step(state, event) → { state, ...acts }= over ={user_attention, peerAt, ownCaret}=.
 AN ACT NAMED IS AN ACT PERFORMED; =null= is a real value (unmark, unclaim), an
 absent key is an absence. Every reading rides the event — the law never looks at
 a view. The mark and the firefly track the peer in EVERY state; only the claim
@@ -1623,7 +3520,7 @@ still holds (a followed PROGRAM does not hatch its previews, D023).
 ** when the reflect is hatched — the one verdict
 :PROPERTIES:
 :ID: nav-hatch-verdict
-:KEYWORDS: hatch verdict hatchVerdict BEAT first-light alive settled owed reason floor cadence animation loop snapshot onFrame keepRendering firstDrawAt lastHatchAt reflectChanged stage hatchInFlight
+:KEYWORDS: hatch verdict hatchVerdict BEAT first-light alive settled owed reason floor cadence animation loop snapshot onFrame keepRendering firstDrawAt lastHatchAt reflectChanged stage hatchInFlight snap keep
 :PATH: assets/js/turtling/hatch.js::export function hatchVerdict
 :END:
 *One question a frame: would the watcher learn something new?* The policy is
@@ -1643,10 +3540,31 @@ Nothing re-arms while a figure walks;
 the run's END is the one change it speaks after starting (=onFrame= stamps the
 =_walking= edge), so a run that finishes still sends its final figure.
 
-Callers say =reflectChanged()= and nothing else — no second wire (D025 R4), no
-back door past =gate[self]= (D022/D023; witness-scoped), no second rate limiter. The
-=snap= camera command says it too (it used to clear the =hatched= sentinel to
-trick first light into firing).
+The *sampler* says =reflectChanged()= and nothing else — no second wire
+(D025 R4), no back door past =gate[self]= (D022/D023; witness-scoped), no
+second rate limiter. A *keep* is not a sample: =turtle.snap()= owes the next
+unissued cut after render. It must not receive an older, already-issued hatch.
+The same native body and picture feed Keep and live publication; see
+[[id:nav-owned-capture]] and [[id:keep-coherence-capture-cut]].
+
+** owned capture — the cut and the owed render
+:PROPERTIES:
+:ID: nav-owned-capture
+:KEYWORDS: capture picture snap hatch lendCut claim cut state structuredClone copyLayers fence PBO dispose cancellation reentrance saveRecord
+:PATH: assets/js/turtling/capture.js::export function createCapture
+:MODULE: assets/js/turtling/stage.js assets/js/turtling/turtle.js assets/js/hooks/shell/inner.js test/js/turtling/capture_law_test.mjs test/js/turtling/capture_hatch_test.mjs
+:END:
+
+=capture.js= holds one active cut and one unissued value slot. =stage.hatch=
+reserves the activation before fallible copying, binds the complete owner body,
+marker pixels and save ask, then reads asynchronously. Completion owns its
+resolver; closure cancels known requests. =Turtle.snap= drives an owed render,
+not an already-issued capture. The inner surface lends document/claim at the
+cut; consumers check current rights without re-reading the subject. Claim
+stays local. Native pixels and callback-death proof: [[id:probe-keep-capture-browser]].
+This is not shared realized-state hydration or a VM checkpoint.
+Staging extent: [[id:keep-coherence-staging-validity]]; native missing-allocation versus valid-clear control:
+=node probe/keep-foundation/capture_browser.mjs --unallocated-pack=.
 
 ** attention's two carriers — arrival and movement (D025 R9)
 :PROPERTIES:
@@ -1862,9 +3780,11 @@ first cell on first light). The degree ladder is one pure transition
 :PROPERTIES:
 :ID: nav-tiger
 :KEYWORDS: papertiger tiger companion mood stance mascot clippy pounce coil slink prowl halo intent resting question gaze leap undraw draw ink gesture playground meadow atelier carve seed grok imagine potrace normalize archetype bestiary ladder skeleton anima image_edit image_gen image_to_video reference_to_video ZDR upload_url journey experiment lineage score
-:PATH: scripts/bestiary/papertiger
+:PATH: scripts/bestiary/cli.mjs
 :END:
-Canon lives in =specs/papertiger/= (=papertiger.org= + anima, atelier,
+The generated ground (=papertiger/core/=, =_carve/=, =_skeleton/=, =_ladder/=,
+=dreams/=) is local art, not release source: it is git-ignored, and a clone
+rebuilds it through this CLI. Canon lives in =specs/papertiger/= (=papertiger.org= + anima, atelier,
 evolve, moodboards, skeleton-alphabet, *grok_imagine* API runbook
 [[id:gi-entry]]). The living ground is the bestiary:
 =scripts/bestiary/papertiger/= (=core/=, =_carve/=, =_skeleton/=,
@@ -2126,12 +4046,8 @@ fixture import ≠ ownership; decides ≠ says ≠ carries ≠ inks.
 :KEYWORDS: keep latest fan room memory clan shared_at two clocks works roots river head of root page cursor room_cursor
 :PATH: lib/dojo/keep.ex
 :END:
-=latest/2= — each continuant's head, arranged by the ROOM's clock.
-=of: :target= (default) is last keep of each river; =of: :root= is last keep
-of each journal. **The author's clock picks the head; the room's clock
-arranges the heads** (=by_author/1= · =by_room/1=). Cursored by =at.id= —
-a cap without a cursor is a wall. Returns ={rows, next}=. Seat: =GET /keeps=.
-([[file:specs/weave/keep-access.org][keep-access]] =ka-latest= · =ka-surface=).
+Pre-cut room fan ([[id:keep-cut]] III). Not a kernel verb. Implementation still
+=latest/2= through =works=/=roots=. Seat: =GET /keeps=.
 
 ** keep history — one continuant, cursored
 :PROPERTIES:
@@ -2139,11 +4055,8 @@ a cap without a cursor is a wall. Returns ={rows, next}=. Seat: =GET /keeps=.
 :KEYWORDS: keep history river journal cursor after page work_id root target of range door
 :PATH: lib/dojo/keep.ex
 :END:
-=history/2= + =GET /keeps/:ref/history= — one handle opened. =of: :target=
-(default) is a river (work id, never a keep id); =of: :root= is a journal
-(a root owns itself). View door, not accept — no =source=. Cursor is the
-author's stamp; a cursor cannot cross a hop. Returns ={rows, next}=.
-([[file:specs/weave/keep-access.org][keep-access]] =ka-door-shape= · =ka-surface= · =ka-cursor=).
+Pre-cut depth page ([[id:keep-cut]] III). Open-work is a fold, not this door.
+=history/2= + =GET /keeps/:ref/history= still exist. Do not add callers.
 
 ** prodkeep — versioned prod backups
 :PROPERTIES:
@@ -2154,5 +4067,8 @@ author's stamp; a cursor cannot cross a hop. Returns ={rows, next}=.
 =scripts/ops/prodkeep.sh= SFTP-pulls =/data/keep.db= off Fly app =thedojo= into a
 timestamped, never-overwritten backup under =backups/keep/=, checkpointing the
 WAL first so one =cp= is the whole store ([[file:specs/weave/keep-access.org][keep-access]] =kb-10=). =--census= /
-=--clan= / =--list= read local backups with no network. Runbook: read a clan,
+=--clan= / =--list= read local backups with no network. =--book= renders the
+report book (one self-contained HTML); =--pdf= typesets the same walk — newest
+hand first, pandoc + XeTeX — from =keepbook.mjs --json=, one walk and two faces
+([[file:scripts/ops/keepbook-pdf.mjs][keepbook-pdf.mjs]]). Runbook: read a clan,
 extract images, restore — [[file:scripts/ops/prodkeep.org][scripts/ops/prodkeep.org]] =ops-prodkeep=.

@@ -1,0 +1,11 @@
+let A
+as A do
+  fw 60
+  rt 90
+  fw 40
+end
+let B
+as eye do
+  rt 30
+  fw 80
+end

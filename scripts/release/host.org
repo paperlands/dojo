@@ -1,0 +1,68 @@
+#+title: PaperLang release runbook
+#+FILETAGS: :host:release:
+
+Consumer API and browser imports: [[file:README.md][PaperLang on your canvas]].
+This file owns build and publication operations, not a second API guide.
+
+* Build and verify
+:PROPERTIES:
+:ID: host-consumer-build
+:MODULE: scripts/release/host.mjs
+:END:
+
+#+begin_src sh
+node --test test/js/host/*_test.mjs
+bash scripts/verify/host_closure.sh
+bash scripts/verify/host_play.sh   # Chromium and Python 3
+node scripts/release/host.mjs
+(cd dist/host && npm pack --ignore-scripts)
+#+end_src
+
+The producer installs locked build tooling if needed and writes =dist/host/=.
+An optional final argument chooses another output directory. It only replaces a
+recognized host release. The artifact includes ESM, the npm manifest/README,
+licenses, closure metadata, hashes and a =sources/= snapshot of actual inputs.
+
+To reproduce, check out =release.json.commit=, overlay =sources/= onto that
+checkout, and run the producer. =sourceDirty= compares build inputs with the
+commit; =checkoutDirty= includes unrelated checkout changes. A dirty build carries
+a content-addressed revision and is for local testing, never registry publication.
+
+* Publish
+:PROPERTIES:
+:ID: host-consumer-publish
+:MODULE: scripts/release/verify-host.mjs
+:END:
+
+=mix.exs= names the shared Dojo/PaperLang release. Keep the version in
+=scripts/release/package.json= aligned; each publication needs an unused version.
+
+** First publication
+
+Commit the release inputs and use a clean checkout. After the checks above:
+
+#+begin_src sh
+VERSION=$(awk -F'"' '/^ *version: *"/ {print $2; exit}' mix.exs)
+node scripts/release/verify-host.mjs dist/host "$VERSION" "$(git rev-parse HEAD)"
+npm login --registry https://registry.npmjs.org
+(cd dist/host && npm publish --access public)
+#+end_src
+
+The maintainer completes login/2FA locally. The verifier rejects dirty evidence,
+wrong versions/commits, and modified artifacts or source snapshots. Credentials
+never belong in this repository or agent messages.
+
+** Automatic publication
+
+In npm's package Settings → Trusted Publisher, select GitHub Actions:
+organization =paperlands=, repository =dojo=, workflow =release.yml=, no environment,
+and allow direct =npm publish=. Then set GitHub Actions variable
+=NPM_PUBLISH_ENABLED=true=. Prefer requiring 2FA and disallowing stored tokens.
+Configure trust shortly before its first use; an unused configuration expires
+after two days. [[https://docs.npmjs.com/trusted-publishers/][Upstream setup requirements]].
+
+A production push to the =release= branch publishes after green CI. npm does not
+wait for desktop installers or a GitHub release. It checks the npm manifest
+against the app version from =mix.exs= and verifies the exact clean push commit,
+then publishes publicly with OIDC/provenance. No =NPM_TOKEN= is needed.
+Retry the failed npm job if necessary; npm versions are immutable.

@@ -1,32 +1,62 @@
 defmodule Dojo.IdentityTest do
-  # One Address, backend half — Phase 1b (specs/decisions/007).
-  # The user_id mint lives in one place; presence meta carries reg_key and
-  # node as separate fields; readers stay tolerant of legacy embedded tuples.
+  # One Address, backend half — person key is Session.author_id/1 (id:ki-mint).
+  # Presence meta carries reg_key and node as separate fields; readers stay
+  # tolerant of legacy embedded tuples. Amends D007.
   use ExUnit.Case, async: true
 
   alias DojoWeb.Session
   alias Dojo.Disciple
 
-  describe "Session.user_id/1 — the one mint" do
-    test "derives a stable alphanumeric identity from name + first-login time" do
-      session = %Session{name: "kai", last_opened: ~U[2026-06-10 00:00:00Z]}
-      id = Session.user_id(session)
-      assert id =~ ~r/^[a-zA-Z0-9]+$/
-      assert String.starts_with?(id, "kai")
-      assert Session.user_id(session) == id, "same session, same identity"
+  describe "Session.author_id/1 — the person key (id:ki-mint)" do
+    test "returns the session UUID" do
+      id = Ecto.UUID.generate()
+      session = %Session{name: "kai", id: id}
+      assert Session.author_id(session) == id
+      assert Session.author_id(session) == Session.author_id(session)
     end
 
-    test "different first-login times yield different identities for one name" do
-      a = Session.user_id(%Session{name: "kai", last_opened: ~U[2026-06-10 00:00:00Z]})
-      b = Session.user_id(%Session{name: "kai", last_opened: ~U[2026-06-10 00:00:01Z]})
-      refute a == b
+    test "is independent of the display name" do
+      id = Ecto.UUID.generate()
+      a = Session.author_id(%Session{name: "kai", id: id})
+      b = Session.author_id(%Session{name: "alice", id: id})
+      assert a == b
     end
 
-    test "refuses a session without a name" do
-      # apply/3: deliberate clause miss — static call would type-warn under 1.20
+    test "refuses a session without a UUID id" do
       assert_raise FunctionClauseError, fn ->
-        apply(Session, :user_id, [%Session{name: nil}])
+        apply(Session, :author_id, [%Session{name: "kai", id: nil}])
       end
+
+      assert_raise CaseClauseError, fn ->
+        apply(Session, :author_id, [%Session{name: "kai", id: "not-a-uuid"}])
+      end
+    end
+  end
+
+  describe "Session.ensure_author_id/1 — keep or repair (id:ki-mint)" do
+    test "keeps a good UUID" do
+      id = Ecto.UUID.generate()
+      {session, :kept} = Session.ensure_author_id(%Session{id: id, name: "kai"})
+      assert session.id == id
+    end
+
+    test "repairs a missing or garbage id" do
+      {session, :repaired} = Session.ensure_author_id(%Session{id: nil, name: "kai"})
+      assert {:ok, _} = Ecto.UUID.cast(session.id)
+
+      {session2, :repaired} = Session.ensure_author_id(%Session{id: "garbage", name: "kai"})
+      assert {:ok, _} = Ecto.UUID.cast(session2.id)
+      refute session2.id == "garbage"
+    end
+
+    test "rename does not rotate the person key" do
+      id = Ecto.UUID.generate()
+      session = %Session{id: id, name: "kai"}
+      assert Session.author_id(session) == id
+      assert Session.author_id(%{session | name: "alice"}) == id
+
+      {kept, :kept} = Session.ensure_author_id(%{session | name: "alice"})
+      assert kept.id == id
     end
   end
 
@@ -50,7 +80,6 @@ defmodule Dojo.IdentityTest do
     end
 
     test "an addressless meta crashes loudly, not silently" do
-      # apply/3: deliberate clause miss — static call would type-warn under 1.20
       assert_raise FunctionClauseError, fn -> apply(Disciple, :reg_key, [%{name: "kai"}]) end
 
       assert_raise FunctionClauseError, fn ->
@@ -60,10 +89,13 @@ defmodule Dojo.IdentityTest do
   end
 
   describe "Class.join/3 — identity required" do
-    test "a join without user_id crashes at the door" do
-      # apply/3: deliberate clause miss — static call would type-warn under 1.20
+    test "a join without author_id crashes at the door" do
       assert_raise FunctionClauseError, fn ->
-        apply(Dojo.Class, :join, [self(), "test-identity", %Disciple{name: "kai", user_id: nil}])
+        apply(Dojo.Class, :join, [
+          self(),
+          "test-identity",
+          %Disciple{name: "kai", author_id: nil}
+        ])
       end
     end
   end

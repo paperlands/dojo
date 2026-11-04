@@ -41,28 +41,33 @@ defmodule Dojo.Gate do
   end
 
   def track(pid, topic, %Dojo.Disciple{
-        name: username,
+        name: name,
         action: state,
         node: node,
+        author_id: author_id,
         reg_key: reg_key
-      }) do
+      })
+      when is_binary(reg_key) do
     addr = routable_addr()
 
+    # Tracker key is reg_key, never the display name (id:ki-presence).
+    # Two children named Alice must not collide; letters ride in meta.
     meta = %{
       action: state,
-      name: username,
+      name: name,
+      author_id: author_id,
       node: node,
       reg_key: reg_key,
       addr: addr,
       online_at: System.os_time(:second)
     }
 
-    case Phoenix.Tracker.track(__MODULE__, pid, topic, username, meta) do
+    case Phoenix.Tracker.track(__MODULE__, pid, topic, reg_key, meta) do
       {:ok, _ref} = resp ->
         resp
 
       {:error, {:already_tracked, _, _, _}} ->
-        Phoenix.Tracker.update(__MODULE__, pid, topic, username, meta)
+        Phoenix.Tracker.update(__MODULE__, pid, topic, reg_key, meta)
     end
   end
 
@@ -70,8 +75,8 @@ defmodule Dojo.Gate do
     Phoenix.Tracker.get_by_key(__MODULE__, topic, key)
   end
 
-  def change(pid, topic, username, {key, value}) do
-    Phoenix.Tracker.update(__MODULE__, pid, topic, username, fn meta ->
+  def change(pid, topic, reg_key, {key, value}) when is_binary(reg_key) do
+    Phoenix.Tracker.update(__MODULE__, pid, topic, reg_key, fn meta ->
       Map.put(meta, key, value)
     end)
   end

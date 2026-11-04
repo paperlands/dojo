@@ -49,6 +49,11 @@ describe("measure domain (strict bare idents)", () => {
         )
     })
 
+    test("a hyphen stays subtraction in a measure input", () => {
+        const events = drainEvents(parseProgram("fn step 7\nfw step-1"), realDeps())
+        assert.deepEqual(eventsOfType(events, "path")[0].points.at(-1), [6, 0, 0])
+    })
+
     test("jmp random still works (deferred constant)", () => {
         const events = drainEvents(
             [call("jmp", "random"), call("fw", 10)],
@@ -59,14 +64,15 @@ describe("measure domain (strict bare idents)", () => {
         assert.ok(Number.isFinite(paths[0].points[1][0]))
     })
 
-    test("jmp 0/0 still runs (NaN from arithmetic — separate belt)", () => {
-        // Domain gate only covers bare unknown names, not non-finite math.
-        // Non-finite deposit hygiene is not this change's job.
-        const events = drainEvents(
-            [call("jmp", "0/0"), call("fw", 1)],
-            realDeps(),
-        )
-        assert.ok(events.some((e) => e.type === "head" || e.type === "path"))
+    test("jmp 0/0 is not taken — a non-finite distance cannot enter geometry", () => {
+        // The demand is finite-or-skip: non-finite math is never waved through to the
+        // deposit, and the walk carries on. (ruling: absent-is-zero)
+        const events = drainEvents([call("jmp", "0/0"), call("fw", 1)], realDeps())
+        const told = events.filter((e) => e.type === "notice")
+        assert.equal(told.length, 1, "the step is not taken, and the author hears why")
+        assert.equal(told[0].kind, "nan")
+        assert.match(told[0].message, /No measure/)
+        assert.ok(eventsOfType(events, "path").every((p) => p.points.every((pt) => pt.every(Number.isFinite))))
     })
 
     test("program text: jmp ran then loop does not mint path storm", () => {
@@ -93,6 +99,18 @@ describe("word domain (ink / label)", () => {
         const paths = eventsOfType(events, "path")
         assert.equal(paths.length, 2)
         assert.equal(paths[1].color, "silver")
+    })
+
+    test("color and colour accept the same bare word as beColour", () => {
+        for (const verb of ["color", "colour"]) {
+            const events = drainEvents(
+                [call("fw", 10), call(verb, "silver"), call("fw", 10)],
+                realDeps(),
+            )
+            const paths = eventsOfType(events, "path")
+            assert.equal(paths.length, 2, verb)
+            assert.equal(paths[1].color, "silver", verb)
+        }
     })
 
     test("beColour ff2d55 accepts bare hex", () => {
@@ -137,6 +155,28 @@ describe("word domain (ink / label)", () => {
         assert.equal(labels[0].text, "hello")
         assert.equal(labels[0].textSize, 10)
     })
+})
+
+describe("existence names use the ambient word input", () => {
+    for (const [label, source, name, expected] of [
+        ["defined word", 'fn name "hello"', "name", ["hello"]],
+        ["quoted literal", 'fn A "hello"', '"A"', ["A"]],
+        ["unbound word", "", "A", ["A"]],
+        ["hyphenated word", "", "A-1", ["A-1"]],
+        ["loop count", "", "count", ["0", "1", "2"]],
+        ["interpolation", "", '"part[count]"', ["part0", "part1", "part2"]],
+    ]) {
+        test(label, () => {
+            const reached = statement => drainEvents(parseProgram(
+                `${source}\nloop ${expected.length} do\n ${statement}\nend`
+            ), realDeps())
+            const births = eventsOfType(reached(`let ${name}`), "birth")
+            const spawns = eventsOfType(reached(`as ${name} do\n end`), "spawn")
+            assert.deepEqual(births.map(e => e.name), expected)
+            assert.deepEqual(births.map(e => e.name), spawns.map(e => e.name))
+            assert.ok(births.every(e => e.owner.line === 3))
+        })
+    }
 })
 
 describe("shout holes (name word, payload measure)", () => {

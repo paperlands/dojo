@@ -7,11 +7,12 @@ import { forkRef, shareForkRef } from "../../../assets/js/link.js"
 import { name, write } from "../../../assets/js/keep/entry.js"
 
 const TS = { t: 1000, n: 0 }
+const PROOF = { v: 1, genesis: "d".repeat(64), signature: "ab".repeat(64) }
 const ROOT = "b".repeat(64)
 const WORK = "c".repeat(64)
 
 const snap = (over = {}) =>
-    write("snap", { source_id: "s1", title: "the chase", ...over.body },
+    write("snap", { source_id: name(over.source ?? "fw 50"), title: "the chase", ...over.body },
         { root: ROOT, target: over.target ?? WORK, ts: TS })
 
 // A term that answers like the real one: forkKeep / forkBuffer find-or-create
@@ -35,14 +36,19 @@ function fakeTerm({ forks = {} } = {}) {
 
 function fakeDoor({ keeps = {}, listed = [], sources = {} } = {}) {
     const wrote = { put: [], share: [] }
+    const records = new Map([
+        ...Object.entries(keeps),
+        ...listed.map((bytes) => [name(bytes), bytes]),
+    ])
     return {
         wrote,
         async root() { return ROOT },
         async get(id) { return keeps[id] ?? null },
         async list() { return listed },
-        async source(id) { return sources[id] ?? null },
+        async source(id) { return Object.values(sources).find(text => name(text) === id) ?? null },
         async put(bytes, extras) { wrote.put.push({ bytes, extras }); return name(bytes) },
         async share(id, fact) { wrote.share.push({ id, fact }) },
+        async proof(bytes) { return records.has(name(bytes)) ? PROOF : null },
     }
 }
 
@@ -53,27 +59,26 @@ const fakeCorpus = () => ({
     press: () => ({ id: "frag-the-chase", title: "The Chase", source: "fw 100" }),
 })
 
-describe("shareForkRef — mint the fork word (id:la-fork-pull)", () => {
-    const KEEP = "a".repeat(64)
-    const OLDER = "d".repeat(64)
-    const HEAD = "e".repeat(64)
+describe("shareForkRef — typed intent stays at the fork owner", () => {
+    const born = write("snap", { source_id: name("fw 50"), title: "birth" }, { root: ROOT, ts: TS })
+    const work = name(born)
+    const head = snap({ target: work })
 
-    test("HEAD of the work shares the work_id — always latest at open", () => {
-        assert.equal(shareForkRef(KEEP, { workId: WORK, headId: KEEP }), WORK)
+    test("HEAD follows the evidenced work, not an ambiguous bare id", () => {
+        assert.equal(shareForkRef(head, { headId: name(head), origin: born, proof: PROOF, originProof: PROOF }), `work:${work}`)
     })
 
-    test("an older keep is commit-specific — pins that keep's id", () => {
-        assert.equal(shareForkRef(OLDER, { workId: WORK, headId: HEAD }), OLDER)
+    test("an older keep pins that exact moment", () => {
+        assert.equal(shareForkRef(born, { headId: name(head) }), `keep:${work}`)
     })
 
-    test("no work id falls back to the keep — still a valid face", () => {
-        assert.equal(shareForkRef(KEEP, { workId: null, headId: KEEP }), KEEP)
-        assert.equal(shareForkRef(KEEP, { headId: KEEP }), KEEP)
+    test("without an origin the snapshot still has an exact address", () => {
+        assert.equal(shareForkRef(head, { headId: name(head) }), `keep:${name(head)}`)
     })
 
     test("no keep is quiet null", () => {
-        assert.equal(shareForkRef(null, { workId: WORK, headId: HEAD }), null)
-        assert.equal(shareForkRef("", { workId: WORK, headId: HEAD }), null)
+        assert.equal(shareForkRef(null), null)
+        assert.equal(shareForkRef(""), null)
     })
 })
 
@@ -83,19 +88,22 @@ describe("hex64 — a minted continuant", () => {
         const term = fakeTerm()
         const door = fakeDoor({ keeps: { [name(bytes)]: bytes }, sources: { s1: "fw 50" } })
         const landed = await forkRef(name(bytes), { door, term, say: () => {} })
-        assert.equal(landed, "kept-buf")
-        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 50", name: "the chase", land: true }])
+        assert.equal(landed, "fork-buf")
+        assert.deepEqual(term.asked.forkBuffer,
+            [{ source: "fw 50", name: "the chase", root: ROOT, addr: WORK, time: TS.t, land: true, base_id: name(bytes) }])
     })
 
     test("a bare work id re-enters through the newest picture", async () => {
         const newest = snap({ body: { title: "later" } })
-        const older = write("snap", { source_id: "s0", title: "earlier" },
+        const older = write("snap", { source_id: name("fw 1"), title: "earlier" },
             { root: ROOT, target: WORK, ts: { t: 1, n: 0 } })
         const term = fakeTerm()
         const door = fakeDoor({ listed: [newest, older], sources: { s1: "fw 50" } })
         const landed = await forkRef(WORK, { door, term, say: () => {} })
-        assert.equal(landed, "kept-buf")
-        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 50", name: "later", land: true }])
+        assert.equal(landed, "fork-buf", "cached alias bytes remain borrowable")
+        assert.equal(term.asked.forkBuffer[0].source, "fw 50")
+        assert.equal(term.asked.forkBuffer[0].addr, WORK)
+        assert.equal(term.asked.forkBuffer[0].base_id, name(newest))
     })
 
     test("a tombstone still asks — find-only, source null, and says why", async () => {
@@ -104,9 +112,10 @@ describe("hex64 — a minted continuant", () => {
         const term = fakeTerm()
         const door = fakeDoor({ keeps: { [name(bytes)]: bytes }, sources: {} })
         const landed = await forkRef(name(bytes), { door, term, say: (...a) => said.push(a) })
-        assert.equal(landed, null)
-        assert.equal(term.asked.forkKeep[0].source, null)
-        assert.ok(said.length >= 1, "the wound is spoken")
+        assert.equal(landed, null, "no source, no buffer")
+        assert.equal(term.asked.forkBuffer[0].addr, WORK)
+        assert.equal(term.asked.forkBuffer[0].source, null)
+        assert.equal(term.asked.forkBuffer[0].base_id, name(bytes))
     })
 
     test("nothing kept under the ref settles null and says so", async () => {
@@ -131,7 +140,7 @@ describe("hex64 — a minted continuant", () => {
 describe("the hand decides the gesture (id:la-fork-hand)", () => {
     const OTHER = "9".repeat(64)
     const foreign = (over = {}) =>
-        write("snap", { source_id: "s1", title: "theirs", ...over.body },
+        write("snap", { source_id: name(over.source ?? "fw 7"), title: "theirs", ...over.body },
             { root: OTHER, target: over.target ?? WORK, ts: TS })
 
     test("another hand's keep is a peer fork — forkBuffer by the river, never forkKeep", async () => {
@@ -142,7 +151,7 @@ describe("the hand decides the gesture (id:la-fork-hand)", () => {
         assert.equal(landed, "fork-buf")
         assert.equal(term.asked.forkKeep.length, 0, "a foreign hand never rejoins")
         assert.deepEqual(term.asked.forkBuffer,
-            [{ source: "fw 7", name: "theirs", addr: WORK, time: TS.t, land: true }])
+            [{ source: "fw 7", name: "theirs", root: OTHER, addr: WORK, time: TS.t, land: true, base_id: name(bytes) }])
     })
 
     test("a pulled foreign keep is still kept, then peer-forked", async () => {
@@ -186,41 +195,44 @@ describe("the hand decides the gesture (id:la-fork-hand)", () => {
         const term = fakeTerm()
         const door = fakeDoor({ keeps: { [name(bytes)]: bytes }, sources: { s1: "fw 50" } })
         const landed = await forkRef(name(bytes), { door, term, say: () => {} })
-        assert.equal(landed, "kept-buf")
-        assert.equal(term.asked.forkBuffer.length, 0)
+        assert.equal(landed, "fork-buf")
+        assert.equal(term.asked.forkBuffer.length, 1)
     })
 })
 
 describe("pull — beyond this machine (id:la-fork-pull)", () => {
     test("a local miss pulls, keeps the answer, and forks with the pulled source", async () => {
-        const bytes = snap()
+        const bytes = snap({ source: "fw 9" })
         const term = fakeTerm()
         const door = fakeDoor()
         const pull = async () => ({ id: name(bytes), message: bytes, source: "fw 9", at: 5, node: "n1" })
         const landed = await forkRef(name(bytes), { door, term, pull, say: () => {} })
-        assert.equal(landed, "kept-buf")
-        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 9", name: "the chase", land: true }])
+        assert.equal(landed, "fork-buf")
+        assert.equal(term.asked.forkKeep.length, 0)
+        assert.deepEqual(term.asked.forkBuffer[0],
+            { source: "fw 9", name: "the chase", root: ROOT, addr: WORK, time: TS.t, land: true, base_id: name(bytes) })
         assert.deepEqual(door.wrote.put, [{ bytes, extras: { source: "fw 9" } }])
         assert.deepEqual(door.wrote.share, [{ id: name(bytes), fact: { at: 5, node: "n1" } }])
     })
 
     test("a work face pulls the HEAD of the chain — target must be the ref", async () => {
-        const bytes = snap({ body: { title: "head" } })
+        const bytes = snap({ source: "fw 9", body: { title: "head" } })
         const term = fakeTerm()
         const door = fakeDoor()
         const pull = async () => ({ id: name(bytes), message: bytes, source: "fw 9", at: 7, node: "n1" })
         const landed = await forkRef(WORK, { door, term, pull, say: () => {} })
-        assert.equal(landed, "kept-buf")
-        assert.equal(term.asked.forkKeep[0].work_id, WORK)
+        assert.equal(landed, "fork-buf")
+        assert.equal(term.asked.forkBuffer[0].addr, WORK)
+        assert.equal(term.asked.forkBuffer[0].base_id, name(bytes))
         assert.equal(door.wrote.put.length, 1)
     })
 
     test("a work face re-pulls HEAD even when a local keep already stands", async () => {
         // The first visit accepted an old keep; without re-pull the HEAD link
         // freezes that artifact forever (the user's two-link "same initial").
-        const older = write("snap", { source_id: "s0", title: "first" },
+        const older = write("snap", { source_id: name("fw 1"), title: "first" },
             { root: ROOT, target: WORK, ts: { t: 1, n: 0 } })
-        const head = write("snap", { source_id: "s1", title: "later" },
+        const head = write("snap", { source_id: name("fw 99"), title: "later" },
             { root: ROOT, target: WORK, ts: { t: 2000, n: 0 } })
         const term = fakeTerm()
         const door = fakeDoor({
@@ -230,16 +242,19 @@ describe("pull — beyond this machine (id:la-fork-pull)", () => {
         })
         const pull = async () => ({ id: name(head), message: head, source: "fw 99", at: 9, node: "n1" })
         const landed = await forkRef(WORK, { door, term, pull, say: () => {} })
-        assert.equal(landed, "kept-buf")
-        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 99", name: "later", land: true }])
+        assert.equal(landed, "fork-buf")
+        assert.deepEqual(term.asked.forkBuffer[0] && {
+            addr: term.asked.forkBuffer[0].addr, source: term.asked.forkBuffer[0].source,
+            base_id: term.asked.forkBuffer[0].base_id,
+        }, { addr: WORK, source: "fw 99", base_id: name(head) })
         assert.equal(door.wrote.put.length, 1, "the newer HEAD is kept")
         assert.equal(door.wrote.put[0].bytes, head)
     })
 
     test("a work face keeps a newer local head when the room is behind", async () => {
-        const local = write("snap", { source_id: "s1", title: "mine" },
+        const local = write("snap", { source_id: name("fw local"), title: "mine" },
             { root: ROOT, target: WORK, ts: { t: 5000, n: 0 } })
-        const room = write("snap", { source_id: "s0", title: "old share" },
+        const room = write("snap", { source_id: name("fw room"), title: "old share" },
             { root: ROOT, target: WORK, ts: { t: 1, n: 0 } })
         const term = fakeTerm()
         const door = fakeDoor({
@@ -249,14 +264,15 @@ describe("pull — beyond this machine (id:la-fork-pull)", () => {
         })
         const pull = async () => ({ id: name(room), message: room, source: "fw room", at: 1, node: "n1" })
         await forkRef(WORK, { door, term, pull, say: () => {} })
-        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw local", name: "mine", land: true }])
-        assert.equal(door.wrote.put.length, 0, "local already newer — no re-accept of the room's past")
+        assert.equal(term.asked.forkBuffer[0].source, "fw local")
+        assert.equal(term.asked.forkBuffer[0].base_id, name(local))
+        assert.equal(door.wrote.put.length, 0, "newer local bytes win; no room pull accepted")
     })
 
     test("a keep face stays pinned — does not chase HEAD", async () => {
-        const older = write("snap", { source_id: "s0", title: "pinned" },
+        const older = write("snap", { source_id: name("fw 1"), title: "pinned" },
             { root: ROOT, target: WORK, ts: { t: 1, n: 0 } })
-        const head = write("snap", { source_id: "s1", title: "later" },
+        const head = write("snap", { source_id: name("fw 99"), title: "later" },
             { root: ROOT, target: WORK, ts: { t: 2000, n: 0 } })
         const term = fakeTerm()
         const door = fakeDoor({
@@ -271,7 +287,8 @@ describe("pull — beyond this machine (id:la-fork-pull)", () => {
         }
         await forkRef(name(older), { door, term, pull, say: () => {} })
         assert.equal(pulled, 0, "commit-specific never re-pulls")
-        assert.deepEqual(term.asked.forkKeep, [{ work_id: WORK, source: "fw 1", name: "pinned", land: true }])
+        assert.equal(term.asked.forkBuffer[0].addr, WORK)
+        assert.equal(term.asked.forkBuffer[0].base_id, name(older))
     })
 
     test("a lying room lands nothing — wrong bytes are refused at the reader", async () => {
@@ -284,7 +301,7 @@ describe("pull — beyond this machine (id:la-fork-pull)", () => {
         const landed = await forkRef(wrongRef, { door, term, pull, say: (...a) => said.push(a) })
         assert.equal(landed, null)
         assert.equal(door.wrote.put.length, 0, "nothing accepted")
-        assert.deepEqual(term.asked.forkKeep, [{ work_id: wrongRef, source: null, name: null, land: true }],
+        assert.deepEqual(term.asked.forkKeep, [{ work_id: wrongRef, source: null, name: null, land: true, base_id: null }],
             "still a find — a buffer bearing the work would answer")
         assert.ok(said.length >= 1)
     })
@@ -308,7 +325,7 @@ describe("pull — beyond this machine (id:la-fork-pull)", () => {
     })
 
     test("an answer without a fact is kept local — put without share", async () => {
-        const bytes = snap()
+        const bytes = snap({ source: "fw 9" })
         const term = fakeTerm()
         const door = fakeDoor()
         const pull = async () => ({ id: name(bytes), message: bytes, source: "fw 9" })

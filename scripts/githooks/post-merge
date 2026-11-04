@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# After pull/merge: mirror branch, fast-forward specs to specs.lock when safe.
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+exec bash "$ROOT/scripts/verify/specs_sync.sh" --hook-post-merge "$@"

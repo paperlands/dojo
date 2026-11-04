@@ -1,0 +1,33 @@
+# Text normalization. Every tracked text file is LF today (zero CRLF in the
+# tree), so this changes nothing now — it just stops a Windows checkout from
+# drifting them back.
+* text=auto eol=lf
+
+# --- Vendored corpus -------------------------------------------------------
+# Built here (scripts/vendor, press.codex) and committed on purpose: the image
+# ships the cast, not the source corpus. Marked vendor so language stats and
+# review diffs don't count a bundled esbuild output as our code.
+priv/static/vendor/**  linguist-vendored linguist-generated
+priv/static/codex/**   linguist-vendored linguist-generated
+
+# Machine-written by the specs_sync hook on every commit.
+specs.lock             linguist-generated
+
+# --- Binary assets ---------------------------------------------------------
+# Never diff these as text.
+*.exe    binary
+*.ico    binary
+*.icns   binary
+*.bmp    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ttf    binary
+*.woff   binary
+*.woff2  binary
+*.db     binary
+
+# Artwork: text to git, but nobody hand-reviews a multi-MB embedded-blob SVG.
+# Force a textual diff with `git diff --text` when it actually matters.
+*.svg    -diff

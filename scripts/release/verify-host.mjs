@@ -1,0 +1,36 @@
+// Registry releases must identify a clean commit and the bytes being published.
+import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+
+const [directory, version, commit] = process.argv.slice(2)
+assert.ok(directory && version && commit, 'usage: verify-host.mjs DIRECTORY VERSION COMMIT')
+assert.match(commit, /^[a-f0-9]{40}$/, 'expected a full release commit')
+const json = async path => JSON.parse(await readFile(join(directory, path), 'utf8'))
+const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
+const release = await json('release.json')
+const manifest = await json('package.json')
+assert.equal(release.artifact, 'paperlang-host')
+assert.equal(release.sourceDirty, false, 'release source inputs are dirty')
+assert.equal(release.checkoutDirty, false, 'release checkout is dirty')
+assert.equal(release.commit, commit, 'release commit mismatch')
+assert.equal(release.revision, commit, 'release revision mismatch')
+assert.equal(release.version, version, 'release version mismatch')
+assert.equal(manifest.version, version, 'package version mismatch')
+assert.equal(manifest.name, '@paperland/paperlang', 'package scope mismatch')
+assert.equal(release.name, manifest.name)
+assert.equal(manifest.repository.url, 'git+https://github.com/paperlands/dojo.git')
+assert.equal(manifest.publishConfig.access, 'public')
+assert.equal(manifest.publishConfig.registry, 'https://registry.npmjs.org')
+assert.equal(manifest.private, undefined)
+assert.equal(manifest.type, 'module')
+assert.equal(manifest.exports, './host.mjs')
+assert.ok(release.artifacts['package.json'] && release.artifacts['host.mjs'], 'missing package hashes')
+assert.ok(release.sources['assets/js/host.js'], 'missing host source evidence')
+assert.equal(release.sourceDigest, sha256(JSON.stringify(release.sources)), 'source digest mismatch')
+for (const [path, hash] of Object.entries(release.artifacts))
+    assert.equal(sha256(await readFile(join(directory, path))), hash, 'artifact hash mismatch: ' + path)
+for (const [path, hash] of Object.entries(release.sources))
+    assert.equal(sha256(await readFile(join(directory, 'sources', path))), hash, 'source hash mismatch: ' + path)
+console.log(`Verified ${manifest.name}@${version} at ${commit}`)

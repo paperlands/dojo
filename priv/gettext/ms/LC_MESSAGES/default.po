@@ -80,6 +80,12 @@ msgstr "Senget ke Kanan"
 #, elixir-autogen, elixir-format
 msgid "Make a Function"
 msgstr "Cipta Petua"
+#: lib/dojo_web/components/deck.ex:24
+#, elixir-autogen, elixir-format
+msgid "Give a Law"
+msgstr "Beri Hukum"
+
+
 
 #: lib/dojo_web/components/deck.ex:24
 #, elixir-autogen, elixir-format

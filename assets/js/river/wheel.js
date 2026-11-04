@@ -7,13 +7,15 @@
 //   onSettle — drum still — stand or restore once
 
 import { temporal } from "../utils/temporal.js"
+import { DRAG_PX } from "../utils/pan.js"
 import { nearness, shadeOf } from "./light.js"
 
 /** Quiet after the last non-drag scroll before we trust the rest (ms). */
 export const SETTLE_MS = 96
 
-/** Pointer travel before a press counts as a pan (not a tap). */
-export const DRAG_PX = 5
+// The hand's one threshold lives in utils/pan.js; re-exported so every caller
+// that names it through the wheel keeps working.
+export { DRAG_PX }
 
 /**
  * @param {HTMLElement} rail

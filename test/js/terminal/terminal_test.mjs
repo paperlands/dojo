@@ -9,6 +9,13 @@
 
 import { test, describe, before } from "node:test"
 import assert from "node:assert/strict"
+import { forkRef } from "../../../assets/js/link.js"
+import { writeSnap, mintSnap } from "../../../assets/js/keep/kinds/snap.js"
+import { name, read } from "../../../assets/js/keep/entry.js"
+import { mirrorOf, ofWork } from "../../../assets/js/keep/work.js"
+import { createJournal } from "../../../assets/js/keep/journal.js"
+import { createEngine } from "../../../assets/js/keep/journal.store.js"
+import { createMemoryIDB } from "../keep/idb_memory.mjs"
 
 // ---------------------------------------------------------------------------
 // Node.js environment setup
@@ -205,7 +212,9 @@ function makeMockCm6() {
                 this._state = EditorState.create({ doc: old.slice(0, from) + insert + old.slice(to) });
             }
             if (selection) this._state = { ...this._state, selection };
-            const update = { docChanged: !!changes, selectionSet: !!selection, state: this._state };
+            // Real CM6 ViewUpdates carry the view; the write path must not
+            // depend on it, but the deferral did.
+            const update = { docChanged: !!changes, selectionSet: !!selection, state: this._state, view: this };
             for (const fn of updateListeners) fn(update);
             // keep effects visible for merge-view assertions
             void effects;
@@ -543,6 +552,115 @@ describe("Terminal (CM6)", () => {
         assert.equal(term.getBufferInfo(id).content, "fw 7");
     })
 
+    // Regression — the write-through and the autosave it schedules are the
+    // single content writer; they must not wait on a paint. Deferring the
+    // doc-change notify to requestAnimationFrame dropped the edit on a hidden
+    // tab, an unload before the next frame, or a throttled rAF: the collection
+    // never moved and the flush paths persisted a stale copy (data loss).
+    test("a change lands in the authority even when no frame paints", () => {
+        const cm6  = makeMockCm6();
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+
+        const saved = globalThis.requestAnimationFrame;
+        globalThis.requestAnimationFrame = () => 99;   // present, never fires
+        try {
+            term.setValue("fw 31415");
+        } finally {
+            globalThis.requestAnimationFrame = saved;
+        }
+
+        assert.equal(term.getBufferInfo(id).content, "fw 31415",
+            "content must land under the keystroke, not after a paint");
+        localStorage.clear();
+    });
+
+    test("source claim lands under the key even when no frame paints", () => {
+        const cm6 = makeMockCm6();
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+        const claims = [];
+        term.sourceBridge.sub((claim) => claims.push(claim));
+
+        const saved = globalThis.requestAnimationFrame;
+        globalThis.requestAnimationFrame = () => 99;
+        try {
+            term.setValue("fw 2718");
+        } finally {
+            globalThis.requestAnimationFrame = saved;
+        }
+
+        const claim = claims.at(-1);
+        assert.equal(claim.text, "fw 2718");
+        assert.equal(claim.addr, id);
+        assert.equal(claim.buffer_id, id);
+        assert.equal(claim.place, "coreshell");
+        localStorage.clear();
+    });
+
+    test("projected source claim carries honest null buffer id", () => {
+        const cm6 = makeMockCm6();
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+        const claims = [];
+        term.sourceBridge.sub((claim) => claims.push(claim));
+
+        term.setValue("kept code", { project: true });
+
+        const claim = claims.at(-1);
+        assert.equal(claim.text, "kept code");
+        assert.equal(claim.addr, id);
+        assert.equal(claim.buffer_id, null);
+        localStorage.clear();
+    });
+
+    test("metadata announcement does not mint a source claim", () => {
+        const cm6 = makeMockCm6();
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+        const claims = [];
+        const frames = [];
+        term.sourceBridge.sub((claim) => claims.push(claim));
+        term.bridge.sub((payload) => frames.push(payload));
+
+        term.adoptWork("work-1", id);
+
+        assert.equal(claims.length, 0, "metadata never claims authorship");
+        assert.equal(frames.at(-1).metadata, true);
+        assert.equal(frames.at(-1).id, id);
+        localStorage.clear();
+    });
+
+    test("autosave persists a change that never painted", async () => {
+        const cm6  = makeMockCm6();
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+
+        const saved = globalThis.requestAnimationFrame;
+        globalThis.requestAnimationFrame = () => 99;   // present, never fires
+        try {
+            term.setValue("fw 27182");
+            await new Promise((r) => setTimeout(r, 600));
+        } finally {
+            globalThis.requestAnimationFrame = saved;
+        }
+
+        const stored = JSON.parse(localStorage.getItem("@paperlands.buffers@inner"));
+        assert.equal(stored[id].content, "fw 27182",
+            "the debounced autosave must be scheduled under the keystroke");
+        localStorage.clear();
+    });
+
     // buffers.js pure transition backing the rename path
     test("buffers.renameBuffer renames by id, leaves content and selection", async () => {
         const buffers = await import("../../../assets/js/terminal/buffers.js");
@@ -635,6 +753,47 @@ describe("Terminal (CM6)", () => {
         localStorage.clear();
     });
 
+    test("a first boot has no work; remount does not invent one", () => {
+        const cm6 = makeMockCm6();
+        localStorage.clear();
+        const first = new Terminal(makeEditorStub(), cm6);
+        first.inner();
+        const id = first.currentBufferId();
+        assert.equal(first.currentWorkId(), null);
+        first.destroy();
+
+        const again = new Terminal(makeEditorStub(), cm6);
+        again.inner();
+        assert.equal(again.currentBufferId(), id);
+        assert.equal(again.currentWorkId(), null);
+        localStorage.clear();
+    });
+
+    test("adoptWork expectedFrom refuses a changed work binding", () => {
+        const cm6 = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+        const first = "k".repeat(64), second = "m".repeat(64);
+        assert.equal(term.adoptWork(first, id, null), id);
+        assert.equal(term.adoptWork(second, id, null), null, "stale first-keep adoption is refused");
+        assert.equal(term.currentWorkId(), first, "the changed binding is preserved");
+        assert.equal(term.adoptWork(second, id, first), id);
+        assert.equal(term.currentWorkId(), second);
+        localStorage.clear();
+    });
+
+    test("adoptWork writes the recovered work_id onto the standing tab", () => {
+        const cm6 = makeMockCm6();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const id = term.currentBufferId();
+        const recovered = "k".repeat(64);
+        assert.equal(term.adoptWork(recovered), id);
+        assert.equal(term.currentWorkId(), recovered);
+        assert.equal(term.adoptWork(recovered), id, "same work is no write");
+    });
+
     // forkKeep — fork-from-keep rejoins the river (id:kb-2a, id:la-fork)
     test("forkKeep selects the buffer already bearing the work", () => {
         const cm6  = makeMockCm6();
@@ -658,7 +817,7 @@ describe("Terminal (CM6)", () => {
         assert.equal(term.getValue(), "fw 99", "a link open lands HEAD/pin (id:la-fork-pull)");
     });
 
-    test("forkKeep creates carrying the keep's work_id, and the next mint differs", () => {
+    test("forkKeep carries the origin keep; a blank tab has none", () => {
         const cm6  = makeMockCm6();
         const term = new Terminal(makeEditorStub(), cm6);
         term.inner();
@@ -666,7 +825,7 @@ describe("Terminal (CM6)", () => {
         assert.equal(term.currentWorkId(), "a".repeat(64), "the fork rejoined the keep's river");
         const blank = term.createBuffer("blank", "");
         assert.notEqual(blank, id);
-        assert.notEqual(term.currentWorkId(), "a".repeat(64), "a blank tab is still a new river");
+        assert.equal(term.currentWorkId(), null, "a blank tab has no work until the first keep");
     });
 
     test("forkKeep never creates without source — a fork with nothing to fork is a find", () => {
@@ -706,6 +865,155 @@ describe("Terminal (CM6)", () => {
         const again = term.forkBuffer({ source: "fw 1", name: "theirs", addr, time: 1, land: true });
         assert.equal(again, held);
         assert.equal(term.getValue(), "fw 1", "link open lands the keep over a diverged draft");
+    });
+
+    async function keptEditor({ foreign, source, storeSource }) {
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), makeMockCm6());
+        term.inner();
+        term.setValue("fd 314 // unkept");
+        const { idb, KeyRange } = createMemoryIDB();
+        const door = createJournal({ engine: createEngine({
+            idb, KeyRange, dbName: "source-guard", random: (a) => a.fill(1),
+        }) });
+        const root = foreign ? "f".repeat(64) : await door.root();
+        const bytes = writeSnap({ root, source, ts: { t: 100, n: 0 } });
+        const id = await door.put(bytes, { ...(storeSource ? { source } : {}), ...(foreign ? {} : { authored: true }) });
+        const said = [];
+        return {
+            term, door, root, id, said,
+            open: () => forkRef(id, { door, term, say: (...args) => said.push(args) }),
+            async close() {
+                await door.close();
+                term.destroy();
+                localStorage.clear();
+            },
+        };
+    }
+
+    for (const foreign of [false, true]) {
+        const hand = foreign ? "foreign" : "same-hand";
+        test(`fork link ${hand}: missing source never creates an empty editor`, async () => {
+            const f = await keptEditor({ foreign, source: "fd 10", storeSource: false });
+            try {
+                const before = f.term.currentBufferId();
+                assert.equal(await f.door.source(name("fd 10")), undefined);
+                assert.equal(await f.open(), null);
+                assert.equal(f.term.currentBufferId(), before);
+                assert.equal(f.term.getValue(), "fd 314 // unkept");
+                assert.ok(f.said.some(([message]) => message.includes("no source held")));
+            } finally {
+                await f.close();
+            }
+        });
+
+        test(`fork link ${hand}: missing source finds a held buffer without overwriting its draft`, async () => {
+            const f = await keptEditor({ foreign, source: "fd 10", storeSource: false });
+            try {
+                const held = foreign
+                    ? f.term.forkBuffer({ source: "fd 20", addr: f.id, root: f.root, time: 1 })
+                    : f.term.forkKeep({ work_id: f.id, source: "fd 20" });
+                f.term.setValue("fd 21 // unsaved draft");
+                f.term.createBuffer("another", "fd 99");
+                assert.equal(await f.open(), held);
+                assert.equal(f.term.currentBufferId(), held);
+                assert.equal(f.term.getValue(), "fd 21 // unsaved draft");
+                assert.equal(f.term.getBufferInfo(held).content, "fd 21 // unsaved draft");
+                assert.ok(f.said.some(([message]) => message.includes("no source held")));
+            } finally {
+                await f.close();
+            }
+        });
+
+        test(`fork link ${hand}: a stored empty source is a valid program, not missing material`, async () => {
+            const f = await keptEditor({ foreign, source: "", storeSource: true });
+            try {
+                const before = f.term.currentBufferId();
+                assert.equal(await f.door.source(name("")), "");
+                const landed = await f.open();
+                assert.ok(landed);
+                assert.notEqual(landed, before);
+                assert.equal(f.term.getValue(), "");
+                assert.equal(f.term.getBufferInfo(before).content, "fd 314 // unkept");
+                assert.equal(f.term.currentBaseId(), f.id);
+                assert.deepEqual(f.said, [["using legacy link reader; the address does not state its reading"]]);
+            } finally {
+                await f.close();
+            }
+        });
+    }
+
+    test("two editors continue A independently; restart keeps both branches", async () => {
+        localStorage.clear();
+        const { idb, KeyRange } = createMemoryIDB();
+        const open = () => createJournal({ engine: createEngine({
+            idb, KeyRange, dbName: "two-editors", random: (a) => a.fill(1),
+        }) });
+        let doors = [open(), open()];
+        const terms = [0, 1].map(() => new Terminal(makeEditorStub(), makeMockCm6()));
+        terms.forEach((t) => t.inner());
+        try {
+            const root = await doors[0].root();
+            const a = writeSnap({ root, source: "fd 10", ts: { t: 1, n: 0 } });
+            const A = await doors[0].put(a, { source: "fd 10", authored: true });
+            await Promise.all(terms.map((term, i) => forkRef(A, { term, door: doors[i] })));
+            terms.forEach((t) => assert.equal(t.currentBaseId(), A));
+            const keep = (i) => mintSnap(
+                { title: `branch ${i}`, prev: terms[i].currentBaseId() },
+                { source: terms[i].getValue() },
+                { work_id: terms[i].currentWorkId(), buffer_id: terms[i].currentBufferId() },
+                doors[i], new Blob(["picture"]),
+            );
+            terms[0].setValue("fd 20");
+            terms[1].setValue("fd 30");
+            const B = await keep(0);
+            terms[0].adoptBase(B, terms[0].currentBufferId(), A);
+            assert.equal(terms[1].currentBaseId(), A, "another editor\u2019s keep does not move this base");
+            const C = await keep(1);
+            await Promise.all(doors.map((d) => d.close()));
+            doors = [open()];
+            const b = await doors[0].get(B), c = await doors[0].get(C);
+            assert.equal(read(b).prev, A);
+            assert.equal(read(c).prev, A);
+            assert.equal(read(b).target, A);
+            assert.equal(read(c).target, A);
+            assert.equal(await doors[0].get(A), a);
+            const versions = ofWork(await doors[0].list(root), A);
+            assert.equal(versions.length, 3);
+            const branch = mirrorOf(versions, B);
+            assert.deepEqual(branch.line, [b, a]);
+            assert.deepEqual(branch.sibling, [c, a]);
+            assert.equal(branch.meet, A);
+        } finally {
+            await Promise.all(doors.map((d) => d.close()));
+            terms.forEach((t) => t.destroy());
+            localStorage.clear();
+        }
+    });
+
+    test("the editor base survives reload and delayed completion cannot replace a different base", () => {
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), makeMockCm6());
+        term.inner();
+        const A = "a".repeat(64), B = "b".repeat(64), C = "c".repeat(64);
+        const id = term.forkKeep({ work_id: A, source: "fd 10", base_id: A, land: true });
+        term.forkKeep({ work_id: A, source: "fd 10", base_id: C, land: true });
+        assert.equal(term.currentBaseId(), C, "equal source does not imply equal base");
+        term.forkKeep({ work_id: A, source: "fd 10", base_id: A, land: true });
+        term.adoptBase(B, id, A);
+        assert.equal(term.currentBaseId(), B);
+        term.adoptBase(C, id, A);
+        assert.equal(term.currentBaseId(), B, "late sibling cannot rewrite the editing base");
+        term.setValue("fd 1", { project: true, base_id: A });
+        assert.equal(term.currentBaseId(), A, "a projected keep has its own editing base");
+        term.setValue("fd 10", { project: false });
+        assert.equal(term.currentBaseId(), B, "returning to the draft restores its base");
+        term.destroy();
+        const restored = new Terminal(makeEditorStub(), makeMockCm6());
+        restored.inner();
+        assert.equal(restored.currentBaseId(), B);
+        restored.destroy();
+        localStorage.clear();
     });
 
     // Merge (git-style) view is outershell compare mode, not a side effect of

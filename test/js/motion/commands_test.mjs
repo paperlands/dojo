@@ -10,8 +10,7 @@ import { SE3 } from "../../../assets/js/turtling/se3.js"
 function mkCtx(transform, styleOverrides = {}) {
     return {
         transform,
-        style: { ...DEFAULT_STYLE, ...styleOverrides },
-        worldPosition: [...transform.position]
+        style: { ...DEFAULT_STYLE, ...styleOverrides }
     }
 }
 
@@ -69,42 +68,34 @@ describe("fw (forward)", () => {
 describe("goto", () => {
     const goTo = COMMANDS.get("goto")
 
-    test("sets absolute position (world space)", () => {
-        const result = goTo(mkCtx(identity()), 50, 75)
-        assert.ok(near(result.world.position[0], 50))
-        assert.ok(near(result.world.position[1], 75))
-    })
-
-    test("preserves z when not specified", () => {
-        const t = { ...identity(), position: [0, 0, 42] }
-        const result = goTo(mkCtx(t), 10, 20)
-        assert.ok(near(result.world.position[2], 42))
-    })
-
-    test("sets z when specified", () => {
-        const result = goTo(mkCtx(identity()), 10, 20, 30)
-        assert.ok(near(result.world.position[2], 30))
+    test("proposes the bound world target as a position patch", () => {
+        const result = goTo(mkCtx(identity()), [50, 75, 0])
+        assert.deepEqual(result.transform.position, [50, 75, 0])
+        assert.deepEqual(Object.keys(result.transform), ["position"], "only the proposed field")
     })
 
     test("extends stroke when pen is down", () => {
-        const result = goTo(mkCtx(identity()), 50, 50)
+        const result = goTo(mkCtx(identity()), [50, 50, 0])
         assert.equal(result.stroke, "extend")
+        assert.deepEqual(result.point, result.transform.position)
     })
 
     test("breaks stroke when pen is up", () => {
-        const result = goTo(mkCtx(identity(), { down: false }), 50, 50)
+        const result = goTo(mkCtx(identity(), { down: false }), [50, 50, 0])
         assert.equal(result.stroke, "break")
     })
 })
 
 describe("jmpto", () => {
     const jmpto = COMMANDS.get("jmpto")
+    const goTo = COMMANDS.get("goto")
 
-    test("moves to position without drawing (world space)", () => {
-        const result = jmpto(mkCtx(identity()), 100, 200)
-        assert.ok(near(result.world.position[0], 100))
-        assert.ok(near(result.world.position[1], 200))
-        assert.equal(result.stroke, "break")
+    test("moves to the same bound target as goto, without drawing", () => {
+        const ctx = mkCtx(identity())
+        const jump = jmpto(ctx, [100, 200, 0])
+        const walk = goTo(ctx, [100, 200, 0])
+        assert.deepEqual(jump.transform.position, walk.transform.position)
+        assert.equal(jump.stroke, "break")
     })
 })
 
@@ -134,6 +125,18 @@ describe("home", () => {
         assert.ok(near(result.transform.position[0], 0))
         assert.ok(near(result.transform.position[1], 0))
         assert.ok(near(result.transform.position[2], 0))
+    })
+
+    test("returns to the default facing, not the banked heading", () => {
+        const turned = SE3.rotateLocal(identity(), { x: 0, y: 0, z: 1 }, 90)
+        const result = home(mkCtx(turned))
+        assert.ok(near(result.transform.rotation.w, 1))
+        assert.ok(near(result.transform.rotation.z, 0))
+        // a following fw walks right (+x), not the heading it arrived with
+        const fw = COMMANDS.get("fw")
+        const moved = fw(mkCtx(result.transform), 50)
+        assert.ok(near(moved.transform.position[0], 50))
+        assert.ok(near(moved.transform.position[1], 0))
     })
 })
 
@@ -211,40 +214,45 @@ describe("faceto", () => {
 
     test("face along +x direction", () => {
         const t = { ...identity(), position: [0, 0, 0] }
-        const result = faceto(mkCtx(t), 100, 0)
-        // faceto returns { world: { rotation } } — at root, world = local
-        const faceTransform = { rotation: result.world.rotation, position: t.position }
-        const m = fw(mkCtx(faceTransform), 50)
+        const result = faceto(mkCtx(t), [100, 0, 0])
+        const m = fw(mkCtx({ ...identity(), rotation: result.transform.rotation }), 50)
         assert.ok(near(m.transform.position[0], 50))
         assert.ok(near(m.transform.position[1], 0))
     })
 
     test("face along +y direction", () => {
-        const result = faceto(mkCtx(identity()), 0, 100)
-        const faceTransform = { rotation: result.world.rotation, position: [0, 0, 0] }
-        const m = fw(mkCtx(faceTransform), 50)
+        const result = faceto(mkCtx(identity()), [0, 100, 0])
+        const m = fw(mkCtx({ ...identity(), rotation: result.transform.rotation }), 50)
         assert.ok(near(m.transform.position[0], 0))
         assert.ok(near(m.transform.position[1], 50))
     })
 
     test("face along -x direction", () => {
-        const result = faceto(mkCtx(identity()), -100, 0)
-        const faceTransform = { rotation: result.world.rotation, position: [0, 0, 0] }
-        const m = fw(mkCtx(faceTransform), 50)
+        const result = faceto(mkCtx(identity()), [-100, 0, 0])
+        const m = fw(mkCtx({ ...identity(), rotation: result.transform.rotation }), 50)
         assert.ok(near(m.transform.position[0], -50))
         assert.ok(near(m.transform.position[1], 0))
     })
 
-    test("no-op when target is at current position", () => {
-        const result = faceto(mkCtx(identity()), 0, 0, 0)
-        assert.equal(result.world, undefined)
+    test("aims in birth-frame coords from an offset pose", () => {
+        // Standing at (10, 0); faceto 10 100 faces +y in the same frame as goto.
+        const t = { ...identity(), position: [10, 0, 0] }
+        const result = faceto(mkCtx(t), [10, 100, 0])
+        const m = fw(mkCtx({ ...t, rotation: result.transform.rotation }), 50)
+        assert.ok(near(m.transform.position[0], 10))
+        assert.ok(near(m.transform.position[1], 50))
     })
 
-    test("returns world rotation only (position is executor concern)", () => {
-        const t = { ...identity(), position: [0, 0, 42] }
-        const result = faceto(mkCtx(t), 100, 0)
-        assert.ok(result.world.rotation)
-        assert.equal(result.world.position, undefined)
+    test("no-op when target is at current position", () => {
+        const result = faceto(mkCtx(identity()), [0, 0, 0])
+        assert.equal(result.transform, undefined)
+    })
+
+    test("proposes only the rotation patch, never a displacement", () => {
+        const result = faceto(mkCtx(identity()), [100, 0, 0])
+        assert.ok(result.transform.rotation)
+        assert.equal(result.transform.position, undefined, "an aim proposes no displacement")
+        assert.equal(result.world, undefined)
     })
 })
 
@@ -392,6 +400,17 @@ describe("style commands", () => {
         const r2 = hd(mkCtx(identity()))
         assert.deepEqual(r1, r2)
     })
+    
+    test("forward/fd/right/left/jump/jumpto/color/colour alias the canonical verbs", () => {
+        assert.equal(COMMANDS.get("forward"), COMMANDS.get("fw"))
+        assert.equal(COMMANDS.get("fd"), COMMANDS.get("fw"))
+        assert.equal(COMMANDS.get("right"), COMMANDS.get("rt"))
+        assert.equal(COMMANDS.get("left"), COMMANDS.get("lt"))
+        assert.equal(COMMANDS.get("jump"), COMMANDS.get("jmp"))
+        assert.equal(COMMANDS.get("jumpto"), COMMANDS.get("jmpto"))
+        assert.equal(COMMANDS.get("color"), COMMANDS.get("beColour"))
+        assert.equal(COMMANDS.get("colour"), COMMANDS.get("beColour"))
+    })
 })
 
 // ---------------------------------------------------------------------------
@@ -431,11 +450,11 @@ describe("limit commands", () => {
 
 describe("COMMANDS map", () => {
     const expected = [
-        "fw", "rt", "lt", "yaw", "pitch", "dive", "roll",
-        "show", "hide", "hd", "jmp", "bold", "grid",
-        "goto", "faceto", "jmpto", "label", "erase", "home",
+        "fw", "forward", "fd", "rt", "right", "lt", "left", "yaw", "pitch", "dive", "roll",
+        "show", "hide", "hd", "jmp", "jump", "bold", "grid",
+        "goto", "faceto", "jmpto", "jumpto", "label", "erase", "home",
         "fill", "wait", "limitRecurse", "limitCommand",
-        "limitMessage", "beColour"
+        "limitMessage", "beColour", "color", "colour"
     ]
 
     test("contains all expected commands", () => {
@@ -450,8 +469,8 @@ describe("COMMANDS map", () => {
         }
     })
 
-    test("matches expected command count (26)", () => {
-        assert.equal(COMMANDS.size, 26)
+    test("matches expected command count (34)", () => {
+        assert.equal(COMMANDS.size, 34)
     })
 })
 

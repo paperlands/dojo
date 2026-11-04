@@ -63,11 +63,6 @@ export const SE3 = {
             .rotateVec(dx, dy, dz)
     },
 
-    // Strip frame rotation from a world rotation to get local rotation.
-    localRotation(t, worldRotation) {
-        return Versor.raw(t.rotation.w, -t.rotation.x, -t.rotation.y, -t.rotation.z)
-            .multiply(worldRotation)
-    },
 
     // Inverse rigid transform: the SE3 that undoes t. R⁻¹ = (q*, -q*·p).
     // compose(t, invert(t)) = compose(invert(t), t) = identity. Used by the eye's
@@ -92,11 +87,13 @@ export const SE3 = {
     },
 
     isValid(t) {
-        const r = t.rotation
+        const r = t?.rotation
+        if (!r || ![r.w, r.x, r.y, r.z].every(Number.isFinite)) return false
         const lenSq = r.w * r.w + r.x * r.x + r.y * r.y + r.z * r.z
         if (Math.abs(lenSq - 1) > 1e-6) return false
         const p = t.position
-        if (isNaN(p[0]) || isNaN(p[1]) || isNaN(p[2])) return false
+        if (!Array.isArray(p) || p.length !== 3 ||
+            !Number.isFinite(p[0]) || !Number.isFinite(p[1]) || !Number.isFinite(p[2])) return false
         return true
     }
 }

@@ -43,7 +43,7 @@ function frameProbe(sched) {
             batchCmd: f.batch?.commandCount ?? null,
             liveCmd: commandsOf(f),
             reductions: f.batch?.reductions ?? f.actorState?.reductions ?? null,
-            park: f.park?.cause ?? null,
+            suspension: f.suspension?.kind ?? null,
             chLen: f.channel?.length ?? null,
             run: f.run ?? null,
         })

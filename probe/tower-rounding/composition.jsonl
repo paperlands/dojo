@@ -1,0 +1,58 @@
+{"label":"route: sum 1e-15 a thousand times","value":"1.0000000000000052e-12","said":"nothing","comment":"authored addition"}
+{"label":"route: 1000 * 1e-15","value":"1e-12","said":"nothing","comment":"authored product"}
+{"label":"route: fw 1e-15 a thousand times","value":"1.0000000000000052e-12","said":"nothing","comment":"command geometry"}
+{"label":"the three routes agree?","value":"1","said":"nothing","comment":"one arithmetic means these are the same walk"}
+{"label":"walk 100 x fw 1e-14: the ink","value":"9.99999999999998e-13","said":"nothing","comment":"the geometry kept it"}
+{"label":"walk 100 x fw 1e-14: the reading of x","value":"1e-12","said":"nothing","comment":"exactly the coordinate"}
+{"label":"walk 100 x fw 1e-14: reading agrees with ink?","value":"yes","said":"nothing","comment":"a figure can see the ink it laid down"}
+{"label":"walk 1000 x fw 1e-14: the ink","value":"1.0000000000000124e-11","said":"nothing","comment":"the geometry kept it"}
+{"label":"walk 1000 x fw 1e-14: the reading of x","value":"1e-11","said":"nothing","comment":"exactly the coordinate"}
+{"label":"walk 1000 x fw 1e-14: reading agrees with ink?","value":"yes","said":"nothing","comment":"a figure can see the ink it laid down"}
+{"label":"walk 100000 x fw 1e-14: the ink","value":"9.999999999994308e-10","said":"nothing","comment":"the geometry kept it"}
+{"label":"walk 100000 x fw 1e-14: the reading of x","value":"9.99999999999e-10","said":"nothing","comment":"exactly the coordinate"}
+{"label":"walk 100000 x fw 1e-14: reading agrees with ink?","value":"yes","said":"nothing","comment":"a figure can see the ink it laid down"}
+{"label":"walk 1000 x fw 1e-9: the ink","value":"9.999999999999934e-7","said":"nothing","comment":"the geometry kept it"}
+{"label":"walk 1000 x fw 1e-9: the reading of x","value":"0.000001","said":"nothing","comment":"exactly the coordinate"}
+{"label":"walk 1000 x fw 1e-9: reading agrees with ink?","value":"yes","said":"nothing","comment":"a figure can see the ink it laid down"}
+{"label":"1e-15 * 1","value":"1e-15","said":"nothing","comment":"product"}
+{"label":"1e-15 + 0","value":"1e-15","said":"nothing","comment":"sum — the same value"}
+{"label":"0 + 1e-15","value":"1e-15","said":"nothing","comment":"order does not matter"}
+{"label":"(1e-15 + 0) == 1e-15","value":"1","said":"nothing","comment":"x + 0 == x, which a learner would trust"}
+{"label":"1 + 1e-15 (IEEE keeps the tail)","value":"1.000000000000001","said":"nothing","comment":"the tail survives the sum"}
+{"label":"(1 + 1e-15) - 1","value":"1.1102230246251565e-15","said":"nothing","comment":"cancellation finds it again"}
+{"label":"when (1e-15 * 1) > 0","value":"lands","said":"nothing","comment":"one value, one branch, however it is spelled"}
+{"label":"when (1e-15 + 0) > 0","value":"lands","said":"nothing","comment":"one value, one branch, however it is spelled"}
+{"label":"when (1000 * 1e-15) > 0","value":"lands","said":"nothing","comment":"one value, one branch, however it is spelled"}
+{"label":"when 1e-15 + 1e-15 + 1e-15 + 1e-15 + 1e > 0","value":"lands","said":"nothing","comment":"one value, one branch, however it is spelled"}
+{"label":"label (1e308 * 10)","value":"","said":"1x infinite","comment":"the display names it, and tells the author"}
+{"label":"label sqrt(-1)","value":"","said":"1x nan","comment":"the display names it"}
+{"label":"label (1e308 * 10) prints","value":"infinity","said":"named in the label","comment":"never a numeral"}
+{"label":"when (1e308 * 10) > 0","value":"lands","said":"nothing","comment":"infinity no longer orders silently as a number"}
+{"label":"when (0/0) > 0","value":"skipped","said":"1x nan","comment":"a NaN is not a decision"}
+{"label":"when (0/0) < 0","value":"skipped","said":"1x nan","comment":"and not the other way either"}
+{"label":"when (0/0) == (0/0)","value":"skipped","said":"1x nan","comment":"a NaN is not equal to itself, and it says so"}
+{"label":"fw (1e308 * 10)","value":"","said":"1x infinite","comment":"the step is not taken"}
+{"label":"loop (1e308 * 10) do fw 1 end","value":"","said":"1x infinite","comment":"the loop is not taken"}
+{"label":"nothing in a hole (goto A.x)","value":"","said":"nothing","comment":"the identity, quietly — nothing is an answer"}
+{"label":"a word in a hole (fw 'oops')","value":"","said":"1x not-a-number","comment":"the author is told"}
+{"label":"0/0 > 0","value":"NaN","said":"nothing","comment":"the comparison preserves NaN"}
+{"label":"0/0 == 0/0","value":"NaN","said":"nothing","comment":"and again"}
+{"label":"1/0 == 1/0","value":"1","said":"nothing","comment":"infinity still answers a finite 1"}
+{"label":"when (0/0 > 0) do","value":"","said":"1x nan","comment":"a COMPARED NaN is now told: no branch, and why"}
+{"label":"when (1/0 > 0) do","value":"","said":"nothing","comment":"a compared infinity still draws: extended-real (D065)"}
+{"label":"when (0/0) do","value":"","said":"1x nan","comment":"a BARE non-answer in a condition is told: no branch, and why"}
+{"label":"display 0.1 + 0.2","value":"0.3","said":"nothing","comment":"reads clean; the value keeps its bits"}
+{"label":"display sin(30)","value":"0.5","said":"nothing","comment":"reads clean; the value keeps its bits"}
+{"label":"display 1 + 1e-15","value":"1","said":"nothing","comment":"reads clean; the value keeps its bits"}
+{"label":"display 1e-15","value":"1e-15","said":"nothing","comment":"reads clean; the value keeps its bits"}
+{"label":"display 1/3","value":"0.333333333333","said":"nothing","comment":"reads clean; the value keeps its bits"}
+{"label":"tolerance: Versor.EPSILON (rotor hygiene)","value":"2.220446049250313e-16","said":"absolute","comment":"open: awaiting its scale"}
+{"label":"tolerance: vec3 EPS (direction degeneracy)","value":"1e-12","said":"absolute","comment":"open: awaiting its scale"}
+{"label":"tolerance: aim AIM_TOL (faceto degeneracy)","value":"1e-12","said":"scaled","comment":"dimensionless, judged against the magnitude in hand"}
+{"label":"tolerance: GRAZE (a normalized cosine already)","value":"0.001","said":"scaled","comment":"dimensionless, judged against the magnitude in hand"}
+{"label":"tolerance: REALIZE_TOL / REL_TOL (proposal)","value":"1e-9","said":"absolute","comment":"open: awaiting its scale"}
+{"label":"tolerance: ACCEPT_TOL (a law is satisfied)","value":"0.000001","said":"absolute","comment":"open: awaiting its scale"}
+{"label":"unit of a difference 1e-14 apart","value":"null","said":"nothing","comment":"the RESULT cannot know it is noise; null lets the caller’s own guard speak"}
+{"label":"unit of a real tiny direction","value":"null","said":"nothing","comment":"refused below an absolute floor — the cost of an epsilon without a scale"}
+{"label":"unit of a denormal","value":"null","said":"nothing","comment":"the ADMITTED RESULT guard refuses it (the old code answered [Infinity, 0, 0])"}
+{"label":"faceto aim, inputs in hand","value":"degenerate","said":"nothing","comment":"the one site that CAN carry a scale — it holds both operands"}

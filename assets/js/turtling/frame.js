@@ -14,6 +14,7 @@ export function createFrame(name, generator, opts = {}) {
         name,
 
         parent: opts.parent || null,
+        _root: null,           // lazy cache: top of this frame's tree (frames never reparent)
         children: new Map(),
 
         origin: opts.origin || null,  // parent's SE3 at birth (immutable)
@@ -24,21 +25,42 @@ export function createFrame(name, generator, opts = {}) {
         _worldDirty: true,
 
         generator,            // JS generator = the green-thread body
-        resumeAt: 0,          // logical clock when a wait ends (D011)
+        resumeAt: 0,          // logical clock when a wait ends, ms (D011); `now` only reveals
         logicalBirth: opts.logicalBirth ?? null,  // parent clock at spawn; null at root
         done: false,
 
         ink: createInk(),  // bag; ledger owns the law (id:output-ledger-r3-stock-flow)
 
-        // PARK — suspend mid-instant, like parking a thread mid-quantum.
-        // Siblings must not advance past (instant law). cause: time|credit|residency.
-        // null | { cause, owed, since }. Breath = park with nothing owed.
-        // (id:output-ledger-r2-instant)
-        park: null,
+        // SUSPENSION — one record for every way a frame stops. The KIND table in
+        // scheduler.js says whether it owns the instant and how it resumes.
+        // null | { kind, ...detail }. (id:output-ledger-r2-instant)
+        suspension: null,
+
+        // An admission opens an instant that stays owned until a wait/yield/done.
+        midInstant: false,
 
         // Lossless channel ≈ blocking queue (CSP/Go); full → credit park.
         channel: createRingBuffer(opts.channelCapacity || 4096, { lossless: opts.lossless !== false }),
         sync: {},      // conflating head/view slot — last-write-wins, no credit (D027 R2.5)
+        // What the author is owed about a walk that still DRAWS: a step not taken, a
+        // measure that had no answer. Cleared with the run, like `error`. (id:cmp-resilient)
+        notices: [],
         mailbox: [],   // actor inbox (Hewitt/Erlang); see listensFor
     }
 }
+
+// A being is a frame; its identity is the id, never the name. (id:being-facets-p2-seam)
+export const isBeing = (value) => value != null && typeof value === 'object' &&
+    typeof value.id === 'number' && value.transform != null && value.children != null &&
+    // An INSTALLATION owns execution, not geometry: it is never a being, so a carried
+    // handle is refused at every facet, law and receiver admission door.
+    // (id:being-facets-p4-sequence)
+    value.installation !== true
+
+// Registry identity also covers execution installations, which are not beings.
+// (id:laws-ordered-replacement)
+export const liveIn = (registry, frame) => frame != null && registry != null && registry.get(frame.id) === frame
+
+// Being admission adds geometry's kind contract, never settledness.
+// (id:participation-language)
+export const isLiveBeing = (being, registry) => isBeing(being) && liveIn(registry, being)

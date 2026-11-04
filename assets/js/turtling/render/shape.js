@@ -5,23 +5,15 @@ import {
     FrontSide,
     Mesh,
     MeshBasicMaterial,
-    Plane,
     Vector3,
 } from '../../utils/three-entry.js'
 import earcut from '../../utils/earcut.js';
-
-// Engine primitives - reusable computation pools
-const TEMP_VEC3_A = new Vector3();
-const TEMP_VEC3_B = new Vector3();
-const TEMP_VEC3_C = new Vector3();
-const TEMP_PLANE = new Plane();
 
 /**
  * Core geometric utilities - zero-allocation where possible
  */
 
 class GeometryUtils {
-    static EPSILON = 1e-10;
     static MIN_AREA_THRESHOLD = 1e-10;
 
     /**
@@ -58,39 +50,12 @@ class GeometryUtils {
     }
 
     /**
-     * Ensure polygon is properly closed
-     */
-    static ensureClosed(vertices) {
-        if (vertices.length < 3) return vertices;
-
-        const first = vertices[0];
-        const last = vertices[vertices.length - 1];
-        const distance = first.distanceTo(last);
-
-        if (distance > this.EPSILON) {
-            // Not closed, add closing vertex
-            return [...vertices, first.clone()];
-        }
-
-        return vertices;
-    }
-
-    /**
      * Project 3D polygon to 2D for triangulation
      */
     static projectTo2D(vertices) {
         if (vertices.length < 3) return { coords: [], indices: [] };
 
-        // Calculate polygon normal
-        const normal = new Vector3();
-        for (let i = 0; i < vertices.length; i++) {
-            const current = vertices[i];
-            const next = vertices[(i + 1) % vertices.length];
-            normal.x += (current.y - next.y) * (current.z + next.z);
-            normal.y += (current.z - next.z) * (current.x + next.x);
-            normal.z += (current.x - next.x) * (current.y + next.y);
-        }
-        normal.normalize();
+        const normal = this.calculatePolygonNormal(vertices);
 
         // Choose best projection plane based on largest normal component
         const absNormal = new Vector3(Math.abs(normal.x), Math.abs(normal.y), Math.abs(normal.z));
@@ -117,24 +82,19 @@ class GeometryUtils {
         if (vertices.length < 3) return [];
         if (vertices.length === 3) return [0, 1, 2];
 
-        // Ensure polygon is closed
-        const closedVertices = this.ensureClosed(vertices);
-
-        // Remove duplicate closing vertex for triangulation
-        const triangulationVertices = closedVertices.slice(0, -1);
-
-        if (triangulationVertices.length < 3) return [];
+        // Earcut closes the ring by topology; no endpoint is "close enough" to discard.
+        // Its indices refer to the same vertices the builder uploads. (id:nav-numerics)
 
         try {
             // Project to 2D
-            const { coords } = this.projectTo2D(triangulationVertices);
+            const { coords } = this.projectTo2D(vertices);
 
             // using earcut package for robust triangulation
             return earcut(coords);
 
         } catch (error) {
-            console.warn('Triangulation failed, using fallback:', error);
-            return this.improvedFanTriangulation(triangulationVertices);
+            console.warn('Triangulation failed:', error);
+            return [];
         }
     }
 
@@ -215,24 +175,10 @@ class GeometryBuilder {
         this.normalBuffer.length = 0;
     }
 
-    addPolygon(vertices, options = {}) {
+    addPolygon(vertices) {
         if (vertices.length < 3) return;
-
-        const {
-            autoClose = true,
-
-            forceTriangulation = false
-        } = options;
-
         const startIndex = this.vertexBuffer.length / 3;
-
-        // Ensure proper closure if requested
-        const processedVertices = autoClose ?
-            GeometryUtils.ensureClosed(vertices) : vertices;
-
-        // Choose triangulation method
-        let indices;
-            indices = GeometryUtils.triangulatePolygon(processedVertices);
+        const indices = GeometryUtils.triangulatePolygon(vertices);
 
 
         if (indices.length === 0) {
@@ -241,13 +187,13 @@ class GeometryBuilder {
         }
 
         // Add vertices
-        for (const vertex of processedVertices) {
+        for (const vertex of vertices) {
             this.vertexBuffer.push(vertex.x, vertex.y, vertex.z);
         }
 
         // Calculate and add normals
-        const normal = GeometryUtils.calculatePolygonNormal(processedVertices);
-        for (let i = 0; i < processedVertices.length; i++) {
+        const normal = GeometryUtils.calculatePolygonNormal(vertices);
+        for (let i = 0; i < vertices.length; i++) {
             this.normalBuffer.push(normal.x, normal.y, normal.z);
         }
 
@@ -356,6 +302,11 @@ export default class Shape {
     addPolygon(vertices, options = {}) {
         if (!vertices || vertices.length < 3) {
             console.warn('Invalid polygon: need at least 3 vertices');
+            return null;
+        }
+
+        // This boundary uploads float32 coordinates; do not coerce absence or upload infinity.
+        if (vertices.some(v => !v || ![v.x, v.y, v.z].every(c => Number.isFinite(c) && Number.isFinite(Math.fround(c))))) {
             return null;
         }
 

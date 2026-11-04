@@ -20,19 +20,36 @@ defmodule DojoWeb.Session do
   def dir(locale), do: if(rtl?(locale), do: "rtl", else: "ltr")
 
   @doc """
-  The one derivation of a user's stable identity: name + first-login time,
-  alphanumeric only. Every backend register (Disciple.user_id, the Table
-  reg_key, hatch attribution) derives through this — never mint inline.
-  (specs/decisions/007 — one address, backend half.)
+  The person key until authentication exists (id:ki-mint).
+
+  It is the session UUID — never derived from the display name, never rotated
+  on rename. BootLive keeps a good existing id; hydrate repairs a missing or
+  garbage id and pushes the repair to the client.
+  (specs/weave/keep-author.org; amends D007.)
   """
-  def user_id(%__MODULE__{name: name, last_opened: time}) when is_binary(name) do
-    (name <> Base.encode64(to_string(time)))
-    |> String.replace(~r/[^a-zA-Z0-9]/, "")
+  @spec author_id(%__MODULE__{}) :: String.t()
+  def author_id(%__MODULE__{id: id}) when is_binary(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, uuid} -> uuid
+    end
+  end
+
+  @doc """
+  Keep a good UUID; mint when missing or garbage (id:ki-mint).
+
+  Used by BootLive login and by hydrate of an already-active session.
+  """
+  @spec ensure_author_id(%__MODULE__{}) :: {%__MODULE__{}, :kept | :repaired}
+  def ensure_author_id(%__MODULE__{id: id} = session) do
+    case Ecto.UUID.cast(id) do
+      {:ok, uuid} -> {%{session | id: uuid}, :kept}
+      :error -> {%{session | id: Ecto.UUID.generate()}, :repaired}
+    end
   end
 
   def on_mount(:anon, params, _sessions, socket) do
     connect_params = get_connect_params(socket)
-    session = connect_params["session"] |> mutate_session(params)
+    {session, repair} = connect_params["session"] |> mutate_session(params)
 
     locale =
       get_in(session.settings, ["locale"]) ||
@@ -42,16 +59,25 @@ defmodule DojoWeb.Session do
     lang_code = locale |> String.split("-") |> List.first()
     Gettext.put_locale(DojoWeb.Gettext, lang_code)
 
-    {:cont,
-     socket
-     |> assign(
-       locale: lang_code,
-       tz: %{
-         timezone: connect_params["timezone"] || @timezone,
-         timezone_offset: connect_params["timezone_offset"] || @timezone_offset
-       },
-       session: session
-     )}
+    socket =
+      socket
+      |> assign(
+        locale: lang_code,
+        tz: %{
+          timezone: connect_params["timezone"] || @timezone,
+          timezone_offset: connect_params["timezone_offset"] || @timezone_offset
+        },
+        session: session
+      )
+
+    socket =
+      if repair == :repaired do
+        push_event(socket, "mutateSession", %{id: session.id})
+      else
+        socket
+      end
+
+    {:cont, socket}
   end
 
   # ── Locale-aware gettext ──────────────────────────────────────────────
@@ -94,18 +120,18 @@ defmodule DojoWeb.Session do
 
   # ── Session Hydration ─────────────────────────────────────────────────
 
-  # careful of client and server state race. id here is not SOT
+  # careful of client and server state race. id is the person key (id:ki-mint).
   defp mutate_session(%{"active" => true} = sess, _) do
     atomised_sess =
       for {key, val} <- sess, reduce: %{} do
         acc -> hydrate_session(acc, key, val)
       end
 
-    struct(%__MODULE__{}, atomised_sess)
+    struct(%__MODULE__{}, atomised_sess) |> ensure_author_id()
   end
 
-  # false first load
-  defp mutate_session(_, _), do: %__MODULE__{}
+  # false first load — no person key yet; BootLive mints at login.
+  defp mutate_session(_, _), do: {%__MODULE__{}, :kept}
 
   defp hydrate_session(acc, key, val) when key in ["name", "id", "active", "last_opened"] do
     put_in(acc, [String.to_existing_atom(key)], val)

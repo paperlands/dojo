@@ -18,7 +18,6 @@ import { buildExtensions, reapplyCompartments } from "./terminal/extensions.js"
 import { revealAmbient } from "./nerve/reveal.js"
 import { defaultAttend } from "./editor/plang-mode.js"
 import { get } from "./hooks/shell/term-cell.js"
-import { nonce } from "./keep/genesis.js"
 import { temporal } from "./utils/temporal.js"
 
 const DEFAULT_OPTIONS = { theme: 'abbott', mode: 'plang' };
@@ -52,19 +51,15 @@ const DEFAULT_OPTIONS = { theme: 'abbott', mode: 'plang' };
 export const createTerminal = (element, cm6, options = {}) => {
     const opts = { ...DEFAULT_OPTIONS, ...options };
     const names = createNameGen();
-    // Every mint this terminal makes, in one bag — so the next continuant is a
-    // key here, not a fourth positional everywhere (id:kb-2a). ONE injection
-    // point: opts.mints replaces the whole bag or none of it.
-    // work is the second continuant (id:kb-work): the same draw as genesis's
-    // nonce, hex64 — the work's name IS the draw, not name(entry).
+    // Name and buffer id only. A work is the first keep's name, not a draw.
     const mints = opts.mints ?? {
         name: names,
         id: idGen,
-        work: () => nonce(globalThis.crypto.getRandomValues.bind(globalThis.crypto)),
     };
 
     const bridge = bridged("terminal");
     const selectionBridge = bridged("terminal.selection");
+    const sourceBridge = bridged("terminal.source");
 
     // --- State atom ---
     // Single mutable reference. Transitions via pure functions from buffers.js.
@@ -85,6 +80,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         // River standing on a keep/draft: show foreign text without writing the
         // head buffer. Losing the head on refresh is fatal.
         projecting: false,
+        projectedBase: null,
     };
 
     let shell = null;         // CM6 EditorView — inherently mutable
@@ -114,11 +110,48 @@ export const createTerminal = (element, cm6, options = {}) => {
         autosave.cancel();
         saveToStorage();
     };
+    const sourceClaim = (id, content, buffer_id = id) => {
+        const name = id ? state.collection?.items.get(id)?.name ?? null : null;
+        const claim = { place: "coreshell", addr: id, name, text: content, buffer_id };
+        sourceBridge.pub(claim);
+        return claim;
+    };
 
     const triggerBridge = () => {
         const buffer = buffers.currentBuffer(state.collection);
-        if (!buffer) return;
-        bridge.pub({ id: buffer.id, name: buffer.name, content: buffer.content });
+        if (!buffer) return null;
+        const claim = sourceClaim(buffer.id, buffer.content);
+        bridge.pub({ id: buffer.id, name: buffer.name, content: buffer.content, claim });
+        return { id: buffer.id, name: buffer.name, content: buffer.content, claim };
+    };
+
+    const announceMetadata = (id = state.collection?.currentId) => {
+        const buffer = id ? state.collection?.items.get(id) : buffers.currentBuffer(state.collection);
+        if (!buffer) return null;
+        const payload = { id: buffer.id, name: buffer.name, content: buffer.content, metadata: true };
+        bridge.pub(payload);
+        return payload;
+    };
+
+    // Bridge after paint — the glyph paints first, the live walk follows next
+    // frame (seamless writing). Newest content wins; a dropped final frame is a
+    // dropped render, never lost content — the authority above already moved.
+    // Falls back to sync when no rAF (node:test).
+    let paintPending = null;
+    let paintRaf = 0;
+    const flushPaint = () => {
+        paintRaf = 0;
+        const pending = paintPending;
+        paintPending = null;
+        if (!pending) return;
+        const { id, content, claim } = pending;
+        const name = id ? state.collection.items.get(id)?.name : null;
+        bridge.pub({ id, name, content, claim });
+    };
+    const publishAfterPaint = (id, content, claim) => {
+        paintPending = { id, content, claim };
+        if (typeof requestAnimationFrame !== 'function') return flushPaint();
+        if (!paintRaf) paintRaf = requestAnimationFrame(flushPaint);
     };
 
     // Composite key for merge originals — addr alone isn't unique when remote user has multiple tabs
@@ -158,9 +191,10 @@ export const createTerminal = (element, cm6, options = {}) => {
 
     // Write keep source into a standing buffer + the live editor when it is
     // that buffer. origin (optional) refreshes lineage for a landed peer fork.
-    const landContent = (id, content, origin = undefined) => {
+    const landContent = (id, content, origin = undefined, base_id = undefined) => {
         if (!state.collection?.items.has(id) || typeof content !== 'string') return;
         state.collection = buffers.updateContent(state.collection, id, content);
+        state.collection = buffers.setBaseId(state.collection, id, base_id);
         if (origin !== undefined) {
             const items = new Map(state.collection.items);
             const buf = items.get(id);
@@ -192,6 +226,8 @@ export const createTerminal = (element, cm6, options = {}) => {
         state.collection = buffers.selectCurrent(state.collection, id);
 
         if (switching) {
+            state.projecting = false;
+            state.projectedBase = null;
             editorView.swapState(shell, docFor(id));
             state.projectedId = id;
             reapplyCompartments(shell, state.compartments, cm6, opts.theme, themes);
@@ -241,18 +277,35 @@ export const createTerminal = (element, cm6, options = {}) => {
         // Bridges — exposed for shell.js subscription
         bridge,
         selectionBridge,
+        sourceBridge,
 
         // shell getter — shell.js listeners need the EditorView directly
         get shell() { return shell; },
 
         currentBufferId() { return state.collection?.currentId; },
 
-        // The work the current tab is of — target on a keep (id:kb-work).
-        // Beside currentBufferId so the mint receives both without closing over
-        // pacedHatch (id:kb-vet2-work, id:kb-7).
+        // The origin keep this tab is of — null until the first put.
         currentWorkId() {
             if (!state.collection) return null;
             return buffers.currentBuffer(state.collection)?.work_id ?? null;
+        },
+
+        currentBaseId() {
+            return state.projecting ? state.projectedBase : buffers.currentBuffer(state.collection)?.base_id ?? null;
+        },
+
+        // Only the captured buffer/base may advance after an asynchronous mint.
+        adoptBase(base_id, buffer_id, from) {
+            const held = state.collection?.items.get(buffer_id);
+            if (!held || (from !== undefined && (held.base_id ?? null) !== from)) return null;
+            state.collection = buffers.setBaseId(state.collection, buffer_id, base_id);
+            saveToStorage();
+            return buffer_id;
+        },
+        /** Peer-fork lineage on the standing tab — root + name for signature_of. */
+        currentOrigin() {
+            if (!state.collection) return null;
+            return buffers.currentBuffer(state.collection)?.origin ?? null;
         },
 
         currentBufferName() {
@@ -263,7 +316,7 @@ export const createTerminal = (element, cm6, options = {}) => {
         getBufferInfo(id) {
             const buffer = state.collection?.items.get(id);
             if (!buffer) return null;
-            return { name: buffer.name, content: buffer.content };
+            return { name: buffer.name, content: buffer.content, origin: buffer.origin ?? null };
         },
 
         setTabActive(id) { tabs?.setActive(id) },
@@ -287,9 +340,13 @@ export const createTerminal = (element, cm6, options = {}) => {
                         // unsaved state there is.
                         autosave();
                     }
-                    // 3. Bridge always — river drift and the live walk need it.
-                    const name = id ? state.collection.items.get(id)?.name : null;
-                    bridge.pub({ id, name, content });
+                    // 3. Bridge after paint — glyph first; the live walk next
+                    // frame. A dropped final frame is a dropped render, never
+                    // lost content (the authority above already moved).
+                    const claim = id
+                        ? sourceClaim(id, content, state.projecting ? null : id)
+                        : null;
+                    publishAfterPaint(id, content, claim);
                 },
                 onSelectionChange: (selection) => {
                     selectionBridge.pub(selection);
@@ -328,6 +385,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             state.collection = stored
                 ? buffers.loadCollection(stored, mints)
                 : buffers.createCollection(mints);
+            // work_id is the origin keep, once kept. A blank tab has none.
 
             // Create EditorState per buffer and populate tab UI
             for (const [id, buffer] of state.collection.items) {
@@ -340,6 +398,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             // here reads a half-built room. The mount announces birth when it
             // is whole.
             doSelectBuffer(state.collection.currentId, { announce: false });
+            saveToStorage();
 
             // Persist on tab hide / page unload — timer-based autosave alone is unreliable.
             // Fence pending (lvdx-6) tracks unfenced edits for leave guards.
@@ -465,10 +524,11 @@ export const createTerminal = (element, cm6, options = {}) => {
 
         /**
          * @param {string} content
-         * @param {{ project?: boolean }} [opts] - project: show without writing the head buffer
+         * @param {{ project?: boolean, base_id?: string | null }} [opts] - project: show without writing the head buffer
          */
-        setValue(content, { project = false } = {}) {
+        setValue(content, { project = false, base_id = null } = {}) {
             state.projecting = !!project;
+            state.projectedBase = project ? base_id : null;
             editorView.setContent(shell, content);
         },
 
@@ -484,9 +544,9 @@ export const createTerminal = (element, cm6, options = {}) => {
             if (typeof content !== "string" || !state.collection) return;
             const id = state.collection.currentId;
             if (!id) return;
-            state.projecting = false;
-            state.collection = buffers.updateContent(state.collection, id, content);
-            autosave();
+            landContent(id, content);
+            // The one thing landContent's projection guard refuses: the heal
+            // forces the surface even when another buffer is projected.
             if (shell && editorView.getContent(shell) !== content) {
                 editorView.setContent(shell, content);
             }
@@ -515,17 +575,37 @@ export const createTerminal = (element, cm6, options = {}) => {
             }
         },
 
-        createBuffer(name = '', content = '', origin = null, work_id = null) {
+        createBuffer(name = '', content = '', origin = null, work_id = null, base_id = null) {
             const bufferName = name || mints.name();
-            // Blank tab = new river (id:kb-vet2-work); a caller passing
-            // work_id rejoins one (fork-from-keep, id:kb-2a).
+            // Blank tab = new river, no work until the first keep.
+            // A caller passing work_id rejoins an origin.
             const { collection, id } = buffers.addBuffer(
-                state.collection, { name: bufferName, content, origin, work_id }, mints
+                state.collection, { name: bufferName, content, origin, work_id, base_id }, mints
             );
             state.collection = collection;
             state.docs.set(id, createDoc(content));
             tabs.addTab(id, bufferName);
             doSelectBuffer(id);
+            saveToStorage();
+            return id;
+        },
+
+        // Stash the origin keep the journal already named.
+        // The completion belongs to the buffer captured at ask time — never to
+        // whichever tab is current when the await resolves.
+        adoptWork(work_id, buffer_id = null, expectedFrom = undefined) {
+            if (!work_id || !state.collection) return null;
+            const id = buffer_id ?? state.collection.currentId;
+            if (!id) return null;
+            if (expectedFrom !== undefined) {
+                const buffer = state.collection.items.get(id);
+                if (!buffer || (buffer.work_id ?? null) !== (expectedFrom ?? null)) return null;
+            }
+            const next = buffers.setWorkId(state.collection, id, work_id);
+            if (next === state.collection) return id;
+            state.collection = next;
+            saveToStorage();
+            announceMetadata(id);
             return id;
         },
 
@@ -536,26 +616,33 @@ export const createTerminal = (element, cm6, options = {}) => {
             return null;
         },
 
-        // Fork-from-keep rejoins the river (id:kb-2a): a buffer already
-        // bearing the work IS the fork; otherwise the keep's source opens a
+        // Fork-from-keep rejoins the origin: a buffer already
         // new hand on it. Never creates without source — a fork with nothing
         // to fork is a find (id:la-fork).
         // land: a link open (id:la-fork-pull) writes the keep's source into
         // the standing buffer so HEAD/pin actually appears — a plain rejoin
         // only selects (drafts and outer forks keep their hand).
-        forkKeep({ work_id, source, name, land = false }) {
+        forkKeep({ work_id, source, name, land = false, base_id, choices }) {
             if (!work_id || !state.collection) return null;
             for (const [id, buffer] of state.collection.items) {
                 if (buffer.work_id === work_id) {
                     doSelectBuffer(id);
-                    if (land && typeof source === 'string' && buffer.content !== source) {
-                        landContent(id, source);
+                    const currentChoices = buffer.origin?.choices ?? null
+                    const nextChoices = choices !== undefined ? choices : currentChoices
+                    const choicesChanged = JSON.stringify(nextChoices ?? null) !== JSON.stringify(currentChoices ?? null)
+                    if (land && typeof source === 'string' &&
+                        (buffer.content !== source || (base_id !== undefined && buffer.base_id !== base_id) || choicesChanged)) {
+                        // Source and its offered choices land together; a deliberate land never
+                        // keeps an old capsule beside a new source. (id:laws-construction-input)
+                        const origin = { ...(buffer.origin ?? {}), source }
+                        if (choices !== undefined) origin.choices = choices
+                        landContent(id, source, origin, base_id);
                     }
                     return id;
                 }
             }
             if (typeof source !== 'string') return null;
-            return terminal.createBuffer(name || '', source, null, work_id);
+            return terminal.createBuffer(name || '', source, choices !== undefined ? { choices } : null, work_id, base_id);
         },
 
         // Current content of your fork along a lineage, if you have one.
@@ -571,11 +658,16 @@ export const createTerminal = (element, cm6, options = {}) => {
         // A plain fork or ?fork= link must not light the diff (id:la-fork).
         // Same find-without-source law as forkKeep (id:kb-source-absence): a
         // tombstone still finds; it never creates.
-        forkBuffer({ source, name, addr, buffer_id, time, offset, land = false }) {
+        forkBuffer({ source, name, root, addr, buffer_id, time, offset, land = false, base_id, choices }) {
             if (!addr || !state.collection) return null;
 
             const selectFork = (id) => doSelectBuffer(id, { offset });
             const hasSource = typeof source === 'string';
+            // Peer root rides for signature_of on the first keep (id:kc-sign).
+            const withRoot = (o) => {
+                const withChoices = choices !== undefined ? { ...o, choices } : o;
+                return typeof root === 'string' && root ? { ...withChoices, root } : withChoices;
+            };
 
             const existing = this.findFork(addr, buffer_id);
             if (existing) {
@@ -590,8 +682,15 @@ export const createTerminal = (element, cm6, options = {}) => {
                 // A link open lands the keep: show HEAD/pin even when a draft
                 // already stands on this lineage (id:la-fork-pull).
                 if (land) {
-                    const origin = { addr, buffer_id, source, time, name: name ?? existingBuffer.origin?.name };
-                    landContent(existing, source, origin);
+                    const origin = withRoot({
+                        addr,
+                        buffer_id,
+                        source,
+                        time,
+                        name: name ?? existingBuffer.origin?.name,
+                        root: existingBuffer.origin?.root,
+                    });
+                    landContent(existing, source, origin, base_id);
                     selectFork(existing);
                     return existing;
                 }
@@ -601,11 +700,17 @@ export const createTerminal = (element, cm6, options = {}) => {
                     const forkContent = existingBuffer.content;
 
                     const bufferName = name ? `${name}'s fork (merge)` : 'fork (merge)';
-                    const origin = { addr, buffer_id, source, time, name };
-                    // Peer fork is a new river for this author — mint work_id.
-                    // Same-river continues via opts.work_id (keep rejoin / same hand).
+                    const origin = withRoot({
+                        addr,
+                        buffer_id,
+                        source,
+                        time,
+                        name,
+                        root: existingBuffer.origin?.root,
+                    });
+                    // Peer fork is a new river — no work until the first keep.
                     const { collection, id } = buffers.addBuffer(
-                        state.collection, { name: bufferName, content: forkContent, origin }, mints
+                        state.collection, { name: bufferName, content: forkContent, origin, base_id: existingBuffer.base_id ?? null }, mints
                     );
                     state.collection = collection;
                     state.docs.set(id, createDoc(forkContent));
@@ -622,9 +727,9 @@ export const createTerminal = (element, cm6, options = {}) => {
             if (!hasSource) return null;
 
             const bufferName = name ? `${name}'s fork` : 'fork';
-            const origin = { addr, buffer_id, source, time, name };
+            const origin = withRoot({ addr, buffer_id, source, time, name });
             const { collection, id } = buffers.addBuffer(
-                state.collection, { name: bufferName, content: source, origin }, mints
+                state.collection, { name: bufferName, content: source, origin, base_id }, mints
             );
             state.collection = collection;
             state.docs.set(id, createDoc(source));
@@ -725,7 +830,7 @@ export const createTerminal = (element, cm6, options = {}) => {
             // focus movement. Publish so render/ambient subscribers track the name.
             state.collection = buffers.renameBuffer(state.collection, id, newName);
             saveToStorage();
-            if (id === state.collection.currentId) triggerBridge();
+            if (id === state.collection.currentId) announceMetadata(id);
         },
 
         triggerBridge,

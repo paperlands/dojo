@@ -1,0 +1,31 @@
+# Protractor — drag either arm tip. Drag radially to change the arm's length,
+# drag around the vertex to change the angle. Lengths and angle read live.
+fn round(no) [no - (no // 1)]
+
+let V = origin
+
+fw 3
+let A
+home
+rt 90
+fw 4
+let B
+home
+
+let lenA = A.distance
+let lenB = B.distance
+let spread = A.bearing - B.bearing
+
+as arms do
+  loop 1000 do
+    erase
+    home
+    label round(spread) 0.2
+    faceto A.x A.y
+    fw lenA
+    home
+    faceto B.x B.y
+    fw lenB
+    wait 1/12
+  end
+end

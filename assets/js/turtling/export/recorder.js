@@ -9,6 +9,7 @@ import {
     QUALITY_MEDIUM,
     QUALITY_LOW,
 } from '../../utils/mediabunny.min.mjs';
+import { composeLayers, inkOf } from './picture.js';
 
 
 export const RecorderQuality = {
@@ -423,6 +424,7 @@ export class Recorder {
                     this._config
                 );
 
+                if (this._destroyed) return;   // death during negotiation retires the start
                 if (!negotiation.supported) {
                     throw new Error(
                         'No supported encoder configuration found. ' +
@@ -455,6 +457,7 @@ export class Recorder {
 
             // Initialize output with negotiated config
             await this._initializeOutput();
+            if (this._destroyed) return;   // the continuation allocates nothing on a dead recorder
             
             // Reset timing
             this._startTime = performance.now();
@@ -629,11 +632,17 @@ export class Recorder {
             this._snapshotCanvas.width = width;
             this._snapshotCanvas.height = height;
             this._snapshotContext.putImageData(imageData, 0, 0);
+            // The picture is every surface, not just the buffer: the caller hands
+            // over the layers that sit above the canvas, and they land here — one
+            // GPU blit each — before anything is encoded.
+            const layers = options.layers ?? [];
+            composeLayers(this._snapshotContext, layers, width, height);
             const fullDataURL = this._snapshotCanvas.toDataURL(`image/${config.format}`, config.quality);
             
             let trimmedDataURL = null;
             if (config.trim) {
-                trimmedDataURL = this._createTrimmedSnapshot(imageData, config);
+                trimmedDataURL = this._createTrimmedSnapshot(
+                    inkOf(this._snapshotContext, layers, width, height, imageData), config);
             }
             
             return {

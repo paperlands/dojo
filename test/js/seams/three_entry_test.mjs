@@ -33,10 +33,12 @@ const PROMISED = [
     "Mesh",
     "MeshBasicMaterial",
     "PerspectiveCamera",
+    "Raycaster",
     "Plane",
     "Quaternion",
     "Scene",
     "TOUCH",
+    "Vector2",
     "Vector3",
     "WebGLRenderer",
 ]

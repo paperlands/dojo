@@ -1,4 +1,8 @@
 import { ASTNode } from "./ast.js"
+import { parseProperty, parseSupport, propertyOf } from "./laws/authored.js"
+import { getOperator } from "./mafs/operators.js"
+import { Lexer } from "./mafs/lexer.js"
+import { Parser as ExprParser } from "./mafs/parse.js"
 
 
 //manage state
@@ -45,9 +49,12 @@ export const CELL_OPEN = /^[ \t]*```/;              // an info word may ride the
 export const CELL_CLOSE = /^[ \t]*```[ \t]*$/;      // a bare ``` is only ever a closer
 export const CELL_PROBE = /^[ \t]*```/m;            // cheap multi-line gate (page.js)
 
-export const isMeadowFence = (s) => MEADOW_FENCE.test(s ?? '');
-export const isCellOpen = (s) => CELL_OPEN.test(s ?? '');
-export const isCellClose = (s) => CELL_CLOSE.test(s ?? '');
+// A substring include is a cheap SUPERSET of each fence match (a fence line must
+// contain its mark), and it lets a RegExp test be skipped for every ordinary code
+// line. (profile: these ran a regex per line, twice per meadow scan.)
+export const isMeadowFence = (s) => s != null && s.includes(MEADOW_MARK) && MEADOW_FENCE.test(s);
+export const isCellOpen = (s) => s != null && s.includes(CELL_MARK) && CELL_OPEN.test(s);
+export const isCellClose = (s) => s != null && s.includes(CELL_MARK) && CELL_CLOSE.test(s);
 
 // The one place code and comment part. Everything after `#` rides verbatim —
 // the author's whitespace is theirs. A bare `#` still yields a comment, not undefined.
@@ -256,7 +263,11 @@ export function parseProgram(program) {
 // Same key ⇒ same meaning. Stays COARSE on purpose: drift costs a missed reuse,
 // never a wrong tree, because the fresh parse is always the answer.
 const OVERLAY = new Set(['span', 'comment', 'endComment', 'lit']);
-const contentKey = (node) => JSON.stringify(node, (k, v) => (OVERLAY.has(k) ? undefined : v));
+// Hoisted so the replacer has a STABLE identity — a fresh closure per call hands the
+// JSON.stringify call site a new callee every time. (profile: contentKey is the single
+// hottest frame on the keystroke path.) Measured ~6%; free, never worse.
+const stripOverlay = (k, v) => (OVERLAY.has(k) ? undefined : v);
+const contentKey = (node) => JSON.stringify(node, stripOverlay);
 
 // Span mutates the EXISTING object, so standing captures (frame.error) stay live.
 // Trivia is rebuilt in a fresh parse's key ORDER so adopted meta serializes alike.
@@ -319,7 +330,9 @@ function tokenize(program) {
     // `end`. The comment rides the LAST record; split parts share a birth line.
     const pushCode = (raw, out, line) => {
         const [code, comment] = splitComment(raw);
-        const parts = code.replace(/\bend\b(?!$)/g, 'end\n')
+        // The mid-line `end` split is a regex replace; skip it when the line has no
+        // `end` at all (a superset guard — most lines never do). (profile: pushCode)
+        const parts = (code.includes('end') ? code.replace(/\bend\b(?!$)/g, 'end\n') : code)
             .split('\n').map((p) => p.trim()).filter(Boolean);
         const recs = (parts.length ? parts : ['']).map((text) => ({ text, line }));
         if (comment !== undefined) recs[recs.length - 1].comment = comment;
@@ -405,55 +418,35 @@ function tokenizeLine(code) {
     const len = code.length;
     let start = 0;
     let i = 0;
-    let inGroup = null;  // Track quote/bracket context
-    let depth = 0;       // Track bracket nesting
-    
+    // A stack of pending closers: brackets nest, and a quote closes only with its
+    // own kind — a `)` inside a string is not a structural close. One quote or group
+    // is one chunk, so its interior whitespace never separates arguments.
+    // (id:gw-grammar)
+    const stack = [];
     while (i < len) {
         const ch = code[i];
-        
-        // Not in a group - check for delimiters and group starts
-        if (!inGroup) {
-            // Whitespace - token boundary
+        if (stack.length === 0) {
             if (ch === ' ' || ch === '\t') {
                 if (i > start) tokens.push(code.slice(start, i));
                 start = i + 1;
                 i++;
                 continue;
             }
-            
-            // Check if starting a grouped context
             const closer = CLOSERS[ch];
-            if (closer) {
-                inGroup = closer;
-                if (OPENS_BRACKET[ch]) depth = 1;
-            }
-            
+            if (closer) stack.push(closer);
             i++;
-        }
-        // In a group - look for closing delimiter
-        else {
-            // Bracket - track nesting
-            if (OPENS_BRACKET[inGroup === ']' ? '[' : inGroup === ')' ? '(' : null]) {
-                const opener = inGroup === ']' ? '[' : '(';
-                if (ch === opener) {
-                    depth++;
-                } else if (ch === inGroup) {
-                    depth--;
-                    if (depth === 0) inGroup = null;
-                }
+        } else {
+            const closer = stack[stack.length - 1];
+            if (ch === closer) {
+                stack.pop();
+            } else if (CLOSERS[ch] && closer !== '"' && closer !== "'") {
+                // Inside brackets a nested group or quote opens; inside a quote nothing nests.
+                stack.push(CLOSERS[ch]);
             }
-            // Quote - simple close check
-            else if (ch === inGroup) {
-                inGroup = null;
-            }
-            
             i++;
         }
     }
-    
-    // Flush final token
     if (i > start) tokens.push(code.slice(start, i));
-
     return tokens;
 }
 
@@ -461,116 +454,93 @@ function tokenizeLine(code) {
 // Argument Parser - Single Pass 
 // ============================================================================
 
-function parseArguments(tokens) {
-    const len = tokens.length;
-    if (len === 0) return [];
-    
-    const args = [];
-    let bufStart = -1;
-    let closer = null;
-    let depth = 0;
-    
-    for (let i = 0; i < len; i++) {
-        const token = tokens[i];
-        const firstCh = token[0];
-        
-        // Not in grouped context
-        if (bufStart === -1) {
-            const match = CLOSERS[firstCh];
-            
-            if (!match) {
-                // Regular arg - fast path
-                args.push(new ASTNode('Argument', token));
-                continue;
-            }
-            
-            closer = match;
-            const lastCh = token[token.length - 1];
-            
-            // Bracket type - needs depth tracking
-            if (OPENS_BRACKET[firstCh]) {
-                depth = 1;
-                const tLen = token.length;
-                
-                // Count depth in single pass
-                for (let j = 1; j < tLen; j++) {
-                    const ch = token[j];
-                    if (ch === firstCh) depth++;
-                    else if (ch === closer) depth--;
-                }
-                
-                if (depth === 0) {
-                    // Complete in single token
-                    args.push(new ASTNode('Argument', token));
-                    closer = null;
-                } else {
-                    bufStart = i;
-                }
-            } else {
-                // Quote type - check if quote closes within the token
-                // "mice1".x has closing " at index 6 even though lastCh is 'x'
-                const closeIdx = token.indexOf(closer, 1);
-                if (closeIdx !== -1) {
-                    args.push(new ASTNode('Argument', token));
-                    closer = null;
-                } else {
-                    bufStart = i;
-                }
-            }
-        } 
-        // In grouped context - accumulate
-        else {
-            // Bracket depth tracking
-            if (OPENS_BRACKET[closer === ']' ? '[' : '(']) {
-                const opener = closer === ']' ? '[' : '(';
-                const tLen = token.length;
-                
-                for (let j = 0; j < tLen; j++) {
-                    const ch = token[j];
-                    if (ch === opener) depth++;
-                    else if (ch === closer) depth--;
-                }
-                
-                if (depth === 0) {
-                    // Build from buffer
-                    let joined = tokens[bufStart];
-                    for (let k = bufStart + 1; k <= i; k++) {
-                        joined += ' ' + tokens[k];
-                    }
-                    args.push(new ASTNode('Argument', joined));
-                    bufStart = -1;
-                    closer = null;
-                }
-            } else {
-                // Quote - check last char
-                if (token[token.length - 1] === closer) {
-                    let joined = tokens[bufStart];
-                    for (let k = bufStart + 1; k <= i; k++) {
-                        joined += ' ' + tokens[k];
-                    }
-                    args.push(new ASTNode('Argument', joined));
-                    bufStart = -1;
-                    closer = null;
-                }
-            }
-        }
+// A chunk is classified by the ROLE of its boundary token, read from the shared
+// lexer — not by its spelling. The lexer knows which operators can stand
+// prefix; the boundary just asks it. (id:gw-grammar)
+const chunkLexer = new Lexer()
+function chunkTokens(chunk) {
+    try { return chunkLexer.tokenize(chunk) } catch { return null }  // unsupported ink: an opaque operand
+}
+// Bridges the gap BEFORE the chunk when its first token is an operator in INFIX
+// position. A `+`/`-` followed by an operand is a prefix SIGN, not a bridge:
+// `goto 1 -2`, `1 -(2)` and `1 -pi` are each two coordinates.
+function startsWithOperator(chunk) {
+    const toks = chunkTokens(chunk)
+    if (!toks || toks.length === 0 || toks[0].type !== 'OPERATOR') return false
+    if (toks.length > 1 && getOperator(toks[0].value, 'prefix')) return false
+    return true
+}
+// Bridges the gap AFTER the chunk when its last token is an operator that still
+// wants a right operand (`2+`).
+function endsWithOperator(chunk) {
+    const toks = chunkTokens(chunk)
+    if (!toks || toks.length === 0) return false
+    return toks[toks.length - 1].type === 'OPERATOR'
+}
+
+// A gap bridges only where an operator binds across it. The SCOPE of the boundary
+// rule is a command line: outside an explicit expression region, whitespace separates
+// command arguments; inside one (a group `(...)`/`[...]`, a quote, or a whole
+// expression), the expression grammar owns whitespace.
+//   · `fw sin (20)`  → `sin` and `(20)` are two arguments (one is surplus, refused)
+//   · `fw (sin (20))` → one region, so the expression grammar reads the call
+//   · a bare `sin (20)` → a whole expression, so also a call
+// Application is glued at the boundary; it is not "not a call anywhere". (id:gw-grammar)
+function bridgesAcross(left, right) {
+    return endsWithOperator(left) || startsWithOperator(right)
+}
+
+// ONE boundary rule for every route: whitespace separates arguments, EXCEPT where
+// an operator (or application) binds across the gap. The argument's text is the
+// ORIGINAL source span, so internal spacing — and every diagnostic offset — is
+// preserved. (id:gw-grammar)
+function parseArguments(chunks, source) {
+    const args = []
+    let cursor = 0
+    const locate = (text) => {
+        if (source == null) return -1
+        const at = source.indexOf(text, cursor)
+        if (at >= 0) cursor = at + text.length
+        return at
     }
-    
-    // Unclosed group - flush buffer
-    if (bufStart !== -1) {
-        let joined = tokens[bufStart];
-        for (let k = bufStart + 1; k < len; k++) {
-            joined += ' ' + tokens[k];
+    let i = 0
+    while (i < chunks.length) {
+        const runStart = i
+        const startAt = locate(chunks[i])
+        let endAt = startAt < 0 ? -1 : startAt + chunks[i].length
+        while (i + 1 < chunks.length && bridgesAcross(chunks[i], chunks[i + 1])) {
+            i++
+            const at = locate(chunks[i])
+            if (at >= 0) endAt = at + chunks[i].length
         }
-        args.push(new ASTNode('Argument', joined));
+        const value = startAt >= 0 ? source.slice(startAt, endAt) : chunks.slice(runStart, i + 1).join(' ')
+        const node = new ASTNode('Argument', value)
+        args.push(node)
+        i++
     }
-    
-    return args;
+    return args
+}
+
+// The shared command-argument reader, exposed for a caller that must read an argument
+// list from source it holds — a held figure's invocation. Same contract as a command
+// line, so holding a construction cannot re-read its arguments. It is NOT a second
+// grammar: the math parser still owns binding inside an expression. (id:gw-grammar)
+export function readArguments(source) {
+    return parseArguments(tokenizeLine(source), source).map((node) => node.value)
 }
 
 // A block's body, up to its `end`. On EOF without one the caller wraps the
 // block in an error node — children ride INSIDE it, never reparented to run (D020).
-function parseBlock(state) {
+function parseBlock(state, kind = null) {
+    // Which body are we inside? A declaration is supported in a source body and
+    // in an `as` body, refused in a loop, conditional or function body.
+    // (id:laws-decl-batch)
+    const prevKind = state.blockKind ?? null
+    state.blockKind = kind
+    try { return parseBlockLines(state) } finally { state.blockKind = prevKind }
+}
+
+function parseBlockLines(state) {
     const block = [];
 
     while (state.hasMore()) {
@@ -606,13 +576,135 @@ function parseBlock(state) {
 
 // Total (id:cmp-resilient): a malformed statement becomes an error node in
 // place, and the healthy statements around it still parse and run (D020).
+
+
+// One shared expression reader. It answers ONE question — does this ink parse? — so a
+// malformed right-hand side is a located error in place and the healthy statements
+// around it still run (D020), never a runtime surprise. It does NOT read the
+// expression's KIND: that is the value's business, at the walk.
+// (id:notation-coordinate-vector, id:cmp-resilient)
+const syntaxReader = new ExprParser()
+const parses = (expr) => {
+    try { return syntaxReader.parse(expr, { skipValidation: true }) !== null } catch { return false }
+}
+// A bracketed form is a QUANTITY literal — `(…)` a point, `[…]` a vector. That is a
+// grammar fact, so the parser validates it here. Everything else is the executor's
+// reader (quotes, figures, dotted names), and is not this one's to judge.
+const listed = (expr) => expr[0] === '[' || expr[0] === '('
+
+// The assignment delimiter is outside every group/quote. (id:laws-free-relations-f1)
+function declarationEquals(source) {
+    const stack = []
+    for (let i = 0; i < source.length; i++) {
+        const ch = source[i], closer = stack.at(-1)
+        if (ch === '=' && stack.length === 0) return i
+        if (ch === closer) stack.pop()
+        else if (CLOSERS[ch] && closer !== '"' && closer !== "'") stack.push(CLOSERS[ch])
+    }
+    return -1
+}
+
+// A binder is a plain name OR one quoted word — the spelling `let "part[count]"`
+// already uses. The word's VALUE is read at its reach by the one name seam; the
+// parser only says whether a name was written. (id:laws-names)
+const QUOTED_WORD = /^(?:'[^']*'|"[^"]*")$/
+const names = (lhs) => /^[A-Za-z_][\w-]*$/.test(lhs) || QUOTED_WORD.test(lhs)
+
 function parseStatement(tokens, state, rec) {
     const kw = tokens[0];
     const len = tokens.length;
 
+    // A name identifies a slot in its declaring scope; repetition revisits it.
+    // Distinct names/scopes construct distinct things. (id:laws-generative-experiments)
+    if (kw === 'let') {
+        if (len < 2) return errorNode(rec, "a name after 'let'", 'end of statement')
+        // `let A` — existence. `let A.distance = 5` (or glued) — a dotted relation.
+        // The declaring frame is the observer; the address matches the function
+        // spelling. (id:laws-ordered-replacement)
+        const source = tokens.slice(1).join(' ')
+        const eqAt = declarationEquals(source)
+        const lhs = (eqAt < 0 ? source : source.slice(0, eqAt)).trim()
+        let expr = eqAt < 0 ? null : source.slice(eqAt + 1).trim()
+        if (/^distance\s*\(/.test(lhs)) {
+            let head
+            try { head = syntaxReader.parse(lhs, { skipValidation: true }) } catch {}
+            // A distance subject is a live name, `origin`, a coordinate literal `(x,y)`,
+            // or a vector literal `[x,y]`. A coordinate is an absolute point in the
+            // declaring placement; a vector is a displacement from the declaring frame's
+            // live head. (id:laws-distance-literal-address)
+            const coordOf = (c) => {
+                // Optionally signed — a unary operator on a literal only, never an
+                // arbitrary expression. Negative zero normalizes to zero.
+                if (c.type === 'literal' && Number.isFinite(c.value)) return c.value
+                if (c.type === 'unary_operator' && (c.value === '-' || c.value === '+') &&
+                    c.children.length === 1 && c.children[0].type === 'literal' &&
+                    Number.isFinite(c.children[0].value)) {
+                    const v = c.value === '-' ? -c.children[0].value : c.children[0].value
+                    return v === 0 ? 0 : v
+                }
+                return null
+            }
+            const tupleOf = (n) => {
+                const coords = n.children.map(coordOf)
+                if (coords.some((c) => c === null)) return null
+                if (coords.length === 2) return [coords[0], coords[1], 0]
+                return coords.length === 3 ? coords : null
+            }
+            const subjectOf = (n) => {
+                if (n.type === 'string') return JSON.stringify(n.value)
+                if (n.type === 'operand') {
+                    if (n.value === 'origin') return { framed: [0, 0, 0] }
+                    return /^[A-Za-z_][\w-]*$/.test(n.value) ? n.value : null
+                }
+                if (n.type === 'point') { const t = tupleOf(n); return t ? { framed: t } : null }
+                if (n.type === 'vector') { const t = tupleOf(n); return t ? { relative: t } : null }
+                return null
+            }
+            const subjects = head?.type === 'function' && head.value === 'distance' && head.children.length === 2
+                ? head.children.map(subjectOf) : null
+            if (!subjects || subjects.some((s) => s == null)) {
+                return errorNode(rec, 'distance(name, name) or a framed point', lhs)
+            }
+            if (!expr || !parses(expr)) return errorNode(rec, 'a radius expression after =', expr ?? 'end of statement')
+            return stamp(new ASTNode('Law', 'distance', [], { subjects, expr }), rec)
+        }
+        if (eqAt < 0 && tokens.length > 2) return errorNode(rec, "'=' after a name", tokens[2])
+        if (expr === null) return stamp(new ASTNode('Existence', lhs), rec)
+        if (!expr) return errorNode(rec, 'a value after =', 'end of statement')
+        // `origin` is this frame's zero in a declaration RHS — not a tower name, and
+        // not a value. The declaring frame supplies the world location.
+        // (id:notation-coordinate-vector)
+        if (expr === 'origin') expr = '(0, 0, 0)'
+        const dot = lhs.indexOf('.')
+        if (dot > 0) {
+            const target = lhs.slice(0, dot)
+            const property = lhs.slice(dot + 1)
+            const parsed = parseProperty(property)
+            if (parsed) {
+                return stamp(new ASTNode('Law', parsed.feature, [], { target, expr, ...parsed }), rec)
+            }
+            return errorNode(rec, parseSupport(), lhs)
+        }
+        // ONE declaration, ONE reading: `let NAME = <expr>`. The parser does not read
+        // the expression to learn its KIND — what the VALUE is decides what the name
+        // is: a point is a place, a vector an object and a value, anything else a
+        // derived value. The walk that reads it knows. (id:notation-coordinate-vector)
+        //
+        // Other function-looking binders are not declarations; a quoted word IS a
+        // name, read at its reach by the same seam. (id:laws-names)
+        if (!names(lhs)) {
+            return errorNode(rec, "a name after 'let'", lhs)
+        }
+        if (listed(expr) && !parses(expr)) {
+            return errorNode(rec, 'a quantity — (…) a coordinate or […] a vector', expr)
+        }
+        return stamp(new ASTNode('Declaration', lhs, [], { expr }), rec)
+    }
+
+
     // Most common case first: commands
     if (!BLOCK_KW[kw]) {
-        return stamp(new ASTNode('Call', kw, parseArguments(tokens.slice(1))), rec);
+        return stamp(new ASTNode('Call', kw, parseArguments(tokens.slice(1), rec.text)), rec);
     }
 
     // Block constructs - validate the head BEFORE opening a block: a broken
@@ -624,7 +716,7 @@ function parseStatement(tokens, state, rec) {
 
     // The head is sound — walk the body, then close or contain.
     const blockNode = (make) => {
-        const { block, terminated, endComment } = parseBlock(state);
+        const { block, terminated, endComment } = parseBlock(state, kw);
         // The last record's FAR edge: a folded meadow spans several birth
         // lines; containment reaches its endLine, not its opening line.
         const endLine = state.last?.endLine ?? state.last?.line ?? rec.line;
@@ -689,6 +781,13 @@ function parseStatement(tokens, state, rec) {
 
 
 // print ast fn
+
+// The printer's inverse of the distance-subject reader: a live name, a framed point
+// `(x,y,z)`, or a relative vector `[x,y,z]`. (id:laws-distance-literal-address)
+const spellSubject = (s) => typeof s === 'string' ? s
+    : Array.isArray(s?.framed) ? `(${s.framed.join(', ')})`
+        : Array.isArray(s?.relative) ? `[${s.relative.join(', ')}]`
+            : String(s)
 export function printAST(ast) {
     const out = [];
     
@@ -783,6 +882,27 @@ export function printAST(ast) {
                 out.push(`${indent}as ${node.value}${mod} do${margin}`)
                 node.children.forEach(c => visit(c, depth + 1))
                 out.push(indent + END + endMargin)
+                break
+            }
+
+            case 'Existence':
+                // A bare `let NAME` — a place, seeded at its reach. (id:laws-ordered-birth)
+                out.push(`${indent}let ${node.value}${margin}`)
+                break
+
+            case 'Declaration':
+                out.push(`${indent}let ${node.value}=${node.meta.expr}${margin}`)
+                break
+
+            case 'Law': {
+                // `feature(subjects) = e` or `target.property = e`. The authored
+                // spelling comes from the row, never a local feature list. (D058)
+                const subjects = node.meta.subjects
+                if (subjects) {
+                    out.push(`${indent}let ${node.value}(${subjects.map(spellSubject).join(', ')})=${node.meta.expr}${margin}`)
+                } else {
+                    out.push(`${indent}let ${node.meta.target}.${propertyOf(node.value, node.meta.axis)}=${node.meta.expr}${margin}`)
+                }
                 break
             }
 

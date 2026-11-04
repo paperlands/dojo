@@ -10,6 +10,7 @@ A place where the curious might forge their own path or find one another.
 
 Want to know more about how we are building it? Head over to [paperland.sg](https://paperland.sg).
 
+
 ## What you'll need
 
 We built this on Elixir and OTP.
@@ -35,6 +36,10 @@ iex --cookie enterthedojo --dbg pry -S mix phx.server
 ```
 
 That's it. Visit [localhost:4000](http://localhost:4000) and you're in.
+
+## Embedding PaperLang
+
+For a standalone canvas to develop or run client experiences without our server features, see [the host guide](docs/host.org): build, lifecycle, native controls, and reactive readings.
 
 ## Running a cluster
 

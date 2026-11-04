@@ -1,10 +1,11 @@
 // Shared is a fold, not a field (id:kb-8). Put then share is the order.
 import { describe, test, beforeEach, afterEach } from "node:test"
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
-import { shared, accept } from "../../../assets/js/keep/shared.js"
+import { sharedIds, accept } from "../../../assets/js/keep/shared.js"
 import { createEngine } from "../../../assets/js/keep/journal.store.js"
 import { write, name, read } from "../../../assets/js/keep/entry.js"
 import { createMemoryIDB } from "./idb_memory.mjs"
@@ -12,6 +13,15 @@ import { createMemoryIDB } from "./idb_memory.mjs"
 const fill = (b) => (arr) => {
     arr.fill(b)
     return arr
+}
+
+/** bytes fold via sharedIds — list order, answered names only. */
+function shared(listed, held) {
+    const ids = sharedIds(
+        listed.map(name),
+        new Set(held.map(name)),
+    )
+    return ids.map((id) => listed.find((b) => name(b) === id))
 }
 
 function snap(root, body, ts) {
@@ -326,17 +336,18 @@ describe("shared: the surface's four reads, and the laws they carry (id:kb-8)", 
         })
         try {
             const root = "i".repeat(64)
-            const img = (n) => new Uint8Array(n)
+            const img = (n) => new Blob([new Uint8Array(n)])
+            const digest = createHash("sha256").update(Buffer.alloc(60)).digest("hex")
             const a = snap(root, { tag: "a" }, { t: 100, n: 0 })
             const b = snap(root, { tag: "b" }, { t: 200, n: 0 })
             const idA = await j.put(a, { image: img(60) })
             const idB = await j.put(b, { image: img(60) })
-            await j.share(idA, { at: 1, node: "n" })
-            await j.share(idB, { at: 2, node: "n" })
+            await j.share(idA, { at: 1, node: "n", retained: { image: digest } })
+            await j.share(idB, { at: 2, node: "n", retained: { image: digest } })
             // A third shared image pushes past the cap — oldest shared yields.
             const cBytes = snap(root, { tag: "c" }, { t: 300, n: 0 })
             const idC = await j.put(cBytes, { image: img(60) })
-            await j.share(idC, { at: 3, node: "n" })
+            await j.share(idC, { at: 3, node: "n", retained: { image: digest } })
 
             for (const [id, bytes] of [
                 [idA, a],
@@ -396,7 +407,7 @@ describe("shared: structural greps (id:kb-8 NOT)", () => {
         assert.equal(/\bindexedDB\b/.test(src), false)
         assert.equal(/from\s+["']\.\/journal\.store\.js["']/.test(src), false)
         // The fold and the receive order — nothing else.
-        assert.match(src, /export function shared\b/)
+        assert.match(src, /export function sharedIds\b/)
         assert.match(src, /export async function accept\b/)
         // No stored count, no tally, no mode machine.
         for (const word of ["syncing", "pending", "online", "badge", "count"]) {

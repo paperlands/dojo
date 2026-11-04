@@ -59,3 +59,6 @@ config :phoenix_live_view,
   enable_expensive_runtime_checks: true
 
 config :dojo, :cluster_adapter, Dojo.Cluster.MDNS.DistAdapter
+
+# Tests should not print the interactive boot display or open a browser.
+config :dojo, :boot_display, false

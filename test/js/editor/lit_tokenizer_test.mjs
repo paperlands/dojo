@@ -60,6 +60,14 @@ function lex(src) {
 
 // All styles seen for a given text fragment.
 const stylesOf = (toks, text) => toks.filter(t => t.text === text).map(t => t.style)
+describe("let is a keyword", () => {
+    test("a law inks like a command", () => {
+        const toks = lex("let A.distance = 5")
+        assert.deepEqual(stylesOf(toks, "let"), ["keyword"])
+    })
+})
+
+
 
 describe("the margin door", () => {
     test("the `#` marker dims; the prose is inked; a portal glows", () => {

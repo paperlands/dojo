@@ -11,15 +11,25 @@
 
 export function attach({ get, watch }, bind) {
     let release = null
+    let binding = 0   // the winning claim's incarnation
     let dead = false
 
     const drop = () => { const r = release; release = null; r?.() }
 
     const rebind = () => {
         if (dead) return
+        // Claim the era BEFORE touching anything; recheck ownership after the
+        // release, before acquisition, and after it — a bind, a release or a
+        // detach may reenter us, and the newest era alone may hold a claim.
+        const mine = ++binding
         drop()
+        if (dead || mine !== binding) return
         const occupant = get()
-        if (occupant) release = bind(occupant) ?? null
+        if (!occupant) return
+        if (dead || mine !== binding) return
+        const claimed = bind(occupant) ?? null
+        if (dead || mine !== binding) { claimed?.(); return }
+        release = claimed
     }
 
     const unwatch = watch(rebind)
@@ -28,6 +38,7 @@ export function attach({ get, watch }, bind) {
     return () => {
         if (dead) return
         dead = true
+        binding += 1     // detachment invalidates in-progress claims
         unwatch()
         drop()
     }

@@ -54,16 +54,15 @@ defmodule Dojo.Application do
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Dojo.Supervisor]
 
-    # register the kinos
-    # Kino.SmartCell.register(DojoKino.Incognito)
-
     # 2. Start the main supervision tree
     # This blocks until all children are started synchronously
     case Supervisor.start_link(children, opts) do
       {:ok, pid} ->
         # 3. Execute Post-Start Hook after the endpoint is bound and ready.
         # Browser open happens here so we don't race against port binding.
-        Task.Supervisor.start_child(Dojo.TaskSupervisor, &post_start_hook/0)
+        if Application.get_env(:dojo, :boot_display, true) do
+          Task.Supervisor.start_child(Dojo.TaskSupervisor, &post_start_hook/0)
+        end
 
         {:ok, pid}
 
@@ -102,10 +101,29 @@ defmodule Dojo.Application do
     if Application.get_env(:dojo, :discovery) == :local do
       adapter = Application.get_env(:dojo, :cluster_adapter)
 
+      # Discovery is peripheral: losing the LAN must degrade clustering, never
+      # take the endpoint with it. Its own restart budget keeps a flapping
+      # network child from spending Dojo.Supervisor's 3-in-5s and killing the app.
       [
-        {Dojo.Cluster.MDNS, adapter: adapter, poll_interval: 5_000},
-        Dojo.Cluster.NetworkMonitor,
-        Dojo.Hotspot.Server
+        %{
+          id: Dojo.Cluster.Supervisor,
+          type: :supervisor,
+          start:
+            {Supervisor, :start_link,
+             [
+               [
+                 {Dojo.Cluster.MDNS, adapter: adapter, poll_interval: 5_000},
+                 Dojo.Cluster.NetworkMonitor,
+                 Dojo.Hotspot.Server
+               ],
+               [
+                 strategy: :one_for_one,
+                 max_restarts: 10,
+                 max_seconds: 60,
+                 name: Dojo.Cluster.Supervisor
+               ]
+             ]}
+        }
       ]
     else
       []

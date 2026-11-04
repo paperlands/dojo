@@ -27,16 +27,16 @@ function walk(events, state = openWatch()) {
 
 describe("open — the latch re-arms and nothing is owed", () => {
     test("a fresh watch follows, holds no line, owes no caret", () => {
-        assert.deepEqual(openWatch(), { following: true, peerAt: null, ownCaret: null })
+        assert.deepEqual(openWatch(), { user_attention: "peer", peerAt: null, ownCaret: null })
     })
 
     test("open drops everything the last friend left behind", () => {
         const { state } = walk([peer(7, 100), hand(7), { kind: "open" }])
-        assert.deepEqual(state, { following: true, peerAt: null, ownCaret: null })
+        assert.deepEqual(state, { user_attention: "peer", peerAt: null, ownCaret: null })
     })
 
     test("open performs nothing — the body has not arrived yet", () => {
-        const ans = step({ following: false, peerAt: 9, ownCaret: 3 }, { kind: "open" })
+        const ans = step({ user_attention: "reader", peerAt: 9, ownCaret: 3 }, { kind: "open" })
         assert.deepEqual(Object.keys(ans), ["state"])
     })
 })
@@ -122,21 +122,21 @@ describe("hand — the light changes owner once", () => {
         const { last, state } = walk([peer(12, 300), hand(31)])
         assert.equal(last.halt, true)
         assert.equal(last.claim, 31)
-        assert.equal(state.following, false)
+        assert.equal(state.user_attention, "reader")
         assert.equal(state.peerAt, 12, "the peer is still where they are")
     })
 
     test("a hand that already holds the light asks for nothing", () => {
         const { last, state } = walk([hand(3), hand(8)])
         assert.deepEqual(last, { state }, "no second halt, no second claim")
-        assert.equal(state.following, false)
+        assert.equal(state.user_attention, "reader")
     })
 })
 
 describe("resume — the firefly hands the light back", () => {
     test("a full arrival at their line, latch re-armed", () => {
         const { last, state } = walk([peer(4, 100), hand(4, true), { kind: "resume", line: 22, head: 555 }])
-        assert.equal(state.following, true)
+        assert.equal(state.user_attention, "peer")
         assert.equal(state.peerAt, 22)
         assert.equal(state.ownCaret, 555, "the hand's seat, kept for the draft door")
         assert.equal(last.mark, 22)
@@ -146,7 +146,7 @@ describe("resume — the firefly hands the light back", () => {
 
     test("resuming onto no line re-arms the latch and unmarks", () => {
         const { last, state } = walk([{ kind: "resume", line: null, head: 5 }])
-        assert.equal(state.following, true)
+        assert.equal(state.user_attention, "peer")
         assert.equal(last.mark, null)
         assert.ok(!("claim" in last))
     })
@@ -175,7 +175,7 @@ describe("draftView — a diff has no line to stand on", () => {
         assert.equal(last.mark, null)
         assert.equal(last.chase, null)
         assert.equal(state.peerAt, null)
-        assert.equal(state.following, true, "the latch is untouched")
+        assert.equal(state.user_attention, "peer", "the latch is untouched")
     })
 })
 
@@ -194,7 +194,7 @@ describe("the properties the latch exists to hold", () => {
             const ans = step(state, event)
             state = ans.state
             if (!("claim" in ans)) continue
-            if (state.following) {
+            if (state.user_attention === "peer") {
                 assert.equal(ans.claim, state.peerAt,
                     `${event.kind}: while following, the claim IS their line`)
             } else {

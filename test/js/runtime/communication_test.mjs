@@ -217,14 +217,15 @@ describe("Phase 2: resolveBinding — sibling observation", () => {
         assert.equal(resolveBinding(follower, 'leader.done'), 1)
     })
 
-    test("leader.heading resolves rotation as degrees", () => {
+    test("leader.heading resolves the plane facing as a compass bearing", () => {
         const root = createFrame('root', (function*(){})(), { channelCapacity: 64 })
         const leader = createFrame('leader', (function*(){})(), { parent: root })
-        // 90 degree Y rotation: w=cos(45°), y=sin(45°)
-        const a = Math.PI / 4
+        // A quarter turn to the RIGHT: about +z, w=cos(-45°), z=sin(-45°). Identity
+        // faces +x, which the paper's compass calls east (90); right faces south (180).
+        const a = -Math.PI / 4
         leader.transform.swap(() => ({
             position: [0, 0, 0],
-            rotation: { w: Math.cos(a), x: 0, y: Math.sin(a), z: 0 }
+            rotation: { w: Math.cos(a), x: 0, y: 0, z: Math.sin(a) }
         }))
         root.children.set('leader', leader)
 
@@ -232,11 +233,24 @@ describe("Phase 2: resolveBinding — sibling observation", () => {
         root.children.set('follower', follower)
 
         const heading = resolveBinding(follower, 'leader.heading')
-        assert.ok(Math.abs(heading - 90) < 0.001, `expected ~90, got ${heading}`)
+        assert.ok(Math.abs(heading - 180) < 0.001, `expected ~180, got ${heading}`)
     })
 
-    test("undefined sibling throws", () => {
+    test("undefined sibling suspends while its parent can still spawn it", () => {
         const root = createFrame('root', (function*(){})(), { channelCapacity: 64 })
+        const child = createFrame('child', (function*(){})(), { parent: root })
+        root.children.set('child', child)
+
+        assert.throws(
+            () => resolveBinding(child, 'ghost.x'),
+            (e) => e.blocked === true,
+            'a live parent may still spawn the name — dataflow suspension, not a wound'
+        )
+    })
+
+    test("undefined sibling throws once its parent is done", () => {
+        const root = createFrame('root', (function*(){})(), { channelCapacity: 64 })
+        root.done = true
         const child = createFrame('child', (function*(){})(), { parent: root })
         root.children.set('child', child)
 
@@ -350,20 +364,22 @@ describe("Phase 2c: resolveBinding — relational observation", () => {
         assert.equal(dist, 3) // sqrt(1+4+4) = 3
     })
 
-    test("leader.bearing resolves angular direction from observer to target", () => {
+    test("leader.bearing resolves the turn from observer to target", () => {
         const root = createFrame('root', (function*(){})(), { channelCapacity: 64 })
         const leader = createFrame('leader', (function*(){})(), { parent: root })
-        // Target directly to the right (+x) of observer at origin facing up (+y)
         leader.transform.swap(() => ({ position: [100, 0, 0], rotation: { w: 1, x: 0, y: 0, z: 0 } }))
         root.children.set('leader', leader)
 
         const follower = createFrame('follower', (function*(){})(), { parent: root })
-        // Observer at origin, heading 0 (facing +y, identity quaternion)
+        // Identity faces +x, which the paper's compass calls east (90): a target due
+        // +x is dead ahead, and a target due +y (north) is 270 — a left, never −90.
         follower.transform.swap(() => ({ position: [0, 0, 0], rotation: { w: 1, x: 0, y: 0, z: 0 } }))
         root.children.set('follower', follower)
 
-        const bearing = resolveBinding(follower, 'leader.bearing')
-        assert.ok(Math.abs(bearing - 90) < 0.001, `expected ~90, got ${bearing}`)
+        assert.ok(Math.abs(resolveBinding(follower, 'leader.bearing')) < 0.001, "dead ahead is zero")
+        leader.transform.swap(() => ({ position: [0, 100, 0], rotation: { w: 1, x: 0, y: 0, z: 0 } }))
+        assert.ok(Math.abs(resolveBinding(follower, 'leader.bearing') - 270) < 0.001,
+            "north is 270 from an east-facing observer")
     })
 
     test("leader.sync resolves wait delta needed to catch up", () => {
@@ -380,7 +396,7 @@ describe("Phase 2c: resolveBinding — relational observation", () => {
         assert.equal(resolveBinding(follower, 'leader.sync'), 2.5)
     })
 
-    test("leader.sync clamps to zero when observer is ahead", () => {
+    test("leader.sync is signed — negative when the target is behind", () => {
         const root = createFrame('root', (function*(){})(), { channelCapacity: 64 })
         const leader = createFrame('leader', (function*(){})(), { parent: root })
         leader.elapsedTime = 1.0
@@ -390,8 +406,8 @@ describe("Phase 2c: resolveBinding — relational observation", () => {
         follower.elapsedTime = 3.0
         root.children.set('follower', follower)
 
-        // follower is already ahead — no wait needed
-        assert.equal(resolveBinding(follower, 'leader.sync'), 0)
+        // follower is ahead, so the target is behind by 2 (signed axis)
+        assert.equal(resolveBinding(follower, 'leader.sync'), -2)
     })
 })
 

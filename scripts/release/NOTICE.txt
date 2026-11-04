@@ -1,0 +1,44 @@
+PaperLang host runtime
+
+Dojo is licensed under GNU AGPL version 3; see LICENSE.
+The release's sources/ directory records its build inputs, including local edits.
+Redistributors remain responsible for the applicable source and notice obligations.
+
+Bundled third-party code (license texts in licenses/):
+
+three.js core, renderer, OrbitControls and line addons — MIT
+Copyright 2010-2026 Three.js Authors
+https://github.com/mrdoob/three.js
+Import paths in addons are adapted for Dojo's vendored modules.
+
+Troika text rendering and its bundled helpers — MIT
+Copyright (c) 2019 ProtectWise
+Copyright (c) 2021 Jason Johnston
+https://github.com/protectwise/troika
+The vendored text bundle embeds these further dependencies:
+
+Typr.ts — MIT
+Copyright (c) 2016 Photopea
+https://github.com/fredli74/Typr.ts
+Custom build for Troika text rendering.
+
+fflate — MIT
+Copyright (c) Arjun Barrett
+https://github.com/101arrowz/fflate
+Custom bundle for Troika text rendering.
+
+woff2otf — Apache License 2.0
+Copyright 2012, Steffen Hanikel
+Modified by Artemy Tregubenko, 2014
+https://github.com/arty-name/woff2otf
+Custom bundle with fflate for Troika text rendering.
+
+@unicode-font-resolver/client — MIT
+Copyright (c) 2023 Jason Johnston
+https://github.com/lojjic/unicode-font-resolver
+Custom bundle for Troika text rendering.
+
+These notices describe the vendored files, not newly resolved npm runtime packages.
+Original embedded notices are also retained in host.mjs.LEGAL.txt.
+License texts were retrieved from the upstream LICENSE links.
+Troika may fetch fonts at runtime; remotely fetched fonts are not in this artifact.

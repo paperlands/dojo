@@ -1,0 +1,7 @@
+let B = [0, 0, 0]
+goto 3 2 0
+let P
+as B do
+  let P.tilt = 45
+  let P.y = 1
+end

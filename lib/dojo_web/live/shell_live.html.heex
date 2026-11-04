@@ -14,7 +14,22 @@
     filter: drop-shadow(0 1px 1px var(--color-secondary-content));
   }
   .outershell { display: none; }
-  .rightpane:has(#outer-open.is-open) .outershell { display: block; }
+  /* THE PANEL ARRIVES, IT DOES NOT POP. Going from display:none to a box starts
+     an animation, so the place opens as light — no JS, no second flag, no
+     layout. Closing is not animated: leaving needs no ceremony. */
+  @keyframes outer-arrive {
+    from { opacity: 0; translate: 0 6px; }
+    to   { opacity: 1; translate: 0 0; }
+  }
+  .rightpane:has(#outer-open.is-open) .outershell {
+    display: block;
+    animation: outer-arrive 260ms ease-out both;
+  }
+
+  /* pane flip flag (#pane-state, phx-update=ignore) — client-driven like
+     #deck-state: the panel stays mounted, CSS gates it, no server round-trip */
+  #pane-frame #disciple_panels { display: none; }
+  #pane-frame:has(#pane-state.pane-open) #disciple_panels { display: flex; }
 
   /* the river's own flag — placement and gating are the call site's;
      the component itself is placement-agnostic (id:kr-place). Open paint
@@ -54,6 +69,62 @@
   #outerenv[data-outer-state="draft"] {
     background-color: color-mix(in oklch, var(--color-secondary-content) 9%, transparent);
     box-shadow: inset 0 0 24px color-mix(in oklch, var(--color-secondary-content) 16%, transparent);
+  }
+
+  /* WAITING IS AN HOUR, NOT A SENTENCE (id:hw-phases). Between two selections
+     the document already on the glass KEEPS ITS PLACE: the light leaves it
+     (cloud) and a crescent turns at the frame. Nothing enters or leaves the
+     flow, so the panel never moves — and arrival is the same transition run
+     backwards, one bloom of moonlight (620ms, the strip's arrival beat).
+     These rules sit AFTER the error/draft hours on purpose: the old document's
+     weather is not news any more. */
+  /* THE FENCE'S LOOK ARRIVES WITH THE CLOUD. A warm read flips readiness inside
+     one frame, so dimming at once would paint a dip-and-return (the blink). The
+     0s transition delayed by 220ms means: warm reads never dim it, real waits
+     do, and nothing fades — only the state is late. */
+  #outer-fork { transition: opacity 0s linear; }
+  .outershell:has(#outerenv[data-outer-selection="waiting"]) #outer-fork {
+    opacity: 0.55;
+    transition: opacity 0s linear 220ms;
+  }
+
+  /* THE CLOUD IS A LAYER, NOT A FILTER (id:hw-takahata: no hour may touch the
+     work). The previous selection recedes because light stands in front of the
+     glass — the code keeps its own pixels, colour and edges; only the veil's
+     opacity moves. It enters with the cloud (240ms) and leaves as the arrival
+     bloom (620ms, the strip's beat). */
+  .outer-veil {
+    position: absolute;
+    inset: 0;
+    z-index: 45;
+    pointer-events: none;
+    border-radius: inherit;
+    opacity: 0;
+    background-color: color-mix(in oklch, var(--color-base-100) 66%, transparent);
+    box-shadow: inset 0 0 60px color-mix(in oklch, var(--peer-ink) 12%, transparent);
+    transition: opacity 620ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #outerenv[data-outer-selection="waiting"] .outer-veil {
+    opacity: 1;
+    transition: opacity 240ms ease;
+  }
+
+  /* THE CHIP IS THE WHOLE SENTENCE. While the next selection is read, the live
+     lamp holds its breath: the ping stops and the halo goes neutral, because a
+     green pulse must never claim a document that has not landed. When it does,
+     the server's state returns — green — and the ping comes back. Nothing is
+     drawn in the middle of the glass. */
+  .outershell:has(#outerenv[data-outer-selection="waiting"]) #outer-chip-halo {
+    animation: none;
+    opacity: 0.35;
+    background-color: var(--color-base-content);
+    transition: opacity 220ms ease, background-color 220ms ease;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-marquee { animation: none; }
+    #outer-chip-halo { animation: none; }
+    #outerenv[data-outer-state="error"] .cm-content { animation: none; }
+    .rightpane:has(#outer-open.is-open) .outershell { animation: none; }
   }
 
   /* hearth trail */
@@ -110,17 +181,175 @@
     .weave-trail-step { transition: none; }
   }
 
-  /* presence expires with the socket */
-  .phx-disconnected #disciple_panels [data-disciple],
+  /* presence wavers with the socket — the strip BANKS TO EMBER, not grayed out:
+     dimmed and warmed, so it keeps the state's own colour while the line is
+     down (the ember scheme, never a pure-gray dropout). Down is read from the
+     root data-conn the lamp mirrors: LiveView 1.x sets phx-connected, -loading,
+     -error, -client-error, -server-error and NOT phx-disconnected, so a rule
+     keyed on that class could never fire. */
+  html[data-conn="connecting"] #disciple_panels [data-disciple],
+  html[data-conn="offline"] #disciple_panels [data-disciple],
   .phx-client-error #disciple_panels [data-disciple],
   .phx-error #disciple_panels [data-disciple] {
-    opacity: 0.55;
-    filter: grayscale(0.35);
+    opacity: 0.75;
+    filter: sepia(0.22) saturate(1.05) brightness(0.94);
     pointer-events: none;
+  }
+
+  /* --- the lamp: three states in the shell's own vocabulary.
+     live  = --color-accent-content, the exact colour an ACTIVE tab uses
+     reach = --color-warning, amber — lit but not landed
+     rest  = dull grey, base-content pulled most of the way to the surface
+     The light lives INSIDE the element's 14px box: a radial halo, not a
+     box-shadow. The welcome row clips its overflow (it truncates a long session
+     name), so a spreading bloom gets sliced at the border. */
+  #conn-dot {
+    width: 0.875rem;
+    height: 0.875rem;
+    display: inline-grid;
+    place-items: center;
+    /* one tint drives dot and halo; each state reassigns only this.
+       Grey is mixed, not taken: base-content alone is a bright cream in the
+       dark theme, which is not a dull light — it is a missing one. */
+    --lamp-tint: color-mix(in oklch, var(--color-base-content) 35%, var(--color-base-300));
+    --lamp-core: color-mix(in oklch, var(--lamp-tint) 100%, white);
+    --lamp-halo: color-mix(in oklch, var(--lamp-tint) 80%, transparent);
+  }
+
+  #conn-dot[data-conn="connecting"] {
+    --lamp-tint: var(--color-warning);
+  }
+
+  #conn-dot[data-conn="online"] {
+    --lamp-tint: var(--color-accent-content);
+  }
+
+  #conn-dot::before,
+  #conn-dot::after {
+    content: "";
+    grid-area: 1 / 1;
+    border-radius: 9999px;
+    transition:
+      background-color 420ms ease,
+      opacity 420ms ease;
+  }
+
+  /* the dot: the light that is either on or not */
+  #conn-dot::before {
+    width: 0.375rem;
+    height: 0.375rem;
+    background: var(--lamp-tint);
+    opacity: 0.5;
+  }
+
+  /* the halo: white-hot core so the swell reads on a dark shell instead of
+     dissolving into it */
+  #conn-dot::after {
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(
+      circle,
+      var(--lamp-core) 0%,
+      var(--lamp-halo) 38%,
+      transparent 72%
+    );
+    opacity: 0;
+  }
+
+  #conn-dot[data-conn="connecting"]::before {
+    opacity: 0.95;
+  }
+
+  #conn-dot[data-conn="online"]::before {
+    animation: lamp-core-swell 3.4s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  }
+
+  #conn-dot[data-conn="connecting"]::after {
+    animation: lamp-breathe 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  #conn-dot[data-conn="online"]::after {
+    animation: lamp-helios 3.4s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  }
+
+  /* The dot itself swells with the halo. One moving part reads as a fade; two
+     in phase read as breathing. 6px x 1.22 stays inside the 14px box. */
+  @keyframes lamp-core-swell {
+    0%,
+    100% {
+      opacity: 0.8;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.22);
+    }
+  }
+
+  /* Five stops, not three: a three-stop sine sits still between frames and then
+     jumps. Deep swing (0.38 -> 1) at a contained scale: gradual, still legible. */
+  @keyframes lamp-helios {
+    0%,
+    100% {
+      opacity: 0.38;
+      transform: scale(0.58);
+    }
+    25% {
+      opacity: 0.7;
+      transform: scale(0.78);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    75% {
+      opacity: 0.7;
+      transform: scale(0.78);
+    }
+  }
+
+  @keyframes lamp-breathe {
+    0%,
+    100% {
+      opacity: 0.2;
+      transform: scale(0.5);
+    }
+    50% {
+      opacity: 0.6;
+      transform: scale(0.82);
+    }
+  }
+
+  /* A pulse is a claim. Some of us asked not to be shown one: the lamp still
+     says live, it just stops moving. */
+  @media (prefers-reduced-motion: reduce) {
+    #conn-dot[data-conn="online"]::before {
+      animation: none;
+      opacity: 1;
+    }
+    #conn-dot[data-conn="connecting"]::after,
+    #conn-dot[data-conn="online"]::after {
+      animation: none;
+      opacity: 0.6;
+      transform: scale(0.86);
+    }
   }
 </style>
 <div class="relative h-screen w-screen bg-secondary">
-  <canvas phx-update="ignore" id="core-canvas" class="fixed inset-0 z-0 bg-inherit select-none"></canvas>
+  <canvas
+    phx-update="ignore"
+    id="core-canvas"
+    class="fixed inset-0 w-full h-full z-0 bg-inherit select-none"
+  ></canvas>
+  <!-- Marks layer. JS appends the overlay here; phx-update="ignore" keeps morphdom
+       from reconciling the unknown child away on a presence/hatch patch. (id:host-surface) -->
+  <div
+    id="core-overlay"
+    data-turtle-overlay
+    phx-update="ignore"
+    class="fixed inset-0 z-[2] pointer-events-none"
+  >
+  </div>
   <!-- Desktop Layout (lg and up) -->
   <div class="fixed inset-0 grid grid-cols-[40dvw_20dvw_40dvw] md:grid-cols-[40dvw_25dvw_30dvw]  grid-rows-[60dvh_40dvh]  lg:grid-cols-[25dvw_50dvw_25dvw]  lg:grid-rows-[1fr_30dvh] gap-0.5 lg:gap-1 pointer-events-none">
     <!-- Left Pane - Code Editor -->
@@ -135,7 +364,7 @@
           <!-- Example bookmarks -->
           <div
             class="px-2 font-mono text-xs transition duration-200 rounded  cursor-pointer focus:outline-none  border-r-2 border-accent/50 text-primary hover:bg-accent/50 hover:text-primary-content"
-            phx-click="seeTurtle"
+            phx-click={DojoWeb.OuterShellLive.close_js()}
           >
             <span class="font-paperlang inline">~</span>
           </div>
@@ -307,8 +536,18 @@
                 {Session.t(@locale, "to %{clan}'s shell", clan: to_titlecase(@clan))}
               </span>
 
+              <%!-- The lamp: connection truth where the old blind pulse sat
+                   (id:shell-offline-first). No progress bar — the shell is
+                   offline-first, so the question is "can the socket carry a
+                   frame". ConnectionDot flips data-conn; CSS owns the light. --%>
               <span class="relative flex items-center ms-1">
-                <span class="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                <span
+                  id="conn-dot"
+                  phx-hook="ConnectionDot"
+                  role="status"
+                  aria-label="connecting"
+                  data-conn="connecting"
+                ></span>
               </span>
             </span>
           </div>
@@ -367,7 +606,9 @@
                 phx-rtclick={
                   ((@outershell.active &&
                       JS.dispatch("phx:outerkeepCanvas",
-                        detail: %{"title" => @outershell.name <> "'s creation"}
+                        detail: %{
+                          "title" => DojoWeb.ShellLive.OuterShell.creation_title(@outershell.name)
+                        }
                       )) ||
                      JS.dispatch("phx:selfkeepCanvas",
                        detail: %{"title" => @session.name <> "'s creation"}
@@ -508,16 +749,17 @@
       <.river class="fixed top-0 left-1/2 -translate-x-1/2 z-40 w-[min(760px,94vw)] pointer-events-none" />
       <%!-- The hearth (Shoot 0): the walk trail — the weave's only chrome.
            Pages open in the outershell (seeWeave invokes it); this path is
-           the residue of the walking, amber shanshui over theme pigments. --%>
-      <nav
-        id="weave-hearth"
-        phx-hook="Shell"
-        phx-update="ignore"
-        data-target="weave"
-        aria-label="walk trail"
-        class="weave weave-path fixed bottom-24 right-3 z-40 pointer-events-auto max-w-[min(38ch,calc(100vw-1.5rem))]"
-      >
-      </nav>
+           the residue of the walking, amber shanshui over theme pigments. 
+      # <nav
+      #   id="weave-hearth"
+      #   phx-hook="Shell"
+      #   phx-update="ignore"
+      #   data-target="weave"
+      #   aria-label="walk trail"
+      #   class="weave  weave-path fixed bottom-24 right-3 z-40 pointer-events-auto max-w-[min(38ch,calc(100vw-1.5rem))]"
+      # >
+      # </nav>
+      --%>
       <div
         id="nerve-hud"
         phx-hook="NerveHook"
@@ -528,15 +770,18 @@
     </div>
     <!-- <div class="backdrop-blur-sm border border-gray-700/50 rounded-lg p-4"/> -->
     <!-- Bottom Pane - Visual Previews (spans both columns) -->
-    <div class="col-span-3 row-start-2 lg:row-span-1 lg:col-span-1 ">
+    <div id="pane-frame" class="col-span-3 row-start-2 lg:row-span-1 lg:col-span-1 ">
+      <div id="pane-state" phx-update="ignore" class="pane-open hidden"></div>
       <div
         id="paneflip"
         class="fixed z-50 -translate-x-1/2 pointer-events-auto transition-transform duration-300 bottom-2 left-1/2"
-        phx-hook="Sensei"
       >
         <svg
-          class={"z-50 w-6 h-6 text-primary/50 items-center flex m-auto rounded-lg backdrop-blur-sm transform transition-transform duration-300 active:text-amber-400 cursor-pointer" <> if(@pane, do: " rotate-180", else: "")}
-          phx-click="flipPane"
+          class="z-50 w-6 h-6 text-primary/50 items-center flex m-auto rounded-lg backdrop-blur-sm transform transition-transform duration-300 active:text-amber-400 cursor-pointer rotate-180"
+          phx-click={
+            JS.toggle_class("pane-open", to: "#pane-state")
+            |> JS.toggle_class("rotate-180", to: "#paneflip svg")
+          }
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -547,71 +792,16 @@
       </div>
       <%!-- Turtle viewing pane --%>
       <div
-        :if={@pane}
         id="disciple_panels"
         phx-hook="DiscipleWindow"
-        class="fixed bg-transparent bottom-0 pointer-events-auto z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto pointer-events-none"
+        class="disciple-strip fixed bg-transparent bottom-0 z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto pointer-events-none"
       >
-        <!-- Other people's turtles -->
-        <div
-          :for={{reg_key, dis} <- @disciples |> Enum.sort_by(&elem(&1, 1).online_at, :desc)}
-          class="bg-transparent pointer-events-auto"
-        >
-          <div
-            data-disciple
-            class={"rounded-lg transition pb-4 pt-2 duration-500 ease-in-out mx-2 backdrop-blur-[1px] animate-fade flex-shrink-0" <> is_main_focus(reg_key, @focused_name)}
-          >
-            <.icon
-              :if={@sensei}
-              name="hero-cursor-arrow-ripple"
-              phx-click="toggle-focus"
-              phx-value-disciple-name={reg_key}
-              class="cursor-pointer pointer-events-auto text-primary"
-            />
-            <div
-              phx-click={
-                (@outershell && @outershell.addr == reg_key &&
-                   DojoWeb.OuterShellLive.close_js()) ||
-                  JS.push("seeTurtle")
-              }
-              phx-throttle="500"
-              phx-value-addr={reg_key}
-              class={[
-                "relative flex justify-center items-center h-32 lg:w-48 w-32 border rounded-md hover:border-primary transition-colors delay-150 ",
-                (Map.has_key?(dis, :meta) && "cursor-alias pointer-events-auto") ||
-                  "cursor-progress pointer-events-none",
-                (Map.has_key?(dis, :meta) && dis.meta.state == :error && "border-error/50") ||
-                  (@outershell && @outershell.addr == reg_key &&
-                     "border-accent-content text-accent-content") ||
-                  "border-accent/50 text-accent"
-              ]}
-            >
-              <div class="absolute font-mono  text-sm tracking-wider rotate-0 select-none top-2 right-2">
-                {dis.name}
-              </div>
-
-              <.droplet_loader
-                :if={!Map.has_key?(dis, :meta)}
-                class="size-10 fill-amber-600"
-                loading="eager"
-                decoding="sync"
-              />
-              <!-- <%= #Map.has_key?(dis, :meta) && IO.inspect("//" <> (dis[:addr] || "") <> "/#{dis.meta.path}") %> -->
-              <img
-                :if={Map.has_key?(dis, :meta)}
-                src={"//" <> (dis[:addr] || "") <> "/#{dis.meta.path}"}
-                onerror="this.src='/images/turtlehead.png';"
-                class="object-scale-down p-1 max-h-full m-auto"
-                loading="eager"
-                decoding="sync"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div :if={@sensei} class="z-50 flex mb-2 pointer-events-auto">
-          <.export />
-        </div>
+        <%!-- The living run, on the presence clock. The lantern run is a second
+              run on the room's clock — composed, never sorted together. --%>
+        <DojoWeb.DiscipleStrip.strip
+          windows={DojoWeb.ShellLive.DiscipleWindow.strip(@disciples, @lanterns)}
+          outershell={@outershell}
+        />
       </div>
     </div>
   </div>

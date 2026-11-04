@@ -4,10 +4,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
-import {
-    createJournal,
-    JOURNAL_VERBS,
-} from "../../../assets/js/keep/journal.js"
+import { createJournal } from "../../../assets/js/keep/journal.js"
 import { createEngine } from "../../../assets/js/keep/journal.store.js"
 import { VERBS as SOURCE_VERBS } from "../../../assets/js/keep/verbs.js"
 import { write, name } from "../../../assets/js/keep/entry.js"
@@ -52,11 +49,9 @@ describe("journal door: public surface", () => {
 
     test("names the verbs; put derives the name; no id parameter", async () => {
         assert.deepEqual(
-            [...JOURNAL_VERBS].sort(),
-            ["genesis", "get", "image", "list", "local", "put", "share", "source"].sort(),
+            [...SOURCE_VERBS].sort(),
+            ["genesis", "get", "hand", "image", "list", "local", "newHand", "proof", "put", "roots", "share", "source"].sort(),
         )
-        // One list — door re-exports verbs.js
-        assert.equal(JOURNAL_VERBS, SOURCE_VERBS)
         const root = await door.root()
         const bytes = snap(root, { tag: 1 }, { t: 1, n: 0 })
         const id = await door.put(bytes)
@@ -97,6 +92,14 @@ describe("journal door: public surface", () => {
         // Cap rides the same wire — n bounds the fold (id:kb-8-page).
         assert.equal((await door.local(root, 1)).length, 1)
         assert.equal((await door.list(root, 1)).length, 1)
+        // Options ride the door: a positive filter before n is forwarded, not dropped.
+        await door.put(snap(root, { tag: "ghost" }, { t: 300, n: 0 }))
+        const signed = snap(root, { tag: "signed" }, { t: 50, n: 0 })
+        await door.put(signed, { authored: true })
+        assert.deepEqual(
+            (await door.local(root, 1, { proved: true })).map((x) => read(x).tag),
+            ["signed"],
+        )
     })
 
     test("engine never leaks — return values are data, never IDB handles", async () => {
@@ -109,6 +112,28 @@ describe("journal door: public surface", () => {
         assert.equal(door.open, undefined)
         assert.equal(door.engine, undefined)
         assert.equal(typeof door.put, "function")
+    })
+    test("roots rides the worker transport", async () => {
+        const sent = []
+        const lineage = { active: "a".repeat(64), prior: ["b".repeat(64)] }
+        class FakeWorker {
+            constructor() { this.onmessage = null }
+            postMessage(msg) {
+                sent.push(msg.op)
+                queueMicrotask(() => {
+                    const value = msg.op === "genesis" ? "birth" : msg.op === "roots" ? lineage : undefined
+                    this.onmessage?.({ data: { id: msg.id, ok: true, value } })
+                })
+            }
+            terminate() {}
+        }
+        const workerDoor = createJournal({ Worker: FakeWorker, workerUrl: "about:blank" })
+        try {
+            assert.deepEqual(await workerDoor.roots(), lineage)
+            assert.ok(sent.includes("roots"))
+        } finally {
+            await workerDoor.close()
+        }
     })
 })
 

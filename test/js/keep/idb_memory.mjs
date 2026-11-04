@@ -375,10 +375,17 @@ class Connection {
         let finished = false
         let releaseLock = null
 
+        let snapshots = []
         if (mode === "readwrite") {
             // This writer's requests wait on the previous writer.
             const prev = state._writeChain
-            life.gate = prev
+            life.gate = prev.then(() => {
+                if (finished) return
+                snapshots = names.map((n) => {
+                    const store = state.stores.get(n)
+                    return [store, new Map(store.rows)]
+                })
+            })
             state._writeChain = new Promise((r) => {
                 releaseLock = r
             })
@@ -412,12 +419,13 @@ class Connection {
             if (how === "complete") {
                 queueMicrotask(() => tx.oncomplete?.())
             } else if (how === "abort") {
+                for (const [store, rows] of snapshots) store.rows = rows
                 tx.error = tx.error || new Error("journal: abort")
                 queueMicrotask(() => tx.onabort?.())
             }
             // Release the write lock so the next writer may run.
             if (releaseLock) {
-                releaseLock()
+                life.gate.then(releaseLock)
                 releaseLock = null
             }
         }

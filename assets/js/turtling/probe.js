@@ -4,6 +4,27 @@
 // play needs a way to ASK it (id:codex-play-eyes). Nothing in assets/ may
 // import this file. Opt-in only (`?perf=1` in the shell).
 
+import { snapshotFact } from './observation.js'
+import { lawWorld } from './scheduler.js'
+import { lawContext } from './laws/candidate.js'
+import { boundTerm, inputPosition } from './laws/authored.js'
+
+const LAW_FIELDS = ['address', 'feature', 'relation', 'endpoints', 'scope', 'frame', 'predicate',
+    'owner', 'axis', 'expression', 'kind', 'guards', 'bounds', 'sourceIds']
+// Observation scope: law facts only; other read fields are delegated as-is. A distance term
+// also exposes its OBSERVED world inputs (typed inputPosition) beside the bound term and
+// radius; unreadable inputs stay null. (id:codex-play-eyes)
+const lawFact = (law, ctx) => {
+    const fact = {}
+    for (const key of LAW_FIELDS) if (key in law) fact[key] = law[key]
+    const term = boundTerm(law)
+    if (ctx && term?.type === 'distance' && Array.isArray(term.references)) {
+        fact.radius = term.radius
+        fact.observedInputs = term.references.map((input) => inputPosition(input, ctx))
+    }
+    return snapshotFact(fact)
+}
+
 export function attachProbe(turtle, law, { authoredOf } = {}) {
     window.__probe = {
         read: () => {
@@ -11,6 +32,7 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
             const focus = turtle.focus
             const compositor = turtle.compositor
             const ambients = []
+            const lawCtx = sch?.registry ? lawContext(sch.registry, null, lawWorld) : null
             if (sch?.registry) {
                 for (const [id, ambient] of sch.registry) {
                     if (ambient === sch.root) continue
@@ -22,6 +44,18 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                         done: !!ambient.done,
                         transform: snapSE3(ambient.transform?.deref?.() ?? ambient.transform),
                         origin: snapSE3(ambient.origin),
+                        isPlace: !!ambient.isPlace,
+                        // Retained ownership ids, not liveness or publication permission; ids join in this read.
+                        // (id:being-facets-p4-sequence)
+                        installation: ambient.installation === true,
+                        receiverId: ambient.receiver?.id ?? null,
+                        sourceId: ambient.installationRecord?.source?.id ?? null,
+                        error: ambient.error ?? null,
+                        unresolved: ambient.unresolved ?? null,
+                        state: turtle._stateOf?.(ambient) ?? null,
+                        resumeAt: ambient.resumeAt,
+                        logicalBirth: ambient.logicalBirth,
+                        elapsedTime: ambient.elapsedTime,
                     })
                 }
             }
@@ -31,16 +65,63 @@ export function attachProbe(turtle, law, { authoredOf } = {}) {
                 warm:       focus?.warm ?? [],
                 authored:   authoredOf?.() ?? null,
                 mine:       turtle._hatchMine,
+                held:       turtle._handle?.grabbed?.name ?? null,
+                reveal:     turtle.reveal ? { condition: turtle.reveal, revealed: turtle.hintsRevealed === true, hints: turtle._hintsVisible?.() ?? null } : null,
+                handMoves:  turtle.handMoves ?? null,
+                revision:   turtle.scheduler?.motionRevision ?? null,
+                simMs:      turtle.scheduler?.lastTickTime ?? null,
+                done:       !!turtle.scheduler?.done,
                 lastHatchAt:      turtle._lastHatchAt,
                 lastReflectChange: turtle._lastReflectChange,
                 ambients,
                 layers: compositor?.probeLayers?.() ?? [],
+                readout: sch?.readouts?.stats?.() ?? null,
+                nodes: sch?.readouts?.list?.() ?? [],
                 order: {
                     coreshell: law?.orderOf?.("coreshell") ?? null,
                     outershell: law?.orderOf?.("outershell") ?? null,
                 },
+                // The frame the marks are drawn in: the compositor's reframe and the
+                // live camera. A mark and its hit target share this. (id:laws-decl-interface)
+                view: snapSE3(compositor?.viewReframe?.()),
+                camera: snapCamera(turtle.stage),
+                // The camera's OWN control state: a hand that takes the pointer must give the
+                // camera back when it lets go. (id:codex-play-eyes)
+                controlsEnabled: turtle.stage?.controls?.enabled ?? null,
+                // The play's active laws: address → predicate + owner.
+                // (id:laws-ordered-replacement)
+                laws: (sch?.laws?.active?.() ?? []).map((law) => lawFact(law, lawCtx)),
+                // Last recorded decision: what was attempted, against what, with which gate.
+                // (id:scheduler-observation-ownership)
+                attempt: sch?.root?._lastAttempt ?? null,
             }
         },
+        // Read-only projection of a world point into CSS pixels — the same
+        // mapping the marks and the hit test use. (id:codex-play-eyes)
+        project: (world) => turtle._view?.()?.project(world) ?? null,
+        // Facilitator view: set the camera and its target, then repaint. A view
+        // change only — no geometry, no law, no eligibility, no revision.
+        // The two conditions save the same position/target for comparability.
+        look: ({ position, target } = {}) => {
+            const st = turtle.stage
+            if (position) st.camera.position.set(position[0], position[1], position[2])
+            if (target) st.controls.target.set(target[0], target[1], target[2])
+            st.camera.updateProjectionMatrix?.()
+            st.controls.update()
+            turtle.requestRender()
+            return snapCamera(st)
+        },
+        // A legible frame for a BOUNDED figure: an oblique view sized to its
+        // bounding sphere, so a circle reads as a curve and not a point. A view
+        // change only — no geometry, no law, no revision. (id:laws-freedom)
+        fit: ({ dir = null } = {}) => {
+            turtle.fit({ dir })
+            return snapCamera(turtle.stage)
+        },
+        // The facilitator's explicit reveal, at the recorded checkpoint. A view
+        // change only: it never resolves, moves or re-seats anything. Delayed
+        // keeps the hints hidden until this call; the condition stays 'delayed'.
+        revealNow: () => turtle.revealNow(),
         law,
         // Pure-shape seating poke for live-shell tests.
         seat: (addr, { name, doc, own = false, place, attention = null } = {}) => {
@@ -82,5 +163,17 @@ function snapSE3(t) {
     return {
         pos: Array.isArray(p) ? [...p] : [p.x ?? p[0], p.y ?? p[1], p.z ?? p[2]],
         rot: r ? { w: r.w, x: r.x, y: r.y, z: r.z } : null,
+    }
+}
+
+function snapCamera(stage) {
+    const cam = stage?.camera
+    if (!cam) return null
+    const t = stage.controls?.target
+    return {
+        pos: [cam.position.x, cam.position.y, cam.position.z],
+        quat: { x: cam.quaternion.x, y: cam.quaternion.y, z: cam.quaternion.z, w: cam.quaternion.w },
+        target: t ? [t.x, t.y, t.z] : null,
+        fov: cam.fov ?? null,
     }
 }

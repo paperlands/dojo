@@ -332,6 +332,51 @@ defmodule Dojo.Cluster.MDNS.DiscoveryTest do
       refute Map.has_key?(updated, @peer_atom)
       assert Map.has_key?(updated, :"admin@peer-c")
     end
+
+    test "goodbye from another address keeps the fresh record" do
+      fresh_ip = {192, 168, 1, 51}
+      bye_pkt = Packet.announcement(@service, @peer_name, @peer_ip, 0, 9090)
+      {:ok, records} = Packet.decode(bye_pkt)
+
+      # The peer already re-announced from its new address; the delayed goodbye
+      # for the old one refers to an incarnation that is gone.
+      cache = peer_cache(@peer_atom, now(), fresh_ip)
+      updated = MDNS.update_cache(cache, records, @own_name, @service, @peer_ip)
+
+      assert Map.has_key?(updated, @peer_atom)
+      assert updated[@peer_atom].ip == fresh_ip
+    end
+  end
+
+  # ── Departure reporting ─────────────────────────────────────────────────
+  # Every disappearance must reach the adapter with its cause. A TTL sweep used
+  # to replace the cache before the departure diff, so aged-out peers vanished
+  # without ever notifying the transport.
+
+  describe "departure reporting" do
+    test "a TTL-expired peer is reported as :expired" do
+      cache = peer_cache(:admin@aged, now() - (@peer_ttl + 5), {192, 168, 1, 60})
+      swept = MDNS.sweep_cache(cache)
+      expired = Map.keys(cache) -- Map.keys(swept)
+
+      assert MDNS.departures(cache, cache, swept, expired) == [
+               {:admin@aged, :expired, :cache_only}
+             ]
+
+      refute :transport in Enum.map(MDNS.departures(cache, cache, swept, expired), &elem(&1, 2))
+    end
+
+    test "a POOF eviction is reported as :poof" do
+      cache = peer_cache(:admin@quiet, now() - 5, {192, 168, 1, 61})
+
+      assert MDNS.departures(cache, cache, %{}, []) == [{:admin@quiet, :poof, :transport}]
+    end
+
+    test "a peer present before and after is not a departure" do
+      cache = peer_cache(:admin@steady, now(), {192, 168, 1, 62})
+
+      assert MDNS.departures(cache, cache, cache, []) == []
+    end
   end
 
   # ── Step 2: Cache-flush bit preservation ────────────────────────────────

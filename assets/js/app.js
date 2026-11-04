@@ -20,7 +20,6 @@ import "phoenix_html";
 // Establish Phoenix Socket and LiveView configuration.
 import { Socket } from "phoenix";
 import { LiveSocket } from "phoenix_live_view";
-import topbar from "../vendor/topbar";
 import {hooks as colocatedHooks} from "phoenix-colocated/dojo"
 import  Hooks  from "./hooks/index.js";
 
@@ -30,6 +29,12 @@ let csrfToken = document
 
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 5000,
+  // The lamp (id:shell-offline-first) reads this socket's own health rather than
+  // a side-channel probe. At the 30s default a frozen server looks connected for
+  // up to a minute; at 5s phoenix.js tears the transport down on the second
+  // missed reply, so a stalled VM shows inside ~10s — and reconnection gets the
+  // same speed-up for free.
+  heartbeatIntervalMs: 5000,
   params: () => {
     let session = {...(JSON.parse(localStorage.getItem("session")) || {}), active: true};
     return {
@@ -52,16 +57,6 @@ let liveSocket = new LiveSocket("/live", Socket, {
     hooks: {...colocatedHooks, ...Hooks}
 });
 
-
-window.addEventListener("phx:download-file", (event) => {
-  const a = document.createElement("a");
-  a.href = event.detail.href;
-  a.download = event.detail.filename;
-  a.style.display = "none";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-});
 
 // lvdx-7 · kc-p-fence: chrome flourishes only, capability closed HERE.
 // Free-form execJS keyed by bare selector is refused — every call site would
@@ -92,10 +87,8 @@ window.addEventListener("dojo:yoink", (event) => {
     alert("Sorry, your browser does not support clipboard copy.");
   }
 });
-// Show progress bar on live navigation and form submits
-topbar.config({ barColors: { 0: "#ff7722" }, shadowColor: "rgba(0, 0, 0, .3)" });
-window.addEventListener("phx:page-loading-start", (_info) => topbar.show(300));
-window.addEventListener("phx:page-loading-stop", (_info) => topbar.hide());
+// Connection state is a dot in the shell chrome (ConnectionDot), not a progress
+// bar: the shell is offline-first, so "loading" was never the question.
 
 // connect if there are any LiveViews on the page
 liveSocket.connect();

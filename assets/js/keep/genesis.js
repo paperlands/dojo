@@ -1,30 +1,14 @@
-// The journal names itself (id:kc-law 1, id:kb-3).
-//
-// We roll one die and write one message; that message's fingerprint is the
-// name of the whole journal (id:kc-feynman). The root is name(bytes) of this
-// entry — not hash(a bare nonce). Pattern 1: a continuant is minted; an
-// occurrent is derived. The author is the first continuant; work is the
-// second (id:kb-work) and reuses nonce() for its draw.
-//
-// This is the journal's name, kept in `self`. It is not a log row: identity
-// is not a moment the author kept, and the nonce never ships (id:kb-5-genesis-place).
-// Every log keep names this one as `root`.
-//
-// This file is pure law. The BINDING — once, ever; find-or-create; two tabs
-// one genesis — lives in the journal as one readwrite transaction over
-// `self` (id:kb-3-owner, id:kb-vet2-root). A random body makes two tabs a
-// fork, not a dedup; the stamp's "identical body ⇒ same page" premise does not
-// transfer here (id:kc-c-stamp, id:kb-vet3).
+// Root = name(exact genesis); work = name(its first keep) (id:kc-law 1).
+// Genesis lives in self, not the moment log; its public key travels as evidence.
+// This mint is pure; the journal atomically seats genesis + key (id:keep-auth-write-guard).
 
 import { write } from "./entry.js"
 
 /**
  * Pattern 1's mint side: one draw of 32 random bytes, as hex64.
  *
- * Continuants mint once through this draw. The journal's root is not this
- * value — it is the *name of the genesis entry that carries it*. A work_id is
- * this value directly — the terminal's `mints.work` (id:kb-2a).
- *
+ * The journal's root is not this value — it is the *name of the genesis
+ * entry that carries it*. A work is the first keep's name, not this draw.
  * `random` has the shape of crypto.getRandomValues: it fills the array it is
  * handed. Never crypto.randomUUID — that throws on the classroom path and
  * looks safe (id:kc-env).
@@ -51,14 +35,14 @@ export function nonce(random) {
  * journal's find-or-create over the pure bytes this returns, not a property of
  * this function. The nonce is never kept apart from the entry (id:kb-3 NOT).
  *
- * BOTH inputs are injected, so the bytes are fully determined by the call —
- * half-ambient inputs are what the stamp's own contract refuses (id:kc-c-stamp).
- * The journal passes stamp(); a test passes a fixed pair and asserts bytes.
+ * Random, stamp and optional public credential are explicit inputs.
+ * The journal supplies the credential; keyless genesis is historical data only.
  *
  * @param {(arr: Uint8Array) => Uint8Array} random
  * @param {{t: number, n: number}} ts
+ * @param {{v: number, algorithm: string, public_key: string} | null} [auth]
  * @returns {string} the entry — the durable message
  */
-export function genesisBytes(random, ts) {
-    return write("genesis", { nonce: nonce(random) }, { ts })
+export function genesisBytes(random, ts, auth = null) {
+    return write("genesis", { nonce: nonce(random), ...(auth ? { auth } : {}) }, { ts })
 }
