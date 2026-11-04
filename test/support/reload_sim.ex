@@ -57,7 +57,7 @@ defmodule Dojo.Test.ReloadSim do
     # otherwise a replacement child reads as a missing one.
     Process.sleep(Keyword.get(opts, :settle, 200))
 
-    deaths = drain_downs(before, [])
+    deaths = drain_downs(refs(before), [])
     Enum.each(before, fn {_id, _pid, ref} -> Process.demonitor(ref, [:flush]) end)
 
     now =
@@ -87,16 +87,15 @@ defmodule Dojo.Test.ReloadSim do
     {result, report}
   end
 
-  defp drain_downs(before, acc) do
-    receive do
-      {:DOWN, ref, :process, pid, reason} ->
-        id =
-          Enum.find_value(before, :unknown, fn
-            {id, ^pid, ^ref} -> id
-            _ -> nil
-          end)
+  # Only the monitors this call installed: any other `:DOWN` in the mailbox
+  # belongs to the caller (a Task it awaited, a process it watched), and eating
+  # it would report a `:unknown` death or strand the caller.
+  defp refs(before), do: Map.new(before, fn {id, _pid, ref} -> {ref, id} end)
 
-        drain_downs(before, [%{id: id, pid: pid, reason: reason} | acc])
+  defp drain_downs(refs, acc) do
+    receive do
+      {:DOWN, ref, :process, pid, reason} when is_map_key(refs, ref) ->
+        drain_downs(refs, [%{id: Map.fetch!(refs, ref), pid: pid, reason: reason} | acc])
     after
       0 -> Enum.reverse(acc)
     end
@@ -151,7 +150,8 @@ defmodule Dojo.Test.ReloadSim do
   end
 
   @doc """
-  Remove *every* project module at once — the shape a full recompile has.
+  Remove *every* module the `:dojo` application owns — the shape a full
+  recompile has.
 
   This is the stressor that matters. Editing one file purges one module and
   the tree shrugs it off; `Compiling 75 files` empties the whole ebin, and
@@ -159,34 +159,46 @@ defmodule Dojo.Test.ReloadSim do
   the same instant. Crucially that includes callback modules owned by *other*
   applications' supervision trees, where Dojo's restart budgets do not reach.
 
-  `Dojo.Test.*` is spared — the rig cannot restore what it needs itself to run.
+  Ownership comes from the application's module list, not from the `Dojo`
+  namespace: a module that drifted into `lib/` under another name is exactly
+  the regression this must catch. `Dojo.Test.*` is spared — the rig cannot
+  restore what it needs itself to run.
   """
   def remove_project(hold_ms) do
-    modules =
-      :code.all_loaded()
-      |> Enum.map(&elem(&1, 0))
-      |> Enum.filter(&project_module?/1)
-
-    removed = Enum.map(modules, &remove/1)
+    removed = remove_all()
 
     try do
       Process.sleep(hold_ms)
     after
-      Enum.each(removed, &restore/1)
+      restore_all(removed)
     end
 
-    %{count: length(removed), modules: modules}
+    %{count: length(removed), modules: Enum.map(removed, & &1.module)}
   end
 
-  defp project_module?(mod) do
-    name = Atom.to_string(mod)
+  @doc """
+  Same wipe, but it returns immediately: the caller owns the window and must
+  `restore_all/1` in its own `try/after`. Exists so a test can *exercise* the
+  window (a broadcast, a heartbeat) instead of sleeping through it.
+  """
+  def remove_all do
+    :dojo
+    |> Application.spec(:modules)
+    |> Enum.reject(&test_module?/1)
+    |> Enum.filter(&(Code.loaded?(&1) and own_beam?(&1)))
+    |> Enum.map(&remove/1)
+  end
 
-    String.starts_with?(name, "Elixir.Dojo") and
-      not String.starts_with?(name, "Elixir.Dojo.Test.") and
-      case :code.which(mod) do
-        beam when is_list(beam) -> String.contains?(to_string(beam), "/lib/dojo/ebin/")
-        _ -> false
-      end
+  @doc "Put every module from `remove_all/0` back, in one step."
+  def restore_all(removed), do: Enum.each(removed, &restore/1)
+
+  defp test_module?(mod), do: String.starts_with?(Atom.to_string(mod), "Elixir.Dojo.Test.")
+
+  defp own_beam?(mod) do
+    case :code.which(mod) do
+      beam when is_list(beam) -> String.contains?(to_string(beam), "/lib/dojo/ebin/")
+      _ -> false
+    end
   end
 
   @doc """

@@ -23,6 +23,10 @@ defmodule Dojo.Cluster.FullRecompileTest do
   fails. Run it alone:
 
       bash scripts/verify/reload_test.sh
+  A second instance of the same fault lived in the PubSub adapter, and the fix
+  there was structural rather than defensive: `Phoenix.Tracker.Shard` resolves
+  `Phoenix.PubSub.Partisan` by atom from Registry meta on every broadcast, so the
+  adapter is its own app in `vendor/` now — no ebin wipe can unload it.
   """
   use ExUnit.Case, async: false
 
@@ -85,6 +89,73 @@ defmodule Dojo.Cluster.FullRecompileTest do
     )
 
     assert :ok == Dojo.Cluster.MDNS.reannounce()
+  end
+
+  @tag timeout: 120_000
+  test "a whole-ebin wipe cannot unload the pubsub adapter" do
+    # Ownership, not absence: `:code.which/1` answers `:non_existing`, which no
+    # "not under /lib/dojo/ebin" check catches. Both modules must belong to the
+    # vendored app and load from its ebin.
+    ebin = Path.expand(Path.join(to_string(:code.lib_dir(:phx_pubsub_partisan)), "ebin"))
+
+    for mod <- [Phoenix.PubSub.Partisan, Phoenix.PubSub.Partisan.Handler] do
+      assert {:module, ^mod} = Code.ensure_loaded(mod)
+      assert mod in Application.spec(:phx_pubsub_partisan, :modules)
+      assert is_list(:code.which(mod)), "#{inspect(mod)} is not loadable"
+
+      assert Path.dirname(to_string(:code.which(mod))) == ebin,
+             "#{inspect(mod)} loads from #{inspect(:code.which(mod))}, not #{ebin}"
+    end
+
+    gate = Process.whereis(Dojo.Gate)
+
+    shards =
+      for {id, pid, _, _} <- Supervisor.which_children(Dojo.Gate), is_pid(pid), do: {id, pid}
+
+    assert shards != []
+
+    topic = "reload_sim:adapter:#{System.unique_integer([:positive])}"
+    :ok = Phoenix.PubSub.subscribe(Dojo.PubSub, topic)
+
+    {_, report} =
+      ReloadSim.watch(Dojo.Gate, [settle: 1_000], fn ->
+        removed = ReloadSim.remove_all()
+
+        try do
+          # The barrier: remove_all/0 returns only once every beam is gone.
+          assert :erlang.module_loaded(Dojo.Cluster.MDNS) == false, "the wipe did not take"
+
+          # Exercise the path the crash took, while the beams are absent: the
+          # adapter is reached through dependency code on both legs.
+          assert :ok = Phoenix.PubSub.broadcast(Dojo.PubSub, topic, {:through_the_gap, topic})
+          assert_receive {:through_the_gap, ^topic}, 2_000
+
+          # A heartbeat broadcasts only with a delta or at the silent-period
+          # ceiling (10), so send a full run of them rather than one.
+          Enum.each(shards, fn {_id, pid} ->
+            Enum.each(1..11, fn _ -> send(pid, :heartbeat) end)
+          end)
+
+          Process.sleep(200)
+        after
+          ReloadSim.restore_all(removed)
+        end
+      end)
+
+    assert report.deaths == [],
+           "a Gate shard died while its adapter was absent: #{inspect(report.deaths)}"
+
+    assert report.missing == [], "a Gate shard gave up: #{inspect(report.missing)}"
+
+    assert Process.whereis(Dojo.Gate) == gate, "the Gate supervisor was replaced"
+
+    assert for(
+             {id, pid, _, _} <- Supervisor.which_children(Dojo.Gate),
+             is_pid(pid),
+             do: {id, pid}
+           ) ==
+             shards,
+           "a Gate shard was replaced during the wipe"
   end
 
   defp assert_eventually(predicate, timeout) do

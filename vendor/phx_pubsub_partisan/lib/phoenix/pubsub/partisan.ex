@@ -1,6 +1,13 @@
 defmodule Phoenix.PubSub.Partisan do
   @moduledoc """
   A Phoenix.PubSub adapter using Partisan's Plumtree backend.
+
+  Its own OTP app because the host's compiler deletes the beam and unloads every
+  module it is about to recompile (`Mix.Compilers.Elixir`), while
+  `Phoenix.Tracker.Shard` keeps resolving this module by atom from Registry meta
+  — a heartbeat in that window was `UndefinedFunctionError`, one dead shard per
+  rebuild. A host-only recompile cannot unload this app; rebuilding `:partisan`
+  or this app itself still can.
   """
 
   @behaviour Phoenix.PubSub.Adapter
@@ -32,9 +39,10 @@ defmodule Phoenix.PubSub.Partisan do
   # 4. Adapter Callbacks
   # ----------------------------------------------------------------------------
 
-  # Helper to lookup config
+  # Helper to lookup config — this app's own key, never the host's: a vendored
+  # module reading `:dojo` is a coupling that outlives the reason for the move.
   defp config_control_channel,
-    do: Application.get_env(:dojo, Phoenix.PubSub.Partisan)[:channel_control] || :default
+    do: Application.get_env(:phx_pubsub_partisan, __MODULE__)[:channel_control] || :default
 
   defp handler_name(adapter_name), do: Module.concat(adapter_name, Handler)
 
@@ -126,8 +134,9 @@ defmodule Phoenix.PubSub.Partisan do
 
       Logger.error(
         "#{inspect(mod)}.#{fun} is missing — the loaded Partisan is not the one this " <>
-          "code was built against. Remote PubSub still sends; health is unknown until " <>
-          "the dep is rebuilt (mix deps.clean partisan --build)."
+          "code was built against. Remote dissemination is attempted without this check; " <>
+          "handler-group health is unknown until the dep is rebuilt " <>
+          "(mix deps.clean partisan --build)."
       )
     end
 
@@ -142,8 +151,8 @@ defmodule Phoenix.PubSub.Partisan do
     local_handler = handler_name(pubsub_name)
 
     if target_node == :partisan.node() do
-      # FIX: Send to the local Handler. 
-      # The Handler holds the `pubsub_name` and will call local_broadcast correctly.
+      # Send to the local Handler: it holds the pubsub_name and will call
+      # local_broadcast correctly.
       send(local_handler, {:direct, topic, message, dispatcher})
     else
       # Remote Forwarding (Control Channel)
@@ -230,12 +239,17 @@ defmodule Phoenix.PubSub.Partisan.Handler do
         Phoenix.PubSub.local_broadcast(pubsub_name, topic, message, dispatcher)
       rescue
         e in ArgumentError ->
+          # The message is lost for this callback, though `true` still suppresses
+          # re-propagation — log enough to tell loss from delivery (D070).
           Logger.error(
-            "Partisan Delivery Failed: PubSub '#{inspect(pubsub_name)}' not running. #{inspect(e)}"
+            "Partisan Delivery Failed: PubSub '#{inspect(pubsub_name)}' not running. " <>
+              Exception.format(:error, e, __STACKTRACE__)
           )
 
         e ->
-          Logger.error("Partisan Delivery Failed: #{inspect(e)}")
+          Logger.error(
+            "Partisan Delivery Failed: " <> Exception.format(:error, e, __STACKTRACE__)
+          )
       end
 
       true
@@ -266,11 +280,9 @@ defmodule Phoenix.PubSub.Partisan.Handler do
     # Check the ETS-backed seen set. When is_stale returns true, Plumtree
     # sends ignored_i_have → ack_outstanding removes the entry from
     # PLUMTREE_OUTSTANDING, breaking the infinite i_have/graft loop.
-    try do
-      :ets.member(@seen_table, id)
-    catch
-      :error, :badarg -> false
-    end
+    :ets.member(@seen_table, id)
+  catch
+    :error, :badarg -> false
   end
 
   @impl true
@@ -279,29 +291,25 @@ defmodule Phoenix.PubSub.Partisan.Handler do
   # -- Deduplication helpers --------------------------------------------------
 
   defp mark_seen(id) do
-    try do
-      :ets.insert(@seen_table, {id, :erlang.monotonic_time()})
-      maybe_prune_seen()
-    catch
-      :error, :badarg -> :ok
-    end
+    :ets.insert(@seen_table, {id, :erlang.monotonic_time()})
+    maybe_prune_seen()
+  catch
+    :error, :badarg -> :ok
   end
 
   defp maybe_prune_seen do
-    try do
-      size = :ets.info(@seen_table, :size)
+    size = :ets.info(@seen_table, :size)
 
-      if is_integer(size) and size > @max_seen do
-        # Delete oldest half by selecting entries with smallest timestamps.
-        # For simplicity, just delete the first half of entries (insertion order
-        # approximates chronological order in a :set table).
-        to_delete = div(size, 2)
-        key = :ets.first(@seen_table)
-        do_prune(key, to_delete)
-      end
-    catch
-      :error, :badarg -> :ok
+    if is_integer(size) and size > @max_seen do
+      # Delete oldest half by selecting entries with smallest timestamps.
+      # For simplicity, just delete the first half of entries (insertion order
+      # approximates chronological order in a :set table).
+      to_delete = div(size, 2)
+      key = :ets.first(@seen_table)
+      do_prune(key, to_delete)
     end
+  catch
+    :error, :badarg -> :ok
   end
 
   defp do_prune(:"$end_of_table", _remaining), do: :ok
@@ -324,7 +332,10 @@ defmodule Phoenix.PubSub.Partisan.Handler do
     try do
       Phoenix.PubSub.local_broadcast(state.pubsub_name, topic, message, dispatcher)
     rescue
-      e -> Logger.error("Partisan direct delivery failed: #{inspect(e)}")
+      e ->
+        Logger.error(
+          "Partisan direct delivery failed: " <> Exception.format(:error, e, __STACKTRACE__)
+        )
     end
 
     {:noreply, state}
