@@ -183,13 +183,156 @@
 
   /* presence wavers with the socket — the strip BANKS TO EMBER, not grayed out:
      dimmed and warmed, so it keeps the state's own colour while the line is
-     down (the ember scheme, never a pure-gray dropout). */
-  .phx-disconnected #disciple_panels [data-disciple],
+     down (the ember scheme, never a pure-gray dropout). Down is read from the
+     root data-conn the lamp mirrors: LiveView 1.x sets phx-connected, -loading,
+     -error, -client-error, -server-error and NOT phx-disconnected, so a rule
+     keyed on that class could never fire. */
+  html[data-conn="connecting"] #disciple_panels [data-disciple],
+  html[data-conn="offline"] #disciple_panels [data-disciple],
   .phx-client-error #disciple_panels [data-disciple],
   .phx-error #disciple_panels [data-disciple] {
     opacity: 0.75;
     filter: sepia(0.22) saturate(1.05) brightness(0.94);
     pointer-events: none;
+  }
+
+  /* --- the lamp: three states in the shell's own vocabulary.
+     live  = --color-accent-content, the exact colour an ACTIVE tab uses
+     reach = --color-warning, amber — lit but not landed
+     rest  = dull grey, base-content pulled most of the way to the surface
+     The light lives INSIDE the element's 14px box: a radial halo, not a
+     box-shadow. The welcome row clips its overflow (it truncates a long session
+     name), so a spreading bloom gets sliced at the border. */
+  #conn-dot {
+    width: 0.875rem;
+    height: 0.875rem;
+    display: inline-grid;
+    place-items: center;
+    /* one tint drives dot and halo; each state reassigns only this.
+       Grey is mixed, not taken: base-content alone is a bright cream in the
+       dark theme, which is not a dull light — it is a missing one. */
+    --lamp-tint: color-mix(in oklch, var(--color-base-content) 35%, var(--color-base-300));
+    --lamp-core: color-mix(in oklch, var(--lamp-tint) 100%, white);
+    --lamp-halo: color-mix(in oklch, var(--lamp-tint) 80%, transparent);
+  }
+
+  #conn-dot[data-conn="connecting"] {
+    --lamp-tint: var(--color-warning);
+  }
+
+  #conn-dot[data-conn="online"] {
+    --lamp-tint: var(--color-accent-content);
+  }
+
+  #conn-dot::before,
+  #conn-dot::after {
+    content: "";
+    grid-area: 1 / 1;
+    border-radius: 9999px;
+    transition:
+      background-color 420ms ease,
+      opacity 420ms ease;
+  }
+
+  /* the dot: the light that is either on or not */
+  #conn-dot::before {
+    width: 0.375rem;
+    height: 0.375rem;
+    background: var(--lamp-tint);
+    opacity: 0.5;
+  }
+
+  /* the halo: white-hot core so the swell reads on a dark shell instead of
+     dissolving into it */
+  #conn-dot::after {
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(
+      circle,
+      var(--lamp-core) 0%,
+      var(--lamp-halo) 38%,
+      transparent 72%
+    );
+    opacity: 0;
+  }
+
+  #conn-dot[data-conn="connecting"]::before {
+    opacity: 0.95;
+  }
+
+  #conn-dot[data-conn="online"]::before {
+    animation: lamp-core-swell 3.4s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  }
+
+  #conn-dot[data-conn="connecting"]::after {
+    animation: lamp-breathe 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  #conn-dot[data-conn="online"]::after {
+    animation: lamp-helios 3.4s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  }
+
+  /* The dot itself swells with the halo. One moving part reads as a fade; two
+     in phase read as breathing. 6px x 1.22 stays inside the 14px box. */
+  @keyframes lamp-core-swell {
+    0%,
+    100% {
+      opacity: 0.8;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.22);
+    }
+  }
+
+  /* Five stops, not three: a three-stop sine sits still between frames and then
+     jumps. Deep swing (0.38 -> 1) at a contained scale: gradual, still legible. */
+  @keyframes lamp-helios {
+    0%,
+    100% {
+      opacity: 0.38;
+      transform: scale(0.58);
+    }
+    25% {
+      opacity: 0.7;
+      transform: scale(0.78);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    75% {
+      opacity: 0.7;
+      transform: scale(0.78);
+    }
+  }
+
+  @keyframes lamp-breathe {
+    0%,
+    100% {
+      opacity: 0.2;
+      transform: scale(0.5);
+    }
+    50% {
+      opacity: 0.6;
+      transform: scale(0.82);
+    }
+  }
+
+  /* A pulse is a claim. Some of us asked not to be shown one: the lamp still
+     says live, it just stops moving. */
+  @media (prefers-reduced-motion: reduce) {
+    #conn-dot[data-conn="online"]::before {
+      animation: none;
+      opacity: 1;
+    }
+    #conn-dot[data-conn="connecting"]::after,
+    #conn-dot[data-conn="online"]::after {
+      animation: none;
+      opacity: 0.6;
+      transform: scale(0.86);
+    }
   }
 </style>
 <div class="relative h-screen w-screen bg-secondary">
@@ -393,8 +536,18 @@
                 {Session.t(@locale, "to %{clan}'s shell", clan: to_titlecase(@clan))}
               </span>
 
+              <%!-- The lamp: connection truth where the old blind pulse sat
+                   (id:shell-offline-first). No progress bar — the shell is
+                   offline-first, so the question is "can the socket carry a
+                   frame". ConnectionDot flips data-conn; CSS owns the light. --%>
               <span class="relative flex items-center ms-1">
-                <span class="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                <span
+                  id="conn-dot"
+                  phx-hook="ConnectionDot"
+                  role="status"
+                  aria-label="connecting"
+                  data-conn="connecting"
+                ></span>
               </span>
             </span>
           </div>

@@ -47,7 +47,7 @@
 /burrito_out/
 
 # The constellation and the workshop: prose, spikes, and generated corpora.
-# The image is mix.exs, config, lib, priv, assets, rel — nothing else.
+# The image is mix.exs, config, lib, vendor, priv, assets, rel — nothing else.
 /specs/
 /scripts/
 /diagrams/

@@ -38,6 +38,9 @@ ENV MIX_ENV="prod"
 
 # install mix dependencies
 COPY mix.exs mix.lock ./
+# The PubSub adapter is a path dependency (vendor/phx_pubsub_partisan): it must
+# exist before deps.get resolves it, and it is not under lib/.
+COPY vendor vendor
 RUN mix deps.get --only $MIX_ENV
 RUN mkdir config
 

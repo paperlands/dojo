@@ -21,6 +21,61 @@
     <%!-- keep journal worker — digested path for the durability door (id:kb-6).
          IIFE cannot resolve import.meta.url; the door reads this meta. --%>
     <meta name="keep-journal-worker" content={~p"/assets/js/keep/journal.worker.js"} />
+    <%!-- id:assets-boot-witness · a bundle that cannot parse never runs, so the
+         only witness left is this listener. ES5 only: it must survive the engines
+         the bundle rejects. Writes one plausible event, then gets out of the way. --%>
+    <script>
+      (function () {
+        var seen = false;
+        window.plausible = window.plausible || function () {
+          (window.plausible.q = window.plausible.q || []).push(arguments);
+        };
+        function isBundleUrl(url) {
+          return typeof url === "string" && url.indexOf("/assets/js/") >= 0;
+        }
+        function notice(message, url) {
+          if (seen) return;
+          seen = true;
+          window.plausible("js-boot-failure", {
+            props: {
+              url: String(url || ""),
+              message: String(message || ""),
+              ua: String(navigator.userAgent || "")
+            }
+          });
+          if (document.readyState === "complete") return;
+          var bar = document.createElement("div");
+          bar.setAttribute("role", "alert");
+          bar.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:2147483647;padding:12px 16px;font:14px/1.45 system-ui,-apple-system,sans-serif;background:#3d1f1f;color:#fff;border-bottom:2px solid #ff9933;cursor:pointer";
+          var strong = document.createElement("strong");
+          strong.textContent = "This browser cannot run PaperLand. ";
+          var body = document.createElement("span");
+          body.textContent = "The page script did not start, so nothing below works — updating the browser fixes it. Details: "
+            + (message || "no message") + " (" + (url || "unknown script") + ") — "
+            + String(navigator.userAgent || "").slice(0, 120);
+          bar.appendChild(strong);
+          bar.appendChild(body);
+          bar.onclick = function () { if (bar.parentNode) bar.parentNode.removeChild(bar); };
+          (document.body || document.documentElement).appendChild(bar);
+        }
+        window.addEventListener("error", function (event) {
+          var target = event.target || {};
+          var url = event.filename || target.src || "";
+          if (isBundleUrl(url)) return notice(event.message || "script did not start", url);
+          if (target.tagName === "SCRIPT" && isBundleUrl(target.src)) return notice("script failed to load", target.src);
+          if (event.message && /is not a function|is not defined|is not supported/i.test(event.message)) {
+            notice(event.message, url || location.href);
+          }
+        }, true);
+        window.addEventListener("unhandledrejection", function (event) {
+          var reason = (event && event.reason) || {};
+          var message = String((reason && reason.message) || reason || "");
+          if (/is not a function|is not defined|is not supported|structuredClone|hasOwn/.test(message)) {
+            notice(message, location.href);
+          }
+        });
+      })();
+    </script>
     <script
       defer
       fetchpriority="high"

@@ -175,8 +175,11 @@ defmodule Dojo.Cluster.NetworkMonitor do
   # existed; withdrawing before the bind leaves us unreachable if the bind fails.
   defp handle_ip_change(new_ips, old_ips, port, new_addr) do
     t0 = System.monotonic_time(:millisecond)
+
     step = fn label ->
-      Logger.warning("[NetworkMonitor] step #{label} +#{System.monotonic_time(:millisecond) - t0}ms")
+      Logger.warning(
+        "[NetworkMonitor] step #{label} +#{System.monotonic_time(:millisecond) - t0}ms"
+      )
     end
 
     new_addrs = Enum.map(new_ips, fn ip -> %{ip: ip, port: port} end)
@@ -302,9 +305,11 @@ defmodule Dojo.Cluster.NetworkMonitor do
     # its membership state (active/passive views) survives the listener restart.
     try do
       Logger.warning("[NetworkMonitor] terminating acceptor pool")
+
       case Supervisor.terminate_child(:partisan_sup, :partisan_acceptor_socket_pool_sup) do
         :ok ->
           Logger.warning("[NetworkMonitor] restarting acceptor pool")
+
           case Supervisor.restart_child(:partisan_sup, :partisan_acceptor_socket_pool_sup) do
             {:ok, pid} ->
               Logger.info("[NetworkMonitor] acceptor pool restarted → #{inspect(pid)}")

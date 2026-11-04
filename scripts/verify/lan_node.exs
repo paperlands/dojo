@@ -27,8 +27,47 @@ defmodule LanNode do
 
     path = Path.join(out_dir, "node#{idx}.term")
     File.mkdir_p!(out_dir)
+    open_keep(idx, out_dir)
     Phoenix.PubSub.subscribe(Dojo.PubSub, @topic)
     loop(path, idx, out_dir, %{})
+  end
+
+  # ── keep: one durable log per node, replicated through Partisan ────────────
+  # The writer identity lives in the database, so a node that reboots under a new
+  # partisan name resumes its own sequence instead of forking (D067.1).
+  defp open_keep(idx, out_dir) do
+    {:ok, conn} = Dojo.Keep.Log.open(Path.join(out_dir, "keep#{idx}.db"))
+    _ = Dojo.Keep.Log.ensure_writer(conn)
+    Dojo.Keep.Sync.Partisan.attach(conn)
+  end
+
+  @doc "Commit n facts locally; returns the frontier afterwards."
+  def keep_write(n) do
+    conn = Dojo.Keep.Sync.Partisan.conn()
+
+    for i <- 1..n do
+      {:ok, _} =
+        Dojo.Keep.Log.commit(conn, %{
+          type: :keep_fact,
+          key: %{id: "#{:partisan.node()}:#{i}:#{System.unique_integer([:positive])}"},
+          value: :binary.copy(<<"k">>, 32)
+        })
+    end
+
+    Dojo.Keep.Log.frontier(conn)
+  end
+
+  @doc "One reconciliation against every reachable peer."
+  def keep_exchange, do: Dojo.Keep.Sync.Partisan.exchange_all()
+
+  @doc "Every materialised unit on this node — the projection as data."
+  def keep_units, do: Dojo.Keep.Log.units(Dojo.Keep.Sync.Partisan.conn())
+
+  @doc "The local applied frontier and completeness."
+  def keep_status do
+    conn = Dojo.Keep.Sync.Partisan.conn()
+    status = Dojo.Keep.Log.status(conn)
+    Map.put(status, :writer, Dojo.Keep.Log.writer(conn))
   end
 
   # These are invoked through the file command bridge. They prove the shipped

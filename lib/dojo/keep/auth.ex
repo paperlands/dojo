@@ -7,6 +7,9 @@ defmodule Dojo.Keep.Auth do
   """
 
   @domain "dojo:keep-auth:v1\0"
+  # Assertions are a different protocol: a signature over one must never be
+  # replayable as a signature over the other (domain separation, D074).
+  @assertion_domain "dojo:keep-assertion:v1\0"
   @max_genesis 64 * 1024
 
   @skeleton_path Path.expand("../../../priv/keep/skeleton.json", __DIR__)
@@ -35,6 +38,51 @@ defmodule Dojo.Keep.Auth do
   end
 
   def verify(_, _, _), do: {:error, :auth}
+
+  @doc """
+  Verify a detached signature over canonical assertion bytes.
+
+  The bytes being signed are the complete canonical envelope (identity, type,
+  version, clock, key, value, dependency) — never the payload alone, never the
+  digest alone. Returns a boolean because ingress has one decision.
+  """
+  @spec verify_assertion(binary(), binary(), binary()) :: boolean()
+  def verify_assertion(public_key_hex, signature_hex, envelope_bytes)
+      when is_binary(public_key_hex) and is_binary(signature_hex) and is_binary(envelope_bytes) do
+    with {:ok, key} <- raw_public_key(public_key_hex),
+         {:ok, raw_signature} <- hex(signature_hex, 64) do
+      valid_signature?(key, raw_signature, @assertion_domain <> envelope_bytes)
+    else
+      _ -> false
+    end
+  end
+
+  def verify_assertion(_, _, _), do: false
+
+  @doc """
+  Sign canonical assertion bytes (local writers and tests).
+
+  The private key never enters the log: a caller signs, the log verifies.
+  """
+  @spec sign_assertion(binary(), binary()) :: binary()
+  def sign_assertion(private_key, envelope_bytes)
+      when is_binary(private_key) and is_binary(envelope_bytes) do
+    der =
+      :crypto.sign(:ecdsa, :sha256, @assertion_domain <> envelope_bytes, [
+        private_key,
+        :secp256r1
+      ])
+
+    {:"ECDSA-Sig-Value", r, s} = :public_key.der_decode(:"ECDSA-Sig-Value", der)
+    Base.encode16(<<r::unsigned-big-256, s::unsigned-big-256>>, case: :lower)
+  end
+
+  defp raw_public_key(hex_key) do
+    case hex(hex_key, 65) do
+      {:ok, <<4, _::binary-size(64)>> = key} -> {:ok, key}
+      _ -> :error
+    end
+  end
 
   defp credential(%{
          "v" => 1,

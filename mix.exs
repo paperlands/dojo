@@ -5,7 +5,7 @@ defmodule Dojo.MixProject do
     [
       app: :dojo,
       version: "0.6.0",
-      elixir: "~> 1.20",
+      elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() in [:prod, :local],
       aliases: aliases(),
@@ -73,6 +73,10 @@ defmodule Dojo.MixProject do
       {:bandit, "~> 1.2"},
       {:burrito, burrito_dep()},
       {:partisan, partisan_dep()},
+      # The PubSub adapter is its own app on purpose: a host compile unloads
+      # every module it recompiles, and the Gate's tracker calls the adapter by
+      # atom every 3s. Deps are never purged — see vendor/phx_pubsub_partisan.
+      {:phx_pubsub_partisan, path: "vendor/phx_pubsub_partisan"},
       {:recon, "~> 2.5"}
     ]
   end
@@ -96,7 +100,7 @@ defmodule Dojo.MixProject do
 
   defp partisan_dep() do
     if path = System.get_env("PARTISAN_PATH") do
-      [path: path]
+      [path: local_path!("PARTISAN_PATH", path)]
     else
       # Pinned by SHA, not a branch: a branch name in mix.exs is what let the
       # lock drift to the v5 tip while the source assumed v6 (D070). The SHA is
@@ -105,11 +109,19 @@ defmodule Dojo.MixProject do
     end
   end
 
+  # Mix expands a `path:` requirement against the project that declared it, and
+  # the vendored adapter declares partisan too: a relative PARTISAN_PATH names
+  # two different directories. Absolute, or fail before the lock is touched.
+  defp local_path!(var, path) do
+    Path.type(path) == :absolute || Mix.raise("#{var} must be absolute, got: #{path}")
+    path
+  end
+
   # Like PARTISAN_PATH: point at a local Burrito fork for development
   # (e.g. testing 32-bit Windows wrapper changes) without a push/lock cycle.
   defp burrito_dep() do
     if path = System.get_env("BURRITO_PATH") do
-      [path: path]
+      [path: local_path!("BURRITO_PATH", path)]
     else
       [github: "paperlands/burrito", commit: "latest"]
     end
@@ -140,6 +152,8 @@ defmodule Dojo.MixProject do
       # press.codex: id→{name,title} index for the weave resolver (Shoot 0 / Q2),
       # and the vendor recast into priv/static/codex (what the web reaches).
       "press.codex": &press_codex/1,
+      # verify.assets wraps the deploy build (id:assets-bundle-boundary).
+      "verify.assets": &verify_assets/1,
       "assets.build": [
         "press.codex",
         "tailwind dojo",
@@ -148,7 +162,7 @@ defmodule Dojo.MixProject do
       "assets.deploy": [
         "press.codex",
         "tailwind dojo --minify",
-        "esbuild dojo --minify",
+        "verify.assets",
         "phx.digest"
       ]
     ]
@@ -163,6 +177,60 @@ defmodule Dojo.MixProject do
     else
       Mix.shell().info("press.codex: no codex/fragments here — skipped")
     end
+  end
+
+  # id:assets-bundle-boundary — the contract this enforces, in one line: every
+  # synchronous browser dependency is either bundled or refused, never left to
+  # become a runtime require. esbuild only reports externals as success, so the
+  # artifact and the metafile are the witnesses. Own outdir: this asserts on the
+  # thing the browser receives, independent of when phx.digest runs.
+  # id:assets-bundle-boundary — the build is the witness, not a pattern match: if
+  # a synchronous dependency was externalized the metafile records it as an
+  # external import, and the browser gets a __require call it cannot honour.
+  # Names nothing, so it cannot go stale when a vendored file is deleted; Linux
+  # cannot fail it (it never externalizes), Windows can.
+  #
+  # Builds to a scratch dir and publishes only verified bytes: a failing build
+  # must not leave a broken bundle where the dev server serves it (learned the
+  # hard way — the falsification run leaked one into priv/static).
+  defp verify_assets(_args) do
+    out = Path.join(System.tmp_dir!(), "dojo-verify-assets")
+    meta = Path.join(out, "meta.json")
+    File.rm_rf!(out)
+    File.mkdir_p!(out)
+
+    # The configured --outdir loses to this one (esbuild: last wins).
+    Mix.Task.run("esbuild", ["dojo", "--minify", "--outdir=#{out}", "--metafile=#{meta}"])
+
+    outputs = meta |> File.read!() |> Jason.decode!() |> Map.fetch!("outputs")
+
+    externals =
+      for {_entry, info} <- outputs,
+          import <- info["imports"] || [],
+          import["external"] == true,
+          uniq: true,
+          do: "#{import["path"]} (#{import["kind"]})"
+
+    if externals != [] do
+      File.rm_rf!(out)
+
+      Mix.raise("""
+      verify.assets: the bundle has external imports, which ship as runtime require():
+        #{Enum.join(externals, "\n  ")}
+      Bundle the dependency, or make it an approved runtime import (non-analyzable specifier).
+      """)
+    end
+
+    "app.js"
+    |> then(&File.read!(Path.join(out, &1)))
+    |> String.contains?("sourceMappingURL=data:")
+    |> if(do: Mix.raise("verify.assets: deploy artifact carries an inline sourcemap"))
+
+    for entry <- File.ls!(out), entry != "meta.json" do
+      File.cp_r!(Path.join(out, entry), Path.join("priv/static/assets/js", entry))
+    end
+
+    File.rm_rf!(out)
   end
 
   def releases do

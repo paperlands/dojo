@@ -81,3 +81,12 @@ rel/packaging/resources/VC_redist.x64.exe
 /video/
 # play rungs are local play programs; no tracked document cites them
 /scripts/play/rungs/
+
+# ── vendored path deps (vendor/*/) ─────────────────────────────────────────
+# A path dep is resolved and locked by the ROOT project, so anything it writes
+# for itself (a lock, deps/, a build dir) is per-machine noise — an editor LSP
+# compiling it standalone must not leave tracked files behind.
+/vendor/*/deps/
+/vendor/*/_build/
+/vendor/*/.expert/
+/vendor/*/mix.lock

@@ -8,7 +8,10 @@ defmodule PhxPubSubPartisan.MixProject do
     [
       app: :phx_pubsub_partisan,
       version: "0.1.0",
-      elixir: "~> 1.20",
+      # The floor the code needs, not the version we happen to run: `Logger.warning/1`
+      # landed in 1.15 and `phoenix_pubsub` itself asks only for 1.13. Raise this
+      # only with a syntax or API that demands it.
+      elixir: "~> 1.15",
       deps: deps()
     ]
   end
@@ -19,6 +22,9 @@ defmodule PhxPubSubPartisan.MixProject do
 
   defp deps do
     [
+      # 2.2 is the floor for a reason, not habit: it is where shards stop
+      # restarting on normal termination, which the restart arithmetic around
+      # this adapter's callers assumes.
       {:phoenix_pubsub, "~> 2.2"},
       {:partisan, partisan_dep()}
     ]

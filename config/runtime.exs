@@ -221,9 +221,10 @@ config :partisan,
   connection_high_watermark: 5_000,
   listen_options: listen_options
 
-config :dojo, Phoenix.PubSub.Partisan,
-  channel_data: :data,
-  channel_control: :control
+# The adapter is its own app (vendor/phx_pubsub_partisan) and reads its own key.
+# Only the control channel is a knob: the data channel is fixed at `:data` by
+# the handler's broadcast_channel/0, so a `channel_data` setting here would lie.
+config :phx_pubsub_partisan, Phoenix.PubSub.Partisan, channel_control: :control
 
 # Keep journal path — runtime, never inside a Burrito extract (id:keep-ms-sqlite-path).
 # KEEP_PATH wins. Else beside the release, since a server release has no home

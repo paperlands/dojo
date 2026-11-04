@@ -52,8 +52,15 @@ config :esbuild,
     # (id:kb-6) — a second entry so the worker is one IIFE with its engine
     # inlined. The door loads it by the digested path in root.html.heex
     # (import.meta.url is empty under IIFE — empty-import-meta).
+    # No --external here on purpose (id:assets-bundle-boundary). A path-like
+    # pattern is matched against resolved filesystem paths, and its meaning
+    # moves with the OS — a leading / is root-absolute on Linux and
+    # volume-relative on Windows, where `/vendor/*` externalized every
+    # assets/vendor/* import and shipped `__require` calls a browser cannot
+    # honour ("Dynamic require of … is not supported"). Runtime-loaded modules
+    # carry a non-analyzable import instead; verify.assets enforces both ends.
     args:
-      ~w(js/app.js js/keep/journal.worker.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --external:/vendor/* --alias:@=.),
+      ~w(js/app.js js/keep/journal.worker.js --bundle --target=es2022 --outdir=../priv/static/assets/js --alias:@=.),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]

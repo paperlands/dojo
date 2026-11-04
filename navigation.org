@@ -610,10 +610,13 @@ Source guard cross-door tests: =test/js/terminal/terminal_test.mjs= ("fork link"
 :PROPERTIES:
 :ID: nav-partisan-pubsub
 :KEYWORDS: pubsub broadcast partisan seen_table dedup storm fanout
-:PATH: lib/dojo/partisan_pubsub.ex
+:PATH: vendor/phx_pubsub_partisan/lib/phoenix/pubsub/partisan.ex
 :END:
 Decision 005: antifragile broadcast storm. Partisan internals: grep
 =/home/putra/Repos/partisan/src/= (fork; LSP won't index).
+It is its own OTP app on purpose: a host compile deletes the beam and unloads
+every stale module, and the Gate's tracker calls the adapter by atom every 3s.
+A dep is never purged, so a reload cannot unload it.
 
 ** which address routes — fly vs local
 :PROPERTIES:
