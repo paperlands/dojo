@@ -226,8 +226,11 @@ defmodule Dojo.MixProject do
     |> String.contains?("sourceMappingURL=data:")
     |> if(do: Mix.raise("verify.assets: deploy artifact carries an inline sourcemap"))
 
+    dest = "priv/static/assets/js"
+    File.mkdir_p!(dest)
+
     for entry <- File.ls!(out), entry != "meta.json" do
-      File.cp_r!(Path.join(out, entry), Path.join("priv/static/assets/js", entry))
+      File.cp_r!(Path.join(out, entry), Path.join(dest, entry))
     end
 
     File.rm_rf!(out)
