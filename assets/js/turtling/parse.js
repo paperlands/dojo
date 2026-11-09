@@ -5,8 +5,24 @@ import { Lexer } from "./mafs/lexer.js"
 import { Parser as ExprParser } from "./mafs/parse.js"
 
 
-//manage state
-class ParserState {
+// ============================================================================
+// parse.js — one pipeline. Each stage narrows what the next may say.
+// ============================================================================
+//   THE GRAMMAR     the marks as typed, and the predicates over them
+//   THE SCAN        one walk naming each line's ROLE — no records, no tree
+//   RESILIENCE      a broken part is held; the healthy parts still run (D020)
+//   THE PARSE       records → top-level units
+//   THE GREEN TREE  identity: an old object may carry the new answer
+//   CONVERGENCE     a text diff → the same forest a full parse would build
+//   THE LINE PASS   lines → records, restartable from three bits of fence state
+//   THE CHUNKS      one line → tokens, groups and quotes kept whole
+//   ARGUMENTS       a chunk's boundary read from the lexer, not its spelling
+//   THE OUTLINE     one walk over lines: the whole shape of a page
+//   GEOMETRY        a fold over the scan → meadows, cells, phases
+//   THE PHASE       attention is the address (D021)
+
+// THE CURSOR — one position over the records; `last` is what a block reads.
+export class ParserState {
     constructor(lines) {
         this.lines = lines;
         this.pos = 0;
@@ -49,12 +65,47 @@ export const CELL_OPEN = /^[ \t]*```/;              // an info word may ride the
 export const CELL_CLOSE = /^[ \t]*```[ \t]*$/;      // a bare ``` is only ever a closer
 export const CELL_PROBE = /^[ \t]*```/m;            // cheap multi-line gate (page.js)
 
-// A substring include is a cheap SUPERSET of each fence match (a fence line must
-// contain its mark), and it lets a RegExp test be skipped for every ordinary code
-// line. (profile: these ran a regex per line, twice per meadow scan.)
-export const isMeadowFence = (s) => s != null && s.includes(MEADOW_MARK) && MEADOW_FENCE.test(s);
-export const isCellOpen = (s) => s != null && s.includes(CELL_MARK) && CELL_OPEN.test(s);
-export const isCellClose = (s) => s != null && s.includes(CELL_MARK) && CELL_CLOSE.test(s);
+// Callers that split elsewhere (CM6 hands us its own lines) may still carry a
+// stray `\r` — and `###\r` is not a fence to any predicate here.
+const lineText = (s) => {
+    const t = s ?? '';
+    return t.charCodeAt(t.length - 1) === 13 ? t.slice(0, -1) : t;
+};
+
+// A line's SYMBOL is a fact about the text alone; its ROLE is a fact about
+// (symbol, place). Keeping them apart lets ONE table serve the scan, the record
+// pass and the restart fold (id:gw-grammar).
+export const SYMBOL = {
+    meadow:   0,   // `###`
+    tickBare: 1,   // ``` alone — a closer in a cell, an opener in a clearing
+    tickInfo: 2,   // ```word — an opener in a clearing, BODY inside a cell
+    headline: 3,   // `* name`
+    text:     4,
+};
+
+// Every fence anchors at line start after optional blanks, so ONE peek at the
+// first significant character decides which regex may match. The peek picks the
+// law; it never replaces it. `text` is expected already normalized by `lineText`.
+export function symbolOf(text) {
+    let i = 0;
+    const n = text.length;
+    while (i < n && (text.charCodeAt(i) === 32 || text.charCodeAt(i) === 9)) i++;
+    switch (text.charCodeAt(i)) {
+        case 35: return MEADOW_FENCE.test(text) ? SYMBOL.meadow : SYMBOL.text;      // #
+        case 96: return CELL_CLOSE.test(text) ? SYMBOL.tickBare                    // `
+                      : CELL_OPEN.test(text) ? SYMBOL.tickInfo : SYMBOL.text;
+        case 42: return HEADLINE.test(text) ? SYMBOL.headline : SYMBOL.text;       // *
+        default: return SYMBOL.text;
+    }
+}
+
+const kindOf = (s) => (s == null ? SYMBOL.text : symbolOf(lineText(s)));
+export const isMeadowFence = (s) => kindOf(s) === SYMBOL.meadow;
+export const isCellOpen = (s) => {
+    const k = kindOf(s);
+    return k === SYMBOL.tickBare || k === SYMBOL.tickInfo;
+};
+export const isCellClose = (s) => kindOf(s) === SYMBOL.tickBare;
 
 // The one place code and comment part. Everything after `#` rides verbatim —
 // the author's whitespace is theirs. A bare `#` still yields a comment, not undefined.
@@ -69,7 +120,7 @@ const OPENS_BRACKET = { '[': 1, '(': 1 };
 
 // Block statement heads — the only keywords that open a `… do … end` body.
 // Editor indent tracks `do`/`end` themselves; depth scanners use blockDelta.
-export const BLOCK_KW = { for: 1, loop: 1, def: 1, draw: 1, when: 1, as: 1 };
+const BLOCK_KW = { for: 1, loop: 1, def: 1, draw: 1, when: 1, as: 1 };
 
 // Depth delta for one source line. +1 opens (code half ends in `do`), -1
 // closes (`end` at the start of the code half), else 0. The margin `# …` is
@@ -109,61 +160,55 @@ export const ROLE = {
 // The ONE split. Line endings are the tape's, never the child's content.
 export const splitLines = (text) => String(text ?? '').split(/\r\n|\r|\n/);
 
-// Callers that split elsewhere (CM6 hands us its own lines) may still carry a
-// stray `\r` — and `###\r` is not a fence to any predicate here.
-const lineText = (s) => {
-    const t = s ?? '';
-    return t.charCodeAt(t.length - 1) === 13 ? t.slice(0, -1) : t;
-};
+
+// THE FENCE MACHINE — four places, one table (id:gw-grammar).
+//   out     outside every clearing
+//   pending inside a clearing whose first unit has not been emitted — an unpaid
+//           obligation to stamp that unit's open mark
+//   meadow  inside a clearing, obligation paid
+//   cell    inside a cell
+// Rows `pending` and `meadow` are identical ON PURPOSE: the obligation changes
+// what the record fold EMITS, never where the machine goes.
+export const PLACE = { out: 0, pending: 1, meadow: 2, cell: 3 };
+
+const R = (role, next) => ({ role, next });
+const MACHINE = [
+    /* out     */ [R(ROLE.meadowOpen, PLACE.pending), R(ROLE.code, PLACE.out), R(ROLE.code, PLACE.out), R(ROLE.code, PLACE.out), R(ROLE.code, PLACE.out)],
+    /* pending */ [R(ROLE.meadowClose, PLACE.out), R(ROLE.cellOpen, PLACE.cell), R(ROLE.cellOpen, PLACE.cell), R(ROLE.headline, PLACE.meadow), R(ROLE.prose, PLACE.meadow)],
+    /* meadow  */ [R(ROLE.meadowClose, PLACE.out), R(ROLE.cellOpen, PLACE.cell), R(ROLE.cellOpen, PLACE.cell), R(ROLE.headline, PLACE.meadow), R(ROLE.prose, PLACE.meadow)],
+    /* cell    */ [R(ROLE.meadowClose, PLACE.out), R(ROLE.cellClose, PLACE.meadow), R(ROLE.code, PLACE.cell), R(ROLE.code, PLACE.cell), R(ROLE.code, PLACE.cell)],
+];
 
 // lines → rows, 1:1 and in document order.
 //   { line, text, role } always; `info` on cellOpen (the word on the fence, or
 //   null), `depth`/`title` on headline, `closesCell` on a meadowClose that cut a
 //   cell short. A headline is prose too — a reader that gathers prose takes it.
 // What ran off the end is the FOLD's to close: the tape ending is not a fence.
-export function classify(lines) {
+// `upto` stops the walk early — for a fold that wants the boundary state, not rows.
+export function classify(lines, upto = Infinity) {
     const rows = [];
-    const n = lines?.length ?? 0;
-    let inMeadow = false, inCell = false;
+    const n = Math.min(lines?.length ?? 0, upto);
+    let place = PLACE.out;
 
     for (let i = 0; i < n; i++) {
         const text = lineText(lines[i]);
         const line = i + 1;
+        const prev = place;
+        const step = MACHINE[place][symbolOf(text)];
+        place = step.next;
 
-        if (inCell) {
-            if (CELL_CLOSE.test(text)) {
-                inCell = false;
-                rows.push({ line, text, role: ROLE.cellClose });
-            } else if (MEADOW_FENCE.test(text)) {
-                // ``` closes a cell; ### closes it AND the clearing.
-                inCell = false; inMeadow = false;
-                rows.push({ line, text, role: ROLE.meadowClose, closesCell: true });
-            } else {
-                rows.push({ line, text, role: ROLE.code });
-            }
-            continue;
-        }
-
-        if (MEADOW_FENCE.test(text)) {
-            rows.push({ line, text, role: inMeadow ? ROLE.meadowClose : ROLE.meadowOpen });
-            inMeadow = !inMeadow;
-            continue;
-        }
-
-        if (!inMeadow) { rows.push({ line, text, role: ROLE.code }); continue; }
-
-        if (CELL_OPEN.test(text)) {
-            inCell = true;
-            rows.push({ line, text, role: ROLE.cellOpen,
+        if (step.role === ROLE.cellOpen) {
+            rows.push({ line, text, role: step.role,
                         info: text.replace(CELL_OPEN, '').trim() || null });
-            continue;
+        } else if (step.role === ROLE.headline) {
+            const m = HEADLINE.exec(text);
+            rows.push({ line, text, role: step.role, depth: m[1].length, title: m[2].trim() });
+        } else if (prev === PLACE.cell && step.role === ROLE.meadowClose) {
+            rows.push({ line, text, role: step.role, closesCell: true });
+        } else {
+            rows.push({ line, text, role: step.role });
         }
-
-        const m = HEADLINE.exec(text);
-        if (m) rows.push({ line, text, role: ROLE.headline, depth: m[1].length, title: m[2].trim() });
-        else rows.push({ line, text, role: ROLE.prose });
     }
-
     return rows;
 }
 
@@ -193,7 +238,7 @@ function cellFenceNode(line) {
 }
 
 // ============================================================================
-// Spans + error nodes — the resilient parse (specs/compiler.org id:cmp-resilient)
+// RESILIENCE — spans, error nodes, trivia (id:cmp-resilient)
 // ============================================================================
 
 // 1-based ORIGINAL buffer lines. The tokenizer reshapes lines but every record
@@ -218,54 +263,77 @@ function errorNode(rec, expected, found, children = []) {
 const attachComment = (node, comment) =>
     comment != null ? node.assign_meta('comment', comment) : node;
 
-// main parser
+// ============================================================================
+// THE PARSE — records → top-level units (id:cmp-green-tree)
+// ============================================================================
+// One top-level unit. The parser carries no cross-unit state at depth 0, so a
+// unit is exactly the restart/stop grain (id:cmp-green-tree, id:pa-zig-incremental).
+export function parseUnit(state) {
+    const line = state.next();
+
+    if (line.meadow !== undefined) return meadowNode(line);
+    if (line.cellFence) return cellFenceNode(line);
+
+    const tokens = tokenizeLine(line.text);
+    const comment = line.comment;
+
+    // A stray `end` is an error node, never a phantom Call (D020).
+    if (tokens.length === 1 && tokens[0] === END) {
+        return attachComment(errorNode(line, 'an open block to close', `'${END}'`), comment);
+    }
+
+    if (tokens.length === 0) {
+        const node = stamp(new ASTNode('Empty', ''), line);
+        attachComment(node, comment);
+        return node;
+    }
+
+    const node = parseStatement(tokens, state, line);
+    attachComment(node, comment);
+    return node;
+}
+
+// A unit's span is the coordinates a restart needs, and it is a CONSERVATIVE
+// superset of the records the unit consumes: an Error node rounds outward to the
+// boundary it refused to cross (`expected 'end'` reaches the fence it stopped at).
+// Rounding outward is the safe direction — a restart may re-parse extra, never skip.
+//
+// PROVENANCE — which text a forest's spans were born in. It rides the array it
+// describes (a Symbol key: invisible to JSON and to every reader), because a side
+// table keyed ON the array can be re-armed wrongly or lost. Geometry is not
+// carried at all: a unit's line, far edge and fence state are read off its own
+// span and the scan (id:cmp-green-tree).
+const PROVENANCE = Symbol('parse.provenance');
+
+const arm = (units, source) => {
+    units[PROVENANCE] = { source, consumed: false };
+    return units;
+};
+
+// Read-only, for the provenance auditor: `{ source }` — never a semantic property.
+export const provenanceOf = (ast) => ast?.[PROVENANCE];
+
 export function parseProgram(program) {
-    const lines = tokenize(program);
+    const { lines } = tokenize(program);
     const state = new ParserState(lines);
     const ast = [];
 
-    while (state.hasMore()) {
-        const line = state.next();
+    while (state.hasMore()) ast.push(parseUnit(state));
 
-        if (line.meadow !== undefined) { ast.push(meadowNode(line)); continue; }
-        if (line.cellFence) { ast.push(cellFenceNode(line)); continue; }
-
-        const tokens = tokenizeLine(line.text);
-        const comment = line.comment;
-
-        // A stray `end` is an error node, never a phantom Call (D020).
-        if (tokens.length === 1 && tokens[0] === END) {
-            ast.push(attachComment(errorNode(line, 'an open block to close', `'${END}'`), comment));
-            continue;
-        }
-
-        if (tokens.length === 0) {
-            const node = stamp(new ASTNode('Empty', ''), line);
-            attachComment(node, comment);
-            ast.push(node);
-            continue;
-        }
-
-        const node = parseStatement(tokens, state, line);
-        attachComment(node, comment);
-        ast.push(node);
-    }
-
-    return ast;
+    return arm(ast, program);
 }
 
 // ============================================================================
-// The green tree — identity across reparses (specs/compiler.org id:cmp-green-tree)
+// THE GREEN TREE — identity across reparses (id:cmp-green-tree)
 // ============================================================================
-// Reparse whole, then recover identity by diffing at the top-level unit, so
-// unchanged structure stays ===-identical across reparses (id:pa-zig-incremental).
+// Reparse whole, then recover identity at the top-level unit, so unchanged
+// structure stays ===-identical across reparses (id:pa-zig-incremental).
 
 // Same key ⇒ same meaning. Stays COARSE on purpose: drift costs a missed reuse,
 // never a wrong tree, because the fresh parse is always the answer.
 const OVERLAY = new Set(['span', 'comment', 'endComment', 'lit']);
-// Hoisted so the replacer has a STABLE identity — a fresh closure per call hands the
-// JSON.stringify call site a new callee every time. (profile: contentKey is the single
-// hottest frame on the keystroke path.) Measured ~6%; free, never worse.
+// Hoisted so the replacer has a STABLE identity — a fresh closure per call is a
+// new callee at the JSON.stringify site (profile: the hottest frame; ~6%).
 const stripOverlay = (k, v) => (OVERLAY.has(k) ? undefined : v);
 const contentKey = (node) => JSON.stringify(node, stripOverlay);
 
@@ -290,124 +358,397 @@ function adoptOverlay(prev, next) {
     for (let i = 0; i < pc.length; i++) adoptOverlay(pc[i], nc[i]);
 }
 
-// Total: the answer is always the forest the text means; adoption only picks
-// which objects carry it, each old node once. (prevText, prevAst) must belong to
-// the buffer's OWNER — another's tree would move THEIR span overlay.
-export function reparseProgram(text, prevText, prevAst) {
-    if (prevText == null || prevAst == null) return parseProgram(text);
-    if (prevText === text) return prevAst;
+// ============================================================================
+// CONVERGENCE — the ChangeSet substitute (id:weave-typing-path, id:cmp-green-tree)
+// ============================================================================
+// Two identical ends are the diff: between them is what changed. Only the units
+// inside that span must be re-parsed; the tail is the same text, hence the same
+// forest, hence reusable.
 
-    const fresh = parseProgram(text);
-
-    const pool = new Map();
-    for (const node of prevAst) {
-        const key = contentKey(node);
-        const bucket = pool.get(key);
-        if (bucket) bucket.push(node);
-        else pool.set(key, [node]);
+// Line breaks counted as splitLines() splits them: LF, CRLF, bare CR. Counting
+// LF alone names a different line than the tokenizer does, and the two
+// coordinate systems must agree or a span addresses nothing real.
+const countNewlines = (s, from, to) => {
+    let n = 0;
+    for (let i = from; i < to; i++) {
+        const c = s.charCodeAt(i);
+        if (c === 10) n++;
+        else if (c === 13) { n++; if (i + 1 < to && s.charCodeAt(i + 1) === 10) i++; }
     }
+    return n;
+};
+
+const commonPrefix = (a, b) => {
+    const n = Math.min(a.length, b.length);
+    let i = 0;
+    while (i < n && a.charCodeAt(i) === b.charCodeAt(i)) i++;
+    return i;
+};
+
+// The suffix may not overlap the prefix: `floor` is the prefix's length.
+const commonSuffix = (a, b, floor) => {
+    const n = Math.min(a.length, b.length) - floor;
+    let i = 0;
+    while (i < n && a.charCodeAt(a.length - 1 - i) === b.charCodeAt(b.length - 1 - i)) i++;
+    return i;
+};
+
+// A fence line is the one construct whose reach crosses lines: a dirty `###`
+// or ``` moves the chunk edges the tail's records are built from. Both sides
+// are tested — a DELETED fence is as structural as an added one.
+const FENCE_LINE = /(?:^|[\r\n])[ \t]*(?:```|###)/;
+
+// Line break = LF, CRLF, or bare CR — the same three splitLines() splits on. A
+// different count names a different line, and the tokenizer's coordinates are
+// the ones the tree is stamped in.
+const isBreak = (c) => c === 10 || c === 13;
+
+// The whole line(s) the dirty span touches, never the span alone: deleting one
+// `#` from `###` leaves a substring no fence predicate can see, while the
+// grammar boundary has moved.
+const affectedLine = (s, from, to) => {
+    let start = from;
+    while (start > 0 && !isBreak(s.charCodeAt(start - 1))) start--;
+    let end = to > from ? to - 1 : from;
+    while (end < s.length && !isBreak(s.charCodeAt(end))) end++;
+    return s.slice(start, end);
+};
+
+// A zero-width edit still has an affected LINE on that side, and inside a fence
+// line it can destroy the fence (` ``` ` → ` `x `` `). Only an insertion at a LINE
+// START is harmless — it creates a line, it does not rewrite one. Everything else
+// reads the whole line, span or no span.
+const affectsFence = (s, from, to) => {
+    if (to > from) return FENCE_LINE.test(affectedLine(s, from, to));
+    if (from > 0 && isBreak(s.charCodeAt(from - 1))) return false;
+    return FENCE_LINE.test(affectedLine(s, from, from));
+};
+
+// A spliced tail keeps its objects; only its line addresses moved, and the
+// whole tail moves by one delta because the tail text is identical.
+function shiftSpan(node, delta) {
+    if (node.span) { node.span.line += delta; node.span.endLine += delta; }
+    const kids = node.children;
+    if (Array.isArray(kids)) for (let i = 0; i < kids.length; i++) shiftSpan(kids[i], delta);
+}
+
+// Identity reconciliation over ONE interval: an old node is claimable only
+// forward of the last claim, so identical twins never swap positions and no
+// object is adopted twice (id:cmp-green-tree, id:pa-zig-incremental).
+function reconcile(prevSlice, fresh) {
+    const pool = new Map();
+    for (let i = 0; i < prevSlice.length; i++) {
+        const key = contentKey(prevSlice[i]);
+        const bucket = pool.get(key);
+        if (bucket) bucket.push(i);
+        else pool.set(key, [i]);
+    }
+    const next = new Map();         // key → next unclaimed slot in its bucket
+    let floor = 0;                  // one past the last claimed prev index
 
     return fresh.map((node) => {
-        const bucket = pool.get(contentKey(node));
-        const prev = bucket?.shift();
-        if (!prev) return node;
+        const key = contentKey(node);
+        const bucket = pool.get(key);
+        if (!bucket) return node;
+        let at = next.get(key) ?? 0;
+        while (at < bucket.length && bucket[at] < floor) at++;
+        if (at >= bucket.length) { next.set(key, at); return node; }
+        const prev = prevSlice[bucket[at]];
+        next.set(key, at + 1);
+        floor = bucket[at] + 1;
         adoptOverlay(prev, node);
         return prev;
     });
 }
 
+// A meadow group is [open … close]; walking back from a unit, the first marker
+// decides whether it is inside the group or already past it.
+function meadowStart(prevAst, k) {
+    for (let i = k; i >= 0; i--) {
+        const meta = prevAst[i] && prevAst[i].meta;
+        if (!meta) continue;
+        if (meta.meadowOpen) return i;
+        if (meta.meadowClose) {
+            // The group ended before the edit — nothing of it can move.
+            if (i < k) return k;
+            // k IS the closing unit: deleting it moves the close marker onto a
+            // neighbour, so the whole group is the unit of work.
+            for (let j = i; j >= 0; j--) {
+                const m = prevAst[j] && prevAst[j].meta;
+                if (m && m.meadowOpen) return j;
+            }
+            return k;
+        }
+    }
+    return k;
+}
 
-//tokenizer
-// Fence-aware line pass. Between `###` fences everything is captured VERBATIM;
-// outside them lines are trimmed and a glued `end` is split onto its own line.
-function tokenize(program) {
-    const rawLines = program.split(/\r\n|\r|\n/);
-    const n = rawLines.length;
+// Answers null whenever any precondition fails; the caller then does the total
+// thing. Correctness rests on the units AFTER the dirty span being untouched
+// text, parsed from the same empty top-level state — never on a key match.
+function reparseConverged(text, prevText, prevAst) {
+    const seen = provenanceOf(prevAst);
+    if (!seen) return decline('unarmed');
+    if (!prevAst.length) return decline('empty');
+    // The certificate names the text these spans were born in: a mismatched pair
+    // would shift THIS tree under a caller that never owned it.
+    if (seen.source !== prevText) return decline('foreign-source');
+    // The spans are the restart coordinates, so they must actually be stamped.
+    for (const unit of prevAst) if (!unit.span) return decline('unstamped');
+
+    const prefix = commonPrefix(prevText, text);
+    const suffix = commonSuffix(prevText, text, prefix);
+    if (!suffix) return decline('no-tail');
+
+    if (affectsFence(prevText, prefix, prevText.length - suffix) ||
+        affectsFence(text, prefix, text.length - suffix)) {
+        return decline('fence');
+    }
+
+    const prevLines = countNewlines(prevText, 0, prevText.length) + 1;
+    const nextLines = countNewlines(text, 0, text.length) + 1;
+    const tailLines = countNewlines(text, text.length - suffix, text.length);
+    const delta = nextLines - prevLines;
+
+    const prevEdge = prevLines - tailLines;   // last line the edit could reach (prev)
+    const fromLine = countNewlines(text, 0, prefix) + 1;
+
+    // The tail: the first unit lying wholly inside the identical suffix.
+    let q = prevAst.length;
+    for (let i = 0; i < prevAst.length; i++) if (prevAst[i].span.line > prevEdge) { q = i; break; }
+    // The head: restart at the unit CONTAINING the edit's first line — a glued
+    // `end` shares its birth line, so "starts at or before" can step past the
+    // records touched — then back up to the enclosing fence GROUP, because a
+    // meadow chunk grows to absorb the edit and may now end past the line it owns.
+    let k = prevAst.length;
+    for (let i = 0; i < prevAst.length; i++) if (prevAst[i].span.endLine >= fromLine) { k = i; break; }
+    k = meadowStart(prevAst, k);
+    if (k >= prevAst.length) return decline('past-last-unit');
+    // The tokenizer restarts only at a LINE, so roll back to the first unit owning
+    // records on this line (id:gw-grammar).
+    while (k > 0 && prevAst[k - 1].span.line === prevAst[k].span.line) k--;
+    if (k >= q) return decline('head-past-tail');
+
+    const stopLine = q < prevAst.length ? prevAst[q].span.line + delta : nextLines + 1;
+
+    // Re-tokenize from the restart line to EOF, but PARSE only up to the tail. The
+    // place is re-derived in one scan of the prefix rather than carried for every
+    // unit; the saving is still the parse, not the tokenize.
+    const rawLines = text.split(/\r\n|\r|\n/);
+    const restartLine = prevAst[k].span.line;
+    const lines = tokenizeRange(rawLines, restartLine - 1, Infinity,
+                                stateAt(rawLines, restartLine)).lines;
+    const state = new ParserState(lines);
+
+    const middle = [];
+    while (state.hasMore() && lines[state.pos].line < stopLine) middle.push(parseUnit(state));
+
+    // The tail keeps its objects: its text is identical, so ONE delta moves every
+    // span in it. But a splice is only sound if the boundary is where we think it
+    // is, so the witness is SEMANTIC, not counted: the next unit the NEW stream
+    // produces must still be the unit we are about to reuse. A unit that swallowed
+    // (or shed) records at the boundary — `fw 1 / end rt 90`, where a new
+    // `for 1 do` eats the `end` — shows up here, not two edits later.
+    const kept = prevAst.slice(q);
+    if (kept.length) {
+        const at = lines[state.pos];
+        if (!at || at.line !== stopLine) return decline('landing');
+        const peek = new ParserState(lines);
+        peek.pos = state.pos;
+        peek.last = null;
+        if (contentKey(parseUnit(peek)) !== contentKey(kept[0])) return decline('peek');
+    }
+    if (delta) for (const unit of kept) shiftSpan(unit, delta);
+    const head = reconcile(prevAst.slice(k, q), middle);
+    return arm(prevAst.slice(0, k).concat(head, kept), text);
+}
+
+// Witness for the convergence fast path: a silent fallback would leave every
+// equivalence test green while the win never runs (id:weave-typing-path). Each
+// refusal has a NAME, so a document that stops converging says which precondition
+// it broke instead of only that it fell back.
+const reparseCounts = { converged: 0, fallback: 0 };
+const declines = Object.create(null);
+const decline = (why) => { declines[why] = (declines[why] ?? 0) + 1; return null; };
+export const reparseStats = () => ({ ...reparseCounts, declines: { ...declines } });
+export const resetReparseStats = () => {
+    reparseCounts.converged = 0; reparseCounts.fallback = 0;
+    for (const k of Object.keys(declines)) delete declines[k];
+};
+
+export function reparseProgram(text, prevText, prevAst) {
+    if (prevText == null || prevAst == null) return parseProgram(text);
+
+    // LINEAR OWNERSHIP. Adoption and shifting mutate the objects they reuse, so a
+    // tree is a valid input exactly once, and only for the text it was parsed from.
+    // A spent or foreign tree is not repaired — it is not ours to rewrite, and its
+    // certificate could no longer name what its nodes describe. Answer from scratch.
+    const cert = provenanceOf(prevAst);
+    if (!cert) return decline('unarmed') ?? parseProgram(text);
+    if (cert.consumed) return decline('spent') ?? parseProgram(text);
+    if (cert.source !== prevText) return decline('foreign-source') ?? parseProgram(text);
+    if (prevText === text) return prevAst;
+
+    const converged = reparseConverged(text, prevText, prevAst);
+    cert.consumed = true;
+    if (converged) { reparseCounts.converged++; return converged; }
+
+    reparseCounts.fallback++;
+    // `reconcile` returns a fresh array; arm IT, not only parseProgram's, or the
+    // next ordinary edit has no provenance and falls back again.
+    const parsed = parseProgram(text);
+    return arm(reconcile(prevAst, parsed), text);
+}
+
+
+// ============================================================================
+// THE LINE PASS — lines → records, restartable at a line (id:gw-grammar)
+// ============================================================================
+// Between `###` fences everything is VERBATIM; outside, lines are trimmed and a
+// glued `end` splits onto its own line. The place carries the restart because the
+// obligation is IN it — a range resumes where the last one stopped.
+const tokenize = (program) => tokenizeRange(program.split(/\r\n|\r|\n/), 0, Infinity, PLACE.out);
+
+// Lines [from, to) from a known fence place. The place travels WITH the coordinates:
+//   lines — the records a full pass would produce for this range, unchanged
+//   marks — the place at the FIRST record of each line (a restart coordinate)
+//   end   — the place after the last consumed line, for the next range
+export function tokenizeRange(rawLines, from, to, state) {
+    const n = Math.min(to, rawLines.length);
     const lines = [];
-    let i = 0;
+    const marks = [];
+    let place = state;
+    let i = from;
+    let chunk = null;          // { at, mark, text } while a meadow run is open
+    let cellOpen = false;      // this cell has had a line processed since its opener
+
+    // The mark is read BEFORE the unit is shaped: a unit carrying the clearing's
+    // open mark still starts OUTSIDE it, and a restart there must re-mark it.
+    const emit = (rec, at) => { marks.push(at); lines.push(rec); };
+
+    const flush = (endIndex) => {
+        if (!chunk) return;
+        emit({ meadow: chunk.text.join('\n'), meadowOpen: chunk.mark === PLACE.pending,
+               meadowClose: false, line: chunk.at + 1, endLine: endIndex }, chunk.mark);
+        chunk = null;
+    };
 
     // Comment off FIRST (trivia is a field, never text), then split a mid-line
     // `end`. The comment rides the LAST record; split parts share a birth line.
-    const pushCode = (raw, out, line) => {
+    const pushCode = (raw, line, at) => {
         const [code, comment] = splitComment(raw);
-        // The mid-line `end` split is a regex replace; skip it when the line has no
-        // `end` at all (a superset guard — most lines never do). (profile: pushCode)
         const parts = (code.includes('end') ? code.replace(/\bend\b(?!$)/g, 'end\n') : code)
             .split('\n').map((p) => p.trim()).filter(Boolean);
         const recs = (parts.length ? parts : ['']).map((text) => ({ text, line }));
         if (comment !== undefined) recs[recs.length - 1].comment = comment;
-        for (const rec of recs) out.push(rec);
+        for (const rec of recs) emit(rec, at);
     };
 
     while (i < n) {
-        if (isMeadowFence(rawLines[i])) {
-            // Prose chunks stay verbatim; a ``` fence re-enters code-space
-            // (id:gw-cell), so the cell's lines go through the code law.
-            const fenceLine = i + 1;
-            i++;
-            const units = [];
-            let chunk = [];
-            let chunkStart = 0;
-            const flushChunk = () => {
-                if (chunk.length) {
-                    units.push({ meadow: chunk.join('\n'), meadowOpen: false, meadowClose: false,
-                                 line: chunkStart, endLine: chunkStart + chunk.length - 1 });
-                    chunk = [];
-                }
-            };
-            while (i < n && !isMeadowFence(rawLines[i])) {
-                if (isCellOpen(rawLines[i])) {
-                    flushChunk();
-                    // The info word (```paperlang) is the child's, so it rides
-                    // in the tree — fidelity lives there, never beside it.
-                    const info = rawLines[i].replace(CELL_OPEN, '').trim();
-                    units.push({ cellFence: true, meadowOpen: false, meadowClose: false,
-                                 line: i + 1, info: info || undefined });
-                    i++;
-                    while (i < n && !isCellClose(rawLines[i]) && !isMeadowFence(rawLines[i])) {
-                        // Blanks included: a blank is a line the child typed,
-                        // and dropping it shifts every line address below (D021).
-                        pushCode(rawLines[i], units, i + 1);
-                        i++;
-                    }
-                    // An auto-close is marked IMPLICIT and the printer stays
-                    // silent: never put a word in the child's mouth (id:pa-ghc-exactprint).
-                    const closed = i < n && isCellClose(rawLines[i]);
-                    if (closed) i++;
-                    units.push({ cellFence: true, meadowOpen: false, meadowClose: false,
-                                 line: Math.min(i, n), implicit: !closed || undefined });
-                    continue;
-                }
-                if (!chunk.length) chunkStart = i + 1;
-                chunk.push(rawLines[i]);
-                i++;
-            }
-            flushChunk();
-            if (units.length === 0) units.push({ meadow: '', meadowOpen: false, meadowClose: false, line: fenceLine });
-            // A clearing that ran to EOF was closed by the parse, not the
-            // child — so the printer stays silent about that fence too.
-            const meadowClosed = i < n;
-            i++; // consume the closing fence (or step past EOF — auto-close)
-            units[0].meadowOpen = true;
-            units[units.length - 1].meadowClose = true;
-            if (!meadowClosed) units[units.length - 1].meadowCloseImplicit = true;
-            lines.push(...units);
-            continue;
-        }
+        const raw = rawLines[i];
+        const step = MACHINE[place][symbolOf(lineText(raw))];
+        const prev = place;
+        place = step.next;
+        // The old loop reached its cell branch on a LATER turn, so a cell whose
+        // opener is the range's last line never closes. This remembers the turn.
+        if (step.role === ROLE.cellOpen) cellOpen = false;
+        else if (prev === PLACE.cell) cellOpen = true;
 
-        // A blank rides through as an empty record: line parity across
-        // parse → print, and a bare Enter still changes the seed.
-        const trimmed = rawLines[i].trim();
-        if (trimmed) pushCode(trimmed, lines, i + 1);
-        else lines.push({ text: '', line: i + 1, blank: true });
+        switch (step.role) {
+            case ROLE.meadowOpen:
+                break;                                  // the opener is not a unit
+
+            case ROLE.meadowClose:
+                flush(i);
+                if (prev === PLACE.cell) {
+                    // The `###` took the cell with it: an IMPLICIT closer stamped on
+                    // the last body line, silent in the printer (id:pa-ghc-exactprint).
+                    emit({ cellFence: true, meadowOpen: false, meadowClose: false,
+                           line: i, implicit: true }, prev);
+                } else if (prev === PLACE.pending) {
+                    // An empty clearing. Adjacent fences, so the closer's 0-based
+                    // index IS the opener's line — one coordinate a resume recovers
+                    // without being told where the clearing began.
+                    emit({ meadow: '', meadowOpen: true, meadowClose: false, line: i }, PLACE.out);
+                }
+                if (lines.length) lines[lines.length - 1].meadowClose = true;
+                break;
+
+            case ROLE.cellOpen: {
+                // The info word (```paperlang) is the child's, so it rides in the
+                // tree — fidelity lives there, never beside it.
+                flush(i);
+                const info = lineText(raw).replace(CELL_OPEN, '').trim();
+                emit({ cellFence: true, meadowOpen: prev === PLACE.pending, meadowClose: false,
+                       line: i + 1, info: info || undefined }, prev);
+                break;
+            }
+
+            case ROLE.cellClose:
+                flush(i);
+                emit({ cellFence: true, meadowOpen: false, meadowClose: false, line: i + 1 }, prev);
+                break;
+
+            case ROLE.prose:
+            case ROLE.headline:
+                if (!chunk) chunk = { at: i, mark: prev, text: [] };
+                chunk.text.push(raw);
+                break;
+
+            case ROLE.code:
+                if (prev === PLACE.cell) {
+                    // Blanks included: a blank is a line the child typed, and
+                    // dropping it shifts every line address below (D021).
+                    pushCode(raw, i + 1, prev);
+                } else {
+                    // Outside is trimmed BEFORE the comment parts, so the author's
+                    // whitespace after `#` is theirs — a semantic trim, not cosmetic.
+                    const trimmed = raw.trim();
+                    if (trimmed) pushCode(trimmed, i + 1, prev);
+                    else emit({ text: '', line: i + 1, blank: true }, prev);
+                }
+                break;
+        }
         i++;
     }
 
-    return lines;
+    // A clearing that ran to EOF was closed by the parse, not the child — so the
+    // printer stays silent about that fence too. Only at real EOF: a truncated
+    // range stops mid-place and says so in `end`.
+    flush(n);
+    if (n < rawLines.length) return { lines, marks, end: place };
+
+    // A cell that opened on the range's LAST line is never closed: the old loop
+    // needed another turn to reach its branch. Preserved until the repair lands.
+    if (place === PLACE.cell && cellOpen) {
+        emit({ cellFence: true, meadowOpen: false, meadowClose: false, line: n, implicit: true },
+             PLACE.cell);
+        place = PLACE.meadow;
+    }
+    if (place === PLACE.pending) {
+        emit({ meadow: '', meadowOpen: true, meadowClose: false, line: n }, PLACE.out);
+        place = PLACE.meadow;
+    }
+    if (place !== PLACE.out && lines.length) {
+        lines[lines.length - 1].meadowClose = true;
+        lines[lines.length - 1].meadowCloseImplicit = true;
+    }
+    return { lines, marks, end: place };
+}
+
+// The place at the START of `line` (1-based), folded from the same table. The
+// obligation is IN the place, so a restart needs no hint from the tree — and the
+// fold reads the text, never a parallel index (id:gw-grammar). State changes only
+// BETWEEN lines, never within one, which is why a restart is always at a boundary.
+export function stateAt(rawLines, line) {
+    let place = PLACE.out;
+    const n = Math.min(rawLines.length, Math.max(0, line - 1));
+    for (let i = 0; i < n; i++) place = MACHINE[place][symbolOf(lineText(rawLines[i]))].next;
+    return place;
 }
 
 // ============================================================================
-// Line Tokenizer - Context-Aware preserving groups [  ] and " "
+// THE CHUNKS — a line → tokens, groups and quotes kept whole (id:gw-grammar)
 // ============================================================================
 
 function tokenizeLine(code) {
@@ -451,7 +792,7 @@ function tokenizeLine(code) {
 }
 
 // ============================================================================
-// Argument Parser - Single Pass 
+// ARGUMENTS — a chunk's boundary read from the lexer, not its spelling (id:gw-grammar)
 // ============================================================================
 
 // A chunk is classified by the ROLE of its boundary token, read from the shared
@@ -547,7 +888,10 @@ function parseBlockLines(state) {
         const line = state.next();
 
         if (line.meadow !== undefined) { block.push(meadowNode(line)); continue; }
-        if (line.cellFence) { block.push(cellFenceNode(line)); continue; }
+        // A CELL FENCE IS A BOUNDARY NO BLOCK MAY CROSS (id:cmp-resilient): swallowing
+        // one let an unterminated block absorb the next cell's fences, so the source
+        // said two cells and the runnable partition said one.
+        if (line.cellFence) { state.pos--; break; }
 
         const tokens = tokenizeLine(line.text);
         const comment = line.comment;

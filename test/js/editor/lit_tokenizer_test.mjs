@@ -11,6 +11,7 @@ import assert from "node:assert/strict"
 import { plangModeSpec, isCellOpener, codeCellFoldService, findCells, cellAt, eyelineCell, marginOutlineFoldService, findProse, defaultAttend} from "../../../assets/js/editor/plang-mode.js"
 import { stepActivation } from "../../../assets/js/editor/code-cell-activation.js"
 import { outline, classify, splitLines } from "../../../assets/js/turtling/parse.js"
+import { docFrom } from "./doc_fixture.mjs"
 
 // A faithful-enough StringStream + per-line loop, mirroring CM6's StreamLanguage:
 // state is created once and carried across lines; token() is called until EOL.
@@ -285,45 +286,30 @@ describe("the code cell — ``` … ``` fenced blocks, linted at full strength",
 
 // A DOM-free CM6 `state.doc` stand-in — enough for the fold services (litFold /
 // indentFold aren't unit-tested; the ``` opener/closer pairing is worth pinning).
-function mkDoc(src) {
-    const texts = src.split("\n")
-    let pos = 0
-    const objs = texts.map((text, i) => {
-        const from = pos, to = pos + text.length
-        pos = to + 1                                          // +1 for the newline
-        return { text, number: i + 1, from, to }
-    })
-    return {
-        lines:  objs.length,
-        length: pos,
-        line:   (n) => objs[n - 1],
-        lineAt: (p) => objs.find(o => p >= o.from && p <= o.to) || objs[objs.length - 1],
-    }
-}
 
 describe("the code cell — folds like a phase (scrollable groundwork)", () => {
     test("only the opening ``` folds; the closer does not", () => {
-        const doc = mkDoc("###\n```\nfw 100\nrt 90\n```\n###")
+        const doc = docFrom("###\n```\nfw 100\nrt 90\n```\n###")
         assert.equal(isCellOpener(doc, 2), true)             // the opening fence
         assert.equal(isCellOpener(doc, 5), false)            // the closing fence
         assert.equal(isCellOpener(doc, 3), false)            // a body line
     })
 
     test("the fold spans the opener's end to the closing fence — the cell collapses whole", () => {
-        const doc  = mkDoc("###\n```\nfw 100\nrt 90\n```\n###")
+        const doc  = docFrom("###\n```\nfw 100\nrt 90\n```\n###")
         const open = doc.line(2)
         const range = codeCellFoldService({ doc }, open.from, open.to)
         assert.deepEqual(range, { from: open.to, to: doc.line(5).to })   // through the closing ```
     })
 
     test("``` outside a meadow is not a cell — nothing folds", () => {
-        const doc = mkDoc("```\nfw 100\n```")                 // no ### — this is code space, not prose
+        const doc = docFrom("```\nfw 100\n```")                 // no ### — this is code space, not prose
         assert.equal(isCellOpener(doc, 1), false)
         assert.equal(codeCellFoldService({ doc }, doc.line(1).from, doc.line(1).to), null)
     })
 
     test("two cells in one meadow each fold from their own opener", () => {
-        const doc = mkDoc("###\n```\nfw 100\n```\nprose between\n```\nrt 90\n```\n###")
+        const doc = docFrom("###\n```\nfw 100\n```\nprose between\n```\nrt 90\n```\n###")
         assert.equal(isCellOpener(doc, 2), true)             // first opener
         assert.equal(isCellOpener(doc, 4), false)            // first closer
         assert.equal(isCellOpener(doc, 6), true)             // second opener
@@ -333,7 +319,7 @@ describe("the code cell — folds like a phase (scrollable groundwork)", () => {
 
 describe("cursor-driven activation — which cell is live (the eval gate)", () => {
     test("findCells returns each cell's line span and termination", () => {
-        const doc = mkDoc("###\n```\nfw 100\n```\nbetween\n```\nrt 90\n```\n###")
+        const doc = docFrom("###\n```\nfw 100\n```\nbetween\n```\nrt 90\n```\n###")
         // `path` rides every cell now: the editor and the parser read ONE
         // prose walk (turtling/parse.js outline), so a cell knows the phase
         // whose sisters it stands among, here as at the seam. `name` and
@@ -346,17 +332,17 @@ describe("cursor-driven activation — which cell is live (the eval gate)", () =
     })
 
     test("an unterminated cell (meadow closes) still reports its span", () => {
-        const doc = mkDoc("###\n```\nfw 100\n###\nrt 90")   // ### closes the meadow, ending the cell
+        const doc = docFrom("###\n```\nfw 100\n###\nrt 90")   // ### closes the meadow, ending the cell
         assert.deepEqual(findCells(doc),
             [{ open: 2, end: 3, terminated: false, path: [], name: null, coord: [1] }])
     })
 
     test("``` outside a meadow is not a cell", () => {
-        assert.deepEqual(findCells(mkDoc("```\nfw 100\n```")), [])
+        assert.deepEqual(findCells(docFrom("```\nfw 100\n```")), [])
     })
 
     test("cellAt: the cursor's line picks the active cell; outside every cell is null", () => {
-        const doc   = mkDoc("###\n```\nfw 100\n```\nbetween\n```\nrt 90\n```\n###")
+        const doc   = docFrom("###\n```\nfw 100\n```\nbetween\n```\nrt 90\n```\n###")
         const cells = findCells(doc)
         const cell = (open, end, coord) => ({ open, end, terminated: true, path: [], name: null, coord })
         assert.deepEqual(cellAt(cells, 3), cell(2, 4, [1]))   // inside first cell body
@@ -370,74 +356,59 @@ describe("cursor-driven activation — which cell is live (the eval gate)", () =
 // The memo that keeps writing buttery: cursor movement must not re-walk the cell
 // index or rebuild decorations unless the active cell actually changed.
 describe("activation memo — cursor movement stays free of linter churn", () => {
-    const doc  = mkDoc("###\n```\nfw 100\nrt 90\n```\nbetween\n```\nrt 45\n```\n###")
-    const NONE = { none: true }                              // Decoration.none stand-in
-
-    test("moving within the active cell rebuilds nothing (same value, cached index)", () => {
-        let builds = 0
-        const build = () => ({ deco: ++builds })
-        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 3 }, build, NONE)
-        assert.equal(builds, 1)                              // first parse builds once
-        const v1 = stepActivation(v0, { selectionChanged: true, doc, headLine: 4 }, build, NONE)
-        assert.equal(v1, v0)                                 // SAME object — memo hit, zero allocation
-        assert.equal(builds, 1)                              // no rebuild
+    const doc  = docFrom("###\n```\nfw 100\nrt 90\n```\nbetween\n```\nrt 45\n```\n###")
+    
+    test("moving within the active cell answers the SAME value (memo hit)", () => {
+        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 3 })
+        const v1 = stepActivation(v0, { selectionChanged: true, doc, headLine: 4 })
+        assert.equal(v1, v0)                                 // SAME object — no allocation
         assert.equal(v1.cells, v0.cells)                     // cell index reused, not re-walked
     })
 
-    test("moving to a different cell rebuilds exactly once, keeping the cached index", () => {
-        let builds = 0
-        const build = () => ({ deco: ++builds })
-        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 3 }, build, NONE)  // cell #1
-        const v1 = stepActivation(v0, { selectionChanged: true, doc, headLine: 8 }, build, NONE) // cell #2
+    test("moving to a different cell answers a new value, still on the cached index", () => {
+        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 3 })  // cell #1
+        const v1 = stepActivation(v0, { selectionChanged: true, doc, headLine: 8 }) // cell #2
         assert.notEqual(v1, v0)
-        assert.equal(builds, 2)
         assert.equal(v1.cells, v0.cells)                     // still the cached index — no re-walk
     })
 
     test("moving into prose keeps the light — sticky, and a memo hit", () => {
-        let builds = 0
-        const build = () => ({ deco: ++builds })
-        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 8 }, build, NONE)  // cell #2
-        const v1 = stepActivation(v0, { selectionChanged: true, doc, headLine: 6 }, build, NONE) // prose "between"
+        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 8 })  // cell #2
+        const v1 = stepActivation(v0, { selectionChanged: true, doc, headLine: 6 }) // prose "between"
         assert.equal(v1, v0)                                 // leaving to prose never moves focus
-        assert.equal(v1.key, 7)                              // cell #2 stays lit
-        const v2 = stepActivation(v1, { selectionChanged: true, doc, headLine: 1 }, build, NONE) // meadow fence
+        assert.equal((v1.held?.open ?? null), 7)                              // cell #2 stays lit
+        const v2 = stepActivation(v1, { selectionChanged: true, doc, headLine: 1 }) // meadow fence
         assert.equal(v2, v1)
-        assert.equal(builds, 1)
     })
 
     test("first light: cursor in prose lights the FIRST cell (init parity with the canvas)", () => {
-        const build = (d, cells, active) => ({ active })
-        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 1 }, build, NONE)
-        assert.equal(v0.key, 2)                              // the first cell wears the light
+        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 1 })
+        assert.equal((v0.held?.open ?? null), 2)                              // the first cell wears the light
     })
 
     test("out of the fence, on bare code, no cell is active — she is making", () => {
         // fw 5 | ### | ``` | fw 100 | ``` | ### | rt 90
-        const mixed = mkDoc("fw 5\n###\n```\nfw 100\n```\n###\nrt 90")
-        let builds = 0
-        const build = () => ({ deco: ++builds })
-        const v0 = stepActivation(null, { docChanged: true, doc: mixed, headLine: 1 }, build, NONE)
-        assert.equal(v0.key, null)                           // first light on bare code lights nothing
-        const v1 = stepActivation(v0, { selectionChanged: true, doc: mixed, headLine: 4 }, build, NONE)
-        assert.equal(v1.key, 3)                              // into the cell — it wakes
-        const v2 = stepActivation(v1, { selectionChanged: true, doc: mixed, headLine: 7 }, build, NONE)
-        assert.equal(v2.key, null)                           // out past the fence — all cells rest
-        const v3 = stepActivation(v2, { selectionChanged: true, doc: mixed, headLine: 4 }, build, NONE)
-        assert.equal(v3.key, 3)                              // reaching back into the cell relights it
+        const mixed = docFrom("fw 5\n###\n```\nfw 100\n```\n###\nrt 90")
+        const v0 = stepActivation(null, { docChanged: true, doc: mixed, headLine: 1 })
+        assert.equal((v0.held?.open ?? null), null)                           // first light on bare code lights nothing
+        const v1 = stepActivation(v0, { selectionChanged: true, doc: mixed, headLine: 4 })
+        assert.equal((v1.held?.open ?? null), 3)                              // into the cell — it wakes
+        const v2 = stepActivation(v1, { selectionChanged: true, doc: mixed, headLine: 7 })
+        assert.equal((v2.held?.open ?? null), null)                           // out past the fence — all cells rest
+        const v3 = stepActivation(v2, { selectionChanged: true, doc: mixed, headLine: 4 })
+        assert.equal((v3.held?.open ?? null), 3)                              // reaching back into the cell relights it
     })
 
     test("prose keeps the light only INSIDE the meadow", () => {
-        const mixed = mkDoc("fw 5\n###\nprose\n```\nfw 100\n```\nmore\n###\nrt 90")
-        const build = () => ({ deco: 1 })
-        const v0 = stepActivation(null, { docChanged: true, doc: mixed, headLine: 5 }, build, NONE) // in the cell
-        assert.equal(v0.key, 4)
-        const v1 = stepActivation(v0, { selectionChanged: true, doc: mixed, headLine: 7 }, build, NONE) // prose "more"
+        const mixed = docFrom("fw 5\n###\nprose\n```\nfw 100\n```\nmore\n###\nrt 90")
+        const v0 = stepActivation(null, { docChanged: true, doc: mixed, headLine: 5 }) // in the cell
+        assert.equal((v0.held?.open ?? null), 4)
+        const v1 = stepActivation(v0, { selectionChanged: true, doc: mixed, headLine: 7 }) // prose "more"
         assert.equal(v1, v0)                                 // inside the meadow: sticky, memo hit
-        const v2 = stepActivation(v1, { selectionChanged: true, doc: mixed, headLine: 9 }, build, NONE) // bare rt 90
-        assert.equal(v2.key, null)                           // outside: the light goes out
-        const v3 = stepActivation(v2, { selectionChanged: true, doc: mixed, headLine: 3 }, build, NONE) // prose again
-        assert.equal(v3.key, null)                           // nothing held to restore — prose alone lights nothing
+        const v2 = stepActivation(v1, { selectionChanged: true, doc: mixed, headLine: 9 }) // bare rt 90
+        assert.equal((v2.held?.open ?? null), null)                           // outside: the light goes out
+        const v3 = stepActivation(v2, { selectionChanged: true, doc: mixed, headLine: 3 }) // prose again
+        assert.equal((v3.held?.open ?? null), null)                           // nothing held to restore — prose alone lights nothing
     })
 
     test("the scroll gesture resolves by EYELINE — the topmost cell still on screen", () => {
@@ -462,16 +433,15 @@ describe("activation memo — cursor movement stays free of linter churn", () =>
     })
 
     test("an edit (docChanged) re-walks the index", () => {
-        const build = () => ({ deco: 1 })
-        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 3 }, build, NONE)
+        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 3 })
         // CM6 replaces the Text object on every edit — the findProse WeakMap
         // keys on that identity. Same content, new doc → fresh walk.
-        const edited = mkDoc("###\n```\nfw 100\nrt 90\n```\nbetween\n```\nrt 45\n```\n###")
-        const v1 = stepActivation(v0, { docChanged: true, doc: edited, headLine: 3 }, build, NONE)
+        const edited = docFrom("###\n```\nfw 100\nrt 90\n```\nbetween\n```\nrt 45\n```\n###")
+        const v1 = stepActivation(v0, { docChanged: true, doc: edited, headLine: 3 })
         assert.notEqual(v1.cells, v0.cells)                  // fresh index after an edit
         // Same doc identity + docChanged still hits the memo (content cannot
         // have changed without a new Text) — real edits always bring a new doc.
-        const v2 = stepActivation(v1, { docChanged: true, doc: edited, headLine: 3 }, build, NONE)
+        const v2 = stepActivation(v1, { docChanged: true, doc: edited, headLine: 3 })
         assert.equal(v2.cells, v1.cells)
     })
 
@@ -480,24 +450,40 @@ describe("activation memo — cursor movement stays free of linter churn", () =>
     // editing the prose between them re-lit cell 1. The held CELL travels by
     // outline identity (kindleCell), so a prose keystroke keeps the light.
     test("an edit in prose keeps the kindled cell — sticky, not first light", () => {
-        const build = () => ({ deco: 1 })
-        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 8 }, build, NONE)
-        assert.equal(v0.key, 7)                              // cell #2
-        const typed = mkDoc("###\n```\nfw 100\nrt 90\n```\nbetwixt\n```\nrt 45\n```\n###")
-        const v1 = stepActivation(v0, { docChanged: true, doc: typed, headLine: 6 }, build, NONE)
-        assert.equal(v1.key, 7, "cell #2 still wears the light after a prose keystroke")
+        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 8 })
+        assert.equal((v0.held?.open ?? null), 7)                              // cell #2
+        const typed = docFrom("###\n```\nfw 100\nrt 90\n```\nbetwixt\n```\nrt 45\n```\n###")
+        const v1 = stepActivation(v0, { docChanged: true, doc: typed, headLine: 6 })
+        assert.equal((v1.held?.open ?? null), 7, "cell #2 still wears the light after a prose keystroke")
     })
 
     // A newline above shifts every fence. Holding by open-line would miss;
     // holding the cell (coord) finds it again at its new open.
-    test("an edit that shifts lines keeps the kindled cell by outline identity", () => {
-        const build = () => ({ deco: 1 })
-        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 8 }, build, NONE)
-        assert.equal(v0.key, 7)
-        const shifted = mkDoc("\n###\n```\nfw 100\nrt 90\n```\nbetween\n```\nrt 45\n```\n###")
-        const v1 = stepActivation(v0, { docChanged: true, doc: shifted, headLine: 7 }, build, NONE)
-        assert.equal(v1.key, 8, "cell #2 is still kindled; its open is now 8")
+    // A newline above shifts every fence. The held cell travels by its OPENER
+    // MAPPED THROUGH THE EDIT — the only thing that can carry a position across
+    // one. Without that mapping the light may go out, but it must never land on
+    // a different cell (see the sibling-insert case below).
+    test("an edit that shifts lines keeps the kindled cell by its mapped opener", () => {
+        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 8 })
+        assert.equal((v0.held?.open ?? null), 7)
+        const shifted = docFrom("\n###\n```\nfw 100\nrt 90\n```\nbetween\n```\nrt 45\n```\n###")
+        // One newline inserted at offset 0: every position moves by one.
+        const changes = { mapPos: (pos) => pos + 1 }
+        const v1 = stepActivation(v0, { docChanged: true, doc: shifted, headLine: 7, changes })
+        assert.equal((v1.held?.open ?? null), 8, "cell #2 is still kindled; its open is now 8")
         assert.deepEqual(v1.held.coord, v0.held.coord, "same outline place")
+    })
+
+    test("without a ChangeSet the light goes OUT rather than landing on another cell", () => {
+        const v0 = stepActivation(null, { docChanged: true, doc, headLine: 8 })
+        assert.equal((v0.held?.open ?? null), 7)
+        const shifted = docFrom("\n###\n```\nfw 100\nrt 90\n```\nbetween\n```\nrt 45\n```\n###")
+        // The old line number is an address in the OLD document. Unmapped, it is
+        // no longer this cell's opener — so there is nothing sound to light.
+        // headLine 7 is prose inside the meadow — clause 2, where the hold is
+        // the only thing that could light a cell.
+        const v1 = stepActivation(v0, { docChanged: true, doc: shifted, headLine: 7 })
+        assert.equal((v1.held?.open ?? null), null, "an unmappable hold is silence, never a guess")
     })
 })
 
@@ -508,30 +494,30 @@ describe("the margin outline — `# * name` folds code like an outline node", ()
     const foldAt = (doc, n) => marginOutlineFoldService({ doc }, doc.line(n).from, doc.line(n).to)
 
     test("a heading folds the code beneath it, down to the next sibling heading", () => {
-        const doc   = mkDoc("fw 0 # * One\n  rt 90\n  fw 10\nfw 5 # * Two\n  rt 45")
+        const doc   = docFrom("fw 0 # * One\n  rt 90\n  fw 10\nfw 5 # * Two\n  rt 45")
         const range = foldAt(doc, 1)
         assert.deepEqual(range, { from: doc.line(1).to, to: doc.line(3).to }) // through fw 10, not into Two
     })
 
     test("a deeper heading nests — h2 folds inside h1's span", () => {
-        const doc = mkDoc("fw 0 # * One\n  fw 1 # ** sub\n  rt 90\nfw 5 # * Two")
+        const doc = docFrom("fw 0 # * One\n  fw 1 # ** sub\n  rt 90\nfw 5 # * Two")
         assert.deepEqual(foldAt(doc, 1), { from: doc.line(1).to, to: doc.line(3).to }) // One holds sub + its body
         assert.deepEqual(foldAt(doc, 2), { from: doc.line(2).to, to: doc.line(3).to }) // sub holds just rt 90
     })
 
     test("the last heading folds to end-of-file", () => {
-        const doc = mkDoc("fw 0 # * Only\n  rt 90\n  fw 10")
+        const doc = docFrom("fw 0 # * Only\n  rt 90\n  fw 10")
         assert.deepEqual(foldAt(doc, 1), { from: doc.line(1).to, to: doc.line(3).to })
     })
 
     test("a plain margin and a bare code line are not outline headings — nothing folds", () => {
-        const doc = mkDoc("fw 50 # just a note\nrt 90")
+        const doc = docFrom("fw 50 # just a note\nrt 90")
         assert.equal(foldAt(doc, 1), null)
         assert.equal(foldAt(doc, 2), null)
     })
 
     test("a meadow opening ends the section; a `# *` inside a meadow is the meadow's, not ours", () => {
-        const doc = mkDoc("fw 0 # * One\n  rt 90\n###\n* a chapter\n###")
+        const doc = docFrom("fw 0 # * One\n  rt 90\n###\n* a chapter\n###")
         assert.deepEqual(foldAt(doc, 1), { from: doc.line(1).to, to: doc.line(2).to }) // stops at the ### fence
         assert.equal(foldAt(doc, 4), null)                                             // meadow headline — litFold owns it
     })
@@ -552,7 +538,7 @@ describe("one prose walk — the editor and the parser see the same shape", () =
     ]
     for (const src of CASES) {
         test(`agree on ${JSON.stringify(src.slice(0, 28))}…`, () => {
-            const fromDoc = findProse(mkDoc(src))
+            const fromDoc = findProse(docFrom(src))
             const fromLines = outline(src.split("\n"))
             assert.deepEqual(fromDoc, fromLines)
         })
@@ -639,7 +625,7 @@ describe("classify — one name per line", () => {
 
 describe("defaultAttend — where a never-attended buffer opens", () => {
     test("a page opens at its first cell's opener, never at the fence itself", () => {
-        const doc = mkDoc("###\n```\nfw 1\n```\n\n```\nfw 2\n```\n###")
+        const doc = docFrom("###\n```\nfw 1\n```\n\n```\nfw 2\n```\n###")
         const offset = defaultAttend(doc)
         const at = doc.lineAt(offset)
         assert.equal(at.number, 2, "the first cell's opener line")
@@ -647,16 +633,29 @@ describe("defaultAttend — where a never-attended buffer opens", () => {
     })
 
     test("a program — bare code outside any fence — has no page law; null stands", () => {
-        assert.equal(defaultAttend(mkDoc("fw 1\njmp 50")), null)
+        assert.equal(defaultAttend(docFrom("fw 1\njmp 50")), null)
     })
 
     test("bare code beside a fenced cell is still a program, not a page", () => {
         // isPageDoc requires EVERY non-blank line inside a meadow — one bare
         // line outside disqualifies the whole doc, same gate reach.js uses.
-        assert.equal(defaultAttend(mkDoc("fw 1\n###\nprose\n```\nfw 2\n```\n###")), null)
+        assert.equal(defaultAttend(docFrom("fw 1\n###\nprose\n```\nfw 2\n```\n###")), null)
     })
 
     test("an empty page — no cells yet — has nothing to open on", () => {
-        assert.equal(defaultAttend(mkDoc("###\nprose only\n###")), null)
+        assert.equal(defaultAttend(docFrom("###\nprose only\n###")), null)
+    })
+})
+
+// A `###` fence closes an open cell IMPLICITLY — the transition classify() takes
+// in parse.js. The stream tokenizer must pop the cell body with it: the leaked
+// entry used to make the NEXT cell's first line paint as prose.
+// Proven by A/B: with the leak, `fw 2` below was `comment`; now it is `keyword`.
+describe("an implicit close (### inside a cell) releases the cell body", () => {
+    test("a later cell's code is code, never prose", () => {
+        const toks = lex("###\n```\nfw 1\n###\nprose\n###\n```\nfw 2")
+        assert.deepEqual(stylesOf(toks, "fw"), ["keyword", "keyword"],
+            "the second cell is code, exactly like the first")
+        assert.deepEqual(stylesOf(toks, "prose"), ["comment"], "the meadow's prose stays prose")
     })
 })

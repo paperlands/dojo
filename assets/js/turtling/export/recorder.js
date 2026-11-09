@@ -792,21 +792,23 @@ export class Recorder {
         if (xMax < xMin || yMax < yMin) {
             return null;
         }
+        // Flush ink dies at thumbnail size; 2px air keeps the last stroke.
+        const pad = 2;
+        const inkW = xMax - xMin + 1;
+        const inkH = yMax - yMin + 1;
+        const trimWidth = inkW + pad * 2;
+        const trimHeight = inkH + pad * 2;
 
-        const trimWidth = xMax - xMin + 1;
-        const trimHeight = yMax - yMin + 1;
-        
         this._snapshotCanvas.width = trimWidth;
         this._snapshotCanvas.height = trimHeight;
-        
+
         const trimmedImageData = this._snapshotContext.createImageData(trimWidth, trimHeight);
         const trimmedData = trimmedImageData.data;
+        const rowBytes = inkW * 4;
 
-        for (let y = 0; y < trimHeight; y++) {
+        for (let y = 0; y < inkH; y++) {
             const srcRowStart = ((yMin + y) * width + xMin) * 4;
-            const dstRowStart = y * trimWidth * 4;
-            const rowBytes = trimWidth * 4;
-            
+            const dstRowStart = ((y + pad) * trimWidth + pad) * 4;
             trimmedData.set(
                 data.subarray(srcRowStart, srcRowStart + rowBytes),
                 dstRowStart

@@ -1,12 +1,16 @@
+<img src="priv/static/images/logo.svg" width="76" alt="PaperLand's saffron gate and sun">
+
 # PaperLand Dojo
+
+Welcome to [PaperLand](https://dojo.paperland.sg/welcome).
+
+![Gold-line night garden: pine, lantern, pagoda, stepping stones, and water.](design/readme/masthead.svg)
 
 > math with the seriousness one has as a child at play
 
-[PaperLand Dojo](https://dojo.paperland.sg/welcome) is a place where
-people explore and wrestle with mathematics together, unveiling the hidden beauty of it 
-all through sharing code.
-
-A place where the curious might forge their own path or find one another. 
+See math differently. 
+Wrestle with math together. 
+And unveil its inner beauty. 
 
 Want to know more about how we are building it? Head over to [paperland.sg](https://paperland.sg).
 

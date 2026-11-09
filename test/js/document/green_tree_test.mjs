@@ -18,7 +18,7 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
-import { parseProgram, reparseProgram, printAST } from "../../../assets/js/turtling/parse.js"
+import { parseProgram, reparseProgram, printAST, reparseStats, resetReparseStats } from "../../../assets/js/turtling/parse.js"
 
 // Structure comparison that ignores object identity (JSON is the wire truth).
 const frozen = (ast) => JSON.stringify(ast)
@@ -69,6 +69,28 @@ describe("equivalence — reparse always answers what a full parse would", () =>
         }
     })
 
+    test("reservation — adoption never crosses position nor repeats an object", () => {
+        for (const program of corpus) {
+            const lines = program.split("\n")
+            for (let i = 0; i < lines.length; i++) {
+                for (const editedLines of edits(lines, i)) {
+                    const edited = editedLines.join("\n")
+                    const prev = parseProgram(program)
+                    const seen = new Set()
+                    let last = -1
+                    for (const node of reparseProgram(edited, program, prev)) {
+                        const at = prev.indexOf(node)
+                        if (at < 0) continue
+                        assert.ok(!seen.has(at), `prev[${at}] adopted twice:\n${edited}`)
+                        assert.ok(at > last, `prev[${at}] adopted after prev[${last}] — crossed:\n${edited}`)
+                        seen.add(at)
+                        last = at
+                    }
+                }
+            }
+        }
+    })
+
     test("appending after an unterminated block extends its containment", () => {
         const program = "for 3 do\nfw 10"
         const prev = parseProgram(program)
@@ -88,6 +110,19 @@ describe("equivalence — reparse always answers what a full parse would", () =>
 
 describe("identity — untouched blocks keep their node objects", () => {
     const PAGE = "def square s do\n  fw s\nend\nsquare 10\nas sky do\n  rt 90\nend"
+
+    test("identical twins keep their own objects — no crossing", () => {
+        const src = "fw 10\nrt 90\nfw 10\nrt 90"
+        const edited = "fw 11\nrt 90\nfw 10\nrt 90"
+        const prev = parseProgram(src)
+        const got = reparseProgram(edited, src, prev)
+        assert.equal(frozen(got), frozen(parseProgram(edited)))
+        assert.notEqual(got[0], prev[0], "the edited statement is fresh")
+        assert.equal(got[2], prev[2], "the lower twin keeps the lower object")
+        assert.notEqual(got[2], prev[0], "…never the twin above it")
+        assert.deepEqual(prev[0].span, { line: 1, endLine: 1 }, "the unclaimed twin's span is not stolen")
+        assert.deepEqual(prev[2].span, { line: 3, endLine: 3 })
+    })
 
     test("an edit to one block leaves every other block ===-identical", () => {
         const prev = parseProgram(PAGE)
@@ -196,5 +231,142 @@ describe("identity — untouched blocks keep their node objects", () => {
         const edited = "fw 5\n" + PAGE
         const got = reparseProgram(edited, PAGE, prev)
         assert.equal(printAST(got), printAST(parseProgram(edited)))
+    })
+})
+
+describe("convergence — indistinguishable, and it actually runs", () => {
+    const PAGE = [
+        "###", "* Chapter", "prose", "```",
+        "def fig n do", "  fw n", "  rt 90", "end", "```", "###",
+        "fw 10", "rt 90", "lt 45",
+    ].join("\n")
+
+    test("a mid-page keystroke converges and answers the full parse", () => {
+        resetReparseStats()
+        const prev = parseProgram(PAGE)
+        const edited = PAGE.replace("fw 10", "fw 11")
+        const got = reparseProgram(edited, PAGE, prev)
+        assert.equal(reparseStats().fallback, 0, "the fast path answered")
+        assert.ok(reparseStats().converged >= 1, "…and it is the fast path")
+        assert.equal(frozen(got), frozen(parseProgram(edited)))
+    })
+
+    test("a removed fence declines the fast path and stays correct", () => {
+        resetReparseStats()
+        const prev = parseProgram(PAGE)
+        const edited = PAGE.replace("```\ndef fig", "###\ndef fig")
+        const got = reparseProgram(edited, PAGE, prev)
+        assert.equal(reparseStats().fallback, 1, "a fence must decline: chunk edges move")
+        assert.equal(frozen(got), frozen(parseProgram(edited)))
+    })
+
+    test("a typing chain never diverges and never falls back", () => {
+        resetReparseStats()
+        let text = PAGE
+        let ast = parseProgram(PAGE)
+        for (let i = 0; i < 8; i++) {
+            const next = text.replace(/fw \d+/, `fw ${10 + i}`)
+            ast = reparseProgram(next, text, ast)
+            text = next
+        }
+        assert.equal(frozen(ast), frozen(parseProgram(text)))
+        assert.equal(reparseStats().fallback, 0, "every keystroke converged")
+    })
+
+    // The fallback path used to return an array with no restart coordinates, so
+    // ONE structural edit disarmed the fast path for the rest of the session
+    // (measured: converged 1 / fallback 3 where 3/1 was expected).
+    test("a structural fallback does not disarm the next keystroke", () => {
+        resetReparseStats()
+        let text = PAGE
+        let ast = parseProgram(PAGE)
+
+        const step = (next) => { const got = reparseProgram(next, text, ast); text = next; ast = got; return got }
+
+        // 1. ordinary edit → the fast path answers
+        step(PAGE.replace("fw 10", "fw 11"))
+        // 2. structural edit (a meadow fence appears) → must fall back
+        step(text.replace("###\n* Chapter", "###\n###\n* Chapter"))
+        // 3. ordinary edit → MUST converge again
+        step(text.replace("fw 11", "fw 12"))
+
+        const stats = reparseStats()
+        assert.equal(stats.fallback, 1, "exactly one fallback, for the structural edit")
+        assert.ok(stats.converged >= 2, `the fast path came back (converged ${stats.converged})`)
+        assert.equal(frozen(ast), frozen(parseProgram(text)))
+    })
+
+    // A one-character edit can create or destroy a fence while its dirty
+    // substring holds no marker at all (`###` → `##` leaves `#`). The guard
+    // therefore tests whole affected LINES; this pins the outcome either way.
+    test("single-character fence edits never diverge", () => {
+        const corpus = [
+            "###\nprose\n```\nfw 1\n```\n###\nrt 90",
+            "###\n* H\n```lang\nfw 1\n```\n###",
+            "###\n```\nfw 1\n###\nrt 2",
+            "###\n```\nfw 1\n```\n###",
+        ]
+        let tried = 0
+        for (const program of corpus) {
+            const lines = program.split("\n")
+            for (let li = 0; li < lines.length; li++) {
+                if (!lines[li].includes("```") && !lines[li].includes("###")) continue
+                for (let ci = 0; ci < lines[li].length; ci++) {
+                    for (const candidate of [lines[li].slice(0, ci) + lines[li].slice(ci + 1),
+                                             lines[li].slice(0, ci) + "`" + lines[li].slice(ci)]) {
+                        const next = lines.slice(); next[li] = candidate
+                        const edited = next.join("\n")
+                        if (edited === program) continue
+                        tried++
+                        const prev = parseProgram(program)
+                        assert.equal(frozen(reparseProgram(edited, program, prev)), frozen(parseProgram(edited)),
+                            `divergence on ${JSON.stringify(lines[li])} → ${JSON.stringify(candidate)}`)
+                    }
+                }
+            }
+        }
+        assert.ok(tried > 90, `the sweep actually ran (${tried} single-character edits)`)
+    })
+
+    // CRLF and bare CR are line breaks to splitLines(); the convergence
+    // coordinate arithmetic must count them the same way, or every line number
+    // after the first CRLF is off by one.
+    test("CRLF and bare CR documents converge on the same coordinates", () => {
+        for (const eol of ["\r\n", "\r"]) {
+            const page = ["###", "* Chapter", "```", "def fig n do", "  fw n", "end", "```", "###", "fw 10", "rt 90"].join(eol);
+            const edited = page.replace("fw 10", "fw 11");
+            const prev = parseProgram(page);
+            const got = reparseProgram(edited, page, prev);
+            assert.equal(frozen(got), frozen(parseProgram(edited)), `${JSON.stringify(eol)} diverged`);
+        }
+    })
+
+    // A bare CR is a line break to splitLines(), so it must be one to the fence
+    // guard too. Reading only LF made this converge onto a DIFFERENT forest than
+    // a fresh parse (the guard never saw the fence), and made every ordinary
+    // bare-CR edit fall back.
+    test("bare-CR edits: the fence guard sees them, ordinary edits still converge", () => {
+        resetReparseStats()
+        const before = "a\r###\r###\r###\ra";
+        const after = "a\r\r###\r###\ra";
+        const got = reparseProgram(after, before, parseProgram(before));
+        assert.equal(frozen(got), frozen(parseProgram(after)), "converged onto the wrong forest");
+        assert.equal(reparseStats().fallback, 1, "a fence-bearing CR edit must fall back, not converge");
+
+        resetReparseStats()
+        const page = "###\r* H\r```\rfw 1\r```\r###\rfw 9";
+        const edited = "###\r* H\r```\rfw 2\r```\r###\rfw 9";
+        const g2 = reparseProgram(edited, page, parseProgram(page));
+        assert.equal(frozen(g2), frozen(parseProgram(edited)));
+        assert.ok(reparseStats().converged >= 1, "an ordinary CR edit must not become a blanket fallback");
+    })
+
+    test("reparsing twice from one parent is idempotent", () => {
+        const prev = parseProgram(PAGE)
+        const edited = "fw 5\n" + PAGE
+        const a = reparseProgram(edited, PAGE, prev)
+        const b = reparseProgram(edited, PAGE, prev)
+        assert.equal(frozen(a), frozen(b), "the same parent answers the same forest")
+        assert.equal(frozen(b), frozen(parseProgram(edited)))
     })
 })

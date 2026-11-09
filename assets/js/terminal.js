@@ -117,20 +117,50 @@ export const createTerminal = (element, cm6, options = {}) => {
         return claim;
     };
 
+    // A publication's TICKET. A deferred payload carries the ticket it was
+    // queued at; if a newer publication has already gone out (a buffer switch
+    // publishes immediately), the deferred one is stale and must be dropped —
+    // otherwise the rAF can deliver an older buffer AFTER the newer selection.
+    let pubSeq = 0;
+    let published = 0;
+
+    // DISPATCH IS SERIALISED. bridge.pub() dispatches a CustomEvent synchronously,
+    // so a subscriber that publishes (a buffer switch, a metadata announce) would
+    // otherwise deliver its event INSIDE ours — and the next subscriber would see
+    // [B, A]. The ticket makes the producer's order monotone; this queue makes
+    // DELIVERY monotone. Nested publications are queued, never dropped, and
+    // drained by the outermost call in the order their tickets were taken.
+    const pubQueue = [];
+    let dispatching = false;
+    const publishNow = (payload) => {
+        published = ++pubSeq;
+        pubQueue.push(payload);
+        if (dispatching) return payload;
+        dispatching = true;
+        try {
+            while (pubQueue.length) bridge.pub(pubQueue.shift());
+        } finally {
+            // A throwing subscriber must not wedge the flag or strand payloads.
+            dispatching = false;
+            pubQueue.length = 0;
+        }
+        return payload;
+    };
+
     const triggerBridge = () => {
         const buffer = buffers.currentBuffer(state.collection);
         if (!buffer) return null;
         const claim = sourceClaim(buffer.id, buffer.content);
-        bridge.pub({ id: buffer.id, name: buffer.name, content: buffer.content, claim });
-        return { id: buffer.id, name: buffer.name, content: buffer.content, claim };
+        const payload = { id: buffer.id, name: buffer.name, content: buffer.content, claim };
+        publishNow(payload);
+        return payload;
     };
 
     const announceMetadata = (id = state.collection?.currentId) => {
         const buffer = id ? state.collection?.items.get(id) : buffers.currentBuffer(state.collection);
         if (!buffer) return null;
         const payload = { id: buffer.id, name: buffer.name, content: buffer.content, metadata: true };
-        bridge.pub(payload);
-        return payload;
+        return publishNow(payload);
     };
 
     // Bridge after paint — the glyph paints first, the live walk follows next
@@ -143,13 +173,16 @@ export const createTerminal = (element, cm6, options = {}) => {
         paintRaf = 0;
         const pending = paintPending;
         paintPending = null;
-        if (!pending) return;
+        // A newer publication already went out — this payload is stale. Dropping
+        // it is always safe: the collection (authority) already holds the newer
+        // content, and every consumer reads it through the newest event.
+        if (!pending || pending.seq <= published) return;
         const { id, content, claim } = pending;
         const name = id ? state.collection.items.get(id)?.name : null;
-        bridge.pub({ id, name, content, claim });
+        publishNow({ id, name, content, claim });
     };
     const publishAfterPaint = (id, content, claim) => {
-        paintPending = { id, content, claim };
+        paintPending = { id, content, claim, seq: ++pubSeq };
         if (typeof requestAnimationFrame !== 'function') return flushPaint();
         if (!paintRaf) paintRaf = requestAnimationFrame(flushPaint);
     };
@@ -836,6 +869,11 @@ export const createTerminal = (element, cm6, options = {}) => {
         triggerBridge,
 
         destroy() {
+            // A destroyed terminal must not publish from a frame that was
+            // already queued: cancel the frame and drop its payload.
+            if (paintRaf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(paintRaf);
+            paintRaf = 0;
+            paintPending = null;
             document.removeEventListener('visibilitychange', onVisibilityChange);
             window.removeEventListener('beforeunload', onBeforeUnload);
             autosave.cancel();

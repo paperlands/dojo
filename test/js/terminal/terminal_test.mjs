@@ -298,7 +298,8 @@ const makeEditorStub = () => ({
 describe("Terminal (CM6)", () => {
     let Terminal;
 
-    before(() => {
+    before(async () => {
+        ;({ Terminal } = await import("../../../assets/js/terminal.js"));
         // Complete DOM stub — satisfies Tabber (getElementById + cloneNode)
         // and Terminal inner() (createElement + insertBefore).
         const makeEl = () => {
@@ -348,8 +349,7 @@ describe("Terminal (CM6)", () => {
         };
     });
 
-    test("setup — import Terminal", async () => {
-        ;({ Terminal } = await import("../../../assets/js/terminal.js"));
+    test("setup — Terminal is importable", () => {
         assert.equal(typeof Terminal, "function");
     });
 
@@ -637,6 +637,126 @@ describe("Terminal (CM6)", () => {
         assert.equal(frames.at(-1).metadata, true);
         assert.equal(frames.at(-1).id, id);
         localStorage.clear();
+    });
+
+    // THE ORDERING LAW. publishAfterPaint keeps only the latest payload, so a
+    // frame queued before a buffer switch can deliver an OLDER buffer after the
+    // newer selection has already been published. Content authority is fine; a
+    // subscriber's idea of "the current buffer" is not.
+    test("a deferred publish never lands after a newer immediate one", () => {
+        const cm6 = makeMockCm6();
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const idA = term.currentBufferId();
+        const heard = [];
+        term.bridge.sub((p) => { if (!p.metadata) heard.push({ id: p.id, content: p.content }); });
+
+        const savedRaf = globalThis.requestAnimationFrame;
+        const savedCancel = globalThis.cancelAnimationFrame;
+        let queued = null;
+        globalThis.requestAnimationFrame = (fn) => { queued = fn; return 7; };
+        globalThis.cancelAnimationFrame = () => { queued = null; };
+        try {
+            term.setValue("fw 1");                       // queues A's publish
+            assert.ok(queued, "a frame is queued for A");
+
+            const idB = term.createBuffer("b", "fw 2");  // selects B, publishes NOW
+            assert.notEqual(idB, idA);
+            const before = heard.length;
+            assert.equal(heard.at(-1).id, idB, "B was published immediately");
+
+            if (queued) queued();                        // the old frame fires late
+            assert.equal(heard.length, before, "the stale A payload is dropped, not delivered");
+            assert.equal(heard.at(-1).id, idB, "the last thing heard is still the newest selection");
+        } finally {
+            globalThis.requestAnimationFrame = savedRaf;
+            globalThis.cancelAnimationFrame = savedCancel;
+            localStorage.clear();
+        }
+    });
+
+    // THE DELIVERY LAW. A subscriber may publish while being dispatched (a buffer
+    // switch publishes immediately). Without serialisation the NEXT subscriber
+    // observes the nested event before the one being delivered: [B, A]. The
+    // ticket keeps the producer monotone; the queue keeps DELIVERY monotone.
+    test("a publication made during dispatch is delivered AFTER the current one", () => {
+        const cm6 = makeMockCm6();
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const idA = term.currentBufferId();
+
+        const seen = [];
+        let idB = null;
+        let nested = 0;
+        term.bridge.sub((p) => {
+            if (p.metadata || nested) return;
+            nested = 1;
+            idB = term.createBuffer("b", "fw 2");     // publishes B from inside A
+        });
+        term.bridge.sub((p) => { if (!p.metadata) seen.push(p.id); });
+
+        term.triggerBridge();                          // A
+
+        assert.ok(idB && idB !== idA, "a new buffer was selected during dispatch");
+        assert.deepEqual(seen, [idA, idB], "the nested publication must not overtake its parent");
+        assert.equal(seen.filter((x) => x === idA).length, 1, "A is delivered exactly once");
+        localStorage.clear();
+    });
+
+    // Nesting can be deeper: a subscriber of the NESTED event may publish too.
+    // The queue is drained by the outermost call, in ticket order, so the whole
+    // cascade is delivered A, B, C — never interleaved.
+    test("a cascade of nested publications is still delivered in ticket order", () => {
+        const cm6 = makeMockCm6();
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const idA = term.currentBufferId();
+
+        const seen = [];
+        let stage = 0;
+        let idB = null, idC = null;
+        term.bridge.sub((p) => {
+            if (p.metadata) return;
+            if (stage === 0) { stage = 1; idB = term.createBuffer("b", "fw 2"); }
+            else if (stage === 1 && p.id === idB) { stage = 2; idC = term.createBuffer("c", "fw 3"); }
+        });
+        term.bridge.sub((p) => { if (!p.metadata) seen.push(p.id); });
+
+        term.triggerBridge();                            // A
+        assert.ok(idB && idC, "two nested selections happened");
+        assert.deepEqual(seen, [idA, idB, idC], "the whole cascade is delivered in order");
+        localStorage.clear();
+    });
+
+    test("a destroyed terminal publishes nothing from a frame already queued", () => {
+        const cm6 = makeMockCm6();
+        localStorage.clear();
+        const term = new Terminal(makeEditorStub(), cm6);
+        term.inner();
+        const heard = [];
+        term.bridge.sub((p) => { if (!p.metadata) heard.push(p.id); });
+
+        const savedRaf = globalThis.requestAnimationFrame;
+        const savedCancel = globalThis.cancelAnimationFrame;
+        let queued = null;
+        globalThis.requestAnimationFrame = (fn) => { queued = fn; return 9; };
+        globalThis.cancelAnimationFrame = () => {};      // the frame still exists
+        try {
+            term.setValue("fw 3");
+            const frame = queued;
+            assert.ok(frame, "a frame is queued");
+            term.destroy();
+            const before = heard.length;
+            if (frame) frame();                          // fires after teardown
+            assert.equal(heard.length, before, "no publication after destroy");
+        } finally {
+            globalThis.requestAnimationFrame = savedRaf;
+            globalThis.cancelAnimationFrame = savedCancel;
+            localStorage.clear();
+        }
     });
 
     test("autosave persists a change that never painted", async () => {

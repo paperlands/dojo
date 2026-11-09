@@ -193,6 +193,16 @@ Stable author paging: =test/dojo/keep/author_cursor_test.exs=; =t.n.id= order/cu
 legacy cursor restarts, no implied causal order or late-arrival completeness.
 Release cut/limits: [[id:keep-author-paging]] · [[id:probe-keep-work-evidence]] · [[id:story-arrival]].
 
+** keep compatibility — forward and backward, enforced at the door
+:PROPERTIES:
+:ID: nav-keep-compatibility
+:KEYWORDS: keep compatibility forward backward schema version migration foreign unreadable signature snapshot busy wire refusal V
+:PATH: specs/weave/keep-compatibility-review.org
+:END:
+Which keep is which, the six measured boundaries, and V drop by drop.
+Gate: =probe/keep-cut/v_readiness.exs= (read-only; =--strict= exits 2 on BLOCKED).
+Log: =lib/dojo/keep/log.ex= · =test/dojo/keep/log_compatibility_test.exs=.
+
 ** keep authentication — forward-only authorship
 :PROPERTIES:
 :ID: nav-keep-auth
@@ -727,6 +737,19 @@ Peer clicks are one local =phx:outerSelect= selector departure; =owner= is the
 selected subject and a receipt is only its acknowledgement. Library open departs
 before its fetch; route resolution is epoch/controller-guarded, ambient reveal is
 not selection. Same-address documents assume channel order + server =follow_gen=.
+
+** README masthead — cloud, shadow, ember
+:PROPERTIES:
+:ID: nav-readme-masthead
+:KEYWORDS: README masthead centerpiece visual competition art direction Thomas Cole cloud shadow Helios ember clearing crossing
+:PATH: design/readme/competition/NOTES.org
+:END:
+SVG composition studies → mathematical proposals → Oracle's Unclosed Sky.
+Current: =design/readme/competition/lichtung.html= — native artefacts composed
+around a shared opening; actual GIF capture and source: [[id:readme-lichtung-composition]].
+Earlier isolated designs/code: =design/readme/competition/variants.html=.
+Archive: =design/readme/competition/index.html=; [[id:readme-masthead-native-variants]].
+Exploration, not a README replacement.
 
 ** helios-window — disciple strip, selenic turn
 :PROPERTIES:
@@ -3205,12 +3228,14 @@ press, page probe, do-end matching all read here — never re-spell.
 ** the scan — one walk, roles only
 :PROPERTIES:
 :ID: nav-classify
-:KEYWORDS: classify scan roles ROLE splitLines lineText naming meadowOpen meadowClose cellOpen cellClose headline prose code closesCell info one walk shared mind CRLF
+:KEYWORDS: classify scan roles ROLE PLACE SYMBOL MACHINE symbolOf stateAt splitLines lineText naming meadowOpen meadowClose cellOpen cellClose headline prose code closesCell info one walk shared mind CRLF
 :PATH: assets/js/turtling/parse.js::export function classify
 :END:
-The predicates at [[id:nav-grammar]] are the marks; this is the ONE walk that
-applies them. Every line gets one name for its place in the clearing — no spans,
-no records, no tree — and every reader downstream is a FOLD over those roles
+The predicates at [[id:nav-grammar]] are the marks; =MACHINE= is the ONE
+transition over them, and this is the walk that applies it. The record pass and
+=stateAt= fold the same table, so a fence meaning is decided in one place.
+Every line gets one name for its place in the clearing — no spans, no records, no
+tree — and every reader downstream is a FOLD over those roles
 ([[id:nav-outline]] into geometry; the tokenizer into records, next).
 
 Roles-only on purpose: the moment the scan reshapes, counts, or spans, it has
@@ -3283,6 +3308,26 @@ its docstring.* =phaseCells= carries
 each cell's =open=/=close= lines and its =path=. Why not a cell ordinal: it
 aliases under insertion and cannot name a phase that owns no cell yet.
 Pinned by =test/js/phase/attention_test.mjs=.
+
+** keystroke latency — what typing actually costs, and the gates on it
+:PROPERTIES:
+:ID: nav-keystroke-latency
+:KEYWORDS: keystroke latency typing paint decoration viewport ViewPlugin paintPlan MARKS activation identity anchor mapPos kindleCell cellAtOpen convergence reparseProgram stateAt provenance fence seam gate chromium retraction probe
+:PATH: probe/keystroke-latency/README.org
+:END:
+Per-keystroke cost, measured: the walk (=findProse= → =outline=) is the only
+document-proportional term left (0.244 ms at 80 cells, 1.924 at 500, half of it
+rope descent); paint is flat (~0.005 ms) because the activation field is STATE
+only and a =ViewPlugin= emits decorations over =view.visibleRanges=
+(=|plan| ≤ 2·visible+1=, asserted). Identity travels by the opener's offset
+mapped through =tr.changes=, never by =coord=. Reasoning:
+[[file:probe/keystroke-latency/DIALECTIC.org][DIALECTIC]] ·
+[[file:probe/keystroke-latency/REVIEW-MAINTAINABILITY.org][maintainability review]].
+Gates: =node --test test/js/document/fence_seam_test.mjs= (parser ≡ editor) ·
+=test/js/editor/activation_paint_test.mjs= (the bound) ·
+=bash probe/keystroke-latency/paint_check.sh= (chromium; a rig change re-runs
+its negative control — a passing result alone is not evidence).
+Story: [[file:specs/weave/typing-path.org][typing-path]] §Landed.
 
 *** two addressings, one seam (=cmp-vet-4=)
 A LINE addresses an INTENTION — where the reader is; total (prose has one) and
