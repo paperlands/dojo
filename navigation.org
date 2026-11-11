@@ -202,6 +202,9 @@ Release cut/limits: [[id:keep-author-paging]] · [[id:probe-keep-work-evidence]]
 Which keep is which, the six measured boundaries, and V drop by drop.
 Gate: =probe/keep-cut/v_readiness.exs= (read-only; =--strict= exits 2 on BLOCKED).
 Log: =lib/dojo/keep/log.ex= · =test/dojo/keep/log_compatibility_test.exs=.
+Open lifecycle: =DJAL= file marker → owned schema → atomic initialization → verified WAL.
+Unmarked nonempty files refuse =:unidentified_database=; no implicit adoption.
+Witnesses cover unchanged file bytes/sidecars, concurrent creation and begin/commit =:busy=.
 
 ** keep authentication — forward-only authorship
 :PROPERTIES:
@@ -2804,6 +2807,23 @@ Cycle scope: [[id:tower-laws-cycle-contracts]] distinguishes a derived definitio
 relation loop, and D011's wait-for snapshot. D054 is not a fixed-point theorem;
 =test/js/laws/component_test.mjs= witnesses a feasible loop outside the tree method.
 
+** forgiving language — meaning, transfer and owned continuation
+:PROPERTIES:
+:ID: nav-forgiving-foundation
+:MODULE: mafs/tower.js, mafs/evaluate.js, bindings.js, expressions.js, execution.js, scheduler.js, laws/readout.js
+:KEYWORDS: forgiving language types Hazel Hazelnut holes marking context capture provenance readiness lifetime continuation prior art
+:PATH: specs/compiler/forgiving-foundation.org::forgiving-foundation
+:END:
+[[id:forgiving-foundation]] compares Hazel's incomplete-state semantics with Dojo's
+existing centers. Distinguishes parse recovery, runtime faults, numeric condition,
+readiness and source-owned effects; transfer witnesses and oracle questions remain
+an inquiry, not a new hole runtime or fault policy.
+Bounded landing: [[id:frame-lifecycle-observation]] moves wait release from facet
+queries to coroutine progress; =suspension_state_test.mjs= fences preflight and lifetime.
+Scalar landing: [[id:readout-scalar-wait]] preserves a blocked cause through one
+attempt epoch and the existing value door; =readout_scalar_wait_test.mjs= fences the
+publication contrast, memo/cycle/lifetime boundaries and known keyed compatibility limits.
+
 ** the semantic center — one door for every operation
 :PROPERTIES:
 :ID: nav-tower-center
@@ -2987,6 +3007,33 @@ Live play protocol: read =codex/play.org= FIRST. The hook is a dispatch point:
 lifecycle machine × { coreshell, outershell, weave } over the shared core.
 =data-target= IS the surface's name — the map key, not a value to branch on; an
 unknown name mounts nothing. Peers, not nesting ([[id:lex-unmarked]]).
+
+** field width — the browser measures, nothing else may
+:PROPERTIES:
+:ID: nav-field-width
+:KEYWORDS: field width field-sizing content autosize tab name cmdparam deck hydration jump resize second authority
+:PATH: lib/dojo_web/components/deck.ex
+:PATH: assets/js/terminal/tabber.js
+:END:
+A text field's width is =field-sizing: content= plus =min-w=/=max-w= clamps
+(=min-w-[1ch]= on a tab name, =max-w-[8ch]= on a deck parameter, =w-[8ch]= on
+the law dropdown). Measured widths — inline =style= or JS — are a SECOND
+authority, and a second authority was the jump: the server painted each
+parameter at its =max-w=, then =.AutoCh= re-sized it to its placeholder after
+paint, while =Tabber.resizeInput= used =n + 0.5ch= and the tab's inline
+handlers used =n + 1ch= and =n= in turn. All four are gone; a tab now sizes
+nothing. The cost is honest: Firefox stable (152) ignores the property and
+shows a clamped fixed box — no growth, but no jump either. Pinned by
+=test/dojo_web/components/deck_test.exs=, which fails if a measured width
+comes back.
+Half a =ch= of =pr=[0.5ch]= keeps the caret off the ceiling: content sizing
+counts text, not the cursor behind it.
+Floors are fingers, not glyphs: =min-w-6= (24px, WCAG 2.5.8) on every
+parameter and on both rename fields — content sizing gives growth, the floor
+gives a child something to hit. Width only, never height: an input centres its
+line box, so =min-h= lands between the digits and the =border-b-2= rule, and
+the rule is the affordance — it must stay under the writing. =.well_class=
+already carries the persistent =bg-base-200/50=, so nothing else is needed.
 
 ** shell lifecycle — the boot seam law
 :PROPERTIES:

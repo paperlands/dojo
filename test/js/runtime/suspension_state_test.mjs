@@ -5,15 +5,16 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 
-import { createScheduler, metaRoot, parkBreath, parkOwing } from "../../../assets/js/turtling/scheduler.js"
+import { createScheduler, metaRoot, parkBreath, parkOwing, resolveBinding } from "../../../assets/js/turtling/scheduler.js"
 import { Parser } from "../../../assets/js/turtling/mafs/parse.js"
 import { Evaluator } from "../../../assets/js/turtling/mafs/evaluate.js"
 import { parseProgram } from "../../../assets/js/turtling/parse.js"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
+import { buildWorld, at, drive, ends } from '../laws/harness.mjs'
 
 const deps = () => ({ mathParser: new Parser(), mathEvaluator: new Evaluator() })
-const fork = (name, src) => ({
-    name, origin: SE3.identity(), frame: null,
+const fork = (name, src, origin = SE3.identity()) => ({
+    name, origin, frame: null,
     style: { color: "#000000", thickness: 2, down: true, showTurtle: 10 },
     code: { ast: parseProgram(src), functions: {} },
     env: { userspace: new Map(), loopCounter: 0, scope: {} },
@@ -91,4 +92,109 @@ test("a matched when never asks, so a poisoned read cannot park the walk", () =>
     assert.equal(reader.suspension?.kind ?? null, null, "and never parks as dataflow")
     const ends = reader.channel.drain().filter((e) => e.type === "path").map((p) => p.points.at(-1))
     assert.deepEqual(ends, [[1, 0, 0], [4, 0, 0]], "the poison drew nothing: fw 1 then fw 3")
+})
+
+test("readout preflight cannot release another argument's dataflow wait", () => {
+    const scheduler = buildWorld()
+    const a = scheduler.hotSwapChild("a", fork("a", "", at(1)))
+    const reader = scheduler.hotSwapChild("reader", fork("reader", "goto a.x b.x\nwait 1"))
+    const watcher = scheduler.hotSwapChild("watcher", fork("watcher", "fw reader.x"))
+    const suspension = reader.suspension, generator = reader.generator
+    const watcherSuspension = watcher.suspension
+    assert.equal(suspension?.kind, "dataflow")
+    assert.equal(suspension.on, null, "the missing b has no frame yet")
+    assert.equal(watcherSuspension?.on, reader)
+
+    assert.equal(scheduler.readouts.dependsOnFrame(() => resolveBinding(reader, "a.x"), a), true)
+    assert.equal(reader.generator, generator, "preflight did not run the coroutine")
+    assert.equal(reader.suspension, suspension, "only the coroutine may release this wait")
+    assert.equal(reader.suspension.on, null)
+    assert.throws(() => resolveBinding(watcher, "reader.x"), error => error.blocked === true)
+    assert.equal(watcher.suspension, watcherSuspension)
+    assert.deepEqual(watcher.transform.deref().position, [0, 0, 0])
+})
+
+test("the original coroutine resumes once and keeps its earlier admitted argument", () => {
+    const scheduler = buildWorld({ admit: ({ requested }) => ({ accepted: true, transform: requested }) })
+    const a = scheduler.hotSwapChild("a", fork("a", "", at(1)))
+    const reader = scheduler.hotSwapChild("reader", fork("reader", "goto a.x b.x\nfw 1\nwait 1"))
+    const generator = reader.generator
+    assert.equal(reader.suspension?.kind, "dataflow")
+    assert.equal(scheduler.requestMotion(a, at(9), scheduler.motionRevision).kind, "accept")
+    scheduler.hotSwapChild("b", fork("b", "", at(5)))
+    assert.equal(reader.generator, generator)
+    const trace = drive(scheduler)
+    assert.equal(reader.error, null)
+    assert.equal(reader.done, true)
+    assert.equal(reader.suspension, null)
+    assert.deepEqual(ends(trace, "reader"), [[1, 5, 0], [2, 5, 0]])
+    assert.deepEqual(reader.transform.deref().position, [2, 5, 0])
+})
+
+test("a successful actor read can finish without a following command or a retained wait", () => {
+    const scheduler = buildWorld()
+    const reader = scheduler.hotSwapChild("reader", fork("reader", "when b.x do\n fw 99\nend"))
+    assert.equal(reader.suspension?.kind, "dataflow")
+    scheduler.hotSwapChild("b", fork("b", ""))
+    const trace = drive(scheduler)
+    assert.equal(reader.error, null)
+    assert.equal(reader.done, true)
+    assert.equal(reader.generator, null)
+    assert.equal(reader.suspension, null)
+    assert.deepEqual(ends(trace, "reader"), [])
+})
+
+test("replacement and removal retire a waiting continuation without passing its wait to a namesake", () => {
+    for (const withdrawal of ["replace", "remove"]) {
+        const scheduler = buildWorld()
+        const old = scheduler.hotSwapChild("reader", fork("reader", "fw b.x\nfw 100"))
+        assert.equal(old.suspension?.kind, "dataflow")
+        old.channel.drain()
+        if (withdrawal === "remove") scheduler.removeChild("reader")
+        const fresh = scheduler.hotSwapChild("reader", fork("reader", "fw 7"))
+        assert.notEqual(fresh, old)
+        assert.equal(old.done, true)
+        assert.equal(old.suspension, null)
+        assert.equal(scheduler.registry.has(old.id), false)
+        assert.notEqual(fresh.suspension?.kind, "dataflow")
+        scheduler.hotSwapChild("b", fork("b", "", at(5)))
+        const trace = drive(scheduler)
+        assert.deepEqual(old.transform.deref().position, [0, 0, 0])
+        assert.deepEqual(old.channel.drain(), [])
+        assert.deepEqual(ends(trace, "reader"), [[7, 0, 0]])
+        assert.deepEqual(fresh.transform.deref().position, [7, 0, 0])
+        assert.equal(fresh.suspension, null)
+    }
+})
+
+test("a waiting read that becomes a terminal fault leaves no dataflow debt", () => {
+    const scheduler = buildWorld()
+    const reader = scheduler.hotSwapChild("reader", fork("reader", "fw missing.x"))
+    assert.equal(reader.suspension?.kind, "dataflow")
+    drive(scheduler)
+    assert.equal(reader.done, true)
+    assert.equal(reader.generator, null)
+    assert.match(reader.error?.message, /Undefined assistant: missing/)
+    assert.equal(reader.suspension, null)
+})
+
+test("input deferral keeps a ready coroutine waiting until its execution permission returns", () => {
+    const scheduler = buildWorld()
+    const reader = scheduler.hotSwapChild("reader", fork("reader", "fw b.x\nwait 1"))
+    const suspension = reader.suspension, generator = reader.generator
+    assert.equal(suspension?.kind, "dataflow")
+    const release = scheduler.defer(reader)
+    scheduler.hotSwapChild("b", fork("b", "", at(5)))
+    const held = drive(scheduler, { maxTicks: 3 })
+    assert.equal(reader.suspension, suspension)
+    assert.equal(reader.generator, generator)
+    assert.equal(reader.done, false)
+    assert.deepEqual(ends(held, "reader"), [])
+    assert.deepEqual(reader.transform.deref().position, [0, 0, 0])
+    assert.equal(release(), true)
+    const resumed = drive(scheduler)
+    assert.equal(reader.error, null)
+    assert.equal(reader.done, true)
+    assert.equal(reader.suspension, null)
+    assert.deepEqual(ends(resumed, "reader"), [[5, 0, 0]])
 })

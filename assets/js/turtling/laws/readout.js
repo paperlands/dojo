@@ -44,10 +44,9 @@ export function createReadouts({ permits = () => true } = {}) {
     let recomputes = 0
     let drains = 0
     let builds = 0
-    // One evaluation at a time. `epoch` marks a node computed for it; `active` is the
-    // evaluation in progress — `path` is the compute stack, `changed` what to announce,
-    // `cycle` the entities found standing on themselves, `probe` the root edges of a
-    // dependency probe, `collect` whether failures are NOTHING (a commit) or a wound.
+    // One publication epoch; `active` owns its compute stack, changes and cycle evidence.
+    // `probe` collects dependency edges; collection turns ordinary failures into NOTHING.
+    // Classified waits keep their cause. (id:readout-scalar-wait)
     let epoch = 0
     let active = null
     let anyRefused = false        // a refusal flag stands somewhere; skip the recovery sweep otherwise
@@ -94,18 +93,20 @@ export function createReadouts({ permits = () => true } = {}) {
     // Evaluate one scalar node on demand, so it is computed AFTER everything it reads.
     // (id:laws-dependency-driven-place)
     const ensureScalar = (node) => {
-        if (node.computedEpoch === epoch) return
+        if (node.attemptedEpoch === epoch) return
         // A preflight restores the cache and references it touched. (id:laws-dependency-driven-place)
         if (active.saved && !active.saved.has(node)) {
-            active.saved.set(node, { value: node.value, computedEpoch: node.computedEpoch,
-                deps: node.deps, frames: node.frames, answer: node.answer,
+            active.saved.set(node, { attemptedEpoch: node.attemptedEpoch, blockedCause: node.blockedCause,
+                value: node.value, deps: node.deps, frames: node.frames, answer: node.answer,
                 requested: node.requested, hasRequested: node.hasRequested })
         }
         node.deps = new Set()
         node.frames = new Set()
         active.path.push(node.id)
         active.stack.add(node.id)
-        let value
+        // A blocked attempt keeps its cause for THIS epoch; it is not an answer.
+        // (id:readout-scalar-wait)
+        let value, blocked = null
         try {
             if (node.capture) {
                 const question = node.capture(active.snapshot)
@@ -117,7 +118,8 @@ export function createReadouts({ permits = () => true } = {}) {
                     node.deps = new Set()
                     node.frames = new Set()
                     const answer = node.compute(active.snapshot)
-                    if (answer.error && !active.collect) throw answer.error
+                    // Waits always escape; on demand any failure escapes before memo write. (id:readout-scalar-wait)
+                    if (answer.error && (answer.error.blocked || !active.collect)) throw answer.error
                     node.requested = answer.question
                     node.hasRequested = true
                     node.answer = answer.value
@@ -127,14 +129,20 @@ export function createReadouts({ permits = () => true } = {}) {
                 value = (active.saved ? (node.compute.capture ?? node.compute) : node.compute)(active.snapshot)
             }
         }
-        catch (error) { if (!active.collect) throw error }
+        catch (error) {
+            // On demand failures are thrown; collection alone records a blocked cause.
+            // (id:readout-scalar-wait)
+            if (!active.collect) throw error
+            if (error?.blocked) blocked = error
+        }
         finally { active.path.pop(); active.stack.delete(node.id) }
-        // At a commit failure is nothing; on demand it throws before touching the cache.
-        // (id:eval-relational)
+        // Attempted is not answered: retain the epoch's wait cause, never its old value.
+        // (id:readout-scalar-wait)
         const previous = node.value
-        node.computedEpoch = epoch
-        node.value = value
-        if (!same(previous, value)) active.changed.push({ id: node.id, source: node.source, value })
+        node.attemptedEpoch = epoch
+        node.blockedCause = blocked
+        node.value = blocked ? undefined : value
+        if (!same(previous, node.value)) active.changed.push({ id: node.id, source: node.source, value: node.value })
     }
 
     // One edge view: a node reads nodes/frames; a frame depends on its producers. The
@@ -271,6 +279,7 @@ export function createReadouts({ permits = () => true } = {}) {
             anyRefused = true
             const had = node.value !== undefined
             node.value = undefined
+            node.blockedCause = null
             if (node.build) node.pending = false
             const cyclic = ctx.cycle.has(node.id)
             if (cyclic && !node.cycled) {
@@ -564,11 +573,13 @@ export function createReadouts({ permits = () => true } = {}) {
                 if (node.pending) return undefined
                 return node.value
             }
-            if (node.computedEpoch !== epoch) {
+            if (node.attemptedEpoch !== epoch) {
                 const outer = active
                 if (!outer) active = evaluation()
                 try { ensureScalar(node) } finally { if (!outer) active = null }
             }
+            // The first discovered wait must carry its cause too. (id:readout-scalar-wait)
+            if (node.blockedCause && node.attemptedEpoch === epoch) throw node.blockedCause
             return node.value
         },
 
@@ -647,7 +658,8 @@ function resetNode(node, spec) {
     node.frames = new Set()
     node.prevDeps = null
     node.prevFrames = null
-    node.computedEpoch = -1
+    node.attemptedEpoch = -1
+    node.blockedCause = null
     node.cycled = false
     node.invalid = false
     return node
@@ -657,7 +669,10 @@ function captureQuestion(node, snapshot, changed) {
     let question, captured = true
     try {
         question = node.capture(snapshot)
-    } catch {
+    } catch (error) {
+        // A blocked capture produced no question; do not fabricate new work.
+        // Existing keyed authority stays as it was. (id:readout-scalar-wait)
+        if (error?.blocked) return
         captured = false
     }
     // The live question is unchanged: settled means nothing to do, pending means

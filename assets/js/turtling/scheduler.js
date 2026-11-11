@@ -666,7 +666,6 @@ function resolveFacet(frame, target, reference, property, args) {
             throw err
         }
     }
-    if (frame.suspension?.kind === 'dataflow') clearSuspension(frame)
     // Only orientation asks for a reader reference; position always projects world geometry.
     // (id:world-coordinate-phase-2-reads)
     const isWorld = reference === 'world'
@@ -3495,6 +3494,7 @@ function stepOnce(ctx, route, pump) {
         if (admission) clearSuspension(ctx)
         ;({ value, done } = ctx.generator.next(input))
     } catch (error) {
+        if (ctx.suspension?.kind === 'dataflow') clearSuspension(ctx)
         foldBatch(ctx)
         ctx.observation = null
         ctx.done = true
@@ -3504,6 +3504,8 @@ function stepOnce(ctx, route, pump) {
         return { verdict: 'ended', produced: true }
     }
 
+    // A successful query cannot release a coroutine's wait. (id:frame-lifecycle-observation)
+    if (ctx.suspension?.kind === 'dataflow' && (done || value.type !== 'blocked')) clearSuspension(ctx)
     return stepFrame(ctx, value, done, route, pump)
 }
 
