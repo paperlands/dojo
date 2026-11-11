@@ -41,7 +41,7 @@ export class Tabber {
         if (input) {
             input.id = `tab-input-name-${id}`;
             input.value = name;
-            this.resizeInput(input);
+            // Width is the browser's (`field-sizing`) — a tab sizes nothing.
 
             arena.on(input, 'blur', () => {
                     this.dispatch('phx:opBuffer', { op: 'rename', target: id });
@@ -96,7 +96,8 @@ export class Tabber {
     }
 
     insertTab(tab) {
-        this.container.insertBefore(tab, this.container.lastElementChild);
+        // The scaffold stays first as the template; new tabs follow it.
+        this.container.appendChild(tab);
     }
 
     activateTab(tab) {
@@ -183,11 +184,6 @@ export class Tabber {
         this._arenas.get(targetId)?.destroy();
         this._arenas.delete(targetId);
         tab.remove();
-    }
-
-    resizeInput(input) {
-        const length = Math.max(input.value.length || input.placeholder.length, 2);
-        input.style.width = `${length + 0.5}ch`;
     }
 
     dispatch(eventName, detail) {

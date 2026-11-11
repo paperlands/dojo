@@ -148,7 +148,6 @@ defmodule DojoWeb.DeckLive do
         <div
           id="deckofcards"
           class="h-10/12 z-80 overflow-y-scroll pl-4 sm:py-2 sm:px-4 pointer-events-auto mt-2"
-          phx-hook="DojoWeb.ShellLive.AutoCh"
         >
           <%= for {key, spec} <- @primitive do %>
             <div
@@ -205,7 +204,7 @@ defmodule DojoWeb.DeckLive do
                             id={"cmdparam-#{cmd}-name"}
                             value={vals[:name]}
                             defaulted={vals[:name]}
-                            class={"#{well_class()} min-w-[1ch] max-w-[6ch]"}
+                            class={"#{well_class()} field-sizing-content pr-[0.5ch] min-w-6 max-w-[6ch]"}
                             placeholder="name"
                             phx-update="ignore"
                             phx-keydown={write}
@@ -233,7 +232,7 @@ defmodule DojoWeb.DeckLive do
                             id={"cmdparam-#{cmd}-eq"}
                             value={vals[:eq]}
                             defaulted={vals[:eq]}
-                            class={"#{well_class()} min-w-[1ch] max-w-[3ch]"}
+                            class={"#{well_class()} field-sizing-content pr-[0.5ch] min-w-6 max-w-[3ch]"}
                             placeholder="eq"
                             phx-update="ignore"
                             phx-keydown={write}
@@ -245,7 +244,7 @@ defmodule DojoWeb.DeckLive do
                             id={"cmdparam-#{cmd}-number"}
                             value={vals[:number]}
                             defaulted={vals[:number]}
-                            class={"#{well_class()} min-w-[2ch] max-w-[6ch]"}
+                            class={"#{well_class()} field-sizing-content pr-[0.5ch] min-w-6 max-w-[6ch]"}
                             placeholder="number"
                             phx-update="ignore"
                             phx-keydown={write}
@@ -261,7 +260,7 @@ defmodule DojoWeb.DeckLive do
                             id={"cmdparam-#{cmd}-#{arg}"}
                             value={val}
                             defaulted={val}
-                            class={"ml-[1ch] #{well_class()} min-w-[2ch] max-w-[8ch]"}
+                            class={"ml-[1ch] #{well_class()} field-sizing-content pr-[0.5ch] min-w-6 max-w-[8ch]"}
                             placeholder={arg}
                             phx-update="ignore"
                             phx-keydown={
@@ -304,6 +303,10 @@ defmodule DojoWeb.DeckLive do
     """
   end
 
+  # Parameter widths are the browser's (`field-sizing-content`): a measured
+  # width here would be a second authority, and a second authority is the jump.
+  # Width floors only lengthen the rule — a height floor would detach it, since
+  # an input centres its line box and the extra space lands above the writing.
   defp well_class do
     "bg-base-200/50 caret-accent-content hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-base-content focus:outline-none text-xs px-0 py-0"
   end

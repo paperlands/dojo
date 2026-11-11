@@ -30,6 +30,11 @@ defmodule DojoWeb.ShellLive do
   @selector_views %{"watch" => :watch, "draft" => :draft, "recall" => :recall}
   @selector_keys [:addr, :view, :draft_live, :follow_peer]
 
+  # Hotspot controls exist only where Hotspot.Server runs — see
+  # application.ex local_network_children/0. Never Mix.env/0 at runtime:
+  # releases ship without Mix, and the call raises on every render.
+  defp local_network?, do: Application.get_env(:dojo, :discovery) == :local
+
   def mount(_params, _session, socket) do
     {:ok,
      socket

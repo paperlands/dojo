@@ -379,7 +379,6 @@
               id="tabs"
               class="flex flex-row items-center overflow-x-auto scrollbar-hide scroll-smooth"
               phx-update="ignore"
-              phx-hook=".AutoCh"
             >
               <div
                 :for={%{"value" => value} <- [%{"value" => "Papert"}]}
@@ -394,14 +393,13 @@
                   id={"tab-#{value}"}
                   value={value}
                   data-original={value}
-                  class="bg-transparent hover:bg-base-100 pointer-events-none hover:bg-base-100/20 focus:bg-base-100/30 border-transparent focus:border-accent/50 border-b transition-all duration-200 outline-none text-primary-content focus:text-base-content -mr-1 placeholder-primary-content/60 text-xs min-w-[1ch] max-w-[7ch] w-full group-hover:bg-base-100/10"
+                  class="bg-transparent hover:bg-base-100 pointer-events-none hover:bg-base-100/20 focus:bg-base-100/30 border-transparent focus:border-accent/50 border-b transition-all duration-200 outline-none text-primary-content focus:text-base-content -mr-1 placeholder-primary-content/60 text-xs min-w-6 max-w-[7ch] field-sizing-content pr-[0.5ch] group-hover:bg-base-100/10"
                   placeholder="name"
                   onfocus="var value = this.value; this.value = null; this.value = value;this.style.pointerEvents='auto'"
                   phx-update="ignore"
                   disabled
-                  onblur="this.disabled=true;this.style.pointerEvents='none';this.closest('[id^=\'tab-scaffold\']').style.pointerEvents='auto';this.style.width=Math.max(this.value.length||this.placeholder.length,1)+'ch';this.setSelectionRange(0, 0);"
+                  onblur="this.disabled=true;this.style.pointerEvents='none';this.closest('[id^=\'tab-scaffold\']').style.pointerEvents='auto';this.setSelectionRange(0, 0);"
                   onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.value=this.defaultValue;this.blur()}"
-                  oninput="this.style.width=Math.max(this.value.length||this.placeholder.length,1)+1+'ch'"
                 />
                 <button
                   class="close ml-1 pl-1 pointer-events-auto -mr-1 w-1 h-3 opacity-0 group-hover:w-3 group-hover:opacity-60 cursor-pointer hover:opacity-100 transition-opacity duration-200 flex items-center justify-center text-red-500/70 hover:text-red-500 data-alive:w-3  data-alive:opacity-100"
@@ -419,30 +417,6 @@
                   </svg>
                 </button>
               </div>
-
-              <script :type={Phoenix.LiveView.ColocatedHook} name=".AutoCh">
-                export default {
-                  mounted() {
-                    const size = (el) => {
-                      const n = Math.max((el.value || el.placeholder || "").length, 1)
-                      el.style.width = n + "ch"
-                    }
-                    const resize = (e) => size(e.target)
-                    const root = this.el
-                    const scan = () => root.querySelectorAll("input").forEach(size)
-                    root.addEventListener("input", resize)
-                    // Deck/tabs morph — re-size when children appear.
-                    const mo = new MutationObserver(scan)
-                    mo.observe(root, { childList: true, subtree: true })
-                    scan()
-                    this._autoChRelease = () => {
-                      root.removeEventListener("input", resize)
-                      mo.disconnect()
-                    }
-                  },
-                  destroyed() { this._autoChRelease?.() }
-                }
-              </script>
             </div>
           </div>
           <!-- New Tab Creator Button -->
@@ -519,13 +493,11 @@
                     id="change-name"
                     phx-blur="changeName"
                     value={@session.name}
-                    class="bg-base-200/50 text-[12px] ms-[0.5ch] sm:text-xs caret-accent-content hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-primary-content focus:text-base-content focus:outline-none text-xs -mb-1 min-w-[2ch]"
-                    style={"width: #{String.length(@session.name)}ch"}
+                    class="bg-base-200/50 text-[12px] ms-[0.5ch] sm:text-xs caret-accent-content hover:bg-base-100 focus-within:border-accent-content border-accent focus-within:bg-primary/40 border-t-0 border-l-0 border-r-0 border-b-2 outline-none text-primary-content focus:text-base-content focus:outline-none text-xs -mb-1 min-w-6 max-w-[15ch] field-sizing-content pr-[0.5ch]"
                     phx-update="ignore"
                     onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.value=this.defaultValue;this.blur()}"
                     phx-key="Enter"
-                    onblur=";this.style.width=Math.max(this.value.length||this.placeholder.length,1)+'ch';this.setSelectionRange(0, 0);"
-                    oninput="this.style.width = (this.value.length || this.placeholder.length) + 'ch';"
+                    onblur="this.setSelectionRange(0, 0)"
                     onclick="event.stopPropagation()"
                     maxlength="15"
                   />
@@ -581,7 +553,7 @@
               </button>
 
               <.live_component
-                :if={Mix.env() !== :prod}
+                :if={local_network?()}
                 module={DojoWeb.HotspotLive}
                 id="hotspot"
                 username={binary_part(@session.name, 0, min(20, byte_size(@session.name)))}
