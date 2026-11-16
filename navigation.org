@@ -312,14 +312,17 @@ A view has no id and is never written ([[file:specs/weave/keep-build.org][keep-b
 :KEYWORDS: keep journal store put get list local share image source genesis IndexedDB blob cap self
 :PATH: assets/js/keep/journal.store.js
 :END:
-Eight verbs; four stores (log · blobs · source · self). =put= takes bytes, not
-id, and refuses a =ts= that will never project. =local= is =1|0=; =list(root, n)=
-and =local(root, n)= both cap, newest-first by reverse cursor. Genesis is one
-readwrite tx over =[self, log]=. Worker-only; the door never imports this
-([[file:specs/weave/keep-build.org][keep-build]] =kb-5= · =kb-5-skeleton=).
+Four stores (log · blobs · source · self). =put= takes bytes, not id, and refuses
+an envelope that will never project. =local= is =1|0=; =list(root, n)= and
+=local(root, n)= both cap, newest-first by reverse cursor. Genesis + signing key
+seat atomically in =self=. Worker-only; the door never imports this engine.
 Retention seam: =test/js/keep/retention_test.mjs= — inserted Blob digest must
 match its receipt; eviction removes the binding. Legacy/unbound images stay
 pinned. =node probe/keep-cut/idb_diff.mjs= proves the retention walk on real IDB.
+Compatibility: =test/js/keep/idb_compatibility_test.mjs=; the same cases run in Chromium
+through =idb_diff.mjs=. Cold/warm adoption is shape-checked; unsupported shape refuses
+without repair. Contract and limits: [[file:specs/weave/keep-idb-compatibility.org][IndexedDB compatibility]].
+Ordinary opens are versionless; =reprojectJournal= is explicit, exclusive maintenance.
 Local process-crash witness: =node probe/keep-foundation/recovery.mjs --runs 3=
 — real worker mint, disposable browser SIGKILL/reopen, exact referent recovery,
 and a missing-source loss control. No normal browser profile is touched.
@@ -753,6 +756,102 @@ around a shared opening; actual GIF capture and source: [[id:readme-lichtung-com
 Earlier isolated designs/code: =design/readme/competition/variants.html=.
 Archive: =design/readme/competition/index.html=; [[id:readme-masthead-native-variants]].
 Exploration, not a README replacement.
+
+** Physis / Lichtung — a world from simple code
+:PROPERTIES:
+:ID: nav-readme-physis
+:KEYWORDS: physis nature becoming unconcealment Paperman fractal sea currents clearing helios radiance instinct toying encounter GIF alpha unfurl bloom eddy tributaries
+:PATH: design/readme/dojo/PHYSIS.org
+:MODULE: design/readme/dojo/physis.mjs
+:END:
+=design/readme/dojo/physis.html= — original illustrated world, not a replica of
+the reference. Native unfolding fern + nature-study ink; host brasswork and light.
+=physis.gif= is the 12-second loop; =physis.png= is the reduced-motion still.
+Reproduce/check: =node design/readme/dojo/capture-physis.mjs --review=.
+Latest: =design/readme/dojo/lichtung.html= — native fractal sea, parting currents and solar radiance;
+Paperman toys, notices, tries again, then lets go as a flat triangle becomes dimensional.
+Score: =design/readme/dojo/encounter.mjs=; source/limits: =design/readme/dojo/LICHTUNG.org=.
+Same capture command with =--lichtung=; timing tests: =node --test design/readme/dojo/encounter_test.mjs=.
+Paperman identity/acting: =design/readme/dojo/POSE-PRIORS.org= → [[id:readme-paperman-selected-masters]].
+=paperman.mjs= owns native-master proportions and bounded limbs; =performance.mjs= owns intentions, plants and follow-through.
+Dense in-between checks and consecutive-frame evidence: [[id:readme-paperman-bounded-acting]].
+
+** Motion priors — the carriers of weight, gait and effort
+:PROPERTIES:
+:ID: nav-motion-priors
+:KEYWORDS: motion priors movement gait stride phase effort strain weight balance lag follower overlap anticipation timing chart timing-chart spine curve twist squash trailing element line boil Genie Goldberg Kaguya Takahata Kon Lasseter daSilva score probe witness vital signs
+:PATH: design/readme/dojo/MOTION-PRIORS.org
+:MODULE: design/readme/dojo/performance.mjs
+:END:
+Read this before inventing a motion number or a pose constant.
+Measure first: =node design/readme/dojo/score-probe.mjs --strict= prints the acting score's
+vital signs (stride stall, carried leg, frozen head, accidental hold, onset order) and
+fails on regression; =performance.mjs= remains the score it measures.
+Fork under decision: [[file:specs/tensions/body-as-score-vs-body-as-state.tension.md][the body has no state]] —
+=node --test design/readme/dojo/encounter_test.mjs= holds the in-between bounds either way.
+** Motion review — the ruling, the falsifications, the patch order
+:PROPERTIES:
+:ID: nav-motion-review
+:KEYWORDS: motion review ruling body state policy reducer falsified instrument witness clocks logical scene time wall time subdivision followCritical lifecycle epoch history fork phase distance parking mid-swing residual coupling EMOTE Kochanek Bartels Jakobsen Perlin Johansen patch order
+:PATH: design/readme/dojo/MOTION-REVIEW.org
+:MODULE: design/readme/dojo/score-probe.mjs
+:END:
+Read before touching =performance.mjs= or the figure's primitives. The ruling: a being's
+authoritative pose stays the frame's certified transform; a character is an optional
+deterministic *policy* reducing accepted movement history and a few intentions into private
+presentation geometry with no authority over identity, laws or ink.
+It falsified four of our own measurements (P0 repaired the probe) and one inference — the five
+witnesses never proved state was necessary; a **history fork** does.
+The patch order P0–P9, each with a named falsifier, is [[id:dojo-motion-review-order]]; the
+archived exchange is =design/readme/dojo/review/=.
+Priors it added: [[id:dojo-motion-review-priors]].
+
+** Motion staging — action phrases, corrected residual, practical toolchains
+:PROPERTIES:
+:ID: nav-motion-staging
+:KEYWORDS: motion staging action phrase silhouette effort resistance strain reach residual audit fifth falsification Genie Goldberg Kaguya Tanabe Takahata Kon Stick Nodes Krita Blender Grease Pencil Rive rigging timing contact transition
+:PATH: specs/turtle/motion-staging.org
+:MODULE: design/readme/dojo/performance.mjs
+:END:
+Follow-up to [[id:dojo-motion-review]]: [[id:motion-staging-study]]. The 30.1 px reach witness is
+approach/release distance, not solver truncation; actual residual is zero. Reproduction:
+[[id:motion-staging-reach-audit]]. Artistic priors are separated from lifecycle authority.
+Toolchain choice: [[id:motion-staging-toolchains]]; bounded comparisons before more rigging:
+[[id:motion-staging-experiments]].
+Oracle-reviewed frontier: [[id:motion-staging-frontier]] — observation repair implemented and
+mutation-tested; production motion unchanged. The human selected release/surprise; see [[id:probe-motion-release]].
+
+** Release / surprise — matched HEAD experiment
+:PROPERTIES:
+:ID: nav-motion-release
+:KEYWORDS: release surprise HEAD timing quintic carry counterbalanced blinded original control comparison viewer native scene capture
+:PATH: probe/motion-release/NOTES.org
+:MODULE: probe/motion-release/viewer.mjs
+:END:
+[[id:probe-motion-release-viewer]] — =node probe/motion-release/serve.mjs= opens the local A/B
+study; =node probe/motion-release/capture.mjs= reproduces the browser evidence. Original,
+half/full carry, identical-pair control; no motion promotion or perceptual success claimed.
+
+** Kairos — character-first film treatment and acting board
+:PROPERTIES:
+:ID: nav-dojo-kairos
+:KEYWORDS: kairos opening Paperman character design screenplay storyboard animatic offline rig Grok Imagine effort strain gait Goldberg Genie Takahata Tanabe Kaguya Kon compositing contact release
+:PATH: design/readme/dojo/kairos/TREATMENT.org
+:END:
+[[id:dojo-kairos-treatment]] — proposed eighteen-second act: resisted pull, listening,
+timely commitment and release. Identity, movement studies, screenplay and generation
+briefs precede the independent world pass: [[id:dojo-kairos-production]].
+Mechanism/contact co-authoring: [[id:dojo-kairos-law-shaped-action]] — sphere/plane crank,
+angular-bearing arc and planar pull; shared legal trajectory, separately rendered acting.
+Realised crank study: [[id:dojo-kairos-crank-study]] — =design/readme/dojo/kairos/crank/=.
+Run =node design/readme/dojo/kairos/crank/run.mjs --serve=; native-law trajectory,
+separate RGBA passes, six-second MP4 and pose comparison. Artistic acceptance remains open.
+Latest pass: [[id:dojo-kairos-arc-head-revision]] — restrained luminous arc opens substantial
+monoliths; torso-parented head replaces floating world-space keys, with a visible-gap fence.
+Archetypal refinement: [[id:dojo-kairos-aletheia]] — a pale crescent tilts to uncover an
+already-present horizon. =crank/plate.png= is the clean composition; the grip path is unchanged.
+=design/readme/dojo/kairos/storyboard.svg= is original rough staging, not approved anatomy
+or a generated animation. Production score and exports remain unchanged.
 
 ** helios-window — disciple strip, selenic turn
 :PROPERTIES:

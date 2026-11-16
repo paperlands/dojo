@@ -10,10 +10,9 @@
 // local is 1|0, a number — a boolean index holds zero rows (measured).
 // list/local use openCursor(range, "prev") — getAll is ascending (measured).
 //
-// Indexed columns are one projection of the message with one writer.
-// Never bump DB_VERSION: a bump is a rewrite. Envelope =v= is the keep's
-// own version; upcast is a fold, never written. Wipe of =log= is phase V,
-// explicit, after refill — not a schema number.
+// Physical schema versions and authored envelope versions are independent.
+// Additive indexes need not rewrite messages; views are never re-kept.
+// Compatibility contract: id:keep-idb-compatibility.
 
 // Eviction is a fold over reasons at put, never a stored verdict.
 
@@ -23,7 +22,7 @@ import { genesisBytes } from "./genesis.js"
 import { hashBytes } from "./hash.js"
 import { signingHand, keepProof, checkKeepProof, publicCredential } from "./auth.js"
 
-export const DB_VERSION = 1
+const DB_NAME = "dojo-keep"
 
 /** Image eviction target; sole or unverified copies may exceed it. */
 const DEFAULT_BLOB_CAP = 32 * 1024 * 1024
@@ -58,7 +57,6 @@ const PRIOR_KEY = "genesis-prior:"
  * @param {object} [opts]
  * @param {IDBFactory} [opts.idb] - injectable; tests pass a memory factory
  * @param {string} [opts.dbName]
- * @param {number} [opts.version] - schema/projection version
  * @param {(arr: Uint8Array) => Uint8Array} [opts.random]
  * @param {() => {t: number, n: number}} [opts.stamp]
  * @param {number} [opts.blobCap]
@@ -69,8 +67,7 @@ export function createEngine(opts = {}) {
     if (!idb) throw new Error("journal: no indexedDB (and none injected)")
     const KeyRange = opts.KeyRange ?? globalThis.IDBKeyRange
     if (!KeyRange) throw new Error("journal: no IDBKeyRange (and none injected)")
-    const dbName = opts.dbName ?? "dojo-keep"
-    const version = opts.version ?? DB_VERSION
+    const dbName = opts.dbName ?? DB_NAME
     const crypto = opts.crypto ?? globalThis.crypto
     const random =
         opts.random ??
@@ -84,44 +81,17 @@ export function createEngine(opts = {}) {
     /** @type {IDBDatabase | null} */
     let db = null
     let closed = false
-    // After versionchange, the held schema may be newer than this build.
-    // Next open adopts it — never re-pins our own version (id:kb-vet4 31).
-    let adoptHeldVersion = false
-
     function open() {
         if (closed) return Promise.reject(new Error("journal: closed"))
-        if (dbp) return dbp
-        dbp = new Promise((resolve, reject) => {
-            // Versionless after versionchange; versioned on first open / our bump.
-            const req = adoptHeldVersion
-                ? idb.open(dbName)
-                : idb.open(dbName, version)
-            adoptHeldVersion = false
-            req.onerror = () => reject(req.error)
-            req.onupgradeneeded = () => {
-                const d = req.result
-                const tx = req.transaction
-                ensureSchema(d)
-                // Rebuild is the upgrade (id:kb-vet2-rebuild). Empty on first create.
-                reproject(tx)
-            }
-            req.onsuccess = () => {
-                const d = req.result
-                if (closed) { d.close(); reject(new Error("journal: closed")); return }
-                // The upgrade waits for every older connection to close
-                // (id:kb-vet3 22). Answer versionchange by closing so the
-                // upgrade can proceed; the next verb re-opens versionless.
+        if (!dbp) dbp = openAt(idb, dbName, {
+            isClosed: () => closed,
+            onOpen(d) {
                 d.onversionchange = () => {
                     d.close()
-                    if (db === d) {
-                        db = null
-                        dbp = null
-                    }
-                    adoptHeldVersion = true
+                    if (db === d) { db = null; dbp = null }
                 }
                 db = d
-                resolve(d)
-            }
+            },
         })
         return dbp
     }
@@ -162,26 +132,6 @@ export function createEngine(opts = {}) {
         }
     }
 
-    function whenCommitted(tx) {
-        return new Promise((resolve, reject) => {
-            let done = false
-            const ok = () => {
-                if (!done) {
-                    done = true
-                    resolve()
-                }
-            }
-            const fail = (e) => {
-                if (!done) {
-                    done = true
-                    reject(e)
-                }
-            }
-            tx.oncomplete = ok
-            tx.onerror = () => fail(tx.error)
-            tx.onabort = () => fail(tx.error || new Error("journal: abort"))
-        })
-    }
 
     // Retain bytes + proof atomically; only explicit authored intent may sign.
     // Source and image share the transaction; receipts remain a later share.
@@ -551,53 +501,149 @@ export function createEngine(opts = {}) {
     }
 }
 
+// Explicit maintenance, never a side effect of ordinary opening (id:keep-idb-compatibility).
+export async function reprojectJournal({ idb = globalThis.indexedDB, dbName = DB_NAME, version } = {}) {
+    if (!Number.isSafeInteger(version) || version < 1) {
+        throw new TypeError("journal.reproject: a positive physical version is required")
+    }
+    const onOpen = (_db, tx) => whenCommitted(tx)
+    let d
+    try {
+        d = await openAt(idb, dbName, { version, onUpgrade: reproject, onOpen })
+    } catch (error) {
+        if (error?.name !== "VersionError") throw error
+        d = await openAt(idb, dbName, { onOpen })
+    }
+    d.close()
+    return d.version
+}
+
 // ── schema ──────────────────────────────────────────────────────────
 
-function ensureSchema(db) {
-    if (!db.objectStoreNames.contains("log")) {
-        const log = db.createObjectStore("log", { keyPath: "id" })
-        // Compound over nested keyPaths — accepted (measured, id:kc-c-journal).
-        log.createIndex("by_root_ts", ["root", "ts.t", "ts.n"])
-        log.createIndex("by_root_local", ["root", "local", "ts.t", "ts.n"])
-    }
-    if (!db.objectStoreNames.contains("blobs")) {
-        db.createObjectStore("blobs") // key = message id, out-of-line
-    }
-    if (!db.objectStoreNames.contains("source")) {
-        db.createObjectStore("source") // key = name(source text)
-    }
-    if (!db.objectStoreNames.contains("self")) {
-        db.createObjectStore("self") // key "genesis" → bytes
+const SCHEMA = {
+    log: {
+        keyPath: "id",
+        indexes: {
+            by_root_ts: ["root", "ts.t", "ts.n"],
+            by_root_local: ["root", "local", "ts.t", "ts.n"],
+        },
+    },
+    blobs: { keyPath: null, indexes: {} },
+    source: { keyPath: null, indexes: {} },
+    self: { keyPath: null, indexes: {} },
+}
+
+function createSchema(db) {
+    for (const [name, { keyPath, indexes }] of Object.entries(SCHEMA)) {
+        const store = db.createObjectStore(name, { keyPath })
+        for (const [index, path] of Object.entries(indexes)) store.createIndex(index, path)
     }
 }
 
-/**
- * Rebuild every projection column from its message. shared is a fact beside
- * the value and is preserved; local is derived from it (id:kb-projection-fence).
- * Uses getAll so the rebuild finishes inside the upgrade transaction's
- * request window rather than a long cursor chain.
- */
+// Structure is observable; stable row meanings are a contract (id:keep-idb-compatibility).
+function requireSchema(db, upgradeTx) {
+    const refuse = (part) => {
+        throw typed("schema-incompatible", `journal: unsupported schema (${part}); stored data was not changed`)
+    }
+    for (const name of Object.keys(SCHEMA)) {
+        if (!db.objectStoreNames.contains(name)) refuse(`missing store ${name}`)
+    }
+    const tx = upgradeTx ?? db.transaction(Object.keys(SCHEMA), "readonly")
+    for (const [name, { keyPath, indexes }] of Object.entries(SCHEMA)) {
+        const store = tx.objectStore(name)
+        if (store.keyPath !== keyPath) refuse(`${name}.keyPath`)
+        if (store.autoIncrement) refuse(`${name}.autoIncrement`)
+        for (const [index, path] of Object.entries(indexes)) {
+            if (!store.indexNames.contains(index)) refuse(`missing index ${name}.${index}`)
+            const held = store.index(index)
+            if (JSON.stringify(held.keyPath) !== JSON.stringify(path) || held.unique || held.multiEntry) {
+                refuse(`${name}.${index}`)
+            }
+        }
+        for (const index of store.indexNames) {
+            if (store.index(index).unique) refuse(`unique index ${name}.${index}`)
+        }
+    }
+    return tx
+}
+
+// Only derived columns change; all other row fields survive (id:kb-projection-fence).
+// Each cursor request keeps the atomic upgrade alive without materializing the log.
 function reproject(tx) {
     if (!tx.objectStoreNames.contains("log")) return
     const log = tx.objectStore("log")
-    const all = log.getAll()
-    all.onsuccess = () => {
-        for (const row of all.result || []) {
-            try {
-                const value = read(row.message)
-                row.root = value.root ?? null
-                row.ts = value.ts ?? null
-                // local is a projection of shared — one owner (id:kc-r-local-fence).
-                row.local = row.shared ? 0 : 1
-                log.put(row)
-            } catch {
-                // Unreadable message: leave the row; the reader verifies names.
-            }
+    const cursor = log.openCursor()
+    cursor.onsuccess = () => {
+        const c = cursor.result
+        if (!c) return
+        const row = c.value
+        try {
+            const value = read(row.message)
+            row.root = value.root ?? null
+            row.ts = value.ts ?? null
+            row.local = row.shared ? 0 : 1
+        } catch {
+            c.continue()
+            return
         }
+        // Update failures must abort the whole upgrade, not certify a partial fold.
+        c.update(row)
+        c.continue()
     }
 }
 
 // ── IDB helpers ─────────────────────────────────────────────────────
+
+function whenCommitted(tx) {
+    return new Promise((resolve, reject) => {
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+        tx.onabort = () => reject(tx.error || new Error("journal: abort"))
+    })
+}
+
+// Own the native request until it settles, including after a blocked rejection.
+function openAt(idb, dbName, { version, onUpgrade, onOpen, isClosed = () => false } = {}) {
+    return new Promise((resolve, reject) => {
+        const req = version === undefined ? idb.open(dbName) : idb.open(dbName, version)
+        let failure = null
+        const checkLive = () => {
+            if (failure) throw failure
+            if (isClosed()) throw new Error("journal: closed")
+        }
+        req.onerror = () => reject(failure ?? req.error)
+        req.onblocked = () => {
+            failure = typed("schema-blocked", "journal: another tab is blocking the upgrade; close it and retry")
+            reject(failure)
+        }
+        req.onupgradeneeded = (event) => {
+            try {
+                checkLive()
+                if (event.oldVersion === 0) createSchema(req.result)
+                else requireSchema(req.result, req.transaction)
+                onUpgrade?.(req.transaction)
+            } catch (error) {
+                failure = error
+                try { req.transaction.abort() } catch { /* a late success still closes below */ }
+                reject(error)
+            }
+        }
+        req.onsuccess = async () => {
+            const d = req.result
+            d.onversionchange = () => d.close()
+            try {
+                checkLive()
+                const checked = requireSchema(d)
+                await onOpen?.(d, checked)
+                checkLive()
+                resolve(d)
+            } catch (error) {
+                d.close()
+                reject(error)
+            }
+        }
+    })
+}
 
 function idbReq(request) {
     return new Promise((resolve, reject) => {

@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { setTimeout as delay } from "node:timers/promises"
-import { createEngine } from "../../../assets/js/keep/journal.store.js"
+import { createEngine, reprojectJournal } from "../../../assets/js/keep/journal.store.js"
 import { checkKeepProof } from "../../../assets/js/keep/auth.js"
 import { accept } from "../../../assets/js/keep/shared.js"
 import { write, name } from "../../../assets/js/keep/entry.js"
@@ -11,7 +11,10 @@ import { proofCases, equivalentProof } from "./proof_cases.mjs"
 
 function fixture() {
     const { idb, KeyRange } = createMemoryIDB()
-    return { open: (extra = {}) => createEngine({ idb, KeyRange, dbName: "proofs", ...extra }) }
+    return {
+        open: (extra = {}) => createEngine({ idb, KeyRange, dbName: "proofs", ...extra }),
+        reproject: (version) => reprojectJournal({ idb, dbName: "proofs", version }),
+    }
 }
 
 function bytes(root, title = "kept", source = "") {
@@ -166,7 +169,7 @@ test("concurrent valid/invalid refills keep one valid proof and one byte identit
 
 test("eviction and projection rebuild preserve public evidence", async () => {
     const { message, proof } = await authored()
-    const { open } = fixture()
+    const { open, reproject } = fixture()
     let engine = open({ blobCap: 1 })
     const image = new Blob(["png"])
     const id = await engine.put(message, { proof, image, source: "" })
@@ -175,7 +178,8 @@ test("eviction and projection rebuild preserve public evidence", async () => {
     assert.equal(await engine.image(id), undefined)
     assert.deepEqual(await engine.proof(message), proof)
     await engine.close()
-    engine = open({ version: 2, crypto: {} })
+    await reproject(2)
+    engine = open({ crypto: {} })
     assert.equal(await engine.get(id), message)
     assert.deepEqual(await engine.proof(message), proof)
     assert.deepEqual(await engine.local(JSON.parse(message).root), [])

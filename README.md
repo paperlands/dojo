@@ -1,10 +1,8 @@
-<img src="priv/static/images/logo.svg" width="76" alt="PaperLand's saffron gate and sun">
+<img src="priv/static/images/logo.svg" width="76" alt="PaperLand">
 
 # PaperLand Dojo
 
 Welcome to [PaperLand](https://dojo.paperland.sg/welcome).
-
-![Gold-line night garden: pine, lantern, pagoda, stepping stones, and water.](design/readme/masthead.svg)
 
 > math with the seriousness one has as a child at play
 

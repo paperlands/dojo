@@ -1,7 +1,7 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { createEngine } from "../../../assets/js/keep/journal.store.js"
+import { createEngine, reprojectJournal } from "../../../assets/js/keep/journal.store.js"
 import { write, name } from "../../../assets/js/keep/entry.js"
 import { createMemoryIDB } from "./idb_memory.mjs"
 
@@ -13,11 +13,11 @@ const receipt = async (image) => ({ at: 1, node: "archive", retained: { image: a
 
 function fixture(blobCap = 3) {
     const { idb, KeyRange } = createMemoryIDB()
-    const open = (version = 1) => createEngine({
-        idb, KeyRange, dbName: "retention", version, blobCap,
+    const open = () => createEngine({
+        idb, KeyRange, dbName: "retention", blobCap,
         random: (a) => a.fill(1),
     })
-    return { idb, open }
+    return { idb, open, reproject: (version) => reprojectJournal({ idb, dbName: "retention", version }) }
 }
 
 async function pressure(j) {
@@ -26,7 +26,7 @@ async function pressure(j) {
 
 describe("retention: permission follows the stored image, not the message slot", () => {
     test("an old A receipt never evicts replacement B, even after reopen and reproject", async () => {
-        const { open } = fixture()
+        const { open, reproject } = fixture()
         let j = open()
         const message = bytes("replace")
         const a = new Blob(["AAA"])
@@ -39,11 +39,12 @@ describe("retention: permission follows the stored image, not the message slot",
             await j.put(message, { image: b })
             assert.equal(await (await j.image(id)).text(), "BBB", "A's receipt cannot delete B")
             await j.close()
-            j = open(2)
+            await reproject(2)
+            j = open()
             await pressure(j)
             assert.equal(await (await j.image(id)).text(), "BBB", "reproject preserves the binding")
             await j.close()
-            j = open(2)
+            j = open()
             await pressure(j)
             assert.equal(await (await j.image(id)).text(), "BBB", "plain reopen preserves the binding")
             assert.equal(await j.get(id), message)

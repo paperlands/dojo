@@ -3,7 +3,7 @@
 import { describe, test, beforeEach, afterEach } from "node:test"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { createEngine, DB_VERSION } from "../../../assets/js/keep/journal.store.js"
+import { createEngine, reprojectJournal } from "../../../assets/js/keep/journal.store.js"
 import { write, read, name, V } from "../../../assets/js/keep/entry.js"
 import { createMemoryIDB } from "./idb_memory.mjs"
 import { PAGE } from "../../../assets/js/keep/page.js"
@@ -31,7 +31,6 @@ function freshJournal(opts = {}) {
         random: opts.random ?? fill(0x11),
         stamp: opts.stamp ?? stamp,
         blobCap: opts.blobCap ?? 1024,
-        version: opts.version ?? DB_VERSION,
         ...opts,
         idb,
         KeyRange,
@@ -370,7 +369,7 @@ describe("journal: blobs capped; source never evicted; messages forever", () => 
     })
 })
 
-describe("journal: projection rebuild IS the upgrade", () => {
+describe("journal: projection rebuild is explicit maintenance", () => {
     test("force local to disagree, bump version, open → local restored from shared", async () => {
         const { idb, KeyRange } = createMemoryIDB()
         const dbName = "reproject-test"
@@ -378,7 +377,6 @@ describe("journal: projection rebuild IS the upgrade", () => {
             idb,
             KeyRange,
             dbName,
-            version: 1,
             random: fill(0x42),
             stamp: () => ({ t: 1, n: 0 }),
         })
@@ -411,12 +409,12 @@ describe("journal: projection rebuild IS the upgrade", () => {
         raw.close()
         await j1.close()
 
-        // Bump version → reproject
+        // Explicit repair raises the physical watermark; ordinary opening never does.
+        await reprojectJournal({ idb, dbName, version: 2 })
         const j2 = createEngine({
             idb,
             KeyRange,
             dbName,
-            version: 2,
             random: fill(0x42),
             stamp: () => ({ t: 1, n: 0 }),
         })
@@ -615,57 +613,6 @@ describe("journal: the genesis lives in self, not the log", () => {
     })
 })
 
-describe("journal: reopen after versionchange is versionless", () => {
-    // Memory IDB does not throw VersionError on a lower-than-held pin
-    // (gap: real IDB would). Assert the open path itself: after versionchange
-    // the next open passes no version, so it adopts what the upgrade left
-    // (id:kb-vet4 31, id:kc-adapt 1).
-
-    test("next open after versionchange adopts held version — no pin", async () => {
-        const { idb, KeyRange } = createMemoryIDB()
-        const dbName = "adopt-held"
-        /** @type {unknown[][]} */
-        const opens = []
-        const wrapping = {
-            open(...args) {
-                opens.push(args)
-                return idb.open(...args)
-            },
-        }
-        const j = createEngine({
-            idb: wrapping,
-            KeyRange,
-            dbName,
-            version: 1,
-            random: fill(0x31),
-            stamp: () => ({ t: 1, n: 0 }),
-        })
-        try {
-            const gen = await j.genesis()
-            assert.equal(opens.length, 1)
-            assert.deepEqual(opens[0], [dbName, 1], "first open pins this build")
-
-            // Another connection upgrades past us — fires our onversionchange.
-            const upgraded = await new Promise((resolve, reject) => {
-                const req = idb.open(dbName, 2)
-                req.onsuccess = () => resolve(req.result)
-                req.onerror = () => reject(req.error)
-            })
-            upgraded.close()
-
-            opens.length = 0
-            assert.equal(await j.get(name(gen)), gen)
-            assert.equal(opens.length, 1)
-            assert.deepEqual(
-                opens[0],
-                [dbName],
-                "reopen is versionless — adopts the held schema",
-            )
-        } finally {
-            await j.close()
-        }
-    })
-})
 
 describe("journal: eviction cannot cost what it does not need", () => {
     test("a message-only put never reads a blob", async () => {
@@ -794,7 +741,7 @@ describe("journal: an answer is not retention — the negative permission", () =
         const bytes = snap(root, { tag: "first" }, { t: 1, n: 0 })
 
         const j = createEngine({
-            idb, KeyRange, dbName, version: DB_VERSION,
+            idb, KeyRange, dbName,
             random: fill(0x42), stamp: () => ({ t: 1, n: 0 }), blobCap: 100,
         })
         const id = await j.put(bytes, { image: blob() })
@@ -804,7 +751,7 @@ describe("journal: an answer is not retention — the negative permission", () =
 
         // The row's first fact stands: the later answer grafted no negative.
         const raw = await new Promise((resolve, reject) => {
-            const req = idb.open(dbName, DB_VERSION)
+            const req = idb.open(dbName)
             req.onsuccess = () => resolve(req.result)
             req.onerror = () => reject(req.error)
         })
@@ -819,7 +766,7 @@ describe("journal: an answer is not retention — the negative permission", () =
         assert.equal(row.local, 0)
 
         const j2 = createEngine({
-            idb, KeyRange, dbName, version: DB_VERSION,
+            idb, KeyRange, dbName,
             random: fill(0x42), stamp: () => ({ t: 2, n: 0 }), blobCap: 100,
         })
         try {
@@ -838,15 +785,16 @@ describe("journal: an answer is not retention — the negative permission", () =
         const bytes = snap(root, { tag: "refused" }, { t: 1, n: 0 })
 
         const j1 = createEngine({
-            idb, KeyRange, dbName, version: 1,
+            idb, KeyRange, dbName,
             random: fill(0x42), stamp: () => ({ t: 1, n: 0 }), blobCap: 100,
         })
         const id = await j1.put(bytes, { image: blob() })
         await j1.share(id, { at: 1, node: "n", retained: false })
         await j1.close()
 
+        await reprojectJournal({ idb, dbName, version: 2 })
         const j2 = createEngine({
-            idb, KeyRange, dbName, version: 2,
+            idb, KeyRange, dbName,
             random: fill(0x42), stamp: () => ({ t: 2, n: 0 }), blobCap: 100,
         })
         try {
@@ -859,7 +807,7 @@ describe("journal: an answer is not retention — the negative permission", () =
         // A plain reopen at the same version also keeps the marker: no upgrade
         // is required for the negative permission to hold. (id:keep-foundation-retention)
         const j3 = createEngine({
-            idb, KeyRange, dbName, version: 2,
+            idb, KeyRange, dbName,
             random: fill(0x42), stamp: () => ({ t: 3, n: 0 }), blobCap: 100,
         })
         try {
