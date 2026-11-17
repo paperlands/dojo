@@ -33,10 +33,12 @@ export class Turtle {
 const { Turtle } = await import(turtleURL)
 const hostURL = new URL('../../../assets/js/host.js', import.meta.url)
 const runURL = new URL('../../../assets/js/turtling/run.js', import.meta.url).href
+const viewURL = new URL('../../../assets/js/turtling/view_snapshot.js', import.meta.url).href
 const source = readFileSync(hostURL, 'utf8')
     .replace('"./turtling/turtle.js"', JSON.stringify(turtleURL))
     .replace('"./turtling/run.js"', JSON.stringify(runURL))
-export const { createWorld } = await import('data:text/javascript,' + encodeURIComponent(source))
+    .replace('"./turtling/view_snapshot.js"', JSON.stringify(viewURL))
+export const { createWorld, projectPoint, unprojectRay } = await import('data:text/javascript,' + encodeURIComponent(source))
 export function headlessWorld(options) {
     const world = createWorld({}, options)
     return { world, turtle: Turtle.instances.at(-1) }

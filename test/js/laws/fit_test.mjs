@@ -5,6 +5,9 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { unionBounds, viewDirection, fitPose } from "../../../assets/js/turtling/laws/fit.js"
 import { boundsOf } from "../../../assets/js/turtling/laws/constraints.js"
+import { SE3, AXIS_Z } from '../../../assets/js/turtling/se3.js'
+import { PerspectiveCamera } from '../../../assets/js/utils/three-entry.js'
+import { worldToViewOf, createViewSnapshot, projectPoint } from '../../../assets/js/turtling/view_snapshot.js'
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps
 const at3 = (p) => p.map((n) => +n.toFixed(6))
@@ -66,4 +69,53 @@ test("the tighter half-FOV frames a portrait viewport", () => {
     const wide = fitPose(bounds, { aspect: 2 })
     const tall = fitPose(bounds, { aspect: 0.5 })
     assert.ok(tall.distance > wide.distance, "the narrower axis needs more room")
+})
+
+// A nonidentity effective reframe maps WORLD bounds into the SCENE the stage
+// frames; radius is rigid and the identity case is unchanged bit for bit.
+// (id:host-embedding-slice-1-view)
+test("viewTargets maps world bounds through the effective reframe", async () => {
+    const { viewTargets } = await import("../../../assets/js/turtling/laws/fit.js")
+    const bounds = { center: [3, 0, 0], radius: 4 }
+    const dir = [0.6, 0, 0.8]
+    const identity = viewTargets(bounds, { dir, reframe: null })
+    assert.deepEqual(identity, { bounds: { center: [3, 0, 0], radius: 4 }, dir })
+    assert.notEqual(identity.bounds.center, bounds.center, "the answer is a copy")
+
+    const reframe = { ...SE3.identity(), position: [-10000, 0, 0] }
+    const mapped = viewTargets(bounds, { dir, reframe })
+    assert.deepEqual(mapped.bounds.center, [-9997, 0, 0])
+    assert.equal(mapped.bounds.radius, 4, "a translation does not resize")
+    assert.deepEqual(mapped.dir, dir)
+
+    const turned = viewTargets(bounds, {
+        dir: [1, 0, 0],
+        reframe: SE3.rotateLocal(SE3.identity(), AXIS_Z, 90),
+    })
+    assert.ok(Math.abs(turned.dir[0]) < 1e-12 && Math.abs(turned.dir[1] - 1) < 1e-12,
+        `a quarter turn sends +x to +y: ${turned.dir}`)
+    assert.equal(viewTargets(null), null)
+})
+
+
+test('scene-mapped fitting keeps the actual world locus visible after a distant reframe', async () => {
+    const { viewTargets } = await import('../../../assets/js/turtling/laws/fit.js')
+    const bounds = { center: [3, 0, 0], radius: 4 }
+    const reframe = { ...SE3.rotateLocal(SE3.identity(), AXIS_Z, 37), position: [-10000, 0, 0] }
+    const dir = viewDirection([1, 0, 0])
+    const project = target => {
+        const pose = fitPose(target.bounds, { dir: target.dir, aspect: 1.5, floor: 30 })
+        const camera = new PerspectiveCamera(60, 1.5, .1, 1e7)
+        camera.position.set(...pose.position)
+        camera.lookAt(...pose.target)
+        camera.updateMatrixWorld()
+        const view = createViewSnapshot({ status: 'ready', width: 900, height: 600,
+            worldToView: worldToViewOf(camera, reframe), projection: camera.projectionMatrix })
+        return projectPoint(view, bounds.center)
+    }
+    assert.equal(project({ bounds, dir }), null, 'control: aiming in world space loses the scene')
+    const point = project(viewTargets(bounds, { dir, reframe }))
+    assert.ok(point)
+    assert.ok(Math.abs(point.x - 450) < 1e-6 && Math.abs(point.y - 300) < 1e-6)
+    assert.deepEqual(bounds, { center: [3, 0, 0], radius: 4 }, 'framing never changes the set')
 })

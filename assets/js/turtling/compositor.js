@@ -134,6 +134,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
 
     // Clear a child layer's geometry/materials but preserve its head mesh.
     function clearChildLayer(layer, { keepLabels = false } = {}) {
+        layer.shapist?.clear()
         const headGroup = layer.head?.turtleGroup
         for (const child of [...layer.group.children]) {
             if (child === headGroup || child._label) continue
@@ -349,6 +350,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         // Finalized runs / filled deposits — anonymous group children tagged by source.
         for (const child of [...layer.group.children]) {
             if (child._sourceId !== undefined && deadIds.has(child._sourceId)) {
+                if (layer.shapist?.removeMesh(child)) continue
                 child.traverse(disposeMesh)
                 layer.group.remove(child)
             }
@@ -362,6 +364,14 @@ export function createCompositor(scheduler, stage, opts = {}) {
             if (!scheduler.registry.has(id)) {
                 (deadIds ||= new Set()).add(id)
                 disposeLayer(id, layer)
+            }
+        }
+        // A retired depositor may never have acquired its own layer. (id:ft-d2)
+        for (const layer of ambientLayers.values()) {
+            for (const child of layer.group.children) {
+                const source = child._sourceId
+                if (typeof source === 'number' && !scheduler.registry.has(source))
+                    (deadIds ||= new Set()).add(source)
             }
         }
         if (!deadIds) return

@@ -836,6 +836,7 @@ half/full carry, identical-pair control; no motion promotion or perceptual succe
 :PROPERTIES:
 :ID: nav-dojo-kairos
 :KEYWORDS: kairos opening Paperman character design screenplay storyboard animatic offline rig Grok Imagine effort strain gait Goldberg Genie Takahata Tanabe Kaguya Kon compositing contact release
+:LATEST: [[id:dojo-kairos-inner-fire]] — expressive calligraphic performance; prior blocking is technical evidence, not an approved movement master.
 :PATH: design/readme/dojo/kairos/TREATMENT.org
 :END:
 [[id:dojo-kairos-treatment]] — proposed eighteen-second act: resisted pull, listening,
@@ -850,6 +851,18 @@ Latest pass: [[id:dojo-kairos-arc-head-revision]] — restrained luminous arc op
 monoliths; torso-parented head replaces floating world-space keys, with a visible-gap fence.
 Archetypal refinement: [[id:dojo-kairos-aletheia]] — a pale crescent tilts to uncover an
 already-present horizon. =crank/plate.png= is the clean composition; the grip path is unchanged.
+Imagine character pass: [[id:dojo-kairos-imagine-brief]] — authenticated Grok CLI route,
+[[id:dojo-kairos-cosmic-nirvana-study][Cosmic Nirvana movement samples]], sparse downward-press guides and review gates.
+[[id:dojo-kairos-review-hold][Creator review hold]] — malformed rig guides and rejected Imagine media quarantined;
+=imagine/index.html= and =becoming/index.html= withhold the stale previews. No new generation.
+[[id:dojo-kairos-vetting][Coordinate vetting board]] — =node design/readme/dojo/kairos/vet/server.mjs= (port 8110);
+reject/QA, source-coordinate pins, video timestamps, local autosave and JSON export/import.
+[[id:dojo-kairos-vetted-baseline][Vetted baseline]] auto-loads 3 Good / 9 rejected with all 14 pins; Good fills QA in one action.
+[[id:dojo-kairos-sprite-pipeline][Image-edit sprite pipeline]] — [[id:dojo-kairos-sprite-contact-01][first contact key]] uses the accepted sheet plus a skeleton-only staging guide;
+[[id:dojo-kairos-sprite-sequence-01][Complete composition study]] — 12 drawings / six seconds, native mathematical partner,
+master + neighbour + guide edits, followed by supervisor end-to-end adversarial review.
+[[id:dojo-kairos-imagine-take-02-rejected][Take 02 rejection]] and native rig notes are historical evidence, not approved inputs.
+The final subject is the native mathematical figure coming alive, not the stone placeholders.
 =design/readme/dojo/kairos/storyboard.svg= is original rough staging, not approved anatomy
 or a generated animation. Production score and exports remain unchanged.
 
@@ -2216,6 +2229,9 @@ fixes: 201 scavenges per fixed workload against the pre-session baseline’s 203
 :PATH: assets/js/host.js::createWorld
 :END:
 Consumer API and browser imports: [[file:scripts/release/README.md][PaperLang on your canvas]].
+Frame targets: [[id:host-frame-paths]] — exact key paths via =frame.js::frameAt=;
+main =['host']=, datum =[]=, nested keys without name parsing. Host path/lifetime
+fence: =test/js/host/frame_path_test.mjs=; scalar named-value reads stay separate.
 Build/publish: [[file:scripts/release/host.org][release runbook]].
 Implementation invariants: [[file:specs/turtle/host-runtime.org][host runtime]] (D030).
 =host.js::createWorld= owns the lifecycle; =turtling/run.js= owns completion.
@@ -2229,6 +2245,76 @@ Surface lookup: =turtling/viewport.js= and =overlay.js=. The overlay host must s
 insets (id:host-surface). Live-shell check: =scripts/verify/shell_surface.mjs=.
 Lab admission seam: =Turtle= → =createScheduler=; adversarial findings:
 [[file:specs/turtle/host-ergonomics-review.org][host ergonomics review]].
+
+** host embedding — figure values, effective view and playback lifetimes
+:PROPERTIES:
+:ID: nav-host-embedding-review
+:KEYWORDS: Figure View Layers Time RFC embedding snapshot provenance effective camera eye playback reveal atomic replacement
+:PATH: specs/turtle/host-embedding-review.org::host-embedding-review
+:END:
+Draft adversarial review: Run ≠ Figure; deposited ink ≠ current state/history;
+effective view ≠ orbit camera. Evidence and proposed delivery cuts live in the
+review; numeric witnesses are in =probe/figure-view-layers-time/=.
+Existing reuse map: [[id:host-embedding-existing-centers]] — native figure/readout composition,
+origin-seated placement, coherent reads, detached facts, retirement and resource ownership.
+Local first slice: [[id:host-embedding-slice-1-view]] — =world.view.snapshot/project/unproject=,
+=world.onFrame=, =world.requestFrame=; pure =projectPoint/unprojectRay= exports.
+Code: =assets/js/turtling/view_snapshot.js=; usage: =scripts/release/README.md= (unreleased).
+Needs/deletion ledger: [[file:specs/turtle/host-embedding-needs.org][needs audit]] — S1–S12 against local capability,
+adopter migration, and the next bounded ink-capture proof; no release implied.
+
+** expressive workflow — one intention, many petals
+:PROPERTIES:
+:ID: nav-expressive-workflow
+:KEYWORDS: witness experience native hand figure binding accepted point question petals onFrame projection
+:PATH: probe/expressive-workflow/README.org::probe-expressive-workflow
+:MODULE: probe/expressive-workflow/experience.mjs
+:END:
+=node probe/expressive-workflow/serve.mjs= — local interactive experience, port 8099.
+=verify.mjs= checks native reuse/ink and trusted browser hand, camera, keyboard,
+narrow/DPR surfaces and disposal. [[id:expressive-workflow-first-readings]] records
+controls and limits. One source play; no JS flower generator or new runtime API.
+
+** rim workflow — a lawful set is not its realization
+:PROPERTIES:
+:ID: nav-rim-workflow
+:KEYWORDS: circle rim law recipe locus accepted realization pointer ray fan lifecycle native fit
+:PATH: probe/rim/README.org::probe-rim-witness
+:MODULE: probe/rim/rim.mjs
+:END:
+=node probe/expressive-workflow/serve.mjs= → =/rim= beside the flower.
+Native laws describe the entire circle before any gesture; three independent
+frame readers label A, reproject a pointer sample and record delivery membership.
+=probe/rim/verify.mjs= checks real off/resume, native capture and manual reframe,
+fit-only wake, narrow/DPR2 and retirement. =world.view.fit()= reveals native
+point/locus framing, not whole-ink bounds or camera restore. Standing controls:
+=test/js/laws/rim_witness_test.mjs=, =test/js/laws/fit_test.mjs= and
+=test/js/host/view_fit_test.mjs=. Receipt ≠ live rights ≠ a general mathematical cut.
+
+** frame observation — live facts are not a frame cut
+:PROPERTIES:
+:ID: nav-frame-observation
+:KEYWORDS: observation coherence mutation async capture revision scalar placement materializer lifecycle
+:PATH: probe/frame-observation/RESULTS.org::frame-observation-results
+:MODULE: probe/frame-observation/verify.mjs
+:END:
+Concluded diagnostic: same fan/view, different live A; replacement before render;
+scalar changes without motion revision; settled accepted state versus pending
+display projection; retired asynchronous replies lose publication rights.
+Capture ≠ change detection ≠ action authority. No new runtime API or universal
+counter. =node probe/frame-observation/verify.mjs= reproduces the bounded controls.
+
+** embedding lifecycle — retire the source, not merely its layer
+:PROPERTIES:
+:ID: nav-embedding-lifecycle
+:KEYWORDS: embedding lifecycle reclaim ink fill erase source retirement glyph font pixels float32
+:PATH: probe/embedding-lifecycle/RESULTS.org::embedding-lifecycle-results
+:MODULE: test/js/render/depositor_retirement_test.mjs probe/embedding-lifecycle/verify.mjs
+:END:
+Nine native regressions: before/during/after first drain, filled faces and owner
+references, live siblings, same-size replacement, exactly-once disposal. Concluded
+browser controls separate prefix admission, live binding, delivery rights, real
+font preparation, pixel equivalence and GPU precision. No general capture API.
 
 ** become — the seed law: an unchanged seat is skipped whole
 :PROPERTIES:
@@ -3973,6 +4059,7 @@ first cell on first light). The degree ladder is one pure transition
 :KEYWORDS: papertiger tiger companion mood stance mascot clippy pounce coil slink prowl halo intent resting question gaze leap undraw draw ink gesture playground meadow atelier carve seed grok imagine potrace normalize archetype bestiary ladder skeleton anima image_edit image_gen image_to_video reference_to_video ZDR upload_url journey experiment lineage score
 :PATH: scripts/bestiary/cli.mjs
 :END:
+Active morphology study: [[file:scripts/bestiary/papertiger/_ladder/inner_fire/ARC.org][inner fire]] — elder face-ring → gathered tiger → spring → catch → return; explicit image 2.0 quality and video 1.5 timed pins. Review page: =scripts/bestiary/papertiger/_ladder/inner_fire/index.html=.
 The generated ground (=papertiger/core/=, =_carve/=, =_skeleton/=, =_ladder/=,
 =dreams/=) is local art, not release source: it is git-ignored, and a clone
 rebuilds it through this CLI. Canon lives in =specs/papertiger/= (=papertiger.org= + anima, atelier,

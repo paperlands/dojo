@@ -17,6 +17,7 @@ import Render from "./render/index.js"
 import { createMaterialCache } from "./render/line/material-cache.js"
 import { surfaceOfCanvas, observeSurface, contentRectOf, projectClient } from "./viewport.js"
 import { applyViewCommand } from "./camera_command.js"
+import { createViewSnapshot, worldToViewOf } from "./view_snapshot.js"
 // AXIS_Z is the camera's sight axis: E is in camera convention (view.js), where
 // the eye looks down local −Z, so a roll is a turn about local Z.
 import { SE3, AXIS_Z } from "./se3.js"
@@ -37,6 +38,7 @@ export function createStage(canvas, bridge, instruments = {}) {
     // Camera, bitmap and line resolution share the canvas's content box.
     // The window stands in only for an unavailable surface. (id:host-surface)
     let surface = surfaceOfCanvas(canvas)
+    let measuredSurface = surface
     // What the surface was last measured as, and the bitmap that measurement
     // produced. `applySurface` reads them to tell a page-sized canvas from an
     // unsized one that is following its own bitmap (see the echo, below).
@@ -114,6 +116,7 @@ export function createStage(canvas, bridge, instruments = {}) {
     // (id:host-surface)
     function applySurface() {
         const next = surfaceOfCanvas(canvas)
+        measuredSurface = next
         if (!next) return
         // Collapsed is a measured zero. Keep the projection already in hand —
         // camera, buffer — and do not adopt the window or write a size over
@@ -131,6 +134,7 @@ export function createStage(canvas, bridge, instruments = {}) {
         surface = echoed
             ? { ...next, width: applied.boxWidth, height: applied.boxHeight }
             : next
+        measuredSurface = surface
         camera.aspect = surface.width / surface.height
         camera.updateProjectionMatrix()
         renderer.setPixelRatio(surface.dpr)
@@ -260,6 +264,26 @@ export function createStage(canvas, bridge, instruments = {}) {
             _raycaster.setFromCamera(_ndc.set(nx, ny), camera)
             const { origin, direction } = _raycaster.ray
             return { origin: [origin.x, origin.y, origin.z], direction: [direction.x, direction.y, direction.z] }
+        },
+
+        // One rendered frame's effective view. Status is MEASURED: a detached
+        // canvas has no element space, a zero box is collapsed, a transform has
+        // no single client mapping. (id:host-embedding-slice-1-view)
+        viewSnapshot({ reframe = null, frame = null, time = null } = {}) {
+            const measured = measuredSurface
+            const status = canvas.isConnected !== true || !measured || measured.windowed ? 'unavailable'
+                : measured.transformed ? 'transformed'
+                : measured.collapsed ? 'collapsed' : 'ready'
+            if (frame === null) camera.updateMatrixWorld()
+            return createViewSnapshot({
+                status, reason: status === 'transformed' ? 'transformed' : null,
+                frame, time,
+                width: surface?.width ?? 0,
+                height: surface?.height ?? 0,
+                dpr: surface?.dpr ?? 1,
+                worldToView: worldToViewOf(camera, reframe),
+                projection: camera.projectionMatrix,
+            })
         },
 
         // The marks layer, offered by the turtle that draws it. The stage does not

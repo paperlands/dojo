@@ -2,7 +2,7 @@
 // Pump + park: preemptive slice (time) and backpressure (credit/residency) share one park.
 // Instant law: no sibling advances past a parked mid-instant. (id:output-ledger-r2-instant)
 
-import { createFrame, isBeing, isLiveBeing, liveIn } from "./frame.js"
+import { createFrame, frameAt, isBeing, isLiveBeing, liveIn } from "./frame.js"
 import { isWithinRegion, isSuppliedParticipant, mayAddressParticipant } from "./participation.js"
 import { createExecution } from "./execution.js"
 import { installAmbientDoor } from "./ambient.js"
@@ -3704,10 +3704,10 @@ export function createScheduler(generator, opts = {}) {
         get motionRevision() { return root._motionRevision },
         // The play's active laws (address → predicate, owner). Read-only seam.
         get laws() { return laws },
-        readPlace(name, property, ownerKey = 'host') {
+        readPlace(path, property, ownerKey = 'host') {
             const owner = root.children.get(ownerKey)
-            const frame = owner?.children.get(name)
-            if (!owner || !frame) return { kind: 'missing' }
+            const frame = frameAt(root, path)
+            if (!owner || !frame || (path.length > 0 && path[0] !== ownerKey)) return { kind: 'missing' }
             try { return { kind: 'value', value: resolveProperty(frame, property, null, owner, true) } }
             catch (error) { return { kind: 'unsupported', message: error.message } }
         },
@@ -3721,10 +3721,10 @@ export function createScheduler(generator, opts = {}) {
                 return { kind: 'value', value }
             } catch (error) { return { kind: 'unsupported', message: error.message } }
         },
-        proposePlace(name, position, revision, ownerKey = 'host') {
+        proposePlace(path, position, revision, ownerKey = 'host') {
             const owner = root.children.get(ownerKey)
-            const frame = owner?.children.get(name)
-            if (!owner || !frame) return { kind: 'missing' }
+            const frame = frameAt(root, path)
+            if (!owner || !frame || (path.length > 0 && path[0] !== ownerKey)) return { kind: 'missing' }
             if (!Array.isArray(position) || position.length !== 3 || !Array.from(position).every(Number.isFinite))
                 return { kind: 'unsupported', message: 'position must contain three finite numbers' }
             if (!freePoint(frame)) return { kind: 'unsupported', message: 'only a free authored place can be proposed' }

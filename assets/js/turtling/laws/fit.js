@@ -5,6 +5,7 @@
 // Pure: numbers in, a camera pose out. The stage applies it; no DOM, no THREE.
 
 import { basisOf } from "./meet.js"
+import { SE3 } from "../se3.js"
 import { len, unit, finite3 } from "./vec3.js"
 
 const RAD = Math.PI / 180
@@ -33,9 +34,8 @@ export function unionBounds(spheres) {
     return { center, radius }
 }
 
-// A direction oblique to the primary bounded mark's normal. A circle read on its
-// own normal is a point on the sight line; tilting off it makes the circle read
-// as a curve. No bounded mark: a studio three-quarter view. (id:laws-freedom)
+// An oblique view reveals the primary bounded locus without an edge-on collapse.
+// With no bounded mark, use a studio three-quarter view. (id:laws-freedom)
 export function viewDirection(normal = null) {
     const n = unit(normal)
     if (!n) return [...DEFAULT_DIR]
@@ -46,6 +46,17 @@ export function viewDirection(normal = null) {
         n[1] * Math.cos(tilt) + t[1] * Math.sin(tilt),
         n[2] * Math.cos(tilt) + t[2] * Math.sin(tilt),
     ]) ?? [...DEFAULT_DIR]
+}
+
+// Bounds are measured in the consumer's WORLD; the stage frames in SCENE. One
+// rigid map, no new geometry: center moves, direction turns, radius is unchanged.
+// (id:laws-freedom)
+export function viewTargets(bounds, { dir = null, reframe = null } = {}) {
+    if (!bounds || !finite3(bounds.center)) return null
+    if (!reframe) return { bounds: { center: [...bounds.center], radius: bounds.radius }, dir: dir ? [...dir] : null }
+    const center = SE3.apply(reframe, bounds.center)
+    const turned = dir ? reframe.rotation.rotateVec(dir[0], dir[1], dir[2]) : null
+    return { bounds: { center, radius: bounds.radius }, dir: turned }
 }
 
 // The camera pose that frames `bounds`. The distance puts the bounding radius on

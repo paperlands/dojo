@@ -7,6 +7,7 @@ import Render from "./render/index.js"
 import { INK } from "./ink.js"
 import { bridged } from "../bridged.js"
 import { createStage } from "./stage.js"
+import { createViewFan } from "./view_fan.js"
 import { SE3 } from "./se3.js"
 import { createScheduler, metaRoot, sumCounts, frameWorldTransform, worldTransform } from "./scheduler.js"
 import { pointStateOf, preparePointRead } from "./laws/point_state.js"
@@ -21,7 +22,7 @@ import { verdictFade, OUTCOME } from "./laws/outcome.js"
 import { VERDICT_DECAY_MS } from "./laws/feel.js"
 import { drawPin, drawTrace, drawRim, drawGhostMark, drawAxis, drawCurve, drawSpan, nameAnchor, drawName } from "./laws/pin.js"
 import { axesOf, marksOf, boundsOf } from "./laws/constraints.js"
-import { unionBounds, viewDirection } from "./laws/fit.js"
+import { unionBounds, viewDirection, viewTargets } from "./laws/fit.js"
 import { hintsVisible, normalizeReveal, movedEnough } from "./laws/reveal.js"
 import { createOverlay } from "./overlay.js"
 import { worldProgress } from "./vitals.js"
@@ -87,8 +88,16 @@ export class Turtle {
         }
 
         this.color = INK
+        this.color = INK
         // Beat channel sink. Set by a host; read live at drain time. (id:host-beat)
         this.onBeat = null
+
+        // Frame observation on the kernel's one breath. Each callback is isolated;
+        // faults surface together after every install has heard the frame.
+        // (id:host-embedding-slice-1-view)
+        this._viewFan = createViewFan(() => this.requestRender())
+        this._frameSeq = 0
+        this._lastView = null
 
         // Unified scheduler + compositor (lazy — created on first upsertAmbient)
         this.scheduler = null
@@ -187,6 +196,10 @@ export class Turtle {
         this.scheduler = null
         release(() => this.focus.bind(null))
         this.onBeat = null
+        // The view fan dies with the turtle: every observer is off, and the last
+        // view is dropped rather than left frozen but stale. (id:host-embedding-slice-1-view)
+        this._viewFan?.clear()
+        this._lastView = null
         release(() => this.stage.dispose())
         if (failures.length) console.warn('turtle: a dispose step failed', failures)
     }
@@ -197,6 +210,27 @@ export class Turtle {
     _view() {
         return viewMapping(this.compositor?.viewReframe?.() ?? null, this.stage)
     }
+    // One frame observer. The callback receives { view }: the frozen view of the
+    // frame just rendered. `off` is immediate and idempotent.
+    // (id:host-embedding-slice-1-view)
+    onViewFrame(fn) {
+        return this._viewFan.watch(fn)
+    }
+
+    // The view of the last rendered frame, or the current one when no frame has
+    // run yet (frame: null, nothing published).
+    lastView() {
+        return this._lastView ?? this.viewSnapshot()
+    }
+
+    // The effective view right now: the measured box, the camera, and the
+    // compositor's own factors. No new composition rule lives here.
+    viewSnapshot({ frame = null, time = null } = {}) {
+        return this.stage.viewSnapshot({
+            reframe: this.compositor?.viewReframe?.() ?? null, frame, time,
+        })
+    }
+
 
     // The one description of a point: free / headed / pinned / unresolved, with its normals,
     // degrees of freedom and the exact locus. Delegated, so the display and a behavioural
@@ -230,14 +264,20 @@ export class Turtle {
             const state = read(frame)
             const bounds = boundsOf(state.locus, state.at)
             if (bounds) spheres.push(bounds)
-            // The direction comes from the largest bounded mark, so a circle reads
-            // as a curve rather than a point on the sight line.
+            // The largest bounded locus supplies the direction, so its circle
+            // reads as a curve rather than an edge-on line.
             if (bounds && state.locus?.normal && bounds.radius > (primary?.radius ?? -1)) {
                 primary = { normal: state.locus.normal, radius: bounds.radius }
             }
         }
         const bounds = unionBounds(spheres)
-        return bounds ? { bounds, dir: viewDirection(primary?.normal ?? null) } : null
+        if (!bounds) return null
+        // The stage frames in scene space: map the world bounds through the same
+        // effective reframe the layers are seated by. (id:host-embedding-slice-1-view)
+        return viewTargets(bounds, {
+            dir: viewDirection(primary?.normal ?? null),
+            reframe: this.compositor?.viewReframe?.() ?? null,
+        })
     }
 
     readPlace(name, property, ownerKey = 'host') {
@@ -685,12 +725,17 @@ export class Turtle {
             renderer.render(scene, camera)
         }
 
+
+        // Capture the final camera after render; every observer gets the same
+        // immutable projection of that frame. (id:host-embedding-slice-1-view)
+        this._lastView = this.viewSnapshot({ frame: ++this._frameSeq, time: t })
         // The overlay is an instrument: a draw fault must not freeze the world.
         try {
             this._drawPins()
         } catch (error) {
             console.error('overlay draw error:', error)
         }
+
 
         // Only hatchVerdict decides hatch; owed keeps the loop awake.
         // mine = gate[self] — foreign witness cells never answer here.
@@ -723,6 +768,16 @@ export class Turtle {
             || verdict.owed || this._snapOwed || this.stage.hatching || !!this._ghost
 
         this._sayProgress(now)
+
+        // Capture and progress finish before an observer can replace or dispose
+        // this world. The envelope is owned too. (id:host-embedding-slice-1-view)
+        if (!this._disposed && this._viewFan.size > 0) {
+            try {
+                this._viewFan.notify(Object.freeze({ view: this._lastView }))
+            } catch (error) {
+                console.error('view observer error:', error)
+            }
+        }
     }
 
     // Clock not payload — reader pulls the world. Phase/run edges always speak

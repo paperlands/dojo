@@ -26,7 +26,7 @@ node "$root/scripts/release/host.mjs" "$out/package" >/dev/null
     node --input-type=module -e '
         import fs from "node:fs"
         const {name} = JSON.parse(fs.readFileSync("package/package.json"))
-        fs.writeFileSync("consumer.mjs", "export { createWorld } from " + JSON.stringify(name))
+        fs.writeFileSync("consumer.mjs", "export { createWorld, projectPoint, unprojectRay } from " + JSON.stringify(name))
     '
     "$root/scripts/vendor/node_modules/esbuild/bin/esbuild" consumer.mjs \
         --bundle --format=esm --platform=browser --outfile=runtime/host.mjs >/dev/null
@@ -40,7 +40,7 @@ cat > "$out/index.html" << 'HTML'
 const out = document.getElementById("out")
 const say = (s) => { out.textContent += s + "\n" }
 try {
-    const { createWorld } = await import("./runtime/host.mjs")
+    const { createWorld, projectPoint, unprojectRay } = await import("./runtime/host.mjs")
     const canvas = document.getElementById("c")
     const world = createWorld(canvas)
     try {
@@ -193,26 +193,26 @@ try {
     const world7 = createWorld(canvas)
     const run7 = await world7.play("let A\nlet A.y = 0\nlet A.z = 0")
     await run7.finished
-    const initial7 = world7.interaction.read("A", "x")
-    const coincident7 = world7.interaction.read("A", "bearing")
+    const initial7 = world7.interaction.read(['host', "A"], "x")
+    const coincident7 = world7.interaction.read(['host', "A"], "bearing")
     const defaultDown7 = new PointerEvent("pointerdown", { clientX: 160, clientY: 120, pointerId: 70, pointerType: "mouse", button: 0, buttons: 1, bubbles: true, cancelable: true })
     canvas.dispatchEvent(defaultDown7)
     const defaultInteractionOff7 = !defaultDown7.defaultPrevented
-    const missing7 = world7.interaction.read("NotDeclared", "x")
+    const missing7 = world7.interaction.read(['host', "NotDeclared"], "x")
     const samples7 = []
     const mutatedSamples7 = []
-    const stop7 = world7.interaction.subscribe("A", "x", answer => samples7.push(answer.value))
-    const stopMutate7 = world7.interaction.subscribe("A", "x", answer => {
+    const stop7 = world7.interaction.subscribe(['host', "A"], "x", answer => samples7.push(answer.value))
+    const stopMutate7 = world7.interaction.subscribe(['host', "A"], "x", answer => {
         mutatedSamples7.push(answer.value)
         if (mutatedSamples7.length === 1) {
             try { answer.value = 7 } catch { /* frozen public answer */ }
         }
     })
-    const stopThrow7 = world7.interaction.subscribe("A", "x", () => { throw new Error("observer") })
-    const movedToSeven7 = world7.interaction.propose("A", [7, 0, 0])
-    const moved7 = world7.interaction.propose("A", [12, 0, 0])
-    const refused7 = world7.interaction.propose("A", [12, Number.POSITIVE_INFINITY, 0])
-    const final7 = world7.interaction.read("A", "x")
+    const stopThrow7 = world7.interaction.subscribe(['host', "A"], "x", () => { throw new Error("observer") })
+    const movedToSeven7 = world7.interaction.propose(['host', "A"], [7, 0, 0])
+    const moved7 = world7.interaction.propose(['host', "A"], [12, 0, 0])
+    const refused7 = world7.interaction.propose(['host', "A"], [12, Number.POSITIVE_INFINITY, 0])
+    const final7 = world7.interaction.read(['host', "A"], "x")
     say("interaction:" + JSON.stringify({ initial7, missing7, moved: moved7.kind, refused: refused7.kind, final7, samples7 }))
     const interactionOk = initial7.kind === "value" && initial7.value === 0
         && coincident7.kind === "value" && coincident7.value === null
@@ -224,22 +224,22 @@ try {
     stopMutate7()
     stopThrow7()
     const obsoleteSamples7 = []
-    const stopObsolete7 = world7.interaction.subscribe("A", "x", answer => obsoleteSamples7.push(answer.value))
+    const stopObsolete7 = world7.interaction.subscribe(['host', "A"], "x", answer => obsoleteSamples7.push(answer.value))
     const replay7 = await world7.play("let A\nlet A.y = 0\nlet A.z = 0")
     await replay7.finished
-    world7.interaction.propose("A", [20, 0, 0])
+    world7.interaction.propose(['host', "A"], [20, 0, 0])
     const replayRetired7 = obsoleteSamples7.length === 1 && obsoleteSamples7[0] === 12
     stopObsolete7()
     world7.dispose()
-    const retired7 = world7.interaction.read("A", "x").kind === "retired"
+    const retired7 = world7.interaction.read(['host', "A"], "x").kind === "retired"
     const world8 = createWorld(canvas, { interactive: true })
     const run8 = await world8.play("let A\nlet A.z = 0\nlet A.distance = 50")
     await run8.finished
-    const bearing8 = world8.interaction.read("A", "bearing")
+    const bearing8 = world8.interaction.read(['host', "A"], "bearing")
     const rotatorEvents8 = []
-    const stopBearing8 = world8.interaction.subscribe("A", "bearing", answer => rotatorEvents8.push(answer.value))
-    const rotated8 = world8.interaction.propose("A", [0, 0, 0])
-    const bearingAfter8 = world8.interaction.read("A", "bearing")
+    const stopBearing8 = world8.interaction.subscribe(['host', "A"], "bearing", answer => rotatorEvents8.push(answer.value))
+    const rotated8 = world8.interaction.propose(['host', "A"], [0, 0, 0])
+    const bearingAfter8 = world8.interaction.read(['host', "A"], "bearing")
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     const rect8 = canvas.getBoundingClientRect()
     let rotatorPointerClaimed8 = false
@@ -257,9 +257,9 @@ try {
                 clientY: rect8.top + y, pointerId, pointerType: "mouse", button: 0, buttons: 0, bubbles: true, cancelable: true }))
         }
     }
-    const pointerBearing8 = world8.interaction.read("A", "bearing")
-    const distanceAfter8 = world8.interaction.read("A", "distance")
-    const zAfter8 = world8.interaction.read("A", "z")
+    const pointerBearing8 = world8.interaction.read(['host', "A"], "bearing")
+    const distanceAfter8 = world8.interaction.read(['host', "A"], "distance")
+    const zAfter8 = world8.interaction.read(['host', "A"], "z")
     const rotatorOk = bearing8.kind === "value" && rotated8.kind === "accept"
         && bearingAfter8.kind === "value" && bearingAfter8.value !== bearing8.value
         && rotatorPointerClaimed8 && pointerBearing8.kind === "value" && pointerBearing8.value !== bearingAfter8.value
@@ -273,7 +273,7 @@ try {
         "let A.distance = 50", "let b = A.bearing"].join("\n")
     const run10 = await world10.play(source10)
     await run10.finished
-    const directBearing10 = world10.interaction.read("A", "bearing")
+    const directBearing10 = world10.interaction.read(['host', "A"], "bearing")
     const scalarBearing10 = world10.interaction.read("b")
     const observerOk10 = directBearing10.kind === "value"
         && Object.is(directBearing10.value, scalarBearing10.value)
@@ -283,7 +283,7 @@ try {
     await run11.finished
     const scalarSamples11 = []
     const stop11 = world11.interaction.subscribe("s", answer => scalarSamples11.push(answer.value))
-    const scalarMoved11 = world11.interaction.propose("A", [7, 0, 0])
+    const scalarMoved11 = world11.interaction.propose(['host', "A"], [7, 0, 0])
     const scalarOk11 = scalarSamples11[0] === 0 && scalarSamples11.at(-1) === 7
         && scalarMoved11.kind === "accept"
     stop11()
@@ -291,9 +291,9 @@ try {
     const paintGate11 = new Promise(resolve => { finishPaint11 = resolve })
     window.proposalWitnessReady = true
     window.runProposalWitness = async () => {
-        const verdict = world11.interaction.propose("A", [17, 0, 0])
+        const verdict = world11.interaction.propose(['host', "A"], [17, 0, 0])
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-        return verdict.kind === "accept" && world11.interaction.read("A", "x").value === 17
+        return verdict.kind === "accept" && world11.interaction.read(['host', "A"], "x").value === 17
     }
     window.finishProposalWitness = rendered => finishPaint11(rendered)
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
@@ -305,10 +305,10 @@ try {
     const run12 = await world12.play("let A\nlet A.z = 0\nlet A.distance = 50")
     await run12.finished
     const refusalEvents12 = []
-    const stop12 = world12.interaction.subscribe("A", "bearing", answer => refusalEvents12.push(answer.value))
-    const beforeRefusal12 = world12.interaction.read("A", "bearing")
-    const finiteRefusal12 = world12.interaction.propose("A", [0, 0, 0])
-    const refusalState12 = world12.interaction.read("A", "bearing")
+    const stop12 = world12.interaction.subscribe(['host', "A"], "bearing", answer => refusalEvents12.push(answer.value))
+    const beforeRefusal12 = world12.interaction.read(['host', "A"], "bearing")
+    const finiteRefusal12 = world12.interaction.propose(['host', "A"], [0, 0, 0])
+    const refusalState12 = world12.interaction.read(['host', "A"], "bearing")
     const refusalOk12 = finiteRefusal12.kind === "refuse"
         && Object.is(refusalState12.value, beforeRefusal12.value)
         && refusalEvents12.length === 1
@@ -318,9 +318,9 @@ try {
     const world17 = createWorld(canvas)
     const run17 = await world17.play("as A do\n  rt 90\nend")
     await run17.finished
-    const headingBefore17 = world17.interaction.read("A", "heading")
-    const headedProposal17 = world17.interaction.propose("A", [1, 0, 0])
-    const headingAfter17 = world17.interaction.read("A", "heading")
+    const headingBefore17 = world17.interaction.read(['host', "A"], "heading")
+    const headedProposal17 = world17.interaction.propose(['host', "A"], [1, 0, 0])
+    const headingAfter17 = world17.interaction.read(['host', "A"], "heading")
     const headedRejected17 = headedProposal17.kind === "unsupported"
         && headingBefore17.kind === "value" && headingAfter17.kind === "value"
         && headingBefore17.value === headingAfter17.value
@@ -329,14 +329,14 @@ try {
     const run13 = await world13.play("let A\nlet A.y = 0\nlet A.z = 0\nlet B\nlet B.y = 0\nlet B.z = 0")
     await run13.finished
     const positions13 = []
-    const stop13 = world13.interaction.subscribe("A", "position", answer => {
+    const stop13 = world13.interaction.subscribe(['host', "A"], "position", answer => {
         positions13.push([...answer.value])
         if (positions13.length === 1) {
             try { answer.value[0] = 42 } catch { /* frozen public vector */ }
         }
     })
-    const movedB13 = world13.interaction.propose("B", [5, 0, 0])
-    const unchangedA13 = world13.interaction.read("A", "position")
+    const movedB13 = world13.interaction.propose(['host', "B"], [5, 0, 0])
+    const unchangedA13 = world13.interaction.read(['host', "A"], "position")
     const positionOk13 = movedB13.kind === "accept" && positions13.length === 1
         && Object.isFrozen(unchangedA13.value) && unchangedA13.value[0] === 0
     stop13()
@@ -346,17 +346,17 @@ try {
     await run14.finished
     const siblingValues14 = [], lateValues14 = []
     let lateStop14 = () => {}, siblingStop14 = () => {}, lateCreated14 = false
-    const spawnerStop14 = world14.interaction.subscribe("A", "x", answer => {
+    const spawnerStop14 = world14.interaction.subscribe(['host', "A"], "x", answer => {
         if (answer.value !== 0 && !lateCreated14) {
             lateCreated14 = true
-            lateStop14 = world14.interaction.subscribe("A", "x", value => lateValues14.push(value.value))
+            lateStop14 = world14.interaction.subscribe(['host', "A"], "x", value => lateValues14.push(value.value))
             siblingStop14()
         }
     })
-    siblingStop14 = world14.interaction.subscribe("A", "x", answer => siblingValues14.push(answer.value))
-    world14.interaction.propose("A", [7, 0, 0])
+    siblingStop14 = world14.interaction.subscribe(['host', "A"], "x", answer => siblingValues14.push(answer.value))
+    world14.interaction.propose(['host', "A"], [7, 0, 0])
     const snapshotWatchers14 = lateValues14.join() === "7" && siblingValues14.join() === "0"
-    world14.interaction.propose("A", [8, 0, 0])
+    world14.interaction.propose(['host', "A"], [8, 0, 0])
     const watchersOk14 = snapshotWatchers14 && lateValues14.join() === "7,8" && siblingValues14.join() === "0"
     spawnerStop14()
     lateStop14()
@@ -365,13 +365,13 @@ try {
     const run15 = await world15.play("let A\nlet A.y = 0\nlet A.z = 0")
     await run15.finished
     const disposedSibling15 = []
-    const disposeFirst15 = world15.interaction.subscribe("A", "x", answer => {
+    const disposeFirst15 = world15.interaction.subscribe(['host', "A"], "x", answer => {
         if (answer.value === 7) world15.dispose()
     })
-    world15.interaction.subscribe("A", "x", answer => disposedSibling15.push(answer.value))
-    const disposedDuringDelivery15 = world15.interaction.propose("A", [7, 0, 0]).kind === "accept"
+    world15.interaction.subscribe(['host', "A"], "x", answer => disposedSibling15.push(answer.value))
+    const disposedDuringDelivery15 = world15.interaction.propose(['host', "A"], [7, 0, 0]).kind === "accept"
         && disposedSibling15.join() === "0"
-        && world15.interaction.read("A", "x").kind === "retired"
+        && world15.interaction.read(['host', "A"], "x").kind === "retired"
     disposeFirst15()
     say("positionEquality:" + positionOk13)
     say("watchers:" + watchersOk14 + ":disposeDelivery:" + disposedDuringDelivery15)
@@ -391,7 +391,7 @@ try {
     const move9 = new PointerEvent("pointermove", { clientX: center9.x + 30, clientY: center9.y, pointerId: 71, pointerType: "mouse", buttons: 1, bubbles: true, cancelable: true })
     window.dispatchEvent(move9)
     window.dispatchEvent(new PointerEvent("pointerup", { ...center9, pointerId: 71, pointerType: "mouse", button: 0, buttons: 0, bubbles: true, cancelable: true }))
-    const pointer9 = world9.interaction.read("A", "x")
+    const pointer9 = world9.interaction.read(['host', "A"], "x")
     const claimed9 = down9.defaultPrevented
     const movedByPointer9 = pointer9.kind === "value" && pointer9.value !== 0
     const outside9 = new PointerEvent("pointerdown", { clientX: 5, clientY: 5, pointerId: 72, pointerType: "mouse", button: 0, buttons: 1, bubbles: true, cancelable: true })
@@ -411,7 +411,7 @@ try {
     await new Promise(resolve => setTimeout(resolve, 80))
     window.dispatchEvent(new PointerEvent("pointermove", { clientX: rect16.left + rect16.width / 2 + 30, clientY: rect16.top + rect16.height / 2, pointerId: 81, pointerType: "mouse", buttons: 1, bubbles: true, cancelable: true }))
     window.dispatchEvent(new PointerEvent("pointerup", { clientX: rect16.left + rect16.width / 2 + 30, clientY: rect16.top + rect16.height / 2, pointerId: 81, pointerType: "mouse", button: 0, buttons: 0, bubbles: true, cancelable: true }))
-    const afterHeldReplacement16 = world16.interaction.read("A", "x")
+    const afterHeldReplacement16 = world16.interaction.read(['host', "A"], "x")
     const replacedHeldOk16 = down16.defaultPrevented && afterHeldReplacement16.kind === "value"
         && afterHeldReplacement16.value === 0
     world16.dispose()
@@ -421,7 +421,7 @@ try {
     const run18 = await world18.play("let s = 1\nlet t = s\nwait 0.1\nlet s = 2\nlet A")
     const sourceSamples18 = [], birthSamples18 = []
     world18.interaction.subscribe("s", answer => sourceSamples18.push([answer.value, world18.interaction.read("t").value]))
-    world18.interaction.subscribe("A", "x", answer => birthSamples18.push(answer.kind === "value" ? answer.value : answer.kind))
+    world18.interaction.subscribe(['host', "A"], "x", answer => birthSamples18.push(answer.kind === "value" ? answer.value : answer.kind))
     await run18.finished
     const sourceOk18 = JSON.stringify(sourceSamples18) === "[[1,1],[2,2]]"
         && JSON.stringify(birthSamples18) === '["missing",0]'
@@ -429,7 +429,7 @@ try {
     await vectorRun18.finished
     const vectorSamples18 = []
     world18.interaction.subscribe("v", answer => vectorSamples18.push(answer.value))
-    const vectorMoved18 = world18.interaction.propose("A", [7, 0, 0])
+    const vectorMoved18 = world18.interaction.propose(['host', "A"], [7, 0, 0])
     const vectorsOk18 = vectorMoved18.kind === "accept"
         && JSON.stringify(vectorSamples18) === "[[0,0,0,4],[7,0,0,4]]"
         && vectorSamples18.every(Object.isFrozen)
@@ -489,7 +489,7 @@ try {
     const walkingWorld = createWorld(canvas)
     const walkingRun = await walkingWorld.play("as A do\nwait 0.05\njmp 10\nend")
     const walkingSamples = []
-    walkingWorld.interaction.subscribe("A", "position", answer => walkingSamples.push(answer.value?.[0]))
+    walkingWorld.interaction.subscribe(['host', "A"], "position", answer => walkingSamples.push(answer.value?.[0]))
     await walkingRun.finished
     walkingWorld.dispose()
     say("walkingReads:" + (JSON.stringify(delayedSamples) === '["missing",7]'
@@ -507,6 +507,144 @@ try {
     try { await capRun.finished } catch (error) { capFatal = error.reason === "fatal" }
     capWorld.dispose()
     say("hostTruth:" + (lateFatal && capFatal))
+
+    // The effective view: frozen plain data, pure projection, one frame fan.
+    // A view is the frame that was actually drawn; a stored one cannot move.
+    const viewWorld = createWorld(canvas)
+    const unpainted = viewWorld.view.snapshot()
+    const beforePaint = unpainted.frame === null && unpainted.time === null
+    await (await viewWorld.play("fw 5")).finished
+    const raf = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    await raf()
+    const stored = viewWorld.view.snapshot()
+    const centre = viewWorld.view.project([0, 0, 0])
+    const ray = centre ? viewWorld.view.unproject(centre.x, centre.y) : null
+    const seen = []
+    const envelopes = []
+    const stopEnvelope = viewWorld.onFrame(frame => envelopes.push(
+        Object.isFrozen(frame) && Reflect.set(frame, 'view', null) === false))
+    const stopFrame = viewWorld.onFrame(({ view }) => seen.push(view))
+    const beforeFrames = stored?.frame ?? null
+    await raf()
+    stopFrame()
+    stopEnvelope()
+    const frozen = !!stored && Object.isFrozen(stored) && Object.isFrozen(stored.worldToView)
+    const shaped = !!stored && stored.kind === "view" && stored.status === "ready"
+        && stored.width > 0 && stored.height > 0 && stored.worldToView?.length === 16
+    const centred = !!centre && Math.abs(centre.x - stored.width / 2) < 1
+        && Math.abs(centre.y - stored.height / 2) < 1
+    const rayOk = !!ray && Math.abs(ray.direction[2] + 1) < 0.05
+        && Math.abs(ray.origin[0]) < 0.01 && Math.abs(ray.origin[2] - 500) < 1
+    const fanOk = seen.length >= 1 && seen.every((v) => v.kind === "view" && v.frame !== null)
+        && envelopes.length === seen.length && envelopes.every(Boolean)
+    viewWorld.dispose()
+    // A real camera orbit moves the projection; the stored view does not follow it.
+    // Synthetic pointers have no capture; stock OrbitControls would throw before
+    // it ever reads the drag. The verifier owns this stub, not the runtime.
+    const restoreCapture = () => {
+        canvas.setPointerCapture = () => {}
+        canvas.releasePointerCapture = () => {}
+    }
+    restoreCapture()
+    const orbitWorld = createWorld(canvas)
+    await (await orbitWorld.play("let A\nlet A.y = 0\nlet A.z = 0")).finished
+    await raf()
+    const kept = orbitWorld.view.snapshot()
+    const frameBefore = orbitWorld.view.snapshot().frame
+    const beforeOrbit = orbitWorld.view.project([100, 0, 0])
+    const rectV = canvas.getBoundingClientRect()
+    const cx = rectV.left + rectV.width / 2, cy = rectV.top + rectV.height / 2
+    const downV = new PointerEvent("pointerdown", { clientX: cx, clientY: cy, pointerId: 401, pointerType: "mouse", button: 0, buttons: 1, bubbles: true, cancelable: true })
+    canvas.dispatchEvent(downV)
+    document.dispatchEvent(new PointerEvent("pointermove", { clientX: cx + 90, clientY: cy + 30, pointerId: 401, pointerType: "mouse", buttons: 1, bubbles: true, cancelable: true }))
+    document.dispatchEvent(new PointerEvent("pointerup", { clientX: cx + 90, clientY: cy + 30, pointerId: 401, pointerType: "mouse", button: 0, buttons: 0, bubbles: true, cancelable: true }))
+    orbitWorld.requestFrame()
+    await raf()
+    const afterOrbit = orbitWorld.view.project([100, 0, 0])
+    const orbitMoved = JSON.stringify(beforeOrbit) !== JSON.stringify(afterOrbit)
+    const orbitDiagnostics = { before: beforeOrbit, after: afterOrbit,
+        frameBefore, frameAfter: orbitWorld.view.snapshot().frame }
+    const keptStill = JSON.stringify(projectPoint(kept, [100, 0, 0])) === JSON.stringify(beforeOrbit)
+    // Last rendered metadata survives a play replacement; stored data survives disposal.
+    const replayView = await orbitWorld.play("fw 1")
+    await replayView.finished
+    await raf()
+    const afterReplay = orbitWorld.view.snapshot()
+    const metadataKept = !!afterReplay && afterReplay.kind === "view" && afterReplay.frame !== null
+    orbitWorld.dispose()
+    const disposedNull = orbitWorld.view.snapshot() === null && orbitWorld.view.project([0, 0, 0]) === null
+    const restored = structuredClone(kept)
+    const dataSurvives = JSON.stringify(projectPoint(restored, [100, 0, 0])) === JSON.stringify(beforeOrbit)
+        && !!unprojectRay(restored, restored.width / 2, restored.height / 2)
+    const localCanvas = document.createElement('canvas')
+    localCanvas.style.cssText = 'display:block;width:160px;height:120px'
+    document.body.append(localCanvas)
+    const flowWorld = createWorld(localCanvas)
+    await raf()
+    const boxOf = localCanvas.getBoundingClientRect.bind(localCanvas)
+    let layoutReads = 0, pulses = 0
+    localCanvas.getBoundingClientRect = () => { layoutReads++; return boxOf() }
+    const stopPulses = flowWorld.onFrame(() => {
+        pulses++
+        if (pulses < 3) flowWorld.requestFrame()
+    })
+    await raf(); await raf()
+    stopPulses()
+    const lazyLayout = layoutReads === 0 && pulses === 3
+    localCanvas.style.width = '180px'
+    await raf(); flowWorld.requestFrame(); await raf()
+    const resizedView = flowWorld.view.snapshot()
+    const sizedView = resizedView.width === 180 && localCanvas.width === 180 * resizedView.dpr
+    localCanvas.style.display = 'none'
+    await raf(); flowWorld.requestFrame(); await raf()
+    const collapsedView = flowWorld.view.snapshot().status === 'collapsed'
+        && flowWorld.view.project([0, 0, 0]) === null
+    localCanvas.remove()
+    flowWorld.requestFrame(); await raf()
+    const detachedView = flowWorld.view.snapshot().status === 'unavailable'
+    flowWorld.dispose()
+    const dyingWorld = createWorld(canvas)
+    let dyingView = null, disposedSibling = 0
+    dyingWorld.onFrame(({ view }) => { dyingView = view; dyingWorld.dispose() })
+    dyingWorld.onFrame(() => { disposedSibling++ })
+    await raf()
+    const disposalFan = !!dyingView && disposedSibling === 0 && dyingWorld.view.snapshot() === null
+    say('viewLifecycle:' + JSON.stringify({beforePaint, lazyLayout, pulses, sizedView, collapsedView, detachedView, disposalFan}))
+    say("view:" + JSON.stringify({ beforeFrames, frames: seen.length, centre, rayOk, orbitMoved, orbitDiagnostics }))
+    say("viewok:" + (frozen && shaped && centred && rayOk && fanOk && orbitMoved && keptStill
+        && metadataKept && disposedNull && dataSurvives && !!kept && beforePaint && lazyLayout
+        && sizedView && collapsedView && detachedView && disposalFan))
+    // Read the untouched main program through exact key paths, not a wrapper.
+    // (id:host-frame-paths)
+    const stateCanvas = document.createElement('canvas')
+    stateCanvas.style.cssText = 'width:160px;height:120px'
+    document.body.append(stateCanvas)
+    const stateWorld = createWorld(stateCanvas)
+    const stateRun = await stateWorld.play('fw 1\nwait 0.05\nrt 90\nwait 0.05\nrt 90')
+    const rootPath = ['host'], rootHeadings = []
+    const offRoot = stateWorld.interaction.subscribe(rootPath, 'heading', answer => rootHeadings.push(answer.value))
+    rootPath.push('not-the-root')
+    const stateFinished = await stateRun.finished
+    const rootPathOk = JSON.stringify(rootHeadings) === '[90,180,270]' && stateFinished.commandCount === 5
+    await (await stateWorld.play('as "A/B" do\nrt 30\nend\nas A do\nas B do\nrt 60\nend\nend')).finished
+    const literalHeading = stateWorld.interaction.read(['host', 'A/B'], 'heading').value
+    const nestedHeading = stateWorld.interaction.read(['host', 'A', 'B'], 'heading').value
+    const datum = stateWorld.interaction.read([], 'position')
+    let rejectedString = false, authoredLine = null
+    try { stateWorld.interaction.read('host', 'heading') } catch (error) { rejectedString = error instanceof TypeError }
+    try { await stateWorld.play('fw 1\njmp 1 2 3 4') } catch (error) { authoredLine = error.wound?.span?.line }
+    await (await stateWorld.play('pitch 90')).finished
+    const vertical = stateWorld.interaction.read(['host'], 'heading')
+    offRoot(); offRoot()
+    stateWorld.dispose(); stateWorld.dispose()
+    const framePathsOk = rootPathOk && rootHeadings.length === 3
+        && Math.abs(literalHeading - 120) < 1e-9 && Math.abs(nestedHeading - 150) < 1e-9
+        && JSON.stringify(datum.value) === '[0,0,0]' && Object.isFrozen(datum.value)
+        && rejectedString && authoredLine === 2 && vertical.kind === 'value' && vertical.value === null
+        && stateWorld.interaction.read(['host'], 'heading').kind === 'retired'
+    stateCanvas.remove()
+    say('framePaths:' + JSON.stringify({rootHeadings, literalHeading, nestedHeading, authoredLine, vertical}))
+    say('framePathsok:' + framePathsOk)
     say("DONE")
 } catch (e) {
     say("FAIL " + (e && e.stack || e))

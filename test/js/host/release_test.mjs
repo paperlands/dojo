@@ -29,7 +29,7 @@ test('release is reproducible, licensed, bounded, and identifies actual source b
         for (const [path, hash] of Object.entries(first.artifacts))
             assert.equal(sha256(await readFile(join(a, path))), hash, path)
         const meta = await json(join(a, 'host.meta.json'))
-        assert.deepEqual(meta.outputs['host.mjs'].exports, ['createWorld'])
+        assert.deepEqual(meta.outputs['host.mjs'].exports, ['createWorld', 'projectPoint', 'unprojectRay'])
         assert.deepEqual(Object.keys(meta.outputs).sort(), ['host.mjs', 'host.mjs.LEGAL.txt'])
         assert.ok(!Object.keys(meta.inputs).some(path => /recorder|mediabunny|\/editor\/|\/terminal\/|phoenix_live_view/.test(path)))
         assert.match(await readFile(join(a, 'LICENSE'), 'utf8'), /GNU AFFERO GENERAL PUBLIC LICENSE/)

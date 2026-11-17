@@ -87,10 +87,11 @@ function materializePath(event, pathGroup, shapist, sourceId, materials) {
 
         if (event.filled && shapist) {
             const polyPoints = event.points.map(p => ({ x: p[0], y: p[1], z: p[2] }))
-            shapist.addPolygon(polyPoints, {
+            const fill = shapist.addPolygon(polyPoints, {
                 color: event.color,
                 forceTriangulation: true
             })
+            if (fill && sourceId !== undefined) fill._sourceId = sourceId
         }
     } catch (error) {
         console.warn('Error drawing path:', error)

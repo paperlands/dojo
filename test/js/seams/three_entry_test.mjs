@@ -29,6 +29,7 @@ const PROMISED = [
     "InterleavedBufferAttribute",
     "LineBasicMaterial",
     "LineSegments",
+    "Matrix4",
     "MOUSE",
     "Mesh",
     "MeshBasicMaterial",

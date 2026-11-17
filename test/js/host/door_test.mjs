@@ -30,8 +30,8 @@ test('ordinary actor motion and dependent readings are observed without law publ
     const { world, turtle } = headlessWorld()
     const run = await world.play('as A do\nwait 1\njmp 10\nwait 1\nend\nlet p = A.position')
     const positions = [], derived = []
-    world.interaction.subscribe('A', 'position', answer => {
-        assert.deepEqual(answer, world.interaction.read('A', 'position'))
+    world.interaction.subscribe(['host', 'A'], 'position', answer => {
+        assert.deepEqual(answer, world.interaction.read(['host', 'A'], 'position'))
         assert.deepEqual(answer, world.interaction.read('p'))
         positions.push(answer)
     })
@@ -86,7 +86,7 @@ test('failed replacement also retires delivery; disposal is terminal and idempot
     assert.equal(turtle.disposeCount, 1)
     assert.deepEqual(samples, [value(1)])
     assert.deepEqual(world.interaction.read('s'), { kind: 'retired' })
-    assert.equal(world.interaction.propose('A', [0, 0, 0]).kind, 'retired')
+    assert.equal(world.interaction.propose(['host', 'A'], [0, 0, 0]).kind, 'retired')
 })
 
 test('native acceptance installs geometry and dependent values before observers; callbacks cannot propose', async () => {
@@ -94,12 +94,12 @@ test('native acceptance installs geometry and dependent values before observers;
     await (await world.play('let A\nlet A.y = 0\nlet p = A.position')).finished
     const samples = [], proposals = []
     world.interaction.subscribe('p', answer => {
-        assert.deepEqual(answer, world.interaction.read('A', 'position'))
-        proposals.push(world.interaction.propose('A', [8, 0, 0]).kind)
+        assert.deepEqual(answer, world.interaction.read(['host', 'A'], 'position'))
+        proposals.push(world.interaction.propose(['host', 'A'], [8, 0, 0]).kind)
         samples.push(answer)
         throw Error('observer is not an authority')
     })
-    assert.equal(world.interaction.propose('A', [7, 20, 0]).kind, 'accept')
+    assert.equal(world.interaction.propose(['host', 'A'], [7, 20, 0]).kind, 'accept')
     assert.deepEqual(samples, [value([0, 0, 0]), value([7, 0, 0])])
     assert.deepEqual(proposals, ['busy', 'busy'])
     world.dispose()
@@ -143,7 +143,7 @@ test('a deferred callback proposal uses a later admission, not a hidden retry qu
     let verdict
     world.interaction.subscribe('s', answer => {
         samples.push(answer.value)
-        if (answer.value === 0) queueMicrotask(() => { verdict = world.interaction.propose('A', [7, 0, 0]) })
+        if (answer.value === 0) queueMicrotask(() => { verdict = world.interaction.propose(['host', 'A'], [7, 0, 0]) })
     })
     assert.deepEqual(samples, [0])
     await Promise.resolve()

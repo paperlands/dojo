@@ -20,7 +20,8 @@ const { Turtle } = await import(fakeURL)
 const source = readFileSync(new URL('../../../assets/js/host.js', import.meta.url), 'utf8')
 const { createWorld } = await import('data:text/javascript,' + encodeURIComponent(
     source.replace('"./turtling/turtle.js"', JSON.stringify(fakeURL))
-        .replace('"./turtling/run.js"', JSON.stringify(new URL('../../../assets/js/turtling/run.js', import.meta.url).href))))
+        .replace('"./turtling/run.js"', JSON.stringify(new URL('../../../assets/js/turtling/run.js', import.meta.url).href))
+        .replace('"./turtling/view_snapshot.js"', JSON.stringify(new URL('../../../assets/js/turtling/view_snapshot.js', import.meta.url).href))))
 
 async function ready() {
     const world = createWorld({})
@@ -58,13 +59,13 @@ test('accepted scalar redeclarations notify without inventing a motion revision'
 test('late births notify after installation and keep the reentrant motion gate closed', () => {
     const scheduler = buildWorld({ strokeMax: 0, breathEvery: 1000 })
     scheduler.hotSwapChild('host', fork('host', 'wait 1\nlet A'))
-    const samples = [scheduler.readPlace('A', 'x').kind]
+    const samples = [scheduler.readPlace(['host', 'A'], 'x').kind]
     const proposals = []
     scheduler.onAcceptedChange(() => {
-        const answer = scheduler.readPlace('A', 'x')
+        const answer = scheduler.readPlace(['host', 'A'], 'x')
         if (answer.kind === 'missing') return
         samples.push(answer.value)
-        proposals.push(scheduler.proposePlace('A', [7, 0, 0], scheduler.motionRevision).kind)
+        proposals.push(scheduler.proposePlace(['host', 'A'], [7, 0, 0], scheduler.motionRevision).kind)
     })
     drive(scheduler)
     assert.deepEqual(samples, ['missing', 0])
@@ -74,9 +75,9 @@ test('late births notify after installation and keep the reentrant motion gate c
 
 test('a named vector and a place property share the same value door', () => {
     const scheduler = seat('let A\nlet p = A.position\nlet v = [A.x, A.y, A.z]')
-    assert.deepEqual(scheduler.readScalar('p'), scheduler.readPlace('A', 'position'))
+    assert.deepEqual(scheduler.readScalar('p'), scheduler.readPlace(['host', 'A'], 'position'))
     assert.deepEqual(scheduler.readScalar('v').value, [0, 0, 0])
-    assert.equal(scheduler.proposePlace('A', [7, 0, 0], scheduler.motionRevision).kind, 'accept')
+    assert.equal(scheduler.proposePlace(['host', 'A'], [7, 0, 0], scheduler.motionRevision).kind, 'accept')
     assert.deepEqual(scheduler.readScalar('p').value, [7, 0, 0])
     assert.deepEqual(scheduler.readScalar('v').value, [7, 0, 0])
 })
@@ -88,15 +89,15 @@ test('the value door preserves vector dimension instead of projecting it to the 
 
 test('sparse positions are unsupported before they reach admission', () => {
     const scheduler = seat('let A')
-    assert.equal(scheduler.proposePlace('A', Array(3), scheduler.motionRevision).kind, 'unsupported')
-    assert.deepEqual(scheduler.readPlace('A', 'position').value, [0, 0, 0])
+    assert.equal(scheduler.proposePlace(['host', 'A'], Array(3), scheduler.motionRevision).kind, 'unsupported')
+    assert.deepEqual(scheduler.readPlace(['host', 'A'], 'position').value, [0, 0, 0])
 })
 
 test('subscriptions require a played program and a callable observer', async () => {
     const world = createWorld({})
     assert.throws(() => world.interaction.subscribe('s', () => {}), /play.*before subscribing/)
     await (await world.play('let A')).finished
-    assert.throws(() => world.interaction.subscribe('A', 'x', null), TypeError)
+    assert.throws(() => world.interaction.subscribe(['host', 'A'], 'x', null), TypeError)
     world.dispose()
 })
 
@@ -158,7 +159,7 @@ test('replacement and disposal retire subscriptions and dispose exactly once', a
     assert.equal(turtle.disposeCount, 1)
     assert.equal(turtle.watchers.size, 0)
     assert.equal(world.interaction.read('s').kind, 'retired')
-    assert.equal(world.interaction.propose('A', [0, 0, 0]).kind, 'retired')
+    assert.equal(world.interaction.propose(['host', 'A'], [0, 0, 0]).kind, 'retired')
 })
 
 test('overlapping play acceptance says superseded, not disposed', async () => {

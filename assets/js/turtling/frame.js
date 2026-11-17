@@ -6,6 +6,20 @@ import { createAtom } from "../kernel/observable.js"
 import { createRingBuffer } from "./ring-buffer.js"
 import { createInk } from "./ledger.js"
 
+// Resolve exact tree keys, not names or serialized execution identities.
+// The empty path is the datum; a path denotes the current binding, not a run.
+// (id:host-frame-paths)
+export function frameAt(root, path) {
+    if (!Array.isArray(path)) return null
+    let frame = root
+    for (const key of path) {
+        if (typeof key !== 'string') return null
+        frame = frame?.children.get(key)
+        if (!frame) return null
+    }
+    return frame ?? null
+}
+
 let _nextId = 0
 
 export function createFrame(name, generator, opts = {}) {
