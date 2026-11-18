@@ -65,6 +65,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
     // replaces it, revoking a measurement taken before the edge. Identity, not a
     // generation counter. (id:runtime-state-tla)
     let sample = {}
+    let pumping = false   // a forward scrub is a between-pass command
     const held = () => scheduler.held === true
     // The reveal horizon: how much logical work live execution authorizes. It advances by the
     // normalized wall allowance only when the scheduler is settled through it; a discarded
@@ -421,21 +422,27 @@ export function createCompositor(scheduler, stage, opts = {}) {
 
     function driveToRest(beats, outOfTime, now = scheduler.lastTickTime || 0) {
         let left = MAX_OVERRUN_TICKS
-        while (!held() && !disposed) {
-            const progress = scheduler.tick(now)
-            if (scheduler.done) break
-            if (outOfTime() && !scheduler.atCut) {
-                // Preempted mid-value: finish the instant and stop at its cut.
-                if (--left <= 0) break
-                // No progress and nothing to drain: another tick cannot help. Stop; the
-                // next opportunity resumes. Stopping need not cut, advance or publish.
-                // (id:render-construction-cadence)
+        // A forward scrub is a between-pass command: inside the pump it would be
+        // overwritten by the captured `now`. (id:runtime-state-tla)
+        const wasPumping = pumping
+        pumping = true
+        try {
+            while (!held() && !disposed) {
+                const progress = scheduler.tick(now)
+                if (scheduler.done) break
+                if (outOfTime() && !scheduler.atCut) {
+                    // Preempted mid-value: finish the instant and stop at its cut.
+                    if (--left <= 0) break
+                    // No progress and nothing to drain: another tick cannot help. Stop; the
+                    // next opportunity resumes. Stopping need not cut, advance or publish.
+                    // (id:render-construction-cadence)
+                    if (!progress && !drainAndMaterialize(beats)) break
+                    continue
+                }
+                if (outOfTime()) break
                 if (!progress && !drainAndMaterialize(beats)) break
-                continue
             }
-            if (outOfTime()) break
-            if (!progress && !drainAndMaterialize(beats)) break
-        }
+        } finally { pumping = wasPumping }
     }
     function finishPass(beats, scaleHeads = false) {
         if (!disposed) {
@@ -622,6 +629,18 @@ export function createCompositor(scheduler, stage, opts = {}) {
             // did not run a frame for it. (id:render-construction-cadence)
             frameStart = null
             scheduler.lastTickTime = 0
+        },
+        // Forward scrub: raise the eligibility ceiling without wall credit. The
+        // in-flight allowance sample dies; the scene catches up in scheduler order.
+        // Backward is a new play, never a lowered frontier. (id:runtime-state-tla)
+        scrubTo(to) {
+            if (disposed || pumping || !Number.isFinite(to) || !(to > H)) return false
+            sample = {}
+            lastNow = null
+            H = to
+            scheduler.lastTickTime = H
+            stage.requestRender()
+            return true
         },
 
         // Own timeslice: never inherit a spent deadline (would park on first breath).

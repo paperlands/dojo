@@ -814,6 +814,15 @@ export class Turtle {
         this.requestRender()
     }
 
+    // Forward scrub: raise the ceiling and service what fits this slice. A
+    // backward request is a new play, not a lowered frontier. (id:runtime-state-tla)
+    scrub(to) {
+        if (this._disposed || !this.compositor) return false
+        if (!this.compositor.scrubTo(to)) return false
+        this.compositor.flush()
+        return true
+    }
+
     // Attention is reflect news too. (D025 R4)
     attentionMoved() {
         this.reflectChanged()

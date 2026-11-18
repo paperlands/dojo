@@ -113,6 +113,7 @@ export function createWorld(canvas, { caps, law, interactive = false, input = nu
             return {
                 finished, commandCount: result.commandCount,
                 pause: () => setHeld(true), resume: () => setHeld(false),
+                scrub: to => finishReject === run.reject && (turtle.scrub(to) ?? false),
             }
         },
         interaction: {
