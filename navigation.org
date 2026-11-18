@@ -2289,6 +2289,8 @@ native mesh lifetime holds, event-grain budget and append-before-reclaim fail.
 [[id:host-embedding-ink-turnover][turnover]] separates final size from peak capacity.
 [[id:host-embedding-centreline-flash][Frame-aligned flash]] — =probe/embedding-lifecycle/flash_frame.mjs=:
 bounded world-space coverage, clip-space projection and one frozen render receipt.
+[[id:host-embedding-three-cuts][Three missing host capabilities]] — completion scope, play pause,
+and refusal without replacement. Reproduce in =probe/embedding-lifecycle/host_three_cuts.mjs=.
 [[id:host-embedding-internal-compare][Internal comparison]] tests learner value, not readback removal.
 Try =node probe/embedding-lifecycle/flash_frame.mjs --lesson=; verify with =--verify-lesson=.
 Replacement credit: [[id:output-ledger-replacement-credit]] — same-carrier clear + ink share
