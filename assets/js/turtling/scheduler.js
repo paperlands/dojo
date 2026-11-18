@@ -3700,13 +3700,12 @@ export function createScheduler(generator, opts = {}) {
         // (id:output-ledger-r2-pacer)
         sliceFor(ms) { deadline = ms == null ? null : clock() + ms },
 
-        // Run the pump inside a timeslice, then close it.
-        // Slice spans many ticks (driver loop, not one tick). Must close: an expired
-        // deadline reads as "no time", so every breath parks — silent freeze if forgotten.
-        // Outside a slice the pump is unpaced (batch/headless complete in one call).
+        // The caller owns its deadline even when a nested pump takes a fresh
+        // slice. Exit restores the previous deadline. (id:runtime-state-tla)
         withSlice(ms, drive) {
+            const callerDeadline = deadline
             deadline = ms == null ? null : clock() + ms
-            try { return drive(pump.outOfTime) } finally { deadline = null }
+            try { return drive(pump.outOfTime) } finally { deadline = callerDeadline }
         },
 
         // Mid-build: last tick let go with work left.

@@ -2703,7 +2703,9 @@ Fences: =backpressure_spike_test.mjs= (C3, S6, P5, park doors for S16),
 [[id:scheduler-data-seams][Runtime data seams]] — a deferred admission retains an offer, not a
 re-entry function; wall-sample reductions must preserve distinct reset boundaries.
 [[id:scheduler-data-state-shapes][State-shape witness]] — equal progress labels, distinct causal
-obligations; a nested work slice loses its caller's deadline.
+obligations; a nested work slice used to lose its caller's deadline.
+[[id:runtime-state-tla][Runtime TLA+ checks]] — restored nested deadlines and stale
+allowance counterexamples across fresh play or a hold/resume pair.
 
 *** parkBreath — stop with no debt
 :PROPERTIES:

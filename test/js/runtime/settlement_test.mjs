@@ -86,6 +86,28 @@ function display(source, config, opts) {
     return { scheduler, compositor, scene }
 }
 
+test("nested work scopes restore an expired caller even on a throw", () => {
+    let now = 0
+    const scheduler = seat("fw 1\nwait 0.1", { clock: () => now })
+    const boom = new Error("nested probe")
+    let checkOuter, observed
+    const off = scheduler.onAcceptedChange(() => {
+        now = 2
+        const before = checkOuter()
+        const inner = scheduler.withSlice(8, expired => expired())
+        const after = checkOuter()
+        let caught
+        try { scheduler.withSlice(null, () => { throw boom }) } catch (error) { caught = error }
+        observed = { before, inner, after, afterThrow: checkOuter(), caught }
+    })
+    scheduler.withSlice(1, expired => {
+        checkOuter = expired
+        scheduler.tick(0)
+    })
+    off()
+    assert.deepEqual(observed, { before: true, inner: false, after: true, afterThrow: true, caught: boom })
+    assert.equal(checkOuter(), false, "outermost exit restores unpaced mode")
+})
 describe("live reveal clock — lifecycle constraints", () => {
     test("a new play resets the horizon and its elapsed baseline together", () => {
         const r = display("fw 1\nwait 0.1\nfw 2")
