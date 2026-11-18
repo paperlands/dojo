@@ -56,7 +56,6 @@ defmodule Dojo.World do
     str
     |> Enum.join("  ")
     |> print_world()
-    |> Kino.Markdown.new()
   end
 
   def print(str, view: true) when is_list(str) do
@@ -65,47 +64,15 @@ defmodule Dojo.World do
     |> print_world()
   end
 
-  def print(str, animate: true) when is_list(str) do
-    DojoKino.Animate.new(0..(length(str) - 1), fn index ->
-      Enum.at(str, index)
-      |> print_world()
-      |> Kino.Markdown.new()
-    end)
-  end
-
-  # def print(str, [spacetime: true, class: pid]) when is_list(str) do
-  #   Dojo.Class.publish(pid, str, :animate)
-  #   print(str, [spacetime: true])
-  # end
-
-  def print(str, spacetime: true) when is_list(str) do
-    timesteps = length(str) - 1
-
-    DojoKino.Animate.new(0..timesteps, fn index ->
-      Enum.reduce_while(str, [], fn
-        _x, acc when length(acc) > index ->
-          {:halt, Enum.reverse(acc)}
-
-        _x, acc when length(acc) == timesteps ->
-          {:halt, Enum.reverse(acc)}
-
-        x, acc ->
-          {:cont, [x | acc]}
-      end)
-      |> print(book: true)
-    end)
-  end
-
   def print(rules, book: true) when is_map(rules) do
-    ("""
-     | Input Pattern | Output Value |
-     | ------------- | ------------ |
-     """ <>
-       (Enum.map(rules, fn {k, v} ->
-          "| #{print_world(k)} | #{print_world(v)} |\n"
-        end)
-        |> Enum.join("")))
-    |> Kino.Markdown.new()
+    """
+    | Input Pattern | Output Value |
+    | ------------- | ------------ |
+    """ <>
+      (Enum.map(rules, fn {k, v} ->
+         "| #{print_world(k)} | #{print_world(v)} |\n"
+       end)
+       |> Enum.join(""))
   end
 
   def print(gen, list: true) when is_binary(gen) do

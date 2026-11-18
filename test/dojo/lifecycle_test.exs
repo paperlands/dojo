@@ -40,8 +40,8 @@ defmodule Dojo.LifecycleTest do
 
   # ── helpers ──────────────────────────────────────────────────────────────
 
-  defp make_disciple(name, user_id \\ nil) do
-    %Disciple{name: name, action: "active", user_id: user_id || name}
+  defp make_disciple(name, author_id \\ nil) do
+    %Disciple{name: name, action: "active", author_id: author_id || name}
   end
 
   defp reg_key(name), do: "#{@topic}:#{name}"
@@ -251,7 +251,7 @@ defmodule Dojo.LifecycleTest do
       Table.publish(table, {Dojo.Turtle, nil, turtle}, :hatch)
 
       assert_eventually(fn ->
-        Cache.get({Table, :last, rk, :hatch}) != nil
+        Cache.get!({Table, :last, rk, :hatch}) != nil
       end)
     end
 
@@ -261,12 +261,12 @@ defmodule Dojo.LifecycleTest do
 
       turtle = %Dojo.Turtle{state: :hatch, path: "/test", commands: [:fd], time: 1}
       Table.publish(table, {Dojo.Turtle, nil, turtle}, :hatch)
-      assert_eventually(fn -> Cache.get({Table, :last, rk, :hatch}) != nil end)
+      assert_eventually(fn -> Cache.get!({Table, :last, rk, :hatch}) != nil end)
 
       # Kill watcher → Table terminates normally → terminate/2 clears cache
       Process.exit(watcher, :kill)
       assert_eventually(fn -> not table_alive?(table) end)
-      assert_eventually(fn -> Cache.get({Table, :last, rk, :hatch}) == nil end)
+      assert_eventually(fn -> Cache.get!({Table, :last, rk, :hatch}) == nil end)
     end
 
     test "cache survives Table crash (terminate/2 may not run)" do
@@ -275,16 +275,65 @@ defmodule Dojo.LifecycleTest do
 
       turtle = %Dojo.Turtle{state: :hatch, path: "/test", commands: [:fd], time: 1}
       Table.publish(table, {Dojo.Turtle, nil, turtle}, :hatch)
-      assert_eventually(fn -> Cache.get({Table, :last, rk, :hatch}) != nil end)
+      assert_eventually(fn -> Cache.get!({Table, :last, rk, :hatch}) != nil end)
 
       # Brutal kill — terminate/2 does NOT run
       Process.exit(table, :kill)
       assert_eventually(fn -> not table_alive?(table) end)
 
       # Cache should still have the entry (stale but available for recovery)
-      assert Cache.get({Table, :last, rk, :hatch}) != nil
+      assert Cache.get!({Table, :last, rk, :hatch}) != nil
 
       Cache.delete({Table, :last, rk, :hatch})
+    end
+
+    test "a projection answers only for the owner on this node (ownership-o4)" do
+      {_w, table} = join_as("source_scope")
+      rk = reg_key("source_scope")
+
+      turtle = %Dojo.Turtle{state: :hatch, path: "/local", commands: [:fd], time: 7}
+      Table.publish(table, {Dojo.Turtle, nil, turtle}, :hatch)
+
+      assert_eventually(fn -> Cache.get!({Table, :last, rk, :hatch}) != nil end)
+
+      # The local owner is answered from the projection, no RPC.
+      assert %{path: "/local", time: 7} = Table.last_meta({rk, :partisan.node()}, :hatch)
+
+      # A foreign owner is asked. This node's copy must never answer for it.
+      result =
+        try do
+          Table.last_meta({rk, :ghost@nowhere}, :hatch)
+        catch
+          kind, reason -> {:raised, kind, reason}
+        end
+
+      refute match?(%{path: "/local"}, result)
+      assert match?({:error, {:rpc_failed, _}}, result) or match?({:raised, _, _}, result)
+
+      # With the projection gone, the local owner is still served by the Table
+      # itself — the RPC entry point must survive the source-qualified read.
+      Cache.delete({Table, :last, rk, :hatch})
+      assert %{path: "/local", time: 7} = Table.last_meta({rk, :partisan.node()}, :hatch)
+    end
+
+    test "a projection never answers a document read (owner-only content)" do
+      rk = reg_key("no_owner_content")
+      key = {Table, :last, rk, :hatch}
+
+      # Fault injection: a projection surviving its owner, as a brutal kill or a
+      # swallowed unproject leaves behind. Content must not be served from it.
+      stale = %Dojo.Turtle{state: :hatch, path: "/old", commands: [:fd], time: 123}
+      Cache.put(key, stale, ttl: 60_000)
+      on_exit(fn -> Cache.delete(key) end)
+
+      assert Registry.lookup(Dojo.TableRegistry, rk) == []
+      assert Cache.get!(key) == stale
+
+      assert Table.last({rk, :partisan.node()}, :hatch) == {:error, :table_not_found_on_node}
+
+      # Hints may still use it — a stale image URL is invisible, a stale document is not.
+      assert Table.last_meta({rk, :partisan.node()}, :hatch) ==
+               %{path: "/old", state: :hatch, time: 123}
     end
   end
 

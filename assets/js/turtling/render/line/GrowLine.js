@@ -31,7 +31,6 @@ export class GrowLine {
 		this._cap = INITIAL_SEGMENTS;   // capacity in segments
 		this._segs = 0;                 // segments written
 		this._synced = 0;               // segments uploaded to the GPU
-		this._from = null;              // previous polyline endpoint [x,y,z]
 		this._rgb = DEFAULT_RGB;        // last ink colour [r,g,b] in 0..1
 
 		this._array = new Float32Array(this._cap * 6);
@@ -80,9 +79,8 @@ export class GrowLine {
 		this._synced = 0;   // re-upload everything into the fresh buffers
 	}
 
-	// Append polyline points, continuing from the previous endpoint (or starting a
-	// fresh polyline). Each point past the join adds one segment. `rgb` is the ink
-	// for new segments ([r,g,b] 0..1); hard edge — both ends of a segment share it.
+	// Batch segments, not geometry: each append starts at its own first point.
+	// `rgb` applies to both ends of each new segment.
 	append(points, rgb) {
 		if (!points || points.length === 0) return;
 		if (rgb) this._rgb = rgb;
@@ -92,7 +90,7 @@ export class GrowLine {
 		const a = this._array;
 		const c = this._colors;
 		const [r, g, b] = this._rgb;
-		let from = this._from || points[0];
+		let from = points[0];
 		for (let i = 1; i < points.length; i++) {
 			const p = points[i];
 			const o = this._segs * 6;
@@ -103,7 +101,6 @@ export class GrowLine {
 			this._segs++;
 			from = p;
 		}
-		this._from = from;
 	}
 
 	// Push the newly-appended segments to the GPU. Called once per frame; a no-op

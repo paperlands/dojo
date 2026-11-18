@@ -29,9 +29,18 @@ node --expose-gc test/js/profile/run.mjs
 node --expose-gc test/js/profile/typing_path_bench.mjs   # coreshell/CM keystroke spine
 node --expose-gc test/js/profile/linter_bench.mjs        # CM decoration / tokenize
 node test/js/profile/command_cost_bench.mjs             # cost spread across the command table
+node test/js/profile/numeric_cost_bench.mjs             # the numerics units, per call
 node test/js/profile/breath_cost_bench.mjs              # what the preemption boundary costs
+node test/js/profile/frontend_bench.mjs                # reader · parser · lexer · evaluator
+node test/js/profile/live_loop_bench.mjs               # the user loops, against a frame budget
+node test/js/profile/point_read_bench.mjs              # scan · shared snapshot · prepared point pass
+node --expose-gc test/js/profile/movement_latency_bench.mjs  # movement, against a frame budget
 #+END_SRC
 
+- =point_read_bench.mjs= rotates scanning/shared/prepared passes over real pinned-point worlds,
+  includes preparation in timing, and counts snapshots/records separately. =POINTS= and =SAMPLES=
+  configure it. Run alone; it measures model interpretation, not projection, DOM or GPU.
+  Deterministic fences live in =test/js/laws/point_read_test.mjs=; [[id:runtime-prepared-point-read]].
 - =harness.mjs= — =profileProgram(src, { ticks, frameMs })=: builds a real
   scheduler exactly as =turtle._ensureScheduler=, runs a batch flush then N
   animation ticks, brackets heap with =global.gc()=, walks the live frame tree
@@ -45,6 +54,30 @@ node test/js/profile/breath_cost_bench.mjs              # what the preemption bo
   preemption quantum (D027 R3) is denominated in node visits, so it is only
   meaningful if a visit is roughly a visit: this reports the spread. It is what
   found =evaluateExpr= re-parsing on every evaluation (25x spread → 4x).
+- =numeric_cost_bench.mjs= — ns/call for the numerics units (=conditionOf=, =demand=,
+  =format= by value class) with =String= as a reference. Add it to the family because a
+  whole COMMAND cannot resolve a unit: a 162 ns door inside a 3 000 ns command is inside
+  the machine's resolution, and a CPU profile charges =yield*= delegation to the
+  CALLER's self time, so neither instrument can see it. Multiply a unit by its calls per
+  command to price a change.
+
+** The estimator, and the noise floor it was chosen against
+:PROPERTIES:
+:TYPE: reference
+:END:
+
+Both command benches report *MIN of N* with each row's own *jitter* (=max/min=).
+Measured 2026-10-02 on this machine: three same-tree runs of =command_cost_bench= spread
+*1.3x–2.3x* per fixture, so the previous median-of-3 could not resolve a real change —
+an A/B of a landed change read as ±30% of pure noise. GC inside the timed region is the
+usual culprit and it only ever ADDS time, hence the minimum. MIN-of-5 brought the
+same-tree spread to 1.1x–1.6x, which is tighter but still leaves *±10–15%* on a
+whole-command A/B.
+
+So: a whole-command delta under ~15% is not evidence. For a small change, use a unit
+bench (deterministic per call), a CPU profile (attribution by self time), and the
+*deterministic* allocation proxy — =node --trace-gc= scavenge counts over a fixed
+workload, which is an integer and repeats to within ~1%.
 - =breath_cost_bench.mjs= — what the breath costs, round-robin across quanta with
   an explicit noise gate, *and* worst-block-under-slice for the three B1 shapes.
   *It reports; it does not assert.* It began as asserting tests in
@@ -73,6 +106,101 @@ CPU + memory growth to the render layer* — measured by the overlay below.
 (Aside surfaced while authoring the suite: =fw leader.x - x= — a spec example —
 fails the turtle arg-parser, which splits on spaces into separate args. Parser
 concern, not perf; noted for follow-up.)
+
+** Baseline re-captured [2026-10-02]
+
+#+BEGIN_EXAMPLE
+program              flushMs  animTk  ms/p50   ms/p95   ΔheapKB   Δheap/tk(B)  reg  frames  err
+batch-throughput     0.52     1       0.005    0.005    -16.5    —             2    2       0
+steady-animation     0.06     600     0.015    0.034    242.2    413           2    2       0
+spawn-rewire-churn   0.11     600     0.038    0.055    408.0    696           3    3       0
+communication        0.05     600     0.032    0.049    279.4    477           5    5       0
+#+END_EXAMPLE
+
+All thresholds pass. =command_cost= spread 3.0x across the COMMANDS table (was
+4x); the worst-case body stays well inside the 4ms slice to K=2048. =breath_cost=:
+the breath is below this rig's noise floor (±12%) — unmeasurable, so negligible.
+
+*Fixed while re-capturing*
+
+- =command_cost_bench.mjs= used =count % 7=, which the lexer no longer accepts
+  (=% / //= became =mod=), so the bench *crashed* instead of measuring. Now =[mod(count, 7) + 1]=.
+- =evaluateExpr= built and ran two RegExp matches (quote, computed-dot) on *every*
+  expression — including plain numbers. Guarded by first character and hoisted the
+  patterns: ~89% less regex work per evaluation (measured in isolation; it was ~2% of
+  executor time, below the end-to-end rig's noise).
+- =parse.js= fence predicates (=isMeadowFence/isCellOpen/isCellClose=) ran a RegExp on *every*
+  line, and =pushCode= ran a =\bend\b= replace on every line. A substring =includes= is a
+  cheap superset (a fence line must contain its mark), so the RegExp now runs only when it can
+  match. Measured: =parseProgram= 13 lines *22.1 → 10.9 µs* (2.0×); a 200k-parse loop with a
+  =fn= + =label= *5683 → 1892 ms* (3.0×). Remaining top: =pushCode= (per-line allocations),
+  =tokenizeLine= (char walk), =parseStatement=.
+
+*Known cost accepted — and unguarded*
+
+- =readArguments= (the shared command-argument reader) is *2.1×* the dumb split it replaced
+  (13.0 vs 6.3 µs per held invocation): it lexes + parses where the old code split on
+  whitespace. It runs on the *program-execution* path (a =let= figure declaration), not the
+  animation path, so it stays bounded — but **the boundary reader has no bench in this rig**,
+  which is the gap that let the change land unmeasured.
+
+** Front-end and live-loop benches [2026-10-02]
+
+Two benches for the FRONT of the user loop — the paths that run on every keystroke,
+every flush, every expression. =frontend_bench.mjs= (reader · parser · lexer ·
+evaluator) and =live_loop_bench.mjs= (keystroke · run · edit-live · held-figure,
+each against the user's budget). Both guard only machine-independent ratios and
+generous gross fences, so a busy machine cannot fail them.
+
+*Front-end* (µs unless noted):
+
+| path                          | cost        | note |
+|-------------------------------+-------------+------|
+| =readArguments= (1 held invocation) | *~1.1 µs* | ~9.5× the splitter it replaced — the cost of one contract |
+| =parseProgram=                | 0.76 µs/line | flat across 4× size |
+| =Lexer.tokenize= (=mod(count, 7) + 1=) | 1.42 µs | within 2× plain arithmetic |
+| eval =round(x, n)=            | 1.66× =sin(1)= | builtins within 3× a stock builtin |
+
+*Live loop* (fraction of the user's budget):
+
+| loop                       | typical (p50) | budget        | floor   |
+|----------------------------+---------------+---------------+---------|
+| keystroke 8 cells          | 1.04 ms       | 6% of a frame | 0.89 ms |
+| keystroke 40 cells         | 4.92 ms       | 30%           | 4.14 ms |
+| keystroke 80 cells         | 9.88 ms       | *59%*         | 8.34 ms |
+| run: first ink             | 0.62 ms       | instant       | —       |
+| run: full flush (20k cmds) | ~25 ms        | batched — the breath preempts | — |
+| edit-live (20-cell)        | ~1.1 ms       | 7%            | —       |
+| 50 held figures            | ~0.45 ms      | 2.7% (reader share ~49%) | — |
+
+Reads: the *keystroke* path is the reactivity ceiling — 80 cells ≈ 59% of a frame —
+and it is **not GC** (measured 0.074 ms/keystroke = 0.8%, and =--max-semi-space-size=64=
+did not move it; an earlier "GC-bound" read here was wrong, caused by a no-op edit
+poisoning the floor with a fake-fast sample). It is *stable compute*: floor ≈ typical.
+
+**The deeper lever [2026-10-02].** A CPU profile puts =contentKey= (=JSON.stringify= with
+a replacer) at *~64%* of the keystroke path, and the reason is structural: the same
+buffer is parsed **twice per edit** — the turtle runs =reparseProgram= (turtle.js:668)
+and the weave seats with another =reparseProgram= (=asTree=, page.js:318), each with its
+own held tree. Ablation at 80 cells:
+
+#+BEGIN_EXAMPLE
+reparse + contentKey + observe(doc: string)   8.77 ms   ← live path
+reparse + contentKey + observe(doc: ast)      5.21 ms   ← −3.56 ms, −41%
+reparse + observe(doc: string)                7.40 ms   (contentKey loop = 1.37 ms)
+parseProgram + contentKey + observe(string)   5.88 ms   (adoption costs +2.9 ms over a plain parse)
+#+END_EXAMPLE
+
+=asTree= already accepts a pre-parsed tree (its =Array.isArray(doc)= branch); threading the
+caller's tree through =observe= removes the second parse. Applied: the =contentKey= replacer
+is now hoisted (stable identity — measured ~6%, free). The *reader* is ~49% of a
+figure-heavy flush and ~10× the splitter — the price of one contract, now visible and
+guarded so it cannot grow silently.
+
+*CPU profile of the executor* (=--cpu-prof=, 100k× =fw/rt/label=, ~3.8k samples):
+=walkBody= 35.6% self (the generator statement walk), =callCommand= 15.1% (a =ctx=
+object plus a =[...position]= snapshot per command), GC 12.1%, =evaluateExpr= 8.7%.
+The generator walk is the structural cost; the per-command allocations are the GC load.
 
 * IN-BROWSER OVERLAY
 :PROPERTIES:
@@ -222,6 +350,146 @@ Tools surface only after a Claude Code restart. Protocol per session:
    color-varying program (=color [count]=) ~15×, re-snapshot. Growth that never
    recedes = the unbounded material cache.
 
-* RELATED
+* MOVEMENT LATENCY
+:PROPERTIES:
+:TYPE: reference
+:END:
+
+=movement_latency_bench.mjs= asks where movement costs what. It is a reading instrument:
+each cell names its workload, records the outcome it observed, and reports the displacement
+it achieved. A wish pattern is part of the fixture, not a detail.
+
+The observed mechanism behind the expensive carry workload is recorded, without a ruling, at
+[[id:laws-movement-cost-mechanism]] (=observed-laboratory=): near-tangent circle recomputation,
+fixed-circle idempotence, non-monotone error over the bounded sweep, and the explicit
+distinction between the loop's position-change test and the gate's acceptance tolerance. Carry
+and follower rotation stay open there and here.
+
+#+BEGIN_SRC sh
+node --expose-gc test/js/profile/movement_latency_bench.mjs
+ROTATE=7 RAW=/tmp/movement.jsonl node --expose-gc test/js/profile/movement_latency_bench.mjs
+SAMPLES=50 ACTOR_EDITS=40 node --expose-gc test/js/profile/movement_latency_bench.mjs   # quick read
+#+END_SRC
+
+Scopes are named because they are not interchangeable:
+
+| scope           | includes                                                                  |
+|-----------------+---------------------------------------------------------------------------|
+| =latency:hand=  | one =requestMotion= CALL only — the 2 settle ticks are excluded           |
+| =settleMs=      | the 2 settle ticks, timed separately and reported as their own field       |
+| =alloc:hand=    | warmed world; call + 2 settle ticks + drains, divided by operations        |
+| =latency:motion=| one =scheduler.tick= whose observed attempt is =program-motion= and published |
+| =alloc:motion=  | warmed world (3 observed motions outside); ticks carrying 20, per motion edit |
+
+=RAW= is JSONL: the first line is schema metadata (version, runtime, source hash, scope
+strings, sample counts); every row carries =phase ∈ {warm, measure, cold}=, =op=, =kind=,
+=outcome=, =ms=, =delta=, =requested=, =before=, =after=, =displacement=, =command=, =path=,
+and null slots for =members/reads/transforms= until the diagnostic pass fills them. Filter
+=phase === "measure"= to reproduce the printed statistics. =warm= rows are retained and tagged;
+=cold= means the FIRST operation in a FRESH world — never a process-cold claim. =ROTATE= changes
+the timing order only.
+
+Two carry workloads, not interchangeable:
+
+| workload | wish | what the continuation does |
+|----------+--------------------------------------------+------------------------------------|
+| rebasing | one step D from the CURRENT world position | the writer moves; followers usually already lawful |
+| absolute | the same world points every edit, ±2        | the chain is re-stretched: every member re-placed |
+
+One run (Node 26, headless model time, no GPU; =ROTATE=0, =SAMPLES=200=). Single run: the
+expensive cells are order- and history-sensitive and repeat runs vary, which is what =ROTATE= and
+=RAW= exist to measure. Magnitudes below are indications, not constants:
+
+| cell                        | n   | p50      | tail (p99/max) | disp | alloc     |
+|-----------------------------+-----+----------+----------------+------+-----------|
+| carry n=4  D=1 rebasing     | 200 | 0.36 ms  | 1.9 / 3.1      | 1    | ~123 KB   |
+| carry n=8  D=1 rebasing     | 200 | 0.51 ms  | 2.2 / 2.3      | 1    | ~242 KB   |
+| carry n=16 D=1 rebasing     | 200 | 1.32 ms  | 3.8 / 5.0      | 1    | ~474 KB   |
+| carry n=12 D=4 rebasing     | 200 | 0.93 ms  | 2.7 / 3.9      | 4    | ~348 KB   |
+| absolute ±2 n=8             | 200 | 0.44 ms  | 1.6 / 4.4      | 4    | ~242 KB   |
+| absolute ±2 n=16            | 200 | 11.3 ms  | 21.0 / 22.2    | 4    | ~4.8 MB   |
+| clamp within reach (n=3)    | 200 | 0.25 ms  | 1.0 / 26.8     | 4    | ~77 KB    |
+| clamp restatement (n=3)     | 200 | 0.22 ms  | 0.8 / 0.9      | 0    | ~68 KB    |
+| clamp initial, cold (n=3)   | 12  | 5.98 ms  | 9.2            | 20   | —         |
+| clamp boundary refuse (n=3) | 100 | 5.82 ms  | 10.5 / 11.1    | 0    | —         |
+| unrelated K=0 (n=4)         | 200 | 0.20 ms  | 1.3 / 4.0      | 1    | ~116 KB   |
+| unrelated K=50              | 200 | 1.43 ms  | 5.4 / 7.8      | 1    | ~508 KB   |
+| unrelated K=200             | 200 | 6.72 ms  | 13.3 / 14.5    | 1    | ~1.6 MB   |
+| actor translate n=8         | 120 | 0.50 ms  | 2.3 / 3.1      | 1    | ~163 KB   |
+| actor rotate n=8            | 120 | 0.30 ms  | 1.0 / 1.1      | —    | ~153 KB   |
+| actor translate n=16        | 120 | 0.82 ms  | 2.4 / 2.8      | 1    | ~300 KB   |
+| actor rotate n=16           | 120 | 0.63 ms  | 2.5 / 3.5      | —    | ~276 KB   |
+
+Matched command (translation, one unit per operation): motion tick / hand edit p50 =
+0.88×, 0.98×, 0.62× at n=2, 8, 16. Operational only: the tick also carries execution and
+observers, the call also carries publication, and the two geometry histories are not identical.
+
+*Diagnostic pass (M2).* After every timing cell, and never before one, the bench replays each
+hand/unrelated cell's exact warmup and then, on the state the timing cell occupies, runs a
+*replica* of one continuation call through a counting world, followed by one whole-door call
+(the scheduler's own world wrapped and restored). Two witnesses bracket the replica:
+
+1. *Identity*: every participant's frame, origin and transform objects are saved by reference
+   and must be the same objects afterwards; every active law must keep its address, declaring
+   frame and endpoints. Law OBJECTS cannot be witnessed this way — =laws.active()= materialises
+   fresh records per call (measured), and the artifact records that fact rather than pretending
+   otherwise.
+2. *Value*: a digest over every participant's origin, local and world pose, membership and
+   revision, and every law's address/feature/endpoints/owner/declaring frame, before and after.
+
+Then the producer is compared against the door: the replica's candidate (writer + component) is
+predicted in WORLD coordinates, the door is asked the same question on the same state, and the
+bench asserts the door verdict's member set matches the candidate and that the installed world
+poses equal the prediction within a declared 1e-12 diagnostic budget. Artifacts (=*.diag.jsonl=)
+carry per cell: one-based ordinal, target, members (= writer + component), reads, transforms,
+whole-door counts, signature match, and =maxPublishedPositionGap= /
+=maxPublishedRotationGap=. In these identity-room fixtures both gaps are 0. For scale: at n=16
+the rebasing cell's replica asks 253 reads / 46 transforms and re-places 2 members; the absolute
+±2 cell asks 3157 / 541 and re-places 5–6. Those are counts of what the method asks for; they are
+not an attribution and this file draws no conclusion from them.
+*Provenance:* every timing and count in this section was measured on the pre-change baseline
+(refinement stop 1e-12, pinned verdict hash `8769d4b0…`). The runtime now uses a trial refinement
+stop of 1e-9, [[id:laws-continuation-refinement-budget]]; those cells are cheaper after it, so the
+historical readings are not restated as current claims.
+
+*Post-change checkpoint (2026-10-18, Node 26.12.0).* One uninstrumented A/B over this frozen
+instrument: B0/A0/A7/B7, a fresh process each, 200 ops per cell, the baseline verdict
+`8769d4b0…` served under the canonical URL and the current verdict `10aca177…`, with no counters
+inside any timed region and no per-call hooks. Same scopes as above: `latency:hand` = the call
+only, `alloc:hand` = call + 2 settles + drains. Receipts: `/tmp/movement-stop-ab/`.
+
+| cell              | baseline p50 / p99 / max        | current p50 / p99 / max      | baseline alloc | current alloc |
+|-------------------+---------------------------------+------------------------------+----------------+---------------|
+| absolute ±2, n=16 | 10.13–10.40 / 15.81–15.98 / 17.03–18.34 ms | 0.87–1.11 / 2.75–3.57 / 2.88–4.03 ms | 4232–4762 KB/op | 450–485 KB/op |
+
+Read counts in three warmed states fell 3157 → 253; publication gaps stayed 0; both arms were
+200/200 accept-changed. This is a *method-generated history response* comparison, not an
+identical-output or scene-latency claim. Contract: [[id:laws-continuation-refinement-budget]];
+mechanism review: [[id:laws-movement-cost-mechanism]].
+
+What this instrument does NOT establish, and must not be read into it:
+
+1. *No mechanism.* The continuation's sweep count, its convergence test and the gate's
+   tolerance are being measured separately with an instrumented in-memory copy of the pinned
+   module, not from these timings. A CSV of medians cannot attribute cost to a loop, and
+   subtracting two cells does not either. No root-cause claim lives here until that
+   instrument's equivalence checks (candidate output, effective published poses, source and
+   copy hashes) land.
+2. *No policy.* Refusal is not "no value" — a refused edit preserves obligations, and its cost
+   (5.8 ms p50 to publish nothing) is a price of the search, not a verdict on it. A cheaper
+   movement policy is not thereby the intended interaction. 16.67 ms is a whole frame, not a
+   budget available to movement.
+3. *No breadth.* GPUs/render, input scheduling, observers, competing work, continuous lawful
+   trajectories, arbitrary constraint graphs, richer tower values entering geometry, other
+   machines — all outside. Headless model time is not "what the user feels".
+4. *No cold JIT claim.* The first motion tick is reported separately and labelled JIT; the
+   =cold= phase is reserved for first operations in fresh worlds.
+
+Corrections kept from the review that produced this version: an earlier README said "members 2
+(writer only)" — it is writer + 1 follower; and an earlier sentence claimed the fresh-fixture
+diagnostic explained the steady-state difference — withdrawn, and the diagnostics now run on the
+warmed state.
+
+* RELATED* RELATED* RELATED
 - Diagnosis + follow-up fixes: =~/.claude/plans/observe-deeply-across-the-elegant-mccarthy.md=
 - Spec: [[file:../../../specs/turtle-rearchitecture.org]]

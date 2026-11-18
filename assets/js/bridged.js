@@ -89,7 +89,7 @@ export const sceneBridge = bridged("scene");
  * becomes a missing method, not a silently-ignored event. Subscribers still
  * switch on the tuple's first element.
  *
- * Surfaces speak four: observe · attend · remove · restore (+ fork/landed).
+ * Surfaces speak five: claim · observe · attend · remove · restore (+ fork/landed).
  * focus died with the world sentinel — a click is attend (light-ladders-cut4).
  * The `ambient`/`ambientStop` aliases died with their last caller.
  */
@@ -97,7 +97,13 @@ export const scene = {
     remove:      (ambientId)        => sceneBridge.pub(['remove', { ambientId }]),
     fork:        (payload)          => sceneBridge.pub(['fork', payload]),
     // Live draft / hatch at (self, outershell) — place is fixed in the surface.
-    observe:     (addr, name, code) => sceneBridge.pub(['observe', { addr, name, code }]),
+    // Cheap ownership claim at the write; rendering still follows observe.
+    claim:       (payload)          => sceneBridge.pub(['claim', payload]),
+    observe: (addr, name, code, claim = null) => {
+        const payload = { addr, name, code }
+        if (claim) payload.claim = claim
+        sceneBridge.pub(['observe', payload])
+    },
     // Draft frozen: drop outershell draft; optional name/code re-seats peer.
     restore:     (addr, opts = {})  => sceneBridge.pub(['restore', { addr, ...opts }]),
     // Cursor-gate across the seam: where the reader IS, as (page addr, LINE) —
@@ -110,8 +116,11 @@ export const scene = {
     // which outer could only set by first asking the law "do I hold the light?"
     // — a read-then-write on the same authority. The witness answers both at
     // once: mine claims the place; theirs is presence (P9).
-    attend:      (addr, line, opts = {}) =>
-        sceneBridge.pub(['attend', { addr, line, witness: opts.witness ?? 'self' }]),
+    attend: (addr, line, opts = {}) => {
+        const payload = { addr, line, witness: opts.witness ?? 'self' }
+        if (opts.claim) payload.claim = opts.claim
+        sceneBridge.pub(['attend', payload])
+    },
     // attend's dual: where the ladder LANDED, when that is not where the organ
     // pointed. Rides back, not as a canvas effect — input organ belongs to the
     // surface that owns the cursor.

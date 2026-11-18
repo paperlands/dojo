@@ -1,0 +1,291 @@
+// The gesture: who owns the pointer, and what a move means. (id:laws-decl-handle)
+//
+// A pure state machine. The DOM layer feeds it pointer positions and applies its
+// instructions; nothing here touches listeners, controls or three.js — so the
+// composition (arbitration, grab offset, cancellation, ownership restoration) is
+// testable without a browser.
+//
+// Arbitration is decided BEFORE the camera sees pointerdown: `pointerDown`
+// answers `claimed`, and the DOM layer stops propagation on that answer rather
+// than disabling the controls after they have already started a gesture.
+import {
+    facingPlane, touchPlane,
+    birthLocal, requestedPose, hitTest, eligibility,
+} from "./handle.js"
+import { outcomeOf, readout, OUTCOME } from "./outcome.js"
+import { HIT_RADIUS, DRAG_SLOP, DOUBLE_TAP_MS } from "./feel.js"
+import { handFor } from "./hand.js"
+// A move means EVERY sample it carries. A browser coalesces the real sub-frame pointer
+// path into one `pointermove`, so a handler reading only clientX/clientY samples the
+// display rate and a fast circle becomes a polygon. Both the expansion and the feed
+// loop live here, in the pure state machine, so they are testable without a browser.
+// (id:laws-figures-phase34-intent)
+export function pointerSamples(event) {
+    const coalesced = typeof event?.getCoalescedEvents === "function" ? event.getCoalescedEvents() : null
+    return coalesced && coalesced.length ? coalesced : [event]
+}
+
+// Feed one DOM move — all of it — to the gesture. True when the gesture was cancelled,
+// so the DOM layer drops its held frame once for the batch, not once per sample.
+export function moveGesture(handle, event) {
+    let cancelled = false
+    for (const sample of pointerSamples(event)) {
+        const answer = handle.pointerMove({ pointerId: sample.pointerId, x: sample.clientX, y: sample.clientY })
+        if (answer?.cancelled) cancelled = true
+    }
+    return cancelled
+}
+
+
+export function createGesture(deps) {
+    const {
+        candidates,      // () => [{ name, frame }] — the places currently offered
+        // The cursor's own list: the pins the last draw already offered. Hover
+        // must never rebuild the point-state projection (that is the display's
+        // work, once per frame); a PRESS must never read a frame-old list. So
+        // the two reads are two deps, and only the cheap one is advisory.
+        hoverCandidates = candidates,
+        anchorOf,        // (frame) => live world transform — where the point IS
+        birthOf,         // (frame) => birth frame — the frame the request is expressed in
+        registered,      // (frame) => boolean
+        canTouch = () => true, // an empty point may be touched; a walking head owns its point
+        requestMotion,   // (frame, pose, revision) => verdict
+        homeOf = frame => frame.transform.deref(), // current program baseline; identity removes the action
+        onAccepted = null, // ({ frame, from, to }) => void — one accepted hand move
+        revision,        // () => number
+        wake,            // () => void — an idle canvas must paint an accepted move
+        project,         // (worldPosition) => { x, y } in CSS pixels
+        rayAt,           // (x, y) => { origin, direction }
+        facing,          // () => the camera's world viewing direction
+        capture,         // ({ pointerId, frame }) => optional cleanup
+        release,         // ({ pointerId }) => void
+        setControls,     // (enabled) => void
+        controlsEnabled, // () => boolean — the camera's OWN current state
+        onReadout,       // (line) => void
+        radius = HIT_RADIUS,
+        slop = DRAG_SLOP,
+        locusOf = null,      // (frame) => named locus — a sphere's hand is its camera-plane disk
+        detents = null,      // { paper, poles, band, hold } — slight stickiness at the ball's landmarks
+        now = () => performance.now(),
+    } = deps
+
+    const poseOf = (frame) => frame.transform.deref()
+    let grab = null
+    let lastTap = null
+
+    const submit = (frame, name, accepted, requested, intent = null) => {
+        const verdict = requestMotion(frame, requested, revision(), null, intent)
+        const outcome = verdict.kind === 'accept' ? OUTCOME.accepted : outcomeOf(verdict)
+        // Report the landed pose, not the requested point.
+        if (verdict.kind === 'accept' && onAccepted) {
+            onAccepted({ frame, from: accepted.position, to: verdict.pose.position })
+        }
+        onReadout(readout({
+            point: name, accepted: accepted.position,
+            requested: requested.position, outcome,
+        }))
+        if (verdict.kind === 'accept') wake()
+        return outcome
+    }
+
+    // Every way a capture ends goes through here, so ownership is never left
+    // behind: the pointer is released and the CAMERA'S OWN previous state — not an
+    // unconditional enable — comes back.
+    const endCapture = (reason, acceptedPosition) => {
+        if (!grab) return false
+        const { pointerId, name, controlsWasEnabled, close } = grab
+        grab = null
+        release({ pointerId })
+        setControls(controlsWasEnabled)
+        close?.()
+        if (reason) {
+            onReadout(readout({ point: name, accepted: acceptedPosition ?? null, requested: null, outcome: reason }))
+        }
+        return true
+    }
+
+    // THE FOUR GATES OF A POINT: offered, touchable, under the pointer, and
+    // lawful to hold. `pointerDown` and `hoveredAt` read the SAME gates, so the
+    // hand the cursor promises is exactly the hand a press would take — the
+    // cursor can never claim a point the law would refuse.
+    // (id:laws-decl-handle)
+    // `at` is the drawn CLIENT point, when the caller has one (the hover path
+    // carries the point the last draw used). A press never passes it: a hand is
+    // taken from the live projection, not from a frame-old picture.
+    const hitAt = (here, candidate, at = null) => {
+        // A DRAWN candidate carries its own `at`, and the draw already offered
+        // only touchable pins — so the cursor asks the cheap questions (gate and
+        // distance) and never re-runs the point-state projection that `canTouch`
+        // costs. A press passes no `at` and asks everything, always.
+        if (!at && !canTouch(candidate.frame)) return null
+        // Behind the camera, clipped, or on a zero-sized canvas: not a target,
+        // and never a made-up hit. (id:laws-decl-handle)
+        const anchor = at ? null : anchorOf(candidate.frame).position
+        const projected = at ?? project(anchor)
+        if (!projected || !hitTest(here, projected, radius)) return null
+        const accepted = poseOf(candidate.frame)
+        const gate = eligibility({
+            frame: candidate.frame,
+            registered: registered(candidate.frame),
+            accepted,
+        })
+        return { anchor, projected, accepted, gate }
+    }
+
+    return {
+        // Decide ownership here, before the camera consumes the event.
+        pointerDown({ pointerId, x, y }) {
+            if (grab) return { claimed: false }   // one pointer owns the hand
+            const previousTap = lastTap
+            lastTap = null
+            const here = { x, y }
+            for (const candidate of candidates()) {
+                const found = hitAt(here, candidate)
+                if (!found) continue
+                const { anchor, accepted, gate } = found
+                if (!gate.ok) {
+                    onReadout(readout({
+                        point: candidate.name, accepted: accepted.position ?? null,
+                        requested: null, outcome: gate.reason,
+                    }))
+                    return { claimed: false }
+                }
+                const ray = rayAt(x, y)
+                if (!ray) return { claimed: false }
+                const face = facing()
+                const plane = facingPlane(anchor, face)
+                const hit = touchPlane(ray, plane)
+                if (!hit) return { claimed: false }
+                // A hand is chosen by the locus's own data: a sphere's camera-plane
+                // disk, a cone's polar, and the frozen camera plane for everything
+                // else. The plane is always frozen, so a hand only overrides it.
+                // (id:laws-decl-anchor)
+                const locus = locusOf?.(candidate.frame)
+                let hand = handFor(locus)
+                let handState = null
+                if (hand) {
+                    handState = hand.freeze({ anchor, ray, facing: face, pointer: { x, y }, project, locus })
+                    if (!handState) {
+                        if (hand.rejects) return { claimed: false }
+                        hand = null
+                    }
+                }
+                grab = {
+                    pointerId,
+                    name: candidate.name,
+                    frame: candidate.frame,
+                    plane,
+                    hand,
+                    handState,
+                    origin: [...anchor],
+                    offset: [anchor[0] - hit[0], anchor[1] - hit[1], anchor[2] - hit[2]],
+                    down: { x, y },
+                    armed: false,
+                    startedAt: now(),
+                    previousTap,
+                    controlsWasEnabled: controlsEnabled(),
+                }
+                grab.close = capture({ pointerId, frame: candidate.frame })
+                setControls(false)
+                // The frame travels back so a cue can be exact: names can repeat
+                // across scopes, a frame cannot.
+                return { claimed: true, point: candidate.name, frame: candidate.frame }
+            }
+            return { claimed: false }
+        },
+
+        pointerMove({ pointerId, x, y }) {
+            if (!grab || grab.pointerId !== pointerId) return { moved: false }
+
+            const accepted = poseOf(grab.frame)
+            const gate = eligibility({
+                frame: grab.frame,
+                registered: registered(grab.frame),
+                accepted,
+            })
+            // The declaration can go while the pointer is down, and the frame
+            // survives it. Liveness first, then the capture ends.
+            // The point may gain a walking body while it is held. Release before
+            // another pointer move can become head motion.
+            if (!gate.ok || !canTouch(grab.frame)) {
+                endCapture(gate.ok ? OUTCOME.cancelled : gate.reason, accepted.position ?? null)
+                return { moved: false, cancelled: true }
+            }
+
+            if (!grab.armed) {
+                if (Math.hypot(x - grab.down.x, y - grab.down.y) <= slop) return { moved: false }
+                grab.armed = true
+            }
+
+            const birth = birthOf(grab.frame)
+            const ray = rayAt(x, y)
+            if (!ray) return { moved: false }
+            // The hand's own point, or the frozen camera plane every locus falls back
+            // to. (id:laws-decl-anchor)
+            // The accepted point rides along in the hand's own space, WORLD: a hand speaks
+            // world geometry, so a circle seeds its phase from where the point IS. A refused
+            // move advances nothing. (id:laws-decl-handle)
+            const placed = grab.hand
+                ? grab.hand.place(grab.handState, { ray, pointer: { x, y }, project, detents, anchor: anchorOf(grab.frame).position })
+                : null
+            let request = placed
+            if (!request) {
+                const hit = touchPlane(ray, grab.plane)
+                if (!hit) return { moved: false }        // off the frozen plane: keep the pose
+                request = [hit[0] + grab.offset[0], hit[1] + grab.offset[1], hit[2] + grab.offset[2]]
+            }
+            const requested = requestedPose(accepted, birthLocal(request, birth))
+            return { moved: true, outcome: submit(grab.frame, grab.name, accepted, requested) }
+        },
+
+        // Two still taps ask for home through the same motion door as a drag.
+        pointerUp({ pointerId, x = grab?.down.x, y = grab?.down.y }) {
+            if (!grab || grab.pointerId !== pointerId) return { ended: false }
+            const { frame, name, down, previousTap } = grab
+            const at = now()
+            const accepted = poseOf(frame)
+            const gate = eligibility({ frame, registered: registered(frame), accepted })
+            if (!grab.armed && at - grab.startedAt <= DOUBLE_TAP_MS
+                && Math.hypot(x - down.x, y - down.y) <= slop && gate.ok && canTouch(frame)) {
+                if (previousTap?.frame === frame && previousTap.revision === revision()
+                    && at - previousTap.at <= DOUBLE_TAP_MS
+                    && Math.hypot(x - previousTap.x, y - previousTap.y) <= radius) {
+                    submit(frame, name, accepted, requestedPose(accepted, homeOf(frame).position), { reset: true })
+                } else {
+                    lastTap = { frame, x, y, at, revision: revision() }
+                }
+            }
+            endCapture(null)
+            return { ended: true }
+        },
+
+        // Cancellation discards the pending target; accepted movement stands.
+        pointerCancel({ pointerId }) {
+            if (!grab || grab.pointerId !== pointerId) return { ended: false }
+            endCapture(OUTCOME.cancelled, poseOf(grab.frame).position ?? null)
+            return { ended: true }
+        },
+
+        // WOULD A PRESS HERE TAKE A HAND? The cursor's question, answered by
+        // the press's own gates. The DOM layer asks once per move and says
+        // `grab` only where the answer is yes. (id:laws-decl-handle)
+        hoveredAt({ x, y }) {
+            const here = { x, y }
+            for (const candidate of hoverCandidates()) {
+                if (hitAt(here, candidate, candidate.at ?? null)?.gate.ok) return true
+            }
+            return false
+        },
+
+        // Disposal, fresh play and a replaced scope all arrive here.
+        dispose() {
+            lastTap = null
+            const ended = endCapture(OUTCOME.cancelled, grab ? poseOf(grab.frame).position ?? null : null)
+            return { ended }
+        },
+
+        get grabbed() {
+            return grab ? { name: grab.name, pointerId: grab.pointerId, frame: grab.frame } : null
+        },
+    }
+}

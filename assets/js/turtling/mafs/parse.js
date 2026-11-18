@@ -1,30 +1,52 @@
 import { ASTNode } from "../ast.js"
 import { Lexer } from "./lexer.js"
+import { getOperator } from "./operators.js"
+import { isOpenType, isCloseType, closerTypeFor, glyphOf } from "./delimiters.js"
+import { isNumericLiteral } from "./number.js"
+import { SCALAR_BUILTINS, SHADOWABLE_BUILTINS } from "./tower.js"
+
+// A held value is not a name: it gets its own node, exactly as a string literal
+// does, so no evaluation can resolve a capture as a reference. Plain data is copied,
+// so a held value is never an alias to a live pose. (id:tower-tension-repr)
+export function heldValue(value) {
+    if (Array.isArray(value)) return value.map(heldValue)
+    if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+        return Object.fromEntries(Object.entries(value).map(([key, v]) => [key, heldValue(v)]))
+    }
+    return value
+}
+
+// Only operand keys can consume substitutions; held data and call names cannot.
+// (id:tower-capture-operands)
+const operandNames = (ast, names = new Set()) => {
+    if (ast.type === 'operand' && typeof ast.value === 'string') names.add(ast.value)
+    for (const child of ast.children ?? []) operandNames(child, names)
+    return names
+}
+
+// A qualified local subject cannot escape to a same-named ambient being.
+// (id:being-facets-centers-review)
+const checkCaptureSubjects = (ast, ctx, params) => {
+    if ((ast.type === 'operand' || ast.type === 'function') && typeof ast.value === 'string') {
+        const dot = ast.value.indexOf('.')
+        const subject = ast.value.slice(0, dot)
+        const formal = params.includes(subject) || (ast.type === 'operand' && params.includes(ast.value))
+        if (dot > 0 && !formal && Object.hasOwn(ctx, subject)) {
+            throw new Error(`cannot capture qualified binding '${subject}' in a numeric function; use explicit inputs`)
+        }
+    }
+    for (const child of ast.children ?? []) checkCaptureSubjects(child, ctx, params)
+}
 
 export class Parser {
     constructor() {
-        // Clean precedence table - only binary operators and their precedence
-        this.precedence = {
-            '||': 1,
-            '&&': 2,
-            '|': 3,
-            '&': 4,
-            '===': 5, '!==': 5, '==': 5, '!=': 5,
-            '>=': 6, '>': 6, '<=': 6, '<': 6,
-            '+': 7, '-': 7,
-            '*': 8, '/': 8, '//': 8,
-            '^': 9
-        };
-
-        this.rightAssociative = new Set(['^']);
-        this.unaryOperators = new Set(['+', '-', '!']);
-
-        this.builtins = new Map([
-            ['sin', 1], ['cos', 1], ['tan', 1],
-            ['asin', 1], ['acos', 1], ['atan', 1],
-            ['sqrt', 1], ['log', 1], ['exp', 1],
-            ['abs', 1], ['floor', 1], ['ceil', 1]
-        ]);
+        // One owner for the builtin signatures: the center's own description. The
+        // parser reserves these names and checks their arity from the same list the
+        // evaluator dispatches from, so the two can never disagree.
+        // (id:notation-phase-center)
+        this.builtins = new Map(SCALAR_BUILTINS.map((builtin) => [builtin.name, builtin.arity]));
+        // Which of those names yield to the child's own fn. (id:tower-center-shadowable)
+        this.shadowable = new Set(SHADOWABLE_BUILTINS);
 
         // User-defined functions keys by [name, arity]: [ast, params]
         this.userspace = new Map();
@@ -58,22 +80,23 @@ export class Parser {
     }
 
     // Precedence climbing parser
-    parseExpression(minPrec, options = {}) {
+    parseExpression(minPrec, options = {}, includeEqual = true) {
         let left = this.parsePrimary(options);
 
         while (this.hasMoreTokens()) {
             const token = this.currentToken();
 
-            if (!this.isBinaryOperator(token)) break;
+            const row = token.type === 'OPERATOR' && getOperator(token.value, 'infix');
+            if (!row) break;
 
-            const prec = this.precedence[token.value];
-            if (prec < minPrec) break;
+            const prec = row.prec;
+            if (prec < minPrec || (prec === minPrec && !includeEqual)) break;
 
             const op = token.value;
             this.advance();
 
-            const nextMinPrec = this.rightAssociative.has(op) ? prec : prec + 1;
-            const right = this.parseExpression(nextMinPrec, options);
+            // Strict binding for left association also admits fractional precedences.
+            const right = this.parseExpression(prec, options, row.assoc === 'right');
 
             left = new ASTNode('operator', op, [left, right]);
         }
@@ -89,17 +112,20 @@ export class Parser {
         }
 
         // Unary operators
-        if (this.isUnaryOperator(token)) {
+        const row = token.type === 'OPERATOR' && getOperator(token.value, 'prefix');
+        if (row) {
             const op = token.value;
             this.advance();
-            const operand = this.parsePrimary(options);
+            const operand = this.parseExpression(row.prec, options);
             return new ASTNode('unary_operator', op, [operand]);
         }
 
         // Numbers
         if (token.type === 'NUMBER') {
             this.advance();
-            return new ASTNode('operand', parseFloat(token.value));
+            // A literal is a VALUE, not a name — its own node, exactly as a string
+            // literal has its own. (id:tower-synth-literal)
+            return new ASTNode('literal', parseFloat(token.value));
         }
 
         // Identifiers (variables, constants, functions)
@@ -107,11 +133,27 @@ export class Parser {
             return this.parseIdentifier(options);
         }
 
-        // Parentheses
-        if (token.type === 'LPAREN') {
-            return this.parseParentheses(options);
+        // Groups — ( … ) and [ … ], each closed only by its own kind
+        if (isOpenType(token.type)) {
+            return this.parseGroup(options);
         }
 
+        // A quoted name is a string followed by a path, not reparsed source.
+        // It stays an AST read in commands, definitions and figure questions.
+        if (token.type === 'STRING') {
+            this.advance();
+            const name = new ASTNode('string', token.value);
+            if (this.currentToken()?.type !== 'DOT') return name;
+            this.advance();
+            const path = this.currentToken();
+            if (path?.type !== 'IDENTIFIER') throw new Error('Expected a property after quoted name');
+            this.advance();
+            if (isOpenType(this.currentToken()?.type)) {
+                const call = this.parseFunctionCall('.' + path.value, options);
+                return new ASTNode('access_call', path.value, [name, ...call.children]);
+            }
+            return new ASTNode('access', path.value, [name]);
+        }
         throw new Error(`Unexpected token: ${token.value}`);
     }
 
@@ -120,7 +162,7 @@ export class Parser {
         this.advance();
 
         // Function call
-        if (this.hasMoreTokens() && this.currentToken().type === 'LPAREN') {
+        if (this.hasMoreTokens() && isOpenType(this.currentToken().type)) {
             return this.parseFunctionCall(name, options);
         }
 
@@ -134,11 +176,13 @@ export class Parser {
     }
 
     parseFunctionCall(name, options = {}) {
-        this.advance(); // consume '('
-        const args = this.parseArgumentList(options);
+        const openType = this.currentToken().type;
+        const closeType = closerTypeFor(openType);
+        this.advance(); // consume the opener
+        const args = this.parseArgumentList(closeType, options);
 
-        if (!this.currentToken() || this.currentToken().type !== 'RPAREN') {
-            throw new Error('Missing closing parenthesis in function call');
+        if (!this.currentToken() || this.currentToken().type !== closeType) {
+            throw this.closingError(openType);
         }
         this.advance(); // consume ')'
 
@@ -153,11 +197,11 @@ export class Parser {
         return new ASTNode('function', name, args);
     }
 
-    parseArgumentList(options) {
+    parseArgumentList(closeType, options) {
         const args = [];
 
         // Empty argument list
-        if (this.currentToken()?.type === 'RPAREN') {
+        if (this.currentToken()?.type === closeType) {
             return args;
         }
 
@@ -175,16 +219,48 @@ export class Parser {
         return args;
     }
 
-    parseParentheses(options) {
-        this.advance(); // consume '('
-        const expr = this.parseExpression(0, options);
+    // A comma-list is a QUANTITY; the delimiter names its kind. `(a, b, c)` is a
+    // coordinate (a point — where), `[a, b, c]` a vector (a displacement — which
+    // way, how far). Without a comma `(e)` still groups and `[e]` is the singleton
+    // vector. A suffix `f[…]/f(…)` after a name is still application.
+    // (id:notation-coordinate-vector)
+    parseGroup(options = {}) {
+        const openType = this.currentToken().type;
+        const closeType = closerTypeFor(openType);
+        const isBracket = openType === 'LBRACKET';
+        this.advance(); // consume the opener
 
-        if (!this.currentToken() || this.currentToken().type !== 'RPAREN') {
-            throw new Error('Missing closing brackets');
+        if (isBracket && this.currentToken()?.type === closeType) {
+            throw new Error('An empty vector literal has no components');
         }
-        this.advance(); // consume ')'
 
-        return expr;
+        const elements = [this.parseExpression(0, options)];
+        let listed = isBracket;   // a bracket is always a list, even the singleton
+        while (this.currentToken()?.type === 'COMMA') {
+            this.advance(); // consume the comma
+            listed = true;   // a comma marks a list, even a terminal one
+            // A terminal comma contributes no component; the empty slot is still
+            // refused — `[x,,y]`, `[x,,]`, `(x,,y)` do not parse.
+            if (this.currentToken()?.type === closeType) break;
+            elements.push(this.parseExpression(0, options));
+        }
+        if (this.currentToken()?.type !== closeType) {
+            throw this.closingError(openType);
+        }
+        this.advance(); // consume the closer
+
+        if (!listed) return elements[0];   // `(e)` groups
+        return new ASTNode(isBracket ? 'vector' : 'point', null, elements);
+    }
+
+    // A close of the wrong kind is a mismatched pair; no close at all is missing.
+    closingError(openType) {
+        const found = this.currentToken();
+        const expected = closerTypeFor(openType);
+        if (found && isCloseType(found.type)) {
+            return new Error(`Mismatched delimiters: '${glyphOf(openType)}' must close with '${glyphOf(expected)}', not '${found.value}'`);
+        }
+        return new Error(`Missing closing '${glyphOf(expected)}'`);
     }
 
     // User-defined function management
@@ -192,22 +268,28 @@ export class Parser {
         const signatureAST = this.parseSignature(signature);
         const { name, params } = this.extractSignature(signatureAST);
 
-        if (this.builtins.has(name)) {
+        // A shadowable builtin (round, mod) yields to the child's own definition;
+        // the rest stay reserved. (id:tower-center-shadowable)
+        if (this.builtins.has(name) && !this.shadowable.has(name)) {
             throw new Error(`Cannot override built-in function ${name}`);
         }
 
         const expressionAST = this.parse(expression);
+        const referenced = operandNames(expressionAST);
 
         const substitutions = new Map();
 
         for (const key of Object.keys(ctx)) {
-            // Don't substitute parameter names — they stay symbolic
-            if (!params.includes(key)) {
-                substitutions.set(key, new ASTNode('operand', ctx[key]));
+            // Formals stay symbolic; unused bindings are not acquired.
+            if (!params.includes(key) && referenced.has(key)) {
+                // A captured value is held, never referenced: its own node and a copy,
+                // so the body reads the snapshot it was declared with. (id:tower-tension-repr)
+                substitutions.set(key, new ASTNode('literal', heldValue(ctx[key])));
             }
         }
 
         const subexpressionAST = this.substituteParameters(expressionAST, substitutions)
+        checkCaptureSubjects(subexpressionAST, ctx, params)
 
 
         const key = this.makeKey(name, params.length);
@@ -284,7 +366,10 @@ export class Parser {
     }
 
     cloneAST(ast) {
-        const cloned = new ASTNode(ast.type, ast.value, [], { ...ast.meta });
+        // A literal's payload is copied here too: two instantiations of one body
+        // must not share one array. (id:tower-tension-repr)
+        const value = ast.type === 'literal' ? heldValue(ast.value) : ast.value
+        const cloned = new ASTNode(ast.type, value, [], { ...ast.meta });
         if (ast.children) {
             cloned.children = ast.children.map(child => this.cloneAST(child));
         }
@@ -297,8 +382,11 @@ export class Parser {
     }
 
     functionExists(name, arity) {
-        return this.builtins.has(name) && this.builtins.get(name) === arity ||
-               this.userspace.has(this.makeKey(name, arity));
+        if (this.builtins.has(name)) {
+            const arities = this.builtins.get(name)
+            if (Array.isArray(arities) ? arities.includes(arity) : arities === arity) return true
+        }
+        return this.userspace.has(this.makeKey(name, arity))
     }
 
     getUserFunction(name, arity) {
@@ -322,14 +410,6 @@ export class Parser {
         return this.position < this.tokens.length;
     }
 
-    isBinaryOperator(token) {
-        return token?.type === 'OPERATOR' && this.precedence.hasOwnProperty(token.value);
-    }
-
-    isUnaryOperator(token) {
-        return token?.type === 'OPERATOR' && this.unaryOperators.has(token.value);
-    }
-
     isConstant(name) {
         return this.userspace.has(this.makeKey(name, 0));
     }
@@ -340,7 +420,7 @@ export class Parser {
 
     isNumeric(str) {
         if (typeof str !== "string") return false;
-        return !isNaN(str) && !isNaN(parseFloat(str));
+        return isNumericLiteral(str);
     }
 
     reset() {

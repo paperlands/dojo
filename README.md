@@ -1,14 +1,17 @@
+<img src="priv/static/images/logo.svg" width="76" alt="PaperLand">
+
 # PaperLand Dojo
+
+Welcome to [PaperLand](https://dojo.paperland.sg/welcome).
 
 > math with the seriousness one has as a child at play
 
-[PaperLand Dojo](https://dojo.paperland.sg/welcome) is a place where
-people explore and wrestle with mathematics together, unveiling the hidden beauty of it 
-all through sharing code.
-
-A place where the curious might forge their own path or find one another. 
+See math differently. 
+Wrestle with math together. 
+And unveil its inner beauty. 
 
 Want to know more about how we are building it? Head over to [paperland.sg](https://paperland.sg).
+
 
 ## What you'll need
 
@@ -35,6 +38,10 @@ iex --cookie enterthedojo --dbg pry -S mix phx.server
 ```
 
 That's it. Visit [localhost:4000](http://localhost:4000) and you're in.
+
+## Embedding PaperLang
+
+For a standalone canvas to develop or run client experiences without our server features, see [the host guide](docs/host.org): build, lifecycle, native controls, and reactive readings.
 
 ## Running a cluster
 

@@ -3,8 +3,9 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
-import { execute, drainEvents } from "../../../assets/js/turtling/executor.js"
+import { execute, drainEvents, createActorState } from "../../../assets/js/turtling/executor.js"
 import { ASTNode } from "../../../assets/js/turtling/ast.js"
+import { Parser } from "../../../assets/js/turtling/mafs/parse.js"
 
 const near = (a, b, eps = 1e-8) => Math.abs(a - b) < eps
 
@@ -16,6 +17,7 @@ function mockDeps() {
                 return /^-?\d+\.?\d*$/.test(expr)
             },
             parse(expr) {
+                if (expr[0] === "'" || expr[0] === '"') return new Parser().parse(expr)
                 return { value: expr, children: [] }
             },
             defineFunction() {},
@@ -25,6 +27,7 @@ function mockDeps() {
             constants: {},
             namespace_check(val) { return val in this.constants },
             run(tree, ctx) {
+                if (tree.type === 'string') return tree.value
                 if (tree.value in this.constants) return this.constants[tree.value]()
                 return parseFloat(tree.value) || 0
             }
@@ -120,11 +123,15 @@ describe("path management", () => {
         assert.equal(paths.length, 2)
     })
 
-    test("jmpto breaks path", () => {
+    test("jmpto moves in frame space and breaks path", () => {
         const ast = [call("fw", 50), call("jmpto", 100, 100), call("fw", 50)]
         const events = drainEvents(ast, mockDeps())
         const paths = eventsOfType(events, "path")
+        const heads = eventsOfType(events, "head")
         assert.equal(paths.length, 2)
+        // jmpto lands at (100,100); fw 50 continues along +x → (150,100)
+        assert.ok(near(heads[0].position[0], 150))
+        assert.ok(near(heads[0].position[1], 100))
     })
 
     test("beColour breaks path for new color", () => {
@@ -326,6 +333,32 @@ describe("when (conditional)", () => {
         // First when matches, second skipped
         assert.ok(near(heads[0].position[0], 10))
     })
+
+    test("an unconsidered branch is never evaluated", () => {
+        // The first-match guard is around EVALUATION itself: a later condition
+        // with no answer must not kill a walk that already has its branch.
+        // (id:numeric-boundaries-adversarial-followup)
+        const ast = [
+            when("1", [call("fw", 1)]),
+            when("missing", [call("fw", 2)]),
+            call("fw", 3)
+        ]
+        const events = drainEvents(ast, mockDeps())
+        assert.deepEqual(eventsOfType(events, "head")[0].position, [4, 0, 0])
+    })
+
+    test("an unconsidered branch says nothing", () => {
+        // Never asked, never told: a condition on a non-answer owes no notice
+        // once the level has matched. (id:numeric-boundaries-adversarial-followup)
+        const ast = [
+            when("1", [call("fw", 1)]),
+            when("nan", [call("fw", 2)]),
+            call("fw", 3)
+        ]
+        const events = drainEvents(ast, mockDeps(), { scope: { nan: NaN } })
+        assert.equal(eventsOfType(events, "notice").length, 0, "the branch was never asked")
+        assert.deepEqual(eventsOfType(events, "head")[0].position, [4, 0, 0])
+    })
 })
 
 // ---------------------------------------------------------------------------
@@ -379,6 +412,72 @@ describe("limits", () => {
             /Maximum command limit/
         )
     })
+
+    test("a program cannot raise the host ceiling", () => {
+        const ast = [
+            call("limitCommand", 100),
+            call("fw", 1),
+            call("fw", 1),
+            call("fw", 1),
+            call("fw", 1),
+        ]
+        assert.throws(
+            () => drainEvents(ast, mockDeps(), { commandCeiling: 2, maxCommands: 2 }),
+            /Maximum command limit of 2 reached/
+        )
+    })
+
+    test("a limit has to be a positive integer", () => {
+        assert.throws(
+            () => drainEvents([call("limitCommand", -3), call("fw", 1)], mockDeps()),
+            /positive integer/
+        )
+        assert.throws(
+            () => drainEvents([call("fw", 1)], mockDeps(), { commandCeiling: 0 }),
+            /command ceiling must be a positive integer/
+        )
+        assert.throws(
+            () => drainEvents([call("fw", 1)], mockDeps(), { recurseCeiling: 0 }),
+            /recurse ceiling must be a positive integer/
+        )
+    })
+
+    test("a recurse ceiling throws instead of truncating", () => {
+        const ast = [
+            define("boom", [], [call("boom"), call("fw", 1)]),
+            call("boom"),
+        ]
+        assert.throws(
+            () => drainEvents(ast, mockDeps(), { recurseCeiling: 2, maxRecurseDepth: 2 }),
+            /Maximum recurse depth of 2 reached/
+        )
+    })
+
+    test("a working depth passed with the ceiling is the one that stops the call", () => {
+        const born = createActorState({ recurseCeiling: 500_000, maxRecurseDepth: 200_000 })
+        assert.equal(born.recurseCeiling, 500_000)
+        assert.equal(born.maxRecurseDepth, 200_000)
+        const ast = [
+            define("boom", [], [call("fw", 1), call("boom")]),
+            call("boom"),
+        ]
+        const events = drainEvents(ast, mockDeps(), { recurseCeiling: 500_000, maxRecurseDepth: 2 })
+        const heads = eventsOfType(events, "head")
+        assert.ok(heads.length >= 1)
+        assert.ok(heads.length < 10)
+    })
+
+    test("a working recurse limit beneath the ceiling still stops the call", () => {
+        const ast = [
+            call("limitRecurse", 1),
+            define("boom", [], [call("fw", 1), call("boom")]),
+            call("boom"),
+        ]
+        const events = drainEvents(ast, mockDeps(), { recurseCeiling: 10, maxRecurseDepth: 10 })
+        const heads = eventsOfType(events, "head")
+        assert.ok(heads.length >= 1)
+        assert.ok(heads.length < 10)
+    })
 })
 
 // ---------------------------------------------------------------------------
@@ -403,10 +502,34 @@ describe("integration", () => {
         const ast = [call("fw", 50), call("goto", 100, 100)]
         const events = drainEvents(ast, mockDeps())
         const paths = eventsOfType(events, "path")
+        const heads = eventsOfType(events, "head")
 
         // Single continuous path: [0,0] -> [50,0] -> [100,100]
         assert.equal(paths.length, 1)
         assert.equal(paths[0].points.length, 3)
+        assert.ok(near(paths[0].points[2][0], 100))
+        assert.ok(near(paths[0].points[2][1], 100))
+        // Head must move with the frame-local place.
+        assert.ok(near(heads[0].position[0], 100))
+        assert.ok(near(heads[0].position[1], 100))
+    })
+
+    test("faceto aims in frame space then fw walks toward the point", () => {
+        // From origin, face (0, 100), step 50 → land on +y.
+        const ast = [call("faceto", 0, 100), call("fw", 50)]
+        const events = drainEvents(ast, mockDeps())
+        const heads = eventsOfType(events, "head")
+        assert.ok(near(heads[0].position[0], 0))
+        assert.ok(near(heads[0].position[1], 50))
+    })
+
+    test("faceto from an offset pose still uses birth-frame coords", () => {
+        // goto (10,0), faceto (10,100), fw 40 → (10, 40)
+        const ast = [call("goto", 10, 0), call("faceto", 10, 100), call("fw", 40)]
+        const events = drainEvents(ast, mockDeps())
+        const heads = eventsOfType(events, "head")
+        assert.ok(near(heads[0].position[0], 10))
+        assert.ok(near(heads[0].position[1], 40))
     })
 
     test("home resets position", () => {

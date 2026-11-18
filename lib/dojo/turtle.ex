@@ -20,26 +20,23 @@ defmodule Dojo.Turtle do
             attend: nil,
             diagnostics: [],
             source: nil,
+            choices: nil,
             # MILLISECONDS: a version stamp readers compare with `>`. At second
             # resolution the watcher's gate dropped all but one hatch a second.
             time: nil,
-            buffer_id: nil
+            buffer_id: nil,
+            # The live hand's own context; nil for a draft/peer with none.
+            work_id: nil,
+            base_id: nil
 
-  def reflect(%{"state" => "success"} = body, opts) do
+  def reflect(%{"state" => state} = body, opts) when state in ["success", "error"] do
     body
     |> Map.new(fn {k, v} -> {to_atom(k), v} end)
     |> (&struct(__MODULE__, &1)).()
-    |> Map.merge(%{state: :success, time: System.os_time(:millisecond)})
-    |> Map.update(:path, nil, &store(&1, opts))
-    |> Map.update(:commands, [], &Enum.take(&1, 1008))
-    |> reflect(opts)
-  end
-
-  def reflect(%{"state" => "error"} = body, opts) do
-    body
-    |> Map.new(fn {k, v} -> {to_atom(k), v} end)
-    |> (&struct(__MODULE__, &1)).()
-    |> Map.merge(%{state: :error, time: System.os_time(:millisecond)})
+    |> Map.merge(%{
+      state: if(state == "success", do: :success, else: :error),
+      time: System.os_time(:millisecond)
+    })
     |> Map.update(:path, nil, &store(&1, opts))
     |> reflect(opts)
   end

@@ -69,6 +69,7 @@ function cellEntries(addr, name, cells) {
     const ids = cellIdentities(cells)
     return cells.map(({ code, vocab, nodes, vocabNodes, open, end, path }, i) => ({
         node: cellKey(addr, ids[i].id),
+        cell: ids[i].id,
         name: ids[i].name ?? (i === 0 ? name : `${name}·${i + 1}`),
         code,
         vocab,
@@ -108,14 +109,16 @@ const shapeFor = (cells, bare) =>
 const hasVocabulary = (shape) => shape.seatsBuffer && shape.bound > 0
 
 /** Run entry for a cell (Cut 2 — no per-seat hatch/main flags). */
-const cellRun = (place, entry) => ({
+const cellRun = (place, entry, choices) => ({
     slot: asSlot(place, entry.node),
     node: entry.node,
+    cell: entry.cell,
     name: entry.name,
     code: entry.code,
     vocab: entry.vocab,
     nodes: entry.nodes,
     vocabNodes: entry.vocabNodes,
+    choices,
 })
 
 // Whole-buffer run (plain, or a program's bare code). draw folded into seat.
@@ -125,9 +128,26 @@ const bufferRun = (place, addr, name, code, extra = {}) => ({
     name,
     code,
     nodes: extra.nodes,
+    choices: extra.choices,
     vocab: undefined,
     vocabNodes: undefined,
 })
+
+// Bind the portable root to the seat being run. A cell run's names are relative
+// to the cell seat, so its materialized capsule speaks the document root again.
+// The record's cell id remains the portable identity; no delimiter is split.
+const materialize = (choices, root) => {
+    if (choices == null || !Array.isArray(choices.inputs)) return null
+    const inputs = choices.inputs
+        .filter(({ route }) => root === "document"
+            ? route.root === "document"
+            : route.root != null && typeof route.root === "object" && route.root.cell === root)
+        .map(({ route, action }) => ({
+            route: { root: "document", names: [...route.names] },
+            action,
+        }))
+    return { v: 1, inputs }
+}
 
 const sameOrder = (a, b) => a.length === b.length && a.every((v, i) => v === b[i])
 
@@ -286,10 +306,14 @@ export function slotsOf(world, place) {
 // Runs a standing record would seat — whole figure list, for when a seat
 // changes hands without the document changing.
 const runsFor = (page) => {
-    const out = page.order.map((i) => cellRun(page.place, page.entries[i]))
+    const out = page.order.map((i) => cellRun(page.place, page.entries[i],
+        materialize(page.choices, page.entries[i].cell)))
     if (page.shape.seatsBuffer) {
         out.push(bufferRun(page.place, page.addr, page.name,
-                           page.bareSource ?? page.source, { nodes: page.bare ?? page.tree }))
+                           page.bareSource ?? page.source, {
+                               nodes: page.bare ?? page.tree,
+                               choices: materialize(page.choices, "document"),
+                           }))
     }
     return out
 }
@@ -432,8 +456,10 @@ function finish(world, gone, runs, {
 // Hazard: printAST(bare) drops cell lines with no gap placeholder. Re-parse
 // that string alone and every node after a cell is stamped a line short of
 // its true buffer line. Hand over the tree and spans stay true.
-function seatFrom(world, addr, held, { name, ast, source, witness, place, attention, follow = false }) {
+function seatFrom(world, addr, held, { name, ast, source, witness, place, attention, follow = false, choices = undefined }) {
     const own = witness === world.self
+    // Undefined is "no news" and keeps the held offer; null is a materialized
+    // record with none. A legacy report must not clear a stronger held offer.
     const cells = ast ? phaseCells(ast) : []
     const entries = cellEntries(addr, name, cells)
     const bare = cells.length ? stripCells(ast) : null
@@ -443,15 +469,33 @@ function seatFrom(world, addr, held, { name, ast, source, witness, place, attent
         : cellAtLine(entries, attention.line)
     // Cell order uses entry indices; map held order forward.
     const { order, evicted } = ladder(held?.order ?? [], entries, index, shape, attention != null)
+    const holding = held && held.source === source && held.shape === shape && sameOrder(held.order, order)
+    // On a hold, null/absent is "no news" and keeps the held offer. On a source
+    // replacement, null is a materialized record with none. (id:laws-construction-input)
+    const offered = choices === undefined
+        ? (held?.choices ?? null)
+        : (choices === null && holding ? (held?.choices ?? null) : choices)
 
     // Self events and follow-attend move light; peer events only presence (P9).
     const movesLight = own || follow
 
     // A seat is a RUN — nothing seats when the record about to be written is
     // the record that already stands. Totals still speak (P5 re-attend, P6 sticky prose).
-    if (held && held.source === source && held.shape === shape &&
-        sameOrder(held.order, order)) {
-        return finish(world, [], [], {
+    if (holding) {
+        const choicesChanged = JSON.stringify(held.choices ?? null) !== JSON.stringify(offered)
+        let next = world
+        let runs = []
+        if (choicesChanged) {
+            // The held record owns the new offer; a painted record emits the same
+            // resident seating request with the new materialized choices. hotSwap
+            // holds the seed and reconciles; a shadowed record emits nothing.
+            const updated = { ...held, choices: offered }
+            const records = new Map(world.records)
+            records.set(recKey(witness, place, addr), updated)
+            next = { ...world, records }
+            if (paints(next, updated)) runs = runsFor(updated)
+        }
+        return finish(next, [], runs, {
             source, merge: false,
             hatch: null, // pure light reaffirm — gate unmoved
             at: projectAt(shape, addr, held.entries, order),
@@ -484,7 +528,7 @@ function seatFrom(world, addr, held, { name, ast, source, witness, place, attent
     if (evicted != null && entries[evicted]) gone.push(asSlot(place, entries[evicted].node))
 
     const record = {
-        entries, order, shape, witness, place, source, tree: ast, name, addr,
+        entries, order, shape, witness, place, source, tree: ast, name, addr, choices: offered,
         // Program's bare half, held so a seat can change hands without
         // reprinting the tree (runsFor).
         bare: hasVocabulary(shape) ? bare : null,
@@ -510,7 +554,7 @@ function seatFrom(world, addr, held, { name, ast, source, witness, place, attent
     }
 
     if (!shape.bound) {
-        const run = bufferRun(place, addr, name, source, { nodes: ast })
+        const run = bufferRun(place, addr, name, source, { nodes: ast, choices: materialize(offered, "document") })
         runs.push(run)
         return finish(next, gone, runs, {
             source, merge: true,
@@ -540,9 +584,12 @@ function seatFrom(world, addr, held, { name, ast, source, witness, place, attent
         (!held || held.source !== source || held.shape !== shape)
 
     // Seats: kindled + warm window. No per-seat hatch/main flags (totals).
-    if (kindled) runs.push(cellRun(place, kindled))
-    for (const i of order.slice(1)) runs.push(cellRun(place, entries[i]))
-    if (bareRan) runs.push(bufferRun(place, addr, name, printAST(bare), { nodes: bare }))
+    if (kindled) runs.push(cellRun(place, kindled, materialize(offered, kindled.cell)))
+    for (const i of order.slice(1)) runs.push(cellRun(place, entries[i], materialize(offered, entries[i].cell)))
+    if (bareRan) runs.push(bufferRun(place, addr, name, printAST(bare), {
+        nodes: bare,
+        choices: materialize(offered, "document"),
+    }))
 
     // main: the figure the child is looking at — kindled cell if any; bare only when none.
     const main = !own ? null
@@ -561,7 +608,7 @@ function seatFrom(world, addr, held, { name, ast, source, witness, place, attent
 const witnessOf = (world, witness, own) =>
     witness ?? (own === true ? world.self : own === false ? PEER : null)
 
-function observe(world, { addr, name, doc, witness, own, place = CORESHELL, attention = null, follow = false }) {
+function observe(world, { addr, name, doc, witness, own, place = CORESHELL, attention = null, follow = false, choices = undefined }) {
     const w = witnessOf(world, witness, own)
     if (w == null) throw new TypeError("observe: name a witness (or own: true/false)")
     const held = world.records.get(recKey(w, place, addr))
@@ -572,7 +619,7 @@ function observe(world, { addr, name, doc, witness, own, place = CORESHELL, atte
         : asTree(world, w, place, addr, doc)
 
     return seatFrom(world, addr, held, {
-        name, ast, source, witness: w, place, attention, follow,
+        name, ast, source, witness: w, place, attention, follow, choices,
     })
 }
 
@@ -698,6 +745,23 @@ export function pageLaw({ self = SELF } = {}) {
         seatOf: (addr, place) =>
             asSlot(recordFor(world, addr, place)?.place ?? place ?? CORESHELL, addr),
         witnessesOn: (addr, place) => witnessesOn(world, addr, place),
+        // The ONE document binding query: actual roots and their local canvas seats.
+        // It serves capture scope, trigger membership and cell materialization alike.
+        bindingsOf(addr, place = CORESHELL, witness = world.self) {
+            const record = recordFor(world, addr, place, witness)
+            if (!record) return []
+            const at = record.place ?? place
+            const out = []
+            if (record.shape?.seatsBuffer) out.push({ root: "document", slot: asSlot(at, addr) })
+            for (const entry of record.entries ?? []) {
+                if (entry.cell != null) out.push({ root: { cell: entry.cell }, slot: asSlot(at, entry.node) })
+            }
+            return out
+        },
+        // The held record's offered capsule; null/absent is legacy, not an empty set.
+        choicesOf(addr, place = CORESHELL, witness = world.self) {
+            return recordFor(world, addr, place, witness)?.choices ?? null
+        },
         // standing("coreshell") — non-plain own pages at place.
         standing(place = CORESHELL, witness = self) {
             const out = []

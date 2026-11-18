@@ -4,13 +4,13 @@ defmodule Dojo.Disciple do
             node: "@localhost",
             meta: nil,
             phx_ref: nil,
-            user_id: nil,
+            author_id: nil,
             reg_key: nil
 
   @type t :: %__MODULE__{
           name: String.t(),
           action: String.t(),
-          # `node`, `meta`, `user_id` cross the presence / rolling-deploy seam:
+          # `node`, `meta`, `author_id` cross the presence / rolling-deploy seam:
           # `node` is a display string, a partisan node atom, OR the legacy
           # `{reg_key, node}` tuple older peers embedded (see table_address/1).
           # Left wide on purpose — these are dynamic-boundary values the checker
@@ -18,7 +18,7 @@ defmodule Dojo.Disciple do
           node: term(),
           meta: term(),
           phx_ref: binary() | nil,
-          user_id: term(),
+          author_id: term(),
           reg_key: String.t() | nil
         }
 

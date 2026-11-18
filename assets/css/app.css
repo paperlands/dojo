@@ -1,6 +1,7 @@
 @import "tailwindcss" source(none);
 @import "phoenix-colocated/dojo/colocated.css";
 @import "./river.css";
+@import "./disciple.css";
 @source "../css";
 @source "../js";
 @source "../../lib/dojo_web";

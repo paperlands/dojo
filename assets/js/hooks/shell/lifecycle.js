@@ -63,11 +63,17 @@ export function makeShellHook({ boot, surfaces }) {
                 return;
             }
 
+            // Surface-owned state that must exist before the first arrival.
+            program.acquire?.(this)
+
             // Synchronous registration — nothing may be awaited above this
             // loop, or the mount-patch events are lost.
             for (const name of program.events) {
                 this.handleEvent(name, (payload) => {
                     if (!this.arena.alive) return;
+                    // Ingest at arrival, before the boot queue or domain mount.
+                    // A surface that needs shared pre-boot state names it here.
+                    program.arrive?.(name, payload, this);
                     if (this.surface) this.surface.events[name](payload);
                     else pending.push([name, payload]);
                 });

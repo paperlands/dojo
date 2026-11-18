@@ -8,10 +8,6 @@ import { createDoEndMatchingExtension } from "../editor/do-end-matching.js"
 import { createCodeCellActivationExtension } from "../editor/code-cell-activation.js"
 import { createDiagnosticsExtension } from "../editor/diagnostics.js"
 
-// Doc notify after paint — glyph first; write-through/bridge next frame.
-// Newest doc wins per view. Sync when no rAF (node:test).
-const docAfterPaint = new WeakMap()
-
 export const buildExtensions = (cm6, {
     onDocChange,
     onSelectionChange,
@@ -131,29 +127,14 @@ export const buildExtensions = (cm6, {
             { key: 'Ctrl-,', run: () => { onSwitchPrev?.(); return true; } },
         ]),
 
-        // Doc after paint: CM finishes → browser paints the glyph → then the
-        // cheap write-through/bridge. Quiet still owns when the canvas seats.
-        // Selection stays sync (cursor, not a character).
+        // Doc change → the coordinator's single content writer, SYNCHRONOUSLY.
+        // The write-through and the persistence it schedules must not wait on a
+        // paint: a hidden tab, an unload before the next frame, or a throttled
+        // rAF would silently lose the edit — the collection never moves, and the
+        // flush paths then persist a stale copy. Render is the coordinator's to
+        // defer behind this fact; content is not.
         EditorView.updateListener.of((update) => {
-            if (update.docChanged && onDocChange) {
-                const view = update.view
-                const doc = update.state.doc
-                if (!view || typeof requestAnimationFrame !== 'function') {
-                    onDocChange(doc.toString())
-                } else {
-                    let slot = docAfterPaint.get(view)
-                    if (!slot) docAfterPaint.set(view, slot = { doc: null, raf: 0 })
-                    slot.doc = doc
-                    if (!slot.raf) {
-                        slot.raf = requestAnimationFrame(() => {
-                            slot.raf = 0
-                            const d = slot.doc
-                            slot.doc = null
-                            if (d && !view.destroyed) onDocChange(d.toString())
-                        })
-                    }
-                }
-            }
+            if (update.docChanged) onDocChange?.(update.state.doc.toString())
             if (update.selectionSet) onSelectionChange?.(update.state.selection)
         }),
 

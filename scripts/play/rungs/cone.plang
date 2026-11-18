@@ -1,0 +1,6 @@
+let B = [0, 0, 0]
+goto 5 1 0
+let P
+as B do
+  let P.tilt = 30
+end

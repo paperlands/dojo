@@ -31,12 +31,14 @@ dojo-*.tar
 
 # Ignore assets that are produced by build tools.
 /priv/static/assets/
+/dist/
 
 # Ignore digested assets cache.
 /priv/static/cache_manifest.json
 
-# `mix phx.digest` casts beside the vendored corpus. The fragments themselves
-# are committed (the image carries no codex/); their digests are not.
+# `mix phx.digest` casts beside the vendored corpus. The fragments under
+# priv/static/codex/ MUST be tracked (the image carries no codex/ source); their
+# digests are not. The local-only block below hides the source corpus, not the copy.
 /priv/static/**/*-????????????????????????????????.*
 /priv/static/**/*.gz
 
@@ -53,3 +55,38 @@ npm-debug.log
 rel/packaging/resources/VC_redist.x64.exe
 # Stray npm caches (project is zero-npm; JS tests run on node:test)
 /node_modules/
+
+/specs/
+
+# ── local-only corpus (deliberately not in git) ───────────────────────────
+# Writing/knowledge corpora and operator scratch live with the machine, not the
+# release. Cited project documents are NOT listed here: they stay visible in
+# `git status` until they are tracked, so the omission can never be silent.
+/codex/*
+!/codex/play.org
+/peer/
+/backups/
+/mathworld/
+/head
+/fd.md
+/fdignore
+/.fdignore
+/.dir-locals.el
+/.pi/
+/scripts/bestiary/.venv/
+/scripts/bestiary/**/__pycache__/
+/scripts/bestiary/node_modules/
+# the generated ladder/dream corpora are local art, not release source
+/scripts/bestiary/papertiger/
+/video/
+# play rungs are local play programs; no tracked document cites them
+/scripts/play/rungs/
+
+# ── vendored path deps (vendor/*/) ─────────────────────────────────────────
+# A path dep is resolved and locked by the ROOT project, so anything it writes
+# for itself (a lock, deps/, a build dir) is per-machine noise — an editor LSP
+# compiling it standalone must not leave tracked files behind.
+/vendor/*/deps/
+/vendor/*/_build/
+/vendor/*/.expert/
+/vendor/*/mix.lock

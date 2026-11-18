@@ -5,6 +5,11 @@
     "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": "bbbb"}
   },
   {
+    "note": "origin snap — target omitted; the keep's id is the work",
+    "why": null,
+    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}}
+  },
+  {
     "note": "root null — a log keep names its journal; null is not a name",
     "why": "root",
     "value": {"v": 1, "kind": "snap", "root": null, "ts": {"t": 1, "n": 0}, "target": "bbbb"}
@@ -28,21 +33,6 @@
     "note": "kind a number — never interpreted, always indexed",
     "why": "kind",
     "value": {"v": 1, "kind": 7, "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": "bbbb"}
-  },
-  {
-    "note": "target null — a keep is about something",
-    "why": "target",
-    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": null}
-  },
-  {
-    "note": "target a number — a work's name is a string",
-    "why": "target",
-    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}, "target": 9}
-  },
-  {
-    "note": "target absent — a keep is about something",
-    "why": "target",
-    "value": {"v": 1, "kind": "snap", "root": "aaaa", "ts": {"t": 1, "n": 0}}
   },
   {
     "note": "ts absent — the row lands in neither index",

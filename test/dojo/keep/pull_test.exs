@@ -9,23 +9,38 @@ defmodule Dojo.Keep.PullTest do
 
   @clan "test-clan"
   @author "author-alice"
-  @root String.duplicate("e", 64)
+  @root Dojo.KeepSigning.root(String.duplicate("e", 64))
   @target String.duplicate("f", 64)
+
+  # Explicit legacy cohort: a frozen works key with no keep at its id. These
+  # read-door tests exercise the pre-cut river shape on purpose.
+  defp bind_legacy(work, root \\ @root) do
+    Repo.insert_all("works", [%{work_id: work, root: root}], on_conflict: :nothing)
+  end
+
+  setup do
+    Repo.insert_all("works", [%{work_id: @target, root: @root}], on_conflict: :nothing)
+    :ok
+  end
 
   defp snap(source, opts \\ []) do
     t = Keyword.get(opts, :t, 1_700_000_000_000)
     title = Keyword.get(opts, :title, "hello")
+    root = Keyword.get(opts, :root, @root)
+    target = Keyword.get(opts, :target, @target)
 
     Jason.encode!(%{
       "source_id" => Keep.hash(source),
       "title" => title,
       "v" => 1,
       "kind" => "snap",
-      "root" => @root,
+      "root" => root,
       "ts" => %{"t" => t, "n" => 0},
-      "target" => @target
+      "target" => target
     })
   end
+
+  @png "PNGBYTES"
 
   defp ship(bytes, opts \\ []) do
     payload = %{"id" => Keep.hash(bytes), "message" => bytes}
@@ -36,7 +51,17 @@ defmodule Dojo.Keep.PullTest do
         text -> Map.put(payload, "source", text)
       end
 
-    Keep.receive(payload, clan: @clan, author_id: @author)
+    payload =
+      case Keyword.get(opts, :image, @png) do
+        false -> payload
+        bin when is_binary(bin) -> Map.put(payload, "image", Base.encode64(bin))
+      end
+
+    Keep.receive(Dojo.KeepSigning.sign(payload),
+      clan: Keyword.get(opts, :clan, @clan),
+      author_id: Keyword.get(opts, :author_id, @author),
+      name: Keyword.get(opts, :name)
+    )
   end
 
   test "a keep id answers the message, its source, and the row's fact" do
@@ -72,12 +97,13 @@ defmodule Dojo.Keep.PullTest do
   end
 
   test "a work with keeps but no binding answers nothing, not a guess" do
-    # Written past receive, so no bind — head_of answers nothing (id:ka-works-bind).
-    bytes = snap("fw 9", t: 9_000, title: "unbound")
+    # Written past receive with a target no works row names — pull answers nothing.
+    unbound = String.duplicate("a", 64)
+    bytes = snap("fw 9", t: 9_000, title: "unbound", target: unbound)
     {:ok, cols} = Keep.project(bytes, Keep.hash(bytes))
     Repo.insert_all("keeps", [Keep.row(cols, @clan, 1, "n")], on_conflict: :nothing)
 
-    assert Keep.pull(@target) == :none
+    assert Keep.pull(unbound) == :none
     # Still reachable by its own name (id:ka-capability).
     assert {:ok, %{id: _}} = Keep.pull(Keep.hash(bytes))
   end
@@ -93,7 +119,7 @@ defmodule Dojo.Keep.PullTest do
         "title" => "elsewhere",
         "v" => 1,
         "kind" => "snap",
-        "root" => String.duplicate("7", 64),
+        "root" => Dojo.KeepSigning.root(String.duplicate("7", 64)),
         "ts" => %{"t" => t, "n" => 0},
         "target" => work
       })
@@ -109,6 +135,28 @@ defmodule Dojo.Keep.PullTest do
       assert row.target == @target
       assert row.id == Keep.hash(newer), "the head, not the oldest"
       assert Jason.decode!(row.message)["title"] == "newer"
+      refute Map.has_key?(row, :name), "name belongs to the root fan, not every keep row"
+    end
+
+    test "except: my author id drops my own journals from the fan (id:ks-delta)" do
+      ship(snap("fw 10"))
+
+      assert {[%{root: @root}], _} = Keep.latest(@clan, of: :root)
+      assert {[], _} = Keep.latest(@clan, of: :root, except: @author)
+    end
+
+    test "of: :root does not mint letters — attach/remember withdrawn" do
+      uid = Ecto.UUID.generate()
+
+      ship(snap("fw 11"), author_id: uid, name: "alice")
+
+      assert {[%{name: nil, root: @root}], _} = Keep.latest(@clan, of: :root)
+    end
+
+    test "a missing name is nil — the lamp still lights (id:ks-name)" do
+      ship(snap("fw 12"))
+
+      assert {[%{name: nil, root: @root, face: true}], _} = Keep.latest(@clan, of: :root)
     end
 
     test "rivers are ordered by the ROOM's clock, never the author's" do
@@ -117,6 +165,9 @@ defmodule Dojo.Keep.PullTest do
       # room's memory forever, however recently the room met it.
       sunk = String.duplicate("1", 64)
       recent = String.duplicate("2", 64)
+
+      bind_legacy(sunk)
+      bind_legacy(recent)
 
       ship(
         Jason.encode!(%{
@@ -150,7 +201,8 @@ defmodule Dojo.Keep.PullTest do
       # (The residue is real and named at id:ka-latest: rivers the room met in
       # the same millisecond are unordered among themselves.)
       met = fn work, at ->
-        Repo.update_all(from(k in "keeps", where: k.target == ^work), set: [shared_at: at])
+        ids = Repo.all(from(k in "keeps", where: k.target == ^work, select: k.id))
+        Repo.update_all(from(ck in "clan_keeps", where: ck.id in ^ids), set: [at: at])
       end
 
       met.(sunk, 300)
@@ -172,10 +224,17 @@ defmodule Dojo.Keep.PullTest do
       # that the selector selects, and that an unknown room is empty, not a peek.
       ship(snap("mine", t: 5_000), source: "mine")
 
-      theirs = other_clan_snap(String.duplicate("8", 64), 6_000)
+      other_work = String.duplicate("8", 64)
+      bind_legacy(other_work, Dojo.KeepSigning.root(String.duplicate("7", 64)))
+      theirs = other_clan_snap(other_work, 6_000)
 
       assert %{id: _} =
-               Keep.receive(%{"id" => Keep.hash(theirs), "message" => theirs},
+               Keep.receive(
+                 Dojo.KeepSigning.sign(%{
+                   "id" => Keep.hash(theirs),
+                   "message" => theirs,
+                   "image" => Base.encode64(@png)
+                 }),
                  clan: "other-room",
                  author_id: "someone"
                )
@@ -191,12 +250,6 @@ defmodule Dojo.Keep.PullTest do
     test "face is a flag, never the bytes — and the message rides whole" do
       bytes = snap("pix", title: "has a face")
       ship(bytes, source: "pix")
-      id = Keep.hash(bytes)
-
-      assert {[%{face: false}], nil} = Keep.latest(@clan)
-
-      assert :ok =
-               Keep.image(%{"id" => id, "image" => Base.encode64(<<1, 2, 3>>)}, clan: @clan)
 
       assert {[row], nil} = Keep.latest(@clan)
       assert row.face == true
@@ -208,6 +261,7 @@ defmodule Dojo.Keep.PullTest do
     test "n bounds the answer and cannot be unbounded" do
       for i <- 1..5 do
         w = String.duplicate("#{i}", 64)
+        bind_legacy(w)
 
         ship(
           Jason.encode!(%{
@@ -232,9 +286,9 @@ defmodule Dojo.Keep.PullTest do
     end
 
     test "a river with no binding is not in the room's memory" do
-      # Only reachable by writing past receive; the room cannot vouch for a
-      # river it never bound, so it does not present one (id:ka-works-bind).
-      bytes = snap("unbound", t: 7_000)
+      # Only reachable by writing past receive; no works row names this id, so
+      # the room does not present it (pending child, bytes only).
+      bytes = snap("unbound", t: 7_000, target: String.duplicate("b", 64))
       {:ok, cols} = Keep.project(bytes, Keep.hash(bytes))
       Repo.insert_all("keeps", [Keep.row(cols, @clan, 1, "n")], on_conflict: :nothing)
 
@@ -248,6 +302,7 @@ defmodule Dojo.Keep.PullTest do
       ids =
         for i <- 1..4 do
           w = String.duplicate("#{i}", 64)
+          bind_legacy(w)
 
           b =
             Jason.encode!(%{
@@ -279,7 +334,7 @@ defmodule Dojo.Keep.PullTest do
     end
 
     test "of: :root is last word per journal, room-ordered" do
-      other = String.duplicate("a", 64)
+      other = Dojo.KeepSigning.root(String.duplicate("a", 64))
       alice_old = snap("ao", t: 1_000, title: "alice-old")
       alice_new = snap("an", t: 3_000, title: "alice-new")
 
@@ -297,16 +352,33 @@ defmodule Dojo.Keep.PullTest do
       ship(bob, source: "bo")
       ship(alice_new, source: "an")
 
-      Repo.update_all(from(k in "keeps", where: k.id == ^Keep.hash(alice_new)),
-        set: [shared_at: 10]
+      Repo.update_all(from(ck in "clan_keeps", where: ck.id == ^Keep.hash(alice_new)),
+        set: [at: 10]
       )
 
-      Repo.update_all(from(k in "keeps", where: k.id == ^Keep.hash(bob)), set: [shared_at: 20])
+      Repo.update_all(from(ck in "clan_keeps", where: ck.id == ^Keep.hash(bob)), set: [at: 20])
 
       {rows, nil} = Keep.latest(@clan, of: :root)
       assert Enum.map(rows, & &1.root) == [other, @root]
       assert Enum.map(rows, & &1.id) == [Keep.hash(bob), Keep.hash(alice_new)]
       refute Enum.any?(rows, &(&1.id == Keep.hash(alice_old))), "the head, not an older keep"
+    end
+
+    test "a shared root's census is per room, not per first arrival" do
+      a = snap("census a", t: 1_000, title: "a")
+      b = snap("census b", t: 2_000, title: "b")
+
+      ship(a)
+      ship(b, clan: "other-clan")
+
+      assert {[%{id: head, root: @root}], _} = Keep.latest(@clan, of: :root)
+      assert head == Keep.hash(a), "this room's own last keep"
+
+      assert {[%{id: other_head, root: @root}], _} = Keep.latest("other-clan", of: :root)
+      assert other_head == Keep.hash(b)
+
+      # The row still names the first room; it no longer decides who sees what.
+      assert Repo.one(from(r in "roots", where: r.root == ^@root, select: r.clan)) == @clan
     end
 
     test "unknown of is the empty page, never a guess" do
@@ -383,7 +455,7 @@ defmodule Dojo.Keep.PullTest do
 
     test "a river answers only its owner's keeps" do
       river(2)
-      stranger = String.duplicate("9", 64)
+      stranger = Dojo.KeepSigning.root(String.duplicate("9", 64))
 
       theirs =
         Jason.encode!(%{
@@ -395,8 +467,14 @@ defmodule Dojo.Keep.PullTest do
           "target" => @target
         })
 
-      assert %{why: :work} =
-               Keep.receive(%{"id" => Keep.hash(theirs), "message" => theirs},
+      # Foreign-root bytes are retained; they never become members.
+      assert %{id: _} =
+               Keep.receive(
+                 Dojo.KeepSigning.sign(%{
+                   "id" => Keep.hash(theirs),
+                   "message" => theirs,
+                   "image" => Base.encode64(@png)
+                 }),
                  clan: @clan,
                  author_id: "mallory"
                )
@@ -426,15 +504,17 @@ defmodule Dojo.Keep.PullTest do
     # The codec is pure and lives in the domain because the braid pages a
     # peer's river across hops and wants the same one (id:ka-cursor).
     test "the cursor round-trips, and garbage is no cursor" do
-      assert Keep.cursor(%{t: 42, n: 0}) == "42.0"
-      assert Keep.after_cursor("42.0") == %{t: 42, n: 0}
-      assert Keep.after_cursor(Keep.cursor(%{t: 42, n: 3})) == %{t: 42, n: 3}
+      id = String.duplicate("a", 64)
+      assert Keep.cursor(%{t: 42, n: 0, id: id}) == "42.0.#{id}"
+      assert Keep.after_cursor("42.0.#{id}") == %{t: 42, n: 0, id: id}
+      assert Keep.after_cursor(Keep.cursor(%{t: 42, n: 3, id: id})) == %{t: 42, n: 3, id: id}
 
-      for junk <- ["", "42", "42.", ".0", "a.b", "42.0.1", nil, 42] do
+      # The old two-part cursor cannot name the row it stopped at: no cursor.
+      for junk <- ["", "42", "42.", ".0", "a.b", "42.0", "42.0.1", nil, 42] do
         assert Keep.after_cursor(junk) == nil, "#{inspect(junk)} is no cursor"
       end
 
-      assert Keep.cursor(%{t: "x", n: 0}) == nil, "a stamp is two integers"
+      assert Keep.cursor(%{t: "x", n: 0, id: id}) == nil, "a stamp is two integers"
       assert Keep.cursor(%{message: "irrelevant"}) == nil, "never re-derived from bytes"
 
       id = String.duplicate("a", 64)
@@ -461,7 +541,7 @@ defmodule Dojo.Keep.PullTest do
     end
 
     test "of: :root pages one journal across works, author order" do
-      other = String.duplicate("c", 64)
+      other = Dojo.KeepSigning.root(String.duplicate("c", 64))
 
       for {src, t, work} <- [
             {"a1", 1_000, @target},
@@ -500,28 +580,16 @@ defmodule Dojo.Keep.PullTest do
   end
 
   describe "image_of — the picture comes back out (id:kb-13, id:ka-seat)" do
-    test "what image/2 wrote, image_of reads — byte-identical" do
-      # The write door shipped alone (id:kb-12a) and NOTHING read the column.
-      # The client's eviction is built on this door existing: a shared blob may
-      # be dropped because the room holds it — true about the bytes, and false
-      # about reachability while nothing served them.
+    test "what receive wrote, image_of reads — byte-identical" do
       bytes = snap("pix", title: "with a face")
-      ship(bytes, source: "pix")
-      id = Keep.hash(bytes)
-
       png = <<137, 80, 78, 71, 13, 10, 26, 10, 0, 1, 2, 3>>
-      assert :ok = Keep.image(%{"id" => id, "image" => Base.encode64(png)}, clan: @clan)
+      ship(bytes, source: "pix", image: png)
 
-      assert {:ok, ^png} = Keep.image_of(id)
+      assert {:ok, ^png} = Keep.image_of(Keep.hash(bytes))
     end
 
     test "absent is a NAMED state, not an error" do
-      # kc-e-missing-image: the keep renders whole; the picture may be absent
-      # and says so. A keep with no image and an id nobody minted answer alike.
-      bytes = snap("nopix")
-      ship(bytes, source: "nopix")
-
-      assert Keep.image_of(Keep.hash(bytes)) == :none
+      # Named absence is a missing id, or a row the mint held no picture for.
       assert Keep.image_of(String.duplicate("0", 64)) == :none
     end
 
