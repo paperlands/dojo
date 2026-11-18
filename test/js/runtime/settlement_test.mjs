@@ -75,15 +75,15 @@ describe("isSettledThrough(H) — a fact, not a policy", () => {
     })
 })
 
-function display(source) {
-    const scheduler = seat(source)
+function display(source, config, opts) {
+    const scheduler = seat(source, config)
     const scene = new Group(), ink = new LineMaterial({ vertexColors: true })
     ink._cached = true
     const compositor = createCompositor(scheduler, {
         scene, camera: { position: new Vector3(0, 0, 1000) },
         materials: { getInk: () => ink, clear() {} }, requestRender() {}, viewOffset: () => SE3.identity(),
-    }, { focus: createFocus(scheduler), createText: () => { throw Error("fixture has no labels") } })
-    return { scheduler, compositor }
+    }, { focus: createFocus(scheduler), createText: () => { throw Error("fixture has no labels") }, ...opts })
+    return { scheduler, compositor, scene }
 }
 
 describe("live reveal clock — lifecycle constraints", () => {
@@ -115,6 +115,81 @@ describe("live reveal clock — lifecycle constraints", () => {
         const before = r.scheduler.lastTickTime
         r.compositor.flush()
         assert.equal(r.scheduler.lastTickTime, before, "flush does not advance the horizon")
+    })
+
+    test("a hold stops due work in frames and flushes, not just future waits", () => {
+        let work = 0
+        const { scheduler, compositor, scene } = display("loop 100 do\n fw 1\nend", {
+            clock: () => work, admit: ({ requested }) => { work++; return { accepted: true, transform: requested } },
+        }, { pacer: { budgetMs: 2, observe() {}, skip() {} } })
+        const inkCount = () => {
+            let n = 0
+            scene.traverse(node => { n += node.geometry?.instanceCount ?? 0 })
+            return n
+        }
+        compositor.advance(1000)
+        assert.ok(work > 0 && !scheduler.done, "the fixture has sliced work due at H")
+        const before = [work, inkCount()]
+        assert.equal(compositor.setHeld(true), true)
+        assert.equal(compositor.setHeld(true), false)
+        compositor.advance(1100)
+        compositor.flush()
+        assert.deepEqual([work, inkCount()], before)
+        assert.equal(scheduler.lastTickTime, 0)
+        assert.equal(compositor.setHeld(false), true)
+        assert.equal(compositor.setHeld(false), false)
+        compositor.advance(1200)
+        assert.ok(work > before[0], "due work is permitted again")
+        assert.equal(scheduler.lastTickTime, 0)
+        for (let i = 1; i <= 100 && !scheduler.done; i++) compositor.advance(1200 + i * 16)
+        assert.equal(scheduler.done, true)
+        assert.ok(inkCount() > before[1], "the resumed program adds ink")
+    })
+
+    test("resume preserves a partly elapsed wait without pricing a gap as a frame", () => {
+        const observed = []
+        const { scheduler, compositor } = display("fw 1\nwait 0.1\nfw 2", {}, {
+            pacer: { budgetMs: 4, observe: n => observed.push(n), skip() {} },
+        })
+        compositor.advance(0)
+        compositor.advance(40)
+        compositor.setHeld(true)
+        // No frame at all while held, and below the idle rebase threshold.
+        compositor.setHeld(false)
+        compositor.advance(640)
+        assert.equal(scheduler.lastTickTime, 40)
+        assert.equal(scheduler.done, false)
+        assert.deepEqual(observed, [40])
+        compositor.advance(699)
+        assert.equal(scheduler.done, false)
+        compositor.advance(700)
+        assert.equal(scheduler.lastTickTime, 100)
+        assert.equal(scheduler.done, true)
+    })
+
+    test("a component reply cannot publish from its microtask while held", async () => {
+        const responder = delayedResponder()
+        const { scheduler, compositor } = display("let B\nfw 1", { admitAsync: responder.admit })
+        compositor.advance(0)
+        const frame = scheduler.root.children.get("host")
+        const B = frame.children.get("B")
+        const call = responder.calls[0]
+        const revision = scheduler.motionRevision
+        compositor.setHeld(true)
+        call.resolve({ accepted: true, transform: call.request.requested,
+            component: [{ frame: B, transform: { ...SE3.identity(), position: [7, 0, 0] } }] })
+        await settle()
+        assert.equal(B.transform.deref().position[0], 0, "a reply cannot commit outside the frame pump")
+        assert.equal(scheduler.motionRevision, revision)
+        compositor.advance(120)
+        compositor.flush()
+        assert.equal(scheduler.done, false)
+        compositor.setHeld(false)
+        compositor.advance(136)
+        assert.equal(frame.transform.deref().position[0], 1)
+        assert.equal(B.transform.deref().position[0], 7)
+        assert.equal(scheduler.motionRevision, revision + 1)
+        assert.equal(scheduler.done, true)
     })
 
     test("the gate drains before it spends: a queued keyed build holds H", () => {

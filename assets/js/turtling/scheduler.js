@@ -2407,7 +2407,7 @@ function proposedOverrides(writer, verdict) {
 // (id:execution-input-revisions)
 function parkOnVerdict(ctx, verdict, pump, attempt) {
     let step
-    if (pump.execution.run(ctx, () => { step = acceptVerdict(ctx, verdict, pump, attempt) })) return step
+    if (!pump.held && pump.execution.run(ctx, () => { step = acceptVerdict(ctx, verdict, pump, attempt) })) return step
     openInstant(ctx)
     suspend(ctx, 'admission', { seq: ++ctx.motionSeq, verdict: null,
         deliver: () => parkOnVerdict(ctx, verdict, pump, attempt) })
@@ -2445,7 +2445,7 @@ function acceptVerdict(ctx, verdict, pump, attempt) {
             verdict = { kind: 'refuse', ink: pump.execOpts.refusalStroke === 'continue' ? 'continue' : 'break' }
         }
     }
-    if (!pump.execution.permits(ctx)) return parkOnVerdict(ctx, offered, pump, attempt)
+    if (pump.held || !pump.execution.permits(ctx)) return parkOnVerdict(ctx, offered, pump, attempt)
     if (motionBaseChanged(writer, request) || questionMoved(writer)) verdict = { kind: 'stale' }
     recordAttempt(metaRootFrame(ctx), {
         path: 'program-motion', command: request?.command ?? null, owner: ctx.id,
@@ -3470,6 +3470,7 @@ function stepFrame(ctx, value, done, route, pump) {
 // One generator step (owed deposit first). Both pumps share this path.
 // (id:output-ledger-r2-credit)
 function stepOnce(ctx, route, pump) {
+    if (pump.held) return { verdict: 'paused' }
     const { frameTarget, frameTransform, destination } = route
     if (destination === null) return endUnresolved(ctx, 'the retained receiver has left the world')
     if (!pump.execution.permits(ctx) || questionMoved(ctx)) return { verdict: 'paused' }
@@ -3583,7 +3584,7 @@ export function createScheduler(generator, opts = {}) {
             pump.wake()
             if (root.notifyingCommit) return
             readouts.recompute(committedSnapshot())
-            readouts.drain()
+            if (!pump.held) readouts.drain()
         },
     })
     const readouts = createReadouts({ permits: owner => !root.notifyingCommit && execution.permits(owner) })
@@ -3624,6 +3625,7 @@ export function createScheduler(generator, opts = {}) {
     // Shared pump bag for tick/hotSwap/advanceChild. Config only — now rides route.
     // (id:output-ledger-r2-pacer, id:carving-todo-effects-table)
     const pump = {
+        held: false, // authorization for this play, not a change to execution.permits
         createDeps,
         execOpts,
         motionAdmission: opts.motionAdmission || null,
@@ -3710,6 +3712,8 @@ export function createScheduler(generator, opts = {}) {
         get building() { return this._building === true },
         // Is the world at a logical display cut? The display driver's one boundary
         // question. Where a `wait` is a cut, a breath, a debt or a block is not.
+        get held() { return pump.held },
+        set held(next) { pump.held = next },
         get atCut() { return atCut(root) },
         // Settlement through H is a fact, not a retry or publication instruction.
         // It does not certify complete display geometry or ready visual resources.
@@ -4130,7 +4134,7 @@ export function createScheduler(generator, opts = {}) {
 
         // Earliest resumeAt only; post-order within an instant. (D011 #3)
         tick(now) {
-            if (root.notifyingCommit) return false
+            if (pump.held || root.notifyingCommit) return false
             this.lastTickTime = now
             pump.now = now
             readouts.drain()
@@ -4177,7 +4181,7 @@ export function createScheduler(generator, opts = {}) {
             let parked = false
 
             visitPostOrderMotionFirst(root, (ctx) => {
-                if (parked || ctx.done || !pump.execution.permits(ctx) || ctx.resumeAt > frontier) return
+                if (parked || pump.held || ctx.done || !pump.execution.permits(ctx) || ctx.resumeAt > frontier) return
 
                 // Defer shouts until all siblings exist.
                 const deferredShouts = []

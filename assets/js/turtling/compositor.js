@@ -61,6 +61,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
     let lastWallT = null  // previous advance() wall timestamp, to detect idle-out gaps
     let lastNow = null     // previous normalized wall time, for the elapsed allowance
     let H = 0              // the reveal horizon (logical work authorized), not a scheduler clock
+    const held = () => scheduler.held === true
     // The reveal horizon: how much logical work live execution authorizes. It advances by the
     // normalized wall allowance only when the scheduler is settled through it; a discarded
     // allowance never becomes debt. (id:render-construction-cadence)
@@ -416,7 +417,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
 
     function driveToRest(beats, outOfTime, now = scheduler.lastTickTime || 0) {
         let left = MAX_OVERRUN_TICKS
-        for (;;) {
+        while (!held() && !disposed) {
             const progress = scheduler.tick(now)
             if (scheduler.done) break
             if (outOfTime() && !scheduler.atCut) {
@@ -592,10 +593,20 @@ export function createCompositor(scheduler, stage, opts = {}) {
             setOpacityByAddress(kindled, degree.kindled)
         },
 
+        get held() { return held() },
+        setHeld(next) {
+            if (disposed || next === held()) return false
+            scheduler.held = next
+            // Never spend or price the wall interval crossing a hold edge. (id:host-run-pause)
+            lastNow = frameStart = null
+            stage.requestRender()
+            return true
+        },
         // A NEW PLAY (D011): reset the reveal origin. `now = t − epoch` returns to 0
         // and the scheduler frontier clears, so a fresh seat at the axis origin plays
         // from its start. An EDIT must not call this — it re-seats in place.
         beginPlay() {
+            scheduler.held = false
             epoch = null
             lastWallT = null
             H = 0            // a new play resets the horizon and its elapsed baseline together
@@ -608,12 +619,12 @@ export function createCompositor(scheduler, stage, opts = {}) {
             if (disposed) return scheduler.done
             const beats = []
             const drive = outOfTime => driveToRest(beats, outOfTime)
-            scheduler.withSlice(pacer.budgetMs, drive)
+            if (!held()) scheduler.withSlice(pacer.budgetMs, drive)
             // Capture is in the commit; build is here. Walk the seated answer
             // in this same pump so the show is not a frame behind the pose.
             // (id:laws-figure-eidos-cell, id:laws-figures-phase34-inplace)
-            scheduler.readouts.drain()
-            scheduler.withSlice(pacer.budgetMs, drive)
+            if (!held()) scheduler.readouts.drain()
+            if (!held()) scheduler.withSlice(pacer.budgetMs, drive)
             return finishPass(beats)
         },
 
@@ -634,18 +645,18 @@ export function createCompositor(scheduler, stage, opts = {}) {
             // Drain at the current H FIRST: a readout rebuild re-seats work, so the gate
             // must see it before the allowance is spent. Construction stays outside
             // publication. (id:laws-figure-eidos-cell, id:render-construction-cadence)
-            scheduler.readouts.drain()
+            if (!held()) scheduler.readouts.drain()
             // Spend the normalized allowance only when no obligation remains through H;
             // otherwise discard it. Wall observation above is unaffected.
-            if (scheduler.isSettledThrough(H)) H += allowance
+            if (!held() && scheduler.isSettledThrough(H)) H += allowance
             scheduler.lastTickTime = H
             // Idle gap is not a slow device — skip AIMD, do not cut the quantum.
             if (frameStart !== null) {
-                if (idledOut) pacer.skip()
+                if (held() || idledOut) pacer.skip()
                 else pacer.observe(t - frameStart)
             }
             frameStart = t
-            scheduler.withSlice(pacer.budgetMs, outOfTime => driveToRest(beats, outOfTime, H))
+            if (!held()) scheduler.withSlice(pacer.budgetMs, outOfTime => driveToRest(beats, outOfTime, H))
             finishPass(beats, true)
         },
 

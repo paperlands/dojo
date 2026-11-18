@@ -764,7 +764,7 @@ export class Turtle {
         const controlsSettling = now < this._controlsActiveUntil
         // Snap and in-flight readback must keep the loop awake too — otherwise
         // a quiet canvas can sleep before the owed hatch runs.
-        this._keepRendering = walking || recording || controlsChanged || controlsSettling
+        this._keepRendering = (walking && !this.compositor?.held) || recording || controlsChanged || controlsSettling
             || verdict.owed || this._snapOwed || this.stage.hatching || !!this._ghost
 
         this._sayProgress(now)

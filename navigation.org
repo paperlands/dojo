@@ -2291,6 +2291,8 @@ native mesh lifetime holds, event-grain budget and append-before-reclaim fail.
 bounded world-space coverage, clip-space projection and one frozen render receipt.
 [[id:host-embedding-three-cuts][Three missing host capabilities]] — completion scope, play pause,
 and refusal without replacement. Reproduce in =probe/embedding-lifecycle/host_three_cuts.mjs=.
+Local [[id:host-run-pause][run pause]] — one execution hold, native reply retention and a
+fresh resume anchor; camera and frame requests stay live. Packed fence: =scripts/verify/host_play.sh=.
 [[id:host-embedding-internal-compare][Internal comparison]] tests learner value, not readback removal.
 Try =node probe/embedding-lifecycle/flash_frame.mjs --lesson=; verify with =--verify-lesson=.
 Replacement credit: [[id:output-ledger-replacement-credit]] — same-carrier clear + ink share

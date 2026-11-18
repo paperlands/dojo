@@ -645,6 +645,55 @@ try {
     stateCanvas.remove()
     say('framePaths:' + JSON.stringify({rootHeadings, literalHeading, nestedHeading, authoredLine, vertical}))
     say('framePathsok:' + framePathsOk)
+
+    // Pause is a right of one accepted run, not a patch to the browser. (id:host-run-pause)
+    const pauseWorlds = [0, 1].map(() => {
+        const surface = document.createElement('canvas')
+        surface.style.cssText = 'display:block;width:240px;height:180px'
+        document.body.append(surface)
+        return { surface, world: createWorld(surface) }
+    })
+    const [heldWorld, otherWorld] = pauseWorlds.map(({ world }) => world)
+    const nextHeldView = () => new Promise(resolve => {
+        const off = heldWorld.onFrame(({ view }) => { off(); resolve(view) })
+    })
+    const now = performance.now, pageRAF = requestAnimationFrame, realStart = now.call(performance)
+    const heldBeats = []
+    heldWorld.onBeat(beat => heldBeats.push(beat))
+    const paused = await heldWorld.play('let A = (35, 20)\nfw 10\nwait 0.3\nrt 90\nfw 10')
+    const originalBeatCount = heldBeats.length
+    const pausedOnce = paused.pause() && !paused.pause()
+    let pauseCompleted = false
+    const resumed = paused.finished.then(() => { pauseCompleted = true })
+    const beforeFit = await nextHeldView()
+    const fitted = heldWorld.view.fit()
+    const afterFit = await nextHeldView()
+    await (await otherWorld.play('wait 0.4\nfw 5')).finished
+    const stayedHeld = !pauseCompleted && heldBeats.length === originalBeatCount
+        && heldWorld.interaction.read(['host'], 'x').value === 10
+        && otherWorld.interaction.read(['host'], 'x').value === 5
+        && performance.now === now && requestAnimationFrame === pageRAF && now.call(performance) > realStart
+    const resumedOnce = paused.resume() && !paused.resume()
+    await resumed
+    const endedNoop = !paused.pause() && !paused.resume()
+    const old = await heldWorld.play('wait 30')
+    const oldEnd = old.finished.catch(error => error.reason)
+    const oldHeld = old.pause()
+    const newer = await heldWorld.play('wait 0.05\nfw 2')
+    const oldRevoked = !old.resume() && !old.pause() && await oldEnd === 'superseded'
+    await newer.finished
+    const doomed = await heldWorld.play('wait 30')
+    const doomedEnd = doomed.finished.catch(error => error.reason)
+    const doomedHeld = doomed.pause()
+    heldWorld.dispose()
+    const disposedHeld = !doomed.resume() && await doomedEnd === 'disposed'
+    for (const { world, surface } of pauseWorlds) { world.dispose(); surface.remove() }
+    const cameraLive = fitted && afterFit.frame > beforeFit.frame
+        && JSON.stringify(afterFit.worldToView) !== JSON.stringify(beforeFit.worldToView)
+    say('pause:' + JSON.stringify({ pausedOnce, stayedHeld, resumedOnce, endedNoop,
+        oldHeld, oldRevoked, doomedHeld, disposedHeld, cameraLive }))
+    say('pauseok:' + (pausedOnce && stayedHeld && resumedOnce && endedNoop
+        && oldHeld && oldRevoked && doomedHeld && disposedHeld && cameraLive))
     say("DONE")
 } catch (e) {
     say("FAIL " + (e && e.stack || e))

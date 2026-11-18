@@ -72,6 +72,7 @@ export function createWorld(canvas, { caps, law, interactive = false, input = nu
         finishReject = null
         watch.clear()
         reject?.(halt("superseded"))
+        turtle.compositor?.setHeld(false)
     }
 
 
@@ -92,15 +93,27 @@ export function createWorld(canvas, { caps, law, interactive = false, input = nu
             let resolve
             let reject
             const finished = new Promise((res, rej) => { resolve = res; reject = rej })
+            const settle = (deliver, value) => {
+                if (finishReject === run.reject) {
+                    finishReject = null
+                    turtle.compositor?.setHeld(false)
+                }
+                deliver(value)
+            }
             const run = {
                 settled: false,
-                resolve: value => { finishReject = null; resolve(value) },
-                reject: error => { finishReject = null; reject(error) },
+                resolve: value => settle(resolve, value),
+                reject: error => settle(reject, error),
             }
+            const setHeld = held => finishReject === run.reject && !(held && turtle.scheduler?.done)
+                && (turtle.compositor?.setHeld(held) ?? false)
             finishReject = run.reject
             watch.begin(run)
             watch.look()
-            return { finished, commandCount: result.commandCount }
+            return {
+                finished, commandCount: result.commandCount,
+                pause: () => setHeld(true), resume: () => setHeld(false),
+            }
         },
         interaction: {
             read(place, property) {
