@@ -1398,6 +1398,20 @@ A supplied subject can be retired; read-only scope has no open-context exemption
 Seventeen new direct/characterization tests preserve these distinctions and the
 consumers' different refusal orders. Later installation/publication cuts remain open.
 
+** author-facing composition — patient chase and the invitation question
+:PROPERTIES:
+:ID: nav-author-behaviour-composition
+:KEYWORDS: fox hedgehog patient chase invitation bound facet signal computed truth dependency footprint reconstruction withdrawal independent support native hand local world schedule causality D011 priors Boxer Syndicate Yampa Esterel
+:PATH: probe/interface-language/RESULTS.org::interface-language-results
+:MODULE: probe/interface-language/patient-chase.mjs probe/interface-language/invited-walk.mjs probe/interface-language/patient-episode.mjs probe/interface-language/causal-schedule.mjs
+:END:
+The full native episode binds participants before reading invitation truth. Equal truth
+retains its writer; false drops the hunt's body dependencies while prey and hand can
+move independently; reinvitation uses the accepted present. Support/driver withdrawal
+preserves other owners and geometry. Separate headless schedule control is RED for
+named autonomous pursuit, even after each horizon settles. No runtime repair claimed.
+Priors and limits: [[id:author-behaviour-priors]], [[id:author-behaviour-executable-followup]].
+
 ** n-node response — bounded leaf initialization and the rooted tree
 :PROPERTIES:
 :ID: nav-response-n-node-evidence
@@ -2232,6 +2246,9 @@ Consumer API and browser imports: [[file:scripts/release/README.md][PaperLang on
 Frame targets: [[id:host-frame-paths]] — exact key paths via =frame.js::frameAt=;
 main =['host']=, datum =[]=, nested keys without name parsing. Host path/lifetime
 fence: =test/js/host/frame_path_test.mjs=; scalar named-value reads stay separate.
+Wheel ownership: [[id:host-input-wheel]] — =input.wheel= at the native listener,
+not a global capture listener. Node admission/lifetime controls plus the packed
+=host_play.sh= trusted scroll/zoom/pan/disposal journey; local and unreleased.
 Build/publish: [[file:scripts/release/host.org][release runbook]].
 Implementation invariants: [[file:specs/turtle/host-runtime.org][host runtime]] (D030).
 =host.js::createWorld= owns the lifecycle; =turtling/run.js= owns completion.
@@ -2262,6 +2279,20 @@ Local first slice: [[id:host-embedding-slice-1-view]] — =world.view.snapshot/p
 Code: =assets/js/turtling/view_snapshot.js=; usage: =scripts/release/README.md= (unreleased).
 Needs/deletion ledger: [[file:specs/turtle/host-embedding-needs.org][needs audit]] — S1–S12 against local capability,
 adopter migration, and the next bounded ink-capture proof; no release implied.
+Rich-behaviour path: [[id:host-embedding-rich-foundation]] — keep native question/binding
+semantics; migrate ready capabilities, then measure bounded ink before scene/history expansion.
+Carrier proof: [[id:host-embedding-carrier-foundation]] — requisites for bounded ink capture;
+=test/js/render/carrier_delivery_test.mjs= fences exact endpoints and post-pass beat delivery.
+Retention experiment: [[id:host-embedding-ink-twin]] — =probe/embedding-lifecycle/ink_twin.mjs=;
+native mesh lifetime holds, event-grain budget and append-before-reclaim fail.
+[[id:host-embedding-ink-packed][Packing]] separates geometry from event grain;
+[[id:host-embedding-ink-turnover][turnover]] separates final size from peak capacity.
+[[id:host-embedding-centreline-flash][Frame-aligned flash]] — =probe/embedding-lifecycle/flash_frame.mjs=:
+bounded world-space coverage, clip-space projection and one frozen render receipt.
+[[id:host-embedding-internal-compare][Internal comparison]] tests learner value, not readback removal.
+Try =node probe/embedding-lifecycle/flash_frame.mjs --lesson=; verify with =--verify-lesson=.
+Replacement credit: [[id:output-ledger-replacement-credit]] — same-carrier clear + ink share
+one bounded cell; empty completion retains its return until admission. Fence: =replacement_credit_test.mjs=.
 
 ** expressive workflow — one intention, many petals
 :PROPERTIES:

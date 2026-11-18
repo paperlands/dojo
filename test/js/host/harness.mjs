@@ -34,10 +34,13 @@ const { Turtle } = await import(turtleURL)
 const hostURL = new URL('../../../assets/js/host.js', import.meta.url)
 const runURL = new URL('../../../assets/js/turtling/run.js', import.meta.url).href
 const viewURL = new URL('../../../assets/js/turtling/view_snapshot.js', import.meta.url).href
+const orbitURL = new URL('../../../assets/js/turtling/orbit.js', import.meta.url).href
 const source = readFileSync(hostURL, 'utf8')
     .replace('"./turtling/turtle.js"', JSON.stringify(turtleURL))
     .replace('"./turtling/run.js"', JSON.stringify(runURL))
     .replace('"./turtling/view_snapshot.js"', JSON.stringify(viewURL))
+    .replace('"./turtling/orbit.js"', JSON.stringify(orbitURL))
+export { Turtle }
 export const { createWorld, projectPoint, unprojectRay } = await import('data:text/javascript,' + encodeURIComponent(source))
 export function headlessWorld(options) {
     const world = createWorld({}, options)

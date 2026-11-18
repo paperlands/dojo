@@ -136,8 +136,8 @@ export function accumulateTrail(event, layer, materials) {
     }
 
     // A path event continues its source's open run iff it carries the same
-    // stroke-run id (scheduler: thickness + join; colour is ink). GrowLine.append
-    // joins from the run's last endpoint, skipping the shared start point.
+    // stroke-run id (scheduler: thickness + join; colour is ink). Batching does
+    // not change the geometry of a deposit after projection into the carrier.
     // id:ft-d7-deposit-runid, id:child-ink
     let tr = layer.trails.get(source)
     if (!(tr && tr.runId === event.runId)) {

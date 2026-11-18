@@ -21,7 +21,8 @@ const source = readFileSync(new URL('../../../assets/js/host.js', import.meta.ur
 const { createWorld } = await import('data:text/javascript,' + encodeURIComponent(
     source.replace('"./turtling/turtle.js"', JSON.stringify(fakeURL))
         .replace('"./turtling/run.js"', JSON.stringify(new URL('../../../assets/js/turtling/run.js', import.meta.url).href))
-        .replace('"./turtling/view_snapshot.js"', JSON.stringify(new URL('../../../assets/js/turtling/view_snapshot.js', import.meta.url).href))))
+        .replace('"./turtling/view_snapshot.js"', JSON.stringify(new URL('../../../assets/js/turtling/view_snapshot.js', import.meta.url).href))
+        .replace('"./turtling/orbit.js"', JSON.stringify(new URL('../../../assets/js/turtling/orbit.js', import.meta.url).href))))
 
 async function ready() {
     const world = createWorld({})

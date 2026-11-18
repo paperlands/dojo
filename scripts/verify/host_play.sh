@@ -652,6 +652,44 @@ try {
 </script>
 HTML
 
+# The same packed runtime, with independent canvases inside a scrolling page.
+# Trusted wheel input is driven by host_play.mjs. (id:host-input-wheel)
+cat > "$out/wheel.html" << 'HTML'
+<style>
+body { margin: 0; height: 3000px; scroll-behavior: auto; }
+canvas { position: fixed; top: 40px; width: 200px; height: 160px; }
+#default { left: 8px; } #modifier { left: 224px; } #none { left: 440px; }
+</style>
+<canvas id="default"></canvas><canvas id="modifier"></canvas><canvas id="none"></canvas>
+<script type="module">
+import { createWorld } from './runtime/host.mjs'
+try {
+    const worlds = Object.fromEntries(['default', 'modifier', 'none'].map(name => [name,
+        createWorld(document.getElementById(name), name === 'default' ? {} : { input: { wheel: name } })]))
+    window.wheelWorlds = worlds
+    const events = []
+    window.addEventListener('wheel', event => events.push({
+        trusted: event.isTrusted, target: event.target.id,
+        ctrl: event.ctrlKey, meta: event.metaKey, deltaY: event.deltaY,
+        cancelable: event.cancelable, prevented: event.defaultPrevented,
+    }), { passive: true })
+    for (const world of Object.values(worlds)) await (await world.play('fw 30')).finished
+    await Promise.all(Object.values(worlds).map(world => new Promise(resolve => {
+        const off = world.onFrame(() => { off(); resolve() })
+    })))
+    window.wheelState = () => ({
+        y: scrollY, dpr: devicePixelRatio, scale: visualViewport?.scale ?? 1, events,
+        views: Object.fromEntries(Object.entries(worlds).map(([name, world]) => {
+            const view = world.view.snapshot()
+            return [name, view ? JSON.stringify([view.worldToView, view.projection]) : null]
+        })),
+    })
+    window.addEventListener('pagehide', () => Object.values(worlds).forEach(world => world.dispose()), { once: true })
+    window.wheelReady = true
+} catch (error) { window.wheelError = error.stack }
+</script>
+HTML
+
 python3 -m http.server --bind 127.0.0.1 --directory "$out" "$port" >"$out/http.log" 2>&1 &
 http=$!
 sleep 0.2

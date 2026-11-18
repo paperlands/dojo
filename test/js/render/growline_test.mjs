@@ -16,12 +16,22 @@ describe("GrowLine", () => {
         assert.deepEqual(seg(gl._array, 1), [10, 0, 0, 10, 5, 0])
     })
 
-    test("a continuing append joins from the previous endpoint (skips shared start)", () => {
+    test("adjacent appends share the endpoint without adding a segment", () => {
         const gl = new GrowLine({})
         gl.append([[0, 0, 0], [10, 0, 0]])
         gl.append([[10, 0, 0], [20, 0, 0]])   // shared start [10,0,0]
         assert.equal(gl.segmentCount, 2)
         assert.deepEqual(seg(gl._array, 1), [10, 0, 0, 20, 0, 0])  // no zero-length junk segment
+    })
+
+    test("batching never rewrites a deposit's first endpoint", () => {
+        const gl = new GrowLine({})
+        gl.append([[-1, 0, 0], [0, 0, 0]])
+        gl.append([[1e-7, 0, 0], [2, 0, 0]])
+        gl.append([[-390, 0, 0], [-380, 0, 0]])
+        assert.equal(gl.segmentCount, 3)
+        assert.deepEqual(seg(gl._array, 1), [Math.fround(1e-7), 0, 0, 2, 0, 0])
+        assert.deepEqual(seg(gl._array, 2), [-390, 0, 0, -380, 0, 0])
     })
 
     test("sync sets instanceCount and uploads only the appended range", () => {

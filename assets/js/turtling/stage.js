@@ -12,7 +12,7 @@ import {
     Vector3,
     WebGLRenderer,
 } from '../utils/three-entry.js'
-import { DojoOrbitControls } from './orbit.js'
+import { DojoOrbitControls, normalizeInput } from './orbit.js'
 import Render from "./render/index.js"
 import { createMaterialCache } from "./render/line/material-cache.js"
 import { surfaceOfCanvas, observeSurface, contentRectOf, projectClient } from "./viewport.js"
@@ -25,7 +25,10 @@ import { CLIENT_SPACE } from "./laws/handle.js"
 import { fitPose } from "./laws/fit.js"
 
 import { createCapture, copyBody, copyLayers, copyValue, makeSurface } from "./capture.js"
-export function createStage(canvas, bridge, instruments = {}) {
+export function createStage(canvas, bridge, instruments = {}, input = null) {
+    // Refused before the canvas is touched: a bad policy must not buy a context.
+    // (id:host-input-wheel)
+    const policy = normalizeInput(input)
     const ctx = canvas.getContext("webgl2") ?? canvas.getContext("webgl")
 
     // Material cache (spec A3) rides the WebGL lifetime. Owned here so
@@ -50,7 +53,7 @@ export function createStage(canvas, bridge, instruments = {}) {
     camera.updateProjectionMatrix()
 
     // Controls
-    const controls = new DojoOrbitControls(camera, canvas)
+    const controls = new DojoOrbitControls(camera, canvas, policy)
     controls.target.set(0, 0, 0)
     controls.mouseButtons = {
         RIGHT: MOUSE.ROTATE,

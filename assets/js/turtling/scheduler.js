@@ -293,16 +293,23 @@ function deliverDeposit(ctx, value, frameTarget, frameTransform, stock, destinat
 
     // Credit = flow control: sink queue full (classic credit-based backpressure).
     const sink = frameTarget ? frameTarget.channel : destination.channel
-    if (sink.full) return 'credit'
-
-    // The held clear lands WITH the new ink: one step, so the swap is atomic to the view.
-    // (id:laws-figures-phase34-inplace)
-    if (ctx.pendingClear) { ctx.channel.put({ type: 'clear' }); ctx.pendingClear = false }
+    if (sink.full || (ctx.pendingClear && sink !== ctx.channel && ctx.channel.full)) return 'credit'
+    // One credit carries a same-carrier clear + replacement. Other carriers keep
+    // the writer's clear on its own channel. (id:output-ledger-replacement-credit)
+    // Native puts have no callbacks: both credit checks precede mutation.
     tagRun(ctx, value)
-    if (frameTarget) {
-        sink.put(transformEvent(value, frameTransform, ctx.id))
+    const projected = frameTarget
+        ? transformEvent(value, frameTransform, ctx.id)
+        : lensOutput(destination, value)
+    if (ctx.pendingClear && sink === ctx.channel) {
+        if (!sink.putPair({ type: 'clear' }, projected)) return 'credit'
+        ctx.pendingClear = false
     } else {
-        sink.put(lensOutput(destination, value))
+        if (ctx.pendingClear) {
+            if (!ctx.channel.put({ type: 'clear' })) return 'credit'
+            ctx.pendingClear = false
+        }
+        if (!sink.put(projected)) return 'credit'
     }
     return null
 }
@@ -329,7 +336,7 @@ const SUSPENSIONS = {
 function suspend(frame, kind, parts) {
     if (!SUSPENSIONS[kind]) throw new Error(`Unknown suspension: ${kind}`)
     clearSuspension(frame)
-    frame.suspension = { kind, owed: null, ...parts }   // owed stays null unless a debt is held
+    frame.suspension = { kind, owed: null, ...parts }   // owed is a deposit; completion is a terminal return
 }
 
 function clearSuspension(frame) {
@@ -346,9 +353,9 @@ const dataflowTarget = (frame) =>
     frame.suspension?.kind === 'dataflow' ? frame.suspension.on : null
 
 // Breath = preemption: slice spent, generator stays put, owes nothing.
-// A debt is not a breath: an outstanding deposit outranks it.
+// A debt is not a breath: outstanding output or completion outranks it.
 export function parkBreath(ctx) {
-    if (ctx.suspension?.owed) return
+    if (ctx.suspension?.owed || ctx.suspension?.completion) return
     if (ctx.suspension?.kind === 'breath') return
     suspend(ctx, 'breath')
 }
@@ -3429,7 +3436,14 @@ function stepFrame(ctx, value, done, route, pump) {
     if (done) {
         // An answer that ended without ink still empties the show: discharge the held clear.
         // (id:laws-figures-phase34-inplace)
-        if (ctx.pendingClear) { ctx.channel.put({ type: 'clear' }); ctx.pendingClear = false }
+        if (ctx.pendingClear) {
+            if (!ctx.channel.put({ type: 'clear' })) {
+                if (!ctx.suspension?.completion) suspend(ctx, 'credit', { completion: { value } })
+                return { verdict: 'parked' }
+            }
+            ctx.pendingClear = false
+        }
+        clearSuspension(ctx)
         closeInstant(ctx)
         const result = value || {}
         if (result.actorState) {
@@ -3464,6 +3478,9 @@ function stepOnce(ctx, route, pump) {
 
     // Resume after a suspension: replay an owed deposit first (emission order).
     const sus = ctx.suspension
+    // A terminal return is consumed once; credit retry must not call next again.
+    // Its clear still needs current publication rights. (id:output-ledger-replacement-credit)
+    if (sus?.completion) return stepFrame(ctx, sus.completion.value, true, route, pump)
     if (sus?.owed) {
         const refusal = deliverDeposit(ctx, sus.owed, frameTarget, frameTransform, pump.stock, destination)
         if (refusal) {

@@ -22,8 +22,38 @@ import { createArbiter, frameOf, wrapAngle, SPAN, DRIFT, TWIST } from '../utils/
 const _fwd = new Vector3()
 const TWO_PI = Math.PI * 2
 
+// `input` is a page policy: which gesture owns the wheel. Normalized once into
+// frozen primitives and refused by name, so an unknown key cannot imply support
+// for policy this build lacks. (id:host-input-wheel)
+export const WHEEL_POLICIES = Object.freeze(['always', 'modifier', 'none'])
+const INPUT_KEYS = ['wheel']
+
+export function normalizeInput(input = null) {
+    if (input == null) return Object.freeze({ wheel: 'always' })
+    if (typeof input !== 'object' || Array.isArray(input))
+        throw new TypeError('input must be an options object')
+    for (const key of Object.keys(input))
+        if (!INPUT_KEYS.includes(key))
+            throw new TypeError(`input.${key} is not supported; this build takes only input.wheel`)
+    const wheel = input.wheel ?? 'always'
+    if (!WHEEL_POLICIES.includes(wheel))
+        throw new TypeError(`input.wheel must be one of ${WHEEL_POLICIES.join(', ')}`)
+    return Object.freeze({ wheel })
+}
+
+// A trackpad pinch arrives as wheel+ctrlKey; 'modifier' claims Ctrl/Cmd+wheel
+// deliberately (the playground promises both), leaving Shift/Alt-only to the page.
+// 'none' claims nothing, pinch included.
+export function wheelAdmits(wheel, event) {
+    if (wheel === 'none') return false
+    if (wheel === 'always') return true
+    return event?.ctrlKey === true || event?.metaKey === true
+}
+
 export class DojoOrbitControls extends OrbitControls {
-    constructor(object, domElement = null) {
+    constructor(object, domElement = null, input = null) {
+        // Refused before `super` builds a rig with listeners on the element.
+        const wheel = normalizeInput(input).wheel
         super(object, domElement)
 
         // How close the pivot may sit to the camera — not a hard wall; past it the
@@ -41,6 +71,22 @@ export class DojoOrbitControls extends OrbitControls {
         // takes effect on the very next move.
         this.gestureSlop = 10
 
+        // The vendor's gate prevents the default before its handler, so admission
+        // replaces the bound property (a method override would never run). The
+        // closure owns the policy; no live knob is exposed. (id:host-input-wheel)
+        if (wheel !== 'always') {
+            const vendor = this._onMouseWheel
+            if (typeof vendor !== 'function')
+                throw new Error('orbit: the vendored wheel binding vanished; input.wheel cannot be honoured')
+            this._onMouseWheel = event => { if (wheelAdmits(wheel, event)) vendor(event) }
+            // A world built element-less keeps the owned property; its later
+            // connect() registers this same gate.
+            if (this.domElement) {
+                this.domElement.removeEventListener('wheel', vendor)
+                this.domElement.addEventListener('wheel', this._onMouseWheel, { passive: false })
+            }
+        }
+
         this._arbiter = createArbiter()
         this._twistStart = 0
         // Frame baselines for the public-API path (not stock's private starts).
@@ -49,18 +95,18 @@ export class DojoOrbitControls extends OrbitControls {
         this._mid0y = 0
     }
 
-    // Dolly-through. With `minDistance = 0` stock already computes the advance we
-    // want (`prevRadius − prevRadius·scale`, unclamped) and then parks the target
-    // at that unfloored radius ahead of the camera. All that remains is to floor
-    // the pivot — which is the whole of the law.
+    // Stock computes the unclamped advance; we floor only the pivot afterward.
+    // Its constructor calls update() before our standoff exists: do not apply
+    // the law until configured. (id:host-input-wheel)
     update(deltaTime = null) {
         const changed = super.update(deltaTime)
-
+        const standoff = this.dollyStandoff
+        if (!(standoff > 0) || !this.object.isPerspectiveCamera) return changed
         const gap = this.object.position.distanceTo(this.target)
-        if (gap >= this.dollyStandoff || !this.object.isPerspectiveCamera) return changed
+        if (gap >= standoff) return changed
 
         this.object.getWorldDirection(_fwd)
-        this.target.copy(this.object.position).addScaledVector(_fwd, this.dollyStandoff)
+        this.target.copy(this.object.position).addScaledVector(_fwd, standoff)
         // super.update() stamped _lastTargetPosition before we moved the target;
         // leaving it stale makes the NEXT update report a change that never happened.
         this._lastTargetPosition.copy(this.target)

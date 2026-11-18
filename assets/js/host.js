@@ -2,6 +2,7 @@
 import { Turtle } from "./turtling/turtle.js"
 import { completionOf, createRunWatch, halt, refuse } from "./turtling/run.js"
 import { projectPoint, unprojectRay } from "./turtling/view_snapshot.js"
+import { normalizeInput } from "./turtling/orbit.js"
 
 export { projectPoint, unprojectRay }
 
@@ -47,9 +48,12 @@ function sameAnswer(a, b) {
     return Object.is(a.value, b.value)
 }
 
-export function createWorld(canvas, { caps, law, interactive = false } = {}) {
+export function createWorld(canvas, { caps, law, interactive = false, input = null } = {}) {
     // `law` is the lab seam (id:laws-build-p0); interaction is explicitly opt-in.
-    const turtle = new Turtle(canvas, { caps, law, interactive })
+    // `input` is refused here, before a Turtle or a WebGL context exists: a bad
+    // page policy must cost nothing. (id:host-input-wheel)
+    const policy = normalizeInput(input)
+    const turtle = new Turtle(canvas, { caps, law, interactive, input: policy })
     let disposed = false
     let generation = 0
     let acceptedGeneration = 0

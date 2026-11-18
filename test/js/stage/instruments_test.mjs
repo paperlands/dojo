@@ -38,7 +38,7 @@ describe("the instrument seam", () => {
     test("the stage takes instruments and resolves the recorder lazily", () => {
         assert.match(
             STAGE,
-            /createStage\(\s*canvas,\s*bridge,\s*instruments\s*=\s*\{\}\s*\)/,
+            /createStage\(\s*canvas,\s*bridge,\s*instruments\s*=\s*\{\}\s*(?:,\s*input\s*=\s*null\s*)?\)/,
             "createStage must take instruments, defaulting to none",
         )
         assert.match(STAGE, /instruments\.recorder/, "the recorder must come from instruments")
@@ -74,7 +74,7 @@ describe("the instrument seam", () => {
         )
         assert.match(
             TURTLE,
-            /createStage\(\s*canvas,\s*this\.bridge,\s*options\.instruments\s*\)/,
+            /createStage\(\s*canvas,\s*this\.bridge,\s*options\.instruments\s*(?:,\s*options\.input\s*)?\)/,
             "Turtle must forward options.instruments into createStage",
         )
     })

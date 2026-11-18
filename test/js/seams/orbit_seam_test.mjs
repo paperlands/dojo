@@ -38,7 +38,12 @@ const CALLED = [
     "_dollyStart",
     "_pointers",
     "_pointerPositions",
-    "_lastTargetPosition"
+    "_lastTargetPosition",
+    // Own-property wheel binding. input.wheel substitutes this property instead of
+    // overriding a method: the vendor's gate lives in the bound function and calls
+    // preventDefault before the handler, so a method override would be dead code.
+    // (id:host-input-wheel)
+    "_onMouseWheel"
 ]
 
 // Public rig DOF from #32810 — the intent→rig boundary we route through.
@@ -132,5 +137,43 @@ describe("the vendored/subclass seam", () => {
         // Upstream still passes clientX as y in r185. Fix stays here so the
         // vendored file never conflicts on upgrade.
         assert.match(subclass, /_updateZoomParameters\(\s*event\.clientX\s*,\s*event\.clientY\s*\)/)
+    })
+
+    describe("the wheel binding input.wheel replaces", () => {
+        test("the vendor bounds its handler as an OWN property", () => {
+            assert.ok(
+                vendor.includes("this._onMouseWheel = onMouseWheel.bind( this )"),
+                `${VENDOR} no longer binds the wheel handler to this._onMouseWheel — `
+                + `${SUBCLASS}'s gate would install over a function nobody calls`
+            )
+        })
+
+        test("connect and disconnect both address the CURRENT property", () => {
+            // This is what makes substitution coherent: removal and re-addition read
+            // `this._onMouseWheel` at call time, so the gate survives a reconnect and
+            // leaves no second listener behind.
+            assert.ok(vendor.includes("addEventListener( 'wheel', this._onMouseWheel, { passive: false } )"),
+                "connect() no longer adds this._onMouseWheel")
+            assert.ok(vendor.includes("removeEventListener( 'wheel', this._onMouseWheel )"),
+                "disconnect() no longer removes this._onMouseWheel")
+        })
+
+        test("the vendor gate prevents the default before the handler", () => {
+            // Admission therefore belongs at the binding, not inside _handleMouseWheel:
+            // by then the page has already lost the scroll.
+            const gate = vendor.slice(vendor.indexOf("function onMouseWheel( event )"))
+                .slice(0, 400)
+            const prevent = gate.indexOf("event.preventDefault()")
+            const handle = gate.indexOf("this._handleMouseWheel(")
+            assert.ok(prevent > -1 && handle > -1 && prevent < handle,
+                "onMouseWheel no longer prevents the default before _handleMouseWheel")
+        })
+
+        test("the subclass does not override _onMouseWheel as a method", () => {
+            // A method override would look live and never run: the constructor bound a
+            // module function onto the instance.
+            assert.ok(!/^\s*_onMouseWheel\s*\(/m.test(subclass),
+                `${SUBCLASS} defines _onMouseWheel() as a method — dead code; replace the property instead`)
+        })
     })
 })

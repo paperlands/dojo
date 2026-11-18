@@ -90,6 +90,8 @@ export function createCompositor(scheduler, stage, opts = {}) {
     // Per-ambient rendering state: { group, head, shapist }
     // Keyed by ambient.id (unique monotonic counter).
     const ambientLayers = new Map()
+    let disposed = false
+    let deliveringBeats = null
     let opacityByFrame = new WeakMap()
     let defaultOpacity = 1
 
@@ -177,7 +179,8 @@ export function createCompositor(scheduler, stage, opts = {}) {
     // Focused subtree for view routing; head uses stricter name match.
     const inFocusedSubtree = (ambient) => focus.inFocusedSubtree(ambient)
 
-    function drainAndMaterialize() {
+    function drainAndMaterialize(beats) {
+        if (disposed) return false
         let produced = false
         for (const [id, ambient] of scheduler.registry) {
             const events = ambient.channel.drain()
@@ -219,7 +222,10 @@ export function createCompositor(scheduler, stage, opts = {}) {
             const willPrint = events.some((e) => e.type === 'label')
             for (const event of events) {
                 if (event.type === 'error') continue
-                if (event.type === 'beat') { onBeat?.(event); continue }
+                if (event.type === 'beat') {
+                    if (onBeat) beats.push({ ambient, event })
+                    continue
+                }
                 if (event.type === 'clear') {
                     clearChildLayer(layer, { keepLabels: willPrint })
                 } else if (event.type === 'label') {
@@ -408,7 +414,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
     // (id:render-construction-cadence-wait-regression)
     const MAX_OVERRUN_TICKS = 64
 
-    function driveToRest(outOfTime, now = scheduler.lastTickTime || 0) {
+    function driveToRest(beats, outOfTime, now = scheduler.lastTickTime || 0) {
         let left = MAX_OVERRUN_TICKS
         for (;;) {
             const progress = scheduler.tick(now)
@@ -419,13 +425,45 @@ export function createCompositor(scheduler, stage, opts = {}) {
                 // No progress and nothing to drain: another tick cannot help. Stop; the
                 // next opportunity resumes. Stopping need not cut, advance or publish.
                 // (id:render-construction-cadence)
-                if (!progress && !drainAndMaterialize()) break
+                if (!progress && !drainAndMaterialize(beats)) break
                 continue
             }
             if (outOfTime()) break
-            if (!progress && !drainAndMaterialize()) break
+            if (!progress && !drainAndMaterialize(beats)) break
         }
     }
+    function finishPass(beats, scaleHeads = false) {
+        if (!disposed) {
+            drainAndMaterialize(beats)
+            updateGroupPositions()
+            cleanupOrphanedLayers()
+            if (scaleHeads) scaleChildHeads()
+        }
+        const done = scheduler.done
+        publishBeats(beats)
+        return done
+    }
+
+    // A beat reports a finished pass. A listener may run a new pass, but may
+    // not interrupt materialization or deliver new beats ahead of the old ones.
+    // (id:host-embedding-carrier-repair)
+    function publishBeats(beats) {
+        if (disposed || !beats.length) return
+        if (deliveringBeats) {
+            for (const beat of beats) deliveringBeats.push(beat)
+            return
+        }
+        deliveringBeats = beats
+        try {
+            for (const { ambient, event } of beats) {
+                if (scheduler.registry.get(ambient.id) !== ambient) continue
+                try { onBeat(event) } catch (error) { console.error('Beat observer error:', error) }
+            }
+        } finally {
+            deliveringBeats = null
+        }
+    }
+
     return {
         scheduler,
 
@@ -567,21 +605,23 @@ export function createCompositor(scheduler, stage, opts = {}) {
 
         // Own timeslice: never inherit a spent deadline (would park on first breath).
         flush() {
-            scheduler.withSlice(pacer.budgetMs, driveToRest)
+            if (disposed) return scheduler.done
+            const beats = []
+            const drive = outOfTime => driveToRest(beats, outOfTime)
+            scheduler.withSlice(pacer.budgetMs, drive)
             // Capture is in the commit; build is here. Walk the seated answer
             // in this same pump so the show is not a frame behind the pose.
             // (id:laws-figure-eidos-cell, id:laws-figures-phase34-inplace)
             scheduler.readouts.drain()
-            scheduler.withSlice(pacer.budgetMs, driveToRest)
-            drainAndMaterialize()
-            updateGroupPositions()
-            cleanupOrphanedLayers()
-            return scheduler.done
+            scheduler.withSlice(pacer.budgetMs, drive)
+            return finishPass(beats)
         },
 
         // One display frame: tick generators under quantum, materialize, pose heads.
         // Does not call renderer.render() — caller coordinates that.
         advance(t) {
+            if (disposed) return
+            const beats = []
             // Idle-out: rebase sim epoch so time does not jump. (timeline.js)
             const rebased = rebaseEpoch(epoch, lastWallT, t, FRAME_MS, IDLE_GAP_MS)
             const idledOut = rebased !== epoch
@@ -605,11 +645,8 @@ export function createCompositor(scheduler, stage, opts = {}) {
                 else pacer.observe(t - frameStart)
             }
             frameStart = t
-            scheduler.withSlice(pacer.budgetMs, (outOfTime) => driveToRest(outOfTime, H))
-            drainAndMaterialize()
-            updateGroupPositions()
-            cleanupOrphanedLayers()
-            scaleChildHeads()
+            scheduler.withSlice(pacer.budgetMs, outOfTime => driveToRest(beats, outOfTime, H))
+            finishPass(beats, true)
         },
 
         // Opacity by address, not display name. (D006)
@@ -627,6 +664,9 @@ export function createCompositor(scheduler, stage, opts = {}) {
         // Clean up all layers. Called on turtle.reset() / empty canvas.
         // Does NOT touch the light register — that outlives this compositor.
         dispose() {
+            if (disposed) return
+            disposed = true
+            if (deliveringBeats) deliveringBeats.length = 0
             for (const [id, layer] of ambientLayers) {
                 disposeLayer(id, layer)
             }

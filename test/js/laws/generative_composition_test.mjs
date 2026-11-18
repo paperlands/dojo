@@ -240,11 +240,12 @@ test("G1: inherited display style is part of an attached construction", () => {
     assert.deepEqual(ends(result.trace, "F").at(-1), [2, 0, 0])
 })
 
-test("G1: capacity one preserves the final geometry even when it cannot hold the path", () => {
+test("G1: capacity one preserves final ink as well as the accepted pose and question", () => {
     const result = run('loop 3 do\n let F = fw count+1\nend', { capacity: 1 })
     clean(result)
     assert.deepEqual(nz(result.host.children.get("F").transform.deref().position), [3, 0, 0])
     assert.deepEqual(result.scheduler.readouts.list().find(n => n.keyed).question, [3])
+    assert.deepEqual(ends(result.trace, "F").at(-1), [3, 0, 0], "execution alone does not certify the show")
 })
 
 test("G2: nested iteration restores the outer count and captures each declaration", () => {

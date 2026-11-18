@@ -54,7 +54,7 @@ export class Turtle {
         // Behaviour record only — never a reveal trigger.
         this._handMoves = { accepted: 0, displaced: 0 }
 
-        const stage = createStage(canvas, this.bridge, options.instruments)
+        const stage = createStage(canvas, this.bridge, options.instruments, options.input)
         this.stage = stage
         // The fit verb asks the turtle for the figure's extents; the stage
         // only moves the eye. One framing path for the shell and the probe.
@@ -87,7 +87,6 @@ export class Turtle {
             stage.controls.addEventListener(ev, this._onControlsActive)
         }
 
-        this.color = INK
         this.color = INK
         // Beat channel sink. Set by a host; read live at drain time. (id:host-beat)
         this.onBeat = null
@@ -706,6 +705,7 @@ export class Turtle {
                 console.error('Compositor advance error:', error)
             }
 
+            if (this._disposed) return // a beat can end the world before render
             controlsChanged = this.stage.controls.update()
             this.stage.renderer.render(this.stage.scene, this.stage.camera)
 
@@ -900,6 +900,7 @@ export class Turtle {
             }
 
             this.compositor.flush()
+            if (this._disposed) return null // host play checks disposal after this call
             this._lastReflectChange = performance.now()
 
             const wounds = ailmentsFor(this.scheduler.errors, key)
