@@ -680,7 +680,10 @@ try {
     const oldEnd = old.finished.catch(error => error.reason)
     const oldHeld = old.pause()
     const newer = await heldWorld.play('wait 0.05\nfw 2')
+    const newerHeld = newer.pause()
     const oldRevoked = !old.resume() && !old.pause() && await oldEnd === 'superseded'
+    await nextHeldView()
+    const successorStayedHeld = newerHeld && newer.resume()
     await newer.finished
     const doomed = await heldWorld.play('wait 30')
     const doomedEnd = doomed.finished.catch(error => error.reason)
@@ -691,9 +694,9 @@ try {
     const cameraLive = fitted && afterFit.frame > beforeFit.frame
         && JSON.stringify(afterFit.worldToView) !== JSON.stringify(beforeFit.worldToView)
     say('pause:' + JSON.stringify({ pausedOnce, stayedHeld, resumedOnce, endedNoop,
-        oldHeld, oldRevoked, doomedHeld, disposedHeld, cameraLive }))
+        oldHeld, oldRevoked, successorStayedHeld, doomedHeld, disposedHeld, cameraLive }))
     say('pauseok:' + (pausedOnce && stayedHeld && resumedOnce && endedNoop
-        && oldHeld && oldRevoked && doomedHeld && disposedHeld && cameraLive))
+        && oldHeld && oldRevoked && successorStayedHeld && doomedHeld && disposedHeld && cameraLive))
     say("DONE")
 } catch (e) {
     say("FAIL " + (e && e.stack || e))

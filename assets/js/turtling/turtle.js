@@ -899,6 +899,8 @@ export class Turtle {
                 return { success: true, commandCount: sumCounts(seat) }
             }
 
+            // Only fresh host plays expose hold; beginPlay clears it before this flush.
+            // Shell edits have no hold and still diagnose in this pass. (id:host-run-pause)
             this.compositor.flush()
             if (this._disposed) return null // host play checks disposal after this call
             this._lastReflectChange = performance.now()

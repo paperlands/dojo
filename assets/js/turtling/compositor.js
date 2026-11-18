@@ -597,7 +597,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         setHeld(next) {
             if (disposed || next === held()) return false
             scheduler.held = next
-            // Never spend or price the wall interval crossing a hold edge. (id:host-run-pause)
+            // Discard the first frame's allowance and cadence sample after each edge. (id:host-run-pause)
             lastNow = frameStart = null
             stage.requestRender()
             return true

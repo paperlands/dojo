@@ -94,13 +94,14 @@ run's state. Repeats and calls on a completed, superseded or disposed run return
 `false`. Every new play starts unpaused, including when it replaces a held play.
 An attempted replacement still follows the existing refusal rules.
 
-Pause holds program execution and authored waits after the synchronous work
-already in progress. An asynchronous program admission may answer, but does not
-apply until resumed. Already delivered effects are not undone. Camera and frame
-requests still work; explicit hand input is independent of playback. Page and
-work clocks keep running; resume does not catch up elapsed pause time.
+Pause holds program steps, authored waits and pending figure builds after the
+synchronous work already in progress. An asynchronous program admission may
+answer, but its result does not apply until resumed. Already delivered effects
+are not undone. The camera and frame requests still work. Explicit hand input
+can change an accepted pose and its immediate readings and display while paused.
+Page and work clocks keep running; resume does not catch up elapsed pause time.
 The run's original `finished` promise stays in force. This is not seek, replay
-or a guarantee that the canvas pixels stop changing.
+or a freeze of the canvas.
 
 ## Wheel policy: a drawing beside a scrolling page (unreleased)
 

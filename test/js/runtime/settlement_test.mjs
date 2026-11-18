@@ -7,6 +7,7 @@ import assert from "node:assert/strict"
 import { Group, Vector3 } from "../../../assets/js/utils/three-entry.js"
 import { LineMaterial } from "../../../assets/js/utils/three-addons/lines/LineMaterial.js"
 import { createCompositor } from "../../../assets/js/turtling/compositor.js"
+import { createMaterialCache } from "../../../assets/js/turtling/render/line/material-cache.js"
 import { createFocus } from "../../../assets/js/turtling/focus.js"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
 import { buildWorld, fork, delayedResponder, settle } from "../laws/harness.mjs"
@@ -77,11 +78,10 @@ describe("isSettledThrough(H) — a fact, not a policy", () => {
 
 function display(source, config, opts) {
     const scheduler = seat(source, config)
-    const scene = new Group(), ink = new LineMaterial({ vertexColors: true })
-    ink._cached = true
+    const scene = new Group()
     const compositor = createCompositor(scheduler, {
         scene, camera: { position: new Vector3(0, 0, 1000) },
-        materials: { getInk: () => ink, clear() {} }, requestRender() {}, viewOffset: () => SE3.identity(),
+        materials: createMaterialCache(), requestRender() {}, viewOffset: () => SE3.identity(),
     }, { focus: createFocus(scheduler), createText: () => { throw Error("fixture has no labels") }, ...opts })
     return { scheduler, compositor, scene }
 }
@@ -146,25 +146,47 @@ describe("live reveal clock — lifecycle constraints", () => {
         assert.ok(inkCount() > before[1], "the resumed program adds ink")
     })
 
-    test("resume preserves a partly elapsed wait without pricing a gap as a frame", () => {
-        const observed = []
-        const { scheduler, compositor } = display("fw 1\nwait 0.1\nfw 2", {}, {
-            pacer: { budgetMs: 4, observe: n => observed.push(n), skip() {} },
-        })
+    test("a partly elapsed wait survives both sleeping and rendering during a hold", () => {
+        for (const frames of [[], [60, 2060]]) {
+            const observed = []
+            const { scheduler, compositor } = display("fw 1\nwait 0.1\nfw 2", {}, {
+                pacer: { budgetMs: 4, observe: n => observed.push(n), skip() {} },
+            })
+            compositor.advance(0)
+            compositor.advance(40)
+            compositor.setHeld(true)
+            for (const t of frames) {
+                compositor.advance(t)
+                assert.equal(scheduler.lastTickTime, 40)
+                assert.equal(scheduler.done, false)
+            }
+            const resumeAt = frames.length ? 4080 : 640
+            compositor.setHeld(false)
+            compositor.advance(resumeAt)
+            assert.equal(scheduler.lastTickTime, 40)
+            assert.equal(scheduler.done, false)
+            assert.deepEqual(observed, [40])
+            compositor.advance(resumeAt + 59)
+            assert.equal(scheduler.done, false)
+            compositor.advance(resumeAt + 60)
+            assert.equal(scheduler.lastTickTime, 100)
+            assert.equal(scheduler.done, true)
+        }
+    })
+
+    test("explicit hand input and its derived arrow remain live while the play is held", () => {
+        const { scheduler, compositor } = display("let B\nlet V = [80, B.x, 0]\nwait 0.1\nfw 1")
         compositor.advance(0)
         compositor.advance(40)
+        const tip = () => compositor.vectorNames().find(({ name }) => name === "V")?.to
+        assert.deepEqual(tip(), [80, 0, 0])
         compositor.setHeld(true)
-        // No frame at all while held, and below the idle rebase threshold.
-        compositor.setHeld(false)
-        compositor.advance(640)
+        const move = scheduler.proposePlace(["host", "B"], [7, 0, 0], scheduler.motionRevision)
+        assert.equal(move.kind, "accept")
+        compositor.advance(160)
+        assert.deepEqual(tip(), [80, 7, 0])
         assert.equal(scheduler.lastTickTime, 40)
         assert.equal(scheduler.done, false)
-        assert.deepEqual(observed, [40])
-        compositor.advance(699)
-        assert.equal(scheduler.done, false)
-        compositor.advance(700)
-        assert.equal(scheduler.lastTickTime, 100)
-        assert.equal(scheduler.done, true)
     })
 
     test("a component reply cannot publish from its microtask while held", async () => {
