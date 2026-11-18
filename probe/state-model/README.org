@@ -1,0 +1,42 @@
+#+title: State models — controlled crosses at the question boundary
+
+* Before the runs
+:PROPERTIES:
+:ID: state-model-crosses
+:LENS: empiricist architect adversarial
+:END:
+
+Run =node probe/state-model/question.mjs= and =node probe/state-model/reveal.mjs=
+from the root. The experiment changes no production source. Mirrors are disposable;
+a replacement must match its production text exactly once or the run stops.
+
+** Question: two independent interventions
+
+| factor | control | intervention | prediction and falsifier |
+|--------+---------+--------------+-------------------------|
+| How to read a consumed facet | retained =live()= | record: kind, exact incarnation id, facet, captured interpretation; registry lookup, then existing resolver | Same accepted poses, run transitions, labels, pending and errors on supported live cases. If a retired target yields a fresh answer or revives a run, stop and diagnose. Retirement itself is a deliberate challenge, not assumed parity. |
+| What survives a receiver's own publication | current comparison baseline | keep the last observed receiver demand distinct from own progress; no new work queue | Immediate service is unchanged. After a same-run write before service, the hand's demand survives. Own-only writes don't restart; A→B→A before any own progress may coalesce. If demand survives but same-cut writers renew one another forever, stop before proposing a policy. |
+
+The comparison is of actual scheduler effects, not only token equality. Named
+pursuit is also driven by the real headless compositor at three frame schedules;
+that is a challenge, not an assumption that the receiver intervention fixes
+cross-participant service or changes the external clock contract. Observe the
+current cut and writer/run outcomes, not frame count as a proxy for behaviour.
+
+** Reveal: separate allowance representation from the hold writer
+
+The allowance uses only the difference of consecutive normalized timestamps.
+Test whether a raw timestamp gap plus a one-frame idle cap produces the same
+allowances under renderer timestamps and explicit reset edges. Independently,
+force a hold/resume pair during the real compositor drain, once at its public
+door and once at the scheduler's raw setter. The end boolean is identical; an
+actual observed horizon extension distinguishes the authorities. Include a
+nested call with equal time to test whether revocation per measurement means
+the same thing as revocation per context edge. This is a boundary challenge,
+not a claim that nesting is a supported production operation.
+
+* Exit
+
+Keep this as a concluded instrument once the measured boundary and red cases
+are recorded. No new retry policy, clock fix, generic reducer, or runtime ABI
+is authorised by a mirror.

@@ -1,0 +1,108 @@
+#+title: Fresh attempt — retained run, one accepted observation
+#+PROBE-STATUS: concluded
+
+* Predictions, before the cross
+:PROPERTIES:
+:ID: probe-fresh-attempt-plan
+:LENS: empiricist adversarial
+:END:
+
+=node probe/state-model/fresh-attempt.mjs=. Scratch only, built-in =faceto=
+with one already-bound being in an installation. Not quoted lookup, computed
+point expressions, effectful argument replay, or a new meaning for figures.
+Use the real resolver, chart conversion, motion and law gate. Once acquired,
+the being identity is not acquired again on retry. Reject or complete one
+observed command; at most one replay, no new run, no new queue.
+
+- Standing restart is a positive reference. Live receiver/peer control should
+  reproduce wrong old output, not simplify by discarding every reply.
+- Stamp only: peer change retries correctly, receiver change still proposes
+  from the old cursor. Adding a sampled receiver local pose and basis should
+  agree with an independent world-space aim-and-step calculation, even when
+  both participants move and the receiver's chart is rotated and translated.
+- A whole-configuration stamp may reject a valid attempt when only an unrelated
+  being moves. Compare with the used inputs (retained subject position, receiver
+  local pose and basis): an unrelated edit does not make those values stale.
+  Changed inputs still reject, with the original law and source/run gate intact.
+- After two incompatible edits, exhaust the budget without moving or running
+  the following command. Replacing the source while pending must never let the
+  old result write. Completed pure figures still redraw, and a same-question
+  waiting installation is not restarted or reread before its authored wait.
+
+* Readings — separate the sampled geometry from the guard
+:PROPERTIES:
+:ID: probe-fresh-attempt-results
+:LENS: empiricist adversarial
+:MODULE: assets/js/turtling/scheduler.js, assets/js/turtling/executor.js
+:END:
+
+Six arms, same authored inputs, real parser and deferred responder. Only
+scheduler and executor in disposable mirrors are changed. The live-policy
+fixture limits spatial changes to installation bodies; private figures keep
+the standing read semantics. The JSONL output includes both sampled inputs
+and actual verdicts; assertions use an independent aim-and-step calculation
+in world coordinates rather than an endpoint from the baseline.
+
+| Arm | Hand changes receiver motion slot to (10,0,0), prey at (0,5,0) | Unrelated edit |
+|-----+---------------------------------------------------------------+----------------|
+| Standing restart | run 2, (7.316718,1.341641,0) | no retry |
+| Live reads only | run 1, stale reply executes, (0,3,0) | no retry |
+| Stamp only | run 1, rejects first, retry still starts from local (0,0,0) | retries |
+| Stamp + one receiver sample | run 1, (7.316718,1.341641,0) | retries |
+| Compare the sampled inputs | same pose and run | no retry |
+| Sample handoff on a no-op too | same pose and run | no retry |
+
+A distinct control changes the receiver’s /basis/ by stated placement
+instead of moving its local cursor. The stamp-only arm happened to pass
+that case: resampling the basis sees a basis change, even with the old
+local cursor. Testing both doors is essential. Both participants edited in
+a translated, 90-degree rotated room: the coherent arm reaches
+(19.316718,-9.341641,4), starting from the newly accepted (22,-8,4)
+toward (12,-13,4), within 1e-8 of the independent oracle.
+
+A global configuration stamp can reject even the no-edit case (revision
+9→10 between initial offer and reply; observed poses unchanged). Two edits
+to the same unrelated spare while a global-stamped attempt and its retry
+were parked exhaust the budget and stop the command; comparing the used
+inputs completes without retry. Two edits to actual inputs exhaust the
+budget in both arms: no accepted aim, no following forward command, and
+the hand's position remains intact. The footprint arm uses the global
+revision as a cheap unchanged check, not as the last word on relevance.
+It compares exact subject identity/position and receiver local pose/basis.
+
+* The no-op is a handoff too
+:PROPERTIES:
+:ID: probe-fresh-attempt-noop
+:LENS: adversarial architect
+:END:
+
+Move fox and prey together to (10,0,0) while the first aim is pending. The
+stale reply is correctly rejected. The retry sees coincidence and produces
+no proposal. Without a cursor handoff, the following =fw 3= starts at
+(0,0,0) and erases the hand, ending at (3,0,0). The last arm copies the
+sampled local cursor on this synchronous no-op; it issues no aim verdict
+and the forward starts at 10, ending at 13. A no-op isn't permission to
+publish a new pose; it is a completed read from which the local execution
+cursor may continue.
+
+All arms preserve source replacement: no verdict from the retired writer
+lands on the namesake destination. The distance law still refuses a forward
+step at radius 5, and the completed pure figure still redraws. In the last
+arm a peer move during a wait triggers zero aim reads or offers before the
+authored deadline; then the original run reads once and moves correctly.
+
+* Disposition
+:PROPERTIES:
+:ID: probe-fresh-attempt-disposition
+:LENS: architect
+:END:
+
+An attempt can be inspectable data: exact target identity, observed point,
+receiver local pose and storage basis, and a revision hint. A fresh attempt
+does not authorize a retired run; a fresh run does not make an old attempt
+current. Keep the original acceptance and law checks. No production change:
+this is bounded to one already-bound =faceto= subject, no arbitrary argument
+replay. Before promoting, fence coincident continuation and independent
+retirement, challenge the footprint against pre-instant/cycle observations,
+and do not apply this rule to quoted lookups, effectful arguments, or every
+coordinate consumer merely because it has a pose.
