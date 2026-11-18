@@ -61,6 +61,10 @@ export function createCompositor(scheduler, stage, opts = {}) {
     let lastWallT = null  // previous advance() wall timestamp, to detect idle-out gaps
     let lastNow = null     // previous normalized wall time, for the elapsed allowance
     let H = 0              // the reveal horizon (logical work authorized), not a scheduler clock
+    // Identity of the one allowance sample in flight. A reset edge (hold or new play)
+    // replaces it, revoking a measurement taken before the edge. Identity, not a
+    // generation counter. (id:runtime-state-tla)
+    let sample = {}
     const held = () => scheduler.held === true
     // The reveal horizon: how much logical work live execution authorizes. It advances by the
     // normalized wall allowance only when the scheduler is settled through it; a discarded
@@ -597,8 +601,10 @@ export function createCompositor(scheduler, stage, opts = {}) {
         setHeld(next) {
             if (disposed || next === held()) return false
             scheduler.held = next
-            // Discard the first frame's allowance and cadence sample after each edge. (id:host-run-pause)
+            // Discard the first frame's allowance and cadence sample after each edge,
+            // and revoke a sample measured before it. (id:host-run-pause, id:runtime-state-tla)
             lastNow = frameStart = null
+            sample = {}
             stage.requestRender()
             return true
         },
@@ -611,6 +617,10 @@ export function createCompositor(scheduler, stage, opts = {}) {
             lastWallT = null
             H = 0            // a new play resets the horizon and its elapsed baseline together
             lastNow = null
+            sample = {}
+            // A new play takes no cadence sample from the inter-play gap: the loop
+            // did not run a frame for it. (id:render-construction-cadence)
+            frameStart = null
             scheduler.lastTickTime = 0
         },
 
@@ -640,6 +650,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
             lastWallT = t
             if (epoch === null) epoch = t
             const now = t - epoch
+            const claim = sample
             const allowance = lastNow === null ? 0 : Math.max(0, now - lastNow)
             lastNow = now
             // Drain at the current H FIRST: a readout rebuild re-seats work, so the gate
@@ -647,8 +658,9 @@ export function createCompositor(scheduler, stage, opts = {}) {
             // publication. (id:laws-figure-eidos-cell, id:render-construction-cadence)
             if (!held()) scheduler.readouts.drain()
             // Spend the normalized allowance only when no obligation remains through H;
-            // otherwise discard it. Wall observation above is unaffected.
-            if (!held() && scheduler.isSettledThrough(H)) H += allowance
+            // otherwise discard it. A hold edge or new play during the drain replaced
+            // `sample`, so its measurement is not spendable here. (id:runtime-state-tla)
+            if (!held() && claim === sample && scheduler.isSettledThrough(H)) H += allowance
             scheduler.lastTickTime = H
             // Idle gap is not a slow device — skip AIMD, do not cut the quantum.
             if (frameStart !== null) {

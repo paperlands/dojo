@@ -42,7 +42,8 @@ function run(interleave) {
 
 for (const [caseName, expected] of [['ordinary', 60], ['hold-bounce', 40], ['fresh-play', 0]]) {
     const observed = run(caseName)
-    if (caseName === 'ordinary') assert.equal(observed, expected)
-    // A later prevention of this schedule should report no stale spend.
-    console.log(caseName, { expected, observed, staleSpend: observed !== expected })
+    const staleSpend = observed !== expected
+    console.log(caseName, { expected, observed, staleSpend })
+    // The reset edges must revoke the sample measured before them.
+    assert.equal(observed, expected, `${caseName}: the in-flight sample lost its authority`)
 }

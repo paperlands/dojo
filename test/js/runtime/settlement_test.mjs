@@ -268,4 +268,75 @@ describe("live reveal clock — lifecycle constraints", () => {
         compositor.advance(1016)
         assert.equal(scheduler.lastTickTime, held, "the compositor drains before the gate, so H holds over the re-seated build")
     })
+
+    // The sample is measured before the drain; a reset edge during the drain must
+    // revoke it. Both interleavings are injected at the real drain seam.
+    // (id:runtime-state-tla)
+    test("a hold edge inside the drain revokes the in-flight sample", () => {
+        const r = display("fw 1\nwait 1\nfw 1")
+        r.compositor.advance(0)
+        r.compositor.advance(40)
+        assert.equal(r.scheduler.lastTickTime, 40)
+        const drain = r.scheduler.readouts.drain
+        r.scheduler.readouts.drain = (...args) => {
+            r.scheduler.readouts.drain = drain
+            assert.equal(r.compositor.setHeld(true), true)
+            assert.equal(r.compositor.setHeld(false), true)
+            return drain(...args)
+        }
+        r.compositor.advance(60)
+        assert.equal(r.scheduler.lastTickTime, 40, "a pause/resume pair does not license the stale allowance")
+    })
+
+    test("a new play inside the drain revokes the in-flight sample", () => {
+        const r = display("fw 1\nwait 1\nfw 1")
+        r.compositor.advance(0)
+        r.compositor.advance(40)
+        const drain = r.scheduler.readouts.drain
+        r.scheduler.readouts.drain = (...args) => {
+            r.scheduler.readouts.drain = drain
+            r.compositor.beginPlay()
+            r.scheduler.hotSwapChild("host", fork("host", "wait 1\nfw 3"), { fresh: true })
+            r.compositor.flush()
+            assert.equal(r.scheduler.lastTickTime, 0)
+            return drain(...args)
+        }
+        r.compositor.advance(60)
+        assert.equal(r.scheduler.lastTickTime, 0, "a new play does not inherit the old play's allowance")
+    })
+
+    // The inter-play gap is not a frame of the new play; sampling it would cut
+    // the AIMD quantum. A held edge already discards its first cadence sample.
+    // (id:render-construction-cadence)
+    test("a fresh play does not sample the inter-play gap as a frame", () => {
+        const observed = []
+        const pacer = { budgetMs: 4, observe: n => observed.push(n), skip() {} }
+        const r = display("fw 1\nwait 1\nfw 1", {}, { pacer })
+        r.compositor.advance(0)
+        r.compositor.advance(16)
+        assert.deepEqual(observed, [16])
+        r.compositor.beginPlay()
+        r.compositor.advance(516)
+        assert.deepEqual(observed, [16], "the gap between plays is not a frame cost")
+        r.compositor.advance(532)
+        assert.deepEqual(observed, [16, 16], "the next real frame is observed")
+    })
+
+    test("a new play inside the drain does not sample the pre-edge gap", () => {
+        const observed = []
+        const r = display("fw 1\nwait 1\nfw 1", {}, { pacer: { budgetMs: 4, observe: n => observed.push(n), skip() {} } })
+        r.compositor.advance(0)
+        r.compositor.advance(16)
+        assert.deepEqual(observed, [16])
+        const drain = r.scheduler.readouts.drain
+        r.scheduler.readouts.drain = (...args) => {
+            r.scheduler.readouts.drain = drain
+            r.compositor.beginPlay()
+            return drain(...args)
+        }
+        r.compositor.advance(516)
+        assert.deepEqual(observed, [16], "the pre-edge timestamp is not a frame of the new play")
+        r.compositor.advance(532)
+        assert.deepEqual(observed, [16, 16], "the first real frame of the play is sampled")
+    })
 })
