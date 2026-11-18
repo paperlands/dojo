@@ -197,10 +197,18 @@ describe("live reveal clock — lifecycle constraints", () => {
         const B = frame.children.get("B")
         const call = responder.calls[0]
         const revision = scheduler.motionRevision
+        const pendingSeq = frame.suspension.seq
         compositor.setHeld(true)
         call.resolve({ accepted: true, transform: call.request.requested,
             component: [{ frame: B, transform: { ...SE3.identity(), position: [7, 0, 0] } }] })
         await settle()
+        const { reply, verdict } = frame.suspension
+        assert.equal(verdict, null, "an offered reply has not been admitted")
+        assert.equal(frame.suspension.seq, pendingSeq + 1)
+        assert.equal(reply.verdict.kind, "accept")
+        assert.equal(reply.attempt.writer, frame, "keep the exact writer")
+        assert.equal(reply.verdict.component[0].frame, B, "keep the exact participant")
+        assert.equal(Object.values(frame.suspension).some(value => typeof value === "function"), false)
         assert.equal(B.transform.deref().position[0], 0, "a reply cannot commit outside the frame pump")
         assert.equal(scheduler.motionRevision, revision)
         compositor.advance(120)
@@ -211,6 +219,8 @@ describe("live reveal clock — lifecycle constraints", () => {
         assert.equal(frame.transform.deref().position[0], 1)
         assert.equal(B.transform.deref().position[0], 7)
         assert.equal(scheduler.motionRevision, revision + 1)
+        assert.equal(frame.motionSeq, pendingSeq + 2)
+        assert.equal(frame.suspension, null, "the admitted verdict was consumed on the same turn")
         assert.equal(scheduler.done, true)
     })
 

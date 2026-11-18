@@ -2410,7 +2410,7 @@ function parkOnVerdict(ctx, verdict, pump, attempt) {
     if (!pump.held && pump.execution.run(ctx, () => { step = acceptVerdict(ctx, verdict, pump, attempt) })) return step
     openInstant(ctx)
     suspend(ctx, 'admission', { seq: ++ctx.motionSeq, verdict: null,
-        deliver: () => parkOnVerdict(ctx, verdict, pump, attempt) })
+        reply: { verdict, attempt } })
     return { verdict: 'parked', produced: true }
 }
 
@@ -3474,7 +3474,8 @@ function stepOnce(ctx, route, pump) {
     const { frameTarget, frameTransform, destination } = route
     if (destination === null) return endUnresolved(ctx, 'the retained receiver has left the world')
     if (!pump.execution.permits(ctx) || questionMoved(ctx)) return { verdict: 'paused' }
-    ctx.suspension?.deliver?.()
+    const reply = ctx.suspension?.reply
+    if (reply) parkOnVerdict(ctx, reply.verdict, pump, reply.attempt)
     if (ctx.done) return { verdict: 'ended', produced: true }
 
     // Resume after a suspension: replay an owed deposit first (emission order).
