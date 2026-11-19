@@ -80,6 +80,12 @@ export function createWorld(canvas, { caps, law, interactive = false, input = nu
         async play(program) {
             if (disposed) throw halt("disposed")
             const gen = ++generation
+            // Let the current drive unwind before a reading can replace its play.
+            if (delivering) {
+                await undefined
+                if (disposed) throw halt("disposed")
+                if (generation !== gen) throw halt("superseded")
+            }
             retireReadings()
             supersede()
             const result = await turtle.upsertAmbient("host", "host", program, { hatch: true, fresh: true })

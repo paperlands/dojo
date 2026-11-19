@@ -2706,6 +2706,9 @@ re-entry function; wall-sample reductions must preserve distinct reset boundarie
 obligations; a nested work slice used to lose its caller's deadline.
 [[id:runtime-state-tla][Runtime TLA+ checks]] — restored nested deadlines and stale
 allowance counterexamples across fresh play or a hold/resume pair.
+[[id:probe-host-fresh-reentry][Fresh-play reentry]] — Chromium public-door and native
+single-tick witnesses: a superseded drive spends its old horizon on the new source.
+=probe/state-model/fresh-reentry*.mjs=; compare serial entry with run-scoped work.
 
 *** parkBreath — stop with no debt
 :PROPERTIES:

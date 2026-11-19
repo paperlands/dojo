@@ -1,0 +1,72 @@
+#+TITLE: A retired drive lends its horizon to a fresh play
+#+STATUS: active
+#+FILETAGS: :host:lifecycle:reentrancy:
+
+* Witness: the old call runs the new source
+:PROPERTIES:
+:ID: probe-host-fresh-reentry
+:MODULE: assets/js/host.js assets/js/turtling/compositor.js assets/js/turtling/scheduler.js
+:LENS: adversarial empiricist
+:END:
+
+In Chromium on the actual host API, the old play waits 1 s, publishes =mark=,
+and waits again. =old.scrub(1000)= reaches the mark. Its reading subscriber
+calls =world.play= with =wait 0.05; let arrived = 1; wait 10=. Immediately
+inside the subscriber, =arrived= is missing. Before the old scrub returns,
+=arrived= is already 1; no fresh wall frame intervened. The old completion is
+correctly rejected as =superseded=: the completion fence is not a work fence.
+Calling the same replacement after scrub returns keeps =arrived= missing.
+
+The native fixture crosses a different entry: a pending derived motion
+publishes during a *single* =scheduler.tick(80)= and causes a fresh play to
+seat. After that tick the mirror still says 0, but =arrived= is already 1.
+The defect is not just the old compositor loop reiterating or the mirror
+writing back. The scheduler can choose eligible work after a callback changes
+the population it is walking. Testing the number alone would miss that.
+
+#+begin_src sh
+node probe/state-model/fresh-reentry.mjs
+node probe/state-model/fresh-reentry-browser.mjs
+node probe/state-model/fresh-reentry-browser.mjs --unfenced
+#+end_src
+
+The default browser run checks the fixed public door. =--unfenced= removes
+only the new fence in the local browser bundle and must reproduce the wrong
+value. The native fixture deliberately calls below the fixed host boundary;
+it still demonstrates why restored clock values or an outer-loop brake are
+insufficient if lower-level fresh seating is allowed to reenter.
+
+* Simplicity test: either defer entry or revoke a grant
+:PROPERTIES:
+:ID: probe-host-fresh-reentry-choices
+:LENS: architect adversarial
+:END:
+
+*Invariant:* a drive authorized for run A never executes a continuation of run
+B. A fresh A→B installation revokes *work authority*, not just delivery or
+completion. The number 80 does not carry this distinction; neither does
+restoring a 0 mirror after the fact.
+
+- *Serialized host entry.* Public observer code may request the next play;
+  ownership changes after the current mutating turn unwinds. Smallest cut if
+  public replacement is the only affected entrance and deferral preserves the
+  expected synchronous read/disposal/replacement semantics. Store at most the
+  outstanding request and its ticket if the contract is latest-wins; never
+  retain a callback that can choose its occupant later. Test two replacement
+  requests in a fan, a subsequent immediate play, disposal, and a late wound.
+- *Run-scoped work grant.* If reentrant installation is a required behavior
+  or another production door needs it, let the drive carry a concrete run
+  identity with its bound. Recheck after callbacks that can replace, *inside*
+  the scheduler turn as well as between ticks. A compositor-only break is
+  falsified by the single-tick fixture. Do not reuse the hold/cadence sample
+  identity: a hold can revoke an allowance without retiring a play.
+- *Do not merge domains.* Keep accepted scene state separate from authorized
+  work, run identity separate from notification rights, and wall/cadence
+  observations separate from both. Extra paints should not execute old work.
+
+Priors: [[https://www.w3.org/TR/scxml/#AlgorithmforSCXMLInterpretation][SCXML run-to-completion]] is a useful comparison for ownership switching
+at an external-event boundary; it does not imply unbounded work in a frame.
+[[https://lamport.azurewebsites.net/tla/stuttering.html][Lamport's stuttering]] motivates comparing accepted semantic histories
+while inserting extra observations. Neither prior requires adopting a new
+framework. Start with the browser red/green and the single-tick negative
+control before modeling any broader mechanism.
