@@ -24,19 +24,25 @@ import { signals as S } from "./store.js"
 export function mountSun({ read, place, nerve }) {
     const walk = createHeliosWalk({ read })
     let timer = null
+    let released = false
 
     const tick = () => {
-        const view = walk.tick(performance.now())
+        const now = performance.now()
+        const view = walk.tick(now)
         if (view) nerve()?.push(S.helios(view, place))
         // One timer in flight. Re-arms while walking; stops when the day ends —
-        // no interval to cancel on idle.
-        if (timer == null && walk.isAnimating()) {
-            timer = setTimeout(() => { timer = null; tick() }, walk.nextDelayMs())
+        // A real execution hold has no animation clock to service.
+        if (!walk.isAnimating() && timer != null) {
+            clearTimeout(timer)
+            timer = null
+        }
+        if (!released && timer == null && walk.isAnimating()) {
+            timer = setTimeout(() => { timer = null; tick() }, walk.nextDelayMs(now))
         }
     }
 
     return {
         tick,
-        release() { if (timer != null) clearTimeout(timer); timer = null },
+        release() { released = true; if (timer != null) clearTimeout(timer); timer = null },
     }
 }

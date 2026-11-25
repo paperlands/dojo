@@ -1,6 +1,8 @@
 defmodule DojoWeb.ShellLive.OuterShellTest do
   use ExUnit.Case, async: true
 
+  require Phoenix.LiveViewTest
+
   alias Dojo.Turtle
   alias DojoWeb.ShellLive.OuterShell
 
@@ -52,13 +54,18 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
       assert {:push, %Turtle{source: "good"}} = OuterShell.render_intent(shell)
     end
 
+    test "recall holds when a new LV has no last_good yet" do
+      shell = %OuterShell{view: :recall} |> OuterShell.observe(err("broken"))
+      assert :hold = OuterShell.render_intent(shell)
+    end
+
     test "draft with frozen baseline holds (does not disturb the draft)" do
-      shell = OuterShell.observe(%OuterShell{view: :draft, stream: false}, ok())
+      shell = OuterShell.observe(%OuterShell{view: :draft, draft_live: false}, ok())
       assert :hold = OuterShell.render_intent(shell)
     end
 
     test "draft with live baseline streams origin into the merge original" do
-      shell = OuterShell.observe(%OuterShell{view: :draft, stream: true}, ok())
+      shell = OuterShell.observe(%OuterShell{view: :draft, draft_live: true}, ok())
       assert {:push, %Turtle{state: :success}} = OuterShell.render_intent(shell)
     end
 
@@ -71,7 +78,7 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
     test "draft/1 auto-runs (live) when their code isn't in error" do
       shell = OuterShell.draft(%OuterShell{origin: ok()})
       assert shell.view == :draft
-      assert shell.stream == true
+      assert shell.draft_live == true
     end
 
     # A draft over an error used to start frozen, so there was no runtime and no
@@ -81,12 +88,12 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
     test "draft/1 runs over an error too — that is what you drafted for" do
       shell = OuterShell.draft(%OuterShell{origin: err()})
       assert shell.view == :draft
-      assert shell.stream == true
+      assert shell.draft_live == true
     end
 
-    test "toggle_stream/1 flips the liveness switch" do
-      assert OuterShell.toggle_stream(%OuterShell{stream: false}).stream == true
-      assert OuterShell.toggle_stream(%OuterShell{stream: true}).stream == false
+    test "toggle_draft_live/1 switches draft execution and baseline updates together" do
+      assert OuterShell.toggle_draft_live(%OuterShell{draft_live: false}).draft_live == true
+      assert OuterShell.toggle_draft_live(%OuterShell{draft_live: true}).draft_live == false
     end
 
     test "recall/1 only engages when there is a last good" do
@@ -95,10 +102,57 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
       assert OuterShell.recall(%OuterShell{}).view == :watch
     end
 
-    test "watch/1 returns to live following" do
-      shell = OuterShell.watch(%OuterShell{view: :recall, stream: false})
+    test "watch/1 returns to current code without resuming paused peer updates" do
+      shell = OuterShell.watch(%OuterShell{view: :recall, draft_live: false, follow_peer: false})
       assert shell.view == :watch
-      assert shell.stream == true
+      assert shell.draft_live == true
+      assert shell.follow_peer == false
+    end
+  end
+
+  describe "independent selector axes" do
+    test "peer-update demand depends on follow_peer or draft view, not draft_live" do
+      for view <- [:watch, :recall, :draft],
+          follow_peer <- [false, true],
+          draft_live <- [false, true] do
+        shell = %OuterShell{view: view, follow_peer: follow_peer, draft_live: draft_live}
+        assert OuterShell.wants_updates?(shell) == (follow_peer or view == :draft)
+      end
+    end
+
+    test "a frozen draft caches new peer code without delivering a baseline" do
+      shell =
+        %OuterShell{view: :draft, follow_peer: false, draft_live: false}
+        |> OuterShell.observe(ok("fw 20"))
+
+      assert shell.origin.source == "fw 20"
+      assert shell.last_good.source == "fw 20"
+      assert OuterShell.wants_updates?(shell)
+      assert OuterShell.render_intent(shell) == :hold
+    end
+  end
+
+  describe "chrome names the action, not an ambiguous follow or stream mode" do
+    test "chip labels distinguish peer updates from the coupled draft switch" do
+      for {shell, title, event} <- [
+            {%OuterShell{follow_peer: true}, "Pause peer code updates", "toggleFollowPeer"},
+            {%OuterShell{follow_peer: false}, "Resume peer code updates", "toggleFollowPeer"},
+            {%OuterShell{view: :draft, draft_live: true},
+             "Freeze draft execution and peer baseline", "toggleDraftLive"},
+            {%OuterShell{view: :draft, draft_live: false}, "Run draft and update peer baseline",
+             "toggleDraftLive"}
+          ] do
+        html =
+          Phoenix.LiveViewTest.render_component(DojoWeb.OuterShellLive,
+            id: "outer-shell",
+            locale: "en",
+            outershell: shell
+          )
+
+        assert title in Floki.attribute(Floki.parse_fragment!(html), "[title]", "title")
+        assert html =~ event
+        assert html =~ "outer-selection-status"
+      end
     end
   end
 
@@ -137,6 +191,15 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
       assert OuterShell.reflect_changed?(ok("fw 100"), %Turtle{ok("fw 100") | state: :error})
     end
 
+    test "choice-only changes are news, while identical choices and bumps are not" do
+      inherited = %{"v" => 1, "inputs" => []}
+      offered = %Turtle{ok("fw 100") | choices: inherited}
+      assert OuterShell.reflect_changed?(ok("fw 100"), offered)
+      refute OuterShell.reflect_changed?(offered, %Turtle{offered | time: 99, path: "a.png"})
+      refute OuterShell.reflect_changed?(offered, %Turtle{offered | choices: inherited})
+      assert OuterShell.reflect_changed?(offered, %Turtle{offered | choices: nil})
+    end
+
     # The gate names the bump, never the fields that matter (D025 R3), so a
     # field no test here enumerates counts the day it is added.
     test "true when a field no one enumerated moved" do
@@ -151,6 +214,83 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
     end
   end
 
+  describe "a keep that signed no letters (id:kc-sign)" do
+    test "the panel names the absence, never an empty possessive" do
+      html =
+        Phoenix.LiveViewTest.render_component(DojoWeb.OuterShellLive,
+          id: "outer-shell",
+          locale: "en",
+          outershell: %OuterShell{
+            addr: OuterShell.keep_addr(String.duplicate("a", 64)),
+            name: nil,
+            active: true
+          }
+        )
+
+      assert html =~ "a kept work"
+      refute html =~ "&#39;s code"
+    end
+
+    test "creation_title/1 names a recording even with no letters" do
+      assert OuterShell.creation_title("lowe") == "lowe's creation"
+
+      for none <- [nil, ""] do
+        assert OuterShell.creation_title(none) == "a creation"
+      end
+    end
+  end
+
+  describe "waiting is the chip's breath, not a symbol (id:hw-phases)" do
+    test "the ear's half is real, the eye's half is absent" do
+      html =
+        Phoenix.LiveViewTest.render_component(DojoWeb.OuterShellLive,
+          id: "outer-shell",
+          locale: "en",
+          outershell: %OuterShell{addr: "//kai.t/hatch", name: "kai"}
+        )
+
+      frag = Floki.parse_fragment!(html)
+      [status] = Floki.find(frag, "#outer-selection-status")
+
+      assert Floki.attribute(status, "class") == ["sr-only"],
+             "no symbol in the middle of the glass — the chip carries the state"
+
+      assert Floki.attribute(status, "role") == ["status"]
+      assert Floki.attribute(status, "hidden") == [], "never display-gated: no layout move"
+      assert Floki.attribute(status, "data-state") == [], "the client owns the hour"
+      assert Floki.text(status) =~ "waiting for the selected code"
+      refute html =~ "Any code still shown belongs to the previous selection"
+
+      # the halo the CSS dims while waiting is one element, named for the state
+      assert [_halo] = Floki.find(frag, "#outer-chip-halo")
+      assert Floki.find(frag, ".outer-waiting") == [], "the crescent is gone"
+    end
+
+    test "the cloud is a layer in front of the glass, never a filter on the work" do
+      html =
+        Phoenix.LiveViewTest.render_component(DojoWeb.OuterShellLive,
+          id: "outer-shell",
+          locale: "en",
+          outershell: %OuterShell{addr: "//kai.t/hatch", name: "kai"}
+        )
+
+      frag = Floki.parse_fragment!(html)
+      [veil] = Floki.find(frag, "#outerenv .outer-veil")
+
+      assert Floki.attribute(veil, "aria-hidden") == ["true"],
+             "light in front of the glass is not a thing to read"
+
+      assert Floki.find(frag, "#outershell .outer-veil") == [],
+             "the veil sits beside the editor, not inside it: the work's pixels are untouched"
+
+      [env] = Floki.find(frag, "#outerenv")
+      children = Floki.children(env)
+
+      assert List.last(children) |> Floki.attribute("class") == ["outer-veil"],
+             "painted last in the panel = above the code"
+    end
+  end
+
   describe "payload/2 — the seeOuterShell envelope (dual of JS OUTER_SHELL_KEYS)" do
     test "emits exactly payload_keys — every Turtle field plus shell overlay" do
       turtle = %Turtle{
@@ -158,31 +298,38 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
         source: "fw 10",
         commands: [],
         diagnostics: [],
+        choices: %{"v" => 1, "inputs" => []},
         time: 1,
         path: "frames/x.png",
         attend: %{line: 2},
-        buffer_id: "buf-1"
+        buffer_id: "buf-1",
+        work_id: "work-1",
+        base_id: "base-1"
       }
 
       shell = %OuterShell{
         addr: "alice",
         name: "Alice",
         view: :watch,
-        stream: true
+        draft_live: true
       }
 
       payload = OuterShell.payload(turtle, shell)
 
       assert Map.keys(payload) |> Enum.sort() == OuterShell.payload_keys() |> Enum.sort()
-      assert map_size(payload) == 12
+      assert map_size(payload) == 16
       assert payload.addr == "alice"
       assert payload.origin_name == "Alice"
+      assert Map.has_key?(payload, :root)
       assert payload.view == :watch
-      assert payload.stream == true
+      assert payload.draft_live == true
       assert payload.source == "fw 10"
+      assert payload.choices === turtle.choices
       assert payload.path == "frames/x.png"
       assert payload.attend == %{line: 2}
       assert payload.buffer_id == "buf-1"
+      assert payload.work_id == "work-1"
+      assert payload.base_id == "base-1"
     end
 
     test "nil Turtle fields stay present as nil — not dropped (key absence is not the contract)" do
@@ -190,9 +337,15 @@ defmodule DojoWeb.ShellLive.OuterShellTest do
       assert Map.has_key?(payload, :path)
       assert Map.has_key?(payload, :attend)
       assert Map.has_key?(payload, :buffer_id)
+      assert Map.has_key?(payload, :work_id)
+      assert Map.has_key?(payload, :base_id)
+      assert Map.has_key?(payload, :choices)
+      assert payload.choices == nil
       assert payload.path == nil
       assert payload.attend == nil
       assert payload.buffer_id == nil
+      assert payload.work_id == nil
+      assert payload.base_id == nil
     end
   end
 

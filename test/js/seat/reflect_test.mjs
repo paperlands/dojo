@@ -56,7 +56,7 @@ fw 10
 \`\`\`
 ** Subheading
 \`\`\`
-loop do
+for do
   fw 100
 end
 \`\`\`
@@ -211,11 +211,11 @@ describe("errors propagate, at any nesting (D022 law 3)", () => {
         const { diagnostics: wounds } = s.reflection()
         assert.ok(wounds.length >= 1, "the wound must cross the seam")
         const [first] = wounds
-        assert.match(first.message, /loop/)
+        assert.match(first.message, /count/)
         assert.equal(first.kind, "parse")
-        // The span is a TRUE buffer line — the broken `loop do` is line 8.
+        // The span is a TRUE buffer line — the broken `for do` is line 8.
         assert.equal(first.span.line, 8)
-        assert.equal(BROKEN_CELL_SRC.split("\n")[first.span.line - 1].trim(), "loop do")
+        assert.equal(BROKEN_CELL_SRC.split("\n")[first.span.line - 1].trim(), "for do")
     })
 
     test("the healthy parts still live — a diagnostic is not a dark canvas (D020)", () => {
@@ -321,7 +321,7 @@ fw 10
 ** phase A
 
 \`\`\`
-loop do
+for do
   fw 1
 end
 \`\`\`
@@ -331,7 +331,7 @@ end
         const ast = parseProgram(WOUNDED)
         const wounds = diagnostics(ast, [], "buf")
         const first = wounds[0]
-        assert.equal(first.span.line, 11, "the broken `loop do`")
+        assert.equal(first.span.line, 11, "the broken `for do`")
         assert.deepEqual(phaseAt(ast, first.span.line), ["chapter one", "phase A"])
     })
 

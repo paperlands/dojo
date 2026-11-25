@@ -1,0 +1,10 @@
+# Circle — a sphere (the framed origin) cut by a plane, in a walked and turned
+# frame. Drag A along the circle; revise the radius; obstruct with a pin.
+as F do
+  rt 30
+  fw 40
+  wait 1
+  let A
+  let distance(A, origin) = 5
+  let A.z = 0
+end

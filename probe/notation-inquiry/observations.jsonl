@@ -1,0 +1,54 @@
+{"source":"2+3","prediction":"ordinary arithmetic remains usable","tokens":["2","+","3"],"ast":["operator","+",2,3],"value":5}
+{"source":"2$+3","prediction":"unsupported glyph should be refused, not dropped","tokens":["2","+","3"],"ast":["operator","+",2,3],"value":5}
+{"source":".5+1","prediction":"a decimal without a leading zero must not become five","tokens":["5","+","1"],"ast":["operator","+",5,1],"value":6}
+{"source":"u.v","prediction":"a glued path is one name","tokens":["u.v"],"ast":"u.v","error":"Undefined variable: u.v"}
+{"source":"u . v","prediction":"a spaced dot must not silently become multiplication","tokens":["u","*","v"],"ast":["operator","*","u","v"],"value":6}
+{"source":"(u+v).x","prediction":"selection should remain meaningful on an expression","tokens":["(","u","+","v",")","*","x"],"ast":["operator","*",["operator","+","u","v"],"x"],"value":20}
+{"source":"u.x","prediction":"a dotted name must remain whole","tokens":["u.x"],"ast":"u.x","value":9}
+{"source":"(2]","prediction":"different delimiter kinds should not match","tokens":["(","2","]"],"ast":2,"value":2}
+{"source":"[2)","prediction":"different delimiter kinds should not match","tokens":["[","2",")"],"ast":2,"value":2}
+{"source":"[1]","prediction":"singleton bracket exposes grouping/vector ambiguity","tokens":["[","1","]"],"ast":1,"value":1}
+{"source":"[1,2]","prediction":"vector doorway is currently unavailable","tokens":["[","1",",","2","]"],"error":"Missing closing brackets"}
+{"source":"sin[30]","prediction":"square brackets should not accidentally call sine","tokens":["sin","[","30","]"],"ast":["function","sin",30],"value":0.5}
+{"source":"sin(30]","prediction":"an ill-closed function call should be refused","tokens":["sin","(","30","]"],"ast":["function","sin",30],"value":0.5}
+{"source":"x[1]","prediction":"indexing must not report an unrelated function error","tokens":["x","[","1","]"],"error":"Unknown function: x with 1 arguments"}
+{"source":"2x","prediction":"juxtaposition genuinely helps arithmetic","tokens":["2","*","x"],"ast":["operator","*",2,"x"],"value":8}
+{"source":"x(y+1)","prediction":"named call versus mathematical juxtaposition is ambiguous","tokens":["x","(","y","+","1",")"],"error":"Unknown function: x with 1 arguments"}
+{"source":"(x)(y+1)","prediction":"grouped juxtaposition can work where x(...) does not","tokens":["(","x",")","*","(","y","+","1",")"],"ast":["operator","*","x",["operator","+","y",1]],"value":24}
+{"source":"sin(30)(2)","prediction":"application-after-call versus implicit multiplication","tokens":["sin","(","30",")","*","(","2",")"],"ast":["operator","*",["function","sin",30],2],"value":1}
+{"source":"7mod3","prediction":"word operator may touch digits","tokens":["7","mod","3"],"ast":["operator","mod",7,3],"value":1}
+{"source":"mod3","prediction":"a name accepted by identifier shape may be stolen by word splitting","tokens":["mod","3"],"error":"Unexpected token: mod"}
+{"source":"mod(7,3)","prediction":"word operator currently has no function-shaped doorway","tokens":["mod","(","7",",","3",")"],"error":"Unexpected token: mod"}
+{"source":"3<2<1","prediction":"mathematical chained comparison should not produce true","tokens":["3","<","2","<","1"],"ast":["operator","<",["operator","<",3,2],1],"value":1}
+{"source":"-2^2","prediction":"compatibility is not proof of mathematical convention","tokens":["-","2","^","2"],"ast":["operator","^",["unary_operator","-",2],2],"value":4}
+{"source":"(-2)^2","prediction":"parentheses must make the intended contrast visible","tokens":["(","-","2",")","^","2"],"ast":["operator","^",["unary_operator","-",2],2],"value":4}
+{"source":"0 && missing","prediction":"a dead branch should not require an absent name","tokens":["0","&&","missing"],"ast":["operator","&&",0,"missing"],"error":"Undefined variable: missing"}
+{"source":"1 || missing","prediction":"a dead branch should not require an absent name","tokens":["1","||","missing"],"ast":["operator","||",1,"missing"],"error":"Undefined variable: missing"}
+{"source":"sqrt(-1)","prediction":"domain failure must not teach NaN as a quantity","tokens":["sqrt","(","-","1",")"],"ast":["function","sqrt",["unary_operator","-",1]],"value":"NaN"}
+{"source":"1/0","prediction":"division domain needs an explicit demand/display policy","tokens":["1","/","0"],"ast":["operator","/",1,0],"value":"Infinity"}
+{"source":"sin(1e-15)","prediction":"tiny nonzero signals should not disappear in arithmetic","tokens":["sin","(","1e-15",")"],"ast":["function","sin",1e-15],"value":0}
+{"program":"fw 7 mod 3","ast":[["Call","fw","7 mod 3"]]}
+{"program":"fw x + 1 2","ast":[["Call","fw","x + 1","2"]]}
+{"program":"fw sin(30)","ast":[["Call","fw","sin(30)"]]}
+{"program":"fw sin (30)","ast":[["Call","fw","sin","(30)"]]}
+{"program":"label \"value [x]\"","ast":[["Call","label","\"value [x]\""]]}
+{"program":"goto [1,2,3]","ast":[["Call","goto","[1,2,3]"]]}
+{"source":"u.v with local u and v plus external resolver","value":99,"externalReads":["u.v"]}
+{"source":"u+v","supplied":"arrays through context, not vector literals","value":"NaN"}
+{"source":"u*v","supplied":"arrays through context, not vector literals","value":"NaN"}
+{"walk":"fw 2$+3","arguments":[["Call","fw","2$+3"]],"events":[{"type":"path","points":[[0,0,0],[5,0,0]]},{"type":"beat"},{"type":"head","position":[5,0,0]}]}
+{"walk":"fw .5+1","arguments":[["Call","fw",".5+1"]],"events":[{"type":"path","points":[[0,0,0],[6,0,0]]},{"type":"beat"},{"type":"head","position":[6,0,0]}]}
+{"walk":"fw (2+3) * 2","arguments":[["Call","fw","(2+3)","* 2"]],"error":"Unexpected token: *"}
+{"walk":"fw 2 * (3+4)","arguments":[["Call","fw","2 * (3+4)"]],"events":[{"type":"path","points":[[0,0,0],[14,0,0]]},{"type":"beat"},{"type":"head","position":[14,0,0]}]}
+{"walk":"fw sin(30)","arguments":[["Call","fw","sin(30)"]],"events":[{"type":"path","points":[[0,0,0],[0.5,0,0]]},{"type":"beat"},{"type":"head","position":[0.5,0,0]}]}
+{"walk":"fw sin (30)","arguments":[["Call","fw","sin","(30)"]],"error":"Undefined variable: sin"}
+{"walk":"fw 3<2<1","arguments":[["Call","fw","3<2<1"]],"events":[{"type":"path","points":[[0,0,0],[1,0,0]]},{"type":"beat"},{"type":"head","position":[1,0,0]}]}
+{"walk":"fw sqrt(-1)","arguments":[["Call","fw","sqrt(-1)"]],"events":[{"type":"path","points":[[0,0,0],["NaN",0,0]]},{"type":"beat"},{"type":"head","position":["NaN",0,0]}]}
+{"walk":"fw 1/0","arguments":[["Call","fw","1/0"]],"events":[{"type":"path","points":[[0,0,0],["Infinity",0,0]]},{"type":"beat"},{"type":"head","position":["Infinity",0,0]}]}
+{"arithmetic":"safe integer division identity","dividend":9007199254740990,"divisor":9007199254740991,"quotient":0,"remainder":9007199254740989,"expectedRemainder":9007199254740990}
+{"geometry":"unit-vector wedge does not determine angle","degrees":30,"wedgeXY":0.49999999999999994,"dot":0.8660254037844387}
+{"geometry":"unit-vector wedge does not determine angle","degrees":150,"wedgeXY":0.49999999999999994,"dot":-0.8660254037844387}
+{"geometry":"complex left multiplication is not rotor sandwich","imaginaryUnitAsRotor":{"x":-1,"y":0,"z":0},"quarterTurn":{"x":2.220446049250313e-16,"y":1,"z":0}}
+{"walk":"loop 36 do\nfw 1\nrt 10\nend","heads":[[-2.2870594307278225e-14,7.827072323607354e-15,0]],"pathLengths":[37]}
+{"walk":"fn step[n] n+1\nfw step(2)","heads":[[3,0,0]],"pathLengths":[2]}
+{"walk":"fn mod3 8\nfw mod3","error":"Invalid function signature: mod3"}

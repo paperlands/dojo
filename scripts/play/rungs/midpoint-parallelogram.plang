@@ -1,0 +1,47 @@
+# Drag any corner. The gold sides stay equal and parallel, even when the corners cross.
+def hop u v do
+  faceto u v
+  jmp sqrt[(u-x)^2+(v-y)^2]
+end
+
+hop -100 -60
+let A
+hop -70 75
+let B
+hop 100 50
+let C
+hop 65 -75
+let D
+
+# Keep the handles on the same paper as the ink.
+let A.z = 0
+let B.z = 0
+let C.z = 0
+let D.z = 0
+
+# MN = (C-A)/2 = QO: B cancels from MN, D from QO.
+# Try replacing M's formula with (-85, 7.5). Same initial picture; now drag B.
+let M = ((A.x+B.x)/2, (A.y+B.y)/2)
+let N = ((B.x+C.x)/2, (B.y+C.y)/2)
+let O = ((C.x+D.x)/2, (C.y+D.y)/2)
+let Q = ((D.x+A.x)/2, (D.y+A.y)/2)
+
+def side ax ay bx by do
+  hide
+  hop ax ay
+  faceto bx by
+  fw sqrt[(bx-x)^2+(by-y)^2]
+end
+
+beColour slategray
+let AB = side A.x A.y B.x B.y
+let BC = side B.x B.y C.x C.y
+let CD = side C.x C.y D.x D.y
+let DA = side D.x D.y A.x A.y
+beColour lightgray
+let NO = side N.x N.y O.x O.y
+let MQ = side M.x M.y Q.x Q.y
+beColour gold
+let MN = side M.x M.y N.x N.y
+let QO = side Q.x Q.y O.x O.y
+hide

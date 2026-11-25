@@ -20,7 +20,8 @@ const K = new Uint32Array([
 
 const w = new Uint32Array(64)
 
-function sha256(bytes) {
+/** SHA-256 over exact binary bytes; the same engine as text names. */
+export function hashBytes(bytes) {
     const len = bytes.length
     // 0x80, then zeroes, then a 64-bit big-endian bit count — padded to blocks.
     const m = new Uint8Array(((len + 72) >> 6) << 6)
@@ -70,4 +71,4 @@ const utf8 = new TextEncoder()
  * @param {string} text
  * @returns {string} 64 lowercase hex digits
  */
-export const hash = (text) => sha256(utf8.encode(text))
+export const hash = (text) => hashBytes(utf8.encode(text))

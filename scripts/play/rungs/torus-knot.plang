@@ -1,0 +1,12 @@
+# Torus knot: (p,q) windings on a torus of radii R/r.
+# p and q should be coprime; the loop closes exactly at 360 degrees.
+let R = 3
+let r = 1.2
+let p = 2
+let q = 3
+let steps = 120
+jmpto (R+r, 0, 0)
+loop steps+1 do
+  let t = 360*count/steps
+  goto ((R + r*cos(q*t))*cos(p*t), (R + r*cos(q*t))*sin(p*t), r*sin(q*t))
+end

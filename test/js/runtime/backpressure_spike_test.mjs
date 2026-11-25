@@ -201,7 +201,7 @@ function geometryByAmbient(src, { capacity, lossless }) {
     let guard = 200000
     while (guard-- > 0) {
         const progress = scheduler.tick(now)
-        for (const a of scheduler.registry.values()) if (a.park?.owed) parks++
+        for (const a of scheduler.registry.values()) if (a.suspension?.owed) parks++
         for (const a of scheduler.registry.values()) {
             const key = a.name || String(a.id)
             for (const ev of a.channel.drain()) {
@@ -263,11 +263,11 @@ describe("SPIKE: S6 — re-eval cancels, never interleaves", () => {
             scheduler.tick(0)
             for (const a of scheduler.registry.values()) a.channel.drain()
         }
-        assert.ok(first.park?.owed, "gen1 should be parked mid-instant before the swap")
+        assert.ok(first.suspension?.owed, "gen1 should be parked mid-instant before the swap")
 
         const second = scheduler.hotSwapChild("buf", fork(gen2))
         assert.notEqual(second.id, first.id, "a different seed must mint a new frame")
-        assert.equal(second.park, null, "the new run starts with no parked event")
+        assert.equal(second.suspension, null, "the new run starts with no parked event")
         assert.ok(!scheduler.registry.has(first.id), "the dead gen leaves the registry")
 
         // Drain to completion; only the live frame's channel is ever read, which is
@@ -514,32 +514,32 @@ describe("SPIKE: replay determinism (is the program the ledger?)", () => {
 // of 24000 events vanish, one per stall, silently).
 
 describe("S16: the park keeps its debt", () => {
-    const frame = () => ({ park: null })
+    const frame = () => ({ suspension: null })
 
     test("a breath owes nothing, however often it is taken", () => {
         const f = frame()
         parkBreath(f)
-        assert.equal(f.park.cause, "time")
-        assert.equal(f.park.owed, null)
+        assert.equal(f.suspension.kind, "breath")
+        assert.equal(f.suspension.owed, null)
         parkBreath(f)                    // breath after breath, nothing owed
-        assert.equal(f.park.owed, null)
+        assert.equal(f.suspension.owed, null)
     })
 
     test("a breath after a breath is the SAME breath — one wait, not many", () => {
         const f = frame()
         parkBreath(f)
-        const first = f.park
+        const first = f.suspension
         parkBreath(f)
-        assert.equal(f.park, first, "an unchanged breath is not restarted")
+        assert.equal(f.suspension, first, "an unchanged breath is not restarted")
     })
 
     test("owing holds the deposit and starts a fresh stall clock", () => {
         const f = frame()
         const event = { type: "path", points: [[0, 0, 0], [1, 0, 0]] }
         parkOwing(f, "credit", event)
-        assert.equal(f.park.cause, "credit")
-        assert.equal(f.park.owed, event)
-        assert.equal(f.park.since, null, "a new reason to wait is a new wait")
+        assert.equal(f.suspension.kind, "credit")
+        assert.equal(f.suspension.owed, event)
+        assert.equal(f.suspension.since, null, "a new reason to wait is a new wait")
     })
 
     test("a breath cannot be handed a debt — there is no argument for one", () => {
@@ -549,25 +549,25 @@ describe("S16: the park keeps its debt", () => {
         assert.equal(parkOwing.length, 3)
     })
 
-    test("the replay moves the CAUSE and keeps the deposit and its clock", () => {
+    test("the replay moves the KIND and keeps the deposit and its clock", () => {
         // stepOnce's shape, in miniature: a standing debt refused again under a
-        // new cause. The park is edited, never rebuilt, so `owed` cannot be
+        // new kind. The suspension is edited, never rebuilt, so `owed` cannot be
         // dropped and only a genuinely new reason restarts the wait.
         const f = frame()
         const event = { type: "path", points: [[0, 0, 0], [1, 0, 0]] }
         parkOwing(f, "credit", event)
-        f.park.since = 1000              // enforceResidency stamps the first sighting
+        f.suspension.since = 1000        // enforceResidency stamps the first sighting
 
         const refusal = "residency"
-        if (f.park.cause !== refusal) { f.park.cause = refusal; f.park.since = null }
-        assert.equal(f.park.owed, event, "the debt survives a change of cause")
-        assert.equal(f.park.since, null, "a new reason to wait is a new wait")
+        if (f.suspension.kind !== refusal) { f.suspension.kind = refusal; f.suspension.since = null }
+        assert.equal(f.suspension.owed, event, "the debt survives a change of kind")
+        assert.equal(f.suspension.since, null, "a new reason to wait is a new wait")
 
-        // Refused AGAIN under the same cause: the clock must not restart, or a
+        // Refused AGAIN under the same kind: the clock must not restart, or a
         // frame that never gets room is never wounded.
-        f.park.since = 2000
-        if (f.park.cause !== refusal) { f.park.cause = refusal; f.park.since = null }
-        assert.equal(f.park.since, 2000, "a second sighting must not restart the clock")
-        assert.equal(f.park.owed, event)
+        f.suspension.since = 2000
+        if (f.suspension.kind !== refusal) { f.suspension.kind = refusal; f.suspension.since = null }
+        assert.equal(f.suspension.since, 2000, "a second sighting must not restart the clock")
+        assert.equal(f.suspension.owed, event)
     })
 })

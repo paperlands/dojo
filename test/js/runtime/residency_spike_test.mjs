@@ -77,7 +77,7 @@ function fakeFrame(name, segs, done, stock) {
 
 // A frame knocking at a full stage: refused for residency, holding what it owes.
 function knocking(frame) {
-    frame.park = { cause: 'residency', owed: { type: 'path' }, since: null }
+    frame.suspension = { kind: 'residency', owed: { type: 'path' }, since: null }
     return frame
 }
 
@@ -187,7 +187,7 @@ describe("SPIKE: the residency guard picks the last one standing", () => {
         // Ticks alone never wound: the pump runs up to 64 of them per frame, so
         // a tick count would fire in ~2 frames. Only elapsed TIME counts.
         for (let tick = 0; tick < 500; tick++) enforceResidency(reg, clock, stock)
-        assert.equal(waiter.park.since, 0, "the wait is stamped once, at its start")
+        assert.equal(waiter.suspension.since, 0, "the wait is stamped once, at its start")
         assert.equal(waiter.error, null, "500 ticks inside the window is not a fault")
 
         clock.t = MAX_RESIDENCY_STALL_MS

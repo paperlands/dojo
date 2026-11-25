@@ -225,4 +225,27 @@ describe("Fix A — child anchored to parent logical time (Decision 011)", () =>
         assert.equal(kid.logicalBirth, 100, "born on parent's logical clock")
         assert.equal(kid.resumeAt, 200, "first wait anchored to logical birth, not now")
     })
+
+    // Fix A's `|| null` gap: a parent at frontier 0 is a REAL birth instant. A
+    // park before the first wait must not make the child anchor to wall now.
+    test("frontier 0 is a birth instant, not a missing one", () => {
+        const scheduler = createScheduler(metaRoot(), {
+            createDeps: () => ({ mathParser: new Parser(), mathEvaluator: new Evaluator() }),
+            execOpts: { color: "#e77808" },
+            onShout: () => {},
+        })
+        // `wait 0` holds the parent at frontier 0 while the seat drain ends.
+        scheduler.hotSwapChild("buf", {
+            name: "main",
+            code: { ast: parseProgram("wait 0\nas kid do\n  wait 0.1\nend"), functions: null },
+            style: { color: "#e77808" },
+            env: null,
+        })
+        // A janky tick: the parent resumes and spawns the kid with now=9999.
+        scheduler.tick(9999)
+        const kid = [...scheduler.registry.values()].find((a) => a.name === "kid")
+        assert.ok(kid, "kid spawned at the parent's frontier 0")
+        assert.equal(kid.logicalBirth, 0, "frontier 0 is a real birth, not null")
+        assert.equal(kid.resumeAt, 100, "the first wait anchors to 0, not the tick's now")
+    })
 })

@@ -1,0 +1,124 @@
+#+title: Live observation versus replacement — discrimination plan
+#+PROBE-STATUS: concluded
+
+* Predicted before the run
+:PROPERTIES:
+:ID: probe-live-observation-plan
+:LENS: empiricist adversarial
+:END:
+
+Run =node probe/state-model/live-observation.mjs=. Disposable scheduler mirrors;
+real parser, readouts, law gate, run authority and headless compositor. No change
+to clock arithmetic, service order, admission checks, subject identity or syntax.
+
+Cross two factors independently: (R) an installed receiver's pose participates
+in figure equality / is only the live receiver cursor; (P) implicit spatial
+reads of supplied peers are captured question inputs / reads through the
+existing observation path at use. Temporal facets, explicit scalar arguments
+and captured participant identities are not changed. P applies to all figures
+in its mirror as a deliberately broad challenge, not a proposed default.
+
+- Separate receivers: one step each, finish. Shared receiver: prediction R
+  stops mutual renewal *and* retains both steps (not just quiet by dropping one).
+  Across a wait and noncommuting steps, continue from the accepted pose rather
+  than a private cursor. Reverse source order is a challenge to confluence.
+- Pursuit: R alone leaves schedule-dependent implicit peer reads. P may make
+  accepted trajectories cadence-invariant; equality includes logical cuts and
+  full pose traces, not just endpoint or run count. Equal traces with no actual
+  observation or a silently skipped movement do not qualify.
+- Hand against a waiting receiver: R keeps the same run and elapsed wait, and
+  continues from the new accepted pose. An explicitly supplied receiver y
+  should still replace even in R+P. Hand against a peer: a read before the
+  hand cannot change retroactively; a later live read should see the new y.
+- Pending attempt: change a read participant while a motion answer is awaited.
+  Live observation is not permission to publish the old candidate. An old reply
+  after source replacement must not write even in R+P.
+- Constrained receiver: a prohibited step should not land merely because
+  its continuation can now read the live receiver. A pure named figure that
+  draws from a participant's pose should expose what broad P costs after its
+  run has completed; that is a different promise from executing a behaviour.
+
+Stop at the first unsupported claim; retain negative observations. This is
+not a selection of authoring rules, feedback resolution, or a new engine.
+
+* Readings — each factor solves a different problem
+:PROPERTIES:
+:ID: probe-live-observation-results
+:MODULE: assets/js/turtling/scheduler.js, assets/js/turtling/executor.js
+:LENS: empiricist adversarial
+:END:
+
+Node v26.13.0; scheduler SHA256 =810aeb363b7a3d0e9f0f0498617742229d644fa8653b17e766c8088516ef2117=,
+compositor =618c66502bbd65fc92983d756a47d63109aaa645b92491353d91e776aaa87dc3=.
+The instrument emits a JSON line per arm and asserts the hard contrasts.
+
+| Witness | Restart / irrelevant factor | Relevant live-observation factor |
+|---------+-----------------------------+----------------------------------|
+| Two installed bodies, distinct receivers | 3 admitted commands; runs 1/1 | same in all arms |
+| One shared receiver, forward then turn + forward | done, runs 2/1; 4 admitted commands, (1,-4,0) | R: done, runs 1/1; exactly 3, (1,-3,0) |
+| Same with a second forward after a 0.1s wait | unfinished at 800ms: runs 27/26, 79 attempts | R: 4 admits, final (1,-5,0); the last starts at (1,-3,0), cut 100 |
+| Reverse the two siblings at source | 5 admits; one sibling repeats | R: exactly 3; (0,-4,0), not (1,-3,0); order is still authored |
+| Hand to x=50 while receiver waits | run 2 due at 1500ms, ends x=53 | R: same run due at 1000ms, ends x=52; explicit =fox.y= still replaces |
+| Peer hand y=7 during a wait | labels 0,7,7 in two runs | P: labels 0,7 in one run; only the later read sees 7 |
+| Completed figure reads =prey.y= | a peer move redraws (labels 0,7) | P: stays at 0; an explicit scalar argument still redraws |
+| Law forbids receiver moving from x=5 to x=6 | refuse, no changed pose | same independently classified violation in all arms |
+
+Removing receiver entries from token equality /alone/ first left the
+standing =compareOwed= discharge test expecting their keys. R therefore
+excludes those same entries from the discovery comparison, not just from the
+restart test. Receiver registration and the resume-from-accepted-pose path
+are unchanged; no extra state or scheduler queue.
+
+The three real headless pursuit schedules (16ms, 50ms, and janky) have
+different accepted pose/cut sequences under restart or R alone, with run
+counts 60/60/15. P and R+P each have one run and exactly 60 accepted fox
+forward commands at every cadence; the accepted pose/cut sequence matches the
+ordinary call (=edc804d10f61cb64=). Compare full positions and rotations,
+deduplicated on accepted geometry changes, with cuts shown to eight places.
+This is one authored pursuit, not a proof of scheduler determinism or an
+observation-policy rule for all figures.
+
+* Falsifiers: retaining a run does not retain a valid attempt
+:PROPERTIES:
+:ID: probe-live-observation-async
+:MODULE: assets/js/turtling/scheduler.js, assets/js/turtling/executor.js
+:LENS: adversarial
+:END:
+
+Park an actual =faceto= reply while fox starts at (0,0,0) and prey is at
+(0,5,0). Accept a hand edit, then release the old reply.
+
+| Edit while pending | Subject form (=faceto prey=) without restart | Point form (=faceto prey.x prey.y=) without restart |
+|-------------------+-----------------------------------------------+-----------------------------------------------------|
+| Prey moves to (0,-5,0), P | no base revision on attempt: old reply accepted, fox ends (0,+3,0) | stale reply rejected; same run retries and reaches (0,-3,0) |
+| Fox moves to (10,0,0), R | old reply accepted and writes fox back to its old origin; then (0,+3,0) | stale reply rejected, but retried request still starts at (0,0,0); final (0,+3,0) again |
+
+Existing restart gets both edits right in these fixtures: the changed question
+fences the pending reply and the new run inherits the accepted receiver pose.
+For a peer-only change the existing coordinate form captures and validates a
+configuration revision and already has bounded reread/retry. For a receiver
+change that guard is necessary but insufficient: the next attempt takes a
+fresh observation while the executor's local pose is still the old one.
+The tested =wait= resume path refreshes that pose; retry currently does not.
+
+Source replacement with a reply outstanding leaves the old installation
+absent, publishes none of its commands, and leaves the new fox at (20,0,0) in
+all four arms. Lifetime/authority survived this control. The two red cases
+above do not require a retired writer or a broken geometric law: both bad
+moves pass the standing law gate.
+
+* Disposition
+:PROPERTIES:
+:ID: probe-live-observation-disposition
+:LENS: architect
+:END:
+
+Keep two distinctions, not a global switch: a question defines what answer
+must be rebuilt; a use-time observation feeds one attempt. And a live run
+does not make either a past read or a private cursor current. Blanket P loses
+derived-figure redraw; blanket R loses an accepted hand move. No production
+landing. The next bounded comparison can ask whether observed commands can
+build a fresh attempt from one accepted cut (target read AND receiver cursor)
+without reviving retired state, resampling earlier admitted input, or changing
+the already-working wait continuation. Do not add a scheduler-wide era or
+restart on every motion to solve an attempt-local problem.

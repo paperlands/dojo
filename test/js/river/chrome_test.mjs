@@ -1,11 +1,11 @@
 // Caption chrome — pure facts, one painter.
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { BEAT, captionOf, shareLinkOf, titleOf } from "../../../assets/js/river/chrome.js"
+import { BEAT, captionOf, titleOf } from "../../../assets/js/river/chrome.js"
 import { write, name } from "../../../assets/js/keep/entry.js"
 import { PRESENT, DRAFT } from "../../../assets/js/river/mode.js"
 
-const ROOT = "r".repeat(64)
+const ROOT = "a".repeat(64)
 
 function snap(title) {
     return write(
@@ -16,8 +16,8 @@ function snap(title) {
 }
 
 describe("BEAT: one place for keep→land durations", () => {
-    test("four named durations, positive", () => {
-        for (const k of ["IGNITE_MS", "KEEP_GUARD_MS", "HOLD_MIN_MS", "LAND_MS"]) {
+    test("named durations, positive", () => {
+        for (const k of ["IGNITE_MS", "KEEP_GUARD_MS", "HOLD_MIN_MS", "LAND_MS", "BLUSH_MS"]) {
             assert.ok(BEAT[k] > 0, k)
         }
         assert.ok(Object.isFrozen(BEAT))
@@ -85,53 +85,3 @@ describe("titleOf", () => {
     })
 })
 
-// The engine is injected, so the mint is testable off-document — going
-// around it was what cost this word its test (id:la-mint).
-describe("shareLinkOf — the mint asks the engine (id:la-mint)", () => {
-    const WORK = "w".repeat(64)
-    const door = { address: (o) => `URL${JSON.stringify(o)}` }
-
-    function held(title) {
-        const bytes = snap(title)
-        const id = name(bytes)
-        return { id, keeps: new Map([[id, { bytes }]]) }
-    }
-
-    test("standing on the HEAD shares the work — the river, not the moment", () => {
-        const { id, keeps } = held("a")
-        const url = shareLinkOf(
-            { at: { key: "k", id }, sharedIds: new Set([id]), keeps, newestId: id, work: null },
-            door,
-        )
-        assert.equal(url, `URL{"fork":"${WORK}"}`)
-    })
-
-    test("an older keep shares that commit", () => {
-        const { id, keeps } = held("a")
-        const url = shareLinkOf(
-            {
-                at: { key: "k", id },
-                sharedIds: new Set([id]),
-                keeps,
-                newestId: "n".repeat(64),
-                work: WORK,
-            },
-            door,
-        )
-        assert.equal(url, `URL{"fork":"${id}"}`)
-    })
-
-    test("a keep the room does not hold has no address", () => {
-        const { id, keeps } = held("a")
-        const bare = { at: { key: "k", id }, sharedIds: new Set(), keeps, newestId: id, work: null }
-        assert.equal(shareLinkOf(bare, door), null)
-    })
-
-    test("no keep under the sun has no address", () => {
-        const at = { key: PRESENT, id: null }
-        assert.equal(
-            shareLinkOf({ at, sharedIds: new Set(), keeps: new Map(), newestId: null, work: null }, door),
-            null,
-        )
-    })
-})

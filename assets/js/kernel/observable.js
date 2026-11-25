@@ -1,23 +1,23 @@
-// One watch/notify — the breath every half-adopted list reimplements.
-//
-// Anonymous watchers, so the Set IS the registry. Snapshot on notify for the
-// one thing Set iteration does not give: a watcher registered mid-fan must not
-// hear the breath it was born into. (Unwatching mid-fan needs no snapshot —
-// deleting from a Set under iteration skips the deleted and no sibling.)
-// Carries whatever notify is handed: the cell's breath carries nothing; a
-// store carries the new signal.
+// Each watch is its own installation. Delivery checks live membership; new installs wait.
+// No fault policy here: subscriber exceptions propagate unless the caller supplies a boundary.
+// (id:ownership-o2, id:cell-publication)
 
 export function createObservable() {
-    const watchers = new Set()
+    // Registration is an INCARNATION: a token, not the function's identity.
+    let next = 0
+    const watchers = new Map()   // token → fn
 
     return {
         watch(fn) {
-            watchers.add(fn)
-            return () => { watchers.delete(fn) }
+            const token = ++next
+            watchers.set(token, fn)
+            return () => { watchers.delete(token) }
         },
 
         notify(...args) {
-            for (const fn of [...watchers]) fn(...args)
+            for (const [token, fn] of [...watchers]) {
+                if (watchers.has(token)) fn(...args)
+            }
         },
     }
 }
@@ -42,9 +42,21 @@ export function createAtom(initial) {
 
         swap(fn) {
             const old = value
-            value = fn(old)
-            for (const watcher of watchers.values()) watcher(old, value)
-            return value
+            const next = fn(old)
+            value = next
+            if (!Object.is(old, next)) {
+                for (const watcher of watchers.values()) watcher(old, next)
+            }
+            return next
+        },
+        // Install now; let the caller notify only after related atoms are installed.
+        // Identity is not news: a stated pose keeps motion and must not fan.
+        swapDeferred(fn) {
+            const old = value
+            const next = fn(old)
+            value = next
+            if (Object.is(old, next)) return () => {}
+            return () => { for (const watcher of watchers.values()) watcher(old, next) }
         },
 
         watch(key, fn) {

@@ -1,0 +1,26 @@
+# Ask for ten. Land on the guide.
+#
+# `loop until touch(<a path>) do … end` walks its own body against ONE retained screen:
+# it repeats while the step misses, and returns when the walk stands on the screen
+# or an accepted step reaches it. The body's remaining statements do not run on a hit.
+#
+# The loop is unbounded; the screen closes it, and `stop` can close any loop. The
+# screen here is made by a TURTLE (its accepted trail). To use a declared one
+# instead, replace the `as guide` block and nothing else changes:
+#
+#   let guide = path((3.25, -6, 0), (3.25, 6, 0))
+
+beColour slategray
+as guide do
+  path (3.25, -6, 0) (3.25, 6, 0)
+end
+
+beColour tomato
+loop until touch(guide.path) do
+  fw 10
+  label missed
+end
+label here
+
+# Walk away afterwards: the screen was a stopping condition for that walk, never a wall.
+goto 0 8 0

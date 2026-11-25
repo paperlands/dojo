@@ -10,23 +10,8 @@ import { test, describe } from "node:test"
 import assert from "node:assert"
 
 import { mountReach } from "../../../assets/js/editor/reach.js"
+import { docFrom } from "./doc_fixture.mjs"
 
-// A DOM-free CM6 `state.doc` stand-in (same shape as lit_tokenizer_test's).
-function mkDoc(src) {
-    const objs = []
-    let pos = 0
-    for (const [i, text] of src.split("\n").entries()) {
-        const from = pos, to = pos + text.length
-        pos = to + 1                                          // +1 for the newline
-        objs.push({ text, number: i + 1, from, to })
-    }
-    return {
-        lines:  objs.length,
-        length: pos,
-        line:   (n) => objs[n - 1],
-        lineAt: (p) => objs.find((o) => p >= o.from && p <= o.to) || objs[objs.length - 1],
-    }
-}
 
 // A CM6 EditorView stand-in that keeps the ONE invariant this organ can break:
 // `dispatch` throws while an update is in progress, and requestMeasure swallows
@@ -35,7 +20,7 @@ function mkDoc(src) {
 const LINE_H = 10   // every line the same height, so a pixel span IS a line span
 
 function mkView(src, { bottomLine, topLine = 1, head = 0, anchor = head, focused = false }) {
-    const doc = mkDoc(src)
+    const doc = docFrom(src)
     const view = {
         state: { doc, selection: { main: { head, anchor, empty: head === anchor } } },
         hasFocus: focused,                                 // a cursor active in the shell
@@ -170,7 +155,7 @@ describe("the reach — scrolling kindles a cell AND lights it", () => {
         // The child's caret in cell 1 and the shell focused: typing at its foot scrolls
         // the doc, and the light must not slide off the cell he is writing.
         const view = mkView(PAGE, { bottomLine: 7, topLine: 2, focused: true,
-                                    head: mkDoc(PAGE).line(3).from })
+                                    head: docFrom(PAGE).line(3).from })
         const reached = []
         const reach = mountReach(view, { gate: () => true, publish: (line) => reached.push(line) })
 
@@ -188,7 +173,7 @@ describe("the reach — scrolling kindles a cell AND lights it", () => {
         // scroll must never determine it. (An out-of-view horizon used to hand
         // the light on here; that stole the caret mid-edit.)
         const view = mkView(PAGE, { bottomLine: 8, topLine: 5, focused: true,
-                                    head: mkDoc(PAGE).line(3).from })
+                                    head: docFrom(PAGE).line(3).from })
         const reached = []
         const reach = mountReach(view, { gate: () => true, publish: (line) => reached.push(line) })
 
@@ -257,7 +242,7 @@ describe("the reach — scrolling kindles a cell AND lights it", () => {
         // would normally reach and plant, but an edit is in flight. Unfocused,
         // so it is the SELECTION alone doing the vetoing — a range outlives the
         // focus that made it.
-        const doc = mkDoc(PAGE)
+        const doc = docFrom(PAGE)
         const view = mkView(PAGE, { bottomLine: 7, head: doc.line(1).from, anchor: doc.line(3).from })
         const reached = []
         const reach = mountReach(view, { gate: () => true, publish: (line) => reached.push(line) })

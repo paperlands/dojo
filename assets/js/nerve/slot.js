@@ -27,8 +27,15 @@ export function buildSlot(signal, ch, { showSource, fade, onSourceClick }) {
 
     const msg = document.createElement('span')
     msg.className = 'nerve-msg'
-    msg.textContent = statusText(signal)
     el.appendChild(msg)
+
+    // The sun can radiate without making the tally flash.
+    const count = signal.kind === 'helios' ? document.createElement('span') : null
+    if (count) {
+        count.className = 'nerve-helios-count'
+        el.appendChild(count)
+    }
+    paintMessage(msg, count, signal)
 
     // Own span/colour so remaining work never reads as an alarm count.
     if (signal.tally > 1) {
@@ -43,6 +50,10 @@ export function buildSlot(signal, ch, { showSource, fade, onSourceClick }) {
     return el
 }
 
+function paintMessage(msg, count, signal) {
+    if (msg) msg.textContent = count ? (signal.msg ?? '') : statusText(signal)
+    if (count) count.textContent = signal.payload ?? ''
+}
 // Standing slot + patch. Seat decides SAME | UPDATE | REPLACE.
 export function makeSlot(signal, ch, opts) {
     const el = buildSlot(signal, ch, opts)
@@ -52,8 +63,7 @@ export function makeSlot(signal, ch, opts) {
         el,
         update(next) {
             slot.signal = next
-            const msg = el.querySelector('.nerve-msg')
-            if (msg) msg.textContent = statusText(next)
+            paintMessage(el.querySelector('.nerve-msg'), el.querySelector('.nerve-helios-count'), next)
             let tally = el.querySelector('.nerve-tally')
             if (next.tally > 1) {
                 if (!tally) {

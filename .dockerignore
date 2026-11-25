@@ -47,14 +47,21 @@
 /burrito_out/
 
 # The constellation and the workshop: prose, spikes, and generated corpora.
-# The image is mix.exs, config, lib, priv, assets, rel — nothing else.
+# The image needs no scripts; the workshop stays out.
 /specs/
-/scripts/
+/scripts/*
+!/scripts/verify/
+/scripts/verify/*
 /diagrams/
 /images/
 /mathworld/
 /peer/
 /books/
+# Local-only media and probes: 90MB (video 48 + design 23 + probe 19) that no
+# COPY in the Dockerfile reaches.
+/video/
+/design/
+/probe/
 *.org
 
 # Generated on crash by the VM

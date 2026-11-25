@@ -92,6 +92,28 @@ const ailmentWounds = (ailments, key) =>
         address: a.address ?? key,
     }))
 
+// A PARSE FAULT IS THE TREE'S, NOT THE RUN'S (id:cmp-resilient): the executor's
+// walk mints a notice for a node the tree already reported — the same fault. The
+// invariant that makes ownership mean something: a runtime parse notice always
+// echoes a node in THIS buffer's source tree, addressed to the frame that walked
+// it. So same buffer + same exact span (line AND extent) is the identity. Unlocated
+// reports (null, missing, line 0) share no place and stand; wording never is one.
+// Linear in tree × reports — fine while sparse; index the span pairs if not.
+const spanEnd = (s) => s?.endLine ?? s?.line ?? null
+const isParseEcho = (treeWounds, a, key) =>
+    a?.kind === "parse" &&
+    a.span?.line > 0 &&
+    a.address != null && key != null && isSeatOf(a.address, key) &&
+    treeWounds.some((w) =>
+        w.kind === "parse" &&
+        w.span?.line === a.span.line &&
+        spanEnd(w.span) === spanEnd(a.span))
+
+const dropParseEcho = (treeWounds, ailments, key) => {
+    if (!treeWounds.length || !ailments.length) return ailments
+    return ailments.filter((a) => !isParseEcho(treeWounds, a, key))
+}
+
 // TWO CELLS, ONE NAME (D024 rule 2). The first keeps the word; a later claimant
 // answers to its coordinate and the collision is SAID — silence would seat two
 // figures in one frame invisibly. Facts only; wound-view.js says them.
@@ -180,7 +202,8 @@ const anyNamed = (nodes) => nodes.some((n) => n?.meta?.cellFence && n.meta.info?
 // asks and paints; it does not compute the world.
 export function diagnostics(ast, ailments = [], key = null) {
     const nodes = ast ?? []
-    const gathered = [...parseWounds(nodes, key), ...ailmentWounds(ailments, key)]
+    const treeWounds = parseWounds(nodes, key)
+    const gathered = [...treeWounds, ...ailmentWounds(dropParseEcho(treeWounds, ailments ?? [], key), key)]
     if (!gathered.length && !anyNamed(nodes)) return gathered
 
     // One print→outline for the whole pass: phaseCells and every locate share it.
@@ -216,12 +239,34 @@ export const fingerprint = (w) =>
 // D020 is about the WALK, not the verdict: error nodes stay inert and healthy
 // statements still draw. Severity turns on whether a friend may be told ☀︎ —
 // a parse-broken buffer reflecting `success` was the peer seam lying.
+// EVERY KIND THE CODE MINTS HAS A ROW. An unregistered kind still answers (the
+// fallback below keeps it an error), but it answers by ACCIDENT — and a wound a friend
+// is told about must be a decision, not a default.
 export const KINDS = {
-    parse:     { severity: "error" },     // the tree would not build
-    walk:      { severity: "error" },     // it ran and died
-    rehearsal: { severity: "error" },     // a vocabulary ancestor broke
-    name:      { severity: "warning" },   // two cells, one word (D024 rule 2)
-    dependent: { severity: "warning" },   // it stands on something that never ran
+    // A tree or a run that did not happen.
+    parse:          { severity: "error" },     // the tree would not build
+    walk:           { severity: "error" },     // it ran and died
+    rehearsal:      { severity: "error" },     // a vocabulary ancestor broke
+    ink:            { severity: "error" },     // a budget: the figure ran out of stock
+    // The world would not take the move.
+    motion:         { severity: "error" },     // the world refused a proposed move
+    relation:       { severity: "error" },     // a law could not hold
+    unsupported:    { severity: "error" },     // that question has no answer yet
+    unresolved:     { severity: "error" },     // the solve could not settle
+    contradiction:  { severity: "error" },     // two laws cannot both hold
+    obstructed:     { severity: "error" },     // a placement has nowhere to go
+    stale:          { severity: "error" },     // the answer outlived its question
+    busy:           { severity: "error" },     // a publication is in flight
+    // A value the figure could not use. The SOURCE is wrong when a word stands where a
+    // measure belongs — the figure then says something its text does not. Arithmetic
+    // that ran out of road is the DATA's fault: a step is not taken, and the figure
+    // still draws, so the document is well and only the author is owed the word.
+    "not-a-number": { severity: "error" },
+    nan:            { severity: "warning" },
+    infinite:       { severity: "warning" },
+    // Standing beside a healthy figure.
+    name:           { severity: "warning" },   // two cells, one word (D024 rule 2)
+    dependent:      { severity: "warning" },   // it stands on something that never ran
 }
 
 // An unknown kind is an ERROR: a hurt we cannot name must not be quietly

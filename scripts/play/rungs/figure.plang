@@ -1,0 +1,14 @@
+def sierpinski len step do
+  when step > 0 do
+    loop 3 do
+      fw len
+      lt 120
+      sierpinski len/2 step-1
+    end
+  end
+end
+let X
+fn round(no, nearest) (no - (no // nearest))
+let depth = round[X.x, 50]/50
+let flake = sierpinski 400 depth
+wait 1

@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { chaseDirection } from "../../../assets/js/editor/peer-attention.js";
 import { stepActivation } from "../../../assets/js/editor/code-cell-activation.js";
 import { minimalChange } from "../../../assets/js/terminal/view.js";
+import { docOf } from "./doc_fixture.mjs";
 
 // ---------------------------------------------------------------------------
 // chaseDirection — is the friend off the top, off the bottom, or here?
@@ -80,15 +81,6 @@ describe("heldBy — a name is news only when the body is here", () => {
 // stepActivation with a peer key — one walk, two keys, and the memo intact.
 // ---------------------------------------------------------------------------
 
-// A doc stub shaped like CM6's: 1-indexed lines, `lines` count. `findProse`
-// needs only those two, and it walks the REAL geometry — so the fences here are
-// PaperLang's own: a `###` meadow, `*` headlines, and cells that only count
-// inside the clearing.
-const docOf = (lines) => ({
-    lines: lines.length,
-    line: (n) => ({ number: n, from: n * 1000, to: n * 1000 + lines[n - 1].length, text: lines[n - 1] }),
-});
-
 const PAGE = [
     "###",                  // 1   the meadow opens
     "* a page",             // 2
@@ -108,131 +100,105 @@ const PAGE = [
 const CELL_1 = 4;   // keyed by its opening fence
 const CELL_2 = 10;
 
-// A `build` that records what it was handed, so the assertions can speak about
-// the DECORATION the field would make without owning a RangeSet. It records the
-// friend's LINE, because that is what the field now keeps.
-const spyBuild = () => {
-    const calls = [];
-    const build = (doc, cells, active, peerLine) => {
-        const call = { active: active?.open ?? null, peerLine: peerLine ?? null };
-        calls.push(call);
-        return call;
-    };
-    return { build, calls };
-};
+const first = (doc, headLine, peerLine) =>
+    stepActivation(null, { docChanged: true, selectionChanged: false, doc, headLine, peerLine });
 
-const NONE = Symbol("none");
+const move = (prev, doc, headLine, peerLine) =>
+    stepActivation(prev, { docChanged: false, selectionChanged: true, doc, headLine, peerLine });
 
-const first = (doc, headLine, peerLine, build) =>
-    stepActivation(null, { docChanged: true, selectionChanged: false, doc, headLine, peerLine }, build, NONE);
+const peerMove = (prev, doc, headLine, peerLine) =>
+    stepActivation(prev, { docChanged: false, selectionChanged: false, doc, headLine, peerLine });
 
-const move = (prev, doc, headLine, peerLine, build) =>
-    stepActivation(prev, { docChanged: false, selectionChanged: true, doc, headLine, peerLine }, build, NONE);
-
-const peerMove = (prev, doc, headLine, peerLine, build) =>
-    stepActivation(prev, { docChanged: false, selectionChanged: false, doc, headLine, peerLine }, build, NONE);
-
+// The field now carries SEMANTIC state only — which cell is kindled and where
+// the friend is. Paint is the view plugin's, from `paintPlan` (see
+// activation_paint_test.mjs). These assertions are therefore about the law and
+// the memo, and the absence of a decoration channel is itself pinned below.
 describe("stepActivation — the friend's LINE rides the one field", () => {
     const doc = docOf(PAGE);
 
-    it("keeps the line, not the cell — one walk, both marks", () => {
-        const { build, calls } = spyBuild();
-        const v = first(doc, 5, 11, build);          // my cursor in cell 1, friend in cell 2
-        assert.equal(v.key, CELL_1, "my cell is keyed by its opening fence");
-        assert.equal(v.peerLine, 11, "the friend is kept as a LINE — the cell is derived at build");
+    it("keeps the line, not the cell — one walk, both keys", () => {
+        const v = first(doc, 5, 11);                 // my cursor in cell 1, friend in cell 2
+        assert.equal((v.held?.open ?? null), CELL_1, "my cell is keyed by its opening fence");
+        assert.equal(v.peerLine, 11, "the friend is kept as a LINE — the cell is derived at paint");
         assert.equal(v.peerKey, undefined, "no second key is stored; derive, don't duplicate");
-        assert.equal(calls.length, 1, "one build — never a second decoration engine");
-        assert.deepEqual(calls[0], { active: CELL_1, peerLine: 11 });
+        assert.equal("deco" in v, false, "the field does not build decorations — the view does");
     });
 
     // THE POINT OF A LINE: it is TOTAL. Every position in the document has one,
     // so the friend is locatable in prose, between cells, and on bare code —
     // the places a cell-quantized datum has nothing to say about.
     it("carries a line that falls in NO cell — prose, headline, outside a fence", () => {
-        const { build } = spyBuild();
-        for (const line of [2, 3, 8, 9]) {            // headline, blank, deeper headline, blank
-            assert.equal(first(doc, 5, line, build).peerLine, line,
+        for (const line of [2, 3, 8, 9]) {           // headline, blank, deeper headline, blank
+            assert.equal(first(doc, 5, line).peerLine, line,
                 `line ${line} must survive even though no cell contains it`);
         }
     });
 
     it("carries a line in a document with no cells at all", () => {
         const bare = docOf(["fw 100", "rt 90", "fw 100"]);
-        const { build, calls } = spyBuild();
-        const v = first(bare, 1, 2, build);
+        const v = first(bare, 1, 2);
         assert.equal(v.peerLine, 2);
-        assert.equal(calls.length, 1, "a cell-less doc still paints, because the friend is in it");
-        assert.notEqual(v.deco, NONE);
+        assert.equal(v.cells.length, 0, "no cells — the friend's line is all there is to paint");
     });
 
-    it("paints nothing in a cell-less document when no friend is there", () => {
+    it("a cell-less document with no friend has nothing to say", () => {
         const bare = docOf(["fw 100", "rt 90"]);
-        const { build, calls } = spyBuild();
-        assert.equal(first(bare, 1, null, build).deco, NONE);
-        assert.equal(calls.length, 0, "no cells and no friend — nothing to say");
+        const v = first(bare, 1, null);
+        assert.equal(v.cells.length, 0);
+        assert.equal((v.held?.open ?? null), null, "no cell to light");
+        assert.equal(v.peerLine, null, "no friend to place");
     });
 
-    it("a null peer line paints no friend — and is not an error", () => {
-        const { build } = spyBuild();
-        const v = first(doc, 5, null, build);
+    it("a null peer line is not an error, and does not disturb my light", () => {
+        const v = first(doc, 5, null);
         assert.equal(v.peerLine, null);
-        assert.equal(v.deco.peerLine, null);
+        assert.equal((v.held?.open ?? null), CELL_1);
     });
 
     // THE 443× PROPERTY (code-cell-activation.js). The move path must still
     // return the SAME object — the friend must cost nothing to a cursor that
     // moves while he does not.
     it("returns prev UNCHANGED when neither my cell nor his line moves", () => {
-        const { build, calls } = spyBuild();
-        const a = first(doc, 5, 11, build);
-        const b = move(a, doc, 5, 11, build);        // I moved within my cell
+        const a = first(doc, 5, 11);
+        const b = move(a, doc, 5, 11);               // I moved within my cell
         assert.equal(b, a, "must be the same object — no rebuild, no allocation");
-        assert.equal(calls.length, 1, "build must not have run again");
     });
 
     it("rebuilds when MY cell moves and his line does not", () => {
-        const { build, calls } = spyBuild();
-        const a = first(doc, 5, 11, build);
-        const b = move(a, doc, 11, 11, build);       // I walked into his cell
+        const a = first(doc, 5, 11);
+        const b = move(a, doc, 11, 11);              // I walked into his cell
         assert.notEqual(b, a);
-        assert.equal(b.key, CELL_2);
+        assert.equal((b.held?.open ?? null), CELL_2);
         assert.equal(b.peerLine, 11, "he has not moved");
-        assert.deepEqual(calls.at(-1), { active: CELL_2, peerLine: 11 },
-            "my light and his line on one cell — following is a coincidence, not a branch");
     });
 
     it("rebuilds when HE moves and my cursor does not", () => {
-        const { build, calls } = spyBuild();
-        const a = first(doc, 5, 11, build);
-        const b = peerMove(a, doc, 5, 5, build);     // no selection change at all
+        const a = first(doc, 5, 11);
+        const b = peerMove(a, doc, 5, 5);            // no selection change at all
         assert.notEqual(b, a, "his move must reach the field without a selection");
-        assert.equal(b.key, CELL_1, "my cell is untouched");
+        assert.equal((b.held?.open ?? null), CELL_1, "my cell is untouched");
         assert.equal(b.peerLine, 5);
     });
 
     // The line is finer than the cell, and that is the whole reason to keep it.
     it("rebuilds when he moves WITHIN one cell — the mark must follow him exactly", () => {
-        const { build, calls } = spyBuild();
-        const a = first(doc, 5, CELL_2, build);      // his fence
-        const b = peerMove(a, doc, 5, 11, build);    // his body — same cell, different line
+        const a = first(doc, 5, CELL_2);             // his fence
+        const b = peerMove(a, doc, 5, 11);           // his body — same cell, different line
         assert.notEqual(b, a, "a cell-keyed mark would have stood still here");
         assert.equal(b.peerLine, 11);
-        assert.equal(calls.length, 2);
     });
 
     it("a friend who leaves clears his mark and nothing else", () => {
-        const { build } = spyBuild();
-        const a = first(doc, 5, 11, build);
-        const b = peerMove(a, doc, 5, null, build);
+        const a = first(doc, 5, 11);
+        const b = peerMove(a, doc, 5, null);
         assert.equal(b.peerLine, null);
-        assert.equal(b.key, a.key, "my own light is not disturbed by his leaving");
+        assert.equal(b.held?.open ?? null, a.held?.open ?? null, "my own light is not disturbed by his leaving");
     });
 
     it("an idle transition is a pass-through", () => {
-        const { build } = spyBuild();
-        const a = first(doc, 5, 11, build);
+        const a = first(doc, 5, 11);
         assert.equal(
-            stepActivation(a, { docChanged: false, selectionChanged: false, doc, headLine: 5, peerLine: 11 }, build, NONE),
+            stepActivation(a, { docChanged: false, selectionChanged: false, doc, headLine: 5, peerLine: 11 }),
             a);
     });
 
@@ -240,12 +206,11 @@ describe("stepActivation — the friend's LINE rides the one field", () => {
     // peer effect. Absent `peerLine` must behave exactly as it did before the
     // friend existed.
     it("is unchanged for a surface that never speaks of a friend", () => {
-        const { build, calls } = spyBuild();
-        const a = stepActivation(null, { docChanged: true, selectionChanged: false, doc, headLine: 5 }, build, NONE);
+        const a = stepActivation(null, { docChanged: true, selectionChanged: false, doc, headLine: 5 });
         assert.equal(a.peerLine, null);
-        const b = stepActivation(a, { docChanged: false, selectionChanged: true, doc, headLine: 5 }, build, NONE);
+        const b = stepActivation(a, { docChanged: false, selectionChanged: true, doc, headLine: 5 });
         assert.equal(b, a, "the inner shell's move path is untouched");
-        assert.equal(calls.length, 1);
+        assert.equal("deco" in a, false, "no decoration channel anywhere in the value");
     });
 });
 

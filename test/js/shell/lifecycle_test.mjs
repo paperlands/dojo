@@ -1,20 +1,9 @@
-// Shell hook lifecycle — booting → live → dead; the queue carries the transition.
-// Run with: node --test test/js/shell/lifecycle_test.mjs
-//
-// Guards the boot seam: LiveView dispatches a reply's push_events synchronously
-// in the same task as the patch that mounts the hook, while the shell's boot is
-// async (CM6 dynamic import). The lifecycle machine must register every event a
-// surface declares BEFORE its first await and queue payloads until the surface
-// stands — or the outershell's initial seeOuterShell (pushed by the very
-// seeTurtle reply that mounts the panel) is deterministically lost: empty
-// editor, dead focus/opacity, until the friend's next hatch re-pushes.
-// And a hook destroyed mid-boot must stand down, not zombie-mount.
+// The LiveView mount-patch seam and the installation rollback contract.
 
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
 import { makeShellHook } from "../../../assets/js/hooks/shell/lifecycle.js"
-import { createArena } from "../../../assets/js/kernel/arena.js"
 
 const tick = () => new Promise((resolve) => setImmediate(resolve))
 
@@ -30,7 +19,10 @@ function makeHook(hookDef, target = "outershell") {
     const registered = {}
     return Object.assign(Object.create(hookDef), {
         el: { dataset: { target } },
-        handleEvent(name, cb) { registered[name] = cb },
+        handleEvent(name, cb) { registered[name] = cb; return { name, cb } },
+        removeHandleEvent({ name, cb }) {
+            if (registered[name] === cb) delete registered[name]
+        },
         fire(name, payload) { registered[name]?.(payload) },
         registered,
     })
@@ -41,9 +33,9 @@ function makeSurface(events) {
     const record = { mounts: 0, seen: [], cleaned: 0, births: 0 }
     const surface = {
         events,
-        mount: () => {
+        mount: (hook) => {
             record.mounts++
-            const arena = createArena()
+            const arena = hook.arena.child()
             arena.add(() => record.cleaned++)
             return {
                 events: Object.fromEntries(
@@ -134,7 +126,7 @@ describe("boot seam: events riding the mount patch are never lost", () => {
         let mounted = 0
         const surface = {
             events: [],
-            mount: () => { mounted++; return { events: {}, arena: createArena() } },
+        mount: (hook) => { mounted++; return { events: {}, arena: hook.arena.child() } },
         }
         const hook = makeHook(
             makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outershell: surface, coreshell: surface } })
@@ -142,6 +134,48 @@ describe("boot seam: events riding the mount patch are never lost", () => {
         hook.mounted()
         await tick()
         assert.equal(mounted, 1)
+    })
+
+    test("acquire runs before registration; arrive ingests before the boot queue", async () => {
+        const boot = deferred()
+        const seen = []
+        let acquired = false
+
+        const surface = {
+            events: ["seeOuterShell"],
+            acquire(hook) {
+                acquired = true
+                hook.selection = "owner"
+            },
+            arrive(name, payload) {
+                seen.push(["arrive", name, payload.addr])
+            },
+        mount: (hook) => ({
+            events: { seeOuterShell: (payload) => seen.push(["surface", payload.addr]) },
+            arena: hook.arena.child(),
+            }),
+        }
+
+        const hook = makeHook(
+            makeShellHook({
+                boot: () => boot.promise,
+                surfaces: { outershell: surface, coreshell: surface },
+            })
+        )
+
+        hook.mounted()
+        assert.equal(acquired, true)
+        assert.equal(hook.selection, "owner")
+
+        hook.fire("seeOuterShell", { addr: "a1" })
+        assert.deepEqual(seen, [["arrive", "seeOuterShell", "a1"]], "arrive precedes the queue")
+
+        boot.resolve({})
+        await tick()
+        assert.deepEqual(seen, [
+            ["arrive", "seeOuterShell", "a1"],
+            ["surface", "a1"],
+        ])
     })
 
     test("data-target names the surface: outershell vs coreshell", async () => {
@@ -221,7 +255,7 @@ describe("dead state: a mid-boot destroy stands the mount down", () => {
         assert.equal(hook.arena.alive, false, "boot's mid-flight stand-down check")
     })
 
-    test("the surface's arena is adopted — one destroy ends one lifetime", async () => {
+    test("the mounted surface is a child of the installation", async () => {
         const { surface, record } = makeSurface(["seeOuterShell"])
         const hook = makeHook(
             makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outershell: surface, coreshell: surface } })
@@ -229,9 +263,11 @@ describe("dead state: a mid-boot destroy stands the mount down", () => {
         hook.mounted()
         await tick()
 
+        const child = hook.surface.arena
         hook.destroyed()
         assert.equal(record.cleaned, 1)
-        assert.equal(hook.surface.arena.alive, false)
+        assert.equal(child.alive, false)
+        assert.equal(hook.surface, null)
         hook.destroyed()
         assert.equal(record.cleaned, 1, "idempotent — the arena guards the second call")
     })
@@ -264,26 +300,37 @@ describe("dead state: a mid-boot destroy stands the mount down", () => {
 
     test("destroyed after live runs the surface cleanup and destroys the term", async () => {
         const { surface, record } = makeSurface(["seeOuterShell"])
-        let termDestroyed = 0
-        const hook = makeHook(
-            makeShellHook({ boot: () => Promise.resolve({}), surfaces: { outershell: surface, coreshell: surface } })
-        )
-        hook.term = { destroy: () => termDestroyed++ }
-
+        const releases = []
+        surface.acquire = (ctx) => ctx.arena.add(() => releases.push("acquired"))
+        const mount = surface.mount
+        surface.mount = (ctx) => {
+            const mounted = mount(ctx)
+            mounted.arena.add(() => releases.push("surface"))
+            return mounted
+        }
+        const hook = makeHook(makeShellHook({
+            boot(ctx) {
+                ctx.arena.add(() => releases.push("terminal"))
+                return Promise.resolve({})
+            },
+            surfaces: { outershell: surface },
+        }))
         hook.mounted()
         await tick()
         hook.destroyed()
+        hook.destroyed()
 
         assert.equal(record.cleaned, 1)
-        assert.equal(termDestroyed, 1)
+        assert.deepEqual(releases, ["surface", "terminal", "acquired"])
+        assert.equal(hook.registered.seeOuterShell, undefined)
     })
 
     test("release runs LIFO — the surface's arena owns the order, not this file", async () => {
         const order = []
         const surface = {
             events: ["seeOuterShell"],
-            mount: () => {
-                const arena = createArena()
+            mount: (hook) => {
+                const arena = hook.arena.child()
                 arena.add(() => order.push(1))
                 arena.add(() => order.push(2))
                 arena.add(() => order.push(3))
@@ -297,5 +344,149 @@ describe("dead state: a mid-boot destroy stands the mount down", () => {
         await tick()
         hook.destroyed()
         assert.deepEqual(order, [3, 2, 1])
+    })
+
+    test("outer recovery events ride the boot queue in order", async () => {
+        const { surface, record } = makeSurface(["outerIntent", "syncShell"])
+        const boot = deferred()
+        const hook = makeHook(
+            makeShellHook({ boot: () => boot.promise, surfaces: { outershell: surface, coreshell: surface } }),
+            "outershell"
+        )
+
+        hook.mounted()
+        const intent = { addr: "a1", view: "watch", draft_live: true, follow_peer: true }
+        hook.fire("outerIntent", intent)
+        hook.fire("syncShell", {})
+
+        boot.resolve({})
+        await tick()
+
+        assert.deepEqual(record.seen, [
+            ["birth", null],
+            ["outerIntent", intent],
+            ["syncShell", {}],
+        ])
+    })
+})
+
+
+describe("installation as one revocable lifetime", () => {
+    test("raw ingestion is synchronous; delivery queues through birth and replay", async () => {
+        const seen = []
+        let hook
+        const surface = {
+            events: ["event"],
+            arrive(_name, value) {
+                seen.push(`arrive ${value}`)
+                if (value === "first") hook.fire("event", "nested arrival")
+            },
+            mount(ctx) {
+                return {
+                    arena: ctx.arena.child(),
+                    birth() { seen.push("birth"); hook.fire("event", "from birth") },
+                    events: { event(value) {
+                        seen.push(`deliver ${value}`)
+                        if (value === "first") hook.fire("event", "from handler")
+                    } },
+                }
+            },
+        }
+        hook = makeHook(makeShellHook({ boot: async () => ({}), surfaces: { outershell: surface } }))
+        hook.mounted()
+        hook.fire("event", "first")
+        hook.fire("event", "second")
+        assert.deepEqual(seen, ["arrive first", "arrive nested arrival", "arrive second"])
+        await tick()
+        assert.deepEqual(seen, [
+            "arrive first", "arrive nested arrival", "arrive second", "birth", "arrive from birth",
+            "deliver first", "arrive from handler", "deliver nested arrival", "deliver second",
+            "deliver from birth", "deliver from handler",
+        ])
+    })
+
+    for (const edge of ["acquire", "register", "boot", "stand down", "mount", "birth", "ingest", "replay"]) {
+        test(`${edge} failure leaves no registered resources`, async (t) => {
+            const fault = new Error(edge)
+            const logged = t.mock.method(console, "error", () => {})
+            const taken = [], released = []
+            let lateArrivals = 0
+            const take = (arena, resource) => {
+                taken.push(resource)
+                arena.add(() => released.push(resource))
+            }
+            const check = (point) => { if (edge === point) throw fault }
+            const hook = makeHook(makeShellHook({
+                boot: async (ctx) => {
+                    take(ctx.arena, "boot")
+                    check("boot")
+                    return edge === "stand down" ? null : {}
+                },
+                surfaces: { outershell: {
+                    events: ["event", "second"],
+                    acquire(ctx) { take(ctx.arena, "acquire"); check("acquire") },
+                    arrive(_name, payload) { if (payload === "late") lateArrivals++; check("ingest") },
+                    mount(ctx) {
+                        const arena = ctx.arena.child()
+                        take(arena, "surface")
+                        check("mount")
+                        return {
+                            arena,
+                            birth() {
+                                if (edge === "birth") queueMicrotask(() => ctx.fire("event", "late"))
+                                check("birth")
+                            },
+                            events: { event() { check("replay") }, second() {} },
+                        }
+                    },
+                } },
+            }))
+            const register = hook.handleEvent
+            hook.handleEvent = (name, cb) => {
+                if (name === "second") check("register")
+                return register(name, cb)
+            }
+            hook.mounted()
+            hook.fire("event", null)
+            await tick()
+            assert.equal(hook.arena.alive, false)
+            assert.equal(hook.surface, null)
+            assert.deepEqual(Object.keys(hook.registered), [])
+            assert.equal(lateArrivals, 0)
+            assert.deepEqual(released, taken.toReversed())
+            assert.equal(logged.mock.callCount(), edge === "stand down" ? 0 : 1)
+            hook.destroyed()
+            assert.deepEqual(released, taken.toReversed())
+        })
+    }
+
+    test("destroy during replay drops the tail; a retired callback cannot enter the successor", async () => {
+        const seen = []
+        const hook = makeHook(makeShellHook({
+            boot: async () => ({}),
+            surfaces: { outershell: {
+                events: ["event"],
+                mount(ctx) {
+                    return {
+                        arena: ctx.arena.child(),
+                        events: { event(value) {
+                            seen.push(value)
+                            if (value === "destroy") ctx.destroyed()
+                        } },
+                    }
+                },
+            } },
+        }))
+        hook.mounted()
+        const stale = hook.registered.event
+        hook.fire("event", "destroy")
+        hook.fire("event", "discarded")
+        await tick()
+        assert.equal(hook.surface, null)
+        hook.mounted()
+        await tick()
+        stale("stale")
+        hook.fire("event", "successor")
+        assert.deepEqual(seen, ["destroy", "successor"])
     })
 })

@@ -1,0 +1,357 @@
+/* The arc is held by the shell; Helios keeps its own seat and lifetime. */
+.core-instruments { --sill-axis: 76px; }
+.core-instruments:has(.nerve-sill:not([hidden])) .nerve-helios {
+  padding-left: calc(var(--sill-axis, 76px) - 2.5ch);
+  padding-bottom: 1ch;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The axis is a layout fact: when the dial lets go, the glyph slides into the
+     room it left instead of jumping 54px in the frame the dial hides. Declared
+     on the base, never on the padded rule — a transition that exists only while
+     the rule matches still snaps on the way out. */
+  .core-instruments .nerve-hud-status-line.nerve-helios {
+    transition: padding-left var(--helios-light-in);
+  }
+}
+
+.nerve-sill {
+  /* NO axis declaration here: a stack owns `--sill-axis`, and a value set on the
+     instrument would shadow the stack's. Use sites fall back instead. */
+  --sill-winder-width: 32px;
+  --sill-finished: #fde68a;
+  --sill-finished-glow: color-mix(in oklch, var(--sill-finished) 28%, transparent);
+  --sill-finished-bloom: color-mix(in oklch, var(--sill-finished) 58%, transparent);
+  position: relative;
+  width: 130px;
+  height: 44px;
+  color: var(--helios-ink);
+  font: 500 .75rem/1.25 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.nerve-sill button {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  pointer-events: auto;
+  height: 44px;
+  touch-action: manipulation;
+}
+.nerve-sill button:focus-visible {
+  /* The room's amber ring, drawn INSIDE the button: a hand without a mouse must
+     see where it stands (disciple.css .win:focus-visible), and inset means the
+     twin 40px away is never touched. The glow stays the pointer's word. */
+  outline: 2px solid color-mix(in oklch, var(--helios-sun) 72%, transparent);
+  outline-offset: -2px;
+  border-radius: 3px;
+}
+.nerve-sill .sill-winder {
+  left: 0;
+  width: var(--sill-winder-width);
+  /* OUR NORMAL ICON ORANGE — primary, the colour every glyph in the deck wears —
+     with the copy glyph's soft two-ring halo at rest (river.css .river-copy). */
+  color: var(--helios-sun);
+  opacity: 0.92;
+  filter:
+    drop-shadow(0 0 3px var(--helios-glow-55))
+    drop-shadow(0 0 8px var(--helios-glow-28));
+}
+.nerve-sill .sill-winder svg {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  left: 9px;
+  top: 7px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* THE ACTIVE RING IS THE HOVER. The copy glyph's press, one step earlier: the
+   halo widens to two broader rings and the icon lifts. Nothing is recoloured —
+   the hand says "a control is here", the sun keeps saying which instrument.
+   Keyboard focus takes the amber ring above instead, so the pointer and the keys
+   never borrow each other's voice. */
+@media (hover: hover) {
+  .nerve-sill .sill-winder:hover {
+    opacity: 1;
+    filter:
+      drop-shadow(0 0 5px var(--helios-glow-80))
+      drop-shadow(0 0 14px var(--helios-glow-35));
+  }
+}
+.nerve-sill .sill-winder:active {
+  filter:
+    drop-shadow(0 0 6px var(--helios-glow-85))
+    drop-shadow(0 0 18px var(--helios-glow-42));
+}
+
+/* A STAGE THAT REFUSES IS NOT A PLAY THAT VANISHED. The control goes quiet; the
+   instrument does not. The arc is the INSTRUMENT and keeps its light — only the
+   winder (a glyph that IS an affordance) dims, and the hint that says "a control
+   is here" goes away. (id:nav-core-sill) */
+.nerve-sill button:disabled { cursor: default; pointer-events: none; }
+.nerve-sill .sill-winder:disabled { opacity: .45; filter: none; }
+.nerve-sill .sill-dial:disabled + .sill-time .sill-action { display: none; }
+
+.nerve-sill .sill-dial { inset: 0 0 0 var(--sill-winder-width); }
+.nerve-sill .sill-arc {
+  position: absolute;
+  left: calc(var(--sill-axis, 76px) - var(--sill-winder-width));
+  top: 1px;
+  transform: translateX(-50%);
+  width: 108px;
+  height: 16px;
+  overflow: visible;
+  fill: none;
+  color: var(--color-base-content);
+}
+.nerve-sill .sill-arc path { vector-effect: non-scaling-stroke; }
+.nerve-sill .sill-rim-fade stop { stop-color: currentColor; }
+.nerve-sill:not(.is-resting) .sill-rim-fade .sill-rim-reflection {
+  stop-color: color-mix(in oklab, var(--sill-live) 45%, var(--helios-ink));
+}
+.nerve-sill .sill-rim { /* the rim's gradient is its own attribute: one per mount */ }
+.nerve-sill .sill-ticks { stroke: color-mix(in oklch, currentColor 30%, transparent); }
+/* A lit needle, not a second sun. The readout stays still and clear. */
+.nerve-sill .sill-cut {
+  stroke: var(--sill-live);
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px var(--helios-glow-55));
+}
+.nerve-sill .sill-shadow { stroke: var(--helios-glow-28); stroke-linecap: round; }
+.nerve-sill.is-resting .sill-cut { stroke: var(--sill-held); filter: none; }
+.nerve-sill.is-resting .sill-shadow { stroke: color-mix(in oklch, var(--sill-held) 35%, transparent); }
+.nerve-sill[data-playback="fault"] .sill-cut { stroke: var(--nerve-wound); }
+.nerve-sill[data-playback="fault"] .sill-rim-reflection,
+.nerve-sill[data-playback="fault"] .sill-shadow {
+  color: var(--nerve-wound);
+}
+.nerve-sill[data-playback="fault"] .sill-shadow {
+  stroke: color-mix(in oklch, currentColor 32%, transparent);
+}
+/* Completion warms the instrument. Only an available Restart shares the cue;
+   a disabled winder stays quiet even when the play has finished. */
+.nerve-sill[data-playback="finished"] .sill-cut {
+  stroke: var(--sill-finished);
+  filter: drop-shadow(0 0 6px var(--sill-finished-glow));
+}
+.nerve-sill[data-playback="finished"] .sill-shadow { stroke: var(--sill-finished-glow); }
+.nerve-sill[data-playback="finished"] .sill-winder:where(:enabled) {
+  color: var(--sill-finished);
+}
+.nerve-sill[data-playback="finished"] .sill-winder:where(:enabled:not(:hover, :active)) {
+  filter: drop-shadow(0 0 4px var(--sill-finished-glow));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes sill-settle {
+    from { filter: drop-shadow(0 0 3px var(--helios-glow-55)); }
+    35% {
+      filter:
+        drop-shadow(0 0 5px var(--sill-finished-bloom))
+        drop-shadow(0 0 14px var(--sill-finished-glow));
+    }
+    to { filter: drop-shadow(0 0 6px var(--sill-finished-glow)); }
+  }
+  .nerve-sill[data-playback="finished"] .sill-cut {
+    animation: sill-settle 900ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+.nerve-sill .sill-time {
+  position: absolute;
+  top: 22px;
+  left: var(--sill-axis, 76px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.nerve-sill .sill-time small { color: var(--helios-caption); }
+.nerve-sill .sill-action {
+  position: absolute;
+  visibility: hidden;
+  width: 12px;
+  height: 12px;
+  top: 50%;
+  left: calc(100% + .75ch);
+  transform: translateY(-50%);
+  color: var(--helios-caption);
+  fill: currentColor;
+}
+.nerve-sill .sill-play, .nerve-sill.is-resting .sill-pause { display: none; }
+.nerve-sill.is-resting .sill-play { display: block; }
+.nerve-sill .sill-pause { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.nerve-sill .sill-dial:focus-visible + .sill-time .sill-action { visibility: visible; }
+@media (hover: hover) {
+  .nerve-sill .sill-dial:hover + .sill-time .sill-action { visibility: visible; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .nerve-sill:not([hidden]):not(.is-leaving) { animation: helios-arrive var(--helios-light-in) both; }
+  .nerve-sill .sill-cut { transition: stroke var(--helios-ink-in), filter var(--helios-light-in); }
+  .nerve-sill .sill-shadow { transition: stroke var(--helios-ink-in); }
+  .nerve-sill .sill-winder { transition: opacity 200ms ease, color var(--helios-ink-in), filter 200ms ease; }
+  .nerve-sill .sill-winder svg { transform-origin: 50% 50%; transition: transform var(--helios-light-in); }
+  .nerve-sill .sill-winder:active svg { transform: scale(0.96); }
+  .nerve-sill .sill-hands { transform-origin: 9px 9px; transition: transform var(--helios-light-in); }
+  .nerve-sill .sill-winder:focus-visible .sill-hands { transform: rotate(-108deg); }
+  @media (hover: hover) {
+    .nerve-sill .sill-winder:hover svg { transform: scale(1.08); }
+    .nerve-sill .sill-winder:hover .sill-hands { transform: rotate(-108deg); }
+  }
+}
+
+/* THE DIAL LEAVES THE WAY THE SUN DOES. `hidden` was a cut: one frame of a lit
+   instrument, then nothing, while the glyph beside it got a sunset. Same
+   rhythm, same blur, shared vars — and the halo goes before the edges do, so the
+   needle outlives its own light. Nothing is taken from a hand while it goes. */
+.nerve-sill.is-leaving { pointer-events: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes sill-exit {
+    from { opacity: 1; filter: blur(0); }
+    to   { opacity: 0; filter: blur(var(--helios-exit-blur)); }
+  }
+  .nerve-sill.is-leaving {
+    animation: sill-exit var(--helios-exit-ms) var(--helios-exit-ease) forwards;
+  }
+  /* Go still first. The settle bloom is a hello at the end of a day, not a
+     goodbye; a leaving instrument has no business still breathing. */
+  .nerve-sill.is-leaving .sill-cut,
+  .nerve-sill.is-leaving .sill-winder { animation: none; }
+}
+
+/* One amber cue: the number, the caught line, and the whole resting instrument.
+   The needle alone was too quiet to read as a stop. */
+.nerve-sill.is-caught { color: var(--helios-sun); }
+.nerve-sill.is-caught .sill-arc { color: var(--helios-sun); }
+.nerve-sill.is-caught .sill-cut {
+  stroke: var(--helios-sun);
+  filter: drop-shadow(0 0 4px var(--helios-glow-core)) drop-shadow(0 0 13px var(--helios-glow-55));
+}
+.nerve-sill.is-caught .sill-shadow { stroke: var(--helios-glow-55); }
+.nerve-sill.is-caught .sill-rim-reflection { stop-color: var(--helios-glow-55); }
+.nerve-sill.is-caught .sill-ticks { stroke: var(--helios-glow-42); }
+/* The readout is a marked glyph too: the caught instant wears the same light as
+   the line number that stopped it — no chip, no fill. The action icon carries
+   the glow as a filter, text-shadow having nothing to light up in an SVG. */
+.nerve-sill.is-caught .sill-time {
+  color: var(--helios-sun);
+  text-shadow: var(--helios-glyph-glow-live);
+}
+/* The unit keeps the lamp's colour rather than a caption's — it rides the same
+   light, so it is lit, not merely adjacent to it. */
+.nerve-sill.is-caught .sill-time small { color: var(--helios-sun); }
+.nerve-sill.is-caught .sill-action {
+  color: var(--helios-sun);
+  filter:
+    drop-shadow(0 0 3px var(--helios-glow-55))
+    drop-shadow(0 0 10px var(--helios-glow-28));
+}
+
+/* Beat base `.cm-gutter { overflow:hidden }` — the glow needs the frame. */
+.cm-gutter.cm-catchNumbers { overflow: visible; }
+.cm-catchNumbers .cm-gutterElement { cursor: pointer; }
+.cm-catchNumbers .cm-gutterElement:hover { color: var(--helios-sun); }
+/* The glyph is the mark: no chip behind the number. Every gutter number is
+   already saffron, so weight and the marked-glyph glow carry it — armed rests,
+   hit takes the live rings. */
+.cm-catchNumbers :is(.cm-catch-armed, .cm-catch-hit) {
+  color: var(--helios-sun);
+  font-weight: 700;
+  text-shadow: var(--helios-glyph-glow);
+}
+.cm-catchNumbers .cm-catch-hit { text-shadow: var(--helios-glyph-glow-live); }
+
+/* THE MARK THAT MOVED SAYS SO. A rewind (or any run that re-sets the catch)
+   hands the number a fresh element, so this beat plays exactly when the mark
+   takes a new place — the line the new day starts on, where the eye already is.
+   A HIT is a different fact and keeps the sun and its live ring below; only a
+   re-set wears the gold the winder's acknowledgement wears. Reduced motion
+   loses the beat, never the mark. */
+@media (prefers-reduced-motion: no-preference) {
+  .cm-catchNumbers .cm-catch-armed {
+    animation: catch-arm-ack 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes catch-arm-ack {
+    0%, 45% {
+      color: var(--ack-core);
+      text-shadow:
+        0 0 2px var(--ack-70),
+        0 0 10px var(--ack-32);
+      /* the way home is a plain fade, not a second snap */
+      animation-timing-function: linear;
+    }
+    100% {
+      color: var(--helios-sun);
+      text-shadow: var(--helios-glyph-glow);
+    }
+  }
+}
+.cm-catchNumbers .cm-catch-unavailable {
+  color: var(--helios-caption);
+  opacity: .6;
+  text-decoration: underline dotted;
+  text-underline-offset: .22em;
+}
+.cm-editor .cm-line.cm-catch-flash {
+  box-shadow: inset 2px 0 0 var(--helios-sun);
+  background: linear-gradient(90deg, var(--helios-glow-18), transparent 75%);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cm-editor .cm-line.cm-catch-flash {
+    animation: catch-flash 650ms cubic-bezier(.22, 1, .36, 1);
+  }
+  .nerve-sill.is-caught .sill-arc { animation: sill-catch-arrive 520ms cubic-bezier(.22, 1, .36, 1); }
+  .nerve-sill.is-caught .sill-cut { animation: sill-catch-needle 520ms cubic-bezier(.22, 1, .36, 1); }
+}
+@keyframes catch-flash {
+  from { background-color: var(--helios-glow-28); }
+  to { background-color: transparent; }
+}
+
+@keyframes sill-catch-arrive {
+  from { opacity: .45; }
+  to { opacity: 1; }
+}
+@keyframes sill-catch-needle {
+  from { filter: drop-shadow(0 0 2px var(--helios-glow-core)); }
+  45% { filter: drop-shadow(0 0 4px var(--helios-glow-core)) drop-shadow(0 0 20px var(--helios-glow-80)); }
+  to { filter: drop-shadow(0 0 4px var(--helios-glow-core)) drop-shadow(0 0 13px var(--helios-glow-55)); }
+}
+
+/* An accepted rewind is a quicker, brighter beat than the finish glow.
+   Its light takes precedence over the standing phase. */
+.nerve-sill.is-rewinding .sill-winder { color: var(--ack-core); }
+.nerve-sill.is-rewinding .sill-cut { stroke: var(--ack-core); }
+.nerve-sill.is-rewinding .sill-shadow { stroke: var(--ack-32); }
+.nerve-sill.is-rewinding .sill-rim-reflection { stop-color: var(--ack-70); }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Arrival only — to the halo the caught needle already wears in gold. */
+  @keyframes sill-rewind {
+    0% {
+      filter:
+        drop-shadow(0 0 3px var(--helios-glow-55))
+        drop-shadow(0 0 8px var(--helios-glow-28));
+    }
+    35% {
+      filter:
+        drop-shadow(0 0 6px var(--ack-70))
+        drop-shadow(0 0 16px var(--ack-32));
+    }
+    100% {
+      filter:
+        drop-shadow(0 0 5px var(--ack-70))
+        drop-shadow(0 0 12px var(--ack-32));
+    }
+  }
+  .nerve-sill.is-rewinding .sill-winder {
+    animation: sill-rewind 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+

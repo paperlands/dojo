@@ -1,0 +1,31 @@
+# One authored recipe over two supplied 3-joint distance spines.
+# Knobs: stride/turn/pause/steps; bounded 2000 steps; fw inks each root trail.
+# Invariant: laws-free-relations-installed-receiver (receiver root, writer rights).
+def march a b c stride turn pause steps do
+  as a do
+    loop steps do
+      fw stride
+      rt turn
+      wait pause
+    end
+  end
+end
+jmp 0-180
+let A0
+jmp 50
+let A1
+jmp 50
+let A2
+let distance(A0,A1)=50
+let distance(A1,A2)=50
+jmp 260
+let B0
+jmp 50
+let B1
+jmp 50
+let B2
+let distance(B0,B1)=50
+let distance(B1,B2)=50
+wait 1
+let first = march A0 A1 A2 6 2 [1/24] 2000
+let second = march B0 B1 B2 9 0-2 [1/24] 2000

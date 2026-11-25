@@ -12,8 +12,9 @@ defmodule Dojo.Keep.ReceiveTest do
   @clan "test-clan"
   @author "author-alice"
   @other "author-bob"
-  @root String.duplicate("e", 64)
+  @root Dojo.KeepSigning.root(String.duplicate("e", 64))
   @target String.duplicate("f", 64)
+  @png "PNGBYTES"
 
   defp snap(opts \\ []) do
     root = Keyword.get(opts, :root, @root)
@@ -38,8 +39,41 @@ defmodule Dojo.Keep.ReceiveTest do
     author_id = Keyword.get(opts, :author_id, @author)
     id = Keyword.get(opts, :id, Keep.hash(bytes))
 
-    Keep.receive(%{"id" => id, "message" => bytes}, clan: clan, author_id: author_id)
+    payload =
+      %{"id" => id, "message" => bytes}
+      |> maybe_put("source", Keyword.get(opts, :source))
+      |> maybe_image(Keyword.get(opts, :image, @png))
+
+    Keep.receive(Dojo.KeepSigning.sign(payload),
+      clan: clan,
+      author_id: author_id,
+      name: Keyword.get(opts, :name)
+    )
   end
+
+  # A targetless origin: its id IS the work (keep kernel).
+  defp targetless(root), do: snap_for(root, nil, "origin", 1)
+
+  defp snap_for(root, target, title, t) do
+    body = %{
+      "v" => 1,
+      "kind" => "snap",
+      "root" => root,
+      "ts" => %{"t" => 1_700_000_000_000 + t, "n" => 0},
+      "title" => title
+    }
+
+    body = if target, do: Map.put(body, "target", target), else: body
+    Jason.encode!(body)
+  end
+
+  defp maybe_put(payload, _key, nil), do: payload
+  defp maybe_put(payload, key, value), do: Map.put(payload, key, value)
+
+  defp maybe_image(payload, false), do: payload
+
+  defp maybe_image(payload, bin) when is_binary(bin),
+    do: Map.put(payload, "image", Base.encode64(bin))
 
   defp count_keeps(id) do
     from(k in "keeps", where: k.id == ^id, select: count(k.id)) |> Repo.one()
@@ -66,7 +100,7 @@ defmodule Dojo.Keep.ReceiveTest do
 
     test "unknown kind is shared — meaning is never judged" do
       bytes = snap(kind: "invented-today")
-      assert %{id: id} = fact = ship(bytes)
+      assert %{id: id} = fact = ship(bytes, image: false)
       refute Map.has_key?(fact, :why)
       assert id == Keep.hash(bytes)
     end
@@ -140,8 +174,8 @@ defmodule Dojo.Keep.ReceiveTest do
     end
   end
 
-  describe "TOFU bind — the only decision" do
-    test "first author binds the root; their keep is shared" do
+  describe "the roots row — bookkeeping, not a fence" do
+    test "first author is recorded on the root row; their keep is shared" do
       bytes = snap()
       assert %{id: _} = ship(bytes, author_id: @author)
 
@@ -156,8 +190,23 @@ defmodule Dojo.Keep.ReceiveTest do
       assert bound.author_id == @author
     end
 
-    test "[⚠→✓] a clan-mate CANNOT take another member's river — refused :work" do
-      # Closed (id:ka-hijack → id:ka-works-bind). The hole was on the write: target was unbound.
+    test "attach/remember withdrawn — authors stays empty; first author_id stands" do
+      assert %{id: _} = ship(snap(), name: "alice")
+
+      assert Repo.one(from(a in "authors", select: count(a.author_id))) == 0
+
+      assert %{id: _} =
+               ship(snap(title: "again", n: 1), author_id: @other, name: "Alice Chen")
+
+      assert Repo.one(from(a in "authors", select: count(a.author_id))) == 0
+
+      assert Repo.one(from(r in "roots", where: r.root == ^@root, select: r.author_id)) ==
+               @author
+    end
+
+    test "a foreign-root child lands, and joins no river without an origin" do
+      # The fence moved from the write to evidence: bytes are retained, and
+      # membership needs the origin's root (Member law), not a first writer.
       mine = snap(title: "mine", t: 1_700_000_000_000)
 
       theirs =
@@ -166,50 +215,41 @@ defmodule Dojo.Keep.ReceiveTest do
           "title" => "theirs",
           "v" => 1,
           "kind" => "snap",
-          "root" => String.duplicate("9", 64),
+          "root" => Dojo.KeepSigning.root(String.duplicate("9", 64)),
           "ts" => %{"t" => 1_700_000_999_999, "n" => 0},
           "target" => @target
         })
 
       assert %{id: _} = ship(mine, author_id: @author)
-
-      assert %{id: id, at: at, node: _, why: :work} = ship(theirs, author_id: @other)
-      assert id == Keep.hash(theirs)
+      assert %{id: id, at: at} = ship(theirs, author_id: @other)
       assert is_integer(at)
-      assert count_keeps(Keep.hash(theirs)) == 0
+      assert id == Keep.hash(theirs)
+      assert count_keeps(id) == 1, "bytes land"
 
-      roots =
-        from(k in "keeps", where: k.target == ^@target, select: k.root)
-        |> Repo.all()
-        |> Enum.uniq()
-
-      assert roots == [@root], "one river, one hand — the ordering argument holds"
-
-      assert {:ok, %{message: head}} = Keep.pull(@target)
-      assert Jason.decode!(head)["title"] == "mine"
+      assert Repo.one(from(w in "works", select: count(w.work_id))) == 0
+      assert Keep.history(@target, of: :target) == {[], nil}
+      assert Keep.pull(@target) == :none
     end
 
-    test "another room claiming the root is refused :root — permanently" do
+    test "another room's ship lands; the roots row is bookkeeping, not a fence" do
       a = snap(title: "alice", n: 0)
       b = snap(title: "elsewhere", n: 1)
 
       assert %{id: _} = ship(a, clan: @clan)
-      assert %{id: _, why: _} = r = ship(b, clan: "other-clan")
+      assert %{id: _} = ship(b, clan: "other-clan")
 
-      assert r.why == :root
-      assert r.id == Keep.hash(b)
-      assert is_integer(r.at)
-      # The other room's message never lands.
-      assert count_keeps(Keep.hash(b)) == 0
-      # The bound room's stands alone.
+      # Retention is not ownership: the second room's bytes land.
+      assert count_keeps(Keep.hash(b)) == 1
       assert count_keeps(Keep.hash(a)) == 1
+
+      # The first arrival still names the root's recorded room — a fact beside
+      # the bytes, never a veto, and never a grant.
+      assert Repo.one(from(r in "roots", where: r.root == ^@root, select: r.clan)) == @clan
     end
 
     test "a rename does not sever the bind — author_id is recorded, not compared" do
-      # The wound (id:kb-vet5 40): author_id = name <> b64(last_opened), and
-      # changeName is live. Comparing it made every later keep of that root a
-      # permanent :root refusal — which the client marks SHARED, so the keep
-      # never reaches the clan and the surface says it did.
+      # The wound (id:kb-vet5 40): comparing author_id made every later keep of
+      # that root a permanent refusal. author_id is never a write fence.
       before = snap(title: "before", n: 0)
       after_rename = snap(title: "after", n: 1)
 
@@ -218,7 +258,7 @@ defmodule Dojo.Keep.ReceiveTest do
 
       assert count_keeps(Keep.hash(after_rename)) == 1
 
-      # First arrival's author stands as the record; it is never rewritten.
+      # First insert stands. attach withdrawn — no rewrite.
       bound =
         from(r in "roots", where: r.root == ^@root, select: r.author_id) |> Repo.one()
 
@@ -237,46 +277,51 @@ defmodule Dojo.Keep.ReceiveTest do
   end
 
   # One judgement per continuant, by its primary key (id:ka-rule).
-  describe "the works bind — a river belongs to one hand (id:ka-works-bind)" do
-    test "first hand binds the work; the row is the judgement and nothing else" do
-      assert %{id: _} = ship(snap())
+  describe "works — evidence, not a bind (keep-cut IV)" do
+    test "a continuation writes no works row; origin and child are the members" do
+      origin = targetless(@root)
+      work = Keep.hash(origin)
+      assert %{id: ^work} = ship(origin)
 
-      assert Repo.one(from(w in "works", where: w.work_id == ^@target, select: w.root)) ==
-               @root
-    end
+      child = snap_for(@root, work, "child", 2)
+      assert %{id: child_id} = ship(child)
 
-    test "the same hand keeps again — bound once, never re-bound" do
-      assert %{id: _} = ship(snap(title: "one", n: 0))
-      assert %{id: _} = ship(snap(title: "two", n: 1))
-
-      assert Repo.one(from(w in "works", where: w.work_id == ^@target, select: count(w.work_id))) ==
-               1
-    end
-
-    test "a snap with no work is unshaped — it never lands" do
-      # A keep is about something. Null target is not a work (id:kc-r-absence).
-      bytes =
-        Jason.encode!(%{
-          "source_id" => "abc",
-          "v" => 1,
-          "kind" => "snap",
-          "root" => @root,
-          "ts" => %{"t" => 1_700_000_000_000, "n" => 0},
-          "target" => nil
-        })
-
-      assert %{why: :shape} = ship(bytes)
-      assert count_keeps(Keep.hash(bytes)) == 0
       assert Repo.one(from(w in "works", select: count(w.work_id))) == 0
+
+      assert {rows, _} = Keep.history(work, of: :target, n: 10)
+      assert Enum.sort(Enum.map(rows, & &1.id)) == Enum.sort([work, child_id])
     end
 
-    test "an unheard-of kind binds nothing — enforcement fails OPEN" do
-      # `target` carries more than one continuant (id:ka-selectors): a work has
-      # one owner, a walk's NODE has none — many hands walk one node. A
-      # kind-blind bind would let the first hand to walk a node own it and
-      # refuse every other hand :work, permanently. And an old server must
-      # never refuse a kind it has not heard of (id:kb-12), so the unknown case
-      # binds nothing rather than claiming or rejecting.
+    test "a foreign-root child is retained and never a member" do
+      origin = targetless(@root)
+      work = Keep.hash(origin)
+      assert %{id: ^work} = ship(origin)
+
+      stranger = Dojo.KeepSigning.root(String.duplicate("9", 64))
+      theirs = snap_for(stranger, work, "theirs", 3)
+
+      assert %{id: theirs_id} = ship(theirs, author_id: @other)
+      assert count_keeps(theirs_id) == 1, "bytes land"
+
+      assert {rows, _} = Keep.history(work, of: :target, n: 10)
+      assert Enum.map(rows, & &1.root) |> Enum.uniq() == [@root]
+      refute theirs_id in Enum.map(rows, & &1.id)
+    end
+
+    test "a child before its origin is pending, then eligible when the origin arrives" do
+      origin = targetless(@root)
+      work = Keep.hash(origin)
+      child = snap_for(@root, work, "early", 2)
+
+      assert %{id: child_id} = ship(child)
+      assert Keep.history(work, of: :target) == {[], nil}, "no origin, no membership"
+
+      assert %{id: ^work} = ship(origin)
+      assert {rows, _} = Keep.history(work, of: :target, n: 10)
+      assert Enum.sort(Enum.map(rows, & &1.id)) == Enum.sort([work, child_id])
+    end
+
+    test "an unheard-of kind lands; nothing binds" do
       walk = fn root ->
         Jason.encode!(%{
           "v" => 1,
@@ -287,78 +332,12 @@ defmodule Dojo.Keep.ReceiveTest do
         })
       end
 
-      assert %{id: _} = a = ship(walk.(@root))
-      refute Map.has_key?(a, :why)
-      # A SECOND HAND walking the same node is admitted, not refused.
-      assert %{id: _} = b = ship(walk.(String.duplicate("9", 64)), author_id: @other)
-      refute Map.has_key?(b, :why)
+      assert %{id: _} = ship(walk.(@root))
 
-      assert Repo.one(from(w in "works", select: count(w.work_id))) == 0,
-             "nothing binds a continuant nobody owns"
-    end
+      assert %{id: _} =
+               ship(walk.(Dojo.KeepSigning.root(String.duplicate("9", 64))), author_id: @other)
 
-    test "a refusal leaves NO partial binding — one transaction holds them all" do
-      # kb-source-keys: when two stores hold one fact, one transaction holds
-      # them. `roots` and `works` are two more such stores, and both used to
-      # write BEFORE the transaction opened — two lines under a comment
-      # quoting that very law. The observable proof: a stranger's root is bound
-      # by step one and the work refuses at step two, so if the binds were
-      # outside, their roots row would survive the refusal.
-      stranger = String.duplicate("9", 64)
-
-      theirs =
-        Jason.encode!(%{
-          "source_id" => "abc",
-          "v" => 1,
-          "kind" => "snap",
-          "root" => stranger,
-          "ts" => %{"t" => 1_700_000_000_001, "n" => 0},
-          "target" => @target
-        })
-
-      assert %{id: _} = ship(snap())
-      assert %{why: :work} = ship(theirs, author_id: @other)
-
-      assert Repo.one(from(r in "roots", where: r.root == ^stranger, select: count(r.root))) == 0,
-             "the root bind rolled back with the refusal"
-
-      assert Repo.one(from(w in "works", where: w.work_id == ^@target, select: w.root)) == @root
-      assert count_keeps(Keep.hash(theirs)) == 0
-    end
-
-    test "[structural] every kind file has a row, and every row has a file" do
-      # The table's OTHER interpreter is the kinds/ directory (id:ka-vocabulary).
-      # The day a kind is born the question "does its target have an owner?"
-      # must be answered here, not inherited by silence.
-      dir = Path.expand("../../../assets/js/keep/kinds", __DIR__)
-      files = dir |> File.ls!() |> Enum.map(&Path.rootname/1) |> Enum.sort()
-      declared = Keep.owned_kinds() |> Map.keys() |> Enum.sort()
-
-      assert files == declared,
-             "kinds/ has #{inspect(files)}; owned_kinds declares #{inspect(declared)}"
-
-      for {kind, names} <- Keep.owned_kinds() do
-        assert names in [:work, :node], "#{kind}: target must name a declared continuant"
-      end
-    end
-
-    test "the refusal is permanent and stamped, so announce terminates" do
-      # :work is permanent — re-shipping does not change the hand (id:kb-12).
-      theirs =
-        Jason.encode!(%{
-          "source_id" => "abc",
-          "v" => 1,
-          "kind" => "snap",
-          "root" => String.duplicate("9", 64),
-          "ts" => %{"t" => 1_700_000_000_001, "n" => 0},
-          "target" => @target
-        })
-
-      assert %{id: _} = ship(snap())
-      assert %{why: :work, at: at1} = ship(theirs, author_id: @other)
-      assert %{why: :work, at: at2} = ship(theirs, author_id: @other)
-      assert is_integer(at1) and is_integer(at2)
-      assert count_keeps(Keep.hash(theirs)) == 0
+      assert Repo.one(from(w in "works", select: count(w.work_id))) == 0
     end
   end
 
@@ -370,12 +349,7 @@ defmodule Dojo.Keep.ReceiveTest do
       text = "fd 100 rt 90"
       bytes = snap()
 
-      assert %{id: _} =
-               Keep.receive(
-                 %{"id" => Keep.hash(bytes), "message" => bytes, "source" => text},
-                 clan: @clan,
-                 author_id: @author
-               )
+      assert %{id: _} = ship(bytes, source: text)
 
       held = from(s in "sources", where: s.id == ^Keep.hash(text), select: s.text) |> Repo.one()
       assert held == text
@@ -396,11 +370,7 @@ defmodule Dojo.Keep.ReceiveTest do
           "target" => @target
         })
 
-      assert %{id: _} =
-               Keep.receive(%{"id" => Keep.hash(bytes), "message" => bytes, "source" => text},
-                 clan: @clan,
-                 author_id: @author
-               )
+      assert %{id: _} = ship(bytes, source: text)
 
       assert from(s in "sources", where: s.id == ^Keep.hash(text), select: s.text) |> Repo.one() ==
                text
@@ -415,10 +385,7 @@ defmodule Dojo.Keep.ReceiveTest do
       b = snap(title: "two", n: 1)
 
       for bytes <- [a, b, a] do
-        Keep.receive(%{"id" => Keep.hash(bytes), "message" => bytes, "source" => text},
-          clan: @clan,
-          author_id: @author
-        )
+        ship(bytes, source: text)
       end
 
       count = from(s in "sources", select: count(s.id)) |> Repo.one()
@@ -448,87 +415,76 @@ defmodule Dojo.Keep.ReceiveTest do
       bytes = snap()
 
       assert %{id: _, why: _} =
-               r =
-               Keep.receive(
-                 %{
-                   "id" => Keep.hash(bytes),
-                   "message" => bytes,
-                   "source" => String.duplicate("x", 300 * 1024)
-                 },
-                 clan: @clan,
-                 author_id: @author
-               )
+               r = ship(bytes, source: String.duplicate("x", 300 * 1024))
 
       assert r.why == :too_big
       assert count_keeps(Keep.hash(bytes)) == 0
     end
   end
 
-  describe "image — the referent that follows the fact (id:kb-12a)" do
-    defp share_and_image(bytes, image, opts \\ []) do
-      clan = Keyword.get(opts, :clan, @clan)
-      %{id: _} = ship(bytes)
-
-      Keep.image(%{"id" => Keep.hash(bytes), "image" => Base.encode64(image)}, clan: clan)
-    end
-
+  describe "image — rides the insert when the mint held one" do
     defp image_of(id) do
       from(k in "keeps", where: k.id == ^id, select: k.image) |> Repo.one()
     end
 
-    test "the message shares, then the image lands" do
+    test "a snap lands with its picture in the same insert" do
       bytes = snap()
-      assert image_of(Keep.hash(bytes)) == nil or true
-      assert :ok = share_and_image(bytes, "PNGBYTES")
-      assert image_of(Keep.hash(bytes)) == "PNGBYTES"
+      assert %{id: id} = ship(bytes, image: "FACE")
+      assert image_of(id) == "FACE"
     end
 
-    test "ship one image three times → one picture, byte-identical" do
+    test "a snap without a picture is a row — face is the named absence" do
       bytes = snap()
-      assert :ok = share_and_image(bytes, "FIRST")
+      assert %{id: id} = fact = ship(bytes, image: false)
+      refute Map.has_key?(fact, :why)
+      assert image_of(id) == nil
+    end
+
+    test "an unknown kind lands without a face" do
+      bytes = snap(kind: "invented-today")
+      assert %{id: id} = fact = ship(bytes, image: false)
+      refute Map.has_key?(fact, :why)
+      assert image_of(id) == nil
+    end
+
+    test "an oversized or unreadable picture refuses the ship — no half keep" do
+      bytes = snap()
       id = Keep.hash(bytes)
 
-      for _ <- 1..2 do
-        Keep.image(%{"id" => id, "image" => Base.encode64("SECOND")}, clan: @clan)
-      end
+      assert %{why: :unparseable} =
+               Keep.receive(
+                 %{"id" => id, "message" => bytes, "image" => "!!not-base64!!"},
+                 clan: @clan,
+                 author_id: @author
+               )
 
-      # IS NULL is what makes it a fact rather than a write.
+      assert %{why: :too_big} = ship(bytes, image: String.duplicate("A", 300 * 1024))
+      assert count_keeps(id) == 0
+    end
+
+    test "ship twice is once for the picture too — first write wins" do
+      bytes = snap()
+      assert %{id: id} = ship(bytes, image: "FIRST")
+      assert %{id: ^id} = ship(bytes, image: "SECOND")
       assert image_of(id) == "FIRST"
     end
 
-    test "another room cannot fill this room's picture" do
+    test "the receipt names the stored picture digest" do
       bytes = snap()
-      id = Keep.hash(bytes)
-      assert %{id: _} = ship(bytes)
-
-      Keep.image(%{"id" => id, "image" => Base.encode64("INTRUDER")}, clan: "other-clan")
-      assert image_of(id) == nil
+      assert %{image_digest: digest} = ship(bytes, image: "FACE")
+      assert digest == Keep.hash("FACE")
     end
 
-    test "an oversized or unreadable picture is refused, and the row stays empty" do
-      bytes = snap()
-      id = Keep.hash(bytes)
-      assert %{id: _} = ship(bytes)
-
-      assert {:error, :unparseable} =
-               Keep.image(%{"id" => id, "image" => "!!not-base64!!"}, clan: @clan)
-
-      # Ceiling is 256 KB encoded — latency fence on the one writer (id:kb-10).
-      assert {:error, :too_big} =
-               Keep.image(%{"id" => id, "image" => String.duplicate("A", 300 * 1024)},
-                 clan: @clan
-               )
-
-      assert image_of(id) == nil
+    test "a text-only receipt names no picture" do
+      assert %{image_digest: nil} = ship(snap(), image: false)
     end
 
-    test "an image for a keep that never shared lands nowhere" do
-      assert :ok =
-               Keep.image(%{"id" => String.duplicate("0", 64), "image" => Base.encode64("x")},
-                 clan: @clan
-               )
-
-      assert from(k in "keeps", select: count(k.id)) |> Repo.one() == 0
+    test "a second picture under one id reports the FIRST digest" do
+      bytes = snap()
+      assert %{id: id, image_digest: first} = ship(bytes, image: "FIRST")
+      assert %{id: ^id, image_digest: ^first} = ship(bytes, image: "SECOND")
+      assert image_of(id) == "FIRST"
+      assert first == Keep.hash("FIRST")
     end
   end
 
@@ -539,11 +495,11 @@ defmodule Dojo.Keep.ReceiveTest do
     end
 
     test "receive is the one insert path for keeps" do
-      # No second write API. insert_all on "keeps" lives only here, via row/4.
+      # No second write API. insert_all on "keeps" lives only here, via row/5.
       src = File.read!("lib/dojo/keep.ex")
       assert src =~ ~s|insert_all("keeps"|
       assert length(Regex.scan(~r/insert_all\("keeps"/, src)) == 1
-      assert src =~ "row(cols, clan, at, node)"
+      assert src =~ "row(cols, clan, at, node, image)"
     end
   end
 end

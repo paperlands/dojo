@@ -1,0 +1,17 @@
+{"label":"0 + 1e-15","was":"0","landed":"1e-15","comment":"a tiny signal survives the sum"}
+{"label":"1e-15 + 1e-15","was":"0","landed":"2e-15","comment":"and two of them"}
+{"label":"1e-15 * 1","was":"1e-15","landed":"1e-15","comment":"a product was never gated"}
+{"label":"1e-15 + 0","was":"0","landed":"1e-15","comment":"the additive identity holds — the same value"}
+{"label":"1 + 1e-15","was":"1","landed":"1.000000000000001","comment":"the tail double precision can hold is KEPT"}
+{"label":"(1 + 1e-15) - 1","was":"0","landed":"1.1102230246251565e-15","comment":"cancellation finds it again"}
+{"label":"authored: 1e-15 added 1000 times","was":"0","landed":"1.0000000000000052e-12","comment":"the model of accumulation"}
+{"label":"authored: 1000 * 1e-15","was":"1e-12","landed":"1e-12","comment":"the product"}
+{"label":"measured: fw 1e-15 x 1000","was":"1.0000000000000052e-12","landed":"1.0000000000000052e-12","comment":"the walk — ordinary addition, which never was gated"}
+{"label":"sin(30)","was":"0.5","landed":"0.49999999999999994","comment":"the arithmetic answer"}
+{"label":"sin(30) == 0.5","was":"1","landed":"0","comment":"the familiar equality — CHANGED"}
+{"label":"sin(180) == 0","was":"1","landed":"0","comment":"and this one — CHANGED"}
+{"label":"abs(1e-15) == 1e-15","was":"0","landed":"1","comment":"restored"}
+{"label":"display: sin(30)","was":"0.5","landed":"0.5","comment":"what the eye reads, and never computes with"}
+{"label":"display: sin(180)","was":"0","landed":"1.22464679915e-16","comment":"the residue is SHOWN as it is — the display does not invent a zero"}
+{"label":"the idiom: round(sin(180), 0.0001)","was":"0","landed":"0","comment":"snapping is asked for, never assumed"}
+{"label":"display: 0.1 + 0.2","was":"0.30000000000000004","landed":"0.3","comment":"the residue stays OUT of the eye"}

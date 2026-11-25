@@ -108,17 +108,18 @@ function inactiveError() {
 // ── store ───────────────────────────────────────────────────────────
 
 class Store {
-    constructor(name, { keyPath = null } = {}) {
+    constructor(name, { keyPath = null, autoIncrement = false } = {}) {
         this.name = name
         this.keyPath = keyPath
+        this.autoIncrement = autoIncrement
         this.rows = new Map()
-        /** @type {Map<string, {keyPath:any}>} */
         this.indexDefs = new Map()
     }
 
-    createIndex(name, keyPath) {
-        this.indexDefs.set(name, { keyPath })
-        return { name, keyPath }
+    createIndex(name, keyPath, { unique = false, multiEntry = false } = {}) {
+        const def = { name, keyPath, unique, multiEntry }
+        this.indexDefs.set(name, def)
+        return def
     }
 
     _keyOf(value, key) {
@@ -286,7 +287,13 @@ function wrapStore(store, life) {
     return {
         name: store.name,
         keyPath: store.keyPath,
-        createIndex: (n, kp) => store.createIndex(n, kp),
+        autoIncrement: store.autoIncrement,
+        indexNames: {
+            contains: (n) => store.indexDefs.has(n),
+            *[Symbol.iterator]() { yield* store.indexDefs.keys() },
+        },
+        createIndex: (n, kp, opts) => store.createIndex(n, kp, opts),
+        deleteIndex: (n) => store.indexDefs.delete(n),
         put: (value, key) => request(life, () => store.put(value, key)),
         get: (key) => request(life, () => store.get(key)),
         delete: (key) => request(life, () => store.delete(key)),
@@ -296,19 +303,24 @@ function wrapStore(store, life) {
             cursor(life, store.entries(), range, direction, (pk, v) =>
                 store.update(pk, v),
             ),
-        index: (name) => ({
-            openCursor: (range = null, direction = "next") =>
-                cursor(life, store.indexEntries(name), range, direction, (pk, v) =>
-                    store.update(pk, v),
-                ),
-            getAll: (range = null) =>
-                request(life, () => {
-                    let es = store.indexEntries(name)
-                    if (range) es = es.filter((e) => range.includes(e.key))
-                    es.sort((a, b) => cmp(a.key, b.key))
-                    return es.map((e) => e.value)
-                }),
-        }),
+        index(name) {
+            const def = store.indexDefs.get(name)
+            if (!def) throw new DOMException(`no index ${name}`, "NotFoundError")
+            return {
+                ...def,
+                openCursor: (range = null, direction = "next") =>
+                    cursor(life, store.indexEntries(name), range, direction, (pk, v) =>
+                        store.update(pk, v),
+                    ),
+                getAll: (range = null) =>
+                    request(life, () => {
+                        let es = store.indexEntries(name)
+                        if (range) es = es.filter((e) => range.includes(e.key))
+                        es.sort((a, b) => cmp(a.key, b.key))
+                        return es.map((e) => e.value)
+                    }),
+            }
+        },
     }
 }
 
@@ -322,6 +334,7 @@ class DatabaseState {
     constructor(name) {
         this.name = name
         this.version = 0
+        this.onConnectionsClosed = null
         /** @type {Map<string, Store>} */
         this.stores = new Map()
         /** @type {Set<Connection>} */
@@ -356,7 +369,13 @@ class Connection {
     }
 
     createObjectStore(name, opts = {}) {
-        return this._state.createObjectStore(name, opts)
+        const store = this._state.createObjectStore(name, opts)
+        return this._upgradeLife
+            ? wrapStore(this._state.stores.get(name), this._upgradeLife)
+            : store
+    }
+    deleteObjectStore(name) {
+        this._state.stores.delete(name)
     }
 
     transaction(storeNames, mode = "readonly") {
@@ -375,10 +394,17 @@ class Connection {
         let finished = false
         let releaseLock = null
 
+        let snapshots = []
         if (mode === "readwrite") {
             // This writer's requests wait on the previous writer.
             const prev = state._writeChain
-            life.gate = prev
+            life.gate = prev.then(() => {
+                if (finished) return
+                snapshots = names.map((n) => {
+                    const store = state.stores.get(n)
+                    return [store, new Map(store.rows)]
+                })
+            })
             state._writeChain = new Promise((r) => {
                 releaseLock = r
             })
@@ -412,12 +438,13 @@ class Connection {
             if (how === "complete") {
                 queueMicrotask(() => tx.oncomplete?.())
             } else if (how === "abort") {
+                for (const [store, rows] of snapshots) store.rows = rows
                 tx.error = tx.error || new Error("journal: abort")
                 queueMicrotask(() => tx.onabort?.())
             }
             // Release the write lock so the next writer may run.
             if (releaseLock) {
-                releaseLock()
+                life.gate.then(releaseLock)
                 releaseLock = null
             }
         }
@@ -441,12 +468,15 @@ class Connection {
             }, 0)
         }
 
+        if (life.gate) life.gate.then(life.onIdle)
+        else life.onIdle()
         return tx
     }
 
     close() {
         this._closed = true
         this._state.connections.delete(this)
+        this._state.onConnectionsClosed?.()
     }
 }
 
@@ -458,72 +488,93 @@ export function createMemoryIDB() {
     /** @type {Map<string, DatabaseState>} */
     const registry = new Map()
 
+    const openings = new Map()
     const idb = {
-        open(name, version = 1) {
+        open(name, version) {
             const req = {
-                result: undefined,
-                error: null,
-                transaction: null,
-                onsuccess: null,
-                onerror: null,
-                onupgradeneeded: null,
-                onblocked: null,
+                result: undefined, error: null, transaction: null,
+                onsuccess: null, onerror: null, onupgradeneeded: null, onblocked: null,
             }
-            queueMicrotask(() => {
-                try {
-                    let state = registry.get(name)
-                    if (!state) {
-                        state = new DatabaseState(name)
-                        registry.set(name, state)
-                    }
-                    const oldVersion = state.version
-
-                    if (version > oldVersion) {
-                        // Ask other connections to close (id:kb-vet3 22).
-                        for (const c of [...state.connections]) {
-                            c.onversionchange?.()
-                        }
-                        const conn = new Connection(state)
-                        conn.version = version
-                        const upgradeLife = {
-                            active: true,
-                            pending: 0,
-                            onIdle: () => {},
-                            gate: null,
-                        }
-                        const upgradeTx = {
-                            objectStoreNames: conn.objectStoreNames,
-                            objectStore: (n) => {
-                                const s = state.stores.get(n)
-                                if (!s) throw new Error(`no store ${n}`)
-                                return wrapStore(s, upgradeLife)
-                            },
-                        }
-                        req.transaction = upgradeTx
-                        req.result = conn
-                        req.onupgradeneeded?.({
-                            target: req,
-                            oldVersion,
-                            newVersion: version,
-                        })
-                        state.version = version
-                        // Drain reproject getAll, then succeed.
-                        queueMicrotask(() => {
-                            queueMicrotask(() => {
-                                req.onsuccess?.({ target: req })
-                            })
-                        })
-                    } else {
-                        const conn = new Connection(state)
-                        conn.version = state.version
-                        req.result = conn
-                        queueMicrotask(() => req.onsuccess?.({ target: req }))
-                    }
-                } catch (e) {
-                    req.error = e
-                    req.onerror?.({ target: req })
+            const previous = openings.get(name) ?? Promise.resolve()
+            const pending = previous.then(async () => {
+                let state = registry.get(name)
+                if (!state) {
+                    state = new DatabaseState(name)
+                    registry.set(name, state)
                 }
+                const oldVersion = state.version
+                const target = version ?? (oldVersion || 1)
+                if (target < oldVersion) {
+                    throw new DOMException("requested version is lower than held version", "VersionError")
+                }
+                if (target > oldVersion) {
+                    const event = { oldVersion, newVersion: target }
+                    for (const c of [...state.connections]) c.onversionchange?.(event)
+                    if (state.connections.size) {
+                        const closed = new Promise((resolve) => {
+                            state.onConnectionsClosed = () => {
+                                if (!state.connections.size) resolve()
+                            }
+                        })
+                        req.onblocked?.(event)
+                        await closed
+                        state.onConnectionsClosed = null
+                    }
+                    await state._writeChain
+                    const snapshot = new Map([...state.stores].map(([n, s]) => {
+                        const saved = new Store(n, s)
+                        saved.rows = new Map(s.rows)
+                        saved.indexDefs = new Map(s.indexDefs)
+                        return [n, saved]
+                    }))
+                    state.version = target
+                    const conn = new Connection(state)
+                    const life = { active: true, pending: 0, gate: null, onIdle: null }
+                    conn._upgradeLife = life
+                    req.result = conn
+                    try {
+                        await new Promise((resolve, reject) => {
+                            life.onIdle = () => setTimeout(() => {
+                                if (life.active && life.pending === 0) {
+                                    life.active = false
+                                    resolve()
+                                }
+                            }, 0)
+                            req.transaction = {
+                                mode: "versionchange",
+                                objectStoreNames: conn.objectStoreNames,
+                                objectStore(n) {
+                                    const s = state.stores.get(n)
+                                    if (!s) throw new DOMException(`no store ${n}`, "NotFoundError")
+                                    return wrapStore(s, life)
+                                },
+                                abort() {
+                                    life.active = false
+                                    reject(new DOMException("upgrade aborted", "AbortError"))
+                                },
+                            }
+                            req.onupgradeneeded?.({ target: req, ...event })
+                            life.onIdle()
+                        })
+                    } catch (error) {
+                        state.stores = snapshot
+                        state.version = oldVersion
+                        conn.close()
+                        req.result = undefined
+                        throw error
+                    } finally {
+                        conn._upgradeLife = null
+                        req.transaction = null
+                    }
+                } else {
+                    req.result = new Connection(state)
+                }
+                req.onsuccess?.({ target: req })
+            }).catch((error) => {
+                req.error = error
+                req.onerror?.({ target: req })
             })
+            openings.set(name, pending)
             return req
         },
         deleteDatabase(name) {

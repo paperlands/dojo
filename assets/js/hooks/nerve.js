@@ -22,21 +22,24 @@ const NerveHook = {
         const pushEvent = (event, payload) => safePush(this, event, payload)
         // Held on the hook, not the module: teardown destroys ITS OWN
         // instance even when a successor already holds the seat.
-        this.nerve = createNerve(this.el, pushEvent)
-        this.release = cell.register(this.nerve)
+        const body = this.nerve = createNerve(this.el, pushEvent)
+        cell.register(body, (release) => { this.release = release })
+        if (cell.get() !== body) return
 
         // Inbound envelope: arrives whole — ts is the source's clock and rides
         // through (store.push honors it; gw-t-clock); received_at is the
         // server's annotation; ref the boundary residual.
         this.handleEvent("nerveIncoming", ({ kind, ...rest }) => {
-            this.nerve.push({ ...rest, kind: kind || "chat" })
+            if (cell.get() === body) body.push({ ...rest, kind: kind || "chat" })
         })
     },
 
     destroyed() {
-        this.release?.()        // no-op if a later mount already took the seat
-        this.nerve?.destroy()   // but this one is ours, and its element is gone
+        const { release, nerve: body } = this
+        this.release = null
         this.nerve = null
+        release?.()
+        body?.destroy()
     }
 }
 

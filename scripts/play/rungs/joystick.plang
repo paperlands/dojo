@@ -1,0 +1,17 @@
+# Joystick explorer — drag the pad to drive; the walker draws where it goes.
+# pad.x steers (right = turn right), pad.y throttles (up = forward).
+# sat() is a soft clamp, so the stick is analog instead of a teleport.
+fn sat(x, k) [k * x / (k + abs(x))]
+
+let pad
+
+let walker
+as walker do
+  loop 2000 do
+    let spin = sat(pad.x, 4) * 2
+    let speed = sat(pad.y, 4) / 6
+    rt spin
+    fw speed
+    wait 1/12
+  end
+end
