@@ -67,6 +67,9 @@ rel/packaging/resources/VC_redist.x64.exe
 /peer/
 /backups/
 /mathworld/
+# Probe instruments are local experiments: their runs, traces and logs stay on
+# the machine. scripts/verify/probe_status.sh still walks this tree locally.
+/probe/
 /head
 /fd.md
 /fdignore
@@ -79,8 +82,9 @@ rel/packaging/resources/VC_redist.x64.exe
 # the generated ladder/dream corpora are local art, not release source
 /scripts/bestiary/papertiger/
 /video/
-# play rungs are local play programs; no tracked document cites them
-/scripts/play/rungs/
+# play rungs are tracked, never ignored: scripts/play/rungs/README.org cites
+# them and focused tests read them. An ignored rung is invisible to `git add`
+# and only fails on a clean checkout (the CI-only red of PR 36).
 
 # ── vendored path deps (vendor/*/) ─────────────────────────────────────────
 # A path dep is resolved and locked by the ROOT project, so anything it writes

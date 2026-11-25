@@ -40,10 +40,16 @@ defmodule LanNode do
   # The writer identity lives in the database, so a node that reboots under a new
   # partisan name resumes its own sequence instead of forking (D067.1).
   defp open_keep(idx, out_dir) do
-    # Ecto already owns keepN.db in this rig. An assertion log is a different store.
-    {:ok, conn} = Log.open(Path.join(out_dir, "assertions#{idx}.db"))
-    _ = Log.ensure_writer(conn)
-    Partisan.attach(conn)
+    # The log modules are parked off this branch (stash parked/keep-knowledge), so
+    # a node still boots for the reconnect rig: keep commands fail at the call site.
+    if Code.ensure_loaded?(Dojo.Keep.Sync.Partisan) do
+      # Ecto already owns keepN.db in this rig. An assertion log is a different store.
+      {:ok, conn} = Log.open(Path.join(out_dir, "assertions#{idx}.db"))
+      _ = Log.ensure_writer(conn)
+      Partisan.attach(conn)
+    else
+      :ok
+    end
   end
 
   def keep_trust(signers) do

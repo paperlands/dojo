@@ -1,0 +1,26 @@
+# Two guides, one crossing. Change the maker, not the consumer.
+#
+# `let rail = path((…), (…))` is a VALUE: its own binding draws it, with no turtle and
+# no ink, and `rail.path` is the geometry.
+# `let guide = path A B` is a WALK: a turtle walks A then B, and that ink is its own.
+#
+# Swap them and the consumer below does not change — the crossing is a place, and a
+# place is a vertex either way.
+
+beColour slategray
+let rail = path((-6, 0, 0), (6, 0, 0))
+
+beColour silver
+let A = (0, -6, 0)
+let B = (0, 6, 0)
+let guide = path A B
+
+let cross = intersect(rail.path, guide.path)
+
+# Drag A or B afterwards: the crossing follows the geometry the guide accepted, and the
+# rail's mark stays the rail's own. The declared twin, with no turtle at all, is one
+# line: let guide = path((0, -6, 0), (0, 6, 0)).
+beColour tomato
+as probe do
+  path cross (3, 6, 0)
+end
