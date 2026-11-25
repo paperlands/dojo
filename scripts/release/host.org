@@ -11,6 +11,7 @@ This file owns build and publication operations, not a second API guide.
 :END:
 
 #+begin_src sh
+npm ci --prefix scripts/vendor        # locked build tooling (esbuild)
 node --test test/js/host/*_test.mjs
 bash scripts/verify/host_closure.sh
 bash scripts/verify/host_play.sh   # Chromium and Python 3
@@ -18,7 +19,8 @@ node scripts/release/host.mjs
 (cd dist/host && npm pack --ignore-scripts)
 #+end_src
 
-The producer installs locked build tooling if needed and writes =dist/host/=.
+The producer writes =dist/host/= from pinned build tooling: install it first with
+=npm ci --prefix scripts/vendor= (CI and the release workflow do this as a step).
 An optional final argument chooses another output directory. It only replaces a
 recognized host release. The artifact includes ESM, the npm manifest/README,
 licenses, closure metadata, hashes and a =sources/= snapshot of actual inputs.

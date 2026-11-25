@@ -116,12 +116,11 @@ jobs:
         with:
           node-version: "22"
 
-      # host.mjs installs scripts/vendor lazily on first use (esbuild builds the
-      # consumer artifact). Two test files call it, and node:test runs files in
-      # parallel, so a clean checkout races two `npm ci` into one prefix
-      # (ENOTDIR, intermittent red). Install once, before any file runs, so the
-      # lazy path is never taken. ~1s and 19 packages; scripts/.gitignore keeps
-      # node_modules out of the checkout, so release.json stays clean.
+      # esbuild is a gitignored devDependency of scripts/vendor, pinned by its
+      # lockfile, and the producer no longer installs it itself. Two test files
+      # spawn host.mjs and node:test runs files in parallel, so install it here,
+      # once. ~1s and 19 packages; scripts/.gitignore keeps node_modules out of
+      # the checkout, so release.json stays clean.
       - name: Install host build deps
         run: npm ci --prefix scripts/vendor --no-audit --no-fund
 

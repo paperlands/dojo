@@ -403,6 +403,12 @@ jobs:
       - name: Install OIDC-capable npm
         run: npm install --global npm@11
 
+      # Same bootstrap as CI: the host tests and the producer import esbuild from
+      # the gitignored scripts/vendor prefix. A publication must never depend on
+      # some other step having installed it, so it gets its own step.
+      - name: Install host build deps
+        run: npm ci --prefix scripts/vendor --no-audit --no-fund
+
       - name: Verify host contracts and packed consumer
         run: node --test test/js/host/*_test.mjs
 

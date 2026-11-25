@@ -24,8 +24,8 @@ let esbuild
 try { esbuild = await import('../vendor/node_modules/esbuild/lib/main.js') }
 catch (error) {
     if (error.code !== 'ERR_MODULE_NOT_FOUND') throw error
-    execFileSync('npm', ['ci', '--prefix', join(root, 'scripts/vendor')], { stdio: 'inherit' })
-    esbuild = await import('../vendor/node_modules/esbuild/lib/main.js')
+    // Installing here would race the parallel test files that spawn this script.
+    throw Error('host build deps are missing — run: npm ci --prefix scripts/vendor')
 }
 const commit = git('rev-parse', 'HEAD').toString().trim()
 const checkoutDirty = git('status', '--porcelain', '--untracked-files=all').length > 0
