@@ -108,11 +108,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Zero-npm by design: node:test only, nothing to install or cache.
+      # Zero-npm for the suite itself: node:test only, no test framework to
+      # install. The one install below is host build tooling, not a dependency
+      # of the tests.
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      # host.mjs installs scripts/vendor lazily on first use (esbuild builds the
+      # consumer artifact). Two test files call it, and node:test runs files in
+      # parallel, so a clean checkout races two `npm ci` into one prefix
+      # (ENOTDIR, intermittent red). Install once, before any file runs, so the
+      # lazy path is never taken. ~1s and 19 packages; scripts/.gitignore keeps
+      # node_modules out of the checkout, so release.json stays clean.
+      - name: Install host build deps
+        run: npm ci --prefix scripts/vendor --no-audit --no-fund
 
       # Node 22+ regression: a directory arg is executed as a single file
       # (MODULE_NOT_FOUND) instead of being walked. Shell-expand the test
