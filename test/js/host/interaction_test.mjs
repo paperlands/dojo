@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { makeCrossing, makePath } from '../../../assets/js/turtling/geometry.js'
 import { buildWorld, fork, drive } from '../laws/harness.mjs'
 
 // Run the real host adapter with only its DOM/WebGL owner replaced in memory.
@@ -22,7 +23,8 @@ const { createWorld } = await import('data:text/javascript,' + encodeURIComponen
     source.replace('"./turtling/turtle.js"', JSON.stringify(fakeURL))
         .replace('"./turtling/run.js"', JSON.stringify(new URL('../../../assets/js/turtling/run.js', import.meta.url).href))
         .replace('"./turtling/view_snapshot.js"', JSON.stringify(new URL('../../../assets/js/turtling/view_snapshot.js', import.meta.url).href))
-        .replace('"./turtling/orbit.js"', JSON.stringify(new URL('../../../assets/js/turtling/orbit.js', import.meta.url).href))))
+        .replace('"./turtling/orbit.js"', JSON.stringify(new URL('../../../assets/js/turtling/orbit.js', import.meta.url).href))
+        .replace('"./turtling/geometry.js"', JSON.stringify(new URL('../../../assets/js/turtling/geometry.js', import.meta.url).href))))
 
 async function ready() {
     const world = createWorld({})
@@ -119,6 +121,30 @@ test('public vectors are immutable snapshots; equal values do not re-deliver', a
     assert.equal(samples.length, 2)
     off(); off()
     assert.equal(turtle.watchers.size, 0)
+    world.dispose()
+})
+
+test('a walk crosses as frozen runs, and a crossing does not', async () => {
+    const { world, turtle } = await ready()
+    const path = makePath([[[0, 0, 0], [50, 0, 0]], [[70, 0, 0], [80, 0, 0]]])
+    turtle.answer = { kind: 'value', value: path }
+    const samples = []
+    const off = world.interaction.subscribe('trail', answer => samples.push(answer))
+    const first = samples[0]
+    assert.deepEqual(first.value, [[[0, 0, 0], [50, 0, 0]], [[70, 0, 0], [80, 0, 0]]])
+    assert.ok(Object.isFrozen(first.value) && first.value.every(run => Object.isFrozen(run) && run.every(Object.isFrozen)))
+    assert.throws(() => { first.value[0][0][0] = 9 })
+    assert.notEqual(first.value, path.runs)
+    turtle.publish({ kind: 'value', value: makePath([[[0, 0, 0], [50, 0, 0]], [[70, 0, 0], [80, 0, 0]]]) })
+    assert.equal(samples.length, 1)
+    turtle.publish({ kind: 'value', value: makePath([[[0, 0, 0], [25, 0, 0]]]) })
+    assert.equal(samples.length, 2)
+    turtle.answer = { kind: 'value', value: makeCrossing([[0, 0, 0], [1, 0, 0]]) }
+    assert.equal(world.interaction.read('trail').kind, 'unsupported')
+    assert.equal(world.interaction.read('trail').value, undefined)
+    turtle.answer = { kind: 'value', value: makePath([[[0, 0, 0], [NaN, 0, 0]]]) }
+    assert.equal(world.interaction.read('trail').message, 'value is not a walk of finite places')
+    off()
     world.dispose()
 })
 

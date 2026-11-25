@@ -212,10 +212,15 @@ if (verdict.kind !== 'accept') console.log(verdict.kind, verdict.message)
 | `subscribe('length', fn)`          | Observe a named value                        |
 | `subscribe(['host', 'A'], 'bearing', fn)` | Observe an addressed frame property    |
 | `propose(['host', 'A'], [x, y, z])` | Request a world-space position for a free point |
+| `read(['host'], 'path')` | The main turtle's accepted walk |
 
 Read answers are `{kind: 'value', value}`, `missing`, `unsupported` (with a
 message), or `retired` after disposal. Values are finite numbers, strings,
-booleans, `null`, or frozen finite numeric vectors of their original dimension.
+booleans, `null`, frozen finite numeric vectors of their original dimension,
+or a walk: frozen runs of frozen finite places. Neighbours in a run are joined.
+A new run is a break. An empty walk is an empty array, and it is not an
+overflow, a mid-instant, or a value that is not a walk — those stay
+`unsupported`. The reading is that cut, not a live binding or a picture.
 `null` is a real reading, such as a bearing at coincidence. Do not treat it as
 zero. Runtime frames, functions, and chart metadata do not cross this boundary.
 

@@ -2426,6 +2426,11 @@ Surface lookup: =turtling/viewport.js= and =overlay.js=. The overlay host must s
 insets (id:host-surface). Live-shell check: =scripts/verify/shell_surface.mjs=.
 Lab admission seam: =Turtle= → =createScheduler=; adversarial findings:
 [[file:specs/turtle/host-ergonomics-review.org][host ergonomics review]].
+Walk challenge witnesses: [[id:challenge-walk-expressiveness]] — a page reads
+=interaction.read(['host'], 'path')= as runs; checks, tolerances and mirror policy
+stay outside the host. Run =node --test probe/challenge-expressiveness/host_walk.mjs=.
+[[id:challenge-round-forms][Round forms]] tests one fitted band against full and partial turns,
+and contrasts the accepted walk with the literal step/turn AST pattern.
 
 ** host embedding — figure values, effective view and playback lifetimes
 :PROPERTIES:

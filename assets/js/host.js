@@ -3,6 +3,7 @@ import { Turtle } from "./turtling/turtle.js"
 import { completionOf, createRunWatch, halt, refuse } from "./turtling/run.js"
 import { projectPoint, unprojectRay } from "./turtling/view_snapshot.js"
 import { normalizeInput } from "./turtling/orbit.js"
+import { isPath } from "./turtling/geometry.js"
 
 export { projectPoint, unprojectRay }
 
@@ -26,9 +27,30 @@ function readingTarget(target, property) {
     return framePath(target)
 }
 
+// A walk crosses as its places. A break is a new run; the path object stays inside.
+// (id:path-a-walk-of-places)
+function finitePlace(place) {
+    return Array.isArray(place) && place.length === 3 && place.every(Number.isFinite)
+}
+
+function publicWalk(value) {
+    if (!Array.isArray(value.runs)) return null
+    const runs = []
+    for (const run of value.runs) {
+        if (!Array.isArray(run) || !run.every(finitePlace)) return null
+        runs.push(Object.freeze(run.map(place => Object.freeze([place[0], place[1], place[2]]))))
+    }
+    return Object.freeze(runs)
+}
+
 function publicAnswer(answer) {
     if (answer.kind !== 'value') return Object.freeze({ ...answer })
     const value = answer.value
+    if (isPath(value)) {
+        const walk = publicWalk(value)
+        if (!walk) return Object.freeze({ kind: 'unsupported', message: 'value is not a walk of finite places' })
+        return Object.freeze({ kind: 'value', value: walk })
+    }
     if (Array.isArray(value)) {
         const copy = [...value]
         if (!copy.every(Number.isFinite)) return Object.freeze({ kind: 'unsupported', message: 'value is not a finite vector' })
@@ -41,10 +63,18 @@ function publicAnswer(answer) {
     return Object.freeze({ kind: 'value', value })
 }
 
+function samePlaces(a, b) {
+    return a.length === b.length && a.every((place, i) =>
+        place.length === b[i].length && place.every((n, k) => Object.is(n, b[i][k])))
+}
+
 function sameAnswer(a, b) {
     if (!a || a.kind !== b.kind || a.message !== b.message) return false
-    if (Array.isArray(a.value) && Array.isArray(b.value))
+    if (Array.isArray(a.value) && Array.isArray(b.value)) {
+        if (a.value.some(Array.isArray) || b.value.some(Array.isArray))
+            return a.value.length === b.value.length && a.value.every((run, i) => samePlaces(run, b.value[i]))
         return a.value.length === b.value.length && a.value.every((value, i) => Object.is(value, b.value[i]))
+    }
     return Object.is(a.value, b.value)
 }
 

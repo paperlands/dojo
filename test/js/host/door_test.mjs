@@ -165,6 +165,28 @@ test('disposal during a delayed run revokes delivery and rejects only its comple
     assert.deepEqual(world.interaction.read('s'), { kind: 'retired' })
 })
 
+test('play reads a walk of places, and the reading is not the walk', async () => {
+    const { world } = headlessWorld()
+    await (await world.play('let s = 1')).finished
+    assert.deepEqual(world.interaction.read(['host'], 'path'), { kind: 'value', value: [] })
+    await (await world.play('let rail = path((0, 0, 0), (3, 0, 0))')).finished
+    assert.deepEqual(world.interaction.read('rail'), { kind: 'value', value: [[[0, 0, 0], [3, 0, 0]]] })
+    await (await world.play('fw 50\njmp 20\nfw 10')).finished
+    const walk = world.interaction.read(['host'], 'path')
+    const again = world.interaction.read(['host'], 'path')
+    const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
+    assert.equal(walk.kind, 'value')
+    assert.equal(walk.value.length, 2)
+    assert.ok(Math.abs(dist(walk.value[0][0], walk.value[0][1]) - 50) < 1e-9)
+    assert.ok(Math.abs(dist(walk.value[1][0], walk.value[1][1]) - 10) < 1e-9)
+    assert.ok(Object.isFrozen(walk.value) && walk.value.every(run => Object.isFrozen(run) && run.every(Object.isFrozen)))
+    assert.throws(() => { walk.value[0][1][0] = 9 })
+    assert.notEqual(again.value, walk.value)
+    assert.deepEqual(again.value, walk.value)
+    world.dispose()
+    assert.deepEqual(world.interaction.read(['host'], 'path'), { kind: 'retired' })
+})
+
 test('laboratory inputs are an allow-list, not a scheduler configuration funnel', () => {
     const admit = () => ({ accepted: true })
     assert.equal(labInputs({ motionAdmission: admit }).motionAdmission, admit)

@@ -3904,7 +3904,12 @@ export function createScheduler(generator, opts = {}) {
         readScalar(name, ownerKey = 'host') {
             const owner = root.children.get(ownerKey)
             const id = owner?.scalars?.get(name)
-            if (id === undefined) return { kind: 'missing' }
+            // A declared path is a named value, the same walk a turtle answers. (id:path-a-walk-of-places)
+            if (id === undefined) {
+                const held = owner?.params?.get(name)
+                if (isPath(held)) return { kind: 'value', value: held }
+                return { kind: 'missing' }
+            }
             try {
                 const value = readouts.value(id)
                 if (value === undefined) return { kind: 'unsupported', message: 'value is not ready' }

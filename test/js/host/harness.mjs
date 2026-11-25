@@ -8,7 +8,11 @@ export class Turtle {
     static instances = []
     constructor(canvas, options) {
         this.options = options
-        this.scheduler = buildWorld({ strokeMax: 0, breathEvery: 1000 })
+        this.scheduler = buildWorld({
+            strokeMax: 0, breathEvery: 1000,
+            trace: options?.caps?.traceGeometry !== false,
+            traceMax: options?.caps?.traceMax,
+        })
         Turtle.instances.push(this)
     }
     upsertAmbient(key, name, source, options) {
@@ -40,6 +44,7 @@ const source = readFileSync(hostURL, 'utf8')
     .replace('"./turtling/run.js"', JSON.stringify(runURL))
     .replace('"./turtling/view_snapshot.js"', JSON.stringify(viewURL))
     .replace('"./turtling/orbit.js"', JSON.stringify(orbitURL))
+    .replace('"./turtling/geometry.js"', JSON.stringify(new URL('../../../assets/js/turtling/geometry.js', import.meta.url).href))
 export { Turtle }
 export const { createWorld, projectPoint, unprojectRay } = await import('data:text/javascript,' + encodeURIComponent(source))
 export function headlessWorld(options) {
