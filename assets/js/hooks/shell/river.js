@@ -470,14 +470,15 @@ function mountRiver(hook) {
     /** @param {HTMLElement | null | undefined} seatEl */
     function lightLand(seatEl) {
         if (!seatEl) return
-        pulse(seatEl, "is-landing")
+        // LAND IS THREE KEYFRAMES on purpose: the seat, its face, its open ring.
+        pulse(seatEl, "is-landing", { names: ["river-land", "river-land-face", "river-land-radiate"], within: "*" })
         whenDone(seatEl, { ms: BEAT.LAND_MS }, () => seatEl.classList.remove("is-landing"))
     }
 
     function flare() {
         if (!sun) return
         sun.classList.remove("blush")
-        pulse(sun, "flare")
+        pulse(sun, "flare", { names: ["river-flare"] })
         flareOut()
     }
 
@@ -490,7 +491,7 @@ function mountRiver(hook) {
     /** Dual of flare: the sun reddens, the word comes back, the nerve says why. */
     function blush() {
         if (!sun) return
-        pulse(sun, "blush")
+        pulse(sun, "blush", { names: ["river-blush"] })
         whenDone(sun, { animation: "river-blush", ms: BEAT.BLUSH_MS }, () => {
             sun.classList.remove("blush")
         })
@@ -870,14 +871,16 @@ function mountRiver(hook) {
 
     arena.add(watchTouched(() => { void refold() }))
 
-    arena.add(attach(doorSeat, () => { void refold() }))
-    arena.add(attach(term, (shell) => {
+    attach(doorSeat, () => { void refold() }, arena.add)
+    if (!arena.alive) return { arena }
+    attach(term, (shell) => {
         void refold({ rest: PRESENT })
         return shell.bridge.sub(() => {
             if ((shell.currentWorkId() ?? null) !== work) void refold({ rest: PRESENT })
             else drift()
         })
-    }))
+    }, arena.add)
+    if (!arena.alive) return { arena }
 
     if (typeof IntersectionObserver !== "undefined") {
         const io = arena.observe(

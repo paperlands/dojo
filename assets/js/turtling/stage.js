@@ -380,7 +380,9 @@ export function createStage(canvas, bridge, instruments = {}, input = null) {
                         if (disposed) { caps.fail(which); return }
                         const rec = getRecorder()
                         const result = rec
-                            ? await rec.takeSnapshot({ pixels, width, height, layers })
+                            ? await rec.takeSnapshot({
+                                pixels, width, height, layers, full: !!save?.save,
+                            })
                             : null
                         if (!result) { caps.fail(which); return }
                         if (disposed) { caps.fail(which); return }

@@ -5,7 +5,7 @@
 // A constraint contributes its gradient (a normal) at the point; freedom is the
 // null space. Resolution is projection onto the locus, never a solve.
 
-import { meetAll, copyLocus, dofOf, nearest, conicSamples, basisOf, ringOf, sphere as sphereSet, point as pointSet } from "./meet.js"
+import { meetAll, copyLocus, dofOf, nearest, conicSamples, centralSection, basisOf, ringOf, sphere as sphereSet, point as pointSet } from "./meet.js"
 import { unionBounds } from "./fit.js"
 import { sub, dot, len, unit, finite3, directionBetween } from "./vec3.js"
 import { openAngle, coneLateral } from "./cone.js"
@@ -82,6 +82,8 @@ export function stateOf({ at = null, headed = false, exposed = true, isPlace = t
         .filter((c) => c.feature === 'tilt' && c.set?.kind === 'cone')
         .map((c) => ({ apex: [...c.set.apex], axis: [...c.set.axis], halfAngle: c.set.halfAngle }))
     const truth = { pinned, coincident, distances, coordinates, cones }
+    const spans = constraints.flatMap((c) => c.spans ?? [])
+    if (spans.length) truth.lengthSpans = spans
 
     // interaction — what a request here may move. This query HOLDS the other
     // participants, so a coincident partner is held with them: the point has no
@@ -342,9 +344,18 @@ export function marksOf(locus, { at = null, size = 3.5, viewDir = null, eye = nu
     const empty = { curves: [], traces: [], axes: [], ghosts: [], rings: [], spokes: [] }
     if (!locus) return empty
     switch (locus.kind) {
+        case 'ellipsoid': {
+            const basis = basisOf(locus.axis)
+            const traces = basis ? [basis.u, basis.v].flatMap((normal) => {
+                const section = centralSection(locus, { point: locus.center, normal })
+                return section.kind === 'conic' ? conicSamples(section) : []
+            }) : []
+            return { ...empty, traces, spokes: finite3(at) ? locus.foci.map((f) => [f, at]) : [] }
+        }
         case 'conic':
             // Sampled, so it is a trace: the mark discloses the walk, not the locus.
-            return { ...empty, traces: conicSamples(locus) }
+            return { ...empty, traces: conicSamples(locus),
+                spokes: finite3(at) && locus.foci ? [[locus.foci[0], at], [at, locus.foci[1]]] : [] }
         case 'circle': {
             let c = circleCurve(locus, segments ?? 72)
             if (c && locus.keep) c = c.filter((p) => {
@@ -388,6 +399,7 @@ export function marksOf(locus, { at = null, size = 3.5, viewDir = null, eye = nu
                 ? { ...empty, curves: [patch.corners], axes: patch.axes.map((ax) => [ax.from, ax.to]) }
                 : empty
         }
+        case 'segment': return { ...empty, curves: [[locus.from, locus.to]] }
         case 'line': {
             if (!finite3(at) || !locus.dir) return empty
             const half = Number.isFinite(size) ? size : 3.5
@@ -434,6 +446,7 @@ export function boundsOf(locus, at = null) {
             return finite3(locus.at) ? { center: [...locus.at], radius: 0 } : null
         case 'points':
             return unionBounds((locus.at ?? []).map((p) => ({ center: [...p], radius: 0 })))
+        case 'segment': return unionBounds([locus.from, locus.to].map((center) => ({ center, radius: 0 })))
         case 'line':
         case 'ray':
         case 'plane':
@@ -452,6 +465,7 @@ export function boundsOf(locus, at = null) {
             const radius = coneLateral(h, locus.halfAngle)
             return { center: locus.apex.map((a, k) => a + axis[k] * h), radius }
         }
+        case 'ellipsoid': return { center: [...locus.center], radius: locus.a }
         case 'conic': {
             const pts = conicSamples(locus).flat()
             return pts.length ? unionBounds(pts.map((p) => ({ center: [...p], radius: 0 }))) : null

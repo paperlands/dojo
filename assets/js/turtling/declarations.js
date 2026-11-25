@@ -13,7 +13,7 @@ import { driveOf } from './laws/authored.js'
 import { reactiveReading } from './laws/reactive.js'
 import { acquireArgument } from './arguments.js'
 import { evalOrBlock, evaluateExpr, readExpr, readOrBlock, readsDeferred } from './expressions.js'
-
+import { isGeometry, isPath, isWalkName } from './geometry.js'
 // A source carries its initial reading and the operations it permits.
 // (id:notation-coordinate-vector, id:eval-relational)
 function readingSource(node, scope, deps, initial, revisable) {
@@ -33,7 +33,9 @@ function declarationSource(node, scope, deps) {
         ? { value: evaluateExpr(expr, scope, deps, 'measure', node), reads: null }
         : readExpr(expr, scope, deps, 'measure', null, null, node)
     if (['TowerRefusal', 'DomainRefusal'].includes(initial.error?.name)) throw initial.error
-    return readingSource(node, scope, deps, initial, !sampled)
+    // A retained shape is a value. The read is answered once. (id:path-a-walk-of-places)
+    const retained = !initial.error && isGeometry(initial.value)
+    return readingSource(node, scope, deps, initial, !sampled && !retained)
 }
 
 // Every position spelling uses this law effect; the reading retains its raw tower value.
@@ -44,7 +46,16 @@ function lawEffect(feature, target, source, { axis = null, owner = null, ...deta
         type: 'law', feature, target,
         value: feature === 'position' ? (toSpace(initial.value) ?? initial.value) : initial.value,
         ...details, axis, owner,
-        read: initial.reads?.live ? reactiveReading(initial, observe) : null,
+        // The reading is retained whenever the row admits revision; whether it is DRIVEN
+        // is decided by provenance — a live frame in the inputs — not by a spelling.
+        read: initial.reads?.live || initial.reads?.inputs?.length
+            ? reactiveReading(initial, observe) : null,
+        // The frames this reading touched are the law's dependencies, so retiring one
+        // retracts what stood on it. Same set the driver read. (id:laws-dependency-driven-place)
+        sources: initial.reads?.frames?.size ? [...initial.reads.frames].map((f) => f.id ?? f) : [],
+        // The reading itself: a name that denotes a derived value carries its OWN inputs,
+        // which the scheduler resolves against the readout store. (id:laws-dependency-driven-place)
+        reads: initial.reads ?? null,
     }
 }
 
@@ -65,7 +76,15 @@ function vectorEffect(name, source, owner, state) {
         read: source.read ?? (() => value) }
 }
 
-function valueEffect(name, source, owner) {
+// A retained PATH carries its display with it: the mark is current state owned by the
+// binding (D055), not ink, not a turtle, and never recomputed — so the effect names the
+// runs once and the readout gives them a life. (id:path-accepted-places)
+function valueEffect(name, source, owner, state) {
+    const value = source.initial.value
+    if (isPath(value)) {
+        return { type: 'parameter', name, owner, value,
+            path: { name, runs: value.runs, color: state.style.color, thickness: state.style.thickness } }
+    }
     return source.read
         ? { type: 'scalar', name, owner, read: source.read }
         : { type: 'parameter', name, owner, value: source.initial.value }
@@ -122,6 +141,11 @@ function* lawSubjects(meta, scope, deps) {
 export function* declareLaw(node, scope, state) {
     const meta = node.meta, feature = node.value, position = feature === 'position'
     const { target, subjects, movers } = yield* lawSubjects(meta, scope, state.deps)
+    if (feature === 'affine') {
+        yield { type: 'law', feature, target, subjects, value: meta.weights,
+            owner: node.span ?? null, expression: `${meta.lhs} = ${meta.expr}` }
+        return
+    }
     const revisable = !!driveOf(feature)
     const initial = revisable ? (yield* readOrBlock(meta.expr, scope, state.deps, node))
         : { value: yield* evalOrBlock(meta.expr, scope, state.deps), reads: null }
@@ -130,6 +154,7 @@ export function* declareLaw(node, scope, state) {
         owner: node.span ?? null,
         ...(!position ? {
             ...(meta.subjects ? { subjects } : {}),
+            ...(meta.spanSum ? { spanSum: true } : {}),
             ...(movers ? { movers } : {}),
             ...(meta.reachPolicy !== undefined ? { reachPolicy: meta.reachPolicy } : {}),
             expression: meta.expr, axis: meta.axis ?? null,
@@ -166,13 +191,18 @@ export function spawnEvent(state, scope, name, body, functions, extra = {}) {
 
 // Recipe calls use the command argument boundary; brackets supply an explicit list.
 // (id:gw-grammar, id:laws-figures-phase34-review)
+// (id:gw-grammar, id:laws-figures-phase34-review)
 function figureCallOf(expr, functions) {
     if (typeof expr !== 'string') return null
     const head = /^\s*([A-Za-z_][A-Za-z0-9_]*)/.exec(expr)
     if (!head) return null
     const name = head[1]
-    if (!functions?.[name] && !COMMANDS.get(name)) return null
-    const rest = expr.slice(head[0].length).trim()
+    const tail = expr.slice(head[0].length)
+    // `path A B` walks; `path(A, B)` is the value. The bracket is the difference.
+    // (id:path-append-composition)
+    const walk = isWalkName(name) && tail[0] !== '('
+    if (!functions?.[name] && !COMMANDS.get(name) && !walk) return null
+    const rest = tail.trim()
     if (rest.startsWith('[') && rest.endsWith(']')) {
         const inner = rest.slice(1, -1).trim()
         return { recipe: name, args: inner === '' ? [] : splitTopLevel(inner).map(arg => arg.trim()) }

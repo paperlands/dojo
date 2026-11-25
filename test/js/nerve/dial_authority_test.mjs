@@ -28,7 +28,7 @@ function bench(authority) {
     const dial = createDial({ scheduler, compositor: composition }, {
         seat: () => ({ slot: SLOT }),
         authority: (subject) => { asked.push(subject); return authority(subject) },
-        reseat: () => true,
+        prepareReplay: () => () => true,
         acted: () => {},
         docOf: () => ({ v: 'doc' }),
     })

@@ -19,12 +19,16 @@ export function fork(name, src, origin = IDENT) {
     }
 }
 
+
+
 // `clock` is the scheduler's injected time source: a frozen one makes the display
 // pump's deadline deterministic (an always-spent or always-open slice).
-export function buildWorld({ admit, admitAsync, validate, observeGoto = false, refusalStroke, capacity = 64, strokeMax = 1, breathEvery = 1, settledOnly = true, clock, onShout = () => {}, onHandInput = null } = {}) {
+// `trace` asks the world to retain accepted geometry for `.path`; off by default,
+// because retention is a host capability with a ceiling. (id:path-accepted-places)
+export function buildWorld({ admit, admitAsync, validate, observeGoto = false, refusalStroke, capacity = 64, strokeMax = 1, breathEvery = 1, settledOnly = true, clock, onShout = () => {}, onHandInput = null, trace = false, traceMax, protocol = false } = {}) {
     return createScheduler(metaRoot(), {
         createDeps: deps,
-        execOpts: { color: "#000000", strokeMax, breathEvery },
+        execOpts: { color: "#000000", strokeMax, breathEvery, traceGeometry: trace, traceMax, motionProtocol: protocol },
         channelCapacity: capacity,
         motionAdmission: admit,
         motionAdmissionAsync: admitAsync,

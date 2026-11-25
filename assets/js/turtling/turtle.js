@@ -259,8 +259,9 @@ export class Turtle {
         let primary = null
         for (const frame of scheduler.registry.values()) {
             if (frame === scheduler.root || frame.isLens || !exposed(frame)) continue
-            spheres.push({ center: frameWorldTransform(frame).position, radius: 0 })
             const state = read(frame)
+            if (state.private) continue
+            spheres.push({ center: frameWorldTransform(frame).position, radius: 0 })
             const bounds = boundsOf(state.locus, state.at)
             if (bounds) spheres.push(bounds)
             // The largest bounded locus supplies the direction, so its circle
@@ -352,6 +353,9 @@ export class Turtle {
         const showHints = this._hintsVisible()
         // ONE description per frame per pass — hints and marks read the same
         // story, computed once. (id:laws-decl-point-agent, D058)
+        if (showHints) for (const [a, b] of scheduler.contradictionGuides ?? []) {
+            drawSpan(overlay.ctx, view.project(a), view.project(b), { alpha: 0.9, ink: '255,105,105' })
+        }
         const frames = []
         for (const frame of scheduler.registry.values()) {
             if (frame === scheduler.root || !exposed(frame)) continue
@@ -391,7 +395,7 @@ export class Turtle {
             }
             for (const ring of marks.rings) drawRim(overlay.ctx, ring.map((p) => view.project(p)))
             // A radius spoke is the distance itself: from the point to its centre.
-            for (const [a, b] of marks.spokes) drawSpan(overlay.ctx, view.project(a), view.project(b), { alpha: 0.34 })
+            for (const [a, b] of [...marks.spokes, ...(state.truth.lengthSpans ?? [])]) drawSpan(overlay.ctx, view.project(a), view.project(b), { alpha: 0.34 })
             // the resting axis: the constraint normal, through the point
             const axes = axesOf(state)
             // A radius spoke already names the direction; only a locus without one
@@ -405,6 +409,7 @@ export class Turtle {
         }
         for (const frame of frames) {
             const state = read(frame)
+            if (state.private) continue
             // A derived figure's pin marks its BIRTH — the definition's origin. An
             // ordinary place's pin marks where it walks. The membrane again: a value
             // has an origin to return to; a process owns its position.
@@ -440,7 +445,8 @@ export class Turtle {
             // origin, where `origin` reads). Shown, never spoken.
             // (id:laws-freedom, id:laws-decl-interface)
             if (held) {
-                const partners = state.truth.distances.map((d) => d.other)
+                const partners = [...state.truth.distances.map((d) => d.other),
+                    ...(state.truth.lengthSpans ?? []).map(([other]) => other), ...(state.locus?.foci ?? [])]
                 const targets = partners.length ? partners : [worldTransform(frame.parent).position]
                 for (const target of targets) drawSpan(overlay.ctx, view.project(target), at, { alpha: 0.45 })
             }
@@ -651,6 +657,10 @@ export class Turtle {
                 commandCeiling: this._caps?.maxCommands,
                 recurseCeiling: this._caps?.maxRecurseDepth,
                 color: this.color,
+                // Play retains accepted geometry, so a walked guide can be read back as
+                // `.path`. The run's own ceiling bounds it. (id:path-accepted-places)
+                traceGeometry: this._caps?.traceGeometry ?? true,
+                traceMax: this._caps?.traceMax,
             },
             // onShout carries the emitter's name; routing is read-side.
             onShout: (sourceName, msg, payload) => {
@@ -686,6 +696,9 @@ export class Turtle {
                 controls: this.stage.controls,
             }
         )
+        // A top-level seat appearing, leaving or being replaced re-asks the scoped
+        // hold before the seat drain — no HUD or paint is involved. (id:host-run-pause)
+        this.scheduler.root._onSeatChange = () => this.compositor?.verifyHold()
         // kindled left as register holds — set by first draw() / focusAmbient
         this.stage.head.hide()
         // A figure-valued let is a closed child ambient; it shows through its own
@@ -860,7 +873,7 @@ export class Turtle {
 
     // hatch:false = passive seat (no snapshot/reflect).
     // vocab = phase ancestors (D019); fresh:true forces restart. (id:cmp-become-seed)
-    upsertAmbient(key, displayName, code, { hatch = true, vocab = null, nodes = null, vocabNodes = null, fresh = false, choices } = {}) {
+    upsertAmbient(key, displayName, code, { hatch = true, vocab = null, nodes = null, vocabNodes = null, fresh = false, choices, preparePlay } = {}) {
         try {
             // Live node slices when present; green tree reuses otherwise. (id:cmp-green-tree)
             let instructions = nodes
@@ -896,7 +909,7 @@ export class Turtle {
                     code: { ast: instructions, functions: ns?.functions ?? null },
                     style: { color: this.color },
                     env: ns?.userspace?.size ? { userspace: ns.userspace } : null
-                }, { fresh, choices }))
+                }, { fresh, choices, deferStart: fresh && !!preparePlay }))
             // A new play is a new seat: the reveal starts hidden again. A
             // green-tree reuse (seat === before) keeps what this play revealed.
             if (seat !== before) this._hintsRevealed = false
@@ -908,8 +921,9 @@ export class Turtle {
                 return { success: true, commandCount: sumCounts(seat) }
             }
 
-            // Only fresh host plays expose hold; beginPlay clears it before this flush.
-            // Shell edits have no hold and still diagnose in this pass. (id:host-run-pause)
+            // Fresh play clears hold; shell edits release their own hold before
+            // seating so this pass can still diagnose. (id:host-run-pause)
+            if (fresh && preparePlay && seat) preparePlay()
             this.compositor.flush()
             if (this._disposed) return null // host play checks disposal after this call
             this._lastReflectChange = performance.now()

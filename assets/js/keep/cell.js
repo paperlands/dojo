@@ -11,8 +11,8 @@ const keeperCell = createCell()
 const folding = createObservable()
 
 /** Seat the door for this page. Returns unregister. */
-export function registerDoor(door) {
-    return doorCell.register(door)
+export function registerDoor(door, adopt) {
+    return doorCell.register(door, adopt)
 }
 
 export function getDoor() {

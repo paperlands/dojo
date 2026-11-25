@@ -26,6 +26,7 @@ defmodule Dojo.Cluster.TransportInvariantsTest do
   @moduletag :lan
   @moduletag timeout: 600_000
   @nodes 3
+  @recovery_probe Path.expand("../../support/transport_recovery_probe.ex", __DIR__)
 
   # Re-adoption is timed by configuration, not by luck: `connection_ping` is
   # idle-gated and gossip keeps a dead socket busy, so this ceiling is the whole
@@ -40,11 +41,18 @@ defmodule Dojo.Cluster.TransportInvariantsTest do
     Lan.start(@nodes)
     on_exit(&Lan.stop/0)
 
+    for node <- 1..@nodes do
+      assert {:ok, _} = Lan.call(node, Code, :require_file, [@recovery_probe])
+      path = Path.join(recovery_dir(), "latest-node#{node}")
+      assert {:ok, :ok} = Lan.call(node, Dojo.Test.TransportRecoveryProbe, :start, [path])
+    end
+
     assert Lan.await_mesh(@nodes), "nodes never formed a mesh:\n#{Lan.describe()}"
     :ok
   end
 
-  setup do
+  setup context do
+    on_exit(fn -> capture_recovery(context.test) end)
     assert Lan.baseline!(@nodes), "LAN did not return to baseline:\n#{Lan.describe()}"
     :ok
   end
@@ -136,6 +144,39 @@ defmodule Dojo.Cluster.TransportInvariantsTest do
 
     assert 1 |> Lan.call(:partisan_config, :get, [:connect_timeout]) |> unwrap() == 5_000,
            "connect_timeout is not the value this cluster advertises"
+  end
+
+  defp recovery_dir do
+    root = System.get_env("KEEP_TRANSPORT_EVIDENCE", Path.expand("tmp/transport-recovery"))
+    Path.join(root, System.fetch_env!("DOJO_LAN_RUN") <> "-recovery")
+  end
+
+  defp capture_recovery(test) do
+    dir =
+      Path.join(recovery_dir(), Atom.to_string(test) |> String.replace(~r/[^a-zA-Z0-9_-]/, "-"))
+
+    File.mkdir_p!(dir)
+
+    File.write!(
+      Path.join(dir, "statuses.txt"),
+      inspect(Lan.statuses(), pretty: true, limit: :infinity)
+    )
+
+    for node <- 1..@nodes do
+      for ext <- [".term", ".txt"] do
+        File.cp(
+          Path.join(recovery_dir(), "latest-node#{node}" <> ext),
+          Path.join(dir, "node#{node}" <> ext)
+        )
+      end
+
+      ns = System.fetch_env!("DOJO_LAN_RUN") <> "-n#{node}"
+
+      {sockets, code} =
+        System.cmd("ip", ["netns", "exec", ns, "ss", "-tinp"], stderr_to_stdout: true)
+
+      File.write!(Path.join(dir, "node#{node}-sockets.txt"), "exit=#{code}\n" <> sockets)
+    end
   end
 
   # ── observation helpers ──────────────────────────────────────────────────

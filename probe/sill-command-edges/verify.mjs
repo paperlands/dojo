@@ -21,7 +21,8 @@ function bench(reseat = () => false, program = source, options = {}) {
     }, { focus: createFocus(scheduler), createText: () => { throw Error('no labels') } })
     scheduler.root._onSeatChange = () => compositor.verifyHold()
     const dial = createDial({ scheduler, compositor }, {
-        seat: () => ({ slot: 'A' }), authority: () => true, reseat, ...options,
+        seat: () => ({ slot: 'A' }), authority: () => true,
+        prepareReplay: (play) => (prepare) => reseat(play, prepare), ...options,
     })
     scheduler.hotSwapChild('A', fork('A', program), { fresh: true, deferStart: true })
     compositor.advance(0)
@@ -155,7 +156,7 @@ function bench(reseat = () => false, program = source, options = {}) {
 {
     let attempts = 0
     const { scheduler, compositor, dial } = bench(() => { attempts++; return false }, source, {
-        admit: () => false,
+        prepareReplay: () => null,
     })
     dial.catchLine(3)
     compositor.advance(100)

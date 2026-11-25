@@ -104,6 +104,54 @@ describe("scheduler basics", () => {
     })
 })
 
+// The dial's clock is derived from this fact. It must not be the tick clock:
+// idle frames keep moving `lastTickTime` after the walk is over. (id:nav-core-sill)
+describe("the play's end is stamped where it is proved", () => {
+    test("a finished play keeps its instant while the tick clock moves on", () => {
+        const scheduler = createScheduler(genFromEvents([]))
+        scheduler.tick(0)
+        assert.equal(scheduler.done, true)
+        assert.equal(scheduler.end, 0, "the instant the world was proved finished")
+
+        scheduler.tick(2500)   // an idle frame: nothing to advance
+        assert.equal(scheduler.lastTickTime, 2500, "the tick clock still moves")
+        assert.equal(scheduler.end, 0, "the settled instant does not")
+    })
+
+    test("the end waits for the last obligation", () => {
+        const scheduler = createScheduler(genFromEvents([
+            { type: "wait", duration: 300, position: [0,0,0], rotation: {w:1,x:0,y:0,z:0}, color: '#fff', headSize: 10 },
+        ]))
+        scheduler.tick(0)
+        assert.equal(scheduler.done, false)
+        assert.equal(scheduler.end, null, "a running play has no end to read")
+
+        scheduler.tick(300)
+        assert.equal(scheduler.end, 300)
+    })
+
+    test("a wake that advances nothing keeps the finished instant", () => {
+        const scheduler = createScheduler(genFromEvents([]))
+        scheduler.tick(1000)
+        scheduler.root._done = false     // the re-seat wake, exactly as pump.wake clears it
+        assert.equal(scheduler.end, null, "an awake play cannot show the old end")
+
+        scheduler.tick(1800)             // nothing ready: the play is proved finished again
+        assert.equal(scheduler.end, 1000, "an empty wake is not a walk")
+    })
+
+    test("a new play clears the end and stamps its own", () => {
+        const scheduler = createScheduler(genFromEvents([]))
+        scheduler.tick(1000)
+        assert.equal(scheduler.end, 1000)
+        scheduler.done = false           // a replaced seat: a new play, not a wake
+        assert.equal(scheduler.end, null)
+
+        scheduler.tick(1800)
+        assert.equal(scheduler.end, 1800)
+    })
+})
+
 describe("wait handling", () => {
     test("wait pauses generator and sets resumeAt", () => {
         const events = [

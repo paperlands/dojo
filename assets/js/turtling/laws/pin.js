@@ -197,7 +197,7 @@ export function drawGhostMark(ctx, x, y, r = 3.5) {
 // spoke is the distance itself, a wish is where the pointer asked to land, a held
 // point's span is where it came from. (id:laws-freedom)
 const SPAN_DASH = [1, 3]
-export function drawSpan(ctx, from, to, { alpha, mark = false } = {}) {
+export function drawSpan(ctx, from, to, { alpha, mark = false, ink = PAPER } = {}) {
     if (!from || !to) return
     if (!Number.isFinite(alpha)) return
     if (Math.hypot(from.x - to.x, from.y - to.y) < 1) return
@@ -206,7 +206,7 @@ export function drawSpan(ctx, from, to, { alpha, mark = false } = {}) {
     ctx.moveTo(from.x, from.y)
     ctx.lineTo(to.x, to.y)
     ctx.setLineDash(SPAN_DASH)
-    ctx.strokeStyle = `rgba(${PAPER},${alpha})`
+    ctx.strokeStyle = `rgba(${ink},${alpha})`
     ctx.lineWidth = 1
     ctx.stroke()
     // A far-end mark is a place, not a stroke: solid, or a dotted ring would read

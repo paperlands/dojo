@@ -41,9 +41,11 @@ export function addressOf(law) {
     // symmetry is canonicalized — a reversed distance pair shares an address, but
     // (target, axis) never collides with (axis, target). (id:laws-ordered-replacement, D058)
     const parts = shape(endpoints, law).map(tagged)
-    const canonical = symmetricOf(feature) || FEATURES[feature]?.symmetric === true
-        ? [...parts].sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1))
-        : parts
+    const key = JSON.stringify
+    const order = (a, b) => key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0
+    const canonical = AUTHORED[feature]?.spanSum
+        ? parts.flatMap((a, i) => i % 2 ? [] : [[a, parts[i + 1]].sort(order)]).sort(order)
+        : symmetricOf(feature) || FEATURES[feature]?.symmetric === true ? [...parts].sort(order) : parts
     return JSON.stringify([feature, canonical, tagged(scope), tagged(frame)])
 }
 
@@ -51,7 +53,7 @@ export function addressOf(law) {
 // and domain guard fixed once. The address is derived here and reused; proposal,
 // validation and display read the record rather than rebuilding it.
 // (id:laws-build-p3, id:laws-build-p3a)
-export function bindLaw({ feature, endpoints, scope, frame, predicate, owner = null, axis = null, guards = null, bounds = null, sourceIds = [], source = null, expression = null }) {
+export function bindLaw({ feature, endpoints, scope, frame, predicate, owner = null, axis = null, guards = null, bounds = null, sourceIds = [], witnesses = [], source = null, expression = null }) {
     // Bind once: a supplied term is frozen; a legacy caller without one is normalized
     // through the same constructor. An explicitly malformed term is kept and fails
     // closed at the accessor. (id:laws-distance-term-normalization, D058)
@@ -67,7 +69,8 @@ export function bindLaw({ feature, endpoints, scope, frame, predicate, owner = n
     // is the live solve mirror — a framed centre is never a solve participant — and the
     // framed frames are retraction deps, not endpoints. (id:laws-distance-literal-address)
     const references = Array.isArray(term?.references) ? term.references : endpoints
-    const liveEnds = references.filter(isLiveInput)
+    const live = references.filter(isLiveInput)
+    const liveEnds = AUTHORED[feature]?.inputs?.(term) ?? (AUTHORED[feature]?.spanSum ? [...new Set(live)] : live)
     const boundFrame = AUTHORED[feature]?.reference ? (term?.frame ?? frame) : frame
     const boundAxis = term?.axis ?? axis
     const boundPredicate = term == null ? predicate : (payloadOf(feature, term) ?? predicate)
@@ -78,7 +81,8 @@ export function bindLaw({ feature, endpoints, scope, frame, predicate, owner = n
         kind: kindOf(feature),
         guards: guards ?? guardsOf(feature),
         bounds: bounds ?? boundsOf(feature),
-        sourceIds: [...new Set([...liveEnds, ...inputFrames({ expression: term }), ...sourceIds])] }
+        ...(witnesses.length ? { witnesses: Object.freeze([...witnesses]) } : {}),
+        sourceIds: [...new Set([...live, ...inputFrames({ expression: term }), ...sourceIds])] }
     law.address = addressOf(law)
     return law
 }
@@ -101,11 +105,11 @@ export function createLawStore() {
         return hit ? 'retracted' : 'noop'
     }
 
-    // A law names the retired ids through three distinct channels; membership is a Set
-    // probe, and the framed-input list is read once per law, not once per retired id.
+    // Bound rows retain all inputs, including cancelled ones. Hand-built rows
+    // without a dependency list still get a single scan of their original term.
     const namesAny = (law, ids) => ids.has(law.frame) ||
         (law.endpoints?.some((id) => ids.has(id)) ?? false) ||
-        inputFrames(law).some((id) => ids.has(id))
+        (law.sourceIds?.some((id) => ids.has(id)) ?? inputFrames(law).some((id) => ids.has(id)))
 
     const retractIdentities = (frameIds) => {
         const ids = frameIds instanceof Set ? frameIds : new Set(frameIds)

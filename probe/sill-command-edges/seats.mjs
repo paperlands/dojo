@@ -30,8 +30,8 @@ function bench() {
     let reseats = 0
     const dial = createDial(turtle, {
         seat,
-        authority: slot => selection.grantPlace === CORESHELL && seat().slot === slot,
-        reseat: (play, prepare) => {
+        authority: play => selection.grantPlace === CORESHELL && seat().slot === play.seat,
+        prepareReplay: (play) => (prepare) => {
             reseats++
             compositor.beginPlay()
             scheduler.hotSwapChild(play.seat, recipes.get(play.seat), { fresh: true, deferStart: true })

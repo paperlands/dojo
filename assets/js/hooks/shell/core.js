@@ -19,24 +19,15 @@ import { toBlob } from "../../keep/kinds/snap.js"
 // The browser also caches the ES module natively by URL.
 let cm6 = null;
 
-// ---------------------------------------------------------------------------
-// bootShell — the shared preamble every surface shares: load CM6 once,
-// construct the Terminal over the hook element, hang it off the hook for the
-// destroyed() teardown. Returns the { term, cm6 } the surface builds on.
-// ---------------------------------------------------------------------------
 export async function bootShell(hook) {
-    // ?v= must equal "version" in priv/static/vendor/cm6.manifest.json, which the
-    // build derives from the resolved package. scripts/verify/vendor_verify.sh checks it.
-    // Non-literal on purpose (id:assets-bundle-boundary): the bundle must stay a
-    // runtime import, so no --external flag decides it. A path-like external
-    // matches resolved filesystem paths and flips meaning by OS.
+    const arena = hook.arena;
+    // Non-literal runtime import; keep ?v= in sync with the CM6 manifest.
     if (!cm6) cm6 = await import(location.origin + "/vendor/cm6.js?v=6.43.7-030a3151");
-    // The import is the one real await — if the hook died while we were away
-    // (panel closed mid-boot), stand down: no Terminal on a detached element.
-    // The lifecycle machine sees null and never mounts the surface.
-    if (!hook.arena.alive) return null;
+    if (!arena.alive) return null;
     const term = new Terminal(hook.el, cm6);
-    hook.term = term;
+    const release = () => term.destroy();
+    if (!arena.alive) { release(); return null; }
+    arena.add(release);
     return { term, cm6 };
 }
 

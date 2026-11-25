@@ -3,7 +3,7 @@ import { createTower, installScalarFloor, installVectorFloor, SHADOWABLE_BUILTIN
 import { Parser } from "./parse.js"
 import { parseMemo } from "./parse_memo.js"
 import { isLocal, extend } from "../bindings.js"
-
+import { isPath } from "../geometry.js"
 // Meanings are fixed; a learner's names change. Install this floor once,
 // not on every figure rebuild. (id:tower-center-life)
 const DEFAULT_TOWER = Object.freeze(installVectorFloor(installScalarFloor(createTower())).seal())
@@ -97,6 +97,8 @@ export class Evaluator {
         // (id:being-facets-centers-review)
         if (!this.isSubject?.(held)) {
             if (typeof held === 'string') return { handled: false };
+            // `X.path` on a bound path is the geometry itself. (id:path-a-walk-of-places)
+            if (!args && isPath(held) && name.slice(dot + 1) === 'path') return { handled: true, value: held };
             if (owns) return { handled: true, value: null };
             return { handled: false };
         }

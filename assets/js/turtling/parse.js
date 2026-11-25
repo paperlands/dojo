@@ -1,5 +1,6 @@
 import { ASTNode } from "./ast.js"
 import { parseProperty, parseSupport, propertyOf } from "./laws/authored.js"
+import { affineSyntax } from "./laws/affine.js"
 import { getOperator } from "./mafs/operators.js"
 import { Lexer } from "./mafs/lexer.js"
 import { Parser as ExprParser } from "./mafs/parse.js"
@@ -969,7 +970,8 @@ function parseStatement(tokens, state, rec) {
         const eqAt = declarationEquals(source)
         const lhs = (eqAt < 0 ? source : source.slice(0, eqAt)).trim()
         let expr = eqAt < 0 ? null : source.slice(eqAt + 1).trim()
-        if (/^distance\s*\(/.test(lhs)) {
+        const named = /^(distance|length)\s*\(/.exec(lhs)?.[1]
+        if (named || /\bdistance\s*\(/.test(lhs) && lhs.startsWith('(')) {
             let head
             try { head = syntaxReader.parse(lhs, { skipValidation: true }) } catch {}
             // A distance subject is a live name, `origin`, a coordinate literal `(x,y)`,
@@ -1004,13 +1006,21 @@ function parseStatement(tokens, state, rec) {
                 if (n.type === 'vector') { const t = tupleOf(n); return t ? { relative: t } : null }
                 return null
             }
-            const subjects = head?.type === 'function' && head.value === 'distance' && head.children.length === 2
-                ? head.children.map(subjectOf) : null
+            const spanSum = head?.type === 'operator' && head.value === '+'
+            const terms = (n) => n.type === 'operator' && n.value === '+' ? n.children.flatMap(terms) : [n]
+            const distancePair = (n) => n.type === 'function' && n.value === 'distance' && n.children.length === 2
+            const spans = spanSum ? terms(head) : null
+            const route = head?.type === 'function' && head.value === 'length'
+            const subjects = spanSum
+                ? (spans.every(distancePair) ? spans.flatMap((span) => span.children.map(subjectOf)) : null)
+                : (head && (route ? head.children.length >= 2 : distancePair(head)) ? head.children.map(subjectOf) : null)
             if (!subjects || subjects.some((s) => s == null)) {
-                return errorNode(rec, 'distance(name, name) or a framed point', lhs)
+                return errorNode(rec, 'distance(point, point), a sum of distances, or length(point, point, …)', lhs)
             }
-            if (!expr || !parses(expr)) return errorNode(rec, 'a radius expression after =', expr ?? 'end of statement')
-            return stamp(new ASTNode('Law', 'distance', [], { subjects, expr }), rec)
+            if (!expr || !parses(expr)) return errorNode(rec, route || spanSum ? 'a length expression after =' : 'a radius expression after =', expr ?? 'end of statement')
+            return stamp(new ASTNode('Law', route || spanSum ? 'length' : 'distance', [], {
+                subjects, expr, ...(spanSum ? { spanSum: true } : {}),
+            }), rec)
         }
         if (eqAt < 0 && tokens.length > 2) return errorNode(rec, "'=' after a name", tokens[2])
         if (expr === null) return stamp(new ASTNode('Existence', lhs), rec)
@@ -1019,6 +1029,17 @@ function parseStatement(tokens, state, rec) {
         // not a value. The declaring frame supplies the world location.
         // (id:notation-coordinate-vector)
         if (expr === 'origin') expr = '(0, 0, 0)'
+        const affineLhs = lhs.includes('.position') && !/^[A-Za-z_][\w-]*\.position$/.test(lhs)
+            || lhs.startsWith('[') && expr.includes('.position')
+        if (!names(lhs) && affineLhs) {
+            let affine
+            try {
+                const read = (text) => syntaxReader.parse(text, { skipValidation: true })
+                affine = affineSyntax(read(lhs), read(expr))
+            } catch {}
+            if (!affine) return errorNode(rec, 'an affine equality between points or between displacements', lhs)
+            return stamp(new ASTNode('Law', 'affine', [], { ...affine, lhs, expr }), rec)
+        }
         const dot = lhs.indexOf('.')
         if (dot > 0) {
             const target = lhs.slice(0, dot)
@@ -1075,10 +1096,32 @@ function parseStatement(tokens, state, rec) {
         return node;
     };
 
-    // Loop: for/loop <n> do
+    // `until` reads a condition, except for the swept `touch(path)` head.
+    // Validate before consuming a body. (id:gw-grammar, id:touch-generative-centers)
     if (kw === 'for' || kw === 'loop') {
-        if (len < 3) return errorNode(rec, `a number of loops after '${kw}'`, DO);
-        return blockNode((block) => new ASTNode('Loop', tokens[1], block));
+        const head = tokens.slice(1, len - 1)
+        if (head[0] === 'until') {
+            const expr = head.slice(1).join(' ')
+            const [first, group, ...tail] = head.slice(1)
+            if (first?.startsWith('touch(') || (first === 'touch' && group?.startsWith('('))) {
+                const call = first === 'touch' && !tail.length ? `touch${group}` : expr
+                const inner = /^touch\((.*)\)$/.exec(call)?.[1].trim()
+                if (!inner || !parses(inner) || tokenizeLine(call).length !== 1) {
+                    return errorNode(rec, "one balanced touch(<a path>) after 'until'", expr || DO)
+                }
+                return blockNode((block) => new ASTNode('Loop', '', block, { touch: inner }))
+            }
+            if (!parses(expr)) return errorNode(rec, "a condition after 'until'", expr || DO)
+            return blockNode((block) => new ASTNode('Loop', '', block, { until: expr }))
+        }
+        // A count is what a bounded loop asks for; an omitted one is the unbounded loop,
+        // closed by the body's own `stop`. `for` keeps its count: it never reads as
+        // "forever". (id:gw-grammar)
+        if (kw === 'loop' && head.length === 0) {
+            return blockNode((block) => new ASTNode('Loop', '', block))
+        }
+        if (head.length !== 1) return errorNode(rec, `one count after '${kw}'`, head.join(' ') || DO)
+        return blockNode((block) => new ASTNode('Loop', head[0], block));
     }
 
     // Function def: def/draw <name> [args...] do
@@ -1110,6 +1153,7 @@ function parseStatement(tokens, state, rec) {
         }
     }
 
+
     // Ambient: as <name> [<frame>] do ... end
     if (kw === 'as') {
         if (len < 3) return errorNode(rec, "an assistant name after 'as'", DO);
@@ -1118,7 +1162,7 @@ function parseStatement(tokens, state, rec) {
         return blockNode((block) => new ASTNode('Ambient', tokens[1], block, meta));
     }
 
-    // Unreachable while BLOCK_KW lists exactly the six above — kept total
+    // Unreachable while BLOCK_KW lists exactly the five above — kept total
     // against drift: an unhandled block keyword rests as one line, loudly.
     return errorNode(rec, 'a known block keyword', kw);
 }
@@ -1188,11 +1232,17 @@ export function printAST(ast) {
                 }
                 break;
             
-            case 'Loop':
-                out.push(`${indent}loop ${node.value} do${margin}`);
+            case 'Loop': {
+                // The head prints as the author's own kind of head: a fact, a count, or
+                // nothing — the inverse of the reader above. (id:pa-ghc-exactprint)
+                const head = node.meta?.touch != null ? ` until touch(${node.meta.touch})`
+                    : node.meta?.until != null ? ` until ${node.meta.until}`
+                    : node.value ? ` ${node.value}` : ''
+                out.push(`${indent}loop${head} do${margin}`);
                 node.children.forEach(c => visit(c, depth + 1));
                 out.push(indent + END + endMargin);
                 break;
+            }
 
             case 'When': {
                 const binding = node.meta?.binding ? ` ${node.meta.binding}` : ''
@@ -1242,8 +1292,13 @@ export function printAST(ast) {
                 // `feature(subjects) = e` or `target.property = e`. The authored
                 // spelling comes from the row, never a local feature list. (D058)
                 const subjects = node.meta.subjects
-                if (subjects) {
-                    out.push(`${indent}let ${node.value}(${subjects.map(spellSubject).join(', ')})=${node.meta.expr}${margin}`)
+                if (node.meta.lhs) {
+                    out.push(`${indent}let ${node.meta.lhs} = ${node.meta.expr}${margin}`)
+                } else if (subjects) {
+                    const args = subjects.map(spellSubject)
+                    const lhs = node.meta.spanSum ? args.flatMap((a, i) => i % 2 ? [] : [`distance(${a}, ${args[i + 1]})`]).join(' + ')
+                        : `${node.value}(${args.join(', ')})`
+                    out.push(`${indent}let ${lhs}=${node.meta.expr}${margin}`)
                 } else {
                     out.push(`${indent}let ${node.meta.target}.${propertyOf(node.value, node.meta.axis)}=${node.meta.expr}${margin}`)
                 }

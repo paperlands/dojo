@@ -16,6 +16,10 @@ defmodule LanNode do
   # takes the node down with it (Elixir 1.20).
   require Logger
 
+  alias Dojo.Cluster.MDNS
+  alias Dojo.Keep.{Auth, Log}
+  alias Dojo.Keep.Sync.Partisan
+
   # How often the inbox for test-issued commands is checked.
   @cmd_slice_ms 100
 
@@ -36,38 +40,91 @@ defmodule LanNode do
   # The writer identity lives in the database, so a node that reboots under a new
   # partisan name resumes its own sequence instead of forking (D067.1).
   defp open_keep(idx, out_dir) do
-    {:ok, conn} = Dojo.Keep.Log.open(Path.join(out_dir, "keep#{idx}.db"))
-    _ = Dojo.Keep.Log.ensure_writer(conn)
-    Dojo.Keep.Sync.Partisan.attach(conn)
+    # Ecto already owns keepN.db in this rig. An assertion log is a different store.
+    {:ok, conn} = Log.open(Path.join(out_dir, "assertions#{idx}.db"))
+    _ = Log.ensure_writer(conn)
+    Partisan.attach(conn)
   end
 
-  @doc "Commit n facts locally; returns the frontier afterwards."
-  def keep_write(n) do
-    conn = Dojo.Keep.Sync.Partisan.conn()
+  def keep_trust(signers) do
+    conn = Partisan.conn()
+    for {id, pub} <- signers, do: :ok = Log.register_signer(conn, id, pub)
+    Log.set_require_auth(conn, true)
+  end
 
-    for i <- 1..n do
-      {:ok, _} =
-        Dojo.Keep.Log.commit(conn, %{
-          type: :keep_fact,
-          key: %{id: "#{:partisan.node()}:#{i}:#{System.unique_integer([:positive])}"},
-          value: :binary.copy(<<"k">>, 32)
-        })
+  def keep_commit(id, value, signer, private_key) do
+    conn = Partisan.conn()
+
+    Log.commit(conn, %{
+      type: :keep_fact,
+      key: %{id: id},
+      value: value,
+      signer: signer,
+      sign: fn bytes -> Auth.sign_assertion(private_key, bytes) end
+    })
+  end
+
+  def keep_range(origin), do: Log.range(Partisan.conn(), origin, 0)
+
+  def keep_exchange(peer), do: Partisan.exchange(peer)
+
+  def keep_exchange_all, do: Partisan.exchange_all()
+  def keep_acks, do: Log.peer_acks(Partisan.conn())
+  def keep_observed_by(origin, seq), do: Log.observed_by(Partisan.conn(), origin, seq)
+
+  def keep_commit_many(count, prefix, signer, private_key) do
+    for n <- 1..count do
+      {:ok, op} = keep_commit("#{prefix}-#{n}", "#{prefix} value #{n}", signer, private_key)
+      op
     end
-
-    Dojo.Keep.Log.frontier(conn)
   end
 
-  @doc "One reconciliation against every reachable peer."
-  def keep_exchange, do: Dojo.Keep.Sync.Partisan.exchange_all()
+  def keep_exchange_traced(peer) do
+    caller = self()
+    tracer = spawn(fn -> keep_trace(caller, []) end)
+    {:module, :partisan_rpc} = :code.ensure_loaded(:partisan_rpc)
+    1 = :erlang.trace_pattern({:partisan_rpc, :call, 5}, true, [:local])
+    :erlang.trace(caller, true, [:call, {:tracer, tracer}])
+
+    try do
+      result = keep_exchange(peer)
+      ref = :erlang.trace_delivered(caller)
+      receive do: ({:trace_delivered, ^caller, ^ref} -> :ok)
+      send(tracer, {:flush, ref})
+      calls = receive do: ({:keep_calls, ^ref, calls} -> calls)
+      %{result: result, calls: calls}
+    after
+      :erlang.trace(caller, false, [:call])
+      :erlang.trace_pattern({:partisan_rpc, :call, 5}, false, [:local])
+      send(tracer, :stop)
+    end
+  end
+
+  defp keep_trace(caller, calls) do
+    receive do
+      {:trace, ^caller, :call, {:partisan_rpc, :call, [peer, Partisan, method, args, opts]}} ->
+        call = %{peer: peer, method: method, args: args, opts: opts}
+        keep_trace(caller, [call | calls])
+
+      {:flush, ref} ->
+        send(caller, {:keep_calls, ref, Enum.reverse(calls)})
+        keep_trace(caller, [])
+
+      :stop ->
+        :ok
+
+      _ ->
+        keep_trace(caller, calls)
+    end
+  end
 
   @doc "Every materialised unit on this node — the projection as data."
-  def keep_units, do: Dojo.Keep.Log.units(Dojo.Keep.Sync.Partisan.conn())
+  def keep_units, do: Log.units(Partisan.conn())
 
-  @doc "The local applied frontier and completeness."
+  @doc "The local applied frontier, completeness, and admission mode."
   def keep_status do
-    conn = Dojo.Keep.Sync.Partisan.conn()
-    status = Dojo.Keep.Log.status(conn)
-    Map.put(status, :writer, Dojo.Keep.Log.writer(conn))
+    conn = Partisan.conn()
+    Map.put(Log.status(conn), :require_auth, Log.require_auth?(conn))
   end
 
   # These are invoked through the file command bridge. They prove the shipped
@@ -133,11 +190,17 @@ defmodule LanNode do
          {:ok, bin} <- File.read(inbox),
          {ref, m, f, a} <- safe_binary_to_term(bin) do
       File.rm(inbox)
-      result = safe(fn -> {:ok, apply(m, f, a)} end, {:error, :call_failed})
+      result = command(m, f, a)
       File.write!(Path.join(dir, "node#{idx}.reply.#{ref}"), :erlang.term_to_binary(result))
     else
       _ -> :ok
     end
+  end
+
+  defp command(m, f, a) do
+    {:ok, apply(m, f, a)}
+  catch
+    kind, reason -> {:error, {:call_failed, Exception.format(kind, reason, __STACKTRACE__)}}
   end
 
   defp safe_binary_to_term(bin) do
@@ -168,10 +231,10 @@ defmodule LanNode do
       os_pid: System.pid(),
       at: System.system_time(:second),
       name: :partisan.node(),
-      ips: safe(fn -> Dojo.Cluster.MDNS.routable_ipv4_addrs() end, []),
+      ips: safe(fn -> MDNS.routable_ipv4_addrs() end, []),
       listen_addrs: safe(fn -> Enum.map(:partisan_config.get(:listen_addrs), & &1.ip) end, []),
       members: members(),
-      mdns_peers: safe(fn -> Enum.map(Dojo.Cluster.MDNS.cached_peers(), &elem(&1, 0)) end, []),
+      mdns_peers: safe(fn -> Enum.map(MDNS.cached_peers(), &elem(&1, 0)) end, []),
       # If these are not the same pid every tick, discovery took the app with it.
       anchors: %{
         app: Process.whereis(Dojo.Supervisor),

@@ -9,7 +9,7 @@ import { registerStage } from "../../turtling/stage-cell.js"
 import { cameraBridge, scene } from "../../bridged.js"
 import { temporal } from "../../utils/temporal.js"
 import { pageLaw, CORESHELL, OUTERSHELL, SELF, PEER, heldAt } from "../../weave/page.js"
-import { captureChoices, copyChoices } from "../../turtling/laws/hand_choices.js"
+import { captureChoices } from "../../turtling/laws/hand_choices.js"
 import { registerWorld, worldChanged } from "../../weave/world.js"
 import { makeReflector } from "../../weave/reflect.js"
 import { seatHealth } from "../../weave/seat-health.js"
@@ -22,7 +22,9 @@ import { nerve, nerveSeat } from "../nerve.js"
 import { signals as S } from "../../nerve/store.js"
 import { mountSun } from "../../nerve/sun.js"
 import { mountSill } from "../../nerve/sill.js"
-import { playOf, seatOf, stageOf } from "../../turtling/playback.js"
+import { stageOf } from "../../turtling/playback.js"
+import { admitChoices, createScenePlayback } from "./scene-playback.js"
+import { createOuterPlayback } from "./outer-playback.js"
 import { createDial } from "./dial.js"
 import { commands, listeners, mutators } from "./core.js"
 import { register, outerDrafting, putSource, getSource, get as getTerm, seatOf as termSeatOf } from "./term-cell.js"
@@ -87,12 +89,12 @@ function mountInner(hook, { term, cm6 }) {
     term.inner({
         onLineNumber: catchFromEditor,
         gutterMark: catchMark.extension,
-        // The breakpoint's source site is reconciled at the edit itself, not at a
-        // notification about it: a drive may land between the two. (id:nav-core-sill)
+        // Reconcile the breakpoint at the edit, not at a notice about it. (id:nav-core-sill)
         onDoc: () => dial.disarm(),
     });
     // Term cell — the one address for the coreshell Terminal (gw-t-dom-registry).
-    arena.add(register("coreshell", term));
+    register("coreshell", term, arena.add);
+    if (!arena.alive) return { arena };
 
     // Profiler overlay — opt-in via ?perf=1. Lazy-imported so it adds
     // zero cost to normal sessions. Reports RAF idle-spin + GPU growth.
@@ -120,15 +122,6 @@ function mountInner(hook, { term, cm6 }) {
 
     // Page law decides; this surface performs. Law holds its own orders (Cut 1).
     const law = pageLaw()
-    // One admission for a provided capsule. undefined is "no news"; null is an
-    // explicit materialized record with none; anything provided is copied or refused.
-    const admitChoices = (raw) => {
-        if (raw === undefined) return { ok: true, choices: undefined }
-        if (raw === null) return { ok: true, choices: null }
-        const choices = copyChoices(raw)
-        return choices ? { ok: true, choices } : { ok: false }
-    }
-    const DEGREE = { kindled: 1.0, warm: 0.4 }  // gw-appearance → canvas opacity
 
     // One authored buffer at a time (D022) — child's edit/draft, never a seat
     // or friend push. Names a PLACE too: draft authors the addr the peer
@@ -136,185 +129,31 @@ function mountInner(hook, { term, cm6 }) {
     let authored = null
     let owner = getSource() ?? null
     let coreSourceRelease = null
-    // The last source the law actually seated. NOT a lifecycle: read only when
-    // the dial replays it (a click), never to decide whether the dial shows.
-    let lastSeated = null
-    // The OUTER admission: SELF standing BESIDE a friend's record. A different seat, a
-    // different recipe, its own lifetime. (id:outer-sill-lifetime)
-    let outerSeated = null
-    // The dial's seat: one authored CORESHELL root of the CURRENT buffer, owned by
-    // the claim it was authored under. A re-published claim is not news here, and a
-    // claim is a source identity, not a publication's. (id:nav-core-sill)
-    // THE SEAT IS THE SELECTED SLOT, NOT THE PAGE'S FIGURE. `authored` may hold a
-    // friend's live draft at another place, and that governs the LIGHT — not what this
-    // instrument depicts. Measured: an outer same-addr draft adds a distinct slot and
-    // leaves the core actor advancing, so the dial stays visible and only the hand is
-    // refused. Absent means one thing only: the selected slot has no play to depict.
-    // (id:nav-core-sill)
-    const standingSeat = () => {
-        const addr = term.currentBufferId()
-        if (addr == null) return null
-        const slot = law.seatOf(addr, CORESHELL)
-        return slot == null ? null : { slot }
-    }
-    // A PUBLICATION IS NOT AN AUTHORITY. Comparing claim OBJECTS made a republication
-    // of the same source revoke a command for as long as the render lagged behind it;
-    // comparing the SUBJECT does not. (id:nav-core-sill)
-    const sameSubject = (a, b) => !!a && !!b && a.place === b.place && a.addr === b.addr &&
-        (a.buffer_id ?? null) === (b.buffer_id ?? null)
-    // Authority for one seat, re-asked when an intent runs — never remembered from
-    // the click that painted it. (id:nav-core-sill)
-    // Authority is the page's CURRENT SOURCE being OURS, for this seat. Measured as the
-    // fence that actually refused a stale command — with no epoch rotation — when the
-    // selected buffer had not yet been seated. Topology then blocks on its own.
-    // (id:nav-core-sill)
-    const authorityFor = (play) => owner?.place === CORESHELL &&
-        owner?.addr === term.currentBufferId() && standingSeat()?.slot === play?.seat &&
-        // AND the incarnation this surface admitted: a claim is not evidence that the
-        // draft has seated, so a peer occupant in the same slot is not ours to steer.
-        // (id:outer-sill-lifetime)
-        lastSeated?.seatId === play?.id
-
-    // Replay: the same fidelity the seat had — options, offered choices and the
-    // hand's local inputs — as a NEW play. The recipe binds to the incarnation this
-    // surface actually seated: a faulted seat is still a seat, and a frame we did
-    // not seat is never replayed with a predecessor's recipe. (id:host-run-pause)
-    // ADMISSION WITHOUT RELINQUISHMENT. Both refusal doors are asked while we still
-    // hold everything: (a) does the recipe still bind this incarnation, (b) is the
-    // offer it would hand the scheduler readable. A refusal here costs nothing — no
-    // lost pause, no dead Resume, no lost caught mark, no rewound have-day.
-    // (id:nav-core-sill)
-    // ONE RECIPE SEAM, TWO SEATS. Admit then reseat, parameterized by WHERE the admitted
-    // record lives: the same rules serve the core play and the outer draft, and neither
-    // owns the other's recipe. (id:outer-sill-lifetime)
-    const recipeFor = (recordOf) => {
-        const admit = (play) => {
-            const seated = recordOf()
-            if (!seated || !play || seated.slot !== play.seat || seated.seatId !== play.id) return false
-            const choices = captureChoices(seated.options.choices, [{ root: 'document', slot: seated.slot }],
-                key => turtle.handLocalChoices(key))
-            // Sound on THIS route: page law materializes buffer runs as document roots, so
-            // the scheduler's narrower rule cannot refuse what this admits. A cell root
-            // would pass here and be refused natively — a native hazard, not a shell one.
-            // (id:nav-core-sill)
-            return admitChoices(choices).ok
-        }
-        const reseat = (play, prepare) => {
-            const seated = recordOf()
-            if (!admit(play)) return false
-            const choices = captureChoices(seated.options.choices, [{ root: 'document', slot: seated.slot }],
-                key => turtle.handLocalChoices(key))
-            const before = seatOf(turtle, seated.slot)
-            // THE ADMISSION LANDS WITH THE SEAT, BEFORE prepare ARMS IT.
-            const commit = () => {
-                const now = seatOf(turtle, seated.slot)
-                if (now) seated.seatId = now.id
-                prepare?.()
-            }
-            turtle.upsertAmbient(seated.slot, seated.name, seated.code,
-                { ...seated.options, choices, fresh: true, preparePlay: commit })
-            const now = seatOf(turtle, seated.slot)
-            return !!now && now.id !== before?.id
-        }
-        return { admit, reseat }
-    }
-    const coreRecipe = recipeFor(() => lastSeated)
-
+    const playback = createScenePlayback(turtle, { law, grantOf: () => owner })
+    const core = playback.controls(CORESHELL, () => term.currentBufferId())
     const dial = createDial(turtle, {
-        seat: standingSeat,
-        authority: authorityFor,
-        catchable: slot => lastSeated?.slot === slot && lastSeated.code === authored?.text &&
+        ...core,
+        catchable: (play) => !!authored && core.source(play) === authored.text &&
             term.shell.state.doc.toString() === authored.text,
-        admit: coreRecipe.admit,
-        reseat: coreRecipe.reseat,
-        // The breakpoint's source-site identity #1: the document the hand chose the
-        // line in. A changed document retires the arm, never re-targets it.
         docOf: () => term.shell?.state?.doc ?? null,
         acted: () => { sun.tick(); paintInstruments() },
     })
-    // THE OUTER PORT (id:outer-sill): one controller for the DISPLAYED seat, with three
-    // explicit verbs and ONE pure read. Paint may only read; selection, departure and
-    // close are the edges' work, and they carry the mount that owns them.
-    let outerDial = null
-    let outerDialAddr = null
-    let outerDialOwner = null
-    const outerSlot = (addr) => (addr == null ? null : law.seatOf(addr, OUTERSHELL))
-    const outerCapable = (addr) => owner?.place === OUTERSHELL && owner?.addr === addr &&
-        outerSeated?.addr === addr && outerSeated?.slot === outerSlot(addr)
-    // A watch depicts without command closures: same sampling, no intents built.
-    const passivePlay = (addr) => {
-        const slot = outerSlot(addr)
-        const play = slot == null ? null : playOf(turtle, slot)
-        if (!play || !play.waited) return null
-        return {
-            ms: play.ms, phase: play.phase, caught: false,
-            can: { hold: false, resume: false, replay: false },
-        }
-    }
-    const closeOuterDial = () => {
-        if (outerDial) { outerDial.close(); outerDial = null }
-        outerDialAddr = null
-        outerDialOwner = null
-    }
-    // A REGISTRATION CHANGE IS AN EDGE. The old mount's holding ends now — its epoch
-    // rotates and its lease is released — rather than waiting for it to ask again.
-    arena.add(termSeatOf(OUTERSHELL).watch(() => {
-        const owner = outerDialOwner
-        // The mount DEPARTED for good: close the binding so a dead term is not retained.
-        // (An authority edge still merely `ended()`s it — see endHoldings.) (id:outer-sill)
-        if (owner != null && getTerm(OUTERSHELL) !== owner) closeOuterDial()
-    }))
-    const outerPort = {
-        // A selection edge. Owner-guarded: a mount cannot take a port it does not own,
-        // and re-showing the same seat from the same mount is not news.
-        show(addr, mount) {
-            if (addr == null || mount == null) return false
-            // THE REGISTERED TERM IS THE SUCCESSION DECIDER. Only it may bind, and it may
-            // replace an owner that is no longer registered — otherwise a dead mount could
-            // hold the port forever and a verified successor could never take it.
-            // (id:outer-sill)
-            if (getTerm(OUTERSHELL) !== mount) return false
-            if (outerDial && outerDialOwner === mount && outerDialAddr === addr) return true
-            if (outerDial && outerDialOwner !== mount && getTerm(OUTERSHELL) === outerDialOwner) return false
-            closeOuterDial()
-            outerDialOwner = mount
-            outerDialAddr = addr
-            const recipe = recipeFor(() => (outerSeated?.addr === addr ? outerSeated : null))
-            outerDial = createDial(turtle, {
-                seat: () => { const slot = outerSlot(addr); return slot == null ? null : { slot } },
-                // GRANT *AND* LOCAL ADMISSION: a claim that has not seated cannot steer the
-                // peer occupant still running in that slot. (id:outer-sill-lifetime)
-                authority: (play) => getTerm(OUTERSHELL) === mount &&
-                    outerCapable(addr) && outerSlot(addr) === play?.seat &&
-                    outerSeated?.seatId === play?.id,
-                admit: recipe.admit,
-                reseat: recipe.reseat,
-                acted: () => { sun.tick(); paintInstruments(); worldChanged() },
-                // Outer v1 has no source Catch: breakpoint identity is per editor.
-                docOf: () => null,
-            })
-            return true
-        },
-        // A departure edge: waiting, closed, or this mount leaving the stage.
-        depart(mount) {
-            if (mount !== outerDialOwner) return false
-            closeOuterDial()
-            return true
-        },
-        // PURE, and SCOPED: only the mount that owns the binding, at the addr it is ready
-        // for, sees a reading. An old mount cannot sample a successor's seat. No bind, no
-        // release, and no command closure when nothing may command. (id:outer-sill)
-        read(mount, addr) {
-            if (mount == null || outerDialOwner !== mount) return null
-            if (getTerm(OUTERSHELL) !== mount) return null     // a dead mount sees nothing
-            if (addr == null || outerDialAddr !== addr) return null
-            if (!outerCapable(addr)) return passivePlay(addr)
-            return outerDial ? outerDial.read() : null
-        },
-    }
+    const outerPlayback = createOuterPlayback(turtle, {
+        terminals: termSeatOf(OUTERSHELL),
+        controls: selectedAddr => playback.controls(OUTERSHELL, selectedAddr),
+        acted: () => { sun.tick(); paintInstruments(); worldChanged() },
+    })
+    arena.add(outerPlayback.close)
 
-    // An authority edge ends every painted command and the pause this surface owns.
-    const endHoldings = () => { dial.ended(); outerDial?.ended() }
+    const endHoldings = () => { dial.ended(); outerPlayback.ended() }
+    const setOwner = (claim) => {
+        if (owner === claim) return
+        const subjectChanged = !owner || !claim || owner.place !== claim.place ||
+            owner.addr !== claim.addr || (owner.buffer_id ?? null) !== (claim.buffer_id ?? null)
+        owner = claim
+        if (subjectChanged) endHoldings()
+        paintInstruments()
+    }
     const sill = mountSill(document.getElementById("core-sill"), { read: () => dial.read() })
     const announcement = document.getElementById('core-source-catch')
     function catchFromEditor(view, line) {
@@ -339,7 +178,6 @@ function mountInner(hook, { term, cm6 }) {
     }
     arena.add(sill.destroy)
     arena.add(() => dial.close())
-    arena.add(() => closeOuterDial())   // reverse-of-creation: the hold goes before the DOM
     // A local accepted input is hatch news only for the authored seat; a foreign
     // watched-seat gesture never opens self's reflection gate.
     turtle._onHandInput = (seatKey) => {
@@ -349,22 +187,18 @@ function mountInner(hook, { term, cm6 }) {
             turtle.reflectChanged()
         }
     }
-    // ONE DISOWN, BOTH COORDINATES, each fact judged independently. A place-scoped
-    // teardown at an address must not clear the OTHER place's owner or authored record
-    // there: same address, different seat. (id:outer-sill-lifetime)
+    // Each place is judged alone. Same address, different seat. (id:outer-sill-lifetime)
     const disown = (addr, place = null) => {
         const mine = (x) => x?.addr === addr && (place == null || x.place === place)
         const wasAuthored = mine(authored)
         const wasOwner = mine(owner)
         if (wasAuthored) authored = null
         if (wasOwner) owner = null
-        // THE TWO FACTS ARE JUDGED SEPARATELY. Only the OWNER is an authority edge: a
-        // delayed render leaves `authored` and `owner` disagreeing at different places,
-        // and clearing a figure must not revoke a grant that was never ours here. And the
-        // edge ends only the holding at the PLACE that lost its owner. (id:outer-sill-lifetime)
+        // Only the owner is an authority edge. Clearing a figure does not
+        // revoke a grant that was never ours here. (id:outer-sill-lifetime)
         if (wasOwner) {
             if (place !== OUTERSHELL) dial.ended()
-            if (place !== CORESHELL) outerDial?.ended()
+            if (place !== CORESHELL) outerPlayback.ended()
         }
         if (wasAuthored || wasOwner) paintInstruments()
     }
@@ -450,11 +284,9 @@ function mountInner(hook, { term, cm6 }) {
     // page law, scheduler reach; its faces are the contract. Faces read
     // CURRENT bodies at ask time: scheduler dies and is reborn; capture the
     // owner, ask for the body.
-    // ONE PROGRESS QUERY. `held` is derived per place from the SCOPED holder, not from the
-    // stage flag: an outer pause must not paint the core sun as held, nor the reverse.
-    // (id:outer-sill)
+    // `held` is per place, from the scoped holder, not the stage flag. (id:outer-sill)
     const progressFor = (place) => ({ ...progressAt(place), held: heldAt(stageOf(turtle), place) })
-    arena.add(registerWorld({
+    const worldFaces = {
         // Buffer's whole truth: tree parse errors ⊕ standing frame ailments,
         // at the asked PLACE so a sister never leaks ink.
         diagnostics: (addr, place) => askDiagnostics(addr, place),
@@ -464,13 +296,9 @@ function mountInner(hook, { term, cm6 }) {
         // cannot release from here (id:light-ladders-place-axis).
         attentionAt: () => law.attentionAt(),
         progress: (place) => progressFor(place),
-        // THE PASSIVE PLAYBACK FACE (id:outer-sill). Plain values for a seat at a
-        // place: no Turtle, no scheduler, no lease, no command closures. The world
-        // owner samples; the reader only depicts. Null means "nothing to depict",
-        // asked BEFORE any play lookup so a non-ready selection costs nothing.
-        // THE OUTER PORT (id:outer-sill): pure read for paint; show/depart for the edges.
-        outerPort,
-    }))
+        // Outer acquires a revocable reading, not the stage. (id:shell-playback-binding)
+        outerPort: outerPlayback.port,
+    }
 
     // Engine says "moved"; weave decides who cares (turtling never imports weave).
     // Helios needs its own timer so the sun walks through quiet `wait`.
@@ -487,48 +315,6 @@ function mountInner(hook, { term, cm6 }) {
         sun.tick()
     }
 
-    // ONE APPLICATOR: gone → runs → light → hatch. Two loops, two assignments;
-    // no dispatch, no flag inspection — the answer's shape carries the order
-    // (light-ladders-cut3 / Phase E).
-    //
-    // Seats never open the gate (hatch:false); hatch total owns it. `witness`
-    // scopes that write — only self may close self's reflect; a foreign batch
-    // naming its witness cannot silence the author (Phase B).
-    const perform = (ans, { witness, claim, localSlots, addr }) => {
-        // A gone seat or a replaced play drops the dial's hold at the seat edge in
-        // the runtime — no render is waited for. (id:host-run-pause)
-        for (const key of ans.gone) turtle.removeAmbient(key)
-        for (const r of ans.runs) {
-            const options = {
-                hatch: false,
-                vocab: r.vocab ?? null,
-                nodes: r.nodes ?? null,
-                vocabNodes: r.vocabNodes ?? null,
-            }
-            // What a source record offered; undefined is "no record news", null is a
-            // materialized record with no choices. (id:laws-construction-input)
-            if (r.choices !== undefined) options.choices = r.choices
-            const before = seatOf(turtle, r.slot)
-            const accepted = turtle.upsertAmbient(r.slot, r.name, r.code, options)
-            const seated = seatOf(turtle, r.slot)
-            // A call that put a NEW incarnation in the slot owns the recipe even when
-            // the run faulted (health is not acceptance). A GREEN reconcile of the same
-            // incarnation updates its offers only when the record was admitted; an
-            // actual refusal leaves the standing recipe alone. (id:host-run-pause)
-            const fresh = !!seated && seated.id !== before?.id
-            const prior = claim?.place === OUTERSHELL ? outerSeated : lastSeated
-            const green = !!seated && !fresh && accepted?.success === true &&
-                (r.choices === undefined || admitChoices(r.choices).ok) &&
-                prior?.slot === r.slot && prior.seatId === seated.id
-            if (claim && localSlots.has(r.slot) && (fresh || green)) {
-                const record = { addr, slot: r.slot, seatId: seated.id, name: r.name, code: r.code, options }
-                if (claim.place === OUTERSHELL) outerSeated = record
-                else lastSeated = record
-            }
-        }
-        turtle.light(ans.light, DEGREE)
-        if (ans.hatch != null) turtle.reflectGate(ans.hatch, { witness })
-    }
 
     // The law's other channel: where the ladder put attention, for the input
     // organ that addressed it. This surface's organ is here; another surface's
@@ -544,11 +330,7 @@ function mountInner(hook, { term, cm6 }) {
     // Helios alone speaks the sun: a second ☀︎ push took the status slot from
     // the live walk (id:nav-nerve-helios).
     const enact = (addr, ans, { witness = SELF } = {}) => {
-        const claim = witness === SELF && owner?.addr === addr &&
-            (owner.place === CORESHELL || owner.place === OUTERSHELL) ? owner : null
-        const localSlots = new Set(claim && ans.runs.length
-            ? law.bindingsOf(addr, claim.place, SELF).map(b => b.slot) : [])
-        perform(ans, { witness, claim, localSlots, addr })
+        playback.perform(ans, { addr, witness })
         paintInstruments()
         settle(addr, ans.at)
         // Tiny runs settle in one tick and never breathe `building`.
@@ -613,20 +395,12 @@ function mountInner(hook, { term, cm6 }) {
     }
     const quietRender = temporal.quiet(renderCore, 100)
     arena.add(quietRender.cancel)
-    // A claim is a publication, not an identity. State the owner and drop the hold
-    // it authorized BEFORE asking the dial; publish last, so a reentrant newer claim
-    // during putSource keeps its own release. (id:nav-core-sill)
+    // A claim is a publication, not an identity. Drop the hold it authorized
+    // before publish, so a reentrant claim keeps its own release. (id:nav-core-sill)
     let sourceSeq = 0
     arena.add(term.sourceBridge.sub((claim) => {
         const seq = ++sourceSeq
-        if (owner !== claim) {
-            const news = !sameSubject(owner, claim)
-            owner = claim
-            // Only a change of SUBJECT ends the commands this surface was lent. A
-            // republication is the same authority wearing a new object. (id:nav-core-sill)
-            if (news) endHoldings()
-            paintInstruments()
-        }
+        setOwner(claim)
         const release = putSource(claim)
         if (seq === sourceSeq) coreSourceRelease = release
     }))
@@ -682,8 +456,9 @@ function mountInner(hook, { term, cm6 }) {
 
     // Journal door (id:kb-3-owner) + wire edge (id:kb-9).
     const journal = createJournal();
-    arena.add(registerDoor(journal));
     arena.add(() => journal.close());
+    registerDoor(journal, arena.add);
+    if (!arena.alive) return { arena };
 
     const wireDoor = {
         root: () => journal.root(),
@@ -907,13 +682,13 @@ function mountInner(hook, { term, cm6 }) {
     const health = seatHealth({ wounds: wounds.read, subject: term.currentBufferId })
     // Lent for as long as THIS nerve is seated: it may mount after us and
     // may be replaced under us — attach owns both (kernel/attach.js).
-    arena.add(attach(nerveSeat, (seated) => seated.health(health)))
+    attach(nerveSeat, (seated) => seated.health(health), arena.add)
+    if (!arena.alive) return { arena }
     arena.add(wounds.watch(() => nerve()?.refresh()))
 
     // Scene moves from the outer surface — consumer dual of bridged.js
     // constructors: observe · attend · forget (+ restore). focus died with
     // the world sentinel; a click is attend (light-ladders-cut4).
-    // Law decides; perform() executes.
     const onObserve = ({ addr, name, code, claim }) => {
         if (claim && claim !== owner) return
         if (claim && authored?.claim === claim && authored.addr === addr) return
@@ -942,20 +717,13 @@ function mountInner(hook, { term, cm6 }) {
         // friend's held record WITH THEIR OWN BODY — including pushes that
         // arrived while drafting. Re-seating the peer from frozen text was
         // a second door onto the same fact, and a beat of blank canvas.
-        // No pre-clear: a restore retires the OUTER fact at this address and leaves a
-        // newer CORESHELL owner (if one exists) exactly where it is.
+        // A restore retires the outer fact here and leaves a newer coreshell owner.
         disown(addr, OUTERSHELL)
         enact(addr, law.restore(addr, OUTERSHELL), { witness: PEER })
     }
     arena.add(scene.sub({
         // Outer's cheap ownership claim; it never renders.
-        claim: (payload) => {
-            if (owner === payload) return
-            const news = !sameSubject(owner, payload)
-            owner = payload
-            if (news) endHoldings()
-            paintInstruments()
-        },
+        claim: setOwner,
         // One ladder step: reached cell mounts and RUNS (lazy). Line held so
         // the next edit on this addr carries it (D021).
         //
@@ -971,10 +739,9 @@ function mountInner(hook, { term, cm6 }) {
             if (authored?.addr === addr) turtle.attentionMoved()
         },
         remove: ({ ambientId, place }) => {
-            // Forgotten at the asked PLACE — later re-watch starts clean. A panel close
-            // at a shared address must not erase the other place's records.
+            // Forgotten at the asked place. A close here does not erase the other place.
             // Light total rides forget's answer — no ad-hoc focus fixup (Cut 3).
-            // Scoped removal retires the matching owner/authored at THAT place only.
+            // Retires the matching owner and authored at that place only.
             disown(ambientId, place ?? null)
             reached.delete(ambientId)
             enact(ambientId, law.forget(ambientId, place))
@@ -1105,6 +872,8 @@ function mountInner(hook, { term, cm6 }) {
         // Lifecycle machine calls this; it is a phase, not a trailing line.
         // announce is the same sentence reconnected will say (id:kb-9).
         birth: () => {
+            registerWorld(worldFaces, arena.add)
+            if (!arena.alive) return
             // Rejoin before the first breath: the journal owns the origin id.
             void reclaimWork(journal, term).then(() => {
                 if (!arena.alive) return

@@ -18,13 +18,14 @@
 import { measure } from "./relations.js"
 import { meetAll, nearest as meetNearest } from "./meet.js"
 import { ACCEPT_TOL } from "./realize.js"
-import { AUTHORED, bindWorld, boundTerm, indexByIdentities, isLiveInput, inputPosition, pointQuery, pointSubjects, payloadOf } from "./authored.js"
+import { AUTHORED, bindWorld, boundTerm, indexByIdentities, isLiveInput, inputPosition, pointQuery, pointSubjects, payloadOf, affineEdits } from "./authored.js"
 import { componentOf, realizeDistanceTree } from "./component.js"
 import { finite3 } from "./vec3.js"
 import { addressOf, bindLaw } from "./replacement.js"
 import { predicateOk } from "./expression.js"
 import { exposed } from "./batch.js"
 import { canMove, lawContext as lawCtx, pinnedLaw, positionPose } from "./candidate.js"
+import { affineHandWitness } from '../participation.js'
 import { nearestChild } from "./following.js"
 import { heldIdentity, coincidentPartners, heldFrame, hasBody } from "./constraints.js"
 
@@ -198,7 +199,7 @@ function settle(spec, candidate, worlds, pump, scope, world, { permitted, fail =
         // members. Joint methods legitimately admit more; the check is method-specific.
         // (id:laws-activation-order)
         if (!permitted.includes(id) ||
-            (spec.operation?.explicit && !spec.operation.movable.includes(id))) {
+            (spec.operation?.explicit && !spec.operation.movable.includes(id) && !spec.privateMovers?.includes(id))) {
             return { kind: 'rejected', message: `this operation may not move '${pump.registry.get(id)?.name ?? id}'`, span: spec.owner }
         }
         const frame = pump.registry.get(id)
@@ -295,6 +296,21 @@ export function continueLaws(verdict, writer, registry, laws, world) {
             const at = place(writer, bound, writerWorld, world.read(writer, null).position)
             if (at) work.set(writer, writerLocal(at))
         }
+        if (component.laws.some((law) => law.feature === 'affine')) {
+            const edits = affineEdits(component.laws, [writer.id], ctx, (id) => {
+                const frame = registry.get(id)
+                return !!frame && frame !== writer && (frame.parent === writer.parent || affineHandWitness(writer, frame, component.laws)) && canMove(frame, activeLaws)
+            })
+            if (edits?.size) {
+                const candidate = new Map(work)
+                for (const [id, at] of edits) {
+                    const frame = registry.get(id)
+                    candidate.set(frame, positionPose(world, frame, at))
+                }
+                if (lawViolation(component.laws, candidate, registry, world).status === 'valid') return candidate
+            }
+        }
+        if (component.laws.some(law => law.witnesses?.length)) return work
         let changed = true
         for (let sweep = 0; changed && sweep <= 2 * component.frames.size + 2; sweep++) {
             changed = false
@@ -384,6 +400,8 @@ function componentMeetCandidate(spec, candidate, comp, pump, scope, world, retai
     if (failed) return unsupported(spec, `cannot form the ${failed.feature}`)
     const met = meetAll(query.sets)
     if (met.kind === 'empty') {
+        if (query.laws.some((law) => law.feature === 'affine'))
+            return unsupported(spec, 'the conditional affine meet is empty with other points held')
         // Features, not identities. A distance set is anchored to the other
         // endpoint's LIVE position; a coordinate/tilt/bearing/position set is
         // anchored to its declaring scope's PLACEMENT frame. One identity can
@@ -622,6 +640,8 @@ export function applyLaw(spec, pump, world) {
         feature: spec.feature,
         endpoints: references,
         scope: spec.observer.id,
+        witnesses: spec.witnesses,
+        sourceIds: spec.sources,
         frame: row.reference === 'placement' && spec.observer.installation === true
             ? spec.observer.receiver.id : spec.observer.id,
         // A proposal derives its inputs from the BOUND CANDIDATE: a supplied term is the
@@ -711,6 +731,7 @@ export function applyLaw(spec, pump, world) {
     if (!placed.ok) {
         if (placed.kind === 'obstructed' || placed.kind === 'contradiction') {
             return { kind: placed.kind, message: placed.reason, span: spec.owner,
+                guides: placed.guides,
                 candidate: placed.world ? { frame: spec.target.id, world: placed.world } : null,
                 residual: placed.residual ?? null,
                 members: affectedMembers(pump.registry, scope,
@@ -731,8 +752,9 @@ export function applyLaw(spec, pump, world) {
     const outcome = settle(spec, candidate, worlds, pump, scope, world, {
         // Method-specific: a balanced pair admits its participants; a target-only reach admits
         // the one point it moves. (id:laws-activation-order)
-        permitted: operation.movable,
+        permitted: [...operation.movable, ...(spec.privateMovers ?? [])],
         fail: (gate, poses) => {
+            if (candidate.feature === 'affine') return unsupported(spec, conflictMessage(gate.law, candidate))
             if (policy === 'balanced') return { kind: 'relation', message: 'the free-pair proposal failed its original predicates', span: spec.owner }
             // Two lawful distances can move together: a connected distance tree responds
             // jointly before the candidate is called a failure. (id:laws-build-p3)

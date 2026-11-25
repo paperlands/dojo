@@ -35,6 +35,14 @@ const FIXTURE = {
     bearing: [{ at: bearAt(30), value: 30, off: bearAt(50), offValue: 50, offResidual: 20,
         payloadField: "value", required: framedReads,
         term: { type: "bearing", references: ["A"], frame: "S", value: 30 } }],
+    length: [{ at: [5, 0, 0], value: 16, off: [6, 0, 0], offValue: 18, offResidual: 2,
+        payloadField: "value", required: [["worldOf", "A"], ["worldOf", "L"], ["worldOf", "R"]],
+        positions: { L: [-3, 0, 0], R: [3, 0, 0] },
+        term: { type: "length", references: ["L", "A", "A", "R", "R", "L"], value: 16 } }],
+    affine: [{ at: [5, 0, 0], value: [1, -1, -1, 1], off: [6, 0, 0], offValue: [1, -1], offResidual: 2 / Math.sqrt(6),
+        payloadField: "value", required: [["worldOf", "A"], ["worldOf", "L"], ["worldOf", "R"]],
+        positions: { L: [2, 0, 0], R: [8, 0, 0] },
+        term: { type: "affine", references: ["A", "L", "R", "A"], value: [1, -1, -1, 1] } }],
 }
 const CASES = Object.entries(FIXTURE).flatMap(([feature, fixtures]) =>
     fixtures.map((fixture, i) => ({ ...fixture, feature, name: `${feature}/${i}` })))
@@ -48,7 +56,9 @@ const ctxOf = (f, at = f.at) => ({
     placementOf: (id) => id === "S" || id === "F" ? IDENT : SENTINEL_POSE,
 })
 const specOf = (f, world = f.at) => ({ law: lawOf(f), value: 999, radius: 999,
-    reachPolicy: "target-only", world, axis: f.axis ?? null, ...ctxOf(f) })
+    reachPolicy: "target-only", world, axis: f.axis ?? null,
+    ...(f.feature === 'affine' ? { worlds: new Map([["A", world]]) } : {}),
+    ...(f.feature === 'length' ? { operation: { movable: ["A"] } } : {}), ...ctxOf(f) })
 
 test("row contract: every authored reading has an independent fixture", () => {
     const rows = Object.entries(AUTHORED).filter(([, row]) => row.measure && row.validate)

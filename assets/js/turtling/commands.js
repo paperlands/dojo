@@ -1,7 +1,7 @@
 // Pure command functions — no side effects, no this-binding.
 // CommandFn = (ctx, ...args) => Delta
 // ctx   = { transform: SE3, style }
-// Delta = { transform?, style?, stroke?, point?, effects?, limits? }
+// Delta = { transform?, travel?, style?, stroke?, point?, effects?, limits? }
 //
 // pose / stroke+point / effects.
 // Point consumers use world geometry; body-relative motion keeps its explicit reference.
@@ -36,40 +36,35 @@ const refuseBadPose = (ctx, pose, expr) => {
 // --- Movement commands ---
 
 function fw(ctx, distance = 0) {
+    return relativeTravel(ctx, distance, "segment", "fw position")
+}
+
+function relativeTravel(ctx, distance, travel, expr) {
     const t = ctx.transform
-    const [wx, wy, wz] = t.rotation.rotateVec(distance, 0, 0)
-    const newPos = [t.position[0] + wx, t.position[1] + wy, t.position[2] + wz]
-    refuseBadPose(ctx, newPos, "fw position")
-    const transform = { rotation: t.rotation, position: newPos }
+    const [dx, dy, dz] = t.rotation.rotateVec(distance, 0, 0)
+    const position = [t.position[0] + dx, t.position[1] + dy, t.position[2] + dz]
+    const proposal = place(ctx, position, travel, expr)
+    proposal.transform.rotation = t.rotation
+    return proposal
+}
 
-    if (ctx.style.down) {
-        return { transform, stroke: "extend", point: newPos }
+// Travel describes the proposal, not the ink. A pen-up step still sweeps a segment.
+// The endpoint is expressed in the same chart as the input pose. (id:touch-generative-centers)
+function place(ctx, position, travel, expr = "position") {
+    refuseBadPose(ctx, position, expr)
+    const transform = { position }
+    if (travel === "segment" && ctx.style.down) {
+        return { transform, travel, stroke: "extend", point: position }
     }
-    return { transform, stroke: "break" }
+    return { transform, travel, stroke: "break" }
 }
 
-// A coordinate target is ONE completed world point, bound by the invocation. The command
-// proposes only what it changes; the executor owns the storage conversion.
-// (id:world-coordinate-phase-3)
-function place(ctx, target, stroke) {
-    refuseBadPose(ctx, target, "position")
-    const patch = { transform: { position: target } }
-    if (stroke === "extend" && ctx.style.down) return { ...patch, stroke: "extend", point: target }
-    return { ...patch, stroke: "break" }
-}
+function goTo(ctx, target) { return place(ctx, target, "segment") }
 
-function goTo(ctx, target) { return place(ctx, target, "extend") }
-
-function jmpto(ctx, target) { return place(ctx, target, "break") }
+function jmpto(ctx, target) { return place(ctx, target, "jump") }
 
 function jmp(ctx, distance = 0) {
-    const t = ctx.transform
-    const [wx, wy, wz] = t.rotation.rotateVec(distance, 0, 0)
-    const newPos = [t.position[0] + wx, t.position[1] + wy, t.position[2] + wz]
-    refuseBadPose(ctx, newPos, "jmp position")
-    const transform = { rotation: t.rotation, position: newPos }
-    // jmp always breaks the path (pen up, move, pen down)
-    return { transform, stroke: "break" }
+    return relativeTravel(ctx, distance, "jump", "jmp position")
 }
 
 // --- Rotation commands ---
@@ -247,6 +242,7 @@ function home(ctx) {
     // (+x). One way back — the same principle as the camera's recenter.
     return {
         transform: { rotation: SE3.identity().rotation, position: [0, 0, 0] },
+        travel: "jump",
         stroke: "break"
     }
 }
@@ -310,6 +306,7 @@ const SPECS = [
     def(limitMessage, ["limitMessage"], "measure"),
     def(beColour, ["beColour", "color", "colour"], "word"),
     def(null, ["shout"], "word", "measure"),   // a directive the executor answers itself
+    def(null, ["stop"]),                          // a directive the executor answers itself
 ]
 
 export const COMMANDS = new Map()

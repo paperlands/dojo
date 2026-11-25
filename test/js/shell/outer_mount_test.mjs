@@ -798,11 +798,15 @@ describe("the outer port — bound by registration, not by paint", () => {
         const calls = { show: [], depart: [], read: [] }
         return {
             calls,
-            show(addr, mount) { calls.show.push({ addr, mount }); return true },
-            depart(mount) { calls.depart.push({ mount }); return true },
-            read(mount, addr) {
-                calls.read.push({ addr })
-                return { ms: 0, phase: "running", caught: false, can: { hold: false, resume: false, replay: false } }
+            bind({ addr, mount }) {
+                calls.show.push({ addr, mount })
+                return {
+                    release() { calls.depart.push({ addr, mount }); return true },
+                    read() {
+                        calls.read.push({ addr })
+                        return { ms: 0, phase: "running", caught: false, can: { hold: false, resume: false, replay: false } }
+                    },
+                }
             },
         }
     }
@@ -827,6 +831,22 @@ describe("the outer port — bound by registration, not by paint", () => {
         }
     })
 
+    test("a ready-to-ready arrival releases and binds without a world wake", async () => {
+        const port = mkPort()
+        currentWorld = { outerPort: port }
+        try {
+            const shell = await mount()
+            shell.see(A, "fw 10")
+            assert.equal(shell.env.dataset.outerSelection, "ready")
+            shell.seeLocal(B, "fw 20")
+            assert.equal(shell.env.dataset.outerSelection, "ready")
+            assert.deepEqual(port.calls.show.map(({ addr }) => addr), [A, B])
+            assert.deepEqual(port.calls.depart.map(({ addr }) => addr), [A])
+        } finally {
+            currentWorld = null
+            wakes.length = 0
+        }
+    })
     test("a NEW registration releases the old port and binds the same seat once", async () => {
         const w1 = mkPort()
         const w2 = mkPort()
@@ -847,6 +867,32 @@ describe("the outer port — bound by registration, not by paint", () => {
             breath(); breath()
             assert.equal(w2.calls.show.length, 1, "further breaths do not rebind")
             assert.equal(w1.calls.depart.length, 1)
+        } finally {
+            currentWorld = null
+            wakes.length = 0
+        }
+    })
+
+    // A raw peer select departs at its own edge — before any body lands — and the
+    // binding's identity is the owner's incarnation, never the address alone.
+    // (id:outer-sill-lifetime)
+    test("a raw peer select departs at once; A → B → A binds A afresh", async () => {
+        const port = mkPort()
+        currentWorld = { outerPort: port }
+        try {
+            const shell = await mount()
+            shell.see(A, "fw 10")
+            assert.equal(port.calls.show.length, 1, "A is bound")
+
+            shell.selectPeer(B)
+            assert.equal(port.calls.depart.length, 1, "the departure is the command's, not a later body's")
+
+            shell.selectPeer(A)              // B never landed; A is the address still shown
+            assert.deepEqual(port.calls.show.map(({ addr }) => addr), [A, A],
+                "A returns as a NEW incarnation, never the grant that predates B")
+
+            shell.see(A, "fw 10")
+            assert.equal(port.calls.show.length, 2, "the returning body binds nothing further")
         } finally {
             currentWorld = null
             wakes.length = 0

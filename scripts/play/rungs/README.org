@@ -26,7 +26,18 @@ id:laws-ordered-replacement)
 | =protractor.plang=    | play | drag an arm tip: radial sets its length, around sets the angle |
 | =receiver-spines.plang= | play | one recipe over two supplied 3-joint chains; stride/turn twiddle; fw trails; fit before shot |
 | =conic-orbit.plang=   | play | one cone cut by a plane: pitch selects circle, ellipse, parabola or hyperbola |
+| =sliding-ellipse.plang= | play | drag either slider; change =t= to =1/2= for a circle |
+| =string-ellipse.plang=  | play | two pins and a loop; drag P and look for the same ellipse |
+| =shared-length.plang=  | play | stretch either bar and watch the other shorten; try spending the whole budget |
+| =midpoint-parallelogram.plang= | play | cross the corners; then freeze M and try the same drag |
+| =reversible-midpoint.plang= | play | grab the midpoint, then either end; the same author-defined equation holds |
+| =two-turns.plang= | play | two half-turns make a step; reverse the second step's pegs to come home |
+| =quarter-mark.plang= | play | drag the quarter-mark or the endpoint; two midpoints compose over an unseen handle |
 | =torus-knot.plang=    | play | p=2, q=3 trefoil on a torus of radii 3 and 1.2; closed parametric walk |
+
+In =sliding-ellipse=, switch sliders at the ends to go all the way round. The
+pen =P= follows the bar; it isn't a third handle. In =string-ellipse=, grab the
+pen itself. Both examples have semiaxes 60 and 100 before you change a number.
 
 A rung's *fence* is its headless suite; this directory is the second eye — the
 actual canvas. Keep both, and keep them small.

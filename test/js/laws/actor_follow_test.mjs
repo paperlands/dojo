@@ -9,7 +9,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 
-import { buildWorld, fork, worldOf } from "./harness.mjs"
+import { buildWorld, fork, drive, worldOf } from "./harness.mjs"
 import { frameWorldTransform, lawWorld } from "../../../assets/js/turtling/scheduler.js"
 import { bindLaw } from "../../../assets/js/turtling/laws/replacement.js"
 import { makeDistanceTerm } from "../../../assets/js/turtling/laws/authored.js"
@@ -81,6 +81,37 @@ function assertRecurrence(ids, before, after, radius) {
         assert.ok(dot(was, is) > 0, `${ids[k]}: antipode, not the nearest accepted child`)
     }
 }
+
+test("the walking turtle carries its own free distance point, but not a pinned one", () => {
+    for (const pinned of [false, true]) {
+        const scheduler = buildWorld()
+        const source = ["let A", ...(pinned ? ["let A.position = (100, 0)"] : []),
+            "let A.distance=100", "fw 100"].join("\n")
+        const turtle = scheduler.hotSwapChild("host", fork("host", source))
+        drive(scheduler)
+
+        const head = worldOf(turtle), point = worldOf(turtle.children.get("A"))
+        assert.deepEqual(scheduler.errors, [])
+        assert.deepEqual(head, [pinned ? 0 : 100, 0, 0])
+        assert.deepEqual(point, [pinned ? 100 : 200, 0, 0])
+        assert.equal(dist(head, point), 100)
+    }
+})
+
+test("program following does not reach into another branch", () => {
+    const scheduler = buildWorld()
+    const turtle = scheduler.hotSwapChild("host", fork("host", `as room do
+  let A
+end
+wait 1
+let A.distance=100
+fw 100`))
+    drive(scheduler)
+
+    assert.deepEqual(scheduler.errors, [])
+    assert.deepEqual(worldOf(turtle), [0, 0, 0])
+    assert.deepEqual(worldOf(turtle.children.get("room").children.get("A")), [100, 0, 0])
+})
 
 test("an actor drives a three-joint spine through the default shell", () => {
     const ids = ["A", "B", "C"]

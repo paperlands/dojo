@@ -43,6 +43,7 @@ export function createLabels(group, opts = {}) {
 // is an edit HERE. (See test/js/notation/event_vocabulary_test.mjs.)
 // A row takes (event, groups, ctx, frame) and answers nothing.
 export const MATERIALIZERS = {
+    pathmark: (event, groups, ctx) => materializePathMark(event, groups, ctx),
     path: (event, groups, ctx) => materializePath(event, groups.pathGroup, ctx.shapist, undefined, ctx.materials),
     head: (event, _groups, ctx) => materializeHead(event, ctx),
     vector: (event, _groups, ctx) => materializeVector(event, _groups, ctx),
@@ -63,26 +64,29 @@ export function materialize(event, groups, ctx, frame = null) {
 
 // --- Internal materializers ---
 
+// ONE polyline construction, shared by deposited ink and a declared mark: the scene
+// object for a run of world points is built here and nowhere else.
+function polyline(points, material) {
+    const positions = new Float32Array(points.length * 3)
+    for (let i = 0; i < points.length; i++) {
+        positions[i * 3] = points[i][0]
+        positions[i * 3 + 1] = points[i][1]
+        positions[i * 3 + 2] = points[i][2]
+    }
+    const geometry = new LineGeometry()
+    geometry.setPositions(positions)
+    const mesh = new Line2(geometry, material)
+    mesh.computeLineDistances()
+    return mesh
+}
+
 function materializePath(event, pathGroup, shapist, sourceId, materials) {
     try {
         if (!event.points || event.points.length === 0) return
 
-        const positions = new Float32Array(event.points.length * 3)
-        for (let i = 0; i < event.points.length; i++) {
-            const p = event.points[i]
-            positions[i * 3] = p[0]
-            positions[i * 3 + 1] = p[1]
-            positions[i * 3 + 2] = p[2]
-        }
-
-        const geometry = new LineGeometry()
-        geometry.setPositions(positions)
-
-        const material = materials.get(event.color, event.thickness)
-        const mesh = new Line2(geometry, material)
+        const mesh = polyline(event.points, materials.get(event.color, event.thickness))
         // Source attribution for reclaim when a target layer outlives the depositor.
         if (sourceId !== undefined) mesh._sourceId = sourceId
-        mesh.computeLineDistances()
         pathGroup.add(mesh)
 
         if (event.filled && shapist) {
@@ -229,6 +233,47 @@ function placeArrow(head, from, to) {
     head.quaternion.setFromUnitVectors(_up, _dir.set(dx / len, dy / len, dz / len))
 }
 
+// Current state, keyed by the binding. Replaced whole. One polyline per run.
+// (D055, id:path-accepted-places)
+function materializePathMark(event, groups, ctx) {
+    const store = ctx.paths
+    if (!store || !event.key) return
+    // A run of one place has no segment to draw; it is still part of the mark, so the
+    // entry exists and a later replacement can grow it.
+    const runs = (event.runs ?? []).filter((run) => Array.isArray(run) && run.length > 1)
+    let entry = store.get(event.key)
+    if (!entry) {
+        entry = { lines: [], event }
+        store.set(event.key, entry)
+    }
+    const material = ctx.materials?.get(event.color, event.thickness)
+    for (let i = 0; i < runs.length; i++) {
+        const fresh = polyline(runs[i], material)
+        const prior = entry.lines[i]
+        if (prior) {
+            // The shape is current state: swap its geometry, keep its place in the layer.
+            const stale = prior.geometry
+            prior.geometry = fresh.geometry
+            prior.material = fresh.material ?? prior.material
+            stale?.dispose?.()
+        } else {
+            groups.pathGroup?.add?.(fresh)
+            entry.lines.push(fresh)
+        }
+    }
+    for (const stale of entry.lines.slice(runs.length)) {
+        groups.pathGroup?.remove?.(stale)
+        stale.traverse?.(disposeMarkMesh)
+    }
+    entry.lines.length = runs.length
+    entry.event = event
+    ctx.requestRender?.()
+}
+
+// Geometry only: a mark's material belongs to the stage's cache, not to the mark.
+function disposeMarkMesh(object) {
+    object.geometry?.dispose?.()
+}
 function materializeVector(event, groups, ctx) {
     const store = ctx.vectors
     if (!store || !event.from || !event.to) return

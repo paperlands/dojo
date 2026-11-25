@@ -339,7 +339,7 @@ describe("the verdict — a document with a dead cell is not well", () => {
         assert.equal(v.state, "error", "the peer seam names the broken line")
         assert.equal(v.wound, primaryWound(found, "b1"))
         assert.equal(v.wound.kind, "parse")
-        assert.match(v.wound.message, /number of loops after 'for'/)
+        assert.match(v.wound.message, /one count after 'for'/)
     })
 })
 

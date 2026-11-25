@@ -104,8 +104,8 @@ defmodule Dojo.MixProject do
     else
       # Pinned by SHA, not a branch: a branch name in mix.exs is what let the
       # lock drift to the v5 tip while the source assumed v6 (D070). The SHA is
-      # the fork's `reorg/v6.3.2-port` tip, sliced into reviewable PRs upstream.
-      [github: "paperlands/partisan", ref: "bf16654c0c9bec4aac999e38cd43167ad2ae17d1"]
+      # the reviewed `reorg/v6.3.2-repair` tip; repairs live in the fork, not an overlay.
+      [github: "paperlands/partisan", ref: "2a1ecd28cdeac6b4bbf798d717d9667d32e2db32"]
     end
   end
 

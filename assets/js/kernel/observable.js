@@ -1,11 +1,6 @@
-// One watch/notify — the breath every half-adopted list reimplements.
-//
-// Anonymous watchers — each watch() its own INSTALLATION: the same fn may be
-// installed twice and hears once per installation. The fan snapshots installs
-// at notify and checks the token at delivery: removal retires at once, a
-// birth mid-fan waits for the next breath. (id:ownership-o2)
-// Carries whatever notify is handed: the cell's breath carries nothing; a
-// store carries the new signal.
+// Each watch is its own installation. Delivery checks live membership; new installs wait.
+// No fault policy here: subscriber exceptions propagate unless the caller supplies a boundary.
+// (id:ownership-o2, id:cell-publication)
 
 export function createObservable() {
     // Registration is an INCARNATION: a token, not the function's identity.

@@ -29,7 +29,7 @@ function wordSet(words) {
 const keywordList = [
     "draw",  "as", "def", "label", "erase", "goto", "do", "fw", "forward", "fd", "rt", "right", "dive", "roll",
     "hd", "hide", "grid", "shout",  "lt", "left", "show", "wait", "beColour", "color", "colour", "jmp", "jump", "fill",
-    "jmpto", "jumpto", "faceto", "end", "ensure", "for", "when", "loop", "bold", "fn", "let"
+    "jmpto", "jumpto", "faceto", "end", "ensure", "for", "when", "loop", "stop", "until", "bold", "fn", "let"
 ];
 
 const keywords    = wordSet(keywordList);

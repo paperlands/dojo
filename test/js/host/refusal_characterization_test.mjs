@@ -57,4 +57,48 @@ describe('legacy: a refused play has already replaced the seat', () => {
         assert.equal(typeof threw.wound?.message, 'string')
         world.dispose()
     })
+
+    test('a syntax-only refusal still replaces the seat and keeps no prefix', async () => {
+        const { world } = headlessWorld()
+        const first = await world.play('let s = 3\nwait 30')
+        const ended = first.finished.then(() => 'settled', error => error.reason)
+        await assert.rejects(world.play('let Broken = ('), error => {
+            assert.equal(error.reason, 'fatal')
+            assert.equal(error.wound.kind, 'parse')
+            return true
+        })
+        assert.equal(await ended, 'superseded')
+        assert.deepEqual(world.interaction.read('s'), { kind: 'missing' })
+        world.dispose()
+    })
+
+    test('a parsed call wound keeps the prefix and still refuses before a run exists', async () => {
+        const { world } = headlessWorld()
+        const first = await world.play('let s = 3\nwait 30')
+        const ended = first.finished.then(() => 'settled', error => error.reason)
+        // `nope` is a Call. parseProgram does not refuse it.
+        await assert.rejects(world.play('let s = 4\nnope'), error => {
+            assert.equal(error.reason, 'fatal')
+            assert.equal(error.wound.kind, 'walk')
+            return true
+        })
+        assert.equal(await ended, 'superseded')
+        assert.deepEqual(world.interaction.read('s'), value(4))
+        world.dispose()
+    })
+
+    test('a wound behind a wait is accepted, then fatal on the new run', async () => {
+        const { world, turtle } = headlessWorld()
+        const first = await world.play('let s = 3\nwait 30')
+        const ended = first.finished.then(() => 'settled', error => error.reason)
+        const run = await world.play('wait 0.01\nnope')
+        assert.equal(await ended, 'superseded', 'the old run dies at the attempt, before the later wound')
+        turtle.advance(1000)
+        await assert.rejects(run.finished, error => {
+            assert.equal(error.reason, 'fatal')
+            assert.equal(error.wound.kind, 'walk')
+            return true
+        })
+        world.dispose()
+    })
 })

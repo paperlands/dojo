@@ -9,7 +9,7 @@ import {
     QUALITY_MEDIUM,
     QUALITY_LOW,
 } from '../../utils/mediabunny.min.mjs';
-import { composeLayers, inkOf } from './picture.js';
+import { capScale, composeLayers, cropInto, encodeURL, inkBox, inkOf } from './picture.js';
 
 
 export const RecorderQuality = {
@@ -317,10 +317,6 @@ export class Recorder {
         this._pausedTime = 0;
         this._lastFrameTime = 0;
 
-        // Snapshot state
-        this._snapshotCanvas = null;
-        this._snapshotContext = null;
-
         // Statistics
         this._stats = {
             framesRecorded: 0,
@@ -347,6 +343,9 @@ export class Recorder {
             bitrateMode: 'variable',
             snapshotFormat: 'png',
             snapshotQuality: 0.95,
+            // Longest edge of a still, in pixels; null keeps the surface's own size.
+            // A cap trades the record's resolution for a cheaper readback and encode.
+            snapshotMaxEdge: null,
             targetFrameTime: null,
             dropFramesWhenBehind: true,
             
@@ -601,16 +600,14 @@ export class Recorder {
             format: options.format || this._config.snapshotFormat,
             quality: options.quality || this._config.snapshotQuality,
             trim: options.trim !== false,
+            // The full frame is owed only to a save; the keep publishes the crop.
+            full: options.full !== false,
+            maxEdge: options.maxEdge ?? this._config.snapshotMaxEdge ?? null,
         };
+        // Flush ink dies at thumbnail size; two pixels of air keep the last stroke.
+        const AIR = 2;
 
         try {
-            if (!this._snapshotCanvas) {
-                this._snapshotCanvas = document.createElement('canvas');
-                this._snapshotContext = this._snapshotCanvas.getContext('2d', {
-                    willReadFrequently: false,
-                });
-            }
-
             // Caller-supplied pixels (the async PBO readback in stage.hatch)
             // must be used as-is: by the time this runs the non-preserved
             // drawing buffer has been composited and cleared, so a readPixels
@@ -626,28 +623,47 @@ export class Recorder {
             }
 
             this._flipPixelsVertically(pixels, width, height);
-            
-            const imageData = new ImageData(new Uint8ClampedArray(pixels), width, height);
-            
-            this._snapshotCanvas.width = width;
-            this._snapshotCanvas.height = height;
-            this._snapshotContext.putImageData(imageData, 0, 0);
+
+            // A view over the readback's own bytes: one copy of the frame, not two.
+            const imageData = new ImageData(
+                new Uint8ClampedArray(pixels.buffer, pixels.byteOffset, pixels.length), width, height);
+
             // The picture is every surface, not just the buffer: the caller hands
             // over the layers that sit above the canvas, and they land here — one
             // GPU blit each — before anything is encoded.
             const layers = options.layers ?? [];
-            composeLayers(this._snapshotContext, layers, width, height);
-            const fullDataURL = this._snapshotCanvas.toDataURL(`image/${config.format}`, config.quality);
-            
-            let trimmedDataURL = null;
-            if (config.trim) {
-                trimmedDataURL = this._createTrimmedSnapshot(
-                    inkOf(this._snapshotContext, layers, width, height, imageData), config);
-            }
-            
+            const still = document.createElement('canvas');
+            still.width = width;
+            still.height = height;
+            // Written once, read once: this surface never goes to the GPU, and a
+            // software backing keeps the trim's readback off the fast-path warning.
+            const stillCtx = still.getContext('2d', { willReadFrequently: true });
+            stillCtx.putImageData(imageData, 0, 0);
+            composeLayers(stillCtx, layers, width, height);
+
+            // One crop decision, one blit per still: the whole frame only when a record
+            // asked for it, and never a synchronous encode. (id:host-surface)
+            const box = config.trim ? inkBox(inkOf(stillCtx, layers, width, height, imageData)) : null;
+            const stillOf = (area, pad) => {
+                const scale = capScale(config.maxEdge, area.width + pad * 2, area.height + pad * 2);
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.round((area.width + pad * 2) * scale));
+                canvas.height = Math.max(1, Math.round((area.height + pad * 2) * scale));
+                cropInto(canvas.getContext('2d', { willReadFrequently: false }), still, area, { pad, scale });
+                return canvas;
+            };
+            const wantFull = !config.trim || config.full;
+            const [full, trimmed] = await Promise.all([
+                wantFull
+                    ? encodeURL(stillOf({ x: 0, y: 0, width, height }, 0), config.format, config.quality)
+                    : null,
+                box ? encodeURL(stillOf(box, AIR), config.format, config.quality) : null,
+            ]);
+
+            // `full` is null when nobody asked for it: a save needs one, a hatch does not.
             return {
-                full: fullDataURL,
-                trimmed: trimmedDataURL,
+                full,
+                trimmed,
                 width,
                 height,
             };
@@ -762,61 +778,6 @@ export class Recorder {
             pixels.copyWithin(topOffset, bottomOffset, bottomOffset + bytesPerRow);
             pixels.set(temp, bottomOffset);
         }
-    }
-
-    _createTrimmedSnapshot(imageData, config) {
-        const { width, height } = imageData;
-        const data = imageData.data;
-        
-        let xMin = width, xMax = -1, yMin = height, yMax = -1;
-
-        for (let y = 0; y < height; y++) {
-            let hasPixelInRow = false;
-            const rowStart = y * width * 4;
-
-            for (let x = 0; x < width; x++) {
-                const alpha = data[rowStart + x * 4 + 3];
-                if (alpha > 0) {
-                    hasPixelInRow = true;
-                    if (x < xMin) xMin = x;
-                    if (x > xMax) xMax = x;
-                }
-            }
-
-            if (hasPixelInRow) {
-                if (y < yMin) yMin = y;
-                yMax = y;
-            }
-        }
-
-        if (xMax < xMin || yMax < yMin) {
-            return null;
-        }
-        // Flush ink dies at thumbnail size; 2px air keeps the last stroke.
-        const pad = 2;
-        const inkW = xMax - xMin + 1;
-        const inkH = yMax - yMin + 1;
-        const trimWidth = inkW + pad * 2;
-        const trimHeight = inkH + pad * 2;
-
-        this._snapshotCanvas.width = trimWidth;
-        this._snapshotCanvas.height = trimHeight;
-
-        const trimmedImageData = this._snapshotContext.createImageData(trimWidth, trimHeight);
-        const trimmedData = trimmedImageData.data;
-        const rowBytes = inkW * 4;
-
-        for (let y = 0; y < inkH; y++) {
-            const srcRowStart = ((yMin + y) * width + xMin) * 4;
-            const dstRowStart = ((y + pad) * trimWidth + pad) * 4;
-            trimmedData.set(
-                data.subarray(srcRowStart, srcRowStart + rowBytes),
-                dstRowStart
-            );
-        }
-
-        this._snapshotContext.putImageData(trimmedImageData, 0, 0);
-        return this._snapshotCanvas.toDataURL(`image/${config.format}`, config.quality);
     }
 
     _cleanup() {

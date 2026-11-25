@@ -1,12 +1,13 @@
 // One descriptor per authored relation. Entries stay explicit; wiring is uniform.
 // A descriptor is not a registry that hides branches. (id:relationships-row-contract)
 
+import { affineResidual, affineProject, affineCoefficients } from "./affine.js"
 import { AXES, wrapDegrees, realizeBearing } from "./relationships.js"
 import { forwardOf, DEG, headingOf, compassOf, wrapPositive, upOf } from "./relations.js"
 import { realizeDistance, realizeFreeDistance, validateDistance, realizeTilt, ACCEPT_TOL } from "./realize.js"
-import { nearest as meetNearest, plane as planeSet, sphere as sphereSet, point as pointSet, cone as coneSet, halfplane as halfplaneSet } from "./meet.js"
+import { nearest as meetNearest, plane as planeSet, sphere as sphereSet, point as pointSet, cone as coneSet, halfplane as halfplaneSet, twoFocus, meetAll, EMPTY, SPACE, UNRESOLVED } from "./meet.js"
 import { SE3 } from "../se3.js"
-import { sub, dot, len, finite3 } from "./vec3.js"
+import { add, sub, scale, dot, len, finite3 } from "./vec3.js"
 
 const AXIS_IDX = { x: 0, y: 1, z: 2 }
 const axisOk = (axis) => AXES.includes(axis)
@@ -251,6 +252,10 @@ export function boundReferences(law) {
 const distance = {
     name: "distance",
     family: "relational", kind: "length",
+    // A relational payload is a reading like any other: a live RHS makes the law a
+    // driver, a literal one costs nothing. The capability permits; the readings decide.
+    // (id:laws-dependency-driven-place)
+    drive: true,
     guard: { finite: true, nonNegative: true }, bounds: { min: 0, max: Infinity },
     properties: ["distance"],
     reachPolicies: ["target-only", "balanced"],
@@ -352,6 +357,266 @@ const distance = {
         return c
     },
     points: (law) => (checkedDistanceTerm(law)?.references ?? []).filter(identityToken),
+}
+
+// Both spellings bind the same flat sequence of undirected pairs, not a path through the list.
+export function makeLengthTerm(refs, value, source, paired = false) {
+    const references = paired ? refs : refs.slice(1).flatMap((b, i) => [refs[i], b])
+    return makeValueTerm('length', { references, value, source })
+}
+
+function* pairs(refs) {
+    for (let i = 0; i < refs.length; i += 2) yield [refs[i], refs[i + 1]]
+}
+function lengthTerm(law) {
+    const t = law?.expression
+    return t?.type === 'length' && Array.isArray(t.references) && t.references.length >= 2 && t.references.length % 2 === 0 &&
+        t.references.every(distanceInputOk) && Number.isFinite(t.value) && t.value >= 0 ? t : null
+}
+
+function spanLength(t, ctx, moved) {
+    let total = 0
+    for (const [a, b] of pairs(t.references)) {
+        const p = moved?.get(a) ?? inputPosition(a, ctx), q = moved?.get(b) ?? inputPosition(b, ctx)
+        if (!finite3(p) || !finite3(q)) return NaN
+        total += len(sub(p, q))
+    }
+    return total
+}
+
+// Hold the other vertices: fixed spans spend the budget; at most two arms remain.
+function lengthGeometry(law, ctx) {
+    const t = lengthTerm(law), moving = ctx.writerId
+    if (!t?.references.includes(moving)) return null
+    const refs = t.references
+    const arms = []
+    let fixed = 0
+    for (const [a, b] of pairs(refs)) {
+        if (a === moving && b === moving) continue
+        if (a === moving || b === moving) {
+            arms.push(inputPosition(a === moving ? b : a, ctx))
+        } else {
+            const p = inputPosition(a, ctx), q = inputPosition(b, ctx)
+            if (!finite3(p) || !finite3(q)) return null
+            fixed += len(sub(p, q))
+        }
+    }
+    if (!arms.every(finite3) || !Number.isFinite(fixed)) return null
+    return { arms, fixed, budget: t.value - fixed }
+}
+
+function lengthSet(law, ctx) {
+    const geometry = lengthGeometry(law, ctx)
+    if (!geometry) return null
+    const { arms, budget } = geometry
+    if (budget < -ACCEPT_TOL) return EMPTY
+    if (arms.length === 0) return budget <= ACCEPT_TOL ? SPACE : EMPTY
+    if (arms.length === 1) return budget <= 0 ? pointSet(arms[0]) : sphereSet(arms[0], budget)
+    if (arms.length !== 2) return UNRESOLVED
+    return twoFocus(arms[0], arms[1], budget)
+}
+
+// Independent tips: projecting their radii onto the length budget minimizes squared motion.
+function independentSpans(t, spec, movers) {
+    if (!t) return null
+    let fixed = 0
+    const bars = new Map()
+    const moving = new Set(movers)
+    for (const [a, b] of pairs(t.references)) {
+        if (a === b && identityToken(a)) continue
+        const p = inputPosition(a, spec), q = inputPosition(b, spec)
+        if (!finite3(p) || !finite3(q)) return null
+        const first = moving.has(a), second = moving.has(b)
+        const r = len(sub(p, q))
+        if (!first && !second) { fixed += r; continue }
+        const id = first ? a : b
+        if (first && second || bars.has(id)) return null
+        const base = first ? q : p, arm = sub(first ? p : q, base)
+        bars.set(id, { base, arm, r })
+    }
+    const available = t.value - fixed
+    if (bars.size !== movers.length || !Number.isFinite(available) || available < 0) return null
+    const radii = [...bars.values()].map(({ r }) => r).sort((a, b) => b - a)
+    if (radii.some((r) => !Number.isFinite(r))) return null
+    let shift = 0, total = 0
+    for (let i = 0; i < radii.length; i++) {
+        total += radii[i]
+        shift = (available - total) / (i + 1)
+        if (i + 1 === radii.length || radii[i + 1] + shift <= 0) break
+    }
+    return new Map([...bars].map(([id, { base, arm, r }]) =>
+        [id, add(base, scale(r > 0 ? scale(arm, 1 / r) : spec.tie, Math.max(0, r + shift)))]))
+}
+
+// A lawful SOURCE is a placement, never an absence of edits the gate must then refuse.
+// One mover names one position; several (or an unreadable baseline) name none, which is
+// the empty answer their guards already allowed. No second reader, no widened rights.
+// (id:laws-hand-action-state, D058)
+const sourcePlacement = (spec) => {
+    const only = spec.operation?.movable?.length === 1 ? spec.operation.movable[0] : null
+    const base = only == null ? null : spec.worldOf(only)
+    return { ok: true, worlds: finite3(base) ? new Map([[only, base]]) : new Map() }
+}
+const length = {
+    name: 'length', family: 'relational', kind: 'length', spanSum: true, autoMovers: true,
+    drive: true,
+    guard: { finite: true, nonNegative: true },
+    address: (endpoints, law) => lengthTerm(law)?.references ?? endpoints,
+    endpoints: (spec) => spec.participants?.map((f) => f.id) ?? targetOnly(spec),
+    normalizeTerm: ({ endpoints, predicate, source }) => makeLengthTerm(endpoints, predicate, source),
+    term: lengthTerm,
+    ...payloadSlot('value'),
+    participants: (law) => [...new Set((lengthTerm(law)?.references ?? []).filter(identityToken))],
+    references(law) {
+        return (lengthTerm(law)?.references ?? []).flatMap((r) => identityToken(r)
+            ? [{ id: r, aspect: 'position' }]
+            : isFramedInput(r) ? [{ id: r.frame, aspect: r.relative ? 'position' : 'placement' }] : [])
+    },
+    points: (law) => length.participants(law),
+    set: lengthSet,
+    constraint(law, ctx) {
+        const t = lengthTerm(law)
+        if (t && ctx.heldOf && length.participants(law).some((id) => id !== ctx.writerId && !ctx.heldOf(id))) {
+            const spans = [...pairs(t.references)].filter(([a, b]) => a !== b && (a === ctx.writerId || b === ctx.writerId))
+                .map(([a, b]) => [inputPosition(a === ctx.writerId ? b : a, ctx), ctx.worldOf(ctx.writerId)])
+                .filter((pair) => pair.every(finite3))
+            return { feature: 'length', spans }
+        }
+        const set = lengthSet(law, ctx)
+        return set ? { feature: 'length', set } : null
+    },
+    measure(law, ctx) {
+        const t = lengthTerm(law)
+        return t ? verdict(law, spanLength(t, ctx) - t.value) : unreadable(law)
+    },
+    propose(spec) {
+        if (length.measure(spec.law, spec).status === 'valid') return sourcePlacement(spec)
+        const movers = spec.operation.movable
+        if (movers.length !== 1) {
+            const worlds = movers.length > 1 ? independentSpans(lengthTerm(spec.law), spec, movers) : null
+            if (worlds) return { ok: true, worlds }
+            return { ok: false, kind: 'unresolved', reason: 'length placement needs one adjustable point or independent adjustable tips' }
+        }
+        const writerId = movers[0]
+        const ctx = { ...spec, writerId }
+        const geometry = lengthGeometry(spec.law, ctx)
+        // A temporary hold can't prove impossibility. Only fixed inputs earn this witness.
+        if (geometry?.arms.length === 2 &&
+            spec.operation.held.every((r) => isLiveInput(r) ? finite3(spec.pinWorld?.(r)) : !r.relative)) {
+            const minimum = geometry.fixed + len(sub(...geometry.arms))
+            const t = lengthTerm(spec.law)
+            if (Number.isFinite(minimum) && minimum - t.value > ACCEPT_TOL) {
+                const guides = [...pairs(t.references)].map((span) => span.map((r) => inputPosition(r, spec)))
+                return { ok: false, kind: 'contradiction', guides,
+                    reason: `length ${t.value} is too short; these spans need at least ${minimum}` }
+            }
+        }
+        const q = pointQuery(writerId, spec.retained, { ...spec, writerId })
+        const set = q.complete ? meetAll(q.sets) : UNRESOLVED
+        const near = meetNearest(set, spec.worldOf(writerId), { keep: spec.worldOf(writerId) })
+        return near.ok ? { ok: true, world: near.at } : { ok: false, kind: 'unresolved',
+            reason: set.kind === 'empty' ? 'no point can meet the length with the other points held' : 'no supported placement for this route' }
+    },
+    validate(spec) {
+        const t = lengthTerm(spec.law)
+        const moving = spec.operation?.movable[0]
+        const moved = spec.worlds ?? (spec.world == null ? null : new Map([[moving, spec.world]]))
+        const residual = t ? spanLength(t, spec, moved) - t.value : NaN
+        return Math.abs(residual) <= ACCEPT_TOL ? { ok: true, residual }
+            : { ok: false, reason: 'the candidate does not keep the route length' }
+    },
+}
+
+function affineTerm(law) {
+    const t = law?.expression
+    return t?.type === 'affine' && Array.isArray(t.references) && Array.isArray(t.value) &&
+        t.references.length > 0 && t.references.length <= 64 && t.value.length === t.references.length &&
+        [...t.references].every(identityToken) && [...t.value].every((x) => x === 1 || x === -1) &&
+        t.value.reduce((a, b) => a + b, 0) === 0 ? t : null
+}
+
+export function affineEdits(laws, seeds, ctx, movable) {
+    const pending = laws.filter((law) => law.feature === 'affine').map((law) => [affineTerm(law), law.endpoints, law.witnesses ?? []])
+    const island = new Set(seeds), rows = []
+    const witnesses = new Set()
+    for (let grew = true; grew;) {
+        grew = false
+        for (let i = pending.length - 1; i >= 0; i--) {
+            const [term, ids, locals] = pending[i]
+            if (!term || !ids.some((id) => island.has(id))) continue
+            for (const id of ids) island.add(id)
+            rows.push(term)
+            for (const id of locals) witnesses.add(id)
+            if (rows.length > 32 || island.size > 32) return null
+            pending.splice(i, 1)
+            grew = true
+        }
+    }
+    if (!rows.length) return null
+    const axes = new Map([...island].filter(movable).map((id) => [id, new Set([0, 1, 2])]))
+    for (const law of laws) {
+        const id = law.endpoints[0]
+        if (law.feature === 'coordinate') axes.get(id)?.delete(AXIS_IDX[law.axis])
+        if (law.feature === 'position') axes.delete(id)
+    }
+    return affineProject(rows, ctx.worldOf, (id) => [...(axes.get(id) ?? [])], witnesses)
+}
+
+const affine = {
+    name: 'affine', kind: 'vector', guard: {}, autoMovers: true,
+    address: (endpoints, law) => [law.owner?.line ?? null, ...(affineTerm(law)?.references ?? endpoints),
+        ...(affineTerm(law)?.value ?? [])],
+    endpoints: (spec) => spec.participants?.map((f) => f.id) ?? targetOnly(spec),
+    normalizeTerm: ({ endpoints, predicate, source }) => makeValueTerm('affine', { references: endpoints, value: predicate, source }),
+    term: affineTerm,
+    ...payloadSlot('value'),
+    inputs: (term) => affineTerm({ expression: term }) ? [...affineCoefficients(term).keys()] : [],
+    participants: (law) => affine.inputs(affineTerm(law)),
+    references: (law) => [...new Set(affineTerm(law)?.references ?? [])].map((id) => ({ id, aspect: 'position' })),
+    points: (law) => affine.participants(law),
+    tautology: (law) => {
+        const t = affineTerm(law)
+        return t != null && affine.inputs(t).length === 0
+    },
+    set(law, { writerId, worldOf }) {
+        const t = affineTerm(law)
+        if (!t) return null
+        const terms = affineCoefficients(t)
+        const c = terms.get(writerId)
+        if (!c) return SPACE
+        const at = [0, 0, 0]
+        for (const [id, k] of terms) {
+            if (id === writerId || k === 0) continue
+            const p = worldOf(id)
+            if (!finite3(p)) return null
+            for (let j = 0; j < 3; j++) at[j] -= k / c * p[j]
+        }
+        return finite3(at) ? pointSet(at) : null
+    },
+    constraint(law, ctx) {
+        if (affine.participants(law).some((id) => id !== ctx.writerId && !ctx.heldOf?.(id))) return { feature: 'affine' }
+        const set = affine.set(law, ctx)
+        return set ? { feature: 'affine', set } : null
+    },
+    measure(law, ctx) {
+        const t = affineTerm(law)
+        return t ? verdict(law, affineResidual(t, ctx.worldOf)) : unreadable(law)
+    },
+    propose(spec) {
+        // A private (witness) law always takes the metric below: a lawful pose is not
+        // evidence that its witnesses were interpreted. (id:laws-hand-action-state)
+        if (!spec.law.witnesses?.length && affine.measure(spec.law, spec).status === 'valid')
+            return sourcePlacement(spec)
+        const worlds = affineEdits(spec.retained, spec.law.endpoints, spec, (id) =>
+            spec.operation.movable.includes(id) || spec.privateMovers?.includes(id))
+        return worlds ? { ok: true, worlds } : { ok: false, kind: 'unresolved', reason: 'no bounded affine placement' }
+    },
+    validate(spec) {
+        const t = affineTerm(spec.law)
+        const residual = t ? affineResidual(t, (id) => spec.worlds?.get(id) ?? spec.worldOf(id)) : NaN
+        return residual <= ACCEPT_TOL ? { ok: true, residual }
+            : { ok: false, kind: 'unresolved', reason: 'the candidate does not satisfy the affine equality' }
+    },
 }
 
 const position = defaults({
@@ -459,6 +724,7 @@ const coordinate = defaults({
 
 const tilt = defaults({
     name: "tilt",
+    drive: true,
     reference: "placement",
     family: null, kind: "angle",
     guard: { finite: true }, bounds: { min: 0, max: 180 },
@@ -519,6 +785,7 @@ const bearing = defaults({
     name: "bearing",
     reference: "placement",
     family: "relational", kind: "angle",
+    drive: true,
     guard: { finite: true }, bounds: null,
     properties: ["bearing"],
     address: one,
@@ -567,7 +834,7 @@ const bearing = defaults({
 
 
 // Explicit rows. A new authored relation is one more object here, not a new seam.
-export const AUTHORED = { distance, position, coordinate, tilt, bearing }
+export const AUTHORED = { distance, position, coordinate, tilt, bearing, length, affine }
 
 // Which features admit a dependency-driven revision, and the datum space a driver
 // re-applies them in. A capability is DATA a row declares; the shared mechanisms

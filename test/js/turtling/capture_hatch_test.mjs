@@ -103,8 +103,15 @@ function world(kind, opts) {
         setTimeout: (fn) => { gpu.polls.push(fn) },
         getRecorder: () => box.recorder,
     }
+    // The asks this cut makes of the recorder, in order: what a still costs is the
+    // production hatch's decision, so the fixture records it. (id:host-surface)
+    box.asks = []
     box.recorder = {
-        takeSnapshot: async ({ pixels }) => ({ trimmed: `pic-${pixels[0]}`, full: `full-${pixels[0]}` }),
+        takeSnapshot: async (options) => {
+            box.asks.push(options)
+            const { pixels } = options
+            return { trimmed: `pic-${pixels[0]}`, full: `full-${pixels[0]}` }
+        },
     }
     const vm = createContext(scope)
     const hatch = runInContext(`(${hatchFn})`, vm)
@@ -147,6 +154,8 @@ test("GL1 and GL2 publish the whole lent body, and a later save belongs to the n
         assert.equal(pushed[0].message, null, kind)
         assert.equal("claim" in pushed[0], false, kind)
         assert.equal(rig.sent.some((event) => event[0] === "saveRecord"), false, kind)
+        // A hatch publishes the crop; only a save owes the whole frame's encode.
+        assert.equal(rig.box.asks[0].full, false, `${kind}: a reflect owes no frame encode`)
     }
 })
 
@@ -402,6 +411,7 @@ test("a dispose inside the save callback cannot publish the cut", async () => {
     const shot = await settled(rig.hatch(rig.bridge, () => ({ body: seen(), claim: owner })))
     assert.equal(shot, null, "the closed stage cancels this cut")
     assert.equal(rig.sent.filter((e) => e[0] === "saveRecord").length, 1, "the save itself happened")
+    assert.equal(rig.box.asks[0].full, true, "a save is what pays for the whole frame")
     assert.equal(rig.sent.some((e) => e[0] === "hatchTurtle"), false, "no hatch after death")
 })
 

@@ -1,6 +1,5 @@
 // The number is the breakpoint. The line wash only arrives on an actual catch.
 export function createCatchMark({ Decoration, EditorView, StateEffect, StateField, GutterMarker, gutter }, choose) {
-    // A host without CodeMirror state offers no line numbers to mark.
     if (![Decoration, EditorView, StateEffect, StateField, GutterMarker, gutter]
         .every(api => typeof api === 'function' || typeof api === 'object' && api != null)) {
         return { extension: [], paint() {} }
@@ -50,8 +49,7 @@ export function createCatchMark({ Decoration, EditorView, StateEffect, StateFiel
             domEventHandlers: {
                 mousedown: (view, block, e) => {
                     if (e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return false
-                    // The gutter is not a caret. Focus would invoke the editor's
-                    // mobile nudge, an edit that can disturb the very run caught here.
+                    // Not a caret. Focusing can edit the page under the catch.
                     e.preventDefault()
                     return choose(view, view.state.doc.lineAt(block.from).number)
                 },

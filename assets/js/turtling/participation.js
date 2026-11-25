@@ -29,3 +29,37 @@ export function mayAddressParticipant(requester, subject, registry) {
     return !requester.closed || isWithinRegion(requester, subject) ||
         isSuppliedParticipant(requester, subject, registry)
 }
+
+const namedRecipe = (frame) => frame?.closed && frame.profile === 'derived' && frame.seed?.recipe != null
+
+export function affineScope(observer) {
+    if (!namedRecipe(observer)) return null
+    while (namedRecipe(observer.parent)) observer = observer.parent
+    return observer
+}
+
+export const affineHome = observer => affineScope(observer)?.parent ?? null
+
+// Only a named recipe may own a witness; callers forward an identity, not a spelling.
+export function localToAffine(frame, observer) {
+    if (!frame?.isPlace) return false
+    for (let owner = observer; namedRecipe(owner); owner = owner.parent) {
+        if (frame.parent === owner) return true
+    }
+    return false
+}
+
+export function affineForwarded(frame, observer) {
+    for (let owner = observer; namedRecipe(owner); owner = owner.parent) {
+        if (frame.parent === owner) return true
+        if (!owner.seed.question?.includes(frame)) return false
+    }
+    return true
+}
+export function affineWitness(frame, laws) {
+    return laws.some(law => law.witnesses?.includes(frame.id))
+}
+
+export function affineHandWitness(writer, frame, laws) {
+    return affineHome(frame.parent) === writer.parent && affineWitness(frame, laws)
+}

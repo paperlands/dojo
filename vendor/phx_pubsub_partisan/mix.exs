@@ -36,7 +36,7 @@ defmodule PhxPubSubPartisan.MixProject do
   defp partisan_dep do
     case System.get_env("PARTISAN_PATH") do
       nil ->
-        [github: "paperlands/partisan", ref: "bf16654c0c9bec4aac999e38cd43167ad2ae17d1"]
+        [github: "paperlands/partisan", ref: "2a1ecd28cdeac6b4bbf798d717d9667d32e2db32"]
 
       path ->
         Path.type(path) == :absolute ||

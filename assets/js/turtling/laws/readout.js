@@ -376,6 +376,17 @@ export function createReadouts({ permits = () => true } = {}) {
         readsink(frame) {
             reading()?.frames.add(frame)
         },
+        // A value stands on the frames it read, and on the values it read: provenance is
+        // transitive, so a retirement that names an input reaches the reader too.
+        // (id:laws-dependency-driven-place)
+        framesOf(id, seen = new Set()) {
+            const node = nodes.get(id)
+            if (!node || seen.has(id)) return []
+            seen.add(id)
+            const frames = [...(node.frames ?? [])]
+            for (const dep of node.deps ?? node.prevDeps ?? []) frames.push(...this.framesOf(dep, seen))
+            return frames
+        },
 
         // A node PRODUCES a frame (a derived place's output): the frame depends on it.
         // The scheduler states the fact; the store only closes the graph with it.

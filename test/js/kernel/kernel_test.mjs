@@ -160,6 +160,69 @@ describe("createCell — registry-of-one", () => {
         unA()
         assert.equal(cell.get(), b)
     })
+
+    test("a throwing reader cannot veto registration or strand other readers", (t) => {
+        const cell = createCell()
+        const failure = new Error("reader failed")
+        const report = t.mock.method(console, "error", () => {})
+        const seen = []
+        cell.watch(() => { throw failure })
+        cell.watch(() => seen.push(cell.get()))
+        const value = {}
+        const unregister = cell.register(value)
+        unregister()
+        assert.deepEqual(seen, [value, null])
+        assert.deepEqual(report.mock.calls.map(({ arguments: args }) => args.at(-1)), [failure, failure])
+    })
+
+    test("scoped publication is revoked before dependent teardown during a reader's call", () => {
+        const cell = createCell()
+        const scope = createArena()
+        const seen = []
+        scope.add(() => seen.push(["terminal teardown", cell.get()]))
+        cell.watch(() => {
+            if (cell.get()) scope.destroy()
+        })
+        cell.watch(() => seen.push(["later reader", cell.get()]))
+
+        cell.register("new terminal", scope.add)
+        assert.equal(scope.alive, false)
+        assert.equal(cell.get(), null)
+        assert.deepEqual(seen, [
+            ["later reader", null], ["terminal teardown", null], ["later reader", null],
+        ])
+    })
+
+    test("a dead scope cannot preempt; a reentrant successor survives prior teardown", () => {
+        const cell = createCell()
+        const prior = createArena()
+        const value = {}
+        let successor
+        const once = cell.watch(() => {
+            once()
+            successor = cell.register(value)
+            prior.destroy()
+        })
+        const first = cell.register(value, prior.add)
+        first()
+        assert.equal(cell.get(), value)
+        assert.throws(() => cell.register({}, prior.add), /use after destroy/)
+        assert.equal(cell.get(), value)
+        successor()
+        assert.equal(cell.get(), null)
+    })
+
+    test("an adoption that retires before publication never displaces an incumbent", () => {
+        const cell = createCell()
+        const prior = cell.register("incumbent")
+        const seen = []
+        cell.watch(() => seen.push(cell.get()))
+        const release = cell.register("cancelled", (retire) => retire())
+        release()
+        assert.equal(cell.get(), "incumbent")
+        prior()
+        assert.deepEqual(seen, [null])
+    })
 })
 
 describe("createArena — one lifetime, no individual free", () => {
@@ -308,6 +371,33 @@ describe("attach — a claim that lives exactly as long as the occupant", () => 
         cell.register({})
         detach()
         assert.equal(binds, 2)
+    })
+
+    test("failure of the eager bind leaves no subscription to bind a later occupant", () => {
+        const cell = createCell()
+        cell.register("first")
+        const seen = []
+        assert.throws(() => attach(cell, (value) => {
+            seen.push(value)
+            if (value === "first") throw new Error("cannot bind")
+        }), /cannot bind/)
+        cell.register("second")
+        assert.deepEqual(seen, ["first"])
+    })
+
+    test("scope death during the eager bind cleans the returned claim and unhears the seat", () => {
+        const cell = createCell()
+        const scope = createArena()
+        const seen = []
+        cell.register("first")
+        attach(cell, (value) => {
+            seen.push(value)
+            scope.destroy()
+            return () => seen.push("release " + value)
+        }, scope.add)
+        assert.deepEqual(seen, ["first", "release first"])
+        cell.register("second")
+        assert.deepEqual(seen, ["first", "release first"])
     })
 })
 

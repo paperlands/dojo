@@ -1,8 +1,6 @@
-// A source breakpoint on the play: resolve an accepted statement, stop the
-// executor at that node boundary before it runs, and take the caller's scoped
-// hold after materialization. Continue passes that node once; the breakpoint
-// stays armed. Top-level statements and loop bodies only; function bodies are
-// not claimed. (id:nav-core-sill)
+// Stop before the accepted statement, then take the caller's hold.
+// Continue passes that node once; the arm stays. Function bodies are not
+// claimed. (id:nav-core-sill)
 
 function siteIn(frame, line) {
     const stack = [...(frame?.seed?.ast ?? [])]
@@ -26,12 +24,11 @@ export function catchSite(turtle, seat, line) {
     return node ? { line: node.span.line, type: node.type } : null
 }
 
-// The caller owns the lease; `cancel`/`resume` release only the receipt it got.
-// No timer and no public observer: the compositor's normal drive carries it.
+// The caller owns the lease. No timer, no public observer.
 export function createPlayCatch(turtle, { seat, line, hold = null, release = null, witness = null } = {}) {
     const schedulerOf = () => turtle?.scheduler ?? null
     const compositorOf = () => turtle?.compositor ?? null
-    let state = 'off'          // off | armed | waiting | hit | waiting-hold | paused | stale | unreachable | cancelled
+    let state = 'off'
     let site = null
     let frame = null
     let run = null
@@ -71,14 +68,9 @@ export function createPlayCatch(turtle, { seat, line, hold = null, release = nul
         return true
     }
 
-    // PURE: does this catch still bind the play it was armed on? A READER asks this
-    // to describe the arm; only an EDGE may retire it. Asking used to detach, so
-    // `catchReading()` destroyed the arm it was describing — and then reported the
-    // row available. Reads are not commands. (id:nav-core-sill)
+    // A read describes the arm. Only an edge retires it. (id:nav-core-sill)
     const stale = () => {
-        // A drive can land between the editor's transaction and any notification. Ask
-        // the source site itself, so a stop cannot fire on an arm whose document is
-        // gone. (id:nav-core-sill)
+        // Ask the source: a drive can land before any notice. (id:nav-core-sill)
         if (witness != null && witness() !== true) return true
         const scheduler = schedulerOf()
         if (!frame || !scheduler) return false
@@ -86,7 +78,7 @@ export function createPlayCatch(turtle, { seat, line, hold = null, release = nul
         if (scheduler.root.children.size !== 1) return true
         return scheduler.root.children.get(seat) !== frame || frame.run !== run
     }
-    // Retirement happens on edges that already exist: a drive pass, or a cancel.
+    // A drive or a cancel retires. A read does not.
     const checkStale = () => (stale() ? detach('stale') : false)
 
     const handle = {
@@ -104,7 +96,6 @@ export function createPlayCatch(turtle, { seat, line, hold = null, release = nul
         get receipt() { return receipt },
         get breakpointHit() { return pendingBreak },
         sink(ambient, event) {
-            // The DRIVE is where a stale arm is retired — not a reader, not a gutter.
             if (checkStale()) return
             if (!handle.armed || matched || ambient !== frame) return
             if (event?.type !== 'breakpoint' || event.line !== line) return

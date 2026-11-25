@@ -60,18 +60,18 @@ function completePoint(components, cursorHeight, state) {
     return bad === undefined ? point : refusePoint(bad, state)
 }
 
-export function* bindTarget(raw, state, cursorHeight) {
+export function* bindTarget(raw, state, readCursorHeight) {
     const parts = raw.map(unwrapSingleton)
     if (parts.length === 1 && (isBeing(parts[0]) || typeof parts[0] === 'string')) {
         return yield* projectPosition(parts[0], state.deps)
     }
     if (parts.length === 1 && Array.isArray(parts[0])) {
-        return completePoint(validateVector(parts[0], state), cursorHeight, state)
+        return completePoint(validateVector(parts[0], state), readCursorHeight(), state)
     }
     if (parts.some(value => isBeing(value) || Array.isArray(value))) {
         throw new Error('a coordinate target takes one point or its components, not both')
     }
-    return completePoint(parts, cursorHeight, state)
+    return completePoint(parts, readCursorHeight(), state)
 }
 
 // A display reads a being's location; a word hole alone does not. (id:world-coordinate-phase-3)

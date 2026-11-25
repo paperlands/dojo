@@ -266,6 +266,63 @@ ordinary signed referring statements versus literal same-payload co-signatures.
 State-capture priors: [[id:keep-prior-state-capture]] — document versus session;
 last emitted value versus restorable state; preserve core AST and scoped hydration.
 
+** keep reconciliation — durable facts, disposable schedules
+:PROPERTIES:
+:ID: nav-keep-reconciliation
+:KEYWORDS: keep cluster TLC TLA Jepsen frontier serving floor starvation receipt Partisan LAN
+:PATH: specs/weave/keep-reconciliation.org
+:END:
+[[id:keep-reconciliation-inquiry][Inquiry and results]]. =probe/keep-reconciliation/=
+models the original range-budget failure and replays the repaired floor and receipt
+behavior. The signed cold relay runs via =scripts/verify/lan_test.sh test/dojo/cluster/keep_lan_test.exs=.
+The named-byte branch witness is [[id:keep-reconciliation-siblings]]:
+=test/dojo/keep/sibling_replay_test.exs= checks six arrival orders, reopen,
+comparison, and selective room delivery; not live link recovery.
+[[id:keep-reconciliation-pong][Heartbeat root cause]] traces delayed Partisan
+pongs and samples live Keep RPCs without restarting either survivor.
+[[id:keep-reconciliation-lifecycle][Reconnect lifecycle]] follows rebind,
+per-channel dials, membership, RPC and exact signed range repair; the monitor-only
+control isolates the five-second RPC delay without changing the network.
+The two repairs that follow live in [[id:bounded-control-work][bounded control work]]:
+timed-RPC deadline surfaces =deps/partisan/src/partisan_erpc.erl= +
+=partisan_monitor.erl=; stale-dial test surfaces the hyparview manager's
+=connect/1= call sites.
+[[id:reconnect-authority-and-projection][Adoption vs publication]] isolates a
+reversed NEIGHBOR guard in a disposable BEAM and decomposes the recovery trace.
+
+** deferred reconnect repair — owner-validated maintenance
+:PROPERTIES:
+:ID: nav-deferred-reconnect-repair
+:KEYWORDS: partisan reconnect convoy worker late completion ABA publication snapshot watermark
+:PATH: specs/weave/deferred-reconnect-repair.org
+:END:
+[[id:reconnect-deferred-maintenance][Scope and completion license]]: passive maintenance only, one worker globally;
+JOIN/NEIGHBOR/promote remain synchronous, TCP-established admission stays explicit.
+=bash scripts/verify/reconnect_unit.sh= · =bash scripts/verify/reconnect_publication.sh=.
+Held-attempt/EOF/50-tick check: =test/dojo/cluster/deferred_repair_lan_test.exs=;
+=node-local= traces via =test/support/reconnect_probe.ex=. Fixes are committed at the pinned fork revision.
+
+** keep cluster transport — signed history and reported durable prefixes
+:PROPERTIES:
+:ID: nav-keep-cluster-transport
+:KEYWORDS: keep partisan replication acknowledgement ack partition roam restart bounded range source overlay recovery
+:PATH: specs/weave/keep-transport-consolidation.org
+:END:
+=bash scripts/verify/keep_transport.sh= is the combined gate; it stops on failure.
+Keep uses =control= explicitly; the driver is not a production periodic service.
+Recovery miss: retained in =/home/putra/reconnect-lab/keep-transport-20261119/=;
+bounded observers live in =test/support/transport_recovery_probe.ex=.
+
+** mesh lifecycle hunt — trace the first wrong transition
+:PROPERTIES:
+:ID: nav-mesh-lifecycle-hunt
+:KEYWORDS: partisan reconnect dead row dispatch roam seed 625227 PubSub lifecycle receipt
+:PATH: specs/weave/mesh-lifecycle-hunt.org
+:END:
+[[id:mesh-lifecycle-hunt][Bug register]] · [[id:mesh-lifecycle-replication][Replication order]] · [[id:mesh-lifecycle-evidence][Evidence schema]].
+Separate row retirement, actual directed payload receipt, and durable Keep
+acknowledgement. Start with the same-channel dead-row TCP control.
+
 ** keep hash — text → hex64, one engine always
 :PROPERTIES:
 :ID: nav-keep-hash
@@ -972,6 +1029,30 @@ Book-grounded inquiry, not a new engine: distinguish configuration, prescribed p
 and model-derived evolution. Exact free-particle control, context/ownership checks,
 and bounded plang probes; reuse Keep's owned capture rather than a harness store.
 
+** path — one geometry from a declaration or a walk
+:PROPERTIES:
+:ID: nav-path-walk
+:KEYWORDS: path facet polyline jmpto goto append plot spirograph linkage intersect touch
+:PATH: specs/compiler/path-a-walk-of-places.org::path-a-walk-of-places
+:END:
+Proposal, not runtime: =X.path= reads declared geometry or an accepted turtle trace.
+Intersect either; touch finds the first contact along a candidate move before admission.
+[[file:specs/compiler/path-usecase-brief.org::path-usecase-brief][Dojo brief]] — the candidate base, two substitution tests, and what further prior work must earn.
+First executable slice (candidate): =assets/js/turtling/geometry.js::spanCrossing= and =executor.js::walkPlaces=;
+=tests= in =test/js/laws/path_crossing_test.mjs=, specimen in =scripts/play/rungs/path-crossing.plang=.
+[[id:path-usecase-crossing-review][Review]] — bounded trace retention, keyed guide marks, and guarded straight steps.
+=loop until touch(guide.path)= is exercised by =test/js/laws/touch_step_test.mjs= and
+=scripts/play/rungs/touch-stop.plang=. A loop's head is a count, a fact, or nothing at
+all — =loop 10=, =loop until touch(<path>)=, =loop= — so there is ONE repetition; the
+body's own =stop= closes it too. Entry reads a retained screen; accepted contact ends
+the loop. An unbounded loop requires a finite slice and a usable breath cadence.
+=loop until x == 10= shares the =when= condition reader and checks before each body.
+[[id:touch-route-consolidation][Route consolidation]] — command travel provenance, one proposal chart, overlap entry, and one admission/close.
+[[id:touch-pose-prefix][Pose-prefix witness]] — arc versus chord, independent radius certification, and accepted-route output.
+[[id:path-sufficiency][Sufficiency test]]: feed the intersection and accepted trace into another construction or walk.
+[[file:specs/compiler/path-priors.org::path-priors][Path priors]] — geometric point vs occurrence, linkage branch, contact prefix, and shared time.
+[[file:specs/compiler/path-set-algebra.org::path-set-algebra][Path set algebra]] — open endpoints, reusing geometry, and R-tree broad phase versus exact classification.
+
 ** embodied play — advance, turn, meet again
 :PROPERTIES:
 :ID: nav-embodied-play
@@ -1286,6 +1367,88 @@ movement permission; the whole-law gate stays authoritative and no selective
 acceptance is wired. Direct predicate incidence only — ancestor-placement propagation
 into descendants' effective positions is not yet modelled.
 [[id:laws-free-relations-read-validity]]. Fence: =test/js/laws/incidence_test.mjs=.
+
+** two ellipses — rails and taut string
+:PROPERTIES:
+:ID: nav-ellipse-constructions
+:KEYWORDS: ellipse trammel rails pin focus foci string pen loop conic
+:PATH: test/js/laws/ellipse_constructions_test.mjs
+:END:
+=scripts/play/rungs/{sliding-ellipse,string-ellipse}.plang= make the same shape.
+The sliders reuse coordinate and distance laws; the pen is an interpolated place.
+=length(F,P,G,F)= fixes the length of an ordered route. Pins and paper are separate
+laws. Holding two foci gives an ellipsoid; the plane cuts it into an ellipse.
+[[id:laws-taut-string]].
+
+** shared length — two bars, one budget
+:PROPERTIES:
+:ID: nav-shared-length
+:KEYWORDS: span sum length budget distance independent bars
+:PATH: test/js/laws/shared_length_test.mjs
+:END:
+=length(F,P,G)= and =distance(F,P) + distance(P,G)= bind the same two spans.
+The independent-tip reach splits any correction by least squared displacement;
+the hand gives the grabbed tip priority. =scripts/play/rungs/shared-length.plang=
+lets either tip spend the budget. [[id:laws-shared-length]].
+At the exact two-focus minimum the locus is a finite segment. A shorter witnessed
+budget with fixed foci draws the attempted spans in red until repair.
+
+** midpoint play — an identical picture can have different premises
+:PROPERTIES:
+:ID: nav-midpoint-proof-play
+:KEYWORDS: Varignon midpoint affine proof substitution provenance settled cut same-name replacement
+:PATH: test/js/laws/midpoint_play_test.mjs
+:END:
+=scripts/play/rungs/midpoint-parallelogram.plang= uses driven positions and
+keyed ink, not a theorem gate. Fence: cross corners, then freeze one midpoint
+at the same initial pose and repeat the drag. [[id:laws-midpoint-proof-play]].
+Mendel's controls: [[file:probe/proof-substitution-mendel/RESULTS.org::proof-substitution-mendel-results][premise retirement, coincident substitutes and unsettled cuts]].
+
+** affine recipes — an equality has no output slot
+:PROPERTIES:
+:ID: nav-affine-recipe
+:KEYWORDS: affine equality difference rank reversible midpoint authored occurrences cancellation
+:PATH: assets/js/turtling/laws/affine.js
+:END:
+=let m.position - a.position = b.position - m.position= works inside an
+ordinary recipe. Projection uses merged weights and admitted axes; validation
+reads the original occurrences. =scripts/play/rungs/reversible-midpoint.plang=
+and =test/js/laws/affine_recipe_test.mjs=. [[id:laws-affine-recipe]].
+=scripts/play/rungs/two-turns.plang= nests half-turn → step → trail.
+=test/js/laws/two_turns_test.mjs= contrasts the same endpoint equation with
+different intervening handles and different drag responses.
+Private affine recipes: =scripts/play/rungs/quarter-mark.plang=,
+=test/js/laws/private_recipe_test.mjs=. [[id:laws-two-turns]].
+The [[file:probe/private-recipe-projection/README.org::private-recipe-projection-results][private-recipe experiment]]
+is the pre-runtime comparison.
+
+** geometry table — a crossing and a contact use the same geometry
+:PROPERTIES:
+:ID: nav-geometry-table
+:PATH: probe/geometry-table/README.org
+:KEYWORDS: meet join trail firefly collision ray mirror reflection refraction
+:END:
+[[file:probe/geometry-table/README.org::geometry-table][Open the standalone play bench]].
+Firefly draws or remembers a finite crossing; Light bench takes
+the first contact and separately stops, reflects, or refracts.
+[[file:probe/geometry-table/README.org::geometry-table-race][Race the light]]: one score, a finite sweep, and an independent ray;
+block the gate to separate the quickest legal crossing from refraction.
+[[file:probe/read-or-try/README.org::read-or-try-cut][Read or try]]:
+live quarter-mark control for accepted observation, hypothetical
+measurement, and actual publication. [[id:laws-read-try-publish]].
+[[file:probe/touch-step/README.org::touch-step-witness][Touch inside a step]]:
+a fixed screen clips real pen motion and hand motion; the coupled
+quarter-mark shows why a clip is not merely a cursor edit.
+[[id:laws-touch-step-boundary]].
+The executable milestones and debugger intent fence are in
+[[file:specs/compiler/touch-generative-sequence.org::touch-generative-sequence][Walk to the screen]].
+The adversarial [[id:touch-foundation-review][foundation gate]] and [[file:probe/touch-step/foundation.mjs][red-control probe]] distinguish
+travel from a pose delta, and private adoption from public settlement.
+[[id:touch-step-performance][Touch profiling]]: [[file:test/js/profile/touch_step_bench.mjs][headless bench]] separates segment query, admission and scheduling costs.
+The [[id:touch-parser-free-walk-reading][parser-free walk audit]] checks suffix ownership, scope restoration, and adoption under channel debt.
+The [[id:touch-walk-play][Chromium play lab]] runs the same walk through the compositor with a screen slider and short/long strides.
+The [[id:touch-inline-miss-reading][same-pump miss trial]] uses [[file:probe/touch-step/observed-cut.mjs][an outside reader]]
+to check settled cuts under hold and channel debt.
 
 ** framed composition — original terms through the hand
 :PROPERTIES:
@@ -1616,6 +1779,7 @@ lifetimes compose differently; reach fallback reuses its retained question (=ope
 :PATH: assets/js/turtling/laws/program_following.js
 :PATH: assets/js/turtling/scheduler.js::acceptVerdict
 :END:
+Program followers can be settled free siblings or direct children of the moving turtle.
 The tree orders placement; it does not require a homogeneous conjunction. A follower keeps its
 radial accepted-bond offer if ready originals hold, else existing =pointQuery/meet/nearest=
 views condition it. Future adjustable POSITION reads defer; stable PLACEMENT reads do not.
@@ -2704,8 +2868,14 @@ Fences: =backpressure_spike_test.mjs= (C3, S6, P5, park doors for S16),
 re-entry function; wall-sample reductions must preserve distinct reset boundaries.
 [[id:scheduler-data-state-shapes][State-shape witness]] — equal progress labels, distinct causal
 obligations; a nested work slice used to lose its caller's deadline.
-[[id:runtime-state-tla][Runtime TLA+ checks]] — restored nested deadlines and stale
-allowance counterexamples across fresh play or a hold/resume pair.
+[[id:runtime-state-tla][Runtime TLA+ checks]] — restored nested deadlines; reset
+edges revoke the one in-flight allowance sample (no counter).
+[[id:probe-state-model-question][State-model crosses]] — exact-incarnation read records, dual revision
+fences, and an exact authored wait that distinguishes normalized from raw wall gaps.
+[[id:probe-live-observation-results][Live observation crosses]] — receiver feedback, peer pursuit,
+finished figures, and a stale attempt that can undo an accepted hand move.
+[[id:probe-fresh-attempt-results][Fresh aim attempt]] — sample peer and receiver together; distinguish
+relevant edits from a world revision, including the successful no-op handoff.
 [[id:probe-host-fresh-reentry][Fresh-play reentry]] — Chromium public-door and native
 single-tick witnesses: a superseded drive spends its old horizon on the new source.
 =probe/state-model/fresh-reentry*.mjs=; compare serial entry with run-scoped work.
@@ -3271,11 +3441,29 @@ already carries the persistent =bg-base-200/50=, so nothing else is needed.
 :KEYWORDS: lifecycle boot seam queue booting live dead handleEvent dropped event zombie mount phx dispatch dual-origin
 :PATH: assets/js/hooks/shell/lifecycle.js
 :END:
-booting → live → dead. Events register before the first await (the mount
-patch's own push_events are otherwise lost); the queue drains at live; a
-mid-boot destroy stands the mount down. The door is =window= =phx:*=
-(server push, client =dispatchPhx=, or =JS.dispatch= bubbling from body) —
-origin does not matter; timing does. Pure — =test/js/shell/lifecycle_test.mjs=.
+Acquire and register before async boot; ingest =phx:*= at arrival. Birth and
+FIFO replay finish before direct dispatch. Failure and destroy close the same
+arena. [[id:shell-installation][Contract and priors]] · =test/js/shell/lifecycle_test.mjs=.
+
+** Outer playback binding — selection is not a paint edge
+:PROPERTIES:
+:ID: nav-outer-playback-binding
+:KEYWORDS: outerPort bind release reading playback selection displayed ready-to-ready retirement dial authority
+:PATH: assets/js/hooks/shell/outer-playback.js
+:END:
+World lends =bind({mount, addr, selected}) → {read, release}|null=. Outer
+reconciles the subject and port, not the DOM label; an old release cannot end
+a successor's hold. [[id:shell-playback-binding][Contract]] · =test/js/shell/{inner,outer}_mount_test.mjs=.
+
+** Scene playback — one admission for Core and Outer
+:PROPERTIES:
+:ID: nav-shell-scene-playback
+:KEYWORDS: scene playback perform apply admitted slot incarnation controls prepareReplay Hand choices green peer restore
+:PATH: assets/js/hooks/shell/scene-playback.js
+:END:
+Applies page answers and retains the admitted local document recipe by slot.
+Both dials use =controls(place, selectedAddr)=; restart preflights one Hand
+sample before native seating. [[id:shell-scene-playback][Contract]] · =test/js/shell/scene_playback_test.mjs=.
 
 ** outer-shell payload — one envelope, two producers
 :PROPERTIES:
@@ -3338,8 +3526,9 @@ Upgrade: =scripts/vendor/vendor-three-lines.sh=. Dojo-owned on top: =GrowLine.js
 :KEYWORDS: kernel cell createCell register get watch changed breathes stage-cell idiom later mount wins
 :PATH: assets/js/kernel/cell.js::export function createCell
 :END:
-One occupant, owner-guarded release. Optional breath. Stage, world, navigator,
-terminals all sit on this.
+One occupant, owner-guarded release. =register(value, adopt?)= hands ownership
+of the release to =adopt= before synchronous notification. A failed reader
+cannot veto the seat. [[id:cell-publication][Contract]] · =test/js/kernel/kernel_test.mjs=.
 
 ** kernel observable — one watch/notify
 :PROPERTIES:
@@ -3364,11 +3553,9 @@ throws. =test/js/kernel/kernel_test.mjs=.
 :KEYWORDS: kernel attach claim seat occupant rebind reseat release lend health project nerve cell watch late mount successor
 :PATH: assets/js/kernel/attach.js::export function attach
 :END:
-=attach({get, watch}, bind)= — bind the standing occupant and every successor;
-the previous release runs FIRST, so a claim never stacks and a departing
-occupant never leaves a live one behind. Was hand-rolled three times in three
-shapes (a claim-once guard in =outer.js=, a release-then-relend in =inner.js=,
-a bare thunk in =weave.js=). =nerveSeat= (=hooks/nerve.js=) is the named view.
+=attach({get, watch}, bind, adopt?)= releases before rebinding; stale in-flight
+claims are released at return. Adopt detach before the eager bind; failed eager
+setup unhears the seat. [[id:cell-attachment][Contract]] · =nerveSeat= is the named view.
 
 ** kernel motion — an animation the browser may never run
 :PROPERTIES:

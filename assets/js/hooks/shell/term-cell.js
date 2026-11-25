@@ -13,8 +13,8 @@ function cellFor(role) {
     return cell
 }
 
-export function register(role, term) {
-    return cellFor(role).register(term)
+export function register(role, term, adopt) {
+    return cellFor(role).register(term, adopt)
 }
 
 export function get(role) {

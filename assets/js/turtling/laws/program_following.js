@@ -55,7 +55,9 @@ export function programFollowing(verdict, root, registry, laws, world) {
     for (const id of shape.members) {
         if (id === root.id) continue
         const member = registry.get(id)
-        if (!member || member.parent !== root.parent || !canMove(member, activeLaws)) return null
+        if (!member || !canMove(member, activeLaws)) return null
+        // A child's placement is independent of the live head. (id:laws-free-relations-f4-actor)
+        if (member.parent !== root.parent && member.parent !== root) return null
     }
     const readyIncidence = indexByIdentities(scope.laws, boundParticipants)
     const reference = new Map()

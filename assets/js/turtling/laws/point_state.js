@@ -6,6 +6,7 @@ import { frameWorldTransform, worldTransform } from "../scheduler.js"
 import { bindWorld, constraintsView, indexByIdentities, pointSubjects } from "./authored.js"
 import { stateOf, heldIdentity, hasBody } from "./constraints.js"
 import { exposed } from "./batch.js"
+import { affineWitness } from '../participation.js'
 
 // A read pass borrows one unchanged model; discard it before mutation or yielding. (D058)
 export function preparePointRead(scheduler) {
@@ -13,7 +14,7 @@ export function preparePointRead(scheduler) {
     const states = new Map()
     const held = new Map()
     return (frame) => {
-        if (!laws) laws = indexByIdentities(scheduler.laws.active(), pointSubjects)
+        if (!laws) laws = indexByIdentities(scheduler.laws.active(), law => [...pointSubjects(law), ...(law.witnesses ?? [])])
         if (!states.has(frame)) states.set(frame, readPointState(frame, scheduler, laws, (id) => {
             if (!held.has(id)) held.set(id, heldIdentity(scheduler.registry.get(id), laws, scheduler.registry))
             return held.get(id)
@@ -40,10 +41,12 @@ function readPointState(frame, scheduler, laws, heldOf) {
     // ONE query, consumed together: the surviving records and the unavailable contributions
     // share a single interpretation. (D058)
     const view = constraintsView(frame.id, laws, ctx)
-    return stateOf({
+    const subjectLaws = laws instanceof Map ? (laws.get(frame.id) ?? []) : laws
+    const isWitness = affineWitness(frame, subjectLaws)
+    const state = stateOf({
         at: frameWorldTransform(frame).position,
         headed: hasBody(frame),
-        exposed: exposed(frame),
+        exposed: exposed(frame) && !isWitness,
         isPlace: frame.isPlace === true,
         error: frame.error ?? null,
         // A failed attempt's hold is not an offer. The pin still draws (its previous state),
@@ -54,4 +57,5 @@ function readPointState(frame, scheduler, laws, heldOf) {
         unavailable: view.unavailable,
         constraints: view.constraints,
     })
+    return isWitness ? { ...state, private: true } : state
 }

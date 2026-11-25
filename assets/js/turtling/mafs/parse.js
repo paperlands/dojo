@@ -4,6 +4,10 @@ import { getOperator } from "./operators.js"
 import { isOpenType, isCloseType, closerTypeFor, glyphOf } from "./delimiters.js"
 import { isNumericLiteral } from "./number.js"
 import { SCALAR_BUILTINS, SHADOWABLE_BUILTINS } from "./tower.js"
+// The value-side callables the algebra does not own (a shape is not a measure).
+// One signature list, shared with the dispatcher, so the parser cannot accept a
+// spelling the runtime refuses — or refuse one it answers. (id:path-accepted-places)
+import { CALLABLE_ARITY } from "../geometry.js"
 
 // A held value is not a name: it gets its own node, exactly as a string literal
 // does, so no evaluation can resolve a capture as a reference. Plain data is copied,
@@ -386,6 +390,9 @@ export class Parser {
             const arities = this.builtins.get(name)
             if (Array.isArray(arities) ? arities.includes(arity) : arities === arity) return true
         }
+        // A declared value callable: `*` means its arity is its places, not a number.
+        const external = Object.hasOwn(CALLABLE_ARITY, name) ? CALLABLE_ARITY[name] : undefined
+        if (external !== undefined && (external === '*' || external === arity)) return true
         return this.userspace.has(this.makeKey(name, arity))
     }
 

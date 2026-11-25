@@ -25,6 +25,8 @@ if [ "${DOJO_LAN_NS:-}" != "1" ]; then
   echo "compiling lan + test before entering the namespace..."
   if [ ! -d _build/lan/lib/phoenix_live_view ]; then
     MIX_ENV=lan mix deps.compile --no-deps-check
+  elif [ ! -f _build/lan/lib/phx_pubsub_partisan/ebin/phx_pubsub_partisan.app ]; then
+    MIX_ENV=lan mix deps.compile phx_pubsub_partisan --no-deps-check
   fi
   DOJO_LAN_DIR="$dir" DOJO_LAN_NODE=build MIX_ENV=lan mix compile --no-deps-check >/dev/null
   MIX_ENV=test mix compile --no-deps-check >/dev/null

@@ -58,13 +58,8 @@ export const buildExtensions = (cm6, {
         // Reserve bottom margin so cursor doesn't sit flush against mobile keyboard edge
         EditorView.scrollMargins.of(() => ({ bottom: 32 })),
 
-        // Mobile: the keyboard opens on focus and CM6 does not always bring the
-        // caret into view. ASK FOR THE SCROLL — this handler used to type a space
-        // and delete it again, which rewrote the document on every focus: two
-        // claims published, two undo steps, autosave dirtied, the one hold
-        // released, and a running source re-seated because its text had changed.
-        // A focus may move the viewport; it may not touch the page.
-        // NEVER on a read-only surface: the outershell is a review of another's.
+        // A focus may move the viewport. It may not touch the page.
+        // Not on a read-only surface.
         EditorView.domEventHandlers({
             focus: (event, view) => {
                 setTimeout(() => {

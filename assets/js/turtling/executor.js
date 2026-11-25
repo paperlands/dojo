@@ -12,9 +12,12 @@ import { demand, measure, conditionOf, FINITE } from "./numerics.js"
 import { notice } from "./report.js"
 import { isBeing } from "./frame.js"
 import { extend, project, isLocal } from "./bindings.js"
-import { evalOrBlock, readsDeferred } from "./expressions.js"
+import { evalOrBlock, readOrBlock, readsDeferred } from "./expressions.js"
 import { acquireArgument, bindTarget, bindDisplay, readPointArgs, consumerOf, holeDomain, isTargetCall } from "./arguments.js"
 import { declareExistence, declareValue, declareLaw, spawnEvent } from "./declarations.js"
+// The accepted trace: a walk's own geometry, in the one world chart.
+// (id:path-accepted-places)
+import { firstMeeting, incidence, isPath, recordPlace } from "./geometry.js"
 
 // typeof guard: bare process?.env throws on undeclared process in the browser.
 const envNum = (name) => {
@@ -27,6 +30,8 @@ const envNum = (name) => {
 const DEFAULT_BREATH_EVERY = envNum("DOJO_BREATH") || 512
 // Self-break long strokes so the meter can see them (rate, not truth).
 const DEFAULT_STROKE_MAX = envNum("DOJO_STROKE_MAX") || 512
+// A trail has a ceiling. Past it the read says so. (id:path-accepted-places)
+const DEFAULT_TRACE_MAX = envNum("DOJO_TRACE_MAX") || 100_000
 // Charge one reduction. A construction budget refuses exhaustion rather than
 // returning a shortened answer. (id:laws-living-figures-review-next)
 function chargeReductions(state) {
@@ -115,6 +120,7 @@ export function createActorState(opts = {}) {
         // The beat ledger: source lines walked since the last temporal joint.
         // One `beat` event per wait, not one per node. (id:host-beat)
         beatLines: new Set(),
+        breakLine: null,   // catch: stop BEFORE this source line
         loopCounter: opts.loopCounter || 0,
         mailbox: opts.mailbox || null,
         motionProtocol: opts.motionProtocol === true,
@@ -122,6 +128,18 @@ export function createActorState(opts = {}) {
         // Rebase inbox: a component transaction posts a pose here; this worker adopts
         // it at its next step. The scheduler never writes `transform` directly.
         rebase: undefined,
+        // Accepted places, only when the host asks. Off means no allocation. (id:path-accepted-places)
+        trace: opts.traceGeometry === true ? [] : null,
+        tracePlaces: 0,
+        traceMax: opts.traceMax ?? DEFAULT_TRACE_MAX,
+        // Past its bound a trail is not silently shortened: a read says so by name.
+        traceOverflow: false,
+        // A rebase moved the turtle without a command: the next step must start a
+        // new run rather than draw an edge nobody walked.
+        rebased: false,
+        touch: null,         // one retained screen, scoped to its owning loop
+        loop: null,          // identity of the nearest loop, never inherited by a child
+        close: null,         // only the addressed loop consumes this request
     }
 }
 
@@ -203,14 +221,26 @@ function adoptRebase(state) {
     if (state.rebase === undefined) return
     state.transform = state.rebase
     state.rebase = undefined
+    // Nobody walked here, so the trace must not span it. (id:path-accepted-places)
+    state.rebased = true
 }
 
-const PURE_POINT_READ = /^[A-Za-z_][A-Za-z0-9_]*\.(?:x|y|z)$/
+const PURE_POINT_READ = /^[A-Za-z_][A-Za-z_0-9]*\.(?:x|y|z)$/
+
+function* conditionHolds(expr, scope, state, span) {
+    const asked = demand(yield* evalOrBlock(expr, scope, state.deps), { as: 'condition', expr, span })
+    if (asked.notice) yield asked.notice
+    return asked.verdict === 'take' && asked.value !== 0
+}
 
 function* walkBody(body, scope, state, stroke) {
     let matched = false
 
     for (const node of body) {
+        // A close ends THIS body at once: the suffix after the accepted prefix does not
+        // run. The request rides outward to the loop it ADDRESSES, and is cleared there,
+        // so the caller past that loop continues. (id:touch-generative-centers)
+        if (state.close) break
         adoptRebase(state)   // a component rebase lands before this node reads pose
         // Offer preemption every breathEvery visits — work meter, not emits.
         chargeReductions(state)
@@ -221,6 +251,10 @@ function* walkBody(body, scope, state, stroke) {
         // may visit the same line many times between waits. The wait is the
         // joint, not the ink: it stays out, so the beat's last line is the line
         // that drew or turned. (id:host-beat)
+        if (node.span?.line != null && state.breakLine === node.span.line) {
+            state.breakLine = null
+            yield { type: "breakpoint", line: node.span.line }
+        }
         if (node.span?.line != null && !(node.type === "Call" && node.value === "wait")) {
             state.beatLines.add(node.span.line)
         }
@@ -228,33 +262,70 @@ function* walkBody(body, scope, state, stroke) {
         switch (node.type) {
 
         case 'Loop': {
-            // A count is a decision too: a count that is not a finite number is not a
-            // count, so the loop is not taken — and the author is told why.
-            const asked = demand(yield* evalOrBlock(node.value, scope, state.deps),
-                { as: "count", expr: node.value, span: node.span ?? null })
-            if (asked.notice) yield asked.notice
-            if (asked.verdict !== "take") continue
-            const times = asked.value
-            const prevCount = state.loopCounter
-            for (let i = 0; i < times; i++) {
-                // Observed a sibling → voluntary yield so ambients lockstep (coop MT).
-                if (i > 0 && state.deps.mathEvaluator._observedSibling) {
-                    state.deps.mathEvaluator._observedSibling = false
-                    yield {
-                        type: 'yield',
-                        position: [...state.transform.position],
-                        rotation: state.transform.rotation
-                    }
-                }
-                // Empty body still burns a reduction (when-loop freeze fence).
-                chargeReductions(state)
-                if (state.breathEvery !== 0 && state.reductions % state.breathEvery === 0) {
-                    yield { type: "breath" }
-                }
-                state.loopCounter = i
-                yield* walkBody(node.children, scope, state, stroke)
+            const unbounded = node.value === '' || node.value == null
+            const rehearsal = unbounded && state.rehearsal
+            let times = rehearsal ? 1 : Infinity
+            if (!unbounded) {
+                const asked = demand(yield* evalOrBlock(node.value, scope, state.deps),
+                    { as: "count", expr: node.value, span: node.span ?? null })
+                if (asked.notice) yield asked.notice
+                if (asked.verdict !== "take") continue
+                times = asked.value
             }
-            state.loopCounter = prevCount
+            const loop = {}
+            const outerLoop = state.loop
+            const prevCount = state.loopCounter
+            const prevTouch = state.touch
+            state.loop = loop
+            try {
+                // Rehearsal walks an unbounded body once for vocabulary, without a screen.
+                // In play the screen is a retained read, not a live alias. (id:touch-generative-centers)
+                if (!rehearsal && node.meta?.touch != null) {
+                    if (state.touch) throw new Error('touch: a guarded extent cannot nest inside another')
+                    const reading = yield* readOrBlock(node.meta.touch, scope, state.deps, node)
+                    const screen = reading.value
+                    if (!isPath(screen)) {
+                        throw new Error(`touch: needs a path, and '${node.meta.touch}' answered ${screen == null ? 'nothing' : 'something else'}`)
+                    }
+                    // ENTRY: already on the screen takes no step and runs no body effect.
+                    adoptRebase(state)
+                    if (incidence(screen, state.deps.space.sample().toWorldPoint(state.transform.position))) break
+                    state.touch = { screen, loop }
+                }
+                for (let i = 0; i < times && !state.close; i++) {
+                    // Observed a sibling → voluntary yield so ambients lockstep (coop MT).
+                    if (i > 0 && state.deps.mathEvaluator._observedSibling) {
+                        state.deps.mathEvaluator._observedSibling = false
+                        yield {
+                            type: 'yield',
+                            position: [...state.transform.position],
+                            rotation: state.transform.rotation
+                        }
+                    }
+                    // Empty body still burns a reduction (when-loop freeze fence).
+                    chargeReductions(state)
+                    if (state.breathEvery !== 0 && state.reductions % state.breathEvery === 0) {
+                        yield { type: "breath" }
+                    }
+                    state.loopCounter = i
+                    if (!rehearsal && node.meta?.until != null) {
+                        adoptRebase(state)
+                        if (yield* conditionHolds(node.meta.until, scope, state, node.span ?? null)) break
+                    }
+                    // Repetition needs a live slice, even when resumed. (id:output-ledger-r2-pacer)
+                    const problem = unbounded && !rehearsal && cannotRepeat(state)
+                    if (problem) throw new Error(problem)
+                    yield* walkBody(node.children, scope, state, stroke)
+                }
+                if (state.close?.loop === loop && state.close.reason) {
+                    throw new Error(`touch: ${state.close.reason}`)
+                }
+            } finally {
+                state.touch = prevTouch
+                state.loop = outerLoop
+                state.loopCounter = prevCount
+                if (state.close?.loop === loop) state.close = null
+            }
             break
         }
 
@@ -296,6 +367,15 @@ function* walkBody(body, scope, state, stroke) {
                     }
                 }
                 parser.defineFunction(signature, expression, fnScope)
+                break
+            }
+
+            // In COMMAND position `path A B C` walks places: jmpto A (an explicit break),
+            // then goto B and goto C. It is not a COMMANDS entry, so a declaration
+            // `let x = path(…)` stays an expression, and a recipe called `path` still wins
+            // here. (id:path-append-composition)
+            if (node.value === "path" && !state.functions[scope["path"] || "path"]) {
+                yield* walkPlaces(node.children, scope, state, stroke)
                 break
             }
 
@@ -364,6 +444,13 @@ function* walkBody(body, scope, state, stroke) {
                 yield { type: 'shout', name: args[0], payload: args[1] }
                 break
             }
+            // stop is a directive too — the author's own close, addressed to the nearest
+            // enclosing loop. Outside one there is nothing to close, so it says so.
+            if (node.value === "stop" && !userFn) {
+                if (state.loop == null) throw new Error('stop: no enclosing loop to close')
+                state.close = { loop: state.loop }
+                break
+            }
             if (userFn) {
                 const currDepth = scope['__depth__'] || 0
                 if (currDepth > 1) state.recurseCount++
@@ -408,6 +495,7 @@ function* walkBody(body, scope, state, stroke) {
             break
         }
 
+
         case 'When': {
             if (node.meta?.event) {
                 // Event mode: check mailbox, independent of matched flag.
@@ -441,17 +529,9 @@ function* walkBody(body, scope, state, stroke) {
                 // Conditional mode: first-match-wins via matched flag — the guard wraps
                 // EVALUATION itself, so an unconsidered branch is never asked and cannot
                 // throw, notice, or suspend. Admission must not reorder evaluation.
-                if (!matched) {
-                    // A branch is a DECISION. A condition that has no answer takes no branch,
-                    // and says so: ordering a figure by a non-answer is how it goes wrong with
-                    // no ink to show for it. (numerics: conditionOf, POLICY.condition)
-                    const asked = demand(yield* evalOrBlock(node.value, scope, state.deps),
-                        { as: "condition", expr: node.value, span: node.span ?? null })
-                    if (asked.notice) yield asked.notice
-                    if (asked.verdict === "take" && asked.value !== 0) {
-                        matched = true
-                        yield* walkBody(node.children, scope, state, stroke)
-                    }
+                if (!matched && (yield* conditionHolds(node.value, scope, state, node.span ?? null))) {
+                    matched = true
+                    yield* walkBody(node.children, scope, state, stroke)
                 }
             }
             break
@@ -560,6 +640,65 @@ export function drainNamespace(ast, deps, opts = {}) {
     }
 }
 
+// An unbounded walk parks on a breath. It needs a finite timeslice and a
+// usable cadence. A bounded loop needs no fence. (id:output-ledger-r2-pacer)
+function cannotRepeat(state) {
+    if (state.paced !== true) return 'loop: an unbounded walk needs a finite timeslice (withSlice)'
+    // A cadence must actually offer a breath. Zero disables it; Infinity and NaN make
+    // `reductions % cadence === 0` never true. All three are unusable, and the value is
+    // named so the author can fix the context. (id:output-ledger-r2-pacer)
+    const cadence = state.breathEvery
+    if (!Number.isInteger(cadence) || cadence <= 0) {
+        return `loop: an unbounded walk needs a usable breath cadence (breathEvery is ${cadence})`
+    }
+    return null
+}
+
+
+// A command-position path appends the NEXT PLACE, not another path command: one place
+// at a time through the moves that already exist, so refusal, the accepted pose, the
+// output meter and the basis sample are the move's own. (id:path-a-walk-of-places)
+function* walkPlaces(places, scope, state, stroke) {
+    if (!places.length) throw new Error("a path needs at least one place")
+    for (let i = 0; i < places.length && !state.close; i++) {
+        const place = yield* acquireArgument(places[i], scope, state, "measure", true)
+        yield* callCommand(i === 0 ? "jmpto" : "goto", [place], state, stroke)
+    }
+}
+// One retained place, under the run's own ceiling. Overflow is a NAMED state on the
+// frame, never a silently shortened trail: a read refuses rather than answering with
+// less than the walk made. (id:path-accepted-places)
+function keepPlace(state, point, join) {
+    if (state.tracePlaces >= state.traceMax) {
+        state.traceOverflow = true
+        return
+    }
+    recordPlace(state.trace, point, join)
+    state.tracePlaces += 1
+}
+
+// The accepted place, read after admission. At the ceiling, nothing is sampled.
+// (id:path-accepted-places)
+function retainPlace(state, continuous, convert, fromWorld, fromLocal) {
+    if (state.tracePlaces >= state.traceMax) {
+        state.traceOverflow = true
+        state.rebased = false
+        return
+    }
+    // One basis sample serves every reading this step needs when the command bound no
+    // target of its own.
+    const basis = convert ?? state.deps.space.sample()
+    const worldPlace = basis.toWorldPoint(state.transform.position)
+    // A continuous step begins its run at the place it actually walked from: the first
+    // step of a down pen, or the first step after a rebase nobody walked. A break is a
+    // bare visit and joins nothing.
+    if (continuous && (state.rebased === true || !state.trace.length)) {
+        keepPlace(state, fromWorld ?? basis.toWorldPoint(fromLocal), false)
+    }
+    keepPlace(state, worldPlace, continuous)
+    state.rebased = false
+}
+
 function* callCommand(name, args, state, stroke, baseRevision) {
     const cmd = COMMANDS.get(name)
     if (!cmd) {
@@ -578,12 +717,19 @@ function* callCommand(name, args, state, stroke, baseRevision) {
     // (id:world-coordinate-phase-2)
     const spec = contractOf(name)
     const target = isTargetCall(spec)
-    const convert = target ? state.deps.space.sample() : null
-    // ONE sampled cursor: completion's world height and the return conversion share it,
-    // and the consumer's required value is acquired here, possibly waiting.
-    // (id:world-coordinate-phase-3)
-    const world = convert ? convert.toWorld(state.transform) : null
-    if (target) args = [yield* bindTarget(args, state, world.position[2])]
+    let convert, world
+    const sampleCursor = () => {
+        adoptRebase(state)
+        convert = state.deps.space.sample()
+        world = convert.toWorld(state.transform)
+        return world.position[2]
+    }
+    if (target) {
+        // A being read can park. Take the proposal's chart after that read;
+        // numeric target completion shares the same chart. (id:world-coordinate-phase-3)
+        args = [yield* bindTarget(args, state, sampleCursor)]
+        if (!convert) sampleCursor()
+    } else adoptRebase(state)
     const ctx = {
         transform: convert ? world : state.transform,
         style: state.style,
@@ -591,21 +737,40 @@ function* callCommand(name, args, state, stroke, baseRevision) {
         as: consumerOf(state)
     }
 
-    // Snapshot position before command mutates transform
-    stroke.lastPos = [...state.transform.position]
-
+    const from = state.transform
     const result = cmd(ctx, ...args)
-    if (convert && result.transform) {
-        // 3 · PROPOSE — the command returned only the fields it changed, in world terms.
-        // Convert exactly those; an untouched component never takes a round trip.
-        // (id:world-coordinate-phase-3)
-        const patch = result.transform
-        result.transform = {
-            rotation: patch.rotation ? convert.toLocalRotation(patch.rotation) : state.transform.rotation,
-            position: patch.position ? convert.toLocalPoint(patch.position) : [...state.transform.position],
+    const patch = result.transform
+    const guard = state.touch
+    const basis = convert ?? (guard && result.travel === "segment" ? state.deps.space.sample() : null)
+    const fromWorld = world?.position ?? basis?.toWorldPoint(from.position)
+    let hit = false
+    let position = patch?.position
+    if (guard && (result.travel || (position && position !== ctx.transform.position))) {
+        if (result.travel !== "segment") throw new Error(`touch: ${name} is not a represented straight step`)
+        // Read one screen and one step in the world chart. Only the bounded prefix goes
+        // to admission; the proposal has changed, not the accepted cursor. (id:touch-generative-centers)
+        if (incidence(guard.screen, fromWorld)) {
+            state.close = { loop: guard.loop }
+            state.commandCount--
+            return 'touch'
         }
-        if (result.stroke === "extend") result.point = [...result.transform.position]
+        const meeting = firstMeeting(guard.screen, fromWorld, convert ? position : basis.toWorldPoint(position))
+        if (meeting.kind === 'unresolved') throw new Error(`touch: ${meeting.reason}`)
+        if (meeting.kind === 'point') {
+            hit = true
+            position = convert ? meeting.at : basis.toLocalPoint(meeting.at)
+        }
     }
+    if (patch) {
+        // Complete the proposal in storage coordinates. Untouched fields never round-trip.
+        result.transform = {
+            rotation: patch.rotation ? (convert?.toLocalRotation(patch.rotation) ?? patch.rotation) : from.rotation,
+            position: position ? (convert?.toLocalPoint(position) ?? position) : from.position,
+        }
+        if (result.stroke === "extend") result.point = result.transform.position
+    }
+    let moved = Boolean(result.travel)
+    stroke.lastPos = [...from.position]
     // Admit the accumulated clock before a wait flushes ink or changes run state.
     if (result.effects) {
         for (const event of result.effects) {
@@ -622,11 +787,21 @@ function* callCommand(name, args, state, stroke, baseRevision) {
             from: state.transform,
             requested: result.transform,
             baseRevision,
+            guarded: guard != null,
         }
         // The scheduler hands back a normalized verdict: accept | refuse. A fault
         // never reaches here — the scheduler ends the frame instead.
-        if (admission.kind === 'stale') { state.commandCount--; return 'stale' }
+        if (admission.kind === 'stale') {
+            state.commandCount--
+            if (guard) {
+                state.close = { loop: guard.loop, reason: 'the screen step went stale' }
+                return 'touch'
+            }
+            return 'stale'
+        }
         if (admission.kind === "refuse") {
+            if (guard) state.close = { loop: guard.loop, reason: 'the screen step was refused' }
+            moved = false   // a refused step was not taken: no place, no fabricated visit
             result.transform = state.transform
             // Refusal is an interaction boundary: the verdict's ink says whether the
             // figure breaks or the trail joins through the held point.
@@ -648,6 +823,10 @@ function* callCommand(name, args, state, stroke, baseRevision) {
     if (result.transform) {
         state.transform = result.transform
     }
+    // Contact closes the loop only when the same prefix was admitted. The accepted
+    // places and the ink use that pose; a refused step records neither. (id:touch-generative-centers)
+    if (moved && hit) state.close = { loop: guard.loop }
+    if (moved && state.trace) retainPlace(state, result.stroke === "extend", basis, fromWorld, from.position)
 
     // Apply style changes (merge)
     if (result.style) {

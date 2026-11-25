@@ -43,8 +43,8 @@ function bench() {
     let doc = { v: 'A' }
     const dial = createDial({ scheduler, compositor: composition }, {
         seat: () => ({ slot: SLOT, name: 'seat', code: 'fw 1' }),
-        authority: () => true,
-        reseat: () => true,
+        authority: ({ seat }) => seat === SLOT,
+        prepareReplay: () => () => true,
         acted: () => {},
         docOf: () => doc,
     })
@@ -57,6 +57,7 @@ test('a chosen line is available in the document it was chosen in', () => {
     const reading = b.dial.catchReading()
     assert.equal(reading.line, LINE)
     assert.equal(reading.available, true)
+    assert.equal(b.frame.batch.breakLine, LINE, 'authority was asked about the play, not just a slot')
 })
 
 test('an edit retires the UNHIT arm instead of re-targeting the row', () => {

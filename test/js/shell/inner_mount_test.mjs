@@ -11,6 +11,7 @@ import { createCompositor } from "../../../assets/js/turtling/compositor.js"
 import { createFocus } from "../../../assets/js/turtling/focus.js"
 import { createMaterialCache } from "../../../assets/js/turtling/render/line/material-cache.js"
 import { SE3 } from "../../../assets/js/turtling/se3.js"
+import { world, watchWorld } from "../../../assets/js/weave/world.js"
 
 const noop = () => {}
 const stops = () => noop
@@ -240,22 +241,6 @@ const mockPageLaw = () => ({
 })
 const pageLaw = () => useRealPageLaw ? realPageLaw() : mockPageLaw()
 
-// A REAL world cell, narrow: the fixture needs the registered faces and the breath.
-// Only this one module becomes real; every other mock is untouched. (id:outer-sill)
-const worldCell_ = (() => {
-    let cur = null
-    const fns = new Set()
-    return {
-        register(faces) {
-            cur = faces
-            for (const fn of [...fns]) fn()
-            return () => { if (cur === faces) { cur = null; for (const fn of [...fns]) fn() } }
-        },
-        get: () => cur,
-        watch(fn) { fns.add(fn); return () => fns.delete(fn) },
-        changed() { for (const fn of [...fns]) fn() },
-    }
-})()
 
 const mock = {
     Turtle: TurtleStub,
@@ -267,12 +252,6 @@ const mock = {
     OUTERSHELL: "outershell",
     SELF: "self",
     PEER: "peer",
-    // A REAL world cell, narrow: the fixture needs the registered faces and the breath.
-    // Everything else about the world module stays exactly as it was. (id:outer-sill)
-    registerWorld: (faces) => worldCell_.register(faces),
-    worldChanged: () => worldCell_.changed(),
-    world: () => worldCell_.get(),
-    watchWorld: (fn) => worldCell_.watch(fn),
     makeReflector: () => ({
         ask: () => ({}),
         of: ({ source, attend }) => ({
@@ -373,7 +352,6 @@ const exportsByFile = {
     "/turtling/stage-cell.js": ["registerStage"],
     "/utils/temporal.js": ["temporal"],
     "/weave/page.js": ["pageLaw", "CORESHELL", "OUTERSHELL", "SELF", "PEER", "heldAt"],
-    "/weave/world.js": ["registerWorld", "worldChanged", "world", "watchWorld"],
     "/weave/reflect.js": ["makeReflector"],
     "/weave/seat-health.js": ["seatHealth"],
     "/weave/wounds.js": ["readWounds"],
@@ -459,7 +437,7 @@ const shell = {
 }
 
 const activeHooks = []
-async function mount({ gate = null, realPage = false } = {}) {
+async function mount({ gate = null, realPage = false, onWorld = null } = {}) {
     useRealPageLaw = realPage
     pushes.length = 0
     quietFns.length = 0
@@ -529,9 +507,10 @@ async function mount({ gate = null, realPage = false } = {}) {
     })
     hook.el = { dataset: { target: "coreshell" } }
     hook.handleEvent = (name, callback) => { handlers[name] = callback }
+    const off = onWorld && watchWorld(() => onWorld(world(), hook))
     hook.mounted()
     activeHooks.push(hook)
-    await tick()
+    try { await tick() } finally { off && off() }
 
     return {
         newHandCalls,
@@ -722,6 +701,20 @@ const coreClaim = (text = "fw 1", addr = "b1") => ({
     place: "coreshell", addr, name: "one", text, buffer_id: addr,
 })
 
+test("a world observer can retire Core during birth without leaving a published face", async () => {
+    const seen = []
+    const { hook, surface, hatches } = await mount({
+        onWorld(faces, hook) {
+            seen.push(faces != null)
+            if (faces) hook.destroyed()
+        },
+    })
+    assert.deepEqual(seen, [true, false])
+    assert.equal(hook.arena.alive, false)
+    assert.equal(surface, null)
+    assert.equal(world(), null)
+    assert.deepEqual(hatches(), [])
+})
 describe("mountInner scoped teardown — same address, two seats", () => {
     // ONE DISOWN, BOTH COORDINATES. A panel closing at an address must retire ITS
     // place's fact and leave the other place's fact alone. (id:outer-sill-lifetime)
@@ -2023,56 +2016,34 @@ describe("mountInner real page + scheduler lender seam", () => {
     })
 })
 
-describe("the outer port — real world cell, real term-cell succession", () => {
-    // The handoff trace: M1 owns; M2 registers. The registered term decides succession;
-    // the dead mount's verbs refuse at once; its late depart is a no-op. (id:outer-sill)
-    const port = () => worldCell_.get()?.outerPort ?? null
-
-    test("M2 may replace M1; M1's verbs die on the registration edge", async () => {
+describe("the Outer binding — real world and terminal registrations", () => {
+    test("terminal succession and same-mount retarget both retire the exact binding", async (t) => {
         const { register } = await import("../../../assets/js/hooks/shell/term-cell.js")
-        const { term } = await mount()
-        const A = "handoff-a"
-        const M1 = { id: "m1" }
-        const M2 = { id: "m2" }
+        await mount()
+        const port = world().outerPort
+        const A = "handoff-a", B = "handoff-b"
+        const first = {}, next = {}
+        const bind = (mount, addr) => port.bind({ mount, addr })
 
-        const release1 = register("outershell", M1)
-        assert.equal(port().show(A, M1), true, "the registered mount binds")
-        assert.equal(port().show(A, M1), true, "re-showing the same seat is not news")
-        assert.equal(port().show("handoff-b", M2), false, "an unregistered mount cannot bind")
+        t.after(register("outershell", first))
+        const a1 = bind(first, A)
+        assert.ok(a1)
+        assert.equal(bind(first, A), a1, "same incumbent and address do not rebind")
+        assert.equal(bind(next, B), null)
+        const b = bind(first, B)
+        const a2 = bind(first, A)
+        assert.notEqual(a1, a2)
+        assert.equal(a1.release(), false, "a late A1 release cannot close A2")
+        assert.equal(b.release(), false)
 
-        const release2 = register("outershell", M2)      // succession edge
-        assert.equal(port().show(A, M1), false, "the dead mount cannot re-bind")
-        assert.equal(port().read(M1, A), null, "the dead mount reads nothing")
-        assert.equal(port().show(A, M2), true, "the verified successor binds")
-        assert.equal(port().depart(M1), false, "the dead mount's depart is a no-op")
-        // Ownership, not depiction: the successor is the ONLY one that may release. (With
-        // no play at the seat, `read` answers null for both — that is depictability, not
-        // refusal, so it cannot carry the ownership claim.)
-        assert.equal(port().depart(M2), true, "the successor owns the binding")
-
-        release2()
-        release1()
-        term.dispose?.()
-    })
-
-    test("a departed mount is closed; a fresh mount binds without inheriting it", async () => {
-        const { register } = await import("../../../assets/js/hooks/shell/term-cell.js")
-        const { term } = await mount()
-        const A = "handoff-c"
-        const M1 = { id: "m3" }
-        const release = register("outershell", M1)
-        assert.equal(port().show(A, M1), true)
-        release()                                        // the mount departs for good
-        assert.equal(port().read(M1, A), null, "no reading survives the departure")
-        assert.equal(port().depart(M1), false, "and its depart is a no-op")
-        // The binding was CLOSED, not retained: the next registered mount binds afresh.
-        const { register: reg2 } = await import("../../../assets/js/hooks/shell/term-cell.js")
-        const M2 = { id: "m4" }
-        const release2 = reg2("outershell", M2)
-        assert.equal(port().show(A, M2), true, "a fresh mount binds without inheriting anything")
-        assert.equal(port().depart(M2), true)
-        release2()
-        term.dispose?.()
+        t.after(register("outershell", next))
+        assert.equal(bind(first, A), null)
+        assert.equal(a2.read(), null)
+        assert.equal(a2.release(), false)
+        const binding = bind(next, A)
+        assert.ok(binding)
+        assert.equal(binding.release(), true)
+        assert.equal(binding.release(), false)
     })
 })
 
@@ -2093,16 +2064,32 @@ describe("mounted Outer draft playback", () => {
         t.after(() => { release(); compositor.dispose() })
         const addr = "outer-play"
         const slot = realPageLaw().seatOf(addr, "outershell")
-        const port = worldCell_.get().outerPort
-        assert.equal(port.show(addr, term), true)
+        const port = world().outerPort
+        let isSelected = true
+        const binding = port.bind({ mount: term, addr, selected: () => isSelected })
+        assert.ok(binding)
         const text = "let B\nfw 1\nwait 1\nfw (2+B.x)"
         const claim = { place: "outershell", addr, name: addr, text, buffer_id: null }
         const frame = () => scheduler.root.children.get(slot)
-        const read = () => port.read(term, addr)
+        const read = () => binding.read()
         const observe = () => scene.observe(addr, addr, text, claim)
-        return { hook, register, release, addr, slot, port, term, scheduler, compositor, claim, frame, read, observe }
+        return { hook, register, release, addr, slot, port, binding, scheduler, compositor, claim, frame, read, observe,
+            deselect() { isSelected = false } }
     }
 
+    test("selection loss refuses a painted Pause or Restart before another paint", async (t) => {
+        const b = await draftBench(t)
+        scene.claim(b.claim)
+        b.observe()
+        const old = b.read()
+        const frame = b.frame()
+        b.deselect()
+        assert.equal(b.read(), null)
+        assert.equal(old.pause(), false)
+        assert.equal(old.replay(), false)
+        assert.equal(b.frame(), frame)
+        assert.equal(b.compositor.holdOwner, null)
+    })
     test("draft claim cannot command the solo peer; admission enables Continue and Restart with Hand", async t => {
         const b = await draftBench(t)
         // Native occupant as control; the draft below must enter through the real scene/law performer.
@@ -2124,7 +2111,7 @@ describe("mounted Outer draft playback", () => {
         assert.notEqual(admitted, peer)
         assert.ok(b.read().can.hold, "the performer bound the admitted draft")
         assert.equal(b.read().pause(), true)
-        const { progress } = worldCell_.get()
+        const { progress } = world()
         assert.equal(progress("outershell").held, true, "the held draft lights its own Helios")
         assert.equal(progress("coreshell").held, false, "the other Helios does not borrow the hold")
         const point = admitted.children.get("B")
@@ -2179,12 +2166,13 @@ describe("mounted Outer draft playback", () => {
         assert.equal(b.read(), null)
         assert.equal(old.resume(), false)
         assert.equal(old.replay(), false)
-        assert.equal(b.port.show(b.addr, next), true)
-        assert.equal(b.port.read(next, b.addr).pause(), true)
+        const successor = b.port.bind({ mount: next, addr: b.addr })
+        assert.ok(successor)
+        assert.equal(successor.read().pause(), true)
         const lease = b.compositor.holdOwner
-        const captured = b.port.read(next, b.addr)
+        const captured = successor.read()
         b.release()
-        assert.equal(b.port.depart(b.term), false)
+        assert.equal(b.binding.release(), false)
         assert.equal(b.compositor.holdOwner, lease, "late cleanup cannot release the new hold")
 
         b.hook.destroyed()

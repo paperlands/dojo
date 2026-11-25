@@ -71,7 +71,60 @@ export const angle = (apex, axis, degrees) => ({ kind: "angle", apex: [...apex],
 
 export const conic = (shape, origin, u, v, normal, Q) => ({ kind: "conic", shape, origin: [...origin], u: [...u], v: [...v], normal: [...normal], Q: [...Q] })
 
+function alignedEllipse(origin, u, v, normal, a, b) {
+    const Q = [(b / a) ** 2, 0, 1, 0, 0, -(b ** 2)]
+    return Q.every(Number.isFinite) && Q[0] > 0 && Q[5] < 0
+        ? { ...conic("ellipse", origin, u, v, normal, Q), axes: [a, b] } : null
+}
+
+export function twoFocus(f, g, budget) {
+    const d = sub(g, f), gap = len(d)
+    if (!Number.isFinite(gap) || !Number.isFinite(budget)) return UNRESOLVED
+    if (budget < gap - ACCEPT_TOL) return EMPTY
+    if (gap === 0) return budget <= 0 ? point(f) : sphere(f, budget / 2)
+    if (budget === gap) return { kind: 'segment', from: [...f], to: [...g] }
+    if (budget < gap) return UNCERTAIN
+    const a = budget / 2, b = Math.sqrt((budget - gap) / 2) * Math.sqrt(a + gap / 2)
+    const center = add(f, scale(d, 0.5))
+    return finite3(center) && Number.isFinite(b) && b > 0
+        ? { kind: 'ellipsoid', center, axis: scale(d, 1 / gap), a, b, foci: [f, g] } : UNRESOLVED
+}
+
+// A central section, not an arbitrary plane cut. The projected major axis
+// has length 1/sqrt((c/a)^2+(s/b)^2) on the section.
+export function centralSection(e, pl) {
+    if (Math.abs(dot(pl.normal, sub(e.center, pl.point))) > ACCEPT_TOL) return UNRESOLVED
+    const s = dot(e.axis, pl.normal)
+    const arm = sub(e.axis, scale(pl.normal, s))
+    const c = len(arm)
+    if (c <= REL_TOL) return circle(e.center, pl.normal, e.b)
+    const u = scale(arm, 1 / c)
+    const a = 1 / Math.hypot(c / e.a, s / e.b)
+    const cut = alignedEllipse(e.center, u, cross(pl.normal, u), pl.normal, a, e.b)
+    return cut ? { ...cut, foci: Math.abs(s) <= REL_TOL ? e.foci : null } : UNRESOLVED
+}
+
+function ellipsoidDistance(e, at) {
+    return len(sub(at, e.foci[0])) + len(sub(at, e.foci[1]))
+}
+
 const samePoint = (a, b) => len(sub(a, b)) <= ACCEPT_TOL
+
+function segmentFoot(p, s) {
+    const arm = sub(s.to, s.from), length = len(arm)
+    const dir = arm.map((x) => x / length)
+    const t = Math.max(0, Math.min(length, dot(sub(p, s.from), dir)))
+    return add(s.from, scale(dir, t))
+}
+
+const onSegment = (p, s) => samePoint(p, segmentFoot(p, s))
+
+function cutSegment(s, other) {
+    const cut = meet(line(s.from, sub(s.to, s.from)), other)
+    if (cut.kind === 'line') return s
+    if (cut.kind === 'point') return onSegment(cut.at, s) ? cut : EMPTY
+    return cut
+}
 
 // ---------------------------------------------------------------- named meets
 
@@ -225,7 +278,7 @@ function meetsPoint(pt, set) {
     }
 }
 
-const ORDER = ["space", "empty", "uncertain", "unresolved", "point", "points", "ray", "line", "circle", "halfplane", "plane", "sphere", "angle", "cone", "conic"]
+const ORDER = ["space", "empty", "uncertain", "unresolved", "point", "points", "ray", "line", "segment", "circle", "halfplane", "plane", "sphere", "angle", "cone", "conic", "ellipsoid"]
 const rank = (k) => ORDER.indexOf(k)
 
 // Named geometry is plain data; state copies it without learning its fields. (D058)
@@ -281,6 +334,11 @@ export function meet(a, b) {
         case "sphere∩conic": return UNRESOLVED
         case "cone∩conic": return UNRESOLVED
         case "conic∩conic": return UNRESOLVED
+        case "point∩ellipsoid": return Math.abs(ellipsoidDistance(y, x.at) - 2 * y.a) <= ACCEPT_TOL ? x : EMPTY
+        case "plane∩ellipsoid": return centralSection(y, x)
+        case "point∩segment": return onSegment(x.at, y) ? x : EMPTY
+        case "line∩segment": return cutSegment(y, x)
+        case "segment∩plane": return cutSegment(x, y)
         default: return UNRESOLVED
     }
 }
@@ -495,7 +553,26 @@ function conicScale(co) {
     return Math.min(1e6, Math.max(2, Math.sqrt(base / Math.max(1e-9, lead))))
 }
 
+const ellipseAt = (co, t) => add(co.origin,
+    add(scale(co.u, co.axes[0] * Math.cos(t)), scale(co.v, co.axes[1] * Math.sin(t))))
+
+function nearestAlignedEllipse(co, target) {
+    const count = 96, step = 2 * Math.PI / count
+    const d = (t) => len(sub(ellipseAt(co, t), target))
+    let best = 0
+    for (let i = 1; i < count; i++) if (d(i * step) < d(best * step)) best = i
+    let low = (best - 1) * step, high = (best + 1) * step
+    for (let i = 0; i < 26; i++) {
+        const l = low + (high - low) / 3, r = high - (high - low) / 3
+        if (d(l) <= d(r)) high = r
+        else low = l
+    }
+    return { ok: true, at: ellipseAt(co, (low + high) / 2) }
+}
 export function conicSamples(co, { range: rangeOverride = null, steps = 96 } = {}) {
+    if (co.axes && rangeOverride == null) {
+        return [Array.from({ length: steps + 1 }, (_, i) => ellipseAt(co, 2 * Math.PI * i / steps))]
+    }
     const range = rangeOverride ?? conicScale(co)
     const uMin = -range, uMax = range
     const [A, B, C, D, E, F] = co.Q
@@ -540,7 +617,9 @@ export function dofOf(set) {
         // A straight angle is a RAY; an interior one is a surface. Read verbatim.
         case "angle": return (set.degrees <= 1e-9 || set.degrees >= 180 - 1e-9) ? 1 : 2
         case "conic": return 1
+        case "ellipsoid": return 2
         case "line": return 1
+        case "segment": return 1
         case "ray": return 1
         case "circle": return 1
         case "point": return 0
@@ -581,6 +660,7 @@ export function nearest(set, target, { keep = null, margin = 0, policy = null } 
             const s = dot(sub(foot.at, set.point), set.dir)
             return s >= -REL_TOL ? foot : { ok: true, at: sub(foot.at, scale(set.dir, 2 * s)) }
         }
+        case "segment": return { ok: true, at: segmentFoot(target, set) }
         case "line": {
             const t = dot(sub(target, set.point), set.dir)
             return { ok: true, at: add(set.point, scale(set.dir, t)) }
@@ -641,7 +721,15 @@ export function nearest(set, target, { keep = null, margin = 0, policy = null } 
             const u = add(scale(ax, Math.cos(open * RAD)), scale(p, Math.sin(open * RAD)))
             return { ok: true, at: add(set.apex, scale(u, r)) }
         }
+        case "ellipsoid": {
+            const d = sub(target, set.center)
+            const side = sub(d, scale(set.axis, dot(d, set.axis)))
+            const v = unit(side) ?? basisOf(set.axis)?.u
+            return v ? nearestAlignedEllipse({ origin: set.center, u: set.axis, v, axes: [set.a, set.b] }, target)
+                : { ok: false, kind: "unresolved" }
+        }
         case "conic": {
+            if (set.axes) return nearestAlignedEllipse(set, target)
             // Projecting onto a conic is a quartic; a bounded trace is the disclosed
             // policy, never a claim of the exact locus. (id:laws-freedom)
             const branches = conicSamples(set, { steps: 128 })

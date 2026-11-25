@@ -94,7 +94,11 @@ export const sceneBridge = bridged("scene");
  * The `ambient`/`ambientStop` aliases died with their last caller.
  */
 export const scene = {
-    remove:      (ambientId)        => sceneBridge.pub(['remove', { ambientId }]),
+    // A place, when the caller has one: closing a friend's panel at an address must
+    // not forget the same address's own records. Absent = both places, as before, and
+    // the payload keeps its old shape — no undefined key on the wire.
+    remove:      (ambientId, place) => sceneBridge.pub(['remove',
+        place === undefined ? { ambientId } : { ambientId, place }]),
     fork:        (payload)          => sceneBridge.pub(['fork', payload]),
     // Live draft / hatch at (self, outershell) — place is fixed in the surface.
     // Cheap ownership claim at the write; rendering still follows observe.

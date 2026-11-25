@@ -24,15 +24,17 @@ import { nameAnchor } from "../../../assets/js/turtling/laws/pin.js"
 describe("the wire's vocabulary", () => {
     test("the scheduler routes exactly these verbs — a new one is an edit here", () => {
         assert.deepEqual(Object.keys(EFFECTS).sort(), [
-            "birth", "blocked", "breath", "construct", "law", "limitMailbox", "motion",
+            "birth", "blocked", "breakpoint", "breath", "construct", "law", "limitMailbox", "motion",
             "motionUnresolved", "notice", "parameter", "scalar", "shout", "spawn",
             "wait", "yield",
         ])
     })
 
     test("the renderer draws exactly these kinds — a new one is an edit here", () => {
+        // `pathmark` is a declared binding's own display: it rides the frame's
+        // current-state slot, never the ink channel. (D055, id:path-accepted-places)
         assert.deepEqual(Object.keys(MATERIALIZERS).sort(),
-            ["grid", "head", "label", "path", "vector", "view", "wait"])
+            ["grid", "head", "label", "path", "pathmark", "vector", "view", "wait"])
     })
 
     // One deliberate overlap. `wait` is a temporal marker: the scheduler advances the
