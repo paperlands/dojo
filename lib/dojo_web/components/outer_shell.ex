@@ -178,11 +178,24 @@ defmodule DojoWeb.OuterShellLive do
 
         <%!-- The friend's execution signals — directly below their code, right-aligned.
               Fed by the Shell hook via the shared chatMutator (replaces outer-output). --%>
-        <div
-          id="outer-nerve"
-          phx-update="ignore"
-          class="mt-2 flex flex-col-reverse items-end gap-0.5 font-mono text-xs text-right max-h-[20vh] overflow-hidden pointer-events-none"
-        />
+        <%!-- Nerve reports, Sill depicts and offers (id:outer-sill): one stack, its own
+              axis, right-aligned as today. Each stack owns a local Helios-to-tip
+              alignment only — never a cross-shell one. --%>
+        <div id="outer-stack" class="outer-stack mt-2 flex flex-col items-end gap-0.5">
+          <div
+            id="outer-nerve"
+            phx-update="ignore"
+            class="flex flex-col-reverse items-end gap-0.5 font-mono text-xs text-right max-h-[20vh] overflow-hidden pointer-events-none"
+          />
+          <div
+            id="outer-sill"
+            phx-update="ignore"
+            class="sill-helios"
+            role="group"
+            aria-label="Playback"
+            hidden
+          />
+        </div>
       </div>
     </div>
     """

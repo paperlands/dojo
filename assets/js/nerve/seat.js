@@ -59,10 +59,11 @@ export function createStatusSeat(zone, { health = () => null, nav = () => {} } =
         if (slot && sameSeat(slot.signal, next.signal)) {
             const arrived = fresh
             fresh = false
+            const resumed = slot.signal.held && !next.signal.held && slot.signal.msg === next.signal.msg
             slot.update(next.signal)
             if (next.signal.kind === 'helios') {
                 slot.el.classList.remove('helios-exit', 'helios-arrive')
-                light(slot.el, next.signal, arrived)
+                light(slot.el, next.signal, arrived && !resumed)
             }
             return
         }
@@ -84,7 +85,7 @@ export function createStatusSeat(zone, { health = () => null, nav = () => {} } =
         }
         if (next.signal.ref) s.el.addEventListener('click', () => nav(next.signal))
         if (next.signal.kind === 'helios') {
-            s.el.classList.add('helios-arrive')
+            if (!next.signal.held) s.el.classList.add('helios-arrive')
             light(s.el, next.signal, true)
         }
         slot = s
@@ -96,9 +97,13 @@ export function createStatusSeat(zone, { health = () => null, nav = () => {} } =
     }
 
     function light(el, signal, changed) {
-        el.classList.toggle('helios-living', signal.living === true)
+        const held = signal.held === true
+        el.classList.toggle('helios-held', held)
+        el.classList.toggle('helios-living', signal.living === true && !held)
         el.classList.toggle('helios-apex', heliosApex(signal))
-        if (changed) pulse(el, 'helios-lit')  // rung change only, not keep-alives
+        if (held) el.classList.remove('helios-lit')
+        // The beat is the radiate on the message, and only that.
+        else if (changed) pulse(el, 'helios-lit', { names: ['helios-radiate', 'helios-radiate-apex'], within: '.nerve-msg' })
     }
 
     // Emptying (nothing follows) = long helios-exit; being taken = quick dissolve in part.

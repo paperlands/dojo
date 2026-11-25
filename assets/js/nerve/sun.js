@@ -27,12 +27,17 @@ export function mountSun({ read, place, nerve }) {
     let released = false
 
     const tick = () => {
-        const view = walk.tick(performance.now())
+        const now = performance.now()
+        const view = walk.tick(now)
         if (view) nerve()?.push(S.helios(view, place))
         // One timer in flight. Re-arms while walking; stops when the day ends —
-        // no interval to cancel on idle.
+        // A real execution hold has no animation clock to service.
+        if (!walk.isAnimating() && timer != null) {
+            clearTimeout(timer)
+            timer = null
+        }
         if (!released && timer == null && walk.isAnimating()) {
-            timer = setTimeout(() => { timer = null; tick() }, walk.nextDelayMs())
+            timer = setTimeout(() => { timer = null; tick() }, walk.nextDelayMs(now))
         }
     }
 

@@ -39,6 +39,16 @@ describe("the scene seam — one vocabulary, both sides", () => {
         })
     }
 
+    test("remove names a place when the caller has one", () => {
+        const seen = []
+        const unsub = scene.sub({ remove: (p) => seen.push(p) })
+        scene.remove("b1", "outershell")
+        unsub()
+        // Place-scoped teardown: forgetting one place must not touch the other.
+        // (id:outer-sill-lifetime)
+        assert.deepEqual(seen, [{ ambientId: "b1", place: "outershell" }])
+    })
+
     test("the deprecated aliases are culled — one name per move", () => {
         assert.equal(scene.ambient, undefined)
         assert.equal(scene.ambientStop, undefined)

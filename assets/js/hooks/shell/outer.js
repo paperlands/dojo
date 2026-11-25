@@ -15,9 +15,10 @@ import { readWounds } from "../../weave/wounds.js"
 import { world, watchWorld } from "../../weave/world.js"
 import { OUTERSHELL } from "../../weave/page.js"
 import { mountSun } from "../../nerve/sun.js"
+import { mountSill } from "../../nerve/sill.js"
 import { nerve, nerveSeat } from "../nerve.js"
 import { listeners } from "./core.js"
-import { register, putSource } from "./term-cell.js"
+import { get as getTerm, register, putSource } from "./term-cell.js"
 import { attach } from "../../kernel/attach.js"
 import { safePush } from "../../adapter.js"
 import { createOuterRecovery } from "./outer-recovery.js"
@@ -108,19 +109,40 @@ function mountOuter(hook, { term, cm6 }) {
     arena.add(recovery.release)
 
     term.outer();
-    arena.add(register("outershell", term));
+    register("outershell", term, arena.add);
+    if (!arena.alive) return { arena };
     const envEl = hook.el.closest('#outerenv');
     const hasSelectedDocument = () => !!shownAddr && subject() === shownAddr;
-    // WRITE ONLY ON CHANGE. Most updates change no selection at all (a peer's
-    // hatch, a mirror, a readiness retry), and writing an attribute invalidates
-    // style whether or not the value moved. A quiet repaint is no repaint.
+    let playback = null
+    const departOuter = () => {
+        const prior = playback
+        playback = null
+        prior?.binding.release()
+    }
+    const syncPlayback = () => {
+        if (!arena.alive) return
+        const port = world()?.outerPort
+        // A→B→A is a NEW owner at the same address. Keying the binding on the
+        // address alone would revive A's grant when B never landed. (id:outer-sill-lifetime)
+        const owner = intent.current()
+        const addr = hasSelectedDocument() ? shownAddr : null
+        if (playback?.port === port && playback?.addr === addr && playback?.owner === owner) return
+        departOuter()
+        if (!port || addr == null || playback) return
+        // Usable only while the owner that bound it still stands: an old grant
+        // must not become admissible again by an address match. (id:outer-sill-lifetime)
+        const selected = () => arena.alive && hasSelectedDocument() &&
+            shownAddr === addr && world()?.outerPort === port &&
+            intent.current() === owner
+        const binding = port.bind({ mount: term, addr, selected })
+        if (binding) playback = { port, addr, owner, binding }
+    }
     const paintSelection = () => {
         const ready = hasSelectedDocument();
         const waiting = !!subject() && !ready;
         const state = waiting ? "waiting" : ready ? "ready" : "closed";
-        if (envEl && envEl.dataset.outerSelection !== state) {
-            envEl.dataset.outerSelection = state;
-        }
+        const changedSelection = envEl != null && envEl.dataset.outerSelection !== state;
+        if (changedSelection) envEl.dataset.outerSelection = state;
         // The crescent's whole input: no DOM is added or removed, so the panel
         // never moves — the hour is painted by the same state the fence reads.
         // aria-live speaks on CHANGE, so the word changes with the hour.
@@ -144,6 +166,13 @@ function mountOuter(hook, { term, cm6 }) {
         nerve,
     });
     arena.add(sun.release);
+    const sill = mountSill(document.getElementById('outer-sill'), { read: () => playback?.binding.read() ?? null });
+    arena.add(sill.destroy);
+    const refreshSelection = () => {
+        syncPlayback()
+        paintSelection()
+        sill.paint()
+    }
 
     // Claim friend's address on the shared nerve. Health is seat base (pulled),
     // not a signal. The claim lives exactly as long as THIS nerve is seated —
@@ -152,18 +181,23 @@ function mountOuter(hook, { term, cm6 }) {
     // on refresh() (silent construct).
     const remoteNerveEl = document.getElementById('outer-nerve');
     let outerProj = null;
-    arena.add(attach(nerveSeat, (seated) => {
+    attach(nerveSeat, (seated) => {
         if (!remoteNerveEl) return;
-        outerProj = seated.project(remoteNerveEl, {
+        const projection = seated.project(remoteNerveEl, {
             pushEvent: (e, p) => safePush(hook, e, p),
             targets: { editorView: () => term.shell },
             health: () => health(),
             // A sun names no peer — route by place, not address.
             place: OUTERSHELL,
         });
-        if (outerName) outerProj.retarget(outerName);
-        return () => { outerProj?.destroy(); outerProj = null };
-    }));
+        outerProj = projection;
+        if (outerName) projection.retarget(outerName);
+        return () => {
+            if (outerProj === projection) outerProj = null;
+            projection.destroy();
+        };
+    }, arena.add);
+    if (!arena.alive) return { arena };
 
     // While drafting, a body flag tells coreshell's type-anywhere-to-focus
     // capture to stand down — typing here must not jump to the core editor
@@ -439,7 +473,8 @@ function mountOuter(hook, { term, cm6 }) {
         // New friend: drop previous canvas seat + draft before seating this one.
         const opening = !!payload?.addr && payload.addr !== shownAddr;
         if (opening) {
-            if (shownAddr) scene.remove(shownAddr);
+            departOuter();
+            if (shownAddr) scene.remove(shownAddr, OUTERSHELL);
             if (term.drafting()) leaveDraft();
             wireWounds = NONE;
             reach.reset();
@@ -483,7 +518,7 @@ function mountOuter(hook, { term, cm6 }) {
 
         wireWounds = payload?.diagnostics ?? NONE;
         reask();
-        paintSelection();
+        refreshSelection();
     };
 
 
@@ -492,10 +527,11 @@ function mountOuter(hook, { term, cm6 }) {
         // Arrival owns the decision; a queued old close cannot re-clear a
         // newer local incarnation. Local close is the one correlated request.
         if (!intent.acceptedClose(payload)) return
+        departOuter()
         document.getElementById("outer-open")?.classList.remove("is-open")
         if (term.drafting()) leaveDraft()
         if (shownAddr) {
-            scene.remove(shownAddr)
+            scene.remove(shownAddr, OUTERSHELL)
             shownAddr = null
         }
         recovery.clear()
@@ -509,7 +545,7 @@ function mountOuter(hook, { term, cm6 }) {
         term.changeouter("")
         if (envEl) envEl.dataset.outerState = "ok"
         reask()
-        paintSelection();
+        refreshSelection();
 
     }
 
@@ -531,32 +567,38 @@ function mountOuter(hook, { term, cm6 }) {
     arena.on(outerEl, 'click', onDelegatedClick);
     arena.add(listeners.theme(theme => term.setOption('theme', theme)).mount());
 
-    // Authoritative teardown: drop this addr from the canvas entirely. NOT
-    // stopDraftRun() — restore *reverts* to the friend's code (panel stays
-    // open); on close the slot must go. Registered last so it releases before
-    // every organ: canvas learns the panel is gone before the panel comes apart.
     // One selector application: the strip's command and the server mirror.
     const applySelector = (descriptor) => {
         if (!intent.accepted(descriptor)) return
         if (!recovery.mirror(descriptor)) return
         const addr = subject()
+        if (addr !== shownAddr) departOuter()
         if (addr) document.getElementById("outer-open")?.classList.add("is-open")
         if (term.drafting() && addr !== shownAddr) leaveDraft()
-        paintSelection()
+        refreshSelection()
     }
 
-    arena.add(() => { if (shownAddr) scene.remove(shownAddr); });
+    // Drop our place, not a successor's. Retire playback before removing it. (id:shell-playback-binding)
+    arena.add(() => {
+        if (!shownAddr) return
+        if (getTerm("outershell") !== term) return
+        scene.remove(shownAddr, OUTERSHELL)
+    });
+    arena.add(departOuter);
 
     return {
         // BIRTH — every organ stands, so now the surface may speak. Anything
         // that can TICK is wired only here: a push pulls health() synchronously,
         // so a tick before organs stand reads health in its dead zone.
         birth() {
-            arena.add(watchWorld(sun.tick));
+            arena.add(watchWorld(() => { sun.tick(); syncPlayback(); sill.paint() }));
             // One breath reaches every reader (seat, wash, ink) at once. Seat
             // is built silent; this is the ask that seats a friend already mid-fault.
             reask();
             sun.tick();     // first light, for a panel opening onto running work
+            // A settled world need not breathe again to be depicted.
+            syncPlayback();
+            sill.paint();
         },
 
         events: {

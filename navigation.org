@@ -3165,6 +3165,7 @@ live-probed <2026-08-06>.
 :KEYWORDS: helios progress glyph pace CAST LADDER glyphFor heliosView signals.helios sun mountSun nerve status rung run place scoped seats slotsAt two suns claim claimBy claimed predicate
 :PATH: assets/js/nerve/helios.js
 :END:
+Shared palette and arrival: =assets/css/helios-light.css= (nerve and sill study).
 Pure cast + ladder over =worldProgress= (=phase, lines, ambients, run=). No
 DOM, no store, no turtle. Pipeline:
 
@@ -3920,6 +3921,68 @@ does not.
 :KEYWORDS: inner surface canvas turtle sceneBridge opBuffer writeShell forkBuffer ambient opacity focus
 :PATH: assets/js/hooks/shell/inner.js
 :END:
+
+** sill — coreshell playback under Helios
+:PROPERTIES:
+:ID: nav-core-sill
+:KEYWORDS: sundial clock elapsed pause play restart wait single authored seat compositor playback lease
+:PATH: assets/js/nerve/sill.js::export function mountSill
+:END:
+THREE OWNERS, ONE DIAL. Presentation (=nerve/sill.js=) draws a reading it PULLS —
+=read() → {ms, phase, pause, resume, replay}= bound to one play, or absent — and
+keeps only the intents it last painted. Shell (=hooks/shell/inner.js=) owns
+eligibility and the replay recipe. Runtime (=turtling/playback.js=) owns elapsed,
+completion and fault, plus the scoped hold.
+*Existence is asked, never pushed*: =paint()= derives the one seat from standing
+state — the authored root of the current buffer, alone, and any frame of that
+play has waited. No =track()=/=clear()= call sites, so a redundant source publish
+or a green hold cannot unseat it. A claim is a publication, not an identity:
+=terminal.js= republishes only when the source actually changed. The authority
+edge sets the owner and revokes, THEN paints, and publishes last.
+A hold is a LEASE, not a remembered click: the compositor stores the exact play
+incarnation (frame id + run) and re-asks its witness at each drive and at each
+top-level seat edge (=root._onSeatChange=) — a new sibling, a replacement, an
+end or a disposal drops the pause with no HUD or paint. Release compares the
+lease number, so a stale reading cannot steer a successor. A flag-only hold
+(=setHeld=, host users) has no lease and no revocation from this door, and a
+replay refuses a foreign current hold rather than clearing someone else's pause.
+Replay binds to the seated incarnation (=seatId=), recorded whenever the call
+changed the frame — a faulted seat is still a seat — and refreshed by an admitted
+green reconcile; a refused offer leaves it. Every command is painted under the
+shell's authority epoch and re-asks the current play (same incarnation, still
+alone) before a side effect, so a stale view cannot reset the world; only explicit
+restart intent passes a hold to the successor. The replay seam is synchronous
+shell wiring, tested as such — not a generally reentrant public command or
+observer protocol, and it does not claim to be one.
+Separate from the nerve seat; =assets/css/sill.css= anchors the clock below
+Helios. A timed, solitary authored seat may hold or restart; seek is not wired.
+The shell template's =.shell-bottom= grid owns placement for the bottom-left
+instrument stack and the centered disciple strip. On narrow screens the strip
+takes its own row only when open and populated; no instrument needs its height.
+Helios lights the glyph, not its count. Sill's tip shares the running amber,
+cools on pause, and settles to pale gold at completion. An enabled Restart
+echoes the finish gold; a disabled one stays dim. The quicker rewind pulse
+acknowledges an accepted command. Reduced motion keeps the colour without a pulse.
+A real compositor hold freezes both glyph and time. The settled clock is ASKED
+too: =scheduler.end= is stamped at the =done= edge (the tick that walked), because
+=lastTickTime= goes on advancing through idle and camera frames — =paint()= keeps
+no memory of it. Once the run has no more work, terminal frame errors paint the
+dial with the Nerve wound ink; notices do not.
+The arc and readout share =--sill-axis=; compact visual spacing leaves the
+44px hit targets intact.
+Painting references and rationale: =design/sill/README.org=.
+Live pass: =node scripts/verify/sill_browser.mjs=.
+Debugger study: [[id:debugger-priors][A debugger for a living drawing]]. The [[id:debugger-priors-worktree][stop and hand-motion witnesses]]
+separate selection, evidence, and control. [[id:debugger-play-interplay][Pause × Hand × Catch × Replay]]
+compares continuation with a fresh play seeded by the same Hand adjustment;
+the [[file:probe/source-catch/README.org][source catch probe]] distinguishes a match from a settled stop.
+The [[id:sill-live-experiment][live experiment]] and [[file:probe/sill-command-edges/README.org][native command bench]] test what Continue preserves and what a refused Restart must leave alone.
+[[id:outer-sill][Two Sills, one stage]] specifies the Outer mount, draft grant, and place-scoped teardown.
+=onBeat= is post-pass observation, not a stop.
+Live shell: click a line number to toggle the breakpoint · [[id:debugger-first-live-catch][catch, touch, continue]].
+Control: =assets/js/turtling/catch.js::createPlayCatch=;
+[[file:assets/js/editor/catch-mark.js][the number and line]] reflect the catch without owning it.
+Browser fence: =node scripts/verify/source_catch_browser.mjs=.
 
 ** terminal buffers — tabs, writethrough
 :PROPERTIES:

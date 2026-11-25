@@ -67,6 +67,27 @@ export function createCompositor(scheduler, stage, opts = {}) {
     let sample = {}
     let pumping = false   // a forward scrub is a between-pass command
     const held = () => scheduler.held === true
+    // The scoped hold's owner, if a caller lent one. A flag-only hold (an explicit
+    // stage/host user) has no owner and no lease to re-ask. (id:host-run-pause)
+    let holder = null
+    // One writer for permission: the H sample and the cadence edge reset WITH it.
+    const putHeld = (next) => {
+        if (disposed || next === held()) return false
+        if (!next) holder = null
+        scheduler.held = next
+        // Discard the first frame's allowance and cadence sample after each edge,
+        // and revoke a sample measured before it. (id:host-run-pause, id:runtime-state-tla)
+        lastNow = frameStart = null
+        sample = {}
+        stage.requestRender()
+        return true
+    }
+    // Re-ask the lease — at each drive and at each tree change. Invalidation is
+    // the notification's only job; the witness is the truth.
+    const verifyHold = () => {
+        if (holder != null && !holder.witness()) putHeld(false)
+        return held()
+    }
     // The reveal horizon: how much logical work live execution authorizes. It advances by the
     // normalized wall allowance only when the scheduler is settled through it; a discarded
     // allowance never becomes debt. (id:render-construction-cadence)
@@ -85,6 +106,11 @@ export function createCompositor(scheduler, stage, opts = {}) {
     const controls = opts.controls ?? null
     // The beat channel: one callback, emitted where the playhead consumes it.
     const onBeat = opts.onBeat ?? null
+    // Internal runtime catch sinks: owned beats are captured synchronously (ambient +
+    // event) BEFORE the next tick, never through the public onBeat observer. Off is
+    // an empty set and one branch. (id:nav-core-sill)
+    const catchHandles = new Set()
+    const activeCatch = () => catchHandles.values().next().value ?? null
     // Timeslice budget lives with the frame loop (AIMD quantum). (id:output-ledger-r2-pacer)
     const pacer = opts.pacer || createPacer()
     let frameStart = null
@@ -126,7 +152,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         const head = (createHead && makeHead) ? createHead(group) : null
         const shapist = createShapist ? createShapist(group) : null
         // trails: per-source consolidated polyline runs (materializer-owned state)
-        const layer = { group, head, shapist, labels, trails: new Map(), vectors: new Map() }
+        const layer = { group, head, shapist, labels, trails: new Map(), vectors: new Map(), paths: new Map() }
         ambientLayers.set(id, layer)
         return layer
     }
@@ -155,6 +181,9 @@ export function createCompositor(scheduler, stage, opts = {}) {
         else layer.labels.hide()
         layer.trails.clear()
         layer.vectors.clear()
+        // A declared mark's meshes went with the children above; its entries go too, so
+        // the next declaration builds fresh geometry. (D055, id:path-accepted-places)
+        layer.paths?.clear()
     }
 
     // Retract one displayed object: its geometry AND its name leave together. The
@@ -169,6 +198,18 @@ export function createCompositor(scheduler, stage, opts = {}) {
             obj.parent?.remove?.(obj)
         }
         layer.vectors.delete(name)
+    }
+
+    // A declared path's mark leaves as ONE object: every run it owns goes with the
+    // binding, and no other layer's ink is touched. (D055, id:path-accepted-places)
+    function removePathMark(layer, key) {
+        const entry = layer.paths?.get(key)
+        if (!entry) return
+        for (const line of entry.lines) {
+            line.traverse?.(disposeMesh)
+            line.parent?.remove?.(line)
+        }
+        layer.paths.delete(key)
     }
 
     // Dispose a layer entirely: hide head, dispose shapist, remove from scene.
@@ -216,6 +257,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
                 labels: layer.labels,
                 head: layer.head,
                 vectors: layer.vectors,
+                paths: layer.paths,
                 camera: camOn ? stage.camera : null,
                 controls: camOn ? controls : null,
                 frame: ambient,
@@ -228,7 +270,16 @@ export function createCompositor(scheduler, stage, opts = {}) {
             const willPrint = events.some((e) => e.type === 'label')
             for (const event of events) {
                 if (event.type === 'error') continue
+                if (event.type === 'breakpoint') {
+                    for (const handle of catchHandles) {
+                        try { handle.sink(ambient, event) } catch { /* a catch never breaks the pass */ }
+                    }
+                    continue
+                }
                 if (event.type === 'beat') {
+                    if (event.type === 'beat') for (const handle of catchHandles) {
+                        try { handle.sink(ambient, event) } catch { /* a catch never breaks the pass */ }
+                    }
                     if (onBeat) beats.push({ ambient, event })
                     continue
                 }
@@ -251,6 +302,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
                 // at the same transition that retired the binding.
                 // (id:notation-coordinate-vector, id:laws-ordered-replacement)
                 if (pose.type === 'vector' && pose.removed) { removeVector(layer, pose.name); continue }
+                if (pose.type === 'pathmark' && pose.removed) { removePathMark(layer, pose.key); continue }
                 materialize(pose, childGroups, childCtx)
             }
             // Rebuild the trail mesh once per frame, not per event.
@@ -420,7 +472,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
     // (id:render-construction-cadence-wait-regression)
     const MAX_OVERRUN_TICKS = 64
 
-    function driveToRest(beats, outOfTime, now = scheduler.lastTickTime || 0) {
+    function driveToRest(beats, outOfTime, now = scheduler.lastTickTime || 0, eligible = now) {
         let left = MAX_OVERRUN_TICKS
         // A forward scrub is a between-pass command: inside the pump it would be
         // overwritten by the captured `now`. (id:runtime-state-tla)
@@ -428,7 +480,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         pumping = true
         try {
             while (!held() && !disposed) {
-                const progress = scheduler.tick(now)
+                const progress = scheduler.tick(now, eligible)
                 if (scheduler.done) break
                 if (outOfTime() && !scheduler.atCut) {
                     // Preempted mid-value: finish the instant and stop at its cut.
@@ -444,6 +496,40 @@ export function createCompositor(scheduler, stage, opts = {}) {
             }
         } finally { pumping = wasPumping }
     }
+    // Armed catch: drive one scheduler instant at a time, drain between ticks so the
+    // owned beat is seen before the next tick, and never leave the matched instant
+    // until it settles. H (now) is untouched; only eligibility moves.
+    function driveCatch(beats, outOfTime, now = H) {
+        let left = MAX_OVERRUN_TICKS
+        const wasPumping = pumping
+        pumping = true
+        try {
+            while (!held() && !disposed && activeCatch()) {
+                const handle = activeCatch()
+                const next = handle.eligible
+                // A future instant is not eligible: never fast-forward a wait past H.
+                if (!Number.isFinite(next) || next > now) break
+                const progress = scheduler.tick(now, next)
+                const produced = drainAndMaterialize(beats)
+                const after = activeCatch()
+                if (after?.breakpointHit) break
+                if (after && after.instant != null && scheduler.isSettledThrough(after.instant) && scheduler.atCut) break
+                // The pacer budget cuts at a display cut; a mid-instant slice is finished.
+                if (outOfTime()) {
+                    if (!scheduler.atCut) { if (--left <= 0) break; continue }
+                    break
+                }
+                if (!progress && !produced) break
+            }
+        } finally { pumping = wasPumping }
+    }
+    // The one lease edge: after the pump and materialization, before pass observers.
+    function settleCatches() {
+        for (const handle of catchHandles) {
+            try { handle.settle?.() } catch { /* a hold failure is a read state, not a throw */ }
+        }
+    }
+
     function finishPass(beats, scaleHeads = false) {
         if (!disposed) {
             drainAndMaterialize(beats)
@@ -605,21 +691,35 @@ export function createCompositor(scheduler, stage, opts = {}) {
         },
 
         get held() { return held() },
-        setHeld(next) {
-            if (disposed || next === held()) return false
-            scheduler.held = next
-            // Discard the first frame's allowance and cadence sample after each edge,
-            // and revoke a sample measured before it. (id:host-run-pause, id:runtime-state-tla)
-            lastNow = frameStart = null
-            sample = {}
-            stage.requestRender()
+        // Runtime catch registration (internal; no public observer ABI change).
+        watchCatch(handle) { if (handle) catchHandles.add(handle); return () => catchHandles.delete(handle) },
+        unwatchCatch(handle) { return catchHandles.delete(handle) },
+        // The flag-only door keeps its meaning for explicit stage/host users: an
+        // ownerless hold has no lease to re-ask. One writer is `putHeld`.
+        setHeld: putHeld,
+        // Scoped hold: the caller lends a lease whose witness re-reads the exact
+        // play and the authority it was taken under. One lease at a time, released
+        // by identity — a stale handle cannot cancel a successor's hold.
+        hold(token) {
+            if (disposed || held() || !token || typeof token.witness !== 'function') return false
+            if (token.witness() !== true || !putHeld(true)) return false
+            holder = token
             return true
         },
+        releaseHold(token) {
+            if (token == null || token !== holder) return false
+            return putHeld(false)
+        },
+        // Runtime-private: the playback boundary compares its own leases, and no
+        // presentation or shell receives this token.
+        get holdOwner() { return holder },
+        verifyHold,
         // A NEW PLAY (D011): reset the reveal origin. `now = t − epoch` returns to 0
         // and the scheduler frontier clears, so a fresh seat at the axis origin plays
         // from its start. An EDIT must not call this — it re-seats in place.
         beginPlay() {
             scheduler.held = false
+            holder = null
             epoch = null
             lastWallT = null
             H = 0            // a new play resets the horizon and its elapsed baseline together
@@ -646,14 +746,17 @@ export function createCompositor(scheduler, stage, opts = {}) {
         // Own timeslice: never inherit a spent deadline (would park on first breath).
         flush() {
             if (disposed) return scheduler.done
+            verifyHold()
             const beats = []
-            const drive = outOfTime => driveToRest(beats, outOfTime)
+            const drive = outOfTime => activeCatch() ? driveCatch(beats, outOfTime, H) : driveToRest(beats, outOfTime)
             if (!held()) scheduler.withSlice(pacer.budgetMs, drive)
+            if (activeCatch()?.breakpointHit) settleCatches()
             // Capture is in the commit; build is here. Walk the seated answer
             // in this same pump so the show is not a frame behind the pose.
             // (id:laws-figure-eidos-cell, id:laws-figures-phase34-inplace)
             if (!held()) scheduler.readouts.drain()
             if (!held()) scheduler.withSlice(pacer.budgetMs, drive)
+            settleCatches()
             return finishPass(beats)
         },
 
@@ -661,6 +764,7 @@ export function createCompositor(scheduler, stage, opts = {}) {
         // Does not call renderer.render() — caller coordinates that.
         advance(t) {
             if (disposed) return
+            verifyHold()
             const beats = []
             // Idle-out: rebase sim epoch so time does not jump. (timeline.js)
             const rebased = rebaseEpoch(epoch, lastWallT, t, FRAME_MS, IDLE_GAP_MS)
@@ -687,7 +791,9 @@ export function createCompositor(scheduler, stage, opts = {}) {
                 else pacer.observe(t - frameStart)
             }
             frameStart = t
-            if (!held()) scheduler.withSlice(pacer.budgetMs, outOfTime => driveToRest(beats, outOfTime, H))
+            if (!held()) scheduler.withSlice(pacer.budgetMs, outOfTime =>
+                activeCatch() ? driveCatch(beats, outOfTime, H) : driveToRest(beats, outOfTime, H))
+            settleCatches()
             finishPass(beats, true)
         },
 
@@ -708,6 +814,9 @@ export function createCompositor(scheduler, stage, opts = {}) {
         dispose() {
             if (disposed) return
             disposed = true
+            holder = null
+            // A disposed stage has no play left to pause; the flag dies with it.
+            scheduler.held = false
             if (deliveringBeats) deliveringBeats.length = 0
             for (const [id, layer] of ambientLayers) {
                 disposeLayer(id, layer)

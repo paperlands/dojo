@@ -28,6 +28,7 @@ export const SETTLE_DWELL_MS = 60   // hold per settle step
 /**
  * @typedef {object} HeliosProgress
  * @property {HeliosPhase} [phase]
+ * @property {boolean} [held]
  * @property {number} [lines]
  * @property {number} [commands]
  * @property {number} [ambients]
@@ -135,6 +136,7 @@ export function createHeliosWalk(opts = {}) {
     let lastStepAt = 0
     /** @type {'idle'|'building'|'settling'} */
     let mode = 'idle'
+    let heldAt = null
     /** @type {number|null} */
     let lastRun = null
     let spoken = null         // last stamp — walk owns its edge
@@ -151,6 +153,7 @@ export function createHeliosWalk(opts = {}) {
             step = null
             shown = null
             lastStepAt = 0
+            heldAt = null
             mode = 'building'
         }
 
@@ -160,12 +163,20 @@ export function createHeliosWalk(opts = {}) {
             lastStepAt = shown === null ? 0 : now  // keep beat if already up
         }
 
-        const view = mode === 'building' ? stepSky(truth, now)
+        const held = progress.held === true && mode === 'building'
+        if (held) heldAt ??= now
+        else if (heldAt !== null) {
+            if (mode === 'building') lastStepAt += now - heldAt
+            heldAt = null
+        }
+
+        const view = held ? { ...(shown === null ? rise(truth, now) : viewAt(truth, shown)), held: true }
+                   : mode === 'building' ? stepSky(truth, now)
                    : mode === 'settling' ? stepSettle(truth, now)
                    : hold(truth)
 
-        // Edge = (run, glyph, breath). Same glyph re-run is news; living→rest is news.
-        const stamp = `${run}|${view.glyph}${view.phase === 'building' ? '~' : ''}`
+        // Hold and resume are edges even though the glyph stays put.
+        const stamp = `${run}|${view.glyph}|${view.phase}|${held}`
         if (stamp === spoken) return null
         spoken = stamp
         return view
@@ -216,19 +227,21 @@ export function createHeliosWalk(opts = {}) {
 
     // Building always animates so the shell tick lives through quiet `wait`.
     function isAnimating() {
-        if (mode === 'building') return true
+        if (mode === 'building') return heldAt === null
         if (mode === 'settling') return shown !== 'success'
         return false
     }
 
-    function nextDelayMs() {
-        return mode === 'settling' ? settleMs : skyMs
+    function nextDelayMs(now = lastStepAt) {
+        const dwell = mode === 'settling' ? settleMs : skyMs
+        return Math.max(0, dwell - (now - lastStepAt))
     }
 
     function reset() {
         step = null
         shown = null
         lastStepAt = 0
+        heldAt = null
         mode = 'idle'
         lastRun = null
         spoken = null

@@ -11,6 +11,8 @@ import { createDiagnosticsExtension } from "../editor/diagnostics.js"
 export const buildExtensions = (cm6, {
     onDocChange,
     onSelectionChange,
+    onLineNumber,
+    gutterMark,
     onSwitchNext,
     onSwitchPrev,
     onToggleComment,
@@ -46,7 +48,7 @@ export const buildExtensions = (cm6, {
             '.cm-scroller': { overflow: 'auto' },
         }),
 
-        lineNumbers(),
+        ...(gutterMark ?? [lineNumbers()]),
         highlightActiveLine(),
         foldGutter({ openText: '▾', closedText: '▸' }),
         bracketMatching(),
@@ -56,22 +58,21 @@ export const buildExtensions = (cm6, {
         // Reserve bottom margin so cursor doesn't sit flush against mobile keyboard edge
         EditorView.scrollMargins.of(() => ({ bottom: 32 })),
 
-        // Mobile: keyboard opens on focus — nudge a space in/out to trigger
-        // CM6's natural scroll-to-cursor (the only thing that actually works).
-        // NEVER on a read-only surface: the outershell is a review of another's
-        // page, and this mutation races double-click select (focus at T0, word
-        // select at T~50–150, nudge at T+100) — caret/kindling can jump or
-        // the kindled cell goes dim while the selection lands. Editable only.
+        // Mobile: the keyboard opens on focus and CM6 does not always bring the
+        // caret into view. ASK FOR THE SCROLL — this handler used to type a space
+        // and delete it again, which rewrote the document on every focus: two
+        // claims published, two undo steps, autosave dirtied, the one hold
+        // released, and a running source re-seated because its text had changed.
+        // A focus may move the viewport; it may not touch the page.
+        // NEVER on a read-only surface: the outershell is a review of another's.
         EditorView.domEventHandlers({
             focus: (event, view) => {
                 setTimeout(() => {
                     if (!view.hasFocus || view.state.readOnly) return;
-                    // Mid-select: do not rewrite the doc under a range the
+                    // Mid-select: do not scroll the page out from under a range the
                     // user is still painting.
                     if (!view.state.selection.main.empty) return;
-                    const end = view.state.doc.length;
-                    view.dispatch({ changes: { from: end, insert: ' ' }, scrollIntoView: true });
-                    view.dispatch({ changes: { from: end, to: end + 1, insert: '' } });
+                    view.dispatch({ selection: view.state.selection, scrollIntoView: true });
                 }, 100);
                 return false;
             },
@@ -119,6 +120,9 @@ export const buildExtensions = (cm6, {
 
         // Keyboard shortcuts — dispatched via callbacks, not `this`
         keymap.of([
+            ...(onLineNumber ? [{ key: 'Alt-Enter', run: view =>
+                onLineNumber(view, view.state.doc.lineAt(view.state.selection.main.head).number),
+            }] : []),
             ...defaultKeymap,
             ...historyKeymap,
             indentWithTab,

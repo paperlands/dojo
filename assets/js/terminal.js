@@ -110,9 +110,18 @@ export const createTerminal = (element, cm6, options = {}) => {
         autosave.cancel();
         saveToStorage();
     };
+    // A CLAIM IS A PUBLICATION, SO AN UNCHANGED SOURCE IS NOT NEWS (nav-core-sill).
+    // A fresh object per publish made every reader's `===` compare publications:
+    // a redundant announce read as a source change and unseated the sill's hold.
+    // Same {place, addr, buffer_id, text, name} → the standing claim, unpublished.
+    let standingClaim = null;
     const sourceClaim = (id, content, buffer_id = id) => {
         const name = id ? state.collection?.items.get(id)?.name ?? null : null;
+        const held = standingClaim;
+        if (held && held.place === "coreshell" && held.addr === id && held.buffer_id === buffer_id &&
+            held.text === content && held.name === name) return held;
         const claim = { place: "coreshell", addr: id, name, text: content, buffer_id };
+        standingClaim = claim;
         sourceBridge.pub(claim);
         return claim;
     };
@@ -356,9 +365,15 @@ export const createTerminal = (element, cm6, options = {}) => {
         clearTabActive(id) { tabs?.clearActive(id) },
         clearAllTabActive() { tabs?.clearAllActive() },
 
-        inner() {
+        // `onDoc` is the ACTUAL transaction, synchronous from the update listener: the
+        // moment the document identity changes, before any publish and before a drive
+        // can act on what the old document chose. Descriptive only — never a dispatch.
+        inner({ onLineNumber, gutterMark, onDoc = null } = {}) {
             const { extensions, compartments } = buildExtensions(cm6, {
+                onLineNumber,
+                gutterMark,
                 onDocChange: (content) => {
+                    onDoc?.(content)
                     const id = state.projectedId;
                     // Projecting a keep/draft: the canvas still breathes, but
                     // the head buffer is not the surface under the fingers.

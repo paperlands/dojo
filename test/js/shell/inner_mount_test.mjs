@@ -3,9 +3,14 @@
 import { registerHooks } from "node:module"
 import assert from "node:assert/strict"
 import { afterEach, describe, test } from "node:test"
-import { pageLaw as realPageLaw } from "../../../assets/js/weave/page.js?real"
+import { pageLaw as realPageLaw, heldAt as realHeldAt } from "../../../assets/js/weave/page.js?real"
 import { buildWorld, drive, fork, worldOf } from "../laws/harness.mjs"
 import { cellIdentities, parseProgram, phaseCells } from "../../../assets/js/turtling/parse.js"
+import { Group, Vector3 } from "../../../assets/js/utils/three-entry.js"
+import { createCompositor } from "../../../assets/js/turtling/compositor.js"
+import { createFocus } from "../../../assets/js/turtling/focus.js"
+import { createMaterialCache } from "../../../assets/js/turtling/render/line/material-cache.js"
+import { SE3 } from "../../../assets/js/turtling/se3.js"
 
 const noop = () => {}
 const stops = () => noop
@@ -169,6 +174,16 @@ class TurtleStub {
     removeAmbient(key) { if (this.real) this.scheduler.removeChild(key) }
     upsertAmbient(key, displayName, code, options = {}) {
         if (!this.real) return
+        if (this.compositor) {
+            const { fresh = false, preparePlay, choices } = options
+            if (fresh) this.compositor.beginPlay()
+            const seat = this.scheduler.hotSwapChild(key, fork(displayName, code), {
+                fresh, choices, deferStart: fresh && !!preparePlay,
+            })
+            if (fresh && seat) preparePlay?.()
+            this.compositor.flush()
+            return { success: !seat?.error, seat }
+        }
         const seat = this.scheduler.hotSwapChild(key, fork(key, code), { choices: options.choices })
         drive(this.scheduler)
         return { success: true, commandCount: 1, seat }
@@ -225,6 +240,23 @@ const mockPageLaw = () => ({
 })
 const pageLaw = () => useRealPageLaw ? realPageLaw() : mockPageLaw()
 
+// A REAL world cell, narrow: the fixture needs the registered faces and the breath.
+// Only this one module becomes real; every other mock is untouched. (id:outer-sill)
+const worldCell_ = (() => {
+    let cur = null
+    const fns = new Set()
+    return {
+        register(faces) {
+            cur = faces
+            for (const fn of [...fns]) fn()
+            return () => { if (cur === faces) { cur = null; for (const fn of [...fns]) fn() } }
+        },
+        get: () => cur,
+        watch(fn) { fns.add(fn); return () => fns.delete(fn) },
+        changed() { for (const fn of [...fns]) fn() },
+    }
+})()
+
 const mock = {
     Turtle: TurtleStub,
     Recorder: RecorderStub,
@@ -235,8 +267,12 @@ const mock = {
     OUTERSHELL: "outershell",
     SELF: "self",
     PEER: "peer",
-    registerWorld: stops,
-    worldChanged: noop,
+    // A REAL world cell, narrow: the fixture needs the registered faces and the breath.
+    // Everything else about the world module stays exactly as it was. (id:outer-sill)
+    registerWorld: (faces) => worldCell_.register(faces),
+    worldChanged: () => worldCell_.changed(),
+    world: () => worldCell_.get(),
+    watchWorld: (fn) => worldCell_.watch(fn),
     makeReflector: () => ({
         ask: () => ({}),
         of: ({ source, attend }) => ({
@@ -336,7 +372,7 @@ const exportsByFile = {
     "/turtling/export/recorder.js": ["Recorder"],
     "/turtling/stage-cell.js": ["registerStage"],
     "/utils/temporal.js": ["temporal"],
-    "/weave/page.js": ["pageLaw", "CORESHELL", "OUTERSHELL", "SELF", "PEER"],
+    "/weave/page.js": ["pageLaw", "CORESHELL", "OUTERSHELL", "SELF", "PEER", "heldAt"],
     "/weave/world.js": ["registerWorld", "worldChanged", "world", "watchWorld"],
     "/weave/reflect.js": ["makeReflector"],
     "/weave/seat-health.js": ["seatHealth"],
@@ -385,6 +421,8 @@ globalThis.__innerMocks = mock
 // Real keep modules, imported past the hooks; the page mock must carry PAGE first.
 const { PAGE: realPage } = await import("../../../assets/js/keep/page.js?real")
 mock.PAGE = realPage
+// The scoped-held query is pure; the mock carries the real one rather than a rule.
+mock.heldAt = realHeldAt
 const { createWire: realWireModule } = await import("../../../assets/js/keep/wire.js?real")
 realWireCreate = realWireModule
 const { createJournal: realJournalDoor } = await import("../../../assets/js/keep/journal.js?real")
@@ -682,6 +720,76 @@ afterEach(() => {
 
 const coreClaim = (text = "fw 1", addr = "b1") => ({
     place: "coreshell", addr, name: "one", text, buffer_id: addr,
+})
+
+describe("mountInner scoped teardown — same address, two seats", () => {
+    // ONE DISOWN, BOTH COORDINATES. A panel closing at an address must retire ITS
+    // place's fact and leave the other place's fact alone. (id:outer-sill-lifetime)
+    test("an outer close does not retire a newer core owner at the same address", async () => {
+        const { term, sourceBridge, fire, hatches } = await mount()
+        term.currentBaseId = () => "base-A"
+        sourceBridge.pub(coreClaim("fw 7"))          // the hand came back to core
+        fire("syncShell")
+        const authored = hatches().at(-1)
+        assert.equal(authored.source, "fw 7", "core owns the page")
+
+        scene.remove("b1", "outershell")              // a friend's panel closes at the same addr
+        fire("syncShell")
+        assert.equal(hatches().at(-1).source, "fw 7", "the core owner survives the outer close")
+    })
+
+    test("an outer close retires the outer owner it actually owned", async () => {
+        const { fire, hatches } = await mount()
+        const outer = { place: "outershell", addr: "o1", name: "friend", text: "peer", buffer_id: null }
+        scene.claim(outer)
+        fire("syncShell")
+        assert.equal(hatches().at(-1).source, "peer", "the watched page owns the light")
+
+        scene.remove("o1", "outershell")
+        fire("syncShell")
+        assert.notEqual(hatches().at(-1)?.source, "peer", "a closed panel no longer owns the page")
+    })
+
+    test("a restore retires only the outer fact at this address", async () => {
+        const { term, sourceBridge, fire, hatches } = await mount()
+        term.currentBaseId = () => "base-A"
+        sourceBridge.pub(coreClaim("fw 3"))          // core owns the page at b1
+        fire("syncShell")
+        assert.equal(hatches().at(-1).source, "fw 3")
+
+        // The friend's restore at the same address is a PEER at the OUTER place.
+        scene.restore("b1")
+        fire("syncShell")
+        assert.equal(hatches().at(-1).source, "fw 3", "a peer restore cannot revoke the core owner")
+    })
+})
+
+describe("mountInner one disown, two facts", () => {
+    // A delayed render leaves `authored` (the page figure) and `owner` (the grant)
+    // disagreeing at different places. Clearing the figure must not revoke the grant.
+    // (id:outer-sill-lifetime)
+    test("a stale outer figure does not revoke a newer core grant, even on late restore", async () => {
+        const { term, sourceBridge, fire, hatches } = await mount()
+        term.currentBaseId = () => "base-A"
+        // 1. The page was the friend's: their grant, their figure.
+        const outer = { place: "outershell", addr: "b1", name: "friend", text: "their page", buffer_id: null }
+        scene.claim(outer)
+        scene.observe("b1", "friend", "their page", outer)
+        fire("syncShell")
+        assert.equal(hatches().at(-1).source, "their page")
+
+        // 2. A NEWER core grant lands; `authored` is still the stale outer figure
+        //    until the delayed render adopts the core one.
+        sourceBridge.pub(coreClaim("fw 11"))
+        fire("syncShell")
+        assert.equal(hatches().at(-1).source, "fw 11", "core now owns the page")
+
+        // 3. The outer's restore arrives LATE. It may clear the stale figure; it may
+        //    not revoke a grant that is no longer the outer's.
+        scene.restore("b1")
+        fire("syncShell")
+        assert.equal(hatches().at(-1).source, "fw 11", "the late outer restore cannot revoke the core grant")
+    })
 })
 
 describe("mountInner source claims and commits", () => {
@@ -1912,5 +2020,176 @@ describe("mountInner real page + scheduler lender seam", () => {
             v: 1,
             inputs: [{ route: { root: { cell: id }, names: ["p"] }, action: { kind: "translation", by: [0, 3, 0] } }],
         })
+    })
+})
+
+describe("the outer port — real world cell, real term-cell succession", () => {
+    // The handoff trace: M1 owns; M2 registers. The registered term decides succession;
+    // the dead mount's verbs refuse at once; its late depart is a no-op. (id:outer-sill)
+    const port = () => worldCell_.get()?.outerPort ?? null
+
+    test("M2 may replace M1; M1's verbs die on the registration edge", async () => {
+        const { register } = await import("../../../assets/js/hooks/shell/term-cell.js")
+        const { term } = await mount()
+        const A = "handoff-a"
+        const M1 = { id: "m1" }
+        const M2 = { id: "m2" }
+
+        const release1 = register("outershell", M1)
+        assert.equal(port().show(A, M1), true, "the registered mount binds")
+        assert.equal(port().show(A, M1), true, "re-showing the same seat is not news")
+        assert.equal(port().show("handoff-b", M2), false, "an unregistered mount cannot bind")
+
+        const release2 = register("outershell", M2)      // succession edge
+        assert.equal(port().show(A, M1), false, "the dead mount cannot re-bind")
+        assert.equal(port().read(M1, A), null, "the dead mount reads nothing")
+        assert.equal(port().show(A, M2), true, "the verified successor binds")
+        assert.equal(port().depart(M1), false, "the dead mount's depart is a no-op")
+        // Ownership, not depiction: the successor is the ONLY one that may release. (With
+        // no play at the seat, `read` answers null for both — that is depictability, not
+        // refusal, so it cannot carry the ownership claim.)
+        assert.equal(port().depart(M2), true, "the successor owns the binding")
+
+        release2()
+        release1()
+        term.dispose?.()
+    })
+
+    test("a departed mount is closed; a fresh mount binds without inheriting it", async () => {
+        const { register } = await import("../../../assets/js/hooks/shell/term-cell.js")
+        const { term } = await mount()
+        const A = "handoff-c"
+        const M1 = { id: "m3" }
+        const release = register("outershell", M1)
+        assert.equal(port().show(A, M1), true)
+        release()                                        // the mount departs for good
+        assert.equal(port().read(M1, A), null, "no reading survives the departure")
+        assert.equal(port().depart(M1), false, "and its depart is a no-op")
+        // The binding was CLOSED, not retained: the next registered mount binds afresh.
+        const { register: reg2 } = await import("../../../assets/js/hooks/shell/term-cell.js")
+        const M2 = { id: "m4" }
+        const release2 = reg2("outershell", M2)
+        assert.equal(port().show(A, M2), true, "a fresh mount binds without inheriting anything")
+        assert.equal(port().depart(M2), true)
+        release2()
+        term.dispose?.()
+    })
+})
+
+describe("mounted Outer draft playback", () => {
+    async function draftBench(t) {
+        const { hook } = await mount({ realPage: true })
+        const turtle = globalThis.__innerTurtle
+        const scheduler = turtle.enableRealScheduler()
+        const compositor = createCompositor(scheduler, {
+            scene: new Group(), camera: { position: new Vector3(0, 0, 1000) },
+            materials: createMaterialCache(), requestRender() {}, viewOffset: () => SE3.identity(),
+        }, { focus: createFocus(scheduler), createText: () => { throw Error("no labels") } })
+        turtle.compositor = compositor
+        scheduler.root._onSeatChange = () => compositor.verifyHold()
+        const { register } = await import("../../../assets/js/hooks/shell/term-cell.js")
+        const term = { drafting: () => true }
+        const release = register("outershell", term)
+        t.after(() => { release(); compositor.dispose() })
+        const addr = "outer-play"
+        const slot = realPageLaw().seatOf(addr, "outershell")
+        const port = worldCell_.get().outerPort
+        assert.equal(port.show(addr, term), true)
+        const text = "let B\nfw 1\nwait 1\nfw (2+B.x)"
+        const claim = { place: "outershell", addr, name: addr, text, buffer_id: null }
+        const frame = () => scheduler.root.children.get(slot)
+        const read = () => port.read(term, addr)
+        const observe = () => scene.observe(addr, addr, text, claim)
+        return { hook, register, release, addr, slot, port, term, scheduler, compositor, claim, frame, read, observe }
+    }
+
+    test("draft claim cannot command the solo peer; admission enables Continue and Restart with Hand", async t => {
+        const b = await draftBench(t)
+        // Native occupant as control; the draft below must enter through the real scene/law performer.
+        b.scheduler.hotSwapChild(b.slot, fork("peer", "fw 5\nwait 2\nfw 7"))
+        b.compositor.advance(0)
+        const peer = b.frame()
+        const H = b.scheduler.lastTickTime
+        scene.claim(b.claim)
+        const waiting = b.read()
+        assert.deepEqual(waiting.can, { hold: false, resume: false, replay: false })
+        assert.equal(waiting.pause?.(), undefined)
+        assert.equal(waiting.replay?.(), undefined)
+        assert.equal(b.frame(), peer)
+        assert.equal(b.scheduler.lastTickTime, H)
+        assert.equal(b.compositor.holdOwner, null)
+
+        b.observe()
+        const admitted = b.frame()
+        assert.notEqual(admitted, peer)
+        assert.ok(b.read().can.hold, "the performer bound the admitted draft")
+        assert.equal(b.read().pause(), true)
+        const { progress } = worldCell_.get()
+        assert.equal(progress("outershell").held, true, "the held draft lights its own Helios")
+        assert.equal(progress("coreshell").held, false, "the other Helios does not borrow the hold")
+        const point = admitted.children.get("B")
+        assert.ok(point)
+        assert.equal(b.scheduler.requestMotion(point, {
+            ...point.transform.deref(), position: [8, 0, 0],
+        }, b.scheduler.motionRevision).kind, "accept")
+        const paused = b.read()
+        assert.equal(paused.resume(), true)
+        assert.equal(b.frame(), admitted, "Continue uses the exact same incarnation")
+        assert.equal(b.read().pause(), true)
+        const oldContinue = b.read()
+        assert.equal(oldContinue.replay(), true)
+        const fresh = b.frame()
+        assert.notEqual(fresh.id, admitted.id)
+        assert.notEqual(fresh.run, admitted.run)
+        assert.equal(oldContinue.resume(), false)
+        assert.equal(b.read().phase, "paused")
+        assert.equal(fresh.children.get("B").transform.deref().position[0], 8,
+            "Restart carries the accepted framed adjustment")
+    })
+
+    test("restore and ABA retire exact custody without another paint", async t => {
+        const b = await draftBench(t)
+        scene.claim(b.claim)
+        b.observe()
+        const original = b.frame()
+        assert.equal(b.read().pause(), true)
+        const atA = b.read()
+        scene.claim({ ...b.claim, addr: "outer-other" })
+        scene.claim({ ...b.claim })
+        assert.equal(b.frame(), original, "the grant changed, not the actor")
+        assert.equal(atA.replay(), false)
+        assert.equal(atA.resume(), false)
+        assert.equal(b.read().pause(), true)
+        scene.restore(b.addr)
+        assert.equal(b.compositor.holdOwner, null)
+        assert.equal(b.read(), null, "no restored peer seeded in this arm")
+    })
+
+    test("mount and world teardown fence painted commands without harming a successor hold", async t => {
+        const b = await draftBench(t)
+        scene.claim(b.claim)
+        b.observe()
+        assert.equal(b.read().pause(), true)
+        const old = b.read()
+
+        const next = { drafting: () => true }
+        const releaseNext = b.register("outershell", next)
+        t.after(releaseNext)
+        assert.equal(b.compositor.holdOwner, null, "registration retires the predecessor's exact hold")
+        assert.equal(b.read(), null)
+        assert.equal(old.resume(), false)
+        assert.equal(old.replay(), false)
+        assert.equal(b.port.show(b.addr, next), true)
+        assert.equal(b.port.read(next, b.addr).pause(), true)
+        const lease = b.compositor.holdOwner
+        const captured = b.port.read(next, b.addr)
+        b.release()
+        assert.equal(b.port.depart(b.term), false)
+        assert.equal(b.compositor.holdOwner, lease, "late cleanup cannot release the new hold")
+
+        b.hook.destroyed()
+        assert.equal(b.compositor.holdOwner, null, "world teardown releases custody without a paint")
+        assert.equal(captured.resume(), false)
+        assert.equal(captured.replay(), false)
     })
 })

@@ -84,6 +84,17 @@ const PLACE_MARK = ":"
 const asSlot = (place, node) => `${place}${PLACE_MARK}${node}`
 export const nodeOf = (slot) =>
     typeof slot === "string" ? slot.slice(slot.indexOf(PLACE_MARK) + 1) : slot
+// WHOLE-STAGE HELD, SCOPED. A scoped hold names its seat, and a seat's place is the
+// first segment of its slot spelling. A flag-only hold has no lease to scope by: it
+// predates scoping and is stage-wide — legacy, documented, not a place question.
+// One query, so both Helios reads answer the same way. (id:outer-sill)
+export function heldAt(stage, place) {
+    if (!stage?.held) return false
+    const seat = stage?.holdOwner?.seat
+    if (seat == null) return true
+    return placeOf(seat) === place
+}
+
 export const placeOf = (slot) =>
     typeof slot === "string" && slot.includes(PLACE_MARK)
         ? slot.slice(0, slot.indexOf(PLACE_MARK))

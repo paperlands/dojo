@@ -26,10 +26,37 @@
     animation: outer-arrive 260ms ease-out both;
   }
 
-  /* pane flip flag (#pane-state, phx-update=ignore) — client-driven like
-     #deck-state: the panel stays mounted, CSS gates it, no server round-trip */
-  #pane-frame #disciple_panels { display: none; }
-  #pane-frame:has(#pane-state.pane-open) #disciple_panels { display: flex; }
+  /* Bottom chrome shares a grid: the strip's actual height sets the
+     clearance on narrow screens. An empty or closed strip takes no space. */
+  .shell-bottom {
+    position: absolute;
+    inset: auto 0 1rem;
+    display: grid;
+    grid-template-columns: 20% 60% 20%;
+    grid-template-areas:
+      "instruments instruments instruments"
+      ". strip .";
+    align-items: end;
+  }
+  .shell-bottom .core-instruments {
+    grid-area: instruments;
+    margin-left: 1rem;
+    width: min(40ch, calc(100% - 2rem));
+  }
+  .shell-bottom #disciple_panels {
+    grid-area: strip;
+    min-width: 0;
+    margin-top: 1rem;
+    display: none;
+  }
+  .shell-bottom:has(#pane-state.pane-open) #disciple_panels:has([data-disciple]) {
+    display: flex;
+  }
+  @media (min-width: 64rem) {
+    .shell-bottom { grid-template-areas: "instruments strip ."; }
+    .shell-bottom .core-instruments { width: min(50ch, calc(100% - 1rem)); }
+    .shell-bottom #disciple_panels { margin-top: 0; }
+  }
 
   /* the river's own flag — placement and gating are the call site's;
      the component itself is placement-agnostic (id:kr-place). Open paint
@@ -732,17 +759,28 @@
       # >
       # </nav>
       --%>
-      <div
-        id="nerve-hud"
-        phx-hook="NerveHook"
-        phx-update="ignore"
-        class="fixed bottom-4 left-4 z-30 flex flex-col-reverse gap-0.5 pointer-events-none font-mono text-xs w-[min(40ch,calc(100vw-2rem))] lg:w-[50ch] max-h-[33dvh]"
-      >
-      </div>
     </div>
-    <!-- <div class="backdrop-blur-sm border border-gray-700/50 rounded-lg p-4"/> -->
-    <!-- Bottom Pane - Visual Previews (spans both columns) -->
-    <div id="pane-frame" class="col-span-3 row-start-2 lg:row-span-1 lg:col-span-1 ">
+    <%!-- The shell places the instruments and disciple strip; each owns its behavior. --%>
+    <div id="pane-frame" class="shell-bottom">
+      <div class="core-instruments z-30 font-mono text-xs">
+        <div
+          id="nerve-hud"
+          phx-hook="NerveHook"
+          phx-update="ignore"
+          class="flex flex-col-reverse gap-0.5 max-h-[33dvh]"
+        >
+        </div>
+        <div
+          id="core-sill"
+          class="sill-helios"
+          role="group"
+          aria-label="Playback"
+          phx-update="ignore"
+          hidden
+        >
+        </div>
+        <div id="core-source-catch" class="sr-only" phx-update="ignore" role="status"></div>
+      </div>
       <div id="pane-state" phx-update="ignore" class="pane-open hidden"></div>
       <div
         id="paneflip"
@@ -766,7 +804,7 @@
       <div
         id="disciple_panels"
         phx-hook="DiscipleWindow"
-        class="disciple-strip fixed bg-transparent bottom-0 z-40 flex w-3/5 p-4 m-4 overflow-x-scroll transform -translate-x-1/2 rounded-md left-1/2 dark-scrollbar touch-pan-x overscroll-auto pointer-events-none"
+        class="disciple-strip bg-transparent z-40 p-4 overflow-x-scroll rounded-md dark-scrollbar touch-pan-x overscroll-auto pointer-events-none"
       >
         <%!-- The living run, on the presence clock. The lantern run is a second
               run on the room's clock — composed, never sorted together. --%>

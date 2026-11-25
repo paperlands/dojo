@@ -9,6 +9,9 @@ import { openWatch, step } from "../../../assets/js/editor/watch-law.js"
 const noop = () => {}
 const stops = () => noop
 const listeners = []
+// The port tests own the world's identity and its breath; everything else sees null.
+let currentWorld = null
+const wakes = []
 const attends = []
 const pushes = []
 const forks = []
@@ -40,8 +43,8 @@ const mock = {
     verdict: () => ({ state: "ok" }),
     seatHealth: () => () => ({}),
     readWounds: () => ({ release: noop, read: () => [], watch: stops, changed: noop }),
-    world: () => null,
-    watchWorld: stops,
+    world: () => currentWorld,
+    watchWorld: (fn) => { wakes.push(fn); return stops() },
     OUTERSHELL: "outershell",
     mountSun: () => ({ release: noop, tick: noop }),
     nerve: () => null,
@@ -786,4 +789,83 @@ describe("local close is one correlated request with a close fence", () => {
     })
 
 })
+})
+
+describe("the outer port — bound by registration, not by paint", () => {
+    // A port that records only what it is asked. The real port lives with the world
+    // owner; here we are testing WHEN outer asks it, which is the wiring the spec fixes.
+    const mkPort = () => {
+        const calls = { show: [], depart: [], read: [] }
+        return {
+            calls,
+            show(addr, mount) { calls.show.push({ addr, mount }); return true },
+            depart(mount) { calls.depart.push({ mount }); return true },
+            read(mount, addr) {
+                calls.read.push({ addr })
+                return { ms: 0, phase: "running", caught: false, can: { hold: false, resume: false, replay: false } }
+            },
+        }
+    }
+    const breath = () => { for (const fn of [...wakes]) fn() }
+
+    test("a selection edge binds once; breaths never rebind", async () => {
+        const port = mkPort()
+        currentWorld = { outerPort: port }
+        try {
+            const shell = await mount()
+            shell.see(A, "fw 10")
+            assert.equal(shell.env.dataset.outerSelection, "ready")
+            assert.equal(port.calls.show.length, 1, "bound on the selection edge")
+            assert.equal(port.calls.show[0].addr, A)
+
+            for (let i = 0; i < 5; i++) breath()
+            assert.equal(port.calls.show.length, 1, "five breaths bind nothing")
+            assert.equal(port.calls.depart.length, 0, "and release nothing")
+        } finally {
+            currentWorld = null
+            wakes.length = 0
+        }
+    })
+
+    test("a NEW registration releases the old port and binds the same seat once", async () => {
+        const w1 = mkPort()
+        const w2 = mkPort()
+        currentWorld = { outerPort: w1 }
+        try {
+            const shell = await mount()
+            shell.see(A, "fw 10")
+            assert.equal(w1.calls.show.length, 1)
+            const mountToken = w1.calls.show[0].mount
+
+            currentWorld = { outerPort: w2 }       // a reborn world, same selection
+            breath()
+            assert.equal(w1.calls.depart.length, 1, "the old registration is released exactly once")
+            assert.equal(w2.calls.show.length, 1, "and the ready seat is bound on the new one")
+            assert.equal(w2.calls.show[0].addr, A)
+            assert.equal(w1.calls.depart[0].mount, mountToken, "the release names the mount that held it")
+
+            breath(); breath()
+            assert.equal(w2.calls.show.length, 1, "further breaths do not rebind")
+            assert.equal(w1.calls.depart.length, 1)
+        } finally {
+            currentWorld = null
+            wakes.length = 0
+        }
+    })
+
+    test("close departs the very mount that was shown", async () => {
+        const port = mkPort()
+        currentWorld = { outerPort: port }
+        try {
+            const shell = await mount()
+            shell.see(A, "fw 10")
+            const mountToken = port.calls.show[0].mount
+            shell.close()
+            assert.equal(port.calls.depart.length, 1, "the close edge departs")
+            assert.equal(port.calls.depart[0].mount, mountToken, "with its own identity")
+        } finally {
+            currentWorld = null
+            wakes.length = 0
+        }
+    })
 })
