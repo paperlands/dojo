@@ -1,0 +1,11 @@
+# Stretch either bar. The other gives up exactly what this one takes.
+let A = (-85, -75)
+let C = (85, -75)
+jmp -85
+lt 90
+jmp 55
+let B
+rt 90
+jmp 170
+let D
+let distance(A, B) + distance(C, D) = 240

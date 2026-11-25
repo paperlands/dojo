@@ -1,0 +1,30 @@
+# Pin A. Drag X to stretch the span, then drag B to place the quarter-mark.
+def midpoint a m b do
+  let m.position - a.position = b.position - m.position
+end
+
+def quarter a x b do
+  let h
+  midpoint a h b
+  midpoint a x h
+end
+
+let A = (-70, 0)
+goto 90 0
+let B
+goto -30 0
+let X
+let gauge = quarter A X B
+
+# The two strokes follow the visible marks; h is only used inside quarter.
+def stroke ax ay bx by do
+  hide
+  goto ax ay
+  faceto bx by
+  fw sqrt[(bx-x)^2+(by-y)^2]
+end
+beColour gold
+let first = stroke A.x A.y X.x X.y
+beColour slategray
+let rest = stroke X.x X.y B.x B.y
+hide

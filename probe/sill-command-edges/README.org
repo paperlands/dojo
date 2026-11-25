@@ -1,0 +1,136 @@
+#+title: Sill — refusal, resumption, and a live experiment
+#+PROBE-STATUS: active
+
+* Native command bench
+:PROPERTIES:
+:ID: sill-command-edges
+:MODULE: probe/sill-command-edges/verify.mjs
+:LENS: empiricist adversarial
+:END:
+
+From the Dojo root: =node probe/sill-command-edges/verify.mjs=. Real dial,
+scheduler, and compositor; fixed time and headless display. A stub supplies
+the surface's authorization and, where marked, the restart recipe result.
+No browser, page-law, selection, or reload claims are made by this bench.
+Design implications: [[id:sill-live-experiment]].
+
+| Intervention | Measured on the first run (after adding compensation to the dial) |
+|--------------+------------------------------------------------------------------|
+| Add B beside A, try the old commands, remove B without painting | Old Pause and Restart both refuse while shared, then succeed. A's frame and run did not change. |
+| Catch line 3, try a Restart whose recipe returns false | Still paused, but with a successor lease; caught indication gone; the same reading's previously valid Continue refuses. |
+| Insert another valid command on row 3 in a replacement run | Raw row still says available. =syncCatch= does not re-arm; neither the old nor the new statement catches. |
+| Catch a later read of B.x, move B, lift the catch and continue | H=100; x=1 before and after the hand under the stop; B.x=8; the very same actor/run reaches x=11 after it continues. |
+| Call native =beginPlay= then fresh =hotSwapChild= with malformed choices | Same frame and run (choice rejected); original hold gone. These are the two relevant calls in =upsertAmbient='s order, not a claim that the shell generates malformed choices. |
+| Ask the gutter to read an armed catch on newly shared stage, before drive | The read clears A's executor break line (3→null) and still reports that the row is available. |
+
+On the next run after Mendel's catch-read change, the edited row and the
+shared-stage row both reported unavailable. A gutter read on the shared stage
+no longer changed the executor's break line (3→3). The separate
+[[file:../../test/js/nerve/catch_purity_test.mjs][catch-purity test]] checks retirement at the drive's =sink()= edge.
+
+A later run after moving catch retirement into fresh-seat preparation pins both
+preflight refusal and a recipe that refuses without performing native effects:
+exact lease identity, original hit, and the already-painted Continue survive.
+At the hit the executor had already consumed =breakLine= (null→null across the
+refusal). Before a hit the armed line is still installed (3→3 across reads).
+The positive control uses a native fresh seat with a valid seed and a later
+runtime fault. The exact old lease reaches the native door intact; the new
+frame/run owns the fault, and old Continue is dead.
+
+The raw native ordering remains broader than this shell route. An envelope
+with a cell root is portable-valid but not scheduler-valid until materialized.
+The bench tests that distinction; it does not show a normal shell Restart
+producing such an offer. Page law materializes its document-root recipe.
+
+The successful composition uses =let B / fw (1+B.x) / wait 0.1 /
+fw (2+B.x) / wait 1=. Compare the separate [[file:../pause-hand-catch/README.org][retained-hand]] fixture: both live
+and seeded runs have B.x=8 and H=0 but prefix x=1 vs x=9. Do not splice their
+numerical results: they answer different questions with different suffixes.
+
+* Source identity — proposed first cut
+:PROPERTIES:
+:ID: sill-catch-source-lifetime
+:LENS: architect
+:END:
+
+A row locates a question in one document version; a resolved armed site lives
+in one admitted play. The parser control inserts a comment above the selected
+statement: the incremental parser reuses the exact node object but mutates its
+span through the old reference (3→4). Neither a row nor a green node reference
+certifies an old source version.
+
+Invalidate the trigger on a document change, before a still-seated old play
+can reach it during the quiet window. An already-acquired stop is separate:
+keep its lease until explicit Continue or an existing lifetime edge, without
+painting its historical hit on the modified row. Restart may resolve the site
+again only for the same admitted source. If keeping a breakpoint across edits
+earns itself, map the editor selection through
+[[https://codemirror.net/docs/ref/][CodeMirror's transaction changes]], then check
+for a unique executable site in the next admitted source. Deletion or
+ambiguity retires the selection, not retargets it to the next statement.
+
+The document bench separated mutation from relay. The old relay-only ordering
+let a drive take a stale stop. On the current tree:
+
+1. A drive after the edit but before delayed disarm reports =hitBeforeBridge=false=.
+2. That drive clears the exact old trigger without waiting for a callback.
+3. Same-document republication leaves a live =breakLine= at 3.
+4. Undo to identical bytes does not re-arm an edited trigger.
+5. A hit keeps the exact lease through the edit, another advance, and a flush.
+   Its gutter hit is no longer live; Continue and Restart do not re-arm the row.
+
+The synchronous editor callback clears the selection; the source witness
+independently refuses stale execution. This is a controlled ordering with real
+drive, not a browser timing measurement.
+Browser falsifier: while old code is still seated, an edit just before an
+intended stop cannot catch the old site; an already-caught stop does not
+resume on that same edit alone. Insert a new command at the old row, undo the
+edit, and verify neither text equality nor row reuse resurrects the trigger.
+
+The existing browser journey also passed against the local dev server:
+=scripts/verify/source_catch_browser.mjs= caught the same actor at x=30, moved
+B.x from 0 to 19.245 at unchanged sampled H, and continued that actor to
+x=149.245. That journey validates live Catch × Hand × Continue, not the
+adversarial document-vs-drive timing above.
+
+* Selection, occupancy, and outer draft
+:PROPERTIES:
+:ID: sill-seat-edges
+:MODULE: probe/sill-command-edges/seats.mjs
+:LENS: empiricist
+:END:
+
+Run =node probe/sill-command-edges/seats.mjs=. Real page law, dial,
+compositor and scheduler; explicit selection and grant transitions model the
+shell. The experiment does not run =mountInner= or time browser debounce.
+
+- Select B before it has a seat. The dial has nothing to depict; =currentPlay=
+  still accepts A as the same solo incarnation. A's painted Restart nevertheless
+  refuses, without an epoch change, because A is no longer selected. Seating
+  plain B evicts A. A freshly captured B Restart works after ordinary advance;
+  replacing B in place, with selection/grant unchanged, fences that command.
+- Same address, outer draft: page law adds the outer slot without evicting core.
+  The same core actor advances from x=1 to x=3. While core is still solo and
+  the grant still stands, it can pause. Rotating the grant first releases the
+  hold and disables the visible dial; seating the second root first also blocks
+  Pause and Restart, even under the previous grant. These are independent gates.
+- A short core play can finish while the outer play still waits. The original
+  dial reported /running/ and advanced the clock. With =playOf= asking the
+  scheduler's =allDone(frame)=, the rerun reports /finished/ and still advances
+  the clock: phase describes this play; elapsed is stage time relative to its
+  birth. There is no native per-play end timestamp.
+
+The completion arm runs a short owner with a waiting child, then an owner with
+a waiting installation. At H=0 both owners have =frame.done=true= while the
+child/installation is unfinished. =allDone(owner)= is false in both, even
+though =isSettledThrough(0)= is true: neither future wait owes work at H=0.
+The child is done at the H=1000 sample and the installation by H=2000; the
+five-second neighbor keeps =scheduler.end=null= through H=2000 and ends it
+at H=5000. =allDone= also checks owed comparison; it answers current subtree
+execution exhaustion, not world settlement, presentation, or elapsed.
+* Exit
+
+The bench asserts exact refusal for both doors exercised above, plus the
+faulted fresh incarnation. Move the edited-selection arm to a browser path
+once the policy (invalidate or explicitly map) is chosen. Promote the positive
+Hand interleave as a regression on the existing gates, not as a runtime mode.

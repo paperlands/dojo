@@ -33,7 +33,10 @@ defmodule DojoWeb.BootLive do
         %{assigns: %{session: sess}} = socket
       )
       when is_binary(name) do
-    login_sess = %{sess | name: name, id: Ecto.UUID.generate()}
+    # Person key is the session UUID (id:ki-mint). Keep a good existing id;
+    # mint only when missing or garbage. Never rotate on rename.
+    {with_id, _} = DojoWeb.Session.ensure_author_id(sess)
+    login_sess = %{with_id | name: name, active: true}
 
     {:noreply,
      socket

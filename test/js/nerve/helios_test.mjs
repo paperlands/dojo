@@ -265,6 +265,22 @@ describe("createHeliosWalk — the run, not the phase edge", () => {
 })
 
 describe("createHeliosWalk — speaks on edges, so no caller diffs glyphs", () => {
+    test("a real hold freezes the rung and preserves the remaining dwell", () => {
+        const progress = { phase: 'building', run: 1, held: false }
+        const walk = createHeliosWalk({ read: () => progress, skyMs: 150 })
+        assert.equal(walk.tick(0).id, 0)
+        progress.held = true
+        assert.equal(walk.tick(50).held, true)
+        assert.equal(walk.isAnimating(), false)
+        assert.equal(walk.tick(5000), null)
+        progress.held = false
+        const resumed = walk.tick(6000)
+        assert.equal(resumed.id, 0)
+        assert.equal(resumed.held, undefined)
+        assert.equal(walk.isAnimating(), true)
+        assert.equal(walk.tick(6099), null)
+        assert.equal(walk.tick(6100).id, 1)
+    })
     test("an unmoved world says nothing", () => {
         const w = world({ phase: "building", lines: 10_000, run: 1 })
         assert.equal(w.walk.tick(0).id, 0)

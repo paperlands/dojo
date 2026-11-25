@@ -1,0 +1,6 @@
+jmp 80
+let X
+jmp -80
+let A
+let A.x = X.y
+let A.z = 0

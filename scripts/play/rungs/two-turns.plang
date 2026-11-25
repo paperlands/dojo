@@ -1,0 +1,45 @@
+# Two pegs never move. I turn halfway at each, yet I walk straight.
+# Drag T. Then swap a and b in the 'again' line. Where must T go?
+def halfturn p peg q do
+  let peg.position - p.position = q.position - peg.position
+end
+
+def step p a q b r do
+  let first = halfturn p a q
+  let second = halfturn q b r
+end
+
+def twice p a q b r s t do
+  let once = step p a q b r
+  let again = step r a s b t
+end
+
+let A = (-45, 0)
+let B = (-5, 0)
+goto -115 40
+let P
+goto 25 -40
+let Q
+goto -35 40
+let R
+goto -55 -40
+let S
+goto 45 40
+let T
+let trail = twice P A Q B R S T
+
+# Gold is the straight walk; grey shows the four swings around A, B, A, B.
+def stroke ax ay bx by do
+  hide
+  goto ax ay
+  faceto bx by
+  fw sqrt[(bx-x)^2+(by-y)^2]
+end
+beColour slategray
+let swing1 = stroke P.x P.y Q.x Q.y
+let swing2 = stroke Q.x Q.y R.x R.y
+let swing3 = stroke R.x R.y S.x S.y
+let swing4 = stroke S.x S.y T.x T.y
+beColour gold
+let walk = stroke P.x P.y T.x T.y
+hide

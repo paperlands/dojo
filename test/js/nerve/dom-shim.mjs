@@ -102,7 +102,9 @@ export function seatText(container) {
     const slot = zone?.children[0]
     if (!slot) return null
     const msg = slot.querySelector('.nerve-msg')
-    return msg ? msg.textContent : null
+    const count = slot.querySelector('.nerve-helios-count')
+    if (!msg) return null
+    return count?.textContent ? `${msg.textContent} ${count.textContent}` : msg.textContent
 }
 
 /** The count standing beside the sentence, or null. */

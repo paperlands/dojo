@@ -140,6 +140,19 @@ describe("the sun has one speaker", () => {
         assert.equal(S.helios(v).payload, "42", "and the count rides beside it")
     })
 
+    test("the command count is a separate caption and patches in place", (t) => {
+        const { container, store } = mount(t)
+        const push = commands => store.push(S.helios({ glyph: "☼----", commands, phase: "building" }))
+        push(0)
+        const sun = container.querySelector('.nerve-msg')
+        const count = container.querySelector('.nerve-helios-count')
+        assert.equal(sun.textContent, "☼----")
+        assert.equal(count.textContent, "")
+        push(42)
+        assert.equal(container.querySelector('.nerve-msg'), sun)
+        assert.equal(sun.textContent, "☼----")
+        assert.equal(count.textContent, "42")
+    })
     test("a second producer TAKES the slot — different kinds never merge", (t) => {
         const { container, store } = mount(t)
         const sun = heliosView({ phase: "settled", commands: 42 })

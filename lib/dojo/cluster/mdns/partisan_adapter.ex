@@ -66,8 +66,22 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
 
     update_specs = Enum.filter(specs, &evaluate_peer(&1, @track_config))
 
-    if update_specs != [] do
-      :partisan_peer_service.update_members(update_specs)
+    # A spec at an address we do not hold is a *rejoin*, not a refresh.
+    #
+    # `update_members/1' merges into the passive view, and passive entries are
+    # only promoted while the active view is below `active_min_size'. On a small
+    # cluster the view sits at the minimum by design, so a peer that roamed would
+    # arrive passively and never be promoted: its old entry had already left the
+    # active view, and nothing refilled the slot. `join/1' establishes a
+    # connection and adds the peer to the active view, which is what a changed
+    # address needs.
+    held = held_addresses()
+    {rejoin, refresh} = Enum.split_with(update_specs, &(not MapSet.member?(held, key(&1))))
+
+    Enum.each(rejoin, &:partisan_peer_service.join/1)
+
+    if refresh != [] do
+      :partisan_peer_service.update_members(refresh)
     end
 
     :ok
@@ -80,6 +94,22 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
       maybe_warn_partisan_unavailable("on_peers_discovered", {:exit, reason})
       :ok
   end
+
+  # {name, ip} pairs currently held, in any view. The membership snapshot is the
+  # cheapest complete answer and is already lock-free.
+  defp held_addresses do
+    case :partisan_membership.members() do
+      specs when is_list(specs) ->
+        MapSet.new(specs, fn spec -> {spec.name, spec.listen_addrs |> hd() |> Map.get(:ip)} end)
+
+      _ ->
+        MapSet.new()
+    end
+  rescue
+    _ -> MapSet.new()
+  end
+
+  defp key(%{name: name, listen_addrs: [%{ip: ip} | _]}), do: {name, ip}
 
   @doc """
   Clear all peer tracking after a network change (WiFi roam / hotspot switch).
@@ -125,6 +155,14 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
       connections: partisan_connection_report(),
       hyparview: hyparview_state(),
       discovery_agent: safe(fn -> :partisan_peer_discovery_agent.status() end),
+      discovery_health:
+        safe(fn ->
+          if function_exported?(:partisan_peer_discovery_agent, :info, 0) do
+            :partisan_peer_discovery_agent.info()
+          else
+            :unavailable
+          end
+        end),
       config: partisan_config_snapshot()
     }
   end
@@ -347,8 +385,11 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
   end
 
   @impl :partisan_peer_discovery_agent
-  def lookup(state, _timeout) do
-    peers = Dojo.Cluster.MDNS.cached_peers()
+  def lookup(state, timeout) do
+    # Answer inside the deadline the agent enforces: it kills the worker at
+    # `timeout', so a call that can take longer than that would be reported as a
+    # timeout of our making rather than of the backend's.
+    peers = Dojo.Cluster.MDNS.cached_peers(max(100, timeout - 50))
 
     specs =
       Enum.map(peers, fn {name, ip, port} ->
@@ -357,9 +398,19 @@ defmodule Dojo.Cluster.MDNS.PartisanAdapter do
 
     {:ok, specs, state}
   rescue
-    # Module may be temporarily unavailable during dev code reloading
-    UndefinedFunctionError -> {:ok, [], state}
+    # A failed observation is reported as a failure, not as an empty answer
+    # (D071). "No peers" and "could not look" are different facts; the second one
+    # must be visible in the agent's health, and neither may evict anyone.
+    #
+    # The classes stay distinct: an absent module is an availability problem,
+    # anything else raised here is our bug and must not be labelled as the
+    # network being down. Neither choice is a retry policy — the agent owns that.
+    e in UndefinedFunctionError ->
+      {:error, {:adapter_unavailable, Exception.message(e)}, state}
+
+    e ->
+      {:error, {:adapter_exception, Exception.message(e)}, state}
   catch
-    :exit, _ -> {:ok, [], state}
+    :exit, reason -> {:error, {:adapter_exit, reason}, state}
   end
 end

@@ -1,0 +1,93 @@
+/* One Helios palette for the nerve glyph, the sundial and the sill. Declared on
+   the root so no consumer has to opt in by class; every light below is a
+   color-mix over --helios-sun or a relative color off --helios-ink, so the glyph
+   and the instrument cannot drift apart. */
+:root {
+  /* THE MOON IS THE LAMP HELD IN A BODY. Reference: the disc in
+     design/sill/Screenshot_2026-08-13_16-12-34.jpg — bone white, #fce8d4 at
+     its bright edge. Never a cool silver: nothing in the dark room is blue.
+     The sun's own hue, drained and lifted; multiplying (not mixing toward
+     white) keeps it under the paper's ground too. */
+
+  --helios-sun: var(--color-primary);
+  --helios-ink: var(--color-base-content);
+  --helios-caption: color-mix(in oklch, var(--helios-ink) 72%, transparent);
+  --helios-moon: oklch(from var(--helios-sun) calc(l * 1.22) calc(c * .19) h);
+  --helios-glow-core: var(--helios-sun);
+  --helios-glow-85: color-mix(in oklch, var(--helios-sun) 85%, transparent);
+  --helios-glow-80: color-mix(in oklch, var(--helios-sun) 80%, transparent);
+  --helios-glow-55: color-mix(in oklch, var(--helios-sun) 55%, transparent);
+  --helios-glow-50: color-mix(in oklch, var(--helios-sun) 50%, transparent);
+  --helios-glow-42: color-mix(in oklch, var(--helios-sun) 42%, transparent);
+  --helios-glow-40: color-mix(in oklch, var(--helios-sun) 40%, transparent);
+  --helios-glow-38: color-mix(in oklch, var(--helios-sun) 38%, transparent);
+  --helios-glow-35: color-mix(in oklch, var(--helios-sun) 35%, transparent);
+  --helios-glow-30: color-mix(in oklch, var(--helios-sun) 30%, transparent);
+  --helios-glow-28: color-mix(in oklch, var(--helios-sun) 28%, transparent);
+  --helios-glow-20: color-mix(in oklch, var(--helios-sun) 20%, transparent);
+  --helios-glow-18: color-mix(in oklch, var(--helios-sun) 18%, transparent);
+  --helios-glow-16: color-mix(in oklch, var(--helios-sun) 16%, transparent);
+  --helios-glow-14: color-mix(in oklch, var(--helios-sun) 14%, transparent);
+  --helios-glow-12: color-mix(in oklch, var(--helios-sun) 12%, transparent);
+  --helios-glow-8: color-mix(in oklch, var(--helios-sun) 8%, transparent);
+  --helios-rest-light: 0 0 6px var(--helios-glow-28);
+  /* A MARKED GLYPH IS THE LIGHT, never a chip behind it. Composed once so the
+     caught line number, the held command and the caught instant cannot drift
+     into three glows; `-live` adds the tight core ring the caught state earns. */
+  --helios-glyph-glow:
+    0 0 1px var(--helios-glow-85),
+    0 0 6px var(--helios-glow-55),
+    0 0 14px var(--helios-glow-28);
+  --helios-glyph-glow-live:
+    0 0 1px var(--helios-glow-core),
+    0 0 3px var(--helios-glow-85),
+    0 0 9px var(--helios-glow-55),
+    0 0 19px var(--helios-glow-28);
+  /* THE ACKNOWLEDGEMENT — the pale gold an action wears when the hand's work
+     lands: a pressed rewind, a catch number taking a new day. A catch is a beat
+     and nothing rests in it; a rewind is the one state a hand gets to choose
+     (the sun is weather, the moon is a hold), so it may settle here and stay
+     until the next thing it says. Premixed because color-mix inside keyframes is
+     dropped by the build. */
+  --ack-core: var(--color-amber-200);
+  --ack-70: color-mix(in oklch, var(--color-amber-200) 70%, transparent);
+  --ack-32: color-mix(in oklch, var(--color-amber-200) 32%, transparent);
+  /* INK CHANGES ARE NOT BLOOMS. --helios-light-in is a spring: it is ~90% home
+     in the first quarter, which is right for a halo that must appear at once and
+     wrong for a colour, which then reads as a snap with a long tail. A stroke or
+     a glyph crossing from one role to another takes this symmetric ease instead:
+     slow enough to be seen crossing, short enough to still be a beat. */
+  --helios-ink-in: 320ms cubic-bezier(0.4, 0, 0.2, 1);
+  --helios-light-in: 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* THE GOODBYE, shared: the glyph and the dial stand on one line, so they must
+     go out in the same breath. Blur, not opacity alone — a fade that keeps its
+     edges is a cut with extra frames. */
+  --helios-exit-ms: 560ms;
+  --helios-exit-ease: ease-in;
+  --helios-exit-blur: 4px;
+
+  /* SILL ROLES — read off the ladder above, never sampled beside it. Playback
+     carries time, not self: primary is the one lamp, the moon is a phase, and
+     chartreuse (accent-content, "you") has no business on this instrument. */
+  --sill-live: var(--helios-sun);
+  --sill-held: var(--helios-moon);
+}
+
+/* On paper the same amber needs darker ink rather than more glow. */
+:root[data-theme="light"] {
+  --helios-sun: oklch(from var(--color-primary) calc(l * .72) calc(c * .83) h);
+  --helios-caption: var(--helios-ink);
+}
+
+@keyframes helios-arrive {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}

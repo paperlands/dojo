@@ -15,8 +15,8 @@ const cell = createCell()
 
 // Register the one world. Faces are whatever the registrant contracts —
 // the cell holds them opaque. Returns an owner-guarded unregister.
-export function registerWorld(faces) {
-    return cell.register(faces)
+export function registerWorld(faces, adopt) {
+    return cell.register(faces, adopt)
 }
 
 export function world() {

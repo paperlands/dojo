@@ -122,8 +122,23 @@ const commands = {
     // Command insertion — replace current line or append a new one.
     cmd: (view, { command: cmd, args = [], batch = true }, cm6) => {
         const { view: v, cursor, line, indent, structIndent } = getContext(view);
-        const argText    = formatArgs(args || []);
+        const argText    = formatArgs(args || [], cmd);
         const currentCmd = line.trim().split(" ")[0];
+
+        if (cmd === "let" && argText) {
+            const n = (currentCmd === cmd && batch) ? indent : structIndent;
+            if (currentCmd === cmd && batch) {
+                const range = transform(v,
+                    { from: { line: cursor.line, ch: 0 }, to: { line: cursor.line, ch: line.length } },
+                    padBlock(argText, n));
+                flash(v, range, cm6);
+            } else {
+                const range = transform(v, { from: { line: cursor.line, ch: line.length } },
+                    `\n${padBlock(argText, n)}`);
+                flash(v, { from: { line: cursor.line + 1, ch: 0 }, to: range.to }, cm6);
+            }
+            return;
+        }
 
         if (currentCmd === cmd && batch) {
             const newText = "".padEnd(indent) + cmd + argText;
@@ -153,7 +168,7 @@ const commands = {
         const { EditorSelection } = cm6;
         const state = v.state;
 
-        const argText = formatArgs(args) || " 1";
+        const argText = formatArgs(args, ctrl) || " 1";
 
         const hasSelection = selection.text.trim().length > 0;
         let lines = [];
@@ -229,9 +244,21 @@ const commands = {
 // ---------------------------------------------------------------------------
 
 // Pure string builder — args are already resolved values.
-// DOM lookup responsibility lives upstream in shell.js.
-const formatArgs = (args = []) =>
-    args.reduce((acc, arg) => arg ? `${acc} ${arg}` : acc, "");
+// `let` births the place, then the law — else the target is unknown. (id:laws-vision)
+const formatArgs = (args = [], cmd) => {
+    if (cmd === "let") {
+        const [name, attr, eq, num] = args;
+        if (name && attr && eq) {
+            const rest = num === 0 || (num !== undefined && num !== "") ? String(num) : "";
+            return `let ${name}\nlet ${name}.${attr}${eq}${rest}`;
+        }
+        return "";
+    }
+    return args.reduce((acc, arg) => arg ? `${acc} ${arg}` : acc, "");
+};
+
+const padBlock = (text, n) =>
+    text.split("\n").map((line) => "".padEnd(n) + line).join("\n");
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -247,4 +274,4 @@ const execute = (view, instruction, cm6) => {
     }
 };
 
-export { execute, commands, transform, flash, getContext, structuralIndent };
+export { execute, commands, transform, flash, getContext, structuralIndent, formatArgs };

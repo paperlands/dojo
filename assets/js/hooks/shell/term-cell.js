@@ -13,8 +13,8 @@ function cellFor(role) {
     return cell
 }
 
-export function register(role, term) {
-    return cellFor(role).register(term)
+export function register(role, term, adopt) {
+    return cellFor(role).register(term, adopt)
 }
 
 export function get(role) {
@@ -32,3 +32,8 @@ export function seatOf(role) {
 export function outerDrafting() {
     return !!get("outershell")?.drafting?.()
 }
+
+// One current source claim across independent surface mounts (inner may boot later).
+const sourceCell = createCell()
+export function putSource(claim) { return sourceCell.register(claim) }
+export function getSource() { return sourceCell.get() }

@@ -1,4 +1,4 @@
-// The exact three.js surface dojo depends on — 23 symbols, named once.
+// The exact three.js surface dojo depends on — 26 symbols, named once.
 //
 // This is a CONTRACT, not a convenience. Every dojo-authored module imports
 // three from here, so the whole dependency is legible in one file. Two
@@ -37,12 +37,15 @@ export {
     LineSegments,
     Mesh,
     MeshBasicMaterial,
+    Matrix4,
     MOUSE,
     PerspectiveCamera,
     Plane,
+    Raycaster,
     Quaternion,
     Scene,
     TOUCH,
+    Vector2,
     Vector3,
 } from './three.core.min.js'
 

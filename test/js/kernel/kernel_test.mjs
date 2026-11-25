@@ -23,7 +23,7 @@ describe("createObservable — one watch/notify", () => {
         assert.deepEqual(seen, ["a"])
     })
 
-    test("unwatch mid-fan does not skip a sibling", () => {
+    test("unwatch mid-fan retires delivery; no sibling is skipped", () => {
         const obs = createObservable()
         const order = []
         let unB
@@ -32,8 +32,9 @@ describe("createObservable — one watch/notify", () => {
             unB()
         })
         unB = obs.watch(() => order.push("b"))
+        obs.watch(() => order.push("c"))
         obs.notify()
-        assert.deepEqual(order, ["a", "b"], "b was already on the snapshot")
+        assert.deepEqual(order, ["a", "c"], "b was retired mid-fan; c still heard the breath")
     })
 
     test("a watcher born mid-fan does not hear the breath it was born into", () => {
@@ -94,6 +95,21 @@ describe("createAtom — value over the one observable", () => {
         assert.deepEqual(order, ["first again", "second"],
             "the key is the identity; re-watching must not move it to the back")
     })
+
+
+    test("an identity swap is not news — watchers do not hear it", () => {
+        const held = { n: 1 }
+        const atom = createAtom(held)
+        const seen = []
+        atom.watch("k", (old, next) => seen.push([old, next]))
+        assert.equal(atom.swap(() => held), held)
+        assert.deepEqual(seen, [])
+        const send = atom.swapDeferred(() => held)
+        send()
+        assert.deepEqual(seen, [])
+        atom.swap(() => ({ n: 2 }))
+        assert.equal(seen.length, 1)
+    })
 })
 
 describe("createCell — registry-of-one", () => {
@@ -143,6 +159,69 @@ describe("createCell — registry-of-one", () => {
         cell.register(b)
         unA()
         assert.equal(cell.get(), b)
+    })
+
+    test("a throwing reader cannot veto registration or strand other readers", (t) => {
+        const cell = createCell()
+        const failure = new Error("reader failed")
+        const report = t.mock.method(console, "error", () => {})
+        const seen = []
+        cell.watch(() => { throw failure })
+        cell.watch(() => seen.push(cell.get()))
+        const value = {}
+        const unregister = cell.register(value)
+        unregister()
+        assert.deepEqual(seen, [value, null])
+        assert.deepEqual(report.mock.calls.map(({ arguments: args }) => args.at(-1)), [failure, failure])
+    })
+
+    test("scoped publication is revoked before dependent teardown during a reader's call", () => {
+        const cell = createCell()
+        const scope = createArena()
+        const seen = []
+        scope.add(() => seen.push(["terminal teardown", cell.get()]))
+        cell.watch(() => {
+            if (cell.get()) scope.destroy()
+        })
+        cell.watch(() => seen.push(["later reader", cell.get()]))
+
+        cell.register("new terminal", scope.add)
+        assert.equal(scope.alive, false)
+        assert.equal(cell.get(), null)
+        assert.deepEqual(seen, [
+            ["later reader", null], ["terminal teardown", null], ["later reader", null],
+        ])
+    })
+
+    test("a dead scope cannot preempt; a reentrant successor survives prior teardown", () => {
+        const cell = createCell()
+        const prior = createArena()
+        const value = {}
+        let successor
+        const once = cell.watch(() => {
+            once()
+            successor = cell.register(value)
+            prior.destroy()
+        })
+        const first = cell.register(value, prior.add)
+        first()
+        assert.equal(cell.get(), value)
+        assert.throws(() => cell.register({}, prior.add), /use after destroy/)
+        assert.equal(cell.get(), value)
+        successor()
+        assert.equal(cell.get(), null)
+    })
+
+    test("an adoption that retires before publication never displaces an incumbent", () => {
+        const cell = createCell()
+        const prior = cell.register("incumbent")
+        const seen = []
+        cell.watch(() => seen.push(cell.get()))
+        const release = cell.register("cancelled", (retire) => retire())
+        release()
+        assert.equal(cell.get(), "incumbent")
+        prior()
+        assert.deepEqual(seen, [null])
     })
 })
 
@@ -292,5 +371,167 @@ describe("attach — a claim that lives exactly as long as the occupant", () => 
         cell.register({})
         detach()
         assert.equal(binds, 2)
+    })
+
+    test("failure of the eager bind leaves no subscription to bind a later occupant", () => {
+        const cell = createCell()
+        cell.register("first")
+        const seen = []
+        assert.throws(() => attach(cell, (value) => {
+            seen.push(value)
+            if (value === "first") throw new Error("cannot bind")
+        }), /cannot bind/)
+        cell.register("second")
+        assert.deepEqual(seen, ["first"])
+    })
+
+    test("scope death during the eager bind cleans the returned claim and unhears the seat", () => {
+        const cell = createCell()
+        const scope = createArena()
+        const seen = []
+        cell.register("first")
+        attach(cell, (value) => {
+            seen.push(value)
+            scope.destroy()
+            return () => seen.push("release " + value)
+        }, scope.add)
+        assert.deepEqual(seen, ["first", "release first"])
+        cell.register("second")
+        assert.deepEqual(seen, ["first", "release first"])
+    })
+})
+
+describe("ownership — one incarnation per seat, one claim per occupant", () => {
+    test("re-registering the SAME occupant seats a new owner", () => {
+        const cell = createCell()
+        const a = {}
+        const unFirst = cell.register(a)
+        const unSecond = cell.register(a)
+        unFirst()
+        assert.equal(cell.get(), a, "the first unregister must not evict the second seat")
+        unSecond()
+        assert.equal(cell.get(), null)
+    })
+
+    test("a bind that reseats mid-claim loses the seat; its release runs on the spot", () => {
+        const cell = createCell()
+        const log = []
+        let reentered = false
+        cell.register({ n: 1 })
+        const detach = attach(cell, (o) => {
+            log.push(`bind ${o.n}`)
+            if (!reentered) {
+                reentered = true
+                cell.register({ n: 2 })   // a synchronous reseating during the claim
+            }
+            return () => log.push(`release ${o.n}`)
+        })
+        assert.deepEqual(log, ["bind 1", "bind 2", "release 1"],
+            "the stale claim is released at once — never left live")
+        detach()
+        assert.equal(log.at(-1), "release 2", "exactly the winning claim is released at the end")
+    })
+})
+
+describe("arena — death first, siblings never stranded", () => {
+    test("one throwing cleanup never strands its siblings", () => {
+        const a = createArena()
+        const ran = []
+        a.add(() => ran.push("first"))
+        a.add(() => { throw new Error("boom") })
+        a.add(() => ran.push("third"))
+        a.destroy()
+        assert.deepEqual(ran, ["third", "first"], "LIFO, all of it, despite the boom")
+    })
+
+    test("a throwing cleanup leaves the arena DEAD — never half-alive", () => {
+        const a = createArena()
+        a.add(() => { throw new Error("boom") })
+        a.destroy()
+        assert.equal(a.alive, false)
+        assert.throws(() => a.add(() => {}), /use after destroy/)
+    })
+})
+
+describe("incarnation — the subscription, not the function (O2)", () => {
+    test("re-registering the same callback mid-fan is a BIRTH — it waits", () => {
+        const obs = createObservable()
+        const seen = []
+        let unA = null, unB = null
+        const a = () => {
+            seen.push("a")
+            unA()
+            unB()
+            obs.watch(b)   // same fn — a NEW installation, born mid-fan
+        }
+        const b = () => seen.push("b")
+        unA = obs.watch(a)
+        unB = obs.watch(b)
+        obs.notify()
+        assert.deepEqual(seen, ["a"], "the fresh installation waits for the next breath")
+        obs.notify()
+        assert.deepEqual(seen, ["a", "b"], "and hears the next one")
+    })
+
+    test("a stale unsubscribe cannot kill a newer installation of the same fn", () => {
+        const obs = createObservable()
+        const heard = []
+        const b = () => heard.push("b")
+        const unFirst = obs.watch(b)
+        unFirst()
+        const unSecond = obs.watch(b)
+        unFirst()   // stale — fires again
+        obs.notify()
+        assert.deepEqual(heard, ["b"], "the stale unsubscribe removed nothing")
+        unSecond()
+        obs.notify()
+        assert.deepEqual(heard, ["b"], "and the live one still holds")
+    })
+
+    test("each installation hears once — a doubled watch is two subscriptions", () => {
+        const obs = createObservable()
+        let heard = 0
+        const b = () => heard++
+        obs.watch(b)
+        obs.watch(b)
+        obs.notify()
+        assert.equal(heard, 2, "duplicate installations are the declared policy")
+    })
+
+    test("detach during the claim kills it on the spot — the release runs", () => {
+        const cell = createCell()
+        const log = []
+        let detach = null
+        let armed = false
+        cell.register({ n: 1 })
+        detach = attach(cell, (o) => {
+            log.push(`bind ${o.n}`)
+            if (armed) detach() // a later claim's own bind tears the attach down
+            armed = true
+            return () => log.push(`release ${o.n}`)
+        })
+        cell.register({ n: 2 })
+        assert.deepEqual(log, ["bind 1", "release 1", "bind 2", "release 2"],
+            "a dead attach installs nothing and leaks nothing")
+    })
+
+    test("a release that reseats never lets the outer call bind", () => {
+        const cell = createCell()
+        const log = []
+        let reentered = false
+        cell.register({ n: 1 })
+        attach(cell, (o) => {
+            log.push(`bind ${o.n}`)
+            return () => {
+                log.push(`release ${o.n}`)
+                if (!reentered) {
+                    reentered = true
+                    cell.register({ n: 2 }) // reseat DURING the release
+                }
+            }
+        })
+        cell.register({ n: 3 })
+        assert.deepEqual(log, ["bind 1", "release 1", "bind 2"],
+            "only the nested claim binds — the outer never stacks a second")
     })
 })

@@ -30,6 +30,8 @@ self.onmessage = async (ev) => {
             id,
             ok: false,
             error: e && e.message ? e.message : String(e),
+            name: e && typeof e.name === "string" ? e.name : "Error",
+            code: e && typeof e.code === "string" ? e.code : null,
         })
     }
 }

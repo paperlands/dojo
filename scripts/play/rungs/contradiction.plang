@@ -1,0 +1,7 @@
+let A
+let B
+as B do
+  let A.distance = 5
+  wait 1
+  let A = origin
+end

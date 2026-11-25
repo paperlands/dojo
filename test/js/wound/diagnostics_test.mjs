@@ -11,25 +11,16 @@
 
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
+import { docFrom } from "../editor/doc_fixture.mjs"
 
 import { toDiagnostics, mountDiagnosticsInk } from "../../../assets/js/editor/diagnostics.js"
 import { readWounds } from "../../../assets/js/weave/wounds.js"
 import { worldChanged } from "../../../assets/js/weave/world.js"
 
 // A DOM-free CM6 `state.doc` stand-in (the lit_tokenizer_test shape).
-function mkDoc(src) {
-    const texts = src.split("\n")
-    let pos = 0
-    const objs = texts.map((text, i) => {
-        const from = pos, to = pos + text.length
-        pos = to + 1
-        return { text, number: i + 1, from, to }
-    })
-    return { lines: objs.length, length: pos, line: (n) => objs[n - 1] }
-}
 
 describe("where to lint — only where the span is true", () => {
-    const doc = mkDoc("fw 10\nrt 90\nfw 20")
+    const doc = docFrom("fw 10\nrt 90\nfw 20")
 
     test("a spanned error inks its whole line, severity error", () => {
         const [d] = toDiagnostics(doc, [
@@ -89,7 +80,7 @@ describe("where to lint — only where the span is true", () => {
 // voice cannot be showing different runtimes. What stays the ink's own is its
 // early cutoff — keyed on what IT emits — and the skip law.
 describe("the ink organ — read, breathe, paint", () => {
-    const doc = mkDoc("fw 10\nrt 90\nfw 20")
+    const doc = docFrom("fw 10\nrt 90\nfw 20")
     // A CM6 stand-in that records what was published.
     const rig = () => {
         const painted = []
@@ -243,7 +234,7 @@ describe("the ink organ — read, breathe, paint", () => {
 // of its own, and a child must SEE where. One shape, each reader projecting it
 // its own way.
 describe("children are inked at their own lines", () => {
-    const doc = mkDoc("a\nb\nc\nd")
+    const doc = docFrom("a\nb\nc\nd")
     const tree = [{
         kind: "walk", message: "boom", span: { line: 1 },
         children: [

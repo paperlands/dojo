@@ -1,6 +1,6 @@
 {
   "private": true,
-  "description": "Vendor build tooling — run here, commit priv/static/vendor/ output. Never part of CI/CD.",
+  "description": "Vendor build tooling — run here, commit priv/static/vendor/ output. The host producer (scripts/release/host.mjs) imports esbuild from this prefix; CI and the release workflow install it with npm ci --prefix scripts/vendor.",
   "devDependencies": {
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.10.4",

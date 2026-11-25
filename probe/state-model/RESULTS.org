@@ -1,0 +1,103 @@
+#+title: State model crosses — what actually survives
+#+PROBE-STATUS: concluded
+#+date: 2026-11-18
+
+* Question footprint and demand
+:PROPERTIES:
+:ID: probe-state-model-question
+:LENS: empiricist adversarial
+:MODULE: assets/js/turtling/scheduler.js
+:END:
+
+=node probe/state-model/question.mjs=. Node v26.13.0; input scheduler SHA256
+=810aeb363b7a3d0e9f0f0498617742229d644fa8653b17e766c8088516ef2117=.
+4 arms: closure × record, crossed with standing baseline × separated receiver demand.
+All arms run actual parser, scheduler, accepted publication, and readout store.
+
+*Record arm.* Replace the two per-entry callbacks and retained target objects
+with exact runtime target ids and the existing facet/receiver parameters. Still
+use the existing resolver and its dependency effects. The dictionary (current
+registry) and interpretation remain essential; the descriptors are inspectable,
+not independently replayable, portable identities, or evidence of authority.
+Cross-arm output was identical at each semantics setting. A consumed y read
+structured-clones; an x-only move leaves run 1; y=7 causes run 2 and labels
+0,7. With a pending question, withdrawing its entire source and seating a
+namesake leaves the old ids absent and the new label at 0. This is a source
+withdrawal test, not a live observer of an independently retired participant.
+Grounded orientation under frame changes and unavailable re-reads with a
+still-live observer remain gates before a production contract.
+
+*Demand arm.* Observe =x= and run id, for both the actual slot hand request
+and a world placement request. All arms: own-only =1→2= stays run 1; hand
+=1→50→1= before service stays run 1; immediate service retires run 1.
+
+| arrangement after accepting the hand at x=50 | before explicit drain | run after drain (standing / split) |
+|----------------------------------------------+-----------------------+------------------------------------|
+| tick normally; no explicit drain yet         | x=51, run 2           | 2 / 2                              |
+| withhold drain; keep =questionMoved=         | x=50, run 1, pending  | 2 / 2                              |
+| withhold drain AND bypass =questionMoved=    | x=51, run 1, pending  | 1 / 2                              |
+
+The old causal-center lost-demand interleaving is not reproduced on the
+present production path. It needs both an omitted service and an old turn
+admitted across changed-question authority. In that forced arm the pending bit
+is still true in both cases before drain: it is the *question served* that
+differs. The split arm preserves the requested mismatch until service; at
+service the new run attaches to the accepted present x=51, not the old hand
+pose. It did not earn additional production state or retry semantics.
+
+*Other effects.* The three actual headless compositor schedules yield named
+pursuit run counts 60/60/15 (16 ms / 50 ms / janky); all three accepted trace
+hashes differ, even with matching run counts. All four arms agree on each
+schedule. Two one-step siblings with separate receivers finish at runs 1/1;
+sharing one receiver is unfinished at runs 14/13 after 24 ticks, with no
+scheduler fault. These results distinguish a cadence problem and a feedback
+problem; neither is fixed by storing a descriptor or separating receiver
+progress from the sampled request.
+
+* Reveal allowance and pacing
+:PROPERTIES:
+:ID: probe-state-model-reveal
+:LENS: empiricist adversarial
+:MODULE: assets/js/turtling/compositor.js
+:END:
+
+=node probe/state-model/reveal.mjs=. Real headless compositor, injected seam at
+readout drain. Inception compositor SHA256
+=81d47f7b5a91d38ad31df08916ff484dc669f735a85ed989b0d5552086b32e49=.
+The historical pacing reference is reconstructed in scratch when the parallel
+=beginPlay= cadence reset is present; =current= also runs without source edits.
+
+- Across an ordinary 27-step schedule, raw-gap max horizon error was
+  2.84e-14 ms, no 100 ms eligibility flip and no authored trace difference.
+  The adversarial schedule wins: start at 0.1, discard the allowance at
+  1000.1 (gate false), settle at 1100.1. Normalized H is 100 and executes the
+  next turn (F=100); raw H is 99.99999999999989 and does not (F=0). This does
+  not prove the current normalization makes every decimal exact. It disproves
+  raw subtraction as a representation-only change under exact comparisons.
+- Held→running inside drain through the public compositor door holds H=40.
+  Through the raw scheduler setter it advances to 60; a scratch scheduler-era
+  arm holds 40. Pairing revocation with timestamp-cell replacement also fails:
+  nested equal-time/next-time advances end at H=40/60 rather than 60/80 and
+  lose 20 ms on the next frame. A later observation is not a context reset.
+  No normal production writer outside the compositor was found; a standalone
+  probe uses the raw setter. Do not solve a latent bypass with a publication-
+  wide era. A fresh scoped seat without =beginPlay= keeps the reveal budget;
+  =beginPlay= without a fresh seat revokes it.
+- With a 500 ms inter-play gap, the historical control observes 500 and halves
+  the pacer's budget 4→2. The scratch paired-sample arm skips; the parallel
+  =beginPlay= reset also keeps 4 with no new observation. A partially elapsed
+  authored wait still resumes at H=60, finishes at 100, and supplies only a
+  40 ms pacing observation after resume. See [[id:runtime-state-tla-review]].
+
+* Disposition
+:PROPERTIES:
+:ID: probe-state-model-disposition
+:END:
+
+Represent reading as a value where that replaces hidden capture without enlarging
+its authority. Keep arithmetic whose exact boundary changes authored work. Keep
+reveal authority apart from source/run publication rights: a pause can revoke an
+allowance while an accepted reply remains owed. Preserve the declaration fences;
+no new queue, scheduler-wide generation, pending policy, or numeric tolerance
+is warranted by these crosses. New probe only for an actual unsupported case:
+independently retired participant, or shared-receiver revision vs live observation.

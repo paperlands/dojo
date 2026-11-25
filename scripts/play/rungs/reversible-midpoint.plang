@@ -1,0 +1,29 @@
+# Drag M, then drag an end. The two halves stay equal, without a chosen output.
+def midpoint a m b do
+  let m.position - a.position = b.position - m.position
+end
+
+jmp -100
+let A
+jmp 200
+let B
+jmp -100
+let M
+let A.z = 0
+let B.z = 0
+let M.z = 0
+let bar = midpoint A M B
+
+# Ink is not the law; these two strokes just show its answer.
+def side ax ay bx by do
+  hide
+  faceto ax ay
+  jmp sqrt[(ax-x)^2+(ay-y)^2]
+  faceto bx by
+  fw sqrt[(bx-x)^2+(by-y)^2]
+end
+beColour gold
+let Left = side A.x A.y M.x M.y
+beColour lightgray
+let Right = side M.x M.y B.x B.y
+hide

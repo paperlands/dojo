@@ -8,13 +8,11 @@ import { createDoEndMatchingExtension } from "../editor/do-end-matching.js"
 import { createCodeCellActivationExtension } from "../editor/code-cell-activation.js"
 import { createDiagnosticsExtension } from "../editor/diagnostics.js"
 
-// Doc notify after paint — glyph first; write-through/bridge next frame.
-// Newest doc wins per view. Sync when no rAF (node:test).
-const docAfterPaint = new WeakMap()
-
 export const buildExtensions = (cm6, {
     onDocChange,
     onSelectionChange,
+    onLineNumber,
+    gutterMark,
     onSwitchNext,
     onSwitchPrev,
     onToggleComment,
@@ -50,7 +48,7 @@ export const buildExtensions = (cm6, {
             '.cm-scroller': { overflow: 'auto' },
         }),
 
-        lineNumbers(),
+        ...(gutterMark ?? [lineNumbers()]),
         highlightActiveLine(),
         foldGutter({ openText: '▾', closedText: '▸' }),
         bracketMatching(),
@@ -60,22 +58,16 @@ export const buildExtensions = (cm6, {
         // Reserve bottom margin so cursor doesn't sit flush against mobile keyboard edge
         EditorView.scrollMargins.of(() => ({ bottom: 32 })),
 
-        // Mobile: keyboard opens on focus — nudge a space in/out to trigger
-        // CM6's natural scroll-to-cursor (the only thing that actually works).
-        // NEVER on a read-only surface: the outershell is a review of another's
-        // page, and this mutation races double-click select (focus at T0, word
-        // select at T~50–150, nudge at T+100) — caret/kindling can jump or
-        // the kindled cell goes dim while the selection lands. Editable only.
+        // A focus may move the viewport. It may not touch the page.
+        // Not on a read-only surface.
         EditorView.domEventHandlers({
             focus: (event, view) => {
                 setTimeout(() => {
                     if (!view.hasFocus || view.state.readOnly) return;
-                    // Mid-select: do not rewrite the doc under a range the
+                    // Mid-select: do not scroll the page out from under a range the
                     // user is still painting.
                     if (!view.state.selection.main.empty) return;
-                    const end = view.state.doc.length;
-                    view.dispatch({ changes: { from: end, insert: ' ' }, scrollIntoView: true });
-                    view.dispatch({ changes: { from: end, to: end + 1, insert: '' } });
+                    view.dispatch({ selection: view.state.selection, scrollIntoView: true });
                 }, 100);
                 return false;
             },
@@ -123,6 +115,9 @@ export const buildExtensions = (cm6, {
 
         // Keyboard shortcuts — dispatched via callbacks, not `this`
         keymap.of([
+            ...(onLineNumber ? [{ key: 'Alt-Enter', run: view =>
+                onLineNumber(view, view.state.doc.lineAt(view.state.selection.main.head).number),
+            }] : []),
             ...defaultKeymap,
             ...historyKeymap,
             indentWithTab,
@@ -131,29 +126,14 @@ export const buildExtensions = (cm6, {
             { key: 'Ctrl-,', run: () => { onSwitchPrev?.(); return true; } },
         ]),
 
-        // Doc after paint: CM finishes → browser paints the glyph → then the
-        // cheap write-through/bridge. Quiet still owns when the canvas seats.
-        // Selection stays sync (cursor, not a character).
+        // Doc change → the coordinator's single content writer, SYNCHRONOUSLY.
+        // The write-through and the persistence it schedules must not wait on a
+        // paint: a hidden tab, an unload before the next frame, or a throttled
+        // rAF would silently lose the edit — the collection never moves, and the
+        // flush paths then persist a stale copy. Render is the coordinator's to
+        // defer behind this fact; content is not.
         EditorView.updateListener.of((update) => {
-            if (update.docChanged && onDocChange) {
-                const view = update.view
-                const doc = update.state.doc
-                if (!view || typeof requestAnimationFrame !== 'function') {
-                    onDocChange(doc.toString())
-                } else {
-                    let slot = docAfterPaint.get(view)
-                    if (!slot) docAfterPaint.set(view, slot = { doc: null, raf: 0 })
-                    slot.doc = doc
-                    if (!slot.raf) {
-                        slot.raf = requestAnimationFrame(() => {
-                            slot.raf = 0
-                            const d = slot.doc
-                            slot.doc = null
-                            if (d && !view.destroyed) onDocChange(d.toString())
-                        })
-                    }
-                }
-            }
+            if (update.docChanged) onDocChange?.(update.state.doc.toString())
             if (update.selectionSet) onSelectionChange?.(update.state.selection)
         }),
 

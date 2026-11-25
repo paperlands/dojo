@@ -1,0 +1,6 @@
+jmpto -120 0
+let B
+jmpto 120 160
+let A
+let A.x = B.x + 60*random
+let A.y = 160

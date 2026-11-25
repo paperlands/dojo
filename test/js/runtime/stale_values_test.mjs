@@ -1,10 +1,10 @@
-// Cross-ambient observation: world coordinates + fn capture
+// Cross-ambient observation: birth-frame coordinates + fn capture
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 
 import { Evaluator } from "../../../assets/js/turtling/mafs/evaluate.js"
 import { Parser } from "../../../assets/js/turtling/mafs/parse.js"
-import { createScheduler, resolveBinding } from "../../../assets/js/turtling/scheduler.js"
+import { createScheduler, resolveBinding, frameWorldTransform } from "../../../assets/js/turtling/scheduler.js"
 import { execute } from "../../../assets/js/turtling/executor.js"
 import { parseProgram } from "../../../assets/js/turtling/parse.js"
 
@@ -13,8 +13,8 @@ function realDeps() {
 }
 function findChild(root, name) { return root.children.get(name) || null }
 
-describe("SPATIAL reads world coordinates", () => {
-    test(".x returns world-space x for offset child", () => {
+describe("SPATIAL reads observer birth-frame coordinates", () => {
+    test(".x from root is the shared floor (identity birth)", () => {
         const ast = parseProgram("fw 100\nas kid do\n  fw 10\nend")
         const deps = realDeps()
         const gen = execute(ast, deps, { color: '#fff' })
@@ -24,13 +24,12 @@ describe("SPATIAL reads world coordinates", () => {
         for (let i = 0; i < 10; i++) { sched.tick(0); if (sched.done) break }
 
         const x = resolveBinding(sched.root, 'kid.x')
-        assert.equal(x, 110, `kid.x should be world-space 110, got ${x}`)
+        assert.equal(x, 110, `kid.x should be 110 on the root floor, got ${x}`)
     })
 
-    test(".x and .y reflect heading in world space", () => {
+    test(".x and .y from root follow the child on the floor", () => {
         // Root moves fw 100, rt 90, spawns child who does fw 50
-        // In world space child moves in -Y direction
-        // World: child at (100, -50, 0)
+        // Child moves along birth -Y on the root floor → (100, -50)
         const ast = parseProgram("fw 100\nrt 90\nas kid do\n  fw 50\nend")
         const deps = realDeps()
         const gen = execute(ast, deps, { color: '#fff' })
@@ -45,7 +44,7 @@ describe("SPATIAL reads world coordinates", () => {
         assert.ok(Math.abs(y - (-50)) < 0.001, `kid.y should be ~-50, got ${y}`)
     })
 
-    test(".x updates across ticks with world coords", () => {
+    test(".x updates across ticks on the root floor", () => {
         const ast = parseProgram(
             "fw 100\nrt 90\n" +
             "as kid do\n  loop 3 do\n    fw 10\n    wait 1\n  end\nend"
@@ -67,6 +66,74 @@ describe("SPATIAL reads world coordinates", () => {
         assert.ok(yValues[1] < yValues[0], `y should decrease: ${yValues}`)
         // Third tick: loop completes, no more fw — value plateaus
         assert.ok(yValues[2] <= yValues[1], `y should not increase: ${yValues}`)
+    })
+})
+
+describe("SPATIAL nests: friend coords match goto/faceto", () => {
+    test("sibling coordinates are world-valued under a rotated parent", () => {
+        // Parent turns and walks; children share that birth floor.
+        // guide sits at local (100, 0); seeker reads guide.x/y and faces it.
+        const ast = parseProgram(
+            "rt 90\n" +
+            "fw 50\n" +
+            "as guide do\n" +
+            "  jmp 100\n" +
+            "end\n" +
+            "as seeker do\n" +
+            "  faceto guide.x guide.y\n" +
+            "  fw 100\n" +
+            "end"
+        )
+        const deps = realDeps()
+        const gen = execute(ast, deps, { color: '#fff' })
+        const sched = createScheduler(gen, {
+            createDeps: realDeps, execOpts: { color: '#fff' }, rootDeps: deps
+        })
+        for (let i = 0; i < 30; i++) { sched.tick(0); if (sched.done) break }
+
+        const guide = findChild(sched.root, 'guide')
+        const seeker = findChild(sched.root, 'seeker')
+        assert.ok(guide && seeker, 'guide and seeker should exist')
+
+        // From seeker: guide is at birth (100, 0) — not world (50, -100) after parent rt90+fw50.
+        const gx = resolveBinding(seeker, 'guide.x')
+        const gy = resolveBinding(seeker, 'guide.y')
+        assert.ok(Math.abs(gx - 0) < 0.001, `guide.x is world x, got ${gx}`)
+        assert.ok(Math.abs(gy + 150) < 0.001, `guide.y is world y, got ${gy}`)
+
+        // Seeker faceto + fw 100 reaches guide's birth spot.
+        const sp = seeker.transform.deref().position
+        assert.ok(Math.abs(sp[0] - 100) < 0.001, `seeker local x ~100, got ${sp[0]}`)
+        assert.ok(Math.abs(sp[1] - 0) < 0.001, `seeker local y ~0, got ${sp[1]}`)
+    })
+
+    test("a frame that contains the reader answers from the world, not its birth delta", () => {
+        // The child is born AT outer, so outer.y in its birth frame is 0 — the
+        // failing shape from the spiral: `as name outer do jmp outer.y end`.
+        // Because outer contains the reader, the read is outer's place in the world.
+        const ast = parseProgram(
+            "as outer do\n" +
+            "  rt 90\n" +
+            "  jmp 30\n" +
+            "  as name outer do\n" +
+            "    jmp outer.y\n" +
+            "  end\n" +
+            "end"
+        )
+        const deps = realDeps()
+        const gen = execute(ast, deps, { color: '#fff' })
+        const sched = createScheduler(gen, {
+            createDeps: realDeps, execOpts: { color: '#fff' }, rootDeps: deps
+        })
+        for (let i = 0; i < 30; i++) { sched.tick(0); if (sched.done) break }
+
+        const outer = findChild(sched.root, 'outer')
+        const name = outer.children.get('name')
+        assert.ok(outer && name, 'outer and name should exist')
+        assert.ok(Math.abs(frameWorldTransform(outer).position[1] - (-30)) < 0.001,
+            `outer stands at world y -30, got ${frameWorldTransform(outer).position[1]}`)
+        const oy = resolveBinding(name, 'outer.y')
+        assert.ok(Math.abs(oy - (-30)) < 0.001, `outer.y from the child should be -30, got ${oy}`)
     })
 })
 
@@ -93,7 +160,7 @@ describe("fn captures evaluator constants at definition time", () => {
         const ast = parseProgram(
             "loop 2 do\n" +
             "  as 'c[count]' do\n" +
-            "    fn myid [count]\n" +
+            "    fn myid (count)\n" +
             "    loop 3 do\n" +
             "      wait 0\n" +
             "    end\n" +
@@ -111,11 +178,11 @@ describe("fn captures evaluator constants at definition time", () => {
         assert.equal(resolveBinding(sched.root, 'c1.myid'), 1, 'c1 should capture count=1')
     })
 
-    test("fn follow [count+1]//2 is stable across inner loop iterations", () => {
+    test("fn follow mod(count+1, 2) is stable across inner loop iterations", () => {
         const ast = parseProgram(
             "loop 2 do\n" +
             "  as 'mice[count]' do\n" +
-            "    fn follow [count+1]//2\n" +
+            "    fn follow mod((count+1), 2)\n" +
             "    loop 3 do\n" +
             "      wait 0\n" +
             "    end\n" +
@@ -144,8 +211,8 @@ describe("parse memo drops when userspace changes", () => {
             "fn out 0\n" +
             "as a do\n" +
             "  label 'k[out]'\n" +           // evaluates + memos out → 0
-            "  fn out [out+1]//4\n" +        // out body becomes 1
-            "  fn saw [out]\n" +             // must see 1, not the memoized 0
+            "  fn out mod((out+1), 4)\n" +        // out body becomes 1
+            "  fn saw (out)\n" +             // must see 1, not the memoized 0
             "  wait 0\n" +
             "end"
         )
@@ -302,7 +369,7 @@ describe("auto-yield on cross-ambient observation", () => {
             "  fw 100\n" +
             "  rt 90\n" +
             "  as 'mice[count]' do\n" +
-            "    fn follow [count+1]//4\n" +
+            "    fn follow mod((count+1), 4)\n" +
             "    loop 50 do\n" +
             "      fw 1\n" +
             "      faceto 'mice[follow]'.x 'mice[follow]'.y\n" +
@@ -336,14 +403,14 @@ describe("auto-yield on cross-ambient observation", () => {
     })
 })
 
-describe("mice program: world-space values update across ticks", () => {
-    test("cross-ambient .x and .y reflect world-space movement", () => {
+describe("mice program: floor values update across ticks", () => {
+    test("cross-ambient .x and .y reflect movement on the root floor", () => {
         const ast = parseProgram(
             "loop 2 do\n" +
             "  fw 1000\n" +
             "  rt 90\n" +
             "  as 'mice[count]' do\n" +
-            "    fn follow [count+1]//2\n" +
+            "    fn follow mod((count+1), 2)\n" +
             "    loop 5 do\n" +
             "      wait 1\n" +
             "      fw 10\n" +
@@ -372,11 +439,11 @@ describe("mice program: world-space values update across ticks", () => {
             yValues.push(resolveBinding(sched.root, 'mice0.y'))
         }
 
-        // mice0 moves in -Y direction (world), so x stays ~1000, y decreases
+        // mice0 moves in -Y on the root floor, so x stays ~1000, y decreases
         assert.ok(Math.abs(xValues[0] - 1000) < 0.001,
-            `mice0 world x should be ~1000, got ${xValues[0]}`)
+            `mice0 floor x should be ~1000, got ${xValues[0]}`)
         assert.ok(yValues[0] < 0,
-            `mice0 world y should be negative: ${yValues[0]}`)
+            `mice0 floor y should be negative: ${yValues[0]}`)
         assert.ok(yValues[4] < yValues[0],
             `mice0 world y should decrease over time: ${yValues}`)
 

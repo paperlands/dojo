@@ -1,0 +1,21 @@
+# Pulling spine: two passes, nine computed free joints, eight distance links, z=0 on each joint.
+# Only J0 walks. Twiddle links/spacing, the z plane, or the driver step/turn/wait.
+# The driver loop is large and bounded, not infinite.
+def spine links spacing do
+  loop links+1 do
+    let "J[count]"
+    let "J[count]".z=0
+    jmp 0-spacing
+  end
+  loop links do
+    let distance("J[count]", "J[count+1]") = spacing
+  end
+end
+spine 8 50
+as "J0" do
+  loop 100000 do
+    jmp 8
+    rt 8
+    wait 1/24
+  end
+end

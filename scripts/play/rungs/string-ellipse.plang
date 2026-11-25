@@ -1,0 +1,6 @@
+# Two pins in the paper. The entire closed string is 360 units long.
+let F = (0, -80)
+let G = (0, 80)
+let P
+let P.z = 0
+let length(F, P, G, F) = 360

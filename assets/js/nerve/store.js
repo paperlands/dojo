@@ -34,6 +34,7 @@ export const signals = {
         source: 'system',
         kind: 'helios',
         living: view?.phase === 'building',
+        held: view?.held === true,
         place,
     }),
     shout:   (source, msg, payload, tabId) => ({ msg, payload, source, kind: 'shout', tabId }),

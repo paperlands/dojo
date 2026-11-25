@@ -22,7 +22,7 @@ describe("the parse is total — error nodes, never throws", () => {
         assert.deepEqual(ast.map(n => n.type), ["Call", "Error", "Call"])
         assert.deepEqual(ast[1].span, { line: 2, endLine: 2 })
         assert.equal(ast[1].value, "for do")            // her text, verbatim
-        assert.match(ast[1].meta.expected, /number of loops/)
+        assert.match(ast[1].meta.expected, /one count after 'for'/)
     })
 
     test("a block head missing `do` is one line; no body is consumed", () => {
