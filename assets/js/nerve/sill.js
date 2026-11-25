@@ -138,21 +138,24 @@ export function mountSill(el, { read }) {
         }
         if (el.hidden) el.hidden = false
     }
-    // A PRESS MEANS THE CONTROL, NOT THE WORD IT WORE. The seat may have moved
-    // under the hand; the act follows the offer standing when it lands — a
-    // toggle has a current state, not an opposite — and the gold says it moved.
-    // Admission stays below, in dial.js. (id:nav-core-sill)
+    // A PRESS RUNS THE VERB IT PAINTED OR NOTHING AT ALL. A world that moves under
+    // the pointer repaints instead of inverting the hand: an offer standing now
+    // that the hand never saw — another phase, another play's same-named verb — is
+    // not the one this click was for, so the click only re-offers it.
+    // Admission stays below, in dial.js. (id:outer-sill)
     function invoke(kind) {
-        if (dead || !owned()) return false
+        if (dead || !owned()) return { done: false, moved: false }
         const r = read()
         const now = controlsOf(r)[kind]
         const seen = painted?.[kind]
         if (!now) { paint(); return { done: false, moved: false } }   // no offer, no act
-        const moved = seen != null && !sameVerb(seen, now)
+        if (!sameVerb(seen, now)) {
+            paint()                                   // the seat moved: re-offer, never act
+            return { done: false, moved: true }
+        }
         const done = r[now.method]() === true
         paint()
-        if (done && moved) acknowledge()
-        return { done, moved }
+        return { done, moved: false }
     }
 
     // The beat belongs to the reading that earned it: absent instrument, dead
@@ -173,8 +176,8 @@ export function mountSill(el, { read }) {
     // The winder's own gesture, and never a second beat for the same press. A
     // replay that died with its reading donates no glow. (id:outer-sill-lifetime)
     function replay() {
-        const { done, moved } = invoke('restart')
-        if (done && !moved && painted != null) acknowledge()
+        // Only an act earns the beat; acknowledge refuses a reading already gone.
+        if (invoke('restart').done) acknowledge()
     }
 
     function toggle() { invoke('toggle') }
